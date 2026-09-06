@@ -12195,6 +12195,110 @@ end
         @test Cecelia.qc_photon_limited_frac(rtm).score == 0.95
     end
 
+    # CORRECTION_QC_PLAN.md §1 (rule table) + §3 (tie-break) + §5 (preset cards). Phase C of the
+    # plan: pure meta → CorrectionPlan. No chain wiring, no plan.json write — the engine is a set
+    # of pure functions that a Phase D consumer will mount on a `ChainTemplate`.
+    @testset "correction_plan engine (§1 + §3 + §5)" begin
+        # ── §5 presets: shape + registry ────────────────────────────────────────────────────────
+        @test Set(Cecelia.preset_ids()) == Set([:resonance, :galvo, :spinning_disk, :deep_3d, :custom])
+        res = Cecelia.preset_by_id(:resonance)
+        @test res isa Cecelia.AcquisitionPreset
+        @test res.validation_status == :unvalidated          # honest until a fixture exists
+        @test ("cleanupImages.smooth", "spatialMethod") in res.hard_commitments
+        @test res.params_by_task["cleanupImages.smooth"]["spatialMethod"] == "bilateral_vst"
+        # unknown card id → custom, keeps the engine total for stale plan.json refs
+        @test Cecelia.preset_by_id(:not_a_card).id == :custom
+
+        mk_scores(size_t, size_z; sat_frac = Cecelia.QC_SCORE_ABSENT,
+                  photon_frac = Cecelia.QC_SCORE_ABSENT) = Cecelia.QCResult[
+            Cecelia.QCResult("axis.T_present", size_t > 1 ? 1.0 : 0.0),
+            Cecelia.QCResult("axis.Z_present", size_z > 1 ? 1.0 : 0.0),
+            Cecelia.QCResult("denoise.channel_saturated_frac", sat_frac),
+            Cecelia.QCResult("smooth.photon_limited_frac",     photon_frac),
+        ]
+
+        # ── §1 rule 1: T-axis absent → driftCorrect + flowRegister excluded, even if the card
+        #    seeded them. The exclusion row keeps the reason for the audit trail.
+        r = Cecelia.apply_rules(mk_scores(1, 1), Cecelia.preset_by_id(:galvo))
+        drift_excl = only([s for s in r.excluded if s.fun_name == "cleanupImages.driftCorrect"])
+        @test drift_excl.exclusion_reason == "No T axis — drift correction not applicable"
+        @test !any(s -> s.fun_name == "cleanupImages.driftCorrect", r.included)
+
+        # ── §1 rule 2: T-axis present but card omits driftCorrect → auto-include (custom card).
+        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom))
+        drift = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
+        @test drift.source == :computed_qc
+
+        # ── §1 rule 3: all channels saturated → denoise excluded, PR #796 refusal. The card
+        #    does NOT ship denoise on any of the seed cards, so this is a pure exclusion emitted
+        #    by the engine (no included→excluded transition).
+        r = Cecelia.apply_rules(mk_scores(100, 1; sat_frac = 1.0), Cecelia.preset_by_id(:galvo))
+        den = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
+        @test occursin("saturated", den.exclusion_reason)
+
+        # partial saturation (< 1.0) does NOT exclude denoise — the gate is all-or-nothing
+        r = Cecelia.apply_rules(mk_scores(100, 1; sat_frac = 0.5), Cecelia.preset_by_id(:galvo))
+        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.excluded)
+
+        # sat NaN (probe never ran) → no exclusion (a signal-absent metric is NOT "0.0")
+        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:galvo))
+        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.excluded)
+
+        # ── §5 C-Deep3D: stackAlign shipped on the card, referenceMode = middle.
+        r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:deep_3d))
+        sa = only([s for s in r.included if s.fun_name == "cleanupImages.stackAlign"])
+        @test sa.params["referenceMode"] == "middle"
+        @test sa.source == :card
+        # ...and Z-axis absent excludes it regardless
+        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:deep_3d))
+        @test any(s -> s.fun_name == "cleanupImages.stackAlign" &&
+                       s.exclusion_reason == "No Z axis", r.excluded)
+
+        # ── §1 order weights: drift (200) before smooth (300) before af (400)
+        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:resonance))
+        order = [s.fun_name for s in r.included]
+        drift_i  = findfirst(==("cleanupImages.driftCorrect"), order)
+        smooth_i = findfirst(==("cleanupImages.smooth"), order)
+        @test drift_i !== nothing && smooth_i !== nothing
+        @test drift_i < smooth_i             # 200 < 300
+
+        # ── §3 wizard tier > card tier ──────────────────────────────────────────────────────────
+        # W2 = yes → driftEstimator switches from card's `multiLag` to `sitkRigid`
+        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:galvo),
+                                Dict{Symbol,Any}(:W2 => :yes))
+        drift = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
+        @test drift.params["driftEstimator"] == "sitkRigid"
+        @test drift.source == :wizard        # provenance stamps the wizard, not the card
+
+        # W2 without T-axis → no autocreate (no driftCorrect step)
+        r = Cecelia.apply_rules(mk_scores(1, 1), Cecelia.preset_by_id(:custom),
+                                Dict{Symbol,Any}(:W2 => :yes))
+        @test !any(s -> s.fun_name == "cleanupImages.driftCorrect", r.included)
+
+        # W3 = yes → include flowRegister (card didn't ship it)
+        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:galvo),
+                                Dict{Symbol,Any}(:W3 => :yes))
+        fr = only([s for s in r.included if s.fun_name == "cleanupImages.flowRegister"])
+        @test fr.source == :wizard
+
+        # W5 = yes on a Z-present image → include stackAlign (custom card has no seed)
+        r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:custom),
+                                Dict{Symbol,Any}(:W5 => :yes))
+        @test any(s -> s.fun_name == "cleanupImages.stackAlign" && s.source == :wizard, r.included)
+
+        # ── recommend_plan(meta) — the persist-facing entrypoint ───────────────────────────────
+        meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30)
+        plan = Cecelia.recommend_plan(meta; image_uid = "img-abc", card_id = :deep_3d)
+        @test plan isa Cecelia.CorrectionPlan
+        @test plan.image_uid == "img-abc"
+        @test plan.preset_id == :deep_3d
+        @test length(plan.qc_scores) == 4                    # score snapshot preserved
+        # Deep3D includes both stackAlign (card) and driftCorrect (card + T-axis satisfies)
+        fns = [s.fun_name for s in plan.included]
+        @test "cleanupImages.stackAlign" in fns
+        @test "cleanupImages.driftCorrect" in fns
+    end
+
     # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
     # multiscales metadata and the L0 `.zarray`, not the array itself. A flat store here rather than
     # a bf2raw wrapper, so the same test exercises `series_base`'s flat branch.

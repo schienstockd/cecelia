@@ -1,10 +1,13 @@
 # Correction plan + QC — metadata-driven decision tree
 
-**Status:** **in-progress** (2026-09-06). Phase A shipped (Q-M4 sparsity probes, PR #811 —
-combined `import.photon_limited` finding + `zeroFrac`/`signalFrac` on `meta.saturation.channels[i]`).
-Phase B in flight: §2.1 metadata-derived score layer in `app/src/correction_plan.jl` (this branch).
-Q-C1 resolved by PR #810 (afDriftCorrect composite retired). Every other §Open question is still
-maintainer-blocking.
+**Status:** **in-progress** (2026-09-06). Phases A + B shipped: Q-M4 sparsity probes (PR #811,
+combined `import.photon_limited` finding + `zeroFrac`/`signalFrac` on `meta.saturation.channels[i]`),
+§2.1 metadata-derived score layer (PR #813, `QCResult` + four scores in
+`app/src/correction_plan.jl`). Phase C in flight on this branch: §1 rule table + §3 tie-break + §5
+seed cards → `CorrectionStep` / `CorrectionPlan` / `AcquisitionPreset` + `apply_rules` /
+`recommend_plan`. Q-C1 resolved by PR #810 (afDriftCorrect composite retired). Q-C10 no longer
+applies (composite gone). Every other §Open question is still maintainer-blocking; plan.json
+persistence (§8 provenance triple) is deferred to Phase D.
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),
