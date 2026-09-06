@@ -166,7 +166,10 @@ non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install c
    > as markdown, and 450 lines of `* title by @user in #N` told a user nothing they could act on
    > (Dominik, 2026-08-10). Write for the person opening that modal: what changed for them, and what
    > they now have to decide. The commit log is one click away on the compare link appended below.
-4. Bump the `version:` + `date-released:` in **`CITATION.cff`** to this tag.
+4. Bump the version to this tag in the three files that carry it — the suite fails on divergence:
+   - `CITATION.cff` (`version:` + `date-released:`) — the human-facing citation
+   - `app/Project.toml` (`version =`) — read at runtime via `cecelia_version()`
+   - `frontend/package.json` (`"version":`) — read by JS tooling and bundle metadata
 5. **`bash scripts/bundle_check.sh --build --launch`** — packs the bundle `release.yml` will pack,
    extracts it, and boots the API server from it on `:8099` (~1 min, leaves the running app alone).
    Pass `--build`: without it the bundle carries whatever `frontend/dist` is already on disk, which

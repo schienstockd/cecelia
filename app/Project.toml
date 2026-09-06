@@ -1,6 +1,7 @@
 name = "Cecelia"
 uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 license = "GPL-3.0-or-later"
+version = "0.2.0"
 
 [deps]
 Clustering = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
