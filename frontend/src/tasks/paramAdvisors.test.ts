@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
-  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, ANISO_BYTES_PER_BOX_PER_FRAME,
-  ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
+  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, supportTemporalWindowAdvisory,
+  ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
 
@@ -354,6 +354,52 @@ describe('spatialSigmaAdvisory', () => {
   it('is registered on the KEY, so it does not fire on every float in the app', () => {
     expect(paramAdvisor({ key: 'spatialSigma', type: 'float' })).toBeTruthy()
     expect(paramAdvisor({ key: 'someOtherSlider', type: 'float' })).toBeUndefined()
+  })
+})
+
+// SUPPORT's temporal window. The runner refuses a movie shorter than `inputFrames`; the advisor
+// mirrors that rule live on the slider, mirrored suggested value included ("largest odd ≤ min T").
+describe('supportTemporalWindowAdvisory', () => {
+  it('ok — window fits every selected movie', () => {
+    const a = supportTemporalWindowAdvisory(21, [{ sizeT: 31 }, { sizeT: 60 }, { sizeT: 45 }])!
+    expect(a.severity).toBe('ok')
+    expect(a.message).toContain('21f')
+    expect(a.message).toContain('3 movies')
+    expect(a.message).toContain('shortest 31f')
+  })
+
+  it('warn — some movies too short, message names the count + shortest, tip suggests odd cap', () => {
+    // 41 does not fit a 31f movie; two of three do fit
+    const a = supportTemporalWindowAdvisory(41, [{ sizeT: 31 }, { sizeT: 60 }, { sizeT: 45 }])!
+    expect(a.severity).toBe('warn')
+    expect(a.message).toContain('1 of 3')
+    expect(a.message).toContain('shortest 31f')
+    // 31 is already odd, so the suggested cap is 31
+    expect(a.tip).toContain('31')
+  })
+
+  it('fail — every movie too short, tip mirrors the Julia refusal (odd ≤ longest)', () => {
+    // 61 does not fit any of them
+    const a = supportTemporalWindowAdvisory(61, [{ sizeT: 31 }, { sizeT: 40 }])!
+    expect(a.severity).toBe('fail')
+    expect(a.message).toContain('longest 40f')
+    // 40 is even → largest odd ≤ 40 is 39, matching `_support_short_movie_refusal`
+    expect(a.tip).toContain('39')
+    expect(a.tip).toContain('largest odd')
+  })
+
+  it('returns null when there is nothing to say', () => {
+    expect(supportTemporalWindowAdvisory(21, [])).toBeNull()
+    expect(supportTemporalWindowAdvisory(21, undefined)).toBeNull()
+    // no images carry a sizeT — silence rather than a wrong readout
+    expect(supportTemporalWindowAdvisory(21, [{ sizeT: null }, {}])).toBeNull()
+    expect(supportTemporalWindowAdvisory(0, [{ sizeT: 31 }])).toBeNull()
+    expect(supportTemporalWindowAdvisory('nonsense', [{ sizeT: 31 }])).toBeNull()
+  })
+
+  it('is registered on the KEY, so it fires only on SUPPORT training and not on every int', () => {
+    expect(paramAdvisor({ key: 'inputFrames', type: 'int' })).toBeTruthy()
+    expect(paramAdvisor({ key: 'someOtherInt', type: 'int' })).toBeUndefined()
   })
 })
 

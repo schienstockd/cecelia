@@ -473,6 +473,44 @@ export function temporalSpanAdvisory(
   }
 }
 
+/**
+ * SUPPORT's temporal window. The runner refuses (`_support_short_movie_refusal` in
+ * `train_support_denoise.jl`) a movie shorter than `inputFrames` — this is the same rule, live on
+ * the slider, so the user sees it while dragging instead of at Run.
+ *
+ * Anchors on min sizeT across the SELECTED images (set-scope task). Suggested value mirrors the
+ * Julia helper: largest odd integer ≤ the shortest movie.
+ */
+export function supportTemporalWindowAdvisory(
+  value: unknown, images: readonly { sizeT?: number | null }[] | undefined,
+): ParamAdvisory | null {
+  const v = Math.trunc(Number(value))
+  if (!Number.isFinite(v) || v <= 0) return null
+  const ts = (images ?? []).map(i => i.sizeT ?? 0).filter(t => t > 0)
+  if (!ts.length) return null
+  const minT = Math.min(...ts)
+  const maxT = Math.max(...ts)
+  const n = ts.length
+  const nOver = ts.filter(t => t < v).length
+  const odd = (x: number) => (x % 2 === 1 ? x : Math.max(x - 1, 1))
+  const movies = `${n} movie${n === 1 ? '' : 's'}`
+  if (nOver === 0) {
+    return { severity: 'ok',
+             message: `${v}f on ${movies} (shortest ${minT}f)`,
+             tip: `Every selected movie has at least ${v} timepoints, so all of them will train.` }
+  }
+  if (nOver === n) {
+    return { severity: 'fail',
+             message: `over every movie (longest ${maxT}f) — nothing can train`,
+             tip: `The temporal window has to fit inside every selected movie. Longest is ${maxT}f — `
+                + `set it to ${odd(maxT)} (largest odd value ≤ ${maxT}) or pick longer movies.` }
+  }
+  return { severity: 'warn',
+           message: `${nOver} of ${n} too short (shortest ${minT}f)`,
+           tip: `Movies with fewer than ${v} timepoints are refused at Run. `
+              + `Set the window to ${odd(minT)} (largest odd value ≤ ${minT}) to train on all ${movies}.` }
+}
+
 export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
   // Registered under the KEY, not `chipSelect`: every chipSelect in every task would match the type,
   // and this judgement is about what a temporal LAG means.
@@ -509,6 +547,14 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
 
   // Smoothing's Gaussian. Registered under the KEY: `float` is the widget type and would match every
   // slider in every task, and the judgement here is about what the SMOOTHING pipeline does with it.
+  // SUPPORT's temporal window. Registered under the KEY — no other task widget uses `inputFrames`.
+  // The judgement is per-selection (min sizeT across selected images) so it re-runs when the set
+  // changes, not just when the value does.
+  inputFrames: {
+    reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.sizeT ?? ''}`).join(',')],
+    advise: async (value, ctx) => supportTemporalWindowAdvisory(value, ctx.images),
+  },
+
   spatialSigma: {
     // the verdict depends on the statistic beside it, so it has to re-run when that changes
     reloadOn: ctx => [ctx.values?.temporalStat],
