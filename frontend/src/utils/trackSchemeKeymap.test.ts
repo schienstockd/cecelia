@@ -18,6 +18,7 @@ describe('keyToAction', () => {
     expect(keyToAction(ev({ key: 'l' }))).toBe('join')   // l = link in vizsla, Join for us
     expect(keyToAction(ev({ key: 'b' }))).toBe('split')  // b = break in vizsla, Split for us
     expect(keyToAction(ev({ key: 'r' }))).toBe('remove') // r = ours, no vizsla equivalent
+    expect(keyToAction(ev({ key: 'a' }))).toBe('add')    // P3: points.add — no vizsla equivalent
   })
 
   it('maps Backspace to undo, Enter to apply, Escape to clearSel', () => {
@@ -83,7 +84,7 @@ describe('isActivatingButton', () => {
 
 describe('KEY_HINT', () => {
   it('is complete — every action has a hint (so a new action cannot ship without a tooltip letter)', () => {
-    const actions = ['join', 'split', 'remove', 'undo', 'apply', 'clearSel'] as const
+    const actions = ['join', 'split', 'remove', 'add', 'undo', 'apply', 'clearSel'] as const
     for (const a of actions) expect(KEY_HINT[a]).toBeTruthy()
   })
 })

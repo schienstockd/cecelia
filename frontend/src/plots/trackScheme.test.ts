@@ -5,7 +5,8 @@ import {
   laneOverlap, lanesOverlap, selectionOverlaps,
   frameToX, xToFrame, laneY, laneAtY, runRects, hitTest, laneSummary, schemeCsvRows, frameTicks,
   joinPairs, orderLanesByPair, joinLinks, sharedFrames,
-  type SchemeGeom,
+  buildDetectionsLane, detectionRects, detectionHit,
+  type SchemeGeom, type DetectionFrame,
 } from './trackScheme'
 import type { TrackIssue } from '../lib/trackCorrection'
 
@@ -533,5 +534,90 @@ describe('sharedFrames', () => {
   it('is empty for a clean gap', () => {
     const [a, b] = buildLanes({ '1': path([0, 1]), '2': path([5, 6]) })
     expect(sharedFrames(a, b)).toEqual([])
+  })
+})
+
+// ── untracked detections lane (P3) ──────────────────────────────────────────
+const df = (t: number, labels: number[]): DetectionFrame => ({
+  t, count: labels.length, labels, x: labels.map(() => 0), y: labels.map(() => 0),
+})
+
+describe('buildDetectionsLane', () => {
+  it('is empty for zero frames — a lane with no rects is what an empty response is', () => {
+    const d = buildDetectionsLane([])
+    expect(d.frames).toEqual([]); expect(d.nDetections).toBe(0); expect(d.maxCount).toBe(0)
+  })
+
+  it('drops zero-count frames — no zero-height rect can leak out', () => {
+    const d = buildDetectionsLane([df(3, [10, 11]), { t: 4, count: 0, labels: [], x: [], y: [] }])
+    expect(d.frames.map(f => f.t)).toEqual([3])
+    expect(d.nDetections).toBe(2)
+  })
+
+  it('sorts by t and reports the extent + maxCount for the intensity scale', () => {
+    const d = buildDetectionsLane([df(7, [1, 2]), df(2, [3]), df(5, [4, 5, 6])])
+    expect(d.frames.map(f => f.t)).toEqual([2, 5, 7])
+    expect(d.t0).toBe(2); expect(d.t1).toBe(7)
+    expect(d.nDetections).toBe(6); expect(d.maxCount).toBe(3)
+  })
+})
+
+describe('detectionRects', () => {
+  it('lands each frame on the same x as a track bar at that frame', () => {
+    // one detection at frame 4 must have the same left edge as a track run starting at frame 4
+    const g = geom({ t0: 0, t1: 9, x0: 0, x1: 100 })
+    const d = buildDetectionsLane([df(4, [1])])
+    const [r] = detectionRects(d, g, 20, 8)
+    expect(r.x).toBe(frameToX(g, 4))
+    expect(r.w).toBe(frameToX(g, 5) - frameToX(g, 4))  // one frame wide
+    expect(r.y).toBe(20); expect(r.h).toBe(8)
+    expect(r.frame).toBe(4); expect(r.count).toBe(1)
+  })
+
+  it('normalises intensity against the lane maxCount, not per-rect', () => {
+    // one busy frame at 5 makes the quieter frame at 2 read as quieter (0.5) — the lane is a scan
+    const g = geom({ t0: 0, t1: 9 })
+    const d = buildDetectionsLane([df(2, [1]), df(5, [10, 11])])
+    const rs = detectionRects(d, g, 0, 8)
+    expect(rs.find(r => r.frame === 2)!.intensity).toBeCloseTo(0.5, 5)
+    expect(rs.find(r => r.frame === 5)!.intensity).toBe(1)
+  })
+
+  it('widens single-frame rects to `minW` — the same reason `runRects` does', () => {
+    // a 400-frame image in 700 px is 1.75 px per frame; a 1 px rect is invisible
+    const g = geom({ t0: 0, t1: 399, x0: 0, x1: 700 })
+    const d = buildDetectionsLane([df(200, [1])])
+    const [r] = detectionRects(d, g, 0, 8, /*minW*/ 4)
+    expect(r.w).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('detectionHit', () => {
+  it('returns the frame + labels when the pointer is inside the strip on a frame with cells', () => {
+    const g = geom({ t0: 0, t1: 9 })
+    const d = buildDetectionsLane([df(3, [7, 8, 9])])
+    const h = detectionHit(d, g, /*y*/ 20, /*h*/ 8, /*px*/ frameToX(g, 3) + 1, /*py*/ 22)
+    expect(h).toEqual({ frame: 3, count: 3, labels: [7, 8, 9] })
+  })
+
+  it('is null above and below the strip — pinning outside the lane window still means outside', () => {
+    const g = geom({ t0: 0, t1: 9 })
+    const d = buildDetectionsLane([df(3, [7])])
+    const px = frameToX(g, 3) + 1
+    expect(detectionHit(d, g, 20, 8, px, 5)).toBeNull()    // above
+    expect(detectionHit(d, g, 20, 8, px, 30)).toBeNull()   // below
+  })
+
+  it('is null on a frame with no untracked cell — a click in empty space is nothing, not "ambiguous"', () => {
+    const g = geom({ t0: 0, t1: 9 })
+    const d = buildDetectionsLane([df(3, [7])])
+    expect(detectionHit(d, g, 20, 8, frameToX(g, 5) + 1, 22)).toBeNull()
+  })
+
+  it('is null outside the frame axis', () => {
+    const g = geom({ t0: 0, t1: 9, x0: 10, x1: 100 })
+    const d = buildDetectionsLane([df(3, [7])])
+    expect(detectionHit(d, g, 20, 8, 5, 22)).toBeNull()    // left of x0
+    expect(detectionHit(d, g, 20, 8, 105, 22)).toBeNull()  // right of x1
   })
 })

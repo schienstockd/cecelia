@@ -654,3 +654,123 @@ export function sharedFrames(a: Lane, b: Lane): number[] {
   for (const s of laneOverlap(a, b)) for (let t = s.t0; t <= s.t1; t++) out.push(t)
   return [...new Set(out)].sort((x, y) => x - y)
 }
+
+// ── untracked detections lane (Decision 6, P3) ──────────────────────────────
+//
+// The one op with no other authoring surface is `points.add`, and it is invisible without a place
+// to see the cells that were never linked. This is that place: one horizontal strip, ONE RECT PER
+// FRAME with any untracked cell, sized by count. Different visual grammar from a track lane on
+// purpose (rects per frame, not runs of contiguous frames): a track lane says "existed here", the
+// untracked lane says "N unlinked detections here" — a scatter over time, not a life.
+//
+// Kept as its OWN types rather than a synthetic Lane with `track = 'untracked'`. A Lane has runs;
+// this has counts. Selection semantics differ (drag source, not Join/Split/Remove target).
+// Reusing the type would force `if (lane.track === 'untracked')` at every hit-test and paint
+// site, which is the second variant this codebase's convention forbids.
+
+/** One frame of the /api/tracking/detections response — the wire shape too. */
+export interface DetectionFrame {
+  t: number
+  count: number
+  labels: readonly number[]
+  x: readonly number[]
+  y: readonly number[]
+  z?: readonly number[]
+}
+
+/** The untracked lane, as the scheme reads it. */
+export interface DetectionsLane {
+  frames: DetectionFrame[]
+  /** first / last frame carrying any untracked cell */
+  t0: number
+  t1: number
+  /** the highest per-frame count — for normalising the intensity of each rect */
+  maxCount: number
+  /** total across every frame — the row label ("482 untracked detections") */
+  nDetections: number
+}
+
+/**
+ * Build the lane from the wire response. Frames with `count === 0` are dropped: the route already
+ * omits them, but a caller that assembles this by hand is not disallowed to include zeros and the
+ * lane refuses them so a zero-height rect can never leak into `detectionRects`.
+ *
+ * Sorted by `t` ascending (the wire is too, but rebuilding a lane by hand is not disallowed).
+ */
+export function buildDetectionsLane(frames: readonly DetectionFrame[]): DetectionsLane {
+  const kept = (frames ?? []).filter(f => f.count > 0)
+  if (!kept.length) return { frames: [], t0: 0, t1: 0, maxCount: 0, nDetections: 0 }
+  let t0 = Infinity, t1 = -Infinity, n = 0, maxCount = 0
+  for (const f of kept) {
+    if (f.t < t0) t0 = f.t
+    if (f.t > t1) t1 = f.t
+    if (f.count > maxCount) maxCount = f.count
+    n += f.count
+  }
+  return {
+    frames: [...kept].sort((a, b) => a.t - b.t),
+    t0, t1, maxCount, nDetections: n,
+  }
+}
+
+/** One drawable rect on the untracked lane — one per frame with any untracked cell. */
+export interface DetectionRect {
+  frame: number
+  count: number
+  labels: readonly number[]
+  x: number
+  y: number
+  w: number
+  h: number
+  /** `count / maxCount`, 0..1 — for opacity / intensity, so the busy frames read as busy */
+  intensity: number
+}
+
+/**
+ * Rects for the untracked lane. `y` and `h` are supplied by the caller because the untracked lane
+ * is drawn OUTSIDE the scrolling lane window (pinned above, so a scroll of the track lanes does
+ * not scroll the detections out of view) — the scheme geometry does not know its Y.
+ *
+ * Uses the same `frameToX` a track run does, so a detection at frame t lines up EXACTLY with a
+ * track bar's t: the whole point of drawing them on one x axis is that "this untracked cell sits
+ * inside track 42's hole" is a visual comparison, not an arithmetic one.
+ */
+export function detectionRects(
+  det: DetectionsLane, g: SchemeGeom, y: number, h: number, minW = 2,
+): DetectionRect[] {
+  if (!det.frames.length) return []
+  const out: DetectionRect[] = []
+  for (const f of det.frames) {
+    const x = frameToX(g, f.t)
+    const w = Math.max(minW, frameToX(g, f.t + 1) - x)
+    out.push({
+      frame: f.t, count: f.count, labels: f.labels, x, y, w, h,
+      intensity: det.maxCount > 0 ? f.count / det.maxCount : 0,
+    })
+  }
+  return out
+}
+
+/** A hit on the untracked lane — carries the labels for the drag source. */
+export interface DetectionHit {
+  frame: number
+  count: number
+  labels: readonly number[]
+}
+
+/**
+ * Hit-test a pointer against the untracked lane's strip at `[y, y+h]`.
+ *
+ * Returns `null` when the pointer is outside that strip, outside the frame axis, or on a frame
+ * that carries no untracked cell (a click in the empty space between two counts is not an
+ * ambiguous case — there is nothing there).
+ */
+export function detectionHit(
+  det: DetectionsLane, g: SchemeGeom, y: number, h: number, px: number, py: number,
+): DetectionHit | null {
+  if (py < y || py > y + h) return null
+  if (px < g.x0 || px > g.x1) return null
+  const frame = xToFrame(g, px)
+  const f = det.frames.find(f => f.t === frame)
+  return f ? { frame, count: f.count, labels: f.labels } : null
+}
