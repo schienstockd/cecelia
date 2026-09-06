@@ -249,6 +249,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/movies" => (req, body_bytes) -> (api_movies_list(req)),
     "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_get(req)),
     "/api/correction-plan/presets" => (req, body_bytes) -> (api_correction_plan_presets(req)),
+    "/api/correction-plan/get" => (req, body_bytes) -> (api_correction_plan_get(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────
@@ -263,6 +264,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
     "/api/tasks/validate" => (req, body_bytes) -> (api_task_validate(req, body_bytes)),
     "/api/correction-plan/recommend" => (req, body_bytes) -> (api_correction_plan_recommend(req, body_bytes)),
+    "/api/correction-plan/save" => (req, body_bytes) -> (api_correction_plan_save(req, body_bytes)),
     "/api/plugins/install" => (req, body_bytes) -> (api_plugins_install(body_bytes)),
     "/api/plugins/install-local" => (req, body_bytes) -> (api_plugins_install_local(body_bytes)),
     "/api/plugins/remove"  => (req, body_bytes) -> (api_plugins_remove(body_bytes)),

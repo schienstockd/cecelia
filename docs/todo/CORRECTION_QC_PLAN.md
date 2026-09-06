@@ -8,17 +8,20 @@ wizard)` auto-picks a card so `recommend_plan` can leave `card_id` implicit), UI
 (PR #824 — `GET /api/correction-plan/presets` + `POST /api/correction-plan/recommend` and a
 read-only `CorrectionPlanPanel` above the TaskRunner in the cleanup module: card name, included
 steps with `orderWeight`/`source`, excluded rows with their `exclusionReason`, QC scores collapsed,
-for one selected image), and — on this branch — the **C-Deep3D card update** for PR #818:
-`driftPerPlane = true` + `driftZSmoothness = 0.0` starting point alongside stackAlign, per the peer
-session's "they compose" finding (stackAlign = intra-stack per-frame anchor; driftPerPlane =
-inter-frame per-Z-plane rigid — different axes, no double-count). The §8 provenance triple was
-reduced to a doubleton after review: `writer_versions` per step doesn't apply (cecelia ships as one
-package — a single `ceceliaVersion` covers cache invalidation); `upstream_value_names` per step
-stays deferred (the chain executor's own `execute_task` wiring knows which `value_name` each node
-reads — no second source of truth needed until a UI wants it without loading chain state). Q-C1
-resolved by PR #810 (afDriftCorrect composite retired); Q-C10 no longer applies. **What's left:**
-UI slice 3b (card picker + save/load plan.json), 3c (wizard W1–W6), 3d (mount-to-chain button);
-and the remaining §Open questions.
+for one selected image), the **C-Deep3D card update** for PR #818 (PR #825 — `driftPerPlane = true`
++ `driftZSmoothness = 0.0` alongside stackAlign, per the peer session's "they compose" finding:
+stackAlign = intra-stack per-frame anchor; driftPerPlane = inter-frame per-Z-plane rigid, different
+axes, no double-count), and — on this branch — UI slice **3b** (card picker + save/load): the panel
+now offers a `ChipSelect` of the five cards, picking one calls `POST /api/correction-plan/save`
+which computes + persists `plan.json` in one round-trip; `GET /api/correction-plan/get` is the
+load-first entrypoint that also returns `stale: true` when the saved fingerprint no longer matches
+the image's meta (a re-import happened). The §8 provenance triple was reduced to a doubleton after
+review: `writer_versions` per step doesn't apply (cecelia ships as one package — a single
+`ceceliaVersion` covers cache invalidation); `upstream_value_names` per step stays deferred (the
+chain executor's own `execute_task` wiring knows which `value_name` each node reads — no second
+source of truth needed until a UI wants it without loading chain state). Q-C1 resolved by PR #810
+(afDriftCorrect composite retired); Q-C10 no longer applies. **What's left:** UI slice 3c (wizard
+W1–W6), 3d (mount-to-chain button); and the remaining §Open questions.
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),
