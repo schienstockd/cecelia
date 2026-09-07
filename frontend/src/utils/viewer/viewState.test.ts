@@ -37,12 +37,13 @@ describe('buildViewState', () => {
   })
 
   it('translates pan into an image-pixel centre offset', () => {
-    // panX = +100 µm at 0.5 µm/px → +200 image px. Viewer center moves the OTHER way: cx = W/2 - panXpx.
+    // panX = +100 µm at 0.5 µm/px → +200 image px. cx is the L0 pixel the camera looks at, so
+    // cx = W/2 + panXpx (was `W/2 - panXpx` — inverted, see the buildViewState comment).
     const vs = buildViewState({
       cam: fakeCam({ panX: 100 }), meta: fakeMeta(), t: 0, zPlane: 5, ndisplay: 2,
       canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE,
     })
-    expect(vs.camera.center[2]).toBe(256 - 200)     // cx
+    expect(vs.camera.center[2]).toBe(256 + 200)     // cx
     expect(vs.camera.center[1]).toBe(256)           // cy unchanged
   })
 
