@@ -5,5 +5,10 @@
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "io",
-  "composite": ["segment.correct", "segment.measureLabels"]
+  "composite": [
+    "segment.correct_carryover_snapshot",
+    "segment.correct",
+    "segment.measureLabels",
+    "segment.correct_carryover_restore"
+  ]
 }

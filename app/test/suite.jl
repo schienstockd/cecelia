@@ -16327,11 +16327,25 @@ end
         @test_throws Cecelia.ParamValidationError Cecelia.parse_label_ops(bad)
     end
 
-    # composite chains correct + measureLabels — obs carry-over between them is Decision 4b, tracked as
-    # a follow-up (see docs/todo/CORRECTION_PLAN.md → P2). Until it lands, downstream tasks that read
-    # dropped columns will see them missing after the composite runs.
+    # composite is a 4-step chain: snapshot the obs (`live.*`, track_id, cluster ids, HMM, gating
+    # pops — everything measureLabels would clobber) BEFORE segment.correct, then restore AFTER
+    # segment.measureLabels. Decision 4b, docs/todo/CORRECTION_PLAN.md → P2.
     spec = Cecelia._task_spec(Cecelia._task_from_fun_name("segment.correct_measures"))
-    @test spec["composite"] == ["segment.correct", "segment.measureLabels"]
+    @test spec["composite"] == [
+        "segment.correct_carryover_snapshot",
+        "segment.correct",
+        "segment.measureLabels",
+        "segment.correct_carryover_restore",
+    ]
+end
+
+@testset "label correction — obs carry-over task wiring" begin
+    # both phases are typed CciaTasks (the composite executor threads the same params dict through
+    # every step, so a phase-toggled single task couldn't be invoked twice with different args).
+    @test Cecelia._task_from_fun_name("segment.correct_carryover_snapshot") isa Cecelia.SegmentCorrectCarryOverSnapshot
+    @test Cecelia._task_from_fun_name("segment.correct_carryover_restore")  isa Cecelia.SegmentCorrectCarryOverRestore
+    @test isfile(Cecelia._spec_path(Cecelia.SegmentCorrectCarryOverSnapshot()))
+    @test isfile(Cecelia._spec_path(Cecelia.SegmentCorrectCarryOverRestore()))
 end
 
 @testset "label correction — journal sidecar" begin

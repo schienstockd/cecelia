@@ -1,0 +1,19 @@
+{
+  "task": "segmentCorrectCarryOverRestore",
+  "fun_name": "segment.correct_carryover_restore",
+  "label": "Correct labels — restore obs",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "io",
+  "requires": { "scale": ["xy"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Labels",
+      "type": "valueNameSelection",
+      "field": "labelPropsNames",
+      "default": "default",
+      "tip": "Which labelProps h5ad to restore obs to"
+    }
+  ]
+}

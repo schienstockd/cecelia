@@ -41,6 +41,14 @@ function _spec_path(::SegmentCorrect)
     joinpath(@__DIR__, "segment", "correct.json")
 end
 
+function _spec_path(::SegmentCorrectCarryOverSnapshot)
+    joinpath(@__DIR__, "segment", "carry_over_snapshot.json")
+end
+
+function _spec_path(::SegmentCorrectCarryOverRestore)
+    joinpath(@__DIR__, "segment", "carry_over_restore.json")
+end
+
 function _spec_path(::BayesianTracking)
     joinpath(@__DIR__, "tracking", "bayesian_tracking.json")
 end
@@ -202,6 +210,8 @@ function _fun_name_map()::Dict{String, CciaTask}
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
         "segment.correct"                   => SegmentCorrect(),
+        "segment.correct_carryover_snapshot" => SegmentCorrectCarryOverSnapshot(),
+        "segment.correct_carryover_restore"  => SegmentCorrectCarryOverRestore(),
         "segment.correct_measures"          => CompositeTask("segment.correct_measures"),
         "tracking.bayesian_tracking"        => BayesianTracking(),
         "tracking.track_measures"           => TrackMeasures(),
