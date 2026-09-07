@@ -220,6 +220,39 @@ function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{
     out
 end
 
+# ── Model-vault helpers (shared by coastal and denoise) ───────────────────────
+# One generic lookup used by every user vault (`.pt` + sibling `.json`). Pickers may hand us a bare
+# stem OR a full filename — `flowModels` sends stems, `coastalModels` sends `<name>.pt`, and #828
+# flipped `denoiseModels` from full to stem. Accepting BOTH is what stops that shape flip from
+# silently breaking segmentation again; before this, `denoise_model_path("supp.MERTK")` returned
+# `nothing` because the file on disk is `supp.MERTK.pt`.
+#
+# Absolute paths pass through (a REPL/test caller can point at a checkpoint outside the vault).
+
+function vault_model_path(dir::AbstractString, name::AbstractString)::Union{String,Nothing}
+    s = strip(String(name))
+    isempty(s) && return nothing
+    isabspath(s) && isfile(s) && return s
+    for p in (joinpath(dir, s), joinpath(dir, "$(s).pt"))
+        isfile(p) && return p
+    end
+    nothing
+end
+
+function vault_model_manifest(dir::AbstractString, name::AbstractString)::Dict{String,Any}
+    path = vault_model_path(dir, name)
+    isnothing(path) && return Dict{String,Any}()
+    sidecar = string(first(splitext(path)), ".json")
+    isfile(sidecar) || return Dict{String,Any}()
+    try
+        # A corrupt manifest must not take the picker down with it: the model still lists, and the
+        # runner decides what to do without one (coastal falls back to defaults; SUPPORT errors).
+        Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(sidecar, String)))
+    catch
+        Dict{String,Any}()
+    end
+end
+
 # ── Coastal (optical-flow) models ──────────────────────────────────────────────
 # The same drop-in vault as cellpose above, one directory over: `<config_dir>/models/coastalModels/`.
 # It is deliberately NOT a per-project store — a model trained on one movie is meant to be applied
@@ -246,18 +279,12 @@ coastal_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
 """
     coastal_model_path(name) -> String | Nothing
 
-Absolute path to a coastal checkpoint by filename, or `nothing` if it doesn't exist. Unlike
-[`cellpose_model_path`](@ref) there is no bundled fallback: coastal ships no models, so the user
-vault is the only location.
+Absolute path to a coastal checkpoint. Accepts a bare stem or a `<name>.pt`; unlike
+[`cellpose_model_path`](@ref) there is no bundled fallback (coastal ships no models).
 """
-function coastal_model_path(name::AbstractString,
-                            dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing}
-    s = strip(String(name))
-    isempty(s) && return nothing
-    isabspath(s) && isfile(s) && return s
-    p = joinpath(coastal_models_dir(dev_dir), s)
-    isfile(p) ? p : nothing
-end
+coastal_model_path(name::AbstractString,
+                   dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing} =
+    vault_model_path(coastal_models_dir(dev_dir), name)
 
 """
     coastal_model_manifest(name) -> Dict{String,Any}
@@ -266,20 +293,9 @@ The `<name>.json` sidecar beside a checkpoint, or an empty Dict when there is no
 `.pt`). Parsed here rather than in Python because the picker label and `list_coastal_models` need
 it, and because the vault manager shows it without loading torch.
 """
-function coastal_model_manifest(name::AbstractString,
-                                dev_dir::Union{String,Nothing} = nothing)::Dict{String,Any}
-    path = coastal_model_path(name, dev_dir)
-    isnothing(path) && return Dict{String,Any}()
-    sidecar = string(first(splitext(path)), ".json")
-    isfile(sidecar) || return Dict{String,Any}()
-    try
-        Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(sidecar, String)))
-    catch
-        # A corrupt manifest must not take the picker down with it; the model still lists, and
-        # `CoastalUtils` falls back to coastal's training defaults (and says so).
-        Dict{String,Any}()
-    end
-end
+coastal_model_manifest(name::AbstractString,
+                       dev_dir::Union{String,Nothing} = nothing)::Dict{String,Any} =
+    vault_model_manifest(coastal_models_dir(dev_dir), name)
 
 """
     list_coastal_models() -> Vector{NamedTuple}
@@ -346,17 +362,11 @@ denoise_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
 """
     denoise_model_path(name) -> String | Nothing
 
-Absolute path to a denoise checkpoint by filename, or `nothing` if it doesn't exist. No bundled
-fallback: cecelia ships no denoise models, so the user vault is the only location.
+Absolute path to a denoise checkpoint. Accepts a bare stem or a `<name>.pt`; no bundled fallback.
 """
-function denoise_model_path(name::AbstractString,
-                            dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing}
-    s = strip(String(name))
-    isempty(s) && return nothing
-    isabspath(s) && isfile(s) && return s
-    p = joinpath(denoise_models_dir(dev_dir), s)
-    isfile(p) ? p : nothing
-end
+denoise_model_path(name::AbstractString,
+                   dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing} =
+    vault_model_path(denoise_models_dir(dev_dir), name)
 
 """
     denoise_model_manifest(name) -> Dict{String,Any}
@@ -365,20 +375,9 @@ The `<name>.json` sidecar beside a denoise checkpoint, or an empty Dict when the
 here rather than in Python because the picker label and `list_denoise_models` need it, and because
 the vault manager shows it without loading torch.
 """
-function denoise_model_manifest(name::AbstractString,
-                                dev_dir::Union{String,Nothing} = nothing)::Dict{String,Any}
-    path = denoise_model_path(name, dev_dir)
-    isnothing(path) && return Dict{String,Any}()
-    sidecar = string(first(splitext(path)), ".json")
-    isfile(sidecar) || return Dict{String,Any}()
-    try
-        Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(sidecar, String)))
-    catch
-        # A corrupt manifest must not take the picker down with it; the model still lists, and the
-        # runner errors loudly when it cannot rebuild the architecture.
-        Dict{String,Any}()
-    end
-end
+denoise_model_manifest(name::AbstractString,
+                       dev_dir::Union{String,Nothing} = nothing)::Dict{String,Any} =
+    vault_model_manifest(denoise_models_dir(dev_dir), name)
 
 """
     list_denoise_models() -> Vector{NamedTuple}
