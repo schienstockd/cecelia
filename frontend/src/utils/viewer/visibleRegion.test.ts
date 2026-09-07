@@ -27,16 +27,17 @@ describe('visibleRegion', () => {
   })
 
   it('shifts the window under pan', () => {
-    // Pan the camera 100 image-px to the right → the visible window shifts left by 100
+    // Pan the camera 100 image-px right of image centre → the visible window's centre shifts to
+    // pixel 256 + 100 = 356. At zoom 2 the visible width is 256 px, so the window is [228, 484].
     const r = visibleRegion({ ...base, zoom: 2, panX: 100 })
-    expect(r.xy.X).toEqual([28, 284])
+    expect(r.xy.X).toEqual([228, 484])
     expect(r.xy.Y).toEqual([128, 384])
   })
 
   it('clamps to the image bounds when the camera hangs off the edge', () => {
-    // Panned enough that half the visible rect would be at negative X: clamp, don't emit negatives
+    // Panned so the visible rect runs past the right edge: clamp to imageW, don't emit past-end
     const r = visibleRegion({ ...base, zoom: 4, panX: 200 })
-    // vis width = 128, centre_x = 256 - 200 = 56 → nominal [-8, 120] → clamped [0, 120]
+    // vis width = 128, centre_x = 256 + 200 = 456 → nominal [392, 520] → clamped [392, 512]
     expect(r.xy.X[0]).toBeGreaterThanOrEqual(0)
     expect(r.xy.X[1]).toBeLessThanOrEqual(512)
   })

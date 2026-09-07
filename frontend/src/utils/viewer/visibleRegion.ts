@@ -5,17 +5,20 @@
 // (the offline renderer's preview leg) both go through one derivation rather than open-code it.
 //
 // Model: the camera is a rectangle of image pixels centred at `(cx, cy)` with size (vw, vh). Under
-// `ndisplay: 2` (plane view) `cx`/`cy` are the image centre offset by `panX`/`panY` in image-pixel
-// units, and `(vw, vh)` are `canvasW/zoom` / `canvasH/zoom`. Clamped to `[0, imageW/H]` — a camera
-// hanging off the edge of the image reports the visible half, not a negative bound the worker would
-// treat as an empty region.
+// `ndisplay: 2` (plane view) `cx = imageW/2 + panX`, `cy = imageH/2 + panY` (image-pixel pans;
+// positive-right, positive-down — same convention as `buildViewState`'s camera.center), and
+// `(vw, vh)` are `canvasW/zoom` / `canvasH/zoom`. Clamped to `[0, imageW/H]` — a camera hanging off
+// the edge of the image reports the visible half, not a negative bound the worker would treat as an
+// empty region.
 //
 // Under `ndisplay: 3` (3D volume) there is no single "visible plane", so the report is the whole XY
 // extent and the worker previews the plane at `z` — mirrors the viewer path that also reported
 // full-XY under 3D and let the worker's `preview_region_bounds` fall back to the current plane.
 
 export interface VisibleRegionInput {
-  /** camera pan, in IMAGE PIXELS (positive x = image shifted right → visible window shifts left) */
+  /** camera pan, in IMAGE PIXELS (positive = the L0 pixel at screen centre is right of / below the
+   *  image centre — same convention as `buildViewState`'s `camera.center`, so a pan that moves the
+   *  camera right by 100 px shifts the visible window's centre right by 100 px) */
   panX: number
   panY: number
   /** scalar zoom, 1.0 = image fills canvas, >1 = zoomed in (visible window shrinks) */
@@ -76,8 +79,13 @@ export function visibleRegion(input: VisibleRegionInput): VisibleRegion {
   // Plane view. At zoom = 1 a "fit" camera sees the whole image; at zoom = k the window shrinks by k.
   const visW = canvasW / zoom
   const visH = canvasH / zoom
-  const cx = imageW / 2 - input.panX
-  const cy = imageH / 2 - input.panY
+  // cx/cy = L0-pixel centre of the visible window. Same convention as `buildViewState`'s
+  // camera.center: `cx = W/2 + panX` (was `W/2 - panX` — the mirror around image centre, which was
+  // consistent with itself but inverted from the shader ground truth and from the fixed viewState;
+  // see viewState.ts's buildViewState comment for the history). A visibleRegion consumer that
+  // cross-checked with a viewState snapshot previously disagreed by `2 * panX`.
+  const cx = imageW / 2 + input.panX
+  const cy = imageH / 2 + input.panY
   return {
     xy: { X: clampSpan(cx - visW / 2, cx + visW / 2, imageW),
           Y: clampSpan(cy - visH / 2, cy + visH / 2, imageH) },
