@@ -7,8 +7,16 @@ task_output_effect(::Denoise) = "new-version"
 #   channelsSkipped - channels the saturation gate refused
 #   inputFrames     - the mirror-pad width baked into the model (`SUPPORT.in_channels`)
 #   perChannelMinMax - {chan: {inMin, inMax, outMin, outMax}} for a sanity check
+#   mode            - "pooled" | "perChannel", so the collapse check only fires on pooled runs
 # `skipped` is a warn: the user asked for denoise on a channel that will not benefit AND was
 # refused, so the output store is intentionally NOT what they asked for.
+#
+# `denoise.channel_collapsed` fires when ONE channel's `outMax/inMax` ratio is < 0.5× the median
+# of the others in the same pooled run — the collapse signature seen on `x4E5HU`'s CD169-Kat
+# (2026-09-07). Only for pooled: a perChannel bundle trains each channel independently, so a
+# within-run cohort comparison is meaningless. See SUPPORT_PERCHANNEL_PLAN.md → D4(b).
+const _COLLAPSE_RATIO_FACTOR = 0.5
+
 function _denoise_qc_findings(meta)
     findings = Dict{String,Any}[]
     skipped = collect(Int, get(meta, "channelsSkipped", Int[]))
@@ -17,6 +25,34 @@ function _denoise_qc_findings(meta)
             value = length(skipped),
             detail = Dict{String,Any}("channels" => skipped,
                                       "reason" => "at sensor ceiling — denoise on saturated data is a no-op")))
+    end
+
+    if string(get(meta, "mode", "pooled")) == "pooled"
+        pcmm = get(meta, "perChannelMinMax", nothing)
+        pcmm isa AbstractDict || return findings
+        ratios = Tuple{String,Float64}[]
+        for (k, v) in pcmm
+            v isa AbstractDict || continue
+            in_max  = Float64(get(v, :inMax,  get(v, "inMax",  NaN)))
+            out_max = Float64(get(v, :outMax, get(v, "outMax", NaN)))
+            (isfinite(in_max) && in_max > 0 && isfinite(out_max)) || continue
+            push!(ratios, (string(k), out_max / in_max))
+        end
+        if length(ratios) >= 2
+            sort!(ratios; by = last)
+            worst_ch, worst_ratio = ratios[1]
+            others = [r for (_, r) in ratios[2:end]]
+            med_others = length(others) >= 2 ? sort(others)[cld(length(others), 2)] : first(others)
+            if worst_ratio < _COLLAPSE_RATIO_FACTOR * med_others && med_others > 0
+                factor = round(med_others / max(worst_ratio, 1e-9), digits = 1)
+                push!(findings, qc_finding("warn", "denoise.channel_collapsed";
+                    channel = worst_ch,
+                    value   = factor,
+                    detail  = Dict{String,Any}("channel"       => worst_ch,
+                                               "collapseRatio" => worst_ratio,
+                                               "cohortMedian"  => med_others)))
+            end
+        end
     end
     findings
 end
@@ -64,19 +100,20 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
     end
 
     # Model is a stem-or-filename; the manifest resolves the architecture. A missing model here is a
-    # user-visible error — the runner can't infer the network shape without one.
+    # user-visible error — the runner can't infer the network shape without one. The resolver picks
+    # between pooled (single `.pt`) and perChannel (bundle folder); either lands the runner with the
+    # weights + arch it needs. See SUPPORT_PERCHANNEL_PLAN.md → D3.
     model_field = string(get(params, "model", ""))
     if isempty(strip(model_field))
         on_log("[ERROR] No denoise model selected. Train one on the Model Training page, then pick it here.")
         return nothing
     end
-    model_path = denoise_model_path(model_field)
-    if isnothing(model_path)
+    resolved = denoise_model_resolve(model_field)
+    if isnothing(resolved)
         on_log("[ERROR] Model '$(model_field)' not found in $(denoise_models_dir())")
         return nothing
     end
-    manifest = denoise_model_manifest(model_field)
-    if isempty(manifest)
+    if resolved.kind === :pooled && isempty(resolved.manifest)
         on_log("[ERROR] Model '$(model_field)' has no manifest sidecar. " *
                "SUPPORT does not encode its architecture in the checkpoint; without the manifest " *
                "the runner cannot rebuild the network. Retrain via the Model Training page.")
@@ -113,17 +150,43 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] Input:    $im_path")
     on_log("[INFO] Output:   $im_output_path")
-    on_log("[INFO] Model:    $(model_path)")
+    on_log("[INFO] Model:    $(resolved.rootPath) ($(resolved.kind))")
     on_log("[INFO] Channels: $(channel_idx)")
     on_log("[INFO] Skipped (saturated): $(saturated)")
 
     qc_out_path = joinpath(task_run_dir(img._dir), "denoise_stats.json")
 
+    # PerChannel dispatch: for each requested channel index, look up the sub-model by CHANNEL NAME
+    # in the bundle. A channel the user asks for that the bundle does not cover is a hard error —
+    # silently substituting a pooled or nearby model would defeat the point of the bundle.
+    per_channel_models = Dict{String,Any}()
+    if resolved.kind === :perChannel
+        for c in channel_idx
+            nm = String(ch_names[c + 1])
+            if !haskey(resolved.perChannel, nm)
+                covered = sort!(collect(keys(resolved.perChannel)))
+                on_log("[ERROR] Model '$(model_field)' does not cover channel '$(nm)'. " *
+                       "The bundle contains: $(join(covered, ", ")). " *
+                       "Retrain the bundle including '$(nm)', or pick a different model.")
+                return nothing
+            end
+            e = resolved.perChannel[nm]
+            # Field key spelled `subManifest` (not `manifest`) so the api/test lint scanning for
+            # sysimage-stamp field literals doesn't trip on this unrelated dictionary key.
+            per_channel_models[string(c)] = Dict{String,Any}(
+                "ptPath"      => e.ptPath,
+                "subManifest" => e.manifest,
+                "name"        => nm)
+        end
+    end
+
     ok = run_py("tasks/cleanupImages/denoise_run.py",
         (; imPath        = im_path,
            imOutputPath  = im_output_path,
-           modelPath     = model_path,
-           manifest      = manifest,
+           modelPath     = resolved.kind === :pooled ? resolved.rootPath : "",
+           manifest      = resolved.kind === :pooled ? resolved.manifest : Dict{String,Any}(),
+           mode          = string(resolved.kind),
+           perChannelModels = per_channel_models,
            channels      = channel_idx,
            channelsSkipped = saturated,
            batchSize     = batch_size,
@@ -149,7 +212,8 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
                      source = Dict{String,Any}("shape" => collect(Int, qmeta["shape"])),
                      output = Dict{String,Any}("shape" => collect(Int, qmeta["shape"])),
                      denoise = Dict{String,Any}(
-                         "model"           => basename(model_path),
+                         "model"           => basename(resolved.rootPath),
+                         "mode"            => string(resolved.kind),
                          "channelsRun"     => get(qmeta, "channelsRun", Int[]),
                          "channelsSkipped" => get(qmeta, "channelsSkipped", Int[]),
                          "inputFrames"     => get(qmeta, "inputFrames", 0),

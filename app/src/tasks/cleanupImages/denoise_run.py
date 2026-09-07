@@ -6,16 +6,22 @@ opening the input OME-ZARR through `zarr_utils`, iterating (channel, z) sub-volu
 the staged output store. The model architecture is rebuilt from the manifest's `arch` block via
 `coastal.support.build_model`; a missing/corrupt manifest is a hard error in the Julia handler.
 
+`mode` = "pooled" runs every requested channel through ONE model (as before). `mode` = "perChannel"
+uses one model PER channel — the Julia handler pre-resolved which sub-.pt covers which channel and
+passed the mapping in `perChannelModels`. See SUPPORT_PERCHANNEL_PLAN.md → D3.
+
 Parameter contract (JSON written by Julia):
-  imPath           - absolute path to input .ome.zarr
-  imOutputPath     - absolute path to write the denoised .ome.zarr
-  modelPath        - absolute path to the model .pt
-  manifest         - the parsed <name>.json manifest (arch + training + imaging + checksum)
-  channels         - list of 0-based channel indices to denoise (guaranteed non-empty; already
-                     stripped of any saturated channels by the Julia handler)
-  channelsSkipped  - channels the saturation gate refused (recorded in QC)
-  batchSize        - patches per forward pass
-  qcOutPath        - where to persist stats for the Julia QC step
+  imPath              - absolute path to input .ome.zarr
+  imOutputPath        - absolute path to write the denoised .ome.zarr
+  mode                - "pooled" | "perChannel"
+  modelPath           - absolute path to the model .pt (pooled only; "" for perChannel)
+  manifest            - the parsed <name>.json manifest (pooled only; {} for perChannel)
+  perChannelModels    - {chanIdxStr: {ptPath, subManifest, name}} (perChannel only)
+  channels            - list of 0-based channel indices to denoise (guaranteed non-empty; already
+                        stripped of any saturated channels by the Julia handler)
+  channelsSkipped     - channels the saturation gate refused (recorded in QC)
+  batchSize           - patches per forward pass
+  qcOutPath           - where to persist stats for the Julia QC step
 """
 import numpy as np
 import torch
@@ -56,29 +62,71 @@ def _volume_slice(ndim, t_idx, c_idx, c, z_idx, z):
     return tuple(sl)
 
 
+def _load_state_dict(pt_path, device, log):
+    sd = torch.load(pt_path, map_location=device)
+    if isinstance(sd, dict) and 'state_dict' in sd:
+        sd = sd['state_dict']
+    log.log(f'>> load model: {pt_path}')
+    return sd
+
+
+def _resolve_channel_model(c, mode, pooled_state, pooled_arch, per_channel_models, device, log):
+    """Return (state_dict, arch, label) for one channel index. Pooled → the shared pair; perChannel
+    → the sub-model loaded on demand from `perChannelModels[str(c)]`. A cache would help if the
+    same bundle covered N channels with the same weights, which is not a case we support — one
+    model per channel by construction."""
+    if mode == 'pooled':
+        return pooled_state, pooled_arch, 'pooled'
+    entry = per_channel_models.get(str(c))
+    if entry is None:
+        raise SystemExit(f'[ERROR] perChannel mode missing sub-model for channel {c}')
+    sub_pt = entry['ptPath']
+    sub_manifest = entry.get('subManifest') or {}
+    sub_arch = sub_manifest.get('arch', {}) or {}
+    if not sub_arch:
+        log.log(f'[ERROR] sub-model for channel {c} at {sub_pt} has no arch — retrain the bundle')
+        raise SystemExit(1)
+    return _load_state_dict(sub_pt, device, log), sub_arch, f'perChannel:{entry.get("name", c)}'
+
+
 def run(params):
     log = script_utils.get_logfile_utils(params)
 
     im_path        = params['imPath']
     out_path       = params['imOutputPath']
-    model_path     = params['modelPath']
+    mode           = str(params.get('mode', 'pooled'))
+    model_path     = params.get('modelPath') or ''
     manifest       = params.get('manifest', {}) or {}
+    per_channel_models = params.get('perChannelModels', {}) or {}
     channels       = [int(c) for c in (params.get('channels') or [])]
     skipped        = [int(c) for c in (params.get('channelsSkipped') or [])]
     batch_size     = int(params.get('batchSize', 2))
 
+    if mode not in ('pooled', 'perChannel'):
+        log.log(f'[ERROR] mode must be pooled|perChannel, got "{mode}"')
+        raise SystemExit(1)
     if not channels:
         log.log('[ERROR] no channels to denoise (all skipped or none selected)')
         raise SystemExit(1)
 
-    arch = manifest.get('arch', {}) or {}
-    input_frames = int(arch.get('inputFrames', 61))
-    patch_xy     = int(arch.get('patchXY', 128))
+    # ── pooled: load once. perChannel: load per channel inside the loop. `input_frames` and
+    #    `patch_xy` are used for the pre-flight T-length check; in perChannel we take the widest
+    #    of the sub-models (they should agree — the trainer writes one arch — but we don't rely).
+    pooled_arch = manifest.get('arch', {}) or {}
+    pooled_state = None
+    if mode == 'pooled':
+        pooled_state = _load_state_dict(model_path, torch_device()[1] or torch.device('cpu'), log)
+    input_frames = int(pooled_arch.get('inputFrames', 0))
+    if mode == 'perChannel':
+        for e in per_channel_models.values():
+            input_frames = max(input_frames, int((e.get('subManifest') or {}).get('arch', {}).get('inputFrames', 0)))
+    if input_frames <= 0:
+        input_frames = 61
 
     _, device = torch_device()
     if device is None:
         device = torch.device('cpu')
-    log.log(f'>> device: {device}, input_frames={input_frames}, patch_xy={patch_xy}')
+    log.log(f'>> device: {device}, mode={mode}, input_frames={input_frames}')
 
     log.log(f'>> open image: {im_path}')
     im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
@@ -102,15 +150,6 @@ def run(params):
     log.log(f'>> dims {dim_utils.im_dim_order} {shape}')
     log.log(f'>> denoising channels {channels} (skipped {skipped}, pass-through {others})')
 
-    # Load the state_dict once and hand it to `denoise_stack` per (channel, z). The wrapper builds
-    # a fresh model per call — cheap (<5M params) compared to inference wall time, and it keeps the
-    # `state_dict + arch → denoised_tyx` contract with no shared torch objects across planes.
-    log.log(f'>> load model: {model_path}')
-    state_dict = torch.load(model_path, map_location=device)
-    if isinstance(state_dict, dict) and 'state_dict' in state_dict:
-        state_dict = state_dict['state_dict']
-    log.log(f'   arch: {arch}')
-
     total = nz * len(channels) + 1  # one tick per (channel, z) plus pyramid
     done = 0
     log.progress(done, total)
@@ -126,6 +165,10 @@ def run(params):
             if np.issubdtype(level_in.dtype, np.integer) else None
 
         for c in channels:
+            state_dict, arch, model_label = _resolve_channel_model(
+                c, mode, pooled_state, pooled_arch, per_channel_models, device, log)
+            log.log(f'   ch{c}: using {model_label} | arch inputFrames={arch.get("inputFrames")}')
+
             in_min, in_max = np.inf, -np.inf
             out_min, out_max = np.inf, -np.inf
             for z in range(nz):
@@ -178,7 +221,8 @@ def run(params):
         'inputFrames': input_frames,
         'perChannelMinMax': per_ch_stats,
         'shape': [int(x) for x in shape],
-        'model': model_path,
+        'model': model_path if mode == 'pooled' else '(bundle)',
+        'mode': mode,
     }
 
     qc_out_path = params.get('qcOutPath')

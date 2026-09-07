@@ -50,11 +50,14 @@
   curves were recorded say so rather than drawing an empty box; the run kept only `finalLoss`, and
   that is not recoverable.
 
-  Denoise (SUPPORT) trains a SINGLE L1+L2 blend, so its manifest carries `training.epochLosses` — a
-  flat list, one series. The multi-term chip row + minus-floor toggle are hidden for that kind
-  because neither applies (there is only one term, and there are no per-term floors). Every other
-  control — log Y, held-out (n/a here since SUPPORT is self-supervised), CSV/PNG/SVG export — is
-  the same for both kinds because a loss curve is a loss curve.
+  Denoise (SUPPORT) trains a SINGLE L1+L2 blend, so a pooled model's manifest carries
+  `training.epochLosses` — a flat list, one series. A perChannel bundle
+  (SUPPORT_PERCHANNEL_PLAN.md D3) trains one model per channel and carries `training.perChannelLosses`
+  — a dict keyed by channel name — which this plot renders as one series per channel, with the chip
+  row above auto-showing (>1 series) so each channel becomes a toggle. The minus-floor toggle stays
+  hidden for denoise either way (SUPPORT has no per-term floors). Every other control — log Y,
+  held-out (n/a here since SUPPORT is self-supervised), CSV/PNG/SVG export — is the same for both
+  kinds because a loss curve is a loss curve.
 
   Observable Plot directly, like the cluster HMM panels. The summary `PlotChart` builds from a
   `PlotDataResponse` (server-aggregated CELL data), and its `trend` chart is a LOESS fit — the wrong
@@ -72,7 +75,7 @@ import { useVaultModel } from '../../composables/useVaultModel'
 import { lossSeries, lossTable } from '../../plots/lossCurves'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
 import type { FlowManifest } from '../../utils/flowManifest'
-import type { DenoiseManifest } from '../../utils/denoiseManifest'
+import { denoiseTrainingSeries, type DenoiseManifest } from '../../utils/denoiseManifest'
 
 interface TrainState { logY?: boolean; raw?: boolean; minusFloor?: boolean; terms?: string[]
                        model?: string }
@@ -115,14 +118,12 @@ const forceLight = ref(false)
 
 const floors = computed(() => flowManifest.value?.lossFloors ?? null)
 const hasFloors = computed(() => Object.keys(floors.value ?? {}).length > 0)
-// One series builder per kind. Flow → multi-term via `lossSeries` (weights, floors, val). Denoise →
-// a single L1+L2-blend series from `training.epochLosses`, with `weight:1`, no val, no floor.
+// One series builder per kind. Flow → multi-term via `lossSeries` (weights, floors, val). Denoise
+// → either one series (pooled: `training.epochLosses`) OR one series per channel (perChannel
+// bundles: `training.perChannelLosses`, keyed by channel name). The chip row above the plot
+// auto-shows when there is more than one series, giving the user per-channel toggles for free.
 const series = computed(() => {
-  if (kind.value === 'denoise') {
-    const losses = denoiseManifest.value?.training?.epochLosses ?? []
-    if (!losses.length) return []
-    return [{ term: 'loss', values: losses, weight: 1, floored: false }]
-  }
+  if (kind.value === 'denoise') return denoiseTrainingSeries(denoiseManifest.value)
   return lossSeries(flowManifest.value?.lossCurves, flowManifest.value?.lossWeights, raw.value,
                     floors.value, minusFloor.value && hasFloors.value)
 })

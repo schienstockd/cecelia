@@ -454,9 +454,14 @@ end
     @test Cecelia.denoise_model_manifest("supMemTom", td) == Cecelia.denoise_model_manifest("supMemTom.pt", td)
 
     # A checkpoint with no manifest still lists — but the runner will refuse to load it.
+    # `.name` is the on-disk name inside the vault directory — `<stem>.pt` for a pooled file,
+    # `<stem>` (no extension) for a perChannel bundle folder (SUPPORT_PERCHANNEL_PLAN.md D2). Every
+    # consumer that does `joinpath(dir, m.name)` (`vault_api.jl`, the `list_coastal_models` label
+    # builder) then finds the right on-disk artifact without a kind-aware branch.
     bare = Cecelia.list_denoise_models(td)
     @test length(bare) == 1
     @test bare[1].name == "supMemTom.pt"
+    @test bare[1].kind === :pooled
     @test bare[1].label == "supMemTom"
     @test isempty(bare[1].manifest)
     @test isempty(Cecelia.denoise_model_manifest("supMemTom.pt", td))
@@ -476,13 +481,49 @@ end
     @test isempty(Cecelia.denoise_model_manifest("supMemTom.pt", td))
     @test length(Cecelia.list_denoise_models(td)) == 1
 
-    # Dotfiles + subdirs skipped, same as coastal.
+    # Dotfiles skipped, same as coastal. A directory named with a `.pt` suffix is a leftover mkdir
+    # (not a bundle — a real bundle has no manifest.json marker), so also skip it.
     open(io -> write(io, "hidden"), joinpath(dir, ".DS_Store"), "w")
     mkpath(joinpath(dir, "subdir.pt"))
     names = [m.name for m in Cecelia.list_denoise_models(td)]
     @test names == ["supMemTom.pt"]
 
     @test Cecelia.denoise_model_names(td) == ["supMemTom"]
+
+    # ── perChannel bundle (SUPPORT_PERCHANNEL_PLAN.md D2/D3) ──────────────────
+    # A bundle is a folder in the vault with per-channel `.pt`s and a top-level `manifest.json`
+    # listing them. `list_denoise_models` picks it up alongside pooled `.pt` files; the picker
+    # label carries a `per-channel` hint so a user can tell them apart at a glance.
+    bundle = joinpath(dir, "suppMerTK")
+    mkpath(bundle)
+    open(io -> write(io, "stub"), joinpath(bundle, "nuc-GFP.pt"), "w")
+    open(io -> write(io, "stub"), joinpath(bundle, "CD169-Kat.pt"), "w")
+    write(joinpath(bundle, "nuc-GFP.json"),
+          """{"kind":"denoise-support","mode":"perChannel-sub","channels":["nuc-GFP"],"arch":{"inputFrames":21}}""")
+    write(joinpath(bundle, "CD169-Kat.json"),
+          """{"kind":"denoise-support","mode":"perChannel-sub","channels":["CD169-Kat"],"arch":{"inputFrames":21}}""")
+    write(joinpath(bundle, "manifest.json"), """
+        {"kind":"denoise-support","mode":"perChannel","channels":["nuc-GFP","CD169-Kat"],
+         "perChannel":[{"index":1,"name":"nuc-GFP","slug":"nuc-GFP","pt":"nuc-GFP.pt"},
+                       {"index":3,"name":"CD169-Kat","slug":"CD169-Kat","pt":"CD169-Kat.pt"}]}""")
+
+    listed = Cecelia.list_denoise_models(td)
+    @test length(listed) == 2
+    bundle_entry = only(m for m in listed if m.name == "suppMerTK")
+    @test bundle_entry.kind === :perChannel
+    @test bundle_entry.label == "suppMerTK (nuc-GFP+CD169-Kat, per-channel)"
+
+    resolved = Cecelia.denoise_model_resolve("suppMerTK", td)
+    @test resolved.kind === :perChannel
+    @test resolved.rootPath == bundle
+    @test sort(collect(keys(resolved.perChannel))) == ["CD169-Kat", "nuc-GFP"]
+    @test endswith(resolved.perChannel["CD169-Kat"].ptPath, "CD169-Kat.pt")
+    @test resolved.perChannel["CD169-Kat"].manifest["arch"]["inputFrames"] == 21
+
+    # Pooled resolver still works — `denoise_model_resolve` handles both kinds.
+    pooled_resolved = Cecelia.denoise_model_resolve("supMemTom", td)
+    @test pooled_resolved.kind === :pooled
+    @test pooled_resolved.rootPath == pt
 end
 
 # The denoise picker is entirely runtime-enumerated — cecelia ships no built-in denoise models. The
@@ -616,6 +657,42 @@ end
 
     # NaN drop — do not flag (the run wrote no history).
     @test isempty(Cecelia._support_train_qc_findings(Dict{String,Any}("lossDrop" => NaN)))
+end
+
+@testset "_denoise_qc_findings — collapse detection (pooled runs)" begin
+    # No collapse — outMax/inMax ratios agree within ½× of the median. No finding.
+    meta_ok = Dict{String,Any}(
+        "mode" => "pooled",
+        "perChannelMinMax" => Dict{String,Any}(
+            "0" => Dict{String,Any}("inMin" => 0, "inMax" => 100.0, "outMin" => 0, "outMax" => 40.0),
+            "1" => Dict{String,Any}("inMin" => 0, "inMax" => 200.0, "outMin" => 0, "outMax" => 70.0),
+            "2" => Dict{String,Any}("inMin" => 0, "inMax" => 300.0, "outMin" => 0, "outMax" => 120.0)))
+    @test isempty(Cecelia._denoise_qc_findings(meta_ok))
+
+    # Ground-truth x4E5HU shape (2026-09-07): CD169-Kat at 0.13 vs the ~0.38 pooled cohort — well
+    # under the 0.5× median threshold. One warn, code denoise.channel_collapsed, factor ≈ 3.
+    meta_collapse = Dict{String,Any}(
+        "mode" => "pooled",
+        "perChannelMinMax" => Dict{String,Any}(
+            "1" => Dict{String,Any}("inMin" => 0, "inMax" => 384.0, "outMin" => 0, "outMax" => 147.8),
+            "2" => Dict{String,Any}("inMin" => 0, "inMax" => 520.0, "outMin" => 0, "outMax" => 186.1),
+            "3" => Dict{String,Any}("inMin" => 0, "inMax" => 235.0, "outMin" => 0, "outMax" => 30.4)))
+    findings = Cecelia._denoise_qc_findings(meta_collapse)
+    @test length(findings) == 1
+    @test findings[1]["code"] == "denoise.channel_collapsed"
+    @test findings[1]["level"] == "warn"
+    @test findings[1]["detail"]["channel"] == "3"
+
+    # perChannel runs — within-run cohort comparison is meaningless (each channel has its own
+    # model), so a collapsed-looking ratio must NOT fire the finding.
+    meta_perch = merge(meta_collapse, Dict{String,Any}("mode" => "perChannel"))
+    @test isempty(Cecelia._denoise_qc_findings(meta_perch))
+
+    # Saturation branch is unchanged — a `channelsSkipped` list still fires the saturated finding.
+    meta_sat = Dict{String,Any}("mode" => "pooled", "channelsSkipped" => [2])
+    findings_sat = Cecelia._denoise_qc_findings(meta_sat)
+    @test length(findings_sat) == 1
+    @test findings_sat[1]["code"] == "denoise.channel_saturated"
 end
 
 @testset "cleanupImages.denoise spec dynamic Model options" begin
