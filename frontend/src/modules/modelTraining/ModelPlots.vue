@@ -36,6 +36,7 @@ import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import ModelVault from './ModelVault.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
 import { defaultVis } from '../../plots/plot'
+import type { VaultKind } from '../../utils/modelVaultKinds'
 
 // `model` is the panel's LOCAL pick, used only when the vault's scope is 'local' (mirrors the
 // cluster canvas's per-panel `hl`).
@@ -60,8 +61,12 @@ const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCa
 // persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state).
 // `model` + `scope` are the vault's selection, in exactly the shape the population manager's
 // highlight set uses: GLOBAL = one pick for every plot, LOCAL = the active plot's own.
-const { showManager, scope, model, tileCols } = useViewState(shared, {
+// `vaultKind` is which vault is being browsed — persisted for the same reason: a user who trains a
+// denoise model, flips the chip, then navigates away expects the chip on the training convergence
+// readout still on `denoiseModels` when they come back.
+const { showManager, scope, model, tileCols, vaultKind } = useViewState(shared, {
   showManager: true, scope: 'global' as 'global' | 'local', model: '',
+  vaultKind: 'flowModels' as VaultKind,
   // Tile Columns knob (0 = Auto) — persisted per canvas; see CanvasArrangeButtons
   tileCols: 0 })
 
@@ -151,8 +156,9 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
              box, so it stays put instead of scrolling away with them. -->
         <div ref="canvasRef" class="fp-scroll">
         <!-- outside the zoom layer, like the population manager: the manager stays full-size -->
-        <ModelVault v-if="showManager" :selected="activeModel" :scope="scope"
-                    @update:selected="setModel" @update:scope="scope = $event" />
+        <ModelVault v-if="showManager" :selected="activeModel" :scope="scope" :kind="vaultKind"
+                    @update:selected="setModel" @update:scope="scope = $event"
+                    @update:kind="vaultKind = $event" />
         <div ref="zoomRef" class="fp-zoom" :style="workspaceStyle">
           <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
             <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
