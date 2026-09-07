@@ -1,0 +1,19 @@
+{
+  "task": "segmentCorrectCarryOverSnapshot",
+  "fun_name": "segment.correct_carryover_snapshot",
+  "label": "Correct labels — snapshot obs",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "io",
+  "requires": { "scale": ["xy"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Labels",
+      "type": "valueNameSelection",
+      "field": "labelPropsNames",
+      "default": "default",
+      "tip": "Which labelProps h5ad's obs to snapshot"
+    }
+  ]
+}

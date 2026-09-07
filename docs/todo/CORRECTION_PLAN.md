@@ -381,14 +381,23 @@ Both from `app/src/label_props.jl:657-692`:
      current t → queue → Apply through the composite. Frontend trio
      (`lib/labelCorrection.ts`, `stores/labelOpsQueue.ts`, `utils/labelOpsRun.ts`) shares the
      shape with the Julia validator; 9 new tests.
-  6. **❌ Obs carry-over (Decision 4b) — REAL GAP.** The composite runs correct + measureLabels
-     but does not snapshot + restore obs across the re-measure. Every `live.*` obs column
-     therefore drops for edited rows; downstream tasks that read them see missing values.
-     The plan's Decision 4b sketch stands — snapshot before `segment.correct`, add_obs +
-     drop_obs stale after `segment.measureLabels` — as a third small task inserted into the
-     composite (`segment.correct.carryOver`). Not shipped this pass so P2 could ship the
-     usable Merge / Remove loop first; users chaining the composite today will find labelProps
-     without `live.*` for touched cells until this lands.
+  6. **✅ Obs carry-over (Decision 4b) — BUILT.** The composite is a 4-step chain:
+     `segment.correct_carryover_snapshot` → `segment.correct` → `segment.measureLabels` →
+     `segment.correct_carryover_restore`. Snapshot serialises every non-measurement obs column
+     (numeric + categorical) keyed by label id to a JSON blob under `task_run_dir()` via
+     `write_json_atomic`. Restore reads the blob, filters out columns measureLabels
+     re-produced (so fresh morphology wins), and routes the rest through
+     `LabelPropsView.add_obs` / `add_categorical_obs` — which align by label, so a merged
+     cell's surviving `into` inherits its OWN pre-op obs while sacrificed and removed ids
+     silently drop. Scope is broader than the plan's original "live.*" wording because
+     `measureLabels` is a total obs replace — the whole enriched frame (track_id, live.*,
+     cluster ids, HMM, gating pops) had been dropping, not just `live.*`. Two Julia tasks
+     (composite executor threads the same params dict through each step, so a
+     phase-toggled single task couldn't be invoked twice), one shared Python runner.
+     `app/src/tasks/segment/carry_over.jl` + `carry_over_run.py`; 4 Python tests +
+     4 Julia wiring tests. **Caveat**: a merged cell's carried `live.cell.speed` etc. reflects
+     its PRE-merge trajectory — stale, though preserved. Reporting that staleness is P3
+     invalidation-surface territory, not carry-over's.
 
   Also **not built:** the Split verb (needs a raster brush → Phase 4), the invalidation
   reporting surface (Decision 5 — half-covered by the correction task dropping its own stale
