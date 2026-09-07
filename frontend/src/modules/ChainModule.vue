@@ -61,6 +61,12 @@ const tabOptions = computed<ChipOption[]>(() => {
 const throttleBtn  = ref<HTMLElement | null>(null)
 const throttleOpen = ref(false)
 
+// Same popover next to the Resource pool select in the edit-side node config, so a user picking
+// `gpu` for a segmentation node can nudge its pool's limit right there without hopping over to the
+// Live tab. Separate anchor + state so switching tabs cannot leave a stale-anchored popover open.
+const poolThrottleBtn  = ref<HTMLElement | null>(null)
+const poolThrottleOpen = ref(false)
+
 const {
   nodes, edges,
   addNodes, addEdges, removeNodes, removeEdges,
@@ -1652,7 +1658,24 @@ onActivated(async () => {
             </select>
           </template>
 
-          <label class="config-label cc-eyebrow" style="margin-top:0.5rem">Resource pool</label>
+          <div class="cc-row cc-row-tight" style="margin-top:0.5rem; align-items:center">
+            <label class="config-label cc-eyebrow" style="margin:0; flex:1">Resource pool</label>
+            <!-- Same PoolThrottle popover as the Live-tab toolbar: same limits, so nudging `gpu` here
+                 shows up the moment the run starts, without leaving the node config. Icon-only to
+                 fit on the label row; the tooltip carries the affordance. -->
+            <button
+              ref="poolThrottleBtn"
+              class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+              :class="{ 'qc-on': poolThrottleOpen }"
+              @click="poolThrottleOpen = !poolThrottleOpen"
+              v-tooltip.bottom="'Throttle — how many tasks run at once, and how wide each may go'"
+            >
+              <i class="pi pi-sliders-h" />
+            </button>
+            <TeleportPopover v-model="poolThrottleOpen" :anchor="poolThrottleBtn" placement="bottom-end">
+              <PoolThrottle />
+            </TeleportPopover>
+          </div>
           <select
             class="config-select"
             :value="selectedNode.data.resource_pool"
