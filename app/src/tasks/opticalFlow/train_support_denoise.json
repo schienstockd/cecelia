@@ -33,6 +33,18 @@
       "tip": "Pool channels into one model — one training run per set"
     },
     {
+      "key": "trainMode",
+      "label": "Training mode",
+      "type": "select",
+      "variant": "chips",
+      "default": "pooled",
+      "tip": "Pooled by default; switch to Per channel if a channel collapses (QC will flag it)",
+      "options": [
+        { "label": "Pooled",      "value": "pooled",     "help": "One model over all channels (fastest, best when channels are comparable)" },
+        { "label": "Per channel", "value": "perChannel", "help": "One model per channel (protects a weak channel from a pooled prior)" }
+      ]
+    },
+    {
       "key": "unetSize",
       "label": "Model size",
       "type": "select",

@@ -29,6 +29,7 @@ include("repl_api.jl")
 include("runner_api.jl")     # detached task runner; uses repl_api.jl's _GIT_COMMIT for staleness
 include("notebooks_api.jl")
 include("movies_api.jl")     # movie registry; builds on routes.jl's movies-dir + name guard
+include("vault_api.jl")         # shared model-vault primitives (used by the two below)
 include("optical_flow_api.jl")
 include("denoise_api.jl")
 include("image_geometry.jl")

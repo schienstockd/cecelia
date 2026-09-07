@@ -42,6 +42,14 @@ curves converged near-identically (0.587 vs 0.597 final). The UX case for one-mo
 a user picks a set of channels once, one training run, done — no per-channel ritual.
 Comparison MP4s: `~/Downloads/TMP/denoise_pool_vs_specialist_fXgbTl_*.mp4`.
 
+**Amendment 2026-09-07 — pooling is the default, not the only path.** `supp.MERTK` on `x4E5HU`
+(same three channels, but CD169-Kat raw range ~0–12) showed the pooled prior collapsing the
+weakest channel — real structure sits at ~2–3σ of shot noise, and per-volume z-score makes it
+look like noise to the shared network. The escape hatch — `trainMode: auto | pooled | perChannel`
+with a per-channel low-SNR precheck driving `auto` — lives in [`SUPPORT_PERCHANNEL_PLAN.md`](SUPPORT_PERCHANNEL_PLAN.md).
+Pooled stays the default for the good-SNR case measured 2026-09-05; perChannel writes a bundle
+folder mirroring the model name, back-compat for existing pooled `.pt` files.
+
 ### D4 — Rename `OpticalFlowModule.vue` → `ModelTrainingModule.vue` NOW
 One module page hosts multiple training scenarios. The vault manager on that page gains a **kind
 selector** (Optical flow / Denoise / …). Route, sidebar entry, docs sweep. Rejected: two separate

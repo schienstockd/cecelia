@@ -395,22 +395,37 @@ function list_denoise_models(dev_dir::Union{String,Nothing} = nothing)::Vector{N
     isdir(dir) || return out
     for name in sort!(readdir(dir))
         startswith(name, ".") && continue
-        last(splitext(name)) == ".pt" || continue
-        isfile(joinpath(dir, name)) || continue
-        manifest = denoise_model_manifest(name, dev_dir)
-        # A denoise model pools N channels into one (DENOISE_INTEGRATION_PLAN.md D3 amendment,
-        # measured on fXgbTl 2026-09-05). Label leads with the joined channel names so a user can
-        # tell at a glance whether a model was trained on the right reporters for the image they
-        # picked. Empty list → just the stem, so a manifest missing channels still renders.
-        chs = get(manifest, "channels", nothing)
-        stem = first(splitext(name))
-        label = if chs isa AbstractVector && !isempty(chs)
-            joined = join((string(c) for c in chs), "+")
-            "$(stem) ($(joined))"
+        full = joinpath(dir, name)
+
+        # A denoise model is EITHER a pooled `.pt` file OR a perChannel bundle folder
+        # (SUPPORT_PERCHANNEL_PLAN.md → D2). `.name` is the ON-DISK name in both cases —
+        # `<stem>.pt` for pooled, `<stem>` for a bundle folder — so every consumer that does
+        # `joinpath(dir, m.name)` still finds the right thing without a kind-aware branch.
+        # `.kind` is exposed so consumers that DO need to differentiate (delete, rename, size)
+        # do not have to re-inspect the disk.
+        stem, mode, manifest = if isfile(full) && last(splitext(name)) == ".pt"
+            (first(splitext(name)), :pooled, denoise_model_manifest(name, dev_dir))
+        elseif isdir(full)
+            resolved = denoise_model_resolve(name, dev_dir)
+            isnothing(resolved) && continue
+            resolved.kind === :perChannel || continue
+            (name, :perChannel, resolved.manifest)
         else
-            stem
+            continue
         end
-        push!(out, (name = name, label = label, source = "user", manifest = manifest))
+
+        chs = get(manifest, "channels", nothing)
+        joined = chs isa AbstractVector && !isempty(chs) ?
+                 join((string(c) for c in chs), "+") : nothing
+        # Only label the exception (perChannel bundle). Pooled is the default — surfacing "pooled"
+        # on every picker entry is noise until the perChannel case exists.
+        label = if mode === :perChannel
+            isnothing(joined) ? "$(stem) (per-channel)" : "$(stem) ($(joined), per-channel)"
+        else
+            isnothing(joined) ? stem : "$(stem) ($(joined))"
+        end
+        push!(out, (name = name, label = label, source = "user",
+                    manifest = manifest, kind = mode))
     end
     out
 end
@@ -425,14 +440,19 @@ denoise_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
     String[first(splitext(m.name)) for m in list_denoise_models(dev_dir)]
 
 """
-    denoise_model_target(name; overwrite) -> String
+    denoise_model_target(name; overwrite, want_bundle=false) -> String | (String, String)
 
 Absolute `.pt` path in the denoise vault for a new model, after checking the name is a plain
 filename and that nothing is being clobbered. Creates the vault directory. Mirror of
 [`flow_model_target`](@ref) — same guards, different vault.
+
+`want_bundle = true` returns `(pt_path, bundle_dir)` — both target paths a SUPPORT `trainMode: auto`
+run may write to. The pooled path is `<name>.pt`; the perChannel bundle path is `<name>/`. The
+overwrite check refuses if EITHER exists (unless overwrite=true). See SUPPORT_PERCHANNEL_PLAN.md D2.
 """
 function denoise_model_target(name::AbstractString; overwrite::Bool = false,
-                              dev_dir::Union{String,Nothing} = nothing)::String
+                              want_bundle::Bool = false,
+                              dev_dir::Union{String,Nothing} = nothing)
     stem = strip(String(name))
     isempty(stem) && error("Give the model a name — it is how you will pick it in the denoiser.")
     occursin(r"[/\\]", stem) && error("Model name cannot contain a path separator: '$stem'")
@@ -441,10 +461,90 @@ function denoise_model_target(name::AbstractString; overwrite::Bool = false,
 
     dir = denoise_models_dir(dev_dir)
     mkpath(dir)
-    target = joinpath(dir, "$(stem).pt")
-    (!overwrite && isfile(target)) && error(
-        "A model named '$stem' already exists. Choose another name, or tick Overwrite existing.")
-    target
+    pt_target     = joinpath(dir, "$(stem).pt")
+    bundle_target = joinpath(dir, stem)
+    if !overwrite
+        isfile(pt_target) && error(
+            "A model named '$stem' already exists. Choose another name, or tick Overwrite existing.")
+        isdir(bundle_target) && error(
+            "A per-channel bundle named '$stem' already exists. Choose another name, or tick Overwrite existing.")
+    end
+    want_bundle ? (pt_target, bundle_target) : pt_target
+end
+
+"""
+    denoise_model_resolve(name) -> NamedTuple | Nothing
+
+Resolve a picker's `<name>` into a concrete model on disk — either a pooled `.pt` OR a perChannel
+bundle folder. Returns a NamedTuple `(kind, rootPath, manifest, perChannel)`:
+
+  * `kind = :pooled`     — `rootPath` is the `.pt`, `manifest` is its `<name>.json` sidecar,
+                           `perChannel` is empty.
+  * `kind = :perChannel` — `rootPath` is the bundle directory, `manifest` is its top-level
+                           `manifest.json`, `perChannel` is `Dict("<channelName>" =>
+                           (ptPath, subManifest))` — one per trained channel.
+  * `nothing`            — no such model in the vault.
+
+Bundle takes precedence over a file of the same name (they cannot both exist because
+[`denoise_model_target`](@ref)'s overwrite guard refuses either colliding shape).
+See SUPPORT_PERCHANNEL_PLAN.md → D3.
+"""
+function denoise_model_resolve(name::AbstractString,
+                               dev_dir::Union{String,Nothing} = nothing)
+    s = strip(String(name))
+    isempty(s) && return nothing
+    dir = denoise_models_dir(dev_dir)
+
+    # Bundle first: a directory in the vault (or an absolute directory path from a REPL caller).
+    # A bundle MUST carry `manifest.json` with `mode:"perChannel"` — the trainer writes both; a
+    # stray directory without that marker is not a bundle and must not shadow a pooled `.pt` of
+    # the same name.
+    for candidate in (isabspath(s) ? [s] : [joinpath(dir, s)])
+        isdir(candidate) || continue
+        top_manifest_path = joinpath(candidate, "manifest.json")
+        isfile(top_manifest_path) || continue
+        top_manifest = try
+            Dict{String,Any}(String(k) => v for (k, v) in
+                JSON3.read(read(top_manifest_path, String)))
+        catch
+            continue
+        end
+        string(get(top_manifest, "mode", "")) == "perChannel" || continue
+        per_ch = Dict{String,Any}()
+        entries = get(top_manifest, "perChannel", Any[])
+        if entries isa AbstractVector
+            for e in entries
+                e isa AbstractDict || continue
+                ch_name = string(get(e, :name, get(e, "name", "")))
+                slug    = string(get(e, :slug, get(e, "slug", "")))
+                pt_rel  = string(get(e, :pt,   get(e, "pt",   isempty(slug) ? "" : "$(slug).pt")))
+                isempty(ch_name) && continue
+                sub_pt  = joinpath(candidate, pt_rel)
+                isfile(sub_pt) || continue
+                sub_json = string(first(splitext(sub_pt)), ".json")
+                sub_manifest = if isfile(sub_json)
+                    try
+                        Dict{String,Any}(String(k) => v for (k, v) in
+                            JSON3.read(read(sub_json, String)))
+                    catch
+                        Dict{String,Any}()
+                    end
+                else
+                    Dict{String,Any}()
+                end
+                per_ch[ch_name] = (ptPath = sub_pt, manifest = sub_manifest)
+            end
+        end
+        return (kind = :perChannel, rootPath = candidate,
+                manifest = top_manifest, perChannel = per_ch)
+    end
+
+    # Fall through to the pooled `.pt` — unchanged behaviour.
+    pt = vault_model_path(dir, s)
+    isnothing(pt) && return nothing
+    return (kind = :pooled, rootPath = pt,
+            manifest = vault_model_manifest(dir, s),
+            perChannel = Dict{String,Any}())
 end
 
 """

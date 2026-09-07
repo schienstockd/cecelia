@@ -36,6 +36,11 @@ export interface DenoiseTraining {
   // Loss curve travels with the model (banked here + in the QC sidecar). The Training convergence
   // plot reads these — a model imported from another project has no run log to fall back on.
   epochLosses?: number[]
+  // PerChannel bundles (SUPPORT_PERCHANNEL_PLAN.md D3) — one curve per trained channel, keyed by
+  // channel NAME. The Training convergence plot detects this and draws one series per key; the
+  // chip row auto-shows when there is more than one series, so each channel becomes a toggle.
+  // Pooled bundles carry only `epochLosses` and leave this undefined.
+  perChannelLosses?: Record<string, number[]>
   finalLoss?: number
   firstLoss?: number
   lossDrop?: number
@@ -48,6 +53,37 @@ export interface DenoiseManifest {
   channels?: string[]
   arch?: DenoiseArch
   training?: DenoiseTraining
+}
+
+/** One (term, values) pair the Training convergence plot consumes. `weight` and `floored` mirror
+ *  the flow shape so both kinds flow through the same rendering path (`FlowTrainingView.vue`). */
+export interface DenoiseSeries {
+  term: string
+  values: number[]
+  weight: number
+  floored: boolean
+}
+
+/**
+ * Series for the Training convergence plot from a denoise manifest — pooled → one series
+ * (`training.epochLosses`, term `"loss"`); perChannel bundle → one series PER CHANNEL from
+ * `training.perChannelLosses`, term = channel name (matches the vault picker's channel labels, and
+ * shows up as the chip label above the plot). Extracted from the SFC per the frontend test rule
+ * — Vue templates aren't tested; the logic is.
+ */
+export function denoiseTrainingSeries(m: DenoiseManifest | null | undefined): DenoiseSeries[] {
+  const tr = m?.training
+  if (!tr) return []
+  const perCh = tr.perChannelLosses
+  if (perCh) {
+    const entries = Object.entries(perCh)
+      .filter(([, v]) => Array.isArray(v) && v.length > 0)
+      .map(([name, values]) => ({ term: name, values, weight: 1, floored: false }))
+    if (entries.length > 0) return entries
+  }
+  const losses = tr.epochLosses ?? []
+  if (!losses.length) return []
+  return [{ term: 'loss', values: losses, weight: 1, floored: false }]
 }
 
 const field = (label: string, value: unknown, mono = false): DetailField | null => {

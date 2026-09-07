@@ -201,6 +201,13 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Loss did not decrease",
         long  = "Check the channel is photon-limited (not saturated) and has real signal, then retrain."),
 
+    # denoise collapse (_denoise_qc_findings, pooled runs only). Within-run cohort comparison: the
+    # weakest channel's post-network dynamic range is <½ the median of the others. Signature seen
+    # on x4E5HU CD169-Kat 2026-09-07 — a low-SNR channel treated as noise by the pooled prior.
+    "denoise.channel_collapsed" => (
+        short = "Channel {channel} range collapsed ({value}× vs cohort)",
+        long  = "Retrain with Training mode = Per channel so this channel gets its own model."),
+
     # OME-TIFF export (_export_qc_findings). The write always "succeeds", so the only objective
     # signal is whether the CALIBRATION came out with it — which is the entire point of the task.
     "export.no_z_calibration" => (
