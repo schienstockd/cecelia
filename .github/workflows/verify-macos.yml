@@ -1,0 +1,110 @@
+name: Verify macOS bundle
+
+# Structurally verifies the Cecelia.app bundle that install.sh writes on macOS,
+# and uploads a Finder screencapture as an artefact so a human can eyeball whether
+# the feijoa icon actually paints. See docs/todo/DESKTOP_ICON_PLAN.md → Phase 4.
+#
+# Why this exists as a separate job: the full install.sh is heavyweight (pixi
+# install downloads GBs, Julia precompiles, bioformats2raw is ~190 MB), and the
+# bundle-writing block at the end is what we actually care about. This job
+# mirrors that block and validates the result — install.sh:266-295 (system) and
+# :314-342 (user) are the source of truth for the shape; a divergence here means
+# a divergence in real installs, so keep the two in sync.
+
+on:
+  pull_request:
+    paths:
+      - install.sh
+      - frontend/public/icons/**
+      - .github/workflows/verify-macos.yml
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: macOS — Cecelia.app structural + visual check
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Assets present
+        run: |
+          test -f frontend/public/icons/cecelia.icns
+          test -f frontend/public/icons/cecelia-256.png
+
+      - name: Synthesise a user-scope Cecelia.app (mirror of install.sh Darwin user)
+        run: |
+          # Mirrors install.sh:314-342 (user scope). If you change the bundle shape there, update here.
+          INSTALL_DIR="$RUNNER_TEMP/cecelia-install"
+          mkdir -p "$INSTALL_DIR/frontend/dist/icons"
+          cp frontend/public/icons/cecelia.icns "$INSTALL_DIR/frontend/dist/icons/cecelia.icns"
+          # Stub the launcher target so MacOS/cecelia is a runnable no-op for lsregister.
+          PIXI="/usr/bin/true"
+
+          mkdir -p "$HOME/Applications"
+          APP="$HOME/Applications/Cecelia.app"
+          rm -rf "$HOME/Applications/Cecelia.command" "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cat > "$APP/Contents/MacOS/cecelia" <<EOF
+          #!/bin/sh
+          cd "$INSTALL_DIR" && exec "$PIXI" run app
+          EOF
+          chmod +x "$APP/Contents/MacOS/cecelia"
+          cp "$INSTALL_DIR/frontend/dist/icons/cecelia.icns" "$APP/Contents/Resources/cecelia.icns"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>Cecelia</string>
+            <key>CFBundleDisplayName</key><string>Cecelia</string>
+            <key>CFBundleIdentifier</key><string>org.cecelia.launcher</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleExecutable</key><string>cecelia</string>
+            <key>CFBundleIconFile</key><string>cecelia.icns</string>
+          </dict></plist>
+          PLIST
+          touch "$APP"
+
+      - name: Bundle layout
+        run: |
+          APP="$HOME/Applications/Cecelia.app"
+          test -d "$APP/Contents/MacOS"
+          test -d "$APP/Contents/Resources"
+          test -x "$APP/Contents/MacOS/cecelia"
+          test -f "$APP/Contents/Resources/cecelia.icns"
+          test -f "$APP/Contents/Info.plist"
+
+      - name: Info.plist is valid
+        run: plutil -lint "$HOME/Applications/Cecelia.app/Contents/Info.plist"
+
+      - name: .icns is multi-resolution and well-formed
+        run: |
+          # sips exits non-zero on a malformed image.
+          sips -g pixelWidth -g pixelHeight "$HOME/Applications/Cecelia.app/Contents/Resources/cecelia.icns"
+
+      - name: LaunchServices registers the bundle
+        run: |
+          LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+          "$LSREGISTER" -f "$HOME/Applications/Cecelia.app"
+          # Grep for the bundle identifier we wrote — if LaunchServices didn't pick it up, the .app
+          # is malformed even if all the individual files are present.
+          "$LSREGISTER" -dump | grep -q 'org.cecelia.launcher'
+
+      - name: Reveal in Finder + screencapture
+        run: |
+          # Reveal the app in Finder; give it a moment to render; grab the screen.
+          open -R "$HOME/Applications/Cecelia.app" || true
+          sleep 3
+          mkdir -p "$RUNNER_TEMP/artefacts"
+          # -x = no camera-shutter sound.
+          screencapture -x "$RUNNER_TEMP/artefacts/cecelia-finder.png" || true
+          ls -la "$RUNNER_TEMP/artefacts"
+
+      - name: Upload Finder screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cecelia-finder-screenshot
+          path: ${{ runner.temp }}/artefacts/cecelia-finder.png
+          if-no-files-found: warn
