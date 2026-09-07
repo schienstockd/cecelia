@@ -35,11 +35,22 @@ describe('buildFocusViewState', () => {
     expect(s.canvas).toBe(src.canvas)
   })
 
-  it('fits the bbox when halfW/halfH are given — smaller zoom of the two wins so the box fits', () => {
-    // canvas 800×600; halfW=100, halfH=50 → bbox 200×100 px + 20% padding → 240×120
-    // zoomH = 600 / 120 = 5;  zoomW = 800 / 240 = 3.33 → min is 3.33
-    const s = buildFocusViewState(state(), { t: 0, cx: 400, cy: 300, halfWpx: 100, halfHpx: 50 })!
+  it('zooms OUT to fit the bbox when the current zoom is too tight', () => {
+    // canvas 800×600; current zoom 10 (very zoomed in); halfW=100, halfH=50 → bbox 200×100 +
+    // 20% padding → 240×120. Fit zooms are 5 (H) and 3.33 (W); min wins. 3.33 < 10, so zoom
+    // out to 3.33 so the whole bbox fits.
+    const src = state({ camera: { center: [0, 0, 0], zoom: 10, angles: [0, 0, 0], perspective: 0 } })
+    const s = buildFocusViewState(src, { t: 0, cx: 400, cy: 300, halfWpx: 100, halfHpx: 50 })!
     expect(s.camera.zoom).toBeCloseTo(800 / 240, 4)
+  })
+
+  it('never zooms IN — a small bbox at low current zoom keeps the current zoom', () => {
+    // A nearly-stationary single-cell track has ~1-pixel bbox; the naive fit computed a 30x
+    // zoom, making the cell fill the screen with no context (Dominik, 2026-09-07). Rule now:
+    // Math.min(fit, current). current=1.5 is lower than fit=~250, so zoom stays at 1.5.
+    const src = state({ camera: { center: [0, 0, 0], zoom: 1.5, angles: [0, 0, 0], perspective: 0 } })
+    const s = buildFocusViewState(src, { t: 0, cx: 100, cy: 100, halfWpx: 1, halfHpx: 1 })!
+    expect(s.camera.zoom).toBe(1.5)
   })
 
   it('leaves zoom alone when halfW/halfH are omitted — "just move, don\'t zoom"', () => {

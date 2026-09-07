@@ -48,12 +48,16 @@ export function buildFocusViewState(
   if (!current) return null
   const cz = target.cz ?? current.camera.center[0] ?? 0
 
-  // Zoom: fit the bbox in the canvas when the caller sent half-widths and the canvas is known.
-  // `zoom = canvas_h_px / visible_image_h_pixels` (per ViewerViewState.camera.zoom docstring). We
-  // want visible_image_h_pixels = 2 * halfHpx * (1 + FIT_PADDING), and the same for W. Take the
-  // TIGHTER (smaller) zoom of the two so the whole box is on screen — otherwise fitting height
-  // alone can clip width and vice versa. Fall through to current zoom when either dimension is
-  // missing (caller wants "just move, don't zoom") or the canvas is empty.
+  // Zoom rule: PAN to centre, keep current zoom — only zoom OUT if the bbox doesn't fit. Never
+  // zoom IN. A nearly-stationary single-cell track has a ~1-pixel bbox and the naive fit
+  // (halfWpx=1, pad 20%) computed a ~30x zoom — the cell became a single pixel filling the
+  // screen with no surrounding context (Dominik, 2026-09-07: "if i just select one track it
+  // zooms in 31x"). Keeping current zoom is the least-surprise default; if the tracks are wider
+  // than the current view we still zoom out to fit.
+  //
+  // `zoom = canvas_h_px / visible_image_h_pixels` (per ViewerViewState.camera.zoom docstring).
+  // Larger zoom = more zoomed in = smaller visible area. So Math.min(fit, current) always picks
+  // the less-zoomed-in of the two.
   let zoom = current.camera.zoom
   if (target.halfWpx && target.halfHpx
       && current.canvas.width > 0 && current.canvas.height > 0) {
@@ -61,7 +65,7 @@ export function buildFocusViewState(
     const zH = current.canvas.height / (2 * target.halfHpx * pad)
     const zW = current.canvas.width  / (2 * target.halfWpx * pad)
     const fit = Math.min(zH, zW)
-    if (Number.isFinite(fit) && fit > 0) zoom = fit
+    if (Number.isFinite(fit) && fit > 0) zoom = Math.min(fit, current.camera.zoom)
   }
 
   const next: ViewerViewState = {

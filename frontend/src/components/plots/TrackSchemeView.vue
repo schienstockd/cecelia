@@ -43,7 +43,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useViewerStore } from '../../stores/viewer'
 import { openViewerWindow } from '../../utils/viewerWindow'
-import { buildFocusViewState } from '../../utils/viewer/focusOnCell'
+import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
@@ -55,12 +55,13 @@ import PopFamilySelect from './PopFamilySelect.vue'
 import type { SeriesTarget } from '../../plots/types'
 import { EMPTY_TRACK_SELECTION, type CanvasTrackSelection } from '../../lib/trackSelection'
 import {
-  issueKey, KIND_LABEL, trackRows, manualActions, suggestedOps, undoLast, opDescription,
+  issueKey, KIND_LABEL, trackRows, manualActions, undoLast, opDescription,
   thresholdQuery, thresholdsChanged, THRESHOLD_FIELDS, selectionSummary, selectedTracks,
   type TrackIssue, type TrackOp, type TrackThresholds, type TrackSelection,
 } from '../../lib/trackCorrection'
 import { submitTrackOps } from '../../lib/trackOpsRun'
 import { useTrackOpsQueueStore, trackOpsKey } from '../../stores/trackOpsQueue'
+import { useCorrectionCockpitStore } from '../../stores/correctionCockpit'
 import type { TrackPathMap } from '../../plots/trackPaths'
 import { keyToAction, KEY_HINT, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
 
@@ -159,6 +160,10 @@ function setSelected(ids: string[]) {
   // The footer × still exists for the rare "keep highlight, clear lanes" case (users who want it
   // will pick a different lane first; Show then replaces the highlight).
   if (!ids.length && viewerStore.trackHighlight) viewerStore.setTrackHighlight(null)
+  // Split cursor only applies when exactly one lane is selected. Any change out of that state
+  // leaves the armed frame stale — a later Split against a fresh single-lane selection would
+  // fire at whatever the last two-lane click armed. Drop it here so all clearing pathways benefit.
+  if (ids.length !== 1) props.state.splitAt = null
 }
 
 const paths = ref<TrackPathMap>({})
@@ -444,6 +449,7 @@ async function readSelection() {
 // segmentation select, so changing it rebound the canvas and took this panel and its queued edits out of
 // view: an un-run task draft was being stored as a view option (`stores/trackOpsQueue.ts`).
 const opsQueue = useTrackOpsQueueStore()
+const cockpit = useCorrectionCockpitStore()
 const opsKey = computed(() => trackOpsKey(props.projectUid, imageUid.value, valueName.value))
 const pending = computed<TrackOp[]>({
   get: () => opsQueue.get(opsKey.value),
@@ -462,6 +468,23 @@ watch(opsKey, k => {
   if (carried?.length) opsQueue.set(k, [...opsQueue.get(k), ...carried])
   props.state.pending = undefined
 }, { immediate: true })
+
+// Publish this panel's selection / split-frame / untracked-detection pick to the shared correction
+// cockpit store, so the app-global cockpit floating panel can act on what the timeline sees. One-way
+// (timeline → cockpit) in Phase 1b — Phase 1c will make the store the source of truth in both
+// directions when the timeline's action row is removed. Guarded on a real key so we don't publish
+// state against a partly-resolved (image, valueName) that the queue would refuse anyway.
+watch([opsKey, selected], ([k, sel]) => {
+  if (k) cockpit.setSelectedTracks(k, [...sel])
+}, { immediate: true })
+watch([opsKey, () => props.state.splitAt], ([k, f]) => {
+  if (k) cockpit.setSplitFrame(k, (f ?? null) as number | null)
+}, { immediate: true })
+watch([opsKey, detSel], ([k, d]) => {
+  if (k) cockpit.setDetSelection(k, d as { frame: number; labels: number[] } | null)
+}, { immediate: true })
+// Actions + addAction are declared later in the file; wire their watchers there so the reference
+// order stays clean. See "Cockpit action-publish" below.
 
 /** The frame the user last clicked — where a Split would cut. */
 const splitAt = computed<number | null>({
@@ -520,18 +543,10 @@ function queue(op: TrackOp | null) {
   detSel.value = null   // a queued points.add "uses up" the picked untracked cell — clear the strip
 }
 
-/** Queue the detector's own op for every selected track that has one — the one-click path. */
-const fixable = computed(() => {
-  const keys = markers.value.filter(m => selected.value.has(m.track)).map(m => m.key)
-  return suggestedOps([...new Set(keys)], issues.value)
-})
-function fixSelected() {
-  if (!fixable.value.length) return
-  pending.value = [...pending.value, ...fixable.value]
-  lastQueued.value = fixable.value.length === 1 ? opDescription(fixable.value[0])
-                                                : `Queued ${fixable.value.length} suggested fixes`
-  setSelected([])
-}
+// Fix (queue the detector's suggested ops for all selected) moved out with the action row —
+// re-add in the cockpit when Phase 2 introduces a "suggested fixes" verb; the underlying
+// `suggestedOps` and `manualActions` helpers stay in lib/trackCorrection so the cockpit can
+// import them without a second copy.
 
 function apply() {
   if (submitTrackOps({
@@ -584,6 +599,17 @@ const addAction = computed(() => {
   return { blocked: '', op,
            label: trackId !== undefined ? `Add${suffix}` : `Add as new track${suffix}` }
 })
+
+// Cockpit action-publish. Timeline computes the Join/Split/Remove/Add ops with their `blocked`
+// reasons; the app-global correction cockpit renders the same set as buttons without refetching
+// the paths. Behind opsKey so a partly-resolved (image, valueName) never publishes.
+watch([opsKey, actions], ([k, as]) => {
+  if (k) cockpit.setActions(k, [...as])
+}, { immediate: true })
+watch([opsKey, addAction], ([k, a]) => {
+  if (!k) return
+  cockpit.setAddAction(k, { label: a.label, blocked: a.blocked || null, op: a.op })
+}, { immediate: true })
 function onKey(e: KeyboardEvent) {
   const a = keyToAction(e)
   if (!a) return
@@ -853,9 +879,11 @@ function onClick(ev: MouseEvent) {
   if (selected.value.has(hit.track) && (!ev.shiftKey || selected.value.size === 1)) next.delete(hit.track)
   else next.add(hit.track)
   setSelected([...next])
-  // the clicked frame IS the split point — the worklist made you read it out of a sentence and type
-  // it into a box, which is the single clearest thing a timeline removes
-  if (hit.occupied) props.state.splitAt = hit.frame
+  // The clicked frame IS the split point — the worklist made you read it out of a sentence and type
+  // it into a box, which is the single clearest thing a timeline removes. But only arm when the
+  // resulting selection is exactly this one lane, so a two-lane Join gesture doesn't silently
+  // arm a split-frame that Split would later fire against.
+  if (hit.occupied && next.size === 1 && next.has(hit.track)) props.state.splitAt = hit.frame
 }
 
 /**
@@ -895,95 +923,9 @@ async function ensureViewerImage(): Promise<boolean> {
  * timelines-side conversion of stepScale (it's a normalisation factor, not a voxel size).
  */
 async function showInViewer() {
-  const ids = [...selected.value]
+  const ids = [...selected.value].map(Number).filter(Number.isFinite)
   if (!ids.length) return
-  if (!(await ensureViewerImage())) return
-
-  // Turn this segmentation's ribbons on first — the highlight NARROWS the source, but the source
-  // has to exist. Same shape a `toggleTrack` in the panel would produce.
-  const uid = project.openImageUid
-  if (uid) {
-    const cur = settings.getTrackVisibility(uid, [valueName.value])
-    if (!cur[valueName.value]) {
-      settings.setTrackVisibility(uid, { ...cur, [valueName.value]: true })
-    }
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('cc.viewerOverlaysTick', `${uid}:${Date.now()}`)
-    }
-  }
-
-  // Publish the highlight so the viewer's per-vn source drops to just these ids.
-  viewerStore.setTrackHighlight({
-    imageUid: imageUid.value, valueName: valueName.value,
-    trackIds: ids.map(Number).filter(Number.isFinite),
-  })
-
-  // Camera focus: fetch ALL selected tracks' paths (occupancy=0 by default → carries x/y/z) plus
-  // the image's voxelUm, then fit a bbox across every point so a multi-track highlight lands the
-  // whole group in view. `t` goes to the MIDDLE of the union window — a point where every track
-  // in play tends to be alive rather than at the start (some may not have started yet) or the end
-  // (some may have ended). Silent failure here is fine: the highlight already narrowed the
-  // ribbons, and a missing focus just means the user pans themselves.
-  try {
-    const cp = new URLSearchParams({ projectUid: props.projectUid, imageUid: imageUid.value,
-                                     ids: ids.join(',') })
-    if (valueName.value) cp.set('valueName', valueName.value)
-    const [rPaths, rGeom] = await Promise.all([
-      fetch(`/api/tracking/paths?${cp}`),
-      fetch(`/api/images/geometry?projectUid=${encodeURIComponent(props.projectUid)}` +
-            `&imageUid=${encodeURIComponent(imageUid.value)}` +
-            (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')),
-    ])
-    if (!rPaths.ok || !rGeom.ok) return
-    const dPaths = await rPaths.json() as {
-      groups?: { imageUids?: string[]; paths?: Record<string, { t: number[]; x: number[]; y: number[]; z?: number[] }> }[]
-    }
-    const dGeom = await rGeom.json() as { voxelUm?: number[] }
-    const grp = (dPaths.groups ?? []).find(g => (g.imageUids ?? []).includes(imageUid.value))
-             ?? dPaths.groups?.[0]
-    const vu = dGeom.voxelUm
-    if (!grp?.paths || !vu || vu.length < 2) return
-    // Merge every requested track's points into ONE bbox. A track the server didn't send (id
-    // absent from the response) is silently dropped from the bbox — a missing id shouldn't fail
-    // the focus for the ones present.
-    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity
-    let zmin = Infinity, zmax = -Infinity, tmin = Infinity, tmax = -Infinity
-    let anyZ = false
-    for (const id of ids) {
-      const p = grp.paths[String(id)]
-      if (!p?.t?.length) continue
-      for (let i = 0; i < p.t.length; i++) {
-        const x = p.x[i], y = p.y[i], tt = p.t[i]
-        if (x < xmin) xmin = x; if (x > xmax) xmax = x
-        if (y < ymin) ymin = y; if (y > ymax) ymax = y
-        if (tt < tmin) tmin = tt; if (tt > tmax) tmax = tt
-        if (p.z) {
-          anyZ = true
-          const z = p.z[i]
-          if (z < zmin) zmin = z; if (z > zmax) zmax = z
-        }
-      }
-    }
-    if (!Number.isFinite(xmin)) return   // no points at all
-    const cxUm = (xmin + xmax) / 2, cyUm = (ymin + ymax) / 2
-    const cx = cxUm / (vu[0] || 1)
-    const cy = cyUm / (vu[1] || 1)
-    const cz = anyZ ? ((zmin + zmax) / 2) / (vu[2] || 1) : undefined
-    // Middle of the union window — where the most tracks tend to overlap. Round, since t is an
-    // integer frame index everywhere else in the viewer.
-    const t = Math.round((tmin + tmax) / 2)
-    // Half-widths in L0 pixels for the fit. A single-point degenerate track (halfWpx === 0) would
-    // divide by zero in buildFocusViewState; floor at 1 pixel so the fit stays finite (the padded
-    // fit then gives a reasonable ~50-pixel window around a stationary cell).
-    const halfWpx = Math.max(1, (xmax - xmin) / 2 / (vu[0] || 1))
-    const halfHpx = Math.max(1, (ymax - ymin) / 2 / (vu[1] || 1))
-    const focus = buildFocusViewState(viewerStore.viewState,
-                                       { t, cx, cy, cz, halfWpx, halfHpx })
-    if (focus) viewerStore.setPendingViewState(focus)
-  } catch { /* focus is best-effort; the highlight is the primary Show effect */ }
-
-  log.info(`Highlighting ${ids.length} track${ids.length === 1 ? '' : 's'} — camera moved to the first.`,
-           { source: 'tracks' })
+  await showTracksInViewer(props.projectUid, imageUid.value, valueName.value, ids, 'tracks')
 }
 
 
@@ -1122,36 +1064,14 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
          @mouseleave="hover = ''" @wheel="onWheel" />
     <PlotSpinner v-if="loading" label="Loading tracks" />
 
-    <!-- ONE ACTION ROW: edit the selection, and reach the viewer, in the same place and at the same
-         size. The viewer pair used to be icon-only buttons stranded in the status footer, which made
-         two related things look like one control and one afterthought. Two `.cc-btn-group` strips —
-         the canonical "joined strip of related buttons" (docs/UI.md) — separate the groups without a
-         bespoke divider rule.
-
-         Always visible, not only when something is selected: Draw is how you START a selection, so
-         hiding it until you have one is a loop with no entry. A blocked edit still SHOWS, with its
-         reason on hover — a button that vanishes teaches nothing. -->
+    <!-- Timeline canvas-affordances only. The correction verbs (Join / Split / Remove / Fix / Add)
+         and the queue tail (Undo / Apply) live in the Correction cockpit floating panel — one
+         authoring surface for tracks and (Phase 2) labels, so the two surfaces cannot disagree
+         about what's Joinable. This row keeps the viewer-brush pair (Draw / Read) and the
+         selection utilities (Show / Clear) because they act ON the canvas the user is looking at.
+         Hotkeys (Join / Split / Remove / Add / Undo / Apply) still work from here — the keydown
+         handler drives the same functions the cockpit does. -->
     <div class="tsv-act cc-row">
-      <div class="cc-btn-group">
-        <button v-for="a in actions" :key="a.key" class="cc-btn cc-btn-dense"
-                :class="a.blocked ? 'cc-btn-bare' : 'cc-btn-primary'" :disabled="!!a.blocked"
-                v-tooltip.top="`${a.blocked || opDescription(a.op!)} (${KEY_HINT[a.key]})`"
-                @click="queue(a.op)">{{ a.label }}</button>
-        <button class="cc-btn cc-btn-dense" :class="fixable.length ? 'cc-btn-primary' : 'cc-btn-bare'"
-                :disabled="!fixable.length"
-                v-tooltip.top="fixable.length ? 'Queue the suggested fix for the selected tracks'
-                                             : 'Select a flagged track to use its suggested fix'"
-                @click="fixSelected">Fix{{ fixable.length ? ` ${fixable.length}` : '' }}</button>
-        <!-- P3: Add — attach the picked untracked cell to the selected track, or start a new
-             track when none is selected. Hidden entirely unless the untracked strip has been
-             clicked, so the action row stays tidy when the affordance isn't in play. -->
-        <button v-if="detSel" class="cc-btn cc-btn-dense"
-                :class="addAction.blocked ? 'cc-btn-bare' : 'cc-btn-primary'"
-                :disabled="!!addAction.blocked"
-                v-tooltip.top="`${addAction.blocked || opDescription(addAction.op!)} (${KEY_HINT.add})`"
-                @click="queue(addAction.op)">{{ addAction.label }}</button>
-      </div>
-
       <div class="cc-btn-group">
         <button class="cc-btn cc-btn-bare cc-btn-dense"
                 v-tooltip.top="'Select tracks by dragging a rectangle in the viewer'"
@@ -1169,25 +1089,16 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
           <i class="pi pi-times" />
         </button>
       </div>
-
-      <span class="tsv-spacer" />
-      <span v-if="pending.length" class="tsv-queued cc-fs-xs"
-            v-tooltip.top="'Queued edits — nothing changes until Apply'">{{ pending.length }} queued</span>
-      <button v-if="pending.length" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense"
-              v-tooltip.top="`Undo the last queued edit (${KEY_HINT.undo})`"
-              @click="pending = undoLast(pending)">
-        <i class="pi pi-undo" />
-      </button>
-      <button v-if="pending.length" class="cc-btn cc-btn-primary cc-btn-dense"
-              v-tooltip.top="`Run all queued edits as one correction, then re-measure (${KEY_HINT.apply})`"
-              @click="apply">Apply {{ pending.length }}</button>
     </div>
 
     <div class="tsv-foot cc-row">
-      <span class="cc-muted cc-fs-2xs">{{ hover || lastQueued || selSummary }}</span>
+      <!-- Persistent state slot: the answer to "did my click do anything". Hover no longer
+           overwrites this — the transient hover readout lives in its own slot to the right. -->
+      <span class="cc-muted cc-fs-2xs tsv-foot-state">{{ lastQueued || selSummary }}</span>
+      <span v-if="hover" class="cc-muted cc-fs-2xs tsv-foot-hover">{{ hover }}</span>
       <span v-if="viewerSummary" class="cc-muted cc-fs-2xs">{{ viewerSummary }}</span>
       <!-- When the viewer highlight is active, show it here — the release path is the Clear
-           Selection X in the action row above (which also clears the highlight). -->
+           Selection X in the row above (which also clears the highlight). -->
       <span v-if="viewerHighlightSummary" class="cc-muted cc-fs-2xs">{{ viewerHighlightSummary }}</span>
       <span class="tsv-spacer" />
       <span v-if="note" class="cc-muted cc-fs-2xs">{{ note }}</span>
@@ -1220,11 +1131,12 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
    pointer. `min-width: 0` lets the readout ellipsise instead of pushing the row wider. */
 .tsv-foot { padding: 2px 6px 4px; align-items: center; gap: 0.25rem;
             flex-wrap: nowrap; height: 22px; overflow: hidden; }
-.tsv-foot > span:first-child { min-width: 0; overflow: hidden;
-                              text-overflow: ellipsis; white-space: nowrap; }
+/* both textual readouts ellipsise. State keeps its width (first slot); hover shrinks first when
+   the row is tight — a transient readout losing chars is fine, the persistent state must not. */
+.tsv-foot-state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tsv-foot-hover { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                  flex-shrink: 2; font-style: italic; }
 .tsv-act { padding: 2px 6px; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 .tsv-knobs { padding: 0 6px 4px; flex-wrap: wrap; gap: 0.4rem; }
 .tsv-knobs input { width: 4.5rem; }
-/* the queue count is the answer to "did my click do anything" — it must not read as chrome */
-.tsv-queued { color: #8fe0a3; white-space: nowrap; }
 </style>

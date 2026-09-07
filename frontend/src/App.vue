@@ -13,6 +13,7 @@ import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
 import LabLogPanel from './components/LabLogPanel.vue'
+import CorrectionCockpit from './components/correction/CorrectionCockpit.vue'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useTaskStore } from './stores/tasks'
@@ -190,6 +191,11 @@ const bare = computed(() => popout || route.meta.bare === true)
                    @close="settings.labLogPanelOpen = false">
       <LabLogPanel />
     </FloatingPanel>
+    <!-- correction cockpit: mode radio (Tracks/Labels/Review), tool palette that reprograms the
+         viewer click, always-visible selection + fixed queue footer. One per app (not per popup)
+         so the queue survives popup close/reopen. -->
+    <CorrectionCockpit v-if="settings.correctionCockpitOpen"
+                       @close="settings.correctionCockpitOpen = false" />
     <ErrorConsole />
     <Toast position="bottom-right" />
     <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.
