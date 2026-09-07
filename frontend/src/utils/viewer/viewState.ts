@@ -89,12 +89,16 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
   const umPerL0X = meta.voxelUm?.[0] || 1
   const umPerL0Y = meta.voxelUm?.[1] || 1
 
-  // Camera → the viewer's (center, zoom). Same arithmetic as `publishRegionSink` in ViewerWindow, kept
-  // in ONE place so a bug in one publish path is a bug in the other.
+  // Camera → the viewer's (center, zoom). cx / cy = the image L0 pixel the camera looks at, matching
+  // the docstring on ViewerViewState.camera.center below and on `FocusOnCellTarget`. Previously
+  // written as `nX/2 - panXpx`, which was consistent with itself but INVERTED from the documented
+  // meaning — a `buildFocusViewState({cx: 6})` then panned to `nX - 6` (the mirror), so a track at
+  // the mid-left of the image landed the camera on the bottom-right corner (Dominik, 2026-09-07).
+  // Fixed as a pair with `applyViewStateToBrowser` so the round-trip is preserved.
   const panXpx = cam.panX / umPerL0X                      // image-pixel pan X
   const panYpx = -cam.panY / umPerL0Y                     // screen-up = negative image-Y
-  const cx = (meta.nX || 1) / 2 - panXpx
-  const cy = (meta.nY || 1) / 2 - panYpx
+  const cx = (meta.nX || 1) / 2 + panXpx
+  const cy = (meta.nY || 1) / 2 + panYpx
   const cz = ndisplay === 3
     ? Math.max(0, Math.floor((meta.nZ - 1) / 2))          // 3D: rotate around volume centre
     : zPlane                                              // 2D: the plane the user is on
@@ -163,13 +167,15 @@ export function applyViewStateToBrowser(input: ApplyViewStateInput): AppliedView
   const visibleHeightUm = visibleL0H * umPerL0Y
   const dist = visibleHeightUm / (2 * Math.max(viewHalfAngle, 1e-6))
 
-  // Camera centre → pan. Inverse of `cx = W/2 - panXpx` and `cy = H/2 - panYpx`, where panXpx and
+  // Camera centre → pan. Inverse of `cx = W/2 + panXpx` and `cy = H/2 + panYpx`, where cx / cy are
+  // the image L0 pixel the camera looks at (see `buildViewState` above; the previous convention
+  // stored the mirror around the image centre, which was inverted from the docstring). panXpx /
   // panYpx are the IMAGE-pixel pans (positive-right, positive-down). Then unscale by µm/px, and
   // flip Y (screen-up is negative image-Y in the viewer).
   const cy = Number(vs.camera.center[1] ?? 0)
   const cx = Number(vs.camera.center[2] ?? 0)
-  const panXpx = (meta.nX || 1) / 2 - cx
-  const panYpx = (meta.nY || 1) / 2 - cy
+  const panXpx = cx - (meta.nX || 1) / 2
+  const panYpx = cy - (meta.nY || 1) / 2
   const panX =   panXpx * umPerL0X
   const panY = -(panYpx * umPerL0Y)
 
