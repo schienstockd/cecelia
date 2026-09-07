@@ -54,12 +54,21 @@ type VaultRow = {
 }
 
 // shared manager chrome (canvasManager.ts) + this manager's own selection.
-const props = defineProps<CanvasManagerChrome & { selected?: string }>()
-const emit = defineEmits<CanvasManagerChromeEmits & { 'update:selected': [string] }>()
+// `kind` is v-modelled by the host so it can persist in the canvas's `shared` bag (docs/UI.md →
+// Persisting view state) — an internal bare `ref` here would reset on every navigation, sending a
+// user who just trained a denoise model back to a flow-only list with no cue to flip the chip.
+// Optional so the Analysis-board host (LayoutCanvas) that has no persisted kind yet still mounts.
+const props = defineProps<CanvasManagerChrome & { selected?: string; kind?: VaultKind }>()
+const emit = defineEmits<CanvasManagerChromeEmits &
+  { 'update:selected': [string]; 'update:kind': [VaultKind] }>()
 
-// Kind is persisted per canvas — the vault owns it (a bare `ref()` would forget every navigation).
-// Default to flow because that is the vault users had before this rename.
-const kind = ref<VaultKind>('flowModels')
+// Fall back to an internal ref when the host doesn't bind `kind`. Default flow because that is the
+// vault users had before this rename.
+const kindLocal = ref<VaultKind>('flowModels')
+const kind = computed<VaultKind>({
+  get: () => props.kind ?? kindLocal.value,
+  set: v => { kindLocal.value = v; emit('update:kind', v) },
+})
 
 const models  = ref<VaultRow[]>([])
 const vaultDir = ref('')

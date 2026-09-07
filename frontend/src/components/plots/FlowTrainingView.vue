@@ -138,8 +138,22 @@ const termOptions = computed<ChipOption[]>(() => series.value.map(s => ({
 })))
 // Default: everything that is actually on. `undefined` means "not chosen yet", so an explicit empty
 // pick is respected (docs/UI.md → Persisting view state).
-const terms = computed<string[]>(() =>
-  state.value.terms ?? series.value.filter(s => s.weight !== 0).map(s => s.term))
+//
+// Recover from a stale kind: `state.terms` persists across vault-kind switches (flow ↔ denoise), so
+// a panel that once held flow terms like `['temporal','intensity']` filters to empty against denoise's
+// single `'loss'` series and the plot goes permanently black — with NO way to reset from the UI,
+// because the chip row is hidden when there is only one term. If the persisted terms have zero
+// overlap with the current series (a genuine kind mismatch, not an explicit unchecked-all), fall
+// back to defaults for what is actually available.
+const terms = computed<string[]>(() => {
+  const persisted = state.value.terms
+  const defaults = series.value.filter(s => s.weight !== 0).map(s => s.term)
+  if (persisted === undefined) return defaults
+  const available = new Set(series.value.map(s => s.term))
+  const filtered = persisted.filter(t => available.has(t))
+  // explicit empty (user unchecked everything) stays empty; a non-empty-but-stale list falls back
+  return filtered.length === 0 && persisted.length > 0 ? defaults : filtered
+})
 const shown = computed(() => series.value.filter(s => terms.value.includes(s.term)))
 const rows = computed(() => shown.value.flatMap(s =>
   s.values.map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
