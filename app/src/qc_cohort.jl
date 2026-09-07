@@ -40,8 +40,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # flow-based per-pixel registration: peakFlowPx / meanFlowPx are directly
     # cohort-comparable — a movie whose per-pixel deformation the aligner
     # measured much larger than its peers is unusual (worth a second look at
-    # sample motion during that acquisition).
-    "cleanupImages.flowRegister" => ["peakFlowPx", "meanFlowPx"],
+    # sample motion during that acquisition). meanFrameCorrelation is the
+    # post-warp reference-vs-warped pearson averaged over t: a movie whose flow
+    # correlated its frames back to the reference far worse than peers is one
+    # where the estimator is not converging.
+    "cleanupImages.flowRegister" => ["peakFlowPx", "meanFlowPx", "meanFrameCorrelation"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
     "segment.measureLabels"      => ["nCells"],

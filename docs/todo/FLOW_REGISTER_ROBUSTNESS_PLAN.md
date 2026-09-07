@@ -1,7 +1,6 @@
 # flowRegister robustness — Galene-derived follow-ups
 
-**Status:** planning (2026-09-07)
-**Branch:** `feat/flow-register-structural-channels` (this plan) — implementation on future branches.
+**Status:** Phase 1 shipped 2026-09-07 (branch `feat/flow-register-correlation-gate`); P2 + P3 pending.
 **Prompted by:** Dominik surfacing an ex-colleague's implementation (Galene) after the
 [structural-channel passthrough](../../app/src/tasks/cleanupImages/flow_register.jl) landed. The
 comment that started it: *"optical flow can't distinguish cell movement from local distortion, and
@@ -102,38 +101,32 @@ these phases target:
 
 ## Phases
 
-### Phase 1 — per-frame post-warp correlation + frame gate
+### Phase 1 — per-frame post-warp correlation metric [SHIPPED 2026-09-07, metric-only]
 
-**Why.** Today `flow_register_run.py:113-148` computes a warp and writes it to disk regardless of
-how well it aligned. Galene fits, then measures `correlation(warped, reference)` and `coverage`
-in the covered region (`FrameWarpAligner.cpp:241-243`), and blanks the frame at output if either
-falls below a user threshold (`FrameWarpAligner.cpp:277-278`). Rationale from paper: *"we
-automatically identify and remove these frames by applying a threshold to the correlation between
-the reference image and the best estimate of the corrected frame, in this case 0.8."*
+**Why.** Today `flow_register_run.py` computes a warp and writes it to disk regardless of how well
+it aligned. Galene fits, then measures `correlation(warped, reference)` and `coverage` in the
+covered region (`FrameWarpAligner.cpp:241-243`), and blanks the frame at output if either falls
+below a user threshold (`FrameWarpAligner.cpp:277-278`). Rationale from paper: *"we automatically
+identify and remove these frames by applying a threshold to the correlation between the reference
+image and the best estimate of the corrected frame, in this case 0.8."*
 
-**Design.**
-- After each per-plane warp in `flow_register_run.py`, compute `corr = pearson(warped_ref,
-  reference_ref)` on the reference channel over the region where flow magnitude was in bounds.
-- New QC sidecar fields: `frameCorrelation[t]`, `unalignedCorrelation[t]` (the same score against
-  the raw source, so the user sees "did flow HELP") — both per-frame, one number per (t) at mid-Z.
-- New `_flow_register_qc_findings` case: `flow_register.low_correlation` — warn when the fraction
-  of frames with `frameCorrelation < corrFloor` exceeds `LOW_CORR_FRAC_WARN` (start at 0.5, tune
-  once measured on 5-10 movies).
-- New param `frameCorrelationFloor` (float, default `0.0` = off): frames whose post-warp
-  correlation falls below the floor are written as ZEROS to the output store, and their `(t)` is
-  emitted to a `blankedFrames` array in the QC sidecar. Default off ⇒ behaviour is unchanged; the
-  correction plan wizard can raise it (e.g. 0.6) on cards where blanking is preferable to garbage.
+**As shipped.**
+- Per-frame post-warp pearson `frameCorrelation[t]` between warped and reference on the register
+  channel at mid-Z, computed over the covered region (`~over`, pixels within the `maxShiftPx`
+  clamp). Companion `unalignedCorrelation[t]` (raw-vs-reference) so the delta says whether flow
+  *helped* per frame.
+- New cohort metric `meanFrameCorrelation` in `COHORT_METRICS["cleanupImages.flowRegister"]`.
+- Attribution: THIRD_PARTY.md → *Derived from / ported* row for Galene, plus an inline citation
+  on the correlation lines in the runner (paper DOI + `FrameWarpAligner.cpp:241-243`).
 
-**Touchpoints.**
-- `app/src/tasks/cleanupImages/flow_register_run.py` — add correlation computation, new sidecar
-  fields, blanking branch.
-- `app/src/tasks/cleanupImages/flow_register.jl` — new `_flow_register_qc_findings` case
-  (`flow_register.low_correlation`), pass `frameCorrelationFloor` through to Python.
-- `app/src/tasks/cleanupImages/flow_register.json` — new `frameCorrelationFloor` param + tip.
-- `app/test/suite.jl` — extend `flow_register QC` testset with a "low correlation" fixture.
-- `app/src/qc_cohort.jl` — add `flowregister.mean_frame_correlation` cohort metric.
-
-**Estimate.** ~1 day. Highest leverage; ships value even if Phases 2 and 3 never do.
+**Gate NOT shipped — recorded here so no-one re-adds it without new evidence.** The plan originally
+included a `frameCorrelationFloor` param + fall-back-to-source behaviour + `flow_register.low_correlation`
+warn. Measured on c91ICQ (peak flow 115 px, 98% clamp saturation): flow uniformly improved every
+frame (median Δ = +0.167 correlation warped-vs-unaligned, 125/126 frames helped, zero hurt). At
+sensible floors (≤0.7) zero frames fell back; at 0.8, 38 frames fell back and every one of them
+was a frame flow was demonstrably improving. Warren et al.'s "0.8" was calibrated to FLIM data
+that presumably had catastrophic per-frame failures; c91ICQ doesn't. Ship the metric — if a future
+movie shows a correlation cliff, re-open the gate with the metric already in hand.
 
 ### Phase 2 — phase-correlation warm-start on the flow field
 
