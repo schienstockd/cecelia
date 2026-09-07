@@ -26,6 +26,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import BaseModal from './BaseModal.vue'
+import ComingSoonBadge from './ComingSoonBadge.vue'
 import { useGuideStore } from '../stores/guide'
 import { guidesByGroup, guideById, RECIPES, isWanted } from '../lib/guides'
 import type { WrittenRecipe } from '../lib/guides'
@@ -191,6 +192,17 @@ function firstFixable(g: GuideDef) {
       </div>
     </section>
 
+    <!-- Walkthroughs that don't have their own bubbles yet. Named here so the surface is visible
+         from the picker — same discipline as the "wanted" recipes at the top: an absent row teaches
+         nothing. Not a group in `guides/index.ts` because there is no `GuideDef` to start. -->
+    <section class="gd-group">
+      <h3 class="gd-group-head cc-eyebrow cc-fs-2xs">Walkthroughs on the way</h3>
+      <ul class="gd-soon cc-muted cc-fs-xs">
+        <li>Correction cockpit — join/split/remove tracks, edit labels <ComingSoonBadge /></li>
+        <li>Track scheme timeline — Draw, Show, and the keybindings <ComingSoonBadge /></li>
+      </ul>
+    </section>
+
     <template #footer>
       <span class="gd-spacer" />
       <button v-if="guide.completed.size" class="cc-btn cc-btn-ghost cc-fs-xs" @click="guide.clearCompleted()"
@@ -273,4 +285,12 @@ function firstFixable(g: GuideDef) {
 .gd-req { color: var(--cc-accent-soft); text-decoration: underline; }
 .gd-req:hover { color: var(--cc-accent); }
 .gd-req .pi { font-size: var(--cc-fs-2xs); }
+
+/* Named-but-not-yet-written walkthroughs. Muted list (`.cc-muted` + `.cc-fs-xs` in the markup) so it
+   reads as the tail of the picker, not a fifth interactive group. */
+.gd-soon {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.gd-soon li { display: flex; align-items: center; gap: 0.5rem; }
 </style>

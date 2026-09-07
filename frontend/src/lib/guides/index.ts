@@ -15,7 +15,8 @@ import type { GuideDef } from './types'
 import { tourGuide } from './tour'
 import { importImagesGuide } from './importImages'
 import {
-  driftCorrectGuide, segmentGuide, trackCellsGuide, trainFlowModelGuide, segmentByMotionGuide,
+  driftCorrectGuide, segmentGuide, trackCellsGuide,
+  trainFlowModelGuide, trainDenoiseModelGuide, segmentByMotionGuide,
 } from './taskGuides'
 import { gatePopulationsGuide } from './gatePopulations'
 import { notebooksGuide } from './notebooks'
@@ -35,6 +36,7 @@ export const GUIDES: GuideDef[] = [
   fixMetadataGuide,
   driftCorrectGuide,
   segmentGuide,
+  trainDenoiseModelGuide,
   trainFlowModelGuide,
   segmentByMotionGuide,
   // Populations — define who the cells are

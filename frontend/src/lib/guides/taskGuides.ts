@@ -298,6 +298,54 @@ export const trainFlowModelGuide = moduleTaskGuide({
   ],
 })
 
+// A denoise model is a peer of the flow model on the same page: same layout, same rail, different
+// function. Trained once per set (channels pool into one model) and reused wherever that channel mix
+// shows up. Deliberately no `driftCorrected` prereq — the picker only checks state the frontend
+// already holds; the "run drift correction first" note lives in the copy.
+export const trainDenoiseModelGuide = moduleTaskGuide({
+  id: 'train-denoise-model',
+  title: 'Train a denoise model',
+  group: 'Data',
+  icon: 'pi-sync',
+  summary: 'Teach a SUPPORT model your noise floor so weaker frames become readable — the step before segmenting dim movies.',
+  route: '/model-training',
+  navLabel: 'Model training',
+  taskKey: 'trainSupportDenoise',
+  funName: 'opticalFlow.trainSupportDenoise',
+  funLabel: 'Train denoise model (SUPPORT)',
+  selectionModule: 'opticalFlow',
+  waitLabel: 'Training',
+  prereqs: [PREREQ.projectOpen, PREREQ.imageImported, PREREQ.timeSeries],
+  intro: 'SUPPORT learns your movie\'s noise by comparing the same pixel across frames — so run drift correction first.',
+  funHint: [
+    'Run drift correction before this; SUPPORT needs the same pixel to stay put across frames.',
+    'One model per set — pool the channels you want denoised into a single run.',
+  ],
+  params: [
+    'Model name — the vault entry this writes; you pick it again when you segment or denoise.',
+    'Channels — pool the ones with the same noise character; one model covers them all.',
+    'Model size and temporal window — Medium and 61 frames are safe defaults; keep the window odd.',
+    'Epochs — 20 to start; the loss curve says whether it needed more.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/model-training',
+      placement: 'top-start',
+      title: 'Read the training curves',
+      text: 'Same read as any training run — a loss still falling means feed it more.',
+      bullets: [
+        'A stalled curve early on usually means the input was already clean, not that the model failed.',
+      ],
+    },
+    {
+      title: 'What you now have',
+      text: 'A denoise model in the vault, not this project — it applies to any movie of this kind.',
+      bullets: ['Denoise or segment with it next; the vault list holds it under the name you gave.'],
+    },
+  ],
+})
+
 export const segmentByMotionGuide = moduleTaskGuide({
   id: 'segment-by-motion',
   title: 'Segment a movie by motion',
