@@ -170,7 +170,7 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
 <template>
   <FloatingPanel
     title="Correction plan"
-    icon="pi-list-check"
+    icon="pi-clipboard"
     storage-key="correction-plan"
     :default-w="360"
     :default-h="520"

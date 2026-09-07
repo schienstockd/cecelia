@@ -53,7 +53,7 @@ const asks = computed<CapabilityAsk[]>(() => CALL_FOR_DATASETS)
 </script>
 
 <template>
-  <BaseModal title="Call for Datasets" icon="pi-database" width="640px" height="80vh"
+  <BaseModal title="Call for Datasets" icon="pi-megaphone" width="640px" height="80vh"
              @close="closeCallForDatasets">
     <div class="cfd-body">
       <p class="cfd-intro cc-muted cc-fs-xs">
