@@ -29,7 +29,7 @@
       "type": "channelSelection",
       "multiple": true,
       "default": [],
-      "tip": "Copied through as-is (no warp) — pick SHG/collagen or static structure to avoid warp artefacts"
+      "tip": "Copied through as-is — select SHG/collagen or static channels to avoid warp artefacts"
     },
     {
       "key": "referenceMode",

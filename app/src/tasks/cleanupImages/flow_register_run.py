@@ -61,8 +61,8 @@ def run(params):
     im_out_path     = params['imOutPath']
     register_channel = script_utils.channel_index(
         params.get('registerChannel'), 'registerChannel', 'flow_register.jl')
-    structural_channels = frozenset(
-        int(c) for c in (params.get('structuralChannels') or []))
+    structural_channels = frozenset(script_utils.channel_indices(
+        params.get('structuralChannels'), 'structuralChannels', 'flow_register.jl'))
     reference_mode  = params.get('referenceMode', 'previous')
     winsize         = int(params.get('winsize', 17))
     pyr_levels      = int(params.get('pyrLevels', 5))
