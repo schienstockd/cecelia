@@ -7594,6 +7594,17 @@ end
     @test isempty(Cecelia._flow_register_qc_findings(Dict{String,Any}("maxShiftPx" => 16.0)))
     @test isempty(Cecelia._flow_register_qc_findings(
         Dict{String,Any}("flowMax" => Float64[], "maxShiftPx" => 16.0)))
+
+    # meanFrameCorrelation metric (Phase 1) — average of the finite entries,
+    # emitted as a per-image cohort-comparable diagnostic (Galene-derived; see
+    # Warren et al. 2018, eLife 7:e35800). The metric is banked even when the
+    # `high_shifts` warn does NOT fire, so the sidecar has to carry it.
+    with_corr = merge(quiet, Dict{String,Any}(
+        "frameCorrelation" => [1.0, 0.8, 0.4, 0.2]))
+    qm2 = Cecelia._flow_register_qc_metrics(with_corr)
+    @test qm2["meanFrameCorrelation"] == 0.6
+    # Absent → metric absent (rather than a spurious NaN or 0).
+    @test !haskey(Cecelia._flow_register_qc_metrics(quiet), "meanFrameCorrelation")
 end
 
 @testset "fun_name dispatch" begin

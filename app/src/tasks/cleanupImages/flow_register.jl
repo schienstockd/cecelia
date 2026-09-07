@@ -50,6 +50,13 @@ function _flow_register_qc_metrics(meta)
     if !isnothing(flow_mean) && !isempty(flow_mean)
         m["meanFlowPx"] = round(Float64(sum(flow_mean) / length(flow_mean)), digits = 3)
     end
+    frame_corr = get(meta, "frameCorrelation", nothing)
+    if !isnothing(frame_corr) && !isempty(frame_corr)
+        vals = Float64[Float64(x) for x in frame_corr if isfinite(Float64(x))]
+        if !isempty(vals)
+            m["meanFrameCorrelation"] = round(sum(vals) / length(vals), digits = 3)
+        end
+    end
     m
 end
 
@@ -130,14 +137,17 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
         try
             qmeta = JSON3.read(read(qc_out_path, String))
             findings = _flow_register_qc_findings(qmeta)
+            traj = Dict{String,Any}(
+                "referenceMode" => qmeta["referenceMode"],
+                "flowMax"       => qmeta["flowMax"],
+                "flowMean"      => qmeta["flowMean"])
+            haskey(qmeta, "frameCorrelation")     && (traj["frameCorrelation"]     = qmeta["frameCorrelation"])
+            haskey(qmeta, "unalignedCorrelation") && (traj["unalignedCorrelation"] = qmeta["unalignedCorrelation"])
             write_qc(img, "cleanupImages.flowRegister", out_value_name, findings;
                      metrics = _flow_register_qc_metrics(qmeta),
                      source = Dict{String,Any}("shape" => collect(Int, qmeta["sourceShape"])),
                      output = Dict{String,Any}("shape" => collect(Int, qmeta["sourceShape"])),
-                     trajectory = Dict{String,Any}(
-                         "referenceMode" => qmeta["referenceMode"],
-                         "flowMax"       => qmeta["flowMax"],
-                         "flowMean"      => qmeta["flowMean"]))
+                     trajectory = traj)
             isempty(findings) || on_log("[QC] $(length(findings)) finding(s) — see the image's QC badge.")
         catch e
             on_log("[QC] could not compute flow-register QC: $e")

@@ -27,6 +27,16 @@ Parameter contract (JSON written by Julia):
   winsize            - int, Farneback averaging window
   pyrLevels          - int, Farneback pyramid levels
   maxShiftPx         - float, per-pixel flow-magnitude clamp
+
+Per-frame post-warp reference-vs-warped pearson correlation is measured at
+mid-Z and emitted to the QC sidecar (`frameCorrelation`, `unalignedCorrelation`)
+as a diagnostic — the delta says whether flow HELPED per frame. Derived from
+Galene's frame-quality signal (Warren et al. 2018, eLife 7:e35800;
+FrameWarpAligner.cpp:241-243). Galene also uses it to blank failing frames
+(:277-278); we ship the metric only — on our first anchor movie (c91ICQ) the
+metric confirmed flow uniformly helps and no frame needed to be blanked, so
+the gate would have been a knob with nothing to catch. If a future movie shows
+a correlation cliff we'll re-open the gate.
 """
 
 import cv2
@@ -52,6 +62,25 @@ def _flow(prev, curr, winsize, pyr_levels):
         _FARNEBACK_FIXED['iterations'], _FARNEBACK_FIXED['poly_n'],
         _FARNEBACK_FIXED['poly_sigma'], _FARNEBACK_FIXED['flags'],
     )
+
+
+def _pearson_masked(a, b, mask=None):
+    """Pearson correlation over `mask` == True, else full arrays. Returns 0.0
+    on empty selection or zero variance (a correlation on constant data is
+    undefined; treat as 'no evidence of alignment')."""
+    if mask is not None:
+        a = a[mask]
+        b = b[mask]
+    if a.size < 2:
+        return 0.0
+    a = a.astype(np.float64, copy=False)
+    b = b.astype(np.float64, copy=False)
+    a_ = a - a.mean()
+    b_ = b - b.mean()
+    denom = np.sqrt((a_ * a_).sum() * (b_ * b_).sum())
+    if denom == 0:
+        return 0.0
+    return float((a_ * b_).sum() / denom)
 
 
 def run(params):
@@ -90,6 +119,7 @@ def run(params):
     n_z = dim_utils.dim_val('Z')
     H   = dim_utils.dim_val('Y')
     W   = dim_utils.dim_val('X')
+    mid_z = n_z // 2
 
     # Progress: n_t frames + 1 metadata step.
     total = n_t + 1
@@ -101,6 +131,15 @@ def run(params):
     # Per-frame flow diagnostics (for the QC sidecar).
     flow_max  = np.zeros(n_t, dtype=np.float32)
     flow_mean = np.zeros(n_t, dtype=np.float32)
+    # Post-warp reference-channel pearson correlation at mid-Z, measured over the
+    # covered region (pixels where flow was within the maxShiftPx clamp). Emitted
+    # as a QC diagnostic — the delta against `unaligned_correlation` says whether
+    # flow helped per frame. Galene's frame-quality signal — see Warren et al.
+    # 2018 (eLife 7:e35800) and FrameWarpAligner.cpp:241-243. Galene also uses
+    # it as a frame gate (:277-278); we ship the metric only, per the plan.
+    # Frame 0 is identity by construction (correlation = 1).
+    frame_correlation     = np.ones(n_t, dtype=np.float32)
+    unaligned_correlation = np.ones(n_t, dtype=np.float32)
 
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
 
@@ -123,6 +162,11 @@ def run(params):
         for t in range(1, n_t):
             frame_max = 0.0
             frame_mean_accum = 0.0
+            # Captured at z == mid_z for the post-warp correlation metric.
+            warped_ref_mid = None
+            ref_at_mid = None
+            mov_ref_at_mid = None
+            over_at_mid = None
             for z in range(n_z):
                 if reference_mode == 'first':
                     ref_frame = np.asarray(
@@ -142,6 +186,21 @@ def run(params):
                 map_y = yy + flow[..., 1]
                 over = mag > max_shift_px
 
+                if z == mid_z:
+                    # Warped register channel at mid-Z, computed here so the
+                    # correlation metric is well-defined even when the register
+                    # channel is (unusually) in structuralChannels.
+                    warped_ref_mid = cv2.remap(
+                        mov_frame, map_x, map_y,
+                        interpolation=cv2.INTER_LINEAR,
+                        borderMode=cv2.BORDER_REPLICATE,
+                    )
+                    if over.any():
+                        warped_ref_mid = np.where(over, mov_frame, warped_ref_mid)
+                    ref_at_mid = ref_frame
+                    mov_ref_at_mid = mov_frame
+                    over_at_mid = over
+
                 for c in range(n_c):
                     if c in structural_channels:
                         level0[t, c, z] = im_dat[0][t, c, z]
@@ -158,6 +217,12 @@ def run(params):
 
             flow_max[t]  = frame_max
             flow_mean[t] = frame_mean_accum / n_z
+
+            if warped_ref_mid is not None:
+                covered = ~over_at_mid
+                frame_correlation[t]     = _pearson_masked(warped_ref_mid, ref_at_mid, covered)
+                unaligned_correlation[t] = _pearson_masked(mov_ref_at_mid,  ref_at_mid, None)
+
             log.progress(1 + t, total)
 
         log.log(f'>> build pyramid + save: {im_out_path}')
@@ -182,15 +247,17 @@ def run(params):
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
         doc = {
-            'dimOrder':           ''.join(dim_utils.im_dim_order),
-            'sourceShape':        [int(x) for x in im_dat[0].shape],
-            'referenceMode':      reference_mode,
-            'winsize':            winsize,
-            'pyrLevels':          pyr_levels,
-            'maxShiftPx':         max_shift_px,
-            'structuralChannels': sorted(structural_channels),
-            'flowMax':            [float(x) for x in flow_max],
-            'flowMean':           [float(x) for x in flow_mean],
+            'dimOrder':             ''.join(dim_utils.im_dim_order),
+            'sourceShape':          [int(x) for x in im_dat[0].shape],
+            'referenceMode':        reference_mode,
+            'winsize':              winsize,
+            'pyrLevels':            pyr_levels,
+            'maxShiftPx':           max_shift_px,
+            'structuralChannels':   sorted(structural_channels),
+            'flowMax':              [float(x) for x in flow_max],
+            'flowMean':             [float(x) for x in flow_mean],
+            'frameCorrelation':     [float(x) for x in frame_correlation],
+            'unalignedCorrelation': [float(x) for x in unaligned_correlation],
         }
         write_json_atomic(qc_out_path, doc)
         log.log(f'>> saved flow-register QC: {qc_out_path}')
