@@ -16202,6 +16202,123 @@ end
     @test doc["entries"][1]["op"] == "track.join"
 end
 
+# ── Manual label correction (docs/todo/CORRECTION_PLAN.md, P2) ────────────────
+#
+# The engine is pure — validation, the rewrite-table fold and the journal. Array mutation happens
+# Python-side (per Decision 2b), so these tests assert what Julia OWNS: op shape, per-t rewrite
+# building, chain collapsing, journal I/O, metrics + QC. Fixtures are Dict-only.
+
+@testset "label correction — op validation" begin
+    # merge: needs t, ids (>=2, all >=1) and `into` ∈ ids
+    @test Cecelia.validate_label_op(
+        Dict("op" => "label.merge", "t" => 0, "ids" => [3, 5], "into" => 3)) === nothing
+    @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.merge", "t" => 0, "ids" => [3, 5], "into" => 9))
+    @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.merge", "t" => 0, "ids" => [3],    "into" => 3))
+    @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.merge", "t" => 0, "ids" => [3, 0], "into" => 3))
+    @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.merge", "t" => -1, "ids" => [3, 5], "into" => 3))
+    # remove: needs t, non-empty ids all >=1
+    @test Cecelia.validate_label_op(Dict("op" => "label.remove", "t" => 4, "ids" => [7])) === nothing
+    @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.remove", "t" => 0, "ids" => Int[]))
+    @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.remove", "t" => 0, "ids" => [0]))
+    # unknown op
+    @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.frobnicate", "t" => 0, "ids" => [1]))
+    @test Set(Cecelia.LABEL_OP_KINDS) == Set(["label.merge", "label.remove"])
+end
+
+@testset "label correction — build_rewrite folds ops into per-frame maps" begin
+    # Two frames, independent. Frame 0: merge {2,3} into 2. Frame 1: remove {5}.
+    m = Cecelia.build_rewrite([
+        Dict("op" => "label.merge",  "t" => 0, "ids" => [2, 3], "into" => 2),
+        Dict("op" => "label.remove", "t" => 1, "ids" => [5]),
+    ])
+    @test Set(keys(m)) == Set([0, 1])
+    @test m[0] == Dict(3 => 2)
+    @test m[1] == Dict(5 => 0)
+
+    # Chain collapse within a frame: (2->3) then (3->4) ⇒ 2->4, 3->4 (one pass per pixel).
+    m = Cecelia.build_rewrite([
+        Dict("op" => "label.merge", "t" => 0, "ids" => [2, 3], "into" => 3),
+        Dict("op" => "label.merge", "t" => 0, "ids" => [3, 4], "into" => 4),
+    ])
+    @test m[0][2] == 4 && m[0][3] == 4
+
+    # A remove after a merge in the same frame should map both sources to 0.
+    m = Cecelia.build_rewrite([
+        Dict("op" => "label.merge",  "t" => 0, "ids" => [2, 3], "into" => 3),
+        Dict("op" => "label.remove", "t" => 0, "ids" => [3]),
+    ])
+    @test m[0][2] == 0 && m[0][3] == 0
+
+    # Ops on different frames don't leak into each other (Decision 6b).
+    m = Cecelia.build_rewrite([
+        Dict("op" => "label.remove", "t" => 0, "ids" => [7]),
+        Dict("op" => "label.remove", "t" => 1, "ids" => [7]),
+    ])
+    @test m[0][7] == 0 && m[1][7] == 0 && length(m) == 2
+
+    # Empty op list yields empty map, not an error.
+    @test isempty(Cecelia.build_rewrite(Dict{String,Any}[]))
+
+    # A malformed op inside a batch throws — no partial rewrite.
+    @test_throws ArgumentError Cecelia.build_rewrite([
+        Dict("op" => "label.remove", "t" => 0, "ids" => [1]),
+        Dict("op" => "label.merge",  "t" => 0, "ids" => [2], "into" => 2),   # single-id merge
+    ])
+end
+
+@testset "label correction — QC metrics + findings" begin
+    ops = [
+        Dict("op" => "label.merge",  "t" => 0, "ids" => [1, 2, 3], "into" => 1),   # 2 labels removed
+        Dict("op" => "label.remove", "t" => 1, "ids" => [7]),                       # 1 label removed
+    ]
+    m = Cecelia.label_correction_metrics(ops, [12, 5]; n_labels_before = 10, n_labels_after = 7)
+    @test m["nOps"] == 2
+    @test m["nMerge"] == 1 && m["nRemove"] == 1
+    @test m["nFramesTouched"] == 2
+    @test m["nLabelsRemoved"] == 3
+    @test m["nPixelsRewritten"] == 17
+    @test m["fracLabelsEdited"] ≈ 3/10 atol=1e-4
+
+    # per_op_pixels omitted (e.g. dry-run) → 0
+    m2 = Cecelia.label_correction_metrics(ops, Int[]; n_labels_before = 10)
+    @test m2["nPixelsRewritten"] == 0
+
+    # ≥30% of labels edited fires the warn (mirrors track_correction's threshold)
+    @test any(f -> f["code"] == "correction.labels_large_share_edited",
+              Cecelia.label_correction_qc_findings(m))
+    # a small edit is silent — advisory only, and QC noise on every small correction is not useful
+    small = Cecelia.label_correction_metrics(
+        [Dict("op" => "label.remove", "t" => 0, "ids" => [1])], [3];
+        n_labels_before = 100)
+    @test isempty(Cecelia.label_correction_qc_findings(small))
+
+    # every finding's text resolves from the catalog (no unsubstituted {placeholder} reaches a user)
+    for f in Cecelia.label_correction_qc_findings(m)
+        @test !occursin("{", f["short"]) && !occursin("{", f["long"])
+    end
+end
+
+@testset "label correction — journal sidecar" begin
+    dir = mktempdir()
+    @test Cecelia.label_corrections_path(dir, "memTom") ==
+        joinpath(dir, "corrections", "labels_memTom.json")     # peer to tracks' file, prefixed
+    @test isempty(Cecelia.load_label_corrections(dir, "memTom")["entries"])
+
+    Cecelia.append_label_corrections!(dir, "memTom", [
+        Dict("op" => "label.merge", "t" => 0, "ids" => [2, 3], "into" => 2, "nPixels" => 12),
+    ]; run_id = "r1")
+    Cecelia.append_label_corrections!(dir, "memTom", [
+        Dict("op" => "label.remove", "t" => 1, "ids" => [5], "nPixels" => 4),
+    ]; run_id = "r2")
+
+    doc = Cecelia.load_label_corrections(dir, "memTom")
+    @test doc["valueName"] == "memTom"
+    @test length(doc["entries"]) == 2
+    @test [e["seq"] for e in doc["entries"]] == [1, 2]        # monotonic across runs
+    @test [e["runId"] for e in doc["entries"]] == ["r1", "r2"]
+    @test doc["entries"][1]["op"] == "label.merge"
+end
+
 @testset "track correction — task wiring + param validation" begin
     @test Cecelia._task_from_fun_name("tracking.correct") isa Cecelia.TrackCorrect
     @test Cecelia._task_from_fun_name("tracking.correct_measures") isa Cecelia.CompositeTask
