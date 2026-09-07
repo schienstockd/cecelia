@@ -6506,7 +6506,10 @@ end
 
     bad(t) = @test_throws ChainTemplateError validate_chain_template(t)
 
-    bad(tpl(ChainNode[], ChainEdge[]))                              # nothing to run
+    # Empty template validates — the whiteboard saves that as its first step when the user clicks
+    # "new" and hasn't wired anything yet. run_chain refuses to actually run an empty one, which is
+    # the check that matters.
+    @test validate_chain_template(tpl(ChainNode[], ChainEdge[])) === nothing
     bad(tpl([node("", "importImages.remove")], ChainEdge[]))        # empty id
     bad(tpl([ok_node("n1"), ok_node("n1")], ChainEdge[]))           # duplicate id
     bad(tpl([node("n1", "importImages.nope")], ChainEdge[]))        # unknown fn

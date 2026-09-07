@@ -248,16 +248,18 @@ end
 """
     validate_chain_template(t::ChainTemplate)
 
-Throw `ChainTemplateError` if `t` could not run as written. Checks, in the order a reader would:
-node ids (present, unique), `fn` resolves in the task registry, `scope` / `barrier_policy` /
+Throw `ChainTemplateError` if what `t` DOES describe is malformed. Checks, in the order a reader
+would: node ids (present, unique), `fn` resolves in the task registry, `scope` / `barrier_policy` /
 `resource_pool` are known values, both endpoints of every edge exist, the graph is acyclic, every
 `startTargets` entry is a real node, and each node's params satisfy its task's JSON spec.
+
+An empty template (no nodes) is intentionally allowed here — the whiteboard saves that as its very
+first step when the user clicks "new" and hasn't wired anything yet. The "cannot actually run"
+check lives in `run_chain` itself, which is the point that matters.
 
 Returns `nothing` on success. Pure — reads the task specs and the config, writes nothing.
 """
 function validate_chain_template(t::ChainTemplate)
-    isempty(t.nodes) && throw(ChainTemplateError("template has no nodes"))
-
     ids   = Set{String}()
     pools = _known_pool_names()
     for n in t.nodes
