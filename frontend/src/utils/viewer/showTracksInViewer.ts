@@ -16,10 +16,14 @@ import { buildFocusViewState } from './focusOnCell'
  *   1. **Ensure the viewer's on this image.** No force-launch — that matches the canvas nav
  *      rule ("don't open the viewer just because a lane was clicked"). Logs a hint and returns
  *      false when no viewer is open.
- *   2. **Enable the segmentation's track visibility** so the highlight has a source to narrow.
+ *   2. **Publish the highlight FIRST** via `viewerStore.setTrackHighlight` — the viewer's per-vn
+ *      track source drops to just these ids via `filterPayloadByTracks`. Ordering matters: the
+ *      popup viewer syncs on `cc.viewer.trackHighlight` via a storage listener, so publishing
+ *      highlight AHEAD of the overlays tick ensures the popup's next rebuild uses the new ids
+ *      rather than firing one rebuild's worth of the previous selection first (the "flash of
+ *      the previous highlight" pattern in Dominik's 13:52:26 log — 132 cells kept then 167).
+ *   3. **Enable the segmentation's track visibility** so the highlight has a source to narrow.
  *      Pokes `cc.viewerOverlaysTick` so the popup rebuilds its overlays immediately.
- *   3. **Publish the highlight** via `viewerStore.setTrackHighlight` — the viewer's per-vn
- *      track source drops to just these ids via `filterPayloadByTracks`.
  *   4. **Fit + jump.** ONE fetch of paths (limited to the requested ids), ONE fetch of
  *      geometry (for voxelUm), compute the union bbox + middle-t, `buildFocusViewState` →
  *      `setPendingViewState`. Silent failure here is fine — the highlight is the primary
@@ -55,18 +59,30 @@ export async function showTracksInViewer(
     })
   }
 
-  // 2. Enable this segmentation's ribbons (the highlight NARROWS; the source has to exist)
+  // 2. Publish the highlight FIRST — see the note in the docstring above about the flash of
+  // the previous highlight when the overlays tick landed at the popup ahead of the trackHighlight
+  // update. `setTrackHighlight` writes both the Pinia ref (this window) and localStorage (the
+  // popup viewer's storage listener syncs on it), so publishing here narrows every subsequent
+  // rebuild — from step 3's ribbons, from step 4's camera fly — to the new ids.
+  viewerStore.setTrackHighlight({ imageUid, valueName, trackIds: [...trackIds] })
+
+  // 3. Enable this segmentation's ribbons (the highlight NARROWS; the source has to exist).
+  // Only poke `cc.viewerOverlaysTick` when we ACTUALLY flipped visibility — an unconditional
+  // tick fires a `loadTracks` in the popup every Show, and that extra rebuild raced with the
+  // trackHighlight storage event so the popup filtered on the PREVIOUS highlight before the
+  // current one arrived (the "shows the tracks I selected before the current one" report on
+  // 2026-09-07). When visibility is already on the highlight alone is enough — one rebuild,
+  // seeded from the highlight event, using the fresh ids.
   const uid = project.openImageUid
   if (uid) {
     const cur = settings.getTrackVisibility(uid, [valueName])
-    if (!cur[valueName]) settings.setTrackVisibility(uid, { ...cur, [valueName]: true })
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('cc.viewerOverlaysTick', `${uid}:${Date.now()}`)
+    if (!cur[valueName]) {
+      settings.setTrackVisibility(uid, { ...cur, [valueName]: true })
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('cc.viewerOverlaysTick', `${uid}:${Date.now()}`)
+      }
     }
   }
-
-  // 3. Highlight
-  viewerStore.setTrackHighlight({ imageUid, valueName, trackIds: [...trackIds] })
 
   // 4. Fit + jump — best effort. See TSV showInViewer for the design notes; the bbox is over
   // every requested track's points and t goes to the middle of the union window so the most
@@ -169,7 +185,12 @@ export async function showTracksInViewer(
   }
 
   const tracks = `${nTracks} track${nTracks === 1 ? '' : 's'}`
-  if (skipReason) log.info(`Highlighting ${tracks} — camera skipped: ${skipReason}.`, { source })
-  else log.info(`Highlighting ${tracks} — moved to t=${t}.`, { source })
+  // Ids are in the rail so a "Show highlighted different tracks than I picked" report can be
+  // pinned to a hand-off: compare the ids logged here against the ids logged by `readTrackSelection`.
+  const preview = trackIds.length <= 6 ? [...trackIds].join(', ')
+                                       : `${[...trackIds].slice(0, 6).join(', ')}, …`
+  const on = `on ${valueName || '(no vn)'}`
+  if (skipReason) log.info(`Highlighting ${tracks} (${preview}) ${on} — camera skipped: ${skipReason}.`, { source })
+  else log.info(`Highlighting ${tracks} (${preview}) ${on} — moved to t=${t}.`, { source })
   return true
 }

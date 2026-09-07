@@ -37,13 +37,7 @@ import CollapsibleSection from '../CollapsibleSection.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useFieldDraft } from '../../composables/useFieldDraft'
-import { useLogStore } from '../../stores/log'
-import { useProjectStore } from '../../stores/project'
-import { useSettingsStore } from '../../stores/settings'
-import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useViewerStore } from '../../stores/viewer'
-import { openViewerWindow } from '../../utils/viewerWindow'
-import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
@@ -53,17 +47,17 @@ import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
 import PopFamilySelect from './PopFamilySelect.vue'
 import type { SeriesTarget } from '../../plots/types'
-import { EMPTY_TRACK_SELECTION, type CanvasTrackSelection } from '../../lib/trackSelection'
+import type { CanvasTrackSelection } from '../../lib/trackSelection'
 import {
   issueKey, KIND_LABEL, trackRows, manualActions, undoLast, opDescription,
-  thresholdQuery, thresholdsChanged, THRESHOLD_FIELDS, selectionSummary, selectedTracks,
-  type TrackIssue, type TrackOp, type TrackThresholds, type TrackSelection,
+  thresholdQuery, thresholdsChanged, THRESHOLD_FIELDS,
+  type TrackIssue, type TrackOp, type TrackThresholds,
 } from '../../lib/trackCorrection'
 import { submitTrackOps } from '../../lib/trackOpsRun'
 import { useTrackOpsQueueStore, trackOpsKey } from '../../stores/trackOpsQueue'
 import { useCorrectionCockpitStore } from '../../stores/correctionCockpit'
 import type { TrackPathMap } from '../../plots/trackPaths'
-import { keyToAction, KEY_HINT, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
+import { keyToAction, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
 
 /** One entry of the grouped paths response — the timeline uses its own image's group. */
 interface PathsGroup {
@@ -83,10 +77,11 @@ import {
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  // THE CROSS-PANEL LINK. When the host canvas provides these, the selection lives on the CANVAS, so
-  // picking lanes here is the same act as choosing what the x/y track plot draws. Optional, because a
-  // host that does not offer them (a board slot) must still get a working panel — it then falls back
-  // to the panel's own state and simply talks to nobody.
+  // LEGACY WIRING kept only so canvas hosts that still pass these props do not throw.
+  // Selection is authoritative in `useCorrectionCockpitStore.state(trackOpsKey).selectedTracks`,
+  // not in a prop — see the note by `selected` / `setSelected` in the setup below. Both fields
+  // are ignored here; GatingPlots' `trackLink` continues to write its own canvas view-state
+  // fossil, harmless. Remove once the canvas wiring drops.
   trackSel?: CanvasTrackSelection
   setTrackSel?: (v: CanvasTrackSelection) => void
   // THE CANVAS'S POPULATION MANAGER drives which tracks this shows — the same `series` vocabulary the
@@ -140,20 +135,27 @@ const { options: familyOptions, popType } =
 const order = computed<LaneOrder>(() => (props.state.order as LaneOrder) ?? 'pair')
 const candidatesOnly = computed(() => !!props.state.candidatesOnly)
 const gapsOnly = computed(() => !!props.state.gapsOnly)
-// Only adopt the canvas selection when it is about THIS panel's segmentation — otherwise two
-// timelines on different label sets would highlight each other's ids (see lib/trackSelection.ts).
-const shared = computed(() => !!props.setTrackSel)
+// TRACK-LANE SELECTION LIVES IN THE COCKPIT STORE, keyed by `trackOpsKey(project, image,
+// valueName)` — the SAME key the ops queue uses. Both TSV (this timeline) and the cockpit floating
+// panel read AND write this one place, so `Cockpit.Read → TSV lanes light up` and `TSV lane click
+// → cockpit summary updates` compose without a mirror-watcher. Two-way by design; the timeline's
+// action row is retired for correction verbs (Phase 1c), so the cockpit is the authoring surface.
+//
+// The `trackSel` / `setTrackSel` props are kept for backward compat with GatingPlots' wiring but
+// no longer consulted by TSV — see the comment on the props' declaration. `state.sel` (the local
+// per-panel fallback for unshared hosts) is likewise inert; the shared store is authoritative.
+// Was: TSV owned `selected` off the canvas view-state and published to the cockpit via a watcher;
+// a cockpit-authored Read would set the store, TSV would then re-mount and its `immediate: true`
+// publisher would clobber the store with `[]` — "Read is a no-op in the cockpit". Dominik, 2026-09-07.
+const cockpitSelKey = computed(() => trackOpsKey(props.projectUid, imageUid.value, valueName.value))
 const selected = computed(() => {
-  if (!shared.value) return new Set(props.state.sel ?? [])
-  const sel = props.trackSel ?? EMPTY_TRACK_SELECTION
-  const mine = (!sel.imageUid || sel.imageUid === imageUid.value)
-            && (!sel.valueName || sel.valueName === valueName.value)
-  return new Set(mine ? sel.ids : [])
+  const k = cockpitSelKey.value
+  if (!k) return new Set<string>()
+  return new Set(cockpit.state(k).selectedTracks)
 })
 function setSelected(ids: string[]) {
-  // the scope travels WITH the ids — the receiving panel cannot reconstruct it
-  if (props.setTrackSel) props.setTrackSel({ imageUid: imageUid.value, valueName: valueName.value, ids })
-  else props.state.sel = ids
+  const k = cockpitSelKey.value
+  if (k) cockpit.setSelectedTracks(k, ids)
   // Clearing the LANE selection releases the viewer highlight too. A user's mental model here is
   // "these lanes ↔ what the viewer is showing" — leaving the highlight alone after Clear made the
   // viewer keep narrowing to tracks that were no longer selected, and the ribbons never came back.
@@ -369,12 +371,8 @@ watch(filtered, () => { if (win.value.offset !== (props.state.offset ?? 0)) prop
 // the knob of that detector." The DEFAULTS are never copied into TypeScript — the server reports what
 // it used and the panel seeds from that, so the measured numbers stay on the Julia constants where
 // they belong. Only what the user moved is sent.
-const log = useLogStore()
-// Which image the VIEWER holds, and the one canonical way to change it (`openViewerWindow` — pops
-// the browser viewer window on the target) — a track panel must not grow a second open path.
-const project = useProjectStore()
-const projectMeta = useProjectMetaStore()
-const settings = useSettingsStore()
+// Timeline no longer opens the viewer itself (all "act on viewer" verbs moved to the correction
+// cockpit); the viewer store is only read here for the highlight-summary readout in the footer.
 const viewerStore = useViewerStore()
 const serverThresholds = ref<TrackThresholds>({})
 const thr = computed<TrackThresholds>({
@@ -396,47 +394,17 @@ const knobDrafts = Object.fromEntries(
 
 // ── from viewer ───────────────────────────────────────────────────────────────
 //
-// The other half of "fix a track the detector missed": draw around it in the viewer rather than hunt
-// for its id. Drawing stores the enclosed labels as the transient viewer selection; `GET
-// /api/tracking/selection` resolves those to TRACKS, the vocabulary the ops speak.
-const viewerSel = ref<TrackSelection | null>(null)
-const viewerSummary = computed(() => selectionSummary(viewerSel.value))
-// What the viewer is currently narrowing to (independent of LANE selection). Scoped to this
-// panel's (imageUid, valueName) so a highlight authored elsewhere doesn't advertise here.
+// Draw / Read (arm the viewer's rectangle mode, resolve the pick to tracks) now live in the
+// Correction cockpit — the timeline is the diagnostic surface, the cockpit is the authoring one.
+// This block keeps only the READOUT the timeline draws in its footer: which tracks the viewer is
+// currently narrowing to, so the user sees the cross-panel link without having to look up at the
+// cockpit while their eyes are on the lanes.
 const viewerHighlightSummary = computed(() => {
   const hl = viewerStore.trackHighlight
   if (!hl || !hl.trackIds.length) return ''
   if (hl.imageUid !== imageUid.value || hl.valueName !== valueName.value) return ''
   return `Viewer: ${hl.trackIds.length} highlighted`
 })
-
-async function enterSelectMode() {
-  // Same reason as `showInViewer`: a region drawn on the image ON SCREEN would resolve against this
-  // panel's labels, which is only meaningful when they are the same image.
-  if (!(await ensureViewerImage())) return
-  settings.viewerSelectMode = 'select'
-  log.info('Drag a rectangle on the viewer, then press Read.', { source: 'tracks' })
-}
-
-/** Read what was drawn and SELECT those lanes — the timeline then shows when each of them existed. */
-async function readSelection() {
-  if (!props.projectUid || !imageUid.value) return
-  try {
-    const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}` +
-              `&valueName=${encodeURIComponent(valueName.value)}`
-    const r = await fetch(`/api/tracking/selection?${q}`)
-    if (!r.ok) return
-    viewerSel.value = await r.json() as TrackSelection
-    const t = selectedTracks(viewerSel.value).map(String)
-    if (t.length) {
-      setSelected(t)
-      // a drawn track can be outside the lane window — jump to the first one rather than select
-      // something the user cannot see
-      const i = filtered.value.findIndex(l => l.track === t[0])
-      if (i >= 0) props.state.offset = Math.max(0, i - 1)
-    }
-  } catch { /* nothing drawn is the common case, not an error */ }
-}
 
 // ── editing (Phase 2) ─────────────────────────────────────────────────────────
 //
@@ -469,14 +437,13 @@ watch(opsKey, k => {
   props.state.pending = undefined
 }, { immediate: true })
 
-// Publish this panel's selection / split-frame / untracked-detection pick to the shared correction
-// cockpit store, so the app-global cockpit floating panel can act on what the timeline sees. One-way
-// (timeline → cockpit) in Phase 1b — Phase 1c will make the store the source of truth in both
-// directions when the timeline's action row is removed. Guarded on a real key so we don't publish
-// state against a partly-resolved (image, valueName) that the queue would refuse anyway.
-watch([opsKey, selected], ([k, sel]) => {
-  if (k) cockpit.setSelectedTracks(k, [...sel])
-}, { immediate: true })
+// Publish this panel's split-frame / untracked-detection pick to the shared correction cockpit
+// store, so the app-global cockpit floating panel can act on what the timeline sees. Selection
+// itself is no longer PUBLISHED here — TSV reads AND writes it via `cockpit.state(cockpitSelKey)`
+// directly (see the note by `selected` / `setSelected`), so a publisher watcher would be a mirror
+// of a mirror. Split + detSelection stay TSV-local for now (Phase 1c did not migrate them; they
+// are viewport concerns that only make sense while the timeline is visible), so publishing them
+// TSV → cockpit is the one-way link the cockpit needs to read them.
 watch([opsKey, () => props.state.splitAt], ([k, f]) => {
   if (k) cockpit.setSplitFrame(k, (f ?? null) as number | null)
 }, { immediate: true })
@@ -886,49 +853,6 @@ function onClick(ev: MouseEvent) {
   if (hit.occupied && next.size === 1 && next.has(hit.track)) props.state.splitAt = hit.frame
 }
 
-/**
- * Point the viewer at THIS panel's image, if it is not there already.
- *
- * `false` when there is nothing to point: no viewer open, which is deliberately not force-launched —
- * the same rule the canvas's prev/next navigation follows ("don't force-launch viewer when it isn't
- * open"). Says so rather than failing three calls later inside the bridge.
- */
-async function ensureViewerImage(): Promise<boolean> {
-  if (!imageUid.value) return false
-  if (!project.openImageUid) {
-    log.info('Open this image in the viewer first.', { source: 'tracks' })
-    return false
-  }
-  if (project.openImageUid === imageUid.value) return true
-  openViewerWindow({
-    projectUid: projectMeta.current?.uid ?? '',
-    imageUid: imageUid.value,
-    valueName: valueName.value || undefined,
-  })
-  return true
-}
-
-/**
- * Show the selected tracks in the viewer, and fly the camera to the first one.
- *
- * Restores the pre-napari-retire behaviour that regressed in P9 slice 4 (commit 842d8d36 dropped
- * `showTracksInNapari` + `centreNapariOnTrack` without a browser-viewer equivalent). The two
- * primitives that make this work here:
- *   1. **Highlight** — `viewerStore.setTrackHighlight({imageUid, valueName, trackIds})` narrows
- *      the viewer's per-vn track source to just these ids via `filterPayloadByTracks`.
- *   2. **Focus**    — `buildFocusViewState(current, {t, cx, cy, cz})` + `setPendingViewState`
- *      flies the camera to the first selected track's first detection.
- *
- * Uses ONE fetch (paths?ids=<first>) + ONE fetch (geometry, for voxelUm µm→L0 pixel). No
- * timelines-side conversion of stepScale (it's a normalisation factor, not a voxel size).
- */
-async function showInViewer() {
-  const ids = [...selected.value].map(Number).filter(Number.isFinite)
-  if (!ids.length) return
-  await showTracksInViewer(props.projectUid, imageUid.value, valueName.value, ids, 'tracks')
-}
-
-
 /** Hover readout — which track, which frame, and whether the cell is even there. */
 const hover = ref('')
 function onMove(ev: MouseEvent) {
@@ -1064,39 +988,22 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
          @mouseleave="hover = ''" @wheel="onWheel" />
     <PlotSpinner v-if="loading" label="Loading tracks" />
 
-    <!-- Timeline canvas-affordances only. The correction verbs (Join / Split / Remove / Fix / Add)
-         and the queue tail (Undo / Apply) live in the Correction cockpit floating panel — one
-         authoring surface for tracks and (Phase 2) labels, so the two surfaces cannot disagree
-         about what's Joinable. This row keeps the viewer-brush pair (Draw / Read) and the
-         selection utilities (Show / Clear) because they act ON the canvas the user is looking at.
-         Hotkeys (Join / Split / Remove / Add / Undo / Apply) still work from here — the keydown
-         handler drives the same functions the cockpit does. -->
-    <div class="tsv-act cc-row">
-      <div class="cc-btn-group">
-        <button class="cc-btn cc-btn-bare cc-btn-dense"
-                v-tooltip.top="'Select tracks by dragging a rectangle in the viewer'"
-                @click="enterSelectMode">
-          <i class="pi pi-pencil" /> Draw
-        </button>
-        <button class="cc-btn cc-btn-bare cc-btn-dense"
-                v-tooltip.top="'Select the tracks inside the drawn region'"
-                @click="readSelection">Read</button>
-        <button class="cc-btn cc-btn-bare cc-btn-dense" :disabled="!selected.size"
-                v-tooltip.top="'Turn this segmentation\'s ribbons on in the viewer'"
-                @click="showInViewer"><i class="pi pi-eye" /> Show</button>
-        <button class="cc-btn cc-btn-bare cc-btn-dense" :disabled="!selected.size"
-                v-tooltip.top="`Clear the selection (${KEY_HINT.clearSel})`" @click="setSelected([])">
-          <i class="pi pi-times" />
-        </button>
-      </div>
-    </div>
+    <!-- Timeline is a DIAGNOSTIC surface (see the tracks, spot the issues); every AUTHORING verb
+         — Draw / Read (viewer-brush), Show (highlight in viewer), Clear, and the corrections
+         (Join / Split / Remove / Add) — lives in the Correction cockpit floating panel. One
+         authoring surface for tracks and (Phase 2) labels, so the two cannot disagree about what
+         is Joinable OR about which tracks are picked. Hotkeys (Join / Split / Remove / Add /
+         Undo / Apply / Clear) still work from here — the keydown handler drives the same
+         functions the cockpit does. Dominik, 2026-09-07 — the previous row put Draw/Read on both
+         surfaces which forced the user to run Read TWICE (once here to light the lanes, once in
+         the cockpit to feed Show), and then Show highlighted the wrong tracks because each
+         surface had its own idea of the current selection. -->
 
     <div class="tsv-foot cc-row">
       <!-- Persistent state slot: the answer to "did my click do anything". Hover no longer
            overwrites this — the transient hover readout lives in its own slot to the right. -->
       <span class="cc-muted cc-fs-2xs tsv-foot-state">{{ lastQueued || selSummary }}</span>
       <span v-if="hover" class="cc-muted cc-fs-2xs tsv-foot-hover">{{ hover }}</span>
-      <span v-if="viewerSummary" class="cc-muted cc-fs-2xs">{{ viewerSummary }}</span>
       <!-- When the viewer highlight is active, show it here — the release path is the Clear
            Selection X in the row above (which also clears the highlight). -->
       <span v-if="viewerHighlightSummary" class="cc-muted cc-fs-2xs">{{ viewerHighlightSummary }}</span>

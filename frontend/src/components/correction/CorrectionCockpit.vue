@@ -47,6 +47,8 @@ import { undoLast as undoLabel, opDescription as labelOpDescription,
 import { submitTrackOps } from '../../lib/trackOpsRun'
 import { submitLabelOps } from '../../utils/labelOpsRun'
 import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
+import { armViewerSelectMode, readTrackSelection } from '../../utils/viewer/trackSelectionFromViewer'
+import { selectedTracks as resolvedTracks } from '../../lib/trackCorrection'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -202,6 +204,34 @@ async function showInViewer(): Promise<void> {
   await showTracksInViewer(projectUid.value, imageUid.value, valueName.value, ids, 'cockpit')
 }
 
+/**
+ * Draw / Read — the viewer→tracks bridge. The COCKPIT is the sole authoring surface: Draw arms
+ * the viewer rectangle mode, Read resolves the pick to tracks and writes them to the shared
+ * cockpit store, Show reads back from the same store. The timeline (TrackSchemeView) reads AND
+ * writes the same store too, so a Cockpit Read immediately lights the TSV lanes and a TSV lane
+ * click immediately updates the cockpit summary. That symmetry is why Draw / Read are NOT
+ * duplicated on the timeline — a second copy running against a divergent selection state was
+ * the exact "Cockpit Read is a no-op" / "Show highlights different tracks" bug reported by
+ * Dominik on 2026-09-07.
+ */
+async function drawInViewer(): Promise<void> {
+  if (!imageUid.value) return
+  armViewerSelectMode('cockpit')
+}
+async function readFromViewer(): Promise<void> {
+  if (!projectUid.value || !imageUid.value || !valueName.value || !trackKey.value) return
+  const sel = await readTrackSelection({
+    projectUid: projectUid.value, imageUid: imageUid.value,
+    valueName: valueName.value, source: 'cockpit',
+  })
+  if (!sel) return
+  const ids = resolvedTracks(sel).map(String)
+  // We deliberately write EVEN AN EMPTY read to the store — a Read that resolved to zero tracks
+  // (all-untracked, or nothing picked) should clear a stale selection rather than leave the
+  // previous ids hanging under a summary that no longer matches what the viewer shows.
+  cockpit.setSelectedTracks(trackKey.value, ids)
+}
+
 function onUndo(): void {
   if (!pendingCount.value) return
   if (mode.value === 'labels') labelQueueStore.set(labelKey.value, undoLabel(labelQueueStore.get(labelKey.value)))
@@ -238,7 +268,21 @@ type ToolRow = {
 }
 
 const tracksTools = computed<ToolRow[]>(() => {
+  // Draw + Read + Show are the viewer-brush trio — kept first, in flow order (arm → read →
+  // highlight). The mutating verbs (Add / Join / Split / Remove) come after; they operate on the
+  // selection this trio populates.
   const rows: ToolRow[] = [{
+    key: 'draw', label: 'Draw', icon: 'pi-pencil',
+    blocked: imageUid.value ? '' : 'Open an image in the viewer first',
+    tooltip: 'Select tracks by dragging a rectangle in the viewer',
+    run: drawInViewer,
+  }, {
+    key: 'read', label: 'Read',
+    blocked: (projectUid.value && imageUid.value && valueName.value) ? ''
+             : 'Waiting for the viewer to publish an image',
+    tooltip: 'Resolve the drawn selection to tracks',
+    run: readFromViewer,
+  }, {
     key: 'show', label: 'Show', icon: 'pi-eye',
     blocked: trackScope.value.selectedTracks.length ? '' : 'Pick at least one track first',
     tooltip: 'Show the selected tracks in the viewer',
