@@ -7,6 +7,7 @@ import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore } from '../stores/viewProfiles'
 import { allNavGroups, type NavItem } from '../lib/navGroups'
 import { applyProfile } from '../utils/viewProfiles'
+import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { runningTaskCount } from '../utils/runningTasks'
 import { quitConfirmTooltip } from '../utils/quitWarning'
 import ProjectPanel from './ProjectPanel.vue'
@@ -42,18 +43,25 @@ onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfile
 // `ensureLoaded` fetched once at boot and never retried). Also refreshes the per-category cohortFuns.
 watch(() => projectMeta.current?.uid, uid => { if (uid) customModules.refresh() })
 
-// Track which groups are collapsed (all open by default)
-const collapsed = ref<Set<string>>(new Set())
-function toggleGroup(key: string) {
-  collapsed.value.has(key) ? collapsed.value.delete(key) : collapsed.value.add(key)
-  collapsed.value = new Set(collapsed.value)
-}
-function isOpen(key: string) { return !collapsed.value.has(key) }
+// Accordion: ONE nav group open at a time (Dominik, 2026-09-07 — was: all can be open, but
+// the sidebar was getting too long). Same rule + composable as the viewer window's control
+// accordion. On first-ever load, pick the first shown group so the sidebar isn't empty; after
+// that localStorage takes over (including an intentional "all closed" state).
+const { open: openGroup, isOpen, toggle: toggleGroup } = useSingleOpenSection('cc.sidebar.openGroup', '')
 
 // static pipeline groups + the dynamic custom-module group (when any new-category modules exist).
 // The catalogue itself lives in lib/navGroups.ts — the view-profile editor and the guide picker read
 // the SAME list, so nothing can offer a page this sidebar doesn't have.
 const allGroups = computed(() => allNavGroups(customModules.categories))
+
+// Open the first visible group on first-ever load — the accordion is empty otherwise, and a
+// blank sidebar reads as broken. A user who explicitly collapses everything ends up with '' in
+// localStorage, which is NOT null, so this only fires once (never overwriting a user's choice).
+watch(() => allGroups.value, gs => {
+  if (openGroup.value === '' && localStorage.getItem('cc.sidebar.openGroup') === null && gs.length) {
+    openGroup.value = gs[0].heading
+  }
+}, { immediate: true })
 
 // …then curated by the active VIEW PROFILE: an ordered subset of the above, so a user doing narrow
 // work isn't navigating 20 items they never touch. No profile ⇒ the implicit "All" ⇒ untouched.
@@ -143,37 +151,42 @@ function isNavDisabled(item: NavItem): boolean {
       </template>
     </div>
 
-    <!-- ── Viewer ──────────────────────────────────────────────────────────
-         The viewer controls are a floating dockable panel (see App.vue / FloatingPanel), not a
-         sidebar section. This is a prominent call-to-action button (it drives most viewer controls —
-         populations, tracks, colour-by — so it must be noticeable), not a dim group heading. -->
-    <button class="viewer-cta" data-guide="sidebar.viewerCta" :class="{ 'viewer-on': settings.viewerPanelOpen }"
-            @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
-            v-tooltip.right="'Viewer viewer controls: populations, tracks, colour-by'">
-      <i class="pi pi-sliders-h viewer-cta-icon" />
-      <span class="viewer-cta-title">Viewer controls</span>
-      <i :class="['pi', settings.viewerPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
-    </button>
-
-    <!-- ── Lab log ──────────────────────────────────────────────────────────
-         Per-project append-only analysis memory (you + Claude). Like the viewer, a floating panel
-         toggled here (see App.vue / LabLogPanel). -->
-    <button class="viewer-cta lablog-cta" data-guide="sidebar.labLogCta"
-            :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
-            style="margin-top: 0.4rem"
-            @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
-            v-tooltip.right="settings.labLogUnseen
-              ? ((settings.labLogUnseenKind === 'cecelia' ? 'Cecelia: ' : 'Claude noted: ') + settings.labLogUnseen)
-              : 'Lab log — analysis notes for this project (you + Claude)'">
-      <i class="pi pi-book viewer-cta-icon" />
-      <span class="viewer-cta-title">Lab log</span>
-      <!-- badge: Claude (sparkles) or Cecelia (bell, coloured by severity) added something while the
-           panel was closed (cleared on open) -->
-      <i v-if="settings.labLogUnseen"
-         :class="['pi', settings.labLogUnseenKind === 'cecelia' ? 'pi-bell' : 'pi-sparkles', 'lablog-badge']"
-         :style="labLogBadgeStyle" />
-      <i :class="['pi', settings.labLogPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
-    </button>
+    <!-- ── Floating-panel launchers ────────────────────────────────────────
+         Three icons in one row (Viewer / Correction / Lab log). Was: three stacked full-width
+         CTAs — replaced 2026-09-07 because the sidebar was getting too long. Each floating
+         panel keeps its identity colour: green (viewer), purple (correction), white (lab log).
+         The lab-log unseen badge overlays the icon so Claude/Cecelia notes still get noticed. -->
+    <div class="panel-launcher-row">
+      <button class="panel-launcher panel-launcher-viewer cc-btn cc-btn-bare"
+              data-guide="sidebar.viewerCta"
+              :class="{ on: settings.viewerPanelOpen }"
+              @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
+              v-tooltip.right="settings.viewerPanelOpen
+                ? 'Close viewer controls'
+                : 'Viewer controls — populations, tracks, colour-by'">
+        <i class="pi pi-sliders-h" />
+      </button>
+      <button class="panel-launcher panel-launcher-correction cc-btn cc-btn-bare"
+              :class="{ on: settings.correctionCockpitOpen }"
+              @click="settings.correctionCockpitOpen = !settings.correctionCockpitOpen"
+              v-tooltip.right="settings.correctionCockpitOpen
+                ? 'Close correction cockpit'
+                : 'Correction cockpit — join / split / remove tracks, edit labels'">
+        <i class="pi pi-wrench" />
+      </button>
+      <button class="panel-launcher panel-launcher-lablog cc-btn cc-btn-bare"
+              data-guide="sidebar.labLogCta"
+              :class="{ on: settings.labLogPanelOpen, 'has-unseen': !!settings.labLogUnseen }"
+              @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
+              v-tooltip.right="settings.labLogUnseen
+                ? ((settings.labLogUnseenKind === 'cecelia' ? 'Cecelia: ' : 'Claude noted: ') + settings.labLogUnseen)
+                : (settings.labLogPanelOpen ? 'Close lab log' : 'Lab log — analysis notes for this project (you + Claude)')">
+        <i class="pi pi-book" />
+        <i v-if="settings.labLogUnseen"
+           :class="['pi', settings.labLogUnseenKind === 'cecelia' ? 'pi-bell' : 'pi-sparkles', 'panel-launcher-badge']"
+           :style="labLogBadgeStyle" />
+      </button>
+    </div>
 
     <!-- ── Footer: Settings on the left; app controls (quit / restart) on the right ──────────
          Settings is an app preference, not a pipeline step, so it sits apart from the module nav
@@ -324,42 +337,52 @@ function isNavDisabled(item: NavItem): boolean {
 }
 .group-heading:hover { color: var(--cc-text); }
 .group-chevron { font-size: var(--cc-fs-3xs); opacity: 0.6; }
-/* Viewer controls: a prominent call-to-action (it drives most viewer controls, so it must stand out
-   from the dim nav headings — a bordered, filled button with a title + subtitle). */
-.viewer-cta {
+/* Floating-panel launcher row: three icon buttons (Viewer / Correction / Lab log), one row.
+   Each keeps its identity colour: green = viewer, purple = correction, white = lab log.
+   Was three stacked full-width CTAs; collapsed 2026-09-07 to shrink the sidebar footprint. */
+.panel-launcher-row {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.5rem 0.5rem 0.35rem;
+  flex-shrink: 0;                 /* pinned below the scroll region — never squeezed */
+}
+.panel-launcher {
+  flex: 1;
+  height: 32px;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;                 /* pinned below the scroll region — never squeezed */
-  width: calc(100% - 1rem);
-  margin: 0.6rem 0.5rem 0.2rem;
-  padding: 0.5rem 0.6rem;
+  justify-content: center;
+  position: relative;             /* the unseen badge overlays the icon */
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-md);
   cursor: pointer;
   color: var(--cc-text);
-  text-align: left;
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
-/* GREEN accent (matches the viewer's floating-panel border, --cc-viewer) so the viewer controls read
-   as their own distinct thing, apart from the purple form/accent chrome. */
-.viewer-cta:hover { border-color: #16a34a; background: #14261a; }
-.viewer-cta.viewer-on { background: #0f3d24; border-color: var(--cc-viewer); color: #bbf7d0; }
-.viewer-cta-icon { font-size: 0.95rem; color: var(--cc-viewer); flex-shrink: 0; }
-.viewer-cta-title { flex: 1; min-width: 0; font-size: var(--cc-fs-sm); font-weight: 700; }
-.viewer-cta-state { font-size: var(--cc-fs-md); opacity: 0.75; flex-shrink: 0; }
-/* badge: Claude added a lab-log note while the panel was closed */
-.lablog-badge { font-size: var(--cc-fs-md); color: var(--cc-accent); flex-shrink: 0; margin-left: 0.2rem; }
-.lablog-cta.lablog-unseen { border-color: var(--cc-accent); }
-/* Lab log CTA: a neutral/whiteish variant so it reads as its own thing, distinct from the coloured
-   Viewer control. Overrides the .viewer-cta base (defined above → these win on equal specificity). */
-.lablog-cta .viewer-cta-icon { color: var(--cc-text); }
-.lablog-cta:hover { border-color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06); }
-.lablog-cta.viewer-on {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.6);
-  color: #fff;
+.panel-launcher > i { font-size: 1rem; }
+/* Viewer — green (--cc-viewer). */
+.panel-launcher-viewer { color: var(--cc-viewer); }
+.panel-launcher-viewer:hover { border-color: #16a34a; background: #14261a; }
+.panel-launcher-viewer.on { background: #0f3d24; border-color: var(--cc-viewer); }
+/* Correction — purple (--cc-accent), matching the CorrectionCockpit's floating-panel border. */
+.panel-launcher-correction { color: var(--cc-accent); }
+.panel-launcher-correction:hover { border-color: var(--cc-accent-strong); background: var(--cc-accent-tint); }
+.panel-launcher-correction.on { background: var(--cc-accent-tint); border-color: var(--cc-accent); }
+/* Lab log — neutral white, matches its floating panel's --cc-guide border. */
+.panel-launcher-lablog { color: var(--cc-text); }
+.panel-launcher-lablog:hover { border-color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06); }
+.panel-launcher-lablog.on { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.6); }
+/* Unseen-note border tint: Claude/Cecelia wrote a lab-log note while the panel was closed. */
+.panel-launcher-lablog.has-unseen { border-color: var(--cc-accent); }
+.panel-launcher-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  font-size: var(--cc-fs-xs);
+  background: var(--cc-surface-1);
+  border-radius: 50%;
+  padding: 1px;
 }
 
 /* ── Nav items ────────────────────────────────────────────────────────────── */

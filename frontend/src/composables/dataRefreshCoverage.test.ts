@@ -53,6 +53,8 @@ const EXEMPT: Record<string, string> = {
   'tasks/ParamRenderer.vue': 'a form; its options come from image metadata, not from task output',
   'modules/ChainModule.vue': 'whiteboard wiring, not a plot surface',
   'modules/batchmovies/BatchMoviesPanel.vue': 'movie config, not a plot surface',
+  'composables/useTrackValueNames.ts':
+    'picks the tracked-segmentation label for a picker; the list changes on segmentation completion, not on task output — reload is manual + on (project/image) change',
 }
 
 const RAW = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>

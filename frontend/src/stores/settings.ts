@@ -212,6 +212,19 @@ export const useSettingsStore = defineStore('settings', () => {
   // the lab log is a floating dockable panel too (open/closed state, toggled from the sidebar).
   // Off by default (opt-in). See components/LabLogPanel.vue, docs/ai-assist/LAB-LOG.md.
   const labLogPanelOpen = ref(localStorage.getItem('cc.labLogPanelOpen') === 'true')
+  // the correction cockpit is a floating dockable panel too: mode radio (tracks/labels/review),
+  // tool palette that reprograms the viewer click, always-visible selection + fixed queue footer.
+  // Off by default (opt-in). See components/correction/CorrectionCockpit.vue.
+  const correctionCockpitOpen = ref(localStorage.getItem('cc.correctionCockpitOpen') === 'true')
+  // Which mode the cockpit is on. Persisted so the user's last mode is what they see on reopen.
+  const correctionCockpitMode = ref<'tracks' | 'labels' | 'review'>(
+    (['tracks', 'labels', 'review'] as const)
+      .includes((localStorage.getItem('cc.correctionCockpitMode') ?? '') as 'tracks' | 'labels' | 'review')
+      ? (localStorage.getItem('cc.correctionCockpitMode') as 'tracks' | 'labels' | 'review')
+      : 'tracks')
+  // Cockpit's wanted valueName — empty = "use the resolver's fallback". Persisted so a user picking
+  // a specific segmentation doesn't get bumped back to the default on remount.
+  const correctionCockpitValueName = ref<string>(localStorage.getItem('cc.correctionCockpitValueName') ?? '')
   // Account-managed MCP connectors the user hid in Settings → MCP connections (by name). Machine-wide
   // and permanent, not per project: these are claude.ai account connectors we cannot detect, and
   // plenty of institutes have none of them (LabArchives is site-hosted), so an undismissable row
@@ -573,6 +586,9 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
   watch(viewerSelectMode,         v => localStorage.setItem('cc.viewerSelectMode',         String(v)))
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
+  watch(correctionCockpitOpen,      v => localStorage.setItem('cc.correctionCockpitOpen',      String(v)))
+  watch(correctionCockpitMode,      v => localStorage.setItem('cc.correctionCockpitMode',      String(v)))
+  watch(correctionCockpitValueName, v => localStorage.setItem('cc.correctionCockpitValueName', v))
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
   watch(hiddenMcpAccounts, v => localStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
   watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
@@ -611,7 +627,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

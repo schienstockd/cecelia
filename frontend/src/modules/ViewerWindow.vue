@@ -34,6 +34,7 @@ import { useViewerStore } from '../stores/viewer'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { usePlotResize } from '../composables/usePlotResize'
+import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
   createVolumeRenderer, WebGpuUnavailable,
@@ -2792,11 +2793,11 @@ const keysBtn = ref<HTMLElement | null>(null)
  * put (View, Timepoint) are deliberately not in the accordion, because they are the ones you reach for
  * while looking at something else.
  *
- * '' is a real state — everything collapsed — so clicking an open section shuts it rather than being
- * a no-op. Persisted, like every other user-settable option.
+ * Uses the shared `useSingleOpenSection` composable — same rule as the app sidebar's nav-group
+ * accordion. '' is a real state (everything collapsed), persisted like every other user-settable
+ * option.
  */
-const openSection = ref(localStorage.getItem('cc.vw.section') ?? 'channels')
-watch(openSection, v => localStorage.setItem('cc.vw.section', v))
+const { open: openSection } = useSingleOpenSection('cc.vw.section', 'channels')
 // Re-wire the renderer's frame-timings callback when Debug opens/closes OR when the bench
 // toggle flips, so the query-set resolve path is only paid when someone is looking at the
 // readouts. The bench toggle also gates whether the arrays grow unbounded (save-blob) or roll.
