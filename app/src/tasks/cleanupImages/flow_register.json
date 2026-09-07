@@ -24,6 +24,14 @@
       "tip": "Channel used to estimate the per-pixel flow — use the brightest structured channel"
     },
     {
+      "key": "structuralChannels",
+      "label": "Structural channels",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Copied through as-is — select SHG/collagen or static channels to avoid warp artefacts"
+    },
+    {
       "key": "referenceMode",
       "label": "Reference frame",
       "type": "select",

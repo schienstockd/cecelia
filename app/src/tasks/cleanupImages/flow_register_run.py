@@ -15,13 +15,18 @@ stackAlign's "reference channel drives, others follow" pattern. Runs at
 ~0.15s per (t, z) so a typical (126 T × 6 Z) volume completes in ~2 minutes.
 
 Parameter contract (JSON written by Julia):
-  imPath          - absolute path to input .ome.zarr
-  imOutPath       - absolute path to write flow-registered .ome.zarr
-  registerChannel - int, 0-based channel index used to estimate flow
-  referenceMode   - "previous" | "first"
-  winsize         - int, Farneback averaging window
-  pyrLevels       - int, Farneback pyramid levels
-  maxShiftPx      - float, per-pixel flow-magnitude clamp
+  imPath             - absolute path to input .ome.zarr
+  imOutPath          - absolute path to write flow-registered .ome.zarr
+  registerChannel    - int, 0-based channel index used to estimate flow
+  structuralChannels - list[int], 0-based channel indices copied through unwarped
+                       (e.g. SHG/collagen — dense flow across cell-motion channels
+                       misidentifies its own signal as sample deformation and shears
+                       static structure; excluding structural channels from the warp
+                       stops that class of artefact at the source)
+  referenceMode      - "previous" | "first"
+  winsize            - int, Farneback averaging window
+  pyrLevels          - int, Farneback pyramid levels
+  maxShiftPx         - float, per-pixel flow-magnitude clamp
 """
 
 import cv2
@@ -56,6 +61,8 @@ def run(params):
     im_out_path     = params['imOutPath']
     register_channel = script_utils.channel_index(
         params.get('registerChannel'), 'registerChannel', 'flow_register.jl')
+    structural_channels = frozenset(script_utils.channel_indices(
+        params.get('structuralChannels'), 'structuralChannels', 'flow_register.jl'))
     reference_mode  = params.get('referenceMode', 'previous')
     winsize         = int(params.get('winsize', 17))
     pyr_levels      = int(params.get('pyrLevels', 5))
@@ -74,6 +81,9 @@ def run(params):
     log.log(f'>> image dims: {dim_utils.im_dim_order} {dim_utils.im_dim}')
     log.log(f'>> reference channel: {register_channel}, mode: {reference_mode}, '
             f'winsize={winsize}, pyr_levels={pyr_levels}, max_shift={max_shift_px} px')
+    if structural_channels:
+        log.log(f'>> structural channels (passthrough, no warp): '
+                f'{sorted(structural_channels)}')
 
     n_t = dim_utils.dim_val('T')
     n_c = dim_utils.dim_val('C')
@@ -133,6 +143,9 @@ def run(params):
                 over = mag > max_shift_px
 
                 for c in range(n_c):
+                    if c in structural_channels:
+                        level0[t, c, z] = im_dat[0][t, c, z]
+                        continue
                     mov = np.asarray(im_dat[0][t, c, z], dtype=np.float32)
                     warped = cv2.remap(
                         mov, map_x, map_y,
@@ -169,14 +182,15 @@ def run(params):
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
         doc = {
-            'dimOrder':      ''.join(dim_utils.im_dim_order),
-            'sourceShape':   [int(x) for x in im_dat[0].shape],
-            'referenceMode': reference_mode,
-            'winsize':       winsize,
-            'pyrLevels':     pyr_levels,
-            'maxShiftPx':    max_shift_px,
-            'flowMax':       [float(x) for x in flow_max],
-            'flowMean':      [float(x) for x in flow_mean],
+            'dimOrder':           ''.join(dim_utils.im_dim_order),
+            'sourceShape':        [int(x) for x in im_dat[0].shape],
+            'referenceMode':      reference_mode,
+            'winsize':            winsize,
+            'pyrLevels':          pyr_levels,
+            'maxShiftPx':         max_shift_px,
+            'structuralChannels': sorted(structural_channels),
+            'flowMax':            [float(x) for x in flow_max],
+            'flowMean':           [float(x) for x in flow_mean],
         }
         write_json_atomic(qc_out_path, doc)
         log.log(f'>> saved flow-register QC: {qc_out_path}')
