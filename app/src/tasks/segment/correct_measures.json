@@ -1,0 +1,9 @@
+{
+  "task": "segmentCorrectMeasures",
+  "fun_name": "segment.correct_measures",
+  "label": "Correct labels + measures",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "io",
+  "composite": ["segment.correct", "segment.measureLabels"]
+}

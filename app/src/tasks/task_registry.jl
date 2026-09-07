@@ -37,6 +37,10 @@ function _spec_path(::Branching)
     joinpath(@__DIR__, "segment", "branching.json")
 end
 
+function _spec_path(::SegmentCorrect)
+    joinpath(@__DIR__, "segment", "correct.json")
+end
+
 function _spec_path(::BayesianTracking)
     joinpath(@__DIR__, "tracking", "bayesian_tracking.json")
 end
@@ -180,6 +184,8 @@ _COMPOSITE_SPEC_PATHS["tracking.bayesian_track_measures"] =
 
 _COMPOSITE_SPEC_PATHS["tracking.correct_measures"] =
     joinpath(@__DIR__, "tracking", "correct_measures.json")
+_COMPOSITE_SPEC_PATHS["segment.correct_measures"] =
+    joinpath(@__DIR__, "segment", "correct_measures.json")
 
 _COMPOSITE_SPEC_PATHS["behaviour.hmm"] =
     joinpath(@__DIR__, "behaviour", "hmm.json")
@@ -195,6 +201,8 @@ function _fun_name_map()::Dict{String, CciaTask}
         "opticalFlow.trainSupportDenoise"   => TrainSupportDenoise(),
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
+        "segment.correct"                   => SegmentCorrect(),
+        "segment.correct_measures"          => CompositeTask("segment.correct_measures"),
         "tracking.bayesian_tracking"        => BayesianTracking(),
         "tracking.track_measures"           => TrackMeasures(),
         "tracking.correct"                  => TrackCorrect(),

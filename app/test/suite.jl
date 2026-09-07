@@ -16298,6 +16298,39 @@ end
     end
 end
 
+@testset "label correction — task wiring + param validation" begin
+    @test Cecelia._task_from_fun_name("segment.correct") isa Cecelia.SegmentCorrect
+    @test Cecelia._task_from_fun_name("segment.correct_measures") isa Cecelia.CompositeTask
+    @test isfile(Cecelia._spec_path(Cecelia.SegmentCorrect()))
+    @test haskey(Cecelia.COHORT_METRICS, "segment.correct")
+
+    # ops arrive as a Vector (REPL/API/chain) or a JSON string (the form). One parser.
+    ops = Cecelia.parse_label_ops([Dict("op" => "label.remove", "t" => 0, "ids" => [1])])
+    @test length(ops) == 1 && ops[1]["op"] == "label.remove"
+    @test Cecelia.parse_label_ops("[{\"op\":\"label.merge\",\"t\":0,\"ids\":[1,2],\"into\":1}]")[1]["op"] == "label.merge"
+
+    # EMPTY is legal — same rule as tracking.correct's spec-defaults check
+    for empty_val in (nothing, "", "[]", Any[])
+        @test isempty(Cecelia.parse_label_ops(empty_val))
+    end
+
+    # every malformed shape is a ParamValidationError at submit time
+    for bad in ("not json", "{\"op\":\"label.remove\"}",
+                [Dict("op" => "nope", "t" => 0, "ids" => [1])],
+                [Dict("op" => "label.remove")],                                 # no t/ids
+                [Dict("op" => "label.remove", "t" => 0, "ids" => Int[])],       # empty ids
+                [Dict("op" => "label.merge", "t" => 0, "ids" => [1])],          # single-id merge
+                [Dict("op" => "label.merge", "t" => 0, "ids" => [1, 2], "into" => 9)])   # into ∉ ids
+        @test_throws Cecelia.ParamValidationError Cecelia.parse_label_ops(bad)
+    end
+
+    # composite chains correct + measureLabels — obs carry-over between them is Decision 4b, tracked as
+    # a follow-up (see docs/todo/CORRECTION_PLAN.md → P2). Until it lands, downstream tasks that read
+    # dropped columns will see them missing after the composite runs.
+    spec = Cecelia._task_spec(Cecelia._task_from_fun_name("segment.correct_measures"))
+    @test spec["composite"] == ["segment.correct", "segment.measureLabels"]
+end
+
 @testset "label correction — journal sidecar" begin
     dir = mktempdir()
     @test Cecelia.label_corrections_path(dir, "memTom") ==

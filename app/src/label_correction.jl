@@ -156,7 +156,8 @@ end
 # One file per value_name, appended to per correction run. Same directory + shape as the tracking
 # journal, so a future viewer can render both together without a second reader.
 
-corrections_dir(task_dir::AbstractString) = joinpath(task_dir, "corrections")
+# `corrections_dir` is defined by `tracking/track_correction.jl`; both correction engines share the
+# same directory so a future combined-history viewer reads one place.
 label_corrections_path(task_dir::AbstractString, value_name::AbstractString) =
     joinpath(corrections_dir(task_dir), "labels_" * string(value_name) * ".json")
 

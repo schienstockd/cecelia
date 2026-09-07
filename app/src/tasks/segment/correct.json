@@ -1,0 +1,27 @@
+{
+  "task": "segmentCorrect",
+  "fun_name": "segment.correct",
+  "label": "Correct labels",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "io",
+  "qcPlot": "segmentation_qc",
+  "requires": { "scale": ["xy"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Labels",
+      "type": "valueNameSelection",
+      "field": "labels",
+      "default": "default",
+      "tip": "Which label set to correct"
+    },
+    {
+      "key": "labelOps",
+      "label": "Edits",
+      "type": "text",
+      "default": "[]",
+      "tip": "Supplied by the correction cockpit — a JSON list of edit ops"
+    }
+  ]
+}
