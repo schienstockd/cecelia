@@ -88,6 +88,9 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
         register_channel_idx = first(ch_sel)
     end
 
+    structural_idx = channel_indices(get(params, "structuralChannels", nothing), ch_names;
+                                      what = "structuralChannels")
+
     reference_mode = string(get(params, "referenceMode", "previous"))
     aggressiveness = string(get(params, "aggressiveness", "strong"))
     winsize        = get(FLOW_REGISTER_WINSIZE, aggressiveness, FLOW_REGISTER_WINSIZE["strong"])
@@ -97,20 +100,23 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_out_path")
     on_log("[INFO] Channel:     $register_channel_idx")
+    isempty(structural_idx) ||
+        on_log("[INFO] Structural: $(collect(structural_idx)) — passed through unwarped")
     on_log("[INFO] Reference:   $reference_mode  (aggressiveness=$aggressiveness → winsize=$winsize, " *
            "pyr_levels=$pyr_levels, max_shift=$max_shift_px px)")
 
     qc_out_path = joinpath(task_run_dir(img._dir), "flow_register_shifts.json")
 
     ok = run_py("tasks/cleanupImages/flow_register_run.py",
-        (; imPath          = im_path,
-           imOutPath       = im_out_path,
-           registerChannel = register_channel_idx,
-           referenceMode   = reference_mode,
-           winsize         = winsize,
-           pyrLevels       = pyr_levels,
-           maxShiftPx      = max_shift_px,
-           qcOutPath       = qc_out_path),
+        (; imPath             = im_path,
+           imOutPath           = im_out_path,
+           registerChannel     = register_channel_idx,
+           structuralChannels  = collect(structural_idx),
+           referenceMode       = reference_mode,
+           winsize             = winsize,
+           pyrLevels           = pyr_levels,
+           maxShiftPx          = max_shift_px,
+           qcOutPath           = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
