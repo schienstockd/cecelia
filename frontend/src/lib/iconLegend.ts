@@ -107,6 +107,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-reply', means: 'Correct what Claude wrote' },
       { icon: 'pi-external-link', means: 'Opens outside the app' },
       { icon: 'pi-github', means: 'Opens the repository' },
+      { icon: 'pi-megaphone', means: 'Call for Datasets — what we can build with your data' },
       { icon: 'pi-comments', means: 'Chat to Claude' },
       { icon: 'pi-comment', means: 'A note on an image' },
     ],
@@ -123,7 +124,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-sliders-h', means: 'Viewer controls, or how a canvas is laid out' },
       { icon: 'pi-thumbtack', means: 'Keep these controls visible' },
       { icon: 'pi-bookmark', means: 'Saved for later — a folder, or the viewer look' },
-      { icon: 'pi-database', means: 'Load slices on demand' },
+      { icon: 'pi-clipboard', means: 'A written plan — the correction plan' },
       { icon: 'pi-search-plus', means: 'Zoom' },
       { icon: 'pi-tag', means: 'Labels — channel names, or labels drawn on a plot' },
       { icon: 'pi-palette', means: 'Colour — palettes, colour-by options, cluster hues' },
@@ -175,7 +176,8 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-server', means: 'Which resource pool it runs in' },
       { icon: 'pi-box', means: 'Installed packages' },
       { icon: 'pi-desktop', means: 'The console' },
-      { icon: 'pi-wrench', means: 'A module you dropped in yourself' },
+      { icon: 'pi-database', means: 'The model vault — a trained denoise or flow model' },
+      { icon: 'pi-wrench', means: 'A tool you reach for — the correction cockpit, or a module you dropped in' },
       { icon: 'pi-book', means: 'The lab log and notebooks' },
       { icon: 'pi-list-check', means: 'Tasks' },
       { icon: 'pi-clone', means: 'The analysis board, or cascade the plots' },
@@ -197,6 +199,76 @@ export const ICON_LEGEND: IconFamily[] = [
     ],
   },
 ]
+
+// ─── The shelf ──────────────────────────────────────────────────────────────────────────────────
+// Every PrimeIcons 7 glyph the app has NOT claimed yet, grouped roughly by feel. Kept here (not in
+// ICON_LEGEND above — the ratchet would delete anything listed but unused) so a future author or
+// session can eyeball what is on the shelf BEFORE overloading an existing glyph. Grouped, not
+// sorted alphabetically, so families read together: `pi-caret-*` beside `pi-chevron-circle-*`, the
+// sort variants beside each other, the brand marks all in one row. Not exported — this is a note
+// for a human/model reading the file, not a runtime API. Verify with the installed stylesheet
+// (`node_modules/primeicons/primeicons.css`) before using one; the shelf can drift by a version.
+//
+// Arrows, carets and chevrons — variants of the getting-around family we already use:
+//   pi-angle-up  pi-angle-down  pi-angle-left  pi-angle-right  pi-angle-double-up
+//   pi-caret-up  pi-caret-down  pi-caret-left  pi-caret-right
+//   pi-chevron-circle-up  pi-chevron-circle-down  pi-chevron-circle-left  pi-chevron-circle-right
+//   pi-arrow-circle-down  pi-arrow-circle-left  pi-arrow-circle-right
+//   pi-arrow-up-left  pi-arrow-up-right  pi-arrow-down-right
+//   pi-arrow-up-right-and-arrow-down-left-from-center
+//   pi-arrow-down-left-and-arrow-up-right-to-center
+//   pi-directions-alt  pi-expand
+//
+// Sorting — a dozen variants sitting behind pi-sort-alt / pi-sort-amount-*:
+//   pi-sort  pi-sort-up  pi-sort-down  pi-sort-up-fill  pi-sort-down-fill  pi-sort-alt-slash
+//   pi-sort-amount-up  pi-sort-amount-down-alt
+//   pi-sort-alpha-up  pi-sort-alpha-down  pi-sort-alpha-up-alt  pi-sort-alpha-down-alt
+//   pi-sort-numeric-up  pi-sort-numeric-down  pi-sort-numeric-up-alt  pi-sort-numeric-down-alt
+//
+// Shapes and status — filled/outline variants and near-neighbours of the "Status" family:
+//   pi-circle-on  pi-circle-off  pi-plus-circle  pi-pause-circle
+//   pi-bookmark-fill  pi-filter-fill  pi-flag-fill  pi-star-half  pi-star-half-fill
+//   pi-info  pi-question  pi-verified  pi-shield  pi-bullseye
+//   pi-bell-slash  pi-unlock  pi-delete-left  pi-eject  pi-search-minus
+//
+// Editing / writing — variants of the pencil/file family:
+//   pi-pen-to-square  pi-file-edit  pi-file-check  pi-file-plus  pi-file-arrow-up
+//   pi-file-export  pi-file-import  pi-file-pdf  pi-file-excel  pi-file-word
+//   pi-folder-plus  pi-clipboard (now used)  pi-paperclip  pi-inbox
+//   pi-align-left  pi-align-right  pi-align-center  pi-align-justify  pi-list
+//   pi-tags  pi-hashtag  pi-code
+//
+// Media / playback — for a proper transport bar the movie player will grow into:
+//   pi-backward  pi-fast-backward  pi-fast-forward
+//   pi-step-backward  pi-step-forward  pi-step-backward-alt  pi-step-forward-alt
+//   pi-volume-up  pi-volume-down  pi-volume-off  pi-headphones  pi-microphone
+//
+// Time and calendar — anything a schedule / planner surface might want:
+//   pi-calendar  pi-calendar-clock  pi-calendar-plus  pi-calendar-minus  pi-calendar-times
+//   pi-stopwatch  pi-moon  pi-sun
+//
+// Devices and hardware — for a resource pool / hardware panel:
+//   pi-microchip  pi-microchip-ai  pi-mobile  pi-tablet
+//   pi-calculator  pi-print  pi-qrcode  pi-cloud  pi-cloud-upload  pi-cloud-download  pi-wifi
+//
+// People, places, awards — most of these are here for completeness, not for scientific UI:
+//   pi-user  pi-users  pi-user-edit  pi-user-plus  pi-user-minus  pi-id-card  pi-address-book
+//   pi-face-smile  pi-thumbs-up  pi-thumbs-down  pi-thumbs-up-fill  pi-thumbs-down-fill
+//   pi-heart  pi-heart-fill  pi-crown  pi-trophy  pi-graduation-cap
+//   pi-home  pi-building  pi-building-columns  pi-briefcase  pi-warehouse  pi-truck  pi-car
+//   pi-hammer  pi-shop  pi-shopping-bag  pi-shopping-cart
+//   pi-cart-plus  pi-cart-minus  pi-cart-arrow-down  pi-ticket  pi-gift  pi-receipt
+//   pi-money-bill  pi-credit-card  pi-wallet  pi-dollar  pi-euro  pi-pound  pi-turkish-lira
+//   pi-indian-rupee  pi-barcode  pi-mars  pi-venus  pi-language
+//
+// Messaging — near-neighbours of pi-comments / pi-send / pi-envelope:
+//   pi-envelope  pi-send  pi-at  pi-sign-in  pi-sign-out
+//
+// Odd ones out — the loose bag:
+//   pi-chart-pie  pi-sliders-v  pi-spinner-dotted  pi-fw
+//
+// Modifiers, NOT glyphs — never document these as icons:
+//   pi-spin (spin animation) — always paired with a glyph, e.g. `pi pi-spin pi-spinner`.
 
 /** Every glyph the legend explains. */
 export function legendGlyphs(): Set<string> {

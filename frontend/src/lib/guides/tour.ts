@@ -95,6 +95,13 @@ export const tourGuide: GuideDef = {
       text: 'Opens images in the viewer, with segmentations and tracks as layers you can toggle.',
     },
     {
+      anchor: 'sidebar.correctionCta',
+      placement: 'right',
+      title: 'The correction cockpit',
+      text: 'Join, split or remove tracks, and edit labels — the hand-tools for fixing what an automated run got wrong.',
+      bullets: ['A walkthrough for this is still being written.'],
+    },
+    {
       anchor: 'sidebar.labLogCta',
       placement: 'right',
       title: 'The lab log',

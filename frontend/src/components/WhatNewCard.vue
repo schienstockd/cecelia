@@ -15,6 +15,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useGuideStore } from '../stores/guide'
 import { guideById } from '../lib/guides'
 import CcToggle from './CcToggle.vue'
+import ComingSoonBadge from './ComingSoonBadge.vue'
 
 const props = defineProps<{ card: WhatNewCard; navigable?: boolean }>()
 const emit = defineEmits<{ 'nav-prev': []; 'nav-next': [] }>()
@@ -84,7 +85,9 @@ const tipsOptOut = computed({
         </button>
       </template>
     </div>
-    <div v-else-if="card.sketchAnimation" class="wn-sketch">Animation coming soon</div>
+    <div v-else-if="card.sketchAnimation" class="wn-sketch">
+      <ComingSoonBadge label="Animation coming soon" />
+    </div>
 
     <p v-if="card.description" class="wn-description">{{ card.description }}</p>
 

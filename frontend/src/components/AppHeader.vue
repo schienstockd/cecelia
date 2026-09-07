@@ -97,7 +97,7 @@ const statusTip: Record<string, string> = {
               v-tooltip.bottom="'Call for Datasets — capabilities we can build with your data'"
               aria-label="Call for Datasets"
               @click="openCallForDatasets()">
-        <i class="pi pi-database" />
+        <i class="pi pi-megaphone" />
       </button>
       <a class="help-link cc-btn cc-btn-bare cc-btn-icon" :href="CECELIA_ISSUES_URL"
          target="_blank" rel="noopener"

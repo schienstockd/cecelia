@@ -167,6 +167,7 @@ function isNavDisabled(item: NavItem): boolean {
         <i class="pi pi-sliders-h" />
       </button>
       <button class="panel-launcher panel-launcher-correction cc-btn cc-btn-bare"
+              data-guide="sidebar.correctionCta"
               :class="{ on: settings.correctionCockpitOpen }"
               @click="settings.correctionCockpitOpen = !settings.correctionCockpitOpen"
               v-tooltip.right="settings.correctionCockpitOpen

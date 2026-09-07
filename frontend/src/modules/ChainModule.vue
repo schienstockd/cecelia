@@ -16,6 +16,7 @@ import ChainPicnicNode from '../components/ChainPicnicNode.vue'
 import ChainLiveNode from '../components/ChainLiveNode.vue'
 import ChainLiveLabel from '../components/ChainLiveLabel.vue'
 import ChainQcNode from '../components/ChainQcNode.vue'
+import ComingSoonBadge from '../components/ComingSoonBadge.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
@@ -1495,7 +1496,7 @@ onActivated(async () => {
         <!-- Plots (collapsible) — drag plot nodes onto the canvas; not built yet -->
         <CollapsibleSection label="Plots" :default-open="false" max-height="50vh">
           <div class="palette-soon cc-muted">
-            Plot nodes — drop summary plots into the chain — coming soon.
+            Plot nodes — drop summary plots into the chain. <ComingSoonBadge />
           </div>
         </CollapsibleSection>
 
