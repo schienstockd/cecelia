@@ -36,6 +36,7 @@ import numpy as np
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.atomic_io import write_json_atomic
 from cecelia.utils.dim_utils import DimUtils
 
 
@@ -104,8 +105,8 @@ def run(params: dict):
 
     if not ops:
         log.log('[INFO] No ops — nothing to do.')
-        with open(result_file, 'w', encoding='utf-8') as f:
-            json.dump({'perOpPixels': [], 'nLabelsBefore': 0, 'nLabelsAfter': 0}, f)
+        write_json_atomic(result_file,
+                          {'perOpPixels': [], 'nLabelsBefore': 0, 'nLabelsAfter': 0})
         return
 
     # ── Open source and derive axes ─────────────────────────────────────────
@@ -178,15 +179,21 @@ def run(params: dict):
         # No pyramid to build — nscales=1. If we ever add multi-level, this is where
         # `write_multiscale_pyramid(group, level0, dim_utils, nscales, pchunks)` fires.
 
+        # Carry the source's valid box onto the staged store. A label correction never moves
+        # pixels — merge rewrites `src → into`, remove writes to 0 — so the geometry of "where
+        # real data lives" is identical, and dropping the box would make every downstream
+        # consumer treat the padded borders as data (that's the incident `carry_valid_box`
+        # exists for).
+        zarr_utils.carry_valid_box(labels_path, staging)
+
     log.log(f'>> {len(labels_before)} labels before → {len(labels_after)} after')
     log.log(f'>> per-op pixels: {per_op_pixels}')
 
-    with open(result_file, 'w', encoding='utf-8') as f:
-        json.dump({
-            'perOpPixels': per_op_pixels,
-            'nLabelsBefore': len(labels_before),
-            'nLabelsAfter':  len(labels_after),
-        }, f)
+    write_json_atomic(result_file, {
+        'perOpPixels': per_op_pixels,
+        'nLabelsBefore': len(labels_before),
+        'nLabelsAfter':  len(labels_after),
+    })
 
 
 if __name__ == '__main__':
