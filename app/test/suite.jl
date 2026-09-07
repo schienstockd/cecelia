@@ -400,6 +400,8 @@ end
     pt = joinpath(dir, "gcMemTom.pt")
     open(io -> write(io, "stub"), pt, "w")
     @test coastal_model_path("gcMemTom.pt", td) == pt
+    # Bare stem resolves too — picker shape (with or without `.pt`) roundtrips through the lookup.
+    @test coastal_model_path("gcMemTom", td) == pt
 
     # A checkpoint with no manifest still lists — it just falls back to coastal's defaults.
     bare = list_coastal_models(td)
@@ -446,6 +448,10 @@ end
     pt = joinpath(dir, "supMemTom.pt")
     open(io -> write(io, "stub"), pt, "w")
     @test Cecelia.denoise_model_path("supMemTom.pt", td) == pt
+    # Bare stem resolves too — the denoise picker sends stems (#828); the segmentation runner passed
+    # the stem straight to `denoise_model_path`, which used to look for `<dir>/supMemTom` and miss.
+    @test Cecelia.denoise_model_path("supMemTom", td) == pt
+    @test Cecelia.denoise_model_manifest("supMemTom", td) == Cecelia.denoise_model_manifest("supMemTom.pt", td)
 
     # A checkpoint with no manifest still lists — but the runner will refuse to load it.
     bare = Cecelia.list_denoise_models(td)
