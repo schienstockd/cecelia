@@ -31,6 +31,7 @@ import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
+import { useLogStore } from '../stores/log'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { usePlotResize } from '../composables/usePlotResize'
@@ -104,6 +105,7 @@ const settings = useSettingsStore()
 // task-preview store to feed into `/api/preview/run`, and reads back the active preview labels flag
 // so the labels slab URL flips to the scratch `<vn>__preview.ome.zarr` when a preview is showing.
 const viewerStore = useViewerStore()
+const logStore = useLogStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
@@ -1422,20 +1424,40 @@ function rebuildOverlays() {
   const hl = viewerStore.trackHighlight
   const hlActive = hl && hl.imageUid === imageUid && hl.trackIds.length > 0
   const hlSet = hlActive ? new Set(hl!.trackIds) : null
+  const hlVn = hlActive ? hl!.valueName : null
+  // Track ids are per-vn — the same integer means different tracks in different segmentations —
+  // so we ONLY narrow sources whose vn matches `hlVn`. For the per-vn base tracks that is the
+  // trackPayloads key; for cell-track and trackclust ribbons that is `popMgrVn`, since those
+  // come from the pop-manager payload for popMgrVn.
+  //
+  // Was: only the per-vn base tracks source was narrowed. When the user also had the "Show
+  // cell-track ribbons" (or the trackclust) toggle on, those additional ribbons kept rendering
+  // ALL their tracks unfiltered — a Show that picked 3 tracks then looked like "random tracks
+  // are highlighted" because the highlighted 3 were drawn on top of the full unfiltered
+  // gated-tracks layer. Dominik, 2026-09-07.
+  let hlKept = 0                 // cells retained by the highlight across all narrowed sources
+  let hlTotal = 0                // cells that would have rendered on those sources without highlight
+  let hlSources = 0              // sources the highlight touched (all three kinds counted together)
+  let hlFallback = false         // per-vn source's own fallback to full — see the note there
+  function narrowByHighlight(vn: string, payload: OverlayPayload,
+                             opts: { allowFallback: boolean }): OverlayPayload | null {
+    if (!hlSet || !hlVn || hlVn !== vn) return payload
+    const before = payload.nCells
+    const filtered = filterPayloadByTracks(payload, hlSet)
+    hlSources++; hlTotal += before; hlKept += filtered.nCells
+    if (filtered.nCells > 0) return filtered
+    // Per-vn base source ONLY falls back to full — a stale highlight there should not blank the
+    // ribbons ("all my tracks disappeared" was the pre-fallback bug). Cell-track / trackclust
+    // ribbons are secondary sources that the user opted into separately, so dropping their
+    // ribbon when the highlight zeroes it is the correct semantic — Show should NOT show a
+    // ribbon that has no highlighted track.
+    if (opts.allowFallback) { hlFallback = true; return payload }
+    return null
+  }
+
   for (const [vn, payload] of trackPayloads.value.entries()) {
-    let p = payload
-    if (hlSet && hl!.valueName === vn) {
-      const filtered = filterPayloadByTracks(payload, hlSet)
-      if (filtered.nCells > 0) {
-        p = filtered
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn('[trackHighlight] no cells matched — falling back to full payload', {
-          vn, trackIds: [...hlSet], sampleTrackIds: payload.cells.track?.slice(0, 5),
-        })
-      }
-    }
-    sources.push({ vn, payload: p, colour: overrides[vn] })
+    const p = narrowByHighlight(vn, payload, { allowFallback: true })
+    if (p) sources.push({ vn, payload: p, colour: overrides[vn] })
   }
   const popMgrPayload = overlays.value
   const popMgrVn = gatingCurrent.value.valueName || popMgrPayload?.valueName || ''
@@ -1448,10 +1470,12 @@ function rebuildOverlays() {
       if (!pop.show || !pop.labels?.length) continue
       if (!(pop.isTrack || pop.hasTracks)) continue
       if (hiddenTrackPops.value.has(pop.path)) continue
-      const filtered = filterPayloadByLabels(popMgrPayload, new Set(pop.labels))
-      if (!filtered.nCells) continue
+      const byLabels = filterPayloadByLabels(popMgrPayload, new Set(pop.labels))
+      if (!byLabels.nCells) continue
+      const p = narrowByHighlight(popMgrVn, byLabels, { allowFallback: false })
+      if (!p) continue
       const key = `${popMgrVn}::${pop.path}`
-      sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour,
+      sources.push({ vn: key, payload: p, colour: overrides[key] ?? pop.colour,
                      popColour: pop.colour })
     }
   }
@@ -1460,13 +1484,30 @@ function rebuildOverlays() {
     if (tcPayload) {
       for (const pop of tcPayload.pops ?? []) {
         if (!pop.show || !pop.labels?.length) continue
-        const filtered = filterPayloadByLabels(tcPayload, new Set(pop.labels))
-        if (!filtered.nCells) continue
+        const byLabels = filterPayloadByLabels(tcPayload, new Set(pop.labels))
+        if (!byLabels.nCells) continue
+        const p = narrowByHighlight(popMgrVn, byLabels, { allowFallback: false })
+        if (!p) continue
         const key = `${popMgrVn}::trackclust::${pop.path}`
-        sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour,
+        sources.push({ vn: key, payload: p, colour: overrides[key] ?? pop.colour,
                        popColour: pop.colour })
       }
     }
+  }
+  // Surface the highlight's actual outcome to the log rail — the "Highlighting N tracks"
+  // message from showTracksInViewer.ts is the INTENT; this is what the renderer actually kept.
+  // Kept behind `hlSources > 0` so an unrelated redraw is silent; short (single sentence) so
+  // it lives in the rail without churn. Fires once per redraw where the highlight was active,
+  // by design — the rebuild happens on the events that matter (dataset change, highlight
+  // change, visibility change), not per frame.
+  if (hlSources > 0) {
+    logStore.info(hlFallback
+      ? `Highlight kept ${hlKept}/${hlTotal} cell${hlTotal === 1 ? '' : 's'} on ${hlVn}` +
+        ` across ${hlSources} source${hlSources === 1 ? '' : 's'} — one source had no match` +
+        ` and fell back to full.`
+      : `Highlight kept ${hlKept}/${hlTotal} cell${hlTotal === 1 ? '' : 's'} on ${hlVn}` +
+        ` across ${hlSources} source${hlSources === 1 ? '' : 's'}.`,
+      { source: 'viewer' })
   }
   if (sources.length) {
     const result = buildMultiTrackBuffer(sources, meta.value, PALETTES.cecelia, trackColorMode.value)

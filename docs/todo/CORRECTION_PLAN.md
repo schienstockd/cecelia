@@ -359,10 +359,40 @@ Both from `app/src/label_props.jl:657-692`:
   whose default cannot be submitted does not fit the framework.
   **Not built:** an authoring surface for an op the DETECTOR did not suggest — see P4d below. The
   `text` widget in the spec is a stopgap, not the authoring path.
-- **P2 — `segment.correct`.** Three separable pieces, in order of risk:
-  1. the `editable` load mode in `show_labels` (2b) — smallest, and testable on its own;
-  2. a bridge command to hand the edited layer back (none exists today);
-  3. the staged store write + re-measure + **obs carry-over** (4b), which is the real work.
+- **P2 — `segment.correct`. ✅ MOSTLY BUILT** (`feat/correction-cockpit-labels`). Design pivoted
+  from napari-native paint tools to the browser correction cockpit — napari is being dropped
+  (memory: `project_napari_being_dropped`), so Decision 2's "napari is the editing surface" is
+  dead, and pieces 1/2 of the old three-item plan (`editable` load mode + bridge command) are
+  moot with it. The engine half stands:
+  1. **✅ Engine** — `app/src/label_correction.jl`: op validation, `build_rewrite` (per-t fold
+     with chain collapse), journal I/O parallel to tracks (`corrections/labels_{vn}.json`),
+     metrics + QC. Pure, 35 assertions in `app/test/suite.jl`.
+  2. **✅ Task shell** — `app/src/tasks/segment/correct.{jl,json}` mirrors
+     `tracking/correct.{jl,json}`: `parse_label_ops`, spec-through-invoke validation, journal
+     write, QC banking with per-op pixel counts.
+  3. **✅ Python runner** — `app/src/tasks/segment/correct_run.py`: opens the labels zarr,
+     applies ops op-by-op per touched frame (preserves per-op pixel accuracy vs the folded
+     rewrite), stages via `zarr_utils.staged_store` + `store_compressor('labels')`, errors on
+     multi-level input (Decision 2b lives on).
+  4. **✅ Composite** — `segment.correct_measures` chains `segment.correct` +
+     `segment.measureLabels`. Registry + cohort-metrics wired.
+  5. **✅ Cockpit surface** — `frontend/src/components/correction/CorrectionCockpit.vue`
+     Labels mode: viewer pick-cell → transient pop → Merge / Remove verbs at the viewer's
+     current t → queue → Apply through the composite. Frontend trio
+     (`lib/labelCorrection.ts`, `stores/labelOpsQueue.ts`, `utils/labelOpsRun.ts`) shares the
+     shape with the Julia validator; 9 new tests.
+  6. **❌ Obs carry-over (Decision 4b) — REAL GAP.** The composite runs correct + measureLabels
+     but does not snapshot + restore obs across the re-measure. Every `live.*` obs column
+     therefore drops for edited rows; downstream tasks that read them see missing values.
+     The plan's Decision 4b sketch stands — snapshot before `segment.correct`, add_obs +
+     drop_obs stale after `segment.measureLabels` — as a third small task inserted into the
+     composite (`segment.correct.carryOver`). Not shipped this pass so P2 could ship the
+     usable Merge / Remove loop first; users chaining the composite today will find labelProps
+     without `live.*` for touched cells until this lands.
+
+  Also **not built:** the Split verb (needs a raster brush → Phase 4), the invalidation
+  reporting surface (Decision 5 — half-covered by the correction task dropping its own stale
+  cols, but the SEPARATE artefact list is P3). See P3 below.
 - **P3 — invalidation surface. NOT BUILT.** Decision 5, for both tasks, plus the QC findings.
   `tracking.correct` handles 4b's half (it drops stale `live.*` obs from the cell table itself), but
   nothing reports the SEPARATE artefacts that now predate the correction — `{vn}__tracks.h5ad`, cluster

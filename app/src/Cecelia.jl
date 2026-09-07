@@ -121,6 +121,12 @@ export apply_track_ops!, apply_track_op!, renumber_cell_ids!, next_track_id, tra
 export TRACK_OP_KINDS, TRACK_LINEAGE_OBS, TRACK_CORRECTION_OBS, MIN_USEFUL_TRACK_LENGTH
 export corrections_dir, corrections_path, load_corrections, append_corrections!
 export track_correction_metrics, track_correction_qc_findings, TRACK_CORRECTION_WARN_FRAC
+# manual label correction (docs/todo/CORRECTION_PLAN.md, P2). Peers of the tracking exports above;
+# the array-mutating apply is Python-side (per Decision 2b), so Julia exposes op validation, the
+# rewrite-table builder, the journal, and QC banking.
+export LABEL_OP_KINDS, validate_label_op, build_rewrite
+export label_corrections_path, load_label_corrections, append_label_corrections!
+export label_correction_metrics, label_correction_qc_findings, LABEL_CORRECTION_WARN_FRAC
 # finding what needs correcting — the triage worklist (old R had no equivalent)
 export TrackIssue, find_track_issues, track_issues_for, issue_to_dict
 export TRACK_GAP_MAX_FRAMES, TRACK_GAP_STEPS, TRACK_JUMP_FACTOR, TRACK_JUMP_QUANTILE
@@ -168,7 +174,7 @@ export CellposeSegment
 export CoastalSegment, coastal_models_for_python
 export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
 export flow_model_filename
-export MeasureLabels
+export MeasureLabels, SegmentCorrect, parse_label_ops
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
@@ -280,6 +286,9 @@ include("tasks/param_validators.jl")
 # algorithm-agnostic segmentation label-store conventions shared by every segmentation task —
 # after task.jl (uses the `LiveOutput` trait type), before the segment/ tasks that call it
 include("segmentation.jl")
+# manual label correction — the pure ops engine, its journal, and its QC. Peer to
+# `tracking/track_correction.jl`; docs/todo/CORRECTION_PLAN.md, P2.
+include("label_correction.jl")
 include("tasks/testTasks/image_task.jl")
 include("tasks/testTasks/set_task.jl")
 include("tasks/testTasks/incremental_plot_task.jl")
@@ -308,6 +317,7 @@ include("tasks/opticalFlow/train.jl")
 include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
+include("tasks/segment/correct.jl")     # manual label correction — pairs with `label_correction.jl`
 include("tasks/tracking/bayesian_tracking.jl")
 include("tasks/tracking/track_measures.jl")
 include("tasks/tracking/correct.jl")

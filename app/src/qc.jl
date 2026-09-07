@@ -142,6 +142,11 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "{count} track(s) below {min} timepoints",
         long  = "Splitting left tracks shorter than tracking's own minimum — join them or remove them."),
 
+    # manual label correction (label_correction_qc_findings)
+    "correction.labels_large_share_edited" => (
+        short = "{pct}% of labels hand-corrected",
+        long  = "This much correction points at the segmentation parameters — revisit those and re-segment instead."),
+
     # clustering (cluster_qc_findings)
     "clustering.single_cluster" => (
         short = "Only one cluster found",
