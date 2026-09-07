@@ -229,7 +229,10 @@ printf '%s\n' "$SCOPE"       > "$INSTALL_DIR/.cecelia-scope"
 say "Installed: $PROVENANCE ($SCOPE scope)"
 
 # ── Launcher ───────────────────────────────────────────────────────────────────
-ICON="$INSTALL_DIR/frontend/dist/favicon.svg"
+# 256-px PNG rather than an SVG — a handful of older Linux desktop environments still
+# don't parse SVG icons in .desktop entries reliably. Source: frontend/public/feijoa.svg,
+# regenerated via scripts/regen-icons.sh. See docs/todo/DESKTOP_ICON_PLAN.md.
+ICON="$INSTALL_DIR/frontend/dist/icons/cecelia-256.png"
 
 if [ "$SCOPE" = "system" ]; then
   # A wrapper any account runs: it exports the shared runtime env so `pixi run app` finds the shared
@@ -263,14 +266,33 @@ EOF
     Darwin)
       # macOS is multi-user too: put the launcher at the top of /Applications (all-users, root-owned,
       # world-executable) rather than buried inside the install dir, mirroring the Linux all-users
-      # /usr/share/applications entry. Points at the shared-runtime wrapper.
-      CMD="/Applications/Cecelia.command"
-      cat > "$CMD" <<EOF
+      # /usr/share/applications entry. Minimal .app bundle (not a bare .command) so Finder + Dock
+      # pick up the feijoa icon via CFBundleIconFile. See docs/todo/DESKTOP_ICON_PLAN.md.
+      # NB: .github/workflows/verify-macos.yml mirrors this block — keep them in sync.
+      APP="/Applications/Cecelia.app"
+      rm -rf "/Applications/Cecelia.command" "$APP"   # migrate away from the old .command; idempotent
+      mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+      cat > "$APP/Contents/MacOS/cecelia" <<EOF
 #!/bin/sh
 exec "$LAUNCH"
 EOF
-      chmod 755 "$CMD"
-      say "Installed /Applications/Cecelia.command — any user can double-click to launch."
+      chmod 755 "$APP/Contents/MacOS/cecelia"
+      cp "$INSTALL_DIR/frontend/dist/icons/cecelia.icns" "$APP/Contents/Resources/cecelia.icns"
+      cat > "$APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Cecelia</string>
+  <key>CFBundleDisplayName</key><string>Cecelia</string>
+  <key>CFBundleIdentifier</key><string>org.cecelia.launcher</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>cecelia</string>
+  <key>CFBundleIconFile</key><string>cecelia.icns</string>
+</dict></plist>
+PLIST
+      touch "$APP"    # nudge LaunchServices to refresh the icon cache on re-install
+      say "Installed $APP — any user can double-click to launch."
       ;;
   esac
   say "Done (system-wide). Any user can launch Cecelia; updates are admin-only (re-run this as root)."
@@ -291,14 +313,33 @@ EOF
       say "Installed a 'Cecelia' entry in your application menu."
       ;;
     Darwin)
+      # Minimal .app bundle (not a bare .command) so Finder + Dock pick up the feijoa icon via
+      # CFBundleIconFile. See docs/todo/DESKTOP_ICON_PLAN.md.
       mkdir -p "$HOME/Applications"
-      CMD="$HOME/Applications/Cecelia.command"
-      cat > "$CMD" <<EOF
+      APP="$HOME/Applications/Cecelia.app"
+      rm -rf "$HOME/Applications/Cecelia.command" "$APP"   # migrate away from the old .command; idempotent
+      mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+      cat > "$APP/Contents/MacOS/cecelia" <<EOF
 #!/bin/sh
 cd "$INSTALL_DIR" && exec "$PIXI" run app
 EOF
-      chmod +x "$CMD"
-      say "Installed ~/Applications/Cecelia.command — double-click to launch."
+      chmod +x "$APP/Contents/MacOS/cecelia"
+      cp "$INSTALL_DIR/frontend/dist/icons/cecelia.icns" "$APP/Contents/Resources/cecelia.icns"
+      cat > "$APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Cecelia</string>
+  <key>CFBundleDisplayName</key><string>Cecelia</string>
+  <key>CFBundleIdentifier</key><string>org.cecelia.launcher</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>cecelia</string>
+  <key>CFBundleIconFile</key><string>cecelia.icns</string>
+</dict></plist>
+PLIST
+      touch "$APP"    # nudge LaunchServices to refresh the icon cache on re-install
+      say "Installed $APP — double-click to launch."
       ;;
   esac
   say "Done. Launch Cecelia from your menu, or run:  cd \"$INSTALL_DIR\" && \"$PIXI\" run app"

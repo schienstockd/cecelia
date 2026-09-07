@@ -227,6 +227,9 @@ cd /d "$InstallDir" && "$Pixi" run app
   $Shortcut = $Shell.CreateShortcut($Lnk)
   $Shortcut.TargetPath       = $Launch
   $Shortcut.WorkingDirectory = $InstallDir
+  # Feijoa icon on the shortcut. Standalone .ico (not pixi.exe's embedded icon) so the shortcut
+  # doesn't depend on pixi's own resources. See docs/todo/DESKTOP_ICON_PLAN.md.
+  $Shortcut.IconLocation     = (Join-Path $InstallDir 'frontend\dist\icons\cecelia.ico')
   $Shortcut.Save()
   Say "Installed an all-users 'Cecelia' Start Menu shortcut. Updates are admin-only (re-run this elevated)."
 } else {
@@ -236,6 +239,7 @@ cd /d "$InstallDir" && "$Pixi" run app
   $Shortcut.TargetPath       = $Pixi
   $Shortcut.Arguments        = 'run app'
   $Shortcut.WorkingDirectory = $InstallDir
+  $Shortcut.IconLocation     = (Join-Path $InstallDir 'frontend\dist\icons\cecelia.ico')
   $Shortcut.Save()
   Say "Installed a 'Cecelia' Start Menu shortcut."
 }
