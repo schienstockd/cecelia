@@ -710,7 +710,7 @@ to be true, and neither announces itself when broken:
 Gating on track properties (one point per track) is a first-class **`track` pop_type**, wired all
 the way from the per-track store through the API to a dedicated Tracking-module canvas and to
 ribbon rendering in the browser viewer. Ports R `tracksInfo`. Source plan (kept as a record of the
-design, not a spec of what is): [`docs/todo/plotting-canvas-and-track-df.md`](todo/plotting-canvas-and-track-df.md),
+design, not a spec of what is): [`docs/todo/PLOTTING_CANVAS_AND_TRACK_DF_PLAN.md`](todo/PLOTTING_CANVAS_AND_TRACK_DF_PLAN.md),
 Phase 3 shipped 2026-08-20.
 
 - **`track_props` (`app/src/tracking/track_props.jl`).** Compute-on-read per-track table keyed by

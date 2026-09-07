@@ -134,7 +134,7 @@ For how these actually work, read the permanent `docs/<AREA>.md`. A built plan d
 | [`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md) | wired | The `feijoa` sketch repo behind tip cards; git-dep + conditional Vite alias |
 | [`MOVIE_SEGMENTATION_AUDIT.md`](MOVIE_SEGMENTATION_AUDIT.md) | (a)+(b) BUILT (2026-08-08) | Audit record of what was wrong with movie segmentation overlays |
 | [`TASK_DATA_REFRESH_PLAN.md`](TASK_DATA_REFRESH_PLAN.md) | BUILT (confirmed 2026-08-20) | Task-completion refresh without per-plot reload buttons; napari reloads data only. Plot refresh and napari reload stay separate toggles |
-| [`plotting-canvas-and-track-df.md`](plotting-canvas-and-track-df.md) | BUILT (confirmed 2026-08-20) | Plotting canvas + track-property gating (gate on track measures, one point per track) |
+| [`PLOTTING_CANVAS_AND_TRACK_DF_PLAN.md`](PLOTTING_CANVAS_AND_TRACK_DF_PLAN.md) | BUILT (confirmed 2026-08-20) | Plotting canvas + track-property gating (gate on track measures, one point per track) |
 | [`ONBOARDING_PLAN.md`](ONBOARDING_PLAN.md) | BUILT (confirmed 2026-08-20) | First-launch setup wizard removing the `custom.toml` wall; `config_dir()` is the one resolver it uses |
 | [`NOTEBOOK_PLAYGROUND_PLAN.md`](NOTEBOOK_PLAYGROUND_PLAN.md) | BUILT (confirmed 2026-08-20) | Pluto notebooks as the structured home for downstream analysis. As-built: `docs/NOTEBOOKS.md` |
 | [`ANIMATION_PLAN.md`](ANIMATION_PLAN.md) | BUILT — A–G + F1/F2 + Phase H all done (2026-07-24) | Publication figures and movies: channel layers, colours, tracks, title cards, on the shared snapshot foundation |
