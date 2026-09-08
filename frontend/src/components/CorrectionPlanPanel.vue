@@ -8,7 +8,7 @@
   "unsaved". Picking a card saves plan.json in one round-trip. A `stale` marker fires when the
   image's `saturationFingerprint` no longer matches the sidecar (a re-import happened).
 
-  The card row is a `CorrectionCardPicker` (2×2 grid of image-face tiles with a Custom escape
+  The card row is a `CorrectionCardPicker` (single row of image-face tiles with a Custom escape
   row below) rather than a pill list, because the card names ("Resonance", "Galvo") are
   scanner-first while users think image-first — recognition beats recall. Figures live in
   `tasks/cardVis.ts` (pure module, testable).
