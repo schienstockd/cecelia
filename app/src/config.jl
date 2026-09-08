@@ -201,10 +201,9 @@ rebuild. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
 function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
     out = NamedTuple[]
     for (m, label) in BUILTIN_CELLPOSE_MODELS
-        push!(out, (name = m, label = label, source = "builtin"))
+        push!(out, (name = m, stem = vault_model_stem(m), label = label, source = "builtin"))
     end
     seen = Set{String}(String(m.name) for m in out)
-    # user drop-ins first so they shadow bundled files of the same name (matches resolver order)
     user_dir    = cellpose_models_dir(dev_dir)
     bundled_dir = joinpath(@__DIR__, "..", "..", "models", "cellposeModels")
     for (dir, tag) in ((user_dir, "user"), (bundled_dir, "bundled"))
@@ -213,7 +212,8 @@ function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{
             startswith(name, ".") && continue
             isfile(joinpath(dir, name)) || continue
             name in seen && continue
-            push!(out, (name = name, label = "$(name) ($(tag))", source = tag))
+            push!(out, (name = name, stem = vault_model_stem(name),
+                        label = "$(name) ($(tag))", source = tag))
             push!(seen, name)
         end
     end
@@ -228,6 +228,15 @@ end
 # `nothing` because the file on disk is `supp.MERTK.pt`.
 #
 # Absolute paths pass through (a REPL/test caller can point at a checkpoint outside the vault).
+
+# Strip ONLY the `.pt` suffix — `splitext` would split at every internal dot, collapsing e.g. a
+# perChannel bundle folder named `supp.small` to `supp` and losing the picker → resolver round-trip
+# (2026-09-08 report). Bundle names have no extension and pass through unchanged. The `api` layer's
+# `vault_model_stem` in `api/src/vault_api.jl` is the identical helper — that module isn't in this
+# Julia module's namespace, so a two-line duplicate on the app side is cheaper than a cross-module
+# dep just for a stem strip. Same rule in both; do NOT diverge them.
+vault_model_stem(name::AbstractString) =
+    endswith(String(name), ".pt") ? String(name)[1:end-3] : String(name)
 
 function vault_model_path(dir::AbstractString, name::AbstractString)::Union{String,Nothing}
     s = strip(String(name))
@@ -318,9 +327,9 @@ function list_coastal_models(dev_dir::Union{String,Nothing} = nothing)::Vector{N
         # Label carries the one thing that decides whether a model fits an image: what it was
         # trained on. Kept to a phrase — see docs/ui/COPY.md.
         ch = get(manifest, "channelName", nothing)
-        stem = first(splitext(name))
+        stem = vault_model_stem(name)
         label = isnothing(ch) || isempty(string(ch)) ? stem : "$(stem) ($(ch))"
-        push!(out, (name = name, label = label, source = "user", manifest = manifest))
+        push!(out, (name = name, stem = stem, label = label, source = "user", manifest = manifest))
     end
     out
 end
@@ -338,7 +347,7 @@ The `models` namespace is the odd one out — **global**, not per image (VALUE_N
 this takes no image and its suggestions cannot ride the image payload.
 """
 flow_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
-    String[first(splitext(m.name)) for m in list_coastal_models(dev_dir)]
+    String[m.stem for m in list_coastal_models(dev_dir)]
 
 # ── Denoise (SUPPORT) models ───────────────────────────────────────────────────
 # The same drop-in vault as coastal, one directory over: `<config_dir>/models/denoiseModels/`.
@@ -403,8 +412,8 @@ function list_denoise_models(dev_dir::Union{String,Nothing} = nothing)::Vector{N
         # `joinpath(dir, m.name)` still finds the right thing without a kind-aware branch.
         # `.kind` is exposed so consumers that DO need to differentiate (delete, rename, size)
         # do not have to re-inspect the disk.
-        stem, mode, manifest = if isfile(full) && last(splitext(name)) == ".pt"
-            (first(splitext(name)), :pooled, denoise_model_manifest(name, dev_dir))
+        stem, mode, manifest = if isfile(full) && endswith(name, ".pt")
+            (vault_model_stem(name), :pooled, denoise_model_manifest(name, dev_dir))
         elseif isdir(full)
             resolved = denoise_model_resolve(name, dev_dir)
             isnothing(resolved) && continue
@@ -424,7 +433,7 @@ function list_denoise_models(dev_dir::Union{String,Nothing} = nothing)::Vector{N
         else
             isnothing(joined) ? stem : "$(stem) ($(joined))"
         end
-        push!(out, (name = name, label = label, source = "user",
+        push!(out, (name = name, stem = stem, label = label, source = "user",
                     manifest = manifest, kind = mode))
     end
     out
@@ -434,10 +443,12 @@ end
     denoise_model_names(dev_dir = nothing) -> Vector{String}
 
 The denoise model names already in the vault, as stems — the value the training task's `modelName`
-field holds. Built on `list_denoise_models` so there is one enumeration of the vault.
+field holds. Built on `list_denoise_models` so there is one enumeration of the vault. Uses
+`vault_model_stem` so a bundle folder with an internal dot (e.g. `supp.small`) round-trips through
+the picker instead of collapsing to `supp`.
 """
 denoise_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
-    String[first(splitext(m.name)) for m in list_denoise_models(dev_dir)]
+    String[m.stem for m in list_denoise_models(dev_dir)]
 
 """
     denoise_model_target(name; overwrite, want_bundle=false) -> String | (String, String)
@@ -446,9 +457,11 @@ Absolute `.pt` path in the denoise vault for a new model, after checking the nam
 filename and that nothing is being clobbered. Creates the vault directory. Mirror of
 [`flow_model_target`](@ref) — same guards, different vault.
 
-`want_bundle = true` returns `(pt_path, bundle_dir)` — both target paths a SUPPORT `trainMode: auto`
-run may write to. The pooled path is `<name>.pt`; the perChannel bundle path is `<name>/`. The
-overwrite check refuses if EITHER exists (unless overwrite=true). See SUPPORT_PERCHANNEL_PLAN.md D2.
+`want_bundle = true` returns `(pt_path, bundle_dir)` — both target paths a SUPPORT training run may
+write to. The pooled path is `<name>.pt`; the perChannel bundle path is `<name>/`. The overwrite
+check refuses if EITHER exists (unless overwrite=true). With overwrite=true, BOTH sibling shapes
+are cleared before the run — one name is one model, so a pooled → perChannel retrain (or vice
+versa) does not leave the old shape orphaned next to the new one. See SUPPORT_PERCHANNEL_PLAN.md D2.
 """
 function denoise_model_target(name::AbstractString; overwrite::Bool = false,
                               want_bundle::Bool = false,
@@ -462,12 +475,20 @@ function denoise_model_target(name::AbstractString; overwrite::Bool = false,
     dir = denoise_models_dir(dev_dir)
     mkpath(dir)
     pt_target     = joinpath(dir, "$(stem).pt")
+    json_target   = joinpath(dir, "$(stem).json")
     bundle_target = joinpath(dir, stem)
     if !overwrite
         isfile(pt_target) && error(
             "A model named '$stem' already exists. Choose another name, or tick Overwrite existing.")
         isdir(bundle_target) && error(
             "A per-channel bundle named '$stem' already exists. Choose another name, or tick Overwrite existing.")
+    else
+        # Clear BOTH shapes at this stem — a pooled `<stem>.pt` sibling of a perChannel `<stem>/` (or
+        # vice versa) shows up twice in the picker and is the state a `pooled → perChannel` retrain
+        # would otherwise leave behind. Same reflex as `vault_delete`.
+        isfile(pt_target)     && rm(pt_target)
+        isfile(json_target)   && rm(json_target)
+        isdir(bundle_target)  && rm(bundle_target; recursive = true)
     end
     want_bundle ? (pt_target, bundle_target) : pt_target
 end
