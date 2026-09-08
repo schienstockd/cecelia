@@ -1,0 +1,18 @@
+{
+  "task": "trackingStalenessReport",
+  "fun_name": "tracking.staleness_report",
+  "label": "Correct tracks — report stale downstream",
+  "category": "Tracking",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Tracks",
+      "type": "valueNameSelection",
+      "field": "labelPropsNames",
+      "default": "default",
+      "tip": "Which tracked labels to check for stale downstream artefacts"
+    }
+  ]
+}

@@ -9,6 +9,7 @@
     "segment.correct_carryover_snapshot",
     "segment.correct",
     "segment.measureLabels",
-    "segment.correct_carryover_restore"
+    "segment.correct_carryover_restore",
+    "segment.staleness_report"
   ]
 }

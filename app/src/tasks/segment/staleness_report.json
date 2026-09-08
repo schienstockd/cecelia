@@ -1,0 +1,18 @@
+{
+  "task": "segmentStalenessReport",
+  "fun_name": "segment.staleness_report",
+  "label": "Correct labels — report stale downstream",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "io",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Labels",
+      "type": "valueNameSelection",
+      "field": "labelPropsNames",
+      "default": "default",
+      "tip": "Which labels to check for stale downstream artefacts"
+    }
+  ]
+}

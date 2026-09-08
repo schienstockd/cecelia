@@ -5,5 +5,5 @@
   "category": "Tracking",
   "env": ["local"],
   "resource_pool": "cpu",
-  "composite": ["tracking.correct", "tracking.track_measures"]
+  "composite": ["tracking.correct", "tracking.track_measures", "tracking.staleness_report"]
 }
