@@ -22,8 +22,7 @@ import { channelLegend } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
 import { captureViewLegend } from '../../utils/viewerOverlays'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
-import ViewLegend from '../ViewLegend.vue'
-import StillOverlay from '../StillOverlay.vue'
+import StripCell from './StripCell.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import CcToggle from '../CcToggle.vue'
 
@@ -361,28 +360,29 @@ defineExpose({ exportImage })
     </div>
 
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
-      <div v-for="(c, i) in cells" :key="i" class="is-cell" :style="{ clipPath: clipFor(i) }">
-        <img v-if="c.assetId || c.src" :src="cellSrc(c)" class="is-img" alt="viewer screenshot" />
-        <!-- vector scale bar + timestamp (E2), drawn on the clean capture from the frame's physical extent -->
-        <StillOverlay v-if="(c.assetId || c.src) && (showScaleBar || showTimestamp)"
-                      :extent-um="c.extentUm" :time-label="frameTime(c)"
-                      :show-scale-bar="showScaleBar" :show-timestamp="showTimestamp" />
-        <!-- optional view legend (channels now; pops + colour-by plug in later), from the frame snapshot -->
-        <ViewLegend v-if="showLegend && (c.assetId || c.src) && legendSections(c).length"
-                    :sections="legendSections(c)" :swatch="9" vertical class="is-legend" />
-        <button v-if="!(c.assetId || c.src)" class="is-capture" @click="capture(i)" :disabled="capturing === i"
-                v-tooltip.bottom="'Capture the current viewer view'">
-          <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'viewer view' }}
-        </button>
-        <!-- per-frame actions (hidden while capturing) -->
-        <div v-if="!capturingStrip" class="is-actions">
-          <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="zoomToSource(i)"
-                  :disabled="zooming === i" v-tooltip.top="'Zoom to source: reopen this image in Viewer and restore the exact view'">
-            <i class="pi pi-directions" /></button>
-          <button v-if="c.assetId || c.src" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
-          <button v-if="cells.length > 1" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="removeCell(i)" v-tooltip.top="'Remove frame'"><i class="pi pi-times" /></button>
-        </div>
-      </div>
+      <StripCell v-for="(c, i) in cells" :key="i"
+                 class="is-cell" :style="{ clipPath: clipFor(i) }"
+                 :src="(c.assetId || c.src) ? cellSrc(c) : undefined"
+                 alt="viewer screenshot"
+                 :extent-um="c.extentUm" :time-label="frameTime(c)"
+                 :show-scale-bar="showScaleBar" :show-timestamp="showTimestamp"
+                 :show-legend="showLegend" :legend-sections="legendSections(c)">
+        <template #empty>
+          <button class="is-capture" @click="capture(i)" :disabled="capturing === i"
+                  v-tooltip.bottom="'Capture the current viewer view'">
+            <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'viewer view' }}
+          </button>
+        </template>
+        <template #actions>
+          <template v-if="!capturingStrip">
+            <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="zoomToSource(i)"
+                    :disabled="zooming === i" v-tooltip.top="'Zoom to source: reopen this image in Viewer and restore the exact view'">
+              <i class="pi pi-directions" /></button>
+            <button v-if="c.assetId || c.src" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
+            <button v-if="cells.length > 1" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="removeCell(i)" v-tooltip.top="'Remove frame'"><i class="pi pi-times" /></button>
+          </template>
+        </template>
+      </StripCell>
     </div>
   </div>
 </template>
@@ -402,12 +402,8 @@ defineExpose({ exportImage })
 .is-slider { display: inline-flex; align-items: center; gap: 4px; }
 .is-slider input[type="range"] { width: 4.5rem; }
 .is-check { display: inline-flex; align-items: center; gap: 6px; }
-/* view legend (shared <ViewLegend>): overlaid bottom-left of the frame (z above the auto-hide toolbar
-   like the caption/actions); included in the PDF export (not hidden while capturing). The container
-   sets the on-image styling (white text, shadow, dark chip); ViewLegend inherits color + font-size. */
-.is-legend { position: absolute; bottom: 6px; left: 6px; padding: 3px 5px; border-radius: var(--cc-radius-xs);
-  background: rgba(0,0,0,0.45); pointer-events: none; z-index: 7;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.85); }
+/* cell chrome (image + legend + StillOverlay + hover-actions slot) lives in <StripCell> so this
+   view and CellCardsView draw the cell identically. Only strip-level layout stays here. */
 .is-strip { flex: 1; min-height: 0; display: flex; padding: 6px; gap: 0; overflow: auto; }
 .is-strip.col { flex-direction: column; }
 /* straight: no box around each frame — just a thin rule BETWEEN frames */
@@ -420,34 +416,16 @@ defineExpose({ exportImage })
 .is-strip.angled.row { gap: 0; background: #fff; padding: 0; }
 .is-strip.angled.row .is-cell { border: none; border-radius: 0; background: transparent; }
 .is-strip.angled.row .is-cell + .is-cell { margin-left: calc(var(--sep-thick, 2px) - var(--sk, 22px)); }
-.is-cell { position: relative; flex: 1; min-width: 0; min-height: 120px; display: flex; flex-direction: column;
-  overflow: hidden; background: var(--cc-bg); }
-/* contain (not cover) so the WHOLE captured frame is shown — cover cropped the edges, cutting the viewer's
-   scale bar (bottom-right) and timestamp (top-left). Trade-off: letterbox bars when the cell aspect ≠
-   the image aspect; acceptable for figures (nothing is clipped). ANIMATION_PLAN E (clean capture +
-   Cecelia-drawn scale bar) will let frames go edge-to-edge again without losing the annotations. */
-.is-img { flex: 1; width: 100%; object-fit: contain; min-height: 0; }
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-sm); }
 .is-capture:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); }
-/* per-frame actions (zoom-to-source / recapture / remove): BOTTOM-left, revealed on cell hover.
-   They used to sit TOP-right (z-index 7) — but that's exactly where the CanvasPanel's OWN controls
-   live (pin / duplicate / ⋯ menu, z-index 6), so the always-on strip actions sat on top and blocked
-   them. Bottom-right holds the scale bar and the panel footer (Duplicate/Export), so bottom-left is
-   the free corner. Auto-hide (like the toolbar) so they never permanently obscure the frame or the
-   optional channel legend that also anchors bottom-left; z-index 8 keeps them above it while hovering,
-   and the `.is-strip.capturing` rule below drops them from the PDF export. */
-.is-actions { position: absolute; bottom: 4px; left: 4px; display: flex; gap: 4px; z-index: 8;
-  opacity: 0; transition: opacity 0.12s ease; }
-.is-cell:hover .is-actions { opacity: 1; }
-/* per-frame action buttons — match the app's icon buttons (like .is-gear / .opt-btn) rather than the
-   old dark translucent pills: solid surface + border, purple accent on hover. Sit over the image, so a
-   solid surface reads cleanly. */
+/* per-frame action buttons — sit inside StripCell's #actions slot (auto-hide + positioning owned there). */
 .is-mini { transition: color 0.1s, border-color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .is-mini:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); background: var(--cc-surface-1); }
 .is-mini:disabled { opacity: 0.5; cursor: not-allowed; }
 /* while capturing for the PDF: hide the per-frame buttons (and empty-frame capture prompts) so the
-   exported strip is just the images */
+   exported strip is just the images. Slotted content carries this SFC's scope id, so `.is-mini` /
+   `.is-capture` inside StripCell's #actions and #empty slots match without :deep. */
 .is-strip.capturing .is-mini, .is-strip.capturing .is-capture { display: none; }
 .is-btn { display: inline-flex; align-items: center; gap: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 3px 8px; cursor: pointer; font-size: var(--cc-fs-xs); }
