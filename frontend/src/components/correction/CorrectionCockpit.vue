@@ -2,16 +2,18 @@
   Correction cockpit — one panel to drive all track and label corrections.
 
   Phase 1 landed the shell + Tracks mode (Show / Add / Join / Split / Remove) and cut the
-  timeline's action row so this is the sole authoring surface. Phase 2 (this) adds Labels mode:
+  timeline's action row so this is the sole authoring surface. Phase 2 added Labels mode:
   Merge + Remove verbs against whatever the viewer has picked, submitted as one
-  `segment.correct_measures` task run. Phase 3 will add Review (sort + pager + Details);
-  Phase 4 will add raster brush tools (Draw / Erase / Fill / Pick — the shipment that lets Split
-  become a label op instead of a Phase-4-only-brush-op).
+  `segment.correct_measures` task run. Phase 3 (this) adds Review — pager over a chosen label
+  set, prev/next, fly-to-viewer, inline Remove (Merge is a Labels-mode op that needs 2+ ids).
+  Phase 4 lands the Split op (server-side `label.split`) and — as follow-up — raster brush
+  tools (Draw / Erase / Fill / Pick).
 
-  Two modes today, two independent queues. Track ops and label ops don't compose — they address
-  different data and run through different composite tasks — so `useTrackOpsQueueStore` and
-  `useLabelOpsQueueStore` are peers, and everything on this panel that reads/writes the queue
-  switches by the mode.
+  Three modes today, two independent queues. Track ops and label ops don't compose — they
+  address different data and run through different composite tasks — so `useTrackOpsQueueStore`
+  and `useLabelOpsQueueStore` are peers, and everything on this panel that reads/writes the
+  queue switches by the mode. Review mode drives the label queue too (its Remove/Split verbs
+  are label ops).
 
   How Tracks mode cooperates with TrackSchemeView. The `useCorrectionCockpitStore` holds the
   shared `(image, valueName)`-keyed state (selected tracks, split-frame, det-selection, computed
@@ -43,12 +45,19 @@ import { useTrackValueNames } from '../../composables/useTrackValueNames'
 import { undoLast as undoTrack, opDescription as trackOpDescription,
          type TrackOp } from '../../lib/trackCorrection'
 import { undoLast as undoLabel, opDescription as labelOpDescription,
-         labelActions, type LabelOp, type LabelAction } from '../../lib/labelCorrection'
+         labelActions, buildRemoveOp, buildCentroidSplitOp,
+         type LabelOp, type LabelAction } from '../../lib/labelCorrection'
 import { submitTrackOps } from '../../lib/trackOpsRun'
 import { submitLabelOps } from '../../utils/labelOpsRun'
 import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
 import { armViewerSelectMode, readTrackSelection } from '../../utils/viewer/trackSelectionFromViewer'
 import { selectedTracks as resolvedTracks } from '../../lib/trackCorrection'
+import { buildFocusViewState } from '../../utils/viewer/focusOnCell'
+import { overlaysUrl, type OverlayPayload } from '../../utils/viewerOverlays'
+import {
+  sortLabels, nextIndex, prevIndex, clampIndex, pageSummary,
+  type ReviewLabel, type ReviewSort,
+} from '../../utils/reviewPager'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -81,7 +90,7 @@ const mode = computed<'tracks' | 'labels' | 'review'>({
 const MODES: ChipOption[] = [
   { value: 'tracks', label: 'Tracks', tip: 'Join, split, remove, points' },
   { value: 'labels', label: 'Labels', tip: 'Merge, remove — click cells in the viewer to pick' },
-  { value: 'review', label: 'Review', tip: 'Sort + prev/next + Details — Phase 3', disabled: true },
+  { value: 'review', label: 'Review', tip: 'Step through picked labels one at a time' },
 ]
 
 const valueNameOptions = computed<ChipOption[]>(() => {
@@ -107,9 +116,11 @@ const trackKey = computed(() => trackOpsKey(projectUid.value, imageUid.value, va
 const labelKey = computed(() => labelOpsKey(projectUid.value, imageUid.value, valueName.value))
 const trackScope = computed(() => cockpit.state(trackKey.value))
 
+// Labels + Review both drive the label queue — Review's Remove is a label op.
 const pending = computed<readonly (TrackOp | LabelOp)[]>(() =>
-  mode.value === 'labels' ? labelQueueStore.get(labelKey.value)
-                          : trackQueueStore.get(trackKey.value)
+  (mode.value === 'labels' || mode.value === 'review')
+    ? labelQueueStore.get(labelKey.value)
+    : trackQueueStore.get(trackKey.value)
 )
 const pendingCount = computed(() => pending.value.length)
 
@@ -161,6 +172,127 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') window.removeEventLis
 const labelActionsAtT = computed<LabelAction[]>(() =>
   currentT.value === null ? labelActions(0, []) : labelActions(currentT.value, pickedLabels.value)
 )
+
+// ── Review mode: pager over the picked labels, fly-to on focus change ───────────
+//
+// Sources the label ids from the same `/Pick selection` pop Labels mode uses (`pickedLabels`), so
+// what the user picks in the viewer IS the review scope — no separate pop picker needed for MVP.
+// Coordinates come from `/api/viewer/overlays` fetched once per (image, valueName); the payload is
+// small (see `viewerOverlays.ts` — largest measured is 2 MB). A shrinking pick set clamps the
+// cursor rather than jumping past the end.
+
+const reviewSort = ref<ReviewSort>('id-asc')
+const reviewIndex = ref<number>(0)
+const overlays = ref<OverlayPayload | null>(null)
+let overlayReq = 0
+
+async function reloadOverlays(): Promise<void> {
+  if (!projectUid.value || !imageUid.value || !valueName.value) {
+    overlays.value = null
+    return
+  }
+  const seq = ++overlayReq
+  try {
+    const url = overlaysUrl({ projectUid: projectUid.value, imageUid: imageUid.value,
+                              valueName: valueName.value })
+    const r = await fetch(url)
+    if (!r.ok) { if (seq === overlayReq) overlays.value = null; return }
+    const j = await r.json() as OverlayPayload
+    if (seq === overlayReq) overlays.value = j
+  } catch { if (seq === overlayReq) overlays.value = null }
+}
+// Fetch once when Review mode is opened (or the labels change). Cheap enough to not need a cache
+// across mode switches — a stale overlay after a correction Apply would show old coords, which is
+// worse than a re-fetch.
+watch([mode, labelKey], () => { if (mode.value === 'review') void reloadOverlays() },
+      { immediate: true })
+
+/** label id → first-t centroid, built from the overlays payload. */
+const labelCoords = computed<Map<number, ReviewLabel>>(() => {
+  const map = new Map<number, ReviewLabel>()
+  const o = overlays.value
+  if (!o?.cells?.label?.length) return map
+  const L = o.cells.label, T = o.cells.t ?? [], X = o.cells.x ?? [], Y = o.cells.y ?? [],
+        Z = o.cells.z ?? []
+  for (let i = 0; i < L.length; i++) {
+    const lab = Number(L[i])
+    if (!Number.isFinite(lab) || lab <= 0 || map.has(lab)) continue
+    map.set(lab, {
+      label: lab,
+      t: Number.isFinite(T[i]) ? Math.floor(Number(T[i])) : 0,
+      x: Number(X[i]),
+      y: Number(Y[i]),
+      z: Z[i] !== undefined ? Number(Z[i]) : undefined,
+    })
+  }
+  return map
+})
+
+/** The sorted list Review pages over — the picked labels, resolved to coords, in the chosen order. */
+const reviewList = computed<ReviewLabel[]>(() => {
+  const coords = labelCoords.value
+  const list: ReviewLabel[] = []
+  for (const id of pickedLabels.value) {
+    const c = coords.get(id)
+    if (c) list.push(c)
+    else list.push({ label: id, t: currentT.value ?? 0, x: NaN, y: NaN })
+  }
+  return sortLabels(list, reviewSort.value)
+})
+
+// Clamp the cursor whenever the list shrinks — a Remove that pops the current label off the end
+// would otherwise leave the pager pointing past `total`.
+watch(() => reviewList.value.length, n => { reviewIndex.value = clampIndex(reviewIndex.value, n) })
+
+const reviewFocused = computed<ReviewLabel | null>(() => {
+  const list = reviewList.value
+  const i = reviewIndex.value
+  return (i >= 0 && i < list.length) ? list[i] : null
+})
+
+const reviewSummary = computed(() => pageSummary(reviewIndex.value, reviewList.value.length))
+
+/**
+ * Fly the viewer to the focused label — pans (never zooms in), sets t to the label's first
+ * occurrence. Only fires when we have a real coord (a label with no overlay entry can't be flown
+ * to; a warning surfaces via the summary text). Same delivery mechanism as `showTracksInViewer` +
+ * TrackSchemeView's Show: `viewerStore.setPendingViewState` → popup viewer's watcher applies.
+ */
+function focusReviewLabel(target: ReviewLabel | null): void {
+  if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return
+  const current = viewerStore.viewState
+  if (!current) return
+  const next = buildFocusViewState(current, {
+    t: target.t, cx: target.x, cy: target.y, cz: target.z,
+  })
+  if (next) viewerStore.setPendingViewState(next)
+}
+
+// Auto-fly on any focus change — the whole point of the pager is that a Prev/Next step immediately
+// lights up the label in the viewer. Guard against firing on the initial mount when the viewer
+// hasn't published a state yet.
+watch(reviewFocused, target => { if (mode.value === 'review') focusReviewLabel(target) })
+
+function reviewNext(): void { reviewIndex.value = nextIndex(reviewIndex.value, reviewList.value.length) }
+function reviewPrev(): void { reviewIndex.value = prevIndex(reviewIndex.value, reviewList.value.length) }
+
+/** Queue a Remove for the focused label — one-cell op, no `into` needed. */
+function reviewRemoveFocused(): void {
+  const f = reviewFocused.value
+  if (!f) return
+  const op = buildRemoveOp(f.t, [f.label])
+  if (op) queueLabelOp(op)
+}
+
+/** Queue a centroid-anchored Split — horizontal or vertical cut through the focused label. The
+ *  runner clips the cut to the label's mask, so an overshoot is harmless. A cut that doesn't
+ *  divide the label surfaces as a warn line + zero-pixel op (see `_apply_split_inplace`). */
+function reviewSplitFocused(axis: 'horizontal' | 'vertical'): void {
+  const f = reviewFocused.value
+  if (!f || !Number.isFinite(f.x) || !Number.isFinite(f.y)) return
+  const op = buildCentroidSplitOp(f.t, f.label, f.x, f.y, axis)
+  if (op) queueLabelOp(op)
+}
 
 // ── Summaries ───────────────────────────────────────────────────────────────────
 
@@ -232,21 +364,24 @@ async function readFromViewer(): Promise<void> {
   cockpit.setSelectedTracks(trackKey.value, ids)
 }
 
+const isLabelMode = computed(() => mode.value === 'labels' || mode.value === 'review')
+
 function onUndo(): void {
   if (!pendingCount.value) return
-  if (mode.value === 'labels') labelQueueStore.set(labelKey.value, undoLabel(labelQueueStore.get(labelKey.value)))
-  else                         trackQueueStore.set(trackKey.value, undoTrack(trackQueueStore.get(trackKey.value)))
+  if (isLabelMode.value) labelQueueStore.set(labelKey.value, undoLabel(labelQueueStore.get(labelKey.value)))
+  else                   trackQueueStore.set(trackKey.value, undoTrack(trackQueueStore.get(trackKey.value)))
 }
 function onClear(): void {
-  if (mode.value === 'labels') labelQueueStore.clear(labelKey.value)
-  else                         trackQueueStore.clear(trackKey.value)
+  if (isLabelMode.value) labelQueueStore.clear(labelKey.value)
+  else                   trackQueueStore.clear(trackKey.value)
 }
 function onApply(): void {
   if (!pendingCount.value) return
-  if (mode.value === 'labels') {
+  if (isLabelMode.value) {
     const ok = submitLabelOps({
       projectUid: projectUid.value, setUid: setUid.value, imageUid: imageUid.value,
-      valueName: valueName.value, ops: labelQueueStore.get(labelKey.value), source: 'cockpit',
+      valueName: valueName.value, ops: labelQueueStore.get(labelKey.value),
+      source: mode.value === 'review' ? 'review' : 'cockpit',
     })
     if (ok) labelQueueStore.clear(labelKey.value)
   } else {
@@ -320,7 +455,7 @@ const labelsTools = computed<ToolRow[]>(() =>
 )
 
 // ── Which key drives disable states for the mode ─────────────────────────────────
-const currentKey = computed(() => mode.value === 'labels' ? labelKey.value : trackKey.value)
+const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.value)
 </script>
 
 <template>
@@ -385,10 +520,70 @@ const currentKey = computed(() => mode.value === 'labels' ? labelKey.value : tra
           </div>
         </template>
 
-        <div v-else class="cockpit-placeholder cc-fs-sm cc-muted">
-          Phase 3: sort by criterion, prev/next pager,<br />
-          per-object Details montage.
-        </div>
+        <template v-else>
+          <div v-if="!currentKey" class="cockpit-placeholder cc-fs-sm cc-muted">
+            Pick a labels set to enable Review.
+          </div>
+          <div v-else-if="!reviewList.length" class="cockpit-placeholder cc-fs-sm cc-muted">
+            Pick cells in the viewer to build a review list.
+          </div>
+          <div v-else class="cockpit-review">
+            <div class="cc-btn-group cockpit-toolbar">
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense"
+                      v-tooltip.top="'Previous label'" @click="reviewPrev">
+                <i class="pi pi-chevron-left" />
+              </button>
+              <span class="cockpit-review-counter cc-fs-xs">{{ reviewSummary }}</span>
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense"
+                      v-tooltip.top="'Next label'" @click="reviewNext">
+                <i class="pi pi-chevron-right" />
+              </button>
+              <span class="cockpit-spring" />
+              <button class="cc-btn cc-btn-bare cc-btn-dense"
+                      :class="{ 'cc-btn-primary': reviewSort === 'id-asc' }"
+                      v-tooltip.top="'Sort by label id, ascending'"
+                      @click="reviewSort = 'id-asc'">Id ↑</button>
+              <button class="cc-btn cc-btn-bare cc-btn-dense"
+                      :class="{ 'cc-btn-primary': reviewSort === 'id-desc' }"
+                      v-tooltip.top="'Sort by label id, descending'"
+                      @click="reviewSort = 'id-desc'">Id ↓</button>
+            </div>
+            <div v-if="reviewFocused" class="cockpit-review-card cc-fs-2xs cc-muted">
+              <div>Label {{ reviewFocused.label }} @ frame {{ reviewFocused.t }}</div>
+              <div v-if="Number.isFinite(reviewFocused.x)">
+                Centroid ({{ Math.round(reviewFocused.x) }}, {{ Math.round(reviewFocused.y) }}<template
+                  v-if="reviewFocused.z !== undefined">, z {{ Math.round(reviewFocused.z) }}</template>)
+              </div>
+              <div v-else class="cc-muted-warn">No centroid — this label has no overlay row (re-measure?)</div>
+            </div>
+            <div class="cc-btn-group cockpit-review-verbs">
+              <button class="cc-btn cc-btn-bare cc-btn-dense"
+                      v-tooltip.top="'Re-centre viewer on this label'"
+                      :disabled="!reviewFocused || !Number.isFinite(reviewFocused?.x ?? NaN)"
+                      @click="focusReviewLabel(reviewFocused)">
+                <i class="pi pi-map-marker" /><span>Show</span>
+              </button>
+              <button class="cc-btn cc-btn-danger-ghost cc-btn-dense"
+                      v-tooltip.top="'Queue a Remove for the focused label'"
+                      :disabled="!reviewFocused"
+                      @click="reviewRemoveFocused">
+                <i class="pi pi-trash" /><span>Remove</span>
+              </button>
+              <button class="cc-btn cc-btn-bare cc-btn-dense"
+                      v-tooltip.top="'Split horizontally through the centroid — runner clips to the label'"
+                      :disabled="!reviewFocused || !Number.isFinite(reviewFocused?.x ?? NaN)"
+                      @click="reviewSplitFocused('horizontal')">
+                <span>Split ↔</span>
+              </button>
+              <button class="cc-btn cc-btn-bare cc-btn-dense"
+                      v-tooltip.top="'Split vertically through the centroid — runner clips to the label'"
+                      :disabled="!reviewFocused || !Number.isFinite(reviewFocused?.x ?? NaN)"
+                      @click="reviewSplitFocused('vertical')">
+                <span>Split ↕</span>
+              </button>
+            </div>
+          </div>
+        </template>
       </div>
 
       <div class="cockpit-spacer" />
@@ -439,4 +634,9 @@ const currentKey = computed(() => mode.value === 'labels' ? labelKey.value : tra
                      gap: 2px; }
 .cockpit-queue { align-items: center; gap: 0.3rem; padding-top: 2px; }
 .cockpit-spring { flex: 1; }
+.cockpit-review { display: flex; flex-direction: column; gap: 6px; }
+.cockpit-review-counter { min-width: 5.5rem; text-align: center; }
+.cockpit-review-card { padding: 4px 6px; border-left: 2px solid var(--cc-accent);
+                       display: flex; flex-direction: column; gap: 2px; }
+.cockpit-review-verbs { gap: 0.3rem; flex-wrap: wrap; }
 </style>

@@ -10,16 +10,40 @@
 // task's ParamValidationError catches it — but a UI that offered impossible ops in the first place
 // is a bug, so the validators here are the shared contract.
 
-/** A single label correction op — matches `LABEL_OP_KINDS` in `app/src/label_correction.jl`. */
-export interface LabelOp {
-  /** the op kind: 'label.merge' or 'label.remove' */
-  op: 'label.merge' | 'label.remove'
+/** A single label correction op — matches `LABEL_OP_KINDS` in `app/src/label_correction.jl`.
+ *
+ *  Three op shapes today. Merge/Remove take a plural `ids` list because they operate on many labels
+ *  at once (merge folds N labels into one; remove is a batch delete). Split takes a singular `id`
+ *  because it operates on ONE label at a time — a batched split with the same cut across many
+ *  labels has no coherent meaning (each label needs its own cut geometry). */
+export type LabelOp = LabelMergeOp | LabelRemoveOp | LabelSplitOp
+
+export interface LabelMergeOp {
+  op: 'label.merge'
   /** timepoint index the op applies to (>=0) */
   t: number
-  /** the label ids the op touches (>=1; 0 is background and cannot be an input) */
+  /** the label ids the op touches (>=2; 0 is background and cannot be an input) */
   ids: number[]
-  /** merge only: which id survives — must be one of `ids`. */
-  into?: number
+  /** which id survives — must be one of `ids`. */
+  into: number
+}
+
+export interface LabelRemoveOp {
+  op: 'label.remove'
+  t: number
+  /** the label ids the op removes (>=1 id) */
+  ids: number[]
+}
+
+export interface LabelSplitOp {
+  op: 'label.split'
+  t: number
+  /** the single label to split */
+  id: number
+  /** polyline vertices, image-pixel L0 coords. `xs.length === ys.length >= 2`. The runner
+   *  rasterises the polyline as a 1-pixel-wide cut and splits by connected components. */
+  xs: number[]
+  ys: number[]
 }
 
 /** Everything the surface needs to render one op as a button — same shape as manualActions'. */
@@ -86,11 +110,51 @@ export function labelActions(t: number, ids: readonly number[]): LabelAction[] {
   ]
 }
 
+// ── Split-op builder ────────────────────────────────────────────────────────────
+
+/**
+ * Build a Split op — cut label `id` at frame `t` along a polyline through (xs, ys). Points are
+ * image-pixel L0 coords (matches `buildFocusViewState`'s convention).
+ *
+ * Returns `null` when the payload is nonsense (empty polyline, mismatched xs/ys) — same "silently
+ * refuse malformed" contract as buildMergeOp/buildRemoveOp; the surface's blocked-with-reason
+ * button handles the "why not" side.
+ */
+export function buildSplitOp(t: number, id: number,
+                             xs: readonly number[], ys: readonly number[]): LabelSplitOp | null {
+  if (!Number.isFinite(id) || id < 1) return null
+  if (!xs.length || xs.length !== ys.length) return null
+  const xi = xs.map(x => Math.floor(Number(x)))
+  const yi = ys.map(y => Math.floor(Number(y)))
+  if (xi.some(v => !Number.isFinite(v) || v < 0)) return null
+  if (yi.some(v => !Number.isFinite(v) || v < 0)) return null
+  if (xi.length < 2) return null
+  return { op: 'label.split', t: Math.floor(t), id: Math.floor(id), xs: xi, ys: yi }
+}
+
+/**
+ * Convenience: a centroid-anchored horizontal or vertical cut through label `id`. Spans ±`halfLen`
+ * pixels around (cx, cy) along the chosen axis; the runner clips to the label's mask. `halfLen`
+ * defaults to a big number so any reasonable label is fully bisected.
+ */
+export function buildCentroidSplitOp(t: number, id: number, cx: number, cy: number,
+                                     axis: 'horizontal' | 'vertical',
+                                     halfLen: number = 4096): LabelSplitOp | null {
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null
+  const cxi = Math.floor(cx), cyi = Math.floor(cy), h = Math.max(1, Math.floor(halfLen))
+  if (axis === 'horizontal') {
+    return buildSplitOp(t, id, [Math.max(0, cxi - h), cxi + h], [cyi, cyi])
+  }
+  return buildSplitOp(t, id, [cxi, cxi], [Math.max(0, cyi - h), cyi + h])
+}
+
 // ── Descriptions (tooltip + log line) ───────────────────────────────────────────
 
 /** Short button label — used in the cockpit tool row alongside the icon. */
 export function opLabel(op: LabelOp): string {
-  return op.op === 'label.merge' ? 'Merge' : 'Remove'
+  if (op.op === 'label.merge')  return 'Merge'
+  if (op.op === 'label.remove') return 'Remove'
+  return 'Split'
 }
 
 /** Human sentence for a tooltip / log line — same voice as `trackCorrection.opDescription`. */
@@ -102,9 +166,13 @@ export function opDescription(op: LabelOp): string {
       ? `Merge label ${others[0]} into ${op.into} at ${t}`
       : `Merge labels ${others.join(', ')} into ${op.into} at ${t}`
   }
-  return op.ids.length === 1
-    ? `Remove label ${op.ids[0]} at ${t}`
-    : `Remove labels ${op.ids.join(', ')} at ${t}`
+  if (op.op === 'label.remove') {
+    return op.ids.length === 1
+      ? `Remove label ${op.ids[0]} at ${t}`
+      : `Remove labels ${op.ids.join(', ')} at ${t}`
+  }
+  // label.split
+  return `Split label ${op.id} along a ${op.xs.length}-point polyline at ${t}`
 }
 
 // ── Queue helper: undo (mirrors trackCorrection.undoLast) ───────────────────────

@@ -65,7 +65,100 @@ def _unique_labels(arr):
     return set(int(x) for x in u if int(x) != 0)
 
 
-def _apply_op_inplace(frame, op):
+def _bresenham(x0, y0, x1, y1):
+    """Yield the (y, x) integer pixels along the line from (x0,y0) to (x1,y1), inclusive.
+
+    Bresenham's algorithm — vendored (no skimage dep here so the correction runner stays lean
+    and portable to a Windows install that hasn't linked skimage's Cython). O(max(|dx|,|dy|))
+    per segment; N-vertex polyline is O(sum of segment lengths). Reference: Bresenham J.E.,
+    "Algorithm for computer control of a digital plotter" (IBM Systems J., 1965).
+    """
+    x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
+    dx = abs(x1 - x0); sx = 1 if x0 < x1 else -1
+    dy = -abs(y1 - y0); sy = 1 if y0 < y1 else -1
+    err = dx + dy
+    x, y = x0, y0
+    while True:
+        yield (y, x)
+        if x == x1 and y == y1:
+            break
+        e2 = 2 * err
+        if e2 >= dy:
+            err += dy
+            x += sx
+        if e2 <= dx:
+            err += dx
+            y += sy
+
+
+def _rasterise_polyline(xs, ys, shape):
+    """Rasterise a polyline (`xs`, `ys` parallel int arrays) as a boolean mask of shape
+    `shape=(H, W)`. Out-of-bounds pixels are skipped. `len(xs) == len(ys) >= 2` (validated by
+    the Julia side)."""
+    H, W = int(shape[0]), int(shape[1])
+    mask = np.zeros((H, W), dtype=bool)
+    for k in range(len(xs) - 1):
+        for (y, x) in _bresenham(xs[k], ys[k], xs[k + 1], ys[k + 1]):
+            if 0 <= y < H and 0 <= x < W:
+                mask[y, x] = True
+    return mask
+
+
+def _apply_split_inplace(frame, op, log):
+    """Cut label `id` at frame `t` along the polyline (xs, ys). Returns pixels reassigned.
+
+    The polyline is rasterised as a 1-pixel-wide cut line, subtracted from the label's mask, and
+    the remainder is split by connected components. The largest component keeps the original id;
+    every other component gets a fresh id (max_id_in_frame + 1, +2, …). A cut that fails to
+    divide the label (still one component) is a no-op — logged, pixels=0. This is the RIGHT
+    failure mode for a user-drawn cut: a shallow line that clipped the label's edge should not
+    silently mangle it.
+
+    The cut pixels themselves are assigned to the LARGEST fragment (they were part of the label
+    before, and the largest fragment inherits the id), so nothing goes to background.
+    """
+    from scipy.ndimage import label as cc_label
+    id_ = int(op['id'])
+    xs = [int(x) for x in op['xs']]
+    ys = [int(y) for y in op['ys']]
+    frame2d = frame  # frame is (Y, X); a 3D (Z, Y, X) input would need a plane index — see docstring
+    if frame2d.ndim != 2:
+        # 3D labels (Z, Y, X) or 4D (T, Z, Y, X) at a single T: split needs a plane. Defer to
+        # follow-up — surface, don't crash. The MVP two-click Split ships against 2D+T stacks.
+        log.log(f'[WARN] label.split on a {frame2d.ndim}D frame is not supported yet — skipping.')
+        return 0
+    mask = (frame2d == id_)
+    if not mask.any():
+        log.log(f'[WARN] label.split: label {id_} not present at this frame — no-op.')
+        return 0
+    cut = _rasterise_polyline(xs, ys, frame2d.shape)
+    remainder = mask & ~cut
+    labeled, n = cc_label(remainder)
+    if n <= 1:
+        log.log(f'[WARN] label.split: cut did not divide label {id_} (n={n} component(s)) — no-op.')
+        return 0
+    # Component pixel counts (skip background 0). Largest keeps the id; smaller get fresh ids.
+    sizes = np.bincount(labeled.ravel())
+    ordering = sorted(range(1, n + 1), key=lambda k: -int(sizes[k]))
+    frame_max = int(frame2d.max())
+    next_id = frame_max + 1
+    reassigned = 0
+    # Largest fragment: keeps id_. The cut pixels return to it too so no pixel goes to background.
+    largest = ordering[0]
+    keep = (labeled == largest) | cut & mask
+    # (nothing to write — largest fragment already has id_, cut pixels were id_ before)
+    for k in ordering[1:]:
+        new_mask = (labeled == k)
+        n_pix = int(new_mask.sum())
+        frame2d[new_mask] = next_id
+        reassigned += n_pix
+        log.log(f'>> split label {id_} → new label {next_id} ({n_pix} px)')
+        next_id += 1
+    _ = keep   # silence unused: kept as a comment-shape reminder that the cut restores to largest
+    return reassigned
+
+
+def _apply_op_inplace(frame, op, log):
     """Apply one op to `frame` in place; return the number of pixels rewritten by this op.
 
     The count is measured AT THE TIME the op fires — a merge queued after another merge that
@@ -74,6 +167,8 @@ def _apply_op_inplace(frame, op):
     what its op moves at its point in the sequence.
     """
     kind = op['op']
+    if kind == 'label.split':
+        return _apply_split_inplace(frame, op, log)
     ids = [int(x) for x in op['ids']]
     if kind == 'label.merge':
         into = int(op['into'])
@@ -162,7 +257,7 @@ def run(params: dict):
             for tt in range(n_frames):
                 frame = np.asarray(src[tt])                     # numpy copy — mutation-safe
                 for (i, op) in ops_by_t.get(tt, []):
-                    per_op_pixels[i] = _apply_op_inplace(frame, op)
+                    per_op_pixels[i] = _apply_op_inplace(frame, op, log)
                 level0[tt] = frame
                 labels_after |= _unique_labels(frame)
                 if (tt + 1) % max(1, n_frames // 10) == 0:
@@ -171,7 +266,7 @@ def run(params: dict):
             # Still image / no T axis: whole array in one pass, all ops apply against t=0.
             frame = np.asarray(src[:])
             for (i, op) in ops_by_t.get(0, []):
-                per_op_pixels[i] = _apply_op_inplace(frame, op)
+                per_op_pixels[i] = _apply_op_inplace(frame, op, log)
             level0[:] = frame
             labels_after |= _unique_labels(frame)
             log.log(f'[PROGRESS] 1/1')

@@ -29,9 +29,7 @@ using JSON3
 # ── Op vocabulary ────────────────────────────────────────────────────────────────
 
 """
-The two verbs Phase 2 ships. Drawing / splitting a label needs a raster brush, which is Phase 4
-(cockpit brush tools); until then, an over-segmented cell is fixed by picking the two ids and
-merging, and a false detection is fixed by removing its id.
+The three verbs shipped so far.
 
 Fields:
   * `label.merge`  — `{ op, t, ids: [a, b, …], into }` — every non-`into` id in `ids` is rewritten
@@ -40,8 +38,16 @@ Fields:
                      touching labels folds in one op.
   * `label.remove` — `{ op, t, ids: [a, …] }`         — every id in `ids` is rewritten to 0
                      (background), in frame `t`.
+  * `label.split`  — `{ op, t, id, xs: [x1, x2, …], ys: [y1, y2, …] }` — cut label `id` at frame
+                     `t` along the polyline `(xs, ys)` (image-pixel coords, integer). The runner
+                     rasterises the polyline as a 1-pixel-wide line, subtracts it from the label's
+                     mask, runs connected components on the remainder, and assigns fresh label ids
+                     to every component except the largest (which keeps the original id). A cut
+                     that does not fully divide the label is a no-op (the runner logs a warning).
+                     Introduced in Phase 4; the polyline shape supports the two-click cockpit
+                     affordance today and a raster brush later without a second op kind.
 """
-const LABEL_OP_KINDS = ("label.merge", "label.remove")
+const LABEL_OP_KINDS = ("label.merge", "label.remove", "label.split")
 
 _op_get(op::AbstractDict, k::AbstractString) = get(op, k, get(op, Symbol(k), nothing))
 
@@ -86,6 +92,25 @@ function validate_label_op(op)::Nothing
     t = _op_int(op, "t")
     (isnothing(t) || t < 0) && throw(ArgumentError("label op \"$kind\" needs a non-negative integer `t`"))
 
+    if kind == "label.split"
+        # Split identifies ONE label + a polyline. `id` (singular) keeps the shape distinct from
+        # merge/remove — a plural `ids` on split would be ambiguous (are we splitting several
+        # labels with the same cut?), and the runner works one label at a time anyway.
+        id = _op_int(op, "id")
+        (isnothing(id) || id < 1) &&
+            throw(ArgumentError("label.split needs a single positive integer `id` (0 = background)"))
+        xs = _op_int_list(op, "xs")
+        ys = _op_int_list(op, "ys")
+        length(xs) == length(ys) ||
+            throw(ArgumentError("label.split `xs`/`ys` must be the same length, got " *
+                                "$(length(xs)) and $(length(ys))"))
+        length(xs) >= 2 ||
+            throw(ArgumentError("label.split polyline needs at least 2 vertices, got $(length(xs))"))
+        all(>=(0), xs) && all(>=(0), ys) ||
+            throw(ArgumentError("label.split polyline coords must be non-negative integers"))
+        return nothing
+    end
+
     ids = _op_int_list(op, "ids")
     isempty(ids) && throw(ArgumentError("label op \"$kind\" needs a non-empty `ids` list"))
     all(>=(1), ids) || throw(ArgumentError("label op \"$kind\" ids must all be >= 1 (0 = background)"))
@@ -121,6 +146,11 @@ function build_rewrite(ops)::Dict{Int, Dict{Int,Int}}
     for op in ops
         validate_label_op(op)
         kind = string(_op_get(op, "op"))
+        # Split is a NON-rewrite op — it creates fresh ids by connected-component analysis, which a
+        # {src → tgt} table cannot represent. The Python runner applies it directly against the
+        # frame; this table is for callers reasoning about merges + removes only, so split is a
+        # no-op here rather than an error (a mixed queue is legal).
+        kind == "label.split" && continue
         t    = _op_int(op, "t")::Int
         ids  = _op_int_list(op, "ids")
         m    = get!(out, t, Dict{Int,Int}())
@@ -227,10 +257,17 @@ runner hasn't reported (e.g. dry-run), pass an empty vector and the pixel total 
 function label_correction_metrics(ops::AbstractVector, per_op_pixels::AbstractVector;
                                   n_labels_before::Integer = 0,
                                   n_labels_after::Integer  = 0)::Dict{String,Any}
-    n_merge, n_remove, ts_touched, labels_removed = 0, 0, Set{Int}(), Set{Int}()
+    n_merge, n_remove, n_split = 0, 0, 0
+    ts_touched, labels_removed, labels_split = Set{Int}(), Set{Int}(), Set{Int}()
     for op in ops
         kind = string(_op_get(op, "op"))
         push!(ts_touched, _op_int(op, "t")::Int)
+        if kind == "label.split"
+            n_split += 1
+            id = _op_int(op, "id")::Int
+            push!(labels_split, id)
+            continue
+        end
         ids = _op_int_list(op, "ids")
         if kind == "label.merge"
             n_merge += 1
@@ -246,16 +283,22 @@ function label_correction_metrics(ops::AbstractVector, per_op_pixels::AbstractVe
         end
     end
     n_labels_before = Int(n_labels_before)
+    # `nLabelsEdited` = union of removed + split (a label that was both merged-away and split by two
+    # ops counts once). Split doesn't REMOVE the original id (the largest fragment keeps it), so it
+    # goes in a separate `nLabelsSplit` bucket for the QC threshold to consider both.
+    n_edited = length(union(labels_removed, labels_split))
     Dict{String,Any}(
         "nOps"             => length(ops),
         "nMerge"           => n_merge,
         "nRemove"          => n_remove,
+        "nSplit"           => n_split,
         "nFramesTouched"   => length(ts_touched),
         "nLabelsRemoved"   => length(labels_removed),
+        "nLabelsSplit"     => length(labels_split),
         "nLabelsBefore"    => n_labels_before,
         "nLabelsAfter"     => Int(n_labels_after),
         "nPixelsRewritten" => sum(Int.(per_op_pixels); init = 0),
-        "fracLabelsEdited" => n_labels_before > 0 ? length(labels_removed) / n_labels_before : 0.0,
+        "fracLabelsEdited" => n_labels_before > 0 ? n_edited / n_labels_before : 0.0,
     )
 end
 
