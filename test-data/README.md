@@ -31,7 +31,15 @@ projects/testpr/
                               # 4 intensity channels, 3D centroids + temporal. Now also carries
                               # btrack lineage (track_id, …) + per-cell live.cell.* in obs.
     labelProps/B__tracks.h5ad # companion per-track table: 62 tracks, 10 live.track.* measures
-                              # in X/var, lineage in obs (obs._index = track_id)
+                              # in X/var, lineage in obs (obs._index = track_id). Now also
+                              # carries a SYNTHETIC `clusters.movement` obs col (3 clusters by
+                              # speed thirds — 21/20/21) for the cell-cards fixture.
+    labelProps/B__tracks.clustfeatures.json  # SYNTHETIC clustfeatures sidecar for the
+                              # `movement` run: features=[10 live.track.*], partOf=[KDIeEm],
+                              # family="clusters". Pairs with the obs column above so the
+                              # cell-cards pipeline can resolve trackclust pops on this fixture.
+    gating/B__trackclust.json # SYNTHETIC trackclust pop map: three pops (Scanning/Directed/
+                              # Meandering) each filter `clusters.movement in [0|1|2]`.
     labelProps/aniso__branch.h5ad  # SYNTHETIC branch sidecar (~32 KB): 6 branches over 3
                               # timepoints + the `uns` orientation block (3 frames x 4x4 boxes)
 ```

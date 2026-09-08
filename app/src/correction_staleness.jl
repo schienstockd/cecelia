@@ -23,6 +23,7 @@ const _STALE_KIND_TRACKS         = "tracks_h5ad"
 const _STALE_KIND_CLUSTERS       = "cluster_runs"
 const _STALE_KIND_GATING         = "gating_pops"
 const _STALE_KIND_SPATIAL_GRAPH  = "spatial_graph"
+const _STALE_KIND_CELL_CARDS     = "cell_cards"
 
 """
     stale_artefacts_for(img, value_name; changed) -> Vector{Dict{String,Any}}
@@ -84,6 +85,22 @@ function stale_artefacts_for(img::CciaImage, value_name::AbstractString;
                                 summary = "$(n_pops) $(pop_type) gating pop(s) on $(vn)",
                                 detail  = Dict{String,Any}("pop_type" => pop_type,
                                                            "count"    => n_pops)))
+    end
+
+    # Cell-cards sidecars (`analysis/cell_cards/{vn}__{suffix}.json`) depend on trackclust cluster
+    # membership + the medoid track's centroid — either a `:labels` change (cluster runs may rerun)
+    # or a `:tracks` change (medoid track ids may shift, per-track centroids move) invalidates them.
+    # See docs/todo/CELL_CARDS_PLAN.md Decision 8. Report presence; the route rebuilds on next call.
+    cc_dir = joinpath(img._dir, "analysis", "cell_cards")
+    if isdir(cc_dir)
+        # Any sidecar named `{vn}__*.json` under this image is derived from this value_name's cluster
+        # runs. Match on the vn-prefix so a cell-cards sidecar for a sibling value_name isn't listed.
+        prefix = "$(vn)__"
+        for f in readdir(cc_dir; join = true)
+            (endswith(f, ".json") && startswith(basename(f), prefix)) || continue
+            push!(out, _stale_entry(_STALE_KIND_CELL_CARDS, f, img._dir;
+                                    summary = "cell-cards ($(basename(f)))"))
+        end
     end
 
     # Spatial neighbour graphs are POP-AGNOSTIC and pool across segmentations (`image.jl:125`), so

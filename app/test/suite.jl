@@ -16612,6 +16612,21 @@ end
     empty_dir = mktempdir()
     empty_img = Cecelia.CciaImage(; uid = "uid2", name = "name2", dir = empty_dir)
     @test isempty(Cecelia.stale_artefacts_for(empty_img, vn; changed = :labels))
+
+    # cell-cards sidecar under analysis/cell_cards/{vn}__{suffix}.json shows up on BOTH :labels and
+    # :tracks — trackclust cluster codes change on :labels (via cluster reruns) and medoid track
+    # centroids change on :tracks. See docs/todo/CELL_CARDS_PLAN.md Decision 8.
+    cc_dir = joinpath(dir, "analysis", "cell_cards"); mkpath(cc_dir)
+    write(joinpath(cc_dir, "$(vn)__movement.json"), "{}")
+    # A sidecar keyed on a DIFFERENT vn must NOT be listed for this vn.
+    write(joinpath(cc_dir, "other__movement.json"), "{}")
+    label_arts_2 = Cecelia.stale_artefacts_for(img, vn; changed = :labels)
+    cc_arts_l = filter(a -> a["kind"] == "cell_cards", label_arts_2)
+    @test length(cc_arts_l) == 1
+    @test occursin("$(vn)__movement.json", cc_arts_l[1]["path"])
+    track_arts_2 = Cecelia.stale_artefacts_for(img, vn; changed = :tracks)
+    cc_arts_t = filter(a -> a["kind"] == "cell_cards", track_arts_2)
+    @test length(cc_arts_t) == 1
 end
 
 @testset "correction staleness — QC finding renders through the catalog" begin

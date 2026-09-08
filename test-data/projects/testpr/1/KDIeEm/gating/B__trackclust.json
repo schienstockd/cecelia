@@ -1,0 +1,55 @@
+{
+    "spatial_unit": "px",
+    "value_name": "B",
+    "populations": [
+        {
+            "name": "Scanning",
+            "colour": "#4c78a8",
+            "show": true,
+            "uid": "tc1",
+            "filter": {
+                "fun": "in",
+                "values": [
+                    0
+                ],
+                "measure": "clusters.movement",
+                "default_all": false
+            },
+            "children": [
+            ]
+        },
+        {
+            "name": "Directed",
+            "colour": "#f58518",
+            "show": true,
+            "uid": "tc2",
+            "filter": {
+                "fun": "in",
+                "values": [
+                    1
+                ],
+                "measure": "clusters.movement",
+                "default_all": false
+            },
+            "children": [
+            ]
+        },
+        {
+            "name": "Meandering",
+            "colour": "#54a24b",
+            "show": true,
+            "uid": "tc3",
+            "filter": {
+                "fun": "in",
+                "values": [
+                    2
+                ],
+                "measure": "clusters.movement",
+                "default_all": false
+            },
+            "children": [
+            ]
+        }
+    ],
+    "pop_type": "trackclust"
+}
