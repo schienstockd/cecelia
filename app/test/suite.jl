@@ -526,6 +526,74 @@ end
     @test pooled_resolved.rootPath == pt
 end
 
+@testset "denoise_model_names strips only .pt, keeps internal dots in a bundle name" begin
+    # A bundle folder `supp.small` is legal; `splitext` split it at the internal dot and returned
+    # `"supp"`, which the picker sent to `denoise_model_resolve` — miss → "Model 'supp' not found".
+    # Same rule applied in THREE places (config.jl's `denoise_model_names`, config.jl's
+    # `list_denoise_models` pooled branch, task.jl's `_OPTION_SOURCES["denoiseModels"]`) — all three
+    # now go through `vault_model_stem`.
+    td = mktempdir()
+    dir = Cecelia.denoise_models_dir(td)
+    mkpath(dir)
+    open(io -> write(io, "stub"), joinpath(dir, "supMemTom.pt"), "w")
+    bundle = joinpath(dir, "supp.small")
+    mkpath(bundle)
+    open(io -> write(io, "stub"), joinpath(bundle, "a.pt"), "w")
+    write(joinpath(bundle, "manifest.json"), """
+        {"kind":"denoise-support","mode":"perChannel","channels":["a"],
+         "perChannel":[{"index":0,"name":"a","slug":"a","pt":"a.pt"}]}""")
+
+    @test sort(Cecelia.denoise_model_names(td)) == ["supMemTom", "supp.small"]
+
+    # And the picker's chosen stem must round-trip through the resolver — the bug the user hit.
+    resolved = Cecelia.denoise_model_resolve("supp.small", td)
+    @test !isnothing(resolved)
+    @test resolved.kind === :perChannel
+
+    # The task-spec picker source runs off the same vault. Point config_dir at the fixture so the
+    # denoiseModels source enumerates ours, not the dev vault.
+    withenv("CECELIA_DEV_DIR" => td) do
+        opts = Cecelia._OPTION_SOURCES["denoiseModels"]()
+        values = [String(o.value) for o in opts]
+        @test sort(values) == ["supMemTom", "supp.small"]   # NOT "supp"
+    end
+end
+
+@testset "denoise_model_target clears both sibling shapes on overwrite" begin
+    # Retraining `<name>` as perChannel used to leave the previous pooled `<name>.pt` orphaned next
+    # to the new `<name>/` bundle, and the picker showed both rows under the same stem. `overwrite`
+    # now means "one name is one model" — clear whichever shape existed at that stem.
+    td = mktempdir()
+    dir = Cecelia.denoise_models_dir(td)
+    mkpath(dir)
+
+    # 1) pooled → perChannel: `.pt` + `.json` cleared before the bundle is written.
+    pt   = joinpath(dir, "supX.pt")
+    json = joinpath(dir, "supX.json")
+    open(io -> write(io, "stub"), pt, "w")
+    write(json, """{"channels":["a"]}""")
+    pt_target, bundle_target =
+        Cecelia.denoise_model_target("supX"; overwrite = true, want_bundle = true, dev_dir = td)
+    @test pt_target == pt
+    @test bundle_target == joinpath(dir, "supX")
+    @test !isfile(pt) && !isfile(json)   # old pooled pair gone
+    @test !isdir(bundle_target)          # bundle path still available for the runner to create
+
+    # 2) perChannel → pooled: bundle folder cleared before the .pt is written.
+    bundle = joinpath(dir, "supY")
+    mkpath(bundle)
+    open(io -> write(io, "stub"), joinpath(bundle, "a.pt"), "w")
+    write(joinpath(bundle, "manifest.json"), """{"kind":"denoise-support","mode":"perChannel"}""")
+    Cecelia.denoise_model_target("supY"; overwrite = true, dev_dir = td)
+    @test !isdir(bundle)                 # old bundle gone
+
+    # 3) overwrite = false still refuses either colliding shape.
+    open(io -> write(io, "stub"), joinpath(dir, "supZ.pt"), "w")
+    @test_throws ErrorException Cecelia.denoise_model_target("supZ"; overwrite = false, dev_dir = td)
+    mkpath(joinpath(dir, "supW"))
+    @test_throws ErrorException Cecelia.denoise_model_target("supW"; overwrite = false, dev_dir = td)
+end
+
 # The denoise picker is entirely runtime-enumerated — cecelia ships no built-in denoise models. The
 # spec declares one literal option ("None", value ""), the resolver appends the vault, dedup by value.
 @testset "opticalFlow.trainSupportDenoise task wiring" begin

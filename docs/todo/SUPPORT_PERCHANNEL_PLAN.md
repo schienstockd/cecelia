@@ -100,6 +100,13 @@ the per-channel slice of `vols`. Same for inference: `denoise_stack` already run
 through one model. The whole change lives in the two `_run.py` callers + the two `.jl`
 handlers + one JSON spec + the docs.
 
+## Validation
+
+**2026-09-08 — perChannel `supp.small` on `x4E5HU` (visual, per `CLAUDE.md` → *Real-data visual
+validation*):** nuc-GFP and mem-TOM as clean as the pooled run; CD169-Kat improved to the input's
+own ceiling (channel is genuinely photon-limited on this movie — the residual dimness is a signal
+ceiling, not a network one). Chapter closed here.
+
 ## Phases
 
 ### Phase 0 — calibrate the precheck threshold (before writing the switch)

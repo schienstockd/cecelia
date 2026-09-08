@@ -20,12 +20,9 @@
 
 using Dates
 
-# Strip only the `.pt` extension — a stem like `supp.MERTK` must NOT be split at its internal dot.
-# The pre-consolidation `splitext(...)[1]` implementation collapsed both `supp.MERTK` and
-# `supp.small` to `"supp"` in the vault details modal once perChannel rearranged `.name`. Bundle
-# names have no extension and pass through unchanged.
-vault_model_stem(name::AbstractString) =
-    endswith(String(name), ".pt") ? String(name)[1:end-3] : String(name)
+# `vault_model_stem` lives in Cecelia (`app/src/config.jl`, exported) — the twin copy that used
+# to sit here was independently rediscovered as a bug when `denoise_model_names` collapsed
+# `supp.small` to `supp`. Do NOT re-add it here.
 
 """A vault name that is provably a leaf inside the vault (a pooled `.pt` OR a bundle directory),
 or `nothing`. Path separators and `..` still refused."""
@@ -61,13 +58,16 @@ function vault_model_mtime(path::AbstractString, kind::Symbol)::Float64
     latest
 end
 
-"""Augment a `list_*_models()` row with the fields the vault manager renders."""
+"""Augment a `list_*_models()` row with the fields the vault manager renders. Reads `m.stem` if the
+list function already populated it (all three do today); falls back to `vault_model_stem(m.name)`
+for a caller that hasn't been updated. Same rule, one place."""
 function vault_model_row(dir::AbstractString, m::NamedTuple)
     kind = Symbol(get(m, :kind, :pooled))
     path = joinpath(dir, m.name)
     bytes = vault_model_bytes(path, kind)
     mt    = vault_model_mtime(path, kind)
-    (; name = m.name, label = m.label, stem = vault_model_stem(m.name), kind = String(kind),
+    stem  = get(m, :stem, vault_model_stem(m.name))
+    (; name = m.name, label = m.label, stem = stem, kind = String(kind),
        bytes = bytes,
        modified = mt > 0 ? Dates.format(Dates.unix2datetime(mt), "yyyy-mm-dd") : "",
        hasManifest = !isempty(m.manifest),

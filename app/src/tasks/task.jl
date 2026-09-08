@@ -98,16 +98,22 @@ Resolved for EVERY task, before the per-task hook, so a spec needs no `_needs_dy
 overload to use one. A name with no registered source is left alone and warned about once — a spec
 naming a vault that does not exist should not empty the picker.
 """
+# Every vault picker resolves `value` from `m.name` or `m.stem`; the strip rule lives in exactly
+# one place — `vault_model_stem` in config.jl, applied at row-build time in each `list_*_models`.
+# Never hand-strip a model name here (that path bit us when `first(splitext("supp.small"))` returned
+# `"supp"` and the picker's chosen value failed to resolve, 2026-09-08).
+#   * cellpose/coastal — value = full filename (with `.pt`), the runner accepts either.
+#   * denoise/flow     — value = stem, since the training task and picker both use stems.
 const _OPTION_SOURCES = Dict{String,Function}(
-    # value = what the runner resolves; label = what the user reads.
     "cellposeModels" => () -> [(value = String(m.name), label = String(m.label))
                                for m in list_cellpose_models()],
     "coastalModels"  => () -> [(value = String(m.name), label = String(m.label))
                                for m in list_coastal_models()],
-    "denoiseModels"  => () -> [(value = first(splitext(String(m.name))), label = String(m.label))
+    "denoiseModels"  => () -> [(value = m.stem, label = String(m.label))
                                for m in list_denoise_models()],
     # value == label: the user types the stem, so the suggestion IS what goes in the field.
-    "flowModels"     => () -> [(value = n, label = n) for n in flow_model_names()],
+    "flowModels"     => () -> [(value = m.stem, label = m.stem)
+                               for m in list_coastal_models()],
 )
 
 """
