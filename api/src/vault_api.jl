@@ -20,11 +20,9 @@
 
 using Dates
 
-# Stem strip lives in the Cecelia module — the twin copy that used to sit here was independently
-# rediscovered as a bug when `denoise_model_names` collapsed `supp.small` to `supp`. The api layer
-# already leans on the app module for `denoise_models_dir` / `list_denoise_models`, so aliasing is
-# cheaper than the copies drifting.
-const vault_model_stem = Cecelia.vault_model_stem
+# `vault_model_stem` lives in Cecelia (`app/src/config.jl`, exported) — the twin copy that used
+# to sit here was independently rediscovered as a bug when `denoise_model_names` collapsed
+# `supp.small` to `supp`. Do NOT re-add it here.
 
 """A vault name that is provably a leaf inside the vault (a pooled `.pt` OR a bundle directory),
 or `nothing`. Path separators and `..` still refused."""

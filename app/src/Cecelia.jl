@@ -4,6 +4,7 @@ module Cecelia
 export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
+export vault_model_stem
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit
 export task_worker_threads, default_task_worker_threads, set_task_worker_threads!
