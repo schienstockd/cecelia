@@ -3,6 +3,7 @@ import { DEFAULT_RAIL, type RailKind } from '../../components/canvas/canvasManag
 import ClusterHeatmapPanel from './ClusterHeatmapPanel.vue'
 import ClusterHmmStatesPanel from './ClusterHmmStatesPanel.vue'
 import ClusterHmmTransitionsPanel from './ClusterHmmTransitionsPanel.vue'
+import CellCardsView from '../../components/plots/CellCardsView.vue'
 
 // Registry of CLUSTER "panel" plots — the summary-family cluster plots that wrap CanvasPanel themselves
 // (heatmap, HMM behaviour), as opposed to the interactive WebGL views in interactiveViews.ts (UMAP).
@@ -47,6 +48,13 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   hmmTransitions: {
     label: 'HMM transitions', component: ClusterHmmTransitionsPanel, trackOnly: true, needsCols: 'hmmTransition',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmTransitionCols }),
+  },
+  // One card per trackclust pop the manager ticks: medoid track's filmstrip (server-rendered via
+  // /api/cell_cards, trace baked in by overlay_author's `track_color_mode="pop"`) + a stats footer
+  // of the pop's median motility measures. Needs no per-panel `ClusterCtx` beyond the shared bag.
+  cellCards: {
+    label: 'Cell cards', component: CellCardsView, trackOnly: true,
+    analysisBoard: true, rail: CLUSTER_RAIL,
   },
 }
 

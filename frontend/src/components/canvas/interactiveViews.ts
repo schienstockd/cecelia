@@ -2,7 +2,6 @@ import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import type { PopTypeOption, PopTypeSpecLike } from '../../plots/popTypes'
 import UmapView from '../plots/UmapView.vue'
-import CellCardsView from '../plots/CellCardsView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
@@ -58,11 +57,6 @@ export interface InteractiveView {
   // the second and third ticks changed nothing and said nothing. A picker that accepts input it
   // discards is worse than one that refuses it.
   singlePop?: boolean
-  // TRACKCLUST ONLY — mirror of `ClusterPanelDef.trackOnly` (clusterPanels.ts). LayoutCanvas filters
-  // both registries by this so the picker offers a trackclust-only plot only when clustPopType is
-  // trackclust — see LayoutCanvas.vue `clusterOptions`. HMM plots use this too, on the CanvasPanel
-  // side; keeping the flag name identical lets a reader grep for one convention.
-  trackOnly?: boolean
   square?: boolean            // coord-fixed plot → free-floating panel snaps to a 1:1 box (no blank space)
   initialState?: () => Record<string, unknown>   // seed for a NEW panel's state bag (host-agnostic)
 }
@@ -89,15 +83,6 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     label: 'UMAP', component: UmapView, clusterPage: true, analysisBoard: true,
     boardGroup: 'clustering', square: true, rail: 'clusterPops',
     initialState: () => ({ labels: true, hl: [] }),
-  },
-  // One card per trackclust pop the manager ticks: medoid track's filmstrip + median motility
-  // footer. Server-rendered frames via /api/cell_cards (see docs/todo/CELL_CARDS_PLAN.md); the
-  // trace on a card matches the trace on a recorded movie by construction, because both go through
-  // the same overlay_author pass. `rail: 'clusterPops'` — same rail UMAP + cluster panels use.
-  cellCards: {
-    label: 'Cell cards', component: CellCardsView, analysisBoard: true,
-    boardGroup: 'clustering', rail: 'clusterPops', trackOnly: true,
-    initialState: () => ({ maxPx: 320, padPx: 8 }),
   },
   // Self-contained: both pick their own image/segmentation in their panel state, so a population list
   // is dead chrome for them. `'none'` still gives them the rail's styling block — the gating strategy
