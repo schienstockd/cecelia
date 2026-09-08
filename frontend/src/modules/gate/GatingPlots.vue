@@ -80,7 +80,20 @@ const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled works
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
 // (g.valueName) changes.
-const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:${g.valueName}`)
+// Page-local vn — the source of truth for THIS page's ckey, toolbar, and load().
+// DECOUPLED from `g.valueName` (the singleton gating store, which other pages mutate
+// on task-done: `useClusterContext.ts:105` calls `g.selectImage(uid, resolvedVn, 'clust')`
+// via `useDataRefresh`, flipping `g.valueName` under us — that's the axis-reset bug
+// [GATE-DIAG] confirmed on fXgbTl 2026-09-08). `pageVn` only changes on:
+//   1) user pick from the toolbar
+//   2) server-resolved fallback from OUR OWN `load()` call
+// so a cluster/trackclust page's selectImage on the singleton can't rebind our ckey.
+const pageVn = ref<string>(
+  (props.imageUid && typeof localStorage !== 'undefined')
+    ? (localStorage.getItem(`cc.gate.lastVn.${props.popType}.${props.imageUid}`) || g.valueName)
+    : g.valueName
+)
+const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:${pageVn.value}`)
 // Axis transforms (xt/yt) are intentionally LEFT UNSET here so the panels' own per-axis default
 // fires: GatePlotPanel/GatePairsPanel resolve `ui.xt ?? axisDefaultTransform(col)` (linear for
 // spatial/centroid axes via the store's defaultTransformFor, logicle for flow intensities). That fallback
@@ -370,17 +383,32 @@ const _writeLastVn = (vn: string) => {
 }
 async function load() {
   if (!props.imageUid) return
-  // Prefer this page's own last pick; if the store already agrees (fresh session where the user
-  // hasn't been on this image yet), fall through to what's there. The server falls back an
-  // unknown vn to the active segmentation, so a stale save is self-correcting.
-  const vn = _readLastVn() || g.valueName
-  await g.selectImage(props.imageUid, vn, props.popType)
+  // On a fresh mount `pageVn` initialised from localStorage OR `g.valueName`; either way we
+  // request our own vn and let the server resolve it (a stale save is self-correcting).
+  if (!pageVn.value) pageVn.value = _readLastVn() || g.valueName
+  await g.selectImage(props.imageUid, pageVn.value, props.popType)
+  // Adopt the server-resolved vn back into `pageVn` (fetchChannels may reassign valueName when
+  // the client requested an unknown one and the server fell back). Guard on popType so a
+  // concurrent cluster-context selectImage (which flips g.popType/valueName mid-fetch) can't
+  // slip a foreign vn into our page state.
+  if (g.popType === props.popType && g.valueName && g.valueName !== pageVn.value) {
+    pageVn.value = g.valueName
+  }
 }
-// Persist the segmentation the user actually landed on (server-resolved, from fetchChannels).
-watch(() => g.valueName, vn => _writeLastVn(vn))
+// Persist on pageVn change (user pick, or server-resolved adoption above). Watching g.valueName
+// directly was the poisoning path — a cluster-page task-refresh flipped g.valueName to a foreign
+// vn ('flowKat' when the user was on 'flowTom') and the watcher persisted it, so the next mount
+// of the /gating page loaded the wrong vn ("axis reset" from the user's POV).
+watch(pageVn, vn => _writeLastVn(vn))
 function onBroadcast(d: unknown) { g.applyBroadcast(d as any) }
 
-watch(() => props.imageUid, load)
+// imageUid change → re-read pageVn from the new image's _lastVn (each image has its own
+// preferred segmentation), then load. Without this reset the pageVn stays pinned to the
+// previous image's vn and the new image loads with the wrong bag.
+watch(() => props.imageUid, () => {
+  pageVn.value = _readLastVn() || g.valueName
+  load()
+})
 // a transient pop (viewer cell selection) appears → auto-highlight it on every plot so the
 // spatially-selected cells light up in channel space immediately (linked brushing)
 watch(() => g.transientPaths, (paths) => {
@@ -421,7 +449,10 @@ onMounted(() => { ws.on('gating:popmap', onBroadcast); load() })
 // Gated on valueNames being loaded so we don't seed a transient placeholder key, and skipped for
 // restored canvases (they come back non-empty). Persisted per (image, value_name), so no 2→4→6 stacking.
 watch([ckey, () => g.valueNames.length], () => {
-  if (props.imageUid && g.valueName && g.valueNames.includes(g.valueName) && panels.value.length === 0) {
+  // Guard on `pageVn` (this page's own vn), not `g.valueName` — the singleton flips under us
+  // on cluster/trackclust task-refresh and we do NOT want to seed a fresh pair into someone
+  // else's bag. See the pageVn declaration above for the full mechanism.
+  if (props.imageUid && pageVn.value && g.valueNames.includes(pageVn.value) && panels.value.length === 0) {
     add(); add()
   }
 }, { immediate: true })
@@ -434,8 +465,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
     <template v-else>
       <div class="gp-bar">
         <label>segmentation
-          <select data-guide="gate.segmentation" v-model="g.valueName" v-tooltip.bottom="'Which segmentation (labelProps) to gate on'"
-                  @change="g.selectImage(props.imageUid!, g.valueName, props.popType)">
+          <select data-guide="gate.segmentation" v-model="pageVn" v-tooltip.bottom="'Which segmentation (labelProps) to gate on'"
+                  @change="load()">
             <option v-for="v in g.valueNames" :key="v" :value="v">{{ v }}</option>
           </select>
         </label>
