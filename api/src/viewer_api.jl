@@ -917,6 +917,40 @@ function api_viewer_overlay_legend(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, colourBy = content.colourBy, populations = content.populations))
 end
 
+# ── POST /api/viewer/pick-set ────────────────────────────────────────────────────
+# Overwrite the transient pick selection with an EXPLICIT label list. Complementary to pick-cell
+# (add/toggle/replace one clicked cell) and pick-clear (empty it); this exists so a UI can drop
+# ONE id from a multi-pick without re-picking the survivors (the correction cockpit's chip-strip
+# → x-icon click). Body: {projectUid, imageUid, valueName?, popType?, labels: [int, ...]}.
+# `labels=[]` behaves like pick-clear. Same broadcast path.
+function api_viewer_pick_set(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu   = String(get(body, "projectUid", ""))
+    iu   = String(get(body, "imageUid", ""))
+    pt   = String(get(body, "popType", "flow"))
+    img, err = _gating_image(pu, iu)
+    err === nothing || return err
+    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    raw  = get(body, "labels", Any[])
+    raw isa AbstractVector || return 400, JSON3.write((; error = "labels must be an array"))
+    # Cap the list. A cockpit click strip won't approach this; anything larger is a client bug
+    # or a probe, and we don't want to broadcast a million-entry popmap because a POST asked us
+    # to. `pick-rect` already caps its rectangle read by pixels, so this is the analogue for the
+    # explicit-list path.
+    length(raw) > 50_000 && return 400, JSON3.write((; error = "too many labels (max 50000)"))
+    labs = Int[]
+    for x in raw
+        v = try; Int(x); catch; nothing; end
+        (v === nothing || v <= 0) && continue    # 0 is background; skip silently — matches pick-cell
+        v in labs || push!(labs, v)
+    end
+    _set_pick_selection!(img._dir, vn, labs)
+    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _inject_pick_pop!(m, img)
+    _broadcast_popmap(pu, iu, vn, pt, m)
+    200, JSON3.write((; nSelected = length(labs)))
+end
+
 # ── POST /api/viewer/pick-clear (P9) ──────────────────────────────────────────────
 # Empty the transient cell-selection pop for (image, valueName, popType). Same registry /
 # broadcast path as pick-cell / pick-rect (they all `_set_pick_selection!` + `_inject_pick_pop!`

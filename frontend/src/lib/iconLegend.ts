@@ -178,6 +178,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-desktop', means: 'The console' },
       { icon: 'pi-database', means: 'The model vault — a trained denoise or flow model' },
       { icon: 'pi-wrench', means: 'A tool you reach for — the correction cockpit, or a module you dropped in' },
+      { icon: 'pi-hammer', means: 'A surface still being built — expect more verbs in a follow-up release' },
       { icon: 'pi-book', means: 'The lab log and notebooks' },
       { icon: 'pi-list-check', means: 'Tasks' },
       { icon: 'pi-clone', means: 'The analysis board, or cascade the plots' },
@@ -256,7 +257,7 @@ export const ICON_LEGEND: IconFamily[] = [
 //   pi-face-smile  pi-thumbs-up  pi-thumbs-down  pi-thumbs-up-fill  pi-thumbs-down-fill
 //   pi-heart  pi-heart-fill  pi-crown  pi-trophy  pi-graduation-cap
 //   pi-home  pi-building  pi-building-columns  pi-briefcase  pi-warehouse  pi-truck  pi-car
-//   pi-hammer  pi-shop  pi-shopping-bag  pi-shopping-cart
+//   pi-shop  pi-shopping-bag  pi-shopping-cart
 //   pi-cart-plus  pi-cart-minus  pi-cart-arrow-down  pi-ticket  pi-gift  pi-receipt
 //   pi-money-bill  pi-credit-card  pi-wallet  pi-dollar  pi-euro  pi-pound  pi-turkish-lira
 //   pi-indian-rupee  pi-barcode  pi-mars  pi-venus  pi-language

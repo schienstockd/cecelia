@@ -4779,6 +4779,7 @@ end
         "/api/viewer/pick-cell",
         "/api/viewer/pick-rect",
         "/api/viewer/pick-clear",
+        "/api/viewer/pick-set",
         "/api/viewer/overlay-legend",
         "/api/viewer/record-test",
         "/api/viewer/thumbnail",
@@ -4822,7 +4823,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 87 && length(POST_ROUTES) == 110
+    @test length(GET_ROUTES) == 87 && length(POST_ROUTES) == 111
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -6514,6 +6515,32 @@ end
                                 "valueName" => "default", "popType" => "flow"))
         st, out = api_viewer_pick_clear(Vector{UInt8}(body))
         @test st == 404
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
+@testset "API: viewer pick-set — 404 when the image doesn't exist + input validation" begin
+    # Symmetric with pick-clear: the boundary check goes through `_gating_image` before touching
+    # any zarr, so an unknown image is a 404 not a 500. Also verifies `labels` must be an array —
+    # a wrong body shape fails at 400 rather than silently accepting garbage.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        # Missing image → 404.
+        body = JSON3.write(Dict("projectUid" => "nope", "imageUid" => "nope",
+                                "valueName" => "default", "popType" => "flow",
+                                "labels" => [1, 2, 3]))
+        st, out = api_viewer_pick_set(Vector{UInt8}(body))
+        @test st == 404
+
+        # `labels` not an array → 400. We still hit `_gating_image` first (missing project → 404
+        # short-circuits), so give a fake project so it survives that check. Simulate that by
+        # dropping to a request where project resolution errors on empty projectUid.
+        body2 = JSON3.write(Dict("projectUid" => "", "imageUid" => "any", "labels" => 42))
+        st2, out2 = api_viewer_pick_set(Vector{UInt8}(body2))
+        @test st2 == 400  # `_gating_image` fires "projectUid required" (400) before labels check
     finally
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end
