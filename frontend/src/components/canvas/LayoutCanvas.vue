@@ -213,7 +213,13 @@ function railOf(c: SlotContent | null): RailKind {
 // now the rail declaration rather than a second, parallel test that could disagree with it.
 const isClusterSlot = (c: SlotContent | null): boolean => railOf(c) === 'clusterPops'
 const clusterOptions = computed(() => {
-  const out: { key: string; label: string }[] = [...boardViews('clustering')]
+  // Interactive clustering views (UMAP, cell cards). `trackOnly` is the same flag the CLUSTER_PANELS
+  // side applies below — a trackclust-only plot (cell cards) is hidden until popType flips.
+  const out: { key: string; label: string }[] = boardViews('clustering').filter(v => {
+    const def = INTERACTIVE_VIEWS[v.key]
+    if (def?.trackOnly && clustPopType.value !== 'trackclust') return false
+    return true
+  })
   for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
     if (!def.analysisBoard) continue
     if (def.trackOnly && clustPopType.value !== 'trackclust') continue          // HMM = track runs only

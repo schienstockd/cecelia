@@ -58,6 +58,11 @@ export interface InteractiveView {
   // the second and third ticks changed nothing and said nothing. A picker that accepts input it
   // discards is worse than one that refuses it.
   singlePop?: boolean
+  // TRACKCLUST ONLY — mirror of `ClusterPanelDef.trackOnly` (clusterPanels.ts). LayoutCanvas filters
+  // both registries by this so the picker offers a trackclust-only plot only when clustPopType is
+  // trackclust — see LayoutCanvas.vue `clusterOptions`. HMM plots use this too, on the CanvasPanel
+  // side; keeping the flag name identical lets a reader grep for one convention.
+  trackOnly?: boolean
   square?: boolean            // coord-fixed plot → free-floating panel snaps to a 1:1 box (no blank space)
   initialState?: () => Record<string, unknown>   // seed for a NEW panel's state bag (host-agnostic)
 }
@@ -91,7 +96,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // the same overlay_author pass. `rail: 'clusterPops'` — same rail UMAP + cluster panels use.
   cellCards: {
     label: 'Cell cards', component: CellCardsView, analysisBoard: true,
-    boardGroup: 'clustering', rail: 'clusterPops',
+    boardGroup: 'clustering', rail: 'clusterPops', trackOnly: true,
     initialState: () => ({ maxPx: 320, padPx: 8 }),
   },
   // Self-contained: both pick their own image/segmentation in their panel state, so a population list
