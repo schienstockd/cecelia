@@ -1,12 +1,55 @@
 # flowRegister robustness — Galene-derived follow-ups
 
-**Status:** Phase 1 shipped 2026-09-07 (branch `feat/flow-register-correlation-gate`); P2 + P3 pending.
+**Status:** Phase 1 shipped 2026-09-07 as metric-only (PR #848). **P2 + P3 PARKED 2026-09-08** — see *Why the rest is parked* below.
 **Prompted by:** Dominik surfacing an ex-colleague's implementation (Galene) after the
 [structural-channel passthrough](../../app/src/tasks/cleanupImages/flow_register.jl) landed. The
 comment that started it: *"optical flow can't distinguish cell movement from local distortion, and
 the flow itself is not pixel-wise accurate, so you get broken collagens in the corrected video"*.
 
-## Goal
+## Why the rest is parked (2026-09-08)
+
+P1 shipped as metric-only after measuring on c91ICQ: Galene's frame gate had nothing to catch (flow
+was uniformly improving every frame), and c91ICQ's real failure fingerprint is 98% clamp saturation
+at `maxShiftPx=16` (peak measured flow 115.82 px) — a magnitude problem, not an estimator problem.
+None of Galene's remaining phases (P2 phase-correlation warm-start, P3 coverage-mask sidecar)
+address the clamp.
+
+Web-swept the 2023-2026 open-source landscape for successors that *would* address c91ICQ's fingerprint:
+
+- **PatchWarp** (Hattori & Komiyama, *Cell Reports Methods* 2022,
+  [DOI 10.1016/j.crmeth.2022.100205](https://doi.org/10.1016/j.crmeth.2022.100205);
+  [github.com/ryhattori/PatchWarp](https://github.com/ryhattori/PatchWarp), MIT, MATLAB-first) —
+  per-patch affine, distinct from ours. Niche is per-region distortion under GRIN lens / glass
+  window. **Prototyped 2026-09-08** (from the paper method — overlapping patches, ECC-affine per
+  patch seeded from phase correlation, bilinear-interpolated to a per-pixel field, applied via the
+  same `cv2.remap` path) and measured on both anchor movies (c91ICQ 3D + EaMaVq 3P spleen). Result:
+  **Farneback wins every frame on both movies** (c91ICQ 0/125, EaMaVq 0/200); worst PatchWarp frame
+  is -0.44 below Farneback. The smooth-affine-per-patch basis doesn't fit per-pixel non-rigid
+  deformation; visible stitching artefacts on the comparison movies. *Ruled out on real data — do
+  not re-prototype without a distinct new failure fingerprint.*
+- **RAFT / SEA-RAFT / VoxelMorph** — better estimators or learned deformable regs. All still hit the
+  same clamp / smoothness constraints. *Not applicable* to the c91ICQ fingerprint.
+- **elastix B-spline FFD** (SimpleITK, already vendored for `editImages.register`) — iterative
+  optimizer on B-spline control points; the "disciplined" version of what PatchWarp tried to do,
+  with global smoothness. Considered 2026-09-08 and *parked without prototyping*: ~10-100× slower
+  per (t,z) than Farneback's single-shot polynomial expansion (Farneback is already the slowest
+  cleanup step). Not worth the throughput hit without a distinct failure fingerprint that only a
+  global-smooth non-rigid basis can fix — PatchWarp's failure on real data suggests a global-smooth
+  non-rigid basis isn't what these movies need.
+- **2P community consensus** (e.g. Guglielmi et al. 2024 preprocessing survey) is walking away from
+  within-frame correction — hardware side (faster resonant scanners) has made it a shrinking problem.
+
+**Decision:** leave `flowRegister` as-is. Also measured that raising `maxShiftPx` to 128 gives
+essentially unchanged correlation on both movies — Farneback estimates truthful large motion but
+applying it fully doesn't align better; the current 16px clamp is regularising and helping.
+Larger Farneback `winsize` (51, 71) also loses to the default 25. `frameCorrelation` (PR #848) is
+now the tool for finding the next real failure mode. Revisit only when a future movie's metric
+shows something Farneback + `structuralChannels` genuinely can't handle **and the fingerprint is
+distinct from bulk motion and per-pixel non-rigid deformation** (both now ruled out for PatchWarp).
+
+---
+
+## Goal (original)
 
 Make `cleanupImages.flowRegister` **honest about which frames it corrected** and **cheaper for flow
 to succeed**, without rewriting the estimator. Three portable ideas from Galene (paper + code), each
