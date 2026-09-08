@@ -216,7 +216,11 @@ const clusterOptions = computed(() => {
   const out: { key: string; label: string }[] = [...boardViews('clustering')]
   for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
     if (!def.analysisBoard) continue
-    if (def.trackOnly && clustPopType.value !== 'trackclust') continue          // HMM = track runs only
+    // `trackOnly` no longer filters the picker — picking such a plot AUTO-SETS `clustPopType` (see
+    // addPlot below), so the plot always self-configures. The old filter made these plots
+    // unreachable when they'd be the user's FIRST cluster slot (the popType toolbar select is
+    // guarded by `v-if="hasClusterSlot"`). `needsCols` still filters — those columns come from the
+    // RUN, not from a user choice, so hiding a plot that has no data to draw is right.
     if (def.needsCols === 'hmmState' && !clustHmmStateCols.value.length) continue
     if (def.needsCols === 'hmmTransition' && !clustHmmTransitionCols.value.length) continue
     out.push({ key, label: def.label })
@@ -235,6 +239,12 @@ function addPlot(i: number, val: string) {
     // a view seeds its own new-panel state (registry `initialState`); cluster PANELS carry a `hl`
     // (highlight) bag and self-seed the rest (e.g. heatmap features)
     const state = INTERACTIVE_VIEWS[ref]?.initialState?.() ?? (isClusterPanel(ref) ? { hl: [] } : {})
+    // The picker gets the popType from the plot: a `trackOnly` cluster panel — HMM states/
+    // transitions, cell cards — adopts trackclust when picked, so the board self-configures
+    // rather than dead-ending on "you can't pick this until you switch popType" (the popType
+    // select is `v-if="hasClusterSlot"`, unreachable before the first cluster slot).
+    if (isClusterPanel(ref) && CLUSTER_PANELS[ref].trackOnly && clustPopType.value !== 'trackclust')
+      clustPopType.value = 'trackclust'
     layout.setContent(props.canvasKey, i, { kind: 'interactive', ref, state })
   }
   layout.setActive(props.canvasKey, i)

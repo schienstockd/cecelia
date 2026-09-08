@@ -94,9 +94,6 @@ defineExpose({})
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <div class="ccv">
       <p v-if="err" class="cc-muted-warn">{{ err }}</p>
-      <p v-else-if="popType !== 'trackclust'" class="cc-muted">
-        Cell cards need a track-clustering run. Switch popType to <b>trackclust</b> above.
-      </p>
       <p v-else-if="!rootUid" class="cc-muted">Select an image.</p>
       <p v-else-if="!suffix" class="cc-muted">No clustering run in context.</p>
       <p v-else-if="!(shownPops && shownPops.length)" class="cc-muted">

@@ -52,11 +52,8 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   // One card per trackclust pop the manager ticks: medoid track's filmstrip (server-rendered via
   // /api/cell_cards, trace baked in by overlay_author's `track_color_mode="pop"`) + a stats footer
   // of the pop's median motility measures. Needs no per-panel `ClusterCtx` beyond the shared bag.
-  // NB: no `trackOnly` — the popType select is toolbar-hidden until a cluster slot exists, so a
-  // trackOnly filter would make this plot unreachable when it's the user's FIRST cluster slot.
-  // The plot renders its own "switch popType to trackclust" empty state instead.
   cellCards: {
-    label: 'Cell cards', component: CellCardsView,
+    label: 'Cell cards', component: CellCardsView, trackOnly: true,
     analysisBoard: true, rail: CLUSTER_RAIL,
   },
 }
