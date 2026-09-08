@@ -53,7 +53,7 @@
           "model": "",
           "matchAs": "base",
           "cellChannels": [],
-          "normalise": 99.99,
+          "normalise": 99.9,
           "seedSize": 4.0,
           "seedBlurSigma": 2.5,
           "probThreshold": 0.3,
@@ -180,8 +180,8 @@
               "type": "float",
               "min": 50.0,
               "max": 100.0,
-              "step": 0.01,
-              "default": 99.99,
+              "step": 0.1,
+              "default": 99.9,
               "tip": "Upper percentile for intensity normalisation"
             },
             {
