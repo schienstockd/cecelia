@@ -43,7 +43,7 @@ function _run_task(task::Flip, img::CciaImage, params::Dict{String,Any};
     on_log("[INFO] Flip source: $im_path (axis=$axis)")
     on_log("[INFO] Output:      $im_out_path (valueName='$out_value_name')")
 
-    ok = run_py("tasks/cleanupImages/flip_run.py",
+    ok = run_py("tasks/editImages/flip_run.py",
         (; imPath = im_path, imOutPath = im_out_path, axis = axis),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

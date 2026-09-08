@@ -137,14 +137,6 @@ function _spec_path(::Denoise)
     joinpath(@__DIR__, "cleanupImages", "denoise.json")
 end
 
-function _spec_path(::Flip)
-    joinpath(@__DIR__, "cleanupImages", "flip.json")
-end
-
-function _spec_path(::DtypeConvert)
-    joinpath(@__DIR__, "cleanupImages", "dtype.json")
-end
-
 function _spec_path(::CropImage)
     joinpath(@__DIR__, "editImages", "cropImage.json")
 end
@@ -175,6 +167,14 @@ end
 
 function _spec_path(::Register)
     joinpath(@__DIR__, "editImages", "register.json")
+end
+
+function _spec_path(::Flip)
+    joinpath(@__DIR__, "editImages", "flip.json")
+end
+
+function _spec_path(::DtypeConvert)
+    joinpath(@__DIR__, "editImages", "dtype.json")
 end
 
 function _spec_path(::TestImageTask)
@@ -248,8 +248,6 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.flowRegister"        => FlowRegister(),
         "cleanupImages.smooth"              => Smooth(),
         "cleanupImages.denoise"             => Denoise(),
-        "cleanupImages.flip"                => Flip(),
-        "cleanupImages.dtype"               => DtypeConvert(),
         "editImages.cropImage"              => CropImage(),
         "editImages.copyImage"              => CopyImage(),
         "editImages.zProject"               => ZProject(),
@@ -257,6 +255,8 @@ function _fun_name_map()::Dict{String, CciaTask}
         "editImages.bin"                    => BinImage(),
         "editImages.resampleZ"              => ResampleZ(),
         "editImages.register"               => Register(),
+        "editImages.flip"                   => Flip(),
+        "editImages.dtype"                  => DtypeConvert(),
         "exportImages.ome_tiff"        => ExportOmeTiff(),
         "testTasks.image_task"               => TestImageTask(),
         "testTasks.set_task"                 => TestSetTask(),

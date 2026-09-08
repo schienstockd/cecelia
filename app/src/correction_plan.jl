@@ -184,14 +184,12 @@ end
 # storage/output. Bucket VALUES are the tie-broken order on the chain; a value between buckets is
 # reserved for future tasks that want to slot in without a bucket move.
 const _ORDER_WEIGHTS = Dict{String,Int}(
-    "cleanupImages.flip"         => 100,
     "cleanupImages.stackAlign"   => 100,
     "cleanupImages.driftCorrect" => 200,
     "cleanupImages.flowRegister" => 300,
     "cleanupImages.smooth"       => 300,
     "cleanupImages.afCorrect"    => 400,
     "cleanupImages.denoise"      => 400,
-    "cleanupImages.dtype"        => 500,
 )
 
 _order_weight(fn::AbstractString) = get(_ORDER_WEIGHTS, String(fn), 250)  # 250 = "unclassified"

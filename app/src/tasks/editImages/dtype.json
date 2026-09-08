@@ -1,8 +1,8 @@
 {
   "task": "dtype",
-  "fun_name": "cleanupImages.dtype",
+  "fun_name": "editImages.dtype",
   "label": "Bit depth",
-  "category": "Cleanup",
+  "category": "Preprocessing",
   "env": [
     "local"
   ],
