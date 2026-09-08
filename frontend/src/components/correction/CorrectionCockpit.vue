@@ -58,6 +58,10 @@ import {
   sortLabels, nextIndex, prevIndex, clampIndex, pageSummary,
   type ReviewLabel, type ReviewSort,
 } from '../../utils/reviewPager'
+import {
+  selectionKind, labelSelectionSummary, trackSelectionSummary,
+  labelChipOptions, trackChipOptions, parseLabelChipValues,
+} from '../../utils/correctionSelections'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -304,23 +308,84 @@ function reviewSplitFocused(axis: 'horizontal' | 'vertical'): void {
   if (op) queueLabelOp(op)
 }
 
-// ── Summaries ───────────────────────────────────────────────────────────────────
+// ── Summaries + chip strips ─────────────────────────────────────────────────────
 
-const selectedSummary = computed(() => {
-  if (mode.value === 'labels') {
-    const n = pickedLabels.value.length
-    if (currentT.value === null) return 'Viewer not ready'
-    if (!n) return `No label picked (frame ${currentT.value})`
-    if (n === 1) return `Label ${pickedLabels.value[0]} @ frame ${currentT.value}`
-    if (n <= 4) return `Labels ${pickedLabels.value.join(', ')} @ frame ${currentT.value}`
-    return `${n} labels picked @ frame ${currentT.value}`
+// Which selection this mode reads — labels (Labels + Review both page over `/Pick selection`),
+// tracks (Tracks). Was a bug pre-vis-PR: Review fell through to the tracks branch and reported
+// "N tracks selected" while the user was picking labels (screenshot 2026-09-08).
+const stripKind = computed(() => selectionKind(mode.value))
+
+const selectedSummary = computed(() =>
+  stripKind.value === 'labels'
+    ? labelSelectionSummary(pickedLabels.value, currentT.value)
+    : trackSelectionSummary(trackScope.value.selectedTracks, trackScope.value.splitFrame))
+
+const chipOptions = computed(() =>
+  stripKind.value === 'labels'
+    ? labelChipOptions(pickedLabels.value, reviewFocused.value?.label ?? null)
+    : trackChipOptions(trackScope.value.selectedTracks))
+
+const chipModel = computed<string[]>(() =>
+  stripKind.value === 'labels'
+    ? pickedLabels.value.map(String)
+    : trackScope.value.selectedTracks.slice())
+
+/** Click on a chip in the strip — ChipSelect emits the updated `string[]`; POST to the server so
+ *  every downstream consumer (plots, viewer overlay, the other cockpit mode) reflects the change,
+ *  then explicitly reload from `/api/gating/membership` so the local mirror is the SERVER's truth,
+ *  not our best-effort echo. Same idempotent-reconcile pattern the popmap tick uses for other
+ *  cross-window changes — doing it explicitly here removes "the fetch didn't broadcast" as a
+ *  possible failure mode. */
+async function onStripUpdate(next: string[] | string): Promise<void> {
+  const arr = Array.isArray(next) ? next : [next]
+  if (stripKind.value === 'labels') {
+    if (!projectUid.value || !imageUid.value || !valueName.value) return
+    const labs = parseLabelChipValues(arr)
+    // Optimistic paint so the click feels instant; the reload below is authoritative.
+    pickedLabels.value = labs
+    try {
+      await fetch('/api/viewer/pick-set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectUid: projectUid.value, imageUid: imageUid.value,
+          valueName: valueName.value, popType: 'flow', labels: labs,
+        }),
+      })
+    } catch { /* fall through to reload — the reconciler is the source of truth */ }
+    await reloadPicked()
+  } else if (trackKey.value) {
+    cockpit.setSelectedTracks(trackKey.value, arr)
   }
-  const ids = trackScope.value.selectedTracks
-  if (!ids.length) return 'No track selected'
-  if (ids.length === 1) return `Track ${ids[0]}${trackScope.value.splitFrame !== null ? ` @ frame ${trackScope.value.splitFrame}` : ''}`
-  if (ids.length === 2) return `Tracks ${ids.join(' + ')}`
-  return `${ids.length} tracks selected`
-})
+}
+
+/** Clear the whole selection for the current mode. Labels + Review call `/api/viewer/pick-clear`
+ *  then reconcile; Tracks writes an empty list to the client store. Explicit-clear affordance
+ *  was the "selections hang around for eternity" complaint (screenshot 2026-09-08). */
+async function clearSelection(): Promise<void> {
+  if (stripKind.value === 'labels') {
+    if (!projectUid.value || !imageUid.value || !valueName.value) return
+    pickedLabels.value = []
+    try {
+      await fetch('/api/viewer/pick-clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectUid: projectUid.value, imageUid: imageUid.value,
+          valueName: valueName.value, popType: 'flow',
+        }),
+      })
+    } catch { /* fall through to reload */ }
+    await reloadPicked()
+  } else if (trackKey.value) {
+    cockpit.setSelectedTracks(trackKey.value, [])
+  }
+}
+
+const canClear = computed(() =>
+  stripKind.value === 'labels'
+    ? pickedLabels.value.length > 0
+    : trackScope.value.selectedTracks.length > 0)
 
 const detSummary = computed(() => {
   if (mode.value !== 'tracks') return ''
@@ -599,7 +664,31 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
       <div class="cockpit-spacer" />
 
       <div class="cockpit-selection cc-fs-2xs">
-        <div class="cc-muted">{{ selectedSummary }}</div>
+        <!-- Chip strip: the "what is picked" visualiser. One chip per picked track (Tracks) or
+             picked label (Labels + Review). Clicking a chip drops that id — same DE-select
+             mechanic ChipSelect exposes everywhere else. Empty = no strip; the summary line
+             below still names the state. Review's focused label gets the accent so the pager's
+             cursor is visible in the strip too. -->
+        <div v-if="chipOptions.length" class="cockpit-chip-strip"
+             v-tooltip.top="stripKind === 'labels'
+               ? 'Picked labels — click one to drop it'
+               : 'Selected tracks — click one to drop it'">
+          <ChipSelect variant="pill" multiple :options="chipOptions"
+                      :model-value="chipModel"
+                      @update:model-value="onStripUpdate" />
+        </div>
+        <div class="cockpit-selection-row">
+          <span class="cc-muted">{{ selectedSummary }}</span>
+          <span class="cockpit-spring" />
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense"
+                  :disabled="!canClear"
+                  v-tooltip.top="stripKind === 'labels'
+                    ? 'Clear picked labels'
+                    : 'Clear selected tracks'"
+                  @click="clearSelection">
+            <i class="pi pi-times" />
+          </button>
+        </div>
         <div v-if="detSummary" class="cc-muted">{{ detSummary }}</div>
       </div>
 
@@ -649,4 +738,6 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
 .cockpit-review-card { padding: 4px 6px; border-left: 2px solid var(--cc-accent);
                        display: flex; flex-direction: column; gap: 2px; }
 .cockpit-review-verbs { gap: 0.3rem; flex-wrap: wrap; }
+.cockpit-chip-strip { padding: 2px 0; max-height: 5.5rem; overflow-y: auto; }
+.cockpit-selection-row { display: flex; align-items: center; gap: 0.3rem; }
 </style>

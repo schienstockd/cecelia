@@ -171,9 +171,15 @@ function isNavDisabled(item: NavItem): boolean {
               :class="{ on: settings.correctionCockpitOpen }"
               @click="settings.correctionCockpitOpen = !settings.correctionCockpitOpen"
               v-tooltip.right="settings.correctionCockpitOpen
-                ? 'Close correction cockpit'
-                : 'Correction cockpit — join / split / remove tracks, edit labels'">
+                ? 'Close correction cockpit (in progress)'
+                : 'Correction cockpit — tracks + labels (in progress)'">
         <i class="pi pi-wrench" />
+        <!-- WIP badge: the correction cockpit is shipping in phases (docs/todo/CORRECTION_PLAN.md
+             + docs/todo/COCKPIT_INTERACTIVITY_PLAN.md). The hammer glyph over the wrench tells a
+             pre-release user "we're still building on this" without hiding it — the working half
+             (Merge / Remove / label.split, Review pager) is real and useful. Remove when the plan
+             lands its remaining phases. -->
+        <i class="pi pi-hammer panel-launcher-badge panel-launcher-badge-wip" />
       </button>
       <button class="panel-launcher panel-launcher-lablog cc-btn cc-btn-bare"
               data-guide="sidebar.labLogCta"
@@ -385,6 +391,9 @@ function isNavDisabled(item: NavItem): boolean {
   border-radius: 50%;
   padding: 1px;
 }
+/* WIP variant: amber tint over the cockpit's wrench — "still being built". Not a warning
+   (which is red / --cc-danger), not a QC flag (which is a `pi-flag` on an image row). */
+.panel-launcher-badge-wip { color: #d97706; }
 
 /* ── Nav items ────────────────────────────────────────────────────────────── */
 .nav-item {
