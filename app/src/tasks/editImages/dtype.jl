@@ -47,7 +47,7 @@ function _run_task(task::DtypeConvert, img::CciaImage, params::Dict{String,Any};
     on_log("[INFO] Dtype source: $im_path")
     on_log("[INFO] Output:       $im_out_path (dtype=$dtype rescale=$rescale, valueName='$out_value_name')")
 
-    ok = run_py("tasks/cleanupImages/dtype_run.py",
+    ok = run_py("tasks/editImages/dtype_run.py",
         (; imPath = im_path, imOutPath = im_out_path, dtype = dtype, rescale = rescale),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

@@ -1,8 +1,8 @@
 {
   "task": "flip",
-  "fun_name": "cleanupImages.flip",
+  "fun_name": "editImages.flip",
   "label": "Flip",
-  "category": "Cleanup",
+  "category": "Preprocessing",
   "env": [
     "local"
   ],

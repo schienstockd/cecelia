@@ -104,9 +104,11 @@ Columns:
 | `cleanupImages.smooth` (spatial) | Photon-limited channel(s) present. **No plan-time probe today** (1c §gap 4). Preferred trigger = card "resonance / photon-limited" per 1b Rule 1. Fallback = post-hoc `zeroFracIn > 0.15` from a prior run | `user-pick` (default on for the photon-limited card, off otherwise) | **300** — before AF (Q-C6/C7 resolved 2026-09-06 per SMOOTHING_PLAN's measured evidence on `zolIMa/fXgbTl`) | "Card is not photon-limited" / "No prior `zeroFracIn` above 0.05 for any selected channel" |
 | `cleanupImages.smooth` (temporal) | Spatial trigger fires AND image has `T` axis AND upstream is drift-corrected (name heuristic — 1a inferred assumption 6, **OPEN §Q-C1**) | `user-pick` (default `median`) | (same bucket as spatial smooth) | "No T axis" / "Card excludes temporal averaging" |
 | `cleanupImages.denoise` (SUPPORT) | User has a trained denoise model in the vault AND at least one selected channel is NOT saturated (per PR #796 / DENOISE_INTEGRATION_PLAN D6) AND `SizeT ≥ inputFrames` (PR #805) | `user-pick` (default off — requires a trained model) | **400** — after drift correction per JSON tip; before/after smooth is **OPEN §Q-C6/C7** | "No denoise model in vault" / "All selected channels saturated (`meta.saturation`)" / "SizeT too short for model inputFrames" |
-| `cleanupImages.flip` | User selection only (mounted-on-the-wrong-side dataset) | `user-pick` (default off, QC-EXEMPT per 1a) | **100** (geometric, before drift so downstream tasks see the fixed geometry) | "User did not select a flip axis" |
-| `cleanupImages.dtype` | User storage decision only | `user-pick` (default off) | **500** — typically last, per 1a | "User did not request a dtype cast" |
 | `cleanupImages.cellposeCorrect` (RETIRED) | Never included by the plan — `RETIRED_FUN_NAMES` errors on re-run | `exclude` (hard) | — | "Retired with cellpose v4 migration (#610). Use `cleanupImages.smooth` for photon-limited data or `cleanupImages.denoise` for SUPPORT denoising." |
+
+**Moved out of scope 2026-09-08:** `dtype` and `flip` were relocated to `editImages/` (Preprocessing
+module). They are user-storage / user-geometry choices, not corrections — the planner should not
+recommend or exclude them. See PR moving `cleanupImages.{dtype,flip}` → `editImages.{dtype,flip}`.
 
 ### Notes on the table
 
