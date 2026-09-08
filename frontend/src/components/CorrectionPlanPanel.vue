@@ -8,6 +8,11 @@
   "unsaved". Picking a card saves plan.json in one round-trip. A `stale` marker fires when the
   image's `saturationFingerprint` no longer matches the sidecar (a re-import happened).
 
+  The card row is a `CorrectionCardPicker` (2×2 grid of image-face tiles with a Custom escape
+  row below) rather than a pill list, because the card names ("Resonance", "Galvo") are
+  scanner-first while users think image-first — recognition beats recall. Figures live in
+  `tasks/cardVis.ts` (pure module, testable).
+
   Wizard section (slice 3c) exposes the three enum questions from §4 of the plan doc that overlay a
   card independently — W2 (stage rotated → sitkRigid), W3 (frame-to-frame warp → include
   flowRegister), W5 (intra-stack Z drift → include stackAlign). Each answer immediately re-saves the
@@ -31,6 +36,7 @@
 import { computed, ref, watch } from 'vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import CorrectionCardPicker from './CorrectionCardPicker.vue'
 import FloatingPanel from './FloatingPanel.vue'
 import { useCorrectionPlan, fetchCorrectionPresets } from '../composables/useCorrectionPlan'
 import type { AcquisitionPresetSummary, CorrectionStep, QCScore } from '../types/correctionPlan'
@@ -90,11 +96,10 @@ fetchCorrectionPresets().then(rows => { presets.value = rows }).catch(() => { /*
 // Card picker options — `custom` last so it reads as the fallback rather than an active choice; the
 // natural order for the four opinionated cards is the enum W1 offers.
 const CARD_ORDER = ['resonance', 'galvo', 'spinning_disk', 'deep_3d', 'custom']
-const cardOptions = computed<ChipOption[]>(() =>
+const orderedPresets = computed<AcquisitionPresetSummary[]>(() =>
   CARD_ORDER
     .map(id => presets.value.find(p => p.id === id))
     .filter((p): p is AcquisitionPresetSummary => p !== undefined)
-    .map(p => ({ value: p.id, label: p.name.split(' /')[0], tip: p.description }))
 )
 
 async function pickCard(newId: string): Promise<void> {
@@ -200,16 +205,13 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
     <div v-else-if="error" class="empty cc-fs-sm error-msg">{{ error }}</div>
 
     <template v-else-if="plan">
-      <div class="cc-row cc-fs-sm">
-        <span class="cc-muted">Card:</span>
-        <ChipSelect
-          v-if="cardOptions.length"
-          variant="pill"
-          :options="cardOptions"
-          :model-value="plan.presetId"
-          @update:model-value="v => pickCard(String(v ?? ''))"
-        />
-      </div>
+      <CorrectionCardPicker
+        v-if="orderedPresets.length"
+        :presets="orderedPresets"
+        :model-value="plan.presetId"
+        :disabled="loading"
+        @update:model-value="v => pickCard(v)"
+      />
 
       <CollapsibleSection
         :label="`Wizard${wizardAnswered ? ' (' + wizardAnswered + ')' : ''}`"
