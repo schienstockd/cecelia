@@ -147,6 +147,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "{pct}% of labels hand-corrected",
         long  = "This much correction points at the segmentation parameters — revisit those and re-segment instead."),
 
+    # downstream staleness after a correction (correction_staleness.jl / P3 Decision 5). ONE finding
+    # per report; the affected artefact list rides in `detail.artefacts` so the cockpit can render it
+    # inline. The `long` names the classes rather than each file — a per-artefact wording would balloon
+    # to N lines for a big cohort and the useful information is "which tasks to re-run", not a path list.
+    "correction.stale_artefacts" => (
+        short = "{n} downstream artefact(s) now predate this correction",
+        long  = "A {scope} correction changed the row set — re-run the affected tasks (tracking, clustering, gating rebuild, spatial graph) to refresh; the report file lists each artefact."),
+
     # clustering (cluster_qc_findings)
     "clustering.single_cluster" => (
         short = "Only one cluster found",

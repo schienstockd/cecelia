@@ -11791,7 +11791,10 @@ end
                      "count", "min", "tiles", "suggest",
                      # combined findings (multi-channel roll-ups): `n` count, `s` plural suffix,
                      # `channels` comma-joined list — see import.photon_limited
-                     "n", "s", "channels"])
+                     "n", "s", "channels",
+                     # correction staleness: `scope` is "labels" or "tracks" — see
+                     # correction.stale_artefacts
+                     "scope"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -16415,15 +16418,23 @@ end
         @test_throws Cecelia.ParamValidationError Cecelia.parse_label_ops(bad)
     end
 
-    # composite is a 4-step chain: snapshot the obs (`live.*`, track_id, cluster ids, HMM, gating
-    # pops — everything measureLabels would clobber) BEFORE segment.correct, then restore AFTER
-    # segment.measureLabels. Decision 4b, docs/todo/CORRECTION_PLAN.md → P2.
+    # composite is a 5-step chain: snapshot the obs, correct, re-measure, restore, THEN report which
+    # downstream artefacts predate the correction (P2 Decision 4b + P3 Decision 5, CORRECTION_PLAN.md).
     spec = Cecelia._task_spec(Cecelia._task_from_fun_name("segment.correct_measures"))
     @test spec["composite"] == [
         "segment.correct_carryover_snapshot",
         "segment.correct",
         "segment.measureLabels",
         "segment.correct_carryover_restore",
+        "segment.staleness_report",
+    ]
+
+    # tracking composite gets the same staleness tail (narrower scope — only track-derived artefacts).
+    tspec = Cecelia._task_spec(Cecelia._task_from_fun_name("tracking.correct_measures"))
+    @test tspec["composite"] == [
+        "tracking.correct",
+        "tracking.track_measures",
+        "tracking.staleness_report",
     ]
 end
 
@@ -16434,6 +16445,77 @@ end
     @test Cecelia._task_from_fun_name("segment.correct_carryover_restore")  isa Cecelia.SegmentCorrectCarryOverRestore
     @test isfile(Cecelia._spec_path(Cecelia.SegmentCorrectCarryOverSnapshot()))
     @test isfile(Cecelia._spec_path(Cecelia.SegmentCorrectCarryOverRestore()))
+end
+
+@testset "correction staleness — task wiring" begin
+    # same shape as the carry-over pair — two typed tasks so each composite invokes its own `changed`
+    # scope (a shared task would need a `stalenessScope` param whose only correct values are the
+    # composite's own — worse UX than a task per scope).
+    @test Cecelia._task_from_fun_name("segment.staleness_report")  isa Cecelia.SegmentStalenessReport
+    @test Cecelia._task_from_fun_name("tracking.staleness_report") isa Cecelia.TrackingStalenessReport
+    @test isfile(Cecelia._spec_path(Cecelia.SegmentStalenessReport()))
+    @test isfile(Cecelia._spec_path(Cecelia.TrackingStalenessReport()))
+end
+
+@testset "correction staleness — enumeration by disk presence" begin
+    # Build a scratch img._dir with the four artefact classes present, then assert each shows up
+    # (or doesn't) under `changed = :labels` and `:tracks`. Uses a synthetic CciaImage — no real
+    # h5ad/zarr needed since the enumerator is disk-presence only.
+    dir = mktempdir()
+    vn  = "memTom"
+
+    # per-track h5ad
+    tracks_dir = joinpath(dir, "labelProps"); mkpath(tracks_dir)
+    write(joinpath(tracks_dir, "$(vn)__tracks.h5ad"), "")
+    # primary cell h5ad + clustfeatures sidecar (records one cluster suffix)
+    write(joinpath(tracks_dir, "$(vn).h5ad"), "")
+    open(joinpath(tracks_dir, "$(vn).clustfeatures.json"), "w") do io
+        JSON3.pretty(io, Dict("clusters.immune" => Dict("features" => ["area"])))
+    end
+    # both gating files
+    gdir = joinpath(dir, "gating"); mkpath(gdir)
+    open(joinpath(gdir, "$(vn).json"), "w") do io
+        JSON3.pretty(io, Dict("pops" => Dict("A" => Dict(), "B" => Dict())))
+    end
+    open(joinpath(gdir, "$(vn)__tracks.json"), "w") do io
+        JSON3.pretty(io, Dict("pops" => Dict("T1" => Dict())))
+    end
+    # one spatial graph
+    sgdir = joinpath(dir, "spatialGraph"); mkpath(sgdir)
+    write(joinpath(sgdir, "run1.h5ad"), "")
+
+    img = Cecelia.CciaImage(; uid = "uid", name = "name", dir = dir)
+    img.label_props = Dict{String,String}(vn => "$(vn).h5ad")
+
+    label_arts = Cecelia.stale_artefacts_for(img, vn; changed = :labels)
+    kinds_l = Set(a["kind"] for a in label_arts)
+    @test kinds_l == Set(["tracks_h5ad", "cluster_runs", "gating_pops", "spatial_graph"])
+    # gating entry on :labels is the FLOW file only (label-keyed) — the __tracks pops are on :tracks
+    gating_l = only(a for a in label_arts if a["kind"] == "gating_pops")
+    @test gating_l["detail"]["pop_type"] == "flow"
+    @test gating_l["detail"]["count"] == 2
+
+    track_arts = Cecelia.stale_artefacts_for(img, vn; changed = :tracks)
+    kinds_t = Set(a["kind"] for a in track_arts)
+    @test kinds_t == Set(["tracks_h5ad", "gating_pops"])   # clusters + spatial graph excluded
+    gating_t = only(a for a in track_arts if a["kind"] == "gating_pops")
+    @test gating_t["detail"]["pop_type"] == "track"
+
+    # unknown scope refuses (an added typo is worse than a caught throw)
+    @test_throws ArgumentError Cecelia.stale_artefacts_for(img, vn; changed = :something)
+
+    # empty dir → nothing to report (an image that was never analysed carries no derived artefacts)
+    empty_dir = mktempdir()
+    empty_img = Cecelia.CciaImage(; uid = "uid2", name = "name2", dir = empty_dir)
+    @test isempty(Cecelia.stale_artefacts_for(empty_img, vn; changed = :labels))
+end
+
+@testset "correction staleness — QC finding renders through the catalog" begin
+    # Round-trip a warn finding through qc_text so the catalog placeholders (`{n}`, `{scope}`) are
+    # honoured — same guard the QC_TEXT test uses for the other correction findings.
+    t = Cecelia.qc_text("correction.stale_artefacts"; n = 3, scope = "labels")
+    @test occursin("3", t.short)
+    @test occursin("labels", t.long)
 end
 
 @testset "label correction — journal sidecar" begin
@@ -16484,9 +16566,11 @@ end
         @test_throws Cecelia.ParamValidationError Cecelia.parse_track_ops(bad)
     end
 
-    # the composite is the chain Decision 4 requires: correct, then recompute measures
+    # composite is a 3-step chain: correct, recompute measures, then report which downstream artefacts
+    # predate the correction (Decision 4 + Decision 5, docs/todo/CORRECTION_PLAN.md).
     spec = Cecelia._task_spec(Cecelia._task_from_fun_name("tracking.correct_measures"))
-    @test spec["composite"] == ["tracking.correct", "tracking.track_measures"]
+    @test spec["composite"] ==
+        ["tracking.correct", "tracking.track_measures", "tracking.staleness_report"]
 end
 
 # ── Track-issue triage (the worklist old R had no equivalent of) ──────────────

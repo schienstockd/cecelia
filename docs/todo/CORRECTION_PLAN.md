@@ -1,7 +1,7 @@
 # Manual correction — segmentation and tracks
 
-**Status:** **P1 + P4a built** (PR #590, branch `feat/correction-seg-tracks`); P2, P3 and the
-P4b/P4c surfaces are open. Written to be picked up cold by another session. **Revised 2026-08-17**
+**Status:** **P1 + P2 + P3 + P4a built**. P4 (cockpit raster brush + Split verb) and the Review-mode
+footer remain open. Written to be picked up cold by another session. **Revised 2026-08-17**
 after auditing the plan's assumptions against both codebases — Decisions 2b/3b/4b/4c/4d/6b are new
 and four open questions are answered; the old-R ground truth below was verified line by line and
 stands. Building P1 then corrected two of those decisions against real data (see 4c).
@@ -399,15 +399,23 @@ Both from `app/src/label_props.jl:657-692`:
      its PRE-merge trajectory — stale, though preserved. Reporting that staleness is P3
      invalidation-surface territory, not carry-over's.
 
-  Also **not built:** the Split verb (needs a raster brush → Phase 4), the invalidation
-  reporting surface (Decision 5 — half-covered by the correction task dropping its own stale
-  cols, but the SEPARATE artefact list is P3). See P3 below.
-- **P3 — invalidation surface. NOT BUILT.** Decision 5, for both tasks, plus the QC findings.
-  `tracking.correct` handles 4b's half (it drops stale `live.*` obs from the cell table itself), but
-  nothing reports the SEPARATE artefacts that now predate the correction — `{vn}__tracks.h5ad`, cluster
-  runs, `trackclust` populations, gating pops, spatial graphs. Today a correction silently leaves them
-  in place with no warning, which is precisely the silent staleness the plan calls "the one place where
-  Feijoa must beat old R rather than match it".
+  Also **not built:** the Split verb (needs a raster brush → Phase 4).
+- **P3 — invalidation surface. ✅ BUILT.** Decision 5, for both correction composites.
+  Enumeration helper `stale_artefacts_for(img, value_name; changed=:labels|:tracks)` in
+  `app/src/correction_staleness.jl` disk-scans the four derived classes: `{vn}__tracks.h5ad`,
+  cluster runs (`clusters.*` obs cols keyed by the `.clustfeatures.json` sidecar), gating pops
+  (`gating/{vn}.json` for `:labels`, `gating/{vn}__tracks.json` for `:tracks`) and spatial graphs
+  (`spatialGraph/*.h5ad`, `:labels` only — a track edit doesn't move labels so the neighbour graph
+  is unchanged). Two typed tasks — `SegmentStalenessReport` (`:labels` scope) and
+  `TrackingStalenessReport` (`:tracks` scope) — appended to each composite so the report runs once
+  per Apply. Each writes a `corrections/{vn}.staleness.json` sidecar and banks a `warn` QC finding
+  under `correction.stale_artefacts` (advisory only — no auto-delete, matching "do not silently
+  leave them either"). Detection is disk-presence, not per-row reasoning: "beat old R" is met by
+  *any* surfacing, and reasoning about which rows a merge actually invalidates would ship a
+  guarantee we can't keep. Vocabulary borrowed from `ANALYSIS_KEEP` (`storage.jl:144`) as Decision 5
+  asked. The QC finding renders through the existing catalog (`qc.jl` → `frontend/src/lib/qc.ts` →
+  `ImageTable.vue` / `ChainQcNode.vue`) — no new frontend component. 13 new Julia tests
+  (`app/test/suite.jl`).
 - **P4a — triage worklist. ✅ BACKEND BUILT.** The app finds what looks wrong and pre-picks the fix;
   the user only judges it. This is the inversion of old R, which made the user find the bad track AND
   specify the repair, with no help for the first part — and finding it is the afternoon's work.

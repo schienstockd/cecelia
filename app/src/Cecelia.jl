@@ -176,6 +176,8 @@ export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_q
 export flow_model_filename
 export MeasureLabels, SegmentCorrect, parse_label_ops
 export SegmentCorrectCarryOverSnapshot, SegmentCorrectCarryOverRestore
+export SegmentStalenessReport, TrackingStalenessReport
+export stale_artefacts_for, staleness_sidecar_path
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
@@ -290,6 +292,9 @@ include("segmentation.jl")
 # manual label correction — the pure ops engine, its journal, and its QC. Peer to
 # `tracking/track_correction.jl`; docs/todo/CORRECTION_PLAN.md, P2.
 include("label_correction.jl")
+# Enumerate downstream artefacts made stale by a label/track correction (P3 / Decision 5). Uses
+# `img_*` accessors (image.jl) + `gating_path` (gating/population_manager.jl); comes after both.
+include("correction_staleness.jl")
 include("tasks/testTasks/image_task.jl")
 include("tasks/testTasks/set_task.jl")
 include("tasks/testTasks/incremental_plot_task.jl")
