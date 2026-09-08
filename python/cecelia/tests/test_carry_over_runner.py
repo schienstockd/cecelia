@@ -176,6 +176,44 @@ class CarryOverRunnerTest(unittest.TestCase):
         self.assertEqual(back.obs.loc['3', 'clust'], 'A')
         self.assertEqual(back.obs.loc['7', 'track_id'], 102.0)
 
+    def test_snapshot_handles_nullable_int64_and_boolean_and_string_dtypes(self):
+        """F6 regression: nullable extension dtypes must not crash the snapshotter.
+
+        Before the fix, `_is_categorical` returned False for `pd.Int64Dtype` / `pd.BooleanDtype`
+        / `pd.StringDtype`; `_serialise_numeric` then called `np.asarray(series, dtype=float)`
+        which raises `TypeError` on `pd.NA`. Verify snapshot completes and each dtype ends up on
+        the sensible side (nullable numerics → numeric with NaN, string extension → categorical).
+        """
+        # Build the h5ad by hand so we can attach extension dtypes anndata's shortcuts don't set.
+        labels = [1, 2, 3]
+        obs = pd.DataFrame(index=[str(l) for l in labels])
+        obs['nullable_int']  = pd.array([10, pd.NA, 30], dtype='Int64')
+        obs['nullable_bool'] = pd.array([True, False, pd.NA], dtype='boolean')
+        obs['string_ext']    = pd.array(['a', pd.NA, 'c'], dtype='string')
+        adata = ad.AnnData(X=np.zeros((3, 1), dtype=np.float64), obs=obs)
+        adata.var_names = ['area']
+        os.makedirs(os.path.dirname(self.lp_path), exist_ok=True)
+        adata.write_h5ad(self.lp_path)
+
+        # Snapshot must not raise.
+        self._snapshot()
+        with open(self.snap, 'r', encoding='utf-8') as f:
+            snap = json.load(f)
+
+        # Nullable numerics ride the numeric channel with NA → None (round-trips as NaN via add_obs).
+        self.assertIn('nullable_int',  snap['numeric'])
+        self.assertIn('nullable_bool', snap['numeric'])
+        self.assertEqual(snap['numeric']['nullable_int'][1], None)
+        self.assertEqual(snap['numeric']['nullable_bool'][2], None)
+        self.assertEqual(snap['numeric']['nullable_int'][0], 10.0)
+        # True → 1.0, False → 0.0 (matches the existing "int obs become float64" convention).
+        self.assertEqual(snap['numeric']['nullable_bool'][0], 1.0)
+        self.assertEqual(snap['numeric']['nullable_bool'][1], 0.0)
+
+        # String extension dtype snapshots as categorical — restore goes via `add_categorical_obs`.
+        self.assertIn('string_ext', snap['categorical'])
+        self.assertEqual(snap['categorical']['string_ext'], ['a', None, 'c'])
+
     def test_restore_is_noop_without_snapshot(self):
         _make_labelprops(self.lp_path, labels=[1, 2])
         # No snapshot file exists — restore must exit cleanly with a zero result.

@@ -140,7 +140,10 @@ const pickedLabels = ref<number[]>([])
 let pickReq = 0
 
 async function reloadPicked(): Promise<void> {
-  if (mode.value !== 'labels' || !projectUid.value || !imageUid.value || !valueName.value) {
+  // Both Labels AND Review page over `/Pick selection` — Review's pager is a rank over the same
+  // picks Labels' verbs would act on. Only clear the local mirror when we've left both modes.
+  const needsPicks = mode.value === 'labels' || mode.value === 'review'
+  if (!needsPicks || !projectUid.value || !imageUid.value || !valueName.value) {
     pickedLabels.value = []
     return
   }
@@ -269,9 +272,16 @@ function focusReviewLabel(target: ReviewLabel | null): void {
 }
 
 // Auto-fly on any focus change — the whole point of the pager is that a Prev/Next step immediately
-// lights up the label in the viewer. Guard against firing on the initial mount when the viewer
-// hasn't published a state yet.
+// lights up the label in the viewer. When the cockpit mounts before the viewer publishes its
+// first viewState, the initial focus fires with `current` null and silently drops. Watch both:
+// the focused label AND the viewer viewState — whichever arrives second retries the fly.
 watch(reviewFocused, target => { if (mode.value === 'review') focusReviewLabel(target) })
+watch(() => viewerStore.viewState, (vs, prev) => {
+  // Only fire the retry when viewState transitions from null → present (the mount race). Later
+  // viewState changes (t-scrub, camera edits) must NOT re-fly the focused label — the user has
+  // to be able to pan away while Review is open without being yanked back.
+  if (vs && !prev && mode.value === 'review') focusReviewLabel(reviewFocused.value)
+}, { flush: 'post' })
 
 function reviewNext(): void { reviewIndex.value = nextIndex(reviewIndex.value, reviewList.value.length) }
 function reviewPrev(): void { reviewIndex.value = prevIndex(reviewIndex.value, reviewList.value.length) }
