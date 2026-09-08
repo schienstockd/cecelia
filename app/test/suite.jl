@@ -4092,9 +4092,11 @@ end
     @test occursin("setUid", sc)
     @test !occursin("imageUid", sc)                # the bug: first-selected image decided the canvas
 
-    # gating stays per (image, value_name) — deliberate, not an oversight
+    # gating stays per (image, value_name) — deliberate, not an oversight. The vn identifier
+    # is `pageVn` (page-local, decoupled from the singleton `g.valueName` so cluster/trackclust
+    # task-done can't rebind our ckey) — either substring is fine as long as SOME vn is there.
     gp = ckey_line(("modules", "gate", "GatingPlots.vue"))
-    @test occursin("imageUid", gp) && occursin("valueName", gp)
+    @test occursin("imageUid", gp) && (occursin("valueName", gp) || occursin("pageVn", gp))
 
     # cluster was already set-scoped; it is the precedent this follows (and `objectOf` persists a
     # set-keyed canvas to the SET's own moduleCanvases.json, so no new persistence path was needed)
