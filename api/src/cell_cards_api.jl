@@ -141,8 +141,8 @@ function api_cell_cards(body_bytes::Vector{UInt8})
     root_uid = String(get(data, :rootUid,    get(data, :root_uid, "")))
     vn       = String(get(data, :valueName,  get(data, :value_name, "")))
     suffix   = String(get(data, :suffix,     ""))
-    (isempty(pu) || isempty(root_uid) || isempty(vn) || isempty(suffix)) &&
-        return 400, JSON3.write((; error = "projectUid, rootUid, valueName, suffix required"))
+    (isempty(pu) || isempty(root_uid) || isempty(suffix)) &&
+        return 400, JSON3.write((; error = "projectUid, rootUid, suffix required"))
 
     pops_raw = get(data, :pops, nothing)
     pops_raw isa AbstractVector ||
@@ -162,6 +162,17 @@ function api_cell_cards(body_bytes::Vector{UInt8})
 
     img, gerr = _gating_image(pu, root_uid)
     gerr === nothing || return gerr[1], gerr[2]["body"]
+
+    # Derive value_name when absent — the run's own value_name (the trackclust map's home) is the
+    # first co-clustered vn for the suffix. Callers on a cluster panel don't have to plumb this
+    # themselves: the manager's own vn selection lives server-side in the sidecar already.
+    if isempty(vn)
+        vns = try
+            co_clustered_value_names(img, suffix; granularity=:track, family="clusters")
+        catch; String[] end
+        isempty(vns) && return 404, JSON3.write((; error = "no clustering run '$suffix' on $(root_uid)"))
+        vn = String(vns[1])
+    end
 
     # Cache freshness check — cheapest path. Sidecar sits under the ROOT image's analysis/ dir (the
     # Decision 8 mirror-per-pool-member behaviour lands in Phase 1f; single-image runs land it at

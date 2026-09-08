@@ -7986,6 +7986,21 @@ end
             @test haskey(side, "pool") && haskey(side, "cards") && haskey(side, "clusterMtime")
             @test length(side["cards"]) == 3
 
+            # valueName omitted → server derives from co_clustered_value_names(suffix). Same medoid
+            # triples land — a Phase 2 change that lets the cluster panel skip plumbing valueName.
+            no_vn = Dict{String,Any}("projectUid" => "testpr", "rootUid" => "KDIeEm",
+                                     "suffix" => "movement",
+                                     "pops" => [
+                                         Dict("path"=>"/Scanning", "clusterIds"=>[0]),
+                                         Dict("path"=>"/Directed", "clusterIds"=>[1]),
+                                         Dict("path"=>"/Meandering", "clusterIds"=>[2])])
+            st_dv, body_dv = call(no_vn)
+            @test st_dv == 200
+            rdv = JSON3.read(body_dv)
+            @test length(rdv.cards) == 3
+            @test [Int(c.medoid.track_id) for c in rdv.cards] ==
+                  [Int(c.medoid.track_id) for c in JSON3.read(body).cards]
+
             # Cache hit — second call with unchanged mtime returns the same PARSED content.
             # Byte comparison would drift with Julia Dict key order + int/float encoding; parse first.
             st2, body2 = call(req)

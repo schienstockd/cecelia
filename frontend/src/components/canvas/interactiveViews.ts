@@ -2,6 +2,7 @@ import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import type { PopTypeOption, PopTypeSpecLike } from '../../plots/popTypes'
 import UmapView from '../plots/UmapView.vue'
+import CellCardsView from '../plots/CellCardsView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
@@ -83,6 +84,15 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     label: 'UMAP', component: UmapView, clusterPage: true, analysisBoard: true,
     boardGroup: 'clustering', square: true, rail: 'clusterPops',
     initialState: () => ({ labels: true, hl: [] }),
+  },
+  // One card per trackclust pop the manager ticks: medoid track's filmstrip + median motility
+  // footer. Server-rendered frames via /api/cell_cards (see docs/todo/CELL_CARDS_PLAN.md); the
+  // trace on a card matches the trace on a recorded movie by construction, because both go through
+  // the same overlay_author pass. `rail: 'clusterPops'` — same rail UMAP + cluster panels use.
+  cellCards: {
+    label: 'Cell cards', component: CellCardsView, analysisBoard: true,
+    boardGroup: 'clustering', rail: 'clusterPops',
+    initialState: () => ({ maxPx: 320, padPx: 8 }),
   },
   // Self-contained: both pick their own image/segmentation in their panel state, so a population list
   // is dead chrome for them. `'none'` still gives them the rail's styling block — the gating strategy
