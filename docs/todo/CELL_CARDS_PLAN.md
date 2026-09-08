@@ -31,6 +31,14 @@ panel type" framing is dropped — cards fit as a registry-declared InteractiveV
 
 ## Locked decisions
 
+0. **A clustering run is ALWAYS a pool; a pool of 1 is still a pool.** The card pipeline treats
+   every run as pooled over `(uid, value_name)` pairs from day one — never over a single image. The
+   pool has two axes recorded on the run's `{props}.clustfeatures.json` sidecar (`CLUSTER_POOLING_PLAN`):
+   `partOf: [uIDs]` (multi-image) and the co-clustered value_names (multi-segmentation, via
+   `co_clustered_value_names`). The medoid is picked over the full pool; a card's image comes from
+   whichever `(uid, value_name)` its medoid lives in. Confirmed 2026-09-08 — "cluster runs are
+   always pooled; ship pooled; a pool of 1 is still a pool." Removes the previous "cross-image
+   deferred" reservation.
 1. **`cellCards` is an InteractiveView, not a new panel type.** New registry entry in
    `frontend/src/components/canvas/interactiveViews.ts`. `rail: 'clusterPops'` — the
    `PopulationManager` picks which trackclust pops render (the same rail UMAP + cluster panels use).
@@ -40,13 +48,16 @@ panel type" framing is dropped — cards fit as a registry-declared InteractiveV
    `path`, `colour` from the pop (per fXgbTl: `/Population 1..3`, filter `clusters.movement in
    [0|1|2]`). Renaming a pop renames its card. HMM state is an *input feature* to clustering, not a
    card dimension — confirmed 2026-09-08.
-3. **Medoid = nearest to centroid in the RUN's feature space.** Not motility summaries. For a
-   `trackclust` pop, the feature matrix = the same columns clustering pooled (e.g. `movement` run:
-   the 10 `live.track.*` + 3 `hmm.state.movement.*` + 9 `hmm.transitions.movement.*_*` = 22
-   dims). Cluster codes come from `clusters.{suffix}`; per-pop candidate rows come from `pop_df`;
-   the medoid is the row whose feature vector has the smallest euclidean distance to the pop's
-   feature-mean. Ties broken by cluster-membership length (prefer longer tracks). Small pops
-   (n<10) still get a card; medoid definition unchanged, and the card carries an `n=` note.
+3. **Medoid = nearest to centroid in the RUN's pooled feature space.** Not motility summaries. For
+   a `trackclust` pop, the feature matrix = the same columns clustering pooled (e.g. `movement`
+   run: the 10 `live.track.*` + 3 `hmm.state.movement.*` + 9 `hmm.transitions.movement.*_*` = 22
+   dims), pooled across every `(uid, value_name)` in the run — see Decision 0. Cluster codes come
+   from `clusters.{suffix}` per-`(uid, value_name)`; per-pop candidate rows come from `pop_df`; the
+   medoid is the row whose feature vector has the smallest euclidean distance to the pool's
+   feature-mean. The medoid resolves to a `(uid, value_name, track_id)` triple — the card's image
+   comes from that image, its trace from that vn's `pop_df`. Ties broken by cluster-membership
+   length (prefer longer tracks). Small pools (per-cluster n<10) still get a card; medoid
+   definition unchanged, and the card carries an `n=` note.
 4. **Card content = image + trace + stats footer.**
    - **Image**: for the medoid track's frame range, a small horizontal filmstrip of 3–5 frames
      (first / one at max instantaneous speed / last); each frame is a **crop around the track's
@@ -74,20 +85,26 @@ panel type" framing is dropped — cards fit as a registry-declared InteractiveV
 6. **"Card Table" = a preset layout tab, not a route.** Add a template to the analysis-canvas
    template library (a 1-up slot filled with `cellCards`, or 2-up next to a UMAP). No canvas key,
    no `/cards` route.
-7. **Backend: one route, frames as board-assets.** `POST /api/cell_cards` with `{img_uid,
-   value_name, cluster_col, pops: [{path, cluster_ids}], viewState}` → `{cards: [{path, name,
-   colour, n, medoid: {track_id, frames: [t0, t1]}, filmstrip: [{t, assetId}], stats: [{name,
-   median, q25, q75}]}]}`. Frames are rendered via `render_view_frame` (with track-bbox `crop`
-   + `overlay_author` closures for the medoid), PNG-encoded, and stored as **board-assets**
-   under `settings/board-assets/`, served via `/api/board-assets/{assetId}` — the exact sidecar
-   store `ImageStripView` uses (so autosaves stay cheap and cards persist alongside the tab's
-   other captured images). The trace is baked into the frame by the overlay pass; no separate
-   trace payload.
-8. **Caching: sidecar under the run.** `analysis/cell_cards/{value_name}__{suffix}.json` next to
-   the clustering run's other outputs — payload minus the assets (medoid + frame range + stats +
-   assetIds). Rebuilds when the run's `clusters.{suffix}` mtime is newer or the pop set changes.
-   Assets are content-hashed under `settings/board-assets/` (existing store handles this).
-   Invalidation piggybacks on the existing `correction_staleness` chain (a trackclust-invalidating
+7. **Backend: one route, frames as board-assets, pool-shaped input.** `POST /api/cell_cards` with
+   `{root_uid, value_name, cluster_col, pops: [{path, cluster_ids}], viewState}` → `{pool: [{uid,
+   value_name}, ...], cards: [{path, name, colour, n, medoid: {uid, value_name, track_id, frames:
+   [t0, t1]}, filmstrip: [{t, assetId}], stats: [{name, median, q25, q75}]}]}`. `root_uid` is the
+   image the user opened the analysis board from (used to resolve the run's sidecar and expand
+   the pool); the backend derives the full pool from `partOf` + `co_clustered_value_names` — the
+   client never enumerates the pool. Per-card `viewState` is applied per-image (channels resolved
+   by name/index against each image's own channel list). Frames are rendered via
+   `render_view_frame` (with track-bbox `crop` + `overlay_author` closures for the medoid),
+   PNG-encoded, and stored as **board-assets** under `settings/board-assets/`, served via
+   `/api/board-assets/{assetId}` — the exact sidecar store `ImageStripView` uses. The trace is
+   baked into the frame by the overlay pass; no separate trace payload.
+8. **Caching: sidecar under each pool member.** `analysis/cell_cards/{value_name}__{suffix}.json`
+   written under **each `(uid, value_name)` in the pool** (payload minus the assets: medoid +
+   frame range + stats + assetIds). Same content on every pool member — this keeps the "sidecar
+   lives next to the run's other outputs" rule (`{props}.clustfeatures.json` is already mirrored
+   the same way per `CLUSTER_POOLING_PLAN`), and a card view opened on any pool member reads its
+   local copy. Rebuilds when the run's `clusters.{suffix}` mtime is newer on any pool member or
+   the pop set changes. Assets are content-hashed under `settings/board-assets/` (existing store
+   handles this). Invalidation piggybacks on `correction_staleness` (a trackclust-invalidating
    change already flags derived artefacts — see `correction_staleness.jl:60-61`).
 
 ## What already exists — reuse these, don't reimplement
@@ -136,14 +153,20 @@ panel type" framing is dropped — cards fit as a registry-declared InteractiveV
 
 ## What does NOT exist yet
 
-- **Feature-matrix reader for a clustering run.** The columns used per run are known
-  (`featuresByRun[suffix]` — observer surfaces them, but the app doesn't have a first-class
-  Julia accessor for "the feature matrix suffix was clustered on"). Small helper next to
-  `app/src/tasks/clustPops/cluster.jl`: `clustering_features(img, value_name, suffix) -> DataFrame`
-  reading the columns off the run's existing sidecar (`cluster.jl:33`).
-- **`medoid_track(features_df, cluster_ids)`** — pooled feature centroid, argmin euclidean.
+- **Pool-aware feature-matrix reader for a clustering run.** The columns used per run are known
+  (`featuresByRun[suffix]` — observer surfaces them, but the app doesn't have a first-class Julia
+  accessor for "the feature matrix suffix was clustered on"). Helper next to
+  `app/src/tasks/clustPops/cluster.jl`: `clustering_features_pooled(root_uid, value_name, suffix)
+  -> (df, pool)` where `pool :: Vector{@NamedTuple{uid::String, value_name::String}}` — walks
+  `partOf` (from `{props}.clustfeatures.json`) × `co_clustered_value_names` (`population_manager.jl`),
+  concatenates each pool member's feature columns from its own label-props table with an added
+  `_uid` / `_value_name` tag column, so `medoid_track` returns a triple.
+- **`medoid_track(features_df, cluster_ids) -> (uid, value_name, track_id)`** — pooled feature
+  centroid, argmin euclidean; ties by track length. Reads the `_uid` / `_value_name` tag columns
+  the pooled reader adds.
 - **`track_bbox(img, value_name, track_id; pad_px)`** — min/max centroid over the track's frames,
-  pixel coords, reusing `pop_df`.
+  pixel coords, reusing `pop_df`. Called with the medoid's `(uid, value_name)` — the pooled
+  pipeline resolves the CciaImage from `uid`.
 - **`CellCardsView.vue`** + **`StripCell.vue`** (the extracted common cell primitive).
 - **`POST /api/cell_cards`** orchestration — calls `render_view_frame` per selected frame with
   the medoid bbox + `overlay_author` closures scoped to the medoid track only, PNG-encodes,
@@ -151,14 +174,21 @@ panel type" framing is dropped — cards fit as a registry-declared InteractiveV
 
 ## Phases
 
-### Phase 0 — contracts + test fixtures
-- Declare the payload type in `frontend/src/components/plots/cellCards.ts` (new) —
-  `Card`, `CardsResponse`, mirrored in Julia (`api/src/cell_cards_api.jl` types).
-- Add fXgbTl (`zolIMa`) to `test-data/` as the fixture set for `test-api` (one image, one
-  clustering run, three trackclust pops already present per 2026-09-08).
-- No behaviour yet.
+### Phase 0 — contract + fixture status
+- Declare the payload type in `frontend/src/components/plots/cellCards.ts` (new) — `Card`,
+  `CardsResponse`, `PoolMember`, `CardsRequest`. TS-only for now; the Julia mirror lands in
+  Phase 1 when a writer actually exists (a types-only .jl with no constructor is dead code per
+  CLAUDE.md).
+- Type-drift test in `frontend/src/components/plots/cellCards.test.ts` — pins `medoid` as a
+  `(uid, value_name, track_id)` triple and `pool` as `PoolMember[]`, so any collapse back to
+  single-image shape fails typecheck.
+- Fixture: `test-data/projects/testpr/1/KDIeEm` has no clustering column yet. **Phase 1 adds a
+  synthetic `clusters.movement` + `{props}.clustfeatures.json` sidecar to it** — small (few dozen
+  ints + a JSON), fits the 1 MB/file cap. fXgbTl stays on Dominik's machine as the manual browser
+  target (real intravital data, pool of 1); testpr becomes the headless `test-api` fixture.
 
-**Checkpoint:** the JSON contract compiles both sides; test fixture exists.
+**Checkpoint:** TS contract compiles; drift test asserts pool-shaped medoid; Phase 1 knows what
+fixture surgery it owns.
 
 ### Phase 1 — Julia data pipeline (headless)
 - `clustering_features(img, value_name, suffix)` reader (off the existing cluster-run sidecar).
@@ -224,10 +254,9 @@ are a rendering surface, so no test proves biological correctness).
 - **Card sizing.** `imageGrid` uses uniform cells; a wide cluster range (n=125 vs n=14 on fXgbTl)
   means the same card real estate for very different sample sizes. The `n=` note is enough;
   don't scale card size by n.
-- **Cross-image cards.** Deferred. The prompt asked per-cluster, and clusters are a
-  pool-across-selected-images concept (`CLUSTER_POOLING_PLAN`). A card set for a pooled run over
-  N images could pick one medoid per image, or one global medoid; leaving unresolved until the
-  single-image path is shipped.
+- ~~**Cross-image cards.**~~ Resolved 2026-09-08 by Decision 0 — pool-first from day one. One
+  global medoid per cluster (over `partOf` × co-clustered value_names). Alternative "one medoid
+  per image" is out of scope; each card is a single cell.
 
 ## References
 
