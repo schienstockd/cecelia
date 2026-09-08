@@ -37,8 +37,9 @@ end
 _resonance_preset() = AcquisitionPreset(
     :resonance,
     "Resonance / photon-limited",
-    "Fast dwell, single-digit photon counts per pixel. Smooth before AF; denoise off unless a " *
-    "resonance-trained model is in the vault.",
+    "Fast dwell, single-digit photon counts per pixel. Smooth before AF; denoise seeded (SUPPORT) " *
+    "when the vault holds a trained model and channels are not saturated — model picked at the " *
+    "task widget's vault picker.",
     Dict{String,Dict{String,Any}}(
         "cleanupImages.smooth" => Dict{String,Any}(
             "spatialMethod"  => "bilateral_vst",  # PR #777 — hard
@@ -48,8 +49,13 @@ _resonance_preset() = AcquisitionPreset(
         "cleanupImages.driftCorrect" => Dict{String,Any}(
             "driftEstimator" => "multiLag",
         ),
+        # denoise ships no params from the card — the SUPPORT model is picked at the task widget
+        # (vault picker). The rule engine gates it on `denoise.vault_model_present` +
+        # `denoise.channel_saturated_frac`; either failing turns the card seed into an excluded row
+        # with the reason attached, so the audit trail records why it did not run.
+        "cleanupImages.denoise" => Dict{String,Any}(),
     ),
-    ["cleanupImages.smooth", "cleanupImages.driftCorrect"],  # smooth before AF (§Q-C6/C7 open)
+    ["cleanupImages.smooth", "cleanupImages.driftCorrect", "cleanupImages.denoise"],
     Set{Tuple{String,String}}([
         ("cleanupImages.smooth", "spatialMethod"),  # bilateral_vst defines the card
     ]),
