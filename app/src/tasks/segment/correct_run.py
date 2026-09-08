@@ -143,10 +143,10 @@ def _apply_split_inplace(frame, op, log):
     frame_max = int(frame2d.max())
     next_id = frame_max + 1
     reassigned = 0
-    # Largest fragment: keeps id_. The cut pixels return to it too so no pixel goes to background.
-    largest = ordering[0]
-    keep = (labeled == largest) | cut & mask
-    # (nothing to write — largest fragment already has id_, cut pixels were id_ before)
+    # Smaller fragments get fresh ids first, before the cut pixels are explicitly re-stamped —
+    # order matters: if the cut re-stamp ran first, a small fragment sitting adjacent to the cut
+    # line would still be overwritten in the loop below (it operates on `labeled`, not `frame2d`),
+    # so the order is safe either way, but assigning cut LAST reads more like "the largest wins".
     for k in ordering[1:]:
         new_mask = (labeled == k)
         n_pix = int(new_mask.sum())
@@ -154,7 +154,11 @@ def _apply_split_inplace(frame, op, log):
         reassigned += n_pix
         log.log(f'>> split label {id_} → new label {next_id} ({n_pix} px)')
         next_id += 1
-    _ = keep   # silence unused: kept as a comment-shape reminder that the cut restores to largest
+    # Cut pixels: explicitly re-stamped to id_ (the largest fragment inherits the id). Today they
+    # already hold id_ because we never zero the mask before the fragment loop — but that's an
+    # invariant we shouldn't rely on. A future reorder (e.g. zeroing the mask first, then filling
+    # by component) would silently orphan the cut without this line.
+    frame2d[cut & mask] = id_
     return reassigned
 
 
@@ -219,8 +223,18 @@ def run(params: dict):
     dim_utils.calc_image_dimensions(src.shape)   # calibration from the intensity image, dims from labels
     t_idx = _t_axis(dim_utils, src.shape)
 
+    # This runner iterates by t on axis 0 (`src[tt]`). A labels store where T is present but on a
+    # different axis would silently drop every op at t≥1 into the still-image branch, applying only
+    # `ops_by_t.get(0, [])` and mis-reporting `nLabelsAfter`. Refuse loudly rather than corrupt.
+    # Same-shape stores (T on axis 0, or no T at all) go through unchanged.
+    if t_idx is not None and t_idx != 0:
+        raise RuntimeError(
+            f'labels store has T on axis {t_idx} (shape={tuple(src.shape)}); the correction '
+            f'runner requires T on axis 0. This layout is not produced by cecelia today — if you '
+            f'hit this, the labels store was written by a foreign pipeline.')
+
     # A still image with a T-frame-scoped op is a user mistake, not a runner one — surface it.
-    max_t = src.shape[t_idx] if t_idx is not None else 1
+    max_t = src.shape[0] if t_idx == 0 else 1
     for i, op in enumerate(ops):
         t = int(op.get('t', 0))
         if t < 0 or t >= max_t:
@@ -230,11 +244,11 @@ def run(params: dict):
     # Count labels before — cheap on a per-frame basis, and the sum-of-unions IS the id space.
     labels_before = set()
     n_frames = max_t
-    for tt in range(n_frames):
-        frame = src[tt] if t_idx == 0 else src[:]     # 2D single-t: read whole array once
-        labels_before |= _unique_labels(np.asarray(frame))
-        if t_idx != 0:
-            break
+    if t_idx == 0:
+        for tt in range(n_frames):
+            labels_before |= _unique_labels(np.asarray(src[tt]))
+    else:
+        labels_before |= _unique_labels(np.asarray(src[:]))
 
     # ── Stage the write ─────────────────────────────────────────────────────
     log.log(f'>> stage: {labels_path}')

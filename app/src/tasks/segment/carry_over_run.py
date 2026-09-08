@@ -35,20 +35,38 @@ from cecelia.utils.label_props_utils import LabelPropsUtils, LabelPropsView
 def _is_categorical(series: pd.Series) -> bool:
     """A column snapshots as categorical iff its dtype needs `add_categorical_obs` on restore.
     That's the pandas Categorical dtype, plus object/string dtypes (HMM state strings, cluster
-    ids written as `"1"` etc. — encoded as categorical on write per `add_categorical_obs`)."""
+    ids written as `"1"` etc. — encoded as categorical on write per `add_categorical_obs`).
+
+    Pandas' nullable string extension dtype (`pd.StringDtype`) is NOT `object` — it's an extension
+    dtype with its own class. Treat it as categorical too: without this, F6 sent a `StringDtype`
+    column through `_serialise_numeric` → `np.asarray(dtype=float)` → TypeError.
+    """
     dtype = series.dtype
     if isinstance(dtype, pd.CategoricalDtype):
         return True
-    # object-dtype columns are strings/mixed — restore must go through `add_categorical_obs`.
-    return dtype == object
+    if dtype == object:
+        return True
+    if isinstance(dtype, pd.StringDtype):
+        return True
+    return False
 
 
 def _serialise_numeric(series: pd.Series) -> list:
     """Numpy → JSON-safe list. NaN → None (json can't encode NaN; None round-trips back to NaN
-    inside `add_obs`, which fills missing labels with NaN itself)."""
-    arr = np.asarray(series, dtype=float)
-    out = [None if np.isnan(x) else float(x) for x in arr]
-    return out
+    inside `add_obs`, which fills missing labels with NaN itself).
+
+    Extension numeric dtypes (`pd.Int64Dtype`, `pd.BooleanDtype`, `pd.Float64Dtype`, etc.) use
+    `.to_numpy(dtype=float, na_value=np.nan)` — `np.asarray(dtype=float)` raises `TypeError` on
+    `pd.NA`, which crashed the snapshotter for any h5ad carrying a nullable-int `track_id` or a
+    nullable-bool gate col (F6). Non-extension numpy dtypes take the fast path unchanged.
+    """
+    dtype = series.dtype
+    if pd.api.types.is_extension_array_dtype(dtype):
+        # Extension arrays expose `to_numpy(na_value=…)`; use it so pd.NA becomes np.nan cleanly.
+        arr = series.to_numpy(dtype=float, na_value=np.nan)
+    else:
+        arr = np.asarray(series, dtype=float)
+    return [None if np.isnan(x) else float(x) for x in arr]
 
 
 def _serialise_categorical(series: pd.Series) -> list:

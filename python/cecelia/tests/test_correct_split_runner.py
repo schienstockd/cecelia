@@ -56,6 +56,38 @@ class BresenhamTest(unittest.TestCase):
         self.assertEqual(pts[-1], (3, 5))
 
 
+class _StubDim:
+    """A DimUtils shim exposing only what `_t_axis` reads."""
+    def __init__(self, order):
+        self.im_dim_order = list(order)
+
+
+@unittest.skipUnless(_RUNNER.is_file(), f'runner not present at {_RUNNER}')
+class TAxisTest(unittest.TestCase):
+    """`_t_axis` returns the T index in the LABELS array, accounting for the fact that a labels
+    store drops the C axis. F2+F3 regression: the correction runner iterates by t on axis 0; a
+    labels store where T isn't on axis 0 must be flagged, not silently truncated.
+    """
+    def setUp(self):
+        self.runner = _load_runner()
+
+    def test_t_axis_zero_for_canonical_tzyx_labels(self):
+        # (T, Z, Y, X) shape=(4, 3, 10, 10). Intensity order carries a C axis after T which the
+        # labels store drops — helper compensates.
+        t = self.runner._t_axis(_StubDim(['T', 'C', 'Z', 'Y', 'X']), (4, 3, 10, 10))
+        self.assertEqual(t, 0)
+
+    def test_t_axis_one_for_ztyx_labels_flags_wrong_layout(self):
+        # A foreign pipeline producing (Z, T, Y, X) would return t_idx=1 — the runner's guard
+        # then refuses the run rather than iterating over the wrong axis.
+        t = self.runner._t_axis(_StubDim(['Z', 'T', 'Y', 'X']), (3, 4, 10, 10))
+        self.assertEqual(t, 1)
+
+    def test_t_axis_none_for_still_image(self):
+        t = self.runner._t_axis(_StubDim(['Z', 'Y', 'X']), (3, 10, 10))
+        self.assertIsNone(t)
+
+
 @unittest.skipUnless(_RUNNER.is_file(), f'runner not present at {_RUNNER}')
 class RasterisePolylineTest(unittest.TestCase):
     def setUp(self):
@@ -127,6 +159,20 @@ class ApplySplitInplaceTest(unittest.TestCase):
         self.assertEqual(n_pix, 0)
         self.assertTrue(any('did not divide' in m or 'not present' in m
                             for m in self.log.messages))
+
+    def test_cut_pixels_stay_with_parent_after_split(self):
+        # F5 regression: the cut line's pixels must retain the parent id after a successful split
+        # (they were part of the label before the cut and belong to the largest fragment). An
+        # earlier revision computed a `keep` mask and discarded it — the invariant only held
+        # by accident, and a future reorder of the fragment loop would silently zero them. Pin
+        # the guarantee here.
+        frame = self._frame_with_label_5()
+        op = {'op': 'label.split', 't': 0, 'id': 5, 'xs': [0, 19], 'ys': [9, 9]}
+        n_pix = self.runner._apply_split_inplace(frame, op, self.log)
+        self.assertGreater(n_pix, 0)
+        # Every pixel along the cut row that fell INSIDE the label's original column range must
+        # still read as id 5 — nothing on the cut line goes to background or a new id.
+        self.assertTrue(bool((frame[9, 3:17] == 5).all()))
 
     def test_missing_label_id_reports_and_returns_zero(self):
         frame = self._frame_with_label_5()
