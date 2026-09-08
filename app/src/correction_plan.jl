@@ -107,6 +107,23 @@ function qc_all_channels_saturated(meta::AbstractDict)::QCResult
 end
 
 """
+    qc_denoise_vault_model_present(vault_models) -> QCResult
+
+`1.0` when the user's denoise vault holds at least one trained SUPPORT model, `0.0` when it is
+empty. Feeds the C-Resonance card's denoise auto-seed: the doc's "denoise off unless a
+resonance-trained SUPPORT model exists" gate. Never `NaN` — the check is a directory read the
+caller has already done.
+
+The vault is a system-level resource, not per-image meta; the caller enumerates the vault (via
+`denoise_model_names()`) and passes the list so this function stays pure and testable. A future
+refinement can score by channel-match (per §5 Resonance description); v1 is any-model-present.
+"""
+function qc_denoise_vault_model_present(vault_models::AbstractVector)::QCResult
+    QCResult("denoise.vault_model_present", isempty(vault_models) ? 0.0 : 1.0; scope = :image,
+             subs = Dict{Symbol,Any}(:nModels => length(vault_models)))
+end
+
+"""
     qc_photon_limited_frac(meta) -> QCResult
 
 The worst channel's `zeroFrac` (the sparsest, most photon-limited one). `NaN` when the probe never
@@ -154,13 +171,19 @@ downstream diff-of-two-runs can align by index.
 Post-hoc scores (§2.2) and cohort scores (§2.3) are NOT included here; they read from
 `qc/{fun}/{value_name}.json` / `qc_cohort.jl` and belong to their own roll-ups.
 """
-function compute_qc_scores(meta::AbstractDict)::Vector{QCResult}
-    QCResult[
+function compute_qc_scores(meta::AbstractDict;
+                           vault_models::Union{AbstractVector,Nothing} = nothing)::Vector{QCResult}
+    out = QCResult[
         qc_axis_t_present(meta),
         qc_axis_z_present(meta),
         qc_all_channels_saturated(meta),
         qc_photon_limited_frac(meta),
     ]
+    # System-level scores go after the meta-derived four so a caller that reads by index still finds
+    # the first four in the same slots. Only appended when the caller supplied the vault list —
+    # a pure meta test does not touch the disk, so `nothing` skips the score.
+    vault_models === nothing || push!(out, qc_denoise_vault_model_present(vault_models))
+    out
 end
 
 function compute_qc_scores(img::CciaImage)::Vector{QCResult}
@@ -168,7 +191,7 @@ function compute_qc_scores(img::CciaImage)::Vector{QCResult}
     isfile(ccid) || return QCResult[]
     raw  = read_ccid_raw(ccid)
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    compute_qc_scores(meta)
+    compute_qc_scores(meta; vault_models = denoise_model_names())
 end
 
 
@@ -320,10 +343,18 @@ function apply_rules(scores::AbstractVector{QCResult},
         _mark_excluded!(steps_by_fn, excluded, "cleanupImages.stackAlign", "No Z axis")
     end
 
-    # (c) All-channels-saturated → exclude denoise (PR #796 refusal). This wins over the card
-    #     because the card cannot know about the image's channel-level saturation.
-    sat_frac = _score_val(scores, "denoise.channel_saturated_frac", 0.0)
-    if !isnan(sat_frac) && sat_frac >= 1.0
+    # (c) Denoise gates. The vault check wins over saturation: an empty vault is the more
+    #     actionable answer (train a model / import someone else's), and the saturation reason is
+    #     moot when there is no model to run. Only one exclusion row per fun, so the two are
+    #     chained, not both emitted. Default `1.0` for vault means an absent score does NOT exclude
+    #     (a pure-meta plan without vault info behaves like today — same fall-through the saturation
+    #     gate uses at `0.0` default).
+    vault_present = _score_val(scores, "denoise.vault_model_present", 1.0)
+    sat_frac      = _score_val(scores, "denoise.channel_saturated_frac", 0.0)
+    if vault_present < 0.5
+        _mark_excluded!(steps_by_fn, excluded, "cleanupImages.denoise",
+                        "No trained denoise model in vault")
+    elseif !isnan(sat_frac) && sat_frac >= 1.0
         _mark_excluded!(steps_by_fn, excluded, "cleanupImages.denoise",
                         "All selected channels saturated (meta.saturation)")
     end
@@ -402,8 +433,9 @@ truth — see the plan doc's Open questions).
 function recommend_plan(meta::AbstractDict;
                         image_uid::AbstractString = "",
                         card_id::Union{Symbol,Nothing} = nothing,
-                        wizard::AbstractDict = Dict{Symbol,Any}())::CorrectionPlan
-    scores = compute_qc_scores(meta)
+                        wizard::AbstractDict = Dict{Symbol,Any}(),
+                        vault_models::Union{AbstractVector,Nothing} = nothing)::CorrectionPlan
+    scores = compute_qc_scores(meta; vault_models = vault_models)
     card   = card_id === nothing ? recommend_card(scores, wizard) : card_id
     preset = preset_by_id(card)
     res    = apply_rules(scores, preset, wizard)
@@ -448,7 +480,8 @@ function recommend_plan(img::CciaImage;
                                           CorrectionStep[], CorrectionStep[], QCResult[])
     raw  = read_ccid_raw(ccid)
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    recommend_plan(meta; image_uid = String(img.uid), card_id = card_id, wizard = wizard)
+    recommend_plan(meta; image_uid = String(img.uid), card_id = card_id, wizard = wizard,
+                   vault_models = denoise_model_names())
 end
 
 

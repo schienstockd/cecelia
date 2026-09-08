@@ -12372,6 +12372,18 @@ end
         rt   = JSON3.read(JSON3.write(meta))
         rtm  = Dict{String,Any}(String(k) => v for (k, v) in rt)
         @test Cecelia.qc_photon_limited_frac(rtm).score == 0.95
+
+        # ── vault presence: system-level, appended only when the caller supplies the list ──────
+        v_empty = Cecelia.qc_denoise_vault_model_present(String[])
+        @test v_empty.score == 0.0 && v_empty.subs[:nModels] == 0
+        v_some  = Cecelia.qc_denoise_vault_model_present(["m1", "m2"])
+        @test v_some.score == 1.0 && v_some.subs[:nModels] == 2
+        # compute_qc_scores appends only when vault_models !== nothing — pure meta path unchanged
+        @test length(Cecelia.compute_qc_scores(meta)) == 4
+        @test length(Cecelia.compute_qc_scores(meta; vault_models = String[])) == 5
+        rs_v = Cecelia.compute_qc_scores(meta; vault_models = ["some-model"])
+        @test rs_v[end].metric == "denoise.vault_model_present"
+        @test rs_v[end].score  == 1.0
     end
 
     # CORRECTION_QC_PLAN.md §1 (rule table) + §3 (tie-break) + §5 (preset cards). Phase C of the
@@ -12394,11 +12406,13 @@ end
         @test Cecelia.preset_by_id(:not_a_card).id == :custom
 
         mk_scores(size_t, size_z; sat_frac = Cecelia.QC_SCORE_ABSENT,
-                  photon_frac = Cecelia.QC_SCORE_ABSENT) = Cecelia.QCResult[
+                  photon_frac = Cecelia.QC_SCORE_ABSENT,
+                  vault_present = 1.0) = Cecelia.QCResult[
             Cecelia.QCResult("axis.T_present", size_t > 1 ? 1.0 : 0.0),
             Cecelia.QCResult("axis.Z_present", size_z > 1 ? 1.0 : 0.0),
             Cecelia.QCResult("denoise.channel_saturated_frac", sat_frac),
             Cecelia.QCResult("smooth.photon_limited_frac",     photon_frac),
+            Cecelia.QCResult("denoise.vault_model_present",    vault_present),
         ]
 
         # ── §1 rule 1: T-axis absent → driftCorrect + flowRegister excluded, even if the card
@@ -12413,9 +12427,9 @@ end
         drift = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
         @test drift.source == :computed_qc
 
-        # ── §1 rule 3: all channels saturated → denoise excluded, PR #796 refusal. The card
-        #    does NOT ship denoise on any of the seed cards, so this is a pure exclusion emitted
-        #    by the engine (no included→excluded transition).
+        # ── §1 rule 3: all channels saturated → denoise excluded, PR #796 refusal. Galvo does not
+        #    seed denoise, so the exclusion is a pure engine emission with no card→excluded
+        #    transition; a Resonance-card variant of this test is below.
         r = Cecelia.apply_rules(mk_scores(100, 1; sat_frac = 1.0), Cecelia.preset_by_id(:galvo))
         den = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
         @test occursin("saturated", den.exclusion_reason)
@@ -12427,6 +12441,33 @@ end
         # sat NaN (probe never ran) → no exclusion (a signal-absent metric is NOT "0.0")
         r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:galvo))
         @test !any(s -> s.fun_name == "cleanupImages.denoise", r.excluded)
+
+        # ── denoise vault gate — Resonance seeds denoise; the vault + saturation scores decide
+        #    whether the seed survives. Chained so exactly one exclusion row is emitted.
+        # vault present + not saturated → seeded from the card, no exclusion
+        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:resonance))
+        den = only([s for s in r.included if s.fun_name == "cleanupImages.denoise"])
+        @test den.source == :card
+        @test isempty(den.params)                       # SUPPORT model picked at the task widget
+        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.excluded)
+
+        # vault empty → excluded with the vault reason, seed dropped from `included`
+        r = Cecelia.apply_rules(mk_scores(100, 1; vault_present = 0.0), Cecelia.preset_by_id(:resonance))
+        vault_ex = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
+        @test vault_ex.exclusion_reason == "No trained denoise model in vault"
+        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.included)
+
+        # vault empty + saturated → vault wins (single row, vault reason) — see the chained gate
+        r = Cecelia.apply_rules(mk_scores(100, 1; vault_present = 0.0, sat_frac = 1.0),
+                                Cecelia.preset_by_id(:resonance))
+        rows = [s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]
+        @test length(rows) == 1
+        @test rows[1].exclusion_reason == "No trained denoise model in vault"
+
+        # vault present + saturated → falls through to the saturation reason
+        r = Cecelia.apply_rules(mk_scores(100, 1; sat_frac = 1.0), Cecelia.preset_by_id(:resonance))
+        sat_ex = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
+        @test occursin("saturated", sat_ex.exclusion_reason)
 
         # ── §5 C-Deep3D: stackAlign shipped on the card, referenceMode = middle.
         r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:deep_3d))
@@ -12612,10 +12653,13 @@ end
         @test tmpl.name == "test-mount"
         @test length(tmpl.nodes) == length(p.included)
         @test [n.fn for n in tmpl.nodes] == [s.fun_name for s in p.included]
-        # Node ids are short-form fun_names — stable across re-plans
-        @test [n.id for n in tmpl.nodes] == ["driftCorrect", "smooth"]
-        # Linear edges chain the sorted order (drift → smooth for resonance on T-only image)
-        @test [(e.from, e.to) for e in tmpl.edges] == [("driftCorrect", "smooth")]
+        # Node ids are short-form fun_names — stable across re-plans. Resonance seeds
+        # drift (200) + smooth (300) + denoise (400). Denoise's vault gate defaults `1.0` for a
+        # pure-meta plan (no vault_models argument), so the seed survives without exclusion —
+        # the img-variant of recommend_plan is where a real vault enumeration decides.
+        @test [n.id for n in tmpl.nodes] == ["driftCorrect", "smooth", "denoise"]
+        @test [(e.from, e.to) for e in tmpl.edges] ==
+              [("driftCorrect", "smooth"), ("smooth", "denoise")]
         # Excluded steps are NOT in the template — the audit trail is a plan concept, not chain
         @test !any(n -> n.fn == "cleanupImages.stackAlign", tmpl.nodes)   # Z-absent → excluded
 
