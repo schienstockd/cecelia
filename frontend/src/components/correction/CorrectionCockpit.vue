@@ -354,8 +354,25 @@ async function onStripUpdate(next: string[] | string): Promise<void> {
       })
     } catch { /* fall through to reload — the reconciler is the source of truth */ }
     await reloadPicked()
-  } else if (trackKey.value) {
-    cockpit.setSelectedTracks(trackKey.value, arr)
+  } else {
+    writeSelectedTracks(arr)
+  }
+}
+
+/**
+ * Write a new tracks-selection through the same convention `TrackSchemeView.setSelected` uses:
+ * cockpit store + viewer highlight + split cursor stay in lock-step. Bypassing this via
+ * `cockpit.setSelectedTracks` alone was the "I can't get rid of the selected tracks" bug —
+ * clearing the store leaves `viewerStore.trackHighlight` (persisted to localStorage) still
+ * highlighting the last set, so the viewer keeps drawing them even after every UI count is 0.
+ */
+function writeSelectedTracks(ids: string[]): void {
+  if (!trackKey.value) return
+  cockpit.setSelectedTracks(trackKey.value, ids)
+  if (!ids.length && viewerStore.trackHighlight) viewerStore.setTrackHighlight(null)
+  // Split cursor only makes sense on a lone selection; any other cardinality invalidates it.
+  if (ids.length !== 1 && trackScope.value.splitFrame !== null) {
+    cockpit.setSplitFrame(trackKey.value, null)
   }
 }
 
@@ -377,15 +394,24 @@ async function clearSelection(): Promise<void> {
       })
     } catch { /* fall through to reload */ }
     await reloadPicked()
-  } else if (trackKey.value) {
-    cockpit.setSelectedTracks(trackKey.value, [])
+  } else {
+    // Always clear the store AND the viewer highlight — even when the store is already empty.
+    // The persisted `cc.viewer.trackHighlight` outlives a page reload, so a user can inherit a
+    // stale highlight (Dominik's "I still can't get rid of the selected tracks in fXgbTl",
+    // 2026-09-08) that no in-cockpit count reflects. The ✕ button must be the one that always
+    // works, so it addresses BOTH signals unconditionally.
+    writeSelectedTracks([])
+    if (viewerStore.trackHighlight) viewerStore.setTrackHighlight(null)
   }
 }
 
 const canClear = computed(() =>
+  // Tracks mode: enabled when EITHER the store carries picks OR the viewer highlight is set —
+  // the second is the "stale highlight from before" case; the button must be reachable to clear
+  // it even when the local counts already read zero.
   stripKind.value === 'labels'
     ? pickedLabels.value.length > 0
-    : trackScope.value.selectedTracks.length > 0)
+    : (trackScope.value.selectedTracks.length > 0 || viewerStore.trackHighlight !== null))
 
 const detSummary = computed(() => {
   if (mode.value !== 'tracks') return ''
@@ -435,8 +461,9 @@ async function readFromViewer(): Promise<void> {
   const ids = resolvedTracks(sel).map(String)
   // We deliberately write EVEN AN EMPTY read to the store — a Read that resolved to zero tracks
   // (all-untracked, or nothing picked) should clear a stale selection rather than leave the
-  // previous ids hanging under a summary that no longer matches what the viewer shows.
-  cockpit.setSelectedTracks(trackKey.value, ids)
+  // previous ids hanging under a summary that no longer matches what the viewer shows. Route via
+  // `writeSelectedTracks` so a Read-to-empty also drops the viewer highlight (see the helper).
+  writeSelectedTracks(ids)
 }
 
 const isLabelMode = computed(() => mode.value === 'labels' || mode.value === 'review')
