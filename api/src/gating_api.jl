@@ -497,6 +497,22 @@ function api_gating_channels(req::HTTP.Request)
     # motility columns + the aggregatable cell measures + the aggregate suffixes so the client can
     # offer e.g. "mean CD4 per track" → axis `mean_intensity_0.mean` (track_cell_measures inverts it).
     if get(q, "popType", "flow") in ("track", "trackclust")
+        # For track/trackclust, `scope_vn` MUST be a tracked segmentation — the branch below reads
+        # `img_track_props_path(img, scope_vn)` and everything downstream (clusterSuffixes,
+        # clusterIds, cellMeasures aggregation) needs that file to exist. `_resolve_vn` picks the
+        # active LABEL_PROPS vn, which may be an UNTRACKED segmentation (e.g. fXgbTl's active is
+        # `default` but tracks live on `flowKat`) — and until now the client got an empty
+        # clusterIds back, showing "no clusters at this suffix" in the pop manager while UMAP +
+        # heatmap (which resolve their own vn per-request) showed the clusters just fine
+        # (Dominik on fXgbTl 2026-09-08). When the request didn't name a valueName, prefer a
+        # tracked one; an explicit request is honoured unchanged.
+        if isempty(get(q, "valueName", ""))
+            tracked_vns = String[v for v in versioned_keys(img.label_props) if is_tracked(img; value_name = v)]
+            if !isempty(tracked_vns) && !(scope_vn in tracked_vns)
+                scope_vn = first(tracked_vns)
+                vn = scope_vn
+            end
+        end
         motility = _track_motility_cols(img, scope_vn)
         lpc = label_props(img; value_name = scope_vn)
         cellmeas = col_names(lpc; data_type = :vars)         # aggregatable cell vars
