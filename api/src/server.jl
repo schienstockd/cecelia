@@ -40,6 +40,7 @@ include("crop_api.jl")       # routes only; builds on both
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
 include("movie_render.jl")   # the offline renderer's timelapse sweep — builds on image_render.jl + read_slab
 include("movie_rail.jl")     # movie rail (record button + batch) routed through the offline renderer, off napari
+include("cell_cards_api.jl") # /api/cell_cards — snapshot cards on the offline renderer (docs/todo/CELL_CARDS_PLAN.md)
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
@@ -281,6 +282,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/board-assets/save" => (req, body_bytes) -> (api_board_asset_save(body_bytes)),
     "/api/board-assets/delete" => (req, body_bytes) -> (api_board_asset_delete(body_bytes)),
     "/api/board-assets/copy" => (req, body_bytes) -> (api_board_asset_copy(body_bytes)),
+    "/api/cell_cards" => (req, body_bytes) -> (api_cell_cards(body_bytes)),
     "/api/projects/rename" => (req, body_bytes) -> (api_projects_rename(body_bytes)),
     "/api/projects/delete" => (req, body_bytes) -> (api_projects_delete(body_bytes)),
     "/api/sets/create" => (req, body_bytes) -> (api_sets_create(body_bytes)),

@@ -1,0 +1,22 @@
+{
+    "clusters.movement": {
+        "partOf": [
+            "KDIeEm"
+        ],
+        "family": "clusters",
+        "features": [
+            "live.track.speed",
+            "live.track.duration",
+            "live.track.trackLength",
+            "live.track.displacement",
+            "live.track.straightness",
+            "live.track.displacementRatio",
+            "live.track.outreachRatio",
+            "live.track.meanTurningAngle",
+            "live.track.overallAngle",
+            "live.track.asphericity"
+        ],
+        "labels": {
+        }
+    }
+}

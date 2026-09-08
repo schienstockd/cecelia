@@ -4724,6 +4724,7 @@ end
         "/api/app/switch-worktree", "/api/board-assets/copy",
         "/api/board-assets/delete", "/api/board-assets/save",
         "/api/boards/add",   # create-only board authoring (MCP write 6/6); NOT /api/projects/boards
+        "/api/cell_cards",   # docs/todo/CELL_CARDS_PLAN.md — snapshot cards on the offline renderer
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
         "/api/correction-plan/mount",
@@ -4821,7 +4822,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 87 && length(POST_ROUTES) == 109
+    @test length(GET_ROUTES) == 87 && length(POST_ROUTES) == 110
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -7913,6 +7914,96 @@ end
             @test st == 400
             st, _ = _mount(Dict("projectUid" => "no-such", "imageUid" => "no-such"))
             @test st == 404
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+# ── /api/cell_cards — metadata + sidecar cache ──────────────────────────────────
+# Exercises the pool-first pipeline on the synthetic clustering fixture (`docs/todo/CELL_CARDS_PLAN.md`
+# Decision 0). No OME-Zarr is on disk for `KDIeEm`, so the filmstrip PNGs deliberately come back
+# empty — the card metadata (medoid triple, stats, pop name/colour/n) is what this pins.
+@testset "API: /api/cell_cards — metadata + sidecar cache on the synthetic fixture" begin
+    h5    = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    sidec = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B__tracks.clustfeatures.json")
+    gate  = api_fixture("testpr", "1", "KDIeEm", "gating", "B__trackclust.json")
+    if !(api_have_fixture(h5) && api_have_fixture(sidec) && api_have_fixture(gate))
+        @test_skip "cell-cards fixture missing (see test-data/README.md)"
+    else
+        dir = mktempdir()
+        cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+
+            call(body) = api_cell_cards(Vector{UInt8}(JSON3.write(body)))
+            req = Dict{String,Any}("projectUid" => "testpr", "rootUid" => "KDIeEm",
+                                    "valueName" => "B", "suffix" => "movement",
+                                    "pops" => [
+                                        Dict("path"=>"/Scanning", "clusterIds"=>[0]),
+                                        Dict("path"=>"/Directed", "clusterIds"=>[1]),
+                                        Dict("path"=>"/Meandering", "clusterIds"=>[2])])
+            st, body = call(req)
+            @test st == 200
+            resp = JSON3.read(body)
+
+            # Pool is the single-image pool of one (fixture has partOf=["KDIeEm"]).
+            @test length(resp.pool) == 1
+            @test String(resp.pool[1].uid) == "KDIeEm"
+            @test String(resp.pool[1].value_name) == "B"
+
+            # Three cards in request order; each carries a medoid triple pinning (uid, vn, track_id).
+            @test length(resp.cards) == 3
+            names   = [String(c.name)   for c in resp.cards]
+            colours = [String(c.colour) for c in resp.cards]
+            @test names   == ["Scanning", "Directed", "Meandering"]
+            @test colours == ["#4c78a8", "#f58518", "#54a24b"]
+            @test all(c -> Int(c.n) > 0, resp.cards)             # every pop has rows in the pool
+            @test all(c -> haskey(c.medoid, :uid) && haskey(c.medoid, :value_name)
+                        && haskey(c.medoid, :track_id), resp.cards)
+            @test all(c -> String(c.medoid.uid) == "KDIeEm", resp.cards)
+            @test all(c -> String(c.medoid.value_name) == "B", resp.cards)
+            # Different pops must pick different medoid tracks — the medoid picker collapsed cluster
+            # separation once during Phase 1 development (a subset that copied by ref); pin it.
+            tids = Set(Int(c.medoid.track_id) for c in resp.cards)
+            @test length(tids) == 3
+
+            # Stats footer carries median + IQR for every canonical measure the tracks table has.
+            @test all(c -> length(c.stats) >= 10, resp.cards)
+            first_stat = resp.cards[1].stats[1]
+            @test String(first_stat.name) == "live.track.speed"
+            @test first_stat.q25 <= first_stat.median <= first_stat.q75
+
+            # Filmstrip is EMPTY on this fixture (no OME-Zarr on disk) — the metadata still lands.
+            @test all(c -> isempty(c.filmstrip), resp.cards)
+
+            # Sidecar written under analysis/cell_cards/{value_name}__{suffix}.json.
+            sidecar_path = joinpath(dir, "testpr", "1", "KDIeEm", "analysis", "cell_cards",
+                                     "B__movement.json")
+            @test isfile(sidecar_path)
+            side = JSON3.read(read(sidecar_path, String), Dict{String,Any})
+            @test haskey(side, "pool") && haskey(side, "cards") && haskey(side, "clusterMtime")
+            @test length(side["cards"]) == 3
+
+            # Cache hit — second call with unchanged mtime returns the same PARSED content.
+            # Byte comparison would drift with Julia Dict key order + int/float encoding; parse first.
+            st2, body2 = call(req)
+            @test st2 == 200
+            r1 = JSON3.read(body);  r2 = JSON3.read(body2)
+            @test length(r1.cards) == length(r2.cards)
+            @test [String(c.name) for c in r1.cards] == [String(c.name) for c in r2.cards]
+            @test [Int(c.medoid.track_id) for c in r1.cards] ==
+                  [Int(c.medoid.track_id) for c in r2.cards]
+
+            # Bad body → 400.
+            st3, _ = api_cell_cards(Vector{UInt8}("{not json"))
+            @test st3 == 400
+            st4, _ = call(Dict{String,Any}("projectUid" => "testpr"))
+            @test st4 == 400
+            # Unknown suffix → 404.
+            st5, _ = call(merge(req, Dict{String,Any}("suffix" => "no-such")))
+            @test st5 == 404
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
