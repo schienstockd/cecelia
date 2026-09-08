@@ -16382,9 +16382,24 @@ end
     @test Cecelia.validate_label_op(Dict("op" => "label.remove", "t" => 4, "ids" => [7])) === nothing
     @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.remove", "t" => 0, "ids" => Int[]))
     @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.remove", "t" => 0, "ids" => [0]))
+    # split: needs t, a single positive `id`, and equal-length xs/ys polyline (>=2 vertices).
+    @test Cecelia.validate_label_op(
+        Dict("op" => "label.split", "t" => 0, "id" => 5, "xs" => [10, 30], "ys" => [20, 20])) === nothing
+    # 3-vertex polyline is legal — a two-click cut is the MVP shape, longer polylines land later.
+    @test Cecelia.validate_label_op(
+        Dict("op" => "label.split", "t" => 3, "id" => 5, "xs" => [1, 5, 9], "ys" => [1, 5, 9])) === nothing
+    @test_throws ArgumentError Cecelia.validate_label_op(
+        Dict("op" => "label.split", "t" => 0, "id" => 0, "xs" => [1, 2], "ys" => [3, 4]))       # id=background
+    @test_throws ArgumentError Cecelia.validate_label_op(
+        Dict("op" => "label.split", "t" => 0, "id" => 5, "xs" => [1], "ys" => [3]))             # 1 vertex
+    @test_throws ArgumentError Cecelia.validate_label_op(
+        Dict("op" => "label.split", "t" => 0, "id" => 5, "xs" => [1, 2], "ys" => [3]))          # length mismatch
+    @test_throws ArgumentError Cecelia.validate_label_op(
+        Dict("op" => "label.split", "t" => 0, "id" => 5, "xs" => [1, -2], "ys" => [3, 4]))      # negative coord
+
     # unknown op
     @test_throws ArgumentError Cecelia.validate_label_op(Dict("op" => "label.frobnicate", "t" => 0, "ids" => [1]))
-    @test Set(Cecelia.LABEL_OP_KINDS) == Set(["label.merge", "label.remove"])
+    @test Set(Cecelia.LABEL_OP_KINDS) == Set(["label.merge", "label.remove", "label.split"])
 end
 
 @testset "label correction — build_rewrite folds ops into per-frame maps" begin
@@ -16421,6 +16436,15 @@ end
     # Empty op list yields empty map, not an error.
     @test isempty(Cecelia.build_rewrite(Dict{String,Any}[]))
 
+    # A `label.split` op is a NON-rewrite (creates new ids by CC) — build_rewrite skips it silently
+    # rather than erroring, because a mixed queue (Merge + Split) is legal and callers of this
+    # rewrite table only care about the rewrite half. The Python runner applies split directly.
+    m = Cecelia.build_rewrite([
+        Dict("op" => "label.merge", "t" => 0, "ids" => [2, 3], "into" => 2),
+        Dict("op" => "label.split", "t" => 0, "id" => 5, "xs" => [10, 30], "ys" => [20, 20]),
+    ])
+    @test m[0] == Dict(3 => 2)         # merge kept, split ignored
+
     # A malformed op inside a batch throws — no partial rewrite.
     @test_throws ArgumentError Cecelia.build_rewrite([
         Dict("op" => "label.remove", "t" => 0, "ids" => [1]),
@@ -16453,6 +16477,18 @@ end
         [Dict("op" => "label.remove", "t" => 0, "ids" => [1])], [3];
         n_labels_before = 100)
     @test isempty(Cecelia.label_correction_qc_findings(small))
+
+    # split contributes to `nSplit` + `nLabelsSplit` (separately from removals; the split label
+    # keeps its original id on the largest fragment, so it isn't "removed" from the id space).
+    split_ops = [
+        Dict("op" => "label.split", "t" => 0, "id" => 5, "xs" => [10, 30], "ys" => [20, 20]),
+        Dict("op" => "label.merge", "t" => 0, "ids" => [3, 4], "into" => 3),
+    ]
+    sm = Cecelia.label_correction_metrics(split_ops, [42, 17]; n_labels_before = 20)
+    @test sm["nSplit"] == 1 && sm["nMerge"] == 1 && sm["nRemove"] == 0
+    @test sm["nLabelsSplit"] == 1     # id 5
+    @test sm["nLabelsRemoved"] == 1   # merge sacrificed id 4
+    @test sm["fracLabelsEdited"] ≈ 2/20 atol=1e-4  # split + removed, deduped by union
 
     # every finding's text resolves from the catalog (no unsubstituted {placeholder} reaches a user)
     for f in Cecelia.label_correction_qc_findings(m)

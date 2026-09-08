@@ -399,7 +399,12 @@ Both from `app/src/label_props.jl:657-692`:
      its PRE-merge trajectory — stale, though preserved. Reporting that staleness is P3
      invalidation-surface territory, not carry-over's.
 
-  Also **not built:** the Split verb (needs a raster brush → Phase 4).
+  Also **built** (Phase 3): a Review mode over the picked labels — pager (prev/next), sort
+  (id asc/desc), fly-to-viewer on focus change, inline Remove verb. Source is the
+  `/Pick selection` pop the viewer's pick-cell writes into, so the same click that populates
+  Labels mode also populates the review list. Coordinates come from `/api/viewer/overlays` fetched
+  once per (image, valueName). Extraction: `frontend/src/utils/reviewPager.ts` (pure — sort +
+  wrap-safe next/prev + counter). See Phase 4 for Split — the raster brush is deferred.
 - **P3 — invalidation surface. ✅ BUILT.** Decision 5, for both correction composites.
   Enumeration helper `stale_artefacts_for(img, value_name; changed=:labels|:tracks)` in
   `app/src/correction_staleness.jl` disk-scans the four derived classes: `{vn}__tracks.h5ad`,
@@ -483,6 +488,29 @@ Both from `app/src/label_props.jl:657-692`:
   **The defaults are not duplicated in the frontend.** The route echoes the thresholds it actually used
   (`thresholds` in the response); the panel seeds its inputs from those and sends only what the user
   moved, so the measured numbers stay on the Julia constants where they were measured.
+
+- **Phase 4 (cockpit) — `label.split` op. ✅ BUILT.** Third label op kind alongside `label.merge`
+  and `label.remove` (`app/src/label_correction.jl:LABEL_OP_KINDS`). Op shape
+  `{op, t, id, xs, ys}` — a polyline in image-pixel L0 coords that the runner
+  (`correct_run.py:_apply_split_inplace`) rasterises with vendored Bresenham, subtracts from the
+  label's mask, and splits by scipy `ndimage.label`. Largest fragment keeps the id; every other
+  gets a fresh `max_id_in_frame + 1, +2, …`. A cut that fails to divide the label is a no-op
+  with a warn log — the runner refuses to invent a division the user didn't draw. The Julia
+  `build_rewrite` skips split ops silently (they aren't rewrites; the Python side applies them
+  directly).
+  **Frontend affordance (MVP)**: two centroid-anchored buttons in Review mode — *Split ↔*
+  (horizontal cut through the centroid) and *Split ↕* (vertical) — using the focused label's
+  overlay centroid; runner clips the ±4096 px polyline to the mask. `buildSplitOp` +
+  `buildCentroidSplitOp` in `lib/labelCorrection.ts`. This is the MINIMUM the plan calls
+  "Split becomes a label op": it works today for over-segmented cells whose obvious cut is
+  horizontal or vertical.
+  **Follow-up (Phase 4 raster brush — Draw / Erase / Fill / Pick, NOT shipped):** an arbitrary
+  cut geometry needs a canvas overlay over the WebGPU viewer, mouse capture that doesn't fight
+  pan/zoom, and a pixel-write pipeline. The op shape (`xs`/`ys` polyline) accepts an arbitrary
+  polyline today, so the brush lands without a second op kind — the delta is a new viewer
+  interaction mode + a rasterise-on-mouseup path that emits the same op. Deferred to its own
+  worktree because the WebGPU integration is architecturally novel and deserves visual review
+  of every tool separately from this landing.
 
 ### Icons for the correction surface — checked against the glossary
 

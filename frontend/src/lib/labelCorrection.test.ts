@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildMergeOp, buildRemoveOp, labelActions,
+  buildMergeOp, buildRemoveOp, buildSplitOp, buildCentroidSplitOp, labelActions,
   opLabel, opDescription, undoLast,
   type LabelOp,
 } from './labelCorrection'
@@ -67,6 +67,7 @@ describe('opLabel + opDescription', () => {
   it('short label for the button, sentence for the tooltip', () => {
     expect(opLabel({ op: 'label.merge', t: 0, ids: [3, 5], into: 3 })).toBe('Merge')
     expect(opLabel({ op: 'label.remove', t: 0, ids: [3] })).toBe('Remove')
+    expect(opLabel({ op: 'label.split', t: 0, id: 5, xs: [1, 10], ys: [2, 2] })).toBe('Split')
     expect(opDescription({ op: 'label.merge', t: 2, ids: [3, 5], into: 3 }))
       .toBe('Merge label 5 into 3 at frame 2')
     expect(opDescription({ op: 'label.merge', t: 2, ids: [3, 5, 7], into: 3 }))
@@ -75,6 +76,46 @@ describe('opLabel + opDescription', () => {
       .toBe('Remove label 7 at frame 4')
     expect(opDescription({ op: 'label.remove', t: 4, ids: [7, 9] }))
       .toBe('Remove labels 7, 9 at frame 4')
+    expect(opDescription({ op: 'label.split', t: 3, id: 12, xs: [10, 30, 50], ys: [20, 25, 20] }))
+      .toBe('Split label 12 along a 3-point polyline at frame 3')
+  })
+})
+
+describe('buildSplitOp', () => {
+  it('needs a positive id and >=2 vertices of matching xs/ys length', () => {
+    expect(buildSplitOp(0, 0, [1, 2], [3, 4])).toBeNull()          // id=0 (background)
+    expect(buildSplitOp(0, -1, [1, 2], [3, 4])).toBeNull()         // id<0
+    expect(buildSplitOp(0, 5, [1], [3])).toBeNull()                // 1 vertex
+    expect(buildSplitOp(0, 5, [1, 2], [3])).toBeNull()             // xs/ys length mismatch
+    expect(buildSplitOp(0, 5, [1, -2], [3, 4])).toBeNull()         // negative coord
+    expect(buildSplitOp(0, 5, [1, 2], [3, 4]))
+      .toEqual({ op: 'label.split', t: 0, id: 5, xs: [1, 2], ys: [3, 4] })
+  })
+  it('floors non-integer coords (client may pass float centroids)', () => {
+    expect(buildSplitOp(0, 5, [1.7, 2.9], [3.1, 4.5]))
+      .toEqual({ op: 'label.split', t: 0, id: 5, xs: [1, 2], ys: [3, 4] })
+  })
+})
+
+describe('buildCentroidSplitOp', () => {
+  it('horizontal cut runs left-right through the centroid y', () => {
+    const op = buildCentroidSplitOp(2, 7, 100, 50, 'horizontal', 30)!
+    expect(op.op).toBe('label.split')
+    expect(op.id).toBe(7)
+    expect(op.ys).toEqual([50, 50])                                // same y at both endpoints
+    expect(op.xs[0]).toBeLessThan(op.xs[1])                        // increasing x
+  })
+  it('vertical cut runs top-bottom through the centroid x', () => {
+    const op = buildCentroidSplitOp(2, 7, 100, 50, 'vertical', 30)!
+    expect(op.xs).toEqual([100, 100])
+    expect(op.ys[0]).toBeLessThan(op.ys[1])
+  })
+  it('clamps the leading endpoint to 0 (never negative image px)', () => {
+    const op = buildCentroidSplitOp(0, 3, 5, 5, 'horizontal', 100)!
+    expect(op.xs[0]).toBe(0)
+  })
+  it('returns null for a NaN centroid — a label with no overlay row', () => {
+    expect(buildCentroidSplitOp(0, 3, NaN, 5, 'horizontal')).toBeNull()
   })
 })
 
