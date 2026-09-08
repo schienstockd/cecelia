@@ -12,7 +12,7 @@ Parameter contract (JSON written by Julia) — as cellpose_run.py, except `model
       model           - ABSOLUTE path to a vault checkpoint (Julia resolves the name)
       matchAs         - 'base' or 'nuc'
       cellChannels    - 0-based channel indices for cell signal
-      normalise       - percentile for intensity normalisation (default 99.9)
+      normalise       - percentile for intensity normalisation (default 99.99)
       seedSize        - local-maximum window for seeding
       seedBlurSigma   - blur applied to the SEED map only (outline unaffected)
       probThreshold, affinityThreshold, minComponentSize, probBlurSigma,
