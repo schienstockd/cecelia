@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
-  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor,
+  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -422,6 +422,60 @@ describe('backendAdvisor', () => {
     const before = a.reloadOn?.({ images: [{ uid: 'x', sizeT: 20 }] }) ?? []
     const after  = a.reloadOn?.({ images: [{ uid: 'x', sizeT: 20 }, { uid: 'y', sizeT: 40 }] }) ?? []
     expect(before).not.toEqual(after)
+  })
+})
+
+describe('popsCompatAdvisor — cluster-tracks VN compatibility', () => {
+  const IMG = (uid: string, labels: Record<string, string[]>) =>
+    ({ uid, labels } as unknown as Parameters<typeof popsCompatAdvisor.advise>[1]['images'] extends
+      (infer T)[] | undefined ? T : never)
+
+  const CTX = (images: unknown[], pops: string[]) =>
+    ({ projectUid: 'p', images, values: { popsToCluster: pops } }) as unknown as
+      Parameters<typeof popsCompatAdvisor.advise>[1]
+
+  it('is silent when the selection sits on one VN present everywhere', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new Error('never called') }) as unknown as typeof fetch
+    const ctx = CTX([IMG('a', { flowTom: [] }), IMG('b', { flowTom: [] })],
+                    ['flowTom/qc/CD169-/cells/_tracked'])
+    expect(await popsCompatAdvisor.advise(ctx.values!.popsToCluster, ctx)).toBeNull()
+  })
+
+  it('flags images that lack a VN a selected pop lives on', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      ({ ok: true, json: async () => ({ channelNamesPerVn: {} }) }) as Response) as unknown as typeof fetch
+    const ctx = CTX(
+      [IMG('a', { flowTom: [], cpSAM: [] }), IMG('b', { flowTom: [] })],
+      ['flowTom/qc/_tracked', 'cpSAM/A/_tracked'])
+    const out = await popsCompatAdvisor.advise(ctx.values!.popsToCluster, ctx)
+    expect(out?.severity).toBe('warn')
+    expect(out?.message).toContain('1 image missing a VN')
+    expect(out?.tip).toContain('b (cpSAM)')
+  })
+
+  it('flags a channel-name mismatch across VNs on the reference image', async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({
+      channelNamesPerVn: { flowTom: ['nuc-GFP', 'mem-TOM', 'CD169-Kat'], cpSAM: ['dapi', 'gfp'] },
+    }) }) as Response) as unknown as typeof fetch
+    const ctx = CTX(
+      [IMG('a', { flowTom: [], cpSAM: [] })],
+      ['flowTom/qc/_tracked', 'cpSAM/A/_tracked'])
+    const out = await popsCompatAdvisor.advise(ctx.values!.popsToCluster, ctx)
+    expect(out?.severity).toBe('warn')
+    expect(out?.message).toContain('channel names differ')
+    expect(out?.tip).toContain('cpSAM: [dapi, gfp]')
+  })
+
+  it('registers under the popsToCluster key so clustTracks + clustPops both pick it up', () => {
+    expect(paramAdvisor({ key: 'popsToCluster', type: 'popSelection' })).toBe(popsCompatAdvisor)
+  })
+
+  it('does not fetch when only one VN is selected — nothing to compare across', async () => {
+    let called = false
+    globalThis.fetch = vi.fn(async () => { called = true; return { ok: true, json: async () => ({}) } as Response }) as unknown as typeof fetch
+    const ctx = CTX([IMG('a', { flowTom: [] })], ['flowTom/qc/_tracked', 'flowTom/other/_tracked'])
+    await popsCompatAdvisor.advise(ctx.values!.popsToCluster, ctx)
+    expect(called).toBe(false)
   })
 })
 

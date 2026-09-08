@@ -51,6 +51,8 @@ const EXEMPT: Record<string, string> = {
   'components/ViewerPanel.vue':
     'viewer reload is a SEPARATE opt-in toggle (viewerAutoUpdate, default off) — expensive on large images',
   'tasks/ParamRenderer.vue': 'a form; its options come from image metadata, not from task output',
+  'tasks/paramAdvisors.ts':
+    'form-time advisors — fetch image/VN metadata to render an inline "before you run" line, and reload themselves via `reloadOn(ctx)` when the form context changes; not driven by task completion',
   'modules/ChainModule.vue': 'whiteboard wiring, not a plot surface',
   'modules/batchmovies/BatchMoviesPanel.vue': 'movie config, not a plot surface',
   'composables/useTrackValueNames.ts':
