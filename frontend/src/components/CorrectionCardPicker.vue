@@ -32,7 +32,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
 
 /**
- * Custom stays last as the "none of these" escape row — separated visually below the 2 x 2 grid
+ * Custom stays last as the "none of these" escape row — separated visually below the tile row
  * so it does not read as one of the opinionated four. The other four render in the order the
  * backend ships them (`fetchCorrectionPresets` yields the display order).
  */
@@ -50,8 +50,15 @@ function pick(id: string): void {
 // Same as `VisualAid`: one shared counter so every animated card advances on the same tick
 // (independent timers drift out of phase within seconds). 220 ms because below ~120 ms the eye
 // reads flicker rather than direction; `VisualAid.FRAME_MS` is 220 for the same reason.
+//
+// Advance PAUSES while the mouse is over any tile — the frame-tick's DOM patches were making
+// PrimeVue's tooltip dismiss instantly on hover (the tooltip's autoHide read the burst of
+// attribute updates on descendant rects as a leave). Pausing during hover keeps the DOM under
+// the tooltip still and lets the tooltip persist normally; the animation resumes as soon as the
+// mouse moves off.
 const FRAME_MS = 220
 const frame = ref(0)
+const hovered = ref(false)
 let timer: number | undefined
 
 const figures = computed(() =>
@@ -62,7 +69,7 @@ const hasAnimated = computed(() => figures.value.some(f => f.animated))
 onMounted(() => {
   if (!hasAnimated.value) return
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-  timer = window.setInterval(() => { frame.value++ }, FRAME_MS)
+  timer = window.setInterval(() => { if (!hovered.value) frame.value++ }, FRAME_MS)
 })
 onBeforeUnmount(() => { if (timer !== undefined) window.clearInterval(timer) })
 
@@ -86,7 +93,9 @@ function figureFor(id: string): number[][] {
         :disabled="disabled"
         :aria-pressed="modelValue === p.id"
         @click="pick(p.id)"
-        v-tooltip.top="p.description">
+        @mouseenter="hovered = true"
+        @mouseleave="hovered = false"
+        v-tooltip.top="p.name">
         <div class="card-fig-wrap">
           <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"
             class="card-fig" role="img" :aria-label="p.name"
@@ -103,7 +112,7 @@ function figureFor(id: string): number[][] {
             </template>
           </svg>
         </div>
-        <div class="card-name cc-fs-xs">{{ p.name.split(' /')[0] }}</div>
+        <div class="card-name cc-fs-2xs">{{ p.name.split(' /')[0] }}</div>
       </button>
     </div>
 
@@ -115,7 +124,7 @@ function figureFor(id: string): number[][] {
       :disabled="disabled"
       :aria-pressed="modelValue === customPreset.id"
       @click="pick(customPreset.id)"
-      v-tooltip.top="customPreset.description">
+      v-tooltip.top="customPreset.name">
       <svg viewBox="0 0 100 100" class="card-escape-glyph" aria-hidden="true">
         <rect x="14" y="14" width="72" height="72" rx="4" fill="none" class="fg-dash" />
         <text x="50" y="66" text-anchor="middle" class="fg-qmark">?</text>
@@ -137,16 +146,18 @@ function figureFor(id: string): number[][] {
   pointer-events: none;
 }
 .card-grid {
+  /* 4 tiles in one row keeps the picker compact — at panel width the tiles land ~80 px each,
+     which reads as recognisable microscopy without dominating the panel over Will Run / Wizard. */
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 .card-tile {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
-  padding: 6px;
+  gap: 2px;
+  padding: 4px;
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
@@ -186,7 +197,11 @@ function figureFor(id: string): number[][] {
 }
 .card-name {
   color: var(--cc-text);
-  line-height: 1.2;
+  line-height: 1.15;
+  /* At ~75 px tile width the longer names ("Spinning-disk") wrap; break on the hyphen so it
+     stays two clean lines rather than an ellipsis cut-off. */
+  word-break: break-word;
+  hyphens: auto;
 }
 .card-escape {
   display: grid;
