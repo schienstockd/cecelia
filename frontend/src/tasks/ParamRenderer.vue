@@ -17,7 +17,7 @@ import { selectedOptionHelp } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
-         scopeValueName, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
+         scopeValueName, scopeValueNames, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
 import ImagePickerModal from '../components/ImagePickerModal.vue'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
@@ -336,6 +336,11 @@ async function loadCols() {
   const img = props.context?.images?.[0]
   const projectUid = props.context?.projectUid
   const valueName = resolveColValueName()
+  // Multi-VN scope: when the selected pops span more than one segmentation, the backend
+  // INTERSECTS the column lists so a `clustTracks.cluster` (contract B) only offers features
+  // present on EVERY selected VN — otherwise a per-VN track_props read would KeyError on the
+  // absent col. Single-VN selection falls through to the classic `valueName` path.
+  const scopedVns = scopeValueNames(props.context?.params, props.context?.values)
   // popType matters: 'track'/'trackclust' returns the PER-TRACK feature universe (whole-track
   // motility + aggregatable cell measures), not the cell columns. Was hardcoded to flow, so the
   // track-clustering picker never showed the whole-track measures.
@@ -343,7 +348,8 @@ async function loadCols() {
   colGroups.value = []
   if (!img || !projectUid) return
   try {
-    const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(valueName)}&popType=${popType}`
+    const vnsParam = scopedVns.length >= 2 ? `&valueNames=${scopedVns.map(encodeURIComponent).join(',')}` : ''
+    const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(valueName)}${vnsParam}&popType=${popType}`
     const res = await fetch(`/api/gating/channels?${q}`)
     if (!res.ok) return
     const d = await res.json() as { columns?: string[]; obsColumns?: string[]; channelNames?: string[]
@@ -377,9 +383,16 @@ async function loadCols() {
   } catch { /* no columns available yet */ }
 }
 
-// reload when the image, the sibling valueName, or the selected populations change
-watch(() => [props.context?.images?.[0]?.uid, props.context?.values?.valueName,
-             JSON.stringify(props.context?.values?.pops)],
+// reload when the image, the sibling valueName, or the selected populations change.
+// The pop/valueName params are looked up BY TYPE — same reason `scopeValueName` does: their keys
+// aren't a naming convention (`clustTracks.cluster` calls them `popsToCluster`, `hmm_states` calls
+// them `pops`), and hardcoding `values.pops` here meant the picker never re-fired when the pops it
+// actually depends on changed.
+const popKey = computed(() => siblingKeyOfType(props.context?.params, 'popSelection'))
+const vnKey = computed(() => siblingKeyOfType(props.context?.params, 'valueNameSelection'))
+watch(() => [props.context?.images?.[0]?.uid,
+             vnKey.value ? props.context?.values?.[vnKey.value] : undefined,
+             popKey.value ? JSON.stringify(props.context?.values?.[popKey.value]) : ''],
   () => { loadCols() }, { immediate: true })
 
 const colAllValues = computed(() => colGroups.value.flatMap(g => g.opts).map(o => o.value))

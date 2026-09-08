@@ -79,6 +79,9 @@ export interface AdvisorImage {
   activeValueName?: string
   /** every registered image version, valueName → filename */
   filepaths?: Record<string, string>
+  /** valueName → segmentation label filenames (matches `CciaImage.labels`). Used by cross-image
+   *  advisors to check whether a selected pop's VN is present on every image. */
+  labels?: Record<string, string[]>
 }
 
 /** Frame geometry of ONE resolved image version — what the grid estimate actually needs. */
@@ -516,6 +519,80 @@ export function backendAdvisor(funName: string, paramKey: string): ParamAdvisor 
   }
 }
 
+/** Distinct VN prefixes from a pop list, first-seen order. Duplicates the `scopeValueNames` rule
+ *  (`paramValues.ts`) so this file's advisor stays free of a task-value dependency. */
+function _vnsFromPops(pops: readonly unknown[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of pops) {
+    const s = String(p)
+    if (!s || s.startsWith('/')) continue
+    const idx = s.indexOf('/')
+    if (idx <= 0) continue
+    const vn = s.slice(0, idx)
+    if (!seen.has(vn)) { seen.add(vn); out.push(vn) }
+  }
+  return out
+}
+
+/** Advisory for `popsToCluster` — see the registration comment for the invariant it defends. */
+export const popsCompatAdvisor: ParamAdvisor = {
+  // rerun on: images changing, their label sets shifting (a re-import can wipe a VN), or the pop pick
+  reloadOn: ctx => [
+    (ctx.images ?? []).map(i => `${i.uid}:${Object.keys(i.labels ?? {}).sort().join('/')}`).join(','),
+    JSON.stringify(ctx.values?.popsToCluster ?? []),
+  ],
+  advise: async (value, ctx) => {
+    const pops = Array.isArray(value) ? value as unknown[] : []
+    if (!pops.length) return null
+    const vns = _vnsFromPops(pops)
+    if (!vns.length) return null
+    const imgs = ctx.images ?? []
+    // (a) VN presence per image — client-side, `img.labels` is on the payload already
+    const gapsPerImage: string[] = []
+    for (const img of imgs) {
+      const has = img.labels ?? {}
+      const missing = vns.filter(v => !(v in has))
+      if (missing.length) gapsPerImage.push(`${img.uid ?? '?'} (${missing.join(', ')})`)
+    }
+    // (b) channel names per VN, one backend hop — only when multi-VN. Reuses the multi-VN branch of
+    // /api/gating/channels; single-VN would carry nothing to compare.
+    let chanMsg: string | null = null
+    if (vns.length >= 2 && imgs[0]?.uid && ctx.projectUid) {
+      try {
+        const q = `projectUid=${ctx.projectUid}&imageUid=${imgs[0].uid}`
+              + `&valueNames=${vns.map(encodeURIComponent).join(',')}&popType=track`
+        const res = await fetch(`/api/gating/channels?${q}`)
+        if (res.ok) {
+          const d = await res.json() as { channelNamesPerVn?: Record<string, string[]> }
+          const perVn = d.channelNamesPerVn ?? {}
+          const ref = perVn[vns[0]] ?? []
+          const mismatched = vns.slice(1).some(v => {
+            const list = perVn[v] ?? []
+            return list.length !== ref.length || list.some((c, i) => c !== ref[i])
+          })
+          if (mismatched) {
+            chanMsg = vns.map(v => `${v}: [${(perVn[v] ?? []).join(', ')}]`).join(' vs ')
+          }
+        }
+      } catch { /* silence — advisory never load-bearing */ }
+    }
+    if (!gapsPerImage.length && !chanMsg) return null
+    const parts: string[] = []
+    if (chanMsg) parts.push('channel names differ across VNs')
+    if (gapsPerImage.length) parts.push(`${gapsPerImage.length} image${gapsPerImage.length > 1 ? 's' : ''} missing a VN`)
+    const tipParts: string[] = []
+    if (chanMsg) tipParts.push(`Channel names must match for intensity features to be comparable — ${chanMsg}.`)
+    if (gapsPerImage.length) tipParts.push(
+      `Missing: ${gapsPerImage.slice(0, 4).join('; ')}${gapsPerImage.length > 4 ? '; …' : ''}.`)
+    return {
+      severity: 'warn',
+      message: parts.join(' — '),
+      tip: tipParts.join(' '),
+    }
+  },
+}
+
 export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
   // Registered under the KEY, not `chipSelect`: every chipSelect in every task would match the type,
   // and this judgement is about what a temporal LAG means.
@@ -562,6 +639,14 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
     reloadOn: ctx => [ctx.values?.temporalStat],
     advise: async (value, ctx) => spatialSigmaAdvisory(value, ctx.values?.temporalStat),
   },
+
+  // Cluster-tracks / cluster-pops compatibility check. A joint clustering only makes sense when the
+  // selected pops sit on VNs that (a) exist on every selected image, and (b) share the same channel
+  // names — otherwise `mean_intensity_0` means different molecules on different rows. Not a blocker:
+  // R permitted the union with NA→0, but Dominik prefers the flag so a genuine mistake doesn't get
+  // silently zero-padded. Registered under the KEY (both `clustTracks.cluster` and
+  // `clustPops.cluster` name their pop param `popsToCluster`).
+  popsToCluster: popsCompatAdvisor,
 
   motionDimsSelection: {
     reloadOn: ctx => [ctx.images?.[0]?.uid, ctx.values?.valueName],

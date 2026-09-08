@@ -74,6 +74,30 @@ end
 # 500. (Once segmented — static images included — labelProps exist and the normal path applies.)
 _has_label_props(img::CciaImage)::Bool = !isempty(versioned_keys(img.label_props))
 
+# Intersect column lists across a set of value_names, preserving the first VN's order. Used by the
+# multi-VN picker scope (`?valueNames=A,B`): under contract B the picker only offers features that
+# exist on EVERY selected VN, so `clustTracks.cluster` can't be asked for a column that would
+# KeyError in the per-VN `track_props` read. Returns `String[]` for an empty input.
+function _intersect_cols_across_vns(vns::Vector{String}, getter)::Vector{String}
+    isempty(vns) && return String[]
+    first_cols = getter(first(vns))
+    length(vns) == 1 && return first_cols
+    keep = Set{String}(first_cols)
+    for v in vns[2:end]
+        intersect!(keep, Set{String}(getter(v)))
+    end
+    filter(c -> c in keep, first_cols)
+end
+
+# Parse `?valueNames=A,B` — comma-sep list, filtered to real label_props keys. Returns [] when the
+# query is absent or every entry is stale, in which case the caller keeps its single-VN path.
+function _parse_multi_vns(img::CciaImage, raw::AbstractString)::Vector{String}
+    isempty(raw) && return String[]
+    keys_ok = Set{String}(versioned_keys(img.label_props))
+    String[String(strip(x)) for x in split(raw, ',', keepempty=false)
+        if !isempty(strip(x)) && String(strip(x)) in keys_ok]
+end
+
 # pick the channel-name version whose length matches the intensity-column count
 # (handles AF-corrected images with extra channels); fall back to the active version.
 function _matching_channel_version(versions::AbstractDict, n_channels::Int)::String
@@ -451,6 +475,12 @@ function api_gating_channels(req::HTTP.Request)
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
+    # Multi-VN scope (`?valueNames=A,B`) — used by track-clustering pickers when the selected pops
+    # span more than one segmentation. Only the picker-relevant column lists intersect;
+    # metadata (versions, cluster IDs, channel display) stays scoped to the first VN.
+    multi_vns = _parse_multi_vns(img, get(q, "valueNames", ""))
+    scope_vn = length(multi_vns) >= 2 ? first(multi_vns) : vn
+    do_intersect = length(multi_vns) >= 2
     # image not segmented yet: no labelProps → nothing is gateable. Return empty rather than 500ing
     # when the gating UI probes channels for it (label_props would throw "No labelProps …"). After
     # segmentation the image has labelProps and the normal path below runs.
@@ -467,15 +497,22 @@ function api_gating_channels(req::HTTP.Request)
     # motility columns + the aggregatable cell measures + the aggregate suffixes so the client can
     # offer e.g. "mean CD4 per track" → axis `mean_intensity_0.mean` (track_cell_measures inverts it).
     if get(q, "popType", "flow") in ("track", "trackclust")
-        motility = _track_motility_cols(img, vn)
-        lpc = label_props(img; value_name = vn)
+        motility = _track_motility_cols(img, scope_vn)
+        lpc = label_props(img; value_name = scope_vn)
         cellmeas = col_names(lpc; data_type = :vars)         # aggregatable cell vars
         cellobs  = col_names(lpc; data_type = :obs)          # aggregatable cell obs (HMM state/transitions)
+        if do_intersect
+            motility = _intersect_cols_across_vns(multi_vns, v -> _track_motility_cols(img, v))
+            cellmeas = _intersect_cols_across_vns(multi_vns,
+                v -> col_names(label_props(img; value_name = v); data_type = :vars))
+            cellobs  = _intersect_cols_across_vns(multi_vns,
+                v -> col_names(label_props(img; value_name = v); data_type = :obs))
+        end
         chans = channel_columns(lpc)
         versions = Dict{String,Any}(
             v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
         display = get(versions, _matching_channel_version(versions, length(chans)), String[])
-        tpath = img_track_props_path(img, vn)
+        tpath = img_track_props_path(img, scope_vn)
         tobs  = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
         pt    = get(q, "popType", "track")
         tsfx  = _cluster_suffixes(tobs, pt)                      # trackclust runs in the track table
@@ -487,27 +524,40 @@ function api_gating_channels(req::HTTP.Request)
         # `memTom` holds 374 tracks, so the correction worklist reported "nothing to review" for an
         # image with 31 candidates. `is_tracked` reads only the obs column list, so this is cheap.
         tracked = String[v for v in versioned_keys(img.label_props) if is_tracked(img; value_name = v)]
+        # Per-VN channel names — populated only under multi-VN scope, so the pop-picker advisor can
+        # decide whether the selected VNs measure the same channels (the "compatibility" contract
+        # docs/POPULATION.md — clustTracks value-name intersection).
+        chansPerVn = do_intersect ? Dict{String,Any}(
+            v => something(channel_names(img; value_name = v), String[]) for v in multi_vns
+        ) : Dict{String,Any}()
         return 200, JSON3.write((;
             columns = motility,                                  # whole-track motility (directly gateable)
             trackedValueNames = tracked,                          # the ones a track view may default to
             cellMeasures = cellmeas,                             # cell vars → per-track numeric aggregates
             cellObsMeasures = cellobs,                           # cell obs → per-track aggregates (HMM, …)
             channelNames = display === nothing ? String[] : display,  # relabel intensity aggregates
+            channelNamesPerVn = chansPerVn,                       # multi-VN advisor input (empty in single-VN mode)
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
             clusterSuffixes = tsfx,
             clusterFeatures = _clust_features(tpath, tsfx, tfam),
             clusterMembers  = _clust_members(tpath, tsfx, tfam),  # uIDs clustered together (partOf)
             clusterFeatureLabels = _clust_feature_labels(tpath, tsfx, tfam),
-            clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, vn,
+            clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, scope_vn,
                                 tsfx, _clust_members(tpath, tsfx, tfam), true, pt) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
-            valueName = vn,
+            valueName = scope_vn,
             popType = pt,
         ))
     end
-    lp = label_props(img; value_name = vn)
+    lp = label_props(img; value_name = scope_vn)
     cols = col_names(lp; data_type = :vars)        # all gateable feature columns
     chans = channel_columns(lp)                     # intensity columns specifically
+    if do_intersect
+        cols  = _intersect_cols_across_vns(multi_vns,
+            v -> col_names(label_props(img; value_name = v); data_type = :vars))
+        chans = _intersect_cols_across_vns(multi_vns,
+            v -> channel_columns(label_props(img; value_name = v)))
+    end
     # Channel display names are VERSIONED (e.g. AF correction adds extra channels), and the
     # label value_name doesn't map 1:1 to a channel-name version. Pick the version whose
     # length matches the number of intensity columns; expose all versions for the client.
@@ -517,22 +567,30 @@ function api_gating_channels(req::HTTP.Request)
     # TRACK-level cluster columns (clusters.* in `{vn}__tracks.h5ad`, written by clustTracks). These
     # aren't in the cell obs, but the viewer colour-by broadcasts them to cells via track_id so you
     # can colour tracks by their cluster/population. Offered alongside cell obs columns.
-    tpath = img_track_props_path(img, vn)
+    tpath = img_track_props_path(img, scope_vn)
     trackObs = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
     trackColourColumns = String[c for c in trackObs if startswith(c, "clusters.")]
     # cell-table run family for THIS pop_type: `clusters.*` for clust, `regions.*` for region. Computed
     # once — the obs scan, the sidecar lookups and the ID universe must all agree on the family.
     cpt   = get(q, "popType", "flow")
     cobs  = col_names(lp; data_type = :obs)
+    if do_intersect
+        cobs = _intersect_cols_across_vns(multi_vns,
+            v -> col_names(label_props(img; value_name = v); data_type = :obs))
+    end
     csfx  = _cluster_suffixes(cobs, cpt)
     cfam  = Cecelia._cluster_measure_family(cpt)
-    cpath = img_label_props_path(img, vn)
+    cpath = img_label_props_path(img, scope_vn)
     cmem  = _clust_members(cpath, csfx, cfam)
+    chansPerVnF = do_intersect ? Dict{String,Any}(
+        v => something(channel_names(img; value_name = v), String[]) for v in multi_vns
+    ) : Dict{String,Any}()
     200, JSON3.write((;
         columns = cols,
         channels = chans,
         channelNames = display === nothing ? String[] : display,
         channelNameVersions = versions,
+        channelNamesPerVn = chansPerVnF,  # multi-VN advisor input (empty in single-VN mode)
         obsColumns = cobs,              # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
         trackColourColumns = trackColourColumns,         # track-level clusters.* — colour-by broadcasts to cells
         # spatial/temporal centroid axes (obsm) — offered as gating scatter axes you can visualise AND
@@ -543,9 +601,9 @@ function api_gating_channels(req::HTTP.Request)
         clusterFeatures = _clust_features(cpath, csfx, cfam),
         clusterMembers  = cmem,         # uIDs clustered together (partOf)
         clusterFeatureLabels = _clust_feature_labels(cpath, csfx, cfam),
-        clusterIds      = _cluster_ids(get(q, "projectUid", ""), cpath, vn, csfx, cmem, false, cpt),
+        clusterIds      = _cluster_ids(get(q, "projectUid", ""), cpath, scope_vn, csfx, cmem, false, cpt),
         valueNames = versioned_keys(img.label_props),
-        valueName = vn,                 # the server-resolved value_name these columns belong to
+        valueName = scope_vn,                 # the server-resolved value_name these columns belong to
         popType = cpt,
     ))
 end

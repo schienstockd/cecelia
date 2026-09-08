@@ -112,6 +112,12 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
 
     for m in cell_measures
         m == "track_id" && continue
+        # `select_cols` above already @warned + dropped columns this VN doesn't have — reaching a
+        # column that isn't in `cell` would KeyError below. Under the multi-VN cluster-tracks
+        # picker (contract B) the intersection at `/api/gating/channels` prevents this; keep the
+        # guard as a defensive backstop for a stale form (task JSON dispatched with an obs col that
+        # exists on some pops' VN but not this one) so it degrades to "skip", not crash.
+        m in names(cell) || continue
         g = groupby(cell, :track_id)
         # auto-detect type from the decoded column; `categorical`/`numeric` kwargs force the call
         is_cat = m in categorical ? true :

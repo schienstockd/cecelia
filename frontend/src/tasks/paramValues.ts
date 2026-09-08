@@ -277,6 +277,31 @@ export function scopeValueName(
   return labelKeys[0] ?? 'default'
 }
 
+/** The SET of segmentations behind a picker's currently selected pops — deduped, first-seen order.
+ *  Used by `labelPropsColsSelection` to intersect columns across VNs (contract B: a track cluster
+ *  can only be built on features present on every selected pop's VN). Empty when nothing is
+ *  selected or every entry is prefix-less — the caller then falls back to `scopeValueName`.  */
+export function scopeValueNames(
+  params: ParamDef[] | undefined,
+  values: ParamValues | undefined,
+): string[] {
+  const popKey = siblingKeyOfType(params, 'popSelection')
+  const pops = popKey ? values?.[popKey] : undefined
+  if (!Array.isArray(pops) || !pops.length) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of pops) {
+    const s = String(p)
+    if (!s || s.startsWith('/')) continue
+    const idx = s.indexOf('/')
+    if (idx <= 0) continue
+    const vn = s.slice(0, idx)
+    if (seen.has(vn)) continue
+    seen.add(vn); out.push(vn)
+  }
+  return out
+}
+
 // ── Per-param image-gating: `requires.axes` on a single param ──────────────────────────────────────
 //
 // The image-side twin of `showIf`. `showIf` gates a param on the FORM ("show me only when

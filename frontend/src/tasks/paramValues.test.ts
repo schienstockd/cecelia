@@ -3,7 +3,7 @@ import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
-  showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType,
+  showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType,
   missingRequired, groupOrderKeysFor, newEntryDefaults,
   paramAppliesToImages, resolveParamTip, findParamByKey } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
@@ -503,6 +503,38 @@ describe('scopeValueName', () => {
                 ] as unknown as ParamDef[]
     expect(siblingKeyOfType(def, 'valueNameSelection')).toBe('seg')
     expect(scopeValueName(def, { seg: 'C' }, ['A'])).toBe('C')
+  })
+})
+
+// The plural — for a track-clustering picker that must INTERSECT columns across the selected pops'
+// value_names (contract B: only cluster on features every VN actually has). Empty result routes the
+// caller to the single-VN `scopeValueName` path.
+describe('scopeValueNames', () => {
+  const CLUSTER = [
+    { key: 'popsToCluster', type: 'popSelection' },
+    { key: 'clusterMeasures', type: 'labelPropsColsSelection' },
+  ] as unknown as ParamDef[]
+
+  it('collects distinct VN prefixes from a mixed pop selection, first-seen order', () => {
+    expect(scopeValueNames(CLUSTER,
+      { popsToCluster: ['flowTom/qc/CD169-/cells/_tracked', 'cpSAM/A/_tracked'] }))
+      .toEqual(['flowTom', 'cpSAM'])
+  })
+
+  it('dedupes pops that share a VN', () => {
+    expect(scopeValueNames(CLUSTER,
+      { popsToCluster: ['A/x/_tracked', 'A/y/_tracked', 'B/z/_tracked'] }))
+      .toEqual(['A', 'B'])
+  })
+
+  it('skips root-relative pops that have no VN prefix', () => {
+    expect(scopeValueNames(CLUSTER, { popsToCluster: ['/tcells', 'A/x/_tracked'] }))
+      .toEqual(['A'])
+  })
+
+  it('returns empty when nothing is selected — caller falls back to scopeValueName', () => {
+    expect(scopeValueNames(CLUSTER, { popsToCluster: [] })).toEqual([])
+    expect(scopeValueNames(CLUSTER, {})).toEqual([])
   })
 })
 
