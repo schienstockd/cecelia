@@ -15,6 +15,93 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.1] — 2026-09-09
+
+The heartbeat after v0.2.0 — one week, ~105 PRs. The **correction cockpit** is behind a WIP
+sidebar badge and stays opt-in; the rest is the accumulated week's work across correction,
+denoise, drift/register, viewer, and import.
+
+### Changed
+
+- **`afDriftCorrect` composite is gone.** Chain templates that referenced it will fail to load;
+  rebuild the sequence in the chain editor (its two steps live individually). This was the last
+  hard-coded correction order in the codebase — every order is now the user's chain-editor choice.
+- **`flowRegister` default aggressiveness is now `strong`.** New runs produce a different output
+  from the same store; runs before v0.2.1 ran at the old level.
+- **Coastal normalise percentile default is `99.9`** (step `0.1`, range capped at `90–99.99`).
+
+### Added
+
+- **Denoise — SUPPORT.** Self-supervised temporal denoiser for photon-limited data —
+  `cleanupImages.denoise` task + Model Training page with `kind` selector, per-channel training +
+  collapse QC, patience-based early stopping, sub-epoch loss trace + Detail view on the convergence
+  plot, pooled per-set channel training + VRAM pre-flight, live temporal-window advisor mirroring
+  the run-time refusal. SUPPORT now lives in coastal (vendor tree deleted, called in).
+- **Drift & register.** `sitkRigid` estimator + applier for stage rotation; per-Z-plane drift for
+  breathing shear; `stackAlign` per-timepoint intra-stack XY alignment; trajectory low-pass to
+  kill integer-rounding jitter; `flowRegister` dense per-pixel registration with structural-channel
+  passthrough, per-frame post-warp correlation metric, and three-scenario vis aid.
+- **Smoothing.** Bilateral (VST) spatial engine + per-z parallelism, polish σ, farneback dense
+  flow-warped fusion, `farnebackMaxShiftPx` knob.
+- **Correction plan wizard.** Score-band QC layer (photon-limited + sparsity metrics at import),
+  card recommender + mount-to-chain, `plan.json` sidecar with saturation fingerprint, W2/W3/W5
+  cards, launcher chip in TaskRunner bar, downstream-artefact staleness surface, non-measurement
+  obs carried across `correct_measures`.
+- **Correction cockpit (WIP, behind sidebar badge).** Panel + accordion, label-correction engine
+  + journal + QC, `segment.correct` task + Python runner, frontend `labelCorrection` queue,
+  Labels mode wiring, Review pager + `label.split`, chip strip + clear, image-face card picker,
+  C-Resonance denoise seeds.
+- **Cell Cards.** Headless pipeline + `/api/cell_cards`, `CellCardsView` + `StripCell` in
+  `CLUSTER_PANELS`, popType picked from the plot.
+- **Browser viewer.** Auto-fall-back to bricks (or flat) on OOM + dismissable error chip; 3D
+  orientation gizmo with zoom readout; tunable auto contrast + reset-to-bit-range; track-id
+  highlight + centre-camera-on-cell primitives; same-store label rewrites invalidate on the same
+  rev channel; sidebar Viewer launcher (eye icon).
+- **Import.** ImageJ-style series picker for multi-series LIF files, LIF pre-probe + one-shot
+  hint, `DeltaT` fallback (sidecar median of frame diffs).
+- **Tasks.** Cluster-tracks multi-VN support + pop-picker compat advisory, Task Manager Date
+  column when History is on, generic param validator (one source of truth for form-time
+  advisories), reset-to-defaults button on the params form, bounded history-row log slice.
+- **UI / installer.** Dev-channel toggle + revert in Settings → Software, Call for Datasets
+  modal + header entry, guided tour + walkthroughs for the correction/model surfaces, icon
+  legend refresh, feijoa desktop-launcher icon, track-scheme untracked lane + `points.add` +
+  timeline keybindings.
+
+### Fixed
+
+- **Viewer.** OOM-flag TDZ guard; silent-OOM pump scoped to the flat renderer; stale-renderer
+  error suppressed during `loadVersion`; tile map dropped on store-identity change; stale
+  persisted image version pruned on re-import and on delete; popup viewer follows server active
+  version; slab HTTP cache invalidated on same-store rewrites; `visibleRegion` aligned with the
+  L0-pixel `camera.center` convention; colour-by dropdown / live-preview row read `openImageUid`
+  not the retired napari field; frame cache auto-invalidates when a task finishes; Auto-brick
+  classification + mode-toggle renderer swap unstuck; brick renderer OOM init race (#872).
+- **Gating.** `project_gate` no longer densifies polygon corners; axis stops resetting on
+  task-done; trackclust pop chips populate; `pageVn` accepted as vn identifier in ckey;
+  `/channels` for `trackclust` prefers a tracked vn that has a clustering run — cluster
+  PopulationManager stops going empty when the resolved tracked vn has no runs (#876).
+- **Import.** `DeltaT` recovered from sidecar median on bf2raw imports; `ImageTable` renders
+  `s` with a space (#875).
+- **Tasks / picker.** Falls back to the vault manifest when the picker's per-project record is
+  empty; strips `.pt` from `denoiseModels` option values; one lookup for coastal + denoise models
+  (bare stem OR `.pt`); Model Vault kind persisted so denoise picks survive navigation; training
+  plot recovers from stale term list on vault-kind switch.
+- **Whiteboard.** New chain can save empty; throttle next to pool picker.
+- **`git_probe`.** No longer spawns git without a `.git` — pops the macOS CLT installer (#874).
+- **`cropImage`.** Resolves slice bounds against source shape.
+- **Metadata.** `outputValueName` only enriched for image-writing tasks; resolves via
+  `_spec_output_value_name` too. Version lineage in `ImageMetadataDialog`.
+- **Movie compare.** Per-cell `max_px` scaled up to each cell's native size.
+- **`SeriesPickerModal`.** Uses `--cc-surface-2` and `cc-empty` scenario.
+
+### Docs
+
+- README compact rewrite with a *What Cecelia does* figure + a dev-workflow figure.
+- `CORRECTION_QC_PLAN.md` open questions resolved (Q-C3, Q-C4, Q-C6/C7, Q-C8, Q-P3;
+  W4/W6 retired).
+- Cell cards board-plot InteractiveView plan; SimpleITK opportunity audit + parked plans;
+  flow-register plan.
+
 ## [0.2.0] — 2026-09-01
 
 ~150 PRs since `v0.1.3`. Two changes affect existing work — read those first.
@@ -703,7 +790,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/schienstockd/cecelia/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/schienstockd/cecelia/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/schienstockd/cecelia/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/schienstockd/cecelia/compare/v0.1.1...v0.1.2
