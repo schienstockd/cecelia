@@ -55,9 +55,19 @@ export const openWithTip = ref(false)
 // on close so re-opening always lands back on today's tip.
 export const viewedTipIndex = ref<number | null>(null)
 
+// Debounce the on-open update refetch. `checkUpdate()` also fires once at App mount, so the modal
+// starts populated; the on-open call is the freshness top-up for sessions that predate a new release.
+// 60 s is well below GitHub's 60 req/hour anon limit and coalesces double-clicks.
+let _lastUpdateCheckedAt = 0
+
 export function openWhatsNew(opts?: { withTip?: boolean }) {
   openWithTip.value = !!opts?.withTip
   isWhatsNewOpen.value = true
+  const now = Date.now()
+  if (now - _lastUpdateCheckedAt > 60_000) {
+    _lastUpdateCheckedAt = now
+    useAppControlStore().checkUpdate()   // fire-and-forget; the update card reacts to the store
+  }
 }
 export function closeWhatsNew() {
   isWhatsNewOpen.value = false
