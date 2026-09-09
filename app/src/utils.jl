@@ -248,15 +248,41 @@ there is no `.git` under `~/.local/share/cecelia`, so each probe made git print
 output. The failures were already caught and harmless; only the leaked text reached the console,
 where it reads like a broken install (reported in #540).
 
+**Guarded by `_dir_has_git_marker` — never spawn `git` unless there is a `.git` at or above `dir`.**
+On macOS `/usr/bin/git` is the Xcode Command Line Tools *shim*: invoking it when the CLT are not
+installed pops the "Install the command line developer tools" OS dialog *before* git runs, so
+`try/catch` and `stderr = devnull` are powerless to suppress it. An installed Cecelia.app has no
+`.git`, so every startup fired `const _GIT_COMMIT = _git_short(_REPO_ROOT)` (repl_api.jl) and
+pestered the user for CLT. The cheap upward `.git` check kills the spawn on installed builds and
+costs one `isdir`/`isfile` per level on dev checkouts. Linux/Windows are unaffected (either git is
+present and returns normally, or it is absent and Julia throws — no OS-level UI in either case).
+
 Same reason `_kill_tree`/`_dir_bytes` live here rather than inline: a shell-out gets one spelling.
 Not for anything whose *result* matters — a caller that needs to know WHY git failed should run it
 itself and read stderr.
 """
 function git_probe(args::AbstractString...; dir::AbstractString = pwd())::String
+    _dir_has_git_marker(dir) || return ""
     try
         cmd = Cmd(String["git", "-C", String(dir), String.(args)...])
         String(strip(read(pipeline(cmd; stderr = devnull), String)))
     catch
         ""      # git absent, not a repo, or a non-zero exit — all "no answer"
     end
+end
+
+# Walk upward from `dir` looking for a `.git` entry (a directory in a normal checkout, a file in a
+# linked worktree). Purely local — no subprocess, no git call — so it is safe to run on macOS
+# without triggering the Xcode CLT installer dialog. See `git_probe` for why that matters.
+function _dir_has_git_marker(dir::AbstractString)::Bool
+    cur = try; abspath(String(dir)); catch; ""; end
+    isempty(cur) && return false
+    prev = ""
+    while cur != prev
+        gp = joinpath(cur, ".git")
+        (isdir(gp) || isfile(gp)) && return true
+        prev = cur
+        cur = dirname(cur)
+    end
+    return false
 end
