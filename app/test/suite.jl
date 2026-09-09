@@ -11490,19 +11490,19 @@ end
         dir
     end
 
-    # ── _delta_t_fallback: per-plane DeltaT (TheZ=0, TheT=1), unit-converted to seconds ──
+    # ── _delta_t_fallback: median of successive DeltaT diffs at TheZ=0, unit-converted to s ──
     @testset "_delta_t_fallback" begin
         mktempdir() do d
             make_zarr(d; axes = ["t", "z", "y", "x"], level_scales = [[1.0, 1.0, 0.5, 0.5]],
                       planes = [(z = 0, t = 0, dt = 0.0, unit = "ms"),
                                 (z = 0, t = 1, dt = 5000.0, unit = "ms"),
                                 (z = 0, t = 2, dt = 10000.0, unit = "ms")])
-            @test Cecelia._delta_t_fallback(d) == 5.0            # 5000 ms → 5 s, from TheT=1
+            @test Cecelia._delta_t_fallback(d) == 5.0            # median of [5, 5] s
         end
         mktempdir() do d
             make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
                       planes = [(z = 0, t = 1, dt = 2.0, unit = "min")])
-            @test Cecelia._delta_t_fallback(d) == 120.0          # 2 min → 120 s
+            @test Cecelia._delta_t_fallback(d) == 120.0          # single interval, TheT=0 anchored at 0
         end
         mktempdir() do d
             make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
@@ -11517,6 +11517,40 @@ end
                   "<Plane TheZ=\"0\" TheT=\"1\" DeltaT=\"3\" DeltaTUnit=\"s\"><Annotation/></Plane>" *
                   "</Pixels></Image></OME>")
             @test Cecelia._delta_t_fallback(d) == 3.0
+        end
+        # Warm-up outlier at TheT=1: the first interval is longer than the true rate. Median across
+        # all successive intervals returns the true 30.26 s, not the 34.69 s the old TheT=1 sampler
+        # would have baked in. Matches the c91ICQ LIF that motivated this change.
+        mktempdir() do d
+            make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
+                      planes = [(z = 0, t = 0, dt = 0.0,   unit = "s"),
+                                (z = 0, t = 1, dt = 34.69, unit = "s"),
+                                (z = 0, t = 2, dt = 64.95, unit = "s"),
+                                (z = 0, t = 3, dt = 95.22, unit = "s")])
+            r = Cecelia._delta_t_fallback(d)
+            @test 30.2 <= r <= 30.3                              # diffs [34.69, 30.26, 30.27] → 30.27
+        end
+        # A paused frame mid-run must not skew the recorded rate: [30, 170, 30] → 30 (median).
+        mktempdir() do d
+            make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
+                      planes = [(z = 0, t = 0, dt = 0.0,   unit = "s"),
+                                (z = 0, t = 1, dt = 30.0,  unit = "s"),
+                                (z = 0, t = 2, dt = 200.0, unit = "s"),
+                                (z = 0, t = 3, dt = 230.0, unit = "s")])
+            @test Cecelia._delta_t_fallback(d) == 30.0
+        end
+        # bf2raw wrapper layout: OME/METADATA.ome.xml is at the STORE ROOT, and the caller may pass
+        # the series subdir (`.../store/0`) instead — which is what `img_filepath` returns and what
+        # the import task's `resolved_zarr` is. Must find the sidecar via `dirname(zarr_path)`.
+        mktempdir() do d
+            mkpath(joinpath(d, "OME"))
+            write(joinpath(d, "OME", "METADATA.ome.xml"),
+                  "<OME><Image><Pixels>" *
+                  "<Plane TheZ=\"0\" TheT=\"0\" DeltaT=\"0\" DeltaTUnit=\"s\"/>" *
+                  "<Plane TheZ=\"0\" TheT=\"1\" DeltaT=\"5\" DeltaTUnit=\"s\"/>" *
+                  "</Pixels></Image></OME>")
+            mkpath(joinpath(d, "0"))
+            @test Cecelia._delta_t_fallback(joinpath(d, "0")) == 5.0
         end
         @test isnothing(Cecelia._delta_t_fallback(joinpath(tempdir(), "nope-$(rand(UInt32))")))
     end
