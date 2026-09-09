@@ -26,7 +26,8 @@
 // 6x render cost, silently. WEB_VIEWER_PLAN.md decision 3. The check is shared with the Settings
 // diagnostic in `utils/webgpuProbe.ts` — one place, so a second consumer cannot forget the trap.
 
-import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL } from './mipShader'
+import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL, MIP_PICK_BINDING } from './mipShader'
+import { PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer } from '../../utils/viewerLabels'
 import {
   MAX_CHANNELS, LUT_STOPS, lutTextureBytes, extentUm,
   type ViewerMeta, type ViewerChannel, type OrbitCamera,
@@ -154,6 +155,14 @@ export interface VolumeRenderer {
    * which is what lets the signal under the mask stay readable.
    */
   setLabelStyle(opacity: number, contourPx: number): void
+  /**
+   * Highlight a set of label ids with a bright outline, one of them (`focusId`) distinctly so — the
+   * correction cockpit's "what am I editing right now" answer, painted on the viewer rather than
+   * mirrored into a chip strip beside it. `contourPx` = 0 (or an empty `labels` with no focus)
+   * turns the highlight off. Ids above `PICK_BITSET_CAPACITY` are dropped silently; see
+   * `utils/viewerLabels.ts`. Cheap — one `writeBuffer` per call, no bind-group rebuild.
+   */
+  setPickSet(labels: readonly number[], focusId?: number, contourPx?: number): void
   /** Match the drawing buffer to the element's CSS size. Returns true when the size changed. */
   resize(): boolean
   draw(): void
@@ -449,6 +458,14 @@ export async function createVolumeRenderer(
         texture: { sampleType: 'uint', viewDimension: '3d' } },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float', viewDimension: '2d' } },
+      // Pick highlight storage buffer. Same "always bound" discipline as labels — writes an all-zero
+      // buffer at init (`emptyPickBuffer`); `setPickSet` uploads the real bitset. The shader's
+      // `labPickContourPx()` returns 0 when nothing is picked, which short-circuits the composite.
+      // The number here MUST equal `MIP_PICK_BINDING` in mipShader.ts — kept as a literal so the
+      // `webgpuBindings` static check (which regex-scans this file) can see it.
+      // binding 5 = MIP_PICK_BINDING; literal so the webgpuBindings static check can scan it.
+      { binding: 5, visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'read-only-storage', minBindingSize: PICK_BUFFER_BYTES } },
     ],
   })
   const pipeline = device.createRenderPipeline({
@@ -548,6 +565,13 @@ export async function createVolumeRenderer(
     size: [1, 1, 1], dimension: '3d', format: 'r32uint',
     usage: GPUTextureUsage.TEXTURE_BINDING,
   })
+  // Pick storage buffer — always bound, all-zero at init so the shader's `labPickContourPx()` returns
+  // 0 and the composite branch short-circuits. `setPickSet` overwrites it whole; buffer stays alive
+  // for the lifetime of the renderer.
+  const pickBuffer = device.createBuffer({
+    size: PICK_BUFFER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  })
+  device.queue.writeBuffer(pickBuffer, 0, emptyPickBuffer())
 
   const u = new Float32Array(UNIFORM_BYTES / 4)
   /** t → its volume texture, its mask (when one is shown) and the bind group that reads them. */
@@ -849,6 +873,7 @@ export async function createVolumeRenderer(
           { binding: 2, resource: lutTex.createView() },
           { binding: 3, resource: (labelTexture ?? noLabels).createView() },
           { binding: 4, resource: palTex.createView() },
+          { binding: MIP_PICK_BINDING, resource: { buffer: pickBuffer } },
         ],
       })
       dropSlot(t)                                    // a re-upload replaces, never leaks
@@ -978,6 +1003,15 @@ export async function createVolumeRenderer(
       u[LAB0 + 2] = LABEL_PALETTE_N
     },
 
+    setPickSet(labels: readonly number[], focusId?: number, contourPx?: number) {
+      if (dead || destroyed) return
+      const buf = packPickBuffer(labels, {
+        focusId: focusId ?? 0,
+        contourPx: contourPx ?? (labels.length || focusId ? 2 : 0),
+      })
+      device.queue.writeBuffer(pickBuffer, 0, buf)
+    },
+
     async sampleFrame(withOverlays = false) {
       if (!usable() || !bindGroup) return null
       // Its own square target rather than a copy of the canvas: a canvas texture is transient (it
@@ -1093,7 +1127,7 @@ export async function createVolumeRenderer(
       pointBuf?.destroy(); pointBuf = null
       segBuf?.destroy(); segBuf = null
       if (dead) return                     // the device took its resources with it
-      lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy()
+      lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy(); pickBuffer.destroy()
       // Detach the canvas swap chain BEFORE the device dies. Without the `unconfigure()` step,
       // `device.destroy()` on the still-bound context left the swap chain in a state the next
       // `ctx.configure(newDevice)` couldn't fully recover from — 2D→3D rendered an empty

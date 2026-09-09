@@ -13,6 +13,12 @@
 // top identically.
 
 import { VIEW_HALF_ANGLE, MAX_CHANNELS, LUT_STOPS } from '../../utils/volumeViewer'
+import { pickBufferWgsl } from '../../utils/viewerLabels'
+
+/** Storage-buffer binding number for the pick data on the brick renderer. See
+ *  `MIP_PICK_BINDING` in `mipShader.ts` — same feature, same snippet, different slot because the
+ *  brick renderer's label + palette bindings already occupy 5 and 6. */
+export const BRICK_PICK_BINDING = 7
 
 /**
  * Sentinel written into the page table for an unmapped brick. Matches `pageTable.ts`'s
@@ -133,6 +139,11 @@ ${BRICK_SHARED_WGSL}
 // Label palette: LABEL_PALETTE_N x 1 rgba8. id % rows -- consecutive ids get consecutive rows,
 // so touching cells always come out maximally far apart in hue.
 @group(0) @binding(6) var pal: texture_2d<f32>;
+// Pick highlight — bitset + focus id + contour width in one storage buffer. All the correction-cockpit
+// "what am I editing right now" work rides through this binding; BU stays untouched, which is what
+// lets the flat and brick renderers share the same snippet (utils/viewerLabels.ts) — only the
+// binding NUMBER differs.
+${pickBufferWgsl(BRICK_PICK_BINDING)}
 
 struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
@@ -330,8 +341,18 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   // Label composite: mix the id's palette colour on top of the raycast result at p.lab.x. The
   // ray already found the front-most id; labEdge decides whether THIS voxel is on the contour.
   // No cascade to the outer channels -- viewer draws the mask on top of the signal.
-  if (labId != 0u && labEdge(labVi, labId, i32(p.lab.y))) {
+  if (labId != 0u && p.lab.x > 0.0 && labEdge(labVi, labId, i32(p.lab.y))) {
     acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
+  }
+  // Pick highlight sits ON TOP of everything above — the whole point of "what am I editing right now"
+  // is that it is legible without the user having to hunt. Focus wins over pick (both may be true).
+  // See mipShader.ts for the twin.
+  if (labId != 0u) {
+    let pw = labPickContourPx();
+    if (pw > 0 && labEdge(labVi, labId, pw)) {
+      if (labIsFocus(labId)) { acc = vec3(0.2, 1.0, 1.0); }
+      else if (labInPick(labId)) { acc = vec3(1.0, 1.0, 1.0); }
+    }
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
 }

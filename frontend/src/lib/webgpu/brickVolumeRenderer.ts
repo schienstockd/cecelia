@@ -40,11 +40,14 @@ import {
   fetchBrick, brickSlabUrl, padBrickPayload,
   fetchLabelBrick, brickLabelSlabUrl,
 } from '../../utils/brickLoader'
-import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
+import {
+  LABEL_PALETTE_N, labelPaletteBytes,
+  PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer,
+} from '../../utils/viewerLabels'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import {
   BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
-  BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
+  BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT, BRICK_PICK_BINDING,
 } from './brickShader'
 import type { GpuFrameSample } from '../../utils/benchRecorder'
 
@@ -202,6 +205,11 @@ export async function createBrickVolumeRenderer(
         texture: { sampleType: 'uint', viewDimension: '3d' } },
       { binding: 6, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float', viewDimension: '2d' } },
+      // Pick storage buffer — twin of the flat renderer's binding 5, same shape, different slot
+      // (labels + palette occupy 5/6 on the brick side). Always bound; writes an all-zero buffer
+      // at init and `setPickSet` uploads the real state.
+      { binding: BRICK_PICK_BINDING, visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'read-only-storage', minBindingSize: PICK_BUFFER_BYTES } },
     ],
   })
   const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] })
@@ -314,6 +322,12 @@ export async function createBrickVolumeRenderer(
     size: [1, 1, 1], dimension: '3d', format: 'r32uint',
     usage: GPUTextureUsage.TEXTURE_BINDING,
   })
+  // Pick storage buffer — twin of the flat renderer's. All-zero at init so `labPickContourPx()`
+  // returns 0 and the pick composite short-circuits; `setPickSet` overwrites it whole.
+  const pickBuffer = device.createBuffer({
+    size: PICK_BUFFER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  })
+  device.queue.writeBuffer(pickBuffer, 0, emptyPickBuffer())
 
   const setupErr = await device.popErrorScope()
   if (setupErr) {
@@ -574,6 +588,7 @@ export async function createBrickVolumeRenderer(
         { binding: 4, resource: lutTex.createView() },
         { binding: 5, resource: labelTexture.createView() },
         { binding: 6, resource: palTex.createView() },
+        { binding: BRICK_PICK_BINDING, resource: { buffer: pickBuffer } },
       ],
     })
 
@@ -1463,6 +1478,15 @@ export async function createBrickVolumeRenderer(
       labelContourPx = Math.max(0, Math.round(contourPx))
     },
 
+    setPickSet(labels, focusId, contourPx) {
+      if (destroyed) return
+      const buf = packPickBuffer(labels, {
+        focusId: focusId ?? 0,
+        contourPx: contourPx ?? (labels.length || focusId ? 2 : 0),
+      })
+      device.queue.writeBuffer(pickBuffer, 0, buf)
+    },
+
     resize,
     draw,
     uniformState: () => ({ ...uniform }),
@@ -1697,6 +1721,7 @@ export async function createBrickVolumeRenderer(
       lutTex.destroy()
       palTex.destroy()
       noLabelAtlas.destroy()
+      pickBuffer.destroy()
       // Detach the canvas swap chain BEFORE the device dies (Vulkan/Chromium leaves the swap
       // chain in a state a subsequent `ctx.configure(newDevice)` can't recover from otherwise).
       // Then release the device so its texture pool doesn't pile up across kind swaps — 3D→2D→3D
