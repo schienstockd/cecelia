@@ -245,6 +245,61 @@ end
     end
 end
 
+# The macOS trap this guards against: `/usr/bin/git` is a Xcode CLT *shim* that pops the "Install
+# the command line developer tools" OS dialog *before* git runs, so `try/catch` and stderr redirect
+# are useless. `git_probe` must therefore not spawn `git` at all when there is no `.git` above
+# `dir` — the shape of every installed Cecelia.app. CI runners always have git installed so the
+# dialog itself cannot be reproduced; instead we prove the SPAWN doesn't happen by putting a fake
+# `git` earlier on PATH that touches a marker, and asserting the marker never appears when the
+# guard should fire.
+@testset "git_probe does not spawn git when no .git is reachable" begin
+    # Direct check on the helper — cross-platform, no subprocess.
+    mktempdir() do d
+        @test !Cecelia._dir_has_git_marker(d)
+        mkdir(joinpath(d, ".git"))
+        @test Cecelia._dir_has_git_marker(d)
+        sub = joinpath(d, "a", "b")
+        mkpath(sub)
+        @test Cecelia._dir_has_git_marker(sub)   # walks upward past `a/` and `b/`
+    end
+    # `.git` as a FILE (linked worktree gitdir pointer) also counts.
+    mktempdir() do d
+        write(joinpath(d, ".git"), "gitdir: /elsewhere\n")
+        @test Cecelia._dir_has_git_marker(d)
+    end
+
+    # Spawn-blocking test — only meaningful where we can write an executable shim on PATH.
+    if !Sys.iswindows()
+        mktempdir() do shim_dir
+            marker = joinpath(shim_dir, "was_called")
+            gitshim = joinpath(shim_dir, "git")
+            # Pure builtins — the shim must not depend on any other binary being on PATH,
+            # since we PREPEND `shim_dir` rather than replacing PATH (real git after the shim
+            # is fine — the shim always shadows it — but the shim itself has to be self-contained).
+            write(gitshim, "#!/bin/sh\n: > \"$marker\"\nexit 0\n")
+            chmod(gitshim, 0o755)
+            saved = get(ENV, "PATH", "")
+            try
+                ENV["PATH"] = shim_dir * ":" * saved      # shim wins the PATH lookup
+                mktempdir() do nogit
+                    # No `.git` anywhere above `nogit` (mktempdir roots at system tempdir).
+                    # Guard must fire; shim must NOT be invoked.
+                    @test Cecelia.git_probe("rev-parse", "--short", "HEAD"; dir = nogit) == ""
+                    @test !isfile(marker)
+
+                    # Positive control: add a `.git`, and the shim IS called (proves the shim
+                    # actually works, so the absence above wasn't a false negative).
+                    mkdir(joinpath(nogit, ".git"))
+                    Cecelia.git_probe("rev-parse", "--short", "HEAD"; dir = nogit)
+                    @test isfile(marker)
+                end
+            finally
+                ENV["PATH"] = saved
+            end
+        end
+    end
+end
+
 # The tar list in `.github/workflows/release.yml` is an ALLOW-list, so a directory the running app
 # loads is absent from every stable install the moment nobody remembers to name it — and the dev
 # channel, which ships a full branch archive, keeps working, so the gap is invisible in development.
