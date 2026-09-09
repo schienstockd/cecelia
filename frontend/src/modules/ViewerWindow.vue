@@ -4083,18 +4083,23 @@ interface ViewerCapture {
   if (!el) throw new Error('viewer canvas not ready')
   const ext = overlayExtent.value
   const layers: Record<string, { visible: true }> = {}
-  const vn = valueName.value || ''
-  // Point pops for the active gating pop_type (matches viewer's own gate on `getPopVisible`).
-  const popType = gatingCurrent.value.popType || 'flow'
+  // Point pops for the active gating pop_type (matches viewer's own gate on `getPopVisible`). The
+  // vn comes from the OVERLAY payload's own `valueName` (the vn its pops were authored on) — not
+  // from `valueName.value` (the image RENDER version), which is unrelated: a viewer can render
+  // `default` while the pop manager is authored on `flowTom`, and using the render vn would key the
+  // layer names to a segmentation with no pops → server resolves nothing → empty Populations row
+  // in the strip legend.
+  const popType = overlays.value?.popType || gatingCurrent.value.popType || 'flow'
   const popsShown = setUid.value ? settings.getPopVisible(setUid.value, popType) : false
   if (popsShown) {
+    const popVn = overlays.value?.valueName || gatingCurrent.value.valueName || valueName.value || ''
     for (const p of (overlays.value?.pops ?? [])) {
       if (!p.show || hiddenPops.value.has(p.path)) continue
-      layers[`(${popType}) (${vn}) ${p.path}`] = { visible: true }
+      layers[`(${popType}) (${popVn}) ${p.path}`] = { visible: true }
       if ((p.isTrack || p.hasTracks) && setUid.value
           && settings.getShowGatedTracks(setUid.value)
           && !hiddenTrackPops.value.has(p.path)) {
-        layers[`(track) (${vn}) Tracks ${p.path}`] = { visible: true }
+        layers[`(track) (${popVn}) Tracks ${p.path}`] = { visible: true }
       }
     }
   }
