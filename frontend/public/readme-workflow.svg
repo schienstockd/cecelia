@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 280" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="280" fill="#fafaf7"/>
+
+  <g stroke="#2a2a2a" stroke-width="2">
+    <rect x="30"   y="30" rx="12" ry="12" width="290" height="110" fill="#dbeaf3"/>
+    <rect x="380"  y="30" rx="12" ry="12" width="290" height="110" fill="#efeecf"/>
+    <rect x="730"  y="30" rx="12" ry="12" width="290" height="110" fill="#fbe7d4"/>
+    <rect x="1080" y="30" rx="12" ry="12" width="290" height="110" fill="#f7d0e0"/>
+  </g>
+
+  <g stroke="#d94a86" stroke-width="2.8" fill="none" marker-end="url(#arrow3)">
+    <path d="M325,85 C340,80 355,90 375,85" />
+    <path d="M675,85 C690,80 705,90 725,85" />
+    <path d="M1025,85 C1040,80 1055,90 1075,85" />
+  </g>
+
+  <g fill="#2a2a2a" text-anchor="middle">
+    <text x="175"  y="70" font-size="26" font-weight="700">Ask</text>
+    <text x="175"  y="108" font-size="15" font-family="ui-monospace, monospace">docs/archive/</text>
+
+    <text x="525"  y="70" font-size="26" font-weight="700">Design</text>
+    <text x="525"  y="108" font-size="15" font-family="ui-monospace, monospace">docs/todo/*_PLAN.md</text>
+
+    <text x="875"  y="70" font-size="26" font-weight="700">Ship</text>
+    <text x="875"  y="108" font-size="15" font-family="ui-monospace, monospace">PRs · CI · convention tests</text>
+
+    <text x="1225" y="70" font-size="26" font-weight="700">Land</text>
+    <text x="1225" y="108" font-size="15" font-family="ui-monospace, monospace">docs/&lt;AREA&gt;.md · MILESTONES.md</text>
+  </g>
+
+  <text x="700" y="210" text-anchor="middle" font-size="18" fill="#6b6b66" font-style="italic">Worked example — the chain scheduler:</text>
+  <text x="700" y="248" text-anchor="middle" font-size="18" fill="#2a2a2a" font-family="ui-monospace, monospace">chain-scheduler-prompt.md  →  RESOURCE_POOLS_PLAN.md  →  PRs #306, #307, #325  →  docs/SCHEDULER.md</text>
+</svg>

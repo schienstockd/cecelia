@@ -44,6 +44,27 @@ The AI-disclosure section in the README was calibrated against those references.
 to claim consensus that doesn't exist, and it does not adopt any one manifesto as if it were a
 standard.
 
+## Framework scale — the discipline that had to be added
+
+The publicly disclosed AI-assisted open-source scientific projects we could find in 2025-2026 are
+all single-tool: a QC pipeline, a UMI collapser, an indexer, a STAR fork. Their validation check —
+output equivalence against the original — is a clean fit for that shape. Cecelia is a framework,
+and the thing that bit us hardest was **drift**: with no persistent memory across sessions, an AI
+will happily build the same helper twice because it didn't know the first one existed. The
+frontend was the worst of it — by the time we measured, there were 116 icon-only buttons across
+the app carrying 60 distinct class names, really only two shapes and four size tiers. Collapsing
+them into one primitive with a test that fails on any new hand-rolled icon-button was a 39-file,
+~700-line change ([PR #353](https://github.com/schienstockd/cecelia/pull/353)); the
+CSS-convention tests specifically were the most painful to add after the fact.
+
+What now keeps drift from compounding is making "what already exists" cheap to find.
+`docs/inventory/*.md` catalogs the shared components, `CLAUDE.md` opens with a mandatory discovery
+step, and the "one canonical helper per job" rule is enforced by convention tests where possible.
+None of this was designed up front; each rule went in the day drift caused a real duplication. The
+architecture invariants in [`ARCHITECTURE.md`](ARCHITECTURE.md) — the
+package/API/GUI separation, `Cecelia.jl` as a REPL-runnable standalone package, `run_py` as the one
+Python launcher — were written down the same way, learned in flight rather than designed up front.
+
 ## Validation record — subsystem by subsystem
 
 ### Ported subsystems — validated by matching the R reference
