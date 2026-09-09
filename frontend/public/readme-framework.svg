@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 520" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/>
+    </marker>
+    <marker id="arrDim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b6b66"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="520" fill="#fafaf7"/>
+
+  <text x="30" y="35" font-size="22" font-weight="700" fill="#2a2a2a">a) Components</text>
+  <text x="720" y="35" font-size="22" font-weight="700" fill="#2a2a2a">b) Workflow</text>
+  <line x1="700" y1="55" x2="700" y2="505" stroke="#2a2a2a" stroke-width="1" stroke-dasharray="3,4" opacity="0.35"/>
+
+  <!-- ============ PANEL A ============ -->
+
+  <!-- Browser box with 4 surface chips -->
+  <rect x="160" y="90" rx="12" ry="12" width="260" height="150" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="2.2"/>
+  <text x="290" y="122" text-anchor="middle" font-size="19" font-weight="700" fill="#2a2a2a">Browser</text>
+  <text x="290" y="143" text-anchor="middle" font-size="13" fill="#6b6b66">Vue 3 · PrimeVue</text>
+  <rect x="180" y="158" rx="6" ry="6" width="100" height="28" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+  <text x="230" y="177" text-anchor="middle" font-size="12" fill="#2a2a2a">WebGPU viewer</text>
+  <rect x="288" y="158" rx="6" ry="6" width="112" height="28" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+  <text x="344" y="177" text-anchor="middle" font-size="12" fill="#2a2a2a">Analysis board</text>
+  <rect x="180" y="194" rx="6" ry="6" width="100" height="28" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+  <text x="230" y="213" text-anchor="middle" font-size="12" fill="#2a2a2a">Notebooks</text>
+  <rect x="288" y="194" rx="6" ry="6" width="112" height="28" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+  <text x="344" y="213" text-anchor="middle" font-size="12" fill="#2a2a2a">Task console</text>
+
+  <!-- Julia backend -->
+  <rect x="20" y="340" rx="12" ry="12" width="290" height="120" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
+  <text x="165" y="372" text-anchor="middle" font-size="19" font-weight="700" fill="#2a2a2a">Julia backend</text>
+  <text x="165" y="394" text-anchor="middle" font-size="13" fill="#6b6b66">HTTP + WebSocket · <tspan font-family="ui-monospace, monospace">Cecelia.jl</tspan></text>
+  <text x="165" y="422" text-anchor="middle" font-size="13" fill="#2a2a2a" font-style="italic">chain scheduler · gating</text>
+  <text x="165" y="440" text-anchor="middle" font-size="13" fill="#2a2a2a" font-style="italic">data model · population manager</text>
+
+  <!-- Python compute -->
+  <rect x="390" y="340" rx="12" ry="12" width="290" height="120" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
+  <text x="535" y="372" text-anchor="middle" font-size="19" font-weight="700" fill="#2a2a2a">Python compute</text>
+  <text x="535" y="394" text-anchor="middle" font-size="13" fill="#6b6b66">Pixi-managed env</text>
+  <text x="535" y="422" text-anchor="middle" font-size="13" fill="#2a2a2a" font-style="italic">cellpose · btrack · scanpy</text>
+  <text x="535" y="440" text-anchor="middle" font-size="13" fill="#2a2a2a" font-style="italic">scikit-image · PyTorch</text>
+
+  <!-- Custom modules -->
+  <rect x="440" y="125" rx="12" ry="12" width="180" height="90" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="2.2"/>
+  <text x="530" y="155" text-anchor="middle" font-size="16" font-weight="700" fill="#2a2a2a">Custom modules</text>
+  <text x="530" y="180" text-anchor="middle" font-size="12" fill="#6b6b66">two-file drop-in +</text>
+  <text x="530" y="198" text-anchor="middle" font-size="12" fill="#6b6b66">shareable plugins</text>
+
+  <!-- Arrows -->
+  <path d="M240,242 C215,275 265,305 240,338" fill="none" stroke="#d94a86" stroke-width="2.5" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <text x="203" y="292" font-size="11" fill="#d94a86" font-style="italic">WS</text>
+  <path d="M315,400 L390,400" fill="none" stroke="#d94a86" stroke-width="2.5" marker-end="url(#arr)"/>
+  <text x="330" y="393" font-size="11" fill="#d94a86" font-style="italic">run_py</text>
+  <path d="M438,170 L422,170" fill="none" stroke="#d94a86" stroke-width="2.5" marker-end="url(#arr)"/>
+
+  <!-- ============ PANEL B ============ -->
+
+  <!-- Row 1 -->
+  <g stroke="#2a2a2a" stroke-width="2">
+    <rect x="730"  y="90"  rx="10" ry="10" width="120" height="65" fill="#dbeaf3"/>
+    <rect x="890"  y="90"  rx="10" ry="10" width="130" height="65" fill="#efeecf"/>
+    <rect x="1060" y="90"  rx="10" ry="10" width="130" height="65" fill="#fbe7d4"/>
+    <rect x="1230" y="90"  rx="10" ry="10" width="130" height="65" fill="#f7d0e0"/>
+    <rect x="1400" y="90"  rx="10" ry="10" width="130" height="65" fill="#dbeaf3"/>
+    <!-- Row 2 -->
+    <rect x="730"  y="230" rx="10" ry="10" width="120" height="65" fill="#efeecf"/>
+    <rect x="890"  y="230" rx="10" ry="10" width="130" height="65" fill="#fbe7d4"/>
+    <rect x="1060" y="230" rx="10" ry="10" width="130" height="65" fill="#f7d0e0"/>
+    <rect x="1230" y="230" rx="10" ry="10" width="130" height="65" fill="#dbeaf3"/>
+  </g>
+
+  <!-- Row 1 labels -->
+  <g text-anchor="middle" fill="#2a2a2a">
+    <text x="790"  y="117" font-size="15" font-weight="700">Raw</text>
+    <text x="790"  y="135" font-size="11" fill="#6b6b66">2D · 3D · 4D</text>
+    <text x="790"  y="149" font-size="11" fill="#6b6b66">OME-TIFF / LIF</text>
+
+    <text x="955"  y="117" font-size="15" font-weight="700">Import</text>
+    <text x="955"  y="135" font-size="11" fill="#6b6b66">bioformats2raw</text>
+    <text x="955"  y="149" font-size="11" fill="#6b6b66">→ OME-ZARR</text>
+
+    <text x="1125" y="117" font-size="15" font-weight="700">Correct</text>
+    <text x="1125" y="135" font-size="11" fill="#6b6b66">drift · AF</text>
+    <text x="1125" y="149" font-size="11" fill="#6b6b66">denoise</text>
+
+    <text x="1295" y="117" font-size="15" font-weight="700">Segment</text>
+    <text x="1295" y="135" font-size="11" fill="#6b6b66">Cellpose</text>
+    <text x="1295" y="149" font-size="11" fill="#6b6b66">cells / structures</text>
+
+    <text x="1465" y="117" font-size="15" font-weight="700">Track</text>
+    <text x="1465" y="135" font-size="11" fill="#6b6b66">btrack</text>
+    <text x="1465" y="149" font-size="11" fill="#6b6b66">celltrackR measures</text>
+  </g>
+
+  <!-- Row 2 labels -->
+  <g text-anchor="middle" fill="#2a2a2a">
+    <text x="790"  y="257" font-size="15" font-weight="700">Gate</text>
+    <text x="790"  y="275" font-size="11" fill="#6b6b66">population</text>
+    <text x="790"  y="289" font-size="11" fill="#6b6b66">manager</text>
+
+    <text x="955"  y="257" font-size="15" font-weight="700">Cluster</text>
+    <text x="955"  y="275" font-size="11" fill="#6b6b66">Leiden · spatial</text>
+    <text x="955"  y="289" font-size="11" fill="#6b6b66">regions</text>
+
+    <text x="1125" y="257" font-size="15" font-weight="700">Quantify</text>
+    <text x="1125" y="275" font-size="11" fill="#6b6b66">stats · behaviour</text>
+    <text x="1125" y="289" font-size="11" fill="#6b6b66">HMM</text>
+
+    <text x="1295" y="257" font-size="15" font-weight="700">Analyse</text>
+    <text x="1295" y="275" font-size="11" fill="#6b6b66">Analysis board</text>
+    <text x="1295" y="289" font-size="11" fill="#6b6b66">Notebooks · PDF</text>
+  </g>
+
+  <!-- Row 1 arrows -->
+  <g stroke="#d94a86" stroke-width="2.5" fill="none" marker-end="url(#arr)">
+    <path d="M850,122 L890,122"/>
+    <path d="M1020,122 L1060,122"/>
+    <path d="M1190,122 L1230,122"/>
+    <path d="M1360,122 L1400,122"/>
+  </g>
+  <!-- Wrap -->
+  <path d="M1465,155 C1465,195 790,195 790,230" fill="none" stroke="#d94a86" stroke-width="2.5" marker-end="url(#arr)"/>
+  <!-- Row 2 arrows -->
+  <g stroke="#d94a86" stroke-width="2.5" fill="none" marker-end="url(#arr)">
+    <path d="M850,262 L890,262"/>
+    <path d="M1020,262 L1060,262"/>
+    <path d="M1190,262 L1230,262"/>
+  </g>
+
+  <!-- View surface -->
+  <rect x="960" y="360" rx="12" ry="12" width="440" height="90" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="2.2"/>
+  <text x="1180" y="392" text-anchor="middle" font-size="18" font-weight="700" fill="#2a2a2a">View</text>
+  <text x="1180" y="414" text-anchor="middle" font-size="13" fill="#6b6b66">WebGPU browser viewer · offline movie renderer</text>
+  <text x="1180" y="435" text-anchor="middle" font-size="12" fill="#2a2a2a" font-style="italic">image + labels + tracks + populations — kept in sync at every stage</text>
+
+  <!-- View feeds/reads dashed loops -->
+  <path d="M960,385 C880,385 830,360 830,300" fill="none" stroke="#6b6b66" stroke-width="1.4" stroke-dasharray="4,4" marker-end="url(#arrDim)"/>
+  <path d="M1400,385 C1470,385 1490,350 1490,160" fill="none" stroke="#6b6b66" stroke-width="1.4" stroke-dasharray="4,4" marker-end="url(#arrDim)"/>
+</svg>

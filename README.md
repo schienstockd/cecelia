@@ -9,172 +9,100 @@ tracking, gating, behavioural analysis, and clustering of multiplexed and live-c
 data. It is a ground-up reimplementation of the original R/Shiny
 [cecelia](https://github.com/schienstockd/cecelia-legacy) in a Julia + Python + Vue stack.
 
-> ⚠️ **This software was written almost entirely by an AI** ([Claude Code](https://claude.com/claude-code)),
-> under Dominik's direction. All scientific validation was done by the human author, and
-> it has **not yet been independently tested** by other users — treat early releases accordingly.
-> Full methodology and sources are at the [end of this README](#how-this-software-was-built).
+> **This software was written almost entirely by AI.** Cecelia Feijoa's code was written by
+> [Claude Code](https://claude.com/claude-code) under Dominik's direction, and validated on real
+> intravital microscopy data. It has not yet been independently tested by other users. How the
+> workflow works, per-subsystem validation, and sources:
+> [How this software was built](#how-this-software-was-built).
 
 - **Developer setup:** [`docs/INSTALL.md`](docs/INSTALL.md) · **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **FAQ (why it's built this way):** [`FAQ.md`](FAQ.md)
 
 ---
 
+## What Cecelia does
+
+<p align="center"><img src="frontend/public/readme-framework.svg" alt="Components: a browser (Vue 3 + PrimeVue) hosting the WebGPU viewer, Analysis board, Notebooks and Task console; a Julia backend (HTTP + WebSocket, Cecelia.jl) with the chain scheduler, gating, data model and population manager; a Pixi-managed Python compute env with cellpose, btrack, scanpy, scikit-image and PyTorch; custom modules and plugins register into the Browser. Workflow: Raw → Import → Correct → Segment → Track → Gate → Cluster → Quantify → Analyse, with a View surface (WebGPU browser viewer + offline movie renderer) that stays in sync at every stage." width="100%"></p>
+
+One browser window, one Julia backend, one Pixi-managed Python env. Every stage of the pipeline —
+import, correction, segmentation, tracking, gating, clustering, quantification, analysis — writes
+artifacts the viewer displays; a **chain** runs the stages you pick, per image, in parallel. The
+old two-app (napari + Shiny) arrangement is gone.
+
+---
+
 ## Install & run
 
-**Install**, then **run** — Cecelia asks where to keep your projects on first launch, so there's
-nothing to configure by hand. Image import works out of the box too — Java ships in the
-environment and the installer fetches **bioformats2raw** for you.
+The installer sets up [Pixi](https://pixi.sh) + [Julia](https://julialang.org) if missing, fetches
+the latest release, and provisions the environment (a few GB on first run; later launches are fast).
+Bioformats2raw and the Cellpose checkpoints download on first launch. Installs **just for you** by
+default — no admin rights needed.
 
-The installer sets up [Pixi](https://pixi.sh) + [Julia](https://julialang.org) if they're missing,
-downloads the latest release, and provisions the environment (a few GB on first run; later launches
-are fast). By default it installs **just for you** (no admin rights, into your account). For a shared
-lab machine, see [System-wide install](#system-wide-install-shared-machines) below.
+| OS | Install — in a terminal | Run |
+|---|---|---|
+| Linux · macOS | `curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh \| sh` | Launch **Cecelia** from your applications menu |
+| Windows | `irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 \| iex` (PowerShell) | Launch **Cecelia** from the Start Menu |
 
-### Linux
+**First launch.** Cecelia opens in your browser at <http://localhost:8080>. A one-screen wizard asks
+where to store your projects — accept the default or pick a folder. The choice is saved to
+`~/.cecelia/custom.toml` (`%USERPROFILE%\.cecelia\custom.toml` on Windows); to move the folder later,
+edit that file or delete it and relaunch.
 
-Install — in a terminal:
-```sh
-curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
-```
-Run — launch **Cecelia** from your applications menu (or `cd ~/.local/share/cecelia && pixi run app`).
-
-### macOS
-
-Install — in Terminal:
-```sh
-curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
-```
-Run — open **Cecelia** from `~/Applications` (or `cd ~/.local/share/cecelia && pixi run app`).
-
-### Windows
-
-Install — in PowerShell (no admin rights needed):
-```powershell
-irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
-```
-Run — launch **Cecelia** from the Start Menu.
-
-### First launch — pick your projects folder
-
-Cecelia opens in your browser at <http://localhost:8080>. The **first** time, a one-screen setup
-wizard asks where to store your projects — type or accept a folder (it's created if it doesn't exist)
-and you're done. Image import is ready to use.
-
-Your choice is saved to **`~/.cecelia/custom.toml`** (`%USERPROFILE%\.cecelia\custom.toml` on
-Windows) — a per-user file you never have to edit by hand. To move the folder later, delete that file
-and relaunch to get the wizard again, or edit `dirs.projects` in it directly.
-
-> **Advanced:** to use your *own* bioformats2raw instead of the bundled one, add
-> `bioformats2raw = "/path/to/bioformats2raw"` under `[dirs]` in `~/.cecelia/custom.toml`. Every
-> setting is listed in the bundled `app/config.toml`.
-
-### System-wide install (shared machines)
-
-For a shared or lab workstation, install **once as an administrator** and every account uses the same
-copy. Pixi, Julia and the environment are provisioned inside the install directory so all users share
-one runtime — but each user still gets **their own** projects folder and settings (config always
-stays per-user in `~/.cecelia`, so every account runs its own setup wizard on first launch).
-
-Set `CECELIA_INSTALL_SCOPE=system` and run elevated:
-
-| OS | Command | Installs to |
-|----|---------|-------------|
-| Linux | `curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh \| CECELIA_INSTALL_SCOPE=system sudo -E sh` | `/opt/cecelia` |
-| macOS | *(same command as Linux)* | `/Applications/cecelia` |
-| Windows | in an **elevated** PowerShell: `$env:CECELIA_INSTALL_SCOPE='system'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 \| iex` | `%ProgramFiles%\cecelia` |
-
-Every account gets a launcher (application menu / Start Menu). Because the files are admin-owned,
-**updates are admin-only**: the in-app Update button defers to an administrator, who re-runs the same
-command elevated. (The default per-user install can self-update in-app.)
-
-### Custom install location
-
-Set `CECELIA_HOME` to install anywhere else — a bigger drive, a shared path. Works with either scope;
-Pixi and Julia land inside it, so nothing spills over. `~` and `~/…` are expanded.
-
-```sh
-# Linux / macOS
-curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_HOME=~/apps/cecelia sh
-
-# Windows (PowerShell)
-$env:CECELIA_HOME='D:\apps\cecelia'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
-```
-
-The Applications entry / Start Menu shortcut the installer creates points at `CECELIA_HOME`, so
-launching from the menu still works — no need to `cd` yourself. Your projects folder and settings
-still live in `~/.cecelia`; only the install moves.
+**Advanced setup** — shared/lab machines (system-wide install), custom install location,
+remote-server access — is in [`docs/INSTALL.md`](docs/INSTALL.md). To use your own
+`bioformats2raw` instead of the bundled one, add `bioformats2raw = "/path/to/bioformats2raw"` under
+`[dirs]` in `~/.cecelia/custom.toml`; every setting is listed in the bundled `app/config.toml`.
 
 ---
 
 ## Updating
 
-Re-run the install command for your OS, run `pixi run update` from the install directory, or use the
-in-app **Update** button when a new release is available. (In-app update applies to a per-user
-install; a system-wide install is updated by re-running the installer as an administrator.)
-
----
-
-## Monitoring tasks (terminal console)
-
-Long jobs — segmentation, tracking, and whole **chain runs** — are handled by a background scheduler.
-Alongside the in-app view, you can watch them from a terminal with a live, **read-only** dashboard:
-which tasks are running, their progress, how long each has been going (the real elapsed, even for a task
-that was already running when you opened the console), how many are queued, and how many have finished.
-It only
-*reads* the running Cecelia (it never starts or cancels anything), so it's safe to leave open next to
-the app. It also shows a **pools** line — how many concurrent slots each resource pool (cpu/gpu/io/
-network) allows and how many are in use right now — so you can see what's saturated at a glance.
-
-With Cecelia running, from the install directory:
-
-```sh
-# Linux / macOS
-cd ~/.local/share/cecelia && pixi run console
-```
-```powershell
-# Windows
-cd $env:LOCALAPPDATA\cecelia ; pixi run console
-```
-
-Add `-- --stream` for an append-only log you can pipe to a file (`pixi run console -- --stream | tee run.log`).
-Press `Ctrl-C` to close it — your tasks keep running.
+Re-run the install command, run `pixi run update` from the install directory, or use the in-app
+**Update** button. System-wide installs update by re-running the installer as an administrator.
 
 ---
 
 ## Bleeding-edge builds (dev channel)
 
-To run the **current GitHub state** without waiting for a tagged release, set `CECELIA_CHANNEL=dev`.
-The installer then downloads the latest `main` instead of a release and builds the frontend locally,
-so **[Node.js](https://nodejs.org) (npm) ≥ 20 must be installed**. Re-run the same command to update
-to the newest `main`. The installed commit is recorded in `.cecelia-version` for bug reports.
+Set `CECELIA_CHANNEL=dev` to track `main` instead of the latest release; the frontend is built
+locally, so **[Node.js](https://nodejs.org) (npm) ≥ 20** must be installed. Re-run the same command
+to update.
 
 ```sh
 # Linux / macOS
 curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_CHANNEL=dev sh
-```
-```powershell
-# Windows
+# Windows PowerShell
 $env:CECELIA_CHANNEL='dev'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
 ```
 
-Everything else (projects folder, running) is identical to a stable install. Dev builds track HEAD,
-so expect the occasional rough edge — for routine use, prefer the default stable channel above.
+---
+
+## Monitoring tasks (terminal console)
+
+Long jobs — segmentation, tracking, chain runs — go through a background scheduler. A read-only
+terminal dashboard shows what's running, queued and finished, per-task elapsed, and per-pool
+concurrency (cpu/gpu/io/network). Run alongside the app, from the install directory:
+
+```sh
+# Linux / macOS
+cd ~/.local/share/cecelia && pixi run console
+# Windows
+cd $env:LOCALAPPDATA\cecelia ; pixi run console
+```
+
+Add `-- --stream` for an append-only log (`pixi run console -- --stream | tee run.log`). `Ctrl-C`
+closes it — your tasks keep running.
 
 ---
 
 ## Adding your own analysis step
 
-Cecelia is extensible without touching the package or rebuilding anything. Drop two files into your
-config directory — a JSON describing the form and a Julia file saying what happens on Run — and your
-task appears on the page you named, alongside the built-in ones.
+Cecelia is extensible without touching the package or rebuilding. Drop two files into your config
+directory — a JSON describing the form, a Julia file saying what happens on Run — and your task
+appears on the page you named. Package the same files as a **plugin** and you get a page of your
+own; plugins install from a URL in **Settings → Plugins**.
 
-Package the same files as a **plugin** and you get a page of your own: the task on one side, plots of
-its results below. Plugins install from a URL in **Settings → Plugins**, so they can be shared,
-versioned and reinstalled.
-
-[`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) is the guide, and starts with which of the two you
-want. Two runnable examples ship in the repo and are loaded by CI on every commit, so copying one is
-the route that stays correct:
-[`docs/examples/custom-modules/`](docs/examples/custom-modules/) and
+Guide: [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md). Two runnable examples ship in the repo
+(loaded by CI on every commit): [`docs/examples/custom-modules/`](docs/examples/custom-modules/) and
 [`docs/examples/plugins/`](docs/examples/plugins/).
 
 > Neither is sandboxed — a custom module is arbitrary code with full access to your machine, exactly
@@ -184,89 +112,43 @@ the route that stays correct:
 
 ## Developing
 
-Running from source with hot-reload (`pixi run dev` + `pixi run frontend`) is covered in
-[`docs/INSTALL.md`](docs/INSTALL.md).
+Running from source with hot-reload (`pixi run dev`) is covered in [`docs/DEV.md`](docs/DEV.md).
 
 ---
 
 ## How this software was built
 
+<p align="center"><img src="frontend/public/readme-workflow.svg" alt="Ask (docs/archive/) → Design (docs/todo/*_PLAN.md) → Ship (PRs · CI · convention tests) → Land (docs/<AREA>.md · MILESTONES.md); worked example on the chain scheduler" width="100%"></p>
+
 This software was developed almost entirely with [Claude Code](https://claude.com/claude-code)
 (Anthropic), using the Claude Opus and Claude Sonnet models, under the Garvan Institute of Medical
 Research enterprise license. The field hasn't settled on how to develop, disclose, credit, or
-validate AI-assisted scientific software — this section is what we did and why. Longer version in
+validate AI-assisted scientific software — this section is what we did. Longer version in
 [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
-### Claude's role
+**Claude's role.** Claude wrote essentially all of the code — both the port of the original R/Shiny
+`cecelia` and the newer subsystems that have no direct predecessor (the WebGPU browser viewer, the
+offline renderer, the analysis board, the notebook playground, the chain executor). On engineering
+decisions it was consulted like a colleague with opinions worth listening to; on scientific
+decisions it was the implementer, not the judge.
 
-Claude wrote essentially all of the code — both the port of the original R/Shiny `cecelia` and the
-newer subsystems that have no direct predecessor (the WebGPU browser viewer, the offline renderer,
-the analysis board, the notebook playground, the chain executor). What it couldn't do is the part
-that matters most for trust: it had no access to a microscope, the running GUI, or real imaging
-output beyond small test fixtures. On engineering decisions it was consulted like a colleague with
-opinions worth listening to; on scientific decisions it was the implementer, not the judge.
+**The human role — direction, and validation on real data.** Dominik set every goal and every
+design decision, and provided the immunology and intravital-microscopy judgment the analysis has to
+be correct for. The automated test suite checks *code correctness* — that a function does what it's
+supposed to. It doesn't check *scientific correctness* — whether a segmentation captured the cells
+that mattered. Early in the port, a segmentation model was being tuned by an accuracy metric
+computed without ground truth; on those numbers temporal smoothing looked unhelpful, and the AI
+proposed dropping it. On real intravital output, temporal smoothing was in fact what captured the
+cells being analysed — the metric had been optimising something other than the biological signal.
+The final choice was made on the images, not on the number. Per-subsystem validation record:
+[`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
-### The human role — direction, and validation on real data
-
-Dominik set every goal and every design decision, and provided the immunology and
-intravital-microscopy judgment the analysis has to be correct for. The automated test suite checks
-*code correctness* — that a function does what it's supposed to, that a pipeline runs to
-completion. It doesn't check *scientific correctness*: whether a segmentation captured the cells
-that mattered. Those are separate questions, and it's easy to conflate them.
-
-The failure mode this discipline exists to catch is that **a fit or optimisation number can look
-fine while measuring fit to the wrong thing**. Early in Cecelia's port, the segmentation model was
-being tuned by an accuracy number computed without ground truth. On those numbers, temporal
-smoothing looked unhelpful, and the AI proposed dropping it. On real intravital output, the
-temporal-smoothed model was in fact what captured the cells Dominik was analysing — the metric
-had been optimising something other than the biological signal. The final choice was made on the
-images, not on the number.
-
-Different subsystems were validated in different ways:
-
-- **Ported** parts (celltrackR track measures, the btrack pipeline, drift correction) were
-  validated by matching the R version's output — the same pattern public AI-assisted rewrites
-  like Seqera's RustQC, Fulcrum's fgumi, and Rob Patro's sshash-rs use.
-- The **logicle transform** in gating is cross-checked against FlowUtils, with golden values
-  asserted in the test suite.
-- **Original** parts (segmentation on real intravital data, the WebGPU viewer, the offline
-  renderer, gating population plausibility, autofluorescence correction) have no reference to
-  diff against and were validated by looking at real images. The WebGPU viewer specifically was
-  cross-checked against the offline renderer, and a real disagreement between the two was found
-  and resolved.
-- The **chain executor** has been exercised on the common analysis arrangements Dominik runs, but
-  not on every combination a user might build. Real bugs are expected to surface once other
-  people run combinations he hasn't. That's flagged rather than smoothed over.
-
-### Framework scale — the discipline that had to be added
-
-The publicly disclosed AI-assisted open-source scientific projects we could find in 2025-2026 are
-all single-tool: a QC pipeline, a UMI collapser, an indexer, a STAR fork. Their validation check
-— output equivalence against the original — is a clean fit for that shape. Cecelia is a framework,
-and the thing that bit us hardest was **drift**: with no persistent memory across sessions, an AI
-will happily build the same helper twice because it didn't know the first one existed. The
-frontend was the worst of it — by the time we measured, there were 116 icon-only buttons across
-the app carrying 60 distinct class names, really only two shapes and four size tiers. Collapsing
-them into one primitive with a test that fails on any new hand-rolled icon-button was a 39-file,
-~700-line change ([PR #353](https://github.com/schienstockd/cecelia/pull/353)); the
-CSS-convention tests specifically were the most painful to add after the fact.
-
-What now keeps drift from compounding is making "what already exists" cheap to find. `docs/inventory/*.md`
-catalogs the shared components, `CLAUDE.md` opens with a mandatory discovery step, and the "one
-canonical helper per job" rule is enforced by convention tests where possible. None of this was
-designed up front; each rule went in the day drift caused a real duplication. The architecture
-invariants in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the package/API/GUI separation,
-`Cecelia.jl` as a REPL-runnable standalone package, `run_py` as the one Python launcher — were
-written down the same way, learned in flight rather than designed up front.
-
-### Attribution — an open question
-
-Claude wrote the code. Dominik directed it, reviewed as much as was practical, and made every
-scientific and design decision. Neither of them is the sole author in the sense the word meant a
-few years ago. Every public disclosure the field has landed on so far agrees on one thing: AI
-isn't a listed author. On everything else — how loudly to say "AI wrote this", what to call the
-human's role, where the maintenance responsibility sits long-term — there isn't a convention yet.
-This section doesn't try to invent one.
+**Attribution.** Claude wrote the code. Dominik directed it, reviewed as much as was practical, and
+made every scientific and design decision. Neither is the sole author in the sense the word meant a
+few years ago. Every public disclosure the field has landed on so far agrees on one thing: AI isn't
+a listed author. On everything else — how loudly to say "AI wrote this", what to call the human's
+role, where maintenance responsibility sits — there isn't a convention yet. This section doesn't
+try to invent one.
 
 ### Sources
 
@@ -281,20 +163,6 @@ This section doesn't try to invent one.
   `app/src/tasks/tracking/track_measures.jl`. Cited work, not just a dependency: Wortel et al.
   (2021), *Cell Reports Methods*, [doi:10.1016/j.crmeth.2021.100006](https://doi.org/10.1016/j.crmeth.2021.100006).
 - The **Julia**, **Python**, and **Vue** (with PrimeVue and Observable Plot) open-source ecosystems.
-
----
-
-## Stack at a glance
-
-| Layer | Tech | Responsibility |
-|-------|------|----------------|
-| Frontend | Vue 3 + Pinia + PrimeVue, Observable Plot, regl-scatterplot | UI only — no analysis logic |
-| API | Julia (HTTP + WebSocket server) | Thin transport over the package |
-| Package | **Cecelia.jl** | Data model, tasks, gating, statistics — headless-runnable |
-| Compute | Pixi-managed env (Cellpose, btrack, scanpy, PyTorch) | Image I/O and ML |
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layer boundaries and the REPL-runnable
-contract.
 
 ---
 
