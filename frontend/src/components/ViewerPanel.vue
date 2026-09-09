@@ -869,6 +869,18 @@ onUnmounted(() => {
           @click="toggleTrackclust"
           v-tooltip.bottom="popVisible('trackclust') ? 'Hide track-cluster ribbons' : 'Show track-cluster populations as ribbons'"
         ><i class="pi pi-sitemap" /></button>
+        <!-- Clear highlight — only when one is active. TrackSchemeView + CorrectionCockpit + the
+             cell-cards detail all publish `viewerStore.trackHighlight` to narrow the ribbons to a
+             selection, but nothing local to those callers un-narrows on close. Surfacing the reset
+             in the viewer panel is the single unmute — click it and the ribbons go back to all
+             tracks. Reason for centralising here: three publishers, one place that always shows
+             what's currently narrowed. -->
+        <button
+          v-if="viewerStore.trackHighlight"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-on cc-btn-on-tint"
+          @click="viewerStore.setTrackHighlight(null)"
+          v-tooltip.bottom="`Clear ${viewerStore.trackHighlight.trackIds.length} highlighted track${viewerStore.trackHighlight.trackIds.length === 1 ? '' : 's'}`"
+        ><i class="pi pi-filter-slash" /></button>
       </div>
     </div>
 
