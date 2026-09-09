@@ -508,9 +508,32 @@ function api_gating_channels(req::HTTP.Request)
         # tracked one; an explicit request is honoured unchanged.
         if isempty(get(q, "valueName", ""))
             tracked_vns = String[v for v in versioned_keys(img.label_props) if is_tracked(img; value_name = v)]
-            if !isempty(tracked_vns) && !(scope_vn in tracked_vns)
-                scope_vn = first(tracked_vns)
-                vn = scope_vn
+            if !isempty(tracked_vns)
+                # 1) if the resolved vn isn't tracked, coerce to the first tracked vn — otherwise
+                #    the track_props path below doesn't exist.
+                if !(scope_vn in tracked_vns)
+                    scope_vn = first(tracked_vns)
+                    vn = scope_vn
+                end
+                # 2) for `trackclust` with no explicit valueName, additionally prefer a tracked vn
+                #    that HAS clustering runs — the resolved-tracked pick can still be a peer of the
+                #    one the run lives on (e.g. zolIMa/fXgbTl: `default` is tracked but the
+                #    `movement` clustering is on `flowTom`; the fix landed on 2026-09-08 only guarded
+                #    the untracked case, so this still returned empty clusterIds).
+                if get(q, "popType", "") == "trackclust"
+                    has_trackclust_runs = v -> begin
+                        tp = img_track_props_path(img, v)
+                        isfile(tp) && !isempty(_cluster_suffixes(
+                            col_names(label_props(tp); data_type = :obs), "trackclust"))
+                    end
+                    if !has_trackclust_runs(scope_vn)
+                        with_runs = filter(has_trackclust_runs, tracked_vns)
+                        if !isempty(with_runs)
+                            scope_vn = first(with_runs)
+                            vn = scope_vn
+                        end
+                    end
+                end
             end
         end
         motility = _track_motility_cols(img, scope_vn)
