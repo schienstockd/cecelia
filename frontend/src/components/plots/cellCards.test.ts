@@ -23,10 +23,13 @@ describe('cellCards payload contract', () => {
       { t: 10, asset_id: 'sha256:ef01' },
       { t: 19, asset_id: 'sha256:2345' },
     ],
-    stats: [{ name: 'speed', median: 3.1, q25: 2.4, q75: 4.0 }],
+    stats: [{ name: 'speed', min: 1.2, q25: 2.4, median: 3.1, q75: 4.0, max: 6.5 }],
   }
 
-  const response: CardsResponse = { pool, cards: [card] }
+  const response: CardsResponse = {
+    pool, cards: [card],
+    statScales: { speed: [1.0, 7.0] },
+  }
 
   const request: CardsRequest = {
     root_uid: 'aaa111',
