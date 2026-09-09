@@ -779,7 +779,12 @@ const labelName = computed(() => {
 })
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
-watch(labelName, () => reallocate())
+//
+// `starting.value` guard: `labelName` recomputes when `meta.value` is set during `loadVersion` (a
+// different image can have a different first-visible label), and loadVersion is about to run its
+// own primary reallocate that reads `labelName.value` at call time. A watcher-driven reallocate
+// here would race that primary one — same Vulkan OOM shape as the show3D racer below.
+watch(labelName, () => { if (starting.value) return; reallocate() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -787,8 +792,12 @@ watch(labelName, () => reallocate())
 // raced with an in-flight `reallocate` from `onModeChange` and both callers ended up bailing on
 // `!renderer.value` — a hang on 3D→2D toggle for images that need a kind swap.
 // Guard against firing during `bricksEnabled`'s initial computation when meta is still null.
+// `starting.value` guard: `bricksEnabled` recomputes on the `meta.value = m` assignment inside
+// loadVersion, and loadVersion's own reallocate reads `bricksEnabled.value` at ensureRenderer
+// time. A watcher-driven reallocate here would race that primary one — same Vulkan OOM shape
+// as the show3D racer below.
 watch(bricksEnabled, () => {
-  if (meta.value === null) return
+  if (meta.value === null || starting.value) return
   reallocate()
 })
 // Self-healing for the OOM-fallback flags. During a two-way oscillation at startup (auto pick →
@@ -805,8 +814,10 @@ watch(shownT, v => {
 // Cache size change → full reallocate (atlas / timepoint textures resize). Keep the renderer
 // instance — only `setImage` needs to re-run at the new byte budget; the eviction/growth path is
 // what `setImage` was written to do. Skips URL-override case since that's frozen at mount.
+// `starting.value` guard: defensive against a user-driven cache-size change landing in the same
+// tick as loadVersion; loadVersion's own reallocate reads `effectiveCacheBytes.value` fresh.
 watch(() => settings.viewerCacheMB, () => {
-  if (cacheMBFromUrl) return
+  if (cacheMBFromUrl || starting.value) return
   reallocate()
 })
 // 3D projection flip is a uniform write — cheap. No reallocate: the shader already contains both
@@ -2754,9 +2765,17 @@ function stepZ(next: number) {
  * `loadedLevel` gates against the initial mount: a first `reallocate(true)` sets `loadedLevel` to the
  * fit-appropriate level; only DRIFT from that level fires a second reallocate.
  */
-const levelPump = debouncedLatest<number>(async () => reallocate(false), { wait: 150 })
+const levelPump = debouncedLatest<number>(async () => {
+  // `starting.value` guard: if `slabLevel` changed on `cam.value = fit` inside loadVersion and
+  // the 150 ms debounce elapsed while loadVersion is still awaiting saved props / its own
+  // reallocate, firing here would race the primary reallocate for the same atlas — same Vulkan
+  // OOM shape as the show3D racer. loadVersion's reallocate reads `slabLevel.value` fresh and
+  // sets `loadedLevel = slabLevel.value`, so a follow-up here would be a no-op anyway.
+  if (starting.value) return
+  await reallocate(false)
+}, { wait: 150 })
 watch(slabLevel, (newLvl) => {
-  if (!meta.value || mode.value !== 'plane') return
+  if (!meta.value || mode.value !== 'plane' || starting.value) return
   if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
 })
 /** Brick renderer: use the dropdown as a FLOOR (coarsest allowed), letting SSE pick finer as
@@ -3158,6 +3177,16 @@ function resetView() {
  * VK_ERROR_OUT_OF_DEVICE_MEMORY`, canvas empty, manual toggle to the OTHER kind was the workaround.
  */
 function handleRendererError(kind: 'flat' | 'brick' | 'tile', msg: string) {
+  // Ignore errors from a renderer that has already been replaced. The brick renderer's atlas
+  // `popErrorScope` and the flat renderer's `uploadFrame` scope both resolve ASYNCHRONOUSLY and
+  // can fire AFTER `ensureRenderer` has swapped in the fallback — repopulating the chip on top
+  // of a working canvas (Dominik 2026-09-09: canvas loads as 3D flat fine, but the brick OOM
+  // toast stayed). `currentRendererKind` null = mid-swap, still accept so nothing is silently
+  // dropped during construction. Diagnostic still lands in the log.
+  if (currentRendererKind.value !== null && currentRendererKind.value !== kind) {
+    vlog('warn', `Ignored stale ${kind}-renderer error (current is ${currentRendererKind.value}): ${msg}`)
+    return
+  }
   error.value = 'GPU: ' + msg
   vlog('error', kind === 'tile' ? 'Tile GPU error: ' + msg : 'GPU error: ' + msg)
   if (!isViewerOom(msg)) return
@@ -3526,6 +3555,16 @@ async function loadVersion(refit: boolean) {
   // Plane is the default in EVERY case. It's what plays, it's cheaper, and it's the view the pyramid
   // was wired for. 3D is opt-in via the View chip — the honest cost belongs behind a click.
   mode.value = 'plane'
+  // Consult the per-set 3D flag directly as a DEFAULT before reallocate. The show3D watcher below
+  // is suppressed while `starting` is truthy to avoid a mid-loadVersion reallocate race — the
+  // watcher fires when `setUid` becomes valid on the meta assignment above, DURING the
+  // `await loadViewerProps` boundary below, and would call reallocate a second time. The primary
+  // reallocate then destroys the atlas the watcher's reallocate just built, and Vulkan can OOM
+  // on the second createTexture before it has reclaimed the first (Dominik 2026-09-09 on
+  // XcPcu8/LUkCpP: `Brick atlas: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY`
+  // on initial open, worked on every subsequent manual 2D/3D toggle). Saved.mode still wins
+  // when present (applied below).
+  if (setUid.value && settings.getShow3D(setUid.value)) mode.value = 'volume'
   zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
   zRange.value = [0, Math.max(m.nZ - 1, 0)]
   autoWin.value = []                     // a different version has its own distribution
@@ -3623,8 +3662,15 @@ watch(valueName, () => propsSink.schedule())
 // through the `cc.viewerSetPrefs` bag sync (see `utils/viewerBagChannel.ts`). Watch the setter's
 // derived value here so a panel-side flip drives THIS viewer's mode. Guarded on a real change to
 // avoid re-entrant loops with `onModeChange` (chip → setShow3D).
+//
+// `starting.value` guard: during loadVersion, the trigger for this watcher is `setUid` becoming
+// valid on the fresh image's meta — but loadVersion is about to run the primary reallocate itself
+// and already consults `getShow3D` to seed the default mode. Firing here would race the primary
+// reallocate: destroy its just-built atlas, then Vulkan OOMs on the second createTexture before
+// the first is reclaimed (Dominik 2026-09-09 on XcPcu8/LUkCpP). Live panel-toggle flips still
+// fire because `starting.value` is `''` by then.
 watch(() => setUid.value ? settings.getShow3D(setUid.value) : null, want => {
-  if (want === null) return
+  if (want === null || starting.value) return
   const next: 'plane' | 'volume' = want ? 'volume' : 'plane'
   if (mode.value !== next) { mode.value = next; reallocate(true) }
 })
