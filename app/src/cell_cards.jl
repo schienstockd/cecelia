@@ -208,7 +208,8 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
     cards = @NamedTuple{path::String, name::String, colour::String, n::Int,
                         medoid::@NamedTuple{uid::String, value_name::String, track_id::Int},
                         frames_ts::Vector{Int},
-                        stats::Vector{@NamedTuple{name::String, median::Float64, q25::Float64, q75::Float64}}}[]
+                        stats::Vector{@NamedTuple{name::String, min::Float64, q25::Float64,
+                                                  median::Float64, q75::Float64, max::Float64}}}[]
 
     for p in pops
         path = String(p.path); cids = collect(Int, p.cluster_ids)
@@ -239,11 +240,11 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
                       error("cell_cards_metadata: medoid on sibling '$(medoid.uid)' needs proj_uid") :
                       init_object(String(proj_uid), medoid.uid))
         bbox = track_bbox(med_img, medoid.value_name, medoid.track_id; pad_px=8)
-        # 3 frames: first / mid / last. Cast into a stable Vector{Int} — the caller then hands each t
-        # to `render_view_frame`.
-        frames_ts = bbox.t0 == bbox.t1 ?
-                    Int[bbox.t0] :
-                    Int[bbox.t0, (bbox.t0 + bbox.t1) ÷ 2, bbox.t1]
+        # First / mid / last timepoint — the detail panel needs at least three so a reader can see
+        # the track's start, middle and end (Dominik 2026-09-09). The grid tile only shows the last
+        # one (`filmstrip[end]`), so the extra two ride along cheaply for the detail view.
+        mid = (bbox.t0 + bbox.t1) ÷ 2
+        frames_ts = bbox.t0 == bbox.t1 ? Int[bbox.t1] : sort!(unique(Int[bbox.t0, mid, bbox.t1]))
 
         # Stats footer: pop_df over the medoid's (uid, vn) — for the single-image pool this matches
         # the pool-wide pop, and for a multi-image pool the footer intentionally reflects "this pop
@@ -263,22 +264,24 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
 end
 
 """
-    card_stats(pop_df_frame; measures=CELL_CARD_STATS_MEASURES) -> Vector{@NamedTuple{name,median,q25,q75}}
+    card_stats(pop_df_frame; measures=CELL_CARD_STATS_MEASURES) -> Vector{@NamedTuple{name,min,q25,median,q75,max}}
 
-Per-pop median + q25–q75 over `measures`, given a `pop_df(...; pop_type="trackclust", granularity=:track)`
-frame. Skips a measure that isn't a column in the frame (returns nothing for that entry — a
-run that clustered on a smaller feature set still gets a stats block; the missing measures just don't
-appear rather than lying with a NaN median).
+Per-pop 5-number summary over `measures`, given a `pop_df(...; pop_type="trackclust", granularity=:track)`
+frame. Whiskers are the raw min/max (no Tukey clip) — the pop is small and the shared per-measure
+scale across cards is set from these ends, so a Tukey clip would misalign the boxes visually. Skips a
+measure that isn't a column in the frame (a run that clustered on a smaller feature set still gets a
+stats block; missing measures just don't appear rather than lying with a NaN median).
 """
-function card_stats(frame::DataFrame; measures::AbstractVector{<:AbstractString}=CELL_CARD_STATS_MEASURES)::Vector{@NamedTuple{name::String, median::Float64, q25::Float64, q75::Float64}}
-    out = @NamedTuple{name::String, median::Float64, q25::Float64, q75::Float64}[]
+function card_stats(frame::DataFrame; measures::AbstractVector{<:AbstractString}=CELL_CARD_STATS_MEASURES)::Vector{@NamedTuple{name::String, min::Float64, q25::Float64, median::Float64, q75::Float64, max::Float64}}
+    out = @NamedTuple{name::String, min::Float64, q25::Float64, median::Float64, q75::Float64, max::Float64}[]
     for m in measures
         sym = Symbol(m)
         sym in propertynames(frame) || continue
         vals = Float64[Float64(v) for v in skipmissing(frame[!, sym]) if isfinite(Float64(v))]
         isempty(vals) && continue
         qs = quantile(vals, (0.25, 0.75))
-        push!(out, (name = m, median = median(vals), q25 = qs[1], q75 = qs[2]))
+        push!(out, (name = m, min = minimum(vals), q25 = qs[1], median = median(vals),
+                    q75 = qs[2], max = maximum(vals)))
     end
     out
 end

@@ -103,9 +103,10 @@ const VIEWS = import.meta.glob('/src/components/plots/*View.vue', {
 }) as Record<string, string>
 
 // Board-only views, which InteractivePanel never draws an Export select for (`!docked`). `filmstrip`
-// is `analysisBoard: true` with no page flag, and it already implements `exportImage` for the board's
-// PDF — a dropdown there would render nowhere. Give it a page flag and this list is what fails.
-const EXPORTLESS_BY_DESIGN = ['ImageStripView.vue']
+// and `cell cards` are `analysisBoard: true` with no page flag, and both implement `exportImage`
+// directly for the board's PDF — a dropdown there would render nowhere. Give either a page flag and
+// this list is what fails.
+const EXPORTLESS_BY_DESIGN = ['ImageStripView.vue', 'CellCardsView.vue']
 
 describe('every base64 tile grid offers an export', () => {
   it('…and the ones that do not are board-only, on purpose', () => {
