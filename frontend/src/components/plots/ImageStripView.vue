@@ -1,13 +1,16 @@
 <!--
   Image / filmstrip slot for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase D). One
   slot holding N images (a single image = a 1-cell strip) — for pipeline montages
-  (raw → denoised → segmented → tracked). Each cell's image is a WebGPU-viewer thumbnail
-  (POST /api/viewer/thumbnail with the popup's live viewState → JSON {assetId, imageUid, width,
-  height}). The PNG is a SIDECAR file (settings/board-assets/, served via /api/board-assets) — NOT
-  stored inline — so the board JSON stays small and autosaves cheaply; the cell keeps only the
-  assetId + the viewState snapshot + imageUid (provenance for zoom-to-source). See
-  docs/todo/ANIMATION_PLAN.md. Orientation H/V; separators STRAIGHT (gap + rule) or ANGLED
-  (clip-path parallelograms — cheap because the slot stays rectangular, decision 10).
+  (raw → denoised → segmented → tracked). Each cell's image is a napari-screenshot-equivalent capture
+  of the popped-out viewer's WebGPU canvas — reached via the exposed `Window.__cceceliaViewerCapture`
+  on the same-origin viewer popup. Overlays (tracks / populations / mask outlines) are already baked
+  into the canvas by the shader, so what the user sees IS what the strip stores — no server
+  re-render, no 2D/3D branching. The PNG uploads to POST /api/board-assets/save and lands as a
+  SIDECAR file (settings/board-assets/, served via /api/board-assets) — NOT stored inline — so the
+  board JSON stays small and autosaves cheaply; the cell keeps only the assetId + the viewState
+  snapshot + imageUid (provenance for zoom-to-source). See docs/todo/ANIMATION_PLAN.md. Orientation
+  H/V; separators STRAIGHT (gap + rule) or ANGLED (clip-path parallelograms — cheap because the slot
+  stays rectangular, decision 10).
 -->
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef, nextTick, onMounted } from 'vue'
@@ -22,6 +25,7 @@ import { channelLegend } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
 import { captureViewLegend } from '../../utils/viewerOverlays'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
+import { getOpenPopoutWindow } from '../../lib/popout'
 import StripCell from './StripCell.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import CcToggle from '../CcToggle.vue'
@@ -63,8 +67,10 @@ const separator = computed({ get: () => props.state.separator ?? 'straight', set
 // angled separators: `skew` = the horizontal lean (angle), `thick` = the white gap width between frames
 const skew = computed({ get: () => props.state.sepAngle ?? 22, set: v => (props.state.sepAngle = v) })
 const thick = computed({ get: () => props.state.sepThick ?? 2, set: v => (props.state.sepThick = v) })
-// optional channel-colour legend, read from the frame's snapshot (viewer layer colormaps). Off by default.
-const showLegend = computed({ get: () => props.state.showLegend ?? false, set: v => (props.state.showLegend = v) })
+// optional channel-colour legend, read from the frame's snapshot (viewer layer colormaps). Default ON —
+// pre-napari the viewer's own legend was baked into the screenshot; the browser thumbnail carries none,
+// so the DOM legend restores that (drawn as a bottom-left chip over the image, captured by PDF export).
+const showLegend = computed({ get: () => props.state.showLegend ?? true, set: v => (props.state.showLegend = v) })
 // still overlays (E2): a vector scale bar (from the captured frame's physical extent) + an elapsed-time
 // timestamp — drawn crisp on the clean capture (the viewer's own hidden via E1). Off by default.
 const showScaleBar  = computed({ get: () => props.state.showScaleBar ?? false,  set: v => (props.state.showScaleBar = v) })
@@ -105,14 +111,16 @@ const err = ref('')
 // (network) <img> src, so we temporarily inline each sidecar frame as a data URL for the capture.
 const exportSrcs = ref<Record<string, string>>({})
 
-// Capture the current browser viewer into cell i. Reads the viewer's published viewState
-// (`viewerStore.viewState` — the popup writes it on every camera / channel change) and POSTs it to
-// /api/viewer/thumbnail, which renders one frame through the same offline path the movie recorder
-// uses so the thumbnail matches what a movie made from this look would produce.
+// Capture the current browser viewer into cell i. Reads the WebGPU canvas directly from the popped
+// out viewer window — same-origin, so a `Window.__cceceliaViewerCapture` exposed by `ViewerWindow.vue`
+// hands back the current pixels. The napari-screenshot equivalent: what the user is looking at IS
+// what gets stored, so tracks / populations / mask outlines (already baked into the canvas by the
+// shader) come along by construction — no server re-render, no 2D/3D branching. `viewState` +
+// `imageUid` still ride along as provenance so zoom-to-source can restore the exact camera months
+// later. The PNG uploads to the same sidecar the previous server-render path used.
 //
-// Fails cleanly when no browser viewer is open on this image: the caller cannot capture what they
-// cannot see. The browser thumbnail renders channels-only for MVP — no baked scale bar / timestamp
-// to strip.
+// Fails cleanly when the viewer popup is not open (or is on a different image / same-session handle
+// was lost after a main-window reload): the caller cannot capture what they cannot see.
 async function capture(i: number) {
   capturing.value = i
   err.value = ''
@@ -125,36 +133,62 @@ async function capture(i: number) {
       err.value = 'Open the image in the viewer first to capture a frame.'
       return
     }
-    const valueName = openImage?.valueName || undefined
-    const res = await fetch('/api/viewer/thumbnail', {
+    const vw = getOpenPopoutWindow('/viewer-window')
+    const cap = (vw as unknown as { __cceceliaViewerCapture?: () =>
+      { png: string; extentUm: { x: number; y: number; unit?: string | null } | null; imageUid: string; overlayLayers?: Record<string, { visible: true }> } })?.__cceceliaViewerCapture
+    if (!cap) {
+      err.value = 'Open the viewer window on this image and try again.'
+      return
+    }
+    let shot
+    try { shot = cap() }
+    catch (e) { err.value = 'Viewer capture failed: ' + (e instanceof Error ? e.message : String(e)); return }
+    if (shot.imageUid !== imageUid) {
+      err.value = 'Viewer is showing a different image — open this image first.'
+      return
+    }
+    // Splice the viewer's overlay layer NAMES back into the snapshot before persisting: the browser
+    // viewer's `captureViewState` only records channel layers, but the strip's legend reads pop /
+    // track / mask names from `snapshot.layers` (napari carried them; this restores parity).
+    const augmentedSnapshot = shot.overlayLayers && Object.keys(shot.overlayLayers).length
+      ? { ...(snapshot as unknown as Record<string, unknown>),
+          layers: { ...((snapshot as { layers?: Record<string, unknown> }).layers ?? {}), ...shot.overlayLayers } }
+      : snapshot as unknown as Record<string, unknown>
+    // Persist the PNG as a board-assets sidecar (same storage path used by the movie recorder and by
+    // the legacy migration below).
+    const saveRes = await fetch('/api/board-assets/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid, valueName, viewState: snapshot }),
+      body: JSON.stringify({ projectUid, png: shot.png }),
     })
-    if (!res.ok) { err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Thumbnail render failed'; return }
-    const data = (await res.json()) as { ok?: boolean; assetId?: string; imageUid?: string; width?: number; height?: number }
+    if (!saveRes.ok) {
+      err.value = ((await saveRes.json().catch(() => ({}))) as { error?: string }).error ?? 'Failed to save capture'
+      return
+    }
+    const saved = (await saveRes.json()) as { assetId?: string }
+    if (!saved.assetId) { err.value = 'Save returned no assetId'; return }
+    const capturedColourBy = props.setUid ? settings.getColourBy(props.setUid) : ''
+    const colourOverridesForLegend = (props.setUid && capturedColourBy)
+      ? settings.getColourOverrides(props.setUid, capturedColourBy) : {}
     const c = cells.value[i]
-    if (data.assetId) { c.assetId = data.assetId; c.src = undefined }
-    c.snapshot = snapshot as unknown as Record<string, unknown>
+    c.assetId = saved.assetId; c.src = undefined
+    c.snapshot = augmentedSnapshot
     c.imageUid = imageUid
-    // Physical extent for a still scale bar (E2). Derived from the viewState's canvas + the image's
-    // voxel size, both of which the browser viewer already carries in its snapshot; the endpoint's
-    // MVP doesn't echo it back yet, so leave it unset — the still falls back to a screen-space
-    // scale bar drawn from the canvas dimensions rather than physical units.
-    c.extentUm = null
+    // Physical extent for the still scale bar: taken from the viewer's own `overlayExtent` (the same
+    // value its scale bar reads). Absent / non-positive extent → leave unset and `StillOverlay` hides
+    // the vector bar rather than drawing a wrong one.
+    c.extentUm = shot.extentUm
     // remember the colour-by measure so zoom-to-source restores overlays in the same colours (it isn't
     // encoded in the snapshot's layer names). Per the open image's set.
-    c.colourBy = props.setUid ? settings.getColourBy(props.setUid) : ''
+    c.colourBy = capturedColourBy
     // capture the overlay legend (pops + colour-by) for this frame — read-only, durable (drawn below the
     // channel legend). ALL pop overlays (points AND track/track-cluster ribbons) are sent, parsed from
     // the snapshot's overlay layer names; the backend skips any that aren't a named population (e.g. the
     // whole-segmentation "/_tracked" layer), so track-cluster + gated track pops get legend entries too.
     if (c.imageUid) {
-      // include the set's user recolours for this colour-by so the captured legend matches what's shown
-      // (a recoloured category — e.g. an HMM state with no population — wins over the default colour).
-      const colourOverrides = (props.setUid && c.colourBy)
-        ? settings.getColourOverrides(props.setUid, c.colourBy) : {}
-      // shared capture-legend path (also used by the single-record movie card) — best-effort
-      const leg = await captureViewLegend(props.projectUid, c.imageUid, c.snapshot as { layers?: Record<string, unknown> }, c.colourBy ?? '', colourOverrides)
+      // shared capture-legend path (also used by the single-record movie card) — best-effort.
+      // `colourOverridesForLegend` above is the same per-set recolour map (an HMM state with no
+      // population wins over the default colour), so the captured legend matches what's shown.
+      const leg = await captureViewLegend(props.projectUid, c.imageUid, c.snapshot as { layers?: Record<string, unknown> }, c.colourBy ?? '', colourOverridesForLegend)
       c.overlaysLegend = { colourBy: leg.colourBy, populations: leg.populations }
     }
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
@@ -172,9 +206,20 @@ function legendSections(c: Cell) {
   const colourBy = (c.overlaysLegend?.colourBy?.items ?? [])
     .filter(it => it.colour).map(it => ({ label: it.label, colour: it.colour }))
   const cbyTitle = c.overlaysLegend?.colourBy?.column || 'Colour by'
+  // Mask layers — `"(vn) Labels"` in the snapshot. `parseOverlays` deliberately skips these (they
+  // aren't a pop / track), so name the mask directly. Outline colour follows the pops when any are
+  // gated (the shader draws outlines in each cell's pop colour); grey elsewhere — same neutral the
+  // movie rail's `all_cells_colour` uses when the mask paints every cell.
+  const masks: { label: string; colour: string }[] = []
+  const MASK_RE = /^\(([^)]+)\) Labels$/
+  for (const name of Object.keys(layers)) {
+    const m = MASK_RE.exec(name)
+    if (m) masks.push({ label: m[1], colour: '#9ca3af' })
+  }
   const secs: { title: string; items: { label: string; colour: string }[] }[] = []
   if (colourBy.length)    secs.push({ title: cbyTitle, items: colourBy })
   if (populations.length) secs.push({ title: 'Populations', items: populations })
+  if (masks.length)       secs.push({ title: 'Masks', items: masks })
   if (channels.length)    secs.push({ title: 'Channels', items: channels })
   return secs
 }

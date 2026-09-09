@@ -43,6 +43,20 @@ export type PopoutRoute = keyof typeof POPOUT_WINDOW_NAMES
 
 export const POPOUT_ROUTES = Object.keys(POPOUT_WINDOW_NAMES) as PopoutRoute[]
 
+// Handles of popouts THIS window opened, keyed by route. Populated by `openPopoutWindow`; consumed by
+// `getOpenPopoutWindow` so a caller (e.g. the analysis-board strip's capture) can reach into the
+// popup's own window object (same-origin) without accidentally opening a fresh blank window — which is
+// what `window.open('', name)` does when no such name exists in this browser session.
+const POPOUT_HANDLES: Partial<Record<PopoutRoute, Window>> = {}
+/** The live handle for a popout THIS session opened, or `null` when the popup was closed or never
+ *  opened. Same-origin so the caller can read properties / call exposed functions on it. */
+export function getOpenPopoutWindow(route: PopoutRoute): Window | null {
+  const w = POPOUT_HANDLES[route]
+  if (w && !w.closed) return w
+  if (w) delete POPOUT_HANDLES[route]
+  return null
+}
+
 /** The absolute URL that boots this app on `hashPath` (e.g. `/tasks-window?project=abc`).
  *  `base` is a seam for the unit test — the suite runs in node, with no `location`. */
 export function popoutUrl(
@@ -77,6 +91,7 @@ export function openPopoutWindow(
   try {
     if (w && w.location.href !== url) w.location.href = url
   } catch { /* cross-origin — impossible for our own popouts */ }
+  if (w) POPOUT_HANDLES[route] = w                  // cached for `getOpenPopoutWindow`
   return w
 }
 
