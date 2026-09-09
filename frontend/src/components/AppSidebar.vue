@@ -164,7 +164,7 @@ function isNavDisabled(item: NavItem): boolean {
               v-tooltip.right="settings.viewerPanelOpen
                 ? 'Close viewer controls'
                 : 'Viewer controls — populations, tracks, colour-by'">
-        <i class="pi pi-sliders-h" />
+        <i class="pi pi-eye" />
       </button>
       <button class="panel-launcher panel-launcher-correction cc-btn cc-btn-bare"
               data-guide="sidebar.correctionCta"
