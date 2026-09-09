@@ -13,7 +13,7 @@ import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary, qcState, qcTooltipHtml } from '../lib/qc'
 import { isExcluded, isIncluded, isImported, isStarred, isBlocked, blockedReason } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
-import { shortUnit, fmtNum } from '../utils/physicalSize'
+import { shortUnit, shortTimeUnit, fmtNum } from '../utils/physicalSize'
 import { type SortState } from '../utils/sortRows'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
@@ -85,7 +85,7 @@ function scaleText(img: CciaImage): string {
   const u = shortUnit(img.physicalSizeUnit)
   const parts: string[] = []
   if (img.physicalSizeX != null) parts.push(`${fmtNum(img.physicalSizeX)} ${u}`)
-  if (img.timeIncrement != null) parts.push(`${fmtNum(img.timeIncrement)}${img.timeIncrementUnit ?? 's'}`)
+  if (img.timeIncrement != null) parts.push(`${fmtNum(img.timeIncrement)} ${shortTimeUnit(img.timeIncrementUnit)}`)
   return parts.join(' · ') || '—'
 }
 function scaleTip(img: CciaImage): string {
@@ -95,7 +95,7 @@ function scaleTip(img: CciaImage): string {
   const bits = [`XY ${x} × ${y} ${u}/px`]
   if (img.physicalSizeZ != null) bits.push(`Z ${fmtNum(img.physicalSizeZ)} ${u}`)
   if (img.timeIncrement != null)
-    bits.push(`${fmtNum(img.timeIncrement)} ${img.timeIncrementUnit ?? 's'} per frame`)
+    bits.push(`${fmtNum(img.timeIncrement)} ${shortTimeUnit(img.timeIncrementUnit)} per frame`)
   return bits.join(' · ')
 }
 
