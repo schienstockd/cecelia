@@ -60,18 +60,42 @@ user is happy with the edits, one button recomputes downstream measurements.
 
 ## Phases — small PRs, each independently useful
 
-### P1 — Viewer outline layer. **~1.5 days.**
+### P1 — Viewer outline layer. **~1 day, split into 1a + 1b.**
 
 The prereq for every subsequent phase. Ships a real "what did I pick" answer.
 
-- New `pickOutlineLayer` in `viewerOverlays.ts`. Rasterise `find_contours` on the label
-  mask crop client-side; cache `Map<(label, t), ContourPath>`; invalidate on autosave.
-- Extend `frame_overlays.jl` with a label-mask crop route if not present.
-- Renders three states: pick-set (thin), review focus (bright/thicker), track segment at
-  |currentT − focusT| alpha-ramped so live-scrubbing tells you where "home" is.
-- Delete the "dot" behaviour for these two pops.
-- Spike first (~½ day) on 100-cell pick sets to confirm WebGPU line-strip budget.
-  Fallback: `d3.contour` on a canvas layer above the volume canvas.
+**Design revised 2026-09-10 after reading the shaders.** The label mask is *already* textured in
+the WebGPU viewer (`viewerLabels.ts` — rides `/api/viewer/slab?labels=<vn>` as `r32uint`) and
+the mask shader (`brickShader.ts:246`, `mipShader.ts:154` — `labEdge`) *already* draws contour
+outlines from that texture, palette-coloured by `id % LABEL_PALETTE_N`. So the outline layer is
+a **shader-mode extension on the existing labels layer**, not a new WebGPU line-strip layer.
+
+Rejected the "client-side `find_contours` + line-strip" and the "`d3.contour` on a canvas above
+the volume canvas" fallback — both duplicate contour code the shader already runs, and the
+line-strip path adds a whole overlay pass for what is a two-line branch on an existing fragment
+shader. The role-LUT approach reuses the palette-texture pattern verbatim.
+
+- **P1a — LUT primitive (pure logic, testable).**
+  - `frontend/src/utils/pickOutlineLUT.ts` — builds a `Uint8Array` of length `maxId + 1`, one
+    byte per label id: `ROLE_OFF = 0`, `ROLE_PICK = 1`, `ROLE_FOCUS = 2`. Focus wins over pick.
+    Defensive cap `MAX_PICK_LUT_IDS = 65536`. Unit-tested.
+  - Ships in isolation as a stake in the ground for the shader consumer; no runtime consumer
+    yet. Matches the "extract pure logic first" rule in `frontend/CLAUDE.md`.
+
+- **P1b — Shader consumption + upload + trigger.**
+  - New `@binding` in `brickShader.ts` + `mipShader.ts` for the r8uint role-LUT texture (same
+    row-per-shader pattern as the label palette).
+  - New uniform slot `pickOutlineMode` (0 = off, 1 = on). When on: sample `roleLUT[labId]`;
+    ROLE_OFF fragments discard the label, ROLE_PICK draws the outline in the pick colour,
+    ROLE_FOCUS draws thicker + brighter.
+  - `volumeRenderer.ts` + `brickVolumeRenderer.ts` create the LUT texture on demand and upload
+    when the pick/focus set changes (via `pickOutlineLUTsEqual` — skip write on no-op).
+  - Cockpit-open triggers `pickOutlineMode = 1`, close triggers `0`. Reactive via the settings
+    store; no bespoke event bus.
+  - Renders three states in the mask shader: pick-set (thin, pick colour), review focus
+    (bright/thicker, focus colour), track segment at |currentT − focusT| alpha-ramped so
+    live-scrubbing tells you where "home" is (the alpha-ramp is optional for the MVP; the
+    two-state pick vs focus is enough to unblock P2–P5).
 
 ### P2 — Paint direct mode + autosave + undo journal. **~2 days.**
 
