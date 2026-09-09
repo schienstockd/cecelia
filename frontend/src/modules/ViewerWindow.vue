@@ -3182,11 +3182,8 @@ function handleRendererError(kind: 'flat' | 'brick' | 'tile', msg: string) {
   // can fire AFTER `ensureRenderer` has swapped in the fallback — repopulating the chip on top
   // of a working canvas (Dominik 2026-09-09: canvas loads as 3D flat fine, but the brick OOM
   // toast stayed). `currentRendererKind` null = mid-swap, still accept so nothing is silently
-  // dropped during construction. Diagnostic still lands in the log.
-  if (currentRendererKind.value !== null && currentRendererKind.value !== kind) {
-    vlog('warn', `Ignored stale ${kind}-renderer error (current is ${currentRendererKind.value}): ${msg}`)
-    return
-  }
+  // dropped during construction.
+  if (currentRendererKind.value !== null && currentRendererKind.value !== kind) return
   error.value = 'GPU: ' + msg
   vlog('error', kind === 'tile' ? 'Tile GPU error: ' + msg : 'GPU error: ' + msg)
   if (!isViewerOom(msg)) return
