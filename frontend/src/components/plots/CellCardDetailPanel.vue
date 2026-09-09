@@ -141,7 +141,8 @@ function timeLabel(t: number, t_s?: number): string {
 .ccd-cell { flex: 1; }
 .ccd-frame :deep(.strip-cell) { min-height: 0; }
 /* timestamp caption anchored bottom-left of the frame, white-on-dark chip so it reads on any image */
-.ccd-time { position: absolute; bottom: 4px; left: 4px; padding: 1px 5px; border-radius: 3px;
+.ccd-time { position: absolute; bottom: 4px; left: 4px; padding: 1px 5px;
+  border-radius: var(--cc-radius-xs);
   background: rgba(0,0,0,0.55); color: #fff; font-weight: 600; }
 .ccd-stats { width: 100%; border-collapse: collapse; }
 .ccd-stats td { padding: 2px 6px; vertical-align: middle; border-bottom: 1px solid var(--cc-border); }
