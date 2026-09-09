@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shortUnit, fmtNum, formatPhysicalSize } from './physicalSize'
+import { shortUnit, shortTimeUnit, fmtNum, formatPhysicalSize, formatTimeIncrement } from './physicalSize'
 
 describe('shortUnit', () => {
   it('collapses OME micron variants to µm', () => {
@@ -50,5 +50,39 @@ describe('formatPhysicalSize', () => {
 
   it('accepts a custom fallback (e.g. the tooltip using `?`)', () => {
     expect(formatPhysicalSize(null, 'micrometer', '?')).toBe('?')
+  })
+})
+
+describe('shortTimeUnit', () => {
+  it('collapses OME long forms to symbols', () => {
+    expect(shortTimeUnit('second')).toBe('s')
+    expect(shortTimeUnit('Seconds')).toBe('s')
+    expect(shortTimeUnit('SEC')).toBe('s')
+    expect(shortTimeUnit('millisecond')).toBe('ms')
+    expect(shortTimeUnit('minute')).toBe('min')
+    expect(shortTimeUnit('hour')).toBe('h')
+  })
+
+  it('defaults to s when the unit is null/undefined/empty', () => {
+    expect(shortTimeUnit(null)).toBe('s')
+    expect(shortTimeUnit(undefined)).toBe('s')
+    expect(shortTimeUnit('')).toBe('s')
+  })
+
+  it('keeps unrecognised units verbatim', () => {
+    expect(shortTimeUnit('frame')).toBe('frame')
+  })
+})
+
+describe('formatTimeIncrement', () => {
+  it('produces "<n> <shortTimeUnit>" — the readout the ImageTable cell was missing the space in', () => {
+    expect(formatTimeIncrement(30.26, 'second')).toBe('30.26 s')
+    expect(formatTimeIncrement(500, 'millisecond')).toBe('500 ms')
+    expect(formatTimeIncrement(30, null)).toBe('30 s')
+  })
+
+  it('falls back for null/undefined', () => {
+    expect(formatTimeIncrement(null, 'second')).toBe('—')
+    expect(formatTimeIncrement(undefined, 'second')).toBe('—')
   })
 })

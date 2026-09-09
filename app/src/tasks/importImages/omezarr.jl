@@ -1,33 +1,62 @@
 using JSON3
+using Statistics: median
 
 # ── OME-ZARR metadata reader ──────────────────────────────────────────────────
 
 """
 Fallback for the time interval when there's no top-level NGFF `t`-axis scale: many OME-XML
 sources (including ones bioformats2raw converts) carry no single `TimeIncrement` on `Pixels`,
-only a per-`Plane` `DeltaT` — the interval between frames at `TheZ="0" TheT="1"`. Scrapes
+only per-`Plane` `DeltaT` — the elapsed seconds since T=0 for each frame. Scrapes
 bioformats2raw's `OME/METADATA.ome.xml` sidecar with a plain regex (ports the same idea as the old
 R `cciaImage.R::omeXMLTimelapseInfo` crutch; no XML dependency, see `image.jl` header note).
-Returns the interval in seconds, or `nothing` if the file/tag isn't there.
+Returns the **median** of successive frame intervals across every `TheZ="0"` plane, so a single
+warm-up gap or paused frame can't skew the recorded rate. Falls back to `nothing` if the file/tag
+isn't there or there aren't enough planes to form an interval.
+
+Uses the median rather than a single sample: a Leica LIF from a working microscope showed the
+first interval at 34.69 s (a scanner warm-up) while every other interval clustered at 30.26 s. The
+old logic sampled `TheT="1"` alone and would have baked in the outlier.
 """
 function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
+    # The OME/METADATA.ome.xml sidecar lives at the STORE ROOT, not at the series subdir the
+    # multiscales sit in. bioformats2raw writes `<store>/OME/METADATA.ome.xml` and puts the
+    # multiscales in `<store>/0/` (or `<store>/N/` for a series pick), and callers here pass either
+    # the store root (import task) or the series subdir (`img_filepath` → `series_base`). Probe the
+    # given path first (flat-store case) and fall back to the parent (bf2raw wrapper case); missing
+    # this second lookup meant every bf2raw import silently skipped the fallback.
     xml_file = joinpath(zarr_path, "OME", "METADATA.ome.xml")
-    isfile(xml_file) || return nothing
+    if !isfile(xml_file)
+        xml_file = joinpath(dirname(zarr_path), "OME", "METADATA.ome.xml")
+        isfile(xml_file) || return nothing
+    end
     try
         xml = read(xml_file, String)
-        # match the <Plane …> opening tag whether self-closing (`/>`, bioformats2raw) or not
-        # (`>…</Plane>`, some vendors) — DeltaT is an attribute on the opening tag either way
+        # Elapsed seconds since T=0, keyed by TheT. Match the <Plane …> opening tag whether
+        # self-closing (`/>`, bioformats2raw) or not (`>…</Plane>`, some vendors) — the DeltaT
+        # attribute is on the opening tag either way.
+        deltas = Dict{Int,Float64}()
         for m in eachmatch(r"<Plane\b[^>]*?>", xml)
             tag = m.match
             occursin(r"TheZ=\"0\"", tag) || continue
-            occursin(r"TheT=\"1\"", tag) || continue
+            tm = match(r"TheT=\"(\d+)\"", tag)
+            isnothing(tm) && continue
             dm = match(r"DeltaT=\"([-\d.eE+]+)\"", tag)
             isnothing(dm) && continue
             value = parse(Float64, dm.captures[1])
             um    = match(r"DeltaTUnit=\"([a-zA-Z]+)\"", tag)
             unit  = isnothing(um) ? "s" : lowercase(um.captures[1])
-            return unit == "ms" ? value / 1000 : (unit == "min" ? value * 60 : value)
+            secs  = unit == "ms" ? value / 1000 : (unit == "min" ? value * 60 : value)
+            deltas[parse(Int, tm.captures[1])] = secs
         end
+        isempty(deltas) && return nothing
+        # OME's implicit anchor: DeltaT is elapsed time since the first plane, so TheT=0 → 0 s.
+        # Add it explicitly so a file that only carries TheT>=1 still yields an interval (matches
+        # the previous behaviour for the "single TheT=1" case).
+        get!(deltas, 0, 0.0)
+        ts = sort!(collect(keys(deltas)))
+        length(ts) < 2 && return nothing
+        diffs = Float64[deltas[ts[i+1]] - deltas[ts[i]] for i in 1:length(ts)-1]
+        return median(diffs)
     catch e
         @warn "Could not read OME-XML for DeltaT fallback" zarr_path exception = e
     end

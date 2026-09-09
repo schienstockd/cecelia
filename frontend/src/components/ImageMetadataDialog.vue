@@ -14,7 +14,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { formatBytes } from '../utils/storage'
 import { storeFormatFacts, storeFormatTitle, storeLevelRows,
          type StoreEncoding } from '../utils/storeFormat'
-import { formatPhysicalSize, fmtNum } from '../utils/physicalSize'
+import { formatPhysicalSize, formatTimeIncrement } from '../utils/physicalSize'
 import { buildLineageForest, flattenLineage } from '../utils/versionLineage'
 import { useTaskDefsStore } from '../stores/taskDefs'
 
@@ -42,13 +42,7 @@ const physical = computed(() => {
   }
 })
 
-const timeStr = computed(() => {
-  const i = img.value
-  if (i.timeIncrement === null || i.timeIncrement === undefined) return '—'
-  // Time is not a physical-size (unit is 's' or 'ms', not µm) — normalise the number the same way
-  // but keep the unit as-recorded rather than routing it through the µm-shortening path.
-  return `${fmtNum(i.timeIncrement)} ${i.timeIncrementUnit ?? 's'}`
-})
+const timeStr = computed(() => formatTimeIncrement(img.value.timeIncrement, img.value.timeIncrementUnit))
 
 const channels = computed(() => img.value.channelNames?.filter(c => c && c.length) ?? [])
 // valueName → filename, active first. The active version is the zarr the app currently reads.
