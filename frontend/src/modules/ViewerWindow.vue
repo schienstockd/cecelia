@@ -4057,6 +4057,72 @@ function publishViewerFocus() {
 // invalidation logic #779 wired for a version swap fires for a same-store rewrite too.
 let stopCacheClearWatch: (() => void) | null = null
 
+// Analysis-board "image strip" capture — the browser equivalent of napari's screenshot.
+// A caller in the OPENER window (same-origin) reads the popup's `Window.__cceceliaViewerCapture`
+// and gets back the WebGPU canvas's current pixels, plus the physical extent so a downstream vector
+// scale bar aligns with the image. Overlays (tracks / populations / mask outlines) are already baked
+// into the canvas by the shader, so the capture matches what the user is looking at — no server
+// re-render, no divergence, no 2D/3D branching. Set on mount, cleared on unmount so a closed viewer
+// popup cleanly refuses.
+//
+// `overlayLayers` restores the napari-parity legend: `captureViewState` (`utils/viewerProps.ts`) only
+// records CHANNEL layer entries — the pre-napari-retire snapshot also carried overlay layer NAMES
+// (`(popType) (vn) path`, `(track) (vn) Tracks path`, `(vn) Labels`), which the strip's
+// `parseOverlays` + `/api/viewer/overlay-legend` path uses to name populations and tracks in the
+// legend. We synthesise those names here (only the ones actually drawn) so the strip's legend
+// matches what the user sees, without threading pop/track state through the shared viewState.
+interface ViewerCapture {
+  png: string           // data URL (base64 PNG)
+  extentUm: { x: number; y: number; unit?: string | null } | null
+  imageUid: string
+  valueName: string
+  overlayLayers: Record<string, { visible: true }>
+}
+;(window as unknown as { __cceceliaViewerCapture?: () => ViewerCapture }).__cceceliaViewerCapture = () => {
+  const el = canvas.value
+  if (!el) throw new Error('viewer canvas not ready')
+  const ext = overlayExtent.value
+  const layers: Record<string, { visible: true }> = {}
+  // Point pops for the active gating pop_type (matches viewer's own gate on `getPopVisible`). The
+  // vn comes from the OVERLAY payload's own `valueName` (the vn its pops were authored on) — not
+  // from `valueName.value` (the image RENDER version), which is unrelated: a viewer can render
+  // `default` while the pop manager is authored on `flowTom`, and using the render vn would key the
+  // layer names to a segmentation with no pops → server resolves nothing → empty Populations row
+  // in the strip legend.
+  const popType = overlays.value?.popType || gatingCurrent.value.popType || 'flow'
+  const popsShown = setUid.value ? settings.getPopVisible(setUid.value, popType) : false
+  if (popsShown) {
+    const popVn = overlays.value?.valueName || gatingCurrent.value.valueName || valueName.value || ''
+    for (const p of (overlays.value?.pops ?? [])) {
+      if (!p.show || hiddenPops.value.has(p.path)) continue
+      layers[`(${popType}) (${popVn}) ${p.path}`] = { visible: true }
+      if ((p.isTrack || p.hasTracks) && setUid.value
+          && settings.getShowGatedTracks(setUid.value)
+          && !hiddenTrackPops.value.has(p.path)) {
+        layers[`(track) (${popVn}) Tracks ${p.path}`] = { visible: true }
+      }
+    }
+  }
+  // Whole-segmentation tracks: one per vn currently in trackPayloads (a vn is only in the map when
+  // its per-vn "directions" eye is on).
+  for (const vnKey of trackPayloads.value.keys()) {
+    layers[`(track) (${vnKey}) Tracks /_tracked`] = { visible: true }
+  }
+  // Trackclust ribbons: whichever pops the trackclust payload publishes as `show`.
+  for (const [vnKey, payload] of trackclustPayloads.value.entries()) {
+    for (const p of (payload?.pops ?? [])) {
+      if (!p.show) continue
+      layers[`(trackclust) (${vnKey}) Tracks ${p.path}`] = { visible: true }
+    }
+  }
+  // Segmentation mask: one per visible label layer (currently ≤1 — see the multi-mask decision above).
+  if (labelName.value) layers[`(${labelName.value}) Labels`] = { visible: true }
+  return {
+    png: el.toDataURL('image/png'),
+    extentUm: ext && ext.x > 0 && ext.y > 0 ? { x: ext.x, y: ext.y, unit: ext.unit ?? 'µm' } : null,
+    imageUid, valueName: valueName.value, overlayLayers: layers,
+  }
+}
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSelectModeTick)
@@ -4112,6 +4178,7 @@ onUnmounted(() => {
   window.removeEventListener('storage', onOverlaysTick)
   window.removeEventListener('storage', onSelectModeTick)
   window.removeEventListener('focus', publishViewerFocus)
+  delete (window as unknown as { __cceceliaViewerCapture?: unknown }).__cceceliaViewerCapture
   stopCacheClearWatch?.(); stopCacheClearWatch = null
   stopPlay()
   pump.cancel()

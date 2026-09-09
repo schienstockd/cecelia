@@ -8,6 +8,12 @@ import { viewerColormapHex } from './viewerColormap'
 export interface LegendItem { label: string; colour: string }
 export interface LegendSection { title: string; items: LegendItem[] }
 
+// `#rrggbb` in any case, with or without the leading `#`. The browser viewer's `captureViewState`
+// writes the channel LUT's terminal stop as a hex string into `colormap` (no colormap name — the LUT
+// carries the colour); pre-napari-retire the field was a napari colormap NAME (`"magenta"`), which
+// `viewerColormapHex` looked up. Accepting a hex-as-colour here keeps `channelLegend` working for
+// both shapes so a captured strip still surfaces its Channels section.
+const HEX_RE = /^#?[0-9a-f]{6}$/i
 /**
  * Channel legend from a view snapshot's viewer layers: visible layers whose colormap is a single-hue
  * channel colour (continuous maps / labels / tracks return no colour and are skipped). Ported from
@@ -19,7 +25,9 @@ export function channelLegend(
   const out: LegendItem[] = []
   for (const [name, l] of Object.entries(layers ?? {})) {
     if (l?.visible === false) continue
-    const colour = viewerColormapHex(l?.colormap)
+    const cm = l?.colormap
+    const colour = viewerColormapHex(cm)
+      ?? (typeof cm === 'string' && HEX_RE.test(cm) ? (cm.startsWith('#') ? cm : '#' + cm) : null)
     if (colour) out.push({ label: name, colour })
   }
   return out
