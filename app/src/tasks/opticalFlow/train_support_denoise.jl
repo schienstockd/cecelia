@@ -69,17 +69,25 @@ end
 register_param_validator!("opticalFlow.trainSupportDenoise", "inputFrames",
                           _support_temporal_window_advisory)
 
-# Two unambiguous bad cases, pure so a test can exercise them without a GPU. Both about the LOSS —
-# training's one objective signal until inference runs on real data.
+# QC findings for a SUPPORT training run. Two states, one warn:
+#   - Stopped early (loss plateaued and early-stop caught it): expected on shot-noise-limited
+#     fluorescence, NOT a bug. No finding.
+#   - Ran to the full epoch budget AND the epoch-loss stayed within the plateau band all the way
+#     through: something is off — either the channel is truly saturated (nothing to remove) or the
+#     pooled prior collapsed a weak channel. Warn and point at the collapse QC in
+#     `cleanupImages.denoise`, which is the reliable quality signal (per-run out/in ratio).
+# Pure so a test can exercise it without a GPU.
 function _support_train_qc_findings(metrics::AbstractDict)
     out = Dict{String,Any}[]
+    stopped_early = get(metrics, "stoppedEarly", false) === true
     drop = get(metrics, "lossDrop", NaN)
-    if drop isa Real && !isnan(drop) && drop <= 1.0
-        push!(out, qc_finding("warn", "denoise.loss_flat", "Loss did not decrease",
-            "Check the channel is photon-limited, then retrain — SUPPORT has nothing to remove on saturated data";
-            detail = Dict{String,Any}("finalLoss" => get(metrics, "finalLoss", nothing),
-                                      "lossDrop"  => drop,
-                                      "epochs"    => get(metrics, "epochs", 0))))
+    if drop isa Real && !isnan(drop) && drop <= 1.0 && !stopped_early
+        push!(out, qc_finding("warn", "denoise.loss_flat", "Loss stayed flat for every epoch",
+            "Compare out/in ratios in cleanupImages.denoise — if one channel collapses, retrain with trainMode=perChannel";
+            detail = Dict{String,Any}("finalLoss"    => get(metrics, "finalLoss", nothing),
+                                      "lossDrop"     => drop,
+                                      "epochs"       => get(metrics, "epochs", 0),
+                                      "stoppedEarly" => stopped_early)))
     end
     out
 end
@@ -202,6 +210,12 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
            depth            = unet["depth"],
            unetSize         = unet_size,
            blindConvChannels = Int(get(params, "blindConvChannels", 64)),
+           # Early-stop budget — the runner passes patience=None to coastal when earlyStop is off,
+           # matching the current "train to `epochs`" behaviour. Defaults track the coastal defaults
+           # (patience 5, min_delta 0.005) which stop MERTK-large in ~6-10 epochs on the plateau.
+           earlyStop        = Bool(get(params, "earlyStop", true)),
+           patience         = Int(get(params, "patience", 5)),
+           minLossDelta     = Float64(get(params, "minLossDelta", 5e-3)),
            midZOnly         = Bool(get(params, "midZOnly", true))),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
@@ -215,10 +229,12 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
         try
             qmeta = JSON3.read(read(qc_out_path, String))
             metrics = Dict{String,Any}(
-                "finalLoss" => Float64(get(qmeta, :finalLoss, NaN)),
-                "lossDrop"  => Float64(get(qmeta, :lossDrop, NaN)),
-                "epochs"    => Int(get(qmeta, :epochs, 0)),
-                "nImages"   => length(movies))
+                "finalLoss"    => Float64(get(qmeta, :finalLoss, NaN)),
+                "lossDrop"     => Float64(get(qmeta, :lossDrop, NaN)),
+                "epochs"       => Int(get(qmeta, :epochs, 0)),
+                "stoppedEarly" => Bool(get(qmeta, :stoppedEarly, false)),
+                "stopEpoch"    => Int(get(qmeta, :stopEpoch, 0)),
+                "nImages"      => length(movies))
             findings = _support_train_qc_findings(metrics)
             trained_uids = Set(String(m["uID"]) for m in movies)
             for img in imgs
@@ -226,8 +242,9 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
                 write_qc(img, "opticalFlow.trainSupportDenoise", string(basename(model_path)),
                          findings; metrics = metrics)
             end
+            stop_note = metrics["stoppedEarly"] ? " (stopped early at epoch $(metrics["stopEpoch"]))" : ""
             on_log("[QC] final loss $(round(metrics["finalLoss"], digits = 4)) " *
-                   "($(round(metrics["lossDrop"], digits = 2))x lower than the first epoch).")
+                   "($(round(metrics["lossDrop"], digits = 2))x lower than the first epoch)$stop_note.")
         catch e
             on_log("[QC] could not compute training QC: $e")
         end

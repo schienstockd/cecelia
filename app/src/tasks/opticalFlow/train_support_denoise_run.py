@@ -164,20 +164,56 @@ def _slug(name):
     return s or '_'
 
 
-def _train_one(vols_list, arch, epochs, batch_size, lr, device, log, label):
+def _train_one(vols_list, arch, epochs, batch_size, lr, device, log, label,
+               patience=None, min_delta=5e-3):
     """One `train_support` call for `vols_list` (already the pooled or per-channel slice). Returns
     (state_dict, epoch_losses, summary_dict). `label` is prefixed on the log lines so a perChannel
-    run's three sub-training passes are readable in one log."""
+    run's three sub-training passes are readable in one log.
+
+    Also records a sub-epoch loss trace (`stepLosses` + matching `stepIndices`) at a stride chosen
+    so at most ~5000 points land in the manifest regardless of dataset size. The training
+    convergence plot uses it for the log(step) view — SUPPORT typically converges within the first
+    ~100 gradient steps and the per-epoch mean buries that, making a converged run look flat.
+
+    `patience` (in epochs) enables coastal's plateau early-stop; `None` keeps the classic "train
+    to `epochs`" behaviour. `stoppedEarly` / `stopEpoch` in the summary let the caller carry the
+    stop into the manifest so the Training convergence plot's Detail view can annotate it.
+    """
     log.log(f'>> [{label}] training on {len(vols_list)} volume(s)')
+    step_losses = []
+    step_indices = []
+    # We don't know the exact per-epoch batch count without opening the dataset here, so cap by a
+    # rolling stride: log every step until we hit 500 points, then double the stride each time we
+    # would overflow the ~5000-point budget. Bounded storage, keeps early-epoch fine resolution.
+    _state = {'stride': 1, 'next_at': 1}
+    _MAX_POINTS = 5000
+    def _on_batch_loss(step, loss):
+        if step >= _state['next_at']:
+            step_losses.append(float(loss))
+            step_indices.append(int(step))
+            _state['next_at'] = step + _state['stride']
+            if len(step_losses) >= _MAX_POINTS:
+                # thin to half: keep every other point, double the stride going forward
+                del step_losses[::2]
+                del step_indices[::2]
+                _state['stride'] *= 2
     state_dict, epoch_losses = train_support(
         volumes=vols_list, arch=arch, epochs=epochs, batch_size=batch_size, lr=lr,
         device=device, on_progress=log.progress, on_log=log.log,
+        on_batch_loss=_on_batch_loss,
+        patience=patience, min_delta=min_delta,
     )
     final = float(epoch_losses[-1]) if epoch_losses else float('nan')
     first = float(epoch_losses[0]) if epoch_losses else float('nan')
     drop  = (first / final) if (final and final > 0) else float('nan')
+    stopped_early = len(epoch_losses) < epochs
     summary = {'finalLoss': final, 'firstLoss': first, 'lossDrop': drop,
-               'epochLosses': list(map(float, epoch_losses))}
+               'epochLosses':  list(map(float, epoch_losses)),
+               'stepLosses':   step_losses,
+               'stepIndices':  step_indices,
+               'stoppedEarly': stopped_early,
+               'stopEpoch':    len(epoch_losses),   # 1-based; equal to `epochs` when it ran full
+               'epochBudget':  int(epochs)}
     return state_dict, epoch_losses, summary
 
 
@@ -231,6 +267,10 @@ def run(params):
     value_name     = str(params.get('valueName', ''))
     unet_size      = str(params.get('unetSize', 'medium'))
     train_mode_req = str(params.get('trainMode', 'pooled'))
+    # Early stop. Runner passes patience=None when disabled → coastal keeps the classic behaviour.
+    early_stop     = bool(params.get('earlyStop', True))
+    patience_val   = int(params.get('patience', 5)) if early_stop else None
+    min_loss_delta = float(params.get('minLossDelta', 5e-3))
 
     if train_mode_req not in ('pooled', 'perChannel'):
         log.log(f'[ERROR] trainMode must be pooled|perChannel, got "{train_mode_req}"')
@@ -311,7 +351,8 @@ def run(params):
     if mode == 'pooled':
         all_vols = [v for c in channels for v in vols_by_ch.get(int(c), [])]
         state_dict, epoch_losses, summary = _train_one(
-            all_vols, arch, epochs, batch_size, lr, device, log, 'pooled')
+            all_vols, arch, epochs, batch_size, lr, device, log, 'pooled',
+            patience=patience_val, min_delta=min_loss_delta)
 
         # ── save (pooled) ──────────────────────────────────────────────────
         # `.pt` and manifest are two files; both must land atomically so a picker never sees a
@@ -362,7 +403,8 @@ def run(params):
                 continue
             state_dict, epoch_losses, summary = _train_one(
                 vols_c, arch, epochs, batch_size, lr, device, log,
-                f'perChannel {ch_name_by_idx[int(c)]}')
+                f'perChannel {ch_name_by_idx[int(c)]}',
+                patience=patience_val, min_delta=min_loss_delta)
 
             slug = _slug(ch_name_by_idx[int(c)])
             sub_pt = bundle_root / f'{slug}.pt'
@@ -397,6 +439,8 @@ def run(params):
         # without having to grep the directory. `training.perChannelLosses` carries one loss curve
         # per trained channel so the Training convergence plot (FlowTrainingView) can draw them all
         # as separate series, keyed by channel name (matches the chip labels).
+        # `perChannelStepLosses` / `perChannelStepIndices` carry the sub-epoch trace per channel so
+        # the plot's Detail view can render the log(step) descent + plateau per channel.
         top_manifest = {
             'kind': 'denoise-support',
             'mode': 'perChannel',
@@ -405,7 +449,22 @@ def run(params):
             'arch': arch,
             'training': dict(common_training,
                              perChannelLosses={name: s['epochLosses']
-                                               for name, s in per_channel_summaries.items()}),
+                                               for name, s in per_channel_summaries.items()},
+                             perChannelStepLosses={name: s.get('stepLosses', [])
+                                                   for name, s in per_channel_summaries.items()},
+                             perChannelStepIndices={name: s.get('stepIndices', [])
+                                                    for name, s in per_channel_summaries.items()},
+                             # Aggregate early-stop signals (any-of / max-of) match the QC sidecar
+                             # shape; per-channel dicts let the Detail view annotate per series.
+                             stoppedEarly=any(bool(s.get('stoppedEarly', False))
+                                              for s in per_channel_summaries.values()),
+                             stopEpoch=max((int(s.get('stopEpoch', 0))
+                                            for s in per_channel_summaries.values()), default=0),
+                             epochBudget=int(epochs),
+                             perChannelStoppedEarly={name: bool(s.get('stoppedEarly', False))
+                                                     for name, s in per_channel_summaries.items()},
+                             perChannelStopEpoch={name: int(s.get('stopEpoch', 0))
+                                                  for name, s in per_channel_summaries.items()}),
         }
         top_manifest_path = str(bundle_root / 'manifest.json')
         write_json_atomic(top_manifest_path, top_manifest)
@@ -437,6 +496,21 @@ def run(params):
             'firstLoss': worst_first,
             'lossDrop':  worst_drop,
             'epochLosses': per_channel_summaries[headline]['epochLosses'] if headline else [],
+            # Sub-epoch trace of the headline (worst-final) channel — the Julia QC handler doesn't
+            # currently thread this into the QC metrics dict (nothing on the metric side needs it),
+            # but the FlowTrainingView reads the model's manifest directly, so this is diagnostic-
+            # only. Keep the shape so a future QC finding (e.g. "converged at step N") can build
+            # on it without another schema bump.
+            'stepLosses':  per_channel_summaries[headline].get('stepLosses', []) if headline else [],
+            'stepIndices': per_channel_summaries[headline].get('stepIndices', []) if headline else [],
+            # Early-stop signals — bucketed as ANY channel stopping early for perChannel bundles,
+            # since a plateau on the weakest channel is what we care about; ALL for pooled.
+            # `stopEpoch` is the headline channel's stop point (max of `stopEpoch` across channels
+            # for perChannel, which is the last channel to plateau).
+            'stoppedEarly': any(bool(s.get('stoppedEarly', False))
+                                for s in per_channel_summaries.values()),
+            'stopEpoch':   max((int(s.get('stopEpoch', 0)) for s in per_channel_summaries.values()),
+                               default=0),
             'epochs': worst_epochs,
             'nImages': len(movies),
             'arch': arch,

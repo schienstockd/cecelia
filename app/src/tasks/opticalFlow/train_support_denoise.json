@@ -136,6 +136,33 @@
           "step": 16,
           "default": 64,
           "tip": "Capacity of the denoising branch — leave at 64"
+        },
+        {
+          "key": "earlyStop",
+          "label": "Early stop on plateau",
+          "type": "bool",
+          "default": true,
+          "tip": "Stop early once the loss stops improving — SUPPORT usually plateaus in a few epochs"
+        },
+        {
+          "key": "patience",
+          "label": "Patience (epochs)",
+          "type": "int",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 5,
+          "tip": "Consecutive plateau epochs before stopping"
+        },
+        {
+          "key": "minLossDelta",
+          "label": "Min loss delta",
+          "type": "float",
+          "min": 0.0001,
+          "max": 0.05,
+          "step": 0.0001,
+          "default": 0.005,
+          "tip": "Smaller than this counts as no improvement"
         }
       ]
     }

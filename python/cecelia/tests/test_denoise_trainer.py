@@ -136,15 +136,39 @@ class SupportTrainerSmokeTest(unittest.TestCase):
             self.assertIn(k, manifest['training'],
                           f'training.{k} missing — Training convergence plot reads it from the manifest')
         self.assertEqual(len(manifest['training']['epochLosses']), 1)
+        # Sub-epoch trace also travels in the manifest — the Detail view of the Training
+        # convergence plot reads it to render a log(step) view (SUPPORT typically converges
+        # inside the first ~100 steps; per-epoch means bury that).
+        for k in ('stepLosses', 'stepIndices'):
+            self.assertIn(k, manifest['training'],
+                          f'training.{k} missing — Detail view reads it from the manifest')
+        self.assertEqual(len(manifest['training']['stepLosses']),
+                         len(manifest['training']['stepIndices']))
+        self.assertGreater(len(manifest['training']['stepLosses']), 0,
+                           'no per-step losses recorded — on_batch_loss callback not fired')
+        # Early-stop signals — recorded on every training run so the QC handler can key off them
+        # (`stoppedEarly=True` suppresses the "loss stayed flat" warn, since plateau is expected).
+        # With epochs=1 and default patience, this run does NOT stop early — asserts the shape,
+        # not the value.
+        for k in ('stoppedEarly', 'stopEpoch', 'epochBudget'):
+            self.assertIn(k, manifest['training'],
+                          f'training.{k} missing — QC reads it from the manifest')
+        self.assertEqual(manifest['training']['epochBudget'], 1)
+        self.assertEqual(manifest['training']['stopEpoch'], 1)
+        self.assertFalse(manifest['training']['stoppedEarly'])
 
         # QC sidecar carries the loss curve for _support_train_qc_findings
         with open(qc_path, encoding='utf-8') as f:
             qc = json.load(f)
-        for k in ('finalLoss', 'firstLoss', 'lossDrop', 'epochLosses', 'epochs', 'nImages'):
+        for k in ('finalLoss', 'firstLoss', 'lossDrop', 'epochLosses', 'epochs', 'nImages',
+                  'stepLosses', 'stepIndices', 'stoppedEarly', 'stopEpoch'):
             self.assertIn(k, qc, f'QC missing {k}')
         self.assertEqual(qc['epochs'], 1)
         self.assertEqual(qc['nImages'], 1)
         self.assertEqual(len(qc['epochLosses']), 1)
+        self.assertEqual(len(qc['stepLosses']), len(qc['stepIndices']))
+        self.assertGreater(len(qc['stepLosses']), 0)
+        self.assertFalse(qc['stoppedEarly'])   # 1-epoch run has no chance to plateau
 
     def test_trainer_refuses_short_movies(self):
         """A movie with fewer than `input_frames` timepoints can't produce a centred window; the

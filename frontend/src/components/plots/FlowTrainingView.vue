@@ -75,10 +75,16 @@ import { useVaultModel } from '../../composables/useVaultModel'
 import { lossSeries, lossTable } from '../../plots/lossCurves'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
 import type { FlowManifest } from '../../utils/flowManifest'
-import { denoiseTrainingSeries, type DenoiseManifest } from '../../utils/denoiseManifest'
+import { denoiseTrainingSeries, type DenoiseManifest, type DenoiseSeries } from '../../utils/denoiseManifest'
+import { convergenceStats } from '../../utils/convergence'
 
 interface TrainState { logY?: boolean; raw?: boolean; minusFloor?: boolean; terms?: string[]
-                       model?: string }
+                       model?: string
+                       // Detail = log(step) sub-epoch view with initial/plateau/converged-at
+                       // markers. On when available (see `hasStepTrace`); toggled off falls back
+                       // to the per-epoch line for the classic look. Off by default so first-time
+                       // viewers see the familiar shape, then discover Detail via the toggle.
+                       detail?: boolean }
 
 // `model` comes from the HOST — the vault owns the selection and its global/local scope, exactly as
 // the population manager owns which pops the plots highlight. No picker here: two pickers for one
@@ -95,6 +101,8 @@ const project = useProjectStore()
 const state = computed(() => props.state)
 const logY = computed({ get: () => state.value.logY ?? false, set: v => (state.value.logY = v) })
 const raw = computed({ get: () => state.value.raw ?? false, set: v => (state.value.raw = v) })
+const detail = computed({ get: () => state.value.detail ?? false,
+                          set: v => (state.value.detail = v) })
 // Default ON. The floor is the whole reason a converged run reads as a stalled one, so the useful
 // view is the one showing what the model actually did; the unadjusted number is one click away.
 // Models trained before floors were recorded have none, and `hasFloors` disables the control rather
@@ -158,6 +166,105 @@ const terms = computed<string[]>(() => {
 const shown = computed(() => series.value.filter(s => terms.value.includes(s.term)))
 const rows = computed(() => shown.value.flatMap(s =>
   s.values.map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
+
+// ── Detail view (log(step) sub-epoch trace) — data + convergence stats ────────────────────
+// Only denoise carries step traces today (see denoiseTrainingSeries). Flow will slot in via
+// the same DenoiseSeries.steps/stepValues shape if/when its trainer starts logging them.
+type StepSeries = DenoiseSeries & { steps: number[]; stepValues: number[] }
+function _hasSteps(s: DenoiseSeries): s is StepSeries {
+  return !!(s.steps && s.stepValues && s.steps.length === s.stepValues.length
+            && s.steps.length > 20)
+}
+// True when any shown series carries a step trace — the toggle is hidden otherwise, so we don't
+// offer a control that does nothing on old models.
+const hasStepTrace = computed(() =>
+  kind.value === 'denoise' && (series.value as DenoiseSeries[]).some(_hasSteps))
+const detailActive = computed(() => detail.value && hasStepTrace.value)
+
+// Faint per-batch underlay — thin to at most 500 points per term so a big trace doesn't blow the
+// SVG up. `stepStride` matches the runner's adaptive thinning: keep the last N ≈ 500 points.
+const stepRows = computed(() => {
+  if (!detailActive.value) return []
+  return (shown.value as DenoiseSeries[]).filter(_hasSteps).flatMap((s) => {
+    const stride = Math.max(1, Math.floor(s.steps.length / 500))
+    const out = []
+    for (let i = 0; i < s.steps.length; i += stride)
+      out.push({ step: s.steps[i], term: s.term, loss: s.stepValues[i] })
+    return out
+  })
+})
+// Per-term convergence stats (initial/plateau/convergedAt) — one entry per shown series that has
+// a step trace. Undefined when the trace is too short to summarise (falls back cleanly).
+const convByTerm = computed(() => {
+  const out: Record<string, ReturnType<typeof convergenceStats>> = {}
+  if (!detailActive.value) return out
+  for (const s of (shown.value as DenoiseSeries[]).filter(_hasSteps)) {
+    out[s.term] = convergenceStats(s.steps, s.stepValues, { window: 20 })
+  }
+  return out
+})
+// Per-term early-stop info — resolved from the manifest.
+//   - Pooled bundles: single stoppedEarly/stopEpoch at training level; the sole series is "loss".
+//   - PerChannel bundles: perChannelStoppedEarly / perChannelStopEpoch dicts keyed by channel name.
+// Returns {epoch, budget} when the term stopped early, else null. Consumed by the Detail render
+// to annotate the plot ("stopped @ ep N of E").
+const stopByTerm = computed(() => {
+  const out: Record<string, { epoch: number; budget: number } | null> = {}
+  const tr = denoiseManifest.value?.training
+  if (!tr) return out
+  const budget = tr.epochBudget ?? tr.epochs ?? 0
+  const perChEarly = tr.perChannelStoppedEarly
+  const perChStop = tr.perChannelStopEpoch
+  for (const s of shown.value) {
+    if (perChEarly && perChStop) {
+      out[s.term] = perChEarly[s.term]
+        ? { epoch: perChStop[s.term] ?? 0, budget }
+        : null
+    } else {
+      out[s.term] = tr.stoppedEarly ? { epoch: tr.stopEpoch ?? 0, budget } : null
+    }
+  }
+  return out
+})
+// Any shown series stopped early — surfaced as a small caption above the plot even in Simple
+// view. Reader shouldn't need to toggle Detail to learn that patience caught the plateau.
+const anyStoppedEarly = computed(() =>
+  Object.values(stopByTerm.value).some(v => v !== null))
+
+// Per-series caption for the Detail view. HTML rather than in-plot text — in-plot labels of
+// three similar-shape curves collide both vertically (labels stack at similar y) and horizontally
+// (left-side "converged" text meets right-side "stopped" text on narrow panels). One line per
+// shown series, colour matched to the plot's stroke, wraps naturally.
+interface DetailCaption { term: string; color: string; text: string }
+const detailCaptions = computed<DetailCaption[]>(() => {
+  if (!detailActive.value) return []
+  const colors = distinctColors(shown.value.map(s => s.term).length)
+  return shown.value.map((s, idx) => {
+    const c = convByTerm.value[s.term]
+    const stop = stopByTerm.value[s.term]
+    const parts: string[] = []
+    if (c?.convergedAt !== null && c) {
+      const drop = isFinite(c.dropFraction) ? Math.round(c.dropFraction * 100) : 0
+      parts.push(`converged step ${c.convergedAt} (${drop}% drop)`)
+    }
+    if (stop && stop.epoch > 0) {
+      parts.push(`stopped ep ${stop.epoch}/${stop.budget}`)
+    }
+    return { term: s.term, color: colors[idx] || colors[0],
+             text: parts.length ? parts.join(' · ') : '' }
+  }).filter(cap => cap.text)
+})
+// Moving-avg rows, one per term — the bold line the reader reads. Same colour as the term.
+const maRows = computed(() => {
+  const out: { step: number; term: string; loss: number }[] = []
+  if (!detailActive.value) return out
+  for (const s of (shown.value as DenoiseSeries[]).filter(_hasSteps)) {
+    const c = convByTerm.value[s.term]
+    if (!c) continue
+    for (let i = 0; i < c.ma.length; i++) out.push({ step: c.maSteps[i], term: s.term, loss: c.ma[i] })
+  }
+  return out
+})
 // Held-out curves, drawn dashed in the SAME colour as their term. The only thing anyone reads off a
 // validation curve is the gap to its own training curve, so a second colour would turn the
 // comparison into a legend lookup. Denoise (SUPPORT) is self-supervised, no held-out curve exists.
@@ -191,6 +298,49 @@ async function render() {
   const dark = !forceLight.value
   const { ink: fg, ground: bg } = plotTheme(dark)
   const domain = shown.value.map(s => s.term)
+
+  // Detail view — log(gradient step) sub-epoch trace + initial/plateau reference furniture per
+  // series. The reason this exists: SUPPORT (and any shot-noise-limited self-supervised trainer)
+  // plateaus inside the first ~100 steps and the per-epoch mean buries that, so a converged run
+  // reads as a flat line. Same colour per term as the classic view; the marks change, not the
+  // colour key. Old models (no step trace) never see this branch — the toggle stays hidden.
+  if (detailActive.value) {
+    const colors = distinctColors(domain.length)
+    const colorOf = (term: string) => colors[domain.indexOf(term)] || colors[0]
+    const marks: unknown[] = []
+    // Faint per-batch underlay (honest variance) + bold moving-avg line per term.
+    marks.push(Plot.line(stepRows.value, { x: 'step', y: 'loss', stroke: 'term',
+                                           strokeWidth: 0.5, opacity: 0.25 }))
+    marks.push(Plot.line(maRows.value,   { x: 'step', y: 'loss', stroke: 'term',
+                                           strokeWidth: 1.8, tip: true }))
+    // Reference line (initial) + plateau band + convergence x-marker per term. Same colour as the
+    // term. Text lives in an HTML caption row above the plot (`detailCaptions`) rather than as
+    // in-plot text marks — earlier attempts put per-series labels on the plot and they collided
+    // both vertically (similar curves stack at the same y) AND horizontally (converged label on
+    // the left touched the early-stop label on the right on any narrow panel).
+    for (const s of shown.value) {
+      const c = convByTerm.value[s.term]
+      if (!c) continue
+      const col = colorOf(s.term)
+      marks.push(Plot.ruleY([c.initial], { stroke: col, strokeDasharray: '2,3', opacity: 0.6 }))
+      marks.push(Plot.ruleY([c.plateau], { stroke: col, strokeWidth: 2,   opacity: 0.3  }))
+      if (c.convergedAt !== null) {
+        marks.push(Plot.ruleX([c.convergedAt], { stroke: col, strokeDasharray: '4,3', opacity: 0.7 }))
+      }
+    }
+    node = Plot.plot({
+      width: w, height: h, marginLeft: 58, marginRight: 12, marginTop: 12,
+      style: { background: bg, color: fg, fontSize: '11px' },
+      x: { label: 'gradient step (log)', type: 'log', grid: true },
+      y: { label: 'loss', grid: true, type: 'linear', zero: true },
+      color: { domain, range: colors, legend: false },
+      marks,
+    }) as SVGElement
+    applyPlotTheme(node, dark)
+    host.value.append(node)
+    return
+  }
+
   node = Plot.plot({
     width: w, height: h, marginLeft: 58, marginRight: 12, marginTop: 12,
     style: { background: bg, color: fg, fontSize: '11px' },
@@ -229,7 +379,8 @@ watch(manifest, () => nextTick().then(render))
 // that loops ("ResizeObserver loop completed with undelivered notifications") and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
-watch([chosen, logY, raw, minusFloor, () => terms.value.join(','), hasVal],
+watch([chosen, logY, raw, minusFloor, detail, () => terms.value.join(','), hasVal,
+       anyStoppedEarly],
       () => plotBox.redraw())
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the cluster panels) ──
@@ -279,6 +430,13 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         <label class="cc-muted cc-fs-xs ftv-opt" v-tooltip.top="'Log scale on the loss axis'">
           <input type="checkbox" v-model="logY" /> log
         </label>
+        <!-- Detail toggle only appears when the model actually carries a sub-epoch step trace
+             (old denoise models don't). Shipping a control that silently does nothing is worse
+             than not having it. -->
+        <label v-if="hasStepTrace" class="cc-muted cc-fs-xs ftv-opt"
+               v-tooltip.top="'log(step) view: sub-epoch trace with initial/plateau markers'">
+          <input type="checkbox" v-model="detail" /> detail
+        </label>
         <label v-if="kind !== 'denoise'" class="cc-muted cc-fs-xs ftv-opt"
                :class="{ 'ftv-off': !hasFloors }"
                v-tooltip.top="hasFloors
@@ -288,6 +446,10 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         </label>
         <!-- A dashed line with nothing naming it is a puzzle. Only shown when there is one. -->
         <span v-if="hasVal" class="cc-muted cc-fs-2xs">dashed = held out</span>
+        <!-- Surfaced in both Simple and Detail so a reader who never toggles Detail still knows
+             the shorter run wasn't a failure — patience caught the plateau. -->
+        <span v-if="anyStoppedEarly" class="cc-muted cc-fs-2xs"
+              v-tooltip.top="'Loss stopped improving — patience cut the run short (Advanced → Early stop)'">early-stopped</span>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload'"
                 :disabled="loading" @click="refresh">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
@@ -317,6 +479,17 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
       No loss curves — {{ chosen }} was trained before they were recorded. Re-train to get them.
     </p>
 
+    <!-- Per-series convergence/early-stop readout for the Detail view. HTML rather than in-plot
+         text: three similarly-shaped curves would collide both vertically and horizontally as
+         SVG marks. Empty in Simple view. -->
+    <ul v-if="detailCaptions.length" class="ftv-captions cc-fs-xs">
+      <li v-for="cap in detailCaptions" :key="cap.term">
+        <span class="ftv-cap-swatch" :style="{ background: cap.color }" />
+        <span class="ftv-cap-term">{{ cap.term }}</span>
+        <span class="cc-muted">{{ cap.text }}</span>
+      </li>
+    </ul>
+
     <div ref="host" class="ftv-host" />
   </div>
 </template>
@@ -331,4 +504,9 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .ftv-opt { display: flex; align-items: center; gap: 0.25rem; }
 .ftv-off { opacity: 0.45; }
 .ftv-host { flex: 1; min-height: 0; }
+.ftv-captions { list-style: none; margin: 0.1rem 6px 0.2rem; padding: 0;
+                display: flex; flex-direction: column; gap: 0.1rem; }
+.ftv-captions li { display: flex; align-items: center; gap: 0.35rem; line-height: 1.15; }
+.ftv-cap-swatch { display: inline-block; width: 8px; height: 8px; }
+.ftv-cap-term  { font-weight: 600; }
 </style>

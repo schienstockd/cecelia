@@ -41,6 +41,28 @@ export interface DenoiseTraining {
   // chip row auto-shows when there is more than one series, so each channel becomes a toggle.
   // Pooled bundles carry only `epochLosses` and leave this undefined.
   perChannelLosses?: Record<string, number[]>
+  // Sub-epoch loss trace — one point per gradient step, thinned by the runner to at most ~5000
+  // points regardless of dataset size. `stepIndices[i]` is the 1-based gradient step for
+  // `stepLosses[i]`; not every step is logged (adaptive stride), so the arrays are dense but the
+  // step indices are not consecutive. The Training convergence plot's Detail view reads these to
+  // render a log(step) view — SUPPORT typically converges within the first ~100 gradient steps,
+  // and per-epoch means bury that so a converged run looks like a flat line.
+  // Pooled bundles carry `stepLosses`/`stepIndices`; perChannel bundles carry per-channel dicts.
+  stepLosses?: number[]
+  stepIndices?: number[]
+  perChannelStepLosses?: Record<string, number[]>
+  perChannelStepIndices?: Record<string, number[]>
+  // Early-stop signals. `stoppedEarly` is true when the trainer broke out before the requested
+  // epoch budget (see coastal.support.train_support patience/min_delta); `stopEpoch` is the
+  // 1-based epoch it actually stopped at, and `epochBudget` is what the user asked for. The
+  // Training convergence plot's Detail view annotates the stop; the QC page suppresses the
+  // "loss stayed flat" warn when early-stop caught the plateau (plateau is expected here).
+  // PerChannel bundles carry BOTH the aggregate (any/max across channels) AND per-channel dicts.
+  stoppedEarly?: boolean
+  stopEpoch?: number
+  epochBudget?: number
+  perChannelStoppedEarly?: Record<string, boolean>
+  perChannelStopEpoch?: Record<string, number>
   finalLoss?: number
   firstLoss?: number
   lossDrop?: number
@@ -56,12 +78,16 @@ export interface DenoiseManifest {
 }
 
 /** One (term, values) pair the Training convergence plot consumes. `weight` and `floored` mirror
- *  the flow shape so both kinds flow through the same rendering path (`FlowTrainingView.vue`). */
+ *  the flow shape so both kinds flow through the same rendering path (`FlowTrainingView.vue`).
+ *  `steps` + `stepValues` carry the sub-epoch trace for the Detail view; undefined for old models
+ *  (they fall back to the per-epoch curve). */
 export interface DenoiseSeries {
   term: string
   values: number[]
   weight: number
   floored: boolean
+  steps?: number[]
+  stepValues?: number[]
 }
 
 /**
@@ -76,14 +102,21 @@ export function denoiseTrainingSeries(m: DenoiseManifest | null | undefined): De
   if (!tr) return []
   const perCh = tr.perChannelLosses
   if (perCh) {
+    const perChSteps    = tr.perChannelStepLosses  ?? {}
+    const perChStepsIdx = tr.perChannelStepIndices ?? {}
     const entries = Object.entries(perCh)
       .filter(([, v]) => Array.isArray(v) && v.length > 0)
-      .map(([name, values]) => ({ term: name, values, weight: 1, floored: false }))
+      .map(([name, values]) => ({
+        term: name, values, weight: 1, floored: false,
+        stepValues: perChSteps[name],
+        steps:      perChStepsIdx[name],
+      }))
     if (entries.length > 0) return entries
   }
   const losses = tr.epochLosses ?? []
   if (!losses.length) return []
-  return [{ term: 'loss', values: losses, weight: 1, floored: false }]
+  return [{ term: 'loss', values: losses, weight: 1, floored: false,
+            stepValues: tr.stepLosses, steps: tr.stepIndices }]
 }
 
 const field = (label: string, value: unknown, mono = false): DetailField | null => {
