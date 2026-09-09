@@ -52,6 +52,17 @@ export interface DenoiseTraining {
   stepIndices?: number[]
   perChannelStepLosses?: Record<string, number[]>
   perChannelStepIndices?: Record<string, number[]>
+  // Early-stop signals. `stoppedEarly` is true when the trainer broke out before the requested
+  // epoch budget (see coastal.support.train_support patience/min_delta); `stopEpoch` is the
+  // 1-based epoch it actually stopped at, and `epochBudget` is what the user asked for. The
+  // Training convergence plot's Detail view annotates the stop; the QC page suppresses the
+  // "loss stayed flat" warn when early-stop caught the plateau (plateau is expected here).
+  // PerChannel bundles carry BOTH the aggregate (any/max across channels) AND per-channel dicts.
+  stoppedEarly?: boolean
+  stopEpoch?: number
+  epochBudget?: number
+  perChannelStoppedEarly?: Record<string, boolean>
+  perChannelStopEpoch?: Record<string, number>
   finalLoss?: number
   firstLoss?: number
   lossDrop?: number

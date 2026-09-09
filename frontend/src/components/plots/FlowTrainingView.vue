@@ -203,6 +203,57 @@ const convByTerm = computed(() => {
   }
   return out
 })
+// Per-term early-stop info — resolved from the manifest.
+//   - Pooled bundles: single stoppedEarly/stopEpoch at training level; the sole series is "loss".
+//   - PerChannel bundles: perChannelStoppedEarly / perChannelStopEpoch dicts keyed by channel name.
+// Returns {epoch, budget} when the term stopped early, else null. Consumed by the Detail render
+// to annotate the plot ("stopped @ ep N of E").
+const stopByTerm = computed(() => {
+  const out: Record<string, { epoch: number; budget: number } | null> = {}
+  const tr = denoiseManifest.value?.training
+  if (!tr) return out
+  const budget = tr.epochBudget ?? tr.epochs ?? 0
+  const perChEarly = tr.perChannelStoppedEarly
+  const perChStop = tr.perChannelStopEpoch
+  for (const s of shown.value) {
+    if (perChEarly && perChStop) {
+      out[s.term] = perChEarly[s.term]
+        ? { epoch: perChStop[s.term] ?? 0, budget }
+        : null
+    } else {
+      out[s.term] = tr.stoppedEarly ? { epoch: tr.stopEpoch ?? 0, budget } : null
+    }
+  }
+  return out
+})
+// Any shown series stopped early — surfaced as a small caption above the plot even in Simple
+// view. Reader shouldn't need to toggle Detail to learn that patience caught the plateau.
+const anyStoppedEarly = computed(() =>
+  Object.values(stopByTerm.value).some(v => v !== null))
+
+// Per-series caption for the Detail view. HTML rather than in-plot text — in-plot labels of
+// three similar-shape curves collide both vertically (labels stack at similar y) and horizontally
+// (left-side "converged" text meets right-side "stopped" text on narrow panels). One line per
+// shown series, colour matched to the plot's stroke, wraps naturally.
+interface DetailCaption { term: string; color: string; text: string }
+const detailCaptions = computed<DetailCaption[]>(() => {
+  if (!detailActive.value) return []
+  const colors = distinctColors(shown.value.map(s => s.term).length)
+  return shown.value.map((s, idx) => {
+    const c = convByTerm.value[s.term]
+    const stop = stopByTerm.value[s.term]
+    const parts: string[] = []
+    if (c?.convergedAt !== null && c) {
+      const drop = isFinite(c.dropFraction) ? Math.round(c.dropFraction * 100) : 0
+      parts.push(`converged step ${c.convergedAt} (${drop}% drop)`)
+    }
+    if (stop && stop.epoch > 0) {
+      parts.push(`stopped ep ${stop.epoch}/${stop.budget}`)
+    }
+    return { term: s.term, color: colors[idx] || colors[0],
+             text: parts.length ? parts.join(' · ') : '' }
+  }).filter(cap => cap.text)
+})
 // Moving-avg rows, one per term — the bold line the reader reads. Same colour as the term.
 const maRows = computed(() => {
   const out: { step: number; term: string; loss: number }[] = []
@@ -262,8 +313,11 @@ async function render() {
                                            strokeWidth: 0.5, opacity: 0.25 }))
     marks.push(Plot.line(maRows.value,   { x: 'step', y: 'loss', stroke: 'term',
                                            strokeWidth: 1.8, tip: true }))
-    // One reference line + plateau band + convergence marker per term. Same colour as the term,
-    // so the visual link is unmistakable at a glance without a second colour to look up.
+    // Reference line (initial) + plateau band + convergence x-marker per term. Same colour as the
+    // term. Text lives in an HTML caption row above the plot (`detailCaptions`) rather than as
+    // in-plot text marks — earlier attempts put per-series labels on the plot and they collided
+    // both vertically (similar curves stack at the same y) AND horizontally (converged label on
+    // the left touched the early-stop label on the right on any narrow panel).
     for (const s of shown.value) {
       const c = convByTerm.value[s.term]
       if (!c) continue
@@ -272,12 +326,6 @@ async function render() {
       marks.push(Plot.ruleY([c.plateau], { stroke: col, strokeWidth: 2,   opacity: 0.3  }))
       if (c.convergedAt !== null) {
         marks.push(Plot.ruleX([c.convergedAt], { stroke: col, strokeDasharray: '4,3', opacity: 0.7 }))
-        const drop = isFinite(c.dropFraction) ? Math.round(c.dropFraction * 100) : 0
-        marks.push(Plot.text([{ step: c.convergedAt, loss: (c.initial + c.plateau) / 2,
-                                label: `${s.term}: step ${c.convergedAt} (${drop}% drop)` }], {
-          x: 'step', y: 'loss', text: 'label', fill: col,
-          textAnchor: 'start', dx: 6, dy: -4, fontSize: 10,
-        }))
       }
     }
     node = Plot.plot({
@@ -331,7 +379,8 @@ watch(manifest, () => nextTick().then(render))
 // that loops ("ResizeObserver loop completed with undelivered notifications") and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
-watch([chosen, logY, raw, minusFloor, detail, () => terms.value.join(','), hasVal],
+watch([chosen, logY, raw, minusFloor, detail, () => terms.value.join(','), hasVal,
+       anyStoppedEarly],
       () => plotBox.redraw())
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the cluster panels) ──
@@ -397,6 +446,10 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         </label>
         <!-- A dashed line with nothing naming it is a puzzle. Only shown when there is one. -->
         <span v-if="hasVal" class="cc-muted cc-fs-2xs">dashed = held out</span>
+        <!-- Surfaced in both Simple and Detail so a reader who never toggles Detail still knows
+             the shorter run wasn't a failure — patience caught the plateau. -->
+        <span v-if="anyStoppedEarly" class="cc-muted cc-fs-2xs"
+              v-tooltip.top="'Loss stopped improving — patience cut the run short (Advanced → Early stop)'">early-stopped</span>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload'"
                 :disabled="loading" @click="refresh">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
@@ -426,6 +479,17 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
       No loss curves — {{ chosen }} was trained before they were recorded. Re-train to get them.
     </p>
 
+    <!-- Per-series convergence/early-stop readout for the Detail view. HTML rather than in-plot
+         text: three similarly-shaped curves would collide both vertically and horizontally as
+         SVG marks. Empty in Simple view. -->
+    <ul v-if="detailCaptions.length" class="ftv-captions cc-fs-xs">
+      <li v-for="cap in detailCaptions" :key="cap.term">
+        <span class="ftv-cap-swatch" :style="{ background: cap.color }" />
+        <span class="ftv-cap-term">{{ cap.term }}</span>
+        <span class="cc-muted">{{ cap.text }}</span>
+      </li>
+    </ul>
+
     <div ref="host" class="ftv-host" />
   </div>
 </template>
@@ -440,4 +504,9 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .ftv-opt { display: flex; align-items: center; gap: 0.25rem; }
 .ftv-off { opacity: 0.45; }
 .ftv-host { flex: 1; min-height: 0; }
+.ftv-captions { list-style: none; margin: 0.1rem 6px 0.2rem; padding: 0;
+                display: flex; flex-direction: column; gap: 0.1rem; }
+.ftv-captions li { display: flex; align-items: center; gap: 0.35rem; line-height: 1.15; }
+.ftv-cap-swatch { display: inline-block; width: 8px; height: 8px; }
+.ftv-cap-term  { font-weight: 600; }
 </style>
