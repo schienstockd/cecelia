@@ -1,7 +1,11 @@
 # Manual correction — segmentation and tracks
 
-**Status:** **P1 + P2 + P3 + P4a built**. P4 (cockpit raster brush + Split verb) and the Review-mode
-footer remain open. Written to be picked up cold by another session. **Revised 2026-08-17**
+**Status:** **P1 + P2 + P3 + P4a built**. P4's cockpit raster brush is **retired 2026-09-10** —
+the queue-and-apply UX was the wrong shape; direct manipulation replaces it. See
+[`CORRECTION_DIRECT_PLAN.md`](CORRECTION_DIRECT_PLAN.md) for the successor (napari-paint parity
+on the viewer + vizsla-parity track ops, immediate autosave, user-triggered recompute).
+Everything below about the ops, invalidation contract, and old-R ground truth still stands.
+Written to be picked up cold by another session. **Revised 2026-08-17**
 after auditing the plan's assumptions against both codebases — Decisions 2b/3b/4b/4c/4d/6b are new
 and four open questions are answered; the old-R ground truth below was verified line by line and
 stands. Building P1 then corrected two of those decisions against real data (see 4c).
