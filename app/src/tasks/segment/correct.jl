@@ -212,16 +212,35 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
         on_log("[QC] could not compute correction QC: $e")
     end
 
-    # The h5ad still describes the PRE-correction row set — call this out plainly. The composite
-    # (segment.correct_measures) chains a re-measure + obs carry-over. Running this task alone is a
-    # deliberate REPL escape hatch, not the intended workflow; the warn line + the QC finding are
-    # what makes the staleness visible if someone does it anyway.
-    on_log("[WARN] labelProps h5ad still describes the pre-correction labels — run " *
-           "segment.correct_measures (composite) to re-measure with obs carry-over, or " *
-           "segment.measureLabels manually.")
+    # If not a single pixel changed (every op resolved to a no-op — id not in frame, split failed to
+    # divide, etc.) the labels store is byte-identical to what it was before. Signal that to the
+    # composite executor so it can skip the re-measure + carry-over + staleness steps: there is
+    # nothing to re-measure, nothing to reconcile, and the staleness warning would be a lie.
+    # Otherwise call out the staleness plainly — running this task alone (REPL escape hatch) leaves
+    # the h5ad describing the PRE-correction row set; the composite (segment.correct_measures) is
+    # what chains the re-measure + obs carry-over.
+    n_pixels = Int(get(metrics, "nPixelsRewritten", 0))
+    if n_pixels == 0
+        on_log("[INFO] No pixels rewritten — labels store unchanged; downstream composite steps skipped.")
+    else
+        on_log("[WARN] labelProps h5ad still describes the pre-correction labels — run " *
+               "segment.correct_measures (composite) to re-measure with obs carry-over, or " *
+               "segment.measureLabels manually.")
+    end
     on_progress(5, 5)
 
-    Dict{String,Any}("valueName" => value_name,
-                     "nOps"      => length(ops),
-                     "metrics"   => metrics)
+    # Return BOTH `valueName` and `outputValueName` — the correction rewrites the labels store IN
+    # PLACE (input vn == output vn), and downstream composite steps split on which key they read:
+    # `measureLabels` reads `outputValueName` (default = "default") and would otherwise re-measure
+    # the wrong segmentation, silently reverting the composite to the default vn's shape (see
+    # measureLabels.jl:8). Producer tasks (cellpose, coastal) return the same shape.
+    #
+    # `skipDownstream` is honoured by the composite executor (`task.jl` → CompositeTask) to stop the
+    # chain cleanly after this step when the correction was a no-op. Not a failure — the run is
+    # complete, there just isn't anything for the follow-up steps to do.
+    Dict{String,Any}("valueName"       => value_name,
+                     "outputValueName" => value_name,
+                     "nOps"            => length(ops),
+                     "metrics"         => metrics,
+                     "skipDownstream"  => n_pixels == 0)
 end
