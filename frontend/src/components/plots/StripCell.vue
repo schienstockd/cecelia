@@ -27,6 +27,12 @@ const props = defineProps<{
   legendSections?: LegendSection[]
   /** Optional 2px inset ring around the image (e.g. a card's pop colour). */
   ringColour?: string
+  /** Text sizes in screen px — mirrors the viewer's own scale-bar/timestamp px controls. Absent →
+   *  the proportional defaults (fraction of extent for the vector chrome, `--cc-fs-2xs` for the
+   *  DOM legend chip). Present → switch StillOverlay to `chrome="fixed"` so the number lands. */
+  legendFontPx?: number
+  scaleBarFontPx?: number
+  timestampFontPx?: number
 }>()
 const emit = defineEmits<{ (e: 'click'): void }>()
 </script>
@@ -38,9 +44,13 @@ const emit = defineEmits<{ (e: 'click'): void }>()
     <div v-else class="cc-empty cc-empty-overlay"><slot name="empty" /></div>
     <StillOverlay v-if="src && (showScaleBar || showTimestamp)"
                   :extent-um="extentUm" :time-label="timeLabel || ''"
-                  :show-scale-bar="!!showScaleBar" :show-timestamp="!!showTimestamp" />
+                  :show-scale-bar="!!showScaleBar" :show-timestamp="!!showTimestamp"
+                  :chrome="(scaleBarFontPx || timestampFontPx) ? 'fixed' : 'proportional'"
+                  :bar-font-px="scaleBarFontPx ?? 20" :time-font-px="timestampFontPx ?? 20" />
     <ViewLegend v-if="src && showLegend && legendSections && legendSections.length"
-                :sections="legendSections" :swatch="9" vertical class="sc-legend" />
+                :sections="legendSections" :swatch="Math.max(6, Math.round((legendFontPx ?? 12) * 0.85))"
+                vertical class="sc-legend"
+                :style="legendFontPx ? { fontSize: legendFontPx + 'px' } : undefined" />
     <div class="sc-actions"><slot name="actions" /></div>
   </div>
 </template>

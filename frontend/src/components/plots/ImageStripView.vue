@@ -53,7 +53,7 @@ interface OverlaysLegend {
 interface Cell { assetId?: string; src?: string; snapshot?: Record<string, unknown>; imageUid?: string | null; extentUm?: ExtentUm | null; colourBy?: string; overlaysLegend?: OverlaysLegend }
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; showLegend?: boolean; showScaleBar?: boolean; showTimestamp?: boolean }
+  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; showLegend?: boolean; showScaleBar?: boolean; showTimestamp?: boolean; legendFontPx?: number; scaleBarFontPx?: number; timestampFontPx?: number }
 }>()
 
 // seed defaults into the persisted state bag (the slot starts as {})
@@ -75,6 +75,12 @@ const showLegend = computed({ get: () => props.state.showLegend ?? true, set: v 
 // timestamp — drawn crisp on the clean capture (the viewer's own hidden via E1). Off by default.
 const showScaleBar  = computed({ get: () => props.state.showScaleBar ?? false,  set: v => (props.state.showScaleBar = v) })
 const showTimestamp = computed({ get: () => props.state.showTimestamp ?? false, set: v => (props.state.showTimestamp = v) })
+// Text-size sliders, matching the viewer's own scale-bar / timestamp sliders (8..32 px). The strip's
+// chrome switches to `fixed` mode when set so the user's px choice takes — proportional (fraction of
+// extent) is what would ignore these numbers.
+const legendFontPx    = computed({ get: () => props.state.legendFontPx    ?? 12, set: v => (props.state.legendFontPx    = v) })
+const scaleBarFontPx  = computed({ get: () => props.state.scaleBarFontPx  ?? 14, set: v => (props.state.scaleBarFontPx  = v) })
+const timestampFontPx = computed({ get: () => props.state.timestampFontPx ?? 14, set: v => (props.state.timestampFontPx = v) })
 // elapsed-time label for a frame: its snapshot T index × the source image's frame interval
 function frameTime(c: Cell): string {
   const step = (c.snapshot?.dims as { current_step?: number[] } | undefined)?.current_step
@@ -380,15 +386,38 @@ defineExpose({ exportImage })
                 v-tooltip.bottom="'Caption size & separator'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
-            <CcToggle class="is-check cc-muted cc-fs-xs" label="legend (channels · pops · colour-by)"
-              v-tooltip.bottom="'Show the channel and population key under the strip'"
-              :model-value="showLegend" @update:model-value="showLegend = $event" />
-            <CcToggle class="is-check cc-muted cc-fs-xs" label="scale bar"
-              v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'"
-              :model-value="showScaleBar" @update:model-value="showScaleBar = $event" />
-            <CcToggle class="is-check cc-muted cc-fs-xs" label="timestamp"
-              v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'"
-              :model-value="showTimestamp" @update:model-value="showTimestamp = $event" />
+            <!-- Toggle + px slider on one row per overlay — same pattern as the viewer's own
+                 scale-bar / timestamp controls (`ViewerWindow.vue`), 8..32 px range. The slider hides
+                 with its toggle so a control the user cannot use doesn't sit in a dense popover.
+                 Each row is a grid so the sliders and readouts line up across rows even when the
+                 toggle labels differ in width. -->
+            <div class="is-tr">
+              <CcToggle class="is-check cc-muted cc-fs-xs" label="legend"
+                v-tooltip.bottom="'Show channels · populations · colour-by under the strip'"
+                :model-value="showLegend" @update:model-value="showLegend = $event" />
+              <input v-if="showLegend" type="range" class="is-px" min="8" max="32" step="1"
+                :value="legendFontPx" @input="legendFontPx = +($event.target as HTMLInputElement).value"
+                v-tooltip.bottom="'Legend text size'" aria-label="Legend text size" />
+              <span v-if="showLegend" class="is-val">{{ legendFontPx }}</span>
+            </div>
+            <div class="is-tr">
+              <CcToggle class="is-check cc-muted cc-fs-xs" label="scale bar"
+                v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'"
+                :model-value="showScaleBar" @update:model-value="showScaleBar = $event" />
+              <input v-if="showScaleBar" type="range" class="is-px" min="8" max="32" step="1"
+                :value="scaleBarFontPx" @input="scaleBarFontPx = +($event.target as HTMLInputElement).value"
+                v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale-bar text size" />
+              <span v-if="showScaleBar" class="is-val">{{ scaleBarFontPx }}</span>
+            </div>
+            <div class="is-tr">
+              <CcToggle class="is-check cc-muted cc-fs-xs" label="timestamp"
+                v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'"
+                :model-value="showTimestamp" @update:model-value="showTimestamp = $event" />
+              <input v-if="showTimestamp" type="range" class="is-px" min="8" max="32" step="1"
+                :value="timestampFontPx" @input="timestampFontPx = +($event.target as HTMLInputElement).value"
+                v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size" />
+              <span v-if="showTimestamp" class="is-val">{{ timestampFontPx }}</span>
+            </div>
             <template v-if="separator === 'angled' && orientation === 'h'">
               <label class="is-slider cc-muted cc-fs-xs" v-tooltip.bottom="'Slant of the separator between frames'">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
@@ -411,7 +440,9 @@ defineExpose({ exportImage })
                  alt="viewer screenshot"
                  :extent-um="c.extentUm" :time-label="frameTime(c)"
                  :show-scale-bar="showScaleBar" :show-timestamp="showTimestamp"
-                 :show-legend="showLegend" :legend-sections="legendSections(c)">
+                 :show-legend="showLegend" :legend-sections="legendSections(c)"
+                 :legend-font-px="legendFontPx" :scale-bar-font-px="scaleBarFontPx"
+                 :timestamp-font-px="timestampFontPx">
         <template #empty>
           <button class="is-capture" @click="capture(i)" :disabled="capturing === i"
                   v-tooltip.bottom="'Capture the current viewer view'">
@@ -446,6 +477,12 @@ defineExpose({ exportImage })
 .is-err { color: #fca5a5; font-size: var(--cc-fs-xs); }
 .is-slider { display: inline-flex; align-items: center; gap: 4px; }
 .is-slider input[type="range"] { width: 4.5rem; }
+/* Three-column grid for the overlay toggle rows: toggle | slider | readout. Fixed widths on cols
+   1 and 3 so the sliders line up across rows even when the toggle labels differ in length. */
+.is-tr { display: grid; grid-template-columns: 8.5rem 5rem 1.5rem; align-items: center;
+  column-gap: 8px; }
+.is-tr .is-val { text-align: right; }
+.is-px { width: 100%; }
 .is-check { display: inline-flex; align-items: center; gap: 6px; }
 /* cell chrome (image + legend + StillOverlay + hover-actions slot) lives in <StripCell> so this
    view and CellCardsView draw the cell identically. Only strip-level layout stays here. */
