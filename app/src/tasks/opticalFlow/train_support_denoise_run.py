@@ -167,17 +167,43 @@ def _slug(name):
 def _train_one(vols_list, arch, epochs, batch_size, lr, device, log, label):
     """One `train_support` call for `vols_list` (already the pooled or per-channel slice). Returns
     (state_dict, epoch_losses, summary_dict). `label` is prefixed on the log lines so a perChannel
-    run's three sub-training passes are readable in one log."""
+    run's three sub-training passes are readable in one log.
+
+    Also records a sub-epoch loss trace (`stepLosses` + matching `stepIndices`) at a stride chosen
+    so at most ~5000 points land in the manifest regardless of dataset size. The training
+    convergence plot uses it for the log(step) view — SUPPORT typically converges within the first
+    ~100 gradient steps and the per-epoch mean buries that, making a converged run look flat.
+    """
     log.log(f'>> [{label}] training on {len(vols_list)} volume(s)')
+    step_losses = []
+    step_indices = []
+    # We don't know the exact per-epoch batch count without opening the dataset here, so cap by a
+    # rolling stride: log every step until we hit 500 points, then double the stride each time we
+    # would overflow the ~5000-point budget. Bounded storage, keeps early-epoch fine resolution.
+    _state = {'stride': 1, 'next_at': 1}
+    _MAX_POINTS = 5000
+    def _on_batch_loss(step, loss):
+        if step >= _state['next_at']:
+            step_losses.append(float(loss))
+            step_indices.append(int(step))
+            _state['next_at'] = step + _state['stride']
+            if len(step_losses) >= _MAX_POINTS:
+                # thin to half: keep every other point, double the stride going forward
+                del step_losses[::2]
+                del step_indices[::2]
+                _state['stride'] *= 2
     state_dict, epoch_losses = train_support(
         volumes=vols_list, arch=arch, epochs=epochs, batch_size=batch_size, lr=lr,
         device=device, on_progress=log.progress, on_log=log.log,
+        on_batch_loss=_on_batch_loss,
     )
     final = float(epoch_losses[-1]) if epoch_losses else float('nan')
     first = float(epoch_losses[0]) if epoch_losses else float('nan')
     drop  = (first / final) if (final and final > 0) else float('nan')
     summary = {'finalLoss': final, 'firstLoss': first, 'lossDrop': drop,
-               'epochLosses': list(map(float, epoch_losses))}
+               'epochLosses': list(map(float, epoch_losses)),
+               'stepLosses':  step_losses,
+               'stepIndices': step_indices}
     return state_dict, epoch_losses, summary
 
 
@@ -397,6 +423,8 @@ def run(params):
         # without having to grep the directory. `training.perChannelLosses` carries one loss curve
         # per trained channel so the Training convergence plot (FlowTrainingView) can draw them all
         # as separate series, keyed by channel name (matches the chip labels).
+        # `perChannelStepLosses` / `perChannelStepIndices` carry the sub-epoch trace per channel so
+        # the plot's Detail view can render the log(step) descent + plateau per channel.
         top_manifest = {
             'kind': 'denoise-support',
             'mode': 'perChannel',
@@ -405,7 +433,11 @@ def run(params):
             'arch': arch,
             'training': dict(common_training,
                              perChannelLosses={name: s['epochLosses']
-                                               for name, s in per_channel_summaries.items()}),
+                                               for name, s in per_channel_summaries.items()},
+                             perChannelStepLosses={name: s.get('stepLosses', [])
+                                                   for name, s in per_channel_summaries.items()},
+                             perChannelStepIndices={name: s.get('stepIndices', [])
+                                                    for name, s in per_channel_summaries.items()}),
         }
         top_manifest_path = str(bundle_root / 'manifest.json')
         write_json_atomic(top_manifest_path, top_manifest)
@@ -437,6 +469,13 @@ def run(params):
             'firstLoss': worst_first,
             'lossDrop':  worst_drop,
             'epochLosses': per_channel_summaries[headline]['epochLosses'] if headline else [],
+            # Sub-epoch trace of the headline (worst-final) channel — the Julia QC handler doesn't
+            # currently thread this into the QC metrics dict (nothing on the metric side needs it),
+            # but the FlowTrainingView reads the model's manifest directly, so this is diagnostic-
+            # only. Keep the shape so a future QC finding (e.g. "converged at step N") can build
+            # on it without another schema bump.
+            'stepLosses':  per_channel_summaries[headline].get('stepLosses', []) if headline else [],
+            'stepIndices': per_channel_summaries[headline].get('stepIndices', []) if headline else [],
             'epochs': worst_epochs,
             'nImages': len(movies),
             'arch': arch,
