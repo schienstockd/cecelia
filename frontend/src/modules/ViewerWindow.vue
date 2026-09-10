@@ -481,9 +481,12 @@ const seenMax = ref<number[]>([])
  * with it, so the handle appeared pinned at the right edge and the whole travel range collapsed
  * under the pointer, with no way to drag `hi` back up (Dominik, 2026-09-10 on nG1jSi).
  *
- * `hiCeiling` grows monotonically to include every `ch.hi` ever set — via slider drag, Reset,
- * Auto, or a restored autosave — so the slider max never shrinks below a value the user has seen.
- * Reset to meta change (with `seenMax`) so a fresh image doesn't inherit the previous one's range.
+ * `hiCeiling` grows monotonically to include every `ch.hi` ever set — via slider drag, Reset, or
+ * a restored autosave — so the slider max never shrinks under a value the user has seen. Auto is
+ * the ONE deliberate exception: it explicitly shrinks the ceiling back to `autoWin.max` (via
+ * `shrinkHiCeilingToAuto`) because Auto's semantics are "put me at a smart window on the data",
+ * pair to Reset's "put me at the raw sensor range". Reset to meta change (with `seenMax`) so a
+ * fresh image doesn't inherit the previous one's range.
  */
 const hiCeiling = ref<number[]>([])
 const chMax = computed(() =>
@@ -3520,17 +3523,34 @@ function autoContrast(c: number) {
   if (!w || !m) return
   m.channels[c].lo = w.lo
   m.channels[c].hi = w.hi
+  shrinkHiCeilingToAuto(c, w.max)
   pushChannels()
 }
 function autoAllContrast() {
   const m = meta.value
   if (!m) return
+  const next = hiCeiling.value.slice()
   autoWin.value.forEach((w, c) => {
     if (!w || !m.channels[c]) return
     m.channels[c].lo = w.lo
     m.channels[c].hi = w.hi
+    next[c] = Math.max(w.max, 1)
   })
+  hiCeiling.value = next
   pushChannels()
+}
+/**
+ * Auto is the pair to Reset — Reset grows the slider ceiling to the raw dtype range, Auto shrinks
+ * it back to a data-appropriate range. Without this, after a Reset the ceiling stays at
+ * dtypeMax forever and Auto's tight window (typically hi < 1% of dtypeMax on sparse microscopy)
+ * lives in the leftmost sliver of the slider with no way back (Dominik, 2026-09-10 on nG1jSi).
+ * The `hiCeiling` monotone-grow watch would immediately raise this to the new `hi` if the shrink
+ * target were smaller — but `w.max` is `>= w.hi` by construction, so this settles as written.
+ */
+function shrinkHiCeilingToAuto(c: number, wMax: number) {
+  const next = hiCeiling.value.slice()
+  next[c] = Math.max(wMax, 1)
+  hiCeiling.value = next
 }
 
 // The top-percentile knob for Auto is a fetch-time computation. On change, recompute IN PLACE
