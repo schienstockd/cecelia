@@ -198,8 +198,11 @@ def run(params: dict) -> None:
 
 
 if __name__ == '__main__':
-    import sys
-    params_path = sys.argv[1]
-    with open(params_path, 'r', encoding='utf-8') as f:
-        params = json.load(f)
+    # `run_py` passes `--params <path>` (app/src/py_runner.jl); go through the canonical reader
+    # `script_utils.script_params()` so this stays parallel to every other runner and inherits the
+    # contract-version check. A positional `sys.argv[1]` grabs the flag literal instead of the path.
+    params = script_utils.script_params()
+    if params is None:
+        print('[ERROR] No params file provided (--params missing or not found)', flush=True)
+        raise SystemExit(1)
     run(params)

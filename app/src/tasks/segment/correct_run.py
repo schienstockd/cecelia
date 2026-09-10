@@ -104,29 +104,11 @@ def _rasterise_polyline(xs, ys, shape):
     return mask
 
 
-def _apply_split_inplace(frame, op, log):
-    """Cut label `id` at frame `t` along the polyline (xs, ys). Returns pixels reassigned.
-
-    The polyline is rasterised as a 1-pixel-wide cut line, subtracted from the label's mask, and
-    the remainder is split by connected components. The largest component keeps the original id;
-    every other component gets a fresh id (max_id_in_frame + 1, +2, …). A cut that fails to
-    divide the label (still one component) is a no-op — logged, pixels=0. This is the RIGHT
-    failure mode for a user-drawn cut: a shallow line that clipped the label's edge should not
-    silently mangle it.
-
-    The cut pixels themselves are assigned to the LARGEST fragment (they were part of the label
-    before, and the largest fragment inherits the id), so nothing goes to background.
-    """
+def _apply_split_2d_inplace(frame2d, id_, xs, ys, log):
+    """Core 2D split: mutate `frame2d` in place; return pixels reassigned. Called with a plane —
+    either a 2D labels frame (T-only, ZYX-less) OR one z-slice of a 3D frame. The 3D dispatch
+    lives in `_apply_split_inplace` below."""
     from scipy.ndimage import label as cc_label
-    id_ = int(op['id'])
-    xs = [int(x) for x in op['xs']]
-    ys = [int(y) for y in op['ys']]
-    frame2d = frame  # frame is (Y, X); a 3D (Z, Y, X) input would need a plane index — see docstring
-    if frame2d.ndim != 2:
-        # 3D labels (Z, Y, X) or 4D (T, Z, Y, X) at a single T: split needs a plane. Defer to
-        # follow-up — surface, don't crash. The MVP two-click Split ships against 2D+T stacks.
-        log.log(f'[WARN] label.split on a {frame2d.ndim}D frame is not supported yet — skipping.')
-        return 0
     mask = (frame2d == id_)
     if not mask.any():
         log.log(f'[WARN] label.split: label {id_} not present at this frame — no-op.')
@@ -160,6 +142,41 @@ def _apply_split_inplace(frame, op, log):
     # by component) would silently orphan the cut without this line.
     frame2d[cut & mask] = id_
     return reassigned
+
+
+def _apply_split_inplace(frame, op, log):
+    """Dispatch a split op to the right plane. `frame` is:
+      - 2D `(Y, X)`   — labels store has no Z axis, apply straight.
+      - 3D `(Z, Y, X)` — one t-frame of a `(T, Z, Y, X)` store, slice the plane given by `op['z']`
+                        and apply to that. The brush emits `z` from the viewer's currently-visible
+                        plane; a merge/remove op has no per-plane semantics (it targets whole ids),
+                        so this dispatch is split-only.
+    Returns pixels reassigned."""
+    id_ = int(op['id'])
+    xs = [int(x) for x in op['xs']]
+    ys = [int(y) for y in op['ys']]
+    if frame.ndim == 2:
+        return _apply_split_2d_inplace(frame, id_, xs, ys, log)
+    if frame.ndim == 3:
+        # 3D labels: split is per-plane. `z` MUST be present — the brush passes it. A caller-side
+        # bug that drops it surfaces as a warn + no-op rather than a silent apply-to-plane-0.
+        z = op.get('z')
+        if z is None:
+            log.log(f'[WARN] label.split on 3D labels needs `z`; op dropped z — skipping.')
+            return 0
+        zi = int(z)
+        if zi < 0 or zi >= frame.shape[0]:
+            log.log(f'[WARN] label.split: z={zi} out of range [0, {frame.shape[0]-1}] — skipping.')
+            return 0
+        plane = frame[zi]
+        n = _apply_split_2d_inplace(plane, id_, xs, ys, log)
+        # `plane` is a view into `frame`; in-place mutation already reached the parent array. The
+        # explicit re-assign is redundant on a numpy view but cheap, and keeps the dispatch honest
+        # if a future refactor materialises `plane` via `.copy()`.
+        frame[zi] = plane
+        return n
+    log.log(f'[WARN] label.split on a {frame.ndim}D frame is not supported — skipping.')
+    return 0
 
 
 def _apply_op_inplace(frame, op, log):
@@ -218,9 +235,27 @@ def run(params: dict):
     src = src_levels[0]
     log.log(f'>> shape: {tuple(src.shape)}  dtype: {src.dtype}')
 
+    # Labels have their OWN NGFF axes; reconciling image OMEXML shape against labels shape blows
+    # up when spatial dims legitimately differ (drift-correct expansion, post-seg crop, etc.). Read
+    # the labels' axes directly and hand `calc_image_dimensions` an explicit dim_dict matching
+    # `src.shape`, so calibration is still inherited from the intensity image's OMEXML but the axis
+    # layout tracks the labels store — dim_utils then names the derived store's axes correctly.
+    # Fallback for a labels store missing NGFF axes: cecelia's convention is [T?, Z?, Y, X] with an
+    # optional dim only present when >1, so guess from `src.shape` length.
+    labels_axes_raw = zarr_utils.read_axes(labels_path)
+    if labels_axes_raw:
+        labels_axes = [str(a).upper() for a in labels_axes_raw]
+    else:
+        n = len(src.shape)
+        labels_axes = (['T', 'Z', 'Y', 'X'][-n:]) if n <= 4 else ['T', 'C', 'Z', 'Y', 'X'][-n:]
+    if len(labels_axes) != len(src.shape):
+        raise RuntimeError(
+            f'labels NGFF axes {labels_axes} do not match store shape {tuple(src.shape)}')
+    labels_dim_dict = dict(zip(labels_axes, [int(x) for x in src.shape]))
+
     omexml    = ome_xml_utils.parse_meta(im_path)
-    dim_utils = DimUtils(omexml, use_channel_axis=True)
-    dim_utils.calc_image_dimensions(src.shape)   # calibration from the intensity image, dims from labels
+    dim_utils = DimUtils(omexml, use_channel_axis=('C' in labels_axes))
+    dim_utils.calc_image_dimensions(list(src.shape), im_dim_dict=labels_dim_dict)
     t_idx = _t_axis(dim_utils, src.shape)
 
     # This runner iterates by t on axis 0 (`src[tt]`). A labels store where T is present but on a
@@ -306,8 +341,11 @@ def run(params: dict):
 
 
 if __name__ == '__main__':
-    import sys
-    params_path = sys.argv[1]
-    with open(params_path, 'r', encoding='utf-8') as f:
-        params = json.load(f)
+    # `run_py` passes `--params <path>` (app/src/py_runner.jl); go through the canonical reader
+    # `script_utils.script_params()` so this stays parallel to every other runner and inherits the
+    # contract-version check. A positional `sys.argv[1]` grabs the flag literal instead of the path.
+    params = script_utils.script_params()
+    if params is None:
+        print('[ERROR] No params file provided (--params missing or not found)', flush=True)
+        raise SystemExit(1)
     run(params)

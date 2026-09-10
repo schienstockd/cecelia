@@ -43,6 +43,70 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### `segment.measureLabels` picks the wrong intensity image on any drift-corrected project
+
+Reproduces on any image whose labels were computed against a *derived* value (denoised, drift-
+corrected, smoothed) rather than the raw `default`. `measure_labels.jl:9` reads
+`intensityValueName` and defaults it to `VERSIONED_DEFAULT_VAL` (`"default"`) — the raw
+`ccidImage.ome.zarr`. When that image was cropped, drift-expanded, or otherwise reshaped by the
+processing pipeline the labels' spatial dims match the DERIVED image, not the raw one, and
+`regionprops` errors with `Label and intensity image shapes must match`. Measured on `zolIMa/fXgbTl`:
+
+| store | shape (T C Z Y X) |
+|---|---|
+| `ccidImage.ome.zarr` (default) | 31 · 4 · **31 · 418 · 434** |
+| `ccidDenoised.ome.zarr` (`_active`) | 31 · 4 · **32 · 420 · 441** |
+| `ccidDriftCorrected.ome.zarr` | 31 · 4 · **32 · 420 · 441** |
+| all labels (`flowTom.zarr`, `default.zarr`, …) | 31 · **32 · 420 · 441** |
+
+Two candidate fixes:
+- **Default `intensityValueName` to `VERSIONED_ACTIVE_KEY`** (`"_active"`) in `measure_labels.jl`
+  and every composite step that inherits it. Reads whatever is currently active. Correct for the
+  common workflow (measure right after seg on the active image), but a project that switches
+  active AFTER measuring silently re-points on the next re-measure.
+- **Stamp the label store with the intensity vn it was computed against** — a `.zattrs`
+  side-car under the labels' `0/` group, read on measure. Deterministic; survives an `_active`
+  flip. Costs a schema bump + a migration for legacy stores (fall back to `_active` when
+  missing).
+
+Surfaced 2026-09-09 during Correction Brush QA — the `segment.correct_measures` composite hit
+this the moment it re-measured `flowTom` on `fXgbTl` (which has both a raw and a denoised copy of
+the intensity image). The brush's no-op short-circuit hides it for now, but the first real edit
+on any drift-corrected labels will trip it.
+
+
+### Frame-scoped `segment.measureLabels` for the correction composite
+
+`segment.correct_measures` re-measures every label at every timepoint after any correction — the
+`measureLabels` step rebuilds the whole `labelProps/{vn}.h5ad` from scratch (`measure_labels_run.py`
+constructs a fresh AnnData; see `carry_over.jl` header). A brush op that edits one label at one
+frame currently triggers a 26k-row × 31-t re-measure, so the observed cost scales with the whole
+segmentation instead of the correction.
+
+The no-op case is already short-circuited (`segment.correct` returns `skipDownstream: true` when
+`nPixelsRewritten == 0`; the composite honours it — see `task.jl` per-image + set-scope executors).
+The remaining wedge is real edits.
+
+Shape:
+- `segment.correct` writes the touched-t set into its result (already known — every op carries a `t`).
+- `segment.measureLabels` grows a `tSubset` param that, when set, measures only those frames and
+  MERGES rows into the existing h5ad instead of rebuilding it (`write_h5ad_atomic` still, but from
+  a merged AnnData).
+- `segment.correct_carryover_restore` currently filters *columns* to carry across a full re-measure;
+  it needs a *rows-in-subset* variant, or becomes a no-op when the re-measure was row-scoped (the
+  rows outside `tSubset` are already the pre-correction rows in situ).
+
+Trade-off: the `carry_over` machinery is currently the composite's insurance against a schema
+drift between the pre- and post-correction h5ads. With a row-scoped re-measure the schema is
+identical by construction, so the snapshot/restore steps can collapse — but only for that path.
+Keep the full-composite path for a hypothetical bulk correction (a Review pass that edits N%
+of labels), and gate the frame-scoped path on a size heuristic (`|tSubset| < nT`).
+
+Dominik, 2026-09-09 asked why we re-measure everything for a single-op edit — we don't have to.
+Blocks nothing today (the no-op skip covers the case that hit), but the first real brush edit on
+a large image will feel it.
+
+
 ### WebGPU per-image layer props — animation snapshot source (P9 blocker)
 
 **Blocks** [`docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md`](todo/VIEWER_CONTROLS_SPLIT_PLAN.md) → P9

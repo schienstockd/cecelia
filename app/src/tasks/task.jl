@@ -1509,11 +1509,34 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
             isnothing(fn) || push!(intermediate_files, string(fn))
         end
 
-        # Wire the step's output valueName as the next step's input
+        # Wire the step's output valueName as the next step's input. Both keys are forwarded —
+        # `valueName` (what most tasks read) AND `outputValueName` (what producer-style tasks read,
+        # e.g. measureLabels). A step that only sets `valueName` still works; one that also sets
+        # `outputValueName` (cellpose, coastal, segment.correct) carries it through so the next
+        # step doesn't fall back to `VERSIONED_DEFAULT_VAL` and re-measure the WRONG segmentation.
         if result isa AbstractDict
-            vn = get(result, "valueName", nothing)
-            isnothing(vn) || (cur_params = merge(cur_params,
-                                                  Dict{String,Any}("valueName" => string(vn))))
+            vn  = get(result, "valueName",       nothing)
+            ovn = get(result, "outputValueName", nothing)
+            isnothing(vn)  || (cur_params = merge(cur_params,
+                                                  Dict{String,Any}("valueName"       => string(vn))))
+            isnothing(ovn) || (cur_params = merge(cur_params,
+                                                  Dict{String,Any}("outputValueName" => string(ovn))))
+
+            # `skipDownstream` — a step-level "chain complete, no more work needed" signal. Distinct
+            # from a failure (`nothing`): the run succeeded, but the remaining steps have nothing to
+            # do. Introduced for `segment.correct` in the `segment.correct_measures` composite when
+            # every op resolved to a no-op — re-measuring the whole labels store to rebuild an
+            # identical h5ad is pure waste (and would fail loudly on any pre-existing shape drift
+            # between the labels and image, unrelated to the correction). Any producer task can opt
+            # in by returning `"skipDownstream" => true`.
+            if get(result, "skipDownstream", false) === true
+                remaining = n_steps - i
+                if remaining > 0
+                    on_log("[INFO] Step '$step_fun_name' signalled skipDownstream — " *
+                           "skipping remaining $remaining composite step(s).")
+                end
+                break
+            end
         end
     end
 
@@ -1592,15 +1615,28 @@ function _run_task(task::CompositeTask, imgs::Vector{CciaImage}, params::Dict{St
                            on_log, on_progress = step_on_progress, on_process)
         isnothing(result) && return nothing
         if result isa AbstractDict
-            vn = get(result, "valueName", nothing)
-            isnothing(vn) || (cur_params = merge(cur_params,
-                                                 Dict{String,Any}("valueName" => string(vn))))
+            # Same dual-key forwarding as the per-image executor above — see the note there.
+            vn  = get(result, "valueName",       nothing)
+            ovn = get(result, "outputValueName", nothing)
+            isnothing(vn)  || (cur_params = merge(cur_params,
+                                                 Dict{String,Any}("valueName"       => string(vn))))
+            isnothing(ovn) || (cur_params = merge(cur_params,
+                                                 Dict{String,Any}("outputValueName" => string(ovn))))
             # Thread an HMM states step's produced column into the next step (transitions) as its
             # `hmmStates` input, so `behaviour.hmm` (states → transitions) chains on a single
             # user-set `colName` without exposing the derived state column in the composite form.
             sc = get(result, "stateColumn", nothing)
             isnothing(sc) || (cur_params = merge(cur_params,
                                                  Dict{String,Any}("hmmStates" => [string(sc)])))
+            # `skipDownstream` — mirrors the per-image executor; see the note there.
+            if get(result, "skipDownstream", false) === true
+                remaining = n_steps - i
+                if remaining > 0
+                    on_log("[INFO] Step '$step_fun_name' signalled skipDownstream — " *
+                           "skipping remaining $remaining composite step(s).")
+                end
+                break
+            end
         end
     end
     result
