@@ -59,7 +59,7 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   shouldUseBricks, CACHE_BUDGET_BYTES, labelDimsMismatch,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
@@ -500,10 +500,17 @@ const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
 const lastFetchedBufs = shallowRef<ArrayBuffer[] | null>(null)
 const lastFetchedRowLen = ref(1)
 const lastFetchedBpv = ref(2)
+/** Per-channel strided subsample of the last-fetched slab, drawn as the histogram behind each
+ *  contrast slider's rail. `shallowRef` because the elements are big typed arrays we never mutate.
+ *  Populated in the same place as `lastFetchedBufs` so the histogram lands the moment the pixels
+ *  do; null while nothing has landed yet (brick renderer path never populates — see the
+ *  `setOnBrickLoaded` callback, which only sees per-channel maxima, not the pixels). */
+const channelSamples = shallowRef<(Uint16Array | Uint8Array)[] | null>(null)
 function stashForAutoRecompute(bufs: ArrayBuffer[], rowLength: number, bpv: number) {
   lastFetchedBufs.value = bufs
   lastFetchedRowLen.value = rowLength
   lastFetchedBpv.value = bpv
+  channelSamples.value = bufs.map(b => stridedSamples(slabView(b, bpv), rowLength))
 }
 function recomputeAutoWin() {
   const bufs = lastFetchedBufs.value
@@ -3610,6 +3617,7 @@ async function loadVersion(refit: boolean) {
   autoWin.value = []                     // a different version has its own distribution
   seenMax.value = []
   hiCeiling.value = []                   // sibling of seenMax — a new image starts a fresh ceiling
+  channelSamples.value = null            // histogram bars belong to the previous image's pixels
   // Fit BEFORE reallocate: `useTiles` and `slabLevel` derive from `cam.dist`, so a stale dist=1
   // would allocate the wrong pipeline for a big image. `fitDist` is seeded here so the reset button
   // works even if a saved camera pose is later restored on top.
@@ -4843,6 +4851,7 @@ onUnmounted(() => {
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
                 :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, hiCeiling[c] ?? 0, 1)" :step="1"
+                scale="log" :samples="channelSamples?.[c] ?? null"
                 @update:lo="v => { ch.lo = v; pushChannels() }"
                 @update:hi="v => { ch.hi = v; pushChannels() }"
               />
@@ -5405,7 +5414,11 @@ onUnmounted(() => {
 /* TWO icon slots (auto + reset) worth of space, plus the gap between them. Keeps the toggle in the
    Distinct row lined up with the toggle in the All-channels row where two buttons follow it. */
 .vw-ch-master-slot { flex: none; width: calc(2 * 1.1rem + 0.35rem); height: 1.1rem; }
-.vw-ch-val { flex: none; white-space: nowrap; }
+/* min-width sized for the widest reading ("0–65535") — without it the readout column shrinks as
+   `hi` drops, the flex-1 slider gains width, and the histogram silhouette appears to breathe with
+   every drag (Dominik, 2026-09-10). Same fix as .vw-num above. `tabular-nums` on .cc-readout keeps
+   the character width deterministic. */
+.vw-ch-val { flex: none; white-space: nowrap; min-width: 3rem; text-align: right; }
 .vw-grow { flex: 1; min-width: 0; }
 /* The numbers beside a slider change width as they count up (9 → 10 → 100), and the slider is `flex: 1`
    next to them — so without a fixed box the track resized on every frame of playback. That is the other
