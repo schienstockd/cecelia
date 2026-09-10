@@ -99,6 +99,7 @@
       "max": 5,
       "step": 0.1,
       "showIf": { "driftPerPlane": [true] },
+      "figure": "driftZSmoothing",
       "tip": "Raise if some Z-planes still jump after correction (0 = off, try 0.3, then 0.5)"
     }
   ]
