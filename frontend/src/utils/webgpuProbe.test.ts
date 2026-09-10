@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { verdictFrom, classifyAdapter } from './webgpuProbe'
+import { verdictFrom, classifyAdapter, isAppleAdapter, adapterNameText } from './webgpuProbe'
 
 const noName = { vendor: '', architecture: '', device: '', description: '' }
 
@@ -34,12 +34,40 @@ describe('classifyAdapter', () => {
     expect(classifyAdapter(noName, 2048)).toBe(false)
   })
 
-  it('does NOT tag Apple as integrated — M-series iGPUs are on-die but strong; let the limit decide', () => {
-    // The verdict is "reduced" vs "ready", which is user-facing. Apple's M-series is unified-memory
-    // but comfortably runs the viewer, and it advertises 16384 anyway — so fall through to the limit
-    // rather than shipping a spurious "performance will be reduced" warning to every Mac user.
+  it('tags Apple as NOT integrated regardless of the limit', () => {
+    // The user-facing verdict is "reduced" vs "ready". Apple M-series is unified-memory but comfortably
+    // runs the viewer, and Safari's WebGPU reports the spec baseline (2048) rather than the hardware
+    // limit — so trusting the limit flipped Apple back into the reduced bucket ("apple apple apple
+    // apple / maxTextureDimension3D 2048", Dominik 2026-09-10). Trust the name here; the copy branch
+    // in `verdictFrom` renders "Apple GPU — ready" instead of "Discrete GPU detected".
     expect(classifyAdapter({ ...noName, vendor: 'apple' }, 16384)).toBe(true)
-    expect(classifyAdapter({ ...noName, vendor: 'apple' }, 2048)).toBe(false)
+    expect(classifyAdapter({ ...noName, vendor: 'apple' }, 2048)).toBe(true)
+  })
+})
+
+describe('adapterNameText', () => {
+  it('joins the non-empty fields with spaces', () => {
+    expect(adapterNameText({ vendor: 'nvidia', architecture: 'ampere', device: 'RTX 4090', description: '' }))
+      .toBe('nvidia ampere RTX 4090')
+  })
+
+  it('collapses consecutive duplicate tokens — Safari fills every field with the same "apple" string', () => {
+    expect(adapterNameText({ vendor: 'apple', architecture: 'apple', device: 'apple', description: 'apple' }))
+      .toBe('apple')
+  })
+
+  it('is case-insensitive when deduping so Apple/apple/APPLE do not stutter', () => {
+    expect(adapterNameText({ vendor: 'Apple', architecture: 'apple', device: 'APPLE', description: '' }))
+      .toBe('Apple')
+  })
+})
+
+describe('isAppleAdapter', () => {
+  it('matches on any Apple token, regardless of which field it lands in', () => {
+    expect(isAppleAdapter({ ...noName, vendor: 'apple' })).toBe(true)
+    expect(isAppleAdapter({ ...noName, description: 'Apple M2' })).toBe(true)
+    expect(isAppleAdapter(noName)).toBe(false)
+    expect(isAppleAdapter({ ...noName, vendor: 'nvidia' })).toBe(false)
   })
 })
 
@@ -74,6 +102,16 @@ describe('verdictFrom', () => {
   it('returns ready on discrete GPU with r16uint', () => {
     const r = verdictFrom({ supported: true, adapterFound: true, looksDiscrete: true, hasR16Uint: true })
     expect(r.verdict).toBe('ready')
+    expect(r.reason).toMatch(/discrete/i)
+  })
+
+  it('returns ready with Apple-specific copy when isApple is set', () => {
+    // Same verdict as a discrete card, different reason — the ready line should not call
+    // unified-memory hardware "Discrete".
+    const r = verdictFrom({ supported: true, adapterFound: true, looksDiscrete: true, hasR16Uint: true, isApple: true })
+    expect(r.verdict).toBe('ready')
+    expect(r.reason).toMatch(/apple/i)
+    expect(r.reason).not.toMatch(/discrete/i)
   })
 
   it('accepts hasR16Uint=null (probe could not build a device) as long as the discrete side is there', () => {

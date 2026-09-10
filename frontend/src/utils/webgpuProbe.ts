@@ -58,9 +58,16 @@ export function adapterName(adapter: GPUAdapter): GpuAdapterName {
   }
 }
 
-/** The adapter's name as one string, or `''` when the browser blanked every field. */
+/** The adapter's name as one string, or `''` when the browser blanked every field. Consecutive
+ *  duplicate tokens are collapsed — Safari fills all four fields with the same generic string
+ *  ("apple apple apple apple"), which reads as a stutter without adding any information. */
 export function adapterNameText(n: GpuAdapterName): string {
-  return [n.vendor, n.architecture, n.device, n.description].filter(Boolean).join(' ')
+  const parts = [n.vendor, n.architecture, n.device, n.description].filter(Boolean)
+  const out: string[] = []
+  for (const p of parts) {
+    if (out.length === 0 || out[out.length - 1].toLowerCase() !== p.toLowerCase()) out.push(p)
+  }
+  return out.join(' ')
 }
 
 /**
@@ -72,14 +79,25 @@ export function adapterNameText(n: GpuAdapterName): string {
  * "amd", "intel", "apple") without needing the developer-features flag, and Firefox has historically
  * blanked it entirely — hence the fallback.
  *
- * `apple` is intentionally NOT tagged integrated: M-series Apple GPUs are on-die but strong, and their
- * limits typically hit 16384 anyway. Fall through to the limit check for them.
+ * `apple` is treated as NOT-integrated regardless of the limit. M-series Apple GPUs are unified-memory
+ * (technically on-die) but comfortably run the viewer, so the user-facing "performance will be reduced"
+ * warning would be a false positive. An earlier version deferred to the limit, but Safari's WebGPU
+ * reports the spec baseline (2048), which flipped Apple back into the reduced bucket — see the readout
+ * `apple apple apple apple / maxTextureDimension3D 2048` (Dominik 2026-09-10). Trust the name here.
  */
 export function classifyAdapter(name: GpuAdapterName, maxTextureDimension3D: number): boolean {
   const text = adapterNameText(name).toLowerCase()
   if (/nvidia|geforce|quadro|\brtx\b|\bgtx\b|radeon|\bamd\b|rdna/.test(text)) return true
+  if (/\bapple\b/.test(text)) return true
   if (/\bintel\b|iris|llvmpipe|swiftshader|microsoft basic|software rasterizer/.test(text)) return false
   return maxTextureDimension3D > 2048
+}
+
+/** True when the adapter is Apple silicon — the caller uses this to pick honest copy ("Apple GPU"
+ *  rather than "Discrete") without threading the whole name through. Same name-matching rule as
+ *  `classifyAdapter`. */
+export function isAppleAdapter(name: GpuAdapterName): boolean {
+  return /\bapple\b/.test(adapterNameText(name).toLowerCase())
 }
 
 export interface GpuLimitsDump {
@@ -218,7 +236,7 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
   }
 
   const { verdict, reason } = verdictFrom({
-    supported: true, adapterFound: true, looksDiscrete, hasR16Uint,
+    supported: true, adapterFound: true, looksDiscrete, hasR16Uint, isApple: isAppleAdapter(name),
   })
   return {
     supported: true, adapterFound: true, looksDiscrete, hasTimestamps,
@@ -236,6 +254,10 @@ export function verdictFrom(input: {
   adapterFound: boolean
   looksDiscrete: boolean
   hasR16Uint: boolean | null
+  /** True when `adapter.info.vendor === 'apple'` — the copy branch, not the classification branch.
+   *  Apple silicon reads as `looksDiscrete=true` for the verdict (it runs the viewer fine), but the
+   *  reason line should not call unified-memory hardware "Discrete". */
+  isApple?: boolean
 }): { verdict: GpuVerdict, reason: string } {
   if (!input.supported) {
     return { verdict: 'unavailable', reason: 'WebGPU is not available in this browser' }
@@ -252,5 +274,6 @@ export function verdictFrom(input: {
       reason: 'Integrated GPU — performance will be reduced',
     }
   }
+  if (input.isApple) return { verdict: 'ready', reason: 'Apple GPU — ready' }
   return { verdict: 'ready', reason: 'Discrete GPU detected' }
 }
