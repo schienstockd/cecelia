@@ -1,7 +1,10 @@
 """
 Cellpose segmentation subclass.
 
-Implements predict_slice() using the cellpose 4 (Cellpose-SAM) `CellposeModel` API.
+Implements predict_slice() for BOTH cellpose 4 (Cellpose-SAM) and cellpose 3 (cyto2/cyto3). The
+version is detected once at import via `cellpose.__version__`; the runner runs under exactly one
+env at a time (default = v4, opt-in `cellpose-v3` on Mac = v3), so the branching is inside the
+`predict_slice` method rather than two files.
 
 Three things about v4 shape this file, all verified against `cellpose==4.2.1.1`:
 
@@ -16,7 +19,18 @@ Three things about v4 shape this file, all verified against `cellpose==4.2.1.1`:
   "independent 2D slices". A Z stack with no stitching therefore goes through the list-of-planes
   form instead, which returns per-plane independent labels (the same thing v3 did).
 
-See docs/todo/CELLPOSE_V4_PLAN.md.
+Cellpose 3 (opt-in `cellpose-v3` env, Mac only — MPS is much faster on the v3 CNNs than on the v4
+transformer):
+
+* **Uses `model_type='cyto2' | 'cyto3'`** — the positional zoo names, which v4 rejected. Only these
+  two are shipped; custom v3 checkpoints are not on the drop path today.
+* **`channels=[cyto, nuc]` is REQUIRED** — 1-indexed positional pair. `[0, 0]` means grayscale
+  (no nuc); `[1, 2]` means "cell channel is axis 0, nuclear channel is axis 1" in the last-axis
+  stack this file already assembles.
+* **`z_axis=0, do_3D=False` gives independent 2D slices** (the exact call v4 rejects). With
+  `stitch_threshold>0`, cellpose stitches labels across Z. Return is `(masks, flows, styles)`.
+
+See docs/todo/CELLPOSE_V4_PLAN.md and docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
 """
 
 import numpy as np
@@ -26,6 +40,21 @@ from skimage import filters
 from cecelia.utils.segmentation_utils import SegmentationUtils
 from cecelia.utils.gpu_utils import torch_device
 import cecelia.utils.script_utils as script_utils
+
+
+def _cellpose_major_version() -> int:
+    """`3` under the `cellpose-v3` opt-in env, `4` under the default env. Any parse failure falls
+    back to 4 — the runner is spawned into a specific env, so the wrong branch would fail loud on
+    the first eval() call rather than silently produce wrong labels."""
+    try:
+        import cellpose
+        return int(str(getattr(cellpose, '__version__', '4')).split('.')[0])
+    except Exception:
+        return 4
+
+
+_CELLPOSE_MAJOR = _cellpose_major_version()
+_CELLPOSE_V3_BUILTINS = ('cyto2', 'cyto3')
 
 
 class CellposeUtils(SegmentationUtils):
@@ -42,12 +71,29 @@ class CellposeUtils(SegmentationUtils):
     def _get_model(self, model_type):
         """Load (or retrieve cached) CellposeModel.
 
-        One branch, not two: v4 takes a built-in name and a checkpoint path through the same
-        `pretrained_model` argument. A cellpose 3 checkpoint is rejected by cellpose itself; the
-        message it raises does not say which file, so it is re-raised with the path.
+        v4: one branch — built-in name and checkpoint path go through the same `pretrained_model`
+        arg. A cellpose 3 checkpoint is rejected by cellpose itself; the message it raises does not
+        say which file, so it is re-raised with the path.
+
+        v3: the built-in names (`cyto2`/`cyto3`) go through `model_type=`. Custom v3 checkpoints
+        aren't shipped, so path-loading is a future extension — an unrecognised name here in the v3
+        env raises with a clear message rather than silently falling through.
         """
-        if model_type not in self._model_cache:
-            from cellpose import models
+        if model_type in self._model_cache:
+            return self._model_cache[model_type]
+
+        from cellpose import models
+
+        if _CELLPOSE_MAJOR == 3:
+            if model_type not in _CELLPOSE_V3_BUILTINS:
+                raise ValueError(
+                    f'{model_type!r} is not a supported cellpose-v3 built-in. '
+                    f'Shipped v3 models: {", ".join(_CELLPOSE_V3_BUILTINS)}.')
+            model = models.CellposeModel(
+                gpu=self.use_gpu, device=self.gpu_device,
+                model_type=model_type,
+            )
+        else:
             try:
                 model = models.CellposeModel(
                     gpu=self.use_gpu, device=self.gpu_device,
@@ -59,8 +105,9 @@ class CellposeUtils(SegmentationUtils):
                         f'{model_type!r} is a Cellpose 3 checkpoint and cellpose 4 cannot load it. '
                         'It has to be retrained on cellpose 4, or pick a built-in model.') from e
                 raise
-            self._model_cache[model_type] = model
-        return self._model_cache[model_type]
+
+        self._model_cache[model_type] = model
+        return model
 
     # ── Channel preparation ───────────────────────────────────────────────────
 
@@ -143,8 +190,40 @@ class CellposeUtils(SegmentationUtils):
 
         model = self._get_model(model_type)
 
-        if is_3d and stitch_threshold > 0:
-            # 2D-per-Z-slice, stitched across Z by cellpose. `z_axis` is only accepted here.
+        if _CELLPOSE_MAJOR == 3:
+            # v3 API: 1-indexed positional `channels=[cyto, nuc]`. `[0, 0]` = grayscale (no nuc);
+            # `[1, 2]` = cell axis 0 + nuclear axis 1 of the last-axis stack this file builds.
+            v3_channels = [1, 2] if nuc_im is not None else [0, 0]
+            if is_3d and stitch_threshold > 0:
+                masks, _, _ = model.eval(
+                    im_input,
+                    channels=v3_channels,
+                    channel_axis=channel_axis,
+                    z_axis=0,
+                    diameter=cell_diam_px,
+                    stitch_threshold=stitch_threshold,
+                    do_3D=False,
+                )
+            elif is_3d:
+                # v3 accepts `z_axis=0, do_3D=False, stitch_threshold=0` — independent 2D slices,
+                # per-plane numbering. This is the call v4 rejects; v3 has no equivalent restriction.
+                masks, _, _ = model.eval(
+                    im_input,
+                    channels=v3_channels,
+                    channel_axis=channel_axis,
+                    z_axis=0,
+                    diameter=cell_diam_px,
+                    do_3D=False,
+                )
+            else:
+                masks, _, _ = model.eval(
+                    im_input,
+                    channels=v3_channels,
+                    channel_axis=channel_axis,
+                    diameter=cell_diam_px,
+                )
+        elif is_3d and stitch_threshold > 0:
+            # v4: 2D-per-Z-slice, stitched across Z by cellpose. `z_axis` is only accepted here.
             masks, _, _ = model.eval(
                 im_input,
                 channel_axis=channel_axis,
@@ -154,9 +233,9 @@ class CellposeUtils(SegmentationUtils):
                 do_3D=False,
             )
         elif is_3d:
-            # Independent 2D slices. As a list of planes, because the same call with `z_axis=0` and
-            # no stitching is a ValueError in v4 (see the module docstring). Labels are numbered per
-            # plane, which is what "0 = independent 2D slices" has always meant here.
+            # v4: independent 2D slices. As a list of planes, because the same call with `z_axis=0`
+            # and no stitching is a ValueError in v4 (see the module docstring). Labels are numbered
+            # per plane, which is what "0 = independent 2D slices" has always meant here.
             planes = [im_input[z] for z in range(im_input.shape[0])]
             per_plane, _, _ = model.eval(
                 planes,
@@ -165,6 +244,7 @@ class CellposeUtils(SegmentationUtils):
             )
             masks = np.stack(per_plane)
         else:
+            # v4 2D.
             masks, _, _ = model.eval(
                 im_input,
                 channel_axis=channel_axis,

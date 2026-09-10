@@ -1,6 +1,10 @@
 # Cellpose v4 migration + retire `cellposeCorrect` (coastal denoise/smooth takes over)
 
-**Status:** Phases 0-5 built (2026-08-21), unreviewed and uncommitted. Branch `feat/cellpose-v4`,
+**Status:** Shipped (#610). **Partial reversal on Mac:** cellpose 4 on MPS is unusably slow, so
+cellpose 3 (`cyto2`, `cyto3`) is revived as a Mac-only opt-in pixi env. See
+[`CELLPOSE_V3_OPTIN_PLAN.md`](CELLPOSE_V3_OPTIN_PLAN.md).
+
+**Previous status (superseded):** Phases 0-5 built (2026-08-21), unreviewed and uncommitted. Branch `feat/cellpose-v4`,
 worktree `cecelia-cellpose4`. Suites green: `test-py` 901, `test-pkg` 5931, `test-api`, frontend
 typecheck + 2066 vitest.
 

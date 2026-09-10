@@ -357,11 +357,20 @@ Pixi scopes to the **Python** env. Julia stays on **juliaup + Manifest**, Node o
 inherits PATH so both resolve. For the *shipped* installer, Julia (and the prebuilt frontend) are
 baked into the conda env at build time — see **Building installers**.
 
-### cellpose is pinned to v4
-`cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`). v3 model names (`cyto2`/`cyto3`/`nuclei`) are refused
-by the task rather than silently substituted. Cellpose denoise was removed with the v4 move — the
-replacement is `cleanupImages.smooth` (measured ~30× faster, fewer merged cells; see
-`docs/todo/SEG_QUALITY_PLAN.md`). For dim/moving/3D data prefer `segment.coastal`.
+### cellpose lives in TWO features
+`[feature.cellpose-v4]` (default env) carries `cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`).
+`[feature.cellpose-v3]` (opt-in `cellpose-v3` env, `platforms = ["osx-arm64"]`) carries
+`cellpose >= 3.1, < 4` for the `cyto2` / `cyto3` CNNs — Mac users get the fast path since v4 runs
+slowly on MPS. `cyto`/`nuclei` are still refused (never shipped); `cyto2`/`cyto3` route to the v3
+env's interpreter (`run_py(..., env = :cellpose_v3)`), never a silent fallback to v4. The v3 env
+is a **non-default environment** — `pixi install` and app installers do NOT install it; users opt
+in from the model dropdown's Install button, which POSTs `/api/system/envs/install` and shells
+`pixi install -e cellpose-v3` as a jobs.jl-tracked background job. See
+`docs/todo/CELLPOSE_V3_OPTIN_PLAN.md` and `docs/SEGMENTATION.md` → *Cellpose v3 (Mac-only opt-in)*.
+
+Cellpose denoise was removed with the v4 move — the replacement is `cleanupImages.smooth`
+(measured ~30× faster, fewer merged cells; see `docs/todo/SEG_QUALITY_PLAN.md`). For
+dim/moving/3D data prefer `segment.coastal`.
 
 ### PyTorch is platform-gated
 The cu124 wheel index carries only Linux/Windows wheels, so `torch`/`torchvision` are declared in

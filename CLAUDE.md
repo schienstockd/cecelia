@@ -47,7 +47,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/MODULES.md`](docs/MODULES.md) | Adding task functions and module pages; task JSON, registry, param widgets, composite pattern, the module file pattern. **88 KB — slice it** |
 | [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) | User drop-in tasks: `<config_dir>/modules/`, `register_task!`, `/api/tasks/custom-modules` |
 | [`docs/OBJECTMODEL.md`](docs/OBJECTMODEL.md) | Project/Set/Image hierarchy, disk layout, ccid.json shape, versioned fields, transactions, calibration |
-| [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) | Segmentation pipeline: class hierarchy, base/nuc label types, tiling, output zarr, staged stores. **81 KB — slice it** |
+| [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) | Segmentation pipeline: class hierarchy, base/nuc label types, tiling, output zarr, staged stores. **109 KB — slice it** |
 | [`docs/TRACKING.md`](docs/TRACKING.md) | Cell tracking (btrack): gated-population input, track lineage in H5AD obs, vendored config. **50 KB — slice it** |
 | [`docs/DATAMODEL.md`](docs/DATAMODEL.md) | AnnData conventions: `.h5ad` layout, feature names, `label_props`, mesh paths |
 | [`docs/POPULATION.md`](docs/POPULATION.md) | Population manager & gating: pop types, transforms, `gating/{value_name}.json`, `pop_df`, gate↔track. **56 KB — slice it** |

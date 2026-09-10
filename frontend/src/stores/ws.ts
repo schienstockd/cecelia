@@ -10,6 +10,7 @@ import { useLabCaptureStore } from './labCapture'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
 import { parseRailTime } from '../utils/taskElapsed'
+import { invalidateSystemEnvs } from '../utils/systemEnvs'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -232,6 +233,13 @@ export const useWsStore = defineStore('ws', () => {
           startedAt:  parseRailTime(data.startedAt),
           finishedAt: parseRailTime(data.finishedAt),
         })
+        // An opt-in pixi env install (system_api.jl's `_run_env_install`) ends with a `done`/`failed`
+        // task:status. Invalidate the systemEnvs cache so the next `getSystemEnvs()` — the advisor
+        // re-runs on the model dropdown's next interaction — reads the new `installed` state.
+        // Prefix check keeps the invalidation scoped: no other task type touches this cache.
+        if (taskId.startsWith('system-env-install:') && (status === 'done' || status === 'failed')) {
+          invalidateSystemEnvs()
+        }
         if (imageUid) {
           if (status === 'running') {
             useProjectStore().updateImageStatus(imageUid, 'converting')

@@ -125,9 +125,21 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
         return nothing
     end
 
+    # Pick the interpreter env from the model backend. Mixed v3+v4 in one task is refused up front
+    # — one task = one env — because there is no sensible "compose two cellpose versions" story.
+    # The v3 env is opt-in and Mac-only; on any other platform a v3 pick fails via run_py's env
+    # guard with a message pointing at the install action. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
+    backends = unique(cellpose_model_backend(get(m, "model", "")) for (_, m) in models_converted)
+    if length(backends) > 1
+        on_log("[ERROR] Cannot mix cellpose v3 and v4 models in one segmentation task: $(join(backends, ", ")).")
+        return nothing
+    end
+    py_env = (first(backends) === :v3) ? :cellpose_v3 : nothing
+
     on_log("[INFO] Input:  $im_path")
     on_log("[INFO] Output: $(joinpath(task_dir, "labels", out_value_name)).zarr")
-    on_log("[INFO] Models: $(length(models_converted))")
+    on_log("[INFO] Models: $(length(models_converted))" *
+           (isnothing(py_env) ? "" : "  (cellpose v3 env)"))
 
     qc_out_path = joinpath(task_run_dir(task_dir), "segment_counts.json")
 
@@ -153,7 +165,8 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
            clearDepth          = Bool(get(params, "clearDepth", false)),
            normaliseToWhole    = Bool(get(params, "normaliseToWhole", true))),
         task_run_dir(task_dir);
-        on_log = on_log, on_progress = on_progress, on_process = on_process)
+        on_log = on_log, on_progress = on_progress, on_process = on_process,
+        env = py_env)
     ok || return nothing
 
     on_log("[INFO] Segmentation complete.")

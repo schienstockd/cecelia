@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
   paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
+  cellposeModelAdvisory,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -563,5 +564,49 @@ describe('temporalSpanAdvisory', () => {
     expect(paramAdvisor({ key: 'temporalScales', type: 'chipSelect' })).toBeDefined()
     // Otherwise every chipSelect in every task would get a frame-rate readout.
     expect(paramAdvisor({ key: 'flowMetrics', type: 'chipSelect' })).toBeUndefined()
+  })
+})
+
+describe('cellposeModelAdvisory', () => {
+  it('is silent on non-Mac platforms — v4 is fast on CUDA and v3 env is not shipped there', () => {
+    expect(cellposeModelAdvisory('cpsam_v2', 'linux-64', false)).toBeNull()
+    expect(cellposeModelAdvisory('cyto3',    'win-64',   false)).toBeNull()
+    expect(cellposeModelAdvisory('cpsam_v2', 'osx-64',   false)).toBeNull()   // Intel Mac: not the target
+    expect(cellposeModelAdvisory('cpsam_v2', undefined,  false)).toBeNull()
+  })
+
+  it('is silent when no model is selected', () => {
+    expect(cellposeModelAdvisory('',   'osx-arm64', false)).toBeNull()
+    expect(cellposeModelAdvisory(null, 'osx-arm64', false)).toBeNull()
+    expect(cellposeModelAdvisory(42,   'osx-arm64', false)).toBeNull()
+  })
+
+  it('warns on v4 model + env not installed, with the Install action', () => {
+    const a = cellposeModelAdvisory('cpsam_v2', 'osx-arm64', false)!
+    expect(a).not.toBeNull()
+    expect(a.severity).toBe('warn')
+    expect(a.message).toMatch(/slow on Apple Silicon/i)
+    expect(a.action?.kind).toBe('install-env')
+    expect(a.action?.env).toBe('cellpose-v3')
+    expect(a.action?.label).toMatch(/Install/i)
+  })
+
+  it('nudges toward cyto3 when v4 model picked but env is already installed', () => {
+    const a = cellposeModelAdvisory('cpsam_v2', 'osx-arm64', true)!
+    expect(a.severity).toBe('warn')
+    expect(a.message).toMatch(/cyto3/)
+    expect(a.action).toBeUndefined()   // env is already there — no button
+  })
+
+  it('fails hard on a v3 model when the env is missing, and offers Install', () => {
+    const a = cellposeModelAdvisory('cyto3', 'osx-arm64', false)!
+    expect(a.severity).toBe('fail')
+    expect(a.message).toMatch(/not installed/i)
+    expect(a.action?.kind).toBe('install-env')
+  })
+
+  it('says nothing when the happy path is met (v3 model, v3 env installed)', () => {
+    expect(cellposeModelAdvisory('cyto3', 'osx-arm64', true)).toBeNull()
+    expect(cellposeModelAdvisory('cyto2', 'osx-arm64', true)).toBeNull()
   })
 })

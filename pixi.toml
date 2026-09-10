@@ -75,12 +75,9 @@ websockets   = ">=16.0"
 # → napari-animation until P9; declared here now that napari is gone. Tests in test_movie_io.py
 # encode short mp4s for real, so this needs to be present, not optional.
 imageio-ffmpeg = ">=0.4"
-# Cellpose v4 (Cellpose-SAM). v4 has no `DenoiseModel` — the v3 pin existed to keep
-# `cleanupImages.cellposeCorrect` alive, and that task is retired: `cleanupImages.smooth` (coastal's
-# model-free restorers) and `coastal.denoise` (the Cellpose-3 net re-implemented, no `cellpose`
-# import) cover it. v4 also drops the cyto*/nuclei zoo for `cpsam_v2` and cannot load v3
-# checkpoints. See docs/todo/CELLPOSE_V4_PLAN.md and docs/SHIPPING.md.
-cellpose     = ">=4.2"
+# Cellpose lives in [feature.cellpose-v4] / [feature.cellpose-v3] below (two mutually-exclusive envs
+# — same package name, incompatible major versions). Default env carries v4; the v3 env is an opt-in
+# Mac-only sidecar for MPS speed. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
 anndata      = ">=0.12"
 scanpy       = ">=1.12"
 pandas       = ">=2.3"
@@ -144,8 +141,54 @@ torch       = { version = ">=2.6", index = "https://download.pytorch.org/whl/cu1
 torchvision = { version = ">=0.21", index = "https://download.pytorch.org/whl/cu124" }
 
 [target.osx-arm64.pypi-dependencies]
-torch       = ">=2.6"
-torchvision = ">=0.21"
+# torch >= 2.7 is a HARD floor on Mac (both envs). CPSAM (v4) runs in bfloat16; older MPS builds
+# raise `ERROR: BFloat16 is not supported on MPS` at inference time — see MouseLand/cellpose #1269
+# + #1468, fixed in torch ~2.7 for inference (training got a float32 fallback via cellpose PR #1278,
+# merged 2025-07-23). Also covers the v3 sparse-tensor NotImplementedError seen on torch 2.5.1 +
+# cellpose 3.1.0 (#1063). Do NOT lower this pin — it removes a class of Mac-only silent crashes.
+torch       = ">=2.7"
+torchvision = ">=0.22"
+
+# --- Cellpose v3 / v4 features + environments -------------------------------------------------
+# v3 and v4 are the SAME PyPI package name with incompatible major versions, so they cannot
+# resolve into one env. Split into two features; each env picks one. The default env is v4
+# everywhere; `cellpose-v3` is an opt-in Mac-only sidecar because Cellpose-SAM (v4) runs slowly
+# on MPS and the cellpose-3 CNN models (cyto2/cyto3) are ~10× faster there. See
+# docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
+#
+# The v3 feature is scoped `platforms = ["osx-arm64"]` so a linux/win solve never tries to
+# resolve it (v3 is not the answer to any perf problem on CUDA — MPS is the specific reason).
+# Non-default environments are NOT installed by `pixi install`; users opt in via the in-app
+# Install button (→ /api/system/envs/install), which shells `pixi install -e cellpose-v3`.
+
+[feature.cellpose-v4.pypi-dependencies]
+# Cellpose v4 (Cellpose-SAM). v4 has no `DenoiseModel` — the v3 pin used to keep
+# `cleanupImages.cellposeCorrect` alive, and that task is retired: `cleanupImages.smooth`
+# (coastal's model-free restorers) and `coastal.denoise` (the Cellpose-3 net re-implemented, no
+# `cellpose` import) cover it. v4 also drops the cyto*/nuclei zoo for `cpsam_v2` and cannot load
+# v3 checkpoints. See docs/todo/CELLPOSE_V4_PLAN.md and docs/SHIPPING.md.
+cellpose = ">=4.2"
+
+[feature.cellpose-v3]
+# Mac-only: the whole point of this env is MPS speed on Apple Silicon; CUDA users are already
+# fast on v4. Restricting the feature keeps a Linux/Windows `pixi install -e cellpose-v3`
+# unsolvable rather than silently building a pointless env.
+platforms = ["osx-arm64"]
+
+[feature.cellpose-v3.pypi-dependencies]
+# Cellpose 3.1 has native MPS support in cellpose.core (no monkey-patch, unlike the R-era
+# `inst/patches/cellpose/core.py`). We ship the built-in `cyto2` + `cyto3` models — cellpose 3
+# auto-downloads them to `~/.cellpose/models/` on first use; the install job pre-warms them.
+cellpose = ">=3.1,<4"
+
+[environments]
+# Default: everything a normal `pixi install` / `pixi run <task>` gets. Base pypi-deps +
+# per-platform torch + v4 cellpose.
+default     = { features = ["cellpose-v4"] }
+# Opt-in sidecar. `no-default-feature` defaults to `false`, so this env inherits the base
+# [pypi-dependencies] (numpy, scipy, scikit-image, tqdm via cecelia's pyproject etc.) plus the
+# osx-arm64 torch pin — only the cellpose spec differs. Not installed until explicitly asked.
+cellpose-v3 = { features = ["cellpose-v3"] }
 
 # --- Run templates (replace the old scripts/*.sh|.bat launchers) ------------------------------
 # Launch everything via `pixi run <task>` so the activated env's python3 is what the Julia server's

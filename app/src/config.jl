@@ -173,16 +173,23 @@ end
 # publishes its weights on HuggingFace; `cpsam_v2` is the current default, `cpsam` the v1 release,
 # kept so a run recorded against it stays reproducible. `cpdino*` is deliberately absent — it needs
 # `dinov3` from git, which we do not ship.
+#
+# Fourth field is `backend :: Symbol` — `:v4` for the default env (`cellpose>=4.2`), `:v3` for the
+# opt-in Mac-only `cellpose-v3` env. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
 const BUILTIN_CELLPOSE_MODELS = (
-    ("cpsam_v2", "Cellpose-SAM v2"),
-    ("cpsam",    "Cellpose-SAM v1"),
+    ("cpsam_v2", "Cellpose-SAM v2",       :v4),
+    ("cpsam",    "Cellpose-SAM v1",       :v4),
+    ("cyto3",    "cyto3 (cellpose 3)",    :v3),
+    ("cyto2",    "cyto2 (cellpose 3)",    :v3),
 )
 
-# The Cellpose 3 model zoo. Gone in v4 — and v4 does NOT error on them: an unknown
-# `pretrained_model` logs a warning and silently loads `cpsam_v2` instead, so a saved `cyto3` run
-# would come back as a DIFFERENT segmentation with nothing in the log to say so. We reject them
-# instead; see `cellpose_models_for_python` in tasks/segment/cellpose.jl.
-const RETIRED_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei",
+# Cellpose 3 checkpoint filenames that never got a v4 equivalent AND that our v3 env doesn't ship
+# either. `cyto`/`nuclei` were the pre-v3 zoo; the `*torch_0` suffixes are v3-era model filenames.
+# Kept as an explicit reject list because v4 doesn't error on them — it logs a warning and silently
+# loads `cpsam_v2`, so a saved run under one of these names would return a different segmentation
+# with nothing in the log. `cyto2`/`cyto3` are NO LONGER retired — they route to the v3 env now.
+# See `cellpose_models_for_python` in tasks/segment/cellpose.jl.
+const RETIRED_CELLPOSE_MODELS = ("cyto", "nuclei",
                                  "cyto3torch_0", "cyto2torch_0", "cytotorch_0", "nucleitorch_0")
 
 """
@@ -198,10 +205,28 @@ This is the enumeration the `/api/tasks/definitions` route uses to REPLACE the s
 list in `cellpose.json`'s Model select, so a user's newly-dropped checkpoint appears without a
 rebuild. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
 """
+# Is the opt-in `cellpose-v3` pixi env installed? Presence of its python interpreter is the
+# only reliable signal — an empty directory can be left by a half-cancelled install. Mirrors
+# `_env_installed` in `api/src/system_api.jl` (kept local because config.jl is loaded before the
+# api layer). Called per `/api/tasks/definitions` request; that's a stat() on a known path — cheap.
+function _cellpose_v3_env_installed()::Bool
+    root = abspath(joinpath(@__DIR__, "..", ".."))   # app/src → repo root
+    isfile(joinpath(root, ".pixi", "envs", "cellpose-v3",
+                    Sys.iswindows() ? "python.exe" : joinpath("bin", "python")))
+end
+
 function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
     out = NamedTuple[]
-    for (m, label) in BUILTIN_CELLPOSE_MODELS
-        push!(out, (name = m, stem = vault_model_stem(m), label = label, source = "builtin"))
+    v3_ok = _cellpose_v3_env_installed()
+    for (m, label, backend) in BUILTIN_CELLPOSE_MODELS
+        # Hide v3 built-ins from the picker when the v3 env isn't installed — a user picking one
+        # of those and hitting Run would only get `run_py`'s missing-env error, which is worse
+        # than not showing them at all. The InlineNote advisor on this dropdown still fires with
+        # an Install button, so discoverability is preserved. When the env lands, the next
+        # `/api/tasks/definitions` request re-runs this filter and the two names appear.
+        (backend === :v3 && !v3_ok) && continue
+        push!(out, (name = m, stem = vault_model_stem(m), label = label,
+                    source = "builtin", backend = backend))
     end
     seen = Set{String}(String(m.name) for m in out)
     user_dir    = cellpose_models_dir(dev_dir)
@@ -212,12 +237,30 @@ function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{
             startswith(name, ".") && continue
             isfile(joinpath(dir, name)) || continue
             name in seen && continue
+            # Custom checkpoints are treated as v4 by default (a user-dropped file for the v3 env is
+            # not on the current drop path — those two model names are the built-in cyto2/cyto3).
             push!(out, (name = name, stem = vault_model_stem(name),
-                        label = "$(name) ($(tag))", source = tag))
+                        label = "$(name) ($(tag))", source = tag, backend = :v4))
             push!(seen, name)
         end
     end
     out
+end
+
+"""
+    cellpose_model_backend(name) -> Symbol
+
+`:v3` if `name` is a built-in v3 model, `:v4` otherwise. Custom checkpoints are treated as v4
+(they load through `CellposeModel(pretrained_model=<path>)` and cellpose 4 rejects a v3 file up
+front — see `cellpose_models_for_python`). Case-sensitive; the picker's `optionsFrom` builds from
+`list_cellpose_models`, which uses the canonical spelling.
+"""
+function cellpose_model_backend(name::AbstractString)::Symbol
+    s = String(name)
+    for (m, _, backend) in BUILTIN_CELLPOSE_MODELS
+        m == s && return backend
+    end
+    :v4
 end
 
 # ── Model-vault helpers (shared by coastal and denoise) ───────────────────────
