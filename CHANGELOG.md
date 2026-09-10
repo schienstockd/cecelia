@@ -15,6 +15,62 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.2] — 2026-09-10
+
+One-day heartbeat after v0.2.1, cut so Mac users can test the segmentation pipeline again:
+Cellpose-SAM (v4) is much slower than CUDA on Apple Silicon MPS, so cellpose 3's `cyto2`/`cyto3`
+CNNs are revived as an **opt-in Mac-only pixi env** — one click from the model dropdown.
+The rest is a week's accumulated correction / viewer / image-strip work merged since v0.2.1.
+
+### Added
+
+- **Cellpose v3 as a Mac-only opt-in.** `[feature.cellpose-v3]` (`osx-arm64` only,
+  `cellpose>=3.1,<4`) is a non-default pixi environment — `pixi install` and the app installers
+  do NOT install it. Pick `cpsam_v2` on Mac and the model dropdown shows an inline
+  **Install cellpose-v3 (~500 MB)** button (`cellposeModelAdvisory`); the button POSTs to
+  `/api/system/envs/install`, which shells `pixi install -e cellpose-v3` as a jobs.jl-tracked
+  background job and pre-warms cyto2 + cyto3 weights so the first run does not stall on
+  cellpose's server. Once installed, cyto2/cyto3 appear in the dropdown; `_run_task` routes them
+  to `run_py(..., env = :cellpose_v3)`. Missing env fails LOUDLY with a message pointing at the
+  Install button — never a silent fallback to v4 that would return different labels. Silent on
+  Linux/Windows (v4 is fast on CUDA). See `docs/SEGMENTATION.md` →
+  *Cellpose v3 (Mac-only opt-in)* and `docs/todo/CELLPOSE_V3_OPTIN_PLAN.md`.
+- **Correction cockpit — pick highlight** (WIP behind sidebar badge). Cockpit picks outline the
+  selected label on the viewer via a shader-mode extension (`pickOutlineLUT` primitive), no new
+  layer.
+- **Viewer — log-scale contrast slider + density histogram.** The slider reads how the data is
+  actually distributed rather than pretending the range is uniform; Auto shrinks the ceiling back
+  to the data range instead of clinging to the bit-depth max.
+- **Viewer — play-health readout** on the bricks path (dropped the `?playInflight` knob after
+  bench12 showed it does not help).
+- **Cell Cards — viewer-matched rendering + interactive detail.**
+- **Image strip — px sliders** for legend / scale-bar / timestamp; clear-highlight button on the
+  viewer's Populations & tracks row.
+- **Tasks — Copy from a previous run.** Pull `funParams` from another image without re-typing.
+- **Correction — Z-coupling vis-aid** + graduation-cap icon convention for vis-aid buttons.
+
+### Fixed
+
+- **Viewer.** Picker pan-sign matches the shader — was picking the diagonally-opposite cell on a
+  panned image; masks whose dims don't fit the open image version are flagged; contrast-slider
+  ceiling no longer tracks `hi` downward; Apple Silicon no longer mislabelled as a
+  reduced-performance integrated GPU; the "try Chrome" suggestion dropped (Chrome-on-Mac hits
+  the same 2048 ceiling).
+- **Correction.** Composite runner correctness — `skipDownstream`, `outputValueName`, labels
+  axes.
+- **Image strip / analysis board.** Pop legend rows keyed on the pop payload's `vn`; analysis
+  board image-strip capture parity with the viewer restored.
+- **UI.** Emoji fonts appended so ❌ / ⚠️ no longer render as text glyphs; `.ccd-time` uses
+  `--cc-radius-xs` instead of a raw `3px`; What's New refetches the update check when the modal
+  opens.
+
+### Docs
+
+- `CORRECTION_DIRECT_PLAN.md` added — retire queue-and-apply, adopt direct manipulation.
+- P1 amended: shader-mode extension, not a new line-strip layer.
+- `SEGMENTATION.md` gains *Cellpose v3 (Mac-only opt-in)*; `SHIPPING.md` updated for the
+  two-feature cellpose split.
+
 ## [0.2.1] — 2026-09-09
 
 The heartbeat after v0.2.0 — one week, ~105 PRs. The **correction cockpit** is behind a WIP
@@ -790,7 +846,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/schienstockd/cecelia/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/schienstockd/cecelia/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/schienstockd/cecelia/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/schienstockd/cecelia/compare/v0.1.2...v0.1.3
