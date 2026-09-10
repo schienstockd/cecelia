@@ -7172,6 +7172,62 @@ end
     end
 end
 
+@testset "API: viewer meta — labelDims lets the picker flag masks that don't fit" begin
+    # A mask store segmented on a DIFFERENT image version keeps its old spatial dims (drift-expanded
+    # / cropped — same class as commit 860da24b). The viewer's overlay path assumes label dims equal
+    # image dims at the same level; a mismatch either mis-strides the label texture (silent wrong
+    # render — see volumeRenderer.uploadFrame's `bytesPerRow = imageNX * LABEL_BPV`) or trips the
+    # frontend shape guard. Meta now carries per-vn L0 dims so the sidebar picker can flag the
+    # offending row rather than the user hitting the raw error at fetch time.
+    axes_ms(names, npaths) = Dict("multiscales" => [Dict(
+        "axes"     => [Dict("name" => n) for n in names],
+        "datasets" => [Dict("path" => string(i)) for i in 0:npaths-1])])
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "meta-labeldims")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        proj_id = proj.uid; img_id = img.uid
+        # Image L0 8×6 (Julia dims x, y, z, c, t as elsewhere in this file).
+        store_dir = joinpath(tmp, proj_id, "0", img_id, "ccidImage.ome.zarr")
+        mkpath(dirname(store_dir))
+        g = zgroup(Zarr.DirectoryStore(store_dir); attrs = axes_ms(["t","c","z","y","x"], 1))
+        a = zcreate(UInt16, g, "0", 8, 6, 1, 1, 1; chunks = (4, 4, 1, 1, 1))
+        a[:, :, :, :, :] = zeros(UInt16, 8, 6, 1, 1, 1)
+        # Two label stores under the image's labels/ dir: `matching` 8×6 (fits),
+        # `mismatched` 10×6 (nX differs → flagged). Register through `img.labels` + `save!` so the
+        # ccid.json is written in the versioned shape the readers expect.
+        labels_dir = joinpath(tmp, proj_id, "1", img_id, "labels"); mkpath(labels_dir)
+        for (name, nx, ny) in (("matching", 8, 6), ("mismatched", 10, 6))
+            lp = joinpath(labels_dir, "$(name).zarr")
+            lg = zgroup(Zarr.DirectoryStore(lp);
+                        attrs = axes_ms(["t", "c", "z", "y", "x"], 1))
+            la = zcreate(UInt32, lg, "0", nx, ny, 1, 1, 1; chunks = (nx, ny, 1, 1, 1))
+            la[:, :, :, :, :] = zeros(UInt32, nx, ny, 1, 1, 1)
+        end
+        img.filepath = Dict("default" => "ccidImage.ome.zarr", "_active" => "default")
+        img.labels = Dict("matching" => ["matching.zarr"],
+                          "mismatched" => ["mismatched.zarr"])
+        save!(img)
+        st, body = api_viewer_meta(HTTP.Request("GET",
+            "/api/viewer/meta?projectUid=$(proj_id)&imageUid=$(img_id)"))
+        @test st == 200
+        j = JSON3.read(body)
+        @test j[:nX] == 8 && j[:nY] == 6
+        @test haskey(j, :labelDims)
+        # Both registered stores must be reported. Absence would leave the client unable to check.
+        @test haskey(j[:labelDims], :matching)
+        @test haskey(j[:labelDims], :mismatched)
+        @test (j[:labelDims][:matching][:nX],   j[:labelDims][:matching][:nY])   == (8,  6)
+        @test (j[:labelDims][:mismatched][:nX], j[:labelDims][:mismatched][:nY]) == (10, 6)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: movie rail — offline overlay-config translator" begin
     # `_overlays_raw_from_config` turns a viewer `look` / batch config into the smoke-route overlay
     # shape. If it drifts, the record button silently regresses to channels-only movies.

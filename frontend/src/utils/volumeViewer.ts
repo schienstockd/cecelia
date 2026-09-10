@@ -71,6 +71,15 @@ export interface ViewerMeta {
    */
   labelNames?: string[]
   /**
+   * Per-vn (nX, nY, nZ) of each mask store's L0. Lets the client flag a mask that was segmented on a
+   * DIFFERENT image version whose spatial dims no longer match this image version's — overlaying such
+   * a mask silently mis-strides the label texture (the flat renderer's `writeTexture` uses
+   * `bytesPerRow = imageNX * LABEL_BPV`) or trips the frontend shape guard. Absent for a vn whose
+   * pyramid metadata is unreadable — the picker leaves that one unflagged (a broken pyramid is
+   * already broken in ways the picker can't fix).
+   */
+  labelDims?: Record<string, { nX: number; nY: number; nZ: number }>
+  /**
    * Every registered version of this image, and the one these numbers describe.
    *
    * Both come from the server because the viewer is a pop-out with no project open — it cannot look
@@ -397,6 +406,24 @@ export function slabShapeError(
   const want = nx * ny * nz * bytesPerVoxel
   if (byteLength !== want) return `Slab is ${byteLength} bytes, expected ${want}`
   return null
+}
+
+/**
+ * Which mask vns (if any) were segmented on a DIFFERENT image version whose spatial dims no longer
+ * match this image version's. A mismatched mask fetch either mis-strides the label texture (silent
+ * wrong render — the flat renderer's `writeTexture` uses `bytesPerRow = imageNX * LABEL_BPV`) or
+ * trips the shape guard (loud "Slab is AxBxC but XxYxZ was asked for"); both are hostile. Comparing
+ * at L0 is enough: a matching L0 with a 2x pyramid on both sides matches at every level, and a
+ * mismatched L0 breaks at every level. `labelDims` is absent for a vn whose pyramid metadata is
+ * unreadable — those go unflagged rather than mis-flagged (a broken pyramid is already broken in
+ * ways the picker can't fix).
+ */
+export function labelDimsMismatch(
+  meta: Pick<ViewerMeta, 'nX' | 'nY' | 'labelDims'>, vn: string,
+): boolean {
+  const d = meta.labelDims?.[vn]
+  if (!d) return false
+  return d.nX !== meta.nX || d.nY !== meta.nY
 }
 
 /**

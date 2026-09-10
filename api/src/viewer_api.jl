@@ -269,12 +269,39 @@ function api_viewer_meta(req::HTTP.Request)
         # Which segmentations have a MASK on disk, so the client can offer them without a probe per
         # name. `labels` and `label_props` are independent registries — an imported track set has a
         # measurement table and no mask — so this is not derivable from the overlay payload.
-        label_names = try
+        # `label_dims` reports each mask store's L0 (nX, nY, nZ) so the client can flag a mask that
+        # was segmented on a DIFFERENT image version — one whose spatial dims no longer match this
+        # image version's. Overlaying such a mask silently mis-strides the label texture (the flat
+        # renderer's `writeTexture` uses `bytesPerRow = imageNX * LABEL_BPV`) or trips the
+        # frontend's shape guard. `store_pyramid_levels` is metadata-only (JSON on disk); the read
+        # is cheap. `nothing` when the store has no readable multiscales — the client leaves those
+        # unflagged (a store with no pyramid metadata is already broken in ways the picker can't fix).
+        label_names, label_dims = try
             img = init_object(pu, iu)
-            String[v for v in versioned_keys(img.labels)
-                   if !is_reserved_value_name(v) && isdir(img_labels_path(img, v))]
+            names = String[v for v in versioned_keys(img.labels)
+                           if !is_reserved_value_name(v) && isdir(img_labels_path(img, v))]
+            dims = Dict{String, Any}()
+            for v in names
+                try
+                    lp = img_labels_path(img, v)
+                    lvls = store_pyramid_levels(lp)
+                    if lvls !== nothing && !isempty(lvls)
+                        s = first(lvls).shape
+                        n = length(s)
+                        n >= 2 || continue
+                        lnx = s[n]
+                        lny = s[n - 1]
+                        lnz = n >= 3 ? s[n - 2] : 1
+                        dims[v] = (; nX = lnx, nY = lny, nZ = lnz)
+                    end
+                catch
+                    # unreadable pyramid → leave this vn out of `label_dims`; the client
+                    # treats absence as "cannot check" and does not flag.
+                end
+            end
+            (names, dims)
         catch
-            String[]
+            (String[], Dict{String, Any}())
         end
         # Which VERSIONS this image has, and which one these numbers describe. The viewer window is a
         # pop-out with no project open, so it can look up neither — and without the second field a
@@ -310,6 +337,7 @@ function api_viewer_meta(req::HTTP.Request)
         200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny,
                             name = image_name, setUid = set_uid,
                             labelNames = label_names,
+                            labelDims  = label_dims,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
