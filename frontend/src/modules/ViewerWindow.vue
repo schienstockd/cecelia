@@ -472,6 +472,20 @@ const playing = ref(false)
  * re-scale the slider under a value the user had already set.
  */
 const seenMax = ref<number[]>([])
+/**
+ * Per-channel monotone ceiling of `ch.hi` values the user (or Reset) has actually asked for.
+ *
+ * Why it exists: the slider's `max` used to be `max(chMax, ch.hi, 1)`. When `hi > chMax` — the
+ * usual state right after "Reset to full bit range", which sets `hi = dtypeMax` on data whose
+ * `seenMax` is a fraction of that — every drag of `hi` downward pulled the slider's ceiling down
+ * with it, so the handle appeared pinned at the right edge and the whole travel range collapsed
+ * under the pointer, with no way to drag `hi` back up (Dominik, 2026-09-10 on nG1jSi).
+ *
+ * `hiCeiling` grows monotonically to include every `ch.hi` ever set — via slider drag, Reset,
+ * Auto, or a restored autosave — so the slider max never shrinks below a value the user has seen.
+ * Reset to meta change (with `seenMax`) so a fresh image doesn't inherit the previous one's range.
+ */
+const hiCeiling = ref<number[]>([])
 const chMax = computed(() =>
   seenMax.value.map(v => contrastCeiling(v, meta.value?.bytesPerVoxel ?? 2)))
 /** Per-channel percentile window of the first timepoint loaded, behind the "Auto" button. Taken ONCE
@@ -3505,6 +3519,22 @@ function autoAllContrast() {
 // scrub (Dominik, 2026-09-03).
 watch(() => settings.viewerAutoContrastPercent, () => { recomputeAutoWin() })
 
+// Grow `hiCeiling` from every `ch.hi` we see — see the ref's docstring. All hi-writing paths
+// (slider drag, Reset, Auto, autosave restore, undo) flow through `ch.hi = …`, so a single
+// watch catches them and callers don't need to remember to grow the ceiling themselves.
+watch(() => meta.value?.channels.map(c => c.hi) ?? [], his => {
+  if (his.length === 0) return
+  const cur = hiCeiling.value
+  let changed = cur.length !== his.length
+  const next = new Array<number>(his.length)
+  for (let c = 0; c < his.length; c++) {
+    const nv = Math.max(cur[c] ?? 0, his[c] ?? 0)
+    next[c] = nv
+    if (nv !== cur[c]) changed = true
+  }
+  if (changed) hiCeiling.value = next
+}, { immediate: true })
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
 // PY — per-image viewer props autosave. Legacy on-disk shape at
@@ -3566,6 +3596,7 @@ async function loadVersion(refit: boolean) {
   zRange.value = [0, Math.max(m.nZ - 1, 0)]
   autoWin.value = []                     // a different version has its own distribution
   seenMax.value = []
+  hiCeiling.value = []                   // sibling of seenMax — a new image starts a fresh ceiling
   // Fit BEFORE reallocate: `useTiles` and `slabLevel` derive from `cam.dist`, so a stale dist=1
   // would allocate the wrong pipeline for a big image. `fitDist` is seeded here so the reset button
   // works even if a saved camera pose is later restored on top.
@@ -4772,7 +4803,7 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, ch.hi, 1)" :step="1"
+                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, hiCeiling[c] ?? 0, 1)" :step="1"
                 @update:lo="v => { ch.lo = v; pushChannels() }"
                 @update:hi="v => { ch.hi = v; pushChannels() }"
               />
