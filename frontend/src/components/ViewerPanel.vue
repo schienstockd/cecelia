@@ -109,6 +109,20 @@ const labelNames  = computed(() => Object.keys(openedImage.value?.labels ?? {}))
 const pointsOnlyNames = computed(() =>
   (openedImage.value?.labelPropsNames ?? []).filter(vn => !labelNames.value.includes(vn)))
 
+// Mask stores whose spatial dims don't match the OPEN image version (segmented on a
+// drift-expanded / cropped version — same class as commit 860da24b). Published by ViewerWindow on
+// meta load; consumed here to flag those rows. Scoped to the OPEN image: a mismatch payload for a
+// different imageUid is stale and ignored. Empty when the viewer isn't open (no flag until we've
+// checked).
+const dimMismatchInfo = computed(() => {
+  const m = viewerStore.labelsDimMismatch
+  const uid = projectStore.openImageUid
+  if (!m || !uid || m.imageUid !== uid) return null
+  return m
+})
+const mismatchedMaskVns = computed<Set<string>>(() =>
+  new Set(dimMismatchInfo.value?.mismatched ?? []))
+
 const labelRows = computed(() => {
   const live = new Set(livePreviews.value.map(p => p.valueName))
   const names = [...labelNames.value,
@@ -123,6 +137,7 @@ const labelRows = computed(() => {
     // whole reason the row exists.
     masked: labelNames.value.includes(valueName),
     live: live.has(valueName),
+    dimMismatch: mismatchedMaskVns.value.has(valueName),
   }))
 })
 const hasLabelRows = computed(() => labelRows.value.length > 0)
@@ -597,6 +612,18 @@ function pingViewerOverlays() {
   localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
 }
 
+/** Tooltip text for a mask whose spatial dims don't match the open image version. Quotes both
+ *  dims so the user can see WHY the row is flagged — a mask segmented on a drift-expanded /
+ *  cropped version cannot be overlaid without either mis-striding the texture or landing
+ *  spatially shifted from the underlying cells (rendering it silently would be a lie). Falls
+ *  back to a short claim if `byVn` didn't carry dims for this vn (unreadable pyramid). */
+function mismatchTooltip(vn: string): string {
+  const info = dimMismatchInfo.value
+  const d = info?.byVn?.[vn]
+  if (!info || !d) return "Mask doesn't match this image version — pick a matching version, or re-segment"
+  return `Mask is ${d.nX}×${d.nY}, image version is ${info.imageNX}×${info.imageNY} — pick a matching version, or re-segment`
+}
+
 function toggleLabel(valueName: string) {
   // Write the settings bag; the WebGPU viewer reads it via `storage` events.
   //
@@ -796,6 +823,12 @@ onUnmounted(() => {
             <i :class="['pi', row.masked ? 'pi-th-large' : 'pi-circle-fill', 'viewer-label-icon']"
                v-tooltip.right="row.masked ? undefined : 'Points only — tracks, no mask'" />
             <span class="viewer-label-name cc-muted" :title="row.valueName">{{ row.valueName }}</span>
+            <!-- Mask segmented on a DIFFERENT image version (drift-expanded / cropped) — its
+                 spatial dims don't fit the open version. Overlay is silently skipped rather
+                 than mis-strided; the tooltip quotes the two dims so it's obvious why. -->
+            <i v-if="row.dimMismatch"
+               class="pi pi-exclamation-triangle viewer-label-warn"
+               v-tooltip.right="mismatchTooltip(row.valueName)" />
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
             <!-- The live-preview toggle is NOT hover-hidden: it exists only while the run does, so a
@@ -826,7 +859,9 @@ onUnmounted(() => {
                 class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" data-guide="viewer.toggleLabels"
                 :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[row.valueName] }"
                 @click="toggleLabel(row.valueName)"
-                v-tooltip.right="visibleLabels[row.valueName] ? 'Hide labels in Viewer' : 'Show labels in Viewer'"
+                v-tooltip.right="row.dimMismatch
+                  ? mismatchTooltip(row.valueName)
+                  : (visibleLabels[row.valueName] ? 'Hide labels in Viewer' : 'Show labels in Viewer')"
               ><i class="pi pi-eye" /></button>
               <!-- No delete here. Deleting a label set is one scope of the Import page's Delete modal
                    (docs/todo/IMAGE_DELETE_PLAN.md Decision 4) — the viewer shows and hides layers, it
@@ -1069,6 +1104,9 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .viewer-label-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Mask-doesn't-fit-image flag: warn severity, sits between name and actions. Always shown (the
+   whole point is that it must NOT wait for hover), and its host row's eye is disabled. */
+.viewer-label-warn { font-size: var(--cc-fs-sm); color: var(--cc-sev-warn); flex-shrink: 0; }
 .opt-btn.danger:hover { border-color: var(--cc-danger); color: var(--cc-danger); }
 /* row action icons (eye / directions): hidden until the row is hovered to keep the narrow sidebar
    uncluttered; an ACTIVE toggle (shown layer/tracks) stays visible so state is readable */

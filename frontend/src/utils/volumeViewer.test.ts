@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel,
+  slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -463,6 +463,30 @@ describe('spatial audit — slab URL carries level/x/y, guard is level-aware', (
     expect(slabShapeError(`4,${l1ny},${l1nx}`, okBytes, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny)).toBeNull()
     expect(slabShapeError('4,3,5', 5 * 3 * 4 * 2, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny))
       .toMatch(/was asked for/)
+  })
+})
+
+describe('labelDimsMismatch — flag masks whose L0 doesn\'t fit this image version', () => {
+  const m = (over: Partial<ViewerMeta> = {}) => meta({ nX: 434, nY: 418, ...over })
+  it('flags a mask whose (nX, nY) differ from the image version', () => {
+    const m0 = m({ labelDims: { default: { nX: 441, nY: 420, nZ: 1 } } })
+    expect(labelDimsMismatch(m0, 'default')).toBe(true)
+  })
+  it('does not flag a mask that matches', () => {
+    const m0 = m({ labelDims: { default: { nX: 434, nY: 418, nZ: 1 } } })
+    expect(labelDimsMismatch(m0, 'default')).toBe(false)
+  })
+  it('does not flag a mask absent from labelDims (unreadable pyramid)', () => {
+    // Server omits a vn whose multiscales metadata could not be read. Better to leave it unflagged
+    // than to false-flag it — a broken pyramid is already broken in ways this picker can't fix.
+    const m0 = m({ labelDims: {} })
+    expect(labelDimsMismatch(m0, 'default')).toBe(false)
+  })
+  it('does not flag when labelDims is absent entirely (old server)', () => {
+    // Kept graceful for a browser talking to a pre-labelDims server: if the payload lacks the
+    // field, the picker just doesn't flag anything.
+    const m0 = m({})
+    expect(labelDimsMismatch(m0, 'default')).toBe(false)
   })
 })
 

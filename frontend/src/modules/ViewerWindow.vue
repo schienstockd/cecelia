@@ -60,7 +60,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks, CACHE_BUDGET_BYTES,
+  shouldUseBricks, CACHE_BUDGET_BYTES, labelDimsMismatch,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -1796,6 +1796,19 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       })),
       (async () => {
         if (!vn) return null
+        // Mask store segmented on a DIFFERENT image version keeps its old spatial dims (drift
+        // correct expands the canvas, crop shrinks it). Overlaying it on the current version
+        // either mis-strides the label texture (silent wrong render) or trips the shape guard,
+        // and resample-to-fit would render a spatially-shifted overlay. Skip the fetch and let
+        // the sidebar flag speak — the image frame keeps rendering. Preview writes match the
+        // current image dims by construction (the worker uses the open image), so bypass this
+        // check for previews.
+        if (!(!!viewerStore.previewLabels &&
+              viewerStore.previewLabels?.valueName === vn &&
+              viewerStore.previewLabels?.imageUid === imageUid)
+            && m.labelDims && labelDimsMismatch(m, vn)) {
+          return null
+        }
         // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
         // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
@@ -3711,6 +3724,32 @@ function onModeChange(v: 'plane' | 'volume'): void {
   reallocate(true)
   if (setUid.value) settings.setShow3D(setUid.value, v === 'volume')
 }
+
+// ── Labels-vs-image dim mismatch → sidebar flag ─────────────────────────────
+// A mask store segmented on a DIFFERENT image version (drift-expanded / cropped — same class as
+// commit 860da24b) keeps its old spatial dims; overlaying it on the current image version either
+// mis-strides the label texture (silent wrong render — see volumeRenderer.uploadFrame's
+// `bytesPerRow = imageNX * LABEL_BPV`) or trips the frontend shape guard ("Slab is AxBxC but
+// XxYxZ was asked for"). Meta now carries per-vn L0 dims (`labelDims`); publish the mismatch set
+// so `ViewerPanel` can flag the offending rows in the segmentation list — the fix from #814 does
+// not cover this case (a version SWITCH has a different URL, so the cache-bust never fires) and
+// resample-to-fit would render a spatially-shifted overlay (see commit message).
+watch(meta, m => {
+  if (!m || !imageUid) return
+  const dims = m.labelDims ?? {}
+  const mismatched: string[] = []
+  const byVn: Record<string, { nX: number; nY: number }> = {}
+  for (const [vn, d] of Object.entries(dims)) {
+    if (d.nX !== m.nX || d.nY !== m.nY) {
+      mismatched.push(vn)
+      byVn[vn] = { nX: d.nX, nY: d.nY }
+    }
+  }
+  viewerStore.setLabelsDimMismatch({
+    imageUid, valueName: valueName.value || (m.valueName ?? ''),
+    imageNX: m.nX, imageNY: m.nY, mismatched, byVn,
+  })
+}, { immediate: true })
 
 // ── Task-preview integration (P7) ─────────────────────────────────────────────
 // One scheduler per this specific emit: pan/zoom fires per frame, but the preview API is expensive

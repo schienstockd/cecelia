@@ -40,6 +40,7 @@ const K_PENDING_VIEW     = 'cc.viewer.pendingViewState'
 const K_PREVIEW_LABELS   = 'cc.viewer.previewLabels'
 const K_PREVIEW_IMAGES   = 'cc.viewer.previewImages'
 const K_TRACK_HIGHLIGHT  = 'cc.viewer.trackHighlight'
+const K_LABELS_DIM_MISMATCH = 'cc.viewer.labelsDimMismatch'
 
 /** What the `<vn>__preview.ome.zarr` scratch store contains — set by taskPreview after a run, read
  *  by ViewerWindow to flip its labels slab request onto the preview path. Lives HERE (not in
@@ -108,6 +109,26 @@ export interface TrackHighlight {
   updateId: number
 }
 
+/**
+ * Which mask stores' spatial dims no longer match the open image version, per (imageUid,
+ * valueName). ViewerWindow computes this from its meta payload on load / on version pick and
+ * publishes here; ViewerPanel reads it to flag the offending rows in the segmentation list, so a
+ * user can see WHY the eye toggle silently refused to overlay. Bridged across the popup ⇄ main
+ * window through the same `storage`-event pattern as the other viewer bags.
+ *
+ * `byVn` names each mismatched mask's L0 dims — the flag's tooltip can quote them ("mask is
+ * 441×420, image is 434×418"). Empty `mismatched` means "checked, all clear" (a distinct signal
+ * from `null`: "no viewer open, nothing to say").
+ */
+export interface LabelsDimMismatch {
+  imageUid: string
+  valueName: string          // the IMAGE version the check was done against
+  imageNX: number
+  imageNY: number
+  mismatched: string[]
+  byVn: Record<string, { nX: number; nY: number }>
+}
+
 function _readJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
   try {
@@ -140,6 +161,7 @@ export const useViewerStore = defineStore('viewer', () => {
   const previewLabels    = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
   const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
   const trackHighlight   = ref<TrackHighlight | null>(_readJson<TrackHighlight>(K_TRACK_HIGHLIGHT))
+  const labelsDimMismatch = ref<LabelsDimMismatch | null>(_readJson<LabelsDimMismatch>(K_LABELS_DIM_MISMATCH))
 
   /** ViewerWindow calls this when the image changes (route load, valueName picker). */
   function setOpenImage(next: OpenImage | null) {
@@ -221,6 +243,14 @@ export const useViewerStore = defineStore('viewer', () => {
     _writeJson(K_TRACK_HIGHLIGHT, stamped)
   }
 
+  /** ViewerWindow calls this whenever meta lands (image open / valueName pick), so the sidebar
+   *  panel can flag mask rows whose stored spatial dims no longer match the current image
+   *  version. `null` clears (no viewer open). */
+  function setLabelsDimMismatch(next: LabelsDimMismatch | null) {
+    labelsDimMismatch.value = next
+    _writeJson(K_LABELS_DIM_MISMATCH, next)
+  }
+
   // Cross-window sync: `storage` events fire only in OTHER same-origin windows on a write, so the
   // pattern is symmetric — every window listens, every window writes on its own change.
   if (typeof window !== 'undefined') {
@@ -239,14 +269,17 @@ export const useViewerStore = defineStore('viewer', () => {
         previewImages.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_TRACK_HIGHLIGHT) {
         trackHighlight.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_LABELS_DIM_MISMATCH) {
+        labelsDimMismatch.value = e.newValue ? JSON.parse(e.newValue) : null
       }
     })
   }
 
   return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
-           trackHighlight,
+           trackHighlight, labelsDimMismatch,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
-           consumePendingViewState, setPreviewLabels, setPreviewImages, setTrackHighlight }
+           consumePendingViewState, setPreviewLabels, setPreviewImages, setTrackHighlight,
+           setLabelsDimMismatch }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))
