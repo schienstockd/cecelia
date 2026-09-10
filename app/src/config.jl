@@ -205,9 +205,26 @@ This is the enumeration the `/api/tasks/definitions` route uses to REPLACE the s
 list in `cellpose.json`'s Model select, so a user's newly-dropped checkpoint appears without a
 rebuild. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
 """
+# Is the opt-in `cellpose-v3` pixi env installed? Presence of its python interpreter is the
+# only reliable signal — an empty directory can be left by a half-cancelled install. Mirrors
+# `_env_installed` in `api/src/system_api.jl` (kept local because config.jl is loaded before the
+# api layer). Called per `/api/tasks/definitions` request; that's a stat() on a known path — cheap.
+function _cellpose_v3_env_installed()::Bool
+    root = abspath(joinpath(@__DIR__, "..", ".."))   # app/src → repo root
+    isfile(joinpath(root, ".pixi", "envs", "cellpose-v3",
+                    Sys.iswindows() ? "python.exe" : joinpath("bin", "python")))
+end
+
 function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
     out = NamedTuple[]
+    v3_ok = _cellpose_v3_env_installed()
     for (m, label, backend) in BUILTIN_CELLPOSE_MODELS
+        # Hide v3 built-ins from the picker when the v3 env isn't installed — a user picking one
+        # of those and hitting Run would only get `run_py`'s missing-env error, which is worse
+        # than not showing them at all. The InlineNote advisor on this dropdown still fires with
+        # an Install button, so discoverability is preserved. When the env lands, the next
+        # `/api/tasks/definitions` request re-runs this filter and the two names appear.
+        (backend === :v3 && !v3_ok) && continue
         push!(out, (name = m, stem = vault_model_stem(m), label = label,
                     source = "builtin", backend = backend))
     end

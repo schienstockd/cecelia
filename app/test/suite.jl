@@ -408,12 +408,20 @@ end
     # so tests can't assume it's empty — check invariants that hold either way.
     td = mktempdir()
 
-    # Built-ins are always first, in a stable order. v4 first (cpsam_v2/cpsam), then the v3
-    # opt-in models (cyto2/cyto3) — the picker's dropdown pill (v3/v4) tells them apart.
+    # Built-ins are always first, in a stable order. v4 rows always show (cpsam_v2/cpsam); v3
+    # rows (cyto2/cyto3) are HIDDEN unless the opt-in `cellpose-v3` pixi env is installed — a
+    # user picking one without the env would only get `run_py`'s missing-env error at Run time,
+    # so dropping them upstream is the right filter (see docs/todo/CELLPOSE_V3_OPTIN_PLAN.md).
+    # Whether the env is present depends on the machine running the tests; assert both branches
+    # of the gate.
     names = [m.name for m in list_cellpose_models(td)]
-    @test names[1:4] == ["cpsam_v2", "cpsam", "cyto3", "cyto2"]
-    backends = [m.backend for m in list_cellpose_models(td)]
-    @test backends[1:4] == [:v4, :v4, :v3, :v3]
+    @test names[1:2] == ["cpsam_v2", "cpsam"]
+    if Cecelia._cellpose_v3_env_installed()
+        @test any(m.name == "cyto3" for m in list_cellpose_models(td))
+        @test any(m.name == "cyto2" for m in list_cellpose_models(td))
+    else
+        @test !any(m.name in ("cyto2", "cyto3") for m in list_cellpose_models(td))
+    end
 
     # No user drop-in → nothing tagged "user" for THIS td.
     base = list_cellpose_models(td)

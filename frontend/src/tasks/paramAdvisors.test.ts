@@ -568,17 +568,11 @@ describe('temporalSpanAdvisory', () => {
 })
 
 describe('cellposeModelAdvisory', () => {
-  it('is silent on unsupported platforms', () => {
-    // TESTING (2026-09-10): the advisor's platform allowlist is temporarily widened to include
-    // linux-64 + win-64 so the install flow can be exercised off a Mac. `osx-64` (Intel Mac) and
-    // an unknown/missing platform stay silent — same reasons as before.
+  it('is silent on non-Mac platforms — v4 is fast on CUDA and v3 env is not shipped there', () => {
+    expect(cellposeModelAdvisory('cpsam_v2', 'linux-64', false)).toBeNull()
+    expect(cellposeModelAdvisory('cyto3',    'win-64',   false)).toBeNull()
     expect(cellposeModelAdvisory('cpsam_v2', 'osx-64',   false)).toBeNull()   // Intel Mac: not the target
-    expect(cellposeModelAdvisory('cpsam_v2', 'unknown',  false)).toBeNull()
     expect(cellposeModelAdvisory('cpsam_v2', undefined,  false)).toBeNull()
-    // TESTING: these three will assert `toBeNull()` once the guard is tightened back to Mac-only.
-    expect(cellposeModelAdvisory('cpsam_v2', 'linux-64', false)).not.toBeNull()
-    expect(cellposeModelAdvisory('cyto3',    'linux-64', false)?.severity).toBe('fail')
-    expect(cellposeModelAdvisory('cpsam_v2', 'win-64',   true)?.severity).toBe('warn')
   })
 
   it('is silent when no model is selected', () => {

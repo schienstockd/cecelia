@@ -393,11 +393,9 @@ export function imageVersionAdvisory(
 const CELLPOSE_V3_MODELS: ReadonlySet<string> = new Set(['cyto2', 'cyto3'])
 const CELLPOSE_V3_ENV_NAME = 'cellpose-v3'
 
-/** Platforms where the advisor is allowed to fire. Ship-time: `['osx-arm64']` only. Temporarily
- *  broadened to all workspace platforms so the install/advisor flow can be tested off a Mac —
- *  narrow back in the same change that tightens `[feature.cellpose-v3]` in `pixi.toml` and
- *  `_OPT_IN_ENVS[..].supported_platforms` in `api/src/system_api.jl`. */
-const CELLPOSE_V3_ADVISORY_PLATFORMS: ReadonlySet<string> = new Set(['osx-arm64', 'linux-64', 'win-64'])
+/** Platforms where the advisor is allowed to fire. Mac only — v4 is fast on CUDA and the v3 env
+ *  isn't shipped for Linux/Windows (`[feature.cellpose-v3]` in `pixi.toml`). */
+const CELLPOSE_V3_ADVISORY_PLATFORMS: ReadonlySet<string> = new Set(['osx-arm64'])
 
 /** Pure: takes the selected model, platform, and env installed state. Testable without a fetch. */
 export function cellposeModelAdvisory(

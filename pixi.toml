@@ -170,11 +170,10 @@ torchvision = ">=0.22"
 cellpose = ">=4.2"
 
 [feature.cellpose-v3]
-# TESTING (2026-09-10): temporarily open to all workspace platforms so the install flow can be
-# rehearsed on Linux/Windows before the Mac wet-run. Ship-time: narrow back to
-# `platforms = ["osx-arm64"]` — v4 is fast on CUDA, so a Linux/Windows install is 3 GB spent on
-# nothing. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
-platforms = ["osx-arm64", "linux-64", "win-64"]
+# Mac-only: the whole point of this env is MPS speed on Apple Silicon; CUDA users are already
+# fast on v4. Restricting the feature keeps a Linux/Windows `pixi install -e cellpose-v3`
+# unsolvable rather than silently building a pointless env.
+platforms = ["osx-arm64"]
 
 [feature.cellpose-v3.pypi-dependencies]
 # Cellpose 3.1 has native MPS support in cellpose.core (no monkey-patch, unlike the R-era

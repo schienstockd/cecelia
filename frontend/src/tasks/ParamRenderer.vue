@@ -889,24 +889,28 @@ const pct = computed(() => {
     <div v-if="advisoryLoading" class="param-advisory cc-muted">checking…</div>
     <!-- `InlineNote` hangs the tooltip off the TEXT, not the row, which is what the data-quality flag
          in the slot needs: a row-level tip fires on top of the flag's own (docs/UI.md → nested tooltips) -->
-    <InlineNote v-else-if="advisory" class="param-advisory"
-                :severity="advisory.severity" :short="advisory.message" :detail="advisory.tip">
-      <!-- optional second signal: how good the DATA is, as distinct from how concerning the
-           recommendation is. Own colour + own tooltip; colour is never the only cue. -->
-      <i v-if="advisory.flag" class="pi param-advisory-flag" :class="SEVERITY[advisory.flag.severity].icon"
-         :style="{ color: SEVERITY[advisory.flag.severity].color }"
-         v-tooltip.right="advisory.flag.tip" />
-      <!-- optional trailing action: today one kind (`install-env`) → shells `pixi install -e <env>`
-           via `/api/system/envs/install`. InlineNote's docstring notes a host may add a trailing
-           control here without the tooltips firing on top of each other. -->
-      <button v-if="advisory.action?.kind === 'install-env'"
-              class="cc-btn cc-btn-primary cc-btn-sm param-advisory-action"
-              :disabled="advisoryActionBusy"
-              @click.stop="onAdvisoryAction"
-              v-tooltip.top="`Runs pixi install -e ${advisory.action.env} in the background`">
-        {{ advisoryActionBusy ? 'Installing…' : advisory.action.label }}
-      </button>
-    </InlineNote>
+    <template v-else-if="advisory">
+      <InlineNote class="param-advisory"
+                  :severity="advisory.severity" :short="advisory.message" :detail="advisory.tip">
+        <!-- optional second signal: how good the DATA is, as distinct from how concerning the
+             recommendation is. Own colour + own tooltip; colour is never the only cue. -->
+        <i v-if="advisory.flag" class="pi param-advisory-flag" :class="SEVERITY[advisory.flag.severity].icon"
+           :style="{ color: SEVERITY[advisory.flag.severity].color }"
+           v-tooltip.right="advisory.flag.tip" />
+      </InlineNote>
+      <!-- Optional action for the advisory, on its OWN row below the note — a full-width primary
+           button next to a narrow control (a select) squeezes the note's text to two/three words per
+           line. Today one kind (`install-env`) → shells `pixi install -e <env>` via
+           `/api/system/envs/install`. -->
+      <div v-if="advisory.action?.kind === 'install-env'" class="param-advisory-action-row">
+        <button class="cc-btn cc-btn-primary cc-btn-sm"
+                :disabled="advisoryActionBusy"
+                @click.stop="onAdvisoryAction"
+                v-tooltip.top="`Runs pixi install -e ${advisory.action.env} in the background`">
+          {{ advisoryActionBusy ? 'Installing…' : advisory.action.label }}
+        </button>
+      </div>
+    </template>
     <!-- Per-OPTION guidance for a select: what this choice means and when to pick it. Deliberately NOT
          an advisory — nothing about the user's data was consulted, and borrowing `severity: ok` would
          render a green check claiming a verdict nobody reached. -->
@@ -1182,7 +1186,7 @@ const pct = computed(() => {
 /* layout only — `InlineNote` owns the icon/text/gap and the severity colour */
 .param-advisory { display: flex; }
 .param-advisory-flag { margin-left: 0.1rem; }
-.param-advisory-action { margin-left: 0.5rem; }
+.param-advisory-action-row { margin-top: 0.25rem; }
 
 /* Top-right of the row, where a repeatable group's own figure button sits — and OUT OF FLOW, so it
    costs no height. In flow it took a full row of the form to hold one 20px icon, directly under the

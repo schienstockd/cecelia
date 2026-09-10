@@ -236,11 +236,14 @@ end
     @test st == 400
     @test haskey(JSON3.read(body), :error)
 
-    # TESTING (2026-09-10): the platform guard is temporarily widened to include linux-64 + win-64
-    # so the install flow can be exercised off a Mac. Under the widened guard a POST would kick off
-    # a real background `pixi install -e cellpose-v3` in CI, which we don't want — so the
-    # non-Mac-refusal assertion is disabled here. Re-enable when `_OPT_IN_ENVS[..].supported_platforms`
-    # is narrowed back to `["osx-arm64"]`.
+    # The install POST must refuse a supported-elsewhere env on a non-Mac host with 400 (this test
+    # runs on linux-64 / win-64 in CI; on osx-arm64 CI it would begin the job instead — but we're
+    # asserting the guard, not the happy path). Skip on macOS.
+    if !Sys.isapple()
+        st, body = api_system_envs_install(Vector{UInt8}(JSON3.write(Dict("env" => "cellpose-v3"))))
+        @test st == 400
+        @test occursin("not supported", String(JSON3.read(body)[:error]))
+    end
 
     # Invalid JSON body must 400 too, never crash the handler.
     st, body = api_system_envs_install(Vector{UInt8}("not json"))

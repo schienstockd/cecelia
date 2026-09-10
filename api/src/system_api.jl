@@ -21,13 +21,9 @@ using JSON3
 const _SYSTEM_APP_ROOT = abspath(joinpath(@__DIR__, "..", ".."))
 
 # Static catalog of known opt-in envs.
-#
-# TESTING (2026-09-10): `supported_platforms` temporarily includes linux-64 + win-64 so the whole
-# install/probe flow can be exercised off a Mac. Ship-time: narrow back to `["osx-arm64"]` — the
-# advisor and pixi feature must both be tightened in the same change (see pixi.toml).
 const _OPT_IN_ENVS = Dict(
     "cellpose-v3" => (
-        supported_platforms = ["osx-arm64", "linux-64", "win-64"],   # TESTING — see note above
+        supported_platforms = ["osx-arm64"],
         approx_size_mb      = 500,
         description         = "Cellpose 3 (cyto2/cyto3) — fast on Apple Silicon MPS.",
     ),
@@ -104,44 +100,72 @@ function api_system_envs_install(body_bytes)
     202, JSON3.write((; started = true, jobId = job_id, env = name))
 end
 
-# Shell `pixi install -e <name>` in the app root, stream lines over the WS rail, register the
-# subprocess with the job registry so a cancel reaches it. Best-effort pre-warm of cellpose 3
-# built-in weights so the first segmentation doesn't stall on cellpose's server.
+# Shell `pixi install -e <name>` in the app root, stream lines through the task rail (task:log,
+# task:progress, task:status) so the Task Manager row + log rail show what pixi is doing — a
+# ~500 MB install with no visible output looks like a hang. Register the subprocess with the job
+# registry so a cancel reaches it. Best-effort pre-warm of cellpose 3 built-in weights so the
+# first segmentation doesn't stall on cellpose's server.
+#
+# Task-rail semantics — the same pattern movie_rail.jl uses for background jobs:
+#   ws_status(..., "running", ...; fun = "system:install-env:<name>", pool = "job")
+#   ws_log     for each pixi/warm line
+#   ws_progress in coarse phases (start → install done → warm done)
+#   ws_status(..., "done"|"failed", ...)
+# `pool = "job"` marks it as a background job, not a scheduler task, in the rail.
 function _run_env_install(name::AbstractString, pixi::AbstractString, meta::NamedTuple,
                           job_id::AbstractString)
-    _emit(msg) = broadcast_ws(Dict{String,Any}("type" => "system:env-install-log",
-                                                "env" => String(name), "line" => msg))
+    fun = "system:install-env:$name"
+    _log(msg)  = ws_log(nothing, job_id, msg)
+    _prog(frac) = ws_progress(nothing, job_id, Float64(frac))
     ok = false
+    ws_status(nothing, job_id, "running", ""; fun = fun, pool = "job")
     try
-        _emit("pixi install -e $name  (~$(meta.approx_size_mb) MB)")
+        _log("pixi install -e $name  (~$(meta.approx_size_mb) MB)")
+        _prog(0.02)
         cmd = Cmd(`$pixi install -e $name`; dir = _SYSTEM_APP_ROOT)
         out = Pipe(); err = Pipe()
         proc = run(pipeline(cmd; stdout = out, stderr = err); wait = false)
         close(out.in); close(err.in)
         track_job!(job_id, proc)
-        # pixi writes progress mostly to stderr; drain both.
-        @async try; for line in eachline(err); _emit(line); end; catch; end
-        @async try; for line in eachline(out); _emit(line); end; catch; end
+        # Pixi writes progress mostly to stderr (one "Downloading …" line per package + the tally);
+        # drain both so nothing is dropped. Each line lands as a `task:log` frame under this job's
+        # taskId — the Task Manager row and the log rail both show them.
+        @async try; for line in eachline(err); _log(line); end; catch; end
+        @async try; for line in eachline(out); _log(line); end; catch; end
         wait(proc)
-        ok = proc.exitcode == 0 && proc.termsignal == 0 && _env_installed(name)
-        if ok && name == "cellpose-v3"
-            _emit("pre-warming cyto2 / cyto3 model weights (~50 MB, one-time)…")
+        install_ok = proc.exitcode == 0 && proc.termsignal == 0 && _env_installed(name)
+        if !install_ok
+            _log("[ERROR] pixi install exited with status $(proc.exitcode) / signal $(proc.termsignal)")
+            ws_status(nothing, job_id, "failed", ""; fun = fun, pool = "job")
+            return
+        end
+        _prog(0.85)
+        if name == "cellpose-v3"
+            _log("pre-warming cyto2 / cyto3 model weights (~50 MB, one-time)…")
             warm = Cmd(`$pixi run -e $name python -c "from cellpose import models; models.CellposeModel(model_type='cyto2'); models.CellposeModel(model_type='cyto3')"`;
                        dir = _SYSTEM_APP_ROOT)
+            warm_out = Pipe()
             try
-                wproc = run(pipeline(warm; stdout = devnull, stderr = devnull); wait = false)
+                wproc = run(pipeline(warm; stdout = warm_out, stderr = warm_out); wait = false)
+                close(warm_out.in)
                 track_job!(job_id, wproc)
+                @async try; for line in eachline(warm_out); _log(line); end; catch; end
                 wait(wproc)
-            catch
-                _emit("[WARN] weight pre-warm failed — models will download on first run")
+                if !(wproc.exitcode == 0 && wproc.termsignal == 0)
+                    _log("[WARN] weight pre-warm failed — models will download on first run")
+                end
+            catch e
+                _log("[WARN] weight pre-warm errored ($(sprint(showerror, e))) — models will download on first run")
             end
         end
+        _prog(1.0)
+        _log("[DONE] $name env ready")
+        ok = _env_installed(name)
+        ws_status(nothing, job_id, ok ? "done" : "failed", ""; fun = fun, pool = "job")
     catch e
-        _emit("[ERROR] $(sprint(showerror, e))")
+        _log("[ERROR] $(sprint(showerror, e))")
+        ws_status(nothing, job_id, "failed", ""; fun = fun, pool = "job")
     finally
-        broadcast_ws(Dict{String,Any}("type" => "system:env-install-complete",
-                                       "env" => String(name), "ok" => ok,
-                                       "installed" => _env_installed(name)))
         finish_job!(job_id)
     end
 end
