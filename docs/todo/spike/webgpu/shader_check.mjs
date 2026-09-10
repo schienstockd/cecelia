@@ -57,6 +57,43 @@ const LEADING_VEC4S = (() => {
   if (!m) throw new Error('could not read UNIFORM_BYTES from volumeRenderer.ts')
   return Number(m[1])
 })()
+
+// Pick-highlight storage buffer — the mask shader includes a WGSL snippet from
+// `frontend/src/utils/viewerLabels.ts`'s `pickBufferWgsl(binding)`. Read the layout constants +
+// the binding number from source; the snippet body is short enough to inline here (following the
+// existing "constants read, shader-body verbatim" split). Same-shape guard as UNIFORM_BYTES: if
+// the JS pack changes shape, this throws at extraction rather than passing a stale substitution.
+const VL = readFileSync(join(import.meta.dirname, '..', '..', '..', '..',
+                             'frontend', 'src', 'utils', 'viewerLabels.ts'), 'utf8')
+const PICK_BITSET_CAPACITY = (() => {
+  const m = VL.match(/PICK_BITSET_CAPACITY = ([\d_]+)/)
+  if (!m) throw new Error('could not read PICK_BITSET_CAPACITY from viewerLabels.ts')
+  return Number(m[1].replace(/_/g, ''))
+})()
+const PICK_BITSET_WORDS = PICK_BITSET_CAPACITY / 32
+const MIP_PICK_BINDING = (() => {
+  const m = src.match(/export const MIP_PICK_BINDING = (\d+)/)
+  if (!m) throw new Error('could not read MIP_PICK_BINDING from mipShader.ts')
+  return Number(m[1])
+})()
+const PICK_WGSL = `
+struct PickData {
+  focus:    u32,
+  contour:  u32,
+  reserved0: u32,
+  reserved1: u32,
+  bits:     array<u32, ${PICK_BITSET_WORDS}>,
+};
+@group(0) @binding(${MIP_PICK_BINDING}) var<storage, read> pick: PickData;
+
+fn labInPick(id: u32) -> bool {
+  if (id == 0u || id >= ${PICK_BITSET_CAPACITY}u) { return false; }
+  let w = pick.bits[id >> 5u];
+  return (w & (1u << (id & 31u))) != 0u;
+}
+fn labIsFocus(id: u32) -> bool { return id != 0u && id == pick.focus; }
+fn labPickContourPx() -> i32 { return i32(pick.contour); }
+`
 // The uniform's stage VISIBILITY, read from the renderer rather than restated here. It has to include
 // VERTEX — the overlay passes project a point before there is a fragment to shade — and a layout that
 // omits a stage makes `createRenderPipeline` return an INVALID pipeline, which invalidates the whole
@@ -114,6 +151,7 @@ wgsl = wgsl.replaceAll('${SHARED_WGSL}', SHARED)
              .replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
            .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
            .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
+           .replaceAll('${pickBufferWgsl(MIP_PICK_BINDING)}', PICK_WGSL)
 if (wgsl.includes('${')) throw new Error('unresolved interpolation left in the WGSL: ' + wgsl.match(/\$\{[^}]*\}/))
 
 // Did we get the WHOLE shader? A backtick inside a WGSL comment ends the template literal it is

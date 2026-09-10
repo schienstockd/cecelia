@@ -144,10 +144,9 @@ const pickedLabels = ref<number[]>([])
 let pickReq = 0
 
 async function reloadPicked(): Promise<void> {
-  // Both Labels AND Review page over `/Pick selection` — Review's pager is a rank over the same
-  // picks Labels' verbs would act on. Only clear the local mirror when we've left both modes.
-  const needsPicks = mode.value === 'labels' || mode.value === 'review'
-  if (!needsPicks || !projectUid.value || !imageUid.value || !valueName.value) {
+  // Always mirror the server's `/Pick selection` — the pick-outline overlay on the viewer needs
+  // it regardless of cockpit mode. Only clear when we've lost the (project, image, vn) scope.
+  if (!projectUid.value || !imageUid.value || !valueName.value) {
     pickedLabels.value = []
     return
   }
@@ -165,10 +164,13 @@ async function reloadPicked(): Promise<void> {
   } catch { if (seq === pickReq) pickedLabels.value = [] }
 }
 
-// The gating store broadcasts `gating:popmap` on every mutation (incl. viewer picks). Watch a cheap
-// cross-window signal — pickCellAt writes localStorage `cc.pickSelectionTick`, or the popmap
-// change bumps `viewerStore.viewState` transitively. Cheapest that's reactive: watch mode + key.
-watch([mode, labelKey], () => { void reloadPicked() }, { immediate: true })
+// Refresh triggers, in order of cheapness. Mode/vn change is a cockpit-driven state change, always
+// needs a re-read; `pickSelectionTick` is bumped by ViewerWindow after every pick-cell / pick-rect
+// / pick-clear / pick-set so a click in the viewer reaches the panel WITHIN the same window (a
+// bare `storage` event does not fire in the writing window). The cross-window channel is the
+// storage listener below.
+watch([mode, labelKey, () => viewerStore.pickSelectionTick],
+      () => { void reloadPicked() }, { immediate: true })
 // Poll on localStorage tick so a pick from the popup viewer window refreshes here too.
 function onStorage(e: StorageEvent) {
   if (e.key === 'cc.pickSelectionTick' || e.key === 'cc.gatingPopmapTick') void reloadPicked()
@@ -258,6 +260,35 @@ const reviewFocused = computed<ReviewLabel | null>(() => {
 })
 
 const reviewSummary = computed(() => pageSummary(reviewIndex.value, reviewList.value.length))
+
+// ── Pick highlight publisher — "what am I editing right now" on the viewer ──────
+//
+// Writes `viewerStore.pickHighlight` whenever the pick membership OR the Review-mode focus
+// changes. The popup viewer window watches the same store and calls `renderer.setPickSet(...)` —
+// so the WebGPU mask paints a thick outline around every picked cell and a distinct one around
+// the focused id. This is the whole answer to "what did I pick" — replaces the chip strip.
+//
+// A pick is a pick regardless of cockpit mode: even in Tracks mode, if the user has cells
+// selected in the viewer they want to SEE them. Mode only decides which VERBS apply. Focus is a
+// Review-mode concept — the pager's current position — so that only bleeds through in Review.
+//
+// Scope guard: only publish when we have (imageUid, valueName) — a null/loading state should
+// clear any prior highlight rather than leave it on an unrelated image.
+watch([pickedLabels, reviewFocused, mode, imageUid, valueName], () => {
+  if (!imageUid.value || !valueName.value) {
+    viewerStore.setPickHighlight(null)
+    return
+  }
+  const focusId = mode.value === 'review' ? (reviewFocused.value?.label ?? 0) : 0
+  viewerStore.setPickHighlight({
+    imageUid: imageUid.value, valueName: valueName.value,
+    labels: pickedLabels.value.slice(), focusId,
+  })
+}, { immediate: true })
+
+// A cockpit close should NOT leave the outline hanging — the shader keeps drawing the last state
+// otherwise. Symmetric with the ViewerWindow-side clear on image swap.
+onBeforeUnmount(() => { viewerStore.setPickHighlight(null) })
 
 /**
  * Fly the viewer to the focused label — pans (never zooms in), sets t to the label's first

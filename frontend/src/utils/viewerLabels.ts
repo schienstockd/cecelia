@@ -78,3 +78,105 @@ export function labelBpv(header: string | null): number {
   const n = Number(header)
   return Number.isFinite(n) && n > 0 ? n : 4
 }
+
+// ── Pick highlight ───────────────────────────────────────────────────────────────
+//
+// A bitset of label ids the correction cockpit is authoring against — one bit per id, packed into
+// UInt32 words alongside a small four-word header (focus id, contour px, reserved, reserved).
+// The shader tests membership per fragment and gives picked labels a thick contour (over the
+// normal fill / contour treatment); the focused id gets a distinct outline colour so "what am I
+// editing right now" is legible without leaving the viewer.
+//
+// One storage buffer per renderer — same shape on both, only the binding NUMBER differs (5 on the
+// flat renderer, 7 on the brick), which is the only per-renderer typing left after the shared
+// snippet.
+//
+// Ids above the ceiling are dropped silently. Real images are in the thousands of cells; 65 536 is
+// two orders of magnitude of headroom at 8 KB. When (if) a real store exceeds this, resize the
+// buffer rather than raising — the renderer would rebind the whole layout.
+
+/** Maximum label id the pick bitset can carry. */
+export const PICK_BITSET_CAPACITY = 65_536
+/** UInt32 words in the pick bitset — `PICK_BITSET_CAPACITY / 32`. */
+export const PICK_BITSET_WORDS = PICK_BITSET_CAPACITY / 32
+/** Four-word header ahead of the bitset: `focusId, contourPx, reserved, reserved`. Standard
+ *  scalar-layout for a storage-buffer struct; keeps the whole feature in ONE binding. */
+export const PICK_BUFFER_HEADER_WORDS = 4
+/** Whole buffer length in UInt32 words: header + bitset. */
+export const PICK_BUFFER_WORDS = PICK_BUFFER_HEADER_WORDS + PICK_BITSET_WORDS
+/** Whole buffer length in BYTES — pass to `createBuffer({ size })`. 8208 B. */
+export const PICK_BUFFER_BYTES = PICK_BUFFER_WORDS * 4
+
+/**
+ * Off = no pick highlight anywhere. `focusId=0`, `contourPx=0`, empty bitset. The renderer holds
+ * a buffer this shape at all times — a bind slot cannot be "unbound", same as the placeholder
+ * label texture. See the module note above.
+ */
+export function emptyPickBuffer(): Uint32Array {
+  return new Uint32Array(PICK_BUFFER_WORDS)
+}
+
+/**
+ * Pack a pick state into the storage-buffer shape the shader reads. Duplicates are absorbed;
+ * 0 is the background (never a real label) and is dropped; ids at or above
+ * `PICK_BITSET_CAPACITY` are dropped silently — see the module note above. A `focusId` outside
+ * the pick set is still stored — the shader draws the focused label distinctly even when it is
+ * the ONLY thing picked (typical Review state).
+ */
+export function packPickBuffer(
+  labels: Iterable<number>,
+  opts: { focusId?: number; contourPx?: number } = {},
+): Uint32Array {
+  const buf = new Uint32Array(PICK_BUFFER_WORDS)
+  const focus = Number.isFinite(opts.focusId) ? Math.trunc(opts.focusId as number) : 0
+  const contour = Number.isFinite(opts.contourPx) ? Math.max(0, Math.trunc(opts.contourPx as number)) : 0
+  buf[0] = focus > 0 && focus < PICK_BITSET_CAPACITY ? focus : 0
+  buf[1] = contour
+  for (const id of labels) {
+    if (!Number.isFinite(id)) continue
+    const n = Math.trunc(id)
+    if (n <= 0 || n >= PICK_BITSET_CAPACITY) continue
+    const w = PICK_BUFFER_HEADER_WORDS + (n >>> 5)
+    buf[w] |= 1 << (n & 31)
+  }
+  return buf
+}
+
+/** True iff bit `id` is set in `buf`. Same bounds discipline as `packPickBuffer`. */
+export function pickBufferHas(buf: Uint32Array, id: number): boolean {
+  if (!Number.isFinite(id)) return false
+  const n = Math.trunc(id)
+  if (n <= 0 || n >= PICK_BITSET_CAPACITY) return false
+  return (buf[PICK_BUFFER_HEADER_WORDS + (n >>> 5)] & (1 << (n & 31))) !== 0
+}
+
+/** Focus id read out of the header, 0 for "no focus". */
+export function pickBufferFocus(buf: Uint32Array): number { return buf[0] | 0 }
+
+/**
+ * WGSL snippet declaring the pick storage buffer + `labInPick(id)` / `labIsFocus(id)` /
+ * `labPickContourPx()` helpers. Included by BOTH the flat (`mipShader.ts`) and brick
+ * (`brickShader.ts`) label passes. The caller supplies its own `@binding(N)` number — flat uses
+ * 5, brick uses 7. Nothing here reads from `p.*` — this is the ENTIRE pick-highlight surface, so
+ * the two renderers' uniform structs stay untouched.
+ */
+export function pickBufferWgsl(binding: number): string {
+  return `
+struct PickData {
+  focus:    u32,
+  contour:  u32,
+  reserved0: u32,
+  reserved1: u32,
+  bits:     array<u32, ${PICK_BITSET_WORDS}>,
+};
+@group(0) @binding(${binding}) var<storage, read> pick: PickData;
+
+fn labInPick(id: u32) -> bool {
+  if (id == 0u || id >= ${PICK_BITSET_CAPACITY}u) { return false; }
+  let w = pick.bits[id >> 5u];
+  return (w & (1u << (id & 31u))) != 0u;
+}
+fn labIsFocus(id: u32) -> bool { return id != 0u && id == pick.focus; }
+fn labPickContourPx() -> i32 { return i32(pick.contour); }
+`
+}

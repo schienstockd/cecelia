@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { hslCssToRgb, labelPaletteBytes, widenLabelSlab, labelBpv, LABEL_PALETTE_N } from './viewerLabels'
+import { hslCssToRgb, labelPaletteBytes, widenLabelSlab, labelBpv, LABEL_PALETTE_N,
+         PICK_BITSET_CAPACITY, PICK_BITSET_WORDS, PICK_BUFFER_WORDS, PICK_BUFFER_BYTES,
+         packPickBuffer, pickBufferHas, pickBufferFocus, emptyPickBuffer,
+         pickBufferWgsl } from './viewerLabels'
 import { slabUrl, slabShapeError, type ViewerMeta } from './volumeViewer'
 import { distinctColors } from '../plots/plot'
 
@@ -82,5 +85,56 @@ describe('the mask rides the image route', () => {
     expect(slabShapeError('2,3,4', bytes, META, 2, 4)).toBeNull()
     expect(slabShapeError('2,3,4', bytes, META, 2)).toMatch(/bytes, expected/)
     expect(slabShapeError('1,3,4', bytes, META, 2, 4)).toMatch(/but 2x3x4 was asked for/)
+  })
+})
+
+describe('pick buffer', () => {
+  it('sizes for the documented ceiling', () => {
+    expect(PICK_BITSET_CAPACITY).toBe(65_536)
+    expect(PICK_BITSET_WORDS).toBe(PICK_BITSET_CAPACITY / 32)
+    expect(PICK_BUFFER_WORDS).toBe(PICK_BITSET_WORDS + 4)
+    expect(PICK_BUFFER_BYTES).toBe(PICK_BUFFER_WORDS * 4)
+    expect(emptyPickBuffer().length).toBe(PICK_BUFFER_WORDS)
+    expect(pickBufferFocus(emptyPickBuffer())).toBe(0)
+  })
+  it('sets exactly the ids given, absorbs duplicates', () => {
+    const buf = packPickBuffer([1, 5, 5, 100, 1000])
+    expect(pickBufferHas(buf, 1)).toBe(true)
+    expect(pickBufferHas(buf, 5)).toBe(true)
+    expect(pickBufferHas(buf, 100)).toBe(true)
+    expect(pickBufferHas(buf, 1000)).toBe(true)
+    expect(pickBufferHas(buf, 2)).toBe(false)
+    expect(pickBufferHas(buf, 99)).toBe(false)
+    expect(pickBufferHas(buf, 999)).toBe(false)
+  })
+  it('drops 0, negatives and NaN silently — 0 is the background', () => {
+    const buf = packPickBuffer([0, -1, NaN, 3])
+    expect(pickBufferHas(buf, 0)).toBe(false)
+    expect(pickBufferHas(buf, 3)).toBe(true)
+  })
+  it('drops ids at or above the ceiling — grow the buffer to accept them', () => {
+    const buf = packPickBuffer([PICK_BITSET_CAPACITY, PICK_BITSET_CAPACITY + 1, 42])
+    expect(pickBufferHas(buf, 42)).toBe(true)
+    expect(pickBufferHas(buf, PICK_BITSET_CAPACITY)).toBe(false)
+  })
+  it('carries focus id in the header even when it is not in the pick set', () => {
+    // Typical Review: focus is the ONE label the pager sits on; pick set is the working set.
+    const buf = packPickBuffer([1, 2, 3], { focusId: 42, contourPx: 2 })
+    expect(pickBufferFocus(buf)).toBe(42)
+    expect(pickBufferHas(buf, 42)).toBe(false)
+    expect(pickBufferHas(buf, 1)).toBe(true)
+  })
+  it('rejects a focus id outside the id range', () => {
+    expect(pickBufferFocus(packPickBuffer([], { focusId: 0 }))).toBe(0)
+    expect(pickBufferFocus(packPickBuffer([], { focusId: -1 }))).toBe(0)
+    expect(pickBufferFocus(packPickBuffer([], { focusId: PICK_BITSET_CAPACITY }))).toBe(0)
+  })
+  it('the WGSL snippet stamps the caller-supplied binding number', () => {
+    const s = pickBufferWgsl(7)
+    expect(s).toContain('@binding(7)')
+    expect(s).toContain('array<u32, ' + PICK_BITSET_WORDS + '>')
+    expect(s).toContain('fn labInPick')
+    expect(s).toContain('fn labIsFocus')
+    expect(s).toContain('fn labPickContourPx')
   })
 })

@@ -122,6 +122,70 @@ end
     end
 end
 
+@testset "API: /api/tasks/funparams/sources lists per-image (image, valueName) pairs" begin
+    # The Copy-from-a-previous-run picker reaches for records that live PER IMAGE. Same set as the
+    # form; two sources, unioned: `meta.funParamsByName[fun]` keys (the by-name blob) and matching
+    # `run_log` `done` entries (the retroactive backfill, so runs that predate the by-name feature
+    # are still reachable). Same rule as `run_log_params_for_output`.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-funparams-sources")
+        s    = add_set!(proj; name = "s")
+        imgA = add_image!(s; name = "imgA")
+        imgB = add_image!(s; name = "imgB")
+        fun  = "segment.cellposeMeasure"
+
+        # imgA: banked by-name record for "Tcell"
+        write_module_fun_params!(imgA._dir, fun,
+            Dict{String,Any}("outputValueName" => "Tcell", "cellDiameter" => 12);
+            value_name = "Tcell")
+        # imgB: only in the run log (Neutrophil), so it must be picked up by the retroactive half
+        append_run_log!(imgB, fun, "default", "done",
+                        Dict("outputValueName" => "Neutrophil", "cellDiameter" => 8);
+                        at = "2026-09-05T12:00:00")
+
+        ask(qs) = api_task_fun_params_sources(HTTP.Request("GET", "/api/tasks/funparams/sources?" * qs))
+        st, body = ask("projectUid=$(proj.uid)&setUid=$(s.uid)&fun=$fun")
+        @test st == 200
+        rows = JSON3.read(body)
+        pairs = Set((String(r.imageUid), String(r.valueName)) for r in rows)
+        @test (imgA.uid, "Tcell")      in pairs                    # from the by-name blob
+        @test (imgB.uid, "Neutrophil") in pairs                    # from the run log
+        # `at` present for the log-sourced row (that is what makes newest-first sortable) and empty
+        # for the by-name-only row (no timestamp to invent).
+        rowB = rows[findfirst(r -> String(r.imageUid) == imgB.uid, rows)]
+        @test String(rowB.at) == "2026-09-05T12:00:00"
+        @test String(rowB.imageName) == "imgB"
+
+        # An unknown fun answers 200 with an empty list rather than an error — a form for a fun the
+        # project has never run is a legitimate empty state, not a failure.
+        st2, body2 = ask("projectUid=$(proj.uid)&setUid=$(s.uid)&fun=nope.nope")
+        @test st2 == 200
+        @test isempty(JSON3.read(body2))
+
+        # 400 on missing args; 404 on wrong project/set.
+        @test ask("projectUid=$(proj.uid)&fun=$fun")[1] == 400
+        @test ask("projectUid=NOPE&setUid=$(s.uid)&fun=$fun")[1] == 404
+        @test ask("projectUid=$(proj.uid)&setUid=NOPE&fun=$fun")[1] == 404
+
+        # And the picker's picked row round-trips through the existing single-image lookup —
+        # that is the only reason the sources route needs to exist (the fetch itself is unchanged).
+        st3, body3 = api_task_fun_params(HTTP.Request("GET",
+            "/api/tasks/funparams?projectUid=$(proj.uid)&fun=$fun&imageUid=$(imgA.uid)&valueName=Tcell"))
+        @test st3 == 200
+        d = JSON3.read(body3)
+        @test d.matched == true
+        @test String(d.params.outputValueName) == "Tcell"
+        @test Int(d.params.cellDiameter) == 12
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 # The picker's third selector. The gating/track canvas is pinned to ONE segmentation (its toolbar
 # select) and the summary canvas overlays them all; both ask the same route, so the route has to be
 # askable either way. Narrowing matters beyond tidiness: building the answer evaluates every tracked
@@ -4743,7 +4807,7 @@ end
         "/api/storage/summary",
         "/api/profiles",
         "/api/tasks", "/api/tasks/custom-modules",
-        "/api/tasks/definitions", "/api/tasks/funparams",
+        "/api/tasks/definitions", "/api/tasks/funparams", "/api/tasks/funparams/sources",
         "/api/tasks/history", "/api/tasks/recent",
         "/api/tracking/motion-dims", "/api/tracking/issues", "/api/tracking/paths",
         "/api/tracking/diagnostics", "/api/tracking/selection", "/api/tracking/detections",
@@ -4856,7 +4920,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 88 && length(POST_ROUTES) == 112
+    @test length(GET_ROUTES) == 89 && length(POST_ROUTES) == 112
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
