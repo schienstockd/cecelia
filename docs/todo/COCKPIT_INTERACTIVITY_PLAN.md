@@ -1,5 +1,14 @@
 # Correction cockpit — interactivity + follow-up correctness
 
+> **SUPERSEDED 2026-09-10** by [`CORRECTION_DIRECT_PLAN.md`](CORRECTION_DIRECT_PLAN.md).
+> The chip-strip / queue-and-apply direction is retired. Direct manipulation on the viewer
+> (napari-paint parity + vizsla-parity track ops) with immediate autosave and a user-triggered
+> recompute button replaces both this plan and the never-committed `CORRECTION_BRUSH_PLAN.md`.
+> An intermediate 2026-09-08 rewrite of this file (vizsla-outline + NucleoSegment worklist over
+> the same queue-and-apply substrate) was drafted but never committed — the queue itself is the
+> problem, not what wraps it. Retained below as a historical record of the ranked-affordance
+> analysis; nothing here should be built.
+
 **Status:** planning (2026-09-08). Uncommitted scratch in the `feat/correction-cockpit-review-brush`
 worktree; commit into the first-phase PR when work starts.
 **Origin:** Dominik ran PRs #850 (obs carry-over), #852 (invalidation surface), #855 (Review pager
