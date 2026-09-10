@@ -67,6 +67,9 @@ import {
 import {
   prefetchWindow, prefetchDepth, stripCells, playbackAdvance, playbackIntervalMs,
 } from '../utils/volumeCache'
+import {
+  playHealthSummary, trimSamples, type PlayHealthSample,
+} from '../utils/playHealth'
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
@@ -237,6 +240,11 @@ const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
 const brickKnobThrFromUrl = String(route.query.brickThr ?? '') !== ''
 const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
 const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
+/** `?playInflight=N` — during playback only, raise the two-tier admission caps from the shipped
+ *  16/8 to N/floor(N/2). Reverts on stop. Diagnostic knob for the "flicks through blocks" symptom
+ *  when the flat/brick auto-coarsen is already at the coarsest level (Dominik 2026-09-10 asked by
+ *  another user on an intravital movie). Unset (or ≤0) leaves defaults in force. */
+const brickKnobPlayInflight = parseNumQuery(route.query.playInflight, 0)
 /**
  * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
  * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
@@ -1270,6 +1278,24 @@ watch([effectiveMaxIntersect, effectiveSchedulerBias], ([v, b]) => {
   renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: b })
   frame.redraw()
 })
+// `?playInflight=N` — raise the two-tier admission caps while playing, revert on stop. Only fires
+// when the URL param is set (>0); default 16/8 stays in force otherwise so the Dml3RG black-holes
+// guard is unchanged for scrubbing. Also clears the sample buffer on start/stop so a new play
+// session doesn't average against the previous one's numbers.
+watch(playing, on => {
+  playHealthSamples.value = []
+  if (brickKnobPlayInflight <= 0) return
+  const r = renderer.value
+  if (!r?.setSchedulerKnobs) return
+  if (on) {
+    r.setSchedulerKnobs({
+      maxInflight: brickKnobPlayInflight,
+      maxInflightBg: Math.max(1, Math.floor(brickKnobPlayInflight / 2)),
+    })
+  } else {
+    r.setSchedulerKnobs({ maxInflight: 16, maxInflightBg: 8 })
+  }
+})
 /**
  * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
  *
@@ -1735,6 +1761,20 @@ const syncCacheState = () => {
     brickMissingAtBoundT.value = br.missingAtBoundT ?? 0
     brickDisplayT.value = br.displayT
     brickBoundT.value = br.boundT
+    // Record a play-health sample when playback is active — one per syncCacheState call, which
+    // fires on the same rhythm as the tick pump plus incidental redraws. `trimSamples` bounds
+    // both the age (2 s rolling window) and the count (300 hard cap) so a long play doesn't
+    // grow the array without bound.
+    if (playing.value) {
+      const now = performance.now()
+      playHealthSamples.value = trimSamples(
+        [...playHealthSamples.value, {
+          timeMs: now, displayT: br.displayT, boundT: br.boundT,
+          missingAtDisplay: br.missing ?? 0,
+        }],
+        now, PLAY_HEALTH_WINDOW_MS, PLAY_HEALTH_MAX_SAMPLES,
+      )
+    }
   }
 }
 
@@ -2995,6 +3035,15 @@ const brickMissingAtBoundT = ref<number>(0)
 const brickDisplayT = ref<number>(-1)
 /** Timepoint the scheduler is chasing (mirror of `brickResidency().boundT`). */
 const brickBoundT = ref<number>(0)
+/** Rolling window of play-health samples. Fed by `syncCacheState` while `playing.value` is true;
+ *  reduced by `playHealthSummary` for the debug readout. Sized to give p95 headroom without
+ *  growing unbounded on a long play — see `trimSamples`. */
+const PLAY_HEALTH_WINDOW_MS = 2000
+const PLAY_HEALTH_MAX_SAMPLES = 300
+const playHealthSamples = shallowRef<PlayHealthSample[]>([])
+/** Summary of the rolling window. `playing`-gated so a fresh play cleanly re-samples rather than
+ *  showing yesterday's numbers between sessions. */
+const playHealth = computed(() => playHealthSummary(playHealthSamples.value))
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
 /** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
  *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
@@ -5207,6 +5256,23 @@ onUnmounted(() => {
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
           </div>
+
+          <!-- ── Play health — visible only during playback on the brick renderer. Aggregates the
+               per-frame Bricks numbers so a "flicks through blocks" complaint has a p95 to point at
+               instead of a fluctuating instantaneous value. See `utils/playHealth.ts`. -->
+          <template v-if="bricksEnabled && playing && playHealth.count > 0">
+            <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Play</div>
+            <div class="vw-bench-grid cc-fs-3xs">
+              <span class="cc-muted" v-tooltip.left="'missing bricks at displayT — avg · p95 over the 2 s window'">Hole-fill</span>
+              <span>{{ playHealth.avgMissingAtDisplay.toFixed(1) }} avg · {{ playHealth.p95MissingAtDisplay }} p95</span>
+              <span class="cc-muted" v-tooltip.left="'boundT − displayT p95 — frames the scheduler is chasing that the shader has not drawn'">Lag p95</span>
+              <span>{{ playHealth.p95BoundTLag }} frames</span>
+              <span class="cc-muted" v-tooltip.left="'displayT advances per second vs the requested fps'">Fps</span>
+              <span>{{ Number.isFinite(playHealth.achievedFps) ? playHealth.achievedFps.toFixed(1) : '—' }} / {{ settings.viewerFps }}</span>
+              <span class="cc-muted" v-tooltip.left="'effective LOD bias · ?playInflight raises 16/8 → N/floor(N/2) while playing'">Knobs</span>
+              <span>bias {{ effectiveSchedulerBias }}{{ brickKnobPlayInflight > 0 ? ` · inflight ${brickKnobPlayInflight}/${Math.max(1, Math.floor(brickKnobPlayInflight / 2))}` : '' }}</span>
+            </div>
+          </template>
 
           <!-- ── Cache / bricks — mode-conditional state. -->
           <template v-if="bricksEnabled">

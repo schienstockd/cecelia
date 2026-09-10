@@ -82,7 +82,7 @@ const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
  *  t's bricks first, and at 16 bricks per timepoint (fXgbTl at brickSize [128,128,32]) that
  *  used every slot, so prefetch never ran. Measured 2026-08-29 (Dominik): "doesn't prefetch or
  *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */
-const MAX_INFLIGHT = 16
+const DEFAULT_MAX_INFLIGHT = 16
 
 /** Non-boundT (prefetch / trailing playback t) inflight cap. Reserves `MAX_INFLIGHT - MAX_INFLIGHT_BG`
  *  = 8 sockets for boundT bricks so a stop→scrub-elsewhere doesn't wait ~one browser-fetch time
@@ -91,7 +91,7 @@ const MAX_INFLIGHT = 16
  *  the play button it presumably pushes the bricks into a fifo queue. so when i stop the
  *  playback. i have to wait a bit until the queue catches up. there is no skip the queue for the
  *  brick that i would actually need right now". */
-const MAX_INFLIGHT_BG = 8
+const DEFAULT_MAX_INFLIGHT_BG = 8
 
 /** LRU stamp bias for bricks the shader is CURRENTLY sampling as a fallback (prev-level bricks
  *  during a level swap, prev-t bricks during Frankenstein hole-fill). Placed well past
@@ -414,6 +414,13 @@ export async function createBrickVolumeRenderer(
    *  true (protects prev-level fallback from arriving mid-load; the fix for the black-rectangle
    *  pattern). URL param `?brickHold=0` disables. */
   let holdFinerEnabled = true
+  /** Two-tier inflight caps. Runtime-tunable via `setSchedulerKnobs({maxInflight, maxInflightBg})`
+   *  so ViewerWindow can raise them during playback via `?playInflight=N` and revert on stop.
+   *  Defaults reproduce the shipped behaviour — the 16/8 split was tuned against the Dml3RG
+   *  black-holes bug (Dominik 2026-09-02) and is the safe steady-state value; raising it trades
+   *  socket pressure for throughput and should only be tried on evidence. */
+  let maxInflight = DEFAULT_MAX_INFLIGHT
+  let maxInflightBg = DEFAULT_MAX_INFLIGHT_BG
   /** Timepoint the shader drew from BEFORE `displayT` last moved. Used for Frankenstein hole-
    *  fill — brick positions still empty at `displayT` fall back to the same position at
    *  `prevDisplayT` if the atlas still holds it. `-1` when there is no previous frame. */
@@ -612,11 +619,12 @@ export async function createBrickVolumeRenderer(
     if (currentMeta === null || source === null || atlas === null) return
     const key = brickKey(brick)
     if (inflight.has(key)) return
-    // Two-tier backpressure: total inflight ≤ MAX_INFLIGHT (16) AND non-boundT inflight ≤
-    // MAX_INFLIGHT_BG (8). Reserving 8 slots for boundT means a stop→scrub gets its new-boundT
-    // bricks on the wire the same tick, without cancelling a still-useful prefetch. Skipped kicks
-    // retry next tick — that path is unchanged. See `shouldAdmitKick`.
-    if (!shouldAdmitKick(inflight.keys(), brick.t, boundT, MAX_INFLIGHT, MAX_INFLIGHT_BG)) return
+    // Two-tier backpressure: total inflight ≤ maxInflight (default 16) AND non-boundT inflight ≤
+    // maxInflightBg (default 8). Reserving `maxInflight - maxInflightBg` slots for boundT means a
+    // stop→scrub gets its new-boundT bricks on the wire the same tick, without cancelling a
+    // still-useful prefetch. Skipped kicks retry next tick — that path is unchanged. See
+    // `shouldAdmitKick`. Both caps are runtime-tunable so ViewerWindow can raise them under play.
+    if (!shouldAdmitKick(inflight.keys(), brick.t, boundT, maxInflight, maxInflightBg)) return
     const layout = atlas.layout
     const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox, currentZLo)
     const ac = new AbortController()
@@ -1561,7 +1569,21 @@ export async function createBrickVolumeRenderer(
     setSchedulerKnobs(k) {
       // Merge over the current knobs; ViewerWindow reads `?brickThr=` and `?brickBias=` on
       // mount and calls this once. Same-tick tickScheduler picks up the change on next call.
-      schedulerKnobs = { ...schedulerKnobs, ...k }
+      // `maxInflight`/`maxInflightBg` live outside `SchedulerKnobs` (they gate `kickFetch`, not
+      // the LOD picker) but ride the same setter so ViewerWindow has one entry point.
+      if (k.maxIntersect !== undefined || k.bias !== undefined) {
+        schedulerKnobs = {
+          ...schedulerKnobs,
+          ...(k.maxIntersect !== undefined ? { maxIntersect: k.maxIntersect } : {}),
+          ...(k.bias !== undefined ? { bias: k.bias } : {}),
+        }
+      }
+      if (k.maxInflight !== undefined && k.maxInflight > 0) {
+        maxInflight = Math.floor(k.maxInflight)
+      }
+      if (k.maxInflightBg !== undefined && k.maxInflightBg > 0) {
+        maxInflightBg = Math.min(Math.floor(k.maxInflightBg), maxInflight)
+      }
     },
     setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
     setZPlane(zLo) {
