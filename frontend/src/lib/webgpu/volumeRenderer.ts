@@ -280,16 +280,12 @@ export interface VolumeRenderer {
    */
   setLevelFloor?(level: number | undefined): void
   /**
-   * Brick renderer only: tune the LOD picker + fetch admission knobs at runtime.
-   *  - `maxIntersect` is the CORE brick ceiling for the over-fetch guard (higher = more ambitious).
-   *  - `bias` shifts the SSE-picked level (positive = coarser, negative = finer).
-   *  - `maxInflight` caps total inflight brick fetches (default 16).
-   *  - `maxInflightBg` caps non-boundT (prefetch / trailing) inflight (default 8; reserves the
-   *    remainder for boundT bricks so a stop→scrub jumps the queue).
-   * Exposed as URL params (`?brickThr=`, `?brickBias=`, `?playInflight=`) for interactive tuning;
-   * see ViewerWindow's mount. `?playInflight=N` sets both caps under playback only.
+   * Brick renderer only: tune the LOD picker knobs at runtime. `maxIntersect` is the CORE brick
+   * ceiling for the over-fetch guard (higher = more ambitious); `bias` shifts the SSE-picked
+   * level (positive = coarser, negative = finer). Exposed as URL params for interactive tuning;
+   * see ViewerWindow's mount.
    */
-  setSchedulerKnobs?(k: { maxIntersect?: number; bias?: number; maxInflight?: number; maxInflightBg?: number }): void
+  setSchedulerKnobs?(k: { maxIntersect?: number; bias?: number }): void
   /**
    * Brick renderer only: enable/disable the "hold going-finer until current stable" gate. `true`
    * (default) protects the prev-level fallback from arriving mid-load. `false` swaps levels

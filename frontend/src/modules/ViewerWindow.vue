@@ -240,11 +240,6 @@ const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
 const brickKnobThrFromUrl = String(route.query.brickThr ?? '') !== ''
 const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
 const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
-/** `?playInflight=N` — during playback only, raise the two-tier admission caps from the shipped
- *  16/8 to N/floor(N/2). Reverts on stop. Diagnostic knob for the "flicks through blocks" symptom
- *  when the flat/brick auto-coarsen is already at the coarsest level (Dominik 2026-09-10 asked by
- *  another user on an intravital movie). Unset (or ≤0) leaves defaults in force. */
-const brickKnobPlayInflight = parseNumQuery(route.query.playInflight, 0)
 /**
  * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
  * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
@@ -358,6 +353,16 @@ function benchSave() {
       brickKnobThr, brickKnobBias, brickKnobHold,
       brickKnobThrFromUrl, effectiveMaxIntersect: effectiveMaxIntersect.value,
       viewerBrickTier: settings.viewerBrickTier,
+      // Included in the bench save so two saves at different playback rates are distinguishable.
+      viewerFps: settings.viewerFps,
+    },
+    // Play-health rolling window as captured at Save time — plus the summary so a reader does
+    // not have to re-derive it. Empty when no play session was active in the window.
+    playHealth: {
+      summary: playHealth.value,
+      samples: playHealthSamples.value,
+      windowMs: PLAY_HEALTH_WINDOW_MS,
+      maxSamples: PLAY_HEALTH_MAX_SAMPLES,
     },
   }
   const blob = buildBenchBlob({
@@ -1278,24 +1283,10 @@ watch([effectiveMaxIntersect, effectiveSchedulerBias], ([v, b]) => {
   renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: b })
   frame.redraw()
 })
-// `?playInflight=N` — raise the two-tier admission caps while playing, revert on stop. Only fires
-// when the URL param is set (>0); default 16/8 stays in force otherwise so the Dml3RG black-holes
-// guard is unchanged for scrubbing. Also clears the sample buffer on start/stop so a new play
-// session doesn't average against the previous one's numbers.
-watch(playing, on => {
-  playHealthSamples.value = []
-  if (brickKnobPlayInflight <= 0) return
-  const r = renderer.value
-  if (!r?.setSchedulerKnobs) return
-  if (on) {
-    r.setSchedulerKnobs({
-      maxInflight: brickKnobPlayInflight,
-      maxInflightBg: Math.max(1, Math.floor(brickKnobPlayInflight / 2)),
-    })
-  } else {
-    r.setSchedulerKnobs({ maxInflight: 16, maxInflightBg: 8 })
-  }
-})
+// Clear the play-health sample buffer on play START so a fresh session does not average against
+// the previous one; leaves samples in place on STOP so Save captures the run just finished (the
+// whole point of the readout — bench12 use case, 2026-09-10).
+watch(playing, on => { if (on) playHealthSamples.value = [] })
 /**
  * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
  *
@@ -5257,11 +5248,11 @@ onUnmounted(() => {
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
           </div>
 
-          <!-- ── Play health — visible only during playback on the brick renderer. Aggregates the
-               per-frame Bricks numbers so a "flicks through blocks" complaint has a p95 to point at
-               instead of a fluctuating instantaneous value. See `utils/playHealth.ts`. -->
-          <template v-if="bricksEnabled && playing && playHealth.count > 0">
-            <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Play</div>
+          <!-- ── Play health — shown when the rolling window has samples, whether or not playback
+               is still running. Left visible after stop so the numbers can be read before Save;
+               a fresh play START clears the samples (watch on `playing`). See `utils/playHealth.ts`. -->
+          <template v-if="bricksEnabled && playHealth.count > 0">
+            <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Play{{ playing ? '' : ' (last)' }}</div>
             <div class="vw-bench-grid cc-fs-3xs">
               <span class="cc-muted" v-tooltip.left="'missing bricks at displayT — avg · p95 over the 2 s window'">Hole-fill</span>
               <span>{{ playHealth.avgMissingAtDisplay.toFixed(1) }} avg · {{ playHealth.p95MissingAtDisplay }} p95</span>
@@ -5269,8 +5260,8 @@ onUnmounted(() => {
               <span>{{ playHealth.p95BoundTLag }} frames</span>
               <span class="cc-muted" v-tooltip.left="'displayT advances per second vs the requested fps'">Fps</span>
               <span>{{ Number.isFinite(playHealth.achievedFps) ? playHealth.achievedFps.toFixed(1) : '—' }} / {{ settings.viewerFps }}</span>
-              <span class="cc-muted" v-tooltip.left="'effective LOD bias · ?playInflight raises 16/8 → N/floor(N/2) while playing'">Knobs</span>
-              <span>bias {{ effectiveSchedulerBias }}{{ brickKnobPlayInflight > 0 ? ` · inflight ${brickKnobPlayInflight}/${Math.max(1, Math.floor(brickKnobPlayInflight / 2))}` : '' }}</span>
+              <span class="cc-muted" v-tooltip.left="'effective LOD bias applied by the scheduler for this session'">Knobs</span>
+              <span>bias {{ effectiveSchedulerBias }}</span>
             </div>
           </template>
 
