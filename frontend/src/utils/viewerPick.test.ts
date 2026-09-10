@@ -43,16 +43,20 @@ describe('screenToImagePx', () => {
   })
 
   it('pan shifts what is under the pointer, opposite direction to the eye', () => {
-    // `panDrag(cam, +10, 0, H)` decreases panX by (10 * umPerPx). At W=H=200 and dist=fittedDist,
-    // umPerPx = (2 * dist * VIEW_HALF_ANGLE) / H. So panning the eye LEFT by that amount moves the
-    // world origin to appear RIGHT of centre — a click at canvas centre lands on a LARGER x pixel.
+    // Shader ground truth (see viewerPick.ts): screen-centre = world `(panX, -panY)`.
+    // `panDrag(cam, +10, 0, H)` — a drag RIGHT — decreases panX (the eye moves LEFT), so the
+    // image APPEARS to shift right under a stationary pointer. The pixel now at canvas centre is
+    // one that USED to sit LEFT of centre → a SMALLER x pixel. The old test asserted the
+    // opposite because the picker itself was pan-sign-inverted vs the shader (a mirror that
+    // only showed on a panned image, and produced "picks the diagonally opposite cell" reports
+    // from Dominik in the correction cockpit); fixing that turned this test over too.
     const m = meta()
     const W = 200, H = 200
     const cam0 = fittedCam(m, W, H)
     const p0 = screenToImagePx(W / 2, H / 2, W, H, cam0, m)
     const cam1 = { ...cam0, panX: cam0.panX - 5 }
     const p1 = screenToImagePx(W / 2, H / 2, W, H, cam1, m)
-    expect(p1.x).toBeGreaterThan(p0.x)
+    expect(p1.x).toBeLessThan(p0.x)
   })
 
   it('respects anisotropic voxels', () => {
