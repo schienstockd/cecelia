@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import CollapsibleSection from './CollapsibleSection.vue'
-import { probeWebGpu, adapterNameText, type GpuProbeReport } from '../utils/webgpuProbe'
+import { probeWebGpu, adapterNameText, isAppleAdapter, type GpuProbeReport } from '../utils/webgpuProbe'
 import { SEVERITY, type Severity } from '../lib/severity'
 
 const report  = ref<GpuProbeReport | null>(null)
@@ -29,6 +29,12 @@ const severity = computed<Severity>(() => {
 })
 const sevStyle = computed(() => SEVERITY[severity.value])
 const adapterText = computed(() => report.value ? adapterNameText(report.value.name) : '')
+const isApple = computed(() => !!report.value && isAppleAdapter(report.value.name))
+const gpuTypeLabel = computed(() => {
+  if (!report.value) return ''
+  if (isApple.value) return 'Apple GPU (unified memory)'
+  return report.value.looksDiscrete ? 'Discrete' : 'Integrated'
+})
 
 async function runProbe() {
   probing.value = true
@@ -73,12 +79,18 @@ function fmt(n: number | undefined | null): string {
       <!-- Baseline note. Shown when the browser exposes only the WebGPU-spec-default 3D texture axis
            (2048), which is the ceiling on many platforms and hard-capped by Chromium/Dawn on Linux
            Vulkan even where the driver reports 16384. Phase B's LOD picker already handles it; this row
-           just names the constraint so a user can see why large images stop getting sharper. -->
+           just names the constraint so a user can see why large images stop getting sharper.
+
+           On Apple, both Safari AND Chrome-on-Mac report 2048 (measured 2026-09-10 on `apple metal-3`),
+           so this is a Metal hardware cap on the GPU family, not a browser choice. Nothing to switch to;
+           the LOD picker handles the sharpness fallback. Just name the cause. -->
       <div v-if="report.limits && report.limits.maxTextureDimension3D <= 2048"
            class="note"
            :style="{ color: SEVERITY.warn.color }">
         <i :class="['pi', SEVERITY.warn.icon]" />
-        <span>Large images render at coarser detail — GPU 3D texture cap 2048</span>
+        <span v-if="isApple">Metal caps 3D textures at 2048 on this Apple GPU — large images
+          render at a coarser LOD</span>
+        <span v-else>Large images render at coarser detail — GPU 3D texture cap 2048</span>
       </div>
 
       <div v-if="report.limits" class="kv">
@@ -92,7 +104,7 @@ function fmt(n: number | undefined | null): string {
         </template>
 
         <span>GPU type</span>
-        <span>{{ report.looksDiscrete ? 'Discrete' : 'Integrated' }}<template
+        <span>{{ gpuTypeLabel }}<template
           v-if="!adapterText"> (from limits — the browser gives no adapter name)</template></span>
 
         <span>Ready</span>
