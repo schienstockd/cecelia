@@ -1,6 +1,6 @@
 # Correction — direct manipulation (paint + vizsla, no queue)
 
-**Status:** planning (2026-09-10). Branch: to be cut off `feat/correction-cockpit-vis`.
+**Status:** P1 shipped 2026-09-10 (PR #895); P2–P6 planning.
 Supersedes `COCKPIT_INTERACTIVITY_PLAN.md`. Retires the queue-and-apply half of
 `CORRECTION_PLAN.md` §Phase 4. A companion `CORRECTION_BRUSH_PLAN.md` was drafted on
 2026-09-09 for a queue-and-apply brush pipeline but never committed to `main` — the queue
@@ -60,42 +60,52 @@ user is happy with the edits, one button recomputes downstream measurements.
 
 ## Phases — small PRs, each independently useful
 
-### P1 — Viewer outline layer. **~1 day, split into 1a + 1b.**
+### P1 — Viewer outline layer. **SHIPPED 2026-09-10 (PR #895).**
 
 The prereq for every subsequent phase. Ships a real "what did I pick" answer.
 
-**Design revised 2026-09-10 after reading the shaders.** The label mask is *already* textured in
-the WebGPU viewer (`viewerLabels.ts` — rides `/api/viewer/slab?labels=<vn>` as `r32uint`) and
-the mask shader (`brickShader.ts:246`, `mipShader.ts:154` — `labEdge`) *already* draws contour
-outlines from that texture, palette-coloured by `id % LABEL_PALETTE_N`. So the outline layer is
-a **shader-mode extension on the existing labels layer**, not a new WebGPU line-strip layer.
+The label mask is already textured in the WebGPU viewer (`viewerLabels.ts` — rides
+`/api/viewer/slab?labels=<vn>` as `r32uint`) and the mask shader already runs `labEdge` per
+fragment, palette-coloured by `id % LABEL_PALETTE_N`. So the outline layer is a **shader-mode
+extension on the existing labels layer**, not a new WebGPU line-strip layer.
 
 Rejected the "client-side `find_contours` + line-strip" and the "`d3.contour` on a canvas above
 the volume canvas" fallback — both duplicate contour code the shader already runs, and the
 line-strip path adds a whole overlay pass for what is a two-line branch on an existing fragment
-shader. The role-LUT approach reuses the palette-texture pattern verbatim.
+shader. Also rejected: an intermediate r8uint role-LUT texture (65 536 bytes, one role per id).
+The shipped design uses a compact bitset in a storage buffer — 8 KiB total, one binding, no
+`bytesPerRow` alignment gymnastics.
 
-- **P1a — LUT primitive (pure logic, testable).**
-  - `frontend/src/utils/pickOutlineLUT.ts` — builds a `Uint8Array` of length `maxId + 1`, one
-    byte per label id: `ROLE_OFF = 0`, `ROLE_PICK = 1`, `ROLE_FOCUS = 2`. Focus wins over pick.
-    Defensive cap `MAX_PICK_LUT_IDS = 65536`. Unit-tested.
-  - Ships in isolation as a stake in the ground for the shader consumer; no runtime consumer
-    yet. Matches the "extract pure logic first" rule in `frontend/CLAUDE.md`.
+**As shipped:**
+- `frontend/src/utils/viewerLabels.ts` — `PICK_BITSET_CAPACITY = 65 536` bits + a 4-word
+  header (`focus`, `contour`, 2 × reserved). `packPickBuffer(labels, {focusId, contourPx})`
+  packs a `Uint32Array` the shader reads verbatim. `pickBufferWgsl(binding)` returns the WGSL
+  snippet included by both `mipShader.ts` (binding 5) and `brickShader.ts` (binding 7); helpers
+  are `labInPick(id)`, `labIsFocus(id)`, `labPickContourPx()`. Nothing reads from the per-renderer
+  `P`/`BU` uniform struct — uniform layout stays untouched (the wrong turn on 2026-09-09 was
+  shifting the uniform struct to squeeze in a `pick` vec4, which broke CH0 in every reproducer).
+- `volumeRenderer.ts` + `brickVolumeRenderer.ts` — always-bound storage buffer (all-zero at
+  init, `writeBuffer` on change); `setPickSet(labels, focusId, contourPx)` packs + uploads.
+- `stores/viewer.ts` — `pickHighlight` (Pinia ref + `cc.viewer.pickHighlight` localStorage) is
+  the single source of truth. `bumpPickSelectionTick()` (Pinia + `cc.pickSelectionTick`) wakes
+  same-window and cross-window subscribers on every pick.
+- `CorrectionCockpit.vue` — the SOLE publisher of `pickHighlight`. Watches
+  `[pickedLabels, reviewFocused, mode, imageUid, valueName]` and writes on change; clears on
+  unmount. Reads `/Pick selection` regardless of cockpit mode so a pick belongs to the viewer.
+- `ViewerWindow.vue` — reads `viewerStore.pickHighlight` in the frame loop, calls
+  `r.setPickSet(labels, focusId, 2)` every draw (renderer short-circuits identical bytes). Scope
+  match is `imageUid`-only; an id that doesn't exist in the visible mask silently draws nothing.
+  Frame redraw kick on `pickHighlight.updateId`. Pick verbs (`pickCellAt` / `pickRectAt`) send
+  `labelName.value || gc.valueName || undefined` explicitly, so server + downstream readers
+  agree on the vn.
+- `viewerPick.ts` — pan-sign fix (`wx = panX + ndcX·halfW`, `wy = -panY - ndcY·halfH`). The
+  picker had inverted signs vs the shader that only surfaced on a panned image (picks landed on
+  the diagonally-opposite cell) — the earlier "highlights labels off the selected area" report.
 
-- **P1b — Shader consumption + upload + trigger.**
-  - New `@binding` in `brickShader.ts` + `mipShader.ts` for the r8uint role-LUT texture (same
-    row-per-shader pattern as the label palette).
-  - New uniform slot `pickOutlineMode` (0 = off, 1 = on). When on: sample `roleLUT[labId]`;
-    ROLE_OFF fragments discard the label, ROLE_PICK draws the outline in the pick colour,
-    ROLE_FOCUS draws thicker + brighter.
-  - `volumeRenderer.ts` + `brickVolumeRenderer.ts` create the LUT texture on demand and upload
-    when the pick/focus set changes (via `pickOutlineLUTsEqual` — skip write on no-op).
-  - Cockpit-open triggers `pickOutlineMode = 1`, close triggers `0`. Reactive via the settings
-    store; no bespoke event bus.
-  - Renders three states in the mask shader: pick-set (thin, pick colour), review focus
-    (bright/thicker, focus colour), track segment at |currentT − focusT| alpha-ramped so
-    live-scrubbing tells you where "home" is (the alpha-ramp is optional for the MVP; the
-    two-state pick vs focus is enough to unblock P2–P5).
+**Colour scheme:** pick = white, focus = cyan (+1 voxel of contour width for focus).
+
+**Deferred to a later slice:** the alpha-ramp on `|currentT − focusT|` for live-scrubbing; the
+two-state pick vs focus was enough to unblock P2–P5.
 
 ### P2 — Paint direct mode + autosave + undo journal. **~2 days.**
 
