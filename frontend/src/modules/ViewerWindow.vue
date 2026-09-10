@@ -67,6 +67,9 @@ import {
 import {
   prefetchWindow, prefetchDepth, stripCells, playbackAdvance, playbackIntervalMs,
 } from '../utils/volumeCache'
+import {
+  playHealthSummary, trimSamples, type PlayHealthSample,
+} from '../utils/playHealth'
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
@@ -350,6 +353,16 @@ function benchSave() {
       brickKnobThr, brickKnobBias, brickKnobHold,
       brickKnobThrFromUrl, effectiveMaxIntersect: effectiveMaxIntersect.value,
       viewerBrickTier: settings.viewerBrickTier,
+      // Included in the bench save so two saves at different playback rates are distinguishable.
+      viewerFps: settings.viewerFps,
+    },
+    // Play-health rolling window as captured at Save time — plus the summary so a reader does
+    // not have to re-derive it. Empty when no play session was active in the window.
+    playHealth: {
+      summary: playHealth.value,
+      samples: playHealthSamples.value,
+      windowMs: PLAY_HEALTH_WINDOW_MS,
+      maxSamples: PLAY_HEALTH_MAX_SAMPLES,
     },
   }
   const blob = buildBenchBlob({
@@ -1270,6 +1283,10 @@ watch([effectiveMaxIntersect, effectiveSchedulerBias], ([v, b]) => {
   renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: b })
   frame.redraw()
 })
+// Clear the play-health sample buffer on play START so a fresh session does not average against
+// the previous one; leaves samples in place on STOP so Save captures the run just finished (the
+// whole point of the readout — bench12 use case, 2026-09-10).
+watch(playing, on => { if (on) playHealthSamples.value = [] })
 /**
  * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
  *
@@ -1735,6 +1752,20 @@ const syncCacheState = () => {
     brickMissingAtBoundT.value = br.missingAtBoundT ?? 0
     brickDisplayT.value = br.displayT
     brickBoundT.value = br.boundT
+    // Record a play-health sample when playback is active — one per syncCacheState call, which
+    // fires on the same rhythm as the tick pump plus incidental redraws. `trimSamples` bounds
+    // both the age (2 s rolling window) and the count (300 hard cap) so a long play doesn't
+    // grow the array without bound.
+    if (playing.value) {
+      const now = performance.now()
+      playHealthSamples.value = trimSamples(
+        [...playHealthSamples.value, {
+          timeMs: now, displayT: br.displayT, boundT: br.boundT,
+          missingAtDisplay: br.missing ?? 0,
+        }],
+        now, PLAY_HEALTH_WINDOW_MS, PLAY_HEALTH_MAX_SAMPLES,
+      )
+    }
   }
 }
 
@@ -2995,6 +3026,15 @@ const brickMissingAtBoundT = ref<number>(0)
 const brickDisplayT = ref<number>(-1)
 /** Timepoint the scheduler is chasing (mirror of `brickResidency().boundT`). */
 const brickBoundT = ref<number>(0)
+/** Rolling window of play-health samples. Fed by `syncCacheState` while `playing.value` is true;
+ *  reduced by `playHealthSummary` for the debug readout. Sized to give p95 headroom without
+ *  growing unbounded on a long play — see `trimSamples`. */
+const PLAY_HEALTH_WINDOW_MS = 2000
+const PLAY_HEALTH_MAX_SAMPLES = 300
+const playHealthSamples = shallowRef<PlayHealthSample[]>([])
+/** Summary of the rolling window. `playing`-gated so a fresh play cleanly re-samples rather than
+ *  showing yesterday's numbers between sessions. */
+const playHealth = computed(() => playHealthSummary(playHealthSamples.value))
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
 /** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
  *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
@@ -5207,6 +5247,23 @@ onUnmounted(() => {
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
           </div>
+
+          <!-- ── Play health — shown when the rolling window has samples, whether or not playback
+               is still running. Left visible after stop so the numbers can be read before Save;
+               a fresh play START clears the samples (watch on `playing`). See `utils/playHealth.ts`. -->
+          <template v-if="bricksEnabled && playHealth.count > 0">
+            <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Play{{ playing ? '' : ' (last)' }}</div>
+            <div class="vw-bench-grid cc-fs-3xs">
+              <span class="cc-muted" v-tooltip.left="'missing bricks at displayT — avg · p95 over the 2 s window'">Hole-fill</span>
+              <span>{{ playHealth.avgMissingAtDisplay.toFixed(1) }} avg · {{ playHealth.p95MissingAtDisplay }} p95</span>
+              <span class="cc-muted" v-tooltip.left="'boundT − displayT p95 — frames the scheduler is chasing that the shader has not drawn'">Lag p95</span>
+              <span>{{ playHealth.p95BoundTLag }} frames</span>
+              <span class="cc-muted" v-tooltip.left="'displayT advances per second vs the requested fps'">Fps</span>
+              <span>{{ Number.isFinite(playHealth.achievedFps) ? playHealth.achievedFps.toFixed(1) : '—' }} / {{ settings.viewerFps }}</span>
+              <span class="cc-muted" v-tooltip.left="'effective LOD bias applied by the scheduler for this session'">Knobs</span>
+              <span>bias {{ effectiveSchedulerBias }}</span>
+            </div>
+          </template>
 
           <!-- ── Cache / bricks — mode-conditional state. -->
           <template v-if="bricksEnabled">

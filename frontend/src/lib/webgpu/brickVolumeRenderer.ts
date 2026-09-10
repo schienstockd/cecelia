@@ -90,7 +90,11 @@ const MAX_INFLIGHT = 16
  *  `shouldAdmitKick` in `utils/pageTable.ts`. Bug shape: Dominik 2026-09-02, "when i just press
  *  the play button it presumably pushes the bricks into a fifo queue. so when i stop the
  *  playback. i have to wait a bit until the queue catches up. there is no skip the queue for the
- *  brick that i would actually need right now". */
+ *  brick that i would actually need right now".
+ *
+ *  Bench11/12 (2026-09-10, 2h06xA single-level) showed `?playInflight=32` did NOT raise fetch
+ *  throughput above the shipped 16/8's 25 MB/s — the bottleneck is server-side, not socket
+ *  concurrency. Left as constants; the diagnostic-only override was dropped. */
 const MAX_INFLIGHT_BG = 8
 
 /** LRU stamp bias for bricks the shader is CURRENTLY sampling as a fallback (prev-level bricks
