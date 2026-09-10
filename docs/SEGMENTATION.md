@@ -379,6 +379,45 @@ cecelia runs **cellpose >= 4.2**. Four things about v4 are load-bearing here, al
 `ValueError` in v4, so a Z stack with no stitching is passed plane-by-plane instead. Same result as
 v3 — labels numbered independently per plane — see `test_cellpose_v4_callpath.py`.
 
+### Cellpose v3 (Mac-only opt-in)
+
+Cellpose 4 (Cellpose-SAM) is a ~300M-param transformer and runs slowly on Apple Silicon MPS — a
+lot of its attention/norm ops either fall back to CPU or run on unoptimised Metal shaders. On
+CUDA it's fine. The cellpose 3 CNN models (`cyto2`, `cyto3`) are ~10× faster on MPS, so on Mac
+we offer them as a second pixi environment.
+
+**Not enabled by default.** `[feature.cellpose-v3]` in `pixi.toml` is scoped
+`platforms = ["osx-arm64"]` and the env is a **non-default** environment — `pixi install` does
+NOT install it, and neither does a fresh app install. Users opt in from inside the app: pick a v4
+model on Mac and the model dropdown shows an inline **Install cellpose-v3 (~500 MB)** button (the
+`cellposeModelAdvisory` param advisor). Clicking it POSTs to `/api/system/envs/install`, which
+runs `pixi install -e cellpose-v3` as a jobs.jl-tracked background job and pre-warms the cyto2 +
+cyto3 weights so the first segmentation does not stall on cellpose's server.
+
+**Which env runs the task.** `BUILTIN_CELLPOSE_MODELS` (in `app/src/config.jl`) tags each entry
+with `backend :: :v3 | :v4`. `cellpose.jl::_run_task` reads the picked model's backend and passes
+`env = :cellpose_v3` to `run_py`, which resolves to `.pixi/envs/cellpose-v3/bin/python`. Mixed
+v3+v4 in one task is refused up front — one task = one env. Missing v3 env fails LOUDLY with a
+message pointing at the Install button (never a silent fallback to v4 that would return different
+labels).
+
+**Shipped v3 models.** Only `cyto2` and `cyto3`, the two built-ins. Both auto-download from
+cellpose's own server on first use (~25 MB each) into `~/.cellpose/models/`; the install job
+pre-warms both so the download happens once, up front. `nuclei` and the tissue-specifics are
+deferred until someone asks. Custom v3 checkpoints are not on the drop path today — the
+`<config_dir>/models/cellposeModels/` slot is for v4 files, per the resolver above.
+
+**When v3 is NOT the answer.**
+- On Linux / Windows with a CUDA GPU: v4 is already fast — the advisor does not fire and the v3
+  env is not installable.
+- On an Intel Mac: `osx-arm64` scoping rejects the env. If someone with an Intel Mac needs this,
+  add `"osx-64"` to the feature's `platforms` and expect a slower run than on MPS.
+- For image types v4 handles better (dense tissue): v4 stays selectable and produces better
+  results even on MPS — the advisor is a *recommendation*, not a block.
+
+Full plan: [`docs/todo/CELLPOSE_V3_OPTIN_PLAN.md`](todo/CELLPOSE_V3_OPTIN_PLAN.md). Partial
+reversal of [`docs/todo/CELLPOSE_V4_PLAN.md`](todo/CELLPOSE_V4_PLAN.md).
+
 ### Custom cellpose checkpoints
 
 Custom **cellpose 4** checkpoints live outside the code. There are two slots, in

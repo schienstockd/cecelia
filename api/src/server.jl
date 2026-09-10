@@ -23,6 +23,7 @@ include("tracking_api.jl")
 include("task_validate_api.jl")     # POST /api/tasks/validate — uses _gating_image (gating_api.jl)
 include("correction_plan_api.jl")   # /api/correction-plan/* — uses _gating_image (gating_api.jl)
 include("update_api.jl")
+include("system_api.jl")    # /api/system/envs — opt-in pixi env probe + install job (cellpose-v3 on Mac)
 include("plugins_api.jl")   # plugin install/remove; uses update_api.jl's Downloads + routes.jl's payload
 include("maintenance_api.jl")
 include("repl_api.jl")
@@ -168,6 +169,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/diagnostics/packages" => (req, body_bytes) -> (api_packages(req)),
     "/api/version" => (req, body_bytes) -> (api_version(req)),
     "/api/update/check" => (req, body_bytes) -> (api_update_check(req)),
+    "/api/system/envs" => (req, body_bytes) -> (api_system_envs(req)),
     "/api/setup/defaults" => (req, body_bytes) -> (api_setup_defaults(req)),
     "/api/setup/validate" => (req, body_bytes) -> (api_setup_validate(req)),
     "/api/projects" => (req, body_bytes) -> (api_projects_list(req)),
@@ -369,6 +371,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/repl/config" => (req, body_bytes) -> (api_repl_config(body_bytes)),
     "/api/update/apply" => (req, body_bytes) -> (api_update_apply(body_bytes)),
     "/api/update/revert" => (req, body_bytes) -> (api_update_revert(body_bytes)),
+    "/api/system/envs/install" => (req, body_bytes) -> (api_system_envs_install(body_bytes)),
     "/api/storage/reclaim" => (req, body_bytes) -> (api_storage_reclaim(body_bytes)),
 )
 

@@ -23,6 +23,7 @@ import type { Severity } from '../lib/severity'
 import { isImageVersionField } from './paramValues'
 import { DEFAULT_VALUE_NAME } from '../utils/imageDelete'
 import { spanAnchorRate, secondsLabel, type RateImage } from '../utils/frameDuration'
+import { getSystemEnvs } from '../utils/systemEnvs'
 
 /** What the renderer shows: a one-line readout, a severity, and the full reasoning on hover. */
 export interface ParamAdvisory {
@@ -33,6 +34,16 @@ export interface ParamAdvisory {
   tip: string
   /** Optional second signal — see `DataFlag`. */
   flag?: DataFlag
+  /** Optional trailing action button beside the note. Descriptive, no closures — `ParamRenderer`
+   *  dispatches by `kind`. Today only `install-env` is defined (opt-in pixi env from the app).
+   *  The InlineNote docstring notes a host may add a trailing control without the tooltips firing
+   *  on top of each other, which is exactly what this is. */
+  action?: {
+    kind: 'install-env'
+    label: string
+    /** The env name to install (matches `_OPT_IN_ENVS` in `api/src/system_api.jl`). */
+    env: string
+  }
 }
 
 /**
@@ -112,6 +123,9 @@ export interface AdvisorParam {
   type?: string
   key?: string
   field?: string
+  /** `optionsFrom` on a `select` — surfaced so a key-registered advisor (`model` is used by BOTH
+   *  `segment.cellpose` and `segment.coastal`) can self-gate to the source that actually applies. */
+  optionsFrom?: string
 }
 
 export interface ParamAdvisor {
@@ -360,6 +374,75 @@ export function imageVersionAdvisory(
       : `The selected images are on ${actives.length} different versions, so "${chosen}" is not what `
         + `the viewer shows for all of them. Check the version on each before running.`,
   }
+}
+
+// ── cellpose model backend (Mac-only opt-in v3 env) ───────────────────────────────────────────
+//
+// Cellpose 4 (Cellpose-SAM) runs slowly on Apple Silicon MPS; cellpose 3 CNNs (`cyto2`, `cyto3`)
+// are ~10× faster there. On Mac the app offers a second pixi env (`cellpose-v3`) as a one-click
+// install. This advisory fires ONLY on macOS and:
+//   * v4 model + env not installed → warn, "cellpose 4 is slow on Apple Silicon", + Install button
+//   * v4 model + env installed     → warn, "switch to cyto3 for ~10× speedup" (no button)
+//   * v3 model + env not installed → fail, "cellpose-v3 env is not installed", + Install button
+// Silent on Linux/Windows (where CUDA v4 is fast and the v3 env isn't shipped).
+//
+// See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md. Kept in step with the Python side (`_CELLPOSE_V3_BUILTINS`
+// in `python/cecelia/utils/cellpose_utils.py`) and the Julia side (`BUILTIN_CELLPOSE_MODELS` in
+// `app/src/config.jl`). Add a v3 model → update all three.
+
+const CELLPOSE_V3_MODELS: ReadonlySet<string> = new Set(['cyto2', 'cyto3'])
+const CELLPOSE_V3_ENV_NAME = 'cellpose-v3'
+
+/** Platforms where the advisor is allowed to fire. Ship-time: `['osx-arm64']` only. Temporarily
+ *  broadened to all workspace platforms so the install/advisor flow can be tested off a Mac —
+ *  narrow back in the same change that tightens `[feature.cellpose-v3]` in `pixi.toml` and
+ *  `_OPT_IN_ENVS[..].supported_platforms` in `api/src/system_api.jl`. */
+const CELLPOSE_V3_ADVISORY_PLATFORMS: ReadonlySet<string> = new Set(['osx-arm64', 'linux-64', 'win-64'])
+
+/** Pure: takes the selected model, platform, and env installed state. Testable without a fetch. */
+export function cellposeModelAdvisory(
+  selectedModel: unknown,
+  platform: string | undefined,
+  envInstalled: boolean,
+): ParamAdvisory | null {
+  if (!platform || !CELLPOSE_V3_ADVISORY_PLATFORMS.has(platform)) return null
+  const name = typeof selectedModel === 'string' ? selectedModel : ''
+  if (!name) return null
+
+  const isV3 = CELLPOSE_V3_MODELS.has(name)
+
+  if (isV3 && !envInstalled) {
+    return {
+      severity: 'fail',
+      message: 'cellpose-v3 env is not installed',
+      tip: 'This model runs in a second pixi environment that ships cellpose 3. It is not '
+         + 'installed yet — click Install to fetch it (~500 MB, one-time). The run will fail '
+         + 'until the env is present.',
+      action: { kind: 'install-env', env: CELLPOSE_V3_ENV_NAME, label: 'Install cellpose-v3 (~500 MB)' },
+    }
+  }
+
+  if (!isV3 && !envInstalled) {
+    return {
+      severity: 'warn',
+      message: 'cellpose 4 is slow on Apple Silicon',
+      tip: 'Cellpose-SAM (v4) is a large transformer and MPS is much slower than CUDA on it. '
+         + 'The v3 CNN models (cyto2, cyto3) run ~10× faster on Apple Silicon. Install the opt-in '
+         + 'cellpose-v3 env to get the faster path.',
+      action: { kind: 'install-env', env: CELLPOSE_V3_ENV_NAME, label: 'Install cellpose-v3 (~500 MB)' },
+    }
+  }
+
+  if (!isV3 && envInstalled) {
+    return {
+      severity: 'warn',
+      message: 'switch to cyto3 for ~10× speedup on Apple Silicon',
+      tip: 'Cellpose-SAM (v4) is slow on MPS. You already have the cellpose-v3 env installed — '
+         + 'picking cyto3 (or cyto2) in this dropdown will use it and run much faster.',
+    }
+  }
+
+  return null   // v3 model + env installed = the happy path, no advisory
 }
 
 // ── registry ───────────────────────────────────────────────────────────────────────────────────
@@ -638,6 +721,23 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
     // the verdict depends on the statistic beside it, so it has to re-run when that changes
     reloadOn: ctx => [ctx.values?.temporalStat],
     advise: async (value, ctx) => spatialSigmaAdvisory(value, ctx.values?.temporalStat),
+  },
+
+  // Cellpose model dropdown. `model` is the KEY on `segment.cellpose.json` (and also on
+  // `segment.coastal.json`), so the advisor self-gates on `optionsFrom === 'cellposeModels'`. Fires
+  // only on osx-arm64 — see `cellposeModelAdvisory` for the decision matrix.
+  model: {
+    // env-installed state changes when the install job completes (`stores/ws.ts` invalidates the
+    // cache) — the watch on `val` in `ParamRenderer` doesn't cover it, so re-run whenever the picker
+    // is touched OR the panel remounts. Cheap: `getSystemEnvs()` is cached and served from a small
+    // JSON endpoint.
+    advise: async (value, _ctx, param) => {
+      if (param?.optionsFrom !== 'cellposeModels') return null
+      const envs = await getSystemEnvs()
+      if (!envs) return null
+      const v3 = envs.envs['cellpose-v3']
+      return cellposeModelAdvisory(value, envs.platform, !!v3?.installed)
+    },
   },
 
   // Cluster-tracks / cluster-pops compatibility check. A joint clustering only makes sense when the

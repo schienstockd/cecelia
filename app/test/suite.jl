@@ -408,9 +408,12 @@ end
     # so tests can't assume it's empty — check invariants that hold either way.
     td = mktempdir()
 
-    # Built-ins are always first, in a stable order.
+    # Built-ins are always first, in a stable order. v4 first (cpsam_v2/cpsam), then the v3
+    # opt-in models (cyto2/cyto3) — the picker's dropdown pill (v3/v4) tells them apart.
     names = [m.name for m in list_cellpose_models(td)]
-    @test names[1:2] == ["cpsam_v2", "cpsam"]
+    @test names[1:4] == ["cpsam_v2", "cpsam", "cyto3", "cyto2"]
+    backends = [m.backend for m in list_cellpose_models(td)]
+    @test backends[1:4] == [:v4, :v4, :v3, :v3]
 
     # No user drop-in → nothing tagged "user" for THIS td.
     base = list_cellpose_models(td)
@@ -14754,10 +14757,12 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             @test m["nucChannels"] == Int[]
             @test m["model"] == "cpsam_v2"           # a built-in name passes through untouched
 
-            # A cellpose 3 model name is REJECTED here, not forwarded. cellpose 4 answers an unknown
-            # `pretrained_model` with a log warning and loads `cpsam_v2`, so forwarding one would
-            # return a DIFFERENT segmentation with nothing in the run log to say so.
-            for retired in ("cyto3", "cyto2", "cyto", "nuclei")
+            # Cellpose 3 zoo names that we DO NOT ship (`cyto`, `nuclei`, and the *torch_0 filenames)
+            # are still REJECTED here — cellpose 4 answers an unknown `pretrained_model` with a log
+            # warning and loads `cpsam_v2`, so forwarding one would return a DIFFERENT segmentation
+            # with nothing in the run log to say so. `cyto2` and `cyto3` are no longer rejected: they
+            # route to the opt-in `cellpose-v3` env (see docs/todo/CELLPOSE_V3_OPTIN_PLAN.md).
+            for retired in ("cyto", "nuclei")
                 p3 = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
                     "model" => retired, "matchAs" => "base",
                     "cellChannels" => ["CH3"], "nucChannels" => String[])))
@@ -14766,6 +14771,19 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
                 @test occursin("no longer exists", err.msg)
                 @test occursin("cpsam_v2", err.msg)
             end
+
+            # cyto2/cyto3 are now VALID model names (route to v3 env in the runner), so
+            # `cellpose_models_for_python` accepts them and marks the backend accordingly.
+            for v3name in ("cyto2", "cyto3")
+                p3 = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                    "model" => v3name, "matchAs" => "base",
+                    "cellChannels" => ["CH3"], "nucChannels" => String[])))
+                m3 = Cecelia.cellpose_models_for_python(p3, raw)["0"]
+                @test m3["model"] == v3name
+                @test Cecelia.cellpose_model_backend(v3name) === :v3
+            end
+            @test Cecelia.cellpose_model_backend("cpsam_v2") === :v4
+            @test Cecelia.cellpose_model_backend("unknown-custom.pt") === :v4
 
             # the hook the preview calls produces the same thing, and leaves other params alone
             got = Cecelia.preview_params(Cecelia.CellposeSegment(), params, img)

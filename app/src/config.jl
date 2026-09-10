@@ -173,16 +173,23 @@ end
 # publishes its weights on HuggingFace; `cpsam_v2` is the current default, `cpsam` the v1 release,
 # kept so a run recorded against it stays reproducible. `cpdino*` is deliberately absent — it needs
 # `dinov3` from git, which we do not ship.
+#
+# Fourth field is `backend :: Symbol` — `:v4` for the default env (`cellpose>=4.2`), `:v3` for the
+# opt-in Mac-only `cellpose-v3` env. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
 const BUILTIN_CELLPOSE_MODELS = (
-    ("cpsam_v2", "Cellpose-SAM v2"),
-    ("cpsam",    "Cellpose-SAM v1"),
+    ("cpsam_v2", "Cellpose-SAM v2",       :v4),
+    ("cpsam",    "Cellpose-SAM v1",       :v4),
+    ("cyto3",    "cyto3 (cellpose 3)",    :v3),
+    ("cyto2",    "cyto2 (cellpose 3)",    :v3),
 )
 
-# The Cellpose 3 model zoo. Gone in v4 — and v4 does NOT error on them: an unknown
-# `pretrained_model` logs a warning and silently loads `cpsam_v2` instead, so a saved `cyto3` run
-# would come back as a DIFFERENT segmentation with nothing in the log to say so. We reject them
-# instead; see `cellpose_models_for_python` in tasks/segment/cellpose.jl.
-const RETIRED_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei",
+# Cellpose 3 checkpoint filenames that never got a v4 equivalent AND that our v3 env doesn't ship
+# either. `cyto`/`nuclei` were the pre-v3 zoo; the `*torch_0` suffixes are v3-era model filenames.
+# Kept as an explicit reject list because v4 doesn't error on them — it logs a warning and silently
+# loads `cpsam_v2`, so a saved run under one of these names would return a different segmentation
+# with nothing in the log. `cyto2`/`cyto3` are NO LONGER retired — they route to the v3 env now.
+# See `cellpose_models_for_python` in tasks/segment/cellpose.jl.
+const RETIRED_CELLPOSE_MODELS = ("cyto", "nuclei",
                                  "cyto3torch_0", "cyto2torch_0", "cytotorch_0", "nucleitorch_0")
 
 """
@@ -200,8 +207,9 @@ rebuild. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
 """
 function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
     out = NamedTuple[]
-    for (m, label) in BUILTIN_CELLPOSE_MODELS
-        push!(out, (name = m, stem = vault_model_stem(m), label = label, source = "builtin"))
+    for (m, label, backend) in BUILTIN_CELLPOSE_MODELS
+        push!(out, (name = m, stem = vault_model_stem(m), label = label,
+                    source = "builtin", backend = backend))
     end
     seen = Set{String}(String(m.name) for m in out)
     user_dir    = cellpose_models_dir(dev_dir)
@@ -212,12 +220,30 @@ function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{
             startswith(name, ".") && continue
             isfile(joinpath(dir, name)) || continue
             name in seen && continue
+            # Custom checkpoints are treated as v4 by default (a user-dropped file for the v3 env is
+            # not on the current drop path — those two model names are the built-in cyto2/cyto3).
             push!(out, (name = name, stem = vault_model_stem(name),
-                        label = "$(name) ($(tag))", source = tag))
+                        label = "$(name) ($(tag))", source = tag, backend = :v4))
             push!(seen, name)
         end
     end
     out
+end
+
+"""
+    cellpose_model_backend(name) -> Symbol
+
+`:v3` if `name` is a built-in v3 model, `:v4` otherwise. Custom checkpoints are treated as v4
+(they load through `CellposeModel(pretrained_model=<path>)` and cellpose 4 rejects a v3 file up
+front — see `cellpose_models_for_python`). Case-sensitive; the picker's `optionsFrom` builds from
+`list_cellpose_models`, which uses the canonical spelling.
+"""
+function cellpose_model_backend(name::AbstractString)::Symbol
+    s = String(name)
+    for (m, _, backend) in BUILTIN_CELLPOSE_MODELS
+        m == s && return backend
+    end
+    :v4
 end
 
 # ── Model-vault helpers (shared by coastal and denoise) ───────────────────────

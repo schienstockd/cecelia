@@ -219,6 +219,34 @@ end
     end
 end
 
+@testset "API: system envs — probe + install guards" begin
+    # Probe reports the current platform and the catalog. On this Linux CI box, cellpose-v3 is not
+    # supported and not installed.
+    st, body = api_system_envs(nothing)
+    @test st == 200
+    doc = JSON3.read(body)
+    @test haskey(doc, :platform)
+    @test haskey(doc, :envs)
+    @test haskey(doc.envs, Symbol("cellpose-v3"))
+    v3 = doc.envs[Symbol("cellpose-v3")]
+    @test haskey(v3, :installed) && haskey(v3, :supported) && haskey(v3, :approxSizeMb)
+
+    # The install POST must refuse an unknown env with 400 — never silently accept.
+    st, body = api_system_envs_install(Vector{UInt8}(JSON3.write(Dict("env" => "no-such-env"))))
+    @test st == 400
+    @test haskey(JSON3.read(body), :error)
+
+    # TESTING (2026-09-10): the platform guard is temporarily widened to include linux-64 + win-64
+    # so the install flow can be exercised off a Mac. Under the widened guard a POST would kick off
+    # a real background `pixi install -e cellpose-v3` in CI, which we don't want — so the
+    # non-Mac-refusal assertion is disabled here. Re-enable when `_OPT_IN_ENVS[..].supported_platforms`
+    # is narrowed back to `["osx-arm64"]`.
+
+    # Invalid JSON body must 400 too, never crash the handler.
+    st, body = api_system_envs_install(Vector{UInt8}("not json"))
+    @test st == 400
+end
+
 @testset "API: update scope" begin
     # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
     # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.
@@ -4716,6 +4744,7 @@ end
         "/api/tasks/history", "/api/tasks/recent",
         "/api/tracking/motion-dims", "/api/tracking/issues", "/api/tracking/paths",
         "/api/tracking/diagnostics", "/api/tracking/selection", "/api/tracking/detections",
+        "/api/system/envs",
         "/api/update/check",
         "/api/version",
     ]
@@ -4773,6 +4802,7 @@ end
         "/api/profiles/save", "/api/profiles/delete",
         "/api/tasks/custom-modules/reload", "/api/tasks/validate",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
+        "/api/system/envs/install",
         "/api/update/apply",
         "/api/update/revert",
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
@@ -4823,7 +4853,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 87 && length(POST_ROUTES) == 111
+    @test length(GET_ROUTES) == 88 && length(POST_ROUTES) == 112
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

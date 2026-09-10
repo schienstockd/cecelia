@@ -10,6 +10,7 @@ import { useLabCaptureStore } from './labCapture'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
 import { parseRailTime } from '../utils/taskElapsed'
+import { invalidateSystemEnvs } from '../utils/systemEnvs'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -193,6 +194,14 @@ export const useWsStore = defineStore('ws', () => {
     if (type === 'lab_log_updated') {
       const puid = String(data.projectUid ?? '')
       if (puid && puid === useProjectMetaStore().current?.uid) useLabCaptureStore().notifyAppended()
+    }
+
+    // Opt-in pixi env (e.g. cellpose-v3) finished installing — invalidate the module-level probe
+    // cache so the next `getSystemEnvs()` reads the new `installed` state without a page reload.
+    // The per-line log frames (`system:env-install-log`) are not consumed here; the install job
+    // streams them into the server log rail which the frontend log store already handles.
+    if (type === 'system:env-install-complete') {
+      invalidateSystemEnvs()
     }
 
     if (type === 'task:progress') {

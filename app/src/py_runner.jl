@@ -146,8 +146,20 @@ _py_task_env(pythonpath::AbstractString) = [
     "CECELIA_USABLE_CPUS" => string(usable_cpus()),
 ]
 
+# Resolve the python interpreter for a named opt-in pixi env (e.g. `:cellpose_v3` →
+# `.pixi/envs/cellpose-v3/bin/python`), or `""` if the env is not installed. Symbol names use
+# underscores (Julia convention) and are translated to pixi's dashed form. Off-default entry point;
+# `python_bin_path()` remains the answer for the default env — see `config.jl`.
+function _python_bin_for_env(env_name::Symbol)::String
+    dashed = replace(String(env_name), "_" => "-")
+    root   = abspath(joinpath(_app_dir(), ".."))   # app/ → repo root
+    bin    = joinpath(root, ".pixi", "envs", dashed,
+                      Sys.iswindows() ? "python.exe" : joinpath("bin", "python"))
+    isfile(bin) ? bin : ""
+end
+
 """
-    run_py(script_rel, params, task_dir; on_log, on_progress, on_process) -> Bool
+    run_py(script_rel, params, task_dir; on_log, on_progress, on_process, env=nothing) -> Bool
 
 Run `app/src/<script_rel>` (a task runner co-located with its `.jl`) as a subprocess with a JSON `params` file written to `task_dir` (the
 run's task dir — see `task_run_dir`; never a temp dir) and passed via `--params`, which the script
@@ -158,11 +170,17 @@ lines go to `on_progress(n, total)`, the rest to `on_log`. Registers the process
 termsignal == 0` — libuv reports 0 exitcode for signal-killed procs, so both are checked). PYTHONPATH
 is set to python/ so the script can `import cecelia.*` with no sys.path manipulation. This is the one place
 Cecelia spawns a Python subprocess — the Julia analogue of the old R `self\$pyScript(name, params)`.
+
+`env` selects the pixi environment. Default (`nothing`) uses `python_bin_path()` — the activated
+env, i.e. `default`. A Symbol like `:cellpose_v3` resolves to `.pixi/envs/cellpose-v3/bin/python`;
+a missing env fails LOUDLY with a message pointing at the in-app install action (never a silent
+fallback to `default` — that would run a v3 model under v4 and produce different results).
 """
 function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
                 on_log::Function      = line -> println(line),
                 on_progress::Function = (n, t) -> nothing,
-                on_process::Function  = _ -> nothing)::Bool
+                on_process::Function  = _ -> nothing,
+                env::Union{Symbol,Nothing} = nothing)::Bool
     py_root   = _python_dir()
     # Resolve the script:
     #  • absolute  → a custom (user drop-in) task's own `_run.py`.
@@ -204,7 +222,19 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
     # An ENV VAR rather than a params field, on purpose: the params payload stays exactly the shape each
     # runner documents, and a developer replaying a saved params file by hand simply has no variable set,
     # which `script_utils` treats as "skip the check" rather than as a failure.
-    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, _py_task_env(pythonpath)...)
+    py_bin = if isnothing(env)
+        python_bin_path()
+    else
+        bin = _python_bin_for_env(env)
+        if isempty(bin)
+            on_log("[ERROR] The '$(replace(String(env), "_" => "-"))' pixi environment is not " *
+                   "installed. In Settings → System, click 'Install' next to that env, or run " *
+                   "`pixi install -e $(replace(String(env), "_" => "-"))` from the repo root.")
+            return false
+        end
+        bin
+    end
+    cmd  = addenv(`$py_bin $py_script --params $params_file`, _py_task_env(pythonpath)...)
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

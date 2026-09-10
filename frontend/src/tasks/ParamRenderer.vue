@@ -11,6 +11,7 @@ import { SEVERITY } from '../lib/severity'
 import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContext,
          type AdvisorParam } from './paramAdvisors'
 import { debouncedLatest } from '../utils/debouncedLatest'
+import { requestEnvInstall } from '../utils/systemEnvs'
 import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
@@ -452,6 +453,27 @@ watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.v
   () => { loadAdvisory() }, { immediate: true, deep: true })
 onUnmounted(() => advisoryRun.cancel())
 
+// Advisory trailing action — today the one kind is `install-env`, which shells `pixi install -e
+// <env>` in a jobs.jl-tracked background job. The completion frame (ws.ts) invalidates the
+// systemEnvs cache and the advisor re-fires on the next value change or panel remount. Not a
+// permanent busy flag: cleared on completion OR on unmount so a re-entry to the page never sees a
+// stale spinner.
+const advisoryActionBusy = ref(false)
+async function onAdvisoryAction() {
+  const a = advisory.value?.action
+  if (!a || advisoryActionBusy.value) return
+  if (a.kind === 'install-env') {
+    advisoryActionBusy.value = true
+    try {
+      const r = await requestEnvInstall(a.env)
+      if (!r.started) advisoryActionBusy.value = false   // failed to enqueue → free the button
+      // A successful enqueue leaves the button in "Installing…" until the ws completion frame lands
+      // and the advisor re-runs; the new advisory (no `action`) replaces this one, so nothing else
+      // to clear here.
+    } catch { advisoryActionBusy.value = false }
+  }
+}
+
 // The order row over this group's own entries. Its value does NOT live in `val` — that is the
 // group's entries — but in a sibling key, `<groupKey>Order`, which `_apply_group_order` (Julia)
 // resolves away before any runner sees it. An unset value means "all of them, in entry order": a
@@ -874,6 +896,16 @@ const pct = computed(() => {
       <i v-if="advisory.flag" class="pi param-advisory-flag" :class="SEVERITY[advisory.flag.severity].icon"
          :style="{ color: SEVERITY[advisory.flag.severity].color }"
          v-tooltip.right="advisory.flag.tip" />
+      <!-- optional trailing action: today one kind (`install-env`) → shells `pixi install -e <env>`
+           via `/api/system/envs/install`. InlineNote's docstring notes a host may add a trailing
+           control here without the tooltips firing on top of each other. -->
+      <button v-if="advisory.action?.kind === 'install-env'"
+              class="cc-btn cc-btn-primary cc-btn-sm param-advisory-action"
+              :disabled="advisoryActionBusy"
+              @click.stop="onAdvisoryAction"
+              v-tooltip.top="`Runs pixi install -e ${advisory.action.env} in the background`">
+        {{ advisoryActionBusy ? 'Installing…' : advisory.action.label }}
+      </button>
     </InlineNote>
     <!-- Per-OPTION guidance for a select: what this choice means and when to pick it. Deliberately NOT
          an advisory — nothing about the user's data was consulted, and borrowing `severity: ok` would
@@ -1150,6 +1182,7 @@ const pct = computed(() => {
 /* layout only — `InlineNote` owns the icon/text/gap and the severity colour */
 .param-advisory { display: flex; }
 .param-advisory-flag { margin-left: 0.1rem; }
+.param-advisory-action { margin-left: 0.5rem; }
 
 /* Top-right of the row, where a repeatable group's own figure button sits — and OUT OF FLOW, so it
    costs no height. In flow it took a full row of the form to hold one 20px icon, directly under the

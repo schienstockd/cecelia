@@ -40,7 +40,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 ## Index of every plan in here
 
-**Complete as of 2026-09-10 — 74 files.** `docs/todo/` is **excluded from
+**Complete as of 2026-09-10 — 75 files.** `docs/todo/` is **excluded from
 default search** (see `CLAUDE.md` → *How to read the docs*): 1.2 MB of design docs contributed ~40–50%
 of doc grep hits, and 349 citations from code already reach these files **by name**. So this index is
 the search surface. Grep *this file*, then open the one plan you need.
@@ -96,6 +96,7 @@ disagree, the plan's header wins — and fix the row.
 | [`DENOISE_INTEGRATION_PLAN.md`](DENOISE_INTEGRATION_PLAN.md) | planning (2026-09-05); Phase A next | SUPPORT self-supervised denoiser as a `cleanupImages.denoise` task, on a generalised **Model Training** page (rename of Optical Flow) with a per-kind vault (`denoiseModels/` beside `coastalModels/`). Set-scope training. Saturation gate mandatory. Attribution UI PARKED. Came out of `docs/archive/denoising-methods-prompt.md` + the 2026-09-05 eval on 2h06xA (win) vs c91ICQ (useless — saturated) |
 | [`SUPPORT_PERCHANNEL_PLAN.md`](SUPPORT_PERCHANNEL_PLAN.md) | shipped as manual toggle (2026-09-08) · `auto` deferred · branch `audit/support-denoise` | `trainMode: pooled\|perChannel` chip on `opticalFlow.trainSupportDenoise`; bundle folder `<name>/<channel>.pt` for perChannel, single file for pooled. Post-run collapse QC in `cleanupImages.denoise` catches the case. `auto` + SNR precheck parked (v1 metric over-fires on narrow-DR-but-clean channels) — helper + tests remain for metric v2 |
 | [`CELLPOSE_V4_PLAN.md`](CELLPOSE_V4_PLAN.md) | shipped (#610) | Migration to cellpose 4 (Cellpose-SAM), retirement of `cleanupImages.cellposeCorrect`. Reverses the v3 pin in `pixi.toml` and the verdict in `SEG_QUALITY_PLAN.md` |
+| [`CELLPOSE_V3_OPTIN_PLAN.md`](CELLPOSE_V3_OPTIN_PLAN.md) | planning (2026-09-10) · `feat/cellpose-v3-optin` | Second pixi env `cellpose-v3` (Mac-only, opt-in) carrying `cellpose>=3.1,<4` + cyto2/cyto3. On Mac, v4 selection shows an InlineNote warn + `[Install cellpose-v3]` trailing control. Partial reversal of `CELLPOSE_V4_PLAN.md` because Cellpose-SAM is too slow on MPS |
 | [`SEGMENTATION_QC_PLOT_PLAN.md`](SEGMENTATION_QC_PLOT_PLAN.md) | planned (2026-07-04) | A segmentation-integrity QC plot, per image and per timepoint |
 | [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) | planned (2026-07-22) | In-app 3D crop UI; supersedes the napari-driven crop, which has a low ceiling |
 | [`STATS_ANNOTATIONS_PLAN.md`](STATS_ANNOTATIONS_PLAN.md) | planning · no branch | Server-side hypothesis tests rendered as marks inside existing Observable Plot charts; no new route |
