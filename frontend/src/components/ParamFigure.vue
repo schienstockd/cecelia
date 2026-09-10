@@ -77,10 +77,14 @@ watch(() => props.vis.rows.length, n => { if (!n) open.value = false })
   <button v-if="vis.rows.length" class="param-fig-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro"
     type="button" :class="{ 'cc-btn-on': open }" @click="open = !open"
     v-tooltip.left="tip">
-    <i class="pi pi-chart-bar" />
+    <!-- `pi-graduation-cap` — reserved in the legend as "A schematic — what this control does".
+         Not `pi-chart-bar`: that glyph is already the Behaviour page + Chain QC nodes' mark for
+         real data plots, and a vis-aid is a schematic, not a plot. Not `pi-images` either — the
+         legend takes it for "a set of images". See `frontend/src/lib/iconLegend.ts`. -->
+    <i class="pi pi-graduation-cap" />
   </button>
 
-  <FloatingPanel v-if="open" :title="title" :storage-key="storageKey" icon="pi-chart-bar"
+  <FloatingPanel v-if="open" :title="title" :storage-key="storageKey" icon="pi-graduation-cap"
     :default-w="defaultW" :default-h="defaultH" @close="open = false">
     <VisualAid :vis="vis" :headings="headings" :column-ctas="columnCtas"
       :note="note" :note-severity="noteSeverity" />

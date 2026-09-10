@@ -24,6 +24,7 @@ import type { ColumnCta } from '../components/VisualAid.vue'
 import { smoothFigure, smoothSpatialFigure } from './smoothVis'
 import { driftFigure } from './driftVis'
 import { driftSmoothFigure } from './driftSmoothVis'
+import { driftZSmoothFigure } from './driftZSmoothVis'
 import { stackAlignFigure } from './stackAlignVis'
 import { flowRegisterFigure } from './flowRegisterVis'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
@@ -237,6 +238,32 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       // Wider than driftEstimator's 460 because this figure's story is temporal SHAPE — a
       // ramp/staircase read reliably only when each frame gets ~10 px on screen, not ~3.
       defaultW: 720, defaultH: 380,
+    }
+  },
+
+  /**
+   * Drift correction's Z-plane coupling. Three columns — real breathing shear, a lone bad plane,
+   * and independent per-plane noise — show the three cases σ has to distinguish. Each column
+   * draws a small side-view of a Z stack with a marker per plane at the raw AND smoothed shift,
+   * so tuning `driftZSmoothness` visibly pulls the outlier back / softens the shear / collapses
+   * the noise at whatever σ the slider is on.
+   *
+   * Same three-row shape as `driftSmoothing`, and the same live-σ redraw discipline.
+   */
+  driftZSmoothing: ctx => {
+    const { vis, note } = driftZSmoothFigure({
+      sigma: num(ctx.values?.driftZSmoothness, 0),
+    })
+    return {
+      vis,
+      note,
+      title: 'Z-plane coupling',
+      tip: 'Show what σ does to real shear, a bad plane, and independent noise',
+      headings: ['Shear', 'Outlier', 'Noise'],
+      storageKey: 'drift-z-smoothing-figure',
+      // Narrower than driftSmoothing (720): each column here is ZP=10 planes tall and only
+      // ~48 px wide, so a 460 wide panel keeps three side-views legible without empty margin.
+      defaultW: 460, defaultH: 320,
     }
   },
 }

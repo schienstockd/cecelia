@@ -52,6 +52,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-bell', means: 'Cecelia logged something that needs a look' },
       { icon: 'pi-sparkles', means: 'Claude wrote this' },
       { icon: 'pi-lightbulb', means: 'A suggestion' },
+      { icon: 'pi-graduation-cap', means: 'A schematic — what this control does' },
       { icon: 'pi-bolt', means: 'Preview it live, before running' },
       { icon: 'pi-lock', means: 'Pinned, or needs a project open first' },
       { icon: 'pi-lock-open', means: 'Not pinned — follows what you do' },
@@ -255,7 +256,7 @@ export const ICON_LEGEND: IconFamily[] = [
 // People, places, awards — most of these are here for completeness, not for scientific UI:
 //   pi-user  pi-users  pi-user-edit  pi-user-plus  pi-user-minus  pi-id-card  pi-address-book
 //   pi-face-smile  pi-thumbs-up  pi-thumbs-down  pi-thumbs-up-fill  pi-thumbs-down-fill
-//   pi-heart  pi-heart-fill  pi-crown  pi-trophy  pi-graduation-cap
+//   pi-heart  pi-heart-fill  pi-crown  pi-trophy
 //   pi-home  pi-building  pi-building-columns  pi-briefcase  pi-warehouse  pi-truck  pi-car
 //   pi-shop  pi-shopping-bag  pi-shopping-cart
 //   pi-cart-plus  pi-cart-minus  pi-cart-arrow-down  pi-ticket  pi-gift  pi-receipt
