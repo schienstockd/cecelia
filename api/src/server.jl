@@ -205,6 +205,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/tasks/custom-modules" => (req, body_bytes) -> (api_custom_modules_status(req)),
     "/api/profiles" => (req, body_bytes) -> (api_view_profiles(req)),
     "/api/tasks/funparams" => (req, body_bytes) -> (api_task_fun_params(req)),
+    "/api/tasks/funparams/sources" => (req, body_bytes) -> (api_task_fun_params_sources(req)),
     "/api/pools" => (req, body_bytes) -> (api_pools_list(req)),
     "/api/tasks/threads" => (req, body_bytes) -> (api_task_threads_get(req)),
     "/api/runner/status" => (req, body_bytes) -> (api_runner_status(req)),
