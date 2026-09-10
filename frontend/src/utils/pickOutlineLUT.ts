@@ -1,5 +1,5 @@
 // The role-lookup table for the correction cockpit's viewer outline layer
-// (docs/todo/CORRECTION_DIRECT_PLAN.md → P1). One byte per label id, indexed 0..maxId:
+// (see the correction-direct plan, PR #884 → P1). One byte per label id, indexed 0..maxId:
 //
 //   ROLE_OFF   = 0 — id is not in the pick set (shader draws nothing when pick-outline mode is on)
 //   ROLE_PICK  = 1 — id is in `/Pick selection`               (thin outline, pick colour)
