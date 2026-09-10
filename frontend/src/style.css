@@ -118,7 +118,12 @@
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Emoji fonts appended so codepoints like ❌ / ⚠️ don't fall through to a monochrome text glyph
+     in whatever `system-ui` resolves to. On Ubuntu 24.04 `system-ui` = Ubuntu Sans, which HAS a
+     text-style ❌ but LACKS ✅ — so the lab-log ✅ came from Noto Color Emoji (green) while ❌ came
+     from Ubuntu Sans (a bare thin ×), which read as a font glitch. */
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif,
+               'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
   font-size: var(--cc-fs-md);
   line-height: 1.5;
   background: #0f1117;
