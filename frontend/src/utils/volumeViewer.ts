@@ -789,6 +789,22 @@ export function slabMax(v: Uint16Array | Uint8Array, rowLength = 1, budget = 200
   return mx
 }
 
+/**
+ * Strided subsample of a slab as a typed array — same lattice as `slabMax` / `contrastFromSlab`,
+ * kept for downstream binning (contrast slider's histogram behind the rail). Cheap: one linear
+ * pass, no sort, no `push` — the output length is known from the stride.
+ */
+export function stridedSamples(
+  v: Uint16Array | Uint8Array, rowLength = 1, budget = 200_000,
+): Uint16Array | Uint8Array {
+  const stride = sampleStride(v.length, rowLength, budget)
+  const n = Math.ceil(v.length / stride)
+  const out = v instanceof Uint16Array ? new Uint16Array(n) : new Uint8Array(n)
+  let j = 0
+  for (let i = 0; i < v.length && j < n; i += stride) out[j++] = v[i]
+  return j === n ? out : out.subarray(0, j)
+}
+
 /** Headroom above the brightest voxel seen, so the window can always be opened PAST saturation — which
  *  is a legitimate thing to want (it dims the whole channel) and was impossible when the ceiling was
  *  exactly the maximum. */
