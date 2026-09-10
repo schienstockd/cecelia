@@ -39,6 +39,7 @@ import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
+import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFunParamsModal.vue'
 
 const props = defineProps<{
   defs: TaskDef[]
@@ -345,6 +346,37 @@ function resetParamsToDefaults() {
 function onGroupOrderEdit(key: string, value: string[]) {
   paramValues.value[key] = value
   drafts.set(currentDraftKey.value, paramValues.value)
+}
+
+// ── Copy settings from a previous run on another image ───────────────────────
+// The user has segmented image A with a tuned config; now they want the SAME config on image B.
+// funParams are banked per (image, value_name), so B's own "default" is B's settings, not A's — the
+// only way to reach A's settings is to name A as the source. The picker (CopyFunParamsModal) surfaces
+// the set's (image, value_name) records for the current fun; on pick we fetch the params using the
+// existing image+valueName endpoint and route them through the SAME hand-off path the flow-model
+// vault uses (`paramHandoff` → `applyOffer`), so reconciliation and the "Settings from …" note
+// happen exactly once, in one place.
+const copyOpen = ref(false)
+async function onCopyPick(row: CopyFunParamsRow) {
+  const def = taskDef.value
+  if (!def || !projectUid.value) return
+  const qs = new URLSearchParams({
+    projectUid: projectUid.value, fun: def.fun_name,
+    imageUid: row.imageUid, valueName: row.valueName,
+  })
+  try {
+    const r = await fetch(`/api/tasks/funparams?${qs.toString()}`)
+    if (!r.ok) { handoffNote.value = `Could not read settings from ${row.imageName}`; return }
+    const d = await r.json() as { params?: ParamValues | null; matched?: boolean }
+    if (!d.params) { handoffNote.value = `No saved settings for "${row.valueName}" on ${row.imageName}`; return }
+    handoff.offer({
+      funName: def.fun_name, values: d.params,
+      source: `"${row.valueName}" on ${row.imageName}`,
+    })
+    // `applyOffer` is watching handoff.pending; it fills the form and sets the note.
+  } catch {
+    handoffNote.value = `Could not read settings from ${row.imageName}`
+  }
 }
 
 // Editing a repeatable GROUP has to move its order with it. Reconciled here, with the group's keys
@@ -670,6 +702,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       <div class="params-heading-row">
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                v-tooltip.left="'Copy settings from a previous run on another image'"
+                @click="copyOpen = true"><i class="pi pi-copy" /></button>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                 v-tooltip.left="'Reset to defaults'"
                 @click="resetParamsToDefaults"><i class="pi pi-refresh" /></button>
       </div>
@@ -750,6 +785,12 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         <TaskList :module="module" />
       </div>
     </section>
+
+    <CopyFunParamsModal v-if="copyOpen && taskDef && projectUid && setUid"
+      :projectUid="projectUid" :setUid="setUid"
+      :fun="taskDef.fun_name" :funLabel="taskDef.label"
+      :currentImageUid="drivingImageUid"
+      @pick="onCopyPick" @close="copyOpen = false" />
 
   </aside>
 </template>

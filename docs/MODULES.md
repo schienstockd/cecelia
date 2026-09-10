@@ -1465,6 +1465,16 @@ working untouched; there is no migration.
 - **The name the user just typed is kept.** A restored record carries the output name it was saved
   with; `onParamCommit` writes the committed value back over it, because silently rewriting the field
   someone just typed in is never right.
+- **"Copy from a previous run" reaches records on ANOTHER image.** The by-name blob is per-image dir,
+  so typing `default` on `nG1jSi`'s form legitimately returns `nG1jSi`'s own settings — never
+  `fXgbTl`'s, however carefully `fXgbTl` was tuned. The picker (`CopyFunParamsModal`, opened from the
+  parameters heading in `TaskRunner`) lists `(image, valueName)` pairs the SET has records for and
+  routes the chosen pair's params through the same `paramHandoff` → `applyOffer` path the flow-model
+  vault uses. Source list = `funParamsByName[fun]` keys ∪ matching `run_log` `done` entries — same
+  union `run_log_params_for_output` reads from, so a pre-`funParamsByName` run is still reachable.
+  Endpoint: `GET /api/tasks/funparams/sources?projectUid&setUid&fun` (`api_task_fun_params_sources`
+  in `api/src/routes.jl`). Fetch on pick is the existing `GET /api/tasks/funparams?imageUid&valueName`
+  — no new persistence path, no run-side change.
 
 Whiteboard chain nodes are unaffected — their params live in the per-project chain template, not in
 `funParams`.

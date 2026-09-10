@@ -706,6 +706,101 @@ function api_task_fun_params(req::HTTP.Request)
     200, JSON3.write((; params = params, matched = matched))
 end
 
+# GET /api/tasks/funparams/sources?projectUid=&setUid=&fun=
+# List (image, valueName) pairs in the SET that have banked params for `fun` — the source list the
+# "Copy from a previous run" picker draws from. The pair the user picks is fetched via
+# `/api/tasks/funparams?imageUid=<pick>&valueName=<pick>` (that endpoint already resolves it).
+#
+# Two data sources per image, unioned:
+#   • `meta.funParamsByName[fun]` keys — the exact record the by-name reader uses.
+#   • `run_log` entries whose status is "done" and whose `task_output_name(fun, params)` resolves — the
+#     retroactive half, so runs that predate the by-name record (or ran in `Cecelia.RUN_LOG_CAP`'s
+#     window but the by-name blob has since been overwritten by a different name) are still reachable.
+#     Same rule as `run_log_params_for_output`.
+#
+# Same-set scope (rather than project-wide) matches the mental model — settings are typically copied
+# between sibling images that share an acquisition — and it keeps the sweep small.
+function api_task_fun_params_sources(req::HTTP.Request)
+    q    = HTTP.queryparams(HTTP.URI(req.target))
+    proj = get(q, "projectUid", "")
+    setu = get(q, "setUid", "")
+    fun  = get(q, "fun", "")
+    (isempty(proj) || isempty(setu) || isempty(fun)) &&
+        return 400, JSON3.write((; error = "projectUid, setUid and fun are required"))
+
+    proj_root = joinpath(projects_dir(), proj)
+    isdir(proj_root) || return 404, JSON3.write((; error = "Project not found"))
+    set_file = state_file(proj_root, setu)
+    isfile(set_file) || return 404, JSON3.write((; error = "Set not found: $setu"))
+
+    # Resolved once for the whole sweep — a task that no longer exists costs one lookup, not one per
+    # entry. Same reasoning as run_log_params_for_output.
+    task = try
+        Cecelia._task_from_fun_name(String(fun))
+    catch
+        nothing
+    end
+
+    set_raw = read_ccid_raw(set_file)
+    image_uids = String[String(u) for u in get(set_raw, "image_uids", String[])]
+
+    rows = Dict{String,Any}[]
+    for uid in image_uids
+        img_file = state_file(proj_root, uid)
+        isfile(img_file) || continue
+        img_raw = try read_ccid_raw(img_file) catch; continue end
+        img_name = String(get(img_raw, "name", uid))
+        seen = Dict{String,String}()   # valueName → newest `at` (empty when unknown)
+
+        # 1. by-name blob — keys are the value_names this image has a record for.
+        meta = get(img_raw, "meta", nothing)
+        if meta isa AbstractDict
+            byn = get(meta, "funParamsByName", nothing)
+            if byn isa AbstractDict
+                per_fun = get(byn, String(fun), nothing)
+                if per_fun isa AbstractDict
+                    for k in keys(per_fun)
+                        name = String(k)
+                        isempty(name) && continue
+                        seen[name] = ""
+                    end
+                end
+            end
+        end
+
+        # 2. run log — retroactive backfill and provider of the `at` timestamp. Newest-first so the
+        # first hit per name wins. `task` is nil for an unknown fun, so no log walk at all.
+        if !isnothing(task)
+            for e in Iterators.reverse(read_run_log(joinpath(proj_root, "1", uid)))
+                st = string(get(e, "status", get(e, :status, "")))
+                (isempty(st) || st == "done") || continue
+                string(get(e, "fun", get(e, :fun, ""))) == String(fun) || continue
+                p = get(e, "params", get(e, :params, nothing))
+                p isa AbstractDict || continue
+                params = Dict{String,Any}(String(k) => v for (k, v) in p)
+                name = Cecelia.task_output_name(task, params)
+                isempty(name) && continue
+                at = string(get(e, "at", get(e, :at, "")))
+                cur = get(seen, name, nothing)
+                if cur === nothing || isempty(cur)
+                    seen[name] = at
+                end
+            end
+        end
+
+        for (name, at) in seen
+            row = Dict{String,Any}(
+                "imageUid" => uid, "imageName" => img_name, "valueName" => name)
+            isempty(at) || (row["at"] = at)
+            push!(rows, row)
+        end
+    end
+
+    # Newest first; ties break by image name for a stable order.
+    sort!(rows, by = r -> (get(r, "at", ""), String(r["imageName"])), rev = true)
+    200, JSON3.write(rows)
+end
+
 # ── Resource pools ───────────────────────────────────────────────────────────
 
 # Each pool as {name, limit, running, queued} — the throttle sliders use `limit`, the occupancy
