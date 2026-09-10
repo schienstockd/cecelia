@@ -31,6 +31,12 @@
 // rendered a channel white.
 
 import { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
+import { pickBufferWgsl } from '../../utils/viewerLabels'
+
+/** Storage-buffer binding number for the pick data on the flat renderer. Kept next to the
+ *  bindings block below so the renderer and the shader read the same constant — a mismatch is a
+ *  pipeline-creation validation error rather than a silent wrong-slot bind. */
+export const MIP_PICK_BINDING = 5
 
 /**
  * The uniform layout and the camera, shared verbatim by all three passes.
@@ -111,6 +117,11 @@ ${SHARED_WGSL}
 // golden-angle hues, so cells labelled next to each other come out maximally far apart in hue — which
 // is the property that matters when two touching cells must be told apart.
 @group(0) @binding(4) var pal: texture_2d<f32>;
+// Pick highlight — bitset + focus id + contour width in one storage buffer. All the correction-cockpit
+// "what am I editing right now" work rides through this binding; the shader's uniform struct stays
+// untouched, which is what lets the flat and brick renderers share the same snippet
+// (utils/viewerLabels.ts) — only the binding NUMBER differs.
+${pickBufferWgsl(MIP_PICK_BINDING)}
 
 struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
@@ -233,8 +244,19 @@ fn labColour(id: u32) -> vec3<f32> {
   // The mask goes OVER the composite at its opacity, the way viewer layers a Labels layer over the
   // image — not added to it. Adding would brighten the signal it is meant to annotate, and two masks
   // over one bright cell would saturate to white.
-  if (labId != 0u && labEdge(labVi, labId, i32(p.lab.y))) {
+  if (labId != 0u && p.lab.x > 0.0 && labEdge(labVi, labId, i32(p.lab.y))) {
     acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
+  }
+  // Pick highlight sits ON TOP of everything above — the whole point of "what am I editing right now"
+  // is that it is legible without the user having to hunt. Focus wins over pick (both may be true).
+  // Solid colour override at the outline pixels; interior falls through untouched so the cell body
+  // still shows the signal + any normal label draw.
+  if (labId != 0u) {
+    let pw = labPickContourPx();
+    if (pw > 0 && labEdge(labVi, labId, pw)) {
+      if (labIsFocus(labId)) { acc = vec3(0.2, 1.0, 1.0); }
+      else if (labInPick(labId)) { acc = vec3(1.0, 1.0, 1.0); }
+    }
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
 }

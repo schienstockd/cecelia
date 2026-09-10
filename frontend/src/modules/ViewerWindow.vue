@@ -1358,6 +1358,17 @@ const frame = usePlotResize(canvas, () => {
   const showLabels = !!labelName.value || (!!viewerStore.previewLabels &&
     viewerStore.previewLabels?.imageUid === imageUid)
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  // Pick highlight — the correction cockpit's "what am I editing right now" answer. Scoped to the
+  // matching imageUid only; vn is not enforced because the outline is drawn AGAINST the visible
+  // mask (`labelName`), and a picked id that doesn't exist in the visible mask simply produces no
+  // matching fragment — the shader silently draws nothing for it. Strict vn equality was making
+  // the cockpit's picker choice fight the viewer's ticked-visible segmentation.
+  // Contour thickness is fixed at 2 px here; the shader's `labPickContourPx()` returns 0 when the
+  // buffer is empty, which short-circuits the composite branch.
+  const hlPick = viewerStore.pickHighlight
+  const pickMatches = !!hlPick && hlPick.imageUid === imageUid
+  if (pickMatches) r.setPickSet(hlPick!.labels, hlPick!.focusId, 2)
+  else             r.setPickSet([], 0, 0)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
   // Draw-time recording is gated on Debug being open (or `?bench=1` for the full-session
@@ -2679,9 +2690,14 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
   // label store, else two different label number spaces yield unrelated cells on the plot.
   // `level` matches the display's LOD so nearest-neighbour label downsampling doesn't pick a
   // neighbour of the visible cell.
+  // Pick against the vn the user has VISIBLE on the viewer (`labelName.value`) — falling back to
+  // the pop manager's vn, then the server default. Otherwise a picked cell's id lands under vn A
+  // (pop manager) while any downstream reader (correction cockpit, plots) that queries under vn B
+  // (the visible segmentation) sees stale-or-empty membership and highlights the wrong cells. See
+  // COCKPIT_INTERACTIVITY_PLAN.md — "what has the pop manager to do with segmentation" muddle.
   const body = {
     projectUid, imageUid,
-    valueName: gc.valueName || undefined,
+    valueName: labelName.value || gc.valueName || undefined,
     popType:   gc.popType   || 'flow',
     t: Math.max(0, Math.round(t.value)),
     z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
@@ -2695,8 +2711,11 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
       body: JSON.stringify(body),
     })
     if (!res.ok) { vlog('warn', `Pick failed: ${res.status}`); return }
-    // Nothing to do on the response — the popmap broadcast updates the plots. Log a background
-    // click quietly so the user can tell the click landed off any cell.
+    // `/Pick selection` membership changed on the server — wake same-window (Pinia ref) and
+    // cross-window (localStorage) subscribers. The correction cockpit watches this to re-fetch
+    // membership; without it the cockpit only refreshed on mode/vn change, so a pick never
+    // updated the panel until you switched modes.
+    viewerStore.bumpPickSelectionTick()
     const j = await res.json() as { label?: number; nSelected?: number }
     if (!j.label) vlog('info', 'Pick: background (no cell)')
   } catch (err) {
@@ -2747,10 +2766,12 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
       }
     } catch { /* garbage bag → single-plane read */ }
   }
-  // `valueName` = the pop manager's seg (which IS the plot's seg) — see the note in `pickCellAt`.
+  // Same vn discipline as `pickCellAt` — pick under the VISIBLE segmentation, not the pop
+  // manager's. Otherwise pick-rect stores membership under one vn and every downstream reader
+  // that queries under the visible vn sees stale (or empty) data.
   const body = {
     projectUid, imageUid,
-    valueName: gc.valueName || undefined,
+    valueName: labelName.value || gc.valueName || undefined,
     popType:   gc.popType   || 'flow',
     t: Math.max(0, Math.round(t.value)),
     z: zc,
@@ -2765,6 +2786,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
       body: JSON.stringify(body),
     })
     if (!res.ok) { vlog('warn', `Rect pick failed: ${res.status}`); return }
+    viewerStore.bumpPickSelectionTick()  // see the note on the pick-cell twin
     const j = await res.json() as { nLabels?: number; nSelected?: number }
     vlog('info', `Rect picked ${j.nLabels ?? 0} cells (${j.nSelected ?? 0} in selection)`)
   } catch (err) {
@@ -3911,6 +3933,13 @@ onUnmounted(() => { publishResizeObs?.disconnect(); publishResizeObs = null })
 // so two identical Shows still trigger the watcher. The rebuild is cheap (filterPayloadByTracks
 // on the cached payload, then buildMultiTrackBuffer), so no debounce needed.
 watch(() => viewerStore.trackHighlight?.updateId ?? null, () => rebuildOverlays())
+
+// Pick highlight sync — a click / rect-pick / cockpit chip-drop mutates `/Pick selection` and the
+// cockpit publishes an updated `viewerStore.pickHighlight`. The per-frame path picks up the new
+// buffer contents on the NEXT draw, but nothing else kicks a draw when only the highlight changed
+// (camera, t, and z all stayed put). Kick one here so the outline redraws immediately instead of
+// hanging on the previous pick until the user touches the viewer.
+watch(() => viewerStore.pickHighlight?.updateId ?? null, () => frame.redraw())
 
 // Re-fires on updateId change (a fresh setPendingViewState arriving through the store setter or the
 // storage bridge) AND on meta/canvas becoming ready — the store may seed pendingViewState from

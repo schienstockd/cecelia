@@ -680,9 +680,8 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *     panX_new = panX_old - ndcX * (halfW_new - halfW_old)
  *     panY_new = panY_old - ndcY * (halfH_new - halfH_old)
  *  The first version of this shipped inverted (dominik, 2026-08-29 — "mouse bottom left, it zooms
- *  in top right"). The offender was following `screenToImagePx`, which uses the opposite sign for
- *  panX from the shader — that inconsistency is its own bug (docs/TODO.md → *Picker/renderer pan
- *  sign disagreement*), not something for the zoom to match. */
+ *  in top right"). The offender was following `screenToImagePx`, which at the time had the
+ *  opposite pan sign from the shader; both now agree on the shader convention. */
 export function orbitZoom(
   cam: OrbitCamera, deltaY: number, fitDist: number,
   band: { min: number; max: number } = { min: 0.15, max: 6 },

@@ -59,18 +59,24 @@ export function screenToImagePx(
   // NDC — right is +, up is +. Canvas y is top-down so it flips.
   const ndcX = (2 * cx) / Math.max(canvasW, 1) - 1
   const ndcY = 1 - (2 * cy) / Math.max(canvasH, 1)
-  // Screen point in world µm — eye is at `(panX, panY)` under orthographic; a screen offset scales
-  // by the visible half-extent. Sign convention matches `panDrag`: dragging right (dx>0) decreases
-  // `cam.panX`, which means larger `cam.panX` moves the eye LEFT, so a click at NDC 0 with
-  // panX>0 lands to the RIGHT of the image centre in world space.
-  const worldX = -cam.panX + ndcX * halfW
-  const worldY = -cam.panY + ndcY * halfH
-  // Image is centred on the world origin; add `ext/2` to get absolute image µm from the top-left
-  // corner. The mask store's row 0 lands at the TOP of the canvas — see
-  // `docs/todo/spike/webgpu/shader_check.mjs` for the orientation check. So no y-reflection here:
-  // `1 - 2*cy/H` already inverts canvas-y once and one negation of `worldY` puts it back.
+  // Invert the shader's projection. `tileShader.ts` (and the volume shaders it mirrors) place
+  // screen-centre at world `(panX, -panY)`:
+  //   ndcX = (wx - panX) / halfW      →  wx = panX + ndcX * halfW
+  //   ndcY = -(wy + panY) / halfH     →  wy = -panY - ndcY * halfH
+  // Previously the picker used `-panX` on wx and `-ndcY * halfH` on wy (self-consistent, but off
+  // from the shader by `2*panX` and `2*panY`). At fit-view (pan=0) they agreed, so a rect drawn
+  // on a PANNED image highlighted the diagonally-opposite cells — that's the bug the correction
+  // cockpit's pick-outline surfaced. The shader is ground truth here: any picker that disagrees
+  // is the one to fix.
+  const worldX =  cam.panX + ndcX * halfW
+  const worldY = -cam.panY - ndcY * halfH
+  // Image is centred on the world origin and, per the shader's "screen up = -y in world"
+  // convention (tileShader.ts:53, mipShader.ts:42-48), image row 0 lives at world y = -extY/2
+  // and grows downward through world. So the absolute image µm is `world + ext/2` on BOTH axes —
+  // no reflection. The previous version negated worldY here because its `worldY` was computed
+  // with the opposite y-sign to the shader; the same fix above made this negation wrong too.
   const absX_um = worldX + extX / 2
-  const absY_um = -worldY + extY / 2
+  const absY_um = worldY + extY / 2
   const x = Math.floor(absX_um / vxL)
   const y = Math.floor(absY_um / vyL)
   const inside = x >= 0 && y >= 0 && x < nX && y < nY

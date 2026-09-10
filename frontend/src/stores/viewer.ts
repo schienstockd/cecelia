@@ -41,6 +41,7 @@ const K_PREVIEW_LABELS   = 'cc.viewer.previewLabels'
 const K_PREVIEW_IMAGES   = 'cc.viewer.previewImages'
 const K_TRACK_HIGHLIGHT  = 'cc.viewer.trackHighlight'
 const K_LABELS_DIM_MISMATCH = 'cc.viewer.labelsDimMismatch'
+const K_PICK_HIGHLIGHT   = 'cc.viewer.pickHighlight'
 
 /** What the `<vn>__preview.ome.zarr` scratch store contains — set by taskPreview after a run, read
  *  by ViewerWindow to flip its labels slab request onto the preview path. Lives HERE (not in
@@ -129,6 +130,28 @@ export interface LabelsDimMismatch {
   byVn: Record<string, { nX: number; nY: number }>
 }
 
+/**
+ * "Outline these picked labels on the viewer, with ONE of them (`focusId`) distinct" — the
+ * correction cockpit's answer to "what am I editing right now", painted on the mask by the
+ * WebGPU renderer's pick-set uniform. Written by the cockpit whenever the pick membership or the
+ * Review-mode focus changes; ViewerWindow watches and calls `renderer.setPickSet(...)`.
+ *
+ * When `labels` is empty AND `focusId` is 0 (or the whole record is null), the highlight is off
+ * and the shader's `labPickContourPx()` returns 0 (short-circuits the composite). Scope is per
+ * (imageUid, valueName) for the same reason as `TrackHighlight` — label ids are per-vn, a stale
+ * highlight for image A must not survive an image swap.
+ *
+ * `updateId` follows the other viewer-bag entries: identical repeat writes across localStorage
+ * would emit no `storage` event, so the stamp guarantees a wake-up on every set.
+ */
+export interface PickHighlight {
+  imageUid: string
+  valueName: string
+  labels: number[]
+  focusId: number
+  updateId: number
+}
+
 function _readJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
   try {
@@ -162,6 +185,12 @@ export const useViewerStore = defineStore('viewer', () => {
   const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
   const trackHighlight   = ref<TrackHighlight | null>(_readJson<TrackHighlight>(K_TRACK_HIGHLIGHT))
   const labelsDimMismatch = ref<LabelsDimMismatch | null>(_readJson<LabelsDimMismatch>(K_LABELS_DIM_MISMATCH))
+  const pickHighlight    = ref<PickHighlight | null>(_readJson<PickHighlight>(K_PICK_HIGHLIGHT))
+  /** Monotonic tick bumped whenever the SERVER's `/Pick selection` pop membership changes — the
+   *  correction cockpit watches this to know when to re-fetch membership. Same-window signal (a
+   *  storage event does NOT fire in the writer's own window); the cross-window channel is
+   *  `cc.pickSelectionTick` in localStorage, bumped by the same setter. */
+  const pickSelectionTick = ref(0)
 
   /** ViewerWindow calls this when the image changes (route load, valueName picker). */
   function setOpenImage(next: OpenImage | null) {
@@ -251,6 +280,30 @@ export const useViewerStore = defineStore('viewer', () => {
     _writeJson(K_LABELS_DIM_MISMATCH, next)
   }
 
+  /** ViewerWindow calls this after every successful pick-cell / pick-rect / pick-clear / pick-set —
+   *  the server-side membership just changed, everything downstream (cockpit, plots) must re-read.
+   *  Bumps BOTH channels: the in-window ref (a Pinia store update, seen by same-window watchers)
+   *  and the cross-window `cc.pickSelectionTick` localStorage key (seen by OTHER windows' storage
+   *  listeners). Neither alone suffices — a same-window write does not fire `storage` in its own
+   *  window, and a Pinia ref update does not cross windows. */
+  function bumpPickSelectionTick() {
+    pickSelectionTick.value += 1
+    if (typeof window !== 'undefined') {
+      try { window.localStorage.setItem('cc.pickSelectionTick', String(Date.now()) + ':' + pickSelectionTick.value) }
+      catch { /* quota / privacy mode — the in-window channel still fires */ }
+    }
+  }
+
+  /** Correction cockpit calls this whenever pick membership or Review focus changes. `null` (or an
+   *  empty labels + zero focus) clears the pick outline. Stamped like `setTrackHighlight` so a
+   *  repeat write with the same labels still wakes the popup viewer. */
+  function setPickHighlight(next: Omit<PickHighlight, 'updateId'> | null) {
+    const empty = !next || (!next.labels.length && !next.focusId)
+    const stamped: PickHighlight | null = empty ? null : { ...next!, updateId: ++_updateIdSeq }
+    pickHighlight.value = stamped
+    _writeJson(K_PICK_HIGHLIGHT, stamped)
+  }
+
   // Cross-window sync: `storage` events fire only in OTHER same-origin windows on a write, so the
   // pattern is symmetric — every window listens, every window writes on its own change.
   if (typeof window !== 'undefined') {
@@ -271,15 +324,17 @@ export const useViewerStore = defineStore('viewer', () => {
         trackHighlight.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_LABELS_DIM_MISMATCH) {
         labelsDimMismatch.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_PICK_HIGHLIGHT) {
+        pickHighlight.value = e.newValue ? JSON.parse(e.newValue) : null
       }
     })
   }
 
   return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
-           trackHighlight, labelsDimMismatch,
+           trackHighlight, labelsDimMismatch, pickHighlight, pickSelectionTick,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
            consumePendingViewState, setPreviewLabels, setPreviewImages, setTrackHighlight,
-           setLabelsDimMismatch }
+           setLabelsDimMismatch, setPickHighlight, bumpPickSelectionTick }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))
