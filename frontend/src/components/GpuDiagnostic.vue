@@ -81,17 +81,15 @@ function fmt(n: number | undefined | null): string {
            Vulkan even where the driver reports 16384. Phase B's LOD picker already handles it; this row
            just names the constraint so a user can see why large images stop getting sharper.
 
-           On Apple, Safari reports the spec baseline (2048) whereas Chrome/Dawn on the same Mac
-           usually reports higher — so the actionable line is "try Chrome/Firefox", not "your GPU is
-           too small". Metal itself caps 3D textures at 2048 on several Apple GPU families, so a
-           browser switch may not raise the number — but it's still the first thing to try. -->
+           On Apple, both Safari AND Chrome-on-Mac report 2048 (measured 2026-09-10 on `apple metal-3`),
+           so this is a Metal hardware cap on the GPU family, not a browser choice. Nothing to switch to;
+           the LOD picker handles the sharpness fallback. Just name the cause. -->
       <div v-if="report.limits && report.limits.maxTextureDimension3D <= 2048"
            class="note"
            :style="{ color: SEVERITY.warn.color }">
         <i :class="['pi', SEVERITY.warn.icon]" />
-        <span v-if="isApple">Large images render at coarser detail — 3D texture cap 2048.
-          If this is Safari, try Chrome or Firefox on this Mac; some Apple GPU families cap here
-          in the driver too.</span>
+        <span v-if="isApple">Metal caps 3D textures at 2048 on this Apple GPU — large images
+          render at a coarser LOD</span>
         <span v-else>Large images render at coarser detail — GPU 3D texture cap 2048</span>
       </div>
 
