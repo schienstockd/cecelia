@@ -1,19 +1,14 @@
 # ── hmm.jl — Gaussian HMM over track measurements ────────────────────────────────
 #
-# Port of behaviourAnalysis `hmmStates` + `hmmTransitions` (R/Shiny cecelia). The original used
-# depmixS4: a Gaussian-emission HMM with measurements conditionally independent given the state,
-# one sequence per track (depmixS4 `ntimes`), and a Viterbi global decode (`posterior()$state`).
+# Gaussian HMM over per-track measurements. One sequence per track, diagonal-Gaussian emissions
+# with an owned weighted M-step (HiddenMarkovModels.jl's Distributions refit has no `suffstats`
+# for a diagonal MvNormal, and owning it keeps the independent-per-measurement semantics exact).
+# HiddenMarkovModels.jl handles forward-backward, transition re-estimation, and Viterbi.
 #
-# We replicate that with HiddenMarkovModels.jl, supplying a diagonal-Gaussian emission whose
-# weighted M-step we own — the package's Distributions-based refit has no `suffstats` for a
-# diagonal MvNormal, and owning the M-step keeps depmixS4's independent-per-measurement semantics
-# exactly. HiddenMarkovModels.jl handles forward-backward, transition re-estimation, and Viterbi.
-#
-# Per-cell semantics (the subtle part): a track's first cell has no speed and its first two have no
-# angle (see track_measures.jl — those land as NaN). Such cells are dropped before fitting and get
-# `missing` on join-back, so states are per-cell but undefined where a measurement can't exist —
-# matching the R `drop_na`/`filter(!is.infinite)` then left-join behaviour, including its quirk of
-# treating a mid-track drop as if the surrounding cells were contiguous.
+# Per-cell semantics: a track's first cell has no speed and its first two have no angle (see
+# track_measures.jl — those land as NaN). Such cells are dropped before fitting and returned as
+# `missing` on join-back. A mid-track drop is treated as if its neighbours were contiguous — no
+# state boundary is introduced across the gap.
 #
 # Pure functions over a pooled per-cell DataFrame (built by `pop_df(imgs, uids, …)`); no I/O, no
 # HTTP — headless-testable. See docs/MODULES.md (behaviour tasks).
@@ -72,7 +67,7 @@ end
 # ── Preprocessing helpers ─────────────────────────────────────────────────────────
 
 # Centered running mean over a sequence of observation vectors (per measurement), window `k`.
-# Edges use the available window (shrinking) — an approximation of R caTools::runmean(endrule).
+# Edge windows shrink to the available samples (no padding).
 function _running_mean_vecs(M::Vector{Vector{Float64}}, k::Int)
     k <= 1 && return M
     n = length(M)
@@ -95,8 +90,7 @@ end
 
 # Global per-measurement normalisation (÷ a summary stat) then scaling (÷ sd, no centering),
 # applied across all observations in place. `normalise`: measure => "min"|"max"|"median"|"mean".
-# `scale_measures`: measures to divide by their (uncentered) standard deviation. Mirrors the R
-# normMeasurements / scaleMeasurements steps (scale(center = FALSE)).
+# `scale_measures`: measures to divide by their (uncentered) standard deviation.
 # `measures`/`scale_measures` accept any string vector (an empty selection from the GUI arrives as
 # `Vector{Union{}}`, which is not `Vector{String}` — keep the signature abstract to match the public
 # `hmm_fit_states`).
@@ -129,8 +123,8 @@ function _normalise_scale!(obs::Vector{Vector{Float64}}, measures::AbstractVecto
 end
 
 # Windowed-mode smoothing of a decoded state sequence (per track), `iters` passes, centered
-# window `w` (odd-ish; uses the available window at edges). Ties → smallest state. Ports the R
-# postFiltering/postIterations step (DescTools::Mode over a frollapply window, take-first on ties).
+# window `w` (odd-ish; uses the available window at edges). Ties broken by smallest state ID for
+# reproducibility.
 function _mode_smooth(seq::Vector{Int}, w::Int, iters::Int)
     (w <= 1 || isempty(seq)) && return seq
     n = length(seq)
@@ -159,8 +153,8 @@ end
 
 # Deterministic HMM initialisation: order observations by the first measurement, split into K
 # contiguous quantile bins, seed each state's emission from its bin's mean/sd. Transition matrix
-# is diagonal-heavy (0.9 self), initial distribution uniform. Deterministic → reproducible fit
-# (so the R `seed` param is unnecessary for our path; accepted but unused at the engine level).
+# is diagonal-heavy (0.9 self), initial distribution uniform. Deterministic → reproducible fit;
+# a seed argument is accepted at the public API level but unused here.
 function _init_hmm(obs::Vector{Vector{Float64}}, K::Int)
     N = length(obs)
     D = length(first(obs))
@@ -199,8 +193,8 @@ identified by `group_cols`, ordered within a track by `time_col`) and return a p
 **aligned to `df`'s rows**. Rows with a `missing`/non-finite value in any measure (track-start cells
 with no speed/angle) are excluded from the fit and returned as `missing`.
 
-Preprocessing order mirrors the R port: order-within-track → drop NA/Inf → per-track noise filter
-(running mean) → global normalise → global scale → fit → Viterbi decode.
+Preprocessing order: order-within-track → drop NA/Inf → per-track noise filter (running mean) →
+global normalise → global scale → fit → Viterbi decode.
 """
 function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString};
                         num_states::Int,
@@ -290,8 +284,6 @@ Per-cell HMM transition labels. First the **hybrid** state is formed by pasting 
 - a cell with any `missing`/NaN state column has a `missing` hybrid → `missing` transition;
 - `include_start` keeps the first in-track transition (lag = start, labelled `"NA_<cur>"`);
 - `include_self` keeps self-transitions (`prev == cur`).
-
-Faithful to the R `hmmTransitions` truth table (includeStart × includeSelfTransitions).
 """
 function hmm_transitions(df::DataFrame, state_cols::AbstractVector{<:AbstractString};
                          time_col::AbstractString,
