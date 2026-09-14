@@ -166,6 +166,42 @@ try to invent one.
 
 ---
 
+## Contributing & how to change this codebase
+
+This project is being actively made maintainable by contributors beyond its original author. It
+has been AI-assisted from the start — see [How this software was built](#how-this-software-was-built)
+above — and the goal is a codebase a competent Julia / Python / TypeScript developer can change
+safely within a day of onboarding, not one that requires holding an AI agent's context in prompt
+history.
+
+**Where to start:**
+
+- **[`docs/MAP.md`](docs/MAP.md)** — task-first index of where things live ("I want to change how
+  QC findings are reported", "I want to add a resource pool"). Organised by what you're trying to
+  do, not by module name.
+- **[`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md)** — the standard a change gets checked
+  against: comment/docstring rules, cross-module contract rules, file-responsibility rules.
+  Checklist at the bottom.
+- **[`docs/DEV.md`](docs/DEV.md)** — running tests, branches and PRs, dev-loop conventions.
+- **Root [`CLAUDE.md`](CLAUDE.md)** — cross-cutting rules everyone must follow (H5AD access,
+  OME-ZARR access, `run_py` for Python subprocesses).
+
+**Files flagged concurrency-critical** (do not casually trim comments — they document lock
+ordering, cancellation races, silent-failure contracts): see [`docs/MAP.md`](docs/MAP.md) →
+*Concurrency-critical files*. Currently: `app/src/tasks/scheduler.jl`.
+
+**Files with monolith pressure** (new functionality should NOT be appended by default): see
+[`docs/MAP.md`](docs/MAP.md) → *Structure register*.
+
+**What is not yet in place** (a stranger reading this should know rather than infer):
+
+- No `CONTRIBUTING.md`, issue templates, or a "good first issue" label yet.
+- No single "who to ask" pointer for questions. File an issue.
+- The test-running command is in [`docs/DEV.md`](docs/DEV.md); there is no per-category CI badge
+  above yet.
+
+---
+
 ## License
 
 Cecelia Feijoa is licensed under **GPL-3.0-or-later** — see [`LICENSE`](LICENSE). This is
