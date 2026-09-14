@@ -285,7 +285,7 @@ def caption_band(width, height, text):
 #: viewer's on-image overlays (``StillOverlay.vue``: ``.ovl-ts`` text-shadow ring, ``.ovl-text``
 #: ``paint-order: stroke``, ``.ovl-fill`` white bar with a dark ``stroke``). No solid backing
 #: rectangles: they read as chrome pasted on top rather than an annotation on the image, and the
-#: viewer never had them either — matching the two surfaces was the ask (Dominik, 2026-08-29).
+#: viewer never had them either — matching the two surfaces was the ask.
 _OVERLAY_TEXT      = (255, 255, 255)
 _OVERLAY_STROKE    = (0, 0, 0)                   # dark outline drawn around every white glyph + bar
 _OVERLAY_MARGIN_PX = 8

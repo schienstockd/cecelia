@@ -1170,7 +1170,7 @@ end
 #: default codec", not the size of the layout as such. A different codec shifts all three rows together
 #: — the DIFFERENCE between them is a directory-inode cost and does not depend on the codec at all.
 #:
-#: **`flat` was removed (Dominik, 2026-08-14).** It was the default, on 10 MB of 81 MB (~14%) saved
+#: **`flat` was removed.** It was the default, on 10 MB of 81 MB (~14%) saved
 #: directory inodes at identical read time. Two things undid it. First, re-measured on a real 3.5 GB
 #: movie instead of this 81 MB fixture, the saving is **~171 MB, ~5%** — the fixture flattered it
 #: because its data was small relative to its directory count. Second, and decisive: a flat store
