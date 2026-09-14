@@ -141,7 +141,7 @@ def _group_format(group, default=2):
 
 #: Chunk-key separators, by name. "/" nests keys into a directory tree, "." keeps them flat.
 #:
-#: **We write NESTED, always, in both formats** (Dominik, 2026-08-14). `flat` remains here because we
+#: **We write NESTED, always, in both formats.** `flat` remains here because we
 #: still READ stores written before this — the separator is self-describing (v2 `.zarray`
 #: `dimension_separator`, v3 `chunk_key_encoding`), so old flat stores keep working untouched and
 #: nothing needs re-importing.
@@ -324,13 +324,10 @@ def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):
     staged store fell through to the TIFF branch and raised `IsADirectoryError`. The preview worker and
     the store sweep both have to read a store before it is promoted.
 
-    There used to be a TIFF branch here (`open_image_as_zarr` → `tifffile.imread(..., aszarr=True)`).
-    It was removed because nothing needs it: every pixel read in the app happens *after*
-    bioformats2raw has converted the source to OME-ZARR, so the only paths reaching this function are
-    stores. The TIFF branch had in fact been raising for every input — tifffile refuses to build its
-    zarr bridge against the pinned zarr 3.x — which is the strongest available evidence that it had no
-    callers. Reading TIFF *metadata* is unaffected and still lives in `ome_xml_utils`
-    (`read_imagej_metadata`, `parse_meta_from_tiff`), used on the source file at import time.
+    Every pixel read in the app happens *after* bioformats2raw has converted the source to OME-ZARR,
+    so the only paths reaching this function are stores. TIFF *metadata* reading is unaffected and
+    lives in `ome_xml_utils` (`read_imagej_metadata`, `parse_meta_from_tiff`) — used on the source
+    file at import time.
     """
     # lazy: ome_xml_utils owns the one structural store predicate (same idiom as read_scale below)
     from cecelia.utils import ome_xml_utils
@@ -393,9 +390,7 @@ def plane_chunks(shape, dim_utils=None, xy_tile=512):
 
 
 # NOTE: labels are opened the SAME way as images — open_as_zarr / open_zarr (a flat multiscales
-# store with numeric `datasets`; see segmentation_utils). The old `open_labels_as_zarr/_as_dask`
-# (data_group='labels') were a verbatim port from the R version, had NO callers here, and would
-# KeyError on current stores (which key multiscales under 'datasets', not 'labels') — removed.
+# store with numeric `datasets`; see segmentation_utils).
 
 
 def zarr_data_to_dask(zarr_data):

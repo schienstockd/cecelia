@@ -34,9 +34,8 @@ const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom p
 # holding the GPU with no UI attached is the failure mode Decision 3b calls out, so teardown takes it.
 #
 # A single crash no longer reaches here at all: it relaunches the backend instead (`_crash_death`), so
-# the runner keeps working and the fresh server adopts it. This used to be the bug — a segfault in the
-# backend's own shutdown path counted as "the user is done" and reaped the running segmentation the
-# runner exists to protect.
+# the runner keeps working and the fresh server adopts it — a segfault in the backend's own shutdown
+# path must NOT reap the running segmentation the runner exists to protect.
 const CHILD_PORTS = (7656, 7657, 7660)   # preview worker, task runner, notebooks
 
 # Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits

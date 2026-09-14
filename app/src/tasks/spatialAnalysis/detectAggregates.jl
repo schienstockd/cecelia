@@ -49,8 +49,7 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
 
     # member cells of the population WITH their µm coordinates, in ONE read: `pop_df` is the accessor
     # for population data (docs/POPULATION.md), and `centroids = :physical` pushes the coordinate columns
-    # into that same read and converts them via the shared `scale_centroids!`. This used to be two reads
-    # — membership here, then the centroids again off disk — plus its own copy of the scaling.
+    # into that same read and converts them via the shared `scale_centroids!`.
     cdf = pop_df_multi(img, pops; value_name = value_name, granularity = :cell,
                        restrict_to = value_name, centroids = :physical)
     nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(pops)"); return nothing)

@@ -517,9 +517,8 @@ function api_gating_channels(req::HTTP.Request)
                 end
                 # 2) for `trackclust` with no explicit valueName, additionally prefer a tracked vn
                 #    that HAS clustering runs — the resolved-tracked pick can still be a peer of the
-                #    one the run lives on (e.g. zolIMa/fXgbTl: `default` is tracked but the
-                #    `movement` clustering is on `flowTom`; the fix landed on 2026-09-08 only guarded
-                #    the untracked case, so this still returned empty clusterIds).
+                #    one the run lives on (e.g. a tracked `default` where the clustering was written
+                #    to a differently-suffixed vn), so both cases must be guarded.
                 if get(q, "popType", "") == "trackclust"
                     has_trackclust_runs = v -> begin
                         tp = img_track_props_path(img, v)

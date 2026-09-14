@@ -176,10 +176,9 @@ exactly the image version the run would.
 the decision of what that becomes (`preview_region_bounds`): one z-plane, clamped to the image, with
 a 2D fallback flagged when the viewer is in 3D. Julia does not second-guess it — one place decides.
 
-The output value_name is the REAL one, unsuffixed. It used to be suffixed (`X__preview`) to keep a
-scratch store from colliding with the segmentation's own; there is no store now, so the suffix would
-only stop the preview layer from sharing a stem with `({vn}) Labels` — which is exactly what makes the
-two evict each other instead of stacking.
+The output value_name is the REAL one, unsuffixed — the preview writes no store, so a suffix would
+only stop the preview layer from sharing a stem with `({vn}) Labels`, which is exactly what makes
+the two evict each other instead of stacking.
 """
 function preview_request(img::CciaImage, params::AbstractDict, region::AbstractDict;
                          value_name::AbstractString = VERSIONED_DEFAULT_VAL,

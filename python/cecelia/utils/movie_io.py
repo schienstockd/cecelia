@@ -106,9 +106,8 @@ def movie_writer(path, fps):
     """The one imageio writer for a Cecelia `.mp4`. Use as a context manager.
 
     ``macro_block_size=1`` keeps frames at their exact dimensions — imageio's default of 16 rescales
-    anything not divisible by 16, which is why "canvas size" used to be approximate. That is why
-    `coerce_movie_size`/`crop_to_even` own the even-dimension rule instead: nothing downstream will fix
-    an odd frame for us.
+    anything not divisible by 16. That's why `coerce_movie_size`/`crop_to_even` own the even-dimension
+    rule: nothing downstream will fix an odd frame for us.
 
     **It is a context manager of our own, rather than the raw writer, so the file is closed on the way
     out of a FAILED block too.** imageio's ``__exit__`` closes only when the block exits cleanly

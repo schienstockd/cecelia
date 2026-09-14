@@ -33,7 +33,7 @@ end
 # The pushdown columns for a (value_name, granularity), read from the var list (col_names is
 # metadata-only). Intensity columns are requested BY CHANNEL NAME, so the central raw↔channel resolution
 # in `label_props`/`pop_df` returns them under a consistent channel name across pop_types — no local
-# rename map (that used to be hand-rolled here because pop_df's rename once varied by pop_type).
+# rename map is needed here.
 function _measure_cols(img::CciaImage, vn::AbstractString, gran::Symbol)::Vector{String}
     if gran === :track
         p = img_track_props_path(img, vn); isfile(p) || return String[]

@@ -128,9 +128,8 @@ end
 # running server out from under an open session. Mirrors the server lifecycle above (one tracked proc,
 # atexit cleanup). See docs/NOTEBOOKS.md.
 # The stamp format has ONE implementation — pluto/sysimage_stamp.jl — and this file uses it rather
-# than keeping a parallel copy (paths, Manifest fingerprint and both stamp readers used to be
-# duplicated here, "kept trivially in sync" by hand). It is deliberately dependency-free so it can be
-# included by path from an env that does not depend on the pluto project.
+# than keeping a parallel copy. It is deliberately dependency-free so it can be included by path
+# from an env that does not depend on the pluto project.
 let helper = joinpath(_pluto_root(), "sysimage_stamp.jl")
     # Loaded at server START, so a missing file takes the whole API down, not just notebooks. Say why.
     isfile(helper) || error("pluto/sysimage_stamp.jl not found at $helper — the notebook sysimage " *
