@@ -26,7 +26,7 @@ import {
 import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
-import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
+import { createBrickAtlasTextures, type BrickAtlasTexture } from './brickAtlasTexture'
 import {
   PageTable, brickKey, parseBrickKey, shouldAdmitKick,
   maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
@@ -524,14 +524,26 @@ export async function createBrickVolumeRenderer(
       maxTextureDimension3D: device.limits.maxTextureDimension3D,
       maxBufferSize: device.limits.maxBufferSize,
     }
-    const budget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
-    const layout = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
-    if (layout === null) {
+    // Clamp against the device's own `maxBufferSize` — Chromium/Dawn caps every backend at
+    // ~4 GiB regardless of card VRAM, so a Settings pick above that (or a browser that
+    // reports a smaller cap) would otherwise land in `validateAtlasLayout`'s size guard and
+    // error-toast with no fallback. Silently downgrading here is the honest behaviour: the
+    // user asked for the biggest atlas the hardware would give, and that IS the biggest.
+    // Multi-atlas (WEBGPU_UPLOAD_PATH_PLAN.md → U5) is the way past this ceiling.
+    const requestedBudget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
+    const budget = Math.min(requestedBudget, limits.maxBufferSize)
+    // Multi-atlas P1: `pickAtlasLayout` now returns an array (length always 1 here) so the
+    // pipeline is ready for P2 to allocate N > 1 atlases past the `maxBufferSize` cap
+    // without another API break. See `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` P1.
+    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
+    if (layouts === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return
     }
-    const texture = createBrickAtlasTexture(device, layout, limits, onError)
-    if (texture === null) return
+    const layout = layouts[0]
+    const textures = createBrickAtlasTextures(device, layouts, limits, onError)
+    if (textures === null) return
+    const texture = textures[0]
 
     const capacity = atlasSlotCapacity(layout)
     const pageTable = new PageTable(capacity)

@@ -130,13 +130,39 @@ export function canReuseAtlas(current: AtlasLayout, next: AtlasLayout): boolean 
   )
 }
 
+/**
+ * True iff two atlas ARRAYS can be reused for the same source — length must match AND every
+ * paired layout must satisfy `canReuseAtlas`. Multi-atlas sizing (WEBGPU_MULTI_ATLAS_PLAN.md
+ * Decision 3) requires homogeneity, so pairwise checking captures the whole contract.
+ *
+ * A level swap that changes N drops all atlases, same as a swap that changes any single field.
+ */
+export function canReuseAtlases(current: readonly AtlasLayout[], next: readonly AtlasLayout[]): boolean {
+  if (current.length !== next.length) return false
+  for (let i = 0; i < current.length; i++) {
+    if (!canReuseAtlas(current[i], next[i])) return false
+  }
+  return true
+}
+
+/**
+ * Pick an array of atlas layouts for a given store, targeting a total VRAM budget. See
+ * `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decisions 3 (homogeneous atlases) + 4 (sizer per
+ * atlas, then divide).
+ *
+ * Currently returns an array of length 1 — Phase 1 refactor. Phase 2 will divide the
+ * remaining budget by the per-atlas byte size and add up to `MAX_ATLASES` copies of the same
+ * layout so total VRAM can exceed the single-buffer cap.
+ *
+ * Returns `null` if even one atlas doesn't fit. The array is never empty on success.
+ */
 export function pickAtlasLayout(
   brickSizeVox: readonly [number, number, number],
   bytesPerVoxel: number,
   channelsPerBrick: number,
   vramBudgetBytes: number,
   limits: DeviceLimits,
-): AtlasLayout | null {
+): AtlasLayout[] | null {
   const oneBrickBytes = brickSizeVox[0] * brickSizeVox[1] * brickSizeVox[2] *
                         channelsPerBrick * bytesPerVoxel
   if (oneBrickBytes > vramBudgetBytes) return null
@@ -191,5 +217,6 @@ export function pickAtlasLayout(
     bytesPerVoxel,
     channelsPerBrick,
   }
-  return validateAtlasLayout(layout, limits) === null ? layout : null
+  if (validateAtlasLayout(layout, limits) !== null) return null
+  return [layout]
 }

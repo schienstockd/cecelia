@@ -21,7 +21,7 @@ import {
   atlasTextureSize, atlasSlotCapacity, validateAtlasLayout,
   type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
-export { canReuseAtlas } from '../../utils/brickAtlas'
+export { canReuseAtlas, canReuseAtlases } from '../../utils/brickAtlas'
 
 /** How many bytes one brick × all channels occupies in the atlas — the payload the caller
  *  hands to `writeBrick`. Answers `(brickX × brickY × brickZ × nC × bpv)`. */
@@ -104,6 +104,30 @@ export function createBrickAtlasTexture(
   const nc = layout.channelsPerBrick
   const bpv = layout.bytesPerVoxel
   const perChannelBytes = bx * by * bz * bpv
+  const bytesPerRow = bx * bpv
+  // `copyBufferToTexture` requires `bytesPerRow` to be a multiple of 256. For a 128-wide brick
+  // that means bpv ≥ 2 lands aligned (256 / 512 bytes) and can take the buffered path; r8uint
+  // at bx=128 lands at 128 bytes/row and must fall back to `writeTexture`, which has no such
+  // constraint. Padding the r8uint case would double the staging-buffer size and add a JS
+  // memcpy — measurable trade-off, keep it as writeTexture until numbers say otherwise.
+  const bufferedPath = bytesPerRow % 256 === 0
+  let stagingBuf: GPUBuffer | null = null
+  if (bufferedPath) {
+    // One persistent staging buffer per atlas lifetime — sized to one brick. Reused every
+    // writeBrick call; freed alongside the texture in `destroy()`. The write-path becomes
+    // `writeBuffer → copyBufferToTexture`, which measured 3.2 ms submitted vs
+    // `writeTexture`'s 7.1 ms on a 4 MB r16uint brick (WEBGPU_UPLOAD_PATH_PLAN.md §C,
+    // 2026-09-15 on RTX 2000 Ada) — the 4 ms/brick delta is the driver's own staging copy
+    // that `writeTexture` re-runs each call.
+    device.pushErrorScope('out-of-memory')
+    stagingBuf = device.createBuffer({
+      size: brickPayloadBytes(layout),
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+    })
+    void device.popErrorScope().then(popErr => {
+      if (popErr) onError?.(`Brick atlas staging buffer: ${popErr.message}`)
+    })
+  }
   let destroyed = false
 
   return {
@@ -128,22 +152,35 @@ export function createBrickAtlasTexture(
       const originY = sy * by
       const originZBase = sz * bz * nc
 
-      // ONE writeTexture per brick — the wire payload's (x, y, z, c) column-major layout
-      // stacks channels contiguously along z, and the atlas texture stores channel c at atlas z
-      // `originZBase + c * bz`, so the whole brick is one `[bx, by, bz * nc]` box and one
-      // upload call. The old N-per-channel loop was measured on Dml3RG with 4 channels: at
-      // ~4.85 MB per brick the per-call driver-staging overhead dominated the tail (mean
-      // 5.5 ms, p99 44 ms, max 412 ms) — collapsing to one call brought mean to 0.71 ms and
-      // eliminated the tail entirely (max 5.7 ms, zero writes >10 ms). See PR chain #703
-      // (measurement + short-lived MAP_WRITE experiment) → this PR (one-call collapse; the
-      // MAP_WRITE path measured worse on both paths' fair one-call comparison, so it went).
+      // ONE upload per brick — the wire payload's (x, y, z, c) column-major layout stacks
+      // channels contiguously along z, and the atlas texture stores channel c at atlas z
+      // `originZBase + c * bz`, so the whole brick is one `[bx, by, bz * nc]` box. The old
+      // N-per-channel loop was measured on Dml3RG with 4 channels: at ~4.85 MB per brick the
+      // per-call driver-staging overhead dominated the tail (mean 5.5 ms, p99 44 ms, max
+      // 412 ms) — collapsing to one call brought mean to 0.71 ms and eliminated the tail. See
+      // PR chain #703 (measurement + short-lived MAP_WRITE experiment).
       const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-      device.queue.writeTexture(
-        { texture, origin: [originX, originY, originZBase] },
-        bytes,
-        { bytesPerRow: bx * bpv, rowsPerImage: by },
-        [bx, by, bz * nc],
-      )
+      if (bufferedPath && stagingBuf !== null) {
+        // `writeBuffer` + `copyBufferToTexture` into a persistent staging buffer.
+        // WEBGPU_UPLOAD_PATH_PLAN.md § U2a.
+        device.queue.writeBuffer(stagingBuf, 0, bytes, 0, expected)
+        const enc = device.createCommandEncoder()
+        enc.copyBufferToTexture(
+          { buffer: stagingBuf, bytesPerRow, rowsPerImage: by },
+          { texture, origin: [originX, originY, originZBase] },
+          [bx, by, bz * nc],
+        )
+        device.queue.submit([enc.finish()])
+      } else {
+        // r8uint at bx=128 → 128 B/row, not 256-aligned — `copyBufferToTexture` rejects.
+        // Fall through to `writeTexture`, which has no bytesPerRow alignment constraint.
+        device.queue.writeTexture(
+          { texture, origin: [originX, originY, originZBase] },
+          bytes,
+          { bytesPerRow, rowsPerImage: by },
+          [bx, by, bz * nc],
+        )
+      }
       return true
     },
 
@@ -151,7 +188,38 @@ export function createBrickAtlasTexture(
       if (destroyed) return
       destroyed = true
       texture.destroy()
+      stagingBuf?.destroy()
     },
   }
+}
+
+/**
+ * Create N atlas textures from an array of layouts. `WEBGPU_MULTI_ATLAS_PLAN.md` Phase 1
+ * refactor — always length 1 during Phase 1, N up to `MAX_ATLASES` in Phase 2. Returns
+ * `null` if any single atlas fails to allocate, cleaning up any already-created textures
+ * so the caller doesn't leak GPU memory on a partial success.
+ *
+ * Homogeneity (Decision 3) is a caller contract, not enforced here — `pickAtlasLayout` is
+ * the single producer and never returns heterogeneous arrays.
+ */
+export function createBrickAtlasTextures(
+  device: GPUDevice,
+  layouts: readonly AtlasLayout[],
+  limits: DeviceLimits,
+  onError?: (msg: string) => void,
+): BrickAtlasTexture[] | null {
+  if (layouts.length === 0) return null
+  const created: BrickAtlasTexture[] = []
+  for (const layout of layouts) {
+    const tex = createBrickAtlasTexture(device, layout, limits, onError)
+    if (tex === null) {
+      // Partial success: destroy the atlases we did allocate so the GPU-side memory doesn't
+      // outlive the caller's null-check.
+      for (const t of created) t.destroy()
+      return null
+    }
+    created.push(tex)
+  }
+  return created
 }
 
