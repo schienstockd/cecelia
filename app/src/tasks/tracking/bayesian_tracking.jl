@@ -1,5 +1,58 @@
 struct BayesianTracking <: CciaTask end
 
+# Typed shape of what `_run_task(::BayesianTracking, …)` reads from `params`. Names mirror the
+# btrack Bayesian tracker's inputs (accuracy / probToAssign / noise* / lambda* / theta* / *Thresh);
+# defaults line up with the spec JSON so an omitted key parses identically to what the handler
+# used to fall back to.
+Base.@kwdef struct BayesianTrackingParams
+    valueName::String            = VERSIONED_DEFAULT_VAL
+    popsToTrack::String          = "NONE"
+    trackSourceForce::Bool       = false
+    maxSearchRadius::Int         = 20
+    maxLost::Int                 = 3
+    trackBranching::Bool         = false
+    minTimepoints::Int           = 5
+    accuracy::Float64            = 0.8
+    probToAssign::Float64        = 0.8
+    noiseInital::Int             = 300
+    noiseProcessing::Int         = 100
+    noiseMeasurements::Int       = 100
+    distThresh::Float64          = 10.0
+    timeThresh::Int              = 5
+    segmentationMissRate::Float64 = 0.1
+    lambdaLink::Int              = 5
+    lambdaBranch::Int            = 50
+    lambdaTime::Int              = 5
+    lambdaDist::Float64          = 5.0
+    thetaTime::Int               = 5
+    thetaDist::Float64           = 5.0
+end
+
+function parse_bayesian_tracking_params(d::AbstractDict)::BayesianTrackingParams
+    BayesianTrackingParams(;
+        valueName            = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        popsToTrack          = string(get(d, "popsToTrack", "NONE")),
+        trackSourceForce     = Bool(get(d, "trackSourceForce", false)),
+        maxSearchRadius      = Int(get(d, "maxSearchRadius", 20)),
+        maxLost              = Int(get(d, "maxLost", 3)),
+        trackBranching       = Bool(get(d, "trackBranching", false)),
+        minTimepoints        = Int(get(d, "minTimepoints", 5)),
+        accuracy             = Float64(get(d, "accuracy", 0.8)),
+        probToAssign         = Float64(get(d, "probToAssign", 0.8)),
+        noiseInital          = Int(get(d, "noiseInital", 300)),
+        noiseProcessing      = Int(get(d, "noiseProcessing", 100)),
+        noiseMeasurements    = Int(get(d, "noiseMeasurements", 100)),
+        distThresh           = Float64(get(d, "distThresh", 10.0)),
+        timeThresh           = Int(get(d, "timeThresh", 5)),
+        segmentationMissRate = Float64(get(d, "segmentationMissRate", 0.1)),
+        lambdaLink           = Int(get(d, "lambdaLink", 5)),
+        lambdaBranch         = Int(get(d, "lambdaBranch", 50)),
+        lambdaTime           = Int(get(d, "lambdaTime", 5)),
+        lambdaDist           = Float64(get(d, "lambdaDist", 5.0)),
+        thetaTime            = Int(get(d, "thetaTime", 5)),
+        thetaDist            = Float64(get(d, "thetaDist", 5.0)))
+end
+
 # Bayesian (btrack) cell tracking. Ports old-R-shiny bayesianTracking.R.
 #
 # Tracks either the whole segmentation or a gated flow population. Membership for the
@@ -14,13 +67,11 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name    = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    pops_to_track = string(get(params, "popsToTrack", "NONE"))
-
-    task_dir   = img._dir
-    props_path = img_label_props_path(img, value_name)
+    p        = parse_bayesian_tracking_params(params)
+    task_dir = img._dir
+    props_path = img_label_props_path(img, p.valueName)
     if !isfile(props_path)
-        on_log("[ERROR] No labelProps for valueName='$value_name': $props_path")
+        on_log("[ERROR] No labelProps for valueName='$(p.valueName)': $props_path")
         return nothing
     end
 
@@ -36,28 +87,29 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
     # every non-whole_seg row is an orphan; `nothing` there disables the sweep entirely on the
     # Python side, so a legacy tracking task that never emits the param still lands somewhere sane.
     m = try
-        load_pop_map(img; value_name = value_name, pop_type = "flow")
+        load_pop_map(img; value_name = p.valueName, pop_type = "flow")
     catch _
         nothing
     end
-    live_track_sources = m === nothing ? nothing : [pop_uid(m, p) for p in pop_paths(m)]
-    if pops_to_track != "NONE"
-        m === nothing && (on_log("[ERROR] No gating sidecar for value_name='$value_name'"); return nothing)
-        if !has_pop(m, pops_to_track)
-            on_log("[ERROR] Population not found in gating/$(value_name).json: $pops_to_track")
+    # Shadow the params struct only inside the comprehension so `p` still refers to it below.
+    live_track_sources = m === nothing ? nothing : [pop_uid(m, path) for path in pop_paths(m)]
+    if p.popsToTrack != "NONE"
+        m === nothing && (on_log("[ERROR] No gating sidecar for value_name='$(p.valueName)'"); return nothing)
+        if !has_pop(m, p.popsToTrack)
+            on_log("[ERROR] Population not found in gating/$(p.valueName).json: $(p.popsToTrack)")
             return nothing
         end
-        recompute!(m, cols -> (label_props(img; value_name = value_name) |>
+        recompute!(m, cols -> (label_props(img; value_name = p.valueName) |>
                                lp -> select_cols(lp, cols) |> as_df))
-        label_ids = collect(Int, cells_in_pop(m, pops_to_track))
-        track_source = pop_uid(m, pops_to_track)
-        on_log("[INFO] Tracking $(length(label_ids)) cells from population '$pops_to_track' (uid=$track_source)")
+        label_ids = collect(Int, cells_in_pop(m, p.popsToTrack))
+        track_source = pop_uid(m, p.popsToTrack)
+        on_log("[INFO] Tracking $(length(label_ids)) cells from population '$(p.popsToTrack)' (uid=$track_source)")
         if isempty(label_ids)
-            on_log("[ERROR] Population '$pops_to_track' is empty — nothing to track")
+            on_log("[ERROR] Population '$(p.popsToTrack)' is empty — nothing to track")
             return nothing
         end
     else
-        on_log("[INFO] Tracking whole segmentation '$value_name'")
+        on_log("[INFO] Tracking whole segmentation '$(p.valueName)'")
     end
 
     on_log("[INFO] Tracking labelProps: $props_path")
@@ -70,35 +122,35 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
     ok = run_py("tasks/tracking/bayesian_tracking_run.py",
         (; taskDir              = task_dir,
            physicalSizes        = pixel_res,
-           valueName            = value_name,
+           valueName            = p.valueName,
            labelIds             = label_ids,                          # null = whole segmentation
            trackSource          = track_source,                       # pop UID or "whole_seg"
            # Override the P1 conflict detector: allow writing over labels currently owned by a
            # different pop's track_source. Only for the intentional pop→pop refinement idiom; the
            # whole-seg→pop case doesn't need it (whole_seg is treated as bypass in the detector).
            # Not exposed as a param widget yet — wired for future use.
-           trackSourceForce     = Bool(get(params, "trackSourceForce", false)),
+           trackSourceForce     = p.trackSourceForce,
            # Live pop UIDs seen when this run launched. `nothing` (no sidecar loaded) disables the
            # P3 sweep — matches the legacy behaviour. See MULTI_POP_TRACKING_ORPHANS_PLAN decision 3.
            liveTrackSources     = live_track_sources,
-           maxSearchRadius      = Int(get(params, "maxSearchRadius", 20)),
-           maxLost              = Int(get(params, "maxLost", 3)),
-           trackBranching       = Bool(get(params, "trackBranching", false)),
-           minTimepoints        = Int(get(params, "minTimepoints", 5)),
-           accuracy             = Float64(get(params, "accuracy", 0.8)),
-           probToAssign         = Float64(get(params, "probToAssign", 0.8)),
-           noiseInital          = Int(get(params, "noiseInital", 300)),
-           noiseProcessing      = Int(get(params, "noiseProcessing", 100)),
-           noiseMeasurements    = Int(get(params, "noiseMeasurements", 100)),
-           distThresh           = Float64(get(params, "distThresh", 10.0)),
-           timeThresh           = Int(get(params, "timeThresh", 5)),
-           segmentationMissRate = Float64(get(params, "segmentationMissRate", 0.1)),
-           lambdaLink           = Int(get(params, "lambdaLink", 5)),
-           lambdaBranch         = Int(get(params, "lambdaBranch", 50)),
-           lambdaTime           = Int(get(params, "lambdaTime", 5)),
-           lambdaDist           = Float64(get(params, "lambdaDist", 5.0)),
-           thetaTime            = Int(get(params, "thetaTime", 5)),
-           thetaDist            = Float64(get(params, "thetaDist", 5.0))),
+           maxSearchRadius      = p.maxSearchRadius,
+           maxLost              = p.maxLost,
+           trackBranching       = p.trackBranching,
+           minTimepoints        = p.minTimepoints,
+           accuracy             = p.accuracy,
+           probToAssign         = p.probToAssign,
+           noiseInital          = p.noiseInital,
+           noiseProcessing      = p.noiseProcessing,
+           noiseMeasurements    = p.noiseMeasurements,
+           distThresh           = p.distThresh,
+           timeThresh           = p.timeThresh,
+           segmentationMissRate = p.segmentationMissRate,
+           lambdaLink           = p.lambdaLink,
+           lambdaBranch         = p.lambdaBranch,
+           lambdaTime           = p.lambdaTime,
+           lambdaDist           = p.lambdaDist,
+           thetaTime            = p.thetaTime,
+           thetaDist            = p.thetaDist),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
@@ -116,7 +168,7 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
             [qc_finding("warn", "tracking.no_tracks", "No tracks formed",
                 "btrack linked no cells into tracks — check segmentation continuity and the tracking parameters, then re-run.")] :
             Dict{String,Any}[]
-        write_qc(img, "tracking.bayesian_tracking", value_name, findings;
+        write_qc(img, "tracking.bayesian_tracking", p.valueName, findings;
                  metrics = Dict{String,Any}("nTracks"         => n_tracks,
                                             "meanTrackLength" => round(mean_len, digits = 2),
                                             "nTrackedCells"   => n_tracked))
@@ -126,5 +178,5 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
         on_log("[QC] could not compute tracking QC: $e")
     end
 
-    Dict{String,Any}("valueName" => value_name)
+    Dict{String,Any}("valueName" => p.valueName)
 end
