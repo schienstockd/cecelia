@@ -147,7 +147,7 @@ function _execute_set_task(req::TaskRequest, task_struct;
     end
 
     rep          = first(imgs).uid
-    final_status = Ref{Symbol}(:failed)
+    final_status = Ref{TaskStatus}(TASK_FAILED)
     try
         result = run_task(task_struct, imgs, req.params;
                           task_id          = req.task_id,
@@ -157,19 +157,19 @@ function _execute_set_task(req::TaskRequest, task_struct;
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin
-                              rec.status in (:queued, :running, :cancelled) &&
+                              rec.status in (TASK_QUEUED, TASK_RUNNING, TASK_CANCELLED) &&
                                   on_status(string(rec.status), rep, String[])
                               final_status[] = rec.status
                           end)
         isnothing(result) || on_result(rep, result)
     catch ex
         on_log("[ERROR] " * sprint(showerror, ex))
-        final_status[] = :failed
+        final_status[] = TASK_FAILED
     end
     # A set task touched EVERY member, so the terminal frame carries the full list — the representative
     # alone would leave the other members' plots stale (docs/todo/TASK_DATA_REFRESH_PLAN.md).
     on_status(string(final_status[]), rep, [i.uid for i in imgs])
-    final_status[]
+    Symbol(string(final_status[]))
 end
 
 function _execute_image_task(req::TaskRequest, task_struct;
@@ -184,7 +184,7 @@ function _execute_image_task(req::TaskRequest, task_struct;
         return :failed
     end
 
-    final_status = Ref{Symbol}(:failed)
+    final_status = Ref{TaskStatus}(TASK_FAILED)
     try
         result = run_task(task_struct, img, req.params;
                           task_id          = req.task_id,
@@ -194,17 +194,17 @@ function _execute_image_task(req::TaskRequest, task_struct;
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin
-                              rec.status in (:queued, :running, :cancelled) &&
+                              rec.status in (TASK_QUEUED, TASK_RUNNING, TASK_CANCELLED) &&
                                   on_status(string(rec.status), req.image_uid, String[])
                               final_status[] = rec.status
                           end)
         isnothing(result) || on_result(req.image_uid, result)
     catch ex
         on_log("[ERROR] " * sprint(showerror, ex))
-        final_status[] = :failed
+        final_status[] = TASK_FAILED
     end
     on_status(string(final_status[]), req.image_uid, String[])
-    final_status[]
+    Symbol(string(final_status[]))
 end
 
 # ── Chains ────────────────────────────────────────────────────────────────────

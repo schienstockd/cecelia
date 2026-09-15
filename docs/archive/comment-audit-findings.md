@@ -85,11 +85,31 @@ on frontend.
 
 Ranked by how silently they'd fail. Anchor entries + Phase 4 boundary-file extension (2026-09-15).
 
-**A systemic pattern.** Six Tier-1 entries below are the same shape: a `String` or `Symbol` field
-with a documented-in-comment enum of legal values, no compile-time check. **One `@enum` pass**
-across `TaskRecord.status`, `ChainNode.scope`, `ChainNode.barrier_policy`, `ImageNodeState.status`,
-`CciaImage.status`, and `Population.pop_type` (+ `popType` in `gating_api.jl`) would resolve six
-entries in one PR. Fix template: `@enum X ...` + typed field + `set_X!(rec, ::X)` setter.
+**A systemic pattern.** Six Tier-1 entries below started the same shape: a `String` or `Symbol` field
+with a documented-in-comment enum of legal values, no compile-time check. The `@enum` sweep was
+scoped, then split into three PRs by risk:
+
+- **PR-A (this PR).** `TaskRecord.status` → `@enum TaskStatus`, `ImageNodeState.status` →
+  `@enum ChainNodeStatus`. Both are `Symbol` boundaries with symmetric `string`/`Symbol` conversion
+  at the persistence edge — one shared pattern (`Base.string(::T)` + `parse_*(::AbstractString)`).
+  Resolves 2 register entries.
+- **PR-B (planned).** `ChainNode.scope`, `ChainNode.barrier_policy`, `CciaImage.status`. All three
+  are `String` fields on disk AND on the JSON3 wire (whiteboard payload, ccid.json). Needs either
+  `JSON3.StructType(::Type{T}) = JSON3.StringType()` overloads or explicit stringify at every
+  save site — a different pattern from PR-A. Best done together so the JSON3-shim decision applies
+  once.
+- **PR-C (deferred).** `Population.pop_type` (+ `popType`) — see note below.
+
+Fix template: `@enum X ...` + typed field + `set_X!(rec, ::X)` setter + `Base.string(::X)` for
+the wire form + `parse_x(::AbstractString)` for the read-back.
+
+**Population.pop_type is not a sweep — it's a versioned migration.** Scoping surfaced that this
+field is the on-wire API vocabulary (`"popType": "flow"|"clust"|"track"|"trackclust"|"branch"`
+across ~20 handlers), the on-disk gating-sidecar filename discriminator (`{vn}__clust.json` —
+the filename literally embeds the value), and the frontend/task-spec vocabulary. Fanning out to
+~60 files including the frontend contract and stored task-spec JSON. An `@enum` internally with
+string I/O is possible but the wire vocabulary itself would want a follow-on migration. Not the
+same-day sweep — needs a dedicated design pass. Register entry stays open.
 
 ### Tier 1 — High (silently produces zero output or wrong result on a shape drift)
 
@@ -106,12 +126,12 @@ entries in one PR. Fix template: `@enum X ...` + typed field + `set_X!(rec, ::X)
 - `app/src/label_props.jl:598–606` — `add_obs(lp, df)` requires a `label` column (error-checked) but silently assumes every other column is `Float64`-convertible; a `String` column throws inside `Float64(v)` after the guard. **Fix:** `_assert_float_convertible(pend)` at entry, or an `add_obs_numeric`/`add_obs_categorical` split.
 
 **State machines — string-typed with an enum-in-a-comment**
-- `TaskRecord.status::Symbol` (`scheduler.jl` L312). 5 states, convention-enforced. **Fix:** `@enum TaskStatus`.
-- `ChainNode.scope::String`, `ChainNode.barrier_policy::String` (`chain.jl:20–33`). `"image | set | incremental"` and `"all | require_all | successful_only"`. Typo in `barrier_policy` silently defaults to `"all"`. **Fix:** `@enum ChainScope`, `@enum BarrierPolicy`.
-- `ImageNodeState.status::Symbol` (`chain.jl:73–78`). 7 states. Same class as `TaskRecord.status`. **Fix:** `@enum ChainNodeStatus` + `set_state!(rec, ::ChainNodeStatus)`.
-- `CciaImage.status::String` (`model/image.jl:11`). 4 states. **Fix:** `@enum ImageStatus`.
-- `Population.pop_type::String` (`population_manager.jl:61–68`). 5 values, referenced from `accepts` allow-lists, `pop_df`, palette, popScope. A typo yields a pop nothing routes to. **Fix:** `@enum PopType`; allow-list checks become type checks.
-- `popType` in `gating_api.jl:1033–1036` — repeats `Population.pop_type` on the API side. Same enum resolves both.
+- ✅ `TaskRecord.status` (`scheduler.jl` L299). 5 states. **Resolved** in PR-A via `@enum TaskStatus` + `_set_status!(rec, ::TaskStatus)`; `Base.string` yields the wire lowercase.
+- ✅ `ImageNodeState.status` (`chain.jl:73–78`). 7 states. **Resolved** in PR-A via `@enum ChainNodeStatus` + `parse_chain_node_status(::AbstractString)` at the disk read boundary.
+- ⏭️ `ChainNode.scope::String`, `ChainNode.barrier_policy::String` (`chain.jl:20–33`). `"image | set | incremental"` and `"all | require_all | successful_only"`. Typo in `barrier_policy` silently defaults to `"all"`. **Deferred to PR-B** (JSON3-wire shim needed).
+- ⏭️ `CciaImage.status::String` (`model/image.jl:11`). 4 states. **Deferred to PR-B** (JSON3-wire shim needed; same pattern as ChainNode).
+- ⏭️ `Population.pop_type::String` (`population_manager.jl:61–68`). 5 values, referenced from `accepts` allow-lists, `pop_df`, palette, popScope. A typo yields a pop nothing routes to. **Deferred to PR-C** (versioned wire-format migration — see note above).
+- ⏭️ `popType` in `gating_api.jl:1033–1036` — repeats `Population.pop_type` on the API side. Same enum resolves both.
 
 **Variant types — `Union` with `Nothing` as discriminant**
 - `TaskJob.imgs::Union{Nothing,Vector{CciaImage}}` (`scheduler.jl` L422). Every branch remembers the check. **Fix:** sum type or `job_target(job)` helper.

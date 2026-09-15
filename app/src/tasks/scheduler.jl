@@ -104,7 +104,7 @@ function pool_status()
     queued = Dict{String,Int}()
     lock(_TASKS_LOCK) do
         for rec in values(_TASKS)
-            rec.status === :queued || continue
+            rec.status === TASK_QUEUED || continue
             queued[rec.pool_name] = get(queued, rec.pool_name, 0) + 1
         end
     end
@@ -296,6 +296,20 @@ end
 
 # ── Task record ─────────────────────────────────────────────────────────────────
 
+# Task lifecycle. Terminal states are TASK_DONE, TASK_FAILED, TASK_CANCELLED — `_set_status!`
+# enforces terminality. The lowercase string form ("queued"|"running"|"done"|"failed"|"cancelled")
+# is the on-wire vocabulary consumed by the API snapshot and every `on_status` callback, via
+# `Base.string(::TaskStatus)`.
+@enum TaskStatus TASK_QUEUED TASK_RUNNING TASK_DONE TASK_FAILED TASK_CANCELLED
+const _TASK_STATUS_STR = Dict(
+    TASK_QUEUED    => "queued",
+    TASK_RUNNING   => "running",
+    TASK_DONE      => "done",
+    TASK_FAILED    => "failed",
+    TASK_CANCELLED => "cancelled",
+)
+Base.string(s::TaskStatus) = _TASK_STATUS_STR[s]
+
 mutable struct TaskRecord
     id::String
     fun_name::String
@@ -313,7 +327,7 @@ mutable struct TaskRecord
     # standalone task, and for a set-scope chain node (those bypass `run_task`, so they have no record at
     # all — see `_execute_set_scope_node!` in chain.jl).
     chain_node_id::String
-    status::Symbol                          # :queued | :running | :done | :failed | :cancelled
+    status::TaskStatus                      # see @enum TaskStatus above
     # When it was submitted, and when a pool slot actually admitted it (`nothing` until then, so a task
     # waiting on a busy GPU has a queue wait and no run time). Both UTC. Reported by `list_tasks()`; the
     # start is also banked in `note_task_started!` because THIS record dies the moment the task finishes
@@ -348,7 +362,7 @@ function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_st
     # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
     # so any start still on record belongs to the previous run and must not be inherited.
     forget_task_start!(id)
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, :queued,
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, TASK_QUEUED,
                      Dates.now(UTC), nothing, nothing,
                      on_status_change, live_outputs, params)
     lock(_TASKS_LOCK) do; _TASKS[id] = rec; end
@@ -371,14 +385,14 @@ function _deregister_task!(id)
     lock(_TASKS_LOCK) do; delete!(_TASKS, id); end
 end
 
-function _set_status!(rec::TaskRecord, s::Symbol)
-    # Terminal states are final — don't let :done overwrite a :cancelled
+function _set_status!(rec::TaskRecord, s::TaskStatus)
+    # Terminal states are final — don't let TASK_DONE overwrite a TASK_CANCELLED
     # that arrived from cancel_task! while the task was still running.
-    rec.status in (:done, :failed, :cancelled) && return
+    rec.status in (TASK_DONE, TASK_FAILED, TASK_CANCELLED) && return
     # The pool slot has just been acquired, so this is the real start of the work. Stamped BEFORE the
     # status change is announced, so the `task:status` frame the handler sends already carries it — and
     # banked on the rail (`note_task_started!`) because this record won't survive the task.
-    if s === :running && isnothing(rec.started_at)
+    if s === TASK_RUNNING && isnothing(rec.started_at)
         rec.started_at = note_task_started!(rec.id)
     end
     rec.status = s
@@ -387,7 +401,7 @@ end
 
 function is_cancelled(task_id::String)::Bool
     rec = lock(_TASKS_LOCK) do; get(_TASKS, task_id, nothing); end
-    !isnothing(rec) && rec.status === :cancelled
+    !isnothing(rec) && rec.status === TASK_CANCELLED
 end
 
 # Process kill helpers (_kill_tree / _kill_proc_tree / _kill_listeners_on_port) moved to jobs.jl —
@@ -401,7 +415,7 @@ Safe to call multiple times or for an already-completed task.
 function cancel_task!(task_id::String)
     rec = lock(_TASKS_LOCK) do; get(_TASKS, task_id, nothing); end
     isnothing(rec) && return
-    _set_status!(rec, :cancelled)
+    _set_status!(rec, TASK_CANCELLED)
     proc = @atomic rec.proc
     isnothing(proc) && return
     try
@@ -445,7 +459,7 @@ function _execute_job!(job::TaskJob)
 
     rec = lock(_TASKS_LOCK) do; get(_TASKS, job.id, nothing); end
     # Skip if cancelled while queued
-    if isnothing(rec) || rec.status === :cancelled
+    if isnothing(rec) || rec.status === TASK_CANCELLED
         post!(nothing)
         return
     end
@@ -454,7 +468,7 @@ function _execute_job!(job::TaskJob)
     fun_name    = _fun_name_from_task(job.task)
     value_name  = string(get(job.params, "valueName", ""))
     try
-        _set_status!(rec, :running)
+        _set_status!(rec, TASK_RUNNING)
         # OPEN the run-log entry before the work, not after it. An append-on-finish log cannot record
         # a run that never reaches its finish — a killed runner takes its in-flight tasks with it and
         # no Julia code here ever runs again. See run_log.jl's header. Never fail a task over its log.
@@ -496,11 +510,11 @@ function _execute_job!(job::TaskJob)
             catch; end
             nothing
         end
-        final = is_cancelled(job.id) ? :cancelled : isnothing(result) ? :failed : :done
+        final = is_cancelled(job.id) ? TASK_CANCELLED : isnothing(result) ? TASK_FAILED : TASK_DONE
         _set_status!(rec, final)
         # A cancel kills the subprocess outright, so the task log otherwise just STOPS mid-run and
         # reads exactly like a crash. Say which it was, in the file the user actually opens.
-        final === :cancelled && try
+        final === TASK_CANCELLED && try
             Base.invokelatest(job.on_log, "[INFO] Task cancelled — output is incomplete.")
         catch; end
         # CLOSE each target image's run-log entry — automatic run history for the image table AND the AI
@@ -525,7 +539,7 @@ function _execute_job!(job::TaskJob)
         try
             @error "Scheduler job aborted" task_id = job.id exception = (e, catch_backtrace())
         catch; end
-        try; _set_status!(rec, :failed); catch; end
+        try; _set_status!(rec, TASK_FAILED); catch; end
         # …and close the run-log entry opened above, for the same reason the status is set: an entry
         # left at "running" is indistinguishable from a task still going, and would be reaped as
         # "interrupted" at the next project open rather than reading as the failure it was.
@@ -611,7 +625,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                                  project_uid = img_project_uid(img),
                                  live_outputs = _live_outputs_for(task, params),
                                  chain_node_id = chain_node_id, params = params)
-    _set_status!(rec, :queued)
+    _set_status!(rec, TASK_QUEUED)
 
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(img, fun_name, on_log)
@@ -659,7 +673,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                                  project_uid = img_project_uid(rep),
                                  live_outputs = _live_outputs_for(task, params),
                                  chain_node_id = chain_node_id, params = params)
-    _set_status!(rec, :queued)
+    _set_status!(rec, TASK_QUEUED)
 
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(rep, fun_name, on_log)

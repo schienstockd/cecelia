@@ -197,7 +197,8 @@ export Register
 export ExportOmeTiff
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
-export ResourcePool, TaskRecord
+export ResourcePool, TaskRecord, TaskStatus
+export TASK_QUEUED, TASK_RUNNING, TASK_DONE, TASK_FAILED, TASK_CANCELLED
 export run_task, run_tasks
 export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks,
        recent_tasks, record_task_outcome!, pool_status
@@ -222,7 +223,9 @@ export runner_submit_chain, runner_cancel_chain, runner_chain_runs
 export subscribe_chain_events!, unsubscribe_chain_events!
 
 # ── Chain executor ─────────────────────────────────────────────────────────────
-export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState
+export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState, ChainNodeStatus
+export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED
+export parse_chain_node_status
 export load_chain_template, save_chain_template!, load_template_from_cache
 export validate_chain_template, ChainTemplateError, chain_template_from_raw, chain_root_ids
 export load_chain_run

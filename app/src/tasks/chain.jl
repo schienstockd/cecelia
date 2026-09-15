@@ -70,14 +70,32 @@ ChainTemplate(name, nodes, edges) = ChainTemplate(name, nodes, edges, String[])
 
 # ── Run record ────────────────────────────────────────────────────────────────
 
+# Chain-node lifecycle. Terminal states are NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED
+# (enforced by convention in `_update_node_state!` — a re-fire of a terminal state is not a bug).
+# On-disk (run.json) and on-wire (chain events) form is the lowercase name via
+# `Base.string(::ChainNodeStatus)`; `parse_chain_node_status` reads it back from disk.
+@enum ChainNodeStatus NODE_PENDING NODE_QUEUED NODE_RUNNING NODE_DONE NODE_FAILED NODE_CANCELLED NODE_SKIPPED
+const _NODE_STATUS_STR = Dict(
+    NODE_PENDING   => "pending",
+    NODE_QUEUED    => "queued",
+    NODE_RUNNING   => "running",
+    NODE_DONE      => "done",
+    NODE_FAILED    => "failed",
+    NODE_CANCELLED => "cancelled",
+    NODE_SKIPPED   => "skipped",
+)
+const _NODE_STATUS_PARSE = Dict(v => k for (k, v) in _NODE_STATUS_STR)
+Base.string(s::ChainNodeStatus) = _NODE_STATUS_STR[s]
+parse_chain_node_status(s::AbstractString)::ChainNodeStatus = _NODE_STATUS_PARSE[s]
+
 mutable struct ImageNodeState
-    status::Symbol                          # :pending | :queued | :running | :done | :failed | :cancelled | :skipped
+    status::ChainNodeStatus                 # see @enum ChainNodeStatus above
     task_id::Union{String,Nothing}
     result::Union{Dict{String,Any},Nothing}
-    params_hash::Union{String,Nothing}      # sha256 of effective params — set on :done, used for resume skip
+    params_hash::Union{String,Nothing}      # sha256 of effective params — set on NODE_DONE, used for resume skip
 end
 
-ImageNodeState() = ImageNodeState(:pending, nothing, nothing, nothing)
+ImageNodeState() = ImageNodeState(NODE_PENDING, nothing, nothing, nothing)
 
 mutable struct ChainRun
     id::String
@@ -398,7 +416,7 @@ function _save_run!(run::ChainRun)
 end
 
 function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
-                              status::Symbol,
+                              status::ChainNodeStatus,
                               fn::String               = "",
                               node_params::Dict{String,Any} = Dict{String,Any}(),
                               task_id     = nothing,
@@ -423,7 +441,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
         _save_run!(run)
     end
     # Fire events outside the lock — handlers must not re-enter run._lock
-    if status == :queued
+    if status == NODE_QUEUED
         _fire_chain_event!("node:queued", (
             run_id      = run.id,
             chain_name  = run.chain_name,
@@ -434,7 +452,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             params      = node_params,
             task_id     = captured_task_id[],
         ))
-    elseif status == :running
+    elseif status == NODE_RUNNING
         _fire_chain_event!("node:running", (
             run_id      = run.id,
             chain_name  = run.chain_name,
@@ -445,7 +463,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             params      = node_params,
             task_id     = captured_task_id[],
         ))
-    elseif status == :done
+    elseif status == NODE_DONE
         _fire_chain_event!("node:done", (
             run_id      = run.id,
             chain_name  = run.chain_name,
@@ -457,7 +475,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             result      = captured_result[],
             task_id     = captured_task_id[],
         ))
-    elseif status ∈ (:failed, :skipped, :cancelled)
+    elseif status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
         _fire_chain_event!("node:failed", (
             run_id      = run.id,
             chain_name  = run.chain_name,
@@ -583,7 +601,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
     catch e
         @warn "Could not load image for chain" uid=image_uid exception=e
         for node in ordered_nodes
-            _update_node_state!(run, image_uid, node.id; status=:failed, fn=node.fn)
+            _update_node_state!(run, image_uid, node.id; status=NODE_FAILED, fn=node.fn)
         end
         return
     end
@@ -616,7 +634,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
 
         # Cancel check: mark remaining image-scope nodes and stop processing.
         if is_cancelled()
-            _update_node_state!(run, image_uid, node.id; status=:cancelled, fn=node.fn)
+            _update_node_state!(run, image_uid, node.id; status=NODE_CANCELLED, fn=node.fn)
             continue
         end
 
@@ -628,9 +646,9 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         # Incremental (plot) predecessors never gate.
         let states = run.image_states[image_uid]
             if any(p -> p ∉ incremental_ids && haskey(states, p) &&
-                        states[p].status ∈ (:failed, :cancelled, :skipped),
+                        states[p].status ∈ (NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED),
                    preds[node.id])
-                _update_node_state!(run, image_uid, node.id; status=:skipped, fn=node.fn)
+                _update_node_state!(run, image_uid, node.id; status=NODE_SKIPPED, fn=node.fn)
                 continue
             end
         end
@@ -639,7 +657,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
 
         # Resume: skip already-completed nodes when params are unchanged
         let st = run.image_states[image_uid][node.id]
-            if st.status == :done && st.params_hash == _params_hash(effective_params)
+            if st.status == NODE_DONE && st.params_hash == _params_hash(effective_params)
                 continue
             end
         end
@@ -655,7 +673,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             @warn "Unknown task fn in chain" fn=node.fn exception=e
             Base.invokelatest(on_log, "ERROR [$image_uid/$(node.id)] Unknown function: $(node.fn) — $(sprint(showerror, e))")
             _update_node_state!(run, image_uid, node.id;
-                                status=:failed, fn=node.fn, node_params=effective_params)
+                                status=NODE_FAILED, fn=node.fn, node_params=effective_params)
             continue
         end
 
@@ -663,7 +681,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             reason = task_applicability_reason(task_struct, img)
             Base.invokelatest(on_log, "SKIP [$image_uid/$(node.id)] $reason")
             _update_node_state!(run, image_uid, node.id;
-                                status=:skipped, fn=node.fn, node_params=effective_params)
+                                status=NODE_SKIPPED, fn=node.fn, node_params=effective_params)
             continue
         end
 
@@ -675,7 +693,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         # distinguishes "waiting for a GPU slot" from "running on the GPU", and elapsed
         # time counts from the real start, not from when the image thread reached here.
         _update_node_state!(run, image_uid, node.id;
-                            status=:queued, task_id=tid,
+                            status=NODE_QUEUED, task_id=tid,
                             fn=node.fn, node_params=effective_params)
 
         # THROUGH `execute_task`, the canonical single-task pathway — the same one `handle_task_run`
@@ -683,8 +701,8 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         # a standalone run does not is the chain correlation pair, and that is a field on the shared
         # `TaskRequest` rather than a second implementation here. See docs/SCHEDULER.md.
         result = Ref{Any}(nothing)
-        status = try
-            execute_task(
+        status::ChainNodeStatus = try
+            parse_chain_node_status(string(execute_task(
                 TaskRequest(; task_id      = tid,
                               fun_name     = node.fn,
                               project_uid  = run.project_uid,
@@ -699,26 +717,26 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                 # terminal one is decided below (the chain's cancel check outranks the task's).
                 on_status   = (st, _uid, _uids) -> st == "running" &&
                     _update_node_state!(run, image_uid, node.id;
-                                        status=:running, fn=node.fn,
+                                        status=NODE_RUNNING, fn=node.fn,
                                         node_params=effective_params),
-                on_result   = (_uid, meta) -> (result[] = meta))
+                on_result   = (_uid, meta) -> (result[] = meta))))
         catch e
             @warn "Task error in chain" uid=image_uid node=node.id exception=e
             Base.invokelatest(on_log, "ERROR [$image_uid/$(node.id)] $(sprint(showerror, e))")
-            :failed
+            NODE_FAILED
         end
 
         # The CHAIN's cancel check, not the task registry's: `cancel_chain_run!` sets a chain flag, so a
-        # node killed that way comes back `:failed` from the task's own accounting. Keeping this
+        # node killed that way comes back NODE_FAILED from the task's own accounting. Keeping this
         # override is why routing through `execute_task` is behaviour-preserving here.
-        final_status = is_cancelled() ? :cancelled : Symbol(status)
+        final_status = is_cancelled() ? NODE_CANCELLED : status
         result = result[]
         _update_node_state!(run, image_uid, node.id;
                             fn          = node.fn,
                             node_params = effective_params,
                             status      = final_status,
                             result      = result,
-                            params_hash = final_status == :done ? _params_hash(effective_params) : nothing)
+                            params_hash = final_status == NODE_DONE ? _params_hash(effective_params) : nothing)
     end
 end
 
@@ -736,7 +754,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
 
     if is_cancelled()
         for uid in run.image_uids
-            _update_node_state!(run, uid, node.id; status=:cancelled, fn=node.fn)
+            _update_node_state!(run, uid, node.id; status=NODE_CANCELLED, fn=node.fn)
         end
         _barrier_signal_done!(run, node.id)
         return
@@ -746,7 +764,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     ph = _params_hash(effective_params)
 
     # Resume: skip if all images already completed this node with matching params
-    if all(run.image_states[uid][node.id].status == :done &&
+    if all(run.image_states[uid][node.id].status == NODE_DONE &&
            run.image_states[uid][node.id].params_hash == ph
            for uid in run.image_uids)
         _barrier_signal_done!(run, node.id)
@@ -755,7 +773,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
 
     # Categorize images by upstream failure status (check before this node's state changes)
     failed_uids = Set(uid for uid in run.image_uids
-                      if any(s.status ∈ (:failed, :cancelled)
+                      if any(s.status ∈ (NODE_FAILED, NODE_CANCELLED)
                              for (nid, s) in run.image_states[uid] if nid != node.id))
     ok_uids = [uid for uid in run.image_uids if uid ∉ failed_uids]
 
@@ -765,7 +783,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     if policy == "require_all" && !isempty(failed_uids)
         @warn "Set-scope node aborted: upstream failures under require_all policy" node=node.id failed=length(failed_uids)
         for uid in run.image_uids
-            _update_node_state!(run, uid, node.id; status=:failed, fn=node.fn)
+            _update_node_state!(run, uid, node.id; status=NODE_FAILED, fn=node.fn)
         end
         _barrier_signal_done!(run, node.id)
         return
@@ -776,7 +794,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     if isempty(participating_uids)
         @warn "Set-scope node aborted: no eligible images" node=node.id policy=policy
         for uid in run.image_uids
-            _update_node_state!(run, uid, node.id; status=:failed, fn=node.fn)
+            _update_node_state!(run, uid, node.id; status=NODE_FAILED, fn=node.fn)
         end
         _barrier_signal_done!(run, node.id)
         return
@@ -784,7 +802,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
 
     # Mark excluded images :skipped (successful_only policy only)
     for uid in setdiff(run.image_uids, participating_uids)
-        _update_node_state!(run, uid, node.id; status=:skipped, fn=node.fn)
+        _update_node_state!(run, uid, node.id; status=NODE_SKIPPED, fn=node.fn)
     end
 
     # Load participating images
@@ -804,7 +822,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     # pool worker picking it up means "running" (`execute_task`'s `on_status`, below).
     for uid in participating_uids
         _update_node_state!(run, uid, node.id;
-                            status=:queued, task_id=tid,
+                            status=NODE_QUEUED, task_id=tid,
                             fn=node.fn, node_params=effective_params)
     end
 
@@ -813,7 +831,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     catch e
         @warn "Unknown task fn in set-scope node" fn=node.fn exception=e
         for uid in run.image_uids
-            _update_node_state!(run, uid, node.id; status=:failed, fn=node.fn)
+            _update_node_state!(run, uid, node.id; status=NODE_FAILED, fn=node.fn)
         end
         _barrier_signal_done!(run, node.id)
         return
@@ -830,7 +848,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                 push!(keep_imgs, img); push!(keep_uids, uid)
             else
                 Base.invokelatest(on_log, "SKIP [$uid/$(node.id)] $(task_applicability_reason(task_struct, img))")
-                _update_node_state!(run, uid, node.id; status=:skipped, fn=node.fn, node_params=effective_params)
+                _update_node_state!(run, uid, node.id; status=NODE_SKIPPED, fn=node.fn, node_params=effective_params)
             end
         end
         if isempty(keep_imgs)
@@ -852,8 +870,8 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     # `resource_pool: "gpu"` ran UNQUEUED. Four bugs from one shortcut; the point of routing through
     # the shared executor is that there is no longer a place to take it.
     result = Ref{Any}(nothing)
-    status = try
-        execute_task(
+    status::ChainNodeStatus = try
+        parse_chain_node_status(string(execute_task(
             TaskRequest(; task_id      = tid,
                           fun_name     = node.fn,
                           project_uid  = run.project_uid,
@@ -866,31 +884,31 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
             on_log      = line -> Base.invokelatest(on_log, "[$(first(imgs).uid)/$(node.id)] $line"),
             on_progress = (n, t) -> _fire_node_progress!(run, node, first(imgs).uid, tid, n, t),
             # One task, N images: mirror the pool pick-up onto every participating image, so the whole
-            # barrier row flips :queued → :running together.
+            # barrier row flips NODE_QUEUED → NODE_RUNNING together.
             on_status   = (st, _uid, _uids) -> st == "running" && for uid in participating_uids
                 _update_node_state!(run, uid, node.id;
-                                    status=:running, fn=node.fn, node_params=effective_params)
+                                    status=NODE_RUNNING, fn=node.fn, node_params=effective_params)
             end,
-            on_result   = (_uid, meta) -> (result[] = meta))
+            on_result   = (_uid, meta) -> (result[] = meta))))
     catch e
         @warn "Set-scope task error" node=node.id fn=node.fn exception=e
         Base.invokelatest(on_log, "ERROR [$(first(imgs).uid)/$(node.id)] $(sprint(showerror, e))")
-        :failed
+        NODE_FAILED
     end
     result = result[]
 
     # Same rule as the image-scope path, including the chain's own cancel check outranking the task's:
-    # `cancel_chain_run!` sets a chain flag, so a node killed that way comes back `:failed` from the
+    # `cancel_chain_run!` sets a chain flag, so a node killed that way comes back NODE_FAILED from the
     # task's accounting alone. This path previously had no cancel branch at all — a cancelled set node
     # was recorded as a failure.
-    final_status = is_cancelled() ? :cancelled : Symbol(status)
+    final_status = is_cancelled() ? NODE_CANCELLED : status
     for uid in participating_uids
         _update_node_state!(run, uid, node.id;
                             fn          = node.fn,
                             node_params = effective_params,
                             status      = final_status,
                             result      = result,
-                            params_hash = final_status == :done ? ph : nothing)
+                            params_hash = final_status == NODE_DONE ? ph : nothing)
     end
 
     # Unblock all image threads so they can continue to downstream nodes
@@ -912,7 +930,7 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
     ph               = _params_hash(effective_params)
 
     # Skip if all images already done with matching params (resume scenario)
-    if all(run.image_states[uid][node.id].status == :done &&
+    if all(run.image_states[uid][node.id].status == NODE_DONE &&
            run.image_states[uid][node.id].params_hash == ph
            for uid in run.image_uids)
         return
@@ -923,7 +941,7 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
     catch e
         @warn "Unknown fn in incremental node" fn=node.fn exception=e
         for uid in run.image_uids
-            _update_node_state!(run, uid, node.id; status=:failed, fn=node.fn)
+            _update_node_state!(run, uid, node.id; status=NODE_FAILED, fn=node.fn)
         end
         return
     end
@@ -942,7 +960,7 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
             @warn "Incremental plot task error" node=node.id exception=e
             nothing
         end
-        st = isnothing(result) ? :failed : :done
+        st = isnothing(result) ? NODE_FAILED : NODE_DONE
         ph_val = isnothing(result) ? nothing : ph
         for img in imgs_snap
             _update_node_state!(run, img.uid, node.id;
@@ -953,7 +971,7 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
 
     # Pre-populate with images whose upstream is already :done (resume scenario)
     for uid in run.image_uids
-        if run.image_states[uid][upstream_id].status == :done
+        if run.image_states[uid][upstream_id].status == NODE_DONE
             img = try
                 o = init_object(run.project_uid, uid)
                 o isa CciaImage ? o : nothing
@@ -1136,8 +1154,8 @@ function _force_restart_from!(run::ChainRun, start_node::String)
     for uid in run.image_uids, nid in targets
         haskey(run.image_states[uid], nid) || continue
         st = run.image_states[uid][nid]
-        if st.status != :pending
-            st.status = :pending; st.params_hash = nothing
+        if st.status != NODE_PENDING
+            st.status=NODE_PENDING; st.params_hash = nothing
             st.result = nothing;  st.task_id     = nothing
             changed   = true
         end
@@ -1163,17 +1181,17 @@ function _reset_stale_nodes!(run::ChainRun, overrides::Dict{String,Any},
         ph = _params_hash(effective_params)
         for uid in run.image_uids
             st = run.image_states[uid][node.id]
-            if st.status ∈ (:running, :queued)   # crash recovery — never finished
-                st.status   = :failed
+            if st.status ∈ (NODE_RUNNING, NODE_QUEUED)   # crash recovery — never finished
+                st.status=NODE_FAILED
                 any_changed = true
             end
-            retry        = st.status ∈ (:failed, :skipped, :cancelled)
-            params_stale = st.status == :done && st.params_hash != ph
+            retry        = st.status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
+            params_stale = st.status == NODE_DONE && st.params_hash != ph
             pred_stale   = any((p, uid) ∈ stale_set for p in preds[node.id])
             if retry || params_stale || pred_stale
                 push!(stale_set, (node.id, uid))
-                if st.status != :pending
-                    st.status      = :pending
+                if st.status != NODE_PENDING
+                    st.status=NODE_PENDING
                     st.params_hash = nothing
                     st.result      = nothing
                     st.task_id     = nothing
@@ -1207,7 +1225,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
         for (nid_sym, st_raw) in node_map
             nid = string(nid_sym)
             image_states[uid][nid] = ImageNodeState(
-                Symbol(string(st_raw[:status])),
+                parse_chain_node_status(string(st_raw[:status])),
                 !isnothing(get(st_raw, :task_id,     nothing)) ? string(st_raw[:task_id])     : nothing,
                 !isnothing(get(st_raw, :result,      nothing)) ?
                     Dict{String,Any}(string(k) => v for (k, v) in st_raw[:result]) : nothing,
