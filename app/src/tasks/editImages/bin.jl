@@ -2,6 +2,22 @@ struct BinImage <: CciaTask end
 
 task_output_effect(::BinImage) = "new-image"
 
+# Typed shape of what `_run_task(::BinImage, …)` reads from `params`.
+Base.@kwdef struct BinImageParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    factorX::Int      = 2
+    factorY::Int      = 2
+    op::String        = "mean"
+end
+
+function parse_bin_image_params(d::AbstractDict)::BinImageParams
+    BinImageParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        factorX   = Int(get(d, "factorX", 2)),
+        factorY   = Int(get(d, "factorY", 2)),
+        op        = string(get(d, "op", "mean")))
+end
+
 # Pure: the meta an XY-bin inherits from its SOURCE image. Only the spatial fields change — SizeX/Y
 # shrink by their factor (integer floor, matching the runner's block-coarsen truncation) and
 # PhysicalSizeX/Y grow by the same factor (a binned pixel physically COVERS `factor` source pixels).
@@ -34,24 +50,21 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    factor_x   = Int(get(params, "factorX", 2))
-    factor_y   = Int(get(params, "factorY", 2))
-    op         = string(get(params, "op", "mean"))
-    if factor_x < 1 || factor_y < 1
-        on_log("[ERROR] bin factors must be ≥ 1 (got X=$factor_x, Y=$factor_y)")
+    p = parse_bin_image_params(params)
+    if p.factorX < 1 || p.factorY < 1
+        on_log("[ERROR] bin factors must be ≥ 1 (got X=$(p.factorX), Y=$(p.factorY))")
         return nothing
     end
-    if factor_x == 1 && factor_y == 1
+    if p.factorX == 1 && p.factorY == 1
         on_log("[ERROR] both bin factors are 1 — nothing to do (use Copy image for a plain duplicate)")
         return nothing
     end
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -74,24 +87,24 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
     src_meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     bin_meta = Dict{String,Any}(
         "bin_source_uid"        => img.uid,
-        "bin_source_value_name" => value_name,
-        "bin_factor_x"          => factor_x,
-        "bin_factor_y"          => factor_y,
-        "bin_op"                => op)
-    merge!(bin_meta, _bin_inherited_meta(src_meta, factor_x, factor_y))
+        "bin_source_value_name" => p.valueName,
+        "bin_factor_x"          => p.factorX,
+        "bin_factor_y"          => p.factorY,
+        "bin_op"                => p.op)
+    merge!(bin_meta, _bin_inherited_meta(src_meta, p.factorX, p.factorY))
     haskey(src_meta, "ori_path") && (bin_meta["ori_path"] = src_meta["ori_path"])
 
-    tag     = factor_x == factor_y ? "bin$factor_x" : "bin$(factor_x)x$(factor_y)"
+    tag     = p.factorX == p.factorY ? "bin$(p.factorX)" : "bin$(p.factorX)x$(p.factorY)"
     new_img = add_image!(s; name = "$(img.name) ($tag)", meta = bin_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
-    on_log("[INFO] Bin source: $im_path (factor $factor_x × $factor_y, op=$op)")
+    on_log("[INFO] Bin source: $im_path (factor $(p.factorX) × $(p.factorY), op=$(p.op))")
     on_log("[INFO] New image:  $(new_img.uid) → $im_out_path")
 
     ok = run_py("tasks/editImages/bin_run.py",
         (; imPath = im_path, imOutPath = im_out_path,
-           factorX = factor_x, factorY = factor_y, op = op),
+           factorX = p.factorX, factorY = p.factorY, op = p.op),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

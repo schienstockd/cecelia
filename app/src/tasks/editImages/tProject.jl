@@ -2,6 +2,17 @@ struct TProject <: CciaTask end
 
 task_output_effect(::TProject) = "new-image"
 
+Base.@kwdef struct TProjectParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    op::String        = "mean"
+end
+
+function parse_t_project_params(d::AbstractDict)::TProjectParams
+    TProjectParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        op        = string(get(d, "op", "mean")))
+end
+
 # Pure: the meta a T-projection inherits from its SOURCE image. T is collapsed to a single frame,
 # so SizeT becomes 1; every other calibration field carries over unchanged (X/Y/Z pixel size + unit,
 # frame interval, channels). Mirrors `_zproj_inherited_meta` — kept out of `_run_task` so it's
@@ -29,14 +40,13 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    op         = string(get(params, "op", "mean"))
+    p          = parse_t_project_params(params)
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -59,20 +69,20 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     proj_meta = Dict{String,Any}(
         "tproj_source_uid"        => img.uid,
-        "tproj_source_value_name" => value_name,
-        "tproj_op"                => op)
+        "tproj_source_value_name" => p.valueName,
+        "tproj_op"                => p.op)
     merge!(proj_meta, _tproj_inherited_meta(src_meta))
     haskey(src_meta, "ori_path") && (proj_meta["ori_path"] = src_meta["ori_path"])
 
-    new_img = add_image!(s; name = "$(img.name) (t-$op)", meta = proj_meta, attr = img.attr)
+    new_img = add_image!(s; name = "$(img.name) (t-$(p.op))", meta = proj_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
-    on_log("[INFO] T-project source: $im_path (op='$op')")
+    on_log("[INFO] T-project source: $im_path (op='$(p.op)')")
     on_log("[INFO] New image:        $(new_img.uid) → $im_out_path")
 
     ok = run_py("tasks/editImages/tProject_run.py",
-        (; imPath = im_path, imOutPath = im_out_path, op = op),
+        (; imPath = im_path, imOutPath = im_out_path, op = p.op),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

@@ -18305,3 +18305,85 @@ end
         @test isempty(s.bleedthrough)
     end
 end
+
+# Typed per-task params structs for the editImages family. Each parser is the ONE place its task
+# reads the params bag — a spec rename that isn't mirrored here becomes a struct-field error rather
+# than a silent default at the read site. Same pattern as `typed params — cleanupImages`.
+@testset "typed params — editImages" begin
+    # BinImage
+    let p = Cecelia.parse_bin_image_params(Dict{String,Any}(
+            "valueName" => "corrected", "factorX" => 4, "factorY" => 2, "op" => "sum"))
+        @test p.valueName == "corrected"
+        @test p.factorX === 4
+        @test p.factorY === 2
+        @test p.op == "sum"
+    end
+    let p = Cecelia.parse_bin_image_params(Dict{String,Any}())
+        @test p.factorX === 2 && p.factorY === 2 && p.op == "mean"
+    end
+
+    # CopyImage — exactly-one-of toSetUid/newSetName is a runtime check (not enforced by the type),
+    # so both empty is a legal parse (the handler catches it).
+    let p = Cecelia.parse_copy_image_params(Dict{String,Any}(
+            "valueName" => "corrected", "newSetName" => "  Day 3  "))
+        @test p.valueName == "corrected"
+        @test p.toSetUid == ""
+        @test p.newSetName == "Day 3"          # whitespace stripped
+    end
+
+    # CropImage — nested CropBox with the -1 keep-axis convention.
+    let p = Cecelia.parse_crop_image_params(Dict{String,Any}(
+            "cropBox" => Dict{String,Any}(
+                "x0"=>10, "x1"=>200, "y0"=>0, "y1"=>256, "z0"=>-1, "z1"=>-1, "t0"=>5, "t1"=>20)))
+        b = p.cropBox
+        @test b.x0 === 10 && b.x1 === 200
+        @test b.y0 === 0  && b.y1 === 256
+        @test b.z0 === -1 && b.z1 === -1        # 2D image: keep the whole axis
+        @test b.t0 === 5  && b.t1 === 20
+    end
+    # missing/malformed cropBox → defaulted struct (the handler's separate check rejects the run).
+    let p = Cecelia.parse_crop_image_params(Dict{String,Any}("valueName" => "x"))
+        @test p.cropBox.x0 === 0 && p.cropBox.z0 === -1
+    end
+
+    # DtypeConvert — dtype + rescale are LOWERCASED at parse (the handler's whitelist reads the
+    # lowered value).
+    let p = Cecelia.parse_dtype_convert_params(Dict{String,Any}(
+            "dtype" => "UINT16", "rescale" => "NONE"))
+        @test p.dtype == "uint16"
+        @test p.rescale == "none"
+    end
+
+    # Flip — axis UPPERCASED at parse.
+    let p = Cecelia.parse_flip_params(Dict{String,Any}("axis" => "z"))
+        @test p.axis == "Z"
+    end
+
+    # Register — the audit's `regChannel` is a scalar channel NAME (not a `channelSelection`
+    # array); parser preserves it verbatim.
+    let p = Cecelia.parse_register_params(Dict{String,Any}(
+            "regChannel" => "mem-TOM", "doAffine3d" => true, "sigma" => 0.5,
+            "samplesPerParameter" => 8000))
+        @test p.regChannel == "mem-TOM"
+        @test p.doAffine2d === true            # default preserved
+        @test p.doAffine3d === true
+        @test p.sigma === 0.5
+        @test p.samplesPerParameter === 8000
+    end
+
+    # ResampleZ — order LOWERCASED at parse.
+    let p = Cecelia.parse_resample_z_params(Dict{String,Any}("order" => "CUBIC"))
+        @test p.order == "cubic"
+    end
+
+    # TProject / ZProject — same shape, different defaults (mean vs max).
+    let p = Cecelia.parse_t_project_params(Dict{String,Any}())
+        @test p.op == "mean"
+    end
+    let p = Cecelia.parse_z_project_params(Dict{String,Any}())
+        @test p.op == "max"
+    end
+    let p = Cecelia.parse_z_project_params(Dict{String,Any}("op" => "median"))
+        @test p.op == "median"
+    end
+end

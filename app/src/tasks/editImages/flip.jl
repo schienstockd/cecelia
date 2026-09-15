@@ -2,6 +2,17 @@ struct Flip <: CciaTask end
 
 task_output_effect(::Flip) = "new-version"
 
+Base.@kwdef struct FlipParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    axis::String      = "Y"
+end
+
+function parse_flip_params(d::AbstractDict)::FlipParams
+    FlipParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        axis      = uppercase(string(get(d, "axis", "Y"))))
+end
+
 # Flip an image along one axis (X / Y / Z) and register the result as a NEW VERSION on the same
 # image — dims are preserved (only order along one axis reverses), so existing segmentations,
 # populations and gates that reference the source image's coordinates still line up on the flipped
@@ -14,18 +25,17 @@ function _run_task(task::Flip, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    axis       = uppercase(string(get(params, "axis", "Y")))
-    if !(axis in ("X", "Y", "Z"))
-        on_log("[ERROR] axis must be X, Y or Z (got '$axis')")
+    p = parse_flip_params(params)
+    if !(p.axis in ("X", "Y", "Z"))
+        on_log("[ERROR] axis must be X, Y or Z (got '$(p.axis)')")
         return nothing
     end
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -40,11 +50,11 @@ function _run_task(task::Flip, img::CciaImage, params::Dict{String,Any};
     out_filename   = "ccidFlipped.ome.zarr"
     im_out_path    = joinpath(proj_dir, "0", img.uid, out_filename)
 
-    on_log("[INFO] Flip source: $im_path (axis=$axis)")
+    on_log("[INFO] Flip source: $im_path (axis=$(p.axis))")
     on_log("[INFO] Output:      $im_out_path (valueName='$out_value_name')")
 
     ok = run_py("tasks/editImages/flip_run.py",
-        (; imPath = im_path, imOutPath = im_out_path, axis = axis),
+        (; imPath = im_path, imOutPath = im_out_path, axis = p.axis),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

@@ -2,6 +2,21 @@ struct CopyImage <: CciaTask end
 
 task_output_effect(::CopyImage) = "new-image"
 
+# Typed shape of what `_run_task(::CopyImage, …)` reads from `params`. Provide exactly one of
+# `toSetUid` (existing set) OR `newSetName` (create/resolve by name); both empty is an error.
+Base.@kwdef struct CopyImageParams
+    valueName::String  = VERSIONED_DEFAULT_VAL
+    toSetUid::String   = ""
+    newSetName::String = ""
+end
+
+function parse_copy_image_params(d::AbstractDict)::CopyImageParams
+    CopyImageParams(;
+        valueName  = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        toSetUid   = string(get(d, "toSetUid", "")),
+        newSetName = strip(string(get(d, "newSetName", ""))))
+end
+
 # Pure: the meta a copy inherits from its SOURCE image. A copy is a faithful duplicate of ONE version,
 # so every calibration field carries over UNCHANGED (unlike a crop, which shrinks SizeZ/SizeT) — plus
 # `ori_path` provenance (same underlying acquisition) and a `copy_source_*` breadcrumb. Non-calibration
@@ -56,13 +71,13 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_copy_image_params(params)
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -78,26 +93,24 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     proj = load_project(proj_uid)
 
     # destination: an existing set (toSetUid) OR a new one (newSetName). Mirrors ImageTable's move picker.
-    to_set_uid   = string(get(params, "toSetUid", ""))
-    new_set_name = strip(string(get(params, "newSetName", "")))
     local dest::CciaSet
-    if !isempty(to_set_uid)
-        di = findfirst(s -> s.uid == to_set_uid, proj._sets)
+    if !isempty(p.toSetUid)
+        di = findfirst(s -> s.uid == p.toSetUid, proj._sets)
         if isnothing(di)
-            on_log("[ERROR] Destination set not found: $to_set_uid")
+            on_log("[ERROR] Destination set not found: $(p.toSetUid)")
             return nothing
         end
         dest = proj._sets[di]
-    elseif !isempty(new_set_name)
+    elseif !isempty(p.newSetName)
         # RESOLVE-or-create, the shape `api_images_move` already uses: a set that already carries this
         # name is the set the user meant, not a reason to make a second one with the same label. This
         # used to `add_set!` unconditionally, so copying into "New set: Day 3" when a "Day 3" existed
         # produced two indistinguishable sets with the copy in the new one. `add_set!` now refuses a
         # duplicate outright, which would have turned that into a failed task — reusing is what the
         # caller wanted either way.
-        existing = findfirst(s -> s.name == new_set_name, proj._sets)
+        existing = findfirst(s -> s.name == p.newSetName, proj._sets)
         if isnothing(existing)
-            dest = add_set!(proj; name = String(new_set_name))
+            dest = add_set!(proj; name = String(p.newSetName))
             on_log("[INFO] Created set '$(dest.name)' ($(dest.uid))")
         else
             dest = proj._sets[existing]
@@ -111,7 +124,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     # carry the source version's calibration + provenance onto the copy (else the metadata dialog shows
     # "—"); same source→new pattern as cropImage, minus the extent change.
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    copy_meta = _copied_meta(src_meta, img.uid, value_name)
+    copy_meta = _copied_meta(src_meta, img.uid, p.valueName)
 
     # register a NEW image in the destination set (new uid + {proj}/0|1/{uid} dirs, appended to manifest)
     new_img = add_image!(dest; name = "$(img.name) (copy)", meta = copy_meta, attr = img.attr)
@@ -121,7 +134,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
-    on_log("[INFO] Copy source: $im_path (version '$value_name')")
+    on_log("[INFO] Copy source: $im_path (version '$(p.valueName)')")
     on_log("[INFO] New image:   $(new_img.uid) → $im_out_path")
 
     # verbatim recursive copy of the chosen version's zarr → the new image's default zarr
@@ -134,7 +147,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     # `default` while a processed version carries none of its own, so reading `value_name` directly
     # returned `nothing` and copying a corrected version produced an image with NO channel names at
     # all. The fallback to the active version is exactly what that helper is for.
-    ch_names = channel_names(img; value_name = value_name)
+    ch_names = channel_names(img; value_name = p.valueName)
     commit_state!(new_img) do raw2
         versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
         isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)

@@ -5,6 +5,34 @@ struct Register <: CciaTask end
 # adding a version — same declaration every other add_image!-writing editImages task carries.
 task_output_effect(::Register) = "new-image"
 
+# Typed shape of what `_run_task(::Register, …)` reads from `params`. `regChannel` is a single
+# channel NAME (not a `channelSelection` list) — it names one shared marker each cycle must
+# carry, resolved to a per-image index below.
+Base.@kwdef struct RegisterParams
+    regChannel::String           = ""
+    doFftInitialization::Bool    = false
+    doAffine2d::Bool             = true
+    doAffine3d::Bool             = false
+    ignoreSpacing::Bool          = true
+    sigma::Float64               = 1.0
+    autoMask::Bool               = false
+    samplesPerParameter::Int     = 5000
+    expand::Int                  = 0
+end
+
+function parse_register_params(d::AbstractDict)::RegisterParams
+    RegisterParams(;
+        regChannel          = string(get(d, "regChannel", "")),
+        doFftInitialization = Bool(get(d, "doFftInitialization", false)),
+        doAffine2d          = Bool(get(d, "doAffine2d", true)),
+        doAffine3d          = Bool(get(d, "doAffine3d", false)),
+        ignoreSpacing       = Bool(get(d, "ignoreSpacing", true)),
+        sigma               = Float64(get(d, "sigma", 1.0)),
+        autoMask            = Bool(get(d, "autoMask", false)),
+        samplesPerParameter = Int(get(d, "samplesPerParameter", 5000)),
+        expand              = Int(get(d, "expand", 0)))
+end
+
 # Pure: the meta the registered output inherits from the REFERENCE image + a channel count assembled
 # across all the cycles. Registration keeps the reference's physical extent, calibration and
 # timeline; only the channel dimension grows because every non-reference cycle contributes its
@@ -41,7 +69,8 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
                    on_process::Function  = _ -> nothing)
     length(imgs) < 2 && (on_log("[ERROR] Select at least two images (one reference + one cycle to align)."); return nothing)
 
-    reg_channel_name = string(get(params, "regChannel", ""))
+    p = parse_register_params(params)
+    reg_channel_name = p.regChannel
     isempty(reg_channel_name) && (on_log("[ERROR] No `regChannel` chosen."); return nothing)
 
     # First selected = reference (old R convention). The reference is the "home" — the new registered
@@ -104,8 +133,8 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
         "register_reference_uid"  => ref_img.uid,
         "register_source_uids"    => [im.uid for im in ordered],
         "register_channel_name"   => reg_channel_name,
-        "register_do_affine_2d"   => Bool(get(params, "doAffine2d", true)),
-        "register_do_affine_3d"   => Bool(get(params, "doAffine3d", false)))
+        "register_do_affine_2d"   => p.doAffine2d,
+        "register_do_affine_3d"   => p.doAffine3d)
     merge!(reg_meta, _register_inherited_meta(ref_meta, total_c))
     haskey(ref_meta, "ori_path") && (reg_meta["ori_path"] = ref_meta["ori_path"])
 
@@ -125,14 +154,14 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
            imOutPath      = im_out_path,
            regChannels    = reg_channels,
            transformsOut  = transforms_path,
-           doFftInitialization = Bool(get(params, "doFftInitialization", false)),
-           doAffine2d          = Bool(get(params, "doAffine2d", true)),
-           doAffine3d          = Bool(get(params, "doAffine3d", false)),
-           ignoreSpacing       = Bool(get(params, "ignoreSpacing", true)),
-           sigma               = Float64(get(params, "sigma", 1.0)),
-           autoMask            = Bool(get(params, "autoMask", false)),
-           samplesPerParameter = Int(get(params, "samplesPerParameter", 5000)),
-           expand              = Int(get(params, "expand", 0))),
+           doFftInitialization = p.doFftInitialization,
+           doAffine2d          = p.doAffine2d,
+           doAffine3d          = p.doAffine3d,
+           ignoreSpacing       = p.ignoreSpacing,
+           sigma               = p.sigma,
+           autoMask            = p.autoMask,
+           samplesPerParameter = p.samplesPerParameter,
+           expand              = p.expand),
         task_run_dir(ref_img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
