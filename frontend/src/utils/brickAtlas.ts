@@ -106,18 +106,6 @@ export function validateAtlasLayout(
 }
 
 /**
- * Pick an atlas layout for a given store, targeting a VRAM budget. This is the counterpart of
- * `computeCapacity` in `tileRenderer.ts` (the 2D atlas sizer) but in 3D.
- *
- * The strategy: pin `brickSizeVox` to the caller's choice (usually `[128, 128, min(brickZ,
- * nZ)]` per Decision 2), then grow `atlasSlotCounts` outward — first x, then y, then z — under
- * the VRAM cap. This is the same "growth axis" as Kiln, but our thin-Z stores (SispLk nZ=4)
- * mean the z growth axis usually stays 1.
- *
- * Returns `null` if even a 1×1×1 slot atlas exceeds the budget (channelsPerBrick × brick volume
- * × bpv is bigger than the cap) — the caller then falls back to the flat-atlas path.
- */
-/**
  * Does an existing atlas satisfy a new layout request? True only if EVERY sizing decision
  * matches — brick shape, slot counts, dtype, channel count. Any mismatch (a level swap that
  * changes the channel count, a store swap that changes bpv) forces a fresh atlas.

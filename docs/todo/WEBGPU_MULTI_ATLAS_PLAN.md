@@ -101,12 +101,24 @@ WGSL:
 ```
 
 `binding_array` is the only mechanism that lets a runtime slot ID pick which texture to
-sample. It requires the `binding_array` feature — check on adapter init, fall back to
-single-atlas (Phase 1 mode) if unavailable. All target browsers (Chromium/Firefox/Safari
-recent) support it as of 2026-09.
+sample. It's the `binding_array` proposal (gpuweb/gpuweb#binding-array — status
+"explored", not yet in the stable spec as of 2026-09), so support needs a two-part probe,
+NOT a single feature check:
 
-If a real driver doesn't support `binding_array`, the fallback is Phase 1's behaviour
-(single atlas at `min(budget, maxBufferSize)`) — no crash, just the old capacity ceiling.
+1. **WGSL parse.** Can the shader compiler even accept `binding_array<T, N>`?
+2. **Runtime bindGroup.** Does WebGPU's `createBindGroupLayout` accept an entry with
+   `arraySize: N`, and `createBindGroup` accept `resource: [view0, view1, …]`?
+
+Both must be true to ship P3 without a fallback. `docs/todo/spike/webgpu/diagnostic.html`
+§A probes both and reports `probe.wgsl.bindingArray4.{wgslCompiles, bindGroupAccepts,
+supported}` — re-run on the target device before merging P3.
+
+**Confirmed on RTX 2000 Ada / Chromium 151 / Dawn Vulkan (2026-09-15)**: `wgslCompiles`
+= true. `bindGroupAccepts` = **pending re-run** after the diagnostic's runtime probe
+extension shipped in `feat/webgpu-multi-atlas`.
+
+If either half fails, the fallback is Phase 2's behaviour (single atlas at `min(budget,
+maxBufferSize)`, N=1 always) — no crash, just the old capacity ceiling on that device.
 
 ## Files touched, per phase
 
@@ -133,7 +145,7 @@ If a real driver doesn't support `binding_array`, the fallback is Phase 1's beha
 - **Ship criterion:** `pixi run test-frontend` green, `pixi run dev` renders fXgbTl same as
   today, PR-A's T1.1 clamp still works.
 
-### P2 — Allocate N atlases when budget > `min(maxBufferSize, per-atlas cap)`.
+### P2 — Allocate N atlases when budget > `min(maxBufferSize, per-atlas cap)`. **SHIPPED 2026-09-15 in PR #912 (draft).**
 
 - `pickAtlasLayout` divides remaining budget by `atlasVramBytes(layouts[0])`, adds atlases
   up to `MAX_ATLASES`. Ragged tail rounds down.
