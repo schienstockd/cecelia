@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   atlasTextureSize, atlasVramBytes, atlasSlotCapacity,
-  validateAtlasLayout, pickAtlasLayout, canReuseAtlas,
+  validateAtlasLayout, pickAtlasLayout, canReuseAtlas, canReuseAtlases,
   type AtlasLayout, type DeviceLimits,
 } from './brickAtlas'
 
@@ -91,16 +91,20 @@ describe('validateAtlasLayout', () => {
 })
 
 describe('pickAtlasLayout — real-world sizing', () => {
+  // Multi-atlas P1: `pickAtlasLayout` returns `AtlasLayout[]` — length always 1 in Phase 1.
+  // Every test that used `l!.atlasSlotCounts` now goes through `l![0].atlasSlotCounts`.
+  // See docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md → Phase 1.
   it('sizes a SispLk-shape atlas under a 128 MB budget', () => {
     const l = pickAtlasLayout([128, 128, 4], 1, 38, 128 * 1024 * 1024, REAL_LIMITS)
     expect(l).not.toBeNull()
+    expect(l!).toHaveLength(1)
     // One SispLk brick = 128*128*4*38 = 2.4 MB → 128 MB / 2.4 MB ~ 53 slots. sqrt(53) ~ 7 → nx=7,
     // ny ~ 7, nz = 1 for a thin store.
-    expect(atlasSlotCapacity(l!)).toBeGreaterThanOrEqual(49)
-    expect(atlasSlotCapacity(l!)).toBeLessThanOrEqual(64)
-    expect(l!.atlasSlotCounts[2]).toBe(1)              // thin-Z: growth stays in xy
+    expect(atlasSlotCapacity(l![0])).toBeGreaterThanOrEqual(49)
+    expect(atlasSlotCapacity(l![0])).toBeLessThanOrEqual(64)
+    expect(l![0].atlasSlotCounts[2]).toBe(1)              // thin-Z: growth stays in xy
     // And it validates under the same limits it was built for.
-    expect(validateAtlasLayout(l!, REAL_LIMITS)).toBeNull()
+    expect(validateAtlasLayout(l![0], REAL_LIMITS)).toBeNull()
   })
 
   it('returns null when even one brick blows the budget', () => {
@@ -113,9 +117,10 @@ describe('pickAtlasLayout — real-world sizing', () => {
     const tight: DeviceLimits = { maxTextureDimension3D: 256, maxBufferSize: 1 << 30 }
     const l = pickAtlasLayout([128, 128, 4], 1, 1, 128 * 1024 * 1024, tight)
     expect(l).not.toBeNull()
-    expect(l!.atlasSlotCounts[0]).toBeLessThanOrEqual(2)   // 256 / 128 = 2 bricks per axis
-    expect(l!.atlasSlotCounts[1]).toBeLessThanOrEqual(2)
-    expect(validateAtlasLayout(l!, tight)).toBeNull()
+    expect(l!).toHaveLength(1)
+    expect(l![0].atlasSlotCounts[0]).toBeLessThanOrEqual(2)   // 256 / 128 = 2 bricks per axis
+    expect(l![0].atlasSlotCounts[1]).toBeLessThanOrEqual(2)
+    expect(validateAtlasLayout(l![0], tight)).toBeNull()
   })
 
   it('maximises slot count under budget instead of pinning nz=1 — the fix for Dml3RG atlas under-provisioning', () => {
@@ -130,12 +135,13 @@ describe('pickAtlasLayout — real-world sizing', () => {
     const REAL_2GB: DeviceLimits = { maxTextureDimension3D: 2048, maxBufferSize: 4 * 1024 * 1024 * 1024 }
     const l = pickAtlasLayout([128, 128, 37], 2, 4, 2 * 1024 * 1024 * 1024, REAL_2GB)
     expect(l).not.toBeNull()
+    expect(l!).toHaveLength(1)
     // Strictly better than the old sizer's 16×16×1 = 256, and comfortably above the shipping
     // demand curve during playback (~405 wanted bricks: 5 t's × 81 core bricks per t).
-    expect(atlasSlotCapacity(l!)).toBeGreaterThan(256)
-    expect(atlasSlotCapacity(l!)).toBeLessThanOrEqual(442)
+    expect(atlasSlotCapacity(l![0])).toBeGreaterThan(256)
+    expect(atlasSlotCapacity(l![0])).toBeLessThanOrEqual(442)
     // Still passes the axis + byte guards for the same limits it was built for.
-    expect(validateAtlasLayout(l!, REAL_2GB)).toBeNull()
+    expect(validateAtlasLayout(l![0], REAL_2GB)).toBeNull()
   })
 })
 
@@ -161,5 +167,35 @@ describe('canReuseAtlas — the dtype-safety gate', () => {
     expect(canReuseAtlas(base, { ...base, channelsPerBrick: 25 })).toBe(false)
     expect(canReuseAtlas(base, { ...base, brickSizeVox: [64, 128, 4] })).toBe(false)
     expect(canReuseAtlas(base, { ...base, atlasSlotCounts: [8, 8, 2] })).toBe(false)
+  })
+})
+
+describe('canReuseAtlases — array-shape reuse gate', () => {
+  // Multi-atlas P1: `canReuseAtlases` extends `canReuseAtlas` to the array shape
+  // `pickAtlasLayout` now returns. Homogeneity is a caller invariant, but the reuse gate
+  // still checks pairwise so a hypothetical heterogeneous array can't sneak through.
+  // See docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md → Decision 5.
+  const base: AtlasLayout = {
+    brickSizeVox: [128, 128, 4],
+    atlasSlotCounts: [8, 8, 1],
+    bytesPerVoxel: 1,
+    channelsPerBrick: 38,
+  }
+
+  it('reuses a length-1 array when the sole layout matches', () => {
+    expect(canReuseAtlases([base], [{ ...base }])).toBe(true)
+  })
+
+  it('refuses reuse when the array lengths differ (level swap changes N)', () => {
+    expect(canReuseAtlases([base], [base, base])).toBe(false)
+    expect(canReuseAtlases([base, base], [base])).toBe(false)
+  })
+
+  it('refuses reuse when any paired layout differs', () => {
+    expect(canReuseAtlases([base, base], [base, { ...base, bytesPerVoxel: 2 }])).toBe(false)
+  })
+
+  it('reuses a length-N array when every pair matches', () => {
+    expect(canReuseAtlases([base, base, base], [{ ...base }, { ...base }, { ...base }])).toBe(true)
   })
 })

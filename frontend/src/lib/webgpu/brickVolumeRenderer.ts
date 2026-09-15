@@ -26,7 +26,7 @@ import {
 import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
-import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
+import { createBrickAtlasTextures, type BrickAtlasTexture } from './brickAtlasTexture'
 import {
   PageTable, brickKey, parseBrickKey, shouldAdmitKick,
   maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
@@ -532,13 +532,18 @@ export async function createBrickVolumeRenderer(
     // Multi-atlas (WEBGPU_UPLOAD_PATH_PLAN.md → U5) is the way past this ceiling.
     const requestedBudget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
     const budget = Math.min(requestedBudget, limits.maxBufferSize)
-    const layout = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
-    if (layout === null) {
+    // Multi-atlas P1: `pickAtlasLayout` now returns an array (length always 1 here) so the
+    // pipeline is ready for P2 to allocate N > 1 atlases past the `maxBufferSize` cap
+    // without another API break. See `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` P1.
+    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
+    if (layouts === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return
     }
-    const texture = createBrickAtlasTexture(device, layout, limits, onError)
-    if (texture === null) return
+    const layout = layouts[0]
+    const textures = createBrickAtlasTextures(device, layouts, limits, onError)
+    if (textures === null) return
+    const texture = textures[0]
 
     const capacity = atlasSlotCapacity(layout)
     const pageTable = new PageTable(capacity)

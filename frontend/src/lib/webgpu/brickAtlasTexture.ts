@@ -21,7 +21,7 @@ import {
   atlasTextureSize, atlasSlotCapacity, validateAtlasLayout,
   type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
-export { canReuseAtlas } from '../../utils/brickAtlas'
+export { canReuseAtlas, canReuseAtlases } from '../../utils/brickAtlas'
 
 /** How many bytes one brick × all channels occupies in the atlas — the payload the caller
  *  hands to `writeBrick`. Answers `(brickX × brickY × brickZ × nC × bpv)`. */
@@ -191,5 +191,35 @@ export function createBrickAtlasTexture(
       stagingBuf?.destroy()
     },
   }
+}
+
+/**
+ * Create N atlas textures from an array of layouts. `WEBGPU_MULTI_ATLAS_PLAN.md` Phase 1
+ * refactor — always length 1 during Phase 1, N up to `MAX_ATLASES` in Phase 2. Returns
+ * `null` if any single atlas fails to allocate, cleaning up any already-created textures
+ * so the caller doesn't leak GPU memory on a partial success.
+ *
+ * Homogeneity (Decision 3) is a caller contract, not enforced here — `pickAtlasLayout` is
+ * the single producer and never returns heterogeneous arrays.
+ */
+export function createBrickAtlasTextures(
+  device: GPUDevice,
+  layouts: readonly AtlasLayout[],
+  limits: DeviceLimits,
+  onError?: (msg: string) => void,
+): BrickAtlasTexture[] | null {
+  if (layouts.length === 0) return null
+  const created: BrickAtlasTexture[] = []
+  for (const layout of layouts) {
+    const tex = createBrickAtlasTexture(device, layout, limits, onError)
+    if (tex === null) {
+      // Partial success: destroy the atlases we did allocate so the GPU-side memory doesn't
+      // outlive the caller's null-check.
+      for (const t of created) t.destroy()
+      return null
+    }
+    created.push(tex)
+  }
+  return created
 }
 
