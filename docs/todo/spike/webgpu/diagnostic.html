@@ -313,6 +313,31 @@ async function probeAdapter() {
   const r8 = await tryFormat('r8uint');
   const r16 = await tryFormat('r16uint');
 
+  // WGSL binding_array<T, N> feasibility — the only way to know is to compile a shader that uses it
+  // and see whether the compiler rejects it. Gates U5 P3 (see docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md
+  // → Decision 6). N=4 mirrors MAX_ATLASES. Both intensity (u32) and label (u32) atlases would use
+  // the same shape; testing one covers both.
+  const tryBindingArray = async () => {
+    device.pushErrorScope('validation');
+    try {
+      const mod = device.createShaderModule({
+        code: `@group(0) @binding(0) var atlases: binding_array<texture_3d<u32>, 4>;
+               @fragment fn fs() -> @location(0) vec4<f32> {
+                 let v: vec4<u32> = textureLoad(atlases[0], vec3<i32>(0,0,0), 0);
+                 return vec4<f32>(f32(v.x), 0.0, 0.0, 1.0);
+               }`,
+      });
+      const info = await mod.getCompilationInfo();
+      const err = await device.popErrorScope();
+      const hardError = info.messages.some(m => m.type === 'error') || !!err;
+      return { supported: !hardError, messages: info.messages.map(m => ({ type: m.type, message: m.message })) };
+    } catch (e) {
+      await device.popErrorScope();
+      return { supported: false, messages: [{ type: 'error', message: String(e?.message ?? e) }] };
+    }
+  };
+  const bindingArray = await tryBindingArray();
+
   REPORT.probe = {
     isFallbackAdapter: !!adapter.isFallbackAdapter,
     adapterInfo: {
@@ -337,11 +362,13 @@ async function probeAdapter() {
       maxStorageBufferBindingSize: device.limits.maxStorageBufferBindingSize,
     },
     formats: { r8uint_3d: r8, r16uint_3d: r16 },
+    wgsl: { bindingArray4: bindingArray },
   };
   if (adapter.isFallbackAdapter) {
     REPORT.notes.push('FALLBACK ADAPTER — numbers below reflect a software rasteriser, not the real GPU.');
   }
   if (!r16) REPORT.notes.push('r16uint 3D-sampled unsupported on this device — the viewer would refuse.');
+  if (!bindingArray.supported) REPORT.notes.push('WGSL binding_array<texture_3d<u32>, 4> UNSUPPORTED — U5 P3 must fall back to single-atlas mode on this device.');
 
   el('probeOut').textContent = JSON.stringify(REPORT.probe, null, 2);
   say('probeStatus', 'done.', 'good');
