@@ -32,7 +32,7 @@ The area-per-area reference: [root doc index](../CLAUDE.md).
 
 | I want to… | Go to |
 |---|---|
-| Read or write cell data (`.h5ad`) | Julia: `app/src/label_props.jl` · Python: `python/cecelia/utils/label_props_utils.py`. Never touch HDF5 internals directly. [Root `CLAUDE.md`](../CLAUDE.md) → *H5AD access* |
+| Read or write cell data (`.h5ad`) | Julia: `app/src/label_props.jl` · Python: `python/cecelia/utils/label_props_utils.py`. Never touch HDF5 internals directly. [Root `CLAUDE.md`](../CLAUDE.md) → *H5AD / cell-data access* |
 | Open or write an OME-ZARR image / label store | `python/cecelia/utils/zarr_utils.py` (+ `ome_xml_utils.py`). Always use `staged_store` for writes, always pass `store_compressor(kind)`. [Root `CLAUDE.md`](../CLAUDE.md) → *Image / OME-ZARR access* |
 | Change the ccid.json shape or versioned-field convention | `app/src/model/image.jl` (versioned helpers) + `docs/OBJECTMODEL.md` |
 | Resolve channel names → indices | `app/src/model/image.jl:channel_indices` and `channel_names`. Never hand-roll a `findfirst`. [`app/CLAUDE.md`](../app/CLAUDE.md) → *Channel names → indices* |
