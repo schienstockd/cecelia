@@ -8,7 +8,7 @@ ENV["CECELIA_NO_SERVE"] = "1"
 # HERMETIC BY DEFAULT — same guard as `app/test/runtests.jl`, and here it fixes a real leak, not just
 # CI. Testsets redirect `dirs["projects"]` to a temp dir individually and restore it in a `finally`;
 # anything that forgets, or any `create_project!` on a path between one restore and the next redirect,
-# writes into the DEVELOPER'S REAL projects dir and shows up in their project list. (Dominik has been
+# writes into the DEVELOPER'S REAL projects dir and shows up in their project list. (we have been
 # seeing these: `apiqc-7602` was still sitting there, from a testset since renamed.) Pointing config at
 # a throwaway dir for the whole run makes the whole class impossible instead of per-testset diligence.
 #
@@ -86,7 +86,7 @@ end
     # `cleanupImages.*` / `editImages.*` it names a NEW STORED IMAGE VERSION, for
     # `segment.cellposeMeasure` (and other segmentation/measurement/tracking tasks) it names a
     # LABEL/TRACKS/MEASUREMENT set instead. Enriching indiscriminately produced a real regression
-    # on Dominik's `zolIMa/fXgbTl`: a `segment.cellposeMeasure` written from `smoothed` with
+    # on the `zolIMa/fXgbTl`: a `segment.cellposeMeasure` written from `smoothed` with
     # `outputValueName=default` claimed the `default` image version was produced from `smoothed`,
     # closing a cycle (`smoothed → driftCorrected → default → smoothed`) that gave the forest zero
     # roots and hid the whole lineage panel. Enrichment must therefore only annotate tasks that
@@ -5662,7 +5662,7 @@ end
     # every flag, but `_overlays_raw_from_config` (movie_rail.jl) hands over a `Dict{String,Any}`.
     # Symbol lookups against string keys silently returned the DEFAULTS, so `showPopulations=true`,
     # `showMask=false`, `allCellsColour="#9ca3af"` regardless of what the caller had set. Reported
-    # 2026-08-31 (Dominik): compare-grid cpSAM-vs-flowTom rendered pop dots on flowTom (its flow
+    # 2026-08-31: compare-grid cpSAM-vs-flowTom rendered pop dots on flowTom (its flow
     # populations, painted because show_pops read as its default `true`) and NOTHING on cpSAM (which
     # has no flow pops); the rainbow mask outline never showed up on either cell because show_mask
     # read as its default `false`, skipping the whole mask branch. Julia's own key equality is what
@@ -7456,8 +7456,8 @@ end
     @test last(args_crop.crop.y)  <= 99
 
     # Snapshot's own `canvas` wins over the caller's `canvas_h/canvas_w` kwargs — the crop must
-    # match the VIEWER'S visible rectangle at capture time, not the OUTPUT mp4 size. Bug (2026-08-31,
-    # Dominik): an animation recorded at 512×512 with a captured 656×831 canvas produced a
+    # match the VIEWER'S visible rectangle at capture time, not the OUTPUT mp4 size. Bug (2026-08-31):
+    # an animation recorded at 512×512 with a captured 656×831 canvas produced a
     # 126×126 mp4 (cropped to the OUTPUT size instead of the viewer's actual canvas), losing zoom
     # and aspect. Matches `crop_from_view_state`.
     vs_c = Dict{String,Any}("camera" => Dict("center" => [50.0, 50.0], "zoom" => 2.0),

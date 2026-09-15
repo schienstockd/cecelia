@@ -146,7 +146,7 @@ const gapsOnly = computed(() => !!props.state.gapsOnly)
 // per-panel fallback for unshared hosts) is likewise inert; the shared store is authoritative.
 // Was: TSV owned `selected` off the canvas view-state and published to the cockpit via a watcher;
 // a cockpit-authored Read would set the store, TSV would then re-mount and its `immediate: true`
-// publisher would clobber the store with `[]` — "Read is a no-op in the cockpit". Dominik, 2026-09-07.
+// publisher would clobber the store with `[]` — "Read is a no-op in the cockpit". .
 const cockpitSelKey = computed(() => trackOpsKey(props.projectUid, imageUid.value, valueName.value))
 const selected = computed(() => {
   const k = cockpitSelKey.value
@@ -994,7 +994,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
          authoring surface for tracks and (Phase 2) labels, so the two cannot disagree about what
          is Joinable OR about which tracks are picked. Hotkeys (Join / Split / Remove / Add /
          Undo / Apply / Clear) still work from here — the keydown handler drives the same
-         functions the cockpit does. Dominik, 2026-09-07 — the previous row put Draw/Read on both
+         functions the cockpit does. the previous row put Draw/Read on both
          surfaces which forced the user to run Read TWICE (once here to light the lanes, once in
          the cockpit to feed Show), and then Show highlighted the wrong tracks because each
          surface had its own idea of the current selection. -->

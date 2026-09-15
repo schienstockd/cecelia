@@ -489,7 +489,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         </select>
         <!-- Spatial cell-selection tools — pencil (mode), clear, z-scope. Shared across every
              gating-capable module page via `CellSelectionTools`. Track pops have no spatial
-             selection, so hide the whole cluster. Dominik, 2026-08-26. -->
+             selection, so hide the whole cluster. . -->
         <CellSelectionTools :show="!isTrack" />
         <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
                               @update:cols="tileCols = $event"

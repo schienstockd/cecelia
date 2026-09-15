@@ -308,7 +308,7 @@ end
 # ── Coastal (optical-flow) models ──────────────────────────────────────────────
 # The same drop-in vault as cellpose above, one directory over: `<config_dir>/models/coastalModels/`.
 # It is deliberately NOT a per-project store — a model trained on one movie is meant to be applied
-# across projects (Dominik: *"in config like the cellpose vault. to use it across projects"*).
+# across projects (*"in config like the cellpose vault. to use it across projects"*).
 #
 # Two differences from cellpose, both consequences of coastal having no built-in models:
 #   * there is nothing bundled and nothing built in, so an empty vault means an empty picker — the

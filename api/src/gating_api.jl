@@ -504,7 +504,7 @@ function api_gating_channels(req::HTTP.Request)
         # `default` but tracks live on `flowKat`) — and until now the client got an empty
         # clusterIds back, showing "no clusters at this suffix" in the pop manager while UMAP +
         # heatmap (which resolve their own vn per-request) showed the clusters just fine
-        # (Dominik on fXgbTl 2026-09-08). When the request didn't name a valueName, prefer a
+        # (reported on fXgbTl 2026-09-08). When the request didn't name a valueName, prefer a
         # tracked one; an explicit request is honoured unchanged.
         if isempty(get(q, "valueName", ""))
             tracked_vns = String[v for v in versioned_keys(img.label_props) if is_tracked(img; value_name = v)]

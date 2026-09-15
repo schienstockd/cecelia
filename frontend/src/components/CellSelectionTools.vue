@@ -3,7 +3,7 @@
   One control cluster:
     • Pencil — toggles the WebGPU viewer's SELECT MODE (`settings.viewerSelectMode`). When ON, a
       click in the viewer picks a cell; shift = add, alt = toggle. When OFF, the viewer stays in
-      pan/rotate mode and clicks do nothing (Dominik, 2026-08-26: "clear. pan around mode. and
+      pan/rotate mode and clicks do nothing ("clear. pan around mode. and
       clear selection mode. otherwise i'm confused what mode i'm in").
     • Clear (×) — empties any transient cell selection (through the gating store's
       `clearSelection`, which POSTs `/api/viewer/pick-clear` and re-broadcasts the tree).
@@ -13,7 +13,7 @@
 
   Why a shared component: the same buttons need to appear on every gating-capable module page —
   Gate, Cluster, Tracking, and whatever's added next. Duplicating four `<button>` blocks per page
-  is how three of them would drift the day the endpoint changes. Dominik, 2026-08-26: "make sure
+  is how three of them would drift the day the endpoint changes. "make sure
   the wiring is a communal component and that every module page that does gating consumes it."
 
   Track pops have nothing to spatially select (a track is not a pixel), so the caller passes

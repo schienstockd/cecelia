@@ -89,7 +89,7 @@ _cfg_int(cfg, k, default::Int) = (v = _cfg_get(cfg, k, default); v isa Integer ?
 # `resolved_display_specs(props, nc)` reads whatever colormap the viewer autosaved for the image;
 # a batch config / single-record `look` carries the user's PICKS ({name → colormap}). Without this
 # override, a compare grid across versions rendered whatever colours the props file happened to
-# carry, ignoring the picker on the batch panel (reported by Dominik).
+# carry, ignoring the picker on the batch panel (reported).
 #
 # A channel named in `cfg.channels` gets its picked colormap and is visible; every other channel is
 # hidden. lo/hi stay from the props, so contrast is still whatever the viewer measured. `cfg`
@@ -601,8 +601,8 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     overlays_dict = _overlays_raw_from_config(cfg, has_mask)
     # Compare-grid mask outlines default to per-id rainbow. Gray on top of coloured channels was
     # invisible on cpSAM (large blobs, magenta) and looked like undifferentiated dots on flowTom
-    # (35k tiny cells collapsed to 2-px rings at 512×512). See docs/todo/MOVIE_COMPARE_PLAN.md and
-    # the 2026-08-31 report from Dominik. `build_mask_for` reads "rainbow" as a sentinel and cycles
+    # (35k tiny cells collapsed to 2-px rings at 512×512). See docs/todo/MOVIE_COMPARE_PLAN.md
+    # for the 2026-08-31 report. `build_mask_for` reads "rainbow" as a sentinel and cycles
     # `CECELIA_TRACK_PALETTE` by label id.
     if overlays_dict isa AbstractDict && get(overlays_dict, "allCells", false) === true
         overlays_dict["allCellsColour"] = "rainbow"

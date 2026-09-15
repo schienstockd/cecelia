@@ -664,7 +664,7 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *
  *  `anchor` — cursor-directed zoom (ImageJ, Fiji, QuPath). When given, the pan is shifted so the
  *  world point under the cursor stays under the cursor after the dolly, so a wheel gesture zooms
- *  INTO what the pointer is over rather than into the viewport centre. Without it, dominik had to
+ *  INTO what the pointer is over rather than into the viewport centre. Without it, someone had to
  *  zoom-in / pan / zoom-in to reach a corner (2026-08-29). `ndcX`, `ndcY` are the cursor in NDC
  *  (right/up positive), `aspect` = canvas W/H. Skipped on the clamp edge: if the dolly hit the
  *  band and dist didn't change, don't shift the pan either — the view would drift on further wheel
@@ -678,7 +678,7 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *  and preserving that across the dolly gives
  *     panX_new = panX_old - ndcX * (halfW_new - halfW_old)
  *     panY_new = panY_old - ndcY * (halfH_new - halfH_old)
- *  The first version of this shipped inverted (dominik, 2026-08-29 — "mouse bottom left, it zooms
+ *  The first version of this shipped inverted (— "mouse bottom left, it zooms
  *  in top right"). The offender was following `screenToImagePx`, which at the time had the
  *  opposite pan sign from the shader; both now agree on the shader convention. */
 export function orbitZoom(
@@ -720,7 +720,7 @@ export function orbitZoom(
  *
  * THE TOP PERCENTILE (2026-09-03). Default 99.99%, user-tunable via
  * `settings.viewerAutoContrastPercent`. Sparse microscopy signal (cells <0.5% of pixels) is what
- * Dominik's data looks like, so the widest option preserves it by default; the knob drops to 99
+ * the data looks like, so the widest option preserves it by default; the knob drops to 99
  * or 99.8 when a brighter tail (dead cells, hot pixels) should be trimmed.
  *
  * THE COLLAPSED-WINDOW GUARD. When most of the range sits above the top percentile — the tell of

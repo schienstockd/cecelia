@@ -80,7 +80,7 @@ if __name__ == '__main__':
 class PreviewCallsPredictSliceCorrectlyTest(unittest.TestCase):
     """The preview's call to `predict_slice` matches the method's own signature.
 
-    This is a bug that reached Dominik: `predict_slice` used to take `context=` and `context_index=`,
+    This is a bug that reached production: `predict_slice` used to take `context=` and `context_index=`,
     grew to six such kwargs, and had them collected into ONE `TemporalWindow`. The preview worker was
     not updated, so every coastal preview raised
 
@@ -141,7 +141,7 @@ class PreviewMultiPassMergeTest(unittest.TestCase):
     The bug: both preview backends looped the base model groups and REASSIGNED their output block
     each time, with no id offset and no fill-only merge. So a two-pass coastal config previewed as
     the last group alone — full-frame and unclipped, because nothing had claimed pixels ahead of it.
-    On Dominik's `flowTom` config that is the small-seed pass on its own, which looks like a
+    On the `flowTom` config that is the small-seed pass on its own, which looks like a
     fragmented mess and is not what the run produces.
 
     Pinned against `SegmentationUtils`'s own primitives rather than a hand-written expectation, so
@@ -261,7 +261,7 @@ class PreviewPostProcessRunsAfterTheMergeTest(unittest.TestCase):
     every group into the frame and calls `post_process` once afterwards — so the preview filtered
     objects the run never sees and kept slivers the run removes.
 
-    Measured on zolIMa/fXgbTl with Dominik's own `flowTom` config: 52 objects in run order against
+    Measured on zolIMa/fXgbTl with the `flowTom` config: 52 objects in run order against
     53 in the old preview order, with non-identical foreground. It diverges at `minCellSize` 0 too,
     because `labelSmoothing` defaults to 0.5 and is just as order-sensitive — which is why this
     pins the ORDER rather than any one parameter.

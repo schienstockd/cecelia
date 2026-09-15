@@ -233,7 +233,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .pt-root.compact .pt-cell { flex-direction: column; align-items: stretch; }
 /* Every cell's label row is the SAME height, whether or not it holds the reset button — otherwise the
    button's own box makes the threads cell taller and its slider sits lower than the four beside it
-   (Dominik spotted it, and correctly guessed the icon). The button is stripped to its glyph for the
+   (spotted it, and correctly guessed the icon). The button is stripped to its glyph for the
    same reason. */
 /* CENTRE, not baseline (the default here): an icon-only button has no text baseline to share, so on
    `align-items: baseline` it dragged the whole label row down by its own box. */

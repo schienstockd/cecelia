@@ -37,7 +37,7 @@
   user-select: none;
 }
 
-/* Horizontal lockup — wordmark then mark (Dominik 2026-08-17; the R logo and the header both lead with
+/* Horizontal lockup — wordmark then mark (; the R logo and the header both lead with
    the mark, this trails it). ONE opacity on the group, so the two halves recede by exactly the same
    amount; setting it per element is how a lockup ends up with a word darker than its mark. */
 .welcome-lockup {

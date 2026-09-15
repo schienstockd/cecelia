@@ -5,7 +5,7 @@ import {
   type AtlasLayout, type DeviceLimits,
 } from './brickAtlas'
 
-// A realistic ceiling for Dominik's RTX 2000 Ada (2048/4 GiB from the audit).
+// A realistic ceiling for the RTX 2000 Ada (2048/4 GiB from the audit).
 const REAL_LIMITS: DeviceLimits = {
   maxTextureDimension3D: 2048,
   maxBufferSize: 1 << 30,          // 1 GiB — WebGPU cap on many drivers
@@ -119,7 +119,7 @@ describe('pickAtlasLayout — real-world sizing', () => {
   })
 
   it('maximises slot count under budget instead of pinning nz=1 — the fix for Dml3RG atlas under-provisioning', () => {
-    // Dml3RG-shape at Dominik's cacheMB=2048 setting was the driving case (2026-09-02): brickSize
+    // Dml3RG-shape at the cacheMB=2048 setting was the driving case (2026-09-02): brickSize
     // [128, 128, 37], bpv=2, channelsPerBrick=4. The old sizer picked a square xy (16×16×1=256)
     // against a 442-slot budget — 58 % utilisation — and produced the "want > atlas" thrash that
     // showed up as rectangular black holes in the visible render.

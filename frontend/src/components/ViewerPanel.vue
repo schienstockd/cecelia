@@ -570,7 +570,7 @@ const legendItems = computed(() => {
 
 /**
  * "Active version" advisory, same shape and severity split as tasks' `paramAdvisors`. Moved out of
- * the popup viewer window (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended, Dominik 2026-08-26): the panel
+ * the popup viewer window (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended, ): the panel
  * is the single control now, so the advisory sits next to the control that changes it.
  *
  * `null` when there is only one version, or `activeValueName` isn't reported — an absent answer

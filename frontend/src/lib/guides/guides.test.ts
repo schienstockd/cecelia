@@ -338,7 +338,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
 
   // The regression this encodes: the prereq used to scan the run log for `tracking.*`, so a project
   // migrated from the R version — tracks on disk, no `tracking.*` entry ever recorded — was told it
-  // "needs a tracked image" (Dominik, 4kS67f). Provenance is not state.
+  // "needs a tracked image" (project 4kS67f). Provenance is not state.
   it('tracked reads the tracks on disk, NOT the run log', () => {
     const ran = (fun: string) => ({ fun, at: '2026-01-01T00:00:00' })
     expect(PREREQ.tracked.ok(ctx({ images: [img({ trackValueNames: [] })] }))).toBe(false)

@@ -6,7 +6,7 @@ const noName = { vendor: '', architecture: '', device: '', description: '' }
 describe('classifyAdapter', () => {
   it('names an NVIDIA vendor as discrete even when the limit reads integrated', () => {
     // The bug that triggered this: Dawn on Linux Vulkan reports 2048 for an RTX 2000 Ada. Without the
-    // name check the app tags it "Integrated". Dominik confirmed via brave://gpu that WebGPU IS on the
+    // name check the app tags it "Integrated". confirmed via brave://gpu that WebGPU IS on the
     // RTX with a Vulkan backend, so the name is the truth here.
     expect(classifyAdapter({ ...noName, vendor: 'nvidia' }, 2048)).toBe(true)
     expect(classifyAdapter({ ...noName, description: 'NVIDIA RTX 2000 Ada Generation' }, 2048)).toBe(true)
@@ -38,7 +38,7 @@ describe('classifyAdapter', () => {
     // The user-facing verdict is "reduced" vs "ready". Apple M-series is unified-memory but comfortably
     // runs the viewer, and Safari's WebGPU reports the spec baseline (2048) rather than the hardware
     // limit — so trusting the limit flipped Apple back into the reduced bucket ("apple apple apple
-    // apple / maxTextureDimension3D 2048", Dominik 2026-09-10). Trust the name here; the copy branch
+    // apple / maxTextureDimension3D 2048", ). Trust the name here; the copy branch
     // in `verdictFrom` renders "Apple GPU — ready" instead of "Discrete GPU detected".
     expect(classifyAdapter({ ...noName, vendor: 'apple' }, 16384)).toBe(true)
     expect(classifyAdapter({ ...noName, vendor: 'apple' }, 2048)).toBe(true)

@@ -51,7 +51,7 @@ export function buildFocusViewState(
   // Zoom rule: PAN to centre, keep current zoom — only zoom OUT if the bbox doesn't fit. Never
   // zoom IN. A nearly-stationary single-cell track has a ~1-pixel bbox and the naive fit
   // (halfWpx=1, pad 20%) computed a ~30x zoom — the cell became a single pixel filling the
-  // screen with no surrounding context (Dominik, 2026-09-07: "if i just select one track it
+  // screen with no surrounding context ("if i just select one track it
   // zooms in 31x"). Keeping current zoom is the least-surprise default; if the tracks are wider
   // than the current view we still zoom out to fit.
   //

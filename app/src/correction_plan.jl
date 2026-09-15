@@ -9,7 +9,7 @@
 # advisory-finding framework these scores complement — a finding is a discrete "the output looks off"
 # fact, a score is a continuous 0-1 signal a rule engine can trigger on with a tunable threshold.
 #
-# **All bands are unvalidated placeholders** — per §2.4, calibrated on Dominik's dev movies only.
+# **All bands are unvalidated placeholders** — per §2.4, calibrated on the dev movies only.
 # The scoring FORMULAS live here; the tunable trigger ranges live at the (not-yet-built) rule engine.
 #
 # Phase B scope: the §2.1 metadata-derived scores (no pixel work at plan time). §2.2 (post-hoc

@@ -307,7 +307,7 @@ export interface VolumeRenderer {
    * the FLAT renderer the per-timepoint slots stay allocated but stamped stale, so
    * `show`/`hasTimepoint` miss and `uploadFrame` re-uploads on next visit. Both paths avoid
    * the 200 ms+ freeze `setImage` incurs from destroying every cached texture up front — the
-   * pain Dominik hit on Dml3RG's 2D wheel (2026-08-29). Callers that don't have this method
+   * pain observed on Dml3RG's 2D wheel (2026-08-29). Callers that don't have this method
    * fall through to a full `setImage` reallocate.
    */
   setZPlane?(zLo: number): void
@@ -817,7 +817,7 @@ export async function createVolumeRenderer(
         for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
         // Signal OOM to the caller so it can swap in the brick renderer. Fires ONCE per setImage
         // — a repeat message every retry frame would spam. The strict `slots.size === 0` guard
-        // (only signal when the very first frame did not fit) missed a case Dominik hit on
+        // (only signal when the very first frame did not fit) missed a case observed on
         // 2h06xA in 2D mode: the OOM branch runs, `slots.size` sits at 0, but the caller-side
         // fallback never got the signal. Relaxed to fire on the FIRST OOM inside a setImage
         // cycle — a recoverable "shrink and continue" case is rare on plane view (the frame

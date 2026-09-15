@@ -1769,7 +1769,7 @@ end
     # THE recurring bug in this area, twice: an MCP tool is added, one of the prompts describing the
     # toolset is updated and another silently goes stale — an unmentioned tool is an unused one, so the
     # capability just never gets offered (create_chain the first time, then get_analysis_boards /
-    # get_image_attributes). Both surfaced only because Dominik read a prompt and noticed a gap.
+    # get_image_attributes). Both surfaced only because reading a prompt and noticed a gap.
     #
     # The fix was to stop having copies. The MCP server describes its own toolset
     # (mcp/cecelia_mcp/guidance.py: SERVER_INSTRUCTIONS on connect, BRIEFING_GUIDANCE with
@@ -5170,7 +5170,7 @@ end
 
         # RE-IMPORTING THE SAME NAME MUST WORK. The first version refused any existing name, which made
         # the ordinary case impossible — supplying a corrected file and updating the tracking you had
-        # already named ("so i have no chance of updating the tracking", Dominik). Re-running a task
+        # already named ("so i have no chance of updating the tracking"). Re-running a task
         # over its own output is what every other task does.
         @test run_task(t, img, Dict{String,Any}(
             "mode" => "create", "outputValueName" => "tm",
@@ -13393,7 +13393,7 @@ end
 
         # A CLUSTER board must still work: population_summary's first offered popType is "flow", but
         # trackclust pops are only reachable under "trackclust", so the derivation must walk past the
-        # default rather than stamping it. (Dominik's own "Clustering" board is exactly this shape — an
+        # default rather than stamping it. (the "Clustering" board is exactly this shape — an
         # earlier version of this fix, which allowed only the spec's default, would have refused to
         # re-author it.)
         clust = Dict("B/Directed" => "trackclust", "B/Scanning" => "trackclust")
@@ -14448,7 +14448,7 @@ end
     #
     # Every track-CONSUMING task reads the h5ad and nothing else, and all three gated on `labels`
     # anyway: `tracking.track_measures`, `tracking.correct`, and the plugin's
-    # `trackTools.cumulativeChange` (which is where Dominik spotted it, from the word "Segmentation"
+    # `trackTools.cumulativeChange` (which is where spotted it, from the word "Segmentation"
     # on a form that wanted tracks). You could import tracks and then not measure them, with nothing
     # saying why the set was missing from the picker.
     #

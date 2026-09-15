@@ -355,7 +355,7 @@ export const useProjectStore = defineStore('project', () => {
   // is set by the WS `open` event whenever viewer opens an image, so panel + viewer agree on WHICH
   // image the toggles govern). The popup writes `cc.viewerFocus = imageUid` on mount and window
   // focus; this listener picks it up. Without it, the panel keeps controlling the last-eye-clicked
-  // image while a stranded popup shows a different image (Dominik, 2026-08-31: "popup shows dots
+  // image while a stranded popup shows a different image ("popup shows dots
   // even though every panel toggle is off" — panel keyed to M2b, popup to fXgbTl).
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', e => {

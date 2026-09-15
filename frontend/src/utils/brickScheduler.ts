@@ -84,8 +84,8 @@ export interface ScheduledBrick {
  * (edge fractions round outward). Returns a sorted list — closer to the viewport centre
  * first — so the caller uploads them in visual-priority order.
  *
- * `ring` = 0 for bricks IN the viewport core, 1 for the 1-ring halo Dominik named a "3D halo"
- * (2026-08-28) — one brick wider on each side in X, Y AND Z. On a thin-Z store (SispLk,
+ * `ring` = 0 for bricks IN the viewport core, 1 for the 1-ring "3D halo" — one brick wider on
+ * each side in X, Y AND Z. On a thin-Z store (SispLk,
  * nZ=4) the caller sets `halfDUm >= nZ * voxelUmZ / 2`, so the z-halo saturates the grid
  * and behaviour reduces to "walk every z-slab" — the XY-only case, unchanged.
  */
@@ -256,7 +256,7 @@ export function brickViewportFromCamera(
   // `up = (0, -1, 0)`. So `up * panY` shifts world by `-panY` in Y, not `+panY`. Aim point in
   // shader world = `(panX, -panY, 0)`; in scheduler world (origin at `(ex/2, ey/2, ez/2)`) that's
   // `(ex/2 + panX, ey/2 - panY, ez/2)`. First-cut had `+panY` and the top half of the canvas
-  // fetched a mirrored y-region (Dominik screenshot 2026-08-29: "we still have bricks that are
+  // fetched a mirrored y-region (screenshot 2026-08-29: "we still have bricks that are
   // not being fetched" — top half of canvas black after pan).
   return {
     t,
@@ -280,15 +280,15 @@ export type FloorLevel = number | undefined
  * Core-brick ceiling for the over-fetch guard. Counts ONLY `ring === 0` bricks — the ones
  * actually inside the viewport frustum. Halo (ring === 1) is prefetch and shouldn't gate the
  * level pick: at max zoom on SispLk, halo doubles the total count but the frame cost is the
- * core viewport. First cut counted total (32) and coarsened SispLk max-zoom to L3 (Dominik
- * screenshot 2026-08-29), which is exactly the pin behaviour we were replacing. Switched to
+ * core viewport. First cut counted total (32) and coarsened SispLk max-zoom to L3 (screenshot
+ * 2026-08-29), which is exactly the pin behaviour we were replacing. Switched to
  * core-only + 64 -> tuned to 256 after user testing. URL param `brickThr` overrides live.
  */
 export const MAX_INTERSECT_BRICKS = 256
 
 /**
- * Tunable knobs for the LOD picker. Exposed via URL params (see ViewerWindow) so Dominik can
- * feel out the trade-offs live. Defaults reproduce the shipped behaviour; URL params override.
+ * Tunable knobs for the LOD picker. Exposed via URL params (see ViewerWindow) so we can feel
+ * out the trade-offs live. Defaults reproduce the shipped behaviour; URL params override.
  * - `maxIntersect` — CORE brick count ceiling for the over-fetch guard. Higher = more ambitious
  *   (fetches finer bricks even on wider viewports); lower = safer memory but stays coarser.
  * - `bias` — added to the SSE-picked level BEFORE floor and guard. Positive = coarser (draw less

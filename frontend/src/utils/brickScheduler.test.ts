@@ -258,7 +258,7 @@ describe('scheduleBricks', () => {
   it('over-fetch guard ignores halo — a moderate viewport zoomed in fetches finer even with halo', () => {
     // The regression this catches: pre-2026-08-29 the guard counted total (core+halo). SispLk
     // max-zoom L1 has ~45 core but ~77 total (halo), so a total-count threshold of 32 coarsened
-    // to L3 (Dominik screenshot). Core-only lets L1 through when the FRAME cost fits.
+    // to L3 (screenshot). Core-only lets L1 through when the FRAME cost fits.
     const world: BrickWorld = {
       brickSizeVox: [128, 128, 4],
       voxelUmL0: [0.5, 0.5, 3],
@@ -372,7 +372,7 @@ describe('brickViewportFromCamera', () => {
     // basis, `c.up = cross(right, fwd) = (0, -1, 0)`. So the aim point shifts by (panX, -panY)
     // in world; in scheduler world (origin at (ex/2, ey/2, ez/2)) that lands at
     // (ex/2 + panX, ey/2 - panY, ez/2). The Y sign is what matters — first cut had `+ panY` and
-    // the top half of the canvas fetched a mirrored y-region on pan (Dominik 2026-08-29 screenshot
+    // the top half of the canvas fetched a mirrored y-region on pan (screenshot
     // #30/31 "still bricks missing" after zoom + pan).
     const panned = brickViewportFromCamera(
       { ...cam, panX: 40, panY: -30 }, META, 0, 1024, 1.0, META.nZ,

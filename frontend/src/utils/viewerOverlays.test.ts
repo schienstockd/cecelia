@@ -287,7 +287,7 @@ describe('buildTrackBuffer', () => {
 
   it('shows the "current hop" segment at t=0 so a tracked movie is not empty on open', () => {
     // t=0 used to give null (window [-L+1, 0] and every segment ends at ≥ 1). That reads as broken
-    // because tracked cells are on screen but no ribbons — Dominik, 2026-08-26. The new window is
+    // because tracked cells are on screen but no ribbons — . The new window is
     // [t-L+1, t+1], so at t=0 you see the segments ending at t=1 (the hop from 0 to 1). Viewer's
     // scrub behaviour matches.
     const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)

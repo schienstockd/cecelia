@@ -141,7 +141,7 @@ const bricksOverride = String(route.query.bricks ?? '')
  * destroying the current renderer flipped the budget back to the static floor / 512 MB Auto,
  * flipping the classification, which destroyed the new renderer, which flipped it back — an
  * oscillator that never stabilised on images sitting between the static floor (1.5 GB) and the
- * Auto budget (2 GB), i.e. ldYr8J-plane at 1.75 GB (Dominik, 2026-09-03: "when i select bricks
+ * Auto budget (2 GB), i.e. ldYr8J-plane at 1.75 GB ("when i select bricks
  * from the toggle it works. but when i select auto which goes to bricks it doesn't"). Manual
  * `viewerBricksMode==='brick'` sidestepped it by short-circuiting the budget check.
  *
@@ -158,7 +158,7 @@ const stableAdapterReport = ref<AdapterReport | null>(null)
  * early-return on `renderer.value` truthiness. Between the truthiness check and the awaited
  * continuation, the watcher fired, nulled `renderer.value`, and the resuming reallocate's
  * `if (!r) return` bailed silently — a hang on 3D→2D toggle for images that need a renderer swap
- * (Dominik, 2026-09-03: "when i switch to 3d and then back to 2d. it gets stuck on loading
+ * ("when i switch to 3d and then back to 2d. it gets stuck on loading
  * timepoint again"). Now the destroy sits INSIDE the ensureRenderer IIFE, gated on kind mismatch,
  * so the create branch runs whenever the desired kind isn't already live.
  */
@@ -167,7 +167,7 @@ const currentRendererKind = ref<'brick' | 'flat' | 'tile' | null>(null)
  *  surfaces an OOM under mode `m`, `bricksForcedByOom` holds that `m`; the fallback then only
  *  applies while `mode.value === m`. Scoping matters: 3D flat legitimately OOMs on a big volume
  *  (that is what `shouldUseBricks` exists to catch), but 2D flat on the SAME image fits in the
- *  cache and must not be short-circuited by a stale 3D failure (Dominik, 2026-09-04 on 2h06xA:
+ *  cache and must not be short-circuited by a stale 3D failure (on 2h06xA:
  *  3D toggle was on, flat OOM'd on the 3D attempt, the auto swap to 2D then found the flag still
  *  forcing bricks and never re-consulted `shouldUseBricks`). Same treatment for `flatForcedByOom`
  *  — a brick-atlas OOM in 3D says nothing about a brick attempt in 2D. Not persisted (recovery,
@@ -187,7 +187,7 @@ const bricksEnabled = computed<boolean>(() => {
   const bmode = settings.viewerBricksMode
   // Explicit user setting wins over the fallback flag — if the user has manually picked Brick or
   // Flat, honour it. The fallback only steers the Auto path so a session that OOM'd once does
-  // not silently ignore a manual override (Dominik, 2026-09-04: locking the flag above the user
+  // not silently ignore a manual override (locking the flag above the user
   // setting made the chip look broken).
   if (bmode === 'brick') return true
   if (bmode === 'flat') return false
@@ -480,9 +480,9 @@ const playing = ref(false)
  * would put a real 0–545 range in the first 1% of the slider's travel.
  *
  * It only ever grows, and that is the fix rather than an optimisation: taken from the FIRST timepoint
- * and held, it clipped the slider below the data whenever later frames were brighter (Dominik,
- * 2026-08-24). It also deliberately survives a mode or plane change — a ceiling that dropped would
- * re-scale the slider under a value the user had already set.
+ * and held, it clipped the slider below the data whenever later frames were brighter. It also
+ * deliberately survives a mode or plane change — a ceiling that dropped would re-scale the slider
+ * under a value the user had already set.
  */
 const seenMax = ref<number[]>([])
 /**
@@ -725,7 +725,7 @@ function setTrackSourceColour(vn: string, hex: string) {
  * user is authoring, not the pops of the "active segmentation" resolved server-side. Empty
  * strings = fall back to the server default (`_resolve_vn` + popType=flow) — the previous
  * behaviour, preserved for a viewer opened before the pop manager has selected anything.
- * Dominik, 2026-08-26: "why do you have flowtom as the only pop source for fXgbTl. it should
+ * "why do you have flowtom as the only pop source for fXgbTl. it should
  * switch depending on the pop manager not depending on the segmentation being shown on the image".
  */
 function readGatingCurrent(): { valueName: string; popType: string } {
@@ -997,7 +997,7 @@ const nChannels = computed(() => Math.min(meta.value?.nC ?? 0, MAX_CHANNELS))
 const clipped = computed(() => (meta.value?.nC ?? 0) > MAX_CHANNELS)
 const nT = computed(() => meta.value?.nT ?? 0)
 /**
- * Planes the 3D view actually loads, `[lo, hi]` inclusive — Dominik's suggestion (2026-08-24) and the
+ * Planes the 3D view actually loads, `[lo, hi]` inclusive — the suggestion (2026-08-24) and the
  * thing that makes the volume view usable at all. Every cost is linear in the count, so 8 of 41 planes
  * is a ~0.6 s fetch rather than ~5.8 s, and five times as many timepoints fit the VRAM budget.
  *
@@ -1089,7 +1089,7 @@ const activeAdapter = computed(() =>
  * Channel colour, through the shared `ColourPicker` — the pop manager's design (a swatch you click,
  * not a labelled dropdown; `SwatchSelect` spells the option out in text and had squeezed the channel
  * names to one character each) with the CHANNEL colours rather than the population palette. Both halves
- * are Dominik's call (2026-08-24): the house palette is tuned for telling populations apart on a plot,
+ * are the call (2026-08-24): the house palette is tuned for telling populations apart on a plot,
  * whereas these are the colormaps a channel is actually rendered in, and the batch-movie panel already
  * offers exactly this set.
  *
@@ -1115,7 +1115,7 @@ const MODES = [
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
 ]
 // 3D projection toggle — Imaris-style. Ortho is the default (matches the offline movie renderer and
-// reads more head-on for intravital movies, Dominik 2026-09-01); Persp adds foreshortening depth cue.
+// reads more head-on for intravital movies, ); Persp adds foreshortening depth cue.
 const PROJECTIONS = [
   // Flat square = head-on / no depth cue; angled box = converging depth. Tooltips carry the
   // full name — the glyphs are the recognisable shortcut once you know which is which.
@@ -1150,7 +1150,7 @@ const BRICK_TIERS = [
 ]
 /** Top-percentile choices for the Auto contrast button. Names describe what happens on the DATA,
  *  not what the number IS: Tight = trim more, Balanced = middle, Wide = keep more bright pixels
- *  visible (the shipped default — sparse microscopy signal reads best there, Dominik 2026-09-03). */
+ *  visible (the shipped default — sparse microscopy signal reads best there, ). */
 const AUTO_CONTRAST_OPTIONS = [
   { value: '99', label: 'Tight', tip: 'p99 — trims the bright tail, saturates rare cells' },
   { value: '99.8', label: 'Balanced', tip: 'p99.8 — smooth on dense signal' },
@@ -1278,7 +1278,7 @@ const effectiveSchedulerBias = computed(() => {
 // Live-apply the tier + bias without reallocating the renderer. Ignored on the flat renderer
 // (setter is optional). Nudge the frame pump so the new threshold takes effect on the next draw
 // — otherwise `tickScheduler` doesn't re-run until the user moves the camera (2026-08-31
-// Dominik: "are you sure you're reloading").
+// "are you sure you're reloading").
 watch([effectiveMaxIntersect, effectiveSchedulerBias], ([v, b]) => {
   renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: b })
   frame.redraw()
@@ -1497,7 +1497,7 @@ function rebuildOverlays() {
   // cell-track ribbons" (or the trackclust) toggle on, those additional ribbons kept rendering
   // ALL their tracks unfiltered — a Show that picked 3 tracks then looked like "random tracks
   // are highlighted" because the highlighted 3 were drawn on top of the full unfiltered
-  // gated-tracks layer. Dominik, 2026-09-07.
+  // gated-tracks layer. .
   let hlKept = 0                 // cells retained by the highlight across all narrowed sources
   let hlTotal = 0                // cells that would have rendered on those sources without highlight
   let hlSources = 0              // sources the highlight touched (all three kinds counted together)
@@ -1614,8 +1614,8 @@ async function loadOverlays() {
     //   2. Per-pop `pop.show` — authored in the Population Manager, persisted in the gating JSON.
     //      The viewer's row-eye is a transient override for the SAME fetch; the next refetch resyncs.
     //      Trying to preserve local eye state across refetches was worse: PopManager pings this window
-    //      on every write, so the override would be clobbered within a second anyway (Dominik,
-    //      2026-08-25: "the toggles for pops and tracks dont do anything").
+    //      on every write, so the override would be clobbered within a second anyway
+    //      ("the toggles for pops and tracks dont do anything").
     // Empty `setUid` = a viewer opened without a set context (rare — export path). Default HIDDEN
     // to match `settings.getPopVisible` (line 429) and the panel's own `popVisible` fallback (both
     // false). Before this line defaulted to shown, which contradicted the panel — a viewer whose
@@ -1985,8 +1985,8 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
     // promise resolves truthy — `hasTimepoint(u)` is the only reliable "did the upload actually
     // land" signal. Gated on `currentRendererKind === 'flat'` because brick's `hasTimepoint`
     // returns false during normal LOD paging (bricks arrive per-view, not per-timepoint), which
-    // spuriously fired the flat-OOM fallback with a bricks renderer already active (Dominik,
-    // 2026-09-04: dismissed chip kept re-firing in bricks mode).
+    // spuriously fired the flat-OOM fallback with a bricks renderer already active (dismissed
+    // chip kept re-firing in bricks mode).
     if (currentRendererKind.value === 'flat' && !r.hasTimepoint(u)) {
       handleRendererError('flat', 'flat renderer out of memory: uploaded frame is not resident')
       return
@@ -1995,8 +1995,8 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
     // land on the canvas; playback's own tick paints whatever became resident meanwhile.
     // No `shownT !== u` guard: after `r.setZPlane` bumps `planeVersion`, every slot is stale so
     // showT(t.value) failed (shownT stayed on the OLD-plane t.value), and skipping here left the
-    // new bytes bound but unpainted — the z slider looked dead until the user nudged t (Dominik
-    // 2026-08-31). showT is idempotent for an already-bound slot, and this line only runs when
+    // new bytes bound but unpainted — the z slider looked dead until the user nudged t.
+    // showT is idempotent for an already-bound slot, and this line only runs when
     // u === t.value, so playback's per-tick paint isn't disturbed.
     if (u === t.value) showT(u)
   }
@@ -2047,7 +2047,7 @@ function gotoT(tp: number) {
     // Cap requested: 4 during playback (~½ s buffer at 8 fps), 1 otherwise. The renderer clamps
     // to whatever fits alongside boundT in the atlas — a small cache or a big-L0 image (Dml3RG
     // shape) rounds this down so prefetch bricks can't LRU-evict boundT bricks. Regression guard
-    // for the rectangular-black-holes symptom Dominik hit 2026-09-02.
+    // for the rectangular-black-holes symptom observed 2026-09-02.
     const requested = playing.value ? 4 : 1
     const cap = r.maxSafePrefetchDepth?.(requested) ?? requested
     r.setPrefetchTimepoints(prefetchWindow(tp, dir, m.nT, cap))
@@ -2216,7 +2216,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // are about to upload. Passing the full capacity meant `tileEvictions` returned nothing whenever
     // the atlas was full (its threshold is `entries.length <= capacity`); `uploadTile` then found no
     // free slot and returned -1, and the ring of tiles the new zoom needed never landed — the "right
-    // half never resolves" case Dominik saw at L1 on f8gzA2 (2026-08-26).
+    // half never resolves" case observed at L1 on f8gzA2 (2026-08-26).
     const vp = computeViewportL0()
     const centre = vp && lvl ? viewportCentreTile(vp, key.level, lvl) : { tx: key.tx, ty: key.ty }
     const keep = evictionKeepSet()
@@ -2265,7 +2265,7 @@ function syncTileCacheState() {
  *  renderer isn't active (`useTiles`). That INCLUDES 2D plane mode on movies too big for the flat
  *  cache (Dml3RG, 29.5 GB total: bricks in 2D too). In whole-slide 2D the tile renderer takes
  *  over instead — `syncCacheState` then never touches the brick residency snapshot, so the map
- *  would freeze on the last 3D state (Dominik 2026-09-02, f8gzA2: "brick map stays and doesn't
+ *  would freeze on the last 3D state (f8gzA2: "brick map stays and doesn't
  *  change after 3D→2D").
  *
  *  Grid dims are computed here from meta + `brickSizeVox` + `2^level` rather than plumbed back
@@ -2287,7 +2287,7 @@ const brickMapGrid = computed(() => {
 
 /** Cap on the mini-map's DISPLAY grid dimension per axis. At L0 on SispLk-shape (62×57) or
  *  f8gzA2-shape (159×132), an unaggregated map is thousands of ~1px cells — unreadable
- *  (Dominik, 2026-08-29: "way too fine grained ... a bit more coarser when there are a ton of
+ *  ("way too fine grained ... a bit more coarser when there are a ton of
  *  brick to load"). Above this, cells aggregate `bucket × bucket` real bricks into one visual
  *  cell. `resident` if any inside are resident, `loading` if any loading and none resident,
  *  `absent` if all absent — biases toward "loading progress visible", same convention as the
@@ -2307,7 +2307,7 @@ const brickMapSlices = computed(() => {
   // they just scrubbed to, not what the shader is still drawing. Filtering by `displayT`
   // (the timepoint the shader currently paints) made progress invisible during scrub-past-cold
   // — `displayT` stays on the OLD t until enough of the NEW t lands, so the map read "all
-  // resident" while fetches were firing for boundT (Dominik, 2026-08-29: "the map only shows
+  // resident" while fetches were firing for boundT ("the map only shows
   // loading progress on initial image load and never after").
   const tp = t.value
   const residentAtHere = new Set<string>()
@@ -2347,7 +2347,7 @@ const brickMapSlices = computed(() => {
     slices.push({ z: bz, cells })
   }
   // Wrap the per-Z slices into a roughly square grid so the whole map keeps a similar
-  // FOOTPRINT regardless of nBz — the point of gridding out (Dominik 2026-09-02: "i thought
+  // FOOTPRINT regardless of nBz — the point of gridding out (: "i thought
   // we gridded them out for cases with multiple maps"). `ceil(sqrt)` gives 1×1 at nBz=1,
   // 2×2 at 4, 3×3 at 9, 4×4 at 16; non-perfect-squares (nBz=6 → 3×2) are close to square.
   const gridCols = Math.max(1, Math.ceil(Math.sqrt(slices.length)))
@@ -2394,8 +2394,8 @@ const tileMapCellsView = computed(() => {
  * Fill the atlas around the current viewport — visible + halo, ALL IN PARALLEL. The browser's per-
  * origin concurrency cap (typically 6) throttles the HTTP fanout naturally, and tiles arriving in
  * different orders is not a correctness issue — the atlas caches by key. Serialising was a mistake
- * for the whole-slide case: 12 halo tiles × ~200 ms is ~2.4 s instead of ~500 ms, and Dominik
- * called it out ("takes ages to load. this should take a few seconds"). A stale pump's fetches are
+ * for the whole-slide case: 12 halo tiles × ~200 ms is ~2.4 s instead of ~500 ms, and this was
+ * reported ("takes ages to load. this should take a few seconds"). A stale pump's fetches are
  * aborted by `scheduleTilePump` via `tileAborts` — the abort has to happen at the mid-flight fetch,
  * not at a serial checkpoint, and this shape makes that its ONLY point of cancellation.
  */
@@ -2451,8 +2451,8 @@ function drawTiles() {
   if (resized) scheduleTilePump()
   // Anything still missing → schedule the pump. Covers the initial-mount race where the first
   // `reallocate` fired the pump before the canvas had CSS layout (viewport was null, so nothing
-  // was fetched) — after which the atlas stayed empty until the user moved the mouse (Dominik,
-  // 2026-08-26). Debounced through `tilePump`, so a redraw per pointer notch does not spam.
+  // was fetched) — after which the atlas stayed empty until the user moved the mouse. Debounced
+  // through `tilePump`, so a redraw per pointer notch does not spam.
   if (missingTiles().length > 0) scheduleTilePump()
   // Coarsest-first so finer tiles overpaint the coarse ones as they arrive — the whole point of
   // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
@@ -2520,7 +2520,7 @@ function stopPlay() {
   if (playTimer !== null) { clearTimeout(playTimer); playTimer = null }
   // Retire the playback prefetch window. Playback sets `prefetchTs` to `[t, t±1, t±2]` so the
   // scheduler buffers ahead; leaving that in place after stop keeps `tickScheduler` kicking
-  // fetches for those neighbour t's every tick with no benefit — Dominik 2026-09-02 ("doesn't
+  // fetches for those neighbour t's every tick with no benefit — ("doesn't
   // stop loading"). Idle prefetch is just the current t; the next `gotoT` will replace this.
   renderer.value?.setPrefetchTimepoints?.([t.value])
 }
@@ -2572,7 +2572,7 @@ function tick() {
         const dir = Math.sign(step.next - t.value) || 1
         // Same atlas-size clamp as gotoT — a stalled playback step MUST NOT ask for more
         // prefetch than the atlas can hold, or the prefetch bricks LRU-evict the boundT bricks
-        // the shader is trying to draw. Regression guard, Dominik 2026-09-02.
+        // the shader is trying to draw. Regression guard, .
         const cap = r.maxSafePrefetchDepth?.(4) ?? 4
         r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, cap))
       }
@@ -2814,7 +2814,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
  */
 // `maxWait` is the "planes go past while I scrub" cadence: a plain trailing debounce (what this
 // was) resets its timer on every `@input` event, so a continuous drag never fires until the pointer
-// stops — the release-only symptom Dominik hit 2026-08-31. `maxWait: 220` fires at most once per
+// stops — the release-only symptom observed 2026-08-31. `maxWait: 220` fires at most once per
 // ~220 ms during a sustained drag with the latest z, which is long enough that the average slab
 // fetch (~50-150 ms) has a chance to complete before the next `setZPlane` aborts inflight, and
 // short enough that the user sees planes moving past rather than a step-then-freeze. Canonical
@@ -2822,7 +2822,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
 // *Continuous controls*.
 const zPump = debouncedLatest<number>(async (zp) => {
   // Fast plane switch — both renderers implement setZPlane, so skip the full reallocate
-  // (which destroys textures / atlas — the 200 ms-2 s freeze Dominik hit 2026-08-29). Abort
+  // (which destroys textures / atlas — the 200 ms-2 s freeze observed 2026-08-29). Abort
   // any in-flight slab fetches first: their URLs carry the OLD zPlane and would land in a
   // slot stamped with the NEW planeVersion, leaving wrong bytes on a "fresh" slot. Volume
   // mode and useTiles have different geometry / cache shapes → fall through to reallocate.
@@ -2885,7 +2885,7 @@ function onWheel(e: WheelEvent) {
     return
   }
   // 2D plane view is a bounded rectangle → wider zoom-in band so the user can reach 1:1 (and past)
-  // and `pickTileLevel` gets down to L0. 3D volume band widened 0.15 → 0.05 (Dominik 2026-08-29:
+  // and `pickTileLevel` gets down to L0. 3D volume band widened 0.15 → 0.05 (:
   // "can't zoom in enough for L0 to be used") — with the brick renderer honouring SSE per zoom
   // there's a genuine payoff for going deeper, whereas the pre-brick pin made a deep zoom just
   // slower for the same L5 pixels. Rotation can still lose the box off-screen; Reset view is one
@@ -3115,7 +3115,7 @@ async function loadOverviewThumbnail() {
   const m = meta.value
   if (!m) return
   // Deepest pyramid level for multi-level stores; for a single-level store `m.levels` is empty and
-  // L0 = meta.nX/nY is the only choice (Dominik 2026-09-02, SRPabw: no thumbnail because
+  // L0 = meta.nX/nY is the only choice (SRPabw: no thumbnail because
   // `levels.length === 0` bailed here). L0 is bigger, but still bounded — SRPabw is 441×420×2 B ×
   // 4 ch ≈ 1.5 MB and 350k pixels to composite.
   const lvl = m.levels && m.levels.length > 0
@@ -3278,7 +3278,7 @@ function handleRendererError(kind: 'flat' | 'brick' | 'tile', msg: string) {
   // Ignore errors from a renderer that has already been replaced. The brick renderer's atlas
   // `popErrorScope` and the flat renderer's `uploadFrame` scope both resolve ASYNCHRONOUSLY and
   // can fire AFTER `ensureRenderer` has swapped in the fallback — repopulating the chip on top
-  // of a working canvas (Dominik 2026-09-09: canvas loads as 3D flat fine, but the brick OOM
+  // of a working canvas (: canvas loads as 3D flat fine, but the brick OOM
   // toast stayed). `currentRendererKind` null = mid-swap, still accept so nothing is silently
   // dropped during construction.
   if (currentRendererKind.value !== null && currentRendererKind.value !== kind) return
@@ -3346,8 +3346,8 @@ async function ensureRenderer() {
       // Capture THIS renderer so a later intentional destroy (kind swap in ensureRenderer) can
       // be told apart from an unexpected GPU loss: if `tileRenderer.value` has already moved on,
       // this `.lost` resolution is the cleanup for OUR own destroy, not a driver crash.
-      // Without this guard, toggling 2D↔3D reported "Device was destroyed" every time (Dominik,
-      // 2026-09-03) and forced a Reload click even though the swap had succeeded.
+      // Without this guard, toggling 2D↔3D reported "Device was destroyed" every time and
+      // forced a Reload click even though the swap had succeeded.
       const thisTr = tr
       void tr.lost.then(info => {
         if (tileRenderer.value !== thisTr) return
@@ -3688,8 +3688,7 @@ async function loadVersion(refit: boolean) {
   // watcher fires when `setUid` becomes valid on the meta assignment above, DURING the
   // `await loadViewerProps` boundary below, and would call reallocate a second time. The primary
   // reallocate then destroys the atlas the watcher's reallocate just built, and Vulkan can OOM
-  // on the second createTexture before it has reclaimed the first (Dominik 2026-09-09 on
-  // XcPcu8/LUkCpP: `Brick atlas: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY`
+  // on the second createTexture before it has reclaimed the first (on // XcPcu8/LUkCpP: `Brick atlas: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY`
   // on initial open, worked on every subsequent manual 2D/3D toggle). Saved.mode still wins
   // when present (applied below).
   if (setUid.value && settings.getShow3D(setUid.value)) mode.value = 'volume'
@@ -4207,7 +4206,7 @@ function onSelectModeTick(e: StorageEvent) {
 // toggles etc) key off the FOCUSED popup's image — not whichever image the ImageTable eye was last
 // clicked. Sets `viewerImageUid` on mount so the panel + the popup viewer always agree on WHICH
 // image the toggles govern. Written on mount + on every focus
-// so switching between several open popups follows attention (Dominik, 2026-08-31: "popup shows
+// so switching between several open popups follows attention ("popup shows
 // dots despite panel off" — panel keyed to M2b, popup to fXgbTl).
 function publishViewerFocus() {
   if (imageUid && typeof localStorage !== 'undefined') {
@@ -4306,7 +4305,7 @@ onMounted(() => {
     // A same-store rewrite from a task can change output DIMS (drift correct's canvas expansion
     // recomputes per run, stackAlign, crop), so refetch meta before reallocating — otherwise the
     // renderer resizes against stale nX/nY/nZ and every slab trips the shape guard with
-    // "Slab is AxBxC but XxYxZ was asked for" (Dominik 2026-09-06, x4E5HU: drift correct rerun
+    // "Slab is AxBxC but XxYxZ was asked for" (x4E5HU: drift correct rerun
     // produced 34x296x296 while viewer meta still said 32x295x297). Same-shape rewrites (smooth,
     // denoise) fall through unchanged. Channel state (lo/hi/lut) is preserved because a pixel-only
     // task doesn't change channels, and losing an in-progress auto-contrast on every rerun would
@@ -4602,7 +4601,7 @@ onUnmounted(() => {
           </button>
         </div>
         <!-- The 3D view's own depth control. Caption row (label + readout) above; slider on its
-             own row so it can span the sidebar (Dominik 2026-08-31: "they should take the whole
+             own row so it can span the sidebar (: "they should take the whole
              width"). `@change`, not `@update:*`: the range reallocates every cached texture, so
              it commits on release rather than per pointer move. -->
         <template v-if="mode === 'volume' && meta.nZ > 1">
@@ -4866,7 +4865,7 @@ onUnmounted(() => {
             </button>
             <!-- Auto-contrast tuning popover. Anchored to a cog next to the Auto button — the eye
                  lands on the two together, and the popover keeps the sidebar row height stable
-                 (Dominik 2026-09-03: an inline chip strip was noise, especially since Reset was
+                 (: an inline chip strip was noise, especially since Reset was
                  removed for being visually redundant with Auto on his data). -->
             <button ref="autoTuneTrigger" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                     @click="autoTuneOpen = !autoTuneOpen"
@@ -5005,7 +5004,7 @@ onUnmounted(() => {
                and no populations, and an empty group would read as a broken feature rather than as an
                image that has not been through segmentation yet.
                Panel gate off = the whole section reads as inactive rather than as a cell-count summary
-               (Dominik, 2026-08-26: "how you can show a pops stats when the pops toggle in the viewer
+               ("how you can show a pops stats when the pops toggle in the viewer
                controls is off").
                Empty-state phrasing lines up with Segmentation and Tracks. -->
           <template v-if="!popsPanelOn">
@@ -5391,7 +5390,7 @@ onUnmounted(() => {
    reads as a slider title, not another row of controls. */
 .vw-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
 /* Resolved-value caption under a control in the Advanced popover: sits just under the chip, one
-   line, "Using: X" — Dominik 2026-08-31: an Auto option must show what was picked. */
+   line, "Using: X" — : an Auto option must show what was picked. */
 .vw-adv-using { margin: -0.15rem 0 0.15rem calc(var(--cc-lbl-col) + 0.4rem); }
 .vw-adv-using.cc-sev-ok { color: var(--cc-sev-ok); }
 .vw-adv-using.cc-sev-warn { color: var(--cc-sev-warn); }
@@ -5542,7 +5541,7 @@ onUnmounted(() => {
 .vw-cell.is-current { background: var(--cc-text); }
 /* Tile residency mini map — spatial analog of the timecourse strip. Same visual language: cells on
    `--cc-surface-2`, filled `--cc-accent` when resident. Loading is amber (`--cc-sev-warn`) rather
-   than the strip's `--cc-accent-tint`, per Dominik: "just blue dots and amber for loading"
+   than the strip's `--cc-accent-tint`, per "just blue dots and amber for loading"
    (2026-08-26) — a loading tile in flight has a different meaning from a queued next timepoint. */
 .vw-tilemaprow { display: flex; align-items: flex-start; gap: 0.3rem; }
 .vw-tilemap {
@@ -5566,7 +5565,7 @@ onUnmounted(() => {
 .vw-brickmap-slice { min-width: 0; width: 100%; }
 .vw-brickmap-zlabel { line-height: 1; }
 /* Toggle-row + nested residency map, packed together as one block so the map hangs directly
-   under the switch that turns it on (Dominik 2026-09-02, "have these back underneath the bricks
+   under the switch that turns it on ("have these back underneath the bricks
    toggle"). One .vw-mapblock per toggle; the map itself uses `.vw-nested-map` to cap width so a
    single-tile map doesn't stretch across the whole sidebar. */
 .vw-mapblock { display: flex; flex-direction: column; gap: 0.25rem; }

@@ -7,7 +7,7 @@
      `camera()`, so the arrows can never drift off the rotating volume behind them.
 
      Layout is two stacked rows — the SVG on top, a separate readout strip below — because a
-     rotated axis tip and a corner readout in the same SVG COLLIDE (Dominik 2026-09-03: `+Y` ring
+     rotated axis tip and a corner readout in the same SVG COLLIDE (: `+Y` ring
      drew straight through `0.63×`). Two rows also lets the readout use its own font size without
      eating into the triad's radius. -->
 <script setup lang="ts">

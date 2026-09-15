@@ -43,7 +43,7 @@ onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfile
 // `ensureLoaded` fetched once at boot and never retried). Also refreshes the per-category cohortFuns.
 watch(() => projectMeta.current?.uid, uid => { if (uid) customModules.refresh() })
 
-// Accordion: ONE nav group open at a time (Dominik, 2026-09-07 — was: all can be open, but
+// Accordion: ONE nav group open at a time (was: all can be open, but
 // the sidebar was getting too long). Same rule + composable as the viewer window's control
 // accordion. On first-ever load, pick the first shown group so the sidebar isn't empty; after
 // that localStorage takes over (including an intentional "all closed" state).

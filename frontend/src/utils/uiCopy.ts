@@ -433,7 +433,7 @@ export const uncoveredControls = (src: string, path = ''): UncoveredControl[] =>
  *
  * The complement of `uncoveredControls`, and the same underlying fact seen from the other side: a
  * tipped heading COVERS a chip row / swatch / toggle, so a second identical tooltip on the control
- * adds nothing — and worse, it renders ON TOP of the control (Dominik, 2026-08-07: "it overlays the
+ * adds nothing — and worse, it renders ON TOP of the control ("it overlays the
  * toggle button"). The blanket "every settable control carries its own `v-tooltip`" rule produced
  * exactly this, so the two checks have to move together or fixing one re-breaks the other.
  *
@@ -475,8 +475,8 @@ export const nestedTooltips = (src: string, path = ''): DuplicateTooltip[] =>
  * tests screen edges alone, and `alignLeft` sets `left = hostLeft - tooltipWidth`. So on a target
  * that spans its panel, `.left` puts the tooltip *definitionally* outside that panel — over the
  * neighbouring column — and the library is satisfied, because it is still on screen. `.right` does
- * the same in the other direction. That is what put a param tip over the task list (Dominik,
- * 2026-08-22) and what made 26 of PlotOptions' row tips land on the plot they describe.
+ * the same in the other direction. That is what put a param tip over the task list and what
+ * made 26 of PlotOptions' row tips land on the plot they describe.
  *
  * `.top`/`.bottom` are the ONLY two placements PrimeVue clamps horizontally (`if (left < 0) left = 0;
  * else if (left + tooltipWidth > viewportWidth) …`). On a wide target that clamp is what guarantees

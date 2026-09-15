@@ -122,8 +122,8 @@ export interface VisibleRect { top: number; left: number; width: number; height:
 //
 // This exists because `getBoundingClientRect()` ignores clipping. `TaskRunner`'s parameters block is
 // taller than the panel that scrolls it, so its rect reported the full height and the highlight ring
-// drawn from it framed a region mostly outside the panel — a frame around nothing (Dominik,
-// 2026-08-12). Same trap for any anchor inside a scroll container: the image table, the file list.
+// drawn from it framed a region mostly outside the panel — a frame around nothing. Same trap for
+// any anchor inside a scroll container: the image table, the file list.
 export function visibleRect(el: HTMLElement | null): VisibleRect | null {
   if (!el) return null
   const r = el.getBoundingClientRect()

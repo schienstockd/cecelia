@@ -21,7 +21,7 @@ import { buildFocusViewState } from './focusOnCell'
  *      popup viewer syncs on `cc.viewer.trackHighlight` via a storage listener, so publishing
  *      highlight AHEAD of the overlays tick ensures the popup's next rebuild uses the new ids
  *      rather than firing one rebuild's worth of the previous selection first (the "flash of
- *      the previous highlight" pattern in Dominik's 13:52:26 log — 132 cells kept then 167).
+ *      the previous highlight" pattern in the 13:52:26 log — 132 cells kept then 167).
  *   3. **Enable the segmentation's track visibility** so the highlight has a source to narrow.
  *      Pokes `cc.viewerOverlaysTick` so the popup rebuilds its overlays immediately.
  *   4. **Fit + jump.** ONE fetch of paths (limited to the requested ids), ONE fetch of

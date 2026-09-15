@@ -61,7 +61,7 @@ describe('the icon glossary', () => {
   // The check that matters most, and the one nothing had: PrimeIcons renders a MISSING glyph as an empty
   // box, silently. Four invented names — `pi-ruler`, `pi-layer-group`, `pi-mouse-pointer`,
   // `pi-grip-vertical` — had been shipping blank icons in the physical-size dialog, the metadata panel,
-  // the delete dialog and the chain palette until the glossary put them side by side (Dominik spotted
+  // the delete dialog and the chain palette until the glossary put them side by side (spotted
   // all four by eye, 2026-08-17). The installed stylesheet is the authority.
   it('only names glyphs PrimeIcons actually provides', () => {
     const css = ICONS_CSS
