@@ -1,6 +1,7 @@
 using Cecelia
 using HTTP
 using JSON3
+using Reseau: TLS
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,7 @@ Cecelia.load_custom_modules!()
 
 # ── Sub-modules ───────────────────────────────────────────────────────────────
 
+include("tls.jl")             # self-signed dev cert bootstrap for HTTP/2 via ALPN
 include("sockets.jl")
 include("routes.jl")
 include("movie_helpers.jl")   # shared movie / legend / view helpers (formerly napari_api.jl)
@@ -710,8 +712,29 @@ function start(; host=HOST, port=PORT)
         try; _stop_children_for_exit(); catch; end
     end
     _watch_supervisor!()
-    @info "CeceliaAPI starting" host port threads=Threads.nthreads() projects_dir=projects_dir()
-    HTTP.listen(handle_stream, host, port)
+    # HTTP/2 requires TLS (browsers refuse cleartext h2). Bootstrap a self-signed dev cert
+    # on first launch; on failure fall back to HTTP/1.1 so the server never fails to start
+    # just because openssl isn't available. See `docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U4.
+    tls = ensure_dev_cert()
+    if tls === nothing
+        @info "CeceliaAPI starting (HTTP/1.1, no TLS)" host port threads=Threads.nthreads() projects_dir=projects_dir()
+        HTTP.listen(handle_stream, host, port)
+    else
+        cert_path, key_path = tls
+        # ALPN advertises `h2` first, `http/1.1` as fallback — Chromium picks h2. `verify_peer`
+        # is false because this is a public-facing localhost server; there is no client PKI to
+        # verify against, and clients don't send client certs.
+        tls_config = TLS.Config(;
+            cert_file=cert_path, key_file=key_path,
+            verify_peer=false,
+            alpn_protocols=["h2", "http/1.1"],
+        )
+        address = string(host, ":", port)
+        listener = TLS.listen("tcp", address, tls_config)
+        @info "CeceliaAPI starting (HTTPS/HTTP2)" host port threads=Threads.nthreads() projects_dir=projects_dir() cert=cert_path
+        server = HTTP.listen!(handle_stream, listener)
+        wait(server)
+    end
 end
 
 # Auto-start on load — EXCEPT when `CECELIA_NO_SERVE` is set, so `api/test/runtests.jl` can `include`
