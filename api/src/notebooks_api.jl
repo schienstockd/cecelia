@@ -20,10 +20,22 @@ _project_notebooks_dir(uid::AbstractString) = joinpath(projects_dir(), uid, "not
 _secret_path()      = joinpath(_pluto_root(), ".plutosecret")
 _notebook_secret()  = isfile(_secret_path()) ? String(strip(read(_secret_path(), String))) : ""
 
-const _nb_proc_ref  = Ref{Union{Base.Process,Nothing}}(nothing)
-const _nb_lock      = ReentrantLock()
-const _nb_starting  = Ref(false)
-const _nb_error     = Ref{Union{String,Nothing}}(nothing)   # last launch failure, surfaced in status
+# The Pluto server's lifecycle state, one struct instead of four separately-locked Refs. Every
+# transition (spawn / mark starting / clear starting / record an error) went through `_nb_lock`,
+# but the four Refs were written and READ independently and could drift if a caller took the lock
+# for one and not the others. Bundling names the invariant: `lock` guards every field, and
+# `_with_pluto_state_lock` is the only sanctioned entry to a mutation.
+mutable struct PlutoServerState
+    proc::Union{Base.Process,Nothing}
+    starting::Bool
+    error::Union{String,Nothing}
+    lock::ReentrantLock
+end
+PlutoServerState() = PlutoServerState(nothing, false, nothing, ReentrantLock())
+
+const _pluto_state = PlutoServerState()
+
+_with_pluto_state_lock(f) = lock(f, _pluto_state.lock)
 
 const _SETUP_HINT = "Run `pixi run notebooks-instantiate` once to set up the notebook environment " *
                     "(and optionally `pixi run notebooks-sysimage` for fast plots), then try again."
@@ -48,9 +60,9 @@ end
 # Ensure the Pluto server is up. Returns true if already serving, false if a launch was just kicked
 # off (still starting). `notebooks_dir` points Pluto's file picker at the active project's notebooks.
 function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
-    lock(_nb_lock) do
+    _with_pluto_state_lock() do
         _notebook_server_alive() && return true
-        _nb_starting[] && return false
+        _pluto_state.starting && return false
 
         pluto_root    = _pluto_root()
         launch_script = joinpath(pluto_root, "launch.jl")
@@ -65,13 +77,14 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
             "CECELIA_PLUTO_BROWSER" => "false")
 
         @info "Launching Pluto notebook server..." notebooks_dir port = NOTEBOOKS_PORT
-        _nb_error[] = nothing
         # Onto the log rail with the other children (`spawn_logged`, app/src/log_stream.jl). Pluto was
         # already wired to the parent's streams, so this loses nothing from the terminal — it ADDS the
         # console, which is where a "not instantiated" precompile failure is actually read from.
         proc = spawn_logged(LOG_SOURCE_NOTEBOOKS, cmd)
-        _nb_proc_ref[] = proc
-        _nb_starting[] = true
+        # ONE atomic transition into "starting" — the three fields move together.
+        _pluto_state.proc     = proc
+        _pluto_state.starting = true
+        _pluto_state.error    = nothing
         # Off the request path: wait for the port, OR detect the process dying during startup (the
         # usual cause: env not instantiated → `using Pluto` fails) and surface a friendly hint.
         @async begin
@@ -79,13 +92,15 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
                 for _ in 1:120   # up to ~120 s cold start (first Pluto boot precompiles)
                     _notebook_server_alive() && break
                     if process_exited(proc) && !_notebook_server_alive()
-                        _nb_error[] = "The notebook server exited during startup. $_SETUP_HINT"
+                        _with_pluto_state_lock() do
+                            _pluto_state.error = "The notebook server exited during startup. $_SETUP_HINT"
+                        end
                         break
                     end
                     sleep(1)
                 end
             finally
-                lock(_nb_lock) do; _nb_starting[] = false; end
+                _with_pluto_state_lock() do; _pluto_state.starting = false; end
             end
         end
         false
@@ -115,9 +130,13 @@ end
 # sysimage: "ready" | "stale" | "building" | "error" | "absent" (see _classify_sysimage below).
 function api_notebooks_status(req::HTTP.Request)
     running = _notebook_server_alive()
-    200, JSON3.write((; running = running, starting = _nb_starting[], url = NOTEBOOKS_URL,
+    # Read the two mutable fields inside the lock so a mid-transition write cannot split the pair.
+    starting, err = _with_pluto_state_lock() do
+        (_pluto_state.starting, _pluto_state.error)
+    end
+    200, JSON3.write((; running = running, starting = starting, url = NOTEBOOKS_URL,
                         secret = _notebook_secret(), sysimage = _sysimage_status(),
-                        error = running ? nothing : _nb_error[]))
+                        error = running ? nothing : err))
 end
 
 # ── Fast-plot sysimage (pluto/deps.so), built on first run ───────────────────────
@@ -173,7 +192,11 @@ end
 # the resulting status. Rebuilds over a STALE image too (create_sysimage overwrites deps.so). Errors
 # (env not set up / script missing) propagate to the caller as a 500.
 function _ensure_sysimage_build!()::String
-    lock(_nb_lock) do
+    # The build process is INDEPENDENT of the Pluto server proc — different lifecycle, different
+    # state (see `_nb_build_proc` / `_nb_build_error` below). Reusing the server's lock kept both
+    # write paths through one gate, so the audit's PlutoServerState covers only the server state;
+    # the build state stays its own pair (Refs are fine — they're read/written in ONE place each).
+    _with_pluto_state_lock() do
         _sysimage_status() == "ready" && return "ready"
         p = _nb_build_proc[]
         (p !== nothing && process_running(p)) && return "building"
@@ -202,7 +225,7 @@ function _ensure_sysimage_build!()::String
         # can exit 0 without writing on some failures, so trust the file, not the code).
         @async begin
             wait(proc)
-            lock(_nb_lock) do
+            _with_pluto_state_lock() do
                 _nb_build_error[] = isfile(_sysimage_path()) ? nothing :
                     "The fast-plot sysimage build failed — notebooks still work (slower first plot). Retry, or run `pixi run notebooks-sysimage`."
             end
@@ -226,11 +249,12 @@ end
 # the launcher process terminates Pluto and its Malt workers follow (they exit when the parent drops).
 # An adopted/externally-launched one (e.g. `pixi run notebooks`) isn't ours → direct to stop-by-port.
 function _shutdown_notebook_server!()::Tuple{Bool,String}
-    lock(_nb_lock) do
-        proc = _nb_proc_ref[]
-        _nb_proc_ref[] = nothing
-        _nb_starting[] = false
-        _nb_error[]    = nothing
+    _with_pluto_state_lock() do
+        proc = _pluto_state.proc
+        # ONE atomic transition back to idle — the three fields move together.
+        _pluto_state.proc     = nothing
+        _pluto_state.starting = false
+        _pluto_state.error    = nothing
         if proc !== nothing && process_running(proc)
             kill(proc)
             return true, "stopped"
@@ -261,7 +285,12 @@ end
 # Best-effort: take a server WE spawned down when this API process exits cleanly (so a normal server
 # shutdown doesn't orphan Pluto on :7660). Won't fire on SIGKILL — `pixi run stop` also kills :7660.
 atexit() do
-    for r in (_nb_proc_ref, _nb_build_proc)
+    try
+        p = _pluto_state.proc
+        p !== nothing && process_running(p) && kill(p)
+    catch
+    end
+    for r in (_nb_build_proc,)
         try
             p = r[]
             p !== nothing && process_running(p) && kill(p)
