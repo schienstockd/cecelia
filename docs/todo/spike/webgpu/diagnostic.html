@@ -313,12 +313,18 @@ async function probeAdapter() {
   const r8 = await tryFormat('r8uint');
   const r16 = await tryFormat('r16uint');
 
-  // WGSL binding_array<T, N> feasibility — the only way to know is to compile a shader that uses it
-  // and see whether the compiler rejects it. Gates U5 P3 (see docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md
-  // → Decision 6). N=4 mirrors MAX_ATLASES. Both intensity (u32) and label (u32) atlases would use
-  // the same shape; testing one covers both.
+  // WGSL binding_array<T, N> feasibility — TWO checks matter for U5 P3
+  // (docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md → Decision 6):
+  //   1. WGSL parses `binding_array<T, N>` at all (browsers vary; Chromium/Firefox recent do).
+  //   2. WebGPU's runtime API accepts a bindGroupLayoutEntry with array bindings + a bindGroup
+  //      that supplies an array of resources. This is separate — WGSL support is necessary but
+  //      not sufficient. Some browser versions parse the WGSL but reject the layout entry.
+  // We probe both; P3 needs both to be true to ship without a fallback.
   const tryBindingArray = async () => {
+    // Check 1: WGSL parse.
     device.pushErrorScope('validation');
+    let shaderOk = false;
+    let shaderMessages = [];
     try {
       const mod = device.createShaderModule({
         code: `@group(0) @binding(0) var atlases: binding_array<texture_3d<u32>, 4>;
@@ -328,13 +334,45 @@ async function probeAdapter() {
                }`,
       });
       const info = await mod.getCompilationInfo();
-      const err = await device.popErrorScope();
-      const hardError = info.messages.some(m => m.type === 'error') || !!err;
-      return { supported: !hardError, messages: info.messages.map(m => ({ type: m.type, message: m.message })) };
+      shaderMessages = info.messages.map(m => ({ type: m.type, message: m.message }));
+      shaderOk = !info.messages.some(m => m.type === 'error');
     } catch (e) {
-      await device.popErrorScope();
-      return { supported: false, messages: [{ type: 'error', message: String(e?.message ?? e) }] };
+      shaderMessages = [{ type: 'error', message: String(e?.message ?? e) }];
     }
+    const shaderErr = await device.popErrorScope();
+    if (shaderErr) shaderMessages.push({ type: 'error', message: 'validation: ' + shaderErr.message });
+    if (!shaderOk || shaderErr) {
+      return { supported: false, wgslCompiles: shaderOk && !shaderErr, bindGroupAccepts: null, messages: shaderMessages };
+    }
+    // Check 2: runtime bindGroupLayout + bindGroup with an array of resources. Uses r32uint 3D
+    // textures — same format the intensity + label atlases would ride at.
+    device.pushErrorScope('validation');
+    let bindGroupOk = false;
+    let bindGroupMessages = [];
+    try {
+      const layout = device.createBindGroupLayout({
+        entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'uint', viewDimension: '3d' }, arraySize: 4 }],
+      });
+      const views = [];
+      for (let i = 0; i < 4; i++) {
+        const t = device.createTexture({ size: [1,1,1], dimension: '3d', format: 'r32uint',
+          usage: GPUTextureUsage.TEXTURE_BINDING });
+        views.push(t.createView());
+      }
+      device.createBindGroup({ layout, entries: [{ binding: 0, resource: views }] });
+      bindGroupOk = true;
+    } catch (e) {
+      bindGroupMessages = [{ type: 'error', message: String(e?.message ?? e) }];
+    }
+    const bindGroupErr = await device.popErrorScope();
+    if (bindGroupErr) bindGroupMessages.push({ type: 'error', message: 'validation: ' + bindGroupErr.message });
+    return {
+      supported: shaderOk && !shaderErr && bindGroupOk && !bindGroupErr,
+      wgslCompiles: shaderOk && !shaderErr,
+      bindGroupAccepts: bindGroupOk && !bindGroupErr,
+      messages: [...shaderMessages, ...bindGroupMessages],
+    };
   };
   const bindingArray = await tryBindingArray();
 
