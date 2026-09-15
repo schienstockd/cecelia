@@ -1,0 +1,1228 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cecelia — WebGPU upload-path diagnostic</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 13px/1.5 ui-monospace, monospace; background: #0f1115; color: #e6e6e6;
+         margin: 0; padding: 14px; }
+  h1 { font: 600 15px/1.4 system-ui, sans-serif; margin: 0 0 4px; }
+  p.sub, .sub { font: 12px/1.5 system-ui, sans-serif; color: #9aa0a8; margin: 0 0 8px;
+                max-width: 100ch; }
+  section { margin: 14px 0 4px; padding: 8px 10px; background: #12161d;
+            border: 1px solid #262b33; border-radius: 6px; }
+  section h2 { font: 600 13px system-ui, sans-serif; margin: 0 0 4px; color: #d0d6df; }
+  button { font: 600 12px system-ui, sans-serif; background: #2b6cb0; color: #fff;
+           border: 0; border-radius: 5px; padding: 7px 12px; cursor: pointer; margin: 4px 6px 0 0; }
+  button:disabled { background: #333; color: #888; cursor: default; }
+  button.secondary { background: #2c313a; }
+  pre { background: #171a20; border: 1px solid #262b33; border-radius: 6px; padding: 10px;
+        overflow: auto; max-height: 60vh; margin: 6px 0 0; font-size: 12px; }
+  table { border-collapse: collapse; font: 12px ui-monospace, monospace; margin-top: 6px; }
+  td, th { border: 1px solid #262b33; padding: 3px 8px; text-align: right; vertical-align: top; }
+  th { color: #9aa0a8; }
+  td:first-child, th:first-child { text-align: left; }
+  .bad  { color: #ff8a80; }
+  .good { color: #8ce99a; }
+  .warn { color: #ffd166; }
+  .note { color: #9aa0a8; font: 12px/1.5 system-ui, sans-serif; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  label.k { color: #9aa0a8; }
+  input[type=number] { width: 6em; background: #171a20; color: #e6e6e6;
+                        border: 1px solid #262b33; border-radius: 4px; padding: 3px 6px;
+                        font: 12px ui-monospace, monospace; }
+  input[type=checkbox] { accent-color: #2b6cb0; }
+</style>
+</head>
+<body>
+
+<h1>WebGPU upload-path diagnostic — where is the ceiling on getting brick data resident?</h1>
+<p class="sub">
+Sections A–G run standalone (no server) — GPU-side upload path only. Section H measures the
+FULL pipeline (fetch → decode → writeBrick) end-to-end at a sweep of concurrency, and needs
+<code>diagnostic_server.py</code> running alongside on the same box:
+<code>pixi run python docs/todo/spike/webgpu/diagnostic_server.py --port 7789</code>.
+Open in Chrome/Chromium, click <b>Run all</b>, then use <b>Copy report</b> to paste the JSON
+back. Mirrors <code>frontend/src/lib/webgpu/brickAtlasTexture.ts::writeBrick</code> and
+<code>frontend/src/utils/brickAtlas.ts::pickAtlasLayout</code>. Read-only — never touches the
+actual renderer. See § "What this measures and why" at the bottom.
+</p>
+
+<section id="probe">
+  <h2>A · Adapter probe — real negotiated device limits</h2>
+  <p class="note">Requests <code>powerPreference: high-performance</code> (matches
+    <code>acquireGpuDevice</code>) and negotiates <code>maxBufferSize</code>,
+    <code>maxStorageBufferBindingSize</code>, <code>maxTextureDimension3D/2D</code> from
+    <code>adapter.limits</code>. Flags <code>adapter.isFallbackAdapter</code> — a fallback
+    software adapter produces numbers that look like a code or hardware problem but are actually
+    a driver/Vulkan setup issue.</p>
+  <div class="row">
+    <button id="btnProbe">Probe adapter</button>
+    <span id="probeStatus" class="sub">idle</span>
+  </div>
+  <pre id="probeOut">—</pre>
+</section>
+
+<section id="atlas">
+  <h2>B · Atlas layout probe — real resident-brick capacity at multiple budgets</h2>
+  <p class="note">Runs a JS port of <code>pickAtlasLayout</code> (identical to
+    <code>frontend/src/utils/brickAtlas.ts</code>, verbatim) against the negotiated device
+    limits. Sweeps VRAM budgets so you can read off the current ceiling AND what a fatter budget
+    would buy — the workstation has 32 GB VRAM, but Chromium/Dawn caps
+    <code>maxBufferSize</code> at ≈4 GiB regardless of card, so any single-atlas VRAM budget
+    over that cap wastes headroom that a multi-atlas design could reclaim. That constraint is
+    the same on laptop and on the RTX 5000 — this section proves it.</p>
+  <div class="row">
+    <label class="k">brick X</label><input type="number" id="bx" value="128" min="1">
+    <label class="k">brick Y</label><input type="number" id="by" value="128" min="1">
+    <label class="k">brick Z</label><input type="number" id="bz" value="4" min="1">
+    <label class="k">channels</label><input type="number" id="nc" value="4" min="1">
+    <label class="k">bpv</label><input type="number" id="bpv" value="2" min="1" max="2">
+    <button id="btnAtlas">Compute layouts</button>
+  </div>
+  <pre id="atlasOut">—</pre>
+</section>
+
+<section id="upload">
+  <h2>C · Upload path — stage breakdown, single brick at brick-realistic shape</h2>
+  <p class="note">Mirrors <code>writeBrick</code>: one <code>writeTexture</code> call per brick,
+    <code>[bx, by, bz*nc]</code> box, <code>bytesPerRow: bx*bpv</code>, <code>rowsPerImage: by</code>.
+    Compares four paths at the same total bytes:
+    <b>A</b> <code>queue.writeTexture</code> (the shipped path);
+    <b>B</b> <code>queue.writeBuffer → copyBufferToTexture</code> (isolates writeBuffer staging);
+    <b>C</b> <code>createBuffer({mappedAtCreation:true}) + getMappedRange → copyBufferToTexture</code>
+    (the "MAP_WRITE candidate" #649 left untested);
+    <b>D</b> <code>copyBufferToTexture</code> alone with an already-resident buffer (the GPU floor).
+    Times each stage two ways — wall-clock (submit only) and <code>onSubmittedWorkDone</code>
+    (with #649's ~100 ms floor caveat). GPU-side <code>timestamp-query</code> bracketing is only
+    portable inside compute/render passes, not around <code>writeTexture</code> or
+    <code>copyBufferToTexture</code>; encoder-level <code>writeTimestamp</code> is
+    Chromium-experimental and non-portable, so we don't rely on it. The A – D difference is the
+    honest read on writeTexture-specific overhead.</p>
+  <div class="row">
+    <label class="k">brick X</label><input type="number" id="ubx" value="128" min="1">
+    <label class="k">brick Y</label><input type="number" id="uby" value="128" min="1">
+    <label class="k">brick Z</label><input type="number" id="ubz" value="32" min="1">
+    <label class="k">channels</label><input type="number" id="unc" value="4" min="1">
+    <label class="k">bpv</label><input type="number" id="ubpv" value="2" min="1" max="2">
+    <label class="k">reps</label><input type="number" id="ureps" value="15" min="3">
+    <button id="btnUpload">Run upload benchmark</button>
+  </div>
+  <pre id="uploadOut">—</pre>
+</section>
+
+<section id="scaling">
+  <h2>D · Row-vs-bytes scaling — re-verify PR #649</h2>
+  <p class="note">Sweeps <code>nx</code> and <code>ny*nz</code> independently at
+    r16uint to check whether cost tracks row count or byte count. #649 found rows (2.96×) fit
+    real data far better than bytes (7.41×); re-measure on this run. If the finding holds you'll
+    see roughly constant µs/row across widths, and rising µs/row when row count grows at fixed
+    width means the story is more complicated. Uses <code>onSubmittedWorkDone</code> for
+    continuity with the prior JSON; also reports timestamp-query GPU time where available.</p>
+  <div class="row">
+    <button id="btnScaling">Run row-vs-bytes</button>
+    <span id="scalingStatus" class="sub"></span>
+  </div>
+  <pre id="scalingOut">—</pre>
+</section>
+
+<section id="align">
+  <h2>E · 256-byte pitch alignment — re-verify PR #649</h2>
+  <p class="note">Same total <code>ny·nz</code> at four widths — two unaligned real
+    (441, 1104), two 256-aligned (1152, 2048). #649 saw padded vs unaligned came back
+    near-identical (214 vs 209 ms) and refuted "writeTexture repacks unaligned rows"; re-verify
+    that this isn't hardware-specific.</p>
+  <div class="row">
+    <button id="btnAlign">Run 256B pitch</button>
+    <span id="alignStatus" class="sub"></span>
+  </div>
+  <pre id="alignOut">—</pre>
+</section>
+
+<section id="sustained">
+  <h2>F · Sustained brick-realistic throughput — mean/p95/max, MB/s</h2>
+  <p class="note">Fires <code>N</code> back-to-back <code>writeBrick</code>-shape uploads into a
+    real atlas-shaped <code>texture_3d</code> target (r8uint or r16uint per bpv). Reports MB/s
+    plus per-call mean, p95, max — not just an average, because #703's finding was tail-driven
+    (mean 5.5 ms, p99 44 ms, max 412 ms before the per-channel loop was collapsed to one call).</p>
+  <div class="row">
+    <label class="k">brick X</label><input type="number" id="sbx" value="128" min="1">
+    <label class="k">brick Y</label><input type="number" id="sby" value="128" min="1">
+    <label class="k">brick Z</label><input type="number" id="sbz" value="32" min="1">
+    <label class="k">channels</label><input type="number" id="snc" value="4" min="1">
+    <label class="k">bpv</label><input type="number" id="sbpv" value="2" min="1" max="2">
+    <label class="k">bricks N</label><input type="number" id="sN" value="128" min="4">
+    <button id="btnSustained">Run sustained</button>
+  </div>
+  <pre id="sustainedOut">—</pre>
+</section>
+
+<section id="granularity">
+  <h2>G · Same-total-bytes, many-small vs few-large</h2>
+  <p class="note">Compares the per-call overhead ceiling: same aggregate byte count, split into
+    N bricks of size B (varied) — isolates whether "one call per brick" is already close to
+    optimal at realistic brick sizes, or whether the codebase would benefit from coalescing
+    (unlikely given #703's collapse already went one direction, but this closes the loop
+    empirically at the current shape).</p>
+  <div class="row">
+    <button id="btnGranularity">Run granularity sweep</button>
+    <span id="granStatus" class="sub"></span>
+  </div>
+  <pre id="granularityOut">—</pre>
+</section>
+
+<section id="live">
+  <h2>H · Live pipeline — fetch → arrayBuffer → writeBrick, concurrency sweep</h2>
+  <p class="note">Needs <code>diagnostic_server.py</code> running (throwaway port 7789, off
+    all app ports). Fires N concurrent brick fetches at brick-realistic size against
+    <code>/synthetic-brick</code>, then hands each payload to <code>writeTexture</code>
+    exactly the way the real scheduler does. Sweeps N = 1, 4, 8, 16, 32, 64 to see whether
+    the shipped <code>MAX_INFLIGHT = 16</code> is already saturating the local pipe or
+    leaving throughput on the table. Splits each brick's cost via <code>X-Server-Ms</code>
+    (server work) vs <code>tArrayBuffer</code> (wire + JS decode) vs <code>tUpload</code>
+    (writeBrick + submit) so a slow answer can be attributed instead of guessed at.</p>
+  <div class="row">
+    <label class="k">server URL</label><input type="text" id="lurl" value="http://127.0.0.1:7789" style="width:22em;background:#171a20;color:#e6e6e6;border:1px solid #262b33;border-radius:4px;padding:3px 6px;font:12px ui-monospace,monospace">
+    <label class="k">brick X</label><input type="number" id="lbx" value="128" min="1">
+    <label class="k">Y</label><input type="number" id="lby" value="128" min="1">
+    <label class="k">Z</label><input type="number" id="lbz" value="32" min="1">
+    <label class="k">nc</label><input type="number" id="lnc" value="4" min="1">
+    <label class="k">bpv</label><input type="number" id="lbpv" value="2" min="1" max="2">
+    <label class="k">bricks/N</label><input type="number" id="lK" value="64" min="4">
+    <label>
+      <input type="checkbox" id="lzstd">
+      test both identity and zstd
+    </label>
+    <button id="btnLive">Run live sweep</button>
+    <span id="liveStatus" class="sub"></span>
+  </div>
+  <pre id="liveOut">—</pre>
+</section>
+
+<section id="all">
+  <h2>Report</h2>
+  <div class="row">
+    <button id="btnAll">Run all</button>
+    <button id="btnCopy" class="secondary">Copy report JSON</button>
+    <button id="btnDownload" class="secondary">Download report JSON</button>
+    <span id="allStatus" class="sub"></span>
+  </div>
+  <pre id="reportOut">—</pre>
+</section>
+
+<section>
+  <h2>What this measures and why</h2>
+  <p class="sub">
+    <b>Upload path (target).</b> #649 measured a ~100 ms floor on
+    <code>onSubmittedWorkDone</code> across 35/88/92/163 MB payloads and treated it as an
+    artefact. This diagnostic re-runs the same test but adds an adapter-<code>timestamp-query</code>
+    path (GPU-side actual duration, no timer floor) and a <code>createBuffer({mappedAtCreation})</code>
+    +<code>copyBufferToTexture</code> path (the "MAP_WRITE staging" candidate #649 left untested).
+    If timestamp-query is unavailable, we still report wall-clock and
+    <code>onSubmittedWorkDone</code> with the floor caveat marked.
+  </p>
+  <p class="sub">
+    <b>Atlas budget at 8 GB / 32 GB.</b> The atlas VRAM budget is the likely-binding constraint
+    on typical bricks — not <code>maxTextureDimension3D</code>. But per prior memory,
+    Chromium/Dawn caps <code>maxBufferSize</code> at ~4 GiB regardless of card, so any budget
+    over that cap requires multiple atlas textures — and the codebase currently ships one atlas
+    per image. This section runs <code>pickAtlasLayout</code> at 512 MB, 2 GB, 4 GB, 8 GB, 32 GB
+    against real device limits and reports the resident-brick count at each. Read as: "how many
+    bricks does one atlas hold at this budget, at THIS device's real limits."
+  </p>
+  <p class="sub">
+    <b>Out of scope, called out.</b> <code>MAX_INFLIGHT</code>/network fetch throughput needs the
+    live API — separate diagnostic once these upload numbers are in. The two compound (network
+    delivers the brick, upload stalls getting it resident) in ways that are easy to
+    misattribute; keep them separate.
+  </p>
+  <p class="sub">
+    <b>Notes on <code>pickAtlasLayout</code> while porting.</b> Any suspicious behaviour observed
+    while mirroring the code is dumped into the report's <code>notes</code> array. Nothing here
+    modifies the renderer — this is the read-only diagnostic pass the task spec asks for.
+  </p>
+</section>
+
+<script type="module">
+'use strict';
+const el = id => document.getElementById(id);
+const say = (target, html, cls) => {
+  const t = el(target); if (!t) return;
+  t.innerHTML = cls ? `<span class="${cls}">${html}</span>` : html;
+};
+const fmt = v => (typeof v === 'number' && Number.isFinite(v)) ? +v.toFixed(3) : v;
+const fmtInt = v => (typeof v === 'number' && Number.isFinite(v)) ? Math.round(v) : v;
+const median = a => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+const percentile = (a, p) => { const s = [...a].sort((x, y) => x - y);
+  return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+
+// Report singleton — every section pushes into this, "Copy report" serialises it.
+const REPORT = {
+  version: 1,
+  ranAt: new Date().toISOString(),
+  userAgent: navigator.userAgent,
+  notes: [],
+  probe: null,
+  atlas: null,
+  upload: null,
+  scaling: null,
+  align: null,
+  sustained: null,
+  granularity: null,
+  live: null,
+};
+
+let adapter = null, device = null, hasTimestamps = false;
+
+// ── § A · Adapter probe ────────────────────────────────────────────────────────────
+async function ensureDevice() {
+  if (device) return device;
+  if (!('gpu' in navigator)) throw new Error('navigator.gpu absent — WebGPU not available');
+  adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  if (!adapter) throw new Error('no adapter — check chrome://gpu and OS graphics settings');
+  const info = adapter.info || {};
+  const requiredLimits = {
+    maxBufferSize: adapter.limits.maxBufferSize,
+    maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
+    maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+  };
+  const requiredFeatures = [];
+  if (adapter.features.has('timestamp-query')) requiredFeatures.push('timestamp-query');
+  device = await adapter.requestDevice({ requiredLimits, requiredFeatures });
+  hasTimestamps = adapter.features.has('timestamp-query');
+  device.addEventListener('uncapturederror', e => console.error('uncaptured', e.error));
+  return device;
+}
+
+async function probeAdapter() {
+  say('probeStatus', 'querying…');
+  await ensureDevice();
+  const info = adapter.info || {};
+  // r8uint / r16uint 3D-sampled feasibility — try to create both under a validation scope.
+  const tryFormat = async (fmt) => {
+    device.pushErrorScope('validation');
+    const t = device.createTexture({ size: [1,1,1], dimension: '3d', format: fmt,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    const err = await device.popErrorScope();
+    t.destroy();
+    return !err;
+  };
+  const r8 = await tryFormat('r8uint');
+  const r16 = await tryFormat('r16uint');
+
+  REPORT.probe = {
+    isFallbackAdapter: !!adapter.isFallbackAdapter,
+    adapterInfo: {
+      vendor: info.vendor || '', architecture: info.architecture || '',
+      device: info.device || '', description: info.description || '',
+    },
+    features: [...adapter.features],
+    hasTimestamps,
+    adapterLimits: {
+      maxTextureDimension1D: adapter.limits.maxTextureDimension1D,
+      maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+      maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
+      maxTextureArrayLayers: adapter.limits.maxTextureArrayLayers,
+      maxBufferSize: adapter.limits.maxBufferSize,
+      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+      maxComputeWorkgroupStorageSize: adapter.limits.maxComputeWorkgroupStorageSize,
+    },
+    deviceLimits: {
+      maxTextureDimension3D: device.limits.maxTextureDimension3D,
+      maxTextureDimension2D: device.limits.maxTextureDimension2D,
+      maxBufferSize: device.limits.maxBufferSize,
+      maxStorageBufferBindingSize: device.limits.maxStorageBufferBindingSize,
+    },
+    formats: { r8uint_3d: r8, r16uint_3d: r16 },
+  };
+  if (adapter.isFallbackAdapter) {
+    REPORT.notes.push('FALLBACK ADAPTER — numbers below reflect a software rasteriser, not the real GPU.');
+  }
+  if (!r16) REPORT.notes.push('r16uint 3D-sampled unsupported on this device — the viewer would refuse.');
+
+  el('probeOut').textContent = JSON.stringify(REPORT.probe, null, 2);
+  say('probeStatus', 'done.', 'good');
+}
+
+// ── § B · Atlas layout probe — verbatim port of pickAtlasLayout ────────────────────
+function pickAtlasLayout(brickSizeVox, bytesPerVoxel, channelsPerBrick, vramBudgetBytes, limits) {
+  const oneBrickBytes = brickSizeVox[0] * brickSizeVox[1] * brickSizeVox[2]
+                      * channelsPerBrick * bytesPerVoxel;
+  if (oneBrickBytes > vramBudgetBytes) return null;
+  const budgetSlots = Math.floor(vramBudgetBytes / oneBrickBytes);
+  if (budgetSlots < 1) return null;
+  const maxXperAxis = Math.floor(limits.maxTextureDimension3D / brickSizeVox[0]);
+  const maxYperAxis = Math.floor(limits.maxTextureDimension3D / brickSizeVox[1]);
+  const maxZperAxis = Math.floor(limits.maxTextureDimension3D /
+                                 (brickSizeVox[2] * channelsPerBrick));
+  if (maxXperAxis < 1 || maxYperAxis < 1 || maxZperAxis < 1) return null;
+  let best = null, bestCount = 0, bestSquareDelta = Infinity;
+  for (let nz = 1; nz <= maxZperAxis; nz++) {
+    if (nz > budgetSlots) break;
+    for (let ny = 1; ny <= maxYperAxis; ny++) {
+      if (nz * ny > budgetSlots) break;
+      const nxCap = Math.min(maxXperAxis, Math.floor(budgetSlots / (nz * ny)));
+      if (nxCap < 1) continue;
+      const nx = nxCap;
+      const slots = nx * ny * nz;
+      const squareDelta = Math.abs(nx - ny);
+      const better = slots > bestCount
+        || (slots === bestCount && best !== null && nz < best.nz)
+        || (slots === bestCount && best !== null && nz === best.nz && squareDelta < bestSquareDelta);
+      if (better) { best = { nx, ny, nz }; bestCount = slots; bestSquareDelta = squareDelta; }
+    }
+  }
+  if (best === null) return null;
+  const [bx, by, bz] = brickSizeVox;
+  return {
+    brickSizeVox,
+    atlasSlotCounts: [best.nx, best.ny, best.nz],
+    bytesPerVoxel,
+    channelsPerBrick,
+    // Derived — the physical texture size and VRAM cost.
+    atlasTextureSize: [bx * best.nx, by * best.ny, bz * channelsPerBrick * best.nz],
+    vramBytes: bx * by * bz * channelsPerBrick * bytesPerVoxel * best.nx * best.ny * best.nz,
+    slotCapacity: best.nx * best.ny * best.nz,
+    budgetSlotsAtCap: budgetSlots,
+  };
+}
+
+const BUDGETS = [
+  { name: '512 MB (viewer DEFAULT_ATLAS_BUDGET)', bytes: 512 * 1024 * 1024 },
+  { name: '2 GB (typical setting)', bytes: 2 * 1024 * 1024 * 1024 },
+  { name: '4 GiB (Chromium/Dawn maxBufferSize cap)', bytes: 4 * 1024 * 1024 * 1024 - 4 },
+  { name: '8 GB (RTX 2000 Ada — old workstation)', bytes: 8 * 1024 * 1024 * 1024 },
+  { name: '32 GB (RTX 5000 — new workstation)', bytes: 32 * 1024 * 1024 * 1024 },
+];
+
+// Real brick configs Dominik has hit — the atlas thrash bug was measured on Dml3RG at cacheMB=2048.
+const BRICK_CONFIGS = [
+  { name: 'thin-Z / SispLk (nZ=4)', bx: 128, by: 128, bz: 4,  nc: 4, bpv: 2 },
+  { name: 'medium / fXgbTl-ish',   bx: 128, by: 128, bz: 32, nc: 4, bpv: 2 },
+  { name: 'deep / Dml3RG-ish',     bx: 128, by: 128, bz: 128, nc: 4, bpv: 2 },
+  { name: 'single-channel labels', bx: 128, by: 128, bz: 32, nc: 1, bpv: 4 },
+];
+
+async function runAtlas() {
+  await ensureDevice();
+  const bx = +el('bx').value, by = +el('by').value, bz = +el('bz').value;
+  const nc = +el('nc').value, bpv = +el('bpv').value;
+  const limits = {
+    maxTextureDimension3D: device.limits.maxTextureDimension3D,
+    maxBufferSize: device.limits.maxBufferSize,
+  };
+  const results = { userInput: null, presets: [], limits };
+  const cap = budget => {
+    const layout = pickAtlasLayout([bx, by, bz], bpv, nc, budget, limits);
+    return layout;
+  };
+  results.userInput = {
+    brick: { bx, by, bz, nc, bpv },
+    perBudget: BUDGETS.map(b => ({ budget: b.name, budgetBytes: b.bytes, layout: cap(b.bytes) })),
+  };
+  results.presets = BRICK_CONFIGS.map(cfg => ({
+    name: cfg.name,
+    brick: cfg,
+    perBudget: BUDGETS.map(b => ({
+      budget: b.name, budgetBytes: b.bytes,
+      layout: pickAtlasLayout([cfg.bx, cfg.by, cfg.bz], cfg.bpv, cfg.nc, b.bytes, limits),
+    })),
+  }));
+
+  // Cross-check: for each layout that landed on maxBufferSize (i.e. would be capped), flag it.
+  const flagOversize = layout => layout && layout.vramBytes > limits.maxBufferSize;
+  results.oversizedLayouts = [];
+  for (const p of [results.userInput, ...results.presets]) {
+    for (const b of p.perBudget) {
+      if (flagOversize(b.layout)) {
+        results.oversizedLayouts.push({ preset: p.name || 'userInput', budget: b.budget });
+      }
+    }
+  }
+  REPORT.atlas = results;
+  el('atlasOut').textContent = JSON.stringify(results, null, 2);
+}
+
+// ── § C · Upload — single-brick stage breakdown ────────────────────────────────────
+function fillPattern(view) {
+  // Cheap non-zero fill so drivers can't optimise a zero page. Every 997 bytes gets a byte.
+  for (let i = 0; i < view.length; i += 997) view[i] = i & 255;
+}
+
+async function gpuTimestampMs(device, encoder, querySet, queryIndex) {
+  // Caller has already resolved+read back. Placeholder — the resolve/read happens per-run below.
+  return null;
+}
+
+async function runUpload() {
+  await ensureDevice();
+  const bx = +el('ubx').value, by = +el('uby').value, bz = +el('ubz').value;
+  const nc = +el('unc').value, bpv = +el('ubpv').value;
+  const reps = +el('ureps').value;
+  const format = bpv === 1 ? 'r8uint' : 'r16uint';
+  const boxBz = bz * nc;
+  const bytes = bx * by * boxBz * bpv;
+
+  // Atlas-shaped target: 4×4×2 slot grid — comfortably bigger than one brick so the
+  // writeTexture origin isn't at (0,0,0) every time (defeats trivial driver fast-paths).
+  const slotsX = 4, slotsY = 4, slotsZ = 2;
+  const atlasSize = [bx * slotsX, by * slotsY, boxBz * slotsZ];
+  say('uploadOut', 'allocating atlas ' + atlasSize.join('×') + ' (' +
+    (atlasSize[0] * atlasSize[1] * atlasSize[2] * bpv / 1024 / 1024).toFixed(1) + ' MB)…');
+
+  // Allocate resources
+  const tex = device.createTexture({
+    size: atlasSize, dimension: '3d', format,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const src = new Uint8Array(bytes); fillPattern(src);
+
+  // Buffer for the copyBufferToTexture paths. Must be 256-aligned bytesPerRow — brickX*bpv
+  // is 128*bpv = 128 or 256; both fine.
+  const bytesPerRow = bx * bpv;
+  if (bytesPerRow % 256 !== 0) {
+    REPORT.notes.push(`upload: bytesPerRow ${bytesPerRow} is not 256-aligned — writeBuffer/copy paths use a padded staging buffer, writeTexture uses the tight source.`);
+  }
+  const paddedRow = Math.ceil(bytesPerRow / 256) * 256;
+  const paddedBytes = paddedRow * by * boxBz;
+  const stagingBuf = device.createBuffer({
+    size: paddedBytes,
+    usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+  });
+
+  // Each method returns { wallMs, submittedMs }. Wall = time to return from the submit call
+  // (what the app pays before yielding to the next frame); submitted = wall including
+  // onSubmittedWorkDone (subject to #649's ~100 ms floor artefact — treat as a ceiling, not the
+  // truth). GPU-timestamp bracketing is intentionally not attempted here: portable timestampWrites
+  // are only defined on render/compute pass descriptors, and encoder-level writeTimestamp is
+  // Chromium-experimental. Reporting garbage would be worse than not reporting at all.
+  async function timeMethod(name, prepare, submit) {
+    const runs = [];
+    // Warm-up
+    for (let w = 0; w < 2; w++) { prepare(); await submit(); await device.queue.onSubmittedWorkDone(); }
+    for (let r = 0; r < reps; r++) {
+      prepare();
+      const t0 = performance.now();
+      await submit();
+      const wallMs = performance.now() - t0;
+      await device.queue.onSubmittedWorkDone();
+      const submittedMs = performance.now() - t0;
+      runs.push({ wallMs, submittedMs });
+    }
+    const summarise = key => {
+      const vs = runs.map(r => r[key]);
+      return { median: fmt(median(vs)), mean: fmt(mean(vs)), p95: fmt(percentile(vs, 0.95)),
+               max: fmt(Math.max(...vs)), runs: vs.map(fmt) };
+    };
+    const mbps = ms => bytes / 1e6 / (ms / 1000);
+    return {
+      name,
+      wallMs: summarise('wallMs'),
+      submittedMs: summarise('submittedMs'),
+      mbps: {
+        wall: fmt(mbps(median(runs.map(r => r.wallMs)))),
+        submitted: fmt(mbps(median(runs.map(r => r.submittedMs)))),
+      },
+    };
+  }
+
+  // A · queue.writeTexture — the shipped path
+  const A = await timeMethod('A_writeTexture', () => {}, async () => {
+    device.queue.writeTexture(
+      { texture: tex, origin: [0, 0, 0] }, src,
+      { bytesPerRow, rowsPerImage: by }, [bx, by, boxBz],
+    );
+  });
+
+  // Helper: pack src into stagingBuf with padded rows if needed.
+  function packStaging() {
+    // If the row is already 256-aligned, one writeBuffer call is enough.
+    if (paddedRow === bytesPerRow) {
+      device.queue.writeBuffer(stagingBuf, 0, src);
+      return;
+    }
+    // Otherwise pad row-by-row into a temp Uint8Array. Only occurs when bx*bpv < 256.
+    const padded = new Uint8Array(paddedBytes);
+    for (let z = 0; z < boxBz; z++) {
+      for (let y = 0; y < by; y++) {
+        const srcOff = (z * by + y) * bytesPerRow;
+        const dstOff = (z * by + y) * paddedRow;
+        padded.set(src.subarray(srcOff, srcOff + bytesPerRow), dstOff);
+      }
+    }
+    device.queue.writeBuffer(stagingBuf, 0, padded);
+  }
+
+  const c2t = (enc) => enc.copyBufferToTexture(
+    { buffer: stagingBuf, bytesPerRow: paddedRow, rowsPerImage: by },
+    { texture: tex, origin: [0, 0, 0] },
+    [bx, by, boxBz],
+  );
+
+  // B · writeBuffer + copyBufferToTexture
+  const B = await timeMethod('B_writeBuffer_copyBufferToTexture', () => {}, async () => {
+    packStaging();
+    const enc = device.createCommandEncoder();
+    c2t(enc);
+    device.queue.submit([enc.finish()]);
+  });
+
+  // C · createBuffer({mappedAtCreation:true}) + getMappedRange + copyBufferToTexture
+  // This is the "MAP_WRITE staging" candidate from #649 — measure it.
+  const C = await timeMethod('C_mappedAtCreation_copyBufferToTexture', () => {}, async () => {
+    const buf = device.createBuffer({
+      size: paddedBytes,
+      usage: GPUBufferUsage.COPY_SRC,
+      mappedAtCreation: true,
+    });
+    const range = buf.getMappedRange();
+    const view = new Uint8Array(range);
+    if (paddedRow === bytesPerRow) {
+      view.set(src);
+    } else {
+      for (let z = 0; z < boxBz; z++) {
+        for (let y = 0; y < by; y++) {
+          const srcOff = (z * by + y) * bytesPerRow;
+          const dstOff = (z * by + y) * paddedRow;
+          view.set(src.subarray(srcOff, srcOff + bytesPerRow), dstOff);
+        }
+      }
+    }
+    buf.unmap();
+    const enc = device.createCommandEncoder();
+    enc.copyBufferToTexture(
+      { buffer: buf, bytesPerRow: paddedRow, rowsPerImage: by },
+      { texture: tex, origin: [0, 0, 0] },
+      [bx, by, boxBz],
+    );
+    device.queue.submit([enc.finish()]);
+    // Destroy after submit; the driver keeps the buffer alive until the copy completes.
+    // Do it in a microtask so we don't stall the queue.
+    queueMicrotask(() => buf.destroy());
+  });
+  // D · copyBufferToTexture alone, buffer already resident. Floor for the buffer path.
+  packStaging();
+  await device.queue.onSubmittedWorkDone(); // ensure it's resident
+  const D = await timeMethod('D_copyBufferToTexture_resident', () => {}, async () => {
+    const enc = device.createCommandEncoder();
+    c2t(enc);
+    device.queue.submit([enc.finish()]);
+  });
+
+  // Also measure "decode": creating an ArrayBuffer from a Blob (the closest local proxy to
+  // fetch's arrayBuffer() decode stage, without a live server).
+  const decodeRuns = [];
+  const blobBytes = new Uint8Array(bytes); fillPattern(blobBytes);
+  for (let r = 0; r < reps; r++) {
+    const blob = new Blob([blobBytes.buffer.slice(0)]);
+    const t0 = performance.now();
+    const buf = await new Response(blob).arrayBuffer();
+    decodeRuns.push(performance.now() - t0);
+    // consume so JIT doesn't elide
+    if (new Uint8Array(buf)[0] === 0xff) console.log('sink');
+  }
+  const decodeSummary = {
+    note: 'Response.arrayBuffer() from a Blob — proxy for fetch()′s arrayBuffer decode stage, no server.',
+    median: fmt(median(decodeRuns)), mean: fmt(mean(decodeRuns)),
+    p95: fmt(percentile(decodeRuns, 0.95)), max: fmt(Math.max(...decodeRuns)),
+    mbps: fmt(bytes / 1e6 / (median(decodeRuns) / 1000)),
+  };
+
+  // U3 gate: is streaming response.body.getReader() into a preallocated Uint8Array
+  // faster than Response.arrayBuffer() on this hardware? If Chromium's HTTP response body
+  // is already in a browser-owned buffer, arrayBuffer() is near-zero-copy and streaming
+  // ADDS a memcpy. Only ship the persistent staging ring if this measurement says yes.
+  // Uses a Blob as the source so the comparison is source-consistent with the arrayBuffer
+  // measurement above.
+  const streamRuns = [];
+  const dest = new Uint8Array(bytes);
+  for (let r = 0; r < reps; r++) {
+    const blob = new Blob([blobBytes.buffer.slice(0)]);
+    const t0 = performance.now();
+    const res = new Response(blob);
+    const reader = res.body.getReader();
+    let off = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      dest.set(value, off);
+      off += value.byteLength;
+    }
+    streamRuns.push(performance.now() - t0);
+    if (dest[0] === 0xff) console.log('sink');
+  }
+  const streamSummary = {
+    note: 'response.body.getReader() streaming into a preallocated Uint8Array — U3 candidate. If ≪ arrayBuffer(), a persistent staging ring is a win. If ≥ arrayBuffer(), keep the current path.',
+    median: fmt(median(streamRuns)), mean: fmt(mean(streamRuns)),
+    p95: fmt(percentile(streamRuns, 0.95)), max: fmt(Math.max(...streamRuns)),
+    mbps: fmt(bytes / 1e6 / (median(streamRuns) / 1000)),
+  };
+
+  // padBrickPayload cost — brickLoader.ts:221-245 allocates a fresh Uint8Array and copies
+  // row-by-row when the server clamped an edge brick. Only pays on edge bricks, but on
+  // stores where nZ % brickZ != 0 (SRPabw, nZ=193, brickZ=128 → last z-brick nz=65) that's
+  // every last-Z brick. Nothing else measures it.
+  const padRuns = [];
+  const srcForPad = new Uint8Array(bytes); fillPattern(srcForPad);
+  const rowBytesForPad = bx * bpv;
+  for (let r = 0; r < reps; r++) {
+    const t0 = performance.now();
+    // Simulate the actual copy shape: allocate + copy nc*z*y rows.
+    const out = new Uint8Array(bytes);
+    for (let c = 0; c < nc; c++) {
+      for (let z = 0; z < bz; z++) {
+        for (let y = 0; y < by; y++) {
+          const off = ((c * bz + z) * by + y) * rowBytesForPad;
+          out.set(srcForPad.subarray(off, off + rowBytesForPad), off);
+        }
+      }
+    }
+    padRuns.push(performance.now() - t0);
+    if (out[0] === 0xff) console.log('sink');
+  }
+  const padSummary = {
+    note: 'padBrickPayload equivalent — Uint8Array alloc + row-loop copy at brick-realistic shape. Paid per Z-edge brick on stores where nZ % brickZ != 0.',
+    median: fmt(median(padRuns)), mean: fmt(mean(padRuns)),
+    p95: fmt(percentile(padRuns, 0.95)), max: fmt(Math.max(...padRuns)),
+    mbps: fmt(bytes / 1e6 / (median(padRuns) / 1000)),
+  };
+
+  REPORT.upload = {
+    input: { brick: { bx, by, bz, nc, bpv, format }, bytes, atlasSize, reps },
+    decode: decodeSummary,
+    stream: streamSummary,
+    padBrickPayload: padSummary,
+    methods: [A, B, C, D],
+    interpretation: [
+      'A vs D: A - D ≈ the writeTexture-specific overhead beyond the resident-buffer floor.',
+      'B vs D: B - D ≈ the writeBuffer staging cost by itself.',
+      'C vs D: C - D ≈ the mappedAtCreation allocate + write + unmap cost.',
+      'B vs C: if C < B, the MAP path really is a win for the fetched-once workload; if not, #649′s hypothesis is refuted.',
+      'onSubmittedWorkDone floor (~100 ms in #649) shows up as: submittedMs saturating regardless of wallMs.',
+    ],
+  };
+
+  tex.destroy(); stagingBuf.destroy();
+  el('uploadOut').textContent = JSON.stringify(REPORT.upload, null, 2);
+}
+
+// ── § D · Row-vs-bytes scaling ────────────────────────────────────────────────────
+async function runScaling() {
+  await ensureDevice();
+  say('scalingStatus', 'running…');
+  const format = 'r16uint';
+  // Sweep: vary WIDTH at fixed row count, then vary ROW COUNT at fixed width.
+  const sweeps = [
+    { label: 'width sweep (rows=ny*nz fixed at 39748)',
+      configs: [
+        { nx: 441,  ny: 1046, nz: 38 },
+        { nx: 1104, ny: 1046, nz: 38 },
+        { nx: 1152, ny: 1046, nz: 38 },
+        { nx: 2048, ny: 1046, nz: 38 },
+      ] },
+    { label: 'row-count sweep (width fixed at 1104)',
+      configs: [
+        { nx: 1104, ny: 523,  nz: 19 },
+        { nx: 1104, ny: 1046, nz: 19 },
+        { nx: 1104, ny: 1046, nz: 38 },
+        { nx: 1104, ny: 1046, nz: 76 },
+      ] },
+  ];
+  const reps = 4;
+  const runOne = async (cfg) => {
+    const { nx, ny, nz } = cfg;
+    const bytesPerRow = nx * 2;
+    const rows = ny * nz;
+    const bytes = bytesPerRow * rows;
+    if (bytes > device.limits.maxBufferSize) {
+      return { config: cfg, skipped: 'bytes exceed maxBufferSize' };
+    }
+    const tex = device.createTexture({
+      size: [nx, ny, nz], dimension: '3d', format,
+      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    const src = new Uint8Array(bytes); fillPattern(src);
+    const ts = [];
+    for (let w = 0; w < 2; w++) {
+      device.queue.writeTexture({ texture: tex }, src,
+        { bytesPerRow, rowsPerImage: ny }, [nx, ny, nz]);
+      await device.queue.onSubmittedWorkDone();
+    }
+    for (let r = 0; r < reps; r++) {
+      const t0 = performance.now();
+      device.queue.writeTexture({ texture: tex }, src,
+        { bytesPerRow, rowsPerImage: ny }, [nx, ny, nz]);
+      await device.queue.onSubmittedWorkDone();
+      ts.push(performance.now() - t0);
+    }
+    tex.destroy();
+    const m = median(ts);
+    return {
+      config: cfg, bytes, rows, bytesPerRow, row_aligned_256: bytesPerRow % 256 === 0,
+      medianMs: fmt(m), meanMs: fmt(mean(ts)), maxMs: fmt(Math.max(...ts)),
+      us_per_row: fmt(1000 * m / rows), mbps: fmtInt(bytes / 1e6 / (m / 1000)),
+    };
+  };
+  const results = [];
+  for (const s of sweeps) {
+    const rows = [];
+    for (const cfg of s.configs) {
+      say('scalingStatus', 'sweep: ' + s.label + ' — ' + JSON.stringify(cfg));
+      rows.push(await runOne(cfg));
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    results.push({ sweep: s.label, rows });
+  }
+  REPORT.scaling = { note: '#649: rows tracked cost 2.96×, bytes 7.41× — re-verifying.', sweeps: results };
+  el('scalingOut').textContent = JSON.stringify(REPORT.scaling, null, 2);
+  say('scalingStatus', 'done.', 'good');
+}
+
+// ── § E · 256B pitch alignment ────────────────────────────────────────────────────
+async function runAlign() {
+  await ensureDevice();
+  say('alignStatus', 'running…');
+  const format = 'r16uint';
+  const configs = [
+    { nx: 441,  ny: 1046, nz: 38, note: 'unaligned, 882 B/row (fXgbTl width)' },
+    { nx: 1104, ny: 1046, nz: 38, note: 'unaligned, 2208 B/row (VJy1Nx width)' },
+    { nx: 1152, ny: 1046, nz: 38, note: 'aligned,   2304 B/row = 256×9' },
+    { nx: 2048, ny: 1046, nz: 38, note: 'aligned,   4096 B/row = 256×16' },
+  ];
+  const reps = 4;
+  const results = [];
+  for (const cfg of configs) {
+    const { nx, ny, nz } = cfg;
+    const bytesPerRow = nx * 2;
+    if (bytesPerRow * ny * nz > device.limits.maxBufferSize) {
+      results.push({ config: cfg, skipped: 'exceeds maxBufferSize' }); continue;
+    }
+    const tex = device.createTexture({
+      size: [nx, ny, nz], dimension: '3d', format,
+      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    const src = new Uint8Array(bytesPerRow * ny * nz); fillPattern(src);
+    for (let w = 0; w < 2; w++) {
+      device.queue.writeTexture({ texture: tex }, src,
+        { bytesPerRow, rowsPerImage: ny }, [nx, ny, nz]);
+      await device.queue.onSubmittedWorkDone();
+    }
+    const ts = [];
+    for (let r = 0; r < reps; r++) {
+      const t0 = performance.now();
+      device.queue.writeTexture({ texture: tex }, src,
+        { bytesPerRow, rowsPerImage: ny }, [nx, ny, nz]);
+      await device.queue.onSubmittedWorkDone();
+      ts.push(performance.now() - t0);
+    }
+    tex.destroy();
+    const m = median(ts);
+    results.push({
+      config: cfg, bytesPerRow, row_aligned_256: bytesPerRow % 256 === 0,
+      medianMs: fmt(m), maxMs: fmt(Math.max(...ts)),
+      mbps: fmtInt(bytesPerRow * ny * nz / 1e6 / (m / 1000)),
+    });
+    say('alignStatus', 'done: ' + JSON.stringify(cfg));
+    await new Promise(r => requestAnimationFrame(r));
+  }
+  REPORT.align = { note: '#649: aligned 1152 (214 ms) vs unaligned 1104 (209 ms) — re-verifying.', results };
+  el('alignOut').textContent = JSON.stringify(REPORT.align, null, 2);
+  say('alignStatus', 'done.', 'good');
+}
+
+// ── § F · Sustained brick-realistic throughput ────────────────────────────────────
+async function runSustained() {
+  await ensureDevice();
+  const bx = +el('sbx').value, by = +el('sby').value, bz = +el('sbz').value;
+  const nc = +el('snc').value, bpv = +el('sbpv').value;
+  const N = +el('sN').value;
+  const format = bpv === 1 ? 'r8uint' : 'r16uint';
+  const boxBz = bz * nc;
+  const perBrickBytes = bx * by * boxBz * bpv;
+
+  // Atlas geometry: pick a slot grid that comfortably holds N bricks. Grow X first then Y.
+  const nSlotsX = Math.min(32, Math.ceil(Math.sqrt(N)));
+  const nSlotsY = Math.ceil(N / nSlotsX);
+  const nSlotsZ = 1;
+  const atlasSize = [bx * nSlotsX, by * nSlotsY, boxBz * nSlotsZ];
+  const atlasBytes = atlasSize[0] * atlasSize[1] * atlasSize[2] * bpv;
+  if (atlasBytes > device.limits.maxBufferSize) {
+    say('sustainedOut', 'atlas would be ' + (atlasBytes / 1024 / 1024).toFixed(1) +
+      ' MB, exceeds maxBufferSize ' + (device.limits.maxBufferSize / 1024 / 1024).toFixed(0) +
+      ' MB. Reduce N or brick size.', 'bad');
+    return;
+  }
+  const tex = device.createTexture({
+    size: atlasSize, dimension: '3d', format,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const src = new Uint8Array(perBrickBytes); fillPattern(src);
+  const bytesPerRow = bx * bpv;
+
+  // Warm-up
+  for (let w = 0; w < 4; w++) {
+    device.queue.writeTexture({ texture: tex, origin: [0, 0, 0] }, src,
+      { bytesPerRow, rowsPerImage: by }, [bx, by, boxBz]);
+    await device.queue.onSubmittedWorkDone();
+  }
+
+  const per = new Array(N);
+  const tAll0 = performance.now();
+  for (let i = 0; i < N; i++) {
+    const sx = i % nSlotsX;
+    const sy = Math.floor(i / nSlotsX) % nSlotsY;
+    const sz = Math.floor(i / (nSlotsX * nSlotsY));
+    const origin = [sx * bx, sy * by, sz * boxBz];
+    const t0 = performance.now();
+    device.queue.writeTexture({ texture: tex, origin }, src,
+      { bytesPerRow, rowsPerImage: by }, [bx, by, boxBz]);
+    // Do NOT await onSubmittedWorkDone per-brick — we want sustained throughput, not
+    // per-brick latency. writeTexture returns after the copy is queued, which is what
+    // brickAtlasTexture.writeBrick actually does.
+    per[i] = performance.now() - t0;
+  }
+  const tSubmit = performance.now() - tAll0;
+  await device.queue.onSubmittedWorkDone();
+  const tSubmittedAll = performance.now() - tAll0;
+  tex.destroy();
+
+  const totalBytes = N * perBrickBytes;
+  REPORT.sustained = {
+    input: { N, bx, by, bz, nc, bpv, format, atlasSize, perBrickBytes, totalBytes },
+    perCallMs: {
+      mean: fmt(mean(per)), median: fmt(median(per)),
+      p95: fmt(percentile(per, 0.95)), max: fmt(Math.max(...per)),
+    },
+    allCallsSubmitMs: fmt(tSubmit),
+    submittedWorkDoneMs: fmt(tSubmittedAll),
+    mbps: {
+      queueSubmit: fmt(totalBytes / 1e6 / (tSubmit / 1000)),
+      completion: fmt(totalBytes / 1e6 / (tSubmittedAll / 1000)),
+    },
+    note: 'brickAtlasTexture.writeBrick collapsed N-per-channel to one call in #703 — this measures ' +
+          'the current shape′s tail behaviour. If p95/max are close to mean, the collapse is holding.',
+  };
+  el('sustainedOut').textContent = JSON.stringify(REPORT.sustained, null, 2);
+}
+
+// ── § G · Same-total-bytes, many-small vs few-large ───────────────────────────────
+async function runGranularity() {
+  await ensureDevice();
+  say('granStatus', 'running…');
+  const format = 'r16uint';
+  const bpv = 2;
+  // Total budget ~256 MB, split into N calls of B bytes.
+  const totalBytes = 256 * 1024 * 1024;
+  const cases = [
+    { calls: 1024, brickX: 32,  brickY: 32,  boxZ: 32  }, // 64 KB
+    { calls: 256,  brickX: 64,  brickY: 64,  boxZ: 32  }, // 256 KB
+    { calls: 64,   brickX: 128, brickY: 128, boxZ: 32  }, // 1 MB
+    { calls: 16,   brickX: 128, brickY: 128, boxZ: 128 }, // 4 MB
+    { calls: 4,    brickX: 256, brickY: 256, boxZ: 128 }, // 16 MB
+  ];
+  const results = [];
+  for (const c of cases) {
+    const perBytes = c.brickX * c.brickY * c.boxZ * bpv;
+    const N = c.calls;
+    const wantedBytes = N * perBytes;
+    // Atlas: pack in a 3D grid.
+    const nSlotsX = Math.min(16, Math.ceil(Math.cbrt(N)));
+    const nSlotsY = Math.min(16, Math.ceil(N / nSlotsX));
+    const nSlotsZ = Math.max(1, Math.ceil(N / (nSlotsX * nSlotsY)));
+    const atlasSize = [c.brickX * nSlotsX, c.brickY * nSlotsY, c.boxZ * nSlotsZ];
+    const atlasBytes = atlasSize[0] * atlasSize[1] * atlasSize[2] * bpv;
+    if (atlasBytes > device.limits.maxBufferSize) {
+      results.push({ case: c, skipped: 'atlas exceeds maxBufferSize' }); continue;
+    }
+    const tex = device.createTexture({
+      size: atlasSize, dimension: '3d', format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    const src = new Uint8Array(perBytes); fillPattern(src);
+    const bpr = c.brickX * bpv;
+    for (let w = 0; w < 2; w++) {
+      device.queue.writeTexture({ texture: tex, origin: [0,0,0] }, src,
+        { bytesPerRow: bpr, rowsPerImage: c.brickY }, [c.brickX, c.brickY, c.boxZ]);
+      await device.queue.onSubmittedWorkDone();
+    }
+    const t0 = performance.now();
+    for (let i = 0; i < N; i++) {
+      const sx = i % nSlotsX;
+      const sy = Math.floor(i / nSlotsX) % nSlotsY;
+      const sz = Math.floor(i / (nSlotsX * nSlotsY));
+      device.queue.writeTexture(
+        { texture: tex, origin: [sx * c.brickX, sy * c.brickY, sz * c.boxZ] },
+        src, { bytesPerRow: bpr, rowsPerImage: c.brickY },
+        [c.brickX, c.brickY, c.boxZ]);
+    }
+    const submitMs = performance.now() - t0;
+    await device.queue.onSubmittedWorkDone();
+    const completeMs = performance.now() - t0;
+    tex.destroy();
+    results.push({
+      case: c, calls: N, perBytes, totalBytes: wantedBytes,
+      submitMs: fmt(submitMs), completeMs: fmt(completeMs),
+      submitMbps: fmtInt(wantedBytes / 1e6 / (submitMs / 1000)),
+      completeMbps: fmtInt(wantedBytes / 1e6 / (completeMs / 1000)),
+      submitUsPerCall: fmt(submitMs * 1000 / N),
+    });
+    say('granStatus', 'done: ' + JSON.stringify(c));
+    await new Promise(r => requestAnimationFrame(r));
+  }
+  REPORT.granularity = {
+    note: 'Roughly-same total bytes at different call granularities. submitUsPerCall tells you ' +
+          'per-call overhead; if it climbs as brick size shrinks, coalescing pays off.',
+    results,
+  };
+  el('granularityOut').textContent = JSON.stringify(REPORT.granularity, null, 2);
+  say('granStatus', 'done.', 'good');
+}
+
+// ── § H · Live pipeline — fetch → arrayBuffer → writeBrick ────────────────────────
+// Mirrors the real flow: fetch a brick URL, await res.arrayBuffer(), hand the bytes to
+// writeTexture (same shape brickAtlasTexture.writeBrick uses). Sweeps concurrency to
+// answer "is MAX_INFLIGHT = 16 already saturating the pipe?"
+async function runLive() {
+  await ensureDevice();
+  const baseUrl = el('lurl').value.replace(/\/$/, '');
+  const bx = +el('lbx').value, by = +el('lby').value, bz = +el('lbz').value;
+  const nc = +el('lnc').value, bpv = +el('lbpv').value;
+  const K = +el('lK').value;
+  const testZstd = el('lzstd').checked;
+  const format = bpv === 1 ? 'r8uint' : 'r16uint';
+  const boxBz = bz * nc;
+  const perBrickBytes = bx * by * boxBz * bpv;
+
+  // Ping the server first — a red X here saves a lot of confusion when the sweep
+  // silently produces zero throughput because the server isn't up.
+  say('liveStatus', 'pinging ' + baseUrl + '/meta …');
+  let meta;
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(new Error('timeout')), 5000);
+    const r = await fetch(baseUrl + '/meta', { signal: ac.signal });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    meta = await r.json();
+  } catch (e) {
+    say('liveStatus', 'server unreachable at ' + baseUrl + '/meta — ' + e.message +
+      '. Start it: pixi run python docs/todo/spike/webgpu/diagnostic_server.py --port 7789',
+      'bad');
+    REPORT.live = { skipped: 'server unreachable', baseUrl, error: e.message };
+    el('liveOut').textContent = JSON.stringify(REPORT.live, null, 2);
+    return;
+  }
+
+  // Atlas geometry — comfortably holds K bricks so writeBrick origins vary.
+  const nSlotsX = Math.min(32, Math.ceil(Math.sqrt(K)));
+  const nSlotsY = Math.ceil(K / nSlotsX);
+  const nSlotsZ = 1;
+  const atlasSize = [bx * nSlotsX, by * nSlotsY, boxBz * nSlotsZ];
+  const atlasBytes = atlasSize[0] * atlasSize[1] * atlasSize[2] * bpv;
+  if (atlasBytes > device.limits.maxBufferSize) {
+    say('liveStatus', 'atlas ' + (atlasBytes / 1024 / 1024).toFixed(1) +
+      ' MB exceeds maxBufferSize — reduce K or brick size.', 'bad');
+    return;
+  }
+  const tex = device.createTexture({
+    size: atlasSize, dimension: '3d', format,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const bytesPerRow = bx * bpv;
+
+  const brickUrl = (enc, i) =>
+    `${baseUrl}/synthetic-brick?bx=${bx}&by=${by}&bz=${bz}&nc=${nc}&bpv=${bpv}&enc=${enc}&i=${i}`;
+
+  const FETCH_TIMEOUT_MS = 15000;
+  function fetchWithTimeout(url) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(new Error('timeout')), FETCH_TIMEOUT_MS);
+    return fetch(url, { signal: ac.signal }).finally(() => clearTimeout(timer));
+  }
+
+  // Fire K brick fetches with an in-flight cap of N, timing each stage per brick, then
+  // aggregate.
+  async function sweepAt(N, enc) {
+    let inflight = 0;
+    let issued = 0;
+    let doneCount = 0;
+    const per = [];
+    const overallT0 = performance.now();
+    return await new Promise((resolve) => {
+      const kick = () => {
+        while (inflight < N && issued < K) {
+          const i = issued++;
+          inflight++;
+          const tFetch0 = performance.now();
+          fetchWithTimeout(brickUrl(enc, i)).then(async (res) => {
+            const tFetchEnd = performance.now();
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const serverMs = +(res.headers.get('X-Server-Ms') || 0);
+            const uncBytes = +(res.headers.get('X-Uncompressed-Bytes') || perBrickBytes);
+            const tArrBuf0 = performance.now();
+            const buf = await res.arrayBuffer();
+            const tArrBuf1 = performance.now();
+            // Compute slot origin so writeTexture targets varied atlas coordinates —
+            // defeats trivial driver fast-paths that would only apply at (0,0,0).
+            const slot = i % (nSlotsX * nSlotsY * nSlotsZ);
+            const sx = slot % nSlotsX;
+            const sy = Math.floor(slot / nSlotsX) % nSlotsY;
+            const sz = Math.floor(slot / (nSlotsX * nSlotsY));
+            const origin = [sx * bx, sy * by, sz * boxBz];
+            const tUp0 = performance.now();
+            // buf is (nc,z,y,x) column-major, exactly what writeTexture expects for the
+            // [bx, by, bz*nc] box; view is zero-copy per writeBrick.
+            const view = new Uint8Array(buf);
+            device.queue.writeTexture(
+              { texture: tex, origin }, view,
+              { bytesPerRow, rowsPerImage: by }, [bx, by, boxBz],
+            );
+            const tUp1 = performance.now();
+            per.push({
+              i,
+              wireMs: +(tFetchEnd - tFetch0).toFixed(3),
+              arrayBufferMs: +(tArrBuf1 - tArrBuf0).toFixed(3),
+              uploadMs: +(tUp1 - tUp0).toFixed(3),
+              serverMs, bytes: buf.byteLength, uncompressedBytes: uncBytes,
+            });
+            inflight--; doneCount++;
+            if (doneCount === K) resolve();
+            else kick();
+          }).catch(err => {
+            inflight--; doneCount++;
+            per.push({ i, error: err.message });
+            if (doneCount === K) resolve();
+            else kick();
+          });
+        }
+      };
+      kick();
+    }).then(async () => {
+      await device.queue.onSubmittedWorkDone();
+      const overallMs = performance.now() - overallT0;
+      const ok = per.filter(p => !p.error);
+      const totalUnc = ok.reduce((s, p) => s + p.uncompressedBytes, 0);
+      const totalWire = ok.reduce((s, p) => s + p.bytes, 0);
+      return {
+        N, enc, K, overallMs: fmt(overallMs),
+        errors: per.length - ok.length,
+        uncompressedMbps: fmt(totalUnc / 1e6 / (overallMs / 1000)),
+        wireMbps: fmt(totalWire / 1e6 / (overallMs / 1000)),
+        wireMs: {
+          median: fmt(median(ok.map(p => p.wireMs))),
+          p95: fmt(percentile(ok.map(p => p.wireMs), 0.95)),
+          max: fmt(Math.max(...ok.map(p => p.wireMs))),
+        },
+        arrayBufferMs: {
+          median: fmt(median(ok.map(p => p.arrayBufferMs))),
+          p95: fmt(percentile(ok.map(p => p.arrayBufferMs), 0.95)),
+          max: fmt(Math.max(...ok.map(p => p.arrayBufferMs))),
+        },
+        uploadMs: {
+          median: fmt(median(ok.map(p => p.uploadMs))),
+          p95: fmt(percentile(ok.map(p => p.uploadMs), 0.95)),
+          max: fmt(Math.max(...ok.map(p => p.uploadMs))),
+        },
+        serverMs: {
+          median: fmt(median(ok.map(p => p.serverMs))),
+          p95: fmt(percentile(ok.map(p => p.serverMs), 0.95)),
+          max: fmt(Math.max(...ok.map(p => p.serverMs))),
+        },
+      };
+    });
+  }
+
+  const results = [];
+  const concurrencies = [1, 4, 8, 16, 32];
+  const encs = testZstd ? ['identity', 'zstd'] : ['identity'];
+  for (const enc of encs) {
+    for (const N of concurrencies) {
+      say('liveStatus', `enc=${enc} N=${N} (K=${K}) …`);
+      // brief warm-up to prime keep-alive sockets
+      try { await fetch(brickUrl(enc, -1)); } catch {}
+      const r = await sweepAt(N, enc);
+      results.push(r);
+      el('liveOut').textContent = JSON.stringify({ sweeps: results }, null, 2);
+      await new Promise(r => requestAnimationFrame(r));
+    }
+  }
+  tex.destroy();
+  REPORT.live = {
+    baseUrl, serverMeta: meta,
+    input: { brick: { bx, by, bz, nc, bpv, format }, perBrickBytes, K, atlasSize },
+    sweeps: results,
+    interpretation: [
+      'uncompressedMbps rising as N grows ⇒ MAX_INFLIGHT=16 is leaving throughput on the table.',
+      'uncompressedMbps flat past N=16 ⇒ MAX_INFLIGHT=16 is the right shape for this pipe.',
+      'wireMs ≫ arrayBufferMs+uploadMs ⇒ network/socket dominant; identity vs zstd tells you if compression helps.',
+      'arrayBufferMs high at higher N ⇒ event-loop contention on the JS-heap allocation stage; a persistent staging buffer would help.',
+      'uploadMs stable across N ⇒ writeTexture cost is per-call, not affected by concurrency.',
+    ],
+  };
+  el('liveOut').textContent = JSON.stringify(REPORT.live, null, 2);
+  say('liveStatus', 'done.', 'good');
+}
+
+// ── Run all + copy report ─────────────────────────────────────────────────────────
+async function runAll() {
+  say('allStatus', 'running…');
+  el('btnAll').disabled = true;
+  try {
+    await probeAdapter();
+    await runAtlas();
+    await runUpload();
+    await runScaling();
+    await runAlign();
+    await runSustained();
+    await runGranularity();
+    await runLive();
+    el('reportOut').textContent = JSON.stringify(REPORT, null, 2);
+    say('allStatus', 'done — Copy report JSON to paste back.', 'good');
+  } catch (e) {
+    say('allStatus', 'FAILED: ' + e.message, 'bad');
+    console.error(e);
+  } finally {
+    el('btnAll').disabled = false;
+  }
+}
+
+el('btnProbe').onclick = () => probeAdapter().catch(e => say('probeStatus', 'FAILED: ' + e.message, 'bad'));
+el('btnAtlas').onclick = () => runAtlas().catch(e => say('atlasOut', 'FAILED: ' + e.message, 'bad'));
+el('btnUpload').onclick = () => runUpload().catch(e => say('uploadOut', 'FAILED: ' + e.message, 'bad'));
+el('btnScaling').onclick = () => runScaling().catch(e => say('scalingStatus', 'FAILED: ' + e.message, 'bad'));
+el('btnAlign').onclick = () => runAlign().catch(e => say('alignStatus', 'FAILED: ' + e.message, 'bad'));
+el('btnSustained').onclick = () => runSustained().catch(e => say('sustainedOut', 'FAILED: ' + e.message, 'bad'));
+el('btnGranularity').onclick = () => runGranularity().catch(e => say('granStatus', 'FAILED: ' + e.message, 'bad'));
+el('btnLive').onclick = () => runLive().catch(e => say('liveStatus', 'FAILED: ' + e.message, 'bad'));
+el('btnAll').onclick = runAll;
+
+el('btnCopy').onclick = async () => {
+  const json = JSON.stringify(REPORT, null, 2);
+  try {
+    await navigator.clipboard.writeText(json);
+    say('allStatus', 'copied ' + json.length + ' chars to clipboard.', 'good');
+  } catch (e) {
+    // Fallback: select the pre and let the user Ctrl-C.
+    el('reportOut').textContent = json;
+    const range = document.createRange(); range.selectNodeContents(el('reportOut'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    say('allStatus', 'clipboard blocked — text selected, hit Ctrl-C.', 'warn');
+  }
+};
+el('btnDownload').onclick = () => {
+  const b = new Blob([JSON.stringify(REPORT, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = 'cecelia-webgpu-diagnostic.json';
+  a.click();
+};
+
+// Prime the report pre so it's not empty on load.
+el('reportOut').textContent = JSON.stringify(REPORT, null, 2);
+</script>
+</body>
+</html>

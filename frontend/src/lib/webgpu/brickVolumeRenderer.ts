@@ -524,7 +524,14 @@ export async function createBrickVolumeRenderer(
       maxTextureDimension3D: device.limits.maxTextureDimension3D,
       maxBufferSize: device.limits.maxBufferSize,
     }
-    const budget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
+    // Clamp against the device's own `maxBufferSize` — Chromium/Dawn caps every backend at
+    // ~4 GiB regardless of card VRAM, so a Settings pick above that (or a browser that
+    // reports a smaller cap) would otherwise land in `validateAtlasLayout`'s size guard and
+    // error-toast with no fallback. Silently downgrading here is the honest behaviour: the
+    // user asked for the biggest atlas the hardware would give, and that IS the biggest.
+    // Multi-atlas (WEBGPU_UPLOAD_PATH_PLAN.md → U5) is the way past this ceiling.
+    const requestedBudget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
+    const budget = Math.min(requestedBudget, limits.maxBufferSize)
     const layout = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
     if (layout === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
