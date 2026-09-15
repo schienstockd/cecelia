@@ -7,11 +7,13 @@ schema conversion: index←label, centroids var→obsm (only when absent), and d
 import os
 import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import anndata as ad
 
+import cecelia.utils.legacy_migrate as lm
 from cecelia.utils.legacy_migrate import migrate_h5ad
 
 
@@ -77,6 +79,16 @@ class TestMigrateH5ad(unittest.TestCase):
             self.assertEqual(list(out.uns["spatial_cols"]),
                              ["centroid_z", "centroid_y", "centroid_x"])   # relabelled to explicit
             self.assertTrue(summary["centroids_lifted"])                # recorded the relabel
+
+
+class TestRHelperCoLocated(unittest.TestCase):
+    # read_rds resolves the R helper via Path(__file__).with_name(...). A tree refactor once moved
+    # the helper out from beside the module and Rscript then died with exit 2 ("cannot open input
+    # script") at first scan — no test caught it because no test exercised read_rds end-to-end.
+    def test_read_ccid_rds_r_ships_beside_module(self):
+        helper = Path(lm.__file__).with_name("read_ccid_rds.R")
+        self.assertTrue(helper.is_file(),
+                        f"read_ccid_rds.R must ship next to legacy_migrate.py (looked at {helper})")
 
 
 if __name__ == "__main__":
