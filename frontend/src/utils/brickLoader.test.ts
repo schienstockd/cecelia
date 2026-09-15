@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  parseBrickSlabShape, brickBounds, brickSlabQuery, brickSlabUrl, brickShapeError,
-  padBrickPayload,
+  parseBrickSlabShape, brickBounds, brickSlabQuery, brickSlabUrl, brickLabelSlabUrl,
+  brickShapeError, padBrickPayload,
 } from './brickLoader'
 
 describe('parseBrickSlabShape', () => {
@@ -80,6 +80,22 @@ describe('brickSlabQuery + brickSlabUrl', () => {
   it('omits level for L0 (matches the flat atlas convention — cache-key parity)', () => {
     const url = brickSlabUrl(base, { t: 0, level: 0, bx: 0, by: 0, bz: 0 }, 38, brickSize)
     expect(url).not.toContain('level=')
+  })
+})
+
+describe('brickLabelSlabUrl', () => {
+  const base = { projectUid: '4rNbMp', imageUid: 'SispLk' }
+  const brickSize: readonly [number, number, number] = [128, 128, 4]
+
+  // Regression: without cTo the server responds with the 3-tuple `nz,ny,nx` header and the
+  // brick-atlas parser (`parseBrickSlabShape`, 4-tuple only) drops every label brick on the
+  // floor — labels showed in the flat renderer but never in bricks (fXgbTl, 2026-09-15).
+  it('sends c=0 AND cTo=0 so the server emits the 4-tuple X-Slab-Shape header', () => {
+    const url = brickLabelSlabUrl(base, 'flowTom',
+      { t: 0, level: 0, bx: 0, by: 0, bz: 0 }, brickSize)
+    expect(url).toContain('c=0')
+    expect(url).toContain('cTo=0')
+    expect(url).toContain('labels=flowTom')
   })
 })
 
