@@ -12,7 +12,6 @@
 # once and the browser remembers the exception. mkcert would give a warning-free experience
 # at the cost of bundling a third-party binary and writing the OS trust store — not worth
 # the packaging surface for a research tool; revisit if the click-through actually bites.
-# See `docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U4.
 
 const TLS_SUBDIR = "tls"
 const TLS_CERT_NAME = "cert.pem"
