@@ -6276,7 +6276,7 @@ end
         # …and the SAME start is on the rail, so it still answers once this record is gone
         @test iso_utc(task_started_at(tid)) == row.started_at
         # the status frames the API sends carry it too (that's what `on_status_change` feeds)
-        running = last(filter(r -> r.status === :running, seen))
+        running = last(filter(r -> r.status === TASK_RUNNING, seen))
         @test !isnothing(running.started_at) && iso_utc(running.started_at) == row.started_at
     finally
         put!(_HOLD_TASK_GO[], nothing)                    # let the task finish even if a @test failed
@@ -6834,7 +6834,7 @@ end
 
     # Both images completed node n1
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
     end
 
     # on_log fired for both images
@@ -6883,7 +6883,7 @@ end
         "n1" => Cecelia.ImageNodeState(), "n2" => Cecelia.ImageNodeState(),
         "n3" => Cecelia.ImageNodeState()))
     for nid in ("n1","n2","n3")
-        states[img.uid][nid].status      = :done
+        states[img.uid][nid].status      = NODE_DONE
         states[img.uid][nid].params_hash = "h"
     end
     run = Cecelia.ChainRun("rid", "restart-chain", proj.uid, [img.uid], tpl,
@@ -6892,9 +6892,9 @@ end
                            Dict{String,Channel{Nothing}}())
     mkpath(run._dir)
     Cecelia._force_restart_from!(run, "n2")
-    @test run.image_states[img.uid]["n1"].status == :done       # upstream untouched
-    @test run.image_states[img.uid]["n2"].status == :pending    # start node reset
-    @test run.image_states[img.uid]["n3"].status == :pending    # downstream reset
+    @test run.image_states[img.uid]["n1"].status == NODE_DONE       # upstream untouched
+    @test run.image_states[img.uid]["n2"].status == NODE_PENDING    # start node reset
+    @test run.image_states[img.uid]["n3"].status == NODE_PENDING    # downstream reset
     @test run.image_states[img.uid]["n2"].params_hash === nothing
 
     rm(proj.root; recursive=true)
@@ -6952,13 +6952,13 @@ end
 
     # All per-image nodes completed for every image
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
-        @test run.image_states[img.uid]["n3"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run.image_states[img.uid]["n3"].status == NODE_DONE
     end
 
     # Set-scope node: all images show :done, result contains the full image count
     for img in imgs
-        @test run.image_states[img.uid]["n2"].status == :done
+        @test run.image_states[img.uid]["n2"].status == NODE_DONE
         @test run.image_states[img.uid]["n2"].result["image_count"] == 3
     end
 
@@ -6997,8 +6997,8 @@ end
     # only the reachable subgraph exists in the run — n1 pruned out entirely
     @test Set(keys(run.image_states[imgs[1].uid])) == Set(["n2", "n3"])
     for img in imgs
-        @test run.image_states[img.uid]["n2"].status == :done   # set-scope barrier fired as root
-        @test run.image_states[img.uid]["n3"].status == :done
+        @test run.image_states[img.uid]["n2"].status == NODE_DONE   # set-scope barrier fired as root
+        @test run.image_states[img.uid]["n3"].status == NODE_DONE
     end
     @test run.image_states[imgs[1].uid]["n2"].result["image_count"] == 2
     @test length(filter(l -> contains(l, "setTask ran"), logs)) == 1   # ran once, not per image
@@ -7022,9 +7022,9 @@ end
          ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("a","c")]))
     st = run_chain(proj, [img.uid]; chain="fanout").image_states[img.uid]
-    @test st["a"].status == :done
-    @test st["b"].status == :failed
-    @test st["c"].status == :done       # independent sibling — NOT skipped by b's failure
+    @test st["a"].status == NODE_DONE
+    @test st["b"].status == NODE_FAILED
+    @test st["c"].status == NODE_DONE       # independent sibling — NOT skipped by b's failure
 
     # a (fails) → { b, c } — the shared ancestor failing skips BOTH branches
     save_chain_template!(proj, ChainTemplate("fanout-root-fail",
@@ -7033,9 +7033,9 @@ end
          ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("a","c")]))
     st2 = run_chain(proj, [img.uid]; chain="fanout-root-fail").image_states[img.uid]
-    @test st2["a"].status == :failed
-    @test st2["b"].status == :skipped
-    @test st2["c"].status == :skipped
+    @test st2["a"].status == NODE_FAILED
+    @test st2["b"].status == NODE_SKIPPED
+    @test st2["c"].status == NODE_SKIPPED
 
     # transitive: a → b(fail) → c → d — skip propagates down the branch via :skipped
     save_chain_template!(proj, ChainTemplate("chain-transitive",
@@ -7045,10 +7045,10 @@ end
          ChainNode(id="d", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("b","c"), ChainEdge("c","d")]))
     st3 = run_chain(proj, [img.uid]; chain="chain-transitive").image_states[img.uid]
-    @test st3["a"].status == :done
-    @test st3["b"].status == :failed
-    @test st3["c"].status == :skipped   # pred b failed
-    @test st3["d"].status == :skipped   # pred c skipped → propagates
+    @test st3["a"].status == NODE_DONE
+    @test st3["b"].status == NODE_FAILED
+    @test st3["c"].status == NODE_SKIPPED   # pred b failed
+    @test st3["d"].status == NODE_SKIPPED   # pred c skipped → propagates
 
     rm(proj.root; recursive=true)
 end
@@ -7073,8 +7073,8 @@ end
     run = run_chain(proj, [i.uid for i in imgs]; chain="req-chain", on_log=_->nothing)
 
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :failed
-        @test run.image_states[img.uid]["n2"].status == :failed
+        @test run.image_states[img.uid]["n1"].status == NODE_FAILED
+        @test run.image_states[img.uid]["n2"].status == NODE_FAILED
     end
     rm(proj.root; recursive=true)
 end
@@ -7099,9 +7099,9 @@ end
     run = run_chain(proj, [i.uid for i in imgs]; chain="ok-chain", on_log=_->nothing)
 
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :failed
+        @test run.image_states[img.uid]["n1"].status == NODE_FAILED
         # no eligible images → set-scope node also fails
-        @test run.image_states[img.uid]["n2"].status == :failed
+        @test run.image_states[img.uid]["n2"].status == NODE_FAILED
     end
     rm(proj.root; recursive=true)
 end
@@ -7125,8 +7125,8 @@ end
     run = run_chain(proj, [i.uid for i in imgs]; chain="pass-chain", on_log=_->nothing)
 
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
-        @test run.image_states[img.uid]["n2"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run.image_states[img.uid]["n2"].status == NODE_DONE
     end
     @test run.image_states[imgs[1].uid]["n2"].result["image_count"] == 2
     rm(proj.root; recursive=true)
@@ -7162,8 +7162,8 @@ end
                     on_log=_->nothing)
 
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :failed
-        @test run.image_states[img.uid]["n2"].status == :skipped
+        @test run.image_states[img.uid]["n1"].status == NODE_FAILED
+        @test run.image_states[img.uid]["n2"].status == NODE_SKIPPED
     end
 
     rm(proj.root; recursive=true)
@@ -7187,7 +7187,7 @@ end
 
     # Verify states are :done with a params_hash stored
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
         @test !isnothing(run.image_states[img.uid]["n1"].params_hash)
     end
 
@@ -7197,7 +7197,7 @@ end
     @test loaded.chain_name == "resume-rt-chain"
     @test length(loaded.image_uids) == 2
     for img in imgs
-        @test loaded.image_states[img.uid]["n1"].status == :done
+        @test loaded.image_states[img.uid]["n1"].status == NODE_DONE
         @test loaded.image_states[img.uid]["n1"].params_hash == run.image_states[img.uid]["n1"].params_hash
     end
 
@@ -7232,7 +7232,7 @@ end
     @test isempty(logs2)
     # States still :done
     for img in imgs
-        @test run2.image_states[img.uid]["n1"].status == :done
+        @test run2.image_states[img.uid]["n1"].status == NODE_DONE
     end
 
     rm(proj.root; recursive=true)
@@ -7263,7 +7263,7 @@ end
                      on_log=line->push!(logs2, line))
 
     @test !isempty(logs2)   # node re-ran and produced logs
-    @test run2.image_states[imgs[1].uid]["n1"].status == :done
+    @test run2.image_states[imgs[1].uid]["n1"].status == NODE_DONE
 
     rm(proj.root; recursive=true)
 end
@@ -7290,10 +7290,10 @@ end
                      on_log=line->push!(logs1, line))
 
     uid = imgs[1].uid
-    @test run1.image_states[uid]["n1"].status == :done
-    @test run1.image_states[uid]["n2"].status == :done
-    @test run1.image_states[uid]["n3"].status == :failed
-    @test run1.image_states[uid]["n4"].status == :skipped
+    @test run1.image_states[uid]["n1"].status == NODE_DONE
+    @test run1.image_states[uid]["n2"].status == NODE_DONE
+    @test run1.image_states[uid]["n3"].status == NODE_FAILED
+    @test run1.image_states[uid]["n4"].status == NODE_SKIPPED
 
     # Resume — n1/n2 are :done with unchanged params → must be skipped
     logs2 = String[]
@@ -7310,10 +7310,10 @@ end
     @test n1_logs_run2 == 0   # skipped on resume
     @test n2_logs_run2 == 0   # skipped on resume
     # n3 still fails (fn still missing), n4 still skipped
-    @test run2.image_states[uid]["n1"].status == :done
-    @test run2.image_states[uid]["n2"].status == :done
-    @test run2.image_states[uid]["n3"].status == :failed
-    @test run2.image_states[uid]["n4"].status == :skipped
+    @test run2.image_states[uid]["n1"].status == NODE_DONE
+    @test run2.image_states[uid]["n2"].status == NODE_DONE
+    @test run2.image_states[uid]["n3"].status == NODE_FAILED
+    @test run2.image_states[uid]["n4"].status == NODE_SKIPPED
 
     rm(proj.root; recursive=true)
 end
@@ -7340,7 +7340,7 @@ end
                      on_log=line->push!(logs1, line))
     uid = imgs[1].uid
     for n in ("n1","n2","n3","n4","n5")
-        @test run1.image_states[uid][n].status == :done
+        @test run1.image_states[uid][n].status == NODE_DONE
     end
 
     # Resume with n4 params changed via override → n1,n2,n3 skip; n4,n5 rerun
@@ -7356,7 +7356,7 @@ end
         @test count(l -> contains(l, uid*"/$n"), logs2) > 0
     end
     for n in ("n1","n2","n3","n4","n5")
-        @test run2.image_states[uid][n].status == :done
+        @test run2.image_states[uid][n].status == NODE_DONE
     end
 
     rm(proj.root; recursive=true)
@@ -7382,9 +7382,9 @@ end
     run1 = run_chain(proj, [i.uid for i in imgs]; chain="picnic-resume-chain",
                      on_log=line->push!(logs1, line))
     for img in imgs
-        @test run1.image_states[img.uid]["n1"].status == :done
-        @test run1.image_states[img.uid]["n2"].status == :done
-        @test run1.image_states[img.uid]["n3"].status == :done
+        @test run1.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run1.image_states[img.uid]["n2"].status == NODE_DONE
+        @test run1.image_states[img.uid]["n3"].status == NODE_DONE
     end
 
     # setTask log appeared once in run 1
@@ -7402,9 +7402,9 @@ end
     @test length(set_logs2) == 1   # ran exactly once in this resume run
     # All nodes redone
     for img in imgs
-        @test run2.image_states[img.uid]["n1"].status == :done
-        @test run2.image_states[img.uid]["n2"].status == :done
-        @test run2.image_states[img.uid]["n3"].status == :done
+        @test run2.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run2.image_states[img.uid]["n2"].status == NODE_DONE
+        @test run2.image_states[img.uid]["n3"].status == NODE_DONE
     end
 
     rm(proj.root; recursive=true)
@@ -7434,12 +7434,12 @@ end
 
     # All per-image n1 nodes succeeded
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
     end
 
     # Incremental plot ran — all images' n2 state is :done
     for img in imgs
-        @test run.image_states[img.uid]["n2"].status == :done
+        @test run.image_states[img.uid]["n2"].status == NODE_DONE
     end
 
     # Plot log appeared at least once
@@ -7473,9 +7473,9 @@ end
                     chain="incr-pass-chain", on_log=_->nothing)
 
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
-        @test run.image_states[img.uid]["n3"].status == :done
-        @test run.image_states[img.uid]["n2"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run.image_states[img.uid]["n3"].status == NODE_DONE
+        @test run.image_states[img.uid]["n2"].status == NODE_DONE
     end
 
     rm(proj.root; recursive=true)
@@ -7560,8 +7560,8 @@ end
     # Serialised: ≥ 3×40ms of n1 work. Parallel would finish in ~40-60ms.
     @test elapsed >= 0.10
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
-        @test run.image_states[img.uid]["n2"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run.image_states[img.uid]["n2"].status == NODE_DONE
     end
 
     rm(proj.root; recursive=true)
@@ -7760,14 +7760,14 @@ end
                     chain="xiso-chain", on_log=_->nothing)
 
     # img_a: n1 failed (no zarr), n2 skipped
-    @test run.image_states[img_a.uid]["n1"].status == :failed
-    @test run.image_states[img_a.uid]["n2"].status == :skipped
+    @test run.image_states[img_a.uid]["n1"].status == NODE_FAILED
+    @test run.image_states[img_a.uid]["n2"].status == NODE_SKIPPED
 
     # img_b and img_c: both nodes succeeded — not affected by img_a's failure
-    @test run.image_states[img_b.uid]["n1"].status == :done
-    @test run.image_states[img_b.uid]["n2"].status == :done
-    @test run.image_states[img_c.uid]["n1"].status == :done
-    @test run.image_states[img_c.uid]["n2"].status == :done
+    @test run.image_states[img_b.uid]["n1"].status == NODE_DONE
+    @test run.image_states[img_b.uid]["n2"].status == NODE_DONE
+    @test run.image_states[img_c.uid]["n1"].status == NODE_DONE
+    @test run.image_states[img_c.uid]["n2"].status == NODE_DONE
 
     rm(proj.root; recursive=true)
 end
@@ -7793,9 +7793,9 @@ end
     run = run_chain(proj, [i.uid for i in imgs]; chain="headless-chain", on_log=_->nothing)
 
     for img in imgs
-        @test run.image_states[img.uid]["n1"].status == :done
-        @test run.image_states[img.uid]["n2"].status == :done
-        @test run.image_states[img.uid]["n3"].status == :done
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run.image_states[img.uid]["n2"].status == NODE_DONE
+        @test run.image_states[img.uid]["n3"].status == NODE_DONE
     end
     @test run.image_states[imgs[1].uid]["n2"].result["image_count"] == 2
 
