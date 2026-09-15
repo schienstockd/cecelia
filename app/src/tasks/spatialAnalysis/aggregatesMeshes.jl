@@ -12,33 +12,44 @@ using DataFrames: nrow
 
 struct AggregatesMeshes <: CciaTask end
 
+Base.@kwdef struct AggregatesMeshesParams
+    pops::Vector{String}      = String[]
+    maxClusterDist::Float64   = 5.0
+    minCells::Int             = 5
+end
+
+function parse_aggregates_meshes_params(d::AbstractDict)::AggregatesMeshesParams
+    AggregatesMeshesParams(;
+        pops           = _str_list(d, "pops"),
+        maxClusterDist = Float64(get(d, "maxClusterDist", 5.0)),
+        minCells       = Int(get(d, "minCells", 5)))
+end
+
 function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    pops       = _str_list(params, "pops")
-    isempty(pops) && (on_log("[ERROR] aggregatesMeshes: select a population"); return nothing)
+    p = parse_aggregates_meshes_params(params)
+    isempty(p.pops) && (on_log("[ERROR] aggregatesMeshes: select a population"); return nothing)
     # segmentation derived from the populations (value_name-prefixed picks) — no dropdown (legacy parity)
-    value_name = pops_value_name(pops)
+    value_name = pops_value_name(p.pops)
     # pops may mix types — resolve across types + namespace output by cell kind (see detectAggregates)
-    pop_type   = pop_namespace(img, pops; value_name = value_name)
+    pop_type   = pop_namespace(img, p.pops; value_name = value_name)
     haskey(img.labels, value_name) ||
         (on_log("[ERROR] aggregatesMeshes: no label zarr for $(value_name)"); return nothing)
-    max_dist   = Float64(get(params, "maxClusterDist", 5.0))
-    min_cells  = Int(get(params, "minCells", 5))
     on_progress(1, 3)
 
-    mem = pop_df_multi(img, pops; value_name = value_name, granularity = :cell, restrict_to = value_name)
-    nrow(mem) == 0 && (on_log("[ERROR] aggregatesMeshes: no cells for $(pops)"); return nothing)
+    mem = pop_df_multi(img, p.pops; value_name = value_name, granularity = :cell, restrict_to = value_name)
+    nrow(mem) == 0 && (on_log("[ERROR] aggregatesMeshes: no cells for $(p.pops)"); return nothing)
     (sizes, _) = img_physical_sizes(img)
     qc_out_path = joinpath(task_run_dir(img._dir), "aggregates_mesh_qc.json")
-    on_log("[INFO] aggregatesMeshes: $(nrow(mem)) cells, ≤$(max_dist)µm, min $(min_cells) cells")
+    on_log("[INFO] aggregatesMeshes: $(nrow(mem)) cells, ≤$(p.maxClusterDist)µm, min $(p.minCells) cells")
     on_progress(2, 3)
 
     task_params = Dict{String,Any}(
         "imPath" => img_filepath(img), "labelPath" => _label_zarr_path(img, value_name),
         "labels" => Int.(mem.label), "physicalSizes" => sizes,
-        "maxClusterDist" => max_dist, "minCells" => min_cells, "popType" => pop_type,
+        "maxClusterDist" => p.maxClusterDist, "minCells" => p.minCells, "popType" => pop_type,
         "propsPath" => img_label_props_path(img, value_name), "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_aggregates_mesh_run.py", task_params, task_run_dir(img._dir);
@@ -47,7 +58,7 @@ function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
 
     # Auto-create the reusable "aggregated" population (Decision 14) — same as the points route
     # (detectAggregates): a filter pop under each input pop on `<popType>.cell.is.aggregate > 0`.
-    agg_paths = ensure_filter_pop!(img, pop_type, value_name, pops, AGGREGATED_POP_NAME;
+    agg_paths = ensure_filter_pop!(img, pop_type, value_name, p.pops, AGGREGATED_POP_NAME;
                                    filter_measure = "$(pop_type).cell.is.aggregate",
                                    filter_fun = "gt", filter_values = 0)
     isempty(agg_paths) || on_log("[INFO] aggregatesMeshes: aggregated population → $(join(agg_paths, ", "))")

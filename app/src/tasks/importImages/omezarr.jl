@@ -816,23 +816,55 @@ end
 
 struct ImportOmezarr <: CciaTask end
 
+# Typed shape of what `_run_task(::ImportOmezarr, …)` reads from `params`. Every "auto" is a
+# sentinel that resolves to either a Settings default (ngffVersion) or a reader-aware default at
+# runtime (maxWorkers / jvmHeapGiB). Kept as raw strings so the sentinel survives to the resolver.
+Base.@kwdef struct ImportOmezarrParams
+    valueName::String    = VERSIONED_DEFAULT_VAL
+    src_path::String     = ""
+    pyramidLevels::Any   = nothing   # nothing → falls back to `pyramidScale` in the parser
+    pyramidScale::Int    = 2
+    stageLocal::Bool     = false
+    chunkSize::Any       = "auto"
+    ngffVersion::Any     = nothing   # nothing → Settings default (store_layout().ngffVersion)
+    shardSize::Any       = "auto"
+    shardDepth::Any      = "1"
+    maxWorkers::String   = "auto"
+    jvmHeapGiB::Any      = "auto"
+end
+
+function parse_import_omezarr_params(d::AbstractDict)::ImportOmezarrParams
+    ImportOmezarrParams(;
+        valueName     = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        src_path      = string(get(d, "src_path", "")),
+        pyramidLevels = get(d, "pyramidLevels", nothing),
+        pyramidScale  = Int(get(d, "pyramidScale", 2)),
+        stageLocal    = Bool(get(d, "stageLocal", false)),
+        chunkSize     = get(d, "chunkSize", "auto"),
+        ngffVersion   = get(d, "ngffVersion", nothing),
+        shardSize     = get(d, "shardSize", "auto"),
+        shardDepth    = get(d, "shardDepth", "1"),
+        maxWorkers    = string(get(d, "maxWorkers", "auto")),
+        jvmHeapGiB    = get(d, "jvmHeapGiB", "auto"))
+end
+
 function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p = parse_import_omezarr_params(params)
+    value_name = p.valueName
 
     # Source path: explicit param > stored ori_path in metadata
-    src_path = string(get(params, "src_path",
-                     get(img.meta, "ori_path", "")))
+    src_path = isempty(p.src_path) ? string(get(img.meta, "ori_path", "")) : p.src_path
 
     if isempty(src_path) || !isfile(src_path)
         on_log("[ERROR] Source file not found: $(isempty(src_path) ? "(no src_path)" : src_path)")
         return nothing
     end
 
-    zarr_out      = joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
-    pyramid_levels = Int(get(params, "pyramidLevels", get(params, "pyramidScale", 2)))
+    zarr_out       = joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
+    pyramid_levels = isnothing(p.pyramidLevels) ? p.pyramidScale : Int(p.pyramidLevels)
 
     # Multi-series source (LIF, CZI, …): the register step (or the series picker) recorded which
     # series the user chose in `meta.ori_series`. We ask bioformats2raw to convert ONLY that series
@@ -864,7 +896,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # Stage the source locally first when reading from a slow/network location (SMB): copies the whole
     # companion set to local scratch, then bioformats2raw reads at disk speed. Deleted right after the
     # conversion's source read finishes (independent of the 16-bit transient).
-    stage_local = Bool(get(params, "stageLocal", false))
+    stage_local = p.stageLocal
     eff_src     = src_path
     if stage_local
         try
@@ -889,7 +921,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # Chunk (bioformats2raw calls it the TILE) size. This param existed in the JSON for a long time as
     # `chunkSizeX`/`chunkSizeY` and was read by NOTHING — no tile flag ever reached the CLI, so a user
     # who set 512 still got bioformats2raw's 1024. One control now, and it is actually passed.
-    chunk_flags = bf2raw_chunk_flags(get(params, "chunkSize", "auto"))
+    chunk_flags = bf2raw_chunk_flags(p.chunkSize)
     on_log("[INFO] Chunk size: $(isempty(chunk_flags) ? "auto (1024, capped to the frame)" : chunk_flags[2])")
 
     # Store FORMAT — chosen here and only here; every derived store inherits it (ZARR_V3_PLAN D9).
@@ -898,9 +930,9 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # Unset params fall back to the Settings DEFAULTS, not to hardcoded literals — Settings is where the
     # store-layout default lives and the import form pre-fills from it (ZARR_V3_PLAN D10). A run
     # launched headlessly (REPL, chain) therefore gets the same layout as one launched from the form.
-    fmt_flags = bf2raw_format_flags(
-        get(params, "ngffVersion", store_layout().ngffVersion), get(params, "shardSize", "auto");
-        shard_depth = get(params, "shardDepth", "1"),
+    ngff_version = isnothing(p.ngffVersion) ? store_layout().ngffVersion : p.ngffVersion
+    fmt_flags = bf2raw_format_flags(ngff_version, p.shardSize;
+        shard_depth = p.shardDepth,
         z_planes    = Int(get(img.meta, "SizeZ", 0)))
     on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")
 
@@ -910,15 +942,14 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # task terminated (`H5tiledLayoutBB\$DataChunk.getByteBuffer` → `Deflate.decode`). At workers=2,
     # -Xmx16g: 2 OOMs and 3820 chunks / 1.5 GB written. At workers=1: OOMs go to 0. That's why the
     # auto-default for `.ims` is 1, not 2. See `bf2raw_worker_flags` / `bf2raw_default_workers`.
-    worker_choice = string(get(params, "maxWorkers", "auto"))
+    worker_choice = p.maxWorkers
     if lowercase(strip(worker_choice)) == "auto"
         worker_choice = bf2raw_default_workers(eff_src)
     end
     worker_flags = bf2raw_worker_flags(worker_choice)
 
-    heap_choice = get(params, "jvmHeapGiB", "auto")
-    heap_gib    = bf2raw_java_heap_gib(heap_choice)
-    if heap_gib == 0 && lowercase(strip(string(heap_choice))) == "auto"
+    heap_gib    = bf2raw_java_heap_gib(p.jvmHeapGiB)
+    if heap_gib == 0 && lowercase(strip(string(p.jvmHeapGiB))) == "auto"
         heap_gib = bf2raw_default_heap_gib(eff_src)
     end
     java_env = bf2raw_java_env(heap_gib)

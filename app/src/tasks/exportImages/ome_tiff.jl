@@ -1,5 +1,25 @@
 struct ExportOmeTiff <: CciaTask end
 
+# Typed shape of what `_run_task(::ExportOmeTiff, …)` reads from `params`. `channels` stays a bag
+# (channel NAMES, resolved via `channel_indices` inside the handler); `timepoint` is a Float64
+# because the raw param can arrive as a string (spec allows -1 as sentinel for "all").
+Base.@kwdef struct ExportOmeTiffParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    channels::Any     = nothing
+    zMip::Bool        = false
+    timepoint::Int    = -1
+    outDir::String    = ""
+end
+
+function parse_export_ome_tiff_params(d::AbstractDict)::ExportOmeTiffParams
+    ExportOmeTiffParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        channels  = get(d, "channels", nothing),
+        zMip      = get(d, "zMip", false) === true,
+        timepoint = round(Int, something(tryparse_f64(string(get(d, "timepoint", -1))), -1.0)),
+        outDir    = strip(string(get(d, "outDir", ""))))
+end
+
 # Pure: the calibration an export carries into its OME-XML, read from `ccid.json` — which is the
 # AUTHORITATIVE copy (see docs/OBJECTMODEL.md → *Calibration — three copies, one stamp*). The store's own
 # OME-XML is a derived copy, so a source whose sidecar drifted would otherwise export the wrong
@@ -75,12 +95,12 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_export_ome_tiff_params(params)
     raw        = read_ccid_raw(state_file(img))
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -90,9 +110,6 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
         on_log("[ERROR] Source image not found: $im_path")
         return nothing
     end
-
-    z_mip     = get(params, "zMip", false) === true
-    timepoint = round(Int, something(tryparse_f64(string(get(params, "timepoint", -1))), -1.0))
 
     # `channelSelection` submits channel NAMES, not indices — resolving them is `channel_indices`'
     # job (0-based, which is what the Python runner slices with). Converting here by hand is what
@@ -104,10 +121,10 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     # versioned field instead (`ccid_channel_names(raw, value_name)`) is what made this report
     # "(none registered)" for an image whose channels the picker was happily listing: the picker is
     # fed by `channel_names(img)` in the image payload, so anything else disagrees with the UI.
-    all_names = something(channel_names(img; value_name = value_name), String[])
+    all_names = something(channel_names(img; value_name = p.valueName), String[])
     local channels::Vector{Int}
     try
-        channels = channel_indices(get(params, "channels", nothing), all_names; what = "channels")
+        channels = channel_indices(p.channels, all_names; what = "channels")
     catch e
         # A name this version doesn't have is a parameter problem, not a crash — say which, and stop
         # before doing any work. (Channel names are per image VERSION, so a chain built on one image
@@ -118,8 +135,7 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
 
     # Destination: an artefact, so never inside the project tree. Empty → the same shared folder the
     # `.ccbundle` project export writes to, so exports of both kinds land in one place.
-    out_dir = strip(string(get(params, "outDir", "")))
-    isempty(out_dir) && (out_dir = default_export_dir())
+    out_dir = isempty(p.outDir) ? default_export_dir() : p.outDir
     out_dir = expand_user(out_dir)
     try
         mkpath(out_dir)
@@ -134,7 +150,7 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     # image must not collide.
     stem = safe_name_part(img.name)
     isempty(stem) && (stem = img.uid)
-    value_name != VERSIONED_DEFAULT_VAL && (stem *= "_" * safe_name_part(value_name))
+    p.valueName != VERSIONED_DEFAULT_VAL && (stem *= "_" * safe_name_part(p.valueName))
     out_path = joinpath(out_dir, stem * ".ome.tif")
 
     # Channel names for the OME-XML, restricted to the exported subset (and in that order).
@@ -142,9 +158,9 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
                String[1 <= c + 1 <= length(all_names) ? all_names[c + 1] : "Channel $c" for c in channels]
 
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    cal  = _export_calibration(meta; z_mip = z_mip, one_frame = timepoint >= 0)
+    cal  = _export_calibration(meta; z_mip = p.zMip, one_frame = p.timepoint >= 0)
 
-    on_log("[INFO] Export source: $im_path (version '$value_name')")
+    on_log("[INFO] Export source: $im_path (version '$(p.valueName)')")
     on_log("[INFO] Destination:   $out_path")
     isempty(cal) && on_log("[WARN] Source has no physical calibration — the export will carry none")
 
@@ -154,8 +170,8 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
            outPath     = out_path,
            channels    = channels,
            channelNames = ch_names,
-           zMip        = z_mip,
-           timepoint   = timepoint,
+           zMip        = p.zMip,
+           timepoint   = p.timepoint,
            calibration = cal,
            qcOutPath   = qc_out_path),
         task_run_dir(img._dir);
@@ -174,7 +190,7 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
             qmeta  = JSON3.read(read(qc_out_path, String))
             size_z = Int(get(qmeta, "sizeZ", 1))
             findings = _export_qc_findings(cal, size_z)
-            write_qc(img, "exportImages.ome_tiff", value_name, findings;
+            write_qc(img, "exportImages.ome_tiff", p.valueName, findings;
                      metrics = Dict{String,Any}(
                          "exportBytes"    => written,
                          "exportPlanes"   => Int(get(qmeta, "planes", 0)),
@@ -188,5 +204,5 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     end
 
     on_log("[INFO] Wrote $(round(written / 1024^2; digits = 1)) MB → $out_path")
-    Dict{String,Any}("outPath" => out_path, "bytes" => written, "valueName" => value_name)
+    Dict{String,Any}("outPath" => out_path, "bytes" => written, "valueName" => p.valueName)
 end

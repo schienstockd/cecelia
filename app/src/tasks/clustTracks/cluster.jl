@@ -28,62 +28,95 @@ using DataFrames: nrow, groupby, names
 
 struct ClustTracks <: CciaTask end
 
+# Typed shape of what `_run_task(::ClustTracks, …)` reads from `params`. Same clustering-engine
+# shape as `ClustPops`, plus track-specific `popType` + `minTracklength`.
+Base.@kwdef struct ClustTracksParams
+    popsToCluster::Vector{String}      = String[]
+    popType::String                    = "live"
+    valueNameSuffix::String            = "default"
+    clusterMeasures::Vector{String}    = String[]
+    minTracklength::Int                = 5
+    resolution::Float64                = 1.0
+    normaliseAxis::String              = "channels"
+    normaliseToMedian::Bool            = false
+    maxFraction::Float64               = 0.0
+    normalisePercentile::Float64       = 99.8
+    normalisePercentileBottom::Float64 = 0.0
+    transformation::String             = "NONE"
+    logBase::Int                       = 0
+    mergeUmap::Bool                    = true
+    usePaga::Bool                      = false
+    pagaThreshold::Float64             = 0.1
+end
+
+function parse_clust_tracks_params(d::AbstractDict)::ClustTracksParams
+    ClustTracksParams(;
+        popsToCluster              = _str_list(d, "popsToCluster"),
+        popType                    = string(get(d, "popType", "live")),
+        valueNameSuffix            = string(get(d, "valueNameSuffix", "default")),
+        clusterMeasures            = _str_list(d, "clusterMeasures"),
+        minTracklength             = Int(get(d, "minTracklength", 5)),
+        resolution                 = Float64(get(d, "resolution", 1.0)),
+        normaliseAxis              = string(get(d, "normaliseAxis", "channels")),
+        normaliseToMedian          = Bool(get(d, "normaliseToMedian", false)),
+        maxFraction                = Float64(get(d, "maxFraction", 0.0)),
+        normalisePercentile        = Float64(get(d, "normalisePercentile", 99.8)),
+        normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
+        transformation             = string(get(d, "transformation", "NONE")),
+        logBase                    = Int(get(d, "logBase", 0)),
+        mergeUmap                  = Bool(get(d, "mergeUmap", true)),
+        usePaga                    = Bool(get(d, "usePaga", false)),
+        pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
+end
+
 function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     isempty(imgs) && (on_log("[ERROR] clustTracks: no images"); return nothing)
 
-    pops = _str_list(params, "popsToCluster")           # shared with clustPops (cluster.jl)
-    isempty(pops) && (on_log("[ERROR] clustTracks: select at least one track population"); return nothing)
-    # popScope="tracks" (cluster.json) surfaces `_tracked` populations, which are `live`-derived
-    # (track_id>0 within a cell gate) — resolved under "live" with :track granularity (membership at
-    # cell level → tracks, features from `track_props`). NOT the per-track gate map ("track"), which
-    # is why the old "track" default returned no tracks for `_tracked` pops.
-    pop_type = string(get(params, "popType", "live"))
-    suffix   = string(get(params, "valueNameSuffix", "default"))
-    feature_cols = _str_list(params, "clusterMeasures") # per-track property column names
-    isempty(feature_cols) &&
+    p = parse_clust_tracks_params(params)
+    isempty(p.popsToCluster) && (on_log("[ERROR] clustTracks: select at least one track population"); return nothing)
+    isempty(p.clusterMeasures) &&
         (on_log("[ERROR] clustTracks: select feature columns (motility / HMM / aggregates) to cluster on"); return nothing)
 
-    on_log("[INFO] clustTracks: $(length(imgs)) image(s), pops=$(pops), " *
-           "features=$(feature_cols), suffix=$suffix")
+    on_log("[INFO] clustTracks: $(length(imgs)) image(s), pops=$(p.popsToCluster), " *
+           "features=$(p.clusterMeasures), suffix=$(p.valueNameSuffix)")
     on_progress(1, 4)
 
     uids = [img.uid for img in imgs]
-
-    min_tracklength = Int(get(params, "minTracklength", 5))
 
     # The picker sends BARE base measures (like the old R): whole-track motility (used directly) and
     # cell measures (vars / obs) that `track_props` aggregates to ALL per-track stats — numeric →
     # `{base}.mean/.median/.sum/.qUp/.qLow/.sd`, categorical (HMM state / transitions) →
     # `{base}.{category}` within-track frequencies. So the cell bases to aggregate = the non-motility
     # selections; motility set (same across the set) is read from the first image's track table.
-    mot_cols = (p = img_track_props_path(imgs[1], pops_value_name(pops, imgs[1]));
-                isfile(p) ? col_names(label_props(p); data_type = :vars) : String[])
+    # Local binding to avoid clashing with the `p` struct name in `let p = …` below.
+    mot_cols = (mot_path = img_track_props_path(imgs[1], pops_value_name(p.popsToCluster, imgs[1]));
+                isfile(mot_path) ? col_names(label_props(mot_path); data_type = :vars) : String[])
     mot_set = Set(mot_cols)
-    cell_measures = String[f for f in feature_cols if !(f in mot_set)]
+    cell_measures = String[f for f in p.clusterMeasures if !(f in mot_set)]
 
     # ── pooled per-track features: one row per track tagged with uID + value_name + track_id ──
     # pop_type "live" + :track → membership from the `_tracked` cell gate, features from `track_props`
     # (motility ⊕ on-read aggregates), one point per track. (pop_type "track"/"trackclust" would gate
     # the per-track table directly — same `track_props` features, different membership source.)
-    df = pop_df(imgs, uids, pop_type, pops;
+    df = pop_df(imgs, uids, p.popType, p.popsToCluster;
                 granularity = :track, cell_measures = cell_measures, pop_cols = String[])
-    nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(pops)"); return nothing)
+    nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(p.popsToCluster)"); return nothing)
     on_progress(2, 4)
 
     # min track length: drop short tracks (num_cells = per-track cell count from track_props)
-    if min_tracklength > 1 && "num_cells" in names(df)
-        df = df[df.num_cells .>= min_tracklength, :]
+    if p.minTracklength > 1 && "num_cells" in names(df)
+        df = df[df.num_cells .>= p.minTracklength, :]
         nrow(df) == 0 &&
-            (on_log("[ERROR] clustTracks: no tracks with ≥ $min_tracklength cells (minTracklength)"); return nothing)
+            (on_log("[ERROR] clustTracks: no tracks with ≥ $(p.minTracklength) cells (minTracklength)"); return nothing)
     end
 
     # expand each selected feature to its produced matrix column(s): a motility measure is used
     # directly; a cell base expands to all its `{base}.…` aggregate/frequency columns.
     present_cols = String[]
-    for f in feature_cols
+    for f in p.clusterMeasures
         if f in mot_set
             f in names(df) && push!(present_cols, f)
         else
@@ -119,20 +152,20 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
 
     # ── hand off to the Python engine runner (inline matrix; cf. module docstring) ──
     task_params = Dict{String,Any}(
-        "suffix" => suffix, "segments" => segments,
+        "suffix" => p.valueNameSuffix, "segments" => segments,
         "featureCols" => present_cols,
         "uIDs" => rows_uid, "valueNames" => rows_vn, "labels" => rows_label, "X" => X,
-        "resolution" => get(params, "resolution", 1.0),
-        "normaliseAxis" => string(get(params, "normaliseAxis", "channels")),
-        "normaliseToMedian" => Bool(get(params, "normaliseToMedian", false)),
-        "maxFraction" => get(params, "maxFraction", 0.0),
-        "normalisePercentile" => get(params, "normalisePercentile", 99.8),
-        "normalisePercentileBottom" => get(params, "normalisePercentileBottom", 0.0),
-        "transformation" => string(get(params, "transformation", "NONE")),
-        "logBase" => get(params, "logBase", 0),
-        "createUmap" => Bool(get(params, "mergeUmap", true)),
-        "usePaga" => Bool(get(params, "usePaga", false)),
-        "pagaThreshold" => get(params, "pagaThreshold", 0.1),
+        "resolution" => p.resolution,
+        "normaliseAxis" => p.normaliseAxis,
+        "normaliseToMedian" => p.normaliseToMedian,
+        "maxFraction" => p.maxFraction,
+        "normalisePercentile" => p.normalisePercentile,
+        "normalisePercentileBottom" => p.normalisePercentileBottom,
+        "transformation" => p.transformation,
+        "logBase" => p.logBase,
+        "createUmap" => p.mergeUmap,
+        "usePaga" => p.usePaga,
+        "pagaThreshold" => p.pagaThreshold,
         "randomState" => 0)
     # QC (advisory): the runner writes the per-segment cluster distribution here; banked below.
     qc_out_path = joinpath(task_run_dir(imgs[1]._dir), "cluster_qc.json")
@@ -144,14 +177,14 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     ok || (on_log("[ERROR] clustTracks: Python runner failed"); return nothing)
     # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     for seg in segments
-        _write_clust_features!(seg["propsPath"], suffix, present_cols, uids)
+        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, present_cols, uids)
     end
     # bank per-image cluster QC (track counts + cluster distribution + degenerate-run findings)
-    write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", suffix = suffix, on_log = on_log)
+    write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", suffix = p.valueNameSuffix, on_log = on_log)
     on_progress(4, 4)
 
-    on_log("[INFO] clustTracks done → clusters.$suffix (per-track)")
-    Dict{String,Any}("suffix" => suffix, "segments" => length(segments),
+    on_log("[INFO] clustTracks done → clusters.$(p.valueNameSuffix) (per-track)")
+    Dict{String,Any}("suffix" => p.valueNameSuffix, "segments" => length(segments),
                      "tracks" => nrow(df), "features" => length(present_cols))
 end
 

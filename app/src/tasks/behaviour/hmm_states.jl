@@ -19,6 +19,36 @@ using DataFrames: nrow, DataFrame
 
 struct HmmStates <: CciaTask end
 
+# Typed shape of what `_run_task(::HmmStates, …)` reads from `params`. String-list fields normalise
+# blanks/NONE at parse (via `_hmm_pops` for the standard drop-and-string list, and inline
+# comprehensions for measurement lists).
+Base.@kwdef struct HmmStatesParams
+    pops::Vector{String}                  = String[]
+    colName::String                       = "default"
+    modelMeasurements::Vector{String}     = ["live.cell.speed", "live.cell.angle"]
+    numStates::Int                        = 2
+    noiseFilterMeasurements::Int          = 0
+    postFiltering::Int                    = 0
+    postIterations::Int                   = 1
+    normaliseTo::String                   = "none"
+    normaliseMeasurements::Vector{String} = String[]
+    scaleMeasurements::Vector{String}     = String[]
+end
+
+function parse_hmm_states_params(d::AbstractDict)::HmmStatesParams
+    HmmStatesParams(;
+        pops                    = _hmm_pops(d),
+        colName                 = string(get(d, "colName", "default")),
+        modelMeasurements       = String[string(x) for x in get(d, "modelMeasurements", ["live.cell.speed", "live.cell.angle"])],
+        numStates               = Int(get(d, "numStates", 2)),
+        noiseFilterMeasurements = Int(get(d, "noiseFilterMeasurements", 0)),
+        postFiltering           = Int(get(d, "postFiltering", 0)),
+        postIterations          = Int(get(d, "postIterations", 1)),
+        normaliseTo             = string(get(d, "normaliseTo", "none")),
+        normaliseMeasurements   = String[string(x) for x in get(d, "normaliseMeasurements", String[])],
+        scaleMeasurements       = String[string(x) for x in get(d, "scaleMeasurements", String[])])
+end
+
 # value_names referenced by the (value-name-prefixed) pops, e.g. "A/tracked" → "A".
 _hmm_pop_value_names(pops, default_vn::AbstractString) =
     collect(keys(_group_pops_by_value_name(pops, default_vn)))
@@ -47,53 +77,42 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
                    on_process::Function  = _ -> nothing)
     isempty(imgs) && (on_log("[ERROR] HMM states: no images"); return nothing)
 
-    pops       = _hmm_pops(params)
-    isempty(pops) && (on_log("[ERROR] HMM states: select at least one population/segmentation"); return nothing)
-    col_name   = string(get(params, "colName", "default"))
-    # Comprehensions (not `String.(collect(...))`): an empty GUI selection collects to a
-    # `Vector{Union{}}`, which fails the typed `_normalise_scale!`; `String[...]` is always Vector{String}.
-    measures   = String[string(x) for x in get(params, "modelMeasurements", ["live.cell.speed", "live.cell.angle"])]
-    isempty(measures) && (on_log("[ERROR] HMM states: no modelMeasurements selected"); return nothing)
-    num_states = Int(get(params, "numStates", 2))
+    p = parse_hmm_states_params(params)
+    isempty(p.pops) && (on_log("[ERROR] HMM states: select at least one population/segmentation"); return nothing)
+    isempty(p.modelMeasurements) && (on_log("[ERROR] HMM states: no modelMeasurements selected"); return nothing)
 
-    noise_filter = Int(get(params, "noiseFilterMeasurements", 0))
-    post_filter  = Int(get(params, "postFiltering", 0))
-    post_iters   = Int(get(params, "postIterations", 1))
-    norm_to      = string(get(params, "normaliseTo", "none"))
-    norm_list    = String[string(x) for x in get(params, "normaliseMeasurements", String[])]
-    scale_list   = String[string(x) for x in get(params, "scaleMeasurements", String[])]
-    normalise    = (norm_to == "none" || isempty(norm_list)) ? Dict{String,String}() :
-                   Dict(m => norm_to for m in norm_list)
+    normalise = (p.normaliseTo == "none" || isempty(p.normaliseMeasurements)) ? Dict{String,String}() :
+                Dict(m => p.normaliseTo for m in p.normaliseMeasurements)
 
-    on_log("[INFO] HMM states: $(length(imgs)) image(s), pops=$(pops), " *
-           "measures=$(measures), states=$num_states")
+    on_log("[INFO] HMM states: $(length(imgs)) image(s), pops=$(p.pops), " *
+           "measures=$(p.modelMeasurements), states=$(p.numStates)")
     on_progress(1, 4)
 
     default_vn = get(imgs[1].label_props, VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL)
-    vn0, tcol  = _hmm_temporal(imgs, pops, default_vn)
+    vn0, tcol  = _hmm_temporal(imgs, p.pops, default_vn)
     isnothing(tcol) && (on_log("[ERROR] No temporal column in the selected segmentation(s) — HMM needs a timecourse"); return nothing)
 
     uids     = [img.uid for img in imgs]
-    pop_cols = unique(vcat(measures, ["track_id", tcol]))
+    pop_cols = unique(vcat(p.modelMeasurements, ["track_id", tcol]))
     # pop_type "live" = cell-level pops with the derived `/_tracked` injected (track_id > 0); the same
     # flow gate file backs it (gating/{vn}.json). No value_name kwarg: each prefixed pop resolves its
     # own segmentation (cross-segmentation pool), one row per cell tagged with its `value_name`.
-    df = pop_df(imgs, uids, "live", pops; pop_cols=pop_cols, granularity=:cell)
-    nrow(df) == 0 && (on_log("[ERROR] No cells for pops=$(pops)"); return nothing)
+    df = pop_df(imgs, uids, "live", p.pops; pop_cols=pop_cols, granularity=:cell)
+    nrow(df) == 0 && (on_log("[ERROR] No cells for pops=$(p.pops)"); return nothing)
     on_progress(2, 4)
 
     on_log("[INFO] Fitting HMM over $(nrow(df)) cells…")
-    states = hmm_fit_states(df, measures; num_states=num_states, time_col=tcol,
+    states = hmm_fit_states(df, p.modelMeasurements; num_states=p.numStates, time_col=tcol,
                             group_cols=["uID", "value_name", "track_id"],
-                            noise_filter=noise_filter, normalise=normalise,
-                            scale_measures=scale_list, post_filter=post_filter,
-                            post_iterations=post_iters)
+                            noise_filter=p.noiseFilterMeasurements, normalise=normalise,
+                            scale_measures=p.scaleMeasurements, post_filter=p.postFiltering,
+                            post_iterations=p.postIterations)
     n_decoded = count(!ismissing, states)
     on_log("[INFO] decoded $n_decoded/$(length(states)) cells into " *
            "$(length(unique(skipmissing(states)))) states")
     on_progress(3, 4)
 
-    state_col = "live.cell.hmm.state.$col_name"
+    state_col = "live.cell.hmm.state.$(p.colName)"
     df[!, :_hmm_state] = states
     n_ok = 0
     for img in imgs
@@ -124,7 +143,7 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
     on_log("[INFO] HMM states done → $state_col ($n_ok image-segmentations written)")
 
     # `stateColumn` is threaded into the transitions step by the `behaviour.hmm` composite.
-    Dict{String,Any}("colName" => col_name, "numStates" => num_states,
+    Dict{String,Any}("colName" => p.colName, "numStates" => p.numStates,
                      "images" => length(imgs), "stateColumn" => state_col,
                      "decoded" => n_decoded)
 end

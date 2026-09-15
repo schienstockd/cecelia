@@ -15,6 +15,19 @@ using NearestNeighbors: KDTree, knn
 
 struct CellContacts <: CciaTask end
 
+Base.@kwdef struct CellContactsParams
+    popsA::Vector{String}      = String[]
+    popsB::Vector{String}      = String[]
+    maxContactDist::Float64    = 10.0
+end
+
+function parse_cell_contacts_params(d::AbstractDict)::CellContactsParams
+    CellContactsParams(;
+        popsA          = _str_list(d, "popsA"),
+        popsB          = _str_list(d, "popsB"),
+        maxContactDist = Float64(get(d, "maxContactDist", 10.0)))
+end
+
 # A µm point cloud (rows = points, cols = spatial dims) + labels, from a frame `pop_df` already returned
 # with `centroids = :physical`. Only the matrix assembly lives here — the read, the axis selection and
 # the pixel→µm conversion are all the accessor's (`scale_centroids!`), not this task's.
@@ -31,35 +44,33 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    popsA      = _str_list(params, "popsA")
-    popsB      = _str_list(params, "popsB")
-    max_dist   = Float64(get(params, "maxContactDist", 10.0))
-    (isempty(popsA) || isempty(popsB)) &&
+    p = parse_cell_contacts_params(params)
+    (isempty(p.popsA) || isempty(p.popsB)) &&
         (on_log("[ERROR] cellContacts: select both an A population and a B population"); return nothing)
     # segmentation = the A populations' own value_name (each picker value is value_name-prefixed); no
     # separate dropdown (legacy parity — cellContacts never had one). A is annotated in this seg.
-    value_name = pops_value_name(popsA)
+    value_name = pops_value_name(p.popsA)
     # A / B may each be a MIX of pop types (flow gates, clusters, regions, tracked cells) — resolve
     # membership across types (pop_df_multi), then namespace the output columns by the A/B cell kind
     # (tracked → live.cell.*, else flow.cell.*). Was hardcoded to pop_type="flow", so tracked cells
     # never resolved and always wrote flow.cell.contact.
-    pop_type   = pop_namespace(img, popsA; value_name = value_name)
-    pop_type_b = pop_namespace(img, popsB)
+    pop_type   = pop_namespace(img, p.popsA; value_name = value_name)
+    pop_type_b = pop_namespace(img, p.popsB)
     on_progress(1, 3)
 
     # A cells (this segmentation) + their µm centroids, in ONE read (`centroids = :physical`).
     # restrict_to = value_name: A is annotated in THIS segmentation, so drop any A pop picked from
     # another one (its labels index this seg's props).
-    aMem = pop_df_multi(img, popsA; value_name = value_name, granularity = :cell,
+    aMem = pop_df_multi(img, p.popsA; value_name = value_name, granularity = :cell,
                         restrict_to = value_name, centroids = :physical)
-    nrow(aMem) == 0 && (on_log("[ERROR] cellContacts: no A cells for $(popsA)"); return nothing)
+    nrow(aMem) == 0 && (on_log("[ERROR] cellContacts: no A cells for $(p.popsA)"); return nothing)
     aCoords, aLabels = _centroid_matrix(img, value_name, aMem)
     isempty(aLabels) && (on_log("[ERROR] cellContacts: no A centroids"); return nothing)
 
     # B cells (may span segmentations) → one pooled point cloud + their labels. Each segmentation's rows
     # are scaled with ITS OWN image resolution by `pop_df` before we pool them here.
-    bMem = pop_df_multi([img], [img.uid], popsB; granularity = :cell, centroids = :physical)
-    nrow(bMem) == 0 && (on_log("[ERROR] cellContacts: no B cells for $(popsB)"); return nothing)
+    bMem = pop_df_multi([img], [img.uid], p.popsB; granularity = :cell, centroids = :physical)
+    nrow(bMem) == 0 && (on_log("[ERROR] cellContacts: no B cells for $(p.popsB)"); return nothing)
     bCoordsList = Matrix{Float64}[]; bLabels = Int[]
     for g in groupby(bMem, :value_name)
         c, l = _centroid_matrix(img, string(first(g.value_name)), DataFrame(g))
@@ -75,9 +86,9 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
     idxs, dists = knn(tree, permutedims(aCoords), 1)
     min_dist  = [d[1] for d in dists]
     contactid = [Float64(bLabels[i[1]]) for i in idxs]
-    contact   = Float64.(min_dist .<= max_dist)
+    contact   = Float64.(min_dist .<= p.maxContactDist)
 
-    target = _contact_target(pop_type_b, popsB)
+    target = _contact_target(pop_type_b, p.popsB)
     out = DataFrame("label" => aLabels,
                     "$(pop_type).cell.contact#$(target)"      => contact,
                     "$(pop_type).cell.min_distance#$(target)" => min_dist,
@@ -89,7 +100,7 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
              (length(aLabels) == 0 ? [qc_finding("warn", "contact.no_cells", "No cells", "No A cells.")] : Dict{String,Any}[]);
              metrics = Dict{String,Any}("nCellsA" => length(aLabels), "nContacts" => n_contact,
                                         "fracInContact" => frac))
-    on_log("[INFO] cellContacts: $(n_contact)/$(length(aLabels)) A cells in contact with $(target) (≤$(max_dist)µm).")
+    on_log("[INFO] cellContacts: $(n_contact)/$(length(aLabels)) A cells in contact with $(target) (≤$(p.maxContactDist)µm).")
     on_progress(3, 3)
 
     Dict{String,Any}("valueName" => value_name, "target" => target,

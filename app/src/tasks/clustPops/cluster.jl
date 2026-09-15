@@ -27,6 +27,43 @@ function _str_list(params, key)::Vector{String}
     filter(x -> !isempty(x) && x != "NONE", xs)
 end
 
+# Typed shape of what `_run_task(::ClustPops, …)` reads from `params`. `popsToCluster` and
+# `clusterMeasures` are multi-select strings normalised via `_str_list` (drops blanks + NONE).
+Base.@kwdef struct ClustPopsParams
+    popsToCluster::Vector{String}      = String[]
+    valueNameSuffix::String            = "default"
+    clusterMeasures::Vector{String}    = String[]
+    resolution::Float64                = 1.0
+    normaliseAxis::String              = "channels"
+    normaliseToMedian::Bool            = false
+    maxFraction::Float64               = 0.0
+    normalisePercentile::Float64       = 99.8
+    normalisePercentileBottom::Float64 = 0.0
+    transformation::String             = "NONE"
+    logBase::Int                       = 0
+    mergeUmap::Bool                    = true
+    usePaga::Bool                      = false
+    pagaThreshold::Float64             = 0.1
+end
+
+function parse_clust_pops_params(d::AbstractDict)::ClustPopsParams
+    ClustPopsParams(;
+        popsToCluster              = _str_list(d, "popsToCluster"),
+        valueNameSuffix            = string(get(d, "valueNameSuffix", "default")),
+        clusterMeasures            = _str_list(d, "clusterMeasures"),
+        resolution                 = Float64(get(d, "resolution", 1.0)),
+        normaliseAxis              = string(get(d, "normaliseAxis", "channels")),
+        normaliseToMedian          = Bool(get(d, "normaliseToMedian", false)),
+        maxFraction                = Float64(get(d, "maxFraction", 0.0)),
+        normalisePercentile        = Float64(get(d, "normalisePercentile", 99.8)),
+        normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
+        transformation             = string(get(d, "transformation", "NONE")),
+        logBase                    = Int(get(d, "logBase", 0)),
+        mergeUmap                  = Bool(get(d, "mergeUmap", true)),
+        usePaga                    = Bool(get(d, "usePaga", false)),
+        pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
+end
+
 # Persist a clustering run's per-suffix manifest, so the cluster pages can offer EXACTLY the columns
 # the run used (heatmap) and know WHICH images were clustered together (the `partOf` set — mirrors the
 # old R `attr(clustPath, "partOf") <- uIDs` + `valuePartOf`). Stored as a `{props}.clustfeatures.json`
@@ -65,23 +102,21 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
                    on_process::Function  = _ -> nothing)
     isempty(imgs) && (on_log("[ERROR] clustPops: no images"); return nothing)
 
-    pops = _str_list(params, "popsToCluster")
-    isempty(pops) && (on_log("[ERROR] clustPops: select at least one population/segmentation"); return nothing)
-    suffix   = string(get(params, "valueNameSuffix", "default"))
-    feature_cols = _str_list(params, "clusterMeasures")   # var column names (intensities + morphology)
-    isempty(feature_cols) &&
+    p = parse_clust_pops_params(params)
+    isempty(p.popsToCluster) && (on_log("[ERROR] clustPops: select at least one population/segmentation"); return nothing)
+    isempty(p.clusterMeasures) &&
         (on_log("[ERROR] clustPops: select feature columns (channels / object measures) to cluster on"); return nothing)
 
-    on_log("[INFO] clustPops: $(length(imgs)) image(s), pops=$(pops), " *
-           "features=$(feature_cols), suffix=$suffix")
+    on_log("[INFO] clustPops: $(length(imgs)) image(s), pops=$(p.popsToCluster), " *
+           "features=$(p.clusterMeasures), suffix=$(p.valueNameSuffix)")
     on_progress(1, 4)
 
     uids = [img.uid for img in imgs]
 
     # ── pooled membership: one row per cell tagged with uID + value_name (the popsToCluster set) ──
     # popsToCluster may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves each.
-    df = pop_df_multi(imgs, uids, pops; pop_cols = String[], granularity = :cell)
-    nrow(df) == 0 && (on_log("[ERROR] clustPops: no cells for pops=$(pops)"); return nothing)
+    df = pop_df_multi(imgs, uids, p.popsToCluster; pop_cols = String[], granularity = :cell)
+    nrow(df) == 0 && (on_log("[ERROR] clustPops: no cells for pops=$(p.popsToCluster)"); return nothing)
     on_progress(2, 4)
 
     # ── one segment per (uID, value_name): its labelProps path + member labels ──
@@ -96,23 +131,23 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
             "labels" => Int.(g.label)))
     end
     isempty(segments) && (on_log("[ERROR] clustPops: no segments resolved"); return nothing)
-    on_log("[INFO] $(length(segments)) segment(s), $(nrow(df)) cells, $(length(feature_cols)) features")
+    on_log("[INFO] $(length(segments)) segment(s), $(nrow(df)) cells, $(length(p.clusterMeasures)) features")
 
     # ── hand off to the Python engine runner ──
     task_params = Dict{String,Any}(
-        "suffix" => suffix, "segments" => segments,
-        "featureCols" => feature_cols,
-        "resolution" => get(params, "resolution", 1.0),
-        "normaliseAxis" => string(get(params, "normaliseAxis", "channels")),
-        "normaliseToMedian" => Bool(get(params, "normaliseToMedian", false)),
-        "maxFraction" => get(params, "maxFraction", 0.0),
-        "normalisePercentile" => get(params, "normalisePercentile", 99.8),
-        "normalisePercentileBottom" => get(params, "normalisePercentileBottom", 0.0),
-        "transformation" => string(get(params, "transformation", "NONE")),
-        "logBase" => get(params, "logBase", 0),
-        "createUmap" => Bool(get(params, "mergeUmap", true)),
-        "usePaga" => Bool(get(params, "usePaga", false)),
-        "pagaThreshold" => get(params, "pagaThreshold", 0.1),
+        "suffix" => p.valueNameSuffix, "segments" => segments,
+        "featureCols" => p.clusterMeasures,
+        "resolution" => p.resolution,
+        "normaliseAxis" => p.normaliseAxis,
+        "normaliseToMedian" => p.normaliseToMedian,
+        "maxFraction" => p.maxFraction,
+        "normalisePercentile" => p.normalisePercentile,
+        "normalisePercentileBottom" => p.normalisePercentileBottom,
+        "transformation" => p.transformation,
+        "logBase" => p.logBase,
+        "createUmap" => p.mergeUmap,
+        "usePaga" => p.usePaga,
+        "pagaThreshold" => p.pagaThreshold,
         "randomState" => 0)
     # QC (advisory): the runner writes the per-segment cluster distribution here; banked below.
     qc_out_path = joinpath(task_run_dir(imgs[1]._dir), "cluster_qc.json")
@@ -125,13 +160,13 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     ok || (on_log("[ERROR] clustPops: Python runner failed"); return nothing)
     # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     for seg in segments
-        _write_clust_features!(seg["propsPath"], suffix, feature_cols, uids)
+        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, p.clusterMeasures, uids)
     end
     # bank per-image cluster QC (cell counts + cluster distribution + degenerate-run findings)
-    write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", suffix = suffix, on_log = on_log)
+    write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", suffix = p.valueNameSuffix, on_log = on_log)
     on_progress(4, 4)
 
-    on_log("[INFO] clustPops done → clusters.$suffix")
-    Dict{String,Any}("suffix" => suffix, "segments" => length(segments),
-                     "cells" => nrow(df), "features" => length(feature_cols))
+    on_log("[INFO] clustPops done → clusters.$(p.valueNameSuffix)")
+    Dict{String,Any}("suffix" => p.valueNameSuffix, "segments" => length(segments),
+                     "cells" => nrow(df), "features" => length(p.clusterMeasures))
 end

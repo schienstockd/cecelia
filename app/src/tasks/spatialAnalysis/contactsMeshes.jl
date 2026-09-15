@@ -12,6 +12,19 @@ using DataFrames: nrow
 
 struct ContactsMeshes <: CciaTask end
 
+Base.@kwdef struct ContactsMeshesParams
+    popsA::Vector{String}    = String[]
+    popsB::Vector{String}    = String[]
+    maxContactDist::Float64  = 5.0
+end
+
+function parse_contacts_meshes_params(d::AbstractDict)::ContactsMeshesParams
+    ContactsMeshesParams(;
+        popsA          = _str_list(d, "popsA"),
+        popsB          = _str_list(d, "popsB"),
+        maxContactDist = Float64(get(d, "maxContactDist", 5.0)))
+end
+
 _label_zarr_path(img::CciaImage, vn::AbstractString) =
     joinpath(img._dir, "labels", first(img.labels[vn]))
 
@@ -19,39 +32,37 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    popsA      = _str_list(params, "popsA")
-    popsB      = _str_list(params, "popsB")
-    max_dist   = Float64(get(params, "maxContactDist", 5.0))
-    (isempty(popsA) || isempty(popsB)) &&
+    p = parse_contacts_meshes_params(params)
+    (isempty(p.popsA) || isempty(p.popsB)) &&
         (on_log("[ERROR] contactsMeshes: select both an A and a B population"); return nothing)
     # A and B segmentations derived from their own populations (value_name-prefixed picks); each is ONE
     # segmentation (label ids collide across segmentations) — no separate dropdowns (legacy parity).
-    vnA        = pops_value_name(popsA)
-    vnB        = pops_value_name(popsB)
+    vnA        = pops_value_name(p.popsA)
+    vnB        = pops_value_name(p.popsB)
     (haskey(img.labels, vnA) && haskey(img.labels, vnB)) ||
         (on_log("[ERROR] contactsMeshes: missing a label zarr for $(vnA) / $(vnB)"); return nothing)
     # A / B may each mix pop types — resolve across types + namespace output by cell kind (see cellContacts)
-    pop_type   = pop_namespace(img, popsA; value_name = vnA)
-    pop_type_b = pop_namespace(img, popsB; value_name = vnB)
+    pop_type   = pop_namespace(img, p.popsA; value_name = vnA)
+    pop_type_b = pop_namespace(img, p.popsB; value_name = vnB)
     on_progress(1, 3)
 
     # A/B are each ONE segmentation (label ids collide across segmentations) → restrict each to its vn
-    aMem = pop_df_multi(img, popsA; value_name = vnA, granularity = :cell, restrict_to = vnA)
-    bMem = pop_df_multi(img, popsB; value_name = vnB, granularity = :cell, restrict_to = vnB)
+    aMem = pop_df_multi(img, p.popsA; value_name = vnA, granularity = :cell, restrict_to = vnA)
+    bMem = pop_df_multi(img, p.popsB; value_name = vnB, granularity = :cell, restrict_to = vnB)
     (nrow(aMem) == 0 || nrow(bMem) == 0) &&
         (on_log("[ERROR] contactsMeshes: no A ($(nrow(aMem))) or B ($(nrow(bMem))) cells"); return nothing)
 
     (sizes, _) = img_physical_sizes(img)
     qc_out_path = joinpath(task_run_dir(img._dir), "contacts_mesh_qc.json")
-    target = _contact_target(pop_type_b, popsB)
-    on_log("[INFO] contactsMeshes: $(nrow(aMem)) A × $(nrow(bMem)) B, target=$(target), ≤$(max_dist)µm")
+    target = _contact_target(pop_type_b, p.popsB)
+    on_log("[INFO] contactsMeshes: $(nrow(aMem)) A × $(nrow(bMem)) B, target=$(target), ≤$(p.maxContactDist)µm")
     on_progress(2, 3)
 
     task_params = Dict{String,Any}(
         "imPath" => img_filepath(img),
         "aLabelPath" => _label_zarr_path(img, vnA), "bLabelPath" => _label_zarr_path(img, vnB),
         "aLabels" => Int.(aMem.label), "bLabels" => Int.(bMem.label),
-        "physicalSizes" => sizes, "maxContactDist" => max_dist, "target" => target,
+        "physicalSizes" => sizes, "maxContactDist" => p.maxContactDist, "target" => target,
         "popType" => pop_type, "propsPath" => img_label_props_path(img, vnA),
         "qcOutPath" => qc_out_path)
 

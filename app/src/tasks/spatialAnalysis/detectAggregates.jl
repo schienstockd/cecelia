@@ -15,6 +15,21 @@ using Clustering: dbscan
 
 struct DetectAggregates <: CciaTask end
 
+Base.@kwdef struct DetectAggregatesParams
+    pops::Vector{String}     = String[]
+    clustDiameter::Float64   = 15.0
+    minCells::Int            = 5
+    perTimepoint::Bool       = false
+end
+
+function parse_detect_aggregates_params(d::AbstractDict)::DetectAggregatesParams
+    DetectAggregatesParams(;
+        pops          = _str_list(d, "pops"),
+        clustDiameter = Float64(get(d, "clustDiameter", 15.0)),
+        minCells      = Int(get(d, "minCells", 5)),
+        perTimepoint  = Bool(get(d, "perTimepoint", false)))
+end
+
 # DBSCAN cluster ids for one coord block (rows = points, cols = spatial dims); 0 = noise, 1..k = cluster.
 # Clustering.jl wants (dims × points). min_cluster_size = the legacy `minPts`; a core point needs
 # `minPts-1` neighbours within `eps`.
@@ -35,24 +50,21 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    pops       = _str_list(params, "pops")
-    isempty(pops) && (on_log("[ERROR] detectAggregates: select a population to detect aggregates of"); return nothing)
+    p = parse_detect_aggregates_params(params)
+    isempty(p.pops) && (on_log("[ERROR] detectAggregates: select a population to detect aggregates of"); return nothing)
     # segmentation derived from the populations (value_name-prefixed picks) — no dropdown (legacy parity)
-    value_name = pops_value_name(pops)
+    value_name = pops_value_name(p.pops)
     # pops may mix types (flow gates, clusters, regions, tracked cells) — resolve across types and
     # namespace output by cell kind (tracked → live.cell.*, else flow.cell.*). Was hardcoded to "flow".
-    pop_type   = pop_namespace(img, pops; value_name = value_name)
-    eps        = Float64(get(params, "clustDiameter", 15.0))   # µm
-    min_cells  = Int(get(params, "minCells", 5))
-    per_t      = Bool(get(params, "perTimepoint", false))
+    pop_type   = pop_namespace(img, p.pops; value_name = value_name)
     on_progress(1, 3)
 
     # member cells of the population WITH their µm coordinates, in ONE read: `pop_df` is the accessor
     # for population data (docs/POPULATION.md), and `centroids = :physical` pushes the coordinate columns
     # into that same read and converts them via the shared `scale_centroids!`.
-    cdf = pop_df_multi(img, pops; value_name = value_name, granularity = :cell,
+    cdf = pop_df_multi(img, p.pops; value_name = value_name, granularity = :cell,
                        restrict_to = value_name, centroids = :physical)
-    nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(pops)"); return nothing)
+    nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(p.pops)"); return nothing)
 
     lp    = label_props(img_label_props_path(img, value_name))
     scols = centroid_columns(lp; order=[:x, :y, :z])   # explicit axes, present only
@@ -62,16 +74,16 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
 
     # DBSCAN — per timepoint for live (offset ids so they stay unique across t), else once
     ids = zeros(Int, nrow(cdf))
-    if per_t && !isempty(tcols) && tcols[1] in names(cdf)
+    if p.perTimepoint && !isempty(tcols) && tcols[1] in names(cdf)
         tvals = cdf[!, tcols[1]]; offset = 0
         for tv in sort(unique(tvals))
             m = tvals .== tv
-            sub = _aggregate_ids(coords[m, :], eps, min_cells)
+            sub = _aggregate_ids(coords[m, :], p.clustDiameter, p.minCells)
             ids[m] = [i == 0 ? 0 : i + offset for i in sub]
             offset += maximum(sub; init = 0)
         end
     else
-        ids = _aggregate_ids(coords, eps, min_cells)
+        ids = _aggregate_ids(coords, p.clustDiameter, p.minCells)
     end
 
     is_agg = Float64.(ids .> 0)
@@ -83,7 +95,7 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
     # Auto-create the reusable "aggregated" population (Decision 14): a filter pop under each input pop
     # selecting the aggregated cells (`<popType>.cell.is.aggregate > 0`), resolved lazily by pop_df — so
     # the aggregate flows into any downstream popSelection like a normal pop, no hand-drawn gate needed.
-    agg_paths = ensure_filter_pop!(img, pop_type, value_name, pops, AGGREGATED_POP_NAME;
+    agg_paths = ensure_filter_pop!(img, pop_type, value_name, p.pops, AGGREGATED_POP_NAME;
                                    filter_measure = "$(pop_type).cell.is.aggregate",
                                    filter_fun = "gt", filter_values = 0)
 
