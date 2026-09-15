@@ -2,6 +2,39 @@ struct Smooth <: CciaTask end
 
 task_output_effect(::Smooth) = "new-version"
 
+# Typed shape of what `_run_task(::Smooth, …)` reads from `params`. One authoritative statement of
+# the task's contract with its inbound bag, so a rename in the spec that isn't mirrored here becomes
+# a type error at parse rather than a silent default at the read site. Defaults mirror the spec JSON
+# and the fall-back rules in the block below (e.g. `temporalFrames = 1` when the T axis is guarded off).
+Base.@kwdef struct SmoothParams
+    valueName::String              = VERSIONED_DEFAULT_VAL
+    channels::Any                  = nothing   # names or nothing; resolved via channel_indices
+    spatialMethod::String          = "gaussian"
+    spatialSigma::Float64          = 1.0
+    bilateralColor::Float64        = 10.0
+    bilateralReach::Float64        = 3.0
+    bilateralPolish::Float64       = 0.6
+    temporalFrames::Int            = 1
+    temporalStat::String           = "median"
+    farnebackMaxShiftPx::Float64   = 8.0
+    restoreDynamicRange::Bool      = true
+end
+
+function parse_smooth_params(d::AbstractDict)::SmoothParams
+    SmoothParams(;
+        valueName            = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        channels             = get(d, "channels", nothing),
+        spatialMethod        = string(get(d, "spatialMethod", "gaussian")),
+        spatialSigma         = Float64(get(d, "spatialSigma", 1.0)),
+        bilateralColor       = Float64(get(d, "bilateralColor", 10.0)),
+        bilateralReach       = Float64(get(d, "bilateralReach", 3.0)),
+        bilateralPolish      = Float64(get(d, "bilateralPolish", 0.6)),
+        temporalFrames       = Int(get(d, "temporalFrames", 1)),
+        temporalStat         = string(get(d, "temporalStat", "median")),
+        farnebackMaxShiftPx  = Float64(get(d, "farnebackMaxShiftPx", 8.0)),
+        restoreDynamicRange  = Bool(get(d, "restoreDynamicRange", true)))
+end
+
 # QC from the persisted smoothing stats. The failure modes here are quiet ones — the task always
 # "succeeds", it just may not have helped:
 #  • not run on aligned data — the temporal statistic compares the same pixel across frames, so on an
@@ -62,13 +95,13 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_smooth_params(params)
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -88,8 +121,8 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     # no T axis — the temporal statistic is guarded off by the spec, so drift correction is not a
     # prerequisite this run cares about.
     has_t = :T in img_axes(img)
-    if has_t && !occursin("rift", string(value_name)) && !occursin("rift", string(filename))
-        on_log("[WARN] '$value_name' does not look drift-corrected. The temporal statistic compares the " *
+    if has_t && !occursin("rift", p.valueName) && !occursin("rift", string(filename))
+        on_log("[WARN] '$(p.valueName)' does not look drift-corrected. The temporal statistic compares the " *
                "same pixel across frames, so run drift correction first or the statistic mixes tissue.")
     end
 
@@ -97,32 +130,18 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     # once under "default"; asking for them under a derived version ("driftCorrected") returns an
     # empty list and every channel name then fails to resolve. Same call as drift_correct.jl.
     ch_names = ccid_channel_names(raw)
-    channel_idx = channel_indices(get(params, "channels", nothing), ch_names; what = "channels")
+    channel_idx = channel_indices(p.channels, ch_names; what = "channels")
     if isempty(channel_idx)
         on_log("[INFO] No channels selected — smoothing all of them. Leave structural channels " *
                "(SHG/THG) out if they are not cells.")
     end
-
-    spatial_method   = string(get(params, "spatialMethod", "gaussian"))
-    spatial_sigma    = Float64(get(params, "spatialSigma", 1.0))
-    bilateral_color  = Float64(get(params, "bilateralColor", 10.0))
-    bilateral_reach  = Float64(get(params, "bilateralReach", 3.0))
-    bilateral_polish = Float64(get(params, "bilateralPolish", 0.6))
-    # Fallback = 1 (one frame, temporal term off). The spec's default is 3, but on a static image
-    # `_apply_param_requires` has dropped these keys entirely (guarded by `requires.axes: ["T"]`) and
-    # the "off" value is what the handler must fall back to. Same reason `temporalStat` is irrelevant
-    # once the window is one frame.
-    temporal_frames = Int(get(params, "temporalFrames", 1))
-    temporal_stat   = string(get(params, "temporalStat", "median"))
-    farneback_max_shift_px = Float64(get(params, "farnebackMaxShiftPx", 8.0))
-    restore_gain    = Bool(get(params, "restoreDynamicRange", true))
 
     # Spatial sigma 0 with a temporal window is the one combination measured to be WORSE than doing
     # nothing: at single-digit photon counts a median over 3 mostly-zero samples is zero (8.5% of the
     # reference channel's signal kept, against 15.4% for no smoothing at all). Guard it explicitly —
     # the ordering invariant lives in coastal.smooth, but this is where the GUI can produce it.
     # Only relevant to the gaussian arm; bilateral_vst has its own "reach" knob.
-    if spatial_method == "gaussian" && spatial_sigma <= 0 && temporal_frames > 1
+    if p.spatialMethod == "gaussian" && p.spatialSigma <= 0 && p.temporalFrames > 1
         on_log("[WARN] Spatial sigma 0 with a temporal window keeps LESS signal than no smoothing " *
                "on photon-limited data. Use sigma >= 1 unless you know the input is dense.")
     end
@@ -130,12 +149,12 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     on_log("[INFO] Input:    $im_path")
     on_log("[INFO] Output:   $im_output_path")
     on_log("[INFO] Channels: $(isempty(channel_idx) ? "all" : channel_idx)")
-    if spatial_method == "bilateral_vst"
-        on_log("[INFO] spatial=bilateral_vst color=$bilateral_color reach=$bilateral_reach " *
-               "polish=$bilateral_polish frames=$temporal_frames stat=$temporal_stat")
+    if p.spatialMethod == "bilateral_vst"
+        on_log("[INFO] spatial=bilateral_vst color=$(p.bilateralColor) reach=$(p.bilateralReach) " *
+               "polish=$(p.bilateralPolish) frames=$(p.temporalFrames) stat=$(p.temporalStat)")
     else
-        on_log("[INFO] spatial=gaussian sigma=$spatial_sigma " *
-               "frames=$temporal_frames stat=$temporal_stat")
+        on_log("[INFO] spatial=gaussian sigma=$(p.spatialSigma) " *
+               "frames=$(p.temporalFrames) stat=$(p.temporalStat)")
     end
 
     qc_out_path = joinpath(task_run_dir(img._dir), "smooth_stats.json")
@@ -144,15 +163,15 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
         (; imPath          = im_path,
            imOutputPath    = im_output_path,
            channels        = channel_idx,
-           spatialMethod   = spatial_method,
-           spatialSigma    = spatial_sigma,
-           bilateralColor  = bilateral_color,
-           bilateralReach  = bilateral_reach,
-           bilateralPolish = bilateral_polish,
-           temporalFrames  = temporal_frames,
-           temporalStat    = temporal_stat,
-           farnebackMaxShiftPx = farneback_max_shift_px,
-           restoreGain     = restore_gain,
+           spatialMethod   = p.spatialMethod,
+           spatialSigma    = p.spatialSigma,
+           bilateralColor  = p.bilateralColor,
+           bilateralReach  = p.bilateralReach,
+           bilateralPolish = p.bilateralPolish,
+           temporalFrames  = p.temporalFrames,
+           temporalStat    = p.temporalStat,
+           farnebackMaxShiftPx = p.farnebackMaxShiftPx,
+           restoreGain     = p.restoreDynamicRange,
            qcOutPath       = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
@@ -174,13 +193,13 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
                      smoothing = Dict{String,Any}(
                          "gain"           => get(qmeta, "gain", 1.0),
                          "channels"       => get(qmeta, "channels", Int[]),
-                         "spatialMethod"  => get(qmeta, "spatialMethod", spatial_method),
-                         "spatialSigma"   => get(qmeta, "spatialSigma", spatial_sigma),
-                         "bilateralColor"  => get(qmeta, "bilateralColor", bilateral_color),
-                         "bilateralReach"  => get(qmeta, "bilateralReach", bilateral_reach),
-                         "bilateralPolish" => get(qmeta, "bilateralPolish", bilateral_polish),
-                         "temporalFrames"  => get(qmeta, "temporalFrames", temporal_frames),
-                         "temporalStat"   => get(qmeta, "temporalStat", temporal_stat),
+                         "spatialMethod"  => get(qmeta, "spatialMethod", p.spatialMethod),
+                         "spatialSigma"   => get(qmeta, "spatialSigma", p.spatialSigma),
+                         "bilateralColor"  => get(qmeta, "bilateralColor", p.bilateralColor),
+                         "bilateralReach"  => get(qmeta, "bilateralReach", p.bilateralReach),
+                         "bilateralPolish" => get(qmeta, "bilateralPolish", p.bilateralPolish),
+                         "temporalFrames"  => get(qmeta, "temporalFrames", p.temporalFrames),
+                         "temporalStat"   => get(qmeta, "temporalStat", p.temporalStat),
                          "zeroFracIn"     => get(qmeta, "zeroFracIn", Dict()),
                          "zeroFracOut"    => get(qmeta, "zeroFracOut", Dict())))
             isempty(findings) || on_log("[QC] $(length(findings)) finding(s) — see the image's QC badge.")

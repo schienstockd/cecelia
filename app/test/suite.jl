@@ -18198,3 +18198,110 @@ end
     # nothing exists → nothing
     @test isnothing(Cecelia.bf2raw_series_subdir(joinpath(tempdir(), "nope-$(rand(UInt32))")))
 end
+
+# The typed per-task params structs for the cleanupImages family. Each parser is the ONE place its
+# task reads the params bag, so this pins the fields + defaults that the rest of the task body
+# depends on — a spec rename that isn't mirrored here would show up as a struct-field access error
+# rather than a silent default at the read site.
+@testset "typed params — cleanupImages" begin
+    # Smooth: full dict → every field carries through; empty dict → defaults.
+    let p = Cecelia.parse_smooth_params(Dict{String,Any}(
+            "valueName"           => "driftCorrected",
+            "channels"            => ["mem-TOM"],
+            "spatialMethod"       => "bilateral_vst",
+            "spatialSigma"        => 2.5,
+            "bilateralColor"      => 12.0,
+            "bilateralReach"      => 4.0,
+            "bilateralPolish"     => 0.7,
+            "temporalFrames"      => 3,
+            "temporalStat"        => "mean",
+            "farnebackMaxShiftPx" => 6.5,
+            "restoreDynamicRange" => false))
+        @test p.valueName == "driftCorrected"
+        @test p.channels == ["mem-TOM"]
+        @test p.spatialMethod == "bilateral_vst"
+        @test p.spatialSigma === 2.5
+        @test p.temporalFrames === 3
+        @test p.restoreDynamicRange === false
+    end
+    let p = Cecelia.parse_smooth_params(Dict{String,Any}())
+        @test p.valueName == Cecelia.VERSIONED_DEFAULT_VAL
+        @test p.spatialMethod == "gaussian"
+        @test p.temporalFrames === 1
+        @test p.restoreDynamicRange === true
+    end
+
+    # StackAlign
+    let p = Cecelia.parse_stack_align_params(Dict{String,Any}(
+            "alignChannel" => ["CD169"], "referenceMode" => "first",
+            "minConfidence" => 0.5, "maxShiftPx" => 12.0))
+        @test p.alignChannel == ["CD169"]
+        @test p.referenceMode == "first"
+        @test p.minConfidence === 0.5
+        @test p.maxShiftPx === 12.0
+    end
+
+    # FlowRegister
+    let p = Cecelia.parse_flow_register_params(Dict{String,Any}(
+            "registerChannel" => ["CD169"], "structuralChannels" => ["SHG"],
+            "referenceMode" => "first", "aggressiveness" => "gentle",
+            "pyrLevels" => 3, "maxShiftPx" => 20.0))
+        @test p.registerChannel == ["CD169"]
+        @test p.structuralChannels == ["SHG"]
+        @test p.aggressiveness == "gentle"
+        @test p.pyrLevels === 3
+    end
+
+    # Denoise
+    let p = Cecelia.parse_denoise_params(Dict{String,Any}(
+            "model" => "supp.MERTK", "channels" => ["mem-TOM"], "batchSize" => 4))
+        @test p.model == "supp.MERTK"
+        @test p.channels == ["mem-TOM"]
+        @test p.batchSize === 4
+    end
+
+    # DriftCorrect
+    let p = Cecelia.parse_drift_correct_params(Dict{String,Any}(
+            "driftChannel" => ["mem-TOM"], "driftEstimator" => "sitkRigid",
+            "driftMaxAngle" => 3.0, "driftPerPlane" => true, "driftZSmoothness" => 0.5))
+        @test p.driftChannel == ["mem-TOM"]
+        @test p.driftEstimator == "sitkRigid"
+        @test p.driftMaxAngle === 3.0
+        @test p.driftPerPlane === true
+        @test p.driftZSmoothness === 0.5
+    end
+
+    # AfCorrect + the two typed structs at its edges (task #21 AfChannelStats, task #22
+    # AfCombinationSpec — see docs/archive/comment-audit-findings.md → Tier 1 boundary bags).
+    let p = Cecelia.parse_af_correct_params(Dict{String,Any}(
+            "backgroundMethod" => "otsu"))
+        @test p.valueName == Cecelia.VERSIONED_DEFAULT_VAL
+        @test p.backgroundMethod == "otsu"
+    end
+    let specs = Cecelia.parse_af_combinations(Dict{String,Any}(
+            "afCombinations" => Dict{String,Any}(
+                "CD169-Kat" => Dict{String,Any}(
+                    "targetChannel"     => ["CD169-Kat"],
+                    "competingChannels" => ["SHG", "CH4"]),
+                "malformed" => "not a dict")))
+        @test length(specs) == 1
+        @test specs[1].key == "CD169-Kat"
+        @test specs[1].targetChannel == ["CD169-Kat"]
+        @test specs[1].competingChannels == ["SHG", "CH4"]
+    end
+    # AfChannelStats round-trips the Python-side per-channel block and carries a Dict{String,Float64}
+    # bleedthrough. A missing bleedthrough is a legal shape (no leaks detected) → empty Dict.
+    let s = Cecelia.parse_af_channel_stats(Dict{String,Any}(
+            "saturatedFrac" => 0.02, "levelsUsed" => 3200.0, "levelsAvailable" => 4096.0,
+            "bleedthrough" => Dict{String,Any}("SHG" => 0.15, "CD169" => 0.03)))
+        @test s.saturatedFrac === 0.02
+        @test s.levelsUsed === 3200.0
+        @test s.levelsAvailable === 4096.0
+        @test s.bleedthrough == Dict("SHG" => 0.15, "CD169" => 0.03)
+    end
+    let s = Cecelia.parse_af_channel_stats(Dict{String,Any}())
+        @test s.saturatedFrac === 0.0
+        @test s.levelsAvailable === 1.0    # min-1 floor so `used / avail` never divides by zero
+        @test isempty(s.bleedthrough)
+    end
+end

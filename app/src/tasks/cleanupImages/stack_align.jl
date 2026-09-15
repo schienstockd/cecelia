@@ -2,6 +2,24 @@ struct StackAlign <: CciaTask end
 
 task_output_effect(::StackAlign) = "new-version"
 
+# Typed shape of what `_run_task(::StackAlign, …)` reads from `params`.
+Base.@kwdef struct StackAlignParams
+    valueName::String     = VERSIONED_DEFAULT_VAL
+    alignChannel::Any     = nothing  # channel name(s); resolved via channel_indices
+    referenceMode::String = "middle"
+    minConfidence::Float64 = 0.35
+    maxShiftPx::Float64    = 8.0
+end
+
+function parse_stack_align_params(d::AbstractDict)::StackAlignParams
+    StackAlignParams(;
+        valueName     = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        alignChannel  = get(d, "alignChannel", nothing),
+        referenceMode = string(get(d, "referenceMode", "middle")),
+        minConfidence = Float64(get(d, "minConfidence", 0.35)),
+        maxShiftPx    = Float64(get(d, "maxShiftPx", 8.0)))
+end
+
 # Fraction of non-reference planes that must survive the confidence gate before we call the
 # registration usable — below this the aligner refused to shift most of the stack, which either
 # means the reference channel is wrong for THIS movie (pick the brightest) or the sample is
@@ -87,13 +105,13 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_stack_align_params(params)
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -110,8 +128,7 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
     # Same defence-in-depth as driftCorrect: a name that does not resolve falls back to channel 0
     # AFTER a loud warning, never silently.
     ch_names = ccid_channel_names(raw)
-    align_sel = channel_indices(get(params, "alignChannel", nothing), ch_names;
-                                what = "alignChannel")
+    align_sel = channel_indices(p.alignChannel, ch_names; what = "alignChannel")
     align_channel_idx = 0
     if isempty(align_sel)
         on_log("[WARN] No alignment reference channel selected — using channel 0" *
@@ -121,14 +138,10 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
         align_channel_idx = first(align_sel)
     end
 
-    reference_mode = string(get(params, "referenceMode", "middle"))
-    min_conf       = Float64(get(params, "minConfidence", 0.35))
-    max_shift_px   = Float64(get(params, "maxShiftPx", 8.0))
-
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_aligned_path")
     on_log("[INFO] Channel:     $align_channel_idx")
-    on_log("[INFO] Reference:   $reference_mode  (min_conf=$min_conf, max_shift=$max_shift_px px)")
+    on_log("[INFO] Reference:   $(p.referenceMode)  (min_conf=$(p.minConfidence), max_shift=$(p.maxShiftPx) px)")
 
     qc_out_path = joinpath(task_run_dir(img._dir), "stack_align_shifts.json")
 
@@ -136,9 +149,9 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
         (; imPath         = im_path,
            imAlignedPath  = im_aligned_path,
            alignChannel   = align_channel_idx,
-           referenceMode  = reference_mode,
-           minConfidence  = min_conf,
-           maxShiftPx     = max_shift_px,
+           referenceMode  = p.referenceMode,
+           minConfidence  = p.minConfidence,
+           maxShiftPx     = p.maxShiftPx,
            qcOutPath      = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

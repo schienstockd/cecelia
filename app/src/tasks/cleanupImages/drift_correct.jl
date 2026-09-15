@@ -11,6 +11,32 @@ task_output_effect(::DriftCorrect) = "new-version"
 # good case and a 12x margin under the bad one. See correction_utils.drift_residuals.
 const DRIFT_RESIDUAL_WARN_PX = 2.0
 
+# Typed shape of what `_run_task(::DriftCorrect, …)` reads from `params`.
+Base.@kwdef struct DriftCorrectParams
+    valueName::String            = VERSIONED_DEFAULT_VAL
+    driftChannel::Any            = nothing  # channel name(s); resolved via channel_indices
+    driftEstimator::String       = "multiLag"
+    driftNormalisation::String   = "none"
+    driftMaxLag::Int             = 3
+    driftMaxAngle::Float64       = 5.0
+    driftSmoothSigma::Float64    = 6.0
+    driftPerPlane::Bool          = false
+    driftZSmoothness::Float64    = 0.0
+end
+
+function parse_drift_correct_params(d::AbstractDict)::DriftCorrectParams
+    DriftCorrectParams(;
+        valueName          = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        driftChannel       = get(d, "driftChannel", nothing),
+        driftEstimator     = string(get(d, "driftEstimator", "multiLag")),
+        driftNormalisation = string(get(d, "driftNormalisation", "none")),
+        driftMaxLag        = Int(get(d, "driftMaxLag", 3)),
+        driftMaxAngle      = Float64(get(d, "driftMaxAngle", 5.0)),
+        driftSmoothSigma   = Float64(get(d, "driftSmoothSigma", 6.0)),
+        driftPerPlane      = Bool(get(d, "driftPerPlane", false)),
+        driftZSmoothness   = Float64(get(d, "driftZSmoothness", 0.0)))
+end
+
 # QC findings from the persisted drift trajectory (docs/todo/QC_PLAN.md). Pure, so it is unit-tested
 # directly against a sidecar-shaped Dict. Three checks, most informative first:
 #
@@ -151,13 +177,13 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_drift_correct_params(params)
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -179,8 +205,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
     # this is a parameter that has to be right rather than defaulted.
     ch_names = ccid_channel_names(raw)
     # channelSelection stores an array even when multiple=false
-    drift_sel = channel_indices(get(params, "driftChannel", nothing), ch_names;
-                                what = "driftChannel")
+    drift_sel = channel_indices(p.driftChannel, ch_names; what = "driftChannel")
     drift_channel_idx = 0
     if isempty(drift_sel)
         # The task JSON defaults `driftChannel` to `[]`, so "nothing picked" is a reachable GUI state
@@ -193,39 +218,16 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         drift_channel_idx = first(drift_sel)
     end
 
-    estimator     = string(get(params, "driftEstimator", "multiLag"))
-    normalisation = string(get(params, "driftNormalisation", "none"))
-    max_lag       = Int(get(params, "driftMaxLag", 3))
-    max_angle_deg = Float64(get(params, "driftMaxAngle", 5.0))
-    # Gaussian σ (frames) on the cumulative trajectory. Kills integer-rounding jitter on movies
-    # where estimated drift is at the PC noise floor (see `_smooth_positions` in correction_utils.py).
-    # 0 = off. Default 6 chosen from the 2h06xA / ttRMjQ audit — see docs/todo/DRIFT_JITTER_PLAN.md.
-    smooth_sigma  = Float64(get(params, "driftSmoothSigma", 6.0))
-    # Per-Z-plane correction: fit ONE (Y, X) shift per (t, z) instead of ONE per t. For movies whose
-    # motion depends on Z depth — the canonical case is breathing under a coverslip on intravital
-    # preps, where shallow and deep planes translate in OPPOSITE directions on a single breath and
-    # any whole-volume rigid fit averages them to zero, leaving the shear in the output. Only
-    # meaningful for multiLag/chain (sitkRigid keeps its own path). Ignored on 2D images.
-    # See docs/todo/DRIFT_PERPLANE_PLAN.md.
-    per_plane     = Bool(get(params, "driftPerPlane", false))
-    # Cross-Z smoothness prior for the per-plane joint solver — couples adjacent planes so a
-    # signal-poor plane borrows its bright neighbour's fit instead of noise-fitting on its own.
-    # Second-difference penalty, so a linear Z-ramp (the breathing shear shape) passes through
-    # unchanged; only Z-plane-to-Z-plane DISCONTINUITIES get penalised. 0 = independent per-plane
-    # solve (the P1 default). Ignored when driftPerPlane is off or estimator is chain.
-    # See docs/todo/DRIFT_PERPLANE_PLAN.md → Decision 3 / Phase 3.
-    z_smoothness  = Float64(get(params, "driftZSmoothness", 0.0))
-
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_correction_path")
     on_log("[INFO] Drift ch:    $drift_channel_idx")
-    on_log("[INFO] Estimator:   $estimator" *
-           (estimator == "multiLag" ? " (max lag $max_lag)" :
-            estimator == "sitkRigid" ? " (max angle $(max_angle_deg)°)" : "") *
-           (estimator == "sitkRigid" ? "" : ", normalisation $normalisation") *
-           (per_plane ? ", per-plane 2D" : "") *
-           (per_plane && z_smoothness > 0 ? ", z-smoothness $z_smoothness" : "") *
-           (smooth_sigma > 0 ? ", trajectory σ=$smooth_sigma" : ", no trajectory smoothing"))
+    on_log("[INFO] Estimator:   $(p.driftEstimator)" *
+           (p.driftEstimator == "multiLag" ? " (max lag $(p.driftMaxLag))" :
+            p.driftEstimator == "sitkRigid" ? " (max angle $(p.driftMaxAngle)°)" : "") *
+           (p.driftEstimator == "sitkRigid" ? "" : ", normalisation $(p.driftNormalisation)") *
+           (p.driftPerPlane ? ", per-plane 2D" : "") *
+           (p.driftPerPlane && p.driftZSmoothness > 0 ? ", z-smoothness $(p.driftZSmoothness)" : "") *
+           (p.driftSmoothSigma > 0 ? ", trajectory σ=$(p.driftSmoothSigma)" : ", no trajectory smoothing"))
 
     qc_out_path = joinpath(task_run_dir(img._dir), "drift_shifts.json")
 
@@ -233,13 +235,13 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         (; imPath             = im_path,
            imCorrectionPath   = im_correction_path,
            driftChannel       = drift_channel_idx,
-           driftNormalisation = normalisation,
-           driftEstimator     = estimator,
-           driftMaxLag        = max_lag,
-           driftMaxAngle      = max_angle_deg,
-           driftSmoothSigma   = smooth_sigma,
-           driftPerPlane      = per_plane,
-           driftZSmoothness   = z_smoothness,
+           driftNormalisation = p.driftNormalisation,
+           driftEstimator     = p.driftEstimator,
+           driftMaxLag        = p.driftMaxLag,
+           driftMaxAngle      = p.driftMaxAngle,
+           driftSmoothSigma   = p.driftSmoothSigma,
+           driftPerPlane      = p.driftPerPlane,
+           driftZSmoothness   = p.driftZSmoothness,
            qcOutPath          = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
