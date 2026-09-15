@@ -6,10 +6,23 @@ using JSON3
 
 # ── CciaImage ──────────────────────────────────────────────────────────────────
 
+# Image lifecycle. The lowercase name is the on-disk (ccid.json) and on-wire (API image payloads)
+# form via `Base.string(::ImageStatus)`; `parse_image_status` reads it back.
+@enum ImageStatus IMAGE_PENDING IMAGE_CONVERTING IMAGE_DONE IMAGE_FAILED
+const _IMAGE_STATUS_STR = Dict(
+    IMAGE_PENDING    => "pending",
+    IMAGE_CONVERTING => "converting",
+    IMAGE_DONE       => "done",
+    IMAGE_FAILED     => "failed",
+)
+const _IMAGE_STATUS_PARSE = Dict(v => k for (k, v) in _IMAGE_STATUS_STR)
+Base.string(s::ImageStatus) = _IMAGE_STATUS_STR[s]
+parse_image_status(s::AbstractString)::ImageStatus = _IMAGE_STATUS_PARSE[s]
+
 mutable struct CciaImage
     uid::String
     name::String
-    status::String                    # pending | converting | done | failed
+    status::ImageStatus               # see @enum ImageStatus above
     filepath::Dict{String,String}     # versioned filenames (relative to zero dir)
     labels::Dict{String,Vector{String}}  # valueName → [filename, ...] (e.g. labels.zarr, labels_cyto.zarr)
     label_props::Dict{String,String}
@@ -41,7 +54,7 @@ mutable struct CciaImage
     _pop_df_cache::Dict{String,Any}
 end
 
-function CciaImage(; uid=gen_uid(), name="", status="pending", dir="")
+function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, dir="")
     CciaImage(uid, name, status,
               Dict{String,String}(), Dict{String,Vector{String}}(), Dict{String,String}(),
               Dict{String,Vector{String}}(),      # branch_labels (Decision 6)
@@ -488,7 +501,7 @@ function save!(img::CciaImage)
         "class"          => "CciaImage",
         "uid"            => img.uid,
         "name"           => img.name,
-        "status"         => img.status,
+        "status"         => string(img.status),
         "filepath"       => img.filepath,
         "labels"         => img.labels,
         "branch_labels"  => img.branch_labels,
@@ -813,7 +826,7 @@ function _load_image(dir::String)::CciaImage
     # in favour of per-image axis gating (see Cecelia.task_applies). Legacy ccid.jsons round-trip
     # into memory without kind; next save! strips it from disk.
     CciaImage(
-        d["uid"], d["name"], get(d, "status", "pending"),
+        d["uid"], d["name"], parse_image_status(String(get(d, "status", "pending"))),
         to_spaths("filepath"), to_labels("labels"), to_spaths("label_props"),
         to_labels("branch_labels"),                              # legacy images: absent → empty
         icn,

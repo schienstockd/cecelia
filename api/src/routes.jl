@@ -1801,7 +1801,7 @@ function api_images_list(req::HTTP.Request)
     # needed to choose a cross-image plot: the axes say what you may group by, the assignment says how
     # many images land in each group — see docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 0.
     for s in proj._sets, img in images(s)
-        push!(imgs, (; uid=img.uid, name=img.name, status=img.status,
+        push!(imgs, (; uid=img.uid, name=img.name, status=string(img.status),
                        included=image_included(img), setUid=s.uid, setName=s.name,
                        attr=Dict(string(k) => string(v) for (k, v) in img.attr)))
     end
@@ -1837,7 +1837,7 @@ function api_objects_find(req::HTTP.Request)
     _img_match(proj, s, img) = (; kind="image", uid=img.uid, name=img.name,
                                   projectUid=proj.uid, projectName=proj.name,
                                   setUid=s.uid, setName=s.name,
-                                  status=img.status, included=image_included(img))
+                                  status=string(img.status), included=image_included(img))
 
     projects = _scan_projects_raw()          # most-recently-opened first; carries uid/name/path
     matches  = Vector{Any}()
@@ -2021,7 +2021,7 @@ function api_tasks_history(req::HTTP.Request)
         # and "running" means the run is live right now. Don't assume a terminal value.
         rs = _rl(e, "status")
         push!(rows, Dict{String,Any}(
-            "imageUid" => img.uid, "imageName" => img.name, "status" => img.status,  # image's status
+            "imageUid" => img.uid, "imageName" => img.name, "status" => string(img.status),  # image's status
             "runStatus" => (isempty(rs) ? "done" : rs),                              # this run's outcome
             "fun" => _rl(e, "fun"), "valueName" => _rl(e, "valueName"), "at" => _rl(e, "at"),
             # the tuning trail: the params this run used (run_log.jl; {} on legacy entries). Lets the
@@ -2973,7 +2973,7 @@ function _image_payload(img::CciaImage)
     (;
         uid             = img.uid,
         name            = img.name,
-        status          = img.status,
+        status          = string(img.status),
         sizeC           = _meta_int(img.meta, "SizeC"),
         sizeT           = _meta_int(img.meta, "SizeT"),
         sizeZ           = _meta_int(img.meta, "SizeZ"),

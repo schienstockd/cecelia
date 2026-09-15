@@ -93,11 +93,14 @@ scoped, then split into three PRs by risk:
   `@enum ChainNodeStatus`. Both are `Symbol` boundaries with symmetric `string`/`Symbol` conversion
   at the persistence edge — one shared pattern (`Base.string(::T)` + `parse_*(::AbstractString)`).
   Resolves 2 register entries.
-- **PR-B (planned).** `ChainNode.scope`, `ChainNode.barrier_policy`, `CciaImage.status`. All three
-  are `String` fields on disk AND on the JSON3 wire (whiteboard payload, ccid.json). Needs either
-  `JSON3.StructType(::Type{T}) = JSON3.StringType()` overloads or explicit stringify at every
-  save site — a different pattern from PR-A. Best done together so the JSON3-shim decision applies
-  once.
+- **PR-B (this PR).** `ChainNode.scope` → `@enum ChainScope`, `ChainNode.barrier_policy` →
+  `@enum ChainBarrierPolicy`, `CciaImage.status` → `@enum ImageStatus`. All three are `String`
+  fields on disk AND on the JSON3 wire. Shim chosen: **explicit `string(x)` at each emission
+  site** (Cecelia's explicit-boundaries convention — no `JSON3.StructType` magic). Parse via
+  `parse_chain_scope`/`parse_chain_barrier_policy`/`parse_image_status` at every load site.
+  Validation for scope/barrier_policy simplifies — the type system rejects invalid values at
+  `ChainNode` construction (ArgumentError, surfaced as a 400 by the API's create route).
+  Resolves 3 register entries.
 - **PR-C (deferred).** `Population.pop_type` (+ `popType`) — see note below.
 
 Fix template: `@enum X ...` + typed field + `set_X!(rec, ::X)` setter + `Base.string(::X)` for
@@ -128,8 +131,8 @@ same-day sweep — needs a dedicated design pass. Register entry stays open.
 **State machines — string-typed with an enum-in-a-comment**
 - ✅ `TaskRecord.status` (`scheduler.jl` L299). 5 states. **Resolved** in PR-A via `@enum TaskStatus` + `_set_status!(rec, ::TaskStatus)`; `Base.string` yields the wire lowercase.
 - ✅ `ImageNodeState.status` (`chain.jl:73–78`). 7 states. **Resolved** in PR-A via `@enum ChainNodeStatus` + `parse_chain_node_status(::AbstractString)` at the disk read boundary.
-- ⏭️ `ChainNode.scope::String`, `ChainNode.barrier_policy::String` (`chain.jl:20–33`). `"image | set | incremental"` and `"all | require_all | successful_only"`. Typo in `barrier_policy` silently defaults to `"all"`. **Deferred to PR-B** (JSON3-wire shim needed).
-- ⏭️ `CciaImage.status::String` (`model/image.jl:11`). 4 states. **Deferred to PR-B** (JSON3-wire shim needed; same pattern as ChainNode).
+- ✅ `ChainNode.scope`, `ChainNode.barrier_policy` (`chain.jl:20–33`). **Resolved** in PR-B via `@enum ChainScope` + `@enum ChainBarrierPolicy`. `parse_*` at every JSON load, `string(...)` at every emission site (`save_chain_template!`, `_template_json`, `chains_summary`). Redundant validation removed from `validate_chain_template` — construction now rejects invalid values with `ArgumentError`.
+- ✅ `CciaImage.status` (`model/image.jl:11`). 4 states. **Resolved** in PR-B via `@enum ImageStatus`. `parse_image_status` at `from_dict`, `string(...)` at `save!`, `_update_image_status!`, and the 4 API echo sites in `routes.jl`.
 - ⏭️ `Population.pop_type::String` (`population_manager.jl:61–68`). 5 values, referenced from `accepts` allow-lists, `pop_df`, palette, popScope. A typo yields a pop nothing routes to. **Deferred to PR-C** (versioned wire-format migration — see note above).
 - ⏭️ `popType` in `gating_api.jl:1033–1036` — repeats `Population.pop_type` on the API side. Same enum resolves both.
 

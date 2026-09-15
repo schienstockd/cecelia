@@ -16,16 +16,48 @@ import SHA
 
 # ── Template ──────────────────────────────────────────────────────────────────
 
+# Chain-node scope. Terminal set of values enforced by the enum; the on-disk (template JSON) and
+# on-wire (whiteboard) form is the lowercase name via `Base.string(::ChainScope)`.
+# `parse_chain_scope` reads it back and throws a friendly ArgumentError on an unknown value —
+# `chain_template_from_raw` propagates it as the template-load error (validation would fire otherwise).
+@enum ChainScope CHAIN_IMAGE CHAIN_SET CHAIN_INCREMENTAL
+const _CHAIN_SCOPE_STR = Dict(
+    CHAIN_IMAGE       => "image",
+    CHAIN_SET         => "set",
+    CHAIN_INCREMENTAL => "incremental",
+)
+const _CHAIN_SCOPE_PARSE = Dict(v => k for (k, v) in _CHAIN_SCOPE_STR)
+Base.string(s::ChainScope) = _CHAIN_SCOPE_STR[s]
+function parse_chain_scope(s::AbstractString)::ChainScope
+    haskey(_CHAIN_SCOPE_PARSE, s) || throw(ArgumentError(
+        "unknown chain scope: '$s' (must be one of $(join(sort(collect(keys(_CHAIN_SCOPE_PARSE))), ", ")))"))
+    _CHAIN_SCOPE_PARSE[s]
+end
+
+# Chain-node barrier policy — only meaningful for CHAIN_SET nodes:
+#   BARRIER_ALL              run with every image regardless of upstream failures (default)
+#   BARRIER_REQUIRE_ALL      abort if any image failed upstream; all images → NODE_FAILED
+#   BARRIER_SUCCESSFUL_ONLY  run with only upstream-successful images; failed ones → NODE_SKIPPED
+@enum ChainBarrierPolicy BARRIER_ALL BARRIER_REQUIRE_ALL BARRIER_SUCCESSFUL_ONLY
+const _BARRIER_POLICY_STR = Dict(
+    BARRIER_ALL             => "all",
+    BARRIER_REQUIRE_ALL     => "require_all",
+    BARRIER_SUCCESSFUL_ONLY => "successful_only",
+)
+const _BARRIER_POLICY_PARSE = Dict(v => k for (k, v) in _BARRIER_POLICY_STR)
+Base.string(s::ChainBarrierPolicy) = _BARRIER_POLICY_STR[s]
+function parse_chain_barrier_policy(s::AbstractString)::ChainBarrierPolicy
+    haskey(_BARRIER_POLICY_PARSE, s) || throw(ArgumentError(
+        "unknown chain barrier policy: '$s' (must be one of $(join(sort(collect(keys(_BARRIER_POLICY_PARSE))), ", ")))"))
+    _BARRIER_POLICY_PARSE[s]
+end
+
 struct ChainNode
     id::String
     fn::String              # "category.taskName" — same key as the task registry
-    scope::String           # "image" (default) | "set" (picnic) | "incremental" (plot watcher)
+    scope::ChainScope       # see @enum ChainScope above
     params::Dict{String,Any}
-    # barrier_policy — only meaningful for scope="set" nodes:
-    #   "all"             run with every image regardless of upstream failures (default)
-    #   "require_all"     abort if any image failed upstream; all images → :failed
-    #   "successful_only" run with only upstream-successful images; failed ones → :skipped
-    barrier_policy::String
+    barrier_policy::ChainBarrierPolicy  # see @enum ChainBarrierPolicy above
     # resource_pool — name of the global scheduler pool this node runs in (see scheduler.jl
     # _POOLS, sized from config.toml [pools]). "" falls back to the task JSON's resource_pool,
     # else "cpu". A pool with limit 1 (e.g. "gpu") serialises that node across the process.
@@ -36,21 +68,27 @@ end
 # the single source of truth for scope: set-scope (picnic) tasks like behaviour.hmm and
 # clustTracks.cluster declare "scope": "set" there, so a node built from them — in the REPL or
 # dragged onto the whiteboard — becomes a picnic node without the author restating it. Unknown
-# fn or specless task → "image".
-function _task_default_scope(fn::String)::String
+# fn or specless task → CHAIN_IMAGE.
+function _task_default_scope(fn::String)::ChainScope
     try
-        task_scope(_task_from_fun_name(fn))   # reads the spec's "scope" field (task.jl)
+        parse_chain_scope(task_scope(_task_from_fun_name(fn)))   # spec's "scope" field (task.jl)
     catch
-        "image"
+        CHAIN_IMAGE
     end
 end
 
-# An empty scope means "inherit from the task spec" (see _task_default_scope). An explicit
-# non-empty scope always wins, so a caller can still force image-scope on a set task if needed.
+# `scope`/`barrier_policy` accept String OR the enum: string form for the whiteboard/REPL author
+# and the JSON deserializer; enum form for internal code. An empty scope means "inherit from the
+# task spec" (see _task_default_scope). An explicit non-empty scope always wins, so a caller can
+# still force image-scope on a set task if needed.
+_coerce_scope(s::ChainScope, fn) = s
+_coerce_scope(s::AbstractString, fn) = isempty(s) ? _task_default_scope(fn) : parse_chain_scope(s)
+_coerce_barrier(p::ChainBarrierPolicy) = p
+_coerce_barrier(p::AbstractString) = parse_chain_barrier_policy(p)
+
 ChainNode(; id, fn, scope="", params=Dict{String,Any}(),
             barrier_policy="all", resource_pool="") =
-    ChainNode(id, fn, isempty(scope) ? _task_default_scope(fn) : scope,
-              params, barrier_policy, resource_pool)
+    ChainNode(id, fn, _coerce_scope(scope, fn), params, _coerce_barrier(barrier_policy), resource_pool)
 
 struct ChainEdge
     from::String
@@ -145,15 +183,15 @@ _cache_dir(proj::CciaProject)::String          = joinpath(_chains_dir(proj), ".c
 # ── Template I/O ──────────────────────────────────────────────────────────────
 
 function _node_from_dict(d)::ChainNode
+    fn = string(get(d, "fn", get(d, :fn, "")))
+    sc = string(get(d, "scope", get(d, :scope, "")))
     ChainNode(
         string(get(d, "id", get(d, :id, ""))),
-        string(get(d, "fn", get(d, :fn, ""))),
-        let sc = string(get(d, "scope", get(d, :scope, "")))
-            isempty(sc) ? _task_default_scope(string(get(d, "fn", get(d, :fn, "")))) : sc
-        end,
+        fn,
+        isempty(sc) ? _task_default_scope(fn) : parse_chain_scope(sc),
         Dict{String,Any}(string(k) => v
                          for (k, v) in get(d, "params", get(d, :params, Dict()))),
-        string(get(d, "barrier_policy", get(d, :barrier_policy, "all"))),
+        parse_chain_barrier_policy(string(get(d, "barrier_policy", get(d, :barrier_policy, "all")))),
         string(get(d, "resource_pool", get(d, :resource_pool, ""))),
     )
 end
@@ -204,8 +242,8 @@ function save_chain_template!(proj::CciaProject, t::ChainTemplate)::ChainTemplat
     write_atomic(_template_path(proj, t.name)) do io
         JSON3.pretty(io, (;
             name  = t.name,
-            nodes = [(; id=n.id, fn=n.fn, scope=n.scope, params=n.params,
-                       barrier_policy=n.barrier_policy, resource_pool=n.resource_pool)
+            nodes = [(; id=n.id, fn=n.fn, scope=string(n.scope), params=n.params,
+                       barrier_policy=string(n.barrier_policy), resource_pool=n.resource_pool)
                      for n in t.nodes],
             edges = [(; from=e.from, to=e.to) for e in t.edges],
             startTargets = t.start_targets,
@@ -229,8 +267,10 @@ end
 # `popSelection`) name project state that does not exist at author time. A valid template is a
 # well-formed one, not a sensible one; the user reviewing the graph before Run stays load-bearing.
 
-const CHAIN_SCOPES           = ("image", "set", "incremental")
-const CHAIN_BARRIER_POLICIES = ("all", "require_all", "successful_only")
+# Kept for backward compatibility — internal validation now goes through the type system (a bad
+# value can't survive `parse_chain_scope`/`parse_chain_barrier_policy` in `_node_from_dict`).
+const CHAIN_SCOPES           = Tuple(string(s) for s in instances(ChainScope))
+const CHAIN_BARRIER_POLICIES = Tuple(string(s) for s in instances(ChainBarrierPolicy))
 
 struct ChainTemplateError <: Exception
     msg::String
@@ -291,12 +331,9 @@ function validate_chain_template(t::ChainTemplate)
             throw(ChainTemplateError("node '$(n.id)': unknown task '$(n.fn)' — " *
                                      "fn must be a registered fun_name like \"segment.cellpose\""))
         end
-        n.scope in CHAIN_SCOPES ||
-            throw(ChainTemplateError("node '$(n.id)': scope '$(n.scope)' is not one of " *
-                                     join(CHAIN_SCOPES, ", ")))
-        n.barrier_policy in CHAIN_BARRIER_POLICIES ||
-            throw(ChainTemplateError("node '$(n.id)': barrier_policy '$(n.barrier_policy)' is not " *
-                                     "one of " * join(CHAIN_BARRIER_POLICIES, ", ")))
+        # scope + barrier_policy are type-checked by ChainNode's constructor
+        # (`parse_chain_scope`/`parse_chain_barrier_policy` in `_node_from_dict` throw
+        # ArgumentError on an unknown value, which surfaces at template load time).
         (isempty(n.resource_pool) || n.resource_pool in pools) ||
             throw(ChainTemplateError("node '$(n.id)': resource_pool '$(n.resource_pool)' is not " *
                                      "configured — known pools: " * join(sort(collect(pools)), ", ")))
@@ -339,8 +376,8 @@ end
 function _template_json(t::ChainTemplate)::String
     JSON3.write((;
         name  = t.name,
-        nodes = [(; id=n.id, fn=n.fn, scope=n.scope, params=n.params,
-                   barrier_policy=n.barrier_policy, resource_pool=n.resource_pool)
+        nodes = [(; id=n.id, fn=n.fn, scope=string(n.scope), params=n.params,
+                   barrier_policy=string(n.barrier_policy), resource_pool=n.resource_pool)
                  for n in t.nodes],
         edges = [(; from=e.from, to=e.to) for e in t.edges],
         startTargets = t.start_targets,
@@ -608,7 +645,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
 
     # Incremental plot nodes are driven by the dedicated watcher task — not image threads.
     # Exclude them from fault-isolation checks so a failed plot never kills the pipeline.
-    incremental_ids = Set(n.id for n in ordered_nodes if n.scope == "incremental")
+    incremental_ids = Set(n.id for n in ordered_nodes if n.scope == CHAIN_INCREMENTAL)
 
     # Direct predecessors per node — for predecessor-based fault isolation. In a fan-out
     # (driftCorrect → two independent segmentations) a failed sibling must NOT skip the other
@@ -621,14 +658,14 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
     for node in ordered_nodes
         # Set-scope (picnic) node: always arrive at barrier (avoids deadlock even when
         # cancelled). If cancelled, skip waiting for the set-scope runner to finish.
-        if node.scope == "set"
+        if node.scope == CHAIN_SET
             _barrier_arrive!(run, node.id)
             is_cancelled() || _barrier_wait_done!(run, node.id)
             continue
         end
 
         # Incremental plot node: handled by dedicated watcher task — skip here.
-        if node.scope == "incremental"
+        if node.scope == CHAIN_INCREMENTAL
             continue
         end
 
@@ -780,7 +817,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     policy = node.barrier_policy
 
     # require_all: abort if any image failed upstream
-    if policy == "require_all" && !isempty(failed_uids)
+    if policy == BARRIER_REQUIRE_ALL && !isempty(failed_uids)
         @warn "Set-scope node aborted: upstream failures under require_all policy" node=node.id failed=length(failed_uids)
         for uid in run.image_uids
             _update_node_state!(run, uid, node.id; status=NODE_FAILED, fn=node.fn)
@@ -790,7 +827,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     end
 
     # successful_only: exclude failed images; abort if none remain
-    participating_uids = policy == "successful_only" ? ok_uids : collect(run.image_uids)
+    participating_uids = policy == BARRIER_SUCCESSFUL_ONLY ? ok_uids : collect(run.image_uids)
     if isempty(participating_uids)
         @warn "Set-scope node aborted: no eligible images" node=node.id policy=policy
         for uid in run.image_uids
@@ -1238,7 +1275,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
     barriers      = Dict{String,Channel{Nothing}}()
     barriers_done = Dict{String,Channel{Nothing}}()
     for node in template.nodes
-        if node.scope == "set"
+        if node.scope == CHAIN_SET
             barriers[node.id]      = Channel{Nothing}(n)
             barriers_done[node.id] = Channel{Nothing}(n)
         end
@@ -1330,7 +1367,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         barriers      = Dict{String,Channel{Nothing}}()
         barriers_done = Dict{String,Channel{Nothing}}()
         for node in template.nodes
-            if node.scope == "set"
+            if node.scope == CHAIN_SET
                 barriers[node.id]      = Channel{Nothing}(n)
                 barriers_done[node.id] = Channel{Nothing}(n)
             end
@@ -1355,7 +1392,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
     incr_upstream = Dict{String, String}(
         n.id => first(direct_preds[n.id])
         for n in ordered_nodes
-        if n.scope == "incremental" && !isempty(direct_preds[n.id])
+        if n.scope == CHAIN_INCREMENTAL && !isempty(direct_preds[n.id])
     )
 
     # Bind cancel check to this run's ID so callers only pass a run_id → bool function.
@@ -1373,7 +1410,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
     set_tasks = [
         Threads.@spawn _run_set_scope_node!(run, node, overrides;
             on_log, is_cancelled=_is_cancelled)
-        for node in ordered_nodes if node.scope == "set"
+        for node in ordered_nodes if node.scope == CHAIN_SET
     ]
 
     # One incremental watcher per incremental plot node — event-driven, debounced
@@ -1382,7 +1419,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
             run, node, incr_upstream[node.id], overrides;
             on_log, is_cancelled=_is_cancelled)
         for node in ordered_nodes
-        if node.scope == "incremental" && haskey(incr_upstream, node.id)
+        if node.scope == CHAIN_INCREMENTAL && haskey(incr_upstream, node.id)
     ]
 
     foreach(fetch, image_tasks)

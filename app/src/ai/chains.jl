@@ -16,7 +16,7 @@ function _chain_templates(proj::CciaProject)
         endswith(f, ".json") || continue
         t = try load_chain_template(proj, f[1:end-5]) catch; continue end
         push!(out, (; name = t.name,
-                     nodes = [(; id = n.id, fun = n.fn, scope = n.scope) for n in t.nodes],
+                     nodes = [(; id = n.id, fun = n.fn, scope = string(n.scope)) for n in t.nodes],
                      edges = [(; from = e.from, to = e.to) for e in t.edges],
                      startTargets = t.start_targets))
     end

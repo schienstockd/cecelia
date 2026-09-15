@@ -4539,7 +4539,7 @@ end
         proj = create_project!(name="api-e2e")
         s    = add_set!(proj; name="set-A")
         imgs = [add_image!(s; name="img-$i") for i in 1:2]
-        for img in imgs; img.status = "done"; save!(img); end
+        for img in imgs; img.status = IMAGE_DONE; save!(img); end
 
         # ── 1. chain node: producer → event bus → bridge → bank + broadcast ──
         # The regression this pins. A chain node's outcome travels ONLY as chain:node:done, so the bank
