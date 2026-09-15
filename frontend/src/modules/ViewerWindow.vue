@@ -1479,8 +1479,8 @@ function rebuildOverlays() {
   const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
   const sources: { vn: string; payload: OverlayPayload; colour?: string; popColour?: string }[] = []
   // If a track highlight is set for THIS image + this vn, narrow the per-vn source to just those
-  // ids. Restores the pre-napari-retire behaviour (P9 slice 4 dropped `showTracksInNapari` without
-  // a browser-viewer equivalent). CRUCIAL fallback: when the filter matches zero cells (stale
+  // ids. Restores the pre-napari-retire behaviour (`showTracksInNapari` went out with napari
+  // without a browser-viewer equivalent). CRUCIAL fallback: when the filter matches zero cells (stale
   // highlight, wrong vn/type, ids from a previous run), FALL BACK to the full payload rather than
   // dropping the source — a stale highlight that blanks every ribbon looked to the user like
   // "tracks are completely broken", which they weren't.
@@ -2956,8 +2956,8 @@ watch([openSection, benchEnabled], () => wireFrameTimings(lastWiredRenderer))
  *
  * Binding `@update:open="sectionOpen('channels')"` looks like it binds the returned handler and does
  * not: Vue compiles a CALL expression as an inline STATEMENT, so it runs the outer function on every
- * event and throws the returned one away — the boolean never arrives and nothing ever expands
- *. Only a bare identifier or a member expression is bound as the handler itself.
+ * event and throws the returned one away — the boolean never arrives and nothing ever expands.
+ * Only a bare identifier or a member expression is bound as the handler itself.
  */
 const setSection = (key: string, v: boolean) => { openSection.value = v ? key : '' }
 /**
@@ -3688,7 +3688,8 @@ async function loadVersion(refit: boolean) {
   // watcher fires when `setUid` becomes valid on the meta assignment above, DURING the
   // `await loadViewerProps` boundary below, and would call reallocate a second time. The primary
   // reallocate then destroys the atlas the watcher's reallocate just built, and Vulkan can OOM
-  // on the second createTexture before it has reclaimed the first (on // XcPcu8/LUkCpP: `Brick atlas: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY`
+  // on the second createTexture before it has reclaimed the first (observed on
+  // XcPcu8/LUkCpP: `Brick atlas: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY`
   // on initial open, worked on every subsequent manual 2D/3D toggle). Saved.mode still wins
   // when present (applied below).
   if (setUid.value && settings.getShow3D(setUid.value)) mode.value = 'volume'
@@ -3814,8 +3815,8 @@ function onModeChange(v: 'plane' | 'volume'): void {
 }
 
 // ── Labels-vs-image dim mismatch → sidebar flag ─────────────────────────────
-// A mask store segmented on a DIFFERENT image version (drift-expanded / cropped — same class as
-// commit 860da24b) keeps its old spatial dims; overlaying it on the current image version either
+// A mask store segmented on a DIFFERENT image version (drift-expanded / cropped) keeps its old
+// spatial dims; overlaying it on the current image version either
 // mis-strides the label texture (silent wrong render — see volumeRenderer.uploadFrame's
 // `bytesPerRow = imageNX * LABEL_BPV`) or trips the frontend shape guard ("Slab is AxBxC but
 // XxYxZ was asked for"). Meta now carries per-vn L0 dims (`labelDims`); publish the mismatch set

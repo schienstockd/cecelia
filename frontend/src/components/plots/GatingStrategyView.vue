@@ -213,7 +213,7 @@ const montageRef = useTemplateRef<{
   exportSvg(bg?: string, light?: boolean): string
 }>('montageRef')
 async function exportImage(): Promise<string | null> { return (await montageRef.value?.exportImage('#ffffff', true)) ?? null }
-// full vector <svg> for the board→SVG export — the montage stitches its read-only tiles (Phase A)
+// full vector <svg> for the board→SVG export — the montage stitches its read-only tiles
 function exportSvg(): string | null { return montageRef.value?.exportSvg('#ffffff', true) || null }
 defineExpose({ exportImage, exportSvg })
 </script>

@@ -13,8 +13,8 @@
 //
 // NOTHING TOUCHES THE GPU AFTER THE DEVICE IS GONE, and nothing binds a texture that has been
 // destroyed. Both were reachable and both killed the browser rather than raising anything catchable:
-// Firefox's main process crashed with `Queue[Id(4,2)] does not exist` / `Texture is not submitted`
-//. A lost device left `draw()` still submitting to a dead queue every frame, and
+// Firefox's main process crashed with `Queue[Id(4,2)] does not exist` / `Texture is not submitted`.
+// A lost device left `draw()` still submitting to a dead queue every frame, and
 // the eviction policy protected the timepoint being LOADED while the bind group pointed at the
 // different timepoint still on screen. `dead`/`destroyed` gate every GPU call, and `boundT` is
 // protected at every eviction site as well as unbound before its texture can go.

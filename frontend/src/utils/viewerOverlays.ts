@@ -257,7 +257,7 @@ export function overlaySummary(p: OverlayPayload | null): {
 /**
  * Same shape as `filterPayloadByLabels`, but keys off the `cells.track` column — for the
  * "highlight ONLY these track ids on the viewer" primitive that restores the pre-napari-retire
- * behaviour of `showTracksInNapari` (removed in P9 slice 4 without a browser-viewer replacement).
+ * behaviour of `showTracksInNapari` (removed with napari, without a browser-viewer replacement).
  *
  * A payload with no `cells.track` array cannot be filtered (nothing to match), so we return an
  * empty payload — same reducer discipline as the label version. An empty `trackIds` set means "no

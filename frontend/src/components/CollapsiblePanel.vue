@@ -10,8 +10,8 @@
 // THE PANEL INSIDE MUST NOT OWN A WIDTH. That extraction left half the job done: `TaskRunner` and
 // `MetadataPanel` kept their own `usePanelResize` + drag handle, so each sat inside this one with a
 // second width and a second handle on the same edge — dragging THIS widened this while the content
-// stayed pinned at its own stored 280px, which reads as the content shifting rather than reflowing
-//. Both now fill the slot (`flex: 1; min-width: 0`) and the starting width is
+// stayed pinned at its own stored 280px, which reads as the content shifting rather than reflowing.
+// Both now fill the slot (`flex: 1; min-width: 0`) and the starting width is
 // ModuleLayout's `rightDefaultWidth` (280 by default). A slot child that sets its own width is a bug.
 //
 // COLLAPSE IS ONE SHARED FLAG, deliberately: `settings.rightPanelCollapsed` is global, so folding the

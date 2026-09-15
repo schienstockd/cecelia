@@ -1,4 +1,4 @@
-// Pure helpers for still overlays (Phase E2): the elapsed-time timestamp and the vector scale bar drawn
+// Pure helpers for still overlays: the elapsed-time timestamp and the vector scale bar drawn
 // on a clean-captured strip frame. Kept out of the SFC so they're unit-testable.
 
 /**

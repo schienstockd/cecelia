@@ -16,9 +16,9 @@ import { debouncedSave } from '../utils/debouncedSave'
 // not reload" until 2026-08-08 — it predated the autosave, and had a reader conclude boards weren't
 // persisted at all.) A slot's content is routed by `kind`:
 //   summary     → a SummaryPanel bound to a plot spec (ref = specId)
-//   interactive → an InteractivePanel view (ref = view key; Phase B)
-//   image       → a static PNG (viewer screenshot; Phase D)
-//   filmstrip   → N captioned images with separators (Phase D)
+//   interactive → an InteractivePanel view (ref = view key)
+//   image       → a static PNG (viewer screenshot)
+//   filmstrip   → N captioned images with separators
 export interface SlotContent { kind: 'summary' | 'interactive' | 'image' | 'filmstrip'; ref: string; state: Record<string, unknown> }
 interface LayoutEntry {
   cols: number; rows: number; slotAreas: string[]

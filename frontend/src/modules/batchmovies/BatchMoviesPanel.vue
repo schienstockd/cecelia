@@ -170,7 +170,7 @@ const popValueName = computed<string>({
 const tailWidth    = computed<number>({ get: () => cfg.value.tailWidth ?? 4,         set: v => patch({ tailWidth: v }) })
 const pointsSize   = computed<number>({ get: () => cfg.value.pointsSize ?? 6,        set: v => patch({ pointsSize: v }) })
 
-// Title card (Phase H) — merge-patch so each control keeps the others' values.
+// Title card — merge-patch so each control keeps the others' values.
 function patchTitle(p: Partial<TitleCardCfg>) {
   patch({ titleCard: { ...TITLE_CARD_DEFAULT, ...(cfg.value.titleCard ?? {}), ...p } })
 }
@@ -501,8 +501,8 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     // AFTER the current tick, because arriving here is a NAVIGATION: `ImageTable` seeds its checkboxes
     // from this same store slot `onMounted`, and on the first visit that mount can land after this
     // callback — reading the old (empty) selection and committing it straight back over ours. On a
-    // second click the page is already mounted, which is exactly why it worked the second time
-    //. One tick puts us unambiguously after the seed either way.
+    // second click the page is already mounted, which is exactly why it worked the second time.
+    // One tick puts us unambiguously after the seed either way.
     if (wanted.length) nextTick(() => project.setImageSelection('batchMovies', set, wanted))
 
     const dropped = [...r.dropped]

@@ -2,7 +2,7 @@
   Universal, multipage "Analysis board" page (docs/todo/ANALYSIS_CANVAS_PLAN.md). The
   SAME summary-plot canvas as the per-module pages, but with the MODULE FILTER OFF: each board is a
   `SummaryCanvas` mounted with no `module` prop, so it offers EVERY plot spec — plots can be combined
-  across modules / images / segmentations. `TabbedCanvas` wraps N independent boards (Phase A). Pick
+  across modules / images / segmentations. `TabbedCanvas` wraps N independent boards. Pick
   one OR MORE images from the active set (multi-select, shared across boards); the populations endpoint
   unions across the selected images/segmentations.
 

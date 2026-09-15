@@ -185,7 +185,7 @@ describe('tileEvictions', () => {
   })
 
   it('a same-position wrong-t tile ranks FARTHER than a same-t viewport neighbour', () => {
-    // The invariant Phase F is about: on a scrub back to t=3, the current-t spatial neighbour
+    // The scrub-back invariant: on a scrub back to t=3, the current-t spatial neighbour
     // must survive over a co-located tile at a distant timepoint. Cross-t coefficient (1e7) is
     // larger than the level coefficient (1e6) so a wrong-t tile always loses to any same-t one
     // in the resident set, no matter how much cheaper the wrong-t tile was to fetch.

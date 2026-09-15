@@ -33,7 +33,7 @@ export const useAnimationStore = defineStore('animation', () => {
   const sizeX = ref<number | null>(null)
   const sizeY = ref<number | null>(null)
   const suffix = ref('')                 // filename addition, so two renders of one image can coexist
-  const titleCard = ref<TitleCardCfg>({ ...TITLE_CARD_DEFAULT })   // Phase H4 description slide (per project)
+  const titleCard = ref<TitleCardCfg>({ ...TITLE_CARD_DEFAULT })   // description slide (per project)
   // Write-behind autosave → /api/projects/animations (dirty on any keyframe/fps change, incl. deep
   // edits to a keyframe's viewState from the row toggles). Shared helper — utils/debouncedSave.
   const _autosave = debouncedSave(async () => {

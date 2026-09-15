@@ -35,8 +35,8 @@
 // when it elapses — so a long drag gets a run every `maxWait` ms with the current position, while
 // short drags still coalesce cleanly through `wait`. Same one-at-a-time and same `isCurrent()`
 // semantics; the difference is just how often work is allowed to START during a sustained burst.
-// Written for the volume viewer's z-slider, which without it only painted the release plane
-//. The canonical shape for a scrub — no hand-rolled fourth timer.
+// Written for the volume viewer's z-slider, which without it only painted the release plane.
+// The canonical shape for a scrub — no hand-rolled fourth timer.
 //
 // Deliberately framework-agnostic (same as `coalesce.ts`) — the caller maps `onState` onto a ref.
 

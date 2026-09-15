@@ -78,7 +78,7 @@ function fmt(n: number | undefined | null): string {
 
       <!-- Baseline note. Shown when the browser exposes only the WebGPU-spec-default 3D texture axis
            (2048), which is the ceiling on many platforms and hard-capped by Chromium/Dawn on Linux
-           Vulkan even where the driver reports 16384. Phase B's LOD picker already handles it; this row
+           Vulkan even where the driver reports 16384. The LOD picker already handles it; this row
            just names the constraint so a user can see why large images stop getting sharper.
 
            On Apple, both Safari AND Chrome-on-Mac report 2048 (measured 2026-09-10 on `apple metal-3`),

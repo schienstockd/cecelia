@@ -475,8 +475,8 @@ async function showInViewer(): Promise<void> {
  * writes the same store too, so a Cockpit Read immediately lights the TSV lanes and a TSV lane
  * click immediately updates the cockpit summary. That symmetry is why Draw / Read are NOT
  * duplicated on the timeline — a second copy running against a divergent selection state was
- * the exact "Cockpit Read is a no-op" / "Show highlights different tracks" bug reported by
- * .
+ * the exact "Cockpit Read is a no-op" / "Show highlights different tracks" bug that had been
+ * reported.
  */
 async function drawInViewer(): Promise<void> {
   if (!imageUid.value) return

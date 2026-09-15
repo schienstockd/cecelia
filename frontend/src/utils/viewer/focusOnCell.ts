@@ -1,6 +1,6 @@
 // Centre the browser viewer's camera on a specific cell/track detection — the browser-viewer
-// replacement for the napari-era `centreNapariOnTrack` primitive, which went out with P9 slice 4
-// (commit 842d8d36) without a browser-viewer equivalent. Restoring it as a pure helper so callers
+// replacement for the napari-era `centreNapariOnTrack` primitive, which went out with the napari
+// retirement without a browser-viewer equivalent. Restoring it as a pure helper so callers
 // (TrackSchemeView's Show, later the linked-brushing hover) can go through ONE code path.
 //
 // The delivery mechanism is `viewerStore.setPendingViewState`, which the popup viewer already

@@ -1591,8 +1591,8 @@ export async function createBrickVolumeRenderer(
     setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
     setZPlane(zLo) {
       // Fast plane switch. `setImage` would `dropAtlas()` (destroys a ~64 MB 3D texture) then
-      // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D
-      //. The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
+      // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D.
+      // The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
       // × nch), so we can keep the texture and just invalidate every brick's contents:
       // atlas.pageTable.clear() rewinds the free-slot stack so incoming fetches reuse the
       // same slots. Same discipline as level swap, but without the level/grid churn.

@@ -306,8 +306,8 @@ function api_cell_cards(body_bytes::Vector{UInt8})
         return 500, JSON3.write((; error = "cell_cards_metadata failed: $(sprint(showerror, e))"))
     end
 
-    # Uniform crop across every card so cell POPULATIONS are visually comparable side by side
-    #. Side = the largest bbox extent across all cards + 2×pad, clamped by the
+    # Uniform crop across every card so cell POPULATIONS are visually comparable side by side.
+    # Side = the largest bbox extent across all cards + 2×pad, clamped by the
     # renderer to native. `track_bbox` here is called with pad=0 to keep the metric to the raw
     # motion; the renderer re-adds its own pad centred on each medoid.
     uniform_side = 0

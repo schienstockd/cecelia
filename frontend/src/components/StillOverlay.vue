@@ -1,5 +1,5 @@
 <!--
-  Vector scale bar + timestamp for a captured still (Phase E2). An SVG whose viewBox is the frame's
+  Vector scale bar + timestamp for a captured still. An SVG whose viewBox is the frame's
   physical extent (µm) with preserveAspectRatio "xMidYMid meet" — the SAME fit as the frame <img>'s
   object-fit: contain — so annotations stay geometrically correct AND aligned to the image content even
   when the frame is letterboxed. The scale bar length is drawn in µm (viewBox units), so it's correct by
