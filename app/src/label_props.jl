@@ -594,15 +594,39 @@ Stage obs columns to write. `df` must have a `label` column plus one column per 
 values are aligned to the file's obs index **by label** at `save!` time (labels absent from
 `df` get `NaN`). Repeated `add_obs` calls accumulate (later columns win on name clash).
 Floating-point columns only (track measures, etc.); terminal verb is `save!`.
+
+Non-numeric columns (String / Symbol / Bool etc.) are refused **at entry** with a named-column
+error rather than throwing deep inside `save!`'s `Float64(v)` cast — otherwise a categorical or
+string obs sent through this path fails halfway through the write with a stack trace naming a
+generic `Float64` conversion. Use [`write_categorical_obs`](@ref) for categorical / string columns.
 """
 function add_obs(lp::LabelProps, df::DataFrame)
     "label" in names(df) || error("add_obs: DataFrame needs a `label` column")
+    _assert_float_convertible(df)
     if isnothing(lp.pending_obs)
         lp.pending_obs = copy(df)
     else
         lp.pending_obs = outerjoin(lp.pending_obs, df; on=:label, makeunique=false)
     end
     lp
+end
+
+# Reject non-numeric columns (excluding `label` and the temporal column set) at `add_obs` entry.
+# The write path coerces via `Float64(v)`, which throws a MethodError deep in `save!` if a column
+# holds Strings — the user then sees "no method matching Float64(::String)" with no column name.
+# Missing / nothing entries are allowed (they map to NaN in `save!`); Bool is refused because it
+# would coerce silently to 0.0/1.0 and misrepresent the semantic (use categorical for those).
+function _assert_float_convertible(df::DataFrame)
+    for c in names(df)
+        c == "label" && continue
+        col = df[!, c]
+        eltype(col) === Missing && continue
+        # Cheap acceptor: numeric elements OR missing/nothing. Bool intentionally rejected
+        # (see docstring); Symbol / String / arbitrary structs land in the fallback.
+        ok = all(v -> ismissing(v) || v === nothing || (v isa Real && !(v isa Bool)), col)
+        ok || error("add_obs: column `$c` is not numeric (eltype=$(eltype(col))). " *
+                    "Use write_categorical_obs for String / categorical / Bool columns.")
+    end
 end
 
 """
@@ -716,23 +740,66 @@ end
 # categoricals, so once written these round-trip like any obs column.
 
 """
+Typed shape of one categorical obs column for [`write_categorical_obs`](@ref). `values` is
+aligned to `labels`; a `missing` / `nothing` entry (or a label absent from the column) is left
+unset (category code -1 → NaN).
+
+Introduced so a shape drift on the caller side is a **construction-time error with the field name**
+(`CategoricalObsColumn: no field 'lables'`) rather than the deep, generic
+`ERROR: type NamedTuple has no field labels` the Python writer used to throw from the middle of
+the subprocess when a caller misspelled a field. `write_categorical_obs` accepts either the struct
+or the historical `(; name, labels, values)` NamedTuple shape — the coercer names the offending
+column in either case.
+"""
+struct CategoricalObsColumn
+    name::String
+    labels::Vector{Int}
+    values::Vector{Any}
+end
+
+CategoricalObsColumn(; name::AbstractString, labels, values) =
+    CategoricalObsColumn(String(name), collect(Int, labels),
+        Any[v === missing ? nothing : (v isa AbstractString ? String(v) : v) for v in values])
+
+# Coerce ONE input entry to `CategoricalObsColumn`. Accepts the struct itself (idempotent),
+# an `AbstractDict` with the three fields, or a NamedTuple / any object exposing `.name` / `.labels`
+# / `.values` (the historical shape callers still pass). Missing fields are named in the error.
+function _to_categorical_obs_column(c)::CategoricalObsColumn
+    c isa CategoricalObsColumn && return c
+    if c isa AbstractDict
+        for k in ("name", "labels", "values")
+            haskey(c, k) || haskey(c, Symbol(k)) ||
+                error("CategoricalObsColumn: missing field `$k` in dict entry")
+        end
+        get_k(k) = haskey(c, k) ? c[k] : c[Symbol(k)]
+        return CategoricalObsColumn(; name = get_k("name"), labels = get_k("labels"),
+                                     values = get_k("values"))
+    end
+    for f in (:name, :labels, :values)
+        hasproperty(c, f) ||
+            error("CategoricalObsColumn: entry of type $(typeof(c)) is missing property `$f`")
+    end
+    CategoricalObsColumn(; name = getproperty(c, :name), labels = getproperty(c, :labels),
+                          values = getproperty(c, :values))
+end
+
+"""
     write_categorical_obs(props_path, columns; drop=String[], on_log, on_process) -> Bool
 
-Write/replace categorical obs columns in an existing labelProps `.h5ad`. `columns` is a vector of
-`(name, labels, values)` named tuples — `values` aligned to `labels`; a `missing`/`nothing` value
-or a label absent from the column is left unset (category code -1 → NaN). `drop` removes obs
-columns first. Runs the Python writer as a subprocess via `python_bin_path()`; returns success.
+Write/replace categorical obs columns in an existing labelProps `.h5ad`. `columns` is a vector
+of [`CategoricalObsColumn`](@ref) (or dict / NamedTuple entries with the same fields; both
+shapes are coerced at entry via `_to_categorical_obs_column`). `values` aligned to `labels`; a
+`missing`/`nothing` value or a label absent from the column is left unset (category code -1 → NaN).
+`drop` removes obs columns first. Runs the Python writer as a subprocess via `python_bin_path()`;
+returns success.
 """
 function write_categorical_obs(props_path::AbstractString, columns::AbstractVector;
                                drop::AbstractVector=String[],
                                on_log::Function     = line -> println(line),
                                on_process::Function = _ -> nothing)::Bool
     isfile(props_path) || (on_log("[ERROR] No labelProps: $props_path"); return false)
-    cols = [(; name   = String(c.name),
-               labels = collect(Int, c.labels),
-               values = Any[v === missing ? nothing : (v isa AbstractString ? String(v) : v)
-                            for v in c.values])
-            for c in columns]
+    coerced = CategoricalObsColumn[_to_categorical_obs_column(c) for c in columns]
+    cols = [(; name = c.name, labels = c.labels, values = c.values) for c in coerced]
     # props_path = {img._dir}/labelProps/{vn}.h5ad → up two dirs reaches img._dir
     run_py("writers/write_categorical_obs_run.py",
         (; filepath = String(props_path), columns = cols, drop = String.(collect(drop))),
