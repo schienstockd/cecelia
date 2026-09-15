@@ -47,7 +47,11 @@ jobs:
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cat > "$APP/Contents/MacOS/cecelia" <<EOF
           #!/bin/sh
-          cd "$INSTALL_DIR" && exec "$PIXI" run app
+          LOG_DIR="\$HOME/Library/Logs/Cecelia"
+          mkdir -p "\$LOG_DIR"
+          [ -f "\$LOG_DIR/launcher.log" ] && mv -f "\$LOG_DIR/launcher.log" "\$LOG_DIR/launcher.log.prev"
+          echo "===== \$(date -u +%Y-%m-%dT%H:%M:%SZ) launched =====" >"\$LOG_DIR/launcher.log"
+          cd "$INSTALL_DIR" && exec "$PIXI" run app >>"\$LOG_DIR/launcher.log" 2>&1
           EOF
           chmod +x "$APP/Contents/MacOS/cecelia"
           cp "$INSTALL_DIR/frontend/dist/icons/cecelia.icns" "$APP/Contents/Resources/cecelia.icns"

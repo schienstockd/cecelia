@@ -229,6 +229,20 @@ within 5 seconds, Julia escalates to forceful termination.
 MPS (Metal Performance Shaders) is the Apple Silicon GPU backend for PyTorch.
 Cellpose 4.x supports MPS. Use `torch.backends.mps.is_available()` to check.
 
+### macOS — where the launcher logs go
+
+A `.app` launched from Finder / Dock runs headlessly on macOS: stdout and stderr have no terminal, so
+a silent supervisor death (a reprovision that fails, a server that crash-loops past
+`app.py:CRASH_LIMIT`, an update that leaves an unbootable tree) shows the user only
+*"The application 'Cecelia' is not open anymore."* the next time they click the Dock icon — with no
+cause anywhere.
+
+`Contents/MacOS/cecelia` therefore redirects the whole session to `~/Library/Logs/Cecelia/launcher.log`;
+the previous run is kept as `launcher.log.prev`, so a bad update can be diagnosed by diffing the two.
+Console.app already reads from `~/Library/Logs/`, so a user can just open it there.
+
+If a user reports Cecelia "won't launch" after an update, this file is where the answer is.
+
 ### Running on a remote server (SSH tunnel)
 
 Cecelia can run on a headless Linux VM (e.g. Google Cloud Compute Engine) and be reached from a
