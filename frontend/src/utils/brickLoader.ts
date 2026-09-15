@@ -115,9 +115,11 @@ export function brickSlabUrl(
 
 /**
  * URL for one label brick — `/api/viewer/slab?labels=<name>` at the same (x, y, z, t) box the
- * image brick covers. Labels are u32 ids (no channels) so nc is fixed at 1 and there's no cTo.
- * The server ships them at the same geometry as the image bricks — same page-table entry, same
- * atlas slot — so the shader's page-table lookup works for both.
+ * image brick covers. Label stores have no channel axis, so the bytes come out the same whether
+ * `cTo` is set or not — but the server's `X-Slab-Shape` header shape depends on it: scalar `c`
+ * emits the 3-tuple `nz,ny,nx`, a range emits the 4-tuple `nc,nz,ny,nx`. `fetchLabelBrick` reuses
+ * the brick-atlas parser (`parseBrickSlabShape`, 4-tuple only), so `cTo: 0` is what makes the
+ * header parse — without it, every label brick silently drops on the shape guard.
  */
 export function brickLabelSlabUrl(
   base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string },
@@ -134,6 +136,7 @@ export function brickLabelSlabUrl(
     enc: base.enc,
     t: brick.t,
     c: 0,
+    cTo: 0,
     x: b.xLo,
     xTo: b.xHi,
     y: b.yLo,
