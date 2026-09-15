@@ -181,7 +181,7 @@ function api_plot_populations(req::HTTP.Request)
     # (`is_track_pop`/`pop_category`) — so every path (accepts / popScope / legacy) emits them uniformly.
     result = [Dict("valueName" => g.value_name,
                    "populations" => [Dict("path" => p.path, "name" => p.name,
-                                          "colour" => p.colour, "popType" => p.pop_type,
+                                          "colour" => p.colour, "popType" => string(p.pop_type),
                                           "granularity" => is_track_pop(p.pop_type, p.path) ? "track" : "cell",
                                           "category" => pop_category(p.pop_type, p.path))
                                      for p in g.populations])

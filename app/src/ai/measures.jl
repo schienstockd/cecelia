@@ -70,9 +70,9 @@ function _vn_targets(img::CciaImage, vn::AbstractString, gated::AbstractVector)
     else
         for p in gated
             if p.is_track
-                push!(T, (p.path, p.pop_type, p.path, :track, "motility"))
+                push!(T, (p.path, string(p.pop_type), p.path, :track, "motility"))
             else
-                push!(T, (p.path, p.pop_type, p.path, :cell, "phenotype"))
+                push!(T, (p.path, string(p.pop_type), p.path, :cell, "phenotype"))
                 tracked && push!(T, (p.path, "live", p.path, :track, "motility"))
             end
         end

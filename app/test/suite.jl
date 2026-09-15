@@ -5444,12 +5444,12 @@ end
     proj = create_project!(name="rt-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
     img  = add_image!(s; name="img")
-    img.status = "done"
+    img.status = IMAGE_DONE
     img.attr["condition"] = "treated"
     save!(img)
     r = init_object(proj.uid, img.uid)
     @test r isa CciaImage
-    @test r.status == "done"
+    @test r.status == IMAGE_DONE
     @test get(r.attr, "condition", "") == "treated"
     rm(proj.root; recursive=true)
 end
@@ -5595,9 +5595,9 @@ end
     # (the loaded object carries funParams, so save! doesn't drop them — unlike a stale object).
     r = init_object(proj.uid, img.uid)
     @test haskey(r.meta, "funParams")
-    r.status = "done"; save!(r)
+    r.status = IMAGE_DONE; save!(r)
     r2 = init_object(proj.uid, img.uid)
-    @test r2.status == "done"
+    @test r2.status == IMAGE_DONE
     @test read_module_fun_params(r2._dir, "cleanupImages.driftCorrect")["valueName"] == "driftCorrected"
 
     # a second task's params coexist under its own key (no clobber)
@@ -5651,7 +5651,7 @@ end
 
     # survives the object round-trip, like funParams above
     r = init_object(proj.uid, img.uid)
-    r.status = "done"; save!(r)
+    r.status = IMAGE_DONE; save!(r)
     @test read_module_fun_params_by_name(init_object(proj.uid, img.uid)._dir, fun, "Tcell")["cellDiameter"] == 8
 
     rm(proj.root; recursive=true)
@@ -5910,7 +5910,7 @@ end
     mkpath(zarr)
     img.filepath["default"] = "ccidImage.ome.zarr"
     img.filepath["_active"] = "default"
-    img.status = "done"
+    img.status = IMAGE_DONE
     save!(img)
 
     logs = String[]
@@ -5925,7 +5925,7 @@ end
     @test !isempty(logs)                      # on_log callback fired (no WS needed)
 
     reloaded = init_object(proj.uid, img.uid)
-    @test reloaded.status == "pending"        # primary removal reset status
+    @test reloaded.status == IMAGE_PENDING        # primary removal reset status
     @test !haskey(reloaded.filepath, "default")  # version entry gone
     rm(proj.root; recursive=true)
 end
@@ -5968,13 +5968,13 @@ end
                       "driftCorrected"=>"drift.ome.zarr", "_active"=>"driftCorrected")
     a.im_channel_names = Dict{String,Any}("default"=>["ch0","ch1"], "_active"=>"default")
     a.meta = Dict{String,Any}("SizeC"=>2, "SizeT"=>1, "SizeZ"=>5)
-    a.status = "done"; save!(a)
+    a.status = IMAGE_DONE; save!(a)
 
     # imgB: original only, active default → nothing to reclaim
     b = add_image!(s; name="b")
     _mk_ver!(b, "import.ome.zarr")
     b.filepath = Dict("default"=>"import.ome.zarr", "_active"=>"default")
-    b.status = "done"; save!(b)
+    b.status = IMAGE_DONE; save!(b)
 
     # safe-primary unit: removing default while other versions remain must NOT un-import
     freed, cleared = remove_image_version!(a, "default", "driftCorrected")
@@ -5993,7 +5993,7 @@ end
     @test  isdir(joinpath(img_zero_dir(b), "import.ome.zarr"))    # b untouched
 
     ra = init_object(proj.uid, a.uid)
-    @test ra.status == "done"                                     # NOT un-imported
+    @test ra.status == IMAGE_DONE                                     # NOT un-imported
     @test ra.filepath["_active"] == "driftCorrected"
     @test collect(keys(filter(kv -> kv.first != "_active", ra.filepath))) == ["driftCorrected"]
     @test ra.meta["SizeC"] == 2                                   # dims kept
@@ -6020,7 +6020,7 @@ end
     img.im_channel_names = Dict{String,Any}("default"=>["ch0"], "_active"=>"default")
     img.meta   = Dict{String,Any}("SizeC"=>1, "SizeT"=>1, "SizeZ"=>3)
     img.attr   = Dict{String,Any}("treatment"=>"CTRL")
-    img.status = "done"
+    img.status = IMAGE_DONE
     img.labels = Dict("A"=>["A.zarr"])          # not versioned — a plain valueName → files map
     img.label_props = Dict("A"=>"A.h5ad")
     save!(img)
@@ -6064,7 +6064,7 @@ end
     @test ri isa CciaImage
     @test Cecelia.versioned_get(ri.filepath, "default") == "import.ome.zarr"   # version untouched
     @test ri.filepath["_active"] == "default"
-    @test ri.status == "done"                                                  # still imported
+    @test ri.status == IMAGE_DONE                                                  # still imported
     @test ri.meta["SizeC"] == 1                                                # calibration/dims kept
     @test ri.attr["treatment"] == "CTRL"                                       # annotations kept
     # the analysis REGISTRATIONS are cleared, so nothing points at a deleted file
@@ -6663,28 +6663,28 @@ end
 # tasks (behaviour.hmm, clustTracks.cluster) become picnic nodes automatically, image
 # tasks stay image-scope. An explicit scope always overrides.
 @testset "Chain node scope inherits from task spec" begin
-    @test Cecelia._task_default_scope("clustTracks.cluster") == "set"
-    @test Cecelia._task_default_scope("behaviour.hmm")        == "set"
-    @test Cecelia._task_default_scope("importImages.remove")  == "image"
-    @test Cecelia._task_default_scope("nonexistent.task")     == "image"   # unknown fn → image
+    @test Cecelia._task_default_scope("clustTracks.cluster") == CHAIN_SET
+    @test Cecelia._task_default_scope("behaviour.hmm")        == CHAIN_SET
+    @test Cecelia._task_default_scope("importImages.remove")  == CHAIN_IMAGE
+    @test Cecelia._task_default_scope("nonexistent.task")     == CHAIN_IMAGE   # unknown fn → image
     # EVERY set-scope task declares it in its own spec — including the mock, which used to rely on
     # each chain node passing scope="set" (the one task that contradicted "the spec is the single
     # source of truth", and it's the fixture the barrier tests are built on).
-    @test Cecelia._task_default_scope("testTasks.set_task")    == "set"
-    @test chain_node("testTasks.set_task").scope               == "set"
+    @test Cecelia._task_default_scope("testTasks.set_task")    == CHAIN_SET
+    @test chain_node("testTasks.set_task").scope               == CHAIN_SET
 
     # chain_node / ChainNode with no scope kwarg resolve from the spec …
-    @test chain_node("clustTracks.cluster").scope == "set"
-    @test chain_node("importImages.remove").scope == "image"
-    @test ChainNode(id="x", fn="behaviour.hmm").scope == "set"
+    @test chain_node("clustTracks.cluster").scope == CHAIN_SET
+    @test chain_node("importImages.remove").scope == CHAIN_IMAGE
+    @test ChainNode(id="x", fn="behaviour.hmm").scope == CHAIN_SET
     # … and an explicit scope still wins (force a set task to run per-image)
-    @test chain_node("clustTracks.cluster"; scope="image").scope == "image"
+    @test chain_node("clustTracks.cluster"; scope="image").scope == CHAIN_IMAGE
 
     # Deserialisation: a node dict with no "scope" key also inherits from the spec
-    @test Cecelia._node_from_dict(Dict("id"=>"n", "fn"=>"clustTracks.cluster")).scope == "set"
+    @test Cecelia._node_from_dict(Dict("id"=>"n", "fn"=>"clustTracks.cluster")).scope == CHAIN_SET
     # …while a stored scope (frozen template) is honoured verbatim
     @test Cecelia._node_from_dict(Dict("id"=>"n", "fn"=>"clustTracks.cluster",
-                                       "scope"=>"image")).scope == "image"
+                                       "scope"=>"image")).scope == CHAIN_IMAGE
 end
 
 # ── Producer output value_name is declared in the JSON spec (introspectable) ──
@@ -6757,8 +6757,9 @@ end
     bad(tpl([node("", "importImages.remove")], ChainEdge[]))        # empty id
     bad(tpl([ok_node("n1"), ok_node("n1")], ChainEdge[]))           # duplicate id
     bad(tpl([node("n1", "importImages.nope")], ChainEdge[]))        # unknown fn
-    bad(tpl([node("n1", "importImages.remove"; scope="picnic")], ChainEdge[]))
-    bad(tpl([node("n1", "importImages.remove"; barrier_policy="maybe")], ChainEdge[]))
+    # scope + barrier_policy — rejected at CONSTRUCTION now (enum types), not at validation.
+    @test_throws ArgumentError node("n1", "importImages.remove"; scope="picnic")
+    @test_throws ArgumentError node("n1", "importImages.remove"; barrier_policy="maybe")
     bad(tpl([node("n1", "importImages.remove"; resource_pool="gpu-light")], ChainEdge[]))
 
     # Both edge endpoints. A dangling `from` is a run-time KeyError in _topo_sort; a dangling `to`
@@ -6807,7 +6808,7 @@ end
         mkpath(zarr)
         img.filepath["default"] = "ccidImage.ome.zarr"
         img.filepath["_active"] = "default"
-        img.status = "done"
+        img.status = IMAGE_DONE
         save!(img)
         img
     end
@@ -6878,7 +6879,7 @@ end
     proj = create_project!(name="chain-restart-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
     img  = add_image!(s; name="img")
-    img.status = "done"; save!(img)
+    img.status = IMAGE_DONE; save!(img)
     states = Dict(img.uid => Dict(
         "n1" => Cecelia.ImageNodeState(), "n2" => Cecelia.ImageNodeState(),
         "n3" => Cecelia.ImageNodeState()))
@@ -7143,7 +7144,7 @@ end
         mkpath(zarr)
         img.filepath["default"] = "ccidImage.ome.zarr"
         img.filepath["_active"] = "default"
-        img.status = "done"
+        img.status = IMAGE_DONE
         save!(img)
         img
     end
@@ -7742,7 +7743,7 @@ end
         mkpath(zarr)
         img.filepath["default"] = "ccidImage.ome.zarr"
         img.filepath["_active"] = "default"
-        img.status = "done"
+        img.status = IMAGE_DONE
         save!(img)
     end
 

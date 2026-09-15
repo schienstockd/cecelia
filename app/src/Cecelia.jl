@@ -44,7 +44,9 @@ export project_storage_summary, reclaim_inactive!, remove_image_version!, reclai
 export reset_image_analysis!, analysis_bytes_of, ANALYSIS_KEEP
 
 # ── Data model ────────────────────────────────────────────────────────────────
-export CciaImage, CciaSet, CciaProject
+export CciaImage, CciaSet, CciaProject, ImageStatus
+export IMAGE_PENDING, IMAGE_CONVERTING, IMAGE_DONE, IMAGE_FAILED
+export parse_image_status
 export save!
 export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
@@ -94,7 +96,9 @@ export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, proje
 export Density2D, density_2d
 
 # ── Population manager ─────────────────────────────────────────────────────────
-export Population, PopulationMap, ROOT
+export Population, PopulationMap, ROOT, PopType, PopTypeArg
+export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP_REGION, POP_LABELS
+export parse_pop_type
 export pop_parent, pop_name, pop_path, is_root
 export add_pop!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!
 export boolean_dependents, BOOLEAN_OPS
@@ -224,6 +228,9 @@ export subscribe_chain_events!, unsubscribe_chain_events!
 
 # ── Chain executor ─────────────────────────────────────────────────────────────
 export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState, ChainNodeStatus
+export ChainScope, CHAIN_IMAGE, CHAIN_SET, CHAIN_INCREMENTAL
+export ChainBarrierPolicy, BARRIER_ALL, BARRIER_REQUIRE_ALL, BARRIER_SUCCESSFUL_ONLY
+export parse_chain_scope, parse_chain_barrier_policy
 export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED
 export parse_chain_node_status
 export load_chain_template, save_chain_template!, load_template_from_cache

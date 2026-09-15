@@ -356,7 +356,7 @@ end
 # All three funnel into the SAME `_push_point!` / `_push_track!` and the same segment build
 # (`track_color_mode` + tail-length). If any of these behaviours are wrong here, every
 # downstream author is wrong the same way — which is the drift guarantee.
-function _build_overlay_state(img; value_name::AbstractString, pop_type::AbstractString,
+function _build_overlay_state(img; value_name::AbstractString, pop_type::PopTypeArg,
                               pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                               include_tracks::Bool = true,
                               tail_length::Int = 30,
@@ -372,7 +372,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
     # per-source modes diverged, the target is "pop" (uses `col`, i.e. the colour_by result), not
     # "solid" (uniform palette[0]) — see the docstring above `_prep_overrides`.
     effective_tcm = cb_col === nothing ? String(track_color_mode) : "pop"
-    pt = String(pop_type)
+    pt = string(pop_type)
     vn = String(value_name)
     is_track_pt = pt in ("track", "trackclust")
 
@@ -633,7 +633,7 @@ compatibility with `draw_points!` / `draw_segments!`. `(nothing, nothing)` when 
 Backed by `_build_overlay_state` — one collection, one place any pop-resolution / `track_color_mode`
 fix reaches. The projection differs only in `_apply(transform, x, y)` at emit time.
 """
-function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractString,
+function build_overlays_for(img; value_name::AbstractString, pop_type::PopTypeArg,
                             transform::PixelTransform,
                             pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                             include_tracks::Bool = true,
@@ -756,7 +756,7 @@ draws — the projection math never leaves Julia, so it can't drift from the ray
 `alpha` per segment ramps the tail fade the browser overlay uses:
 `alpha = 0.2 + 0.8 * clamp(1 - age / tail_length, 0, 1)`, `age = (t + 1) - t1`.
 """
-function build_overlays3d_for(img; value_name::AbstractString, pop_type::AbstractString,
+function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopTypeArg,
                               pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                               include_tracks::Bool = true,
                               tail_length::Int = 30,
@@ -848,7 +848,7 @@ mask counterpart of `build_overlays_for(all_tracks = true)`. Useful for a cpSAM-
 segmentation with no gated pops, where the answer to "just show me the cells" is one colour
 per outline.
 """
-function build_mask_for(img; value_name::AbstractString, pop_type::AbstractString,
+function build_mask_for(img; value_name::AbstractString, pop_type::PopTypeArg,
                         transform::PixelTransform,
                         pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                         z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
@@ -856,7 +856,7 @@ function build_mask_for(img; value_name::AbstractString, pop_type::AbstractStrin
                         all_cells_colour::AbstractString = "#9ca3af",
                         colour_by::Union{Nothing,AbstractString} = nothing,
                         colour_overrides::Union{Nothing,AbstractDict} = nothing)
-    pt = String(pop_type)
+    pt = string(pop_type)
     vn = String(value_name)
     is_track_pt = pt in ("track", "trackclust")
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)

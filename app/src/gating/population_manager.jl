@@ -45,6 +45,50 @@ function _replace_prefix(path::AbstractString, old::AbstractString, new::Abstrac
     path
 end
 
+# ── PopType enum ─────────────────────────────────────────────────────────────────
+# Enumerates the population kinds Cecelia recognises internally. The on-wire (API `popType`) and
+# on-disk (gating sidecar `"pop_type"` value, and the `{vn}__<pt>.json` filename discriminator)
+# forms stay lowercase strings via `Base.string(::PopType)`; `parse_pop_type` reads them back and
+# throws `ArgumentError` on an unknown value.
+#
+# The set is not a free vocabulary — every value listed here is one that some code path routes on
+# (`accepts` allow-lists in `is_gating_pop_type`/`_is_cluster_pop_type`, filename derivation in
+# `gating_path`, granularity/category resolution). A new pop_type value is a new set of dispatch
+# entries; add it here first so the compiler surfaces the reachable sites.
+@enum PopType POP_FLOW POP_CLUST POP_TRACK POP_TRACKCLUST POP_BRANCH POP_LIVE POP_REGION POP_LABELS
+const _POP_TYPE_STR = Dict(
+    POP_FLOW       => "flow",
+    POP_CLUST      => "clust",
+    POP_TRACK      => "track",
+    POP_TRACKCLUST => "trackclust",
+    POP_BRANCH     => "branch",
+    POP_LIVE       => "live",
+    POP_REGION     => "region",
+    POP_LABELS     => "labels",
+)
+const _POP_TYPE_PARSE = Dict(v => k for (k, v) in _POP_TYPE_STR)
+Base.string(s::PopType) = _POP_TYPE_STR[s]
+# `String(pt)` also works — the many `String[pop_type, ...]` / `String(pop_type)` idioms across the
+# codebase (already covering the String case as identity) round-trip an enum via this converter.
+Base.String(s::PopType) = _POP_TYPE_STR[s]
+# String interpolation (`"$(pt)"`) goes through `print`, which for `@enum` types defaults to the
+# UPPERCASE symbol name ("POP_FLOW"), not the wire lowercase. Override so interpolation stays
+# wire-compatible — `lab_log_context.jl:300` builds a `|`-delimited key with the pop_type value
+# baked in and then splits it back apart to route on `is_gating_pop_type`.
+Base.print(io::IO, s::PopType) = print(io, _POP_TYPE_STR[s])
+function parse_pop_type(s::AbstractString)::PopType
+    haskey(_POP_TYPE_PARSE, s) || throw(ArgumentError(
+        "unknown pop_type: '$s' (must be one of $(join(sort(collect(keys(_POP_TYPE_PARSE))), ", ")))"))
+    _POP_TYPE_PARSE[s]
+end
+# Accept enum or String at construction/boundary sites — kw ctors, `_pop_from_dict`, and function
+# kwargs that used to take `AbstractString` all go through `_coerce_pop_type`.
+_coerce_pop_type(x::PopType) = x
+_coerce_pop_type(x::AbstractString) = parse_pop_type(x)
+# Union alias for API-boundary function kwargs: accept enum OR string, coerce internally
+# with `string(pop_type)` (already what most helpers do). Signature stays permissive.
+const PopTypeArg = Union{PopType,AbstractString}
+
 # ── Population ───────────────────────────────────────────────────────────────────
 mutable struct Population
     # Stable identity — 6-char `gen_uid`, assigned at creation, persisted in the gating JSON, unchanged
@@ -58,7 +102,7 @@ mutable struct Population
     parent::String
     colour::String
     show::Bool
-    pop_type::String
+    pop_type::PopType             # see @enum PopType above
     value_name::String
     gate::Union{Gate,Nothing}              # flow
     # filtered-pop spec (clust/live; e.g. _tracked = filter_measure="track_id", fun="gt", values=0)
@@ -91,7 +135,7 @@ end
 
 # ── PopulationMap (a tree for one value_name) ────────────────────────────────────
 mutable struct PopulationMap
-    pop_type::String
+    pop_type::PopType             # see @enum PopType above
     value_name::String
     pops::Dict{String,Population}          # path → Population
     order::Vector{String}                  # insertion order (parents before children)
@@ -133,10 +177,11 @@ end
 const SPATIAL_UNIT_PX = "px"
 const SPATIAL_UNIT_UM = "um"
 
-PopulationMap(; pop_type::AbstractString="flow", value_name::AbstractString="default",
+PopulationMap(; pop_type::Union{PopType,AbstractString}=POP_FLOW,
+              value_name::AbstractString="default",
               spatial_unit::AbstractString=SPATIAL_UNIT_PX,
               physical_sizes::Union{AbstractVector{<:Real},Nothing}=nothing) =
-    PopulationMap(String(pop_type), String(value_name),
+    PopulationMap(_coerce_pop_type(pop_type), String(value_name),
                   Dict{String,Population}(), String[],
                   Dict{String,String}(), Set{String}(), false,
                   String(spatial_unit),
@@ -577,7 +622,7 @@ function to_tree(m::PopulationMap; include_transient::Bool=true)::Dict{String,An
     include_transient || (roots = [r for r in roots if !m.pops[r].transient])
     out = Dict{String,Any}(
         "value_name" => m.value_name,
-        "pop_type" => m.pop_type,
+        "pop_type" => string(m.pop_type),
         # Which unit this file's SPATIAL gate coordinates are in. Written always (so a file this code
         # saves is self-describing); read back with a "px" default for pre-existing files.
         "spatial_unit" => m.spatial_unit,
@@ -657,10 +702,10 @@ const POP_MAP_SUFFIX = Dict{String,String}(
 # gates tracks — one abstraction over both so gating features (e.g. copy-to-images, the defining-plot
 # view) treat them uniformly instead of special-casing flow. Single source of truth.
 const GATING_POP_TYPES = ("flow", "track")
-is_gating_pop_type(pop_type) = String(pop_type) in GATING_POP_TYPES
+is_gating_pop_type(pop_type) = string(pop_type) in GATING_POP_TYPES
 gating_dir(task_dir::AbstractString) = joinpath(task_dir, "gating")
-gating_path(task_dir::AbstractString, value_name::AbstractString; pop_type::AbstractString="flow") =
-    joinpath(gating_dir(task_dir), value_name * get(POP_MAP_SUFFIX, pop_type, "") * ".json")
+gating_path(task_dir::AbstractString, value_name::AbstractString; pop_type::PopTypeArg="flow") =
+    joinpath(gating_dir(task_dir), value_name * get(POP_MAP_SUFFIX, string(pop_type), "") * ".json")
 
 """Write the map to `{task_dir}/gating/{value_name}[__tracks].json` (by `m.pop_type`)."""
 function save_pop_map!(m::PopulationMap, task_dir::AbstractString)
@@ -686,7 +731,7 @@ freshly-picked UIDs are stable across sessions (a next load would otherwise rero
 outside reference — a `track_source` obs value, a lab-log capture — would drift). Once the sidecar
 is UID-complete this branch never fires again."""
 function load_pop_map(task_dir::AbstractString, value_name::AbstractString;
-                      pop_type::AbstractString="flow")::PopulationMap
+                      pop_type::PopTypeArg="flow")::PopulationMap
     path = gating_path(task_dir, value_name; pop_type=pop_type)
     isfile(path) || return PopulationMap(; pop_type=pop_type, value_name=value_name)
     m = from_tree(JSON3.read(read(path, String), Dict{String,Any}))
@@ -799,10 +844,10 @@ end
 # uniformly. `clust`/`trackclust` filter `clusters.{suffix}` (clustPops/clustTracks); `region` filters
 # `regions.{suffix}` (clustRegions) — spatial regions are region-clustering output, stored + shared with
 # the identical mechanism as cell/track clusters (see docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 5).
-_is_cluster_pop_type(pop_type)::Bool = String(pop_type) in ("clust", "trackclust", "region")
+_is_cluster_pop_type(pop_type)::Bool = string(pop_type) in ("clust", "trackclust", "region")
 
 # The obs-column family a cluster-style pop type filters over — the one place the prefix is decided.
-_cluster_measure_prefix(pop_type)::String = String(pop_type) == "region" ? "regions." : "clusters."
+_cluster_measure_prefix(pop_type)::String = string(pop_type) == "region" ? "regions." : "clusters."
 # …and the same decision without the dot, for the clustfeatures sidecar key (`{family}.{suffix}`) and
 # any caller that needs the bare family name. Derived, never re-decided.
 _cluster_measure_family(pop_type)::String = chopsuffix(_cluster_measure_prefix(pop_type), ".")
@@ -827,8 +872,8 @@ end
 # nothing when there's nothing to borrow. Read-side only — the SAVE path stays per-vn (editing under a
 # borrowing vn materialises its own real sidecar: plain copy semantics).
 function _borrow_cluster_pop_map(img::CciaImage, value_name::AbstractString,
-                                 pop_type::AbstractString)::Union{PopulationMap,Nothing}
-    granularity = pop_type == "trackclust" ? :track : :cell
+                                 pop_type::PopTypeArg)::Union{PopulationMap,Nothing}
+    granularity = string(pop_type) == "trackclust" ? :track : :cell
     p = granularity === :track ? img_track_props_path(img, value_name) : img_label_props_path(img, value_name)
     my_suffixes = _clustfeatures_suffixes(p; family=_cluster_measure_family(pop_type))
     isempty(my_suffixes) && return nothing              # this vn wasn't clustered → nothing to share
@@ -935,7 +980,7 @@ function colour_by_palette(m::PopulationMap, column::AbstractString, values;
     out
 end
 
-function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::AbstractString="flow")
+function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::PopTypeArg="flow")
     m = load_pop_map(img._dir, value_name; pop_type=pop_type)
     # Stamp THIS image's µm/px so `recompute!` can put spatial gate axes and the cell data in the same
     # unit. Per image on purpose: the same µm gate copied to another image must be evaluated with that
@@ -958,7 +1003,7 @@ function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_
     (img_is_calibrated(img) && !has_spatial_gate(m)) && (m.spatial_unit = SPATIAL_UNIT_UM)
     # cluster pop_types with no own sidecar → try to borrow from a co-clustered sibling (auto-share)
     (_is_cluster_pop_type(pop_type) && isempty(m.pops)) || return m
-    borrowed = _borrow_cluster_pop_map(img, String(value_name), String(pop_type))
+    borrowed = _borrow_cluster_pop_map(img, String(value_name), string(pop_type))
     borrowed === nothing && return m
     # a borrowed map came from a sibling segmentation of the SAME image → same pixel sizes
     borrowed.physical_sizes = m.physical_sizes
@@ -973,9 +1018,9 @@ end
 # the rows pooled + value_name-tagged by the normal pop_df machinery. A value_name-prefixed ref
 # ("T/A") is explicit and passes through unchanged (so a single-segmentation request still works). The
 # run is identified from the pop's own definition (`filter_measure = clusters.{suffix}`).
-function _expand_cluster_pops(img::CciaImage, pops, pop_type::AbstractString, default_vn::AbstractString)
+function _expand_cluster_pops(img::CciaImage, pops, pop_type::PopTypeArg, default_vn::AbstractString)
     _is_cluster_pop_type(pop_type) || return pops
-    granularity = pop_type == "trackclust" ? :track : :cell
+    granularity = string(pop_type) == "trackclust" ? :track : :cell
     vns = versioned_keys(img.label_props)
     out = String[]
     for p0 in pops
@@ -1049,7 +1094,7 @@ end
 # core pop_df over injectable providers (testable headless):
 #   load_map(vn)            -> PopulationMap for value_name vn
 #   fetch(vn, cols)         -> DataFrame(label + cols) for value_name vn
-function _pop_df(load_map::Function, fetch::Function, pop_type::AbstractString, pops;
+function _pop_df(load_map::Function, fetch::Function, pop_type::PopTypeArg, pops;
                  default_vn::AbstractString="default", pop_cols=nothing,
                  unique_labels::Bool=true, drop_na::Bool=false,
                  membership_fetch::Function=fetch)::DataFrame
@@ -1216,7 +1261,7 @@ end
 # generic `_pop_df` core (membership is by `label`, which here IS the track_id). `granularity=:track`
 # returns the gated track rows; `granularity=:cell` expands them to member cells.
 function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
-                              pop_type::AbstractString="track",
+                              pop_type::PopTypeArg="track",
                               cell_measures=String[], categorical=String[], pop_cols=nothing,
                               unique_labels::Bool=true, drop_na::Bool=false,
                               granularity::Symbol=:track,
@@ -1290,8 +1335,8 @@ Root-level paths of the derived populations registered for `pop_type` (e.g. `/_t
 that enumerate selectable populations (e.g. the summary-canvas population picker) need this to
 surface them. Generic over `_DERIVED_POPS`, so future reserved pops appear automatically.
 """
-derived_pop_paths(pop_type::AbstractString)::Vector{String} =
-    ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == String(pop_type)]
+derived_pop_paths(pop_type::PopTypeArg)::Vector{String} =
+    ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == string(pop_type)]
 
 # Cached by the gating sidecar's + the h5ad's mtimes, the same auto-invalidation `pop_df` keys on
 # (`_pop_df_mtime`): a saved gate edit or a re-tracked segmentation changes a stamp, anything else
@@ -1324,7 +1369,7 @@ Cached on the two mtimes it reads (see above); `flush = true` recomputes, for an
 was never written to disk — the same override `pop_df`'s `flush_cache` is.
 """
 function tracked_pop_parents(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing,
-                             pop_type::AbstractString="flow", flush::Bool=false)::Set{String}
+                             pop_type::PopTypeArg="flow", flush::Bool=false)::Set{String}
     vn = resolve_value_name(img, value_name)
     gp = gating_path(img._dir, vn; pop_type=pop_type)
     lp = img_label_props_path(img, vn)
@@ -1336,7 +1381,7 @@ function tracked_pop_parents(img::CciaImage; value_name::Union{AbstractString,No
 end
 
 function _tracked_pop_parents(img::CciaImage, vn::AbstractString,
-                              pop_type::AbstractString)::Set{String}
+                              pop_type::PopTypeArg)::Set{String}
     out = Set{String}()
     is_tracked(img; value_name=vn) || return out
     cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, ["track_id"]) |> as_df
@@ -1399,7 +1444,7 @@ Pop types the summary picker surfaces for a plot's granularity. A **track**-gran
 `live` pops (cell gates + the derived `/_tracked`, aggregated one-point-per-track) with `track` pops
 (gated directly on per-track measures, from `{vn}__tracks.json`); a cell plot uses just `pop_type`.
 """
-plot_pop_types(pop_type::AbstractString, granularity::AbstractString)::Vector{String} =
+plot_pop_types(pop_type::PopTypeArg, granularity::AbstractString)::Vector{String} =
     granularity == "track" ? unique(String[pop_type, "track"]) : String[pop_type]
 
 """
@@ -1502,10 +1547,10 @@ tracks) rather than a per-cell one. Track iff its leaf is a track-flagged derive
 its `pop_type` gates/filters tracks (`track`/`trackclust`); plain `flow`/`live` gates and `clust` pops
 are cells. The Julia equivalent of the R `isTrack` pop-map attribute — the sole cell-vs-track test.
 """
-function is_track_pop(pop_type::AbstractString, path::AbstractString)::Bool
+function is_track_pop(pop_type::PopTypeArg, path::AbstractString)::Bool
     leaf = String(last(split(String(path), '/')))
     haskey(_DERIVED_POPS, leaf) && return _DERIVED_POPS[leaf].is_track
-    String(pop_type) in ("track", "trackclust")
+    string(pop_type) in ("track", "trackclust")
 end
 
 """
@@ -1519,11 +1564,11 @@ vs track granularity) to place a population under a *"<granularity> · <category
 from `pop_type` + leaf name only — the same inputs the picker already carries — so the frontend
 groups on tags the backend sends, with no second derivation (mirrors how `pop_type` is already sent).
 """
-function pop_category(pop_type::AbstractString, path::AbstractString)::String
+function pop_category(pop_type::PopTypeArg, path::AbstractString)::String
     leaf = String(last(split(String(path), '/')))
     leaf == AGGREGATED_POP_NAME && return "aggregated"
     haskey(_DERIVED_POPS, leaf) && return "tracked"        # e.g. _tracked
-    pt = String(pop_type)
+    pt = string(pop_type)
     pt == "region" && return "region"
     pt in ("clust", "trackclust") && return "clustered"
     # branch pops: hand-drawn / ensure_filter_pop!-created filters on the branch table (typically
@@ -1549,7 +1594,7 @@ Reserved (`_`-prefixed) names are allowed (system-created). A `parent` absent fr
 (e.g. an all-cells `/` root maps to `ROOT`, always valid). Loads then saves the map; returns the
 created pop paths.
 """
-function ensure_filter_pop!(img::CciaImage, pop_type::AbstractString, value_name::AbstractString,
+function ensure_filter_pop!(img::CciaImage, pop_type::PopTypeArg, value_name::AbstractString,
                             parents, name::AbstractString;
                             filter_measure::AbstractString, filter_fun::AbstractString,
                             filter_values, colour::AbstractString = "#7c93b8")::Vector{String}
@@ -1672,12 +1717,12 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
           for p in g.populations
               # branch is a THIRD granularity distinct from cell/track (BRANCHING_PLAN Decision 2);
               # detect it explicitly before falling back to the cell/track binary.
-              gran = String(p.pop_type) == "branch" ? "branch" :
+              gran = string(p.pop_type) == "branch" ? "branch" :
                      is_track_pop(p.pop_type, p.path) ? "track" : "cell"
               cat  = pop_category(p.pop_type, p.path)
               _accept_permits(acc, gran, cat) || continue
               push!(kept, (path = p.path, name = p.name, colour = p.colour,
-                           pop_type = p.pop_type, granularity = gran, category = cat))
+                           pop_type = string(p.pop_type), granularity = gran, category = cat))
           end
           kept
       end)
@@ -1718,12 +1763,12 @@ end
 # leaf is a registered derived pop for this `pop_type` (e.g. ".../_tracked" under `live`) becomes
 # a filtered child of its parent; recompute! then composes parent ∩ filter. Unknown/foreign-type
 # leaves are left untouched. No-op if the pop already exists or the parent is absent.
-function _inject_derived_pops!(m::PopulationMap, paths, pop_type::AbstractString)::PopulationMap
+function _inject_derived_pops!(m::PopulationMap, paths, pop_type::PopTypeArg)::PopulationMap
     for path in paths
         path = String(path)
         has_pop(m, path) && continue
         spec = get(_DERIVED_POPS, pop_name(path), nothing)
-        (spec === nothing || spec.pop_type != String(pop_type)) && continue
+        (spec === nothing || spec.pop_type != string(pop_type)) && continue
         parent = pop_parent(path)
         (is_root(parent) || has_pop(m, parent)) || continue
         add_pop!(m, pop_name(path); parent=parent, filter_measure=spec.filter_measure,
@@ -1743,8 +1788,8 @@ _pop_df_mtime(p::AbstractString) = isfile(p) ? string(mtime(p)) : "∅"
 function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols, include_x,
                            include_obs, unique_labels, drop_na, raw_channel_names,
                            granularity, cell_measures, categorical, centroids = false)::String
-    is_track  = String(pop_type) == "track"
-    is_branch = String(pop_type) == "branch"
+    is_track  = string(pop_type) == "track"
+    is_branch = string(pop_type) == "branch"
     stamps = String[]
     for vn in sort(collect(keys(_group_pops_by_value_name(pops, value_name))))
         # track gating reads `{vn}__tracks.json`; branch gating reads `{vn}__branch.json`;
@@ -1823,9 +1868,9 @@ The transient napari-selection pop is intentionally excluded (it's the selection
 it back would steal the legacy viewer's active layer). Cell pop_types only (`flow`/`clust`) — track pops go
 through the Tracks overlay (`show_tracks`), not this points path.
 """
-function resolve_pops(img::CciaImage, pop_type::AbstractString;
+function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
                       value_name::AbstractString)::Vector{NamedTuple}
-    pt = String(pop_type)
+    pt = string(pop_type)
     ckey = string("poplayers:", value_name, ":", pt, "@",
                   _pop_df_mtime(gating_path(img._dir, value_name; pop_type = pt)),
                   "/", _pop_df_mtime(img_label_props_path(img, value_name)))
@@ -2001,7 +2046,7 @@ columns are pushed into the reader, not filtered afterwards) and it resolves mem
 call. On an **uncalibrated** image `:physical` warns and returns pixels — `img_physical_sizes` defaults
 a missing axis to 1.0, so there is otherwise nothing to tell "µm" and "pixels" apart.
 """
-function pop_df(img::CciaImage, pop_type::AbstractString, pops;
+function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
                 value_name::Union{AbstractString,Nothing}=nothing, pop_cols=nothing,
                 include_x::Bool=false, include_obs::Bool=true, unique_labels::Bool=true,
                 drop_na::Bool=false, flush_cache::Bool=false,
@@ -2026,7 +2071,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     # explicit value_name AND wants the expansion (docs/todo/CLUSTER_POOLING_PLAN.md), so the two
     # intentions have to be stated rather than guessed.
     pops = expand_cluster_pops ?
-        _expand_cluster_pops(img, pops, String(pop_type), resolved_vn) : pops
+        _expand_cluster_pops(img, pops, string(pop_type), resolved_vn) : pops
 
     ckey = _pop_df_cache_key(img, pop_type, resolved_vn, pops, pop_cols, include_x, include_obs,
                              unique_labels, drop_na, raw_channel_names, granularity,
@@ -2041,8 +2086,8 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     # `gating/{vn}__trackclust.json`. `granularity` selects the return shape (:track rows, or
     # :cell-expanded member cells). Distinct from the `live`+:track path below, which gates CELL
     # properties and then aggregates to tracks.
-    if String(pop_type) in ("track", "trackclust")
-        df = _pop_df_track_gating(img, pops, resolved_vn; pop_type=String(pop_type),
+    if string(pop_type) in ("track", "trackclust")
+        df = _pop_df_track_gating(img, pops, resolved_vn; pop_type=string(pop_type),
                                   cell_measures=cell_measures,
                                   categorical=categorical, pop_cols=pop_cols,
                                   unique_labels=unique_labels, drop_na=drop_na,
@@ -2057,7 +2102,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     # reads the branch table. Membership is one row per skeleton path; there is no cell/track
     # duality within branches, so `granularity` is ignored (always one row per branch). See
     # docs/todo/BRANCHING_PLAN.md Decisions 1–3.
-    if String(pop_type) == "branch"
+    if string(pop_type) == "branch"
         branch_load = vn -> load_pop_map(img; value_name=vn, pop_type="branch")
         branch_fetch = function (vn, cols)
             lp = label_props(img_branch_props_path(img, vn); value_name=vn)
@@ -2091,7 +2136,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     # objects and write no labelProps), mirroring the gated path's skip for a pop defined on only
     # some images. With no `pops` (or a leading-slash ref) this resolves to the active segmentation,
     # exactly as before.
-    if String(pop_type) == "labels"
+    if string(pop_type) == "labels"
         want = isempty(pops) ? [resolved_vn] :
                sort!(collect(keys(_group_pops_by_value_name(pops, resolved_vn))))
         # The skip applies to the EXTRA value_names a multi-segmentation request names, never to the
@@ -2134,7 +2179,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     # Derived pop_types (e.g. `live`): gates are stored under `flow`; layer the derived pops
     # (e.g. _tracked) on top, transiently. Pop_types with no registered derived specs load normally.
     groups = _group_pops_by_value_name(pops, resolved_vn)
-    has_derived = any(s -> s.pop_type == pop_type, values(_DERIVED_POPS))
+    has_derived = any(s -> s.pop_type == string(pop_type), values(_DERIVED_POPS))
     load_map = function (vn)
         if has_derived
             m = load_pop_map(img; value_name=vn, pop_type="flow")
@@ -2193,7 +2238,7 @@ Because the work happens per image, `centroids = :physical` is correct across im
 pixel sizes**: each image's coordinates are scaled with its OWN resolution before the `vcat`. Never
 scale a pooled frame afterwards — it has no single physical size to apply.
 """
-function pop_df(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector, pop_type::AbstractString,
+function pop_df(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector, pop_type::PopTypeArg,
                 pops; kwargs...)::DataFrame
     length(imgs) == length(uids) ||
         error("pop_df: imgs and uids must be parallel (got $(length(imgs)) vs $(length(uids)))")
@@ -2398,13 +2443,13 @@ and reserved derived leaves (`_tracked`) are exempt. Per-segmentation only — c
 legitimately repeat across co-clustered segmentations (different value_names).
 """
 function pop_name_conflict(img::CciaImage, value_name::AbstractString, path::AbstractString;
-                           pop_type::AbstractString)::Union{String,Nothing}
+                           pop_type::PopTypeArg)::Union{String,Nothing}
     p = String(path)
     (is_root(p) || is_reserved_pop_name(pop_name(p))) && return nothing
-    same_as_flow = String(pop_type) in ("flow", "live")
+    same_as_flow = string(pop_type) in ("flow", "live")
     for pt in _NAME_GUARD_POP_TYPES
         (same_as_flow && pt == "flow") && continue
-        pt == String(pop_type) && continue
+        pt == string(pop_type) && continue
         m = try; load_pop_map(img; value_name=value_name, pop_type=pt); catch; continue; end
         has_pop(m, p) && return pt
     end

@@ -125,7 +125,7 @@ _track_free_cols(img, vn) = (p = img_track_props_path(img, vn);
 
 # pop_types whose membership is evaluated over the per-track table (one point per track):
 # `track` (hand-drawn per-track gates) and `trackclust` (a `clusters.{suffix}` filter).
-_track_grained(pop_type) = String(pop_type) in ("track", "trackclust")
+_track_grained(pop_type) = string(pop_type) in ("track", "trackclust")
 
 # track data source: ONE row per track (`track_props`, label == track_id). The requested columns
 # (gate channels / plot axes / filter measure) drive which cell measures get aggregated
@@ -439,7 +439,7 @@ end
 # A suffix with no recorded members (pre-partOf run) falls back to the primary image's own column.
 function _cluster_ids(project_uid::AbstractString, primary_path::AbstractString, vn::AbstractString,
                       suffixes::Vector{String}, members::AbstractDict, track::Bool,
-                      pop_type::AbstractString = "clust")
+                      pop_type::PopTypeArg = "clust")
     pathcache = Dict{String,Union{String,Nothing}}()   # init_object per uID isn't free; a member may back several suffixes
     member_path(u) = get!(pathcache, u) do
         mi = try init_object(project_uid, u) catch; nothing end

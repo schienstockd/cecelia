@@ -70,7 +70,7 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     img.name        = String(get(f, :name, img.name))
     # Legacy R had static/live/flow per-project — dropped in favour of per-image axis gating
     # (Cecelia.task_applies). Any `kind` in the R result is ignored.
-    img.status      = String(get(f, :status, "done"))
+    img.status      = parse_image_status(String(get(f, :status, "done")))
     img.filepath    = _to_str_str(f.filepath)
     img.labels      = _to_labels(f.labels)
     img.label_props = _to_str_str(f.label_props)

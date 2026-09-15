@@ -583,10 +583,11 @@ end
 
 # ── ccid.json helpers ─────────────────────────────────────────────────────────
 
-function _update_image_status!(img::CciaImage, status::String)
+function _update_image_status!(img::CciaImage, status::ImageStatus)
+    img.status = status
     try
         commit_state!(img) do raw
-            raw["status"] = status
+            raw["status"] = string(status)
         end
     catch e
         @warn "Could not update image status" exception = e
@@ -1058,7 +1059,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         sync_zarr_calibration!(resolved_zarr, zarr_meta)
     end
 
-    _update_image_status!(img, "done")
+    _update_image_status!(img, IMAGE_DONE)
     _merge_zarr_meta_into_ccid!(img, zarr_meta;
                                 zarr_filename = store_rel,
                                 value_name    = value_name,
