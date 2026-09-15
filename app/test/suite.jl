@@ -130,6 +130,30 @@ end
     end
 end
 
+# ── rscript_bin_path: macOS GUI PATH fallbacks ───────────────────────────────
+# macOS GUI apps inherit a bare PATH (`/usr/bin:/bin:/usr/sbin:/sbin`); Terminal-tested Rscript
+# is invisible to the app. The legacy-migrate scan then died with `FileNotFoundError: 'Rscript'`
+# even though the user's install was fine.
+@testset "rscript_bin_path resolution" begin
+    # candidate list — parameterised on OS booleans so both platforms are asserted from any host
+    @test Cecelia._rscript_fallback_candidates(true, false) == [
+        "/Library/Frameworks/R.framework/Resources/bin/Rscript",
+        "/opt/homebrew/bin/Rscript",
+        "/usr/local/bin/Rscript",
+    ]
+    @test Cecelia._rscript_fallback_candidates(false, false) == String[]
+    @test Cecelia._rscript_fallback_candidates(false, true)  == String[]
+
+    # an explicitly configured PATH is honoured verbatim, even if it doesn't exist — user's call
+    @test rscript_bin_path("/opt/custom/bin/Rscript") == "/opt/custom/bin/Rscript"
+    # an unresolvable bare name degrades to itself rather than crashing
+    @test rscript_bin_path("cecelia-no-such-rscript-42") == "cecelia-no-such-rscript-42"
+    # empty input degrades to the bare `"Rscript"` — same string subprocess would have got before
+    let p = rscript_bin_path("")
+        @test p == "Rscript" || (isabspath(p) && isfile(p))
+    end
+end
+
 # ── expand_user: portable leading-~ expansion ────────────────────────────────
 # Base.expanduser is documented Unix-only and silently returns the path unchanged on Windows, so
 # every stored `~`-prefixed path (custom.toml dirs, .env CECELIA_DEV_DIR) went through unexpanded

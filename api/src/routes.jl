@@ -1704,7 +1704,7 @@ function api_import_scan_legacy(body_bytes::Vector{UInt8})
     run_dir     = mktempdir()
     result_file = joinpath(run_dir, "scan.result.json")
     params = Dict{String,Any}("sourceProjectDir" => abs_src, "resultPath" => result_file,
-                              "rscript" => String(get(body, :rscript, "Rscript")))
+                              "rscript" => Cecelia.rscript_bin_path(String(get(body, :rscript, ""))))
     haskey(body, :imageUids) && (params["imageUids"] = [String(u) for u in body.imageUids])
     logs = String[]
     ok = try
