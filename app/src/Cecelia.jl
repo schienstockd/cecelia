@@ -96,7 +96,9 @@ export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, proje
 export Density2D, density_2d
 
 # ── Population manager ─────────────────────────────────────────────────────────
-export Population, PopulationMap, ROOT
+export Population, PopulationMap, ROOT, PopType, PopTypeArg
+export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP_REGION, POP_LABELS
+export parse_pop_type
 export pop_parent, pop_name, pop_path, is_root
 export add_pop!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!
 export boolean_dependents, BOOLEAN_OPS

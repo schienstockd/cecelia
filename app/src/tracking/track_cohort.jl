@@ -92,7 +92,7 @@ function track_plot_groups(imgs::AbstractVector, uids::AbstractVector;
                            group_attrs::Vector{String} = String[],
                            pool_images::Bool = false,
                            pops::Vector{String} = String[],
-                           pop_type::AbstractString = "live",
+                           pop_type::PopTypeArg = "live",
                            value_name::Union{AbstractString,Nothing} = nothing,
                            pool_pops::Bool = false,
                            max_groups::Int = 12)
@@ -122,7 +122,7 @@ function track_plot_groups(imgs::AbstractVector, uids::AbstractVector;
         isempty(spatial) && continue
         _, tstep = img_physical_sizes(first(sources).img)
         push!(out, TrackPlotGroup(string(ig.key, "|", pg.key), _track_group_label(ig.label, pg.label),
-                                  String(pop_type), sources, spatial, Float64(tstep)))
+                                  string(pop_type), sources, spatial, Float64(tstep)))
     end
     # ONE group has nothing to name: a legend of one entry, or a facet title over the only cell, is noise.
     # Blanked here rather than in each caller, because only this loop knows the final count.
@@ -213,7 +213,7 @@ _track_group_label(image_label, pop_label) =
 
 # One (image, segmentation, population)'s cells, or `nothing` when it has no tracks to draw.
 function _track_plot_source(img, uid::String, vn::AbstractString, pop::AbstractString,
-                            pop_type::AbstractString)::Union{Nothing,TrackPlotSource}
+                            pop_type::PopTypeArg)::Union{Nothing,TrackPlotSource}
     props = img_label_props_path(img, vn)
     isfile(props) || return nothing
     lp = label_props(props)

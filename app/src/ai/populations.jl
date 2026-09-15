@@ -15,7 +15,7 @@ function _pop_summary(p::Population)
     gate = p.gate === nothing ? nothing : gate_spec(p.gate)
     filt = p.filter_measure === nothing ? nothing :
         (; measure = p.filter_measure, fun = something(p.filter_fun, ""), values = p.filter_values)
-    (; path = p.path, name = p.name, parent = p.parent, popType = p.pop_type,
+    (; path = p.path, name = p.name, parent = p.parent, popType = string(p.pop_type),
        valueName = p.value_name, colour = p.colour, isTrack = p.is_track, gate = gate, filter = filt)
 end
 

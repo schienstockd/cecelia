@@ -101,18 +101,25 @@ scoped, then split into three PRs by risk:
   Validation for scope/barrier_policy simplifies — the type system rejects invalid values at
   `ChainNode` construction (ArgumentError, surfaced as a 400 by the API's create route).
   Resolves 3 register entries.
-- **PR-C (deferred).** `Population.pop_type` (+ `popType`) — see note below.
+- **PR-C (this PR).** `Population.pop_type` + `PopulationMap.pop_type` → `@enum PopType`. 8 values
+  (not 5 — scoping surfaced `POP_LIVE`, `POP_REGION`, `POP_LABELS` beyond the register's 5).
+  Design: **internal enum, wire format unchanged.** `Base.string(::PopType)` / `Base.String(::PopType)`
+  / `Base.print(io, ::PopType)` all emit the lowercase name; `parse_pop_type` reads it back.
+  Function kwargs use `pop_type::PopTypeArg` (Union of enum + AbstractString) to accept both — this
+  is the boundary-lenient pattern that keeps the ~150 test literals working without change.
+  Resolves 2 register entries (Population.pop_type + gating_api popType).
 
 Fix template: `@enum X ...` + typed field + `set_X!(rec, ::X)` setter + `Base.string(::X)` for
 the wire form + `parse_x(::AbstractString)` for the read-back.
 
-**Population.pop_type is not a sweep — it's a versioned migration.** Scoping surfaced that this
-field is the on-wire API vocabulary (`"popType": "flow"|"clust"|"track"|"trackclust"|"branch"`
-across ~20 handlers), the on-disk gating-sidecar filename discriminator (`{vn}__clust.json` —
-the filename literally embeds the value), and the frontend/task-spec vocabulary. Fanning out to
-~60 files including the frontend contract and stored task-spec JSON. An `@enum` internally with
-string I/O is possible but the wire vocabulary itself would want a follow-on migration. Not the
-same-day sweep — needs a dedicated design pass. Register entry stays open.
+**Population.pop_type was originally deferred as a versioned migration.** Follow-up scoping found
+the internal-enum-with-preserved-wire path was tractable in one PR (8 enum values, ~15 source
+files, boundary-lenient sigs keep test churn tiny). That's what PR-C did — the wire vocabulary
+(`"popType": "flow"|"clust"|"track"|"trackclust"|"branch"|"live"|"region"|"labels"` across ~20
+handlers), the on-disk gating-sidecar filename discriminator (`{vn}__clust.json`), the frontend
+contract, and the task-spec JSON are all **unchanged**. Only the in-memory Julia representation
+becomes typed; a typo now throws `ArgumentError` at `parse_pop_type` (was silent "pop nothing
+routes to"). A subsequent wire-vocabulary rename remains a possible but out-of-scope change.
 
 ### Tier 1 — High (silently produces zero output or wrong result on a shape drift)
 
@@ -133,8 +140,8 @@ same-day sweep — needs a dedicated design pass. Register entry stays open.
 - ✅ `ImageNodeState.status` (`chain.jl:73–78`). 7 states. **Resolved** in PR-A via `@enum ChainNodeStatus` + `parse_chain_node_status(::AbstractString)` at the disk read boundary.
 - ✅ `ChainNode.scope`, `ChainNode.barrier_policy` (`chain.jl:20–33`). **Resolved** in PR-B via `@enum ChainScope` + `@enum ChainBarrierPolicy`. `parse_*` at every JSON load, `string(...)` at every emission site (`save_chain_template!`, `_template_json`, `chains_summary`). Redundant validation removed from `validate_chain_template` — construction now rejects invalid values with `ArgumentError`.
 - ✅ `CciaImage.status` (`model/image.jl:11`). 4 states. **Resolved** in PR-B via `@enum ImageStatus`. `parse_image_status` at `from_dict`, `string(...)` at `save!`, `_update_image_status!`, and the 4 API echo sites in `routes.jl`.
-- ⏭️ `Population.pop_type::String` (`population_manager.jl:61–68`). 5 values, referenced from `accepts` allow-lists, `pop_df`, palette, popScope. A typo yields a pop nothing routes to. **Deferred to PR-C** (versioned wire-format migration — see note above).
-- ⏭️ `popType` in `gating_api.jl:1033–1036` — repeats `Population.pop_type` on the API side. Same enum resolves both.
+- ✅ `Population.pop_type` + `PopulationMap.pop_type` (`population_manager.jl:61,94`). 8 values (register had 5 — scoping surfaced `live`/`region`/`labels`). **Resolved** in PR-C via `@enum PopType` + `parse_pop_type` + `_coerce_pop_type` at struct ctors + `const PopTypeArg = Union{PopType,AbstractString}` for boundary-lenient function kwargs. Wire and disk formats preserved verbatim via `Base.string`/`Base.String`/`Base.print` overrides.
+- ✅ `popType` in `gating_api.jl` — same enum resolves it (parse at handler entry, stringify at outbound).
 
 **Variant types — `Union` with `Nothing` as discriminant**
 - `TaskJob.imgs::Union{Nothing,Vector{CciaImage}}` (`scheduler.jl` L422). Every branch remembers the check. **Fix:** sum type or `job_target(job)` helper.

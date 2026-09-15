@@ -866,7 +866,7 @@ a `measure`, from `pop_df`. Returns the plot-ready series (not a figure). The ve
 same population across images (tagged by `uID`). Use it to reproduce a board plot's numbers in a
 notebook; pick `measure` from the population's columns (`pop_df` / `get_measure_summary`).
 """
-function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart_type::AbstractString;
+function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_type::AbstractString;
                            value_name::Union{AbstractString,Nothing}=nothing,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
@@ -900,7 +900,7 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
 end
 
 function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
-                           pop_type::AbstractString, pops, chart_type::AbstractString;
+                           pop_type::PopTypeArg, pops, chart_type::AbstractString;
                            scope::Symbol=:per_image,
                            value_name::Union{AbstractString,Nothing}=nothing,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
@@ -1019,7 +1019,7 @@ function _targets_frame(targets, fetch_vn)::DataFrame
 end
 
 # single image, multiple segmentations (one series per (value_name, pop)).
-function plot_summary_data(img::CciaImage, pop_type::AbstractString,
+function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
                            targets::AbstractVector{<:Tuple}, chart_type::AbstractString;
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
@@ -1055,7 +1055,7 @@ end
 # multiple images AND multiple segmentations. `scope=:per_image` → one series per image per
 # (value_name, pop); `scope=:summarised` → pool the images per (value_name, pop).
 function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
-                           pop_type::AbstractString, targets::AbstractVector{<:Tuple},
+                           pop_type::PopTypeArg, targets::AbstractVector{<:Tuple},
                            chart_type::AbstractString; scope::Symbol=:per_image,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,

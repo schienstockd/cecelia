@@ -84,7 +84,7 @@ end
 
 # `region` (spatial region-clustering pops) is cluster-family — grouped with Clustering in the digest.
 _category_of_pop_type(pt::AbstractString)::String =
-    String(pt) in ("clust", "trackclust", "region") ? "Clustering" : CATEGORY_GATING
+    string(pt) in ("clust", "trackclust", "region") ? "Clustering" : CATEGORY_GATING
 
 # rank for digest ordering (index in _CATEGORY_ORDER; unknown categories sort last, then alphabetical)
 _category_rank(c::AbstractString)::Int = (i = findfirst(==(String(c)), _CATEGORY_ORDER); i === nothing ? typemax(Int) : i)
