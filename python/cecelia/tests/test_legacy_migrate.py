@@ -4,9 +4,11 @@ Builds tiny synthetic AnnData files (no R, no zarr) covering the two legacy shap
 schema conversion: index←label, centroids var→obsm (only when absent), and dropping the excluded
 (HMM/clustering) columns while keeping segmentation+tracking.
 """
+import errno
 import os
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import numpy as np
@@ -79,6 +81,65 @@ class TestMigrateH5ad(unittest.TestCase):
             self.assertEqual(list(out.uns["spatial_cols"]),
                              ["centroid_z", "centroid_y", "centroid_x"])   # relabelled to explicit
             self.assertTrue(summary["centroids_lifted"])                # recorded the relabel
+
+
+class TestRmtreeRetry(unittest.TestCase):
+    # macOS APFS occasionally raises ENOTEMPTY for a Zarr chunk dir whose files were just unlinked —
+    # the fd-based walker races volume metadata coalescing. Bit a real user on the first migrate
+    # attempt (v0.2.3). The retry MUST distinguish a transient ENOTEMPTY (recovers on retry) from
+    # a real one (persists across every attempt), and MUST NOT swallow other OSErrors.
+    def test_succeeds_when_the_directory_is_gone_first_try(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "sub"
+            p.mkdir()
+            (p / "f").write_text("x", encoding="utf-8")
+            lm._rmtree_robust(p)
+            self.assertFalse(p.exists())
+
+    def test_retries_a_transient_ENOTEMPTY(self):
+        calls = {"n": 0}
+        real_rmtree = lm.shutil.rmtree
+
+        def flaky(path, *a, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError(errno.ENOTEMPTY, "Directory not empty", str(path))
+            return real_rmtree(path, *a, **kw)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "sub"
+            p.mkdir()
+            (p / "f").write_text("x", encoding="utf-8")
+            with unittest.mock.patch.object(lm.shutil, "rmtree", flaky):
+                lm._rmtree_robust(p, retries=3, delay=0.0)
+            self.assertEqual(calls["n"], 2)
+            self.assertFalse(p.exists())
+
+    def test_reraises_a_persistent_ENOTEMPTY(self):
+        def always_fails(path, *a, **kw):
+            raise OSError(errno.ENOTEMPTY, "Directory not empty", str(path))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "sub"; p.mkdir()
+            with unittest.mock.patch.object(lm.shutil, "rmtree", always_fails):
+                with self.assertRaises(OSError) as cm:
+                    lm._rmtree_robust(p, retries=3, delay=0.0)
+                self.assertEqual(cm.exception.errno, errno.ENOTEMPTY)
+
+    def test_does_not_retry_a_different_OSError(self):
+        calls = {"n": 0}
+
+        def perm_denied(path, *a, **kw):
+            calls["n"] += 1
+            raise OSError(errno.EACCES, "Permission denied", str(path))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "sub"; p.mkdir()
+            with unittest.mock.patch.object(lm.shutil, "rmtree", perm_denied):
+                with self.assertRaises(OSError) as cm:
+                    lm._rmtree_robust(p, retries=5, delay=0.0)
+                self.assertEqual(cm.exception.errno, errno.EACCES)
+            self.assertEqual(calls["n"], 1)   # no retry
 
 
 class TestRHelperCoLocated(unittest.TestCase):
