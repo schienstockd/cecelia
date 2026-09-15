@@ -272,9 +272,19 @@ EOF
       APP="/Applications/Cecelia.app"
       rm -rf "/Applications/Cecelia.command" "$APP"   # migrate away from the old .command; idempotent
       mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+      # Redirect the supervisor's stdout+stderr to ~/Library/Logs/Cecelia/launcher.log so a silent
+      # .app-launched failure (reprovision crash, server crash-loop → app.py `return 1`) leaves a
+      # paper trail. Without this, Finder's next Dock click shows only "The application 'Cecelia'
+      # is not open anymore." — no cause anywhere. Keep the previous run as .prev so a user can
+      # diff before/after an update. Per-user path so system-scope installs (root-owned tree) can
+      # still write.
       cat > "$APP/Contents/MacOS/cecelia" <<EOF
 #!/bin/sh
-exec "$LAUNCH"
+LOG_DIR="\$HOME/Library/Logs/Cecelia"
+mkdir -p "\$LOG_DIR"
+[ -f "\$LOG_DIR/launcher.log" ] && mv -f "\$LOG_DIR/launcher.log" "\$LOG_DIR/launcher.log.prev"
+echo "===== \$(date -u +%Y-%m-%dT%H:%M:%SZ) launched =====" >"\$LOG_DIR/launcher.log"
+exec "$LAUNCH" >>"\$LOG_DIR/launcher.log" 2>&1
 EOF
       chmod 755 "$APP/Contents/MacOS/cecelia"
       cp "$INSTALL_DIR/frontend/dist/icons/cecelia.icns" "$APP/Contents/Resources/cecelia.icns"
@@ -319,9 +329,14 @@ EOF
       APP="$HOME/Applications/Cecelia.app"
       rm -rf "$HOME/Applications/Cecelia.command" "$APP"   # migrate away from the old .command; idempotent
       mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+      # Redirect: see the same block under system scope above for the rationale.
       cat > "$APP/Contents/MacOS/cecelia" <<EOF
 #!/bin/sh
-cd "$INSTALL_DIR" && exec "$PIXI" run app
+LOG_DIR="\$HOME/Library/Logs/Cecelia"
+mkdir -p "\$LOG_DIR"
+[ -f "\$LOG_DIR/launcher.log" ] && mv -f "\$LOG_DIR/launcher.log" "\$LOG_DIR/launcher.log.prev"
+echo "===== \$(date -u +%Y-%m-%dT%H:%M:%SZ) launched =====" >"\$LOG_DIR/launcher.log"
+cd "$INSTALL_DIR" && exec "$PIXI" run app >>"\$LOG_DIR/launcher.log" 2>&1
 EOF
       chmod +x "$APP/Contents/MacOS/cecelia"
       cp "$INSTALL_DIR/frontend/dist/icons/cecelia.icns" "$APP/Contents/Resources/cecelia.icns"
