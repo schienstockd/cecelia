@@ -8,6 +8,15 @@
 //
 // See docs/todo/KILN_BRICK_PLAN.md → Decisions 2 (brick shape), 3 (r8uint / r16uint) and
 // Atlas sizing table (SispLk / 35uedD, both nZ=4, uint8).
+//
+// Multi-atlas support (docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md): `pickAtlasLayout` now returns
+// an array of up to `MAX_ATLASES` homogeneous layouts. See that plan's Decisions 1
+// (MAX_ATLASES=4), 3 (homogeneous), 4 (sizer per atlas then divide).
+
+/** Multi-atlas ceiling. Shader binds a fixed-size `binding_array<T, MAX_ATLASES>` in Phase 3;
+ *  growing past 4 needs a WGSL change, not a config bump. See
+ *  `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decision 1. */
+export const MAX_ATLASES = 4
 
 /** Atlas dimensions: brick size in voxels + number of slots along each axis. VRAM budget is
  *  implied by the product of these two (times bytes-per-voxel × channels-per-brick). */
@@ -150,9 +159,10 @@ export function canReuseAtlases(current: readonly AtlasLayout[], next: readonly 
  * `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decisions 3 (homogeneous atlases) + 4 (sizer per
  * atlas, then divide).
  *
- * Currently returns an array of length 1 — Phase 1 refactor. Phase 2 will divide the
- * remaining budget by the per-atlas byte size and add up to `MAX_ATLASES` copies of the same
- * layout so total VRAM can exceed the single-buffer cap.
+ * Multi-atlas: sizes ONE atlas at `min(vramBudgetBytes, maxBufferSize)` with the existing
+ * per-atlas sizer, then divides the total budget by that atlas's byte size to compute N.
+ * Capped at `MAX_ATLASES`. Homogeneous by construction — every returned layout is the same
+ * per-atlas layout, so a single `perAtlasCapacity` fully describes the array (Decision 3).
  *
  * Returns `null` if even one atlas doesn't fit. The array is never empty on success.
  */
@@ -167,7 +177,10 @@ export function pickAtlasLayout(
                         channelsPerBrick * bytesPerVoxel
   if (oneBrickBytes > vramBudgetBytes) return null
 
-  const budgetSlots = Math.floor(vramBudgetBytes / oneBrickBytes)
+  // One atlas is capped at maxBufferSize — Chromium/Dawn caps every texture's storage regardless
+  // of card VRAM. Anything past that ceiling is what multi-atlas is FOR.
+  const perAtlasBudget = Math.min(vramBudgetBytes, limits.maxBufferSize)
+  const budgetSlots = Math.floor(perAtlasBudget / oneBrickBytes)
   if (budgetSlots < 1) return null
 
   // Per-axis caps from `maxTextureDimension3D`. Bricks pack channels along Z inside the atlas
@@ -218,5 +231,13 @@ export function pickAtlasLayout(
     channelsPerBrick,
   }
   if (validateAtlasLayout(layout, limits) !== null) return null
-  return [layout]
+  // Multi-atlas: divide the caller's total budget by the per-atlas byte size. Cap at
+  // MAX_ATLASES; a ragged tail rounds down (Decision 3 forbids heterogeneous sizes, so any
+  // unused remainder is by design). When a caller asks for less than one atlas' worth of
+  // budget past the first (`nAtlases = 1`), N=1 → behaviour identical to Phase 1.
+  const perAtlasBytes = atlasVramBytes(layout)
+  const nAtlases = Math.max(1, Math.min(MAX_ATLASES, Math.floor(vramBudgetBytes / perAtlasBytes)))
+  const layouts: AtlasLayout[] = []
+  for (let i = 0; i < nAtlases; i++) layouts.push(layout)
+  return layouts
 }
