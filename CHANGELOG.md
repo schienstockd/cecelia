@@ -15,6 +15,32 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.3] — 2026-09-15
+
+Patch cut so a macOS user with a legacy R/Shiny project can actually import it. Three unrelated
+blockers hit in one sitting on the *Migrate legacy project* dialog: a copy-paste hazard, a macOS
+`PATH` trap, and a stale file path left behind by an earlier refactor.
+
+### Fixed
+
+- **Legacy migrate — strip quotes around the source path.** macOS Finder's *Copy as Pathname*
+  wraps the result in single quotes; the literal `'…'` was then sent to `/api/import/scan-legacy`
+  and the folder read as missing. A tiny `cleanPathInput` helper trims + strips one matched pair
+  of straight/curly single or double quotes at both dialog call sites (scan + register), covering
+  the Finder paste plus Windows double-quote and autocorrect curly quotes.
+- **Legacy migrate — find Rscript on macOS.** GUI-launched macOS apps inherit a bare `PATH`
+  (`/usr/bin:/bin:/usr/sbin:/sbin`) that omits both the CRAN R.framework and Homebrew, so
+  `subprocess.run(['Rscript', ...])` died with `FileNotFoundError: 'Rscript'` even when Terminal
+  ran R fine. A new `rscript_bin_path` in `app/src/config.jl` — same shape as `python_bin_path` —
+  resolves through the configured path, then `Sys.which`, then the three canonical macOS install
+  locations (CRAN framework, Homebrew Apple Silicon, Homebrew Intel), and is wired into both the
+  scan route and the `importImages.migrateLegacy` task.
+- **Legacy migrate — ship the R helper next to its Python caller.** The
+  `python/cecelia = IO library only` refactor moved `read_ccid_rds.R` out from beside
+  `legacy_migrate.py`, but the caller still resolved it via `Path(__file__).with_name(...)`.
+  Rscript then exited 2 (*cannot open input script*) at first scan. Moved back and a co-location
+  test added so the same move-and-forget cannot slip past the suite again.
+
 ## [0.2.2] — 2026-09-10
 
 One-day heartbeat after v0.2.1, cut so Mac users can test the segmentation pipeline again:
