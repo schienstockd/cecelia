@@ -37,6 +37,17 @@ using JSON3
 struct SegmentCorrectCarryOverSnapshot <: CciaTask end
 struct SegmentCorrectCarryOverRestore  <: CciaTask end
 
+# Both carry-over phases read only `valueName` from `params`. One typed struct + one parser;
+# the composite executor threads the same params dict through unchanged, so no per-phase fields.
+Base.@kwdef struct SegmentCorrectCarryOverParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+end
+
+function parse_segment_correct_carry_over_params(d::AbstractDict)::SegmentCorrectCarryOverParams
+    SegmentCorrectCarryOverParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)))
+end
+
 # ── shared helpers ─────────────────────────────────────────────────────────────
 
 # Path convention mirrors `label_props_utils.LabelPropsUtils.label_props_filepath` — one home for
@@ -63,10 +74,10 @@ function _run_task(task::SegmentCorrectCarryOverSnapshot, img::CciaImage, params
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_segment_correct_carry_over_params(params)
     task_dir   = img._dir
 
-    labelprops = _labelprops_path(task_dir, value_name)
+    labelprops = _labelprops_path(task_dir, p.valueName)
     snap_path  = _carryover_snapshot_path(task_dir)
     result_file = _carryover_result_path(task_dir, "snapshot")
     isfile(snap_path)   && rm(snap_path;   force = true)
@@ -77,17 +88,17 @@ function _run_task(task::SegmentCorrectCarryOverSnapshot, img::CciaImage, params
     # standalone). Skip the Python spawn and leave the snapshot absent; restore then no-ops.
     if !isfile(labelprops)
         on_log("[INFO] No labelProps h5ad at $labelprops — nothing to snapshot.")
-        return Dict{String,Any}("valueName" => value_name, "nRowsSnapshotted" => 0,
+        return Dict{String,Any}("valueName" => p.valueName, "nRowsSnapshotted" => 0,
                                 "snapshotPath" => nothing)
     end
 
-    on_log("[INFO] Snapshotting obs for $value_name")
+    on_log("[INFO] Snapshotting obs for $(p.valueName)")
     on_progress(1, 2)
 
     ok = run_py("tasks/segment/carry_over_run.py",
         (; phase       = "snapshot",
            taskDir     = task_dir,
-           valueName   = value_name,
+           valueName   = p.valueName,
            snapshotFile = snap_path,
            resultFile  = result_file),
         task_run_dir(task_dir);
@@ -109,7 +120,7 @@ function _run_task(task::SegmentCorrectCarryOverSnapshot, img::CciaImage, params
 
     on_log("[INFO] Snapshotted $(n_rows) row(s), $(n_cols + n_cat) column(s) " *
            "($(n_cols) numeric + $(n_cat) categorical).")
-    Dict{String,Any}("valueName"        => value_name,
+    Dict{String,Any}("valueName"        => p.valueName,
                      "nRowsSnapshotted" => n_rows,
                      "nColsSnapshotted" => n_cols + n_cat,
                      "snapshotPath"     => snap_path)
@@ -122,7 +133,7 @@ function _run_task(task::SegmentCorrectCarryOverRestore, img::CciaImage, params:
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_segment_correct_carry_over_params(params)
     task_dir   = img._dir
 
     snap_path  = _carryover_snapshot_path(task_dir)
@@ -131,22 +142,22 @@ function _run_task(task::SegmentCorrectCarryOverRestore, img::CciaImage, params:
 
     if !isfile(snap_path)
         on_log("[INFO] No snapshot at $snap_path — restore is a no-op (snapshot phase skipped or first run).")
-        return Dict{String,Any}("valueName" => value_name, "nRowsCarried" => 0, "nColsCarried" => 0)
+        return Dict{String,Any}("valueName" => p.valueName, "nRowsCarried" => 0, "nColsCarried" => 0)
     end
 
-    labelprops = _labelprops_path(task_dir, value_name)
+    labelprops = _labelprops_path(task_dir, p.valueName)
     if !isfile(labelprops)
         on_log("[WARN] Snapshot exists but labelProps h5ad missing at $labelprops — nothing to restore into.")
-        return Dict{String,Any}("valueName" => value_name, "nRowsCarried" => 0, "nColsCarried" => 0)
+        return Dict{String,Any}("valueName" => p.valueName, "nRowsCarried" => 0, "nColsCarried" => 0)
     end
 
-    on_log("[INFO] Restoring carried obs onto $value_name")
+    on_log("[INFO] Restoring carried obs onto $(p.valueName)")
     on_progress(1, 2)
 
     ok = run_py("tasks/segment/carry_over_run.py",
         (; phase       = "restore",
            taskDir     = task_dir,
-           valueName   = value_name,
+           valueName   = p.valueName,
            snapshotFile = snap_path,
            resultFile  = result_file),
         task_run_dir(task_dir);
@@ -182,7 +193,7 @@ function _run_task(task::SegmentCorrectCarryOverRestore, img::CciaImage, params:
         on_log("[WARN] could not remove snapshot file $snap_path: $e")
     end
 
-    Dict{String,Any}("valueName"    => value_name,
+    Dict{String,Any}("valueName"    => p.valueName,
                      "nRowsCarried" => n_rows,
                      "nColsCarried" => n_cols_carried)
 end
