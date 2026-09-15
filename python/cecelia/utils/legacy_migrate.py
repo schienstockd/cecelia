@@ -12,9 +12,11 @@ Two entry points wrap this: ``scan_legacy_run.py`` (read-only preview manifest) 
 """
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import subprocess
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -256,12 +258,29 @@ def scan_project(src_proj: str, rscript: str = "Rscript", uids=None) -> dict:
 
 
 # ── MIGRATE one image → returns the ccid field dict for Julia to apply ───────────
+def _rmtree_robust(p: Path, retries: int = 4, delay: float = 0.15) -> None:
+    """`shutil.rmtree` with a small retry on ENOTEMPTY. macOS APFS occasionally raises "Directory
+    not empty" for a directory whose contents Python has already `unlink()`ed — the fd-based walker
+    (`_rmtree_safe_fd` in 3.12) races the volume's metadata coalescing, especially on a Zarr chunk
+    tree with thousands of tiny files. Retrying with a short backoff clears it in practice; a real
+    "the directory is not empty" persists across every attempt and the last one re-raises."""
+    for i in range(retries):
+        try:
+            shutil.rmtree(p)
+            return
+        except OSError as e:
+            if e.errno == errno.ENOTEMPTY and i < retries - 1:
+                time.sleep(delay * (i + 1))
+                continue
+            raise
+
+
 def _copy_or_link(src: Path, dst: Path, mode: str) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.is_symlink():
         dst.unlink()
     elif dst.is_dir():
-        shutil.rmtree(dst)
+        _rmtree_robust(dst)
     elif dst.exists():
         dst.unlink()
     if mode == "symlink":

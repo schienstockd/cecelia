@@ -62,7 +62,10 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
            resultPath = result_file, mode = mode, rscript = rscript),
         run_dir; on_log = on_log, on_progress = on_progress, on_process = on_process)
     if !(ok && isfile(result_file))
-        on_log("[ERROR] Migration failed (no result written). Is Rscript available? (--rscript)")
+        # Rscript-availability used to be the ONLY reason this branch fired, so the message said so.
+        # It now fires for any Python-side exception (rmtree race, permissions, disk full, …) and the
+        # actual cause is in the traceback `run_py` already streamed via on_log.
+        on_log("[ERROR] Migration failed (no result written). See the traceback above for the cause.")
         return nothing
     end
 
@@ -81,13 +84,13 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     save!(img)
     rm(result_file; force = true)
 
-    on_log("[INFO] Migrated $(src_uid): $(length(img.label_props) > 0 ? join(value_names(img.label_props), ", ") : "no segmentation")")
+    on_log("[INFO] Migrated $(src_uid): $(length(img.label_props) > 0 ? join(versioned_keys(img.label_props), ", ") : "no segmentation")")
 
     # QC (advisory): the objective signal a migration has is how much came across. A legacy image that
     # migrates with NO segmentation is the silent-failure case — the import "succeeded", the image
     # appears, and every downstream page is empty — so it gets the one warn finding.
     try
-        vns      = value_names(img.label_props)
+        vns      = versioned_keys(img.label_props)
         findings = migrate_qc_findings(vns)
         write_qc(img, "importImages.migrateLegacy", VERSIONED_DEFAULT_VAL, findings;
                  metrics = Dict{String,Any}("nSegmentations" => length(vns),
@@ -97,5 +100,5 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
         on_log("[QC] could not compute migration QC: $e")
     end
 
-    Dict{String,Any}("uid" => img.uid, "segmentations" => value_names(img.label_props))
+    Dict{String,Any}("uid" => img.uid, "segmentations" => versioned_keys(img.label_props))
 end
