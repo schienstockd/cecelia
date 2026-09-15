@@ -1,5 +1,47 @@
 struct TrainSupportDenoise <: CciaTask end
 
+# Typed shape of what `_run_task(::TrainSupportDenoise, …)` reads from `params`. `trainChannels`
+# stays a bag (resolved via `channel_indices` inside the handler using the set's shared channel
+# names).
+Base.@kwdef struct TrainSupportDenoiseParams
+    valueName::String        = VERSIONED_DEFAULT_VAL
+    modelName::String        = ""
+    overwrite::Bool          = false
+    trainChannels::Any       = Any[]
+    unetSize::String         = "medium"
+    inputFrames::Int         = 61
+    trainMode::String        = "pooled"
+    patchXY::Int             = 128
+    epochs::Int              = 20
+    batchSize::Int           = 2
+    learningRate::Float64    = 5e-4
+    blindConvChannels::Int   = 64
+    earlyStop::Bool          = true
+    patience::Int            = 5
+    minLossDelta::Float64    = 5e-3
+    midZOnly::Bool           = true
+end
+
+function parse_train_support_denoise_params(d::AbstractDict)::TrainSupportDenoiseParams
+    TrainSupportDenoiseParams(;
+        valueName         = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        modelName         = string(get(d, "modelName", "")),
+        overwrite         = Bool(get(d, "overwrite", false)),
+        trainChannels     = get(d, "trainChannels", Any[]),
+        unetSize          = string(get(d, "unetSize", "medium")),
+        inputFrames       = Int(get(d, "inputFrames", 61)),
+        trainMode         = string(get(d, "trainMode", "pooled")),
+        patchXY           = Int(get(d, "patchXY", 128)),
+        epochs            = Int(get(d, "epochs", 20)),
+        batchSize         = Int(get(d, "batchSize", 2)),
+        learningRate      = Float64(get(d, "learningRate", 5e-4)),
+        blindConvChannels = Int(get(d, "blindConvChannels", 64)),
+        earlyStop         = Bool(get(d, "earlyStop", true)),
+        patience          = Int(get(d, "patience", 5)),
+        minLossDelta      = Float64(get(d, "minLossDelta", 5e-3)),
+        midZOnly          = Bool(get(d, "midZOnly", true)))
+end
+
 # SET scope, mirroring `TrainFlowModel` above. One denoise model per acquisition-class, reused across
 # the set — that is why the vault is per-config, not per-image (DENOISE_INTEGRATION_PLAN.md D3).
 #
@@ -99,45 +141,41 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
 
     isempty(imgs) && (on_log("[ERROR] No images selected to train on."); return nothing)
 
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p = parse_train_support_denoise_params(params)
 
     # Channel names from the first image; every image must agree. Same rationale as
     # `TrainFlowModel` — a mixed set would silently train on a different reporter per movie.
     ch_names = ccid_channel_names(read_ccid_raw(state_file(imgs[1])))
 
-    local channel_indices_selected, channel_names_selected, model_path, bundle_dir, unet, unet_size
+    local channel_indices_selected, channel_names_selected, model_path, bundle_dir, unet
     try
-        chan_sel = channel_indices(get(params, "trainChannels", []), ch_names;
-                                   what = "trainChannels")
+        chan_sel = channel_indices(p.trainChannels, ch_names; what = "trainChannels")
         isempty(chan_sel) && error("Select at least one channel to train on.")
         channel_indices_selected = chan_sel
         channel_names_selected   = String[String(ch_names[c + 1]) for c in chan_sel]
 
-        unet_size = string(get(params, "unetSize", "medium"))
-        haskey(_SUPPORT_UNET_SIZES, unet_size) ||
-            throw(ParamValidationError("unetSize must be small/medium/large, got \"$unet_size\""))
-        unet = _SUPPORT_UNET_SIZES[unet_size]
+        haskey(_SUPPORT_UNET_SIZES, p.unetSize) ||
+            throw(ParamValidationError("unetSize must be small/medium/large, got \"$(p.unetSize)\""))
+        unet = _SUPPORT_UNET_SIZES[p.unetSize]
 
         # Reserve both targets and let the runner land the one matching trainMode. Cheap and it
         # keeps the vault helper's overwrite check symmetric across the two modes.
         # SUPPORT_PERCHANNEL_PLAN.md → D3.
-        model_path, bundle_dir = denoise_model_target(get(params, "modelName", "");
-                                          overwrite = Bool(get(params, "overwrite", false)),
+        model_path, bundle_dir = denoise_model_target(p.modelName;
+                                          overwrite = p.overwrite,
                                           want_bundle = true)
     catch e
         on_log("[ERROR] $(e isa ErrorException || e isa ParamValidationError ? e.msg : sprint(showerror, e))")
         return nothing
     end
 
-    input_frames = Int(get(params, "inputFrames", 61))
-    isodd(input_frames) || (on_log("[ERROR] inputFrames must be odd (centre is the target); got $input_frames"); return nothing)
+    isodd(p.inputFrames) || (on_log("[ERROR] inputFrames must be odd (centre is the target); got $(p.inputFrames)"); return nothing)
 
     # `auto` is parked — the v1 SNR precheck (Poisson head-room over nonzero-median) over-fires on
     # narrow-DR-but-clean channels like nuc-GFP. Post-run collapse QC in cleanupImages.denoise stays
     # as the reliable signal. See SUPPORT_PERCHANNEL_PLAN.md → Deferred (metric v2).
-    train_mode = string(get(params, "trainMode", "pooled"))
-    train_mode in ("pooled", "perChannel") || (
-        on_log("[ERROR] trainMode must be pooled|perChannel, got \"$train_mode\""); return nothing)
+    p.trainMode in ("pooled", "perChannel") || (
+        on_log("[ERROR] trainMode must be pooled|perChannel, got \"$(p.trainMode)\""); return nothing)
 
     # Collect usable images (per-image existence + channel-name agreement + T-length check). The
     # T-length check runs HERE (not just in the Python runner) so a user picking a 61-frame window
@@ -148,9 +186,9 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
     short_ts = Tuple{String,Int}[]   # (uid, T) for images too short for the current window
     for img in imgs
         raw = read_ccid_raw(state_file(img))
-        filename = versioned_get_field(raw, "filepath", value_name)
+        filename = versioned_get_field(raw, "filepath", p.valueName)
         if isnothing(filename)
-            on_log("[WARN] $(img.uid): no filepath for valueName='$value_name' — skipped")
+            on_log("[WARN] $(img.uid): no filepath for valueName='$(p.valueName)' — skipped")
             continue
         end
         im_path = joinpath(dirname(dirname(img._dir)), "0", img.uid, string(filename))
@@ -164,15 +202,15 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
             continue
         end
         size_t = something(tryparse_i(get(img.meta, "SizeT", nothing)), 0)
-        if size_t < input_frames
+        if size_t < p.inputFrames
             push!(short_ts, (String(img.uid), size_t))
-            on_log("[WARN] $(img.uid): T=$size_t < inputFrames=$input_frames — skipped")
+            on_log("[WARN] $(img.uid): T=$size_t < inputFrames=$(p.inputFrames) — skipped")
             continue
         end
         push!(movies, Dict{String,Any}("uID" => img.uid, "imPath" => im_path))
     end
     if isempty(movies)
-        for line in _support_short_movie_refusal(short_ts, input_frames)
+        for line in _support_short_movie_refusal(short_ts, p.inputFrames)
             on_log(line)
         end
         isempty(short_ts) && on_log("[ERROR] No usable images — nothing to train on.")
@@ -182,11 +220,11 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
     joined_names = join(channel_names_selected, "+")
     joined_idx   = join(channel_indices_selected, ",")
     on_log("[INFO] Training on $(length(movies)) image(s) of $(length(imgs)) selected")
-    on_log("[INFO] Model:    $(train_mode == "perChannel" ? bundle_dir : model_path)")
+    on_log("[INFO] Model:    $(p.trainMode == "perChannel" ? bundle_dir : model_path)")
     on_log("[INFO] Channels: $joined_names (indices $joined_idx)")
-    on_log("[INFO] Mode:     $train_mode")
+    on_log("[INFO] Mode:     $(p.trainMode)")
     on_log("[INFO] Arch:     UNet $(unet["midChannels"]) depth $(unet["depth"]) | " *
-           "inputFrames $input_frames | patch $(Int(get(params, "patchXY", 128)))")
+           "inputFrames $(p.inputFrames) | patch $(p.patchXY)")
 
     task_dir = imgs[1]._dir
     qc_out_path = joinpath(task_run_dir(task_dir), "support_training.json")
@@ -197,32 +235,32 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
            modelPath        = model_path,
            bundleDir        = bundle_dir,
            qcOutPath        = qc_out_path,
-           valueName        = value_name,
-           trainMode        = train_mode,
+           valueName        = p.valueName,
+           trainMode        = p.trainMode,
            trainChannels    = channel_indices_selected,
            channelNames     = channel_names_selected,
-           inputFrames      = input_frames,
-           patchXY          = Int(get(params, "patchXY", 128)),
-           epochs           = Int(get(params, "epochs", 20)),
-           batchSize        = Int(get(params, "batchSize", 2)),
-           learningRate     = Float64(get(params, "learningRate", 5e-4)),
+           inputFrames      = p.inputFrames,
+           patchXY          = p.patchXY,
+           epochs           = p.epochs,
+           batchSize        = p.batchSize,
+           learningRate     = p.learningRate,
            midChannels      = unet["midChannels"],
            depth            = unet["depth"],
-           unetSize         = unet_size,
-           blindConvChannels = Int(get(params, "blindConvChannels", 64)),
+           unetSize         = p.unetSize,
+           blindConvChannels = p.blindConvChannels,
            # Early-stop budget — the runner passes patience=None to coastal when earlyStop is off,
            # matching the current "train to `epochs`" behaviour. Defaults track the coastal defaults
            # (patience 5, min_delta 0.005) which stop MERTK-large in ~6-10 epochs on the plateau.
-           earlyStop        = Bool(get(params, "earlyStop", true)),
-           patience         = Int(get(params, "patience", 5)),
-           minLossDelta     = Float64(get(params, "minLossDelta", 5e-3)),
-           midZOnly         = Bool(get(params, "midZOnly", true))),
+           earlyStop        = p.earlyStop,
+           patience         = p.patience,
+           minLossDelta     = p.minLossDelta,
+           midZOnly         = p.midZOnly),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 
-    saved_at = train_mode == "perChannel" ? bundle_dir : model_path
-    on_log("[INFO] Model saved to the denoise vault: $(basename(saved_at)) ($train_mode)")
+    saved_at = p.trainMode == "perChannel" ? bundle_dir : model_path
+    on_log("[INFO] Model saved to the denoise vault: $(basename(saved_at)) ($(p.trainMode))")
 
     # QC banked against every source image, like opticalFlow.train.
     if isfile(qc_out_path)
@@ -252,6 +290,6 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
 
     Dict{String,Any}("modelName" => basename(saved_at),
                      "modelPath" => saved_at,
-                     "mode"      => train_mode,
+                     "mode"      => p.trainMode,
                      "nImages"   => length(movies))
 end

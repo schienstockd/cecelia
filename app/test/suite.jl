@@ -18560,3 +18560,53 @@ end
         @test p.extendedMeasures === false
     end
 end
+
+@testset "typed params — opticalFlow" begin
+    # TrainFlowModel — 20+ fields; spot-check the ones that MEAN something.
+    let p = Cecelia.parse_train_flow_model_params(Dict{String,Any}(
+            "valueName" => "corrected", "modelName" => "cd8-flow",
+            "overwrite" => true, "trainChannels" => ["mem-TOM"],
+            "temporalScaleMode" => "seconds", "temporalScales" => "2,4,8",
+            "flowMetrics" => ["cell_boundary_likelihood", "cumulative_mag"],
+            "epochs" => 60, "foregroundBoundaryWeight" => 0.3,
+            "cropSize" => 256))
+        @test p.valueName == "corrected"
+        @test p.modelName == "cd8-flow"
+        @test p.overwrite === true
+        @test p.trainChannels == ["mem-TOM"]
+        @test p.temporalScaleMode == "seconds"
+        @test p.temporalScales == "2,4,8"
+        @test p.flowMetrics == ["cell_boundary_likelihood", "cumulative_mag"]
+        @test p.epochs === 60
+        @test p.foregroundBoundaryWeight === 0.3
+        @test p.cropSize === 256
+    end
+    let p = Cecelia.parse_train_flow_model_params(Dict{String,Any}())
+        @test p.temporalScaleMode == "frames"
+        @test p.temporalScales == "1,2,4,8"
+        @test isnothing(p.flowMetrics)                  # nothing → shipped default
+        @test p.epochs === 30
+        @test p.foregroundBoundaryWeight === 0.0        # OFF by default
+        @test p.foregroundBlurSigma === 1.0
+    end
+
+    # TrainSupportDenoise
+    let p = Cecelia.parse_train_support_denoise_params(Dict{String,Any}(
+            "modelName" => "supp.MERTK", "trainChannels" => ["mem-TOM"],
+            "unetSize" => "large", "inputFrames" => 31,
+            "trainMode" => "perChannel", "epochs" => 40, "earlyStop" => false))
+        @test p.modelName == "supp.MERTK"
+        @test p.unetSize == "large"
+        @test p.inputFrames === 31
+        @test p.trainMode == "perChannel"
+        @test p.epochs === 40
+        @test p.earlyStop === false
+    end
+    let p = Cecelia.parse_train_support_denoise_params(Dict{String,Any}())
+        @test p.unetSize == "medium"
+        @test p.inputFrames === 61
+        @test p.trainMode == "pooled"
+        @test p.earlyStop === true
+        @test p.patience === 5
+    end
+end

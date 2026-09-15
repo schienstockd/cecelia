@@ -1,5 +1,61 @@
 struct TrainFlowModel <: CciaTask end
 
+# Typed shape of what `_run_task(::TrainFlowModel, …)` reads from `params`. `trainChannels` stays
+# a bag here (resolved via `channel_indices` inside the handler using the set's shared channel
+# names); `temporalScales` stays a bag because `parse_temporal_scales` throws
+# `ParamValidationError` on malformed input and is called at run start. `flowMetrics` is handled
+# by `flow_dropped_metrics`, which honours `nothing` → the shipped default (see its docstring).
+Base.@kwdef struct TrainFlowModelParams
+    valueName::String                    = VERSIONED_DEFAULT_VAL
+    modelName::String                    = ""
+    overwrite::Bool                      = false
+    trainChannels::Any                   = Any[]
+    temporalScaleMode::String            = "frames"
+    temporalScales::Any                  = "1,2,4,8"
+    flowMetrics::Any                     = nothing   # nothing → shipped default (FLAT metrics dropped)
+    zPlanes::Int                         = 1
+    zSpacing::Int                        = 0
+    cropSize::Int                        = 0
+    maxFrames::Int                       = 0
+    trainRatio::Float64                  = 0.8
+    cumulativeWindow::Int                = 5
+    epochs::Int                          = 30
+    foregroundWeight::Float64            = 1.0
+    foregroundBoundaryWeight::Float64    = 0.0
+    intensityWeight::Float64             = 0.25
+    temporalWeight::Float64              = 2.0
+    foregroundBlurSigma::Float64         = 1.0
+    embeddingDim::Int                    = 16
+    seed::Int                            = 42
+    normalise::Float64                   = 99.99
+end
+
+function parse_train_flow_model_params(d::AbstractDict)::TrainFlowModelParams
+    TrainFlowModelParams(;
+        valueName                = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        modelName                = string(get(d, "modelName", "")),
+        overwrite                = Bool(get(d, "overwrite", false)),
+        trainChannels            = get(d, "trainChannels", Any[]),
+        temporalScaleMode        = string(get(d, "temporalScaleMode", "frames")),
+        temporalScales           = get(d, "temporalScales", "1,2,4,8"),
+        flowMetrics              = get(d, "flowMetrics", nothing),
+        zPlanes                  = Int(get(d, "zPlanes", 1)),
+        zSpacing                 = Int(get(d, "zSpacing", 0)),
+        cropSize                 = Int(get(d, "cropSize", 0)),
+        maxFrames                = Int(get(d, "maxFrames", 0)),
+        trainRatio               = Float64(get(d, "trainRatio", 0.8)),
+        cumulativeWindow         = Int(get(d, "cumulativeWindow", 5)),
+        epochs                   = Int(get(d, "epochs", 30)),
+        foregroundWeight         = Float64(get(d, "foregroundWeight", 1.0)),
+        foregroundBoundaryWeight = Float64(get(d, "foregroundBoundaryWeight", 0.0)),
+        intensityWeight          = Float64(get(d, "intensityWeight", 0.25)),
+        temporalWeight           = Float64(get(d, "temporalWeight", 2.0)),
+        foregroundBlurSigma      = Float64(get(d, "foregroundBlurSigma", 1.0)),
+        embeddingDim             = Int(get(d, "embeddingDim", 16)),
+        seed                     = Int(get(d, "seed", 42)),
+        normalise                = Float64(get(d, "normalise", 99.99)))
+end
+
 # `modelName` names into the model VAULT, which is global — shared across projects, not a property of
 # any image — so its suggestions cannot ride the image payload the way every other `valueNameInput`'s
 # do (VALUE_NAME_INPUT_PLAN → D6). They arrive as injected spec OPTIONS instead, the same runtime
@@ -157,7 +213,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
 
     isempty(imgs) && (on_log("[ERROR] No images selected to train on."); return nothing)
 
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p = parse_train_flow_model_params(params)
 
     # Channel names come from the FIRST image and every other image must agree. A set whose images
     # have different channel orders would silently train on a different reporter per movie, which is
@@ -165,25 +221,17 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
     # visible cause.
     ch_names = ccid_channel_names(read_ccid_raw(state_file(imgs[1])))
 
-    # `frames` = the offsets are the setting and every movie is read at them, which is one physical
-    # displacement only if the set was acquired at one rate. `seconds` = the SPANS are the setting and
-    # each movie is resolved onto its own offsets, so a mixed-rate set contributes one feature
-    # geometry. Default `frames`, because it is what every existing model and chain means.
-    mode = string(get(params, "temporalScaleMode", "frames"))
-
     local channels, scales, model_path
     try
-        channels = channel_indices(get(params, "trainChannels", []), ch_names;
-                                   what = "trainChannels")
+        channels = channel_indices(p.trainChannels, ch_names; what = "trainChannels")
         isempty(channels) && error("Select at least one channel to train on.")
-        mode in ("frames", "seconds") || throw(ParamValidationError(
-            "'temporalScaleMode' must be \"frames\" or \"seconds\", got \"$mode\""))
+        p.temporalScaleMode in ("frames", "seconds") || throw(ParamValidationError(
+            "'temporalScaleMode' must be \"frames\" or \"seconds\", got \"$(p.temporalScaleMode)\""))
         # ONE list, both modes. The lags are the setting; in `seconds` mode the runner multiplies them
         # by the finest usable frame interval to get the SPANS, so a span that is not a whole number of
         # that movie's frames is unrepresentable rather than silently rounded (see `seconds_config`).
-        scales = parse_temporal_scales(get(params, "temporalScales", "1,2,4,8"))
-        model_path = flow_model_target(get(params, "modelName", "");
-                                       overwrite = Bool(get(params, "overwrite", false)))
+        scales = parse_temporal_scales(p.temporalScales)
+        model_path = flow_model_target(p.modelName; overwrite = p.overwrite)
     catch e
         on_log("[ERROR] $(e isa ErrorException || e isa ParamValidationError ? e.msg : sprint(showerror, e))")
         return nothing
@@ -192,9 +240,9 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
     movies = Dict{String,Any}[]
     for img in imgs
         raw = read_ccid_raw(state_file(img))
-        filename = versioned_get_field(raw, "filepath", value_name)
+        filename = versioned_get_field(raw, "filepath", p.valueName)
         if isnothing(filename)
-            on_log("[WARN] $(img.uid): no filepath for valueName='$value_name' — skipped")
+            on_log("[WARN] $(img.uid): no filepath for valueName='$(p.valueName)' — skipped")
             continue
         end
         im_path = joinpath(dirname(dirname(img._dir)), "0", img.uid, string(filename))
@@ -214,23 +262,21 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
 
     isempty(movies) && (on_log("[ERROR] No usable images — nothing to train on."); return nothing)
 
-    dropped = flow_dropped_metrics(get(params, "flowMetrics", nothing))
+    dropped = flow_dropped_metrics(p.flowMetrics)
 
     on_log("[INFO] Training on $(length(movies)) image(s) of $(length(imgs)) selected")
     on_log("[INFO] Model:  $model_path")
     # One line, both modes. What the lags MEAN in seconds depends on the movies, which only the runner
     # has opened at this point — it logs the spans and the interval it anchored them on.
     on_log("[INFO] Scales: $(join(scales, ", ")) | cumulative window " *
-           "$(Int(get(params, "cumulativeWindow", 5)))" *
-           (mode == "seconds" ? " | other rates read at the same DURATIONS" : "") *
+           "$(p.cumulativeWindow)" *
+           (p.temporalScaleMode == "seconds" ? " | other rates read at the same DURATIONS" : "") *
            (isempty(dropped) ? "" : " | dropping $(join(dropped, ", "))"))
-    let crop = Int(get(params, "cropSize", 0)), zsp = Int(get(params, "zSpacing", 0))
-        # Said once, up front: both change what the run is fitted to rather than how it is fitted,
-        # and both are easy to leave set from a previous run without noticing.
-        on_log("[INFO] Sampling: $(Int(get(params, "zPlanes", 1))) Z plane(s)" *
-               (zsp >= 1 ? " every $(zsp)" : " over the stack") *
-               " | " * (crop > 0 ? "random $(crop)×$(crop) crop" : "whole frame"))
-    end
+    # Said once, up front: both change what the run is fitted to rather than how it is fitted,
+    # and both are easy to leave set from a previous run without noticing.
+    on_log("[INFO] Sampling: $(p.zPlanes) Z plane(s)" *
+           (p.zSpacing >= 1 ? " every $(p.zSpacing)" : " over the stack") *
+           " | " * (p.cropSize > 0 ? "random $(p.cropSize)×$(p.cropSize) crop" : "whole frame"))
 
     # Set-scope run dir, consistent with every other set task (never a temp dir).
     task_dir = imgs[1]._dir
@@ -244,33 +290,33 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            taskDir          = task_dir,
            modelPath        = model_path,
            qcOutPath        = qc_out_path,
-           valueName        = value_name,
+           valueName        = p.valueName,
            trainChannels    = channels,
            channelName      = join([string(ch_names[c + 1]) for c in channels
                                     if 0 <= c < length(ch_names)], "+"),
-           zPlanes          = Int(get(params, "zPlanes", 1)),
+           zPlanes          = p.zPlanes,
            # Wins over `zPlanes` in the runner when set. Two controls for one choice rather than a
            # mode switch: they answer different questions (how many planes vs how far apart), and a
            # set of stacks of different depths cannot satisfy both at once.
-           zSpacing         = Int(get(params, "zSpacing", 0)),
-           cropSize         = Int(get(params, "cropSize", 0)),
-           maxFrames        = Int(get(params, "maxFrames", 0)),
-           trainRatio       = Float64(get(params, "trainRatio", 0.8)),
+           zSpacing         = p.zSpacing,
+           cropSize         = p.cropSize,
+           maxFrames        = p.maxFrames,
+           trainRatio       = p.trainRatio,
            temporalScales   = scales,
-           cumulativeWindow = Int(get(params, "cumulativeWindow", 5)),
-           temporalScaleMode = mode,
+           cumulativeWindow = p.cumulativeWindow,
+           temporalScaleMode = p.temporalScaleMode,
            droppedMetrics   = dropped,
-           epochs           = Int(get(params, "epochs", 30)),
-           foregroundWeight = Float64(get(params, "foregroundWeight", 1.0)),
+           epochs           = p.epochs,
+           foregroundWeight = p.foregroundWeight,
            # The flow-boundary term: subtracts a blob-scaled flow-discontinuity map from the
            # foreground target, so the prob map pinches where the velocity field tears. Per
            # `ForegroundLoss.target`, "the ONLY path by which optical flow reaches the labels" —
            # everywhere else flow enters as input channels or through the contrastive term. OFF by
            # default because switching it on also requires two metrics the default set drops (see
            # `FLOW_BOUNDARY_METRICS`), so it cannot be a silent default.
-           foregroundBoundaryWeight = Float64(get(params, "foregroundBoundaryWeight", 0.0)),
-           intensityWeight  = Float64(get(params, "intensityWeight", 0.25)),
-           temporalWeight   = Float64(get(params, "temporalWeight", 2.0)),
+           foregroundBoundaryWeight = p.foregroundBoundaryWeight,
+           intensityWeight  = p.intensityWeight,
+           temporalWeight   = p.temporalWeight,
            # Coastal's default, forwarded rather than left implicit: it decides the SHAPE of the
            # foreground target, and it was silently pinned at coastal's 1.0 because nothing passed
            # it. At zolIMa's 0.331 µm/px that blur is 0.33 µm, so the target thresholds into ~70
@@ -278,14 +324,14 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            # `ForegroundLoss` exists to replace. Not a form control yet: raising it SOFTENS the
            # target, which raises its entropy and therefore the best achievable loss, so the curve
            # cannot referee the choice — it needs a fragment count first (docs/TODO.md).
-           foregroundBlurSigma = Float64(get(params, "foregroundBlurSigma", 1.0)),
-           embeddingDim     = Int(get(params, "embeddingDim", 16)),
+           foregroundBlurSigma = p.foregroundBlurSigma,
+           embeddingDim     = p.embeddingDim,
            # Not a form control. cuDNN is non-deterministic on this workload — the same config on
            # the same seed produced 84 and 79 instances across two runs (~6%) — so a seed box would
            # promise a reproducibility it cannot deliver. It is still recorded in the manifest, and
            # a REPL/chain caller can override it.
-           seed             = Int(get(params, "seed", 42)),
-           normalise        = Float64(get(params, "normalise", 99.99))),
+           seed             = p.seed,
+           normalise        = p.normalise),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
