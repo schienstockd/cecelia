@@ -779,6 +779,39 @@ function python_bin_path()::String
     isempty(conf) ? "python3" : conf
 end
 
+# Standard Rscript locations to try when neither the caller nor `PATH` supplies one. macOS GUI apps
+# inherit a bare PATH (`/usr/bin:/bin:/usr/sbin:/sbin`) that omits both the CRAN framework and
+# Homebrew, so a user whose Terminal happily runs `Rscript` still hits `FileNotFoundError: 'Rscript'`
+# from the legacy-migrate scan. PURE and parameterised on OS booleans so both platforms' behaviour
+# is testable from any host.
+_rscript_fallback_candidates(isapple::Bool, iswin::Bool)::Vector{String} =
+    isapple ? String["/Library/Frameworks/R.framework/Resources/bin/Rscript",
+                     "/opt/homebrew/bin/Rscript",
+                     "/usr/local/bin/Rscript"] :
+    iswin   ? String[] :   # PATH covers the Linux distro-package case; no version-agnostic Win path
+              String[]
+
+"""
+    rscript_bin_path(configured::AbstractString = "") -> String
+
+Resolve the Rscript to spawn for the legacy-migrate scan and task. An explicitly configured PATH
+(anything with a directory component) is used verbatim; a bare name — or empty — falls through to
+`Sys.which` and then to the platform's standard install locations. Returns the caller's
+value/`"Rscript"` unchanged if nothing resolves, so behaviour is never worse than passing the bare
+name straight to `subprocess`.
+"""
+function rscript_bin_path(configured::AbstractString = "")::String
+    conf = strip(String(configured))
+    isempty(conf) || isempty(dirname(conf)) || return String(conf)
+    name = isempty(conf) ? "Rscript" : String(conf)
+    p = Sys.which(name)
+    isnothing(p) || return String(p)
+    for cand in _rscript_fallback_candidates(Sys.isapple(), Sys.iswindows())
+        isfile(cand) && return cand
+    end
+    name
+end
+
 tasks_concurrent_limit()::Int =
     Int(get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "concurrentLimit", 4))
 

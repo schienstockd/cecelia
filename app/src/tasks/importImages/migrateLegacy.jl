@@ -40,9 +40,10 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     src_proj = string(get(params, "sourceProjectDir", get(img.meta, "legacySourceDir", "")))
     src_uid  = string(get(params, "sourceUid",        get(img.meta, "legacySourceUid", "")))
     mode     = string(get(params, "mode",    "copy"))
-    # rscript: explicit task param (if set) → the one chosen at register (meta) → PATH default
+    # rscript: explicit task param (if set) → the one chosen at register (meta), resolved through
+    # rscript_bin_path so a bare "Rscript" is upgraded to an absolute path where possible.
     rp       = string(get(params, "rscript", ""))
-    rscript  = !isempty(rp) ? rp : string(get(img.meta, "legacyRscript", "Rscript"))
+    rscript  = rscript_bin_path(!isempty(rp) ? rp : string(get(img.meta, "legacyRscript", "")))
 
     if isempty(src_proj) || isempty(src_uid)
         on_log("[ERROR] No legacy source (sourceProjectDir / sourceUid) on this image.")

@@ -6,7 +6,7 @@ export cellpose_models_dir, cellpose_model_path, list_cellpose_models, cellpose_
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export vault_model_stem
 export projects_dir, setup_required, set_projects_dir!
-export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit
+export bioformats2raw_bin, python_bin_path, rscript_bin_path, tasks_concurrent_limit
 export task_worker_threads, default_task_worker_threads, set_task_worker_threads!
 export usable_cpus, task_workers_max
 export task_workers_widen, task_workers_derived, set_task_workers_widen!
