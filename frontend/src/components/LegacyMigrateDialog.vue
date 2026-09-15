@@ -8,6 +8,7 @@
 import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
+import { cleanPathInput } from '../utils/pathInput'
 
 const props = defineProps<{ projectUid: string; setUid: string }>()
 const emit = defineEmits<{ (e: 'imported', images: unknown[]): void; (e: 'close'): void }>()
@@ -56,14 +57,16 @@ const summary = computed(() => {
 async function scan() {
   error.value = ''
   manifest.value = null
-  if (!path.value.trim()) { error.value = 'Enter the path to a legacy project folder.'; return }
+  const src = cleanPathInput(path.value)
+  const rs = cleanPathInput(rscript.value)
+  if (!src) { error.value = 'Enter the path to a legacy project folder.'; return }
   scanning.value = true
   try {
     const res = await fetch('/api/import/scan-legacy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourceProjectDir: path.value.trim(),
-        ...(rscript.value.trim() ? { rscript: rscript.value.trim() } : {}),
+        sourceProjectDir: src,
+        ...(rs ? { rscript: rs } : {}),
       }),
     })
     const body = await res.json().catch(() => ({})) as Manifest
@@ -97,12 +100,13 @@ async function confirmImport() {
   try {
     const images = m.images.filter(i => selected.value.includes(i.uid))
       .map(i => ({ uid: i.uid, name: i.name }))
+    const rs = cleanPathInput(rscript.value)
     const res = await fetch('/api/import/register-legacy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: props.projectUid, setUid: props.setUid,
-        sourceProjectDir: path.value.trim(), images,
-        ...(rscript.value.trim() ? { rscript: rscript.value.trim() } : {}),
+        sourceProjectDir: cleanPathInput(path.value), images,
+        ...(rs ? { rscript: rs } : {}),
       }),
     })
     const body = await res.json().catch(() => ({})) as { images?: unknown[]; error?: string }
