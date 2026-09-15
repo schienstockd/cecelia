@@ -15,11 +15,14 @@
     @test tasks_concurrent_limit() >= 1
 end
 
-# ── Version stamp is consistent across the three files that carry it ──────────
+# ── Version stamp is consistent across the four files that carry it ──────────
 # `cecelia_version()` (from Project.toml, via pkgversion) is the runtime reader; CITATION.cff is the
-# human-facing citation; frontend/package.json is what JS tooling sees. All three MUST agree — the
+# human-facing citation; frontend/package.json is what JS tooling sees; frontend/package-lock.json
+# carries the same name+version and npm rewrites it on install. All four MUST agree — the
 # release-cutting checklist (docs/RELEASING.md step 4) bumps them together, and this testset is the
 # ratchet. A divergence here means either the bump was partial or one file was edited by hand.
+# (The lockfile once sat at 0.2.0 for two releases because "the parity gate doesn't cover it" was
+# tribal knowledge instead of an assertion.)
 @testset "cecelia_version agrees with CITATION.cff and package.json" begin
     ver = cecelia_version()
     @test !isempty(ver) && ver != "0.0.0"
@@ -35,6 +38,10 @@ end
 
     pkg_ver = JSON3.read(read(joinpath(root, "frontend", "package.json"), String))[:version]
     @test String(pkg_ver) == ver
+
+    lock = JSON3.read(read(joinpath(root, "frontend", "package-lock.json"), String))
+    @test String(lock[:version]) == ver                              # top-level
+    @test String(lock[:packages][Symbol("")][:version]) == ver       # root package entry
 end
 
 # ── Fixture size ratchet ─────────────────────────────────────────────────────
