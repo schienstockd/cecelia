@@ -510,7 +510,7 @@ describe('temporalSpanAdvisory', () => {
 
   // fXgbTl's ACTUAL stored metadata. `ccid.json` keeps Bioformats' word `second`, while the store's
   // OME-XML — what the Python side reads — says `s`. The first cut of `spanAnchorRate` compared to
-  // `'s'` and told Dominik "no frame interval in seconds" about a movie that records 15 of them.
+  // `'s'` and surfaced "no frame interval in seconds" about a movie that records 15 of them.
   const fXgbTl = { uid: 'fXgbTl', timeIncrement: 15, timeIncrementUnit: 'second' }
 
   it('reads the unit Bioformats actually wrote', () => {

@@ -8,7 +8,7 @@
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
-// Title-card options (Phase H) — a description slide prepended to each recorded movie.
+// Title-card options — a description slide prepended to each recorded movie.
 export interface TitleCardCfg {
   enabled: boolean
   note: string
@@ -125,7 +125,7 @@ export interface BatchMovieRequestConfig {
   titleCard: TitleCardCfg
 }
 
-// Title card is ON by default (Phase H decision 3); duration clamped to 1–10s.
+// Title card is ON by default; duration clamped to 1–10s.
 export const TITLE_CARD_DEFAULT: TitleCardCfg = { enabled: true, note: '', durationSec: 3 }
 
 /** Mask outline width, clamped. 0 = filled. Mirrors `LABEL_CONTOUR_MAX` / `_label_contour`

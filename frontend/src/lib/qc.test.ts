@@ -129,7 +129,7 @@ describe('qcTooltipHtml', () => {
     expect(qcTooltipHtml([], fn => fn, () => ({}))).toBe('')
   })
 
-  // The bug this closes, caught by Dominik looking at a mock: the label first shipped wearing
+  // The bug this closes, caught by manual review of a mock: the label first shipped wearing
   // `.cc-module-tag-fun`, whose `opacity: .85` means "secondary to the bold module id". Here the label
   // is the only thing in the pill, and the dimming took it from 4.55:1 to 3.70:1 — back under AA,
   // undoing the lift `moduleTagStyle` exists to apply, while still looking plausible.

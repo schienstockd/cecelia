@@ -1,8 +1,8 @@
 // Not opening the viewer straight back into the crash it just died in.
 //
 // The volume viewer talks to the graphics driver, and a driver can take the whole browser down rather
-// than raise anything catchable: Mesa's `iris` segfaulted in `libgallium` on opening an image
-// (Dominik, 2026-08-25, SIGSEGV at 0x8). Nothing in the page runs after that — no error handler, no
+// than raise anything catchable: Mesa's `iris` segfaulted in `libgallium` on opening an image.
+// Nothing in the page runs after that — no error handler, no
 // `device.lost`, no console line — and the window reopens on the same URL, so the next click is the
 // same crash. That is the failure this exists for, and it is the one failure the WebGPU probe cannot
 // see: the adapter answers, the format check passes, and the driver dies later anyway.

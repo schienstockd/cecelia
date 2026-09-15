@@ -61,7 +61,7 @@ describe('the icon glossary', () => {
   // The check that matters most, and the one nothing had: PrimeIcons renders a MISSING glyph as an empty
   // box, silently. Four invented names — `pi-ruler`, `pi-layer-group`, `pi-mouse-pointer`,
   // `pi-grip-vertical` — had been shipping blank icons in the physical-size dialog, the metadata panel,
-  // the delete dialog and the chain palette until the glossary put them side by side (Dominik spotted
+  // the delete dialog and the chain palette until the glossary put them side by side (spotted
   // all four by eye, 2026-08-17). The installed stylesheet is the authority.
   it('only names glyphs PrimeIcons actually provides', () => {
     const css = ICONS_CSS
@@ -87,7 +87,7 @@ describe('the icon glossary', () => {
 
   it('never explains a glyph in terms of class names', () => {
     // A reader of the glossary is looking at a symbol, not at our markup — `pi-spin` is our business
-    // (it is in this module's header, and in docs/UI.md), not theirs (Dominik, 2026-08-17).
+    // (it is in this module's header, and in docs/UI.md), not theirs.
     const leaks = ICON_LEGEND.flatMap(f => [
       ...f.icons.filter(i => /\bpi-/.test(i.means)).map(i => i.icon),
       ...(/\bpi-/.test(f.note ?? '') ? [`${f.title} (note)`] : []),

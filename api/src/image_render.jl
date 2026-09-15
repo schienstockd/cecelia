@@ -4,7 +4,7 @@
 #
 # THE ONLY server-side image renderer in the codebase. If you need a thumbnail or preview, use this;
 # do not hand-roll a second compositor. It lived in the old `crop_render.jl`, named for its first consumer,
-# until an audit found essentially nothing in it was crop-specific (Dominik, 2026-07-30) — the crop
+# until an audit found essentially nothing in it was crop-specific — the crop
 # panel just asked first. `crop_api.jl` now holds only the crop ROUTES; the geometry helpers moved
 # out earlier to `image_geometry.jl` for the same reason.
 #

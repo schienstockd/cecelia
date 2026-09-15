@@ -41,7 +41,7 @@ const CH0 = 16
  *  the budget math (`computeCapacity`) and the `writeTexture` layout (`bytesPerRow = w * BPV`) —
  *  a hardcoded 2 sent uint8 tiles with `bytesPerRow = 2w` against a `w*1` buffer, producing
  *  "required size 1786401 exceeds linear data size 893691" (2× over, the exact ratio) — the error
- *  Dominik hit on `SispLk`/`35uedD` 2026-08-27.
+ *  observed on `SispLk`/`35uedD` 2026-08-27.
  *  Fallback default is `2` so a caller that hasn't threaded `bytesPerVoxel` through gets the old
  *  behaviour. */
 const DEFAULT_BPV = 2
@@ -317,7 +317,7 @@ export async function createTileRenderer(
       // swap should reuse it. Old-level tiles stay resident, get drawn UNDER the new-level ones as
       // they stream in (drawTiles sorts coarsest-first), and the eviction ranker drops the coarse
       // tiles under memory pressure. Reallocating on every level swap is what caused the "black
-      // tiles between levels" that Dominik reported (2026-08-26).
+      // tiles between levels" that reported (2026-08-26).
       const reuse = atlas
         && atlasChunkX === chunkX
         && atlasChunkY === chunkY
@@ -408,7 +408,7 @@ export async function createTileRenderer(
       // (a wheel notch during a slow fetch); a tile whose (tx, ty) is valid at key.level can be past
       // the smaller level's extent, and `tileFetchRect` then returns `xTo < x`, giving a negative
       // `rowsPerImage` — the "Value is outside the 'unsigned long' value range" writeTexture failure
-      // Dominik hit (2026-08-26). The atlas is level-agnostic (same chunk shape at every level), so
+      // observed (2026-08-26). The atlas is level-agnostic (same chunk shape at every level), so
       // uploading a coarser-level tile into it is correct.
       const lvl = metaRef?.levels?.find(v => v.level === key.level)
       if (!lvl) return -1
@@ -420,7 +420,6 @@ export async function createTileRenderer(
       // when the atlas gets reallocated to a coarser level with smaller chunks — can arrive with
       // dims LARGER than the atlas can hold, and `writeTexture` then throws "Texture copy range
       // touches outside …". Reject cleanly; the tile pump will re-request at the current level
-      // (Dominik, 2026-08-26).
       if (w > atlasChunkX || h > atlasChunkY) return -1
       // Each channel goes to `slot * nC + c` in the atlas. `writeTexture` returns once the bytes are
       // STAGED — the caller can then read `hasTile` synchronously.

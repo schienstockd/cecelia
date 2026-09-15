@@ -8,9 +8,9 @@ const SFC = import.meta.glob('/src/**/*.vue', { query: '?raw', import: 'default'
  * Every SFC must PARSE — which is not the same question as "does it type-check".
  *
  * `vue-tsc -b` and all 2544 unit tests passed on a `ViewerWindow.vue` whose template was missing two
- * end tags; the only thing that noticed was Vite, in the browser, as a red overlay (Dominik,
- * 2026-08-25). Type-checking works from the compiled render function and a template that fails to
- * compile simply contributes nothing to check, so a structural break reads as "no errors here".
+ * end tags; the only thing that noticed was Vite, in the browser, as a red overlay. Type-checking
+ * works from the compiled render function and a template that fails to compile simply contributes
+ * nothing to check, so a structural break reads as "no errors here".
  *
  * The parse is the same `@vue/compiler-sfc` entry point Vite's plugin calls, so anything this accepts
  * the dev server accepts. It costs milliseconds and it is the difference between finding a broken tag

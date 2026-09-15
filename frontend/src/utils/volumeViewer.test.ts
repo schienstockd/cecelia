@@ -220,7 +220,6 @@ describe('orbit camera', () => {
     //   wx = panX + ndcX*halfW,  wy = -panY - ndcY*halfH.
     // Panning both non-zero so the wrong sign would show — the first shipped version was
     // consistent with itself at panX = panY = 0 but mirrored the cursor across the origin
-    // (dominik, 2026-08-29: "mouse bottom left, it zooms in top right").
     const cam0 = { ...fit, dist: 100, panX: 30, panY: -20 }
     const anchor = { ndcX: -0.7, ndcY: -0.6, aspect: 16 / 9 } // bottom-left of a wide canvas
     const worldAt = (c: typeof cam0) => {
@@ -237,7 +236,7 @@ describe('orbit camera', () => {
     expect(worldAt(zout).y).toBeCloseTo(w0.y)
   })
   it('zoom in at a bottom-left cursor drags the camera center TOWARD it, not the mirror', () => {
-    // Regression pin for "mouse bottom-left, it zooms in top-right" (dominik, 2026-08-29). The
+    // Regression pin for "mouse bottom-left, it zooms in top-right". The
     // buggy version inverted panX AND panY. Screen center in world = (panX, -panY). A cursor at
     // screen bottom-left is NDC (-,-). Zoom in ⇒ the pointed-at world moves closer to center ⇒
     // camera center shifts toward the cursor. So panX shifts SAME SIGN as ndcX (both negative here)
@@ -311,7 +310,7 @@ describe('slabView — dtype-aware wrap around the slab ArrayBuffer', () => {
     expect(lo).toBeGreaterThanOrEqual(10)
     // Sanity: hi is inside the dtype and never below the bulk range. Under the Wide default
     // (p9999) with 4096 samples, position 4095 IS the last element (the 255), so `hi` sits at the
-    // sampled max here — that's the whole point of the Wide default (Dominik 2026-09-03), keep
+    // sampled max here — that's the whole point of the Wide default, keep
     // sparse bright signal visible.
     expect(hi).toBeGreaterThan(100)
     expect(hi).toBeLessThanOrEqual(255)

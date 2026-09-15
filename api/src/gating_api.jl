@@ -504,7 +504,7 @@ function api_gating_channels(req::HTTP.Request)
         # `default` but tracks live on `flowKat`) — and until now the client got an empty
         # clusterIds back, showing "no clusters at this suffix" in the pop manager while UMAP +
         # heatmap (which resolve their own vn per-request) showed the clusters just fine
-        # (Dominik on fXgbTl 2026-09-08). When the request didn't name a valueName, prefer a
+        # (reported on fXgbTl 2026-09-08). When the request didn't name a valueName, prefer a
         # tracked one; an explicit request is honoured unchanged.
         if isempty(get(q, "valueName", ""))
             tracked_vns = String[v for v in versioned_keys(img.label_props) if is_tracked(img; value_name = v)]
@@ -517,9 +517,8 @@ function api_gating_channels(req::HTTP.Request)
                 end
                 # 2) for `trackclust` with no explicit valueName, additionally prefer a tracked vn
                 #    that HAS clustering runs — the resolved-tracked pick can still be a peer of the
-                #    one the run lives on (e.g. zolIMa/fXgbTl: `default` is tracked but the
-                #    `movement` clustering is on `flowTom`; the fix landed on 2026-09-08 only guarded
-                #    the untracked case, so this still returned empty clusterIds).
+                #    one the run lives on (e.g. a tracked `default` where the clustering was written
+                #    to a differently-suffixed vn), so both cases must be guarded.
                 if get(q, "popType", "") == "trackclust"
                     has_trackclust_runs = v -> begin
                         tp = img_track_props_path(img, v)

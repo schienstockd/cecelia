@@ -129,7 +129,7 @@ class PhysicalScaleTest(unittest.TestCase):
 class RunnerLocalsAreNotShadowedTest(unittest.TestCase):
     """The manifest's accumulators are each bound once, and to different names.
 
-    A real bug, found by Dominik running a training job: `physicalScales`' accumulator was called
+    A real bug, found running a training job: `physicalScales`' accumulator was called
     `scales`, which is already the temporal-scale LIST six lines above it. `max(scales)` raised
     `ValueError: max() iterable argument is empty`, and had that guard not crashed first, the manifest
     would have been written with a dict of pixel sizes under `temporalScales`.

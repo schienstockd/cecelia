@@ -39,7 +39,7 @@ export const useSettingsStore = defineStore('settings', () => {
   )
 
   // Auto-refresh the viewer when a task finishes for the open image (labels + overlays re-read
-  // from disk). Off by default — heavy on large images (Dominik has 20k+ frame timelapses).
+  // from disk). Off by default — heavy on large images (we have 20k+ frame timelapses).
   const viewerAutoUpdate = ref(
     localStorage.getItem('cc.viewerAutoUpdate') === 'true'    // default false
   )
@@ -113,7 +113,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // How many z planes either side of the one on screen still draw their cell's marker.
   //
   // 0 is the strict reading — a marker appears only on the plane its centroid falls on. On real data
-  // that reads as RANDOM (Dominik, 2026-08-25): the mask layer draws every cell
+  // that reads as RANDOM: the mask layer draws every cell
   // that INTERSECTS the plane, while the points draw only the few centred on it, so the two look
   // unrelated. A cell spans several planes, so a small tolerance is the honest default; it is a setting
   // rather than a constant because the right number is the cell diameter, which is per experiment.
@@ -138,7 +138,7 @@ export const useSettingsStore = defineStore('settings', () => {
     (localStorage.getItem('cc.viewerVolumeProjection') as 'ortho' | 'persp') || 'ortho')
   // Auto-contrast top percentile — the knob the Auto button uses when picking `hi`. Default
   // 99.99 (Wide — the widest window preserves rare bright cells; tuned for sparse microscopy
-  // signal, Dominik 2026-09-03). 99–99.8 trim a brighter tail and let dense tissue read at a
+  // signal, ). 99–99.8 trim a brighter tail and let dense tissue read at a
   // wider mid-tone range.
   const viewerAutoContrastPercent = ref(
     Number(localStorage.getItem('cc.viewerAutoContrastPercent') ?? '99.99') || 99.99)
@@ -195,7 +195,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // The WebGPU viewer's controls sidebar (`ViewerWindow.vue`) uses the same CollapsiblePanel but its
   // collapse is INDEPENDENT — the module-page right panel and the viewer-window sidebar hold
   // different things, and a shared flag folded the viewer's own controls away whenever the module
-  // page's task list was collapsed (Dominik, 2026-08-28). CollapsiblePanel accepts a `collapsedRef`
+  // page's task list was collapsed. CollapsiblePanel accepts a `collapsedRef`
   // override; ViewerWindow points it here.
   const viewerWindowSideCollapsed = ref(localStorage.getItem('cc.viewerWindowSideCollapsed') === 'true')
   // the Viewer controls are a floating dockable panel (not a sidebar section) — this is its
@@ -287,7 +287,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const firstTrue = labelNames.find(n => out[n])
       if (firstTrue) for (const vn of labelNames) if (vn !== firstTrue) out[vn] = false
       // If the stored bag has no true entries, HONOUR IT — the user explicitly unticked the last
-      // segmentation to hide the mask (Dominik, 2026-08-26: "when i turn off the segmentation
+      // segmentation to hide the mask ("when i turn off the segmentation
       // toggle. the last segmentation is still showing on the image. it never disappears"). An
       // earlier revision re-ticked the first here on the theory that "nothing rendering reads
       // worse than a default", but it makes the untick a no-op — the mask stays on because the
@@ -340,7 +340,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // Per-image active version: { [imageUid]: valueName }. Written by the ViewerPanel's version
   // <select> (main window) and mirrored into the popup viewer via the storage-event bridge, so the
   // two windows never disagree about which version is on screen (VIEWER_CONTROLS_SPLIT_PLAN.md P3
-  // extended to the version picker, Dominik 2026-08-26). Empty entry = no user pick, fall back to
+  // extended to the version picker, ). Empty entry = no user pick, fall back to
   // the URL query / active-in-project default; DO NOT default to the first name here — that would
   // decide the version silently before the user has expressed one.
   const _imageVersionStore = ref<Record<string, string>>(
@@ -375,7 +375,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // legend override). Per-set: mirrors `colourBy` above.
     trackColorMode?: 'track' | 'speed' | 'solid' | 'pop'
     // Per-source hex overrides for the SOLID track colour mode: {[vn]: '#rrggbb'}. Absent = the
-    // default from the palette. Dominik, 2026-08-26: "can we make that the source color can be
+    // default from the palette. "can we make that the source color can be
     // changed. same color picker as for the channels just with the cecelia palette".
     trackSourceColour?: Record<string, string>
     // user recolouring of a categorical colour-by, keyed by column then category value → hex. For
@@ -618,7 +618,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
     // Direct string keys — not JSON, so they don't go through the bag decoder. `storage` events
     // only fire in OTHER windows, so this is the path the popup viewer's mode toggle takes to
-    // reach the main window's settings store (Dominik, 2026-08-26). Without this the pop-manager
+    // reach the main window's settings store. Without this the pop-manager
     // pencil stayed in its old state when the viewer flipped the mode.
     window.addEventListener('storage', e => {
       if (e.key === 'cc.viewerSelectMode') {

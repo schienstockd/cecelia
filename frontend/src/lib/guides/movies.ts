@@ -1,5 +1,5 @@
 // "Record a movie" — the most-asked-for OUTPUT, and the one place the app has three routes to the same
-// result, which is exactly why it needs a guide (Dominik, 2026-08-12).
+// result, which is exactly why it needs a guide.
 //
 // The three routes, as the /movies empty state itself lists them: the Viewer panel (records the current
 // view — what you see is what you get), Batch movies (the same config across a whole selection), and

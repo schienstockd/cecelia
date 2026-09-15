@@ -21,7 +21,7 @@ import { buildFocusViewState } from './focusOnCell'
  *      popup viewer syncs on `cc.viewer.trackHighlight` via a storage listener, so publishing
  *      highlight AHEAD of the overlays tick ensures the popup's next rebuild uses the new ids
  *      rather than firing one rebuild's worth of the previous selection first (the "flash of
- *      the previous highlight" pattern in Dominik's 13:52:26 log — 132 cells kept then 167).
+ *      the previous highlight" pattern in the 13:52:26 log — 132 cells kept then 167).
  *   3. **Enable the segmentation's track visibility** so the highlight has a source to narrow.
  *      Pokes `cc.viewerOverlaysTick` so the popup rebuilds its overlays immediately.
  *   4. **Fit + jump.** ONE fetch of paths (limited to the requested ids), ONE fetch of
@@ -149,7 +149,7 @@ export async function showTracksInViewer(
           // ended (or hadn't started) at t is silently dropped from the average — the alternative
           // (a stale sample from an earlier/later frame) would drag the camera off the cluster.
           // Was: bbox centre over all time — a track moving across the field of view then landed
-          // the camera at its path midpoint, not on the cell at t (Dominik, 2026-09-07).
+          // the camera at its path midpoint, not on the cell at t.
           let sxUm = 0, syUm = 0, szUm = 0, nContrib = 0, nContribZ = 0
           for (const id of trackIds) {
             const p = grp.paths[String(id)]

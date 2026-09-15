@@ -511,7 +511,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
         <div class="mov-side">
           <!-- Playback options sit WITH the list rather than in a page header: they are what you reach for
                while picking a movie, and a header row holding four of them across an empty page read as
-               stray chrome (Dominik, 2026-08-10). -->
+               stray chrome. -->
           <div class="mov-ctls cc-card">
             <div class="cc-row cc-row-tight">
               <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
@@ -612,7 +612,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                  eye drives viewer. -->
             <!-- The TABLE scrolls, not the card. With the Details columns on it is wider than the
                  panel, and a card-level `overflow:auto` slid the count, the chip picker and the Details
-                 toggle out of view along with it (Dominik, 2026-08-10). -->
+                 toggle out of view along with it. -->
             <div class="mov-table-scroll">
             <SelectionTable class="mov-table" selection-mode="multi" :columns="MOVIE_COLUMNS"
                             :rows="shownRows" v-model:selected="checked" id-key="name"

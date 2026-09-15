@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest'
 // and `InteractivePanel` provides its `#footer` only when the hosted view exposes `exportFormats` —
 // which is read off a template ref, so it is empty on the first render. Every interactive panel whose
 // ONLY chrome is that footer therefore decided "no controls" once, forever, and never showed the pin
-// that stops the footer auto-hiding over the body. Dominik reported it twice: first as "these floating
+// that stops the footer auto-hiding over the body. reported it twice: first as "these floating
 // plots have no pin", then again on the correction panel after a partial fix.
 //
 // The fix is a plain function called from the template: it re-evaluates on every render, and a render

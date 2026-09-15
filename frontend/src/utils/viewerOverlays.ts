@@ -257,7 +257,7 @@ export function overlaySummary(p: OverlayPayload | null): {
 /**
  * Same shape as `filterPayloadByLabels`, but keys off the `cells.track` column — for the
  * "highlight ONLY these track ids on the viewer" primitive that restores the pre-napari-retire
- * behaviour of `showTracksInNapari` (removed in P9 slice 4 without a browser-viewer replacement).
+ * behaviour of `showTracksInNapari` (removed with napari, without a browser-viewer replacement).
  *
  * A payload with no `cells.track` array cannot be filtered (nothing to match), so we return an
  * empty payload — same reducer discipline as the label version. An empty `trackIds` set means "no
@@ -455,7 +455,7 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
  * IDs are namespaced per payload (`payload_index * 1e7 + track_id`) so a cell in payload A's track
  * 1 never links to a cell in payload B's track 1 — a naive concat would draw a phantom segment.
  *
- * Dominik, 2026-08-26: "the tracks ribbons should be configurable to show speed. or track id. or
+ * "the tracks ribbons should be configurable to show speed. or track id. or
  * have solid color for all tracks. to distinguish them when multiple track sources are shown".
  */
 export function buildMultiTrackBuffer(
@@ -608,7 +608,7 @@ export function tailRange(
   // segment [t, t+1] is the "current" hop and is included in the visible tail. Viewer's tail_length
   // model does the same on scrub; the old `hi = t` read as broken at t = 0 (window collapsed to
   // [0, 0] and every segment ends at t ≥ 1 → nothing to draw, even though tracks were built).
-  // Dominik, 2026-08-26: "still no ribbons ... there are tracks in 'default' segmentation".
+  // "still no ribbons ... there are tracks in 'default' segmentation".
   const hi = Math.max(0, Math.round(t)) + 1
   // L frames means L hops visible. `hi - L + 1` keeps the tail's LENGTH at L when hi is shifted:
   // L=1 → [t+1, t+1] = the current hop only; L=2 → [t, t+1] = current + one back.

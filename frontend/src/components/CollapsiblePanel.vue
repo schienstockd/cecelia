@@ -10,12 +10,12 @@
 // THE PANEL INSIDE MUST NOT OWN A WIDTH. That extraction left half the job done: `TaskRunner` and
 // `MetadataPanel` kept their own `usePanelResize` + drag handle, so each sat inside this one with a
 // second width and a second handle on the same edge — dragging THIS widened this while the content
-// stayed pinned at its own stored 280px, which reads as the content shifting rather than reflowing
-// (Dominik, 2026-08-15). Both now fill the slot (`flex: 1; min-width: 0`) and the starting width is
+// stayed pinned at its own stored 280px, which reads as the content shifting rather than reflowing.
+// Both now fill the slot (`flex: 1; min-width: 0`) and the starting width is
 // ModuleLayout's `rightDefaultWidth` (280 by default). A slot child that sets its own width is a bug.
 //
 // COLLAPSE IS ONE SHARED FLAG, deliberately: `settings.rightPanelCollapsed` is global, so folding the
-// panel away on one page folds it everywhere (decision: Dominik). That is the behaviour module pages
+// panel away on one page folds it everywhere. That is the behaviour module pages
 // have always had, and the Movies list joins it rather than introducing a second, per-panel rule the
 // user would have to learn. WIDTH stays per panel (`storageKey`) — panels hold different things and a
 // shared width would be wrong for all of them.
@@ -26,7 +26,7 @@ import { usePanelResize } from '../composables/usePanelResize'
 /** Settings-store keys the panel is allowed to bind its collapse flag to. The default
  *  `rightPanelCollapsed` is the app-wide shared fold — see the header. Adding a new key here (and
  *  the ref itself in `stores/settings.ts`) is the extension point when a panel needs an
- *  independent flag, e.g. the viewer window's sidebar (Dominik, 2026-08-28). */
+ *  independent flag, e.g. the viewer window's sidebar. */
 type CollapsedKey = 'rightPanelCollapsed' | 'viewerWindowSideCollapsed'
 
 const props = withDefaults(defineProps<{

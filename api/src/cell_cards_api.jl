@@ -90,7 +90,7 @@ function _render_card_frames(med_img::CciaImage, medoid, frames_ts::Vector{Int},
                              # Time-axis source: the ACTIVE image on the analysis board, whose saved
                              # sidecar carries the correct TimeIncrement — a medoid on a different
                              # image version may resolve to a filepath whose OME-XML lacks the T
-                             # axis and would otherwise degrade the label to "t=N" (Dominik 2026-09-09).
+                             # axis and would otherwise degrade the label to "t=N".
                              interval_s::Union{Nothing,Float64}=nothing)::Vector{Dict{String,Any}}
     # OME-Zarr resolution is IMAGE-versioned (default/denoised/driftCorrected/…), not segmentation-
     # versioned. `value_name` here is the segmentation vn (e.g. `flowTom`) — a different taxonomy;
@@ -106,7 +106,7 @@ function _render_card_frames(med_img::CciaImage, medoid, frames_ts::Vector{Int},
 
     # Crop selection. `crop_side` (when supplied) makes ONE physical pixel size share across every
     # card in the response, centred on each card's own medoid — the card sheet is only useful if
-    # populations are visually comparable side-by-side (Dominik 2026-09-09). Without `crop_side` the
+    # populations are visually comparable side-by-side. Without `crop_side` the
     # crop is just bbox + pad (interactive path — same physical scale within a single card).
     bbox = track_bbox(med_img, value_name, medoid.track_id; pad_px=pad_px)
     if crop_side !== nothing
@@ -186,7 +186,7 @@ function _render_card_frames(med_img::CciaImage, medoid, frames_ts::Vector{Int},
     # the movie renderer and thumbnail route read via `_props_path`. Previously this was pointed at
     # the label-props H5AD, which `layer_display_specs` (a JSON reader) silently caught + returned
     # nothing for; cards then fell back to per-frame percentile and rendered in default colours that
-    # did NOT match the viewer (Dominik 2026-09-09 screenshot). Cold-start (no viewer opened yet)
+    # did NOT match the viewer. Cold-start (no viewer opened yet)
     # falls back to sampled-contrast defaults, same as the movie rail.
     props = _props_path(med_img._dir, zp)
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
@@ -195,7 +195,7 @@ function _render_card_frames(med_img::CciaImage, medoid, frames_ts::Vector{Int},
     channels = collect(0:(nc - 1))
 
     # Snap each requested frame to the nearest tracked timepoint so the dot (medoid at t) always
-    # LANDS on the rendered image (Dominik 2026-09-09). Without this, a mid-frame chosen from the
+    # LANDS on the rendered image. Without this, a mid-frame chosen from the
     # bbox midpoint could fall in a gap between centroid_t entries — the image would render but no
     # dot would draw, and the still would visually disagree with the last-frame ended trace.
     tracked_ts = Int[t for (t, _, _) in hist]
@@ -306,8 +306,8 @@ function api_cell_cards(body_bytes::Vector{UInt8})
         return 500, JSON3.write((; error = "cell_cards_metadata failed: $(sprint(showerror, e))"))
     end
 
-    # Uniform crop across every card so cell POPULATIONS are visually comparable side by side
-    # (Dominik 2026-09-09). Side = the largest bbox extent across all cards + 2×pad, clamped by the
+    # Uniform crop across every card so cell POPULATIONS are visually comparable side by side.
+    # Side = the largest bbox extent across all cards + 2×pad, clamped by the
     # renderer to native. `track_bbox` here is called with pad=0 to keep the metric to the raw
     # motion; the renderer re-adds its own pad centred on each medoid.
     uniform_side = 0

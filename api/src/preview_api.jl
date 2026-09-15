@@ -26,8 +26,8 @@ _preview()::Union{PreviewWorker,Nothing} = _preview_ref[]
 
 Stop the worker and forget it. Shared by the user's toggle-off (`api_preview_stop`) and app
 shutdown/restart (`_stop_children_for_exit`), because "stop the worker" must mean the same thing
-however it is reached — the toggle used to be the only path, which is how shutdown came to leave the
-worker running on :7656 while napari and Pluto were both stopped.
+however it is reached — every code path (toggle, shutdown, restart) comes through here so a stopped
+worker is stopped everywhere.
 
 Best-effort by design: a worker we merely ADOPTED, or one that outlived a crash, has no process handle
 to close, so callers follow this with a port-level kill.

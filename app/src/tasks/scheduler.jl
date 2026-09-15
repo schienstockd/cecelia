@@ -1,3 +1,7 @@
+# concurrency-critical — comments here document lock ordering, cancellation races and silent-
+# failure contracts (post-exactly-once, terminal-state finality, `never nest _TASKS_LOCK inside
+# _POOLS_LOCK`). Do not trim for brevity without re-reading them. See docs/MAINTAINABILITY.md.
+
 using Dates
 
 # ── Chain cancellation registry ───────────────────────────────────────────────
@@ -132,9 +136,9 @@ end
 # acquired at the moment of execution — checked against the current `limit` — a pool never runs more
 # than `limit` jobs at once, even the instant after a throttle-down.
 #
-# Analogue of R's mcparallel / mccollect(wait=TRUE): run_task submits a job and blocks on
-# take!(done_ch) until it finishes — synchronous from the caller. Blocking on a Channel/Condition
-# yields the OS thread to Julia's scheduler (no spin-wait), so blocked submitters don't exhaust it.
+# run_task submits a job and blocks on take!(done_ch) until it finishes — synchronous from the
+# caller. Blocking on a Channel/Condition yields the OS thread to Julia's scheduler (no spin-wait),
+# so blocked submitters don't exhaust it.
 #
 # Resizing just changes the slot budget (same queue, same dispatcher):
 #   • grow  → `notify` wakes the dispatcher if it was waiting for a slot; queued backlog fans out

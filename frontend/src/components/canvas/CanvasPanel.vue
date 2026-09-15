@@ -118,7 +118,7 @@ let ro: ResizeObserver | null = null
 // NEVER call this straight from the ResizeObserver — go through `squareFrame` (below). It writes
 // `root.style.height` on the element the observer WATCHES, and a callback that resizes an observed
 // element during delivery is precisely what the browser reports as "ResizeObserver loop completed with
-// undelivered notifications" — the line Dominik kept seeing in the log rail. The >1px guard bounds the
+// undelivered notifications" — the line observed in the log rail. The >1px guard bounds the
 // loop but not the message: the notification is already undeliverable after the FIRST write.
 function enforceSquare() {
   if (!props.square || props.docked || collapsed.value || !root.value || !mainEl.value) return

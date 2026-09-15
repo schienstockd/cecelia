@@ -43,7 +43,7 @@ onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfile
 // `ensureLoaded` fetched once at boot and never retried). Also refreshes the per-category cohortFuns.
 watch(() => projectMeta.current?.uid, uid => { if (uid) customModules.refresh() })
 
-// Accordion: ONE nav group open at a time (Dominik, 2026-09-07 — was: all can be open, but
+// Accordion: ONE nav group open at a time (was: all can be open, but
 // the sidebar was getting too long). Same rule + composable as the viewer window's control
 // accordion. On first-ever load, pick the first shown group so the sidebar isn't empty; after
 // that localStorage takes over (including an intentional "all closed" state).
@@ -103,7 +103,7 @@ function isNavDisabled(item: NavItem): boolean {
         <!-- Only when a profile is actually curating the menu: "All pages" is the default, and a badge
              for the default state is noise on every screen forever. Its own row BELOW `.proj-info`,
              never a second line inside it — that row centres the folder icon and the ⋯ button against
-             the name, so growing it pushed the name up and both controls down (Dominik, 2026-08-17). -->
+             the name, so growing it pushed the name up and both controls down. -->
         <span v-if="viewProfiles.active" class="profile-badge"
               v-tooltip.right="'View profile — change in Settings → Interface'">
           <i class="pi pi-eye" />{{ viewProfiles.active.label }}

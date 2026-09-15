@@ -53,9 +53,9 @@ fine because the extra `nc` is on the end).
 Measured on `Dml3RG` (37 z, 4 ch, 181 t): a whole timepoint is 326 MB and ~400 ms of server read, one
 plane is 8.8 MB and ~13-22 ms. More to the point, the whole 181-timepoint movie is 1.59 GB at one plane
 against 59 GB at full depth — so it FITS in a VRAM budget, and the second pass through it is entirely
-cache hits. This is the view Dominik actually uses for a timecourse (2026-08-24).
+cache hits. This is the view we use for a timecourse.
 
-The RANGE is what makes the volume view usable, and it is Dominik's suggestion (2026-08-24): every cost
+The RANGE is what makes the volume view usable: every cost
 here is linear in the number of planes, so 8 of 37 is 70 MB rather than 326 MB — a ~0.25 s fetch instead
 of ~1 s — and four times as many timepoints fit the same VRAM budget. Structure is usually in a few
 planes, so a full-depth MIP is mostly paying for empty stack.
@@ -1051,7 +1051,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # `showPopulations` gates the pop-dot build. Absent = true, so `record-test`'s smoke overlays
     # block (which never carried this field) keeps painting pops the way it always has. A
     # `look`-derived dict from `_overlays_raw_from_config` sets it explicitly, so a movie that only
-    # asked for a mask stops leaking pop dots the user didn't select (reported by Dominik).
+    # asked for a mask stops leaking pop dots the user didn't select (reported).
     show_pops = Bool(_ov(ov_raw, :showPopulations, true))
     include_tracks = Bool(_ov(ov_raw, :includeTracks, true))
     # `tailLength` in FRAMES — the legacy `tail_length`, default 30, `0` hides tracks entirely
@@ -1260,7 +1260,7 @@ end
 #
 # `maxFrames` caps the sweep (default 30 — a smoke test should not wait minutes). Absent overlays: the
 # author that resolves populations / centroids / tracks into the primitives' columnar shape is the
-# next chunk, and its output will need Dominik's eyes on real cells rather than a green frame.
+# next chunk, and its output will need the eyes on real cells rather than a green frame.
 #
 # `POST /api/viewer/record-test` — body: `{ projectUid, imageUid, valueName?, ts?: [start, end],
 # z?: int, titleCard?, maxFrames?: 30, overlays?: { popType?: "flow", valueName?, popPaths?: [...],

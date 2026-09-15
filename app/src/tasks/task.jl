@@ -178,8 +178,8 @@ function _apply_options_from!(spec::Dict{String,Any})::Dict{String,Any}
                     # Without the dedupe a spec that lists an option the lister also enumerates gets
                     # it twice — which is what `segment.cellpose` did: it declared `cpsam_v2`/`cpsam`
                     # as literals AND names `cellposeModels`, whose builtin half is the same tuple,
-                    # so the Model picker showed each of them twice (Dominik, 2026-08-21, seen in the
-                    # browser). The declared entry WINS, because its label is the spec author's
+                    # so the Model picker showed each of them twice. The declared entry WINS, because
+                    # its label is the spec author's
                     # wording and order is what keeps coastal's "None" first.
                     seen = Set{String}(string(get(o, "value", "")) for o in base)
                     p["options"] = vcat(base,

@@ -5,7 +5,7 @@
   Same two-half arrangement as the batch-movies panel: the controls as the top half, this module's task
   list as the bottom, sharing `PaneExpandBar`. Every option is inline — the render options used to sit
   behind a gear popover (`MovieOptionsButton`, still the viewer recorder's), which made sense on a page
-  with no side panel and is redundant now there is one (Dominik, 2026-08-10).
+  with no side panel and is redundant now there is one.
 -->
 <script setup lang="ts">
 import { computed, ref, nextTick, watch } from 'vue'
@@ -295,7 +295,7 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     //
     // The set comes from the IMAGE (`setUidOfImage`), never from whatever set happens to be active.
     // Checking the active set instead is what made this report "switch to its set to see it" and leave
-    // the user to do it (Dominik, 2026-08-10) — the same failure whether the image really is in another
+    // the user to do it — the same failure whether the image really is in another
     // set or the page simply had none active yet. A restore is one click; it repairs what it can rather
     // than handing back an instruction.
     //

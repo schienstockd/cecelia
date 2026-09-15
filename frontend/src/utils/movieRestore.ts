@@ -256,7 +256,7 @@ export function missingRefs(cfg: BatchMovieCfg, avail: AvailableNames): string[]
  * Both destinations store per set — the batch page's config and output, and both pages' image
  * selection — so the target has to be settled before anything is written. Reading the ACTIVE set
  * instead is what made a restore report "images from another set" and leave the user to go and switch
- * it themselves (Dominik, 2026-08-10); one click should repair what it can.
+ * it themselves; one click should repair what it can.
  *
  * Images spanning two sets have no single answer, so the caller's fallback wins and the difference is
  * reported. Same when nothing is known (an old movie that banked no image).

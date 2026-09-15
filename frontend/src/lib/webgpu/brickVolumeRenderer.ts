@@ -76,21 +76,21 @@ const BRICK_XY = 128
 const BRICK_Z_MAX = 128
 
 /** Default VRAM ceiling the atlas targets when `setImage`'s `budgetBytes` is zero. Same order of
- *  magnitude as the flat renderer's typical timepoint budget on Dominik's RTX 2000 Ada. */
+ *  magnitude as the flat renderer's typical timepoint budget on the RTX 2000 Ada. */
 const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
 
 /** Concurrent brick fetches in flight at any moment. HTTP/1.1 caps browser-side at 6 per host
  *  and HTTP/2 multiplexes freely; 16 gives room for both while leaving slack for prefetch t's
  *  behind boundT's bricks. 8 (the initial pick) was too tight — the scheduler kicks the current
  *  t's bricks first, and at 16 bricks per timepoint (fXgbTl at brickSize [128,128,32]) that
- *  used every slot, so prefetch never ran. Measured 2026-08-29 (Dominik): "doesn't prefetch or
+ *  used every slot, so prefetch never ran. Measured 2026-08-29: "doesn't prefetch or
  *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */
 const MAX_INFLIGHT = 16
 
 /** Non-boundT (prefetch / trailing playback t) inflight cap. Reserves `MAX_INFLIGHT - MAX_INFLIGHT_BG`
  *  = 8 sockets for boundT bricks so a stop→scrub-elsewhere doesn't wait ~one browser-fetch time
  *  (300 ms–1 s) for the FIFO to drain before the new boundT gets on the wire. See
- *  `shouldAdmitKick` in `utils/pageTable.ts`. Bug shape: Dominik 2026-09-02, "when i just press
+ *  `shouldAdmitKick` in `utils/pageTable.ts`. Bug shape: "when i just press
  *  the play button it presumably pushes the bricks into a fifo queue. so when i stop the
  *  playback. i have to wait a bit until the queue catches up. there is no skip the queue for the
  *  brick that i would actually need right now".
@@ -112,7 +112,7 @@ const PREV_TOUCH_BIAS = 1_000_000_000
  *  picks the first-inserted entry — which is typically an early-loaded boundT brick still in
  *  the visible render. Under overload (`prefetch × scheduled > atlas.capacity` on Dml3RG at
  *  cacheMB=2048: 5 × 81 = 405 wanted vs 256 slots), that produces the "black rectangular
- *  holes" symptom Dominik hit 2026-09-02. Kept strictly SMALLER than `PREV_TOUCH_BIAS` so
+ *  holes" symptom observed 2026-09-02. Kept strictly SMALLER than `PREV_TOUCH_BIAS` so
  *  prev-level fallback still wins ties against current boundT — during a level swap the
  *  fallback matters more than the target. */
 const BOUND_T_TOUCH_BIAS = 500_000_000
@@ -650,7 +650,7 @@ export async function createBrickVolumeRenderer(
         // destroyed, level mismatch) skips the success-path `needsRedraw` below — so if all the
         // in-flight fetches took an early-return path, the pump never woke and the scheduler
         // never re-issued the missing bricks. "12 inflight forever, 5 missing, doesn't do
-        // anything" (Dominik 2026-08-29). rAF-coalesced, so calling it always is cheap.
+        // anything". rAF-coalesced, so calling it always is cheap.
         needsRedraw?.()
         if (payload === null) return
         if (destroyed || atlas === null) return
@@ -711,7 +711,7 @@ export async function createBrickVolumeRenderer(
         // Prev-level eviction: `prevPageTableCpu` may still index this slot at a different grid
         // position (the OLD level's grid). If we don't wipe it, the shader's fallback lookup will
         // return the slot number and sample the FRESH brick's bytes with prev-level coords —
-        // producing a scrambled block. Ring-halo-of-blank pattern (Dominik screenshot #32,
+        // producing a scrambled block. Ring-halo-of-blank pattern (screenshot #32,
         // 2026-08-29). Prev-level touch loop in `tickScheduler` should keep this rare, but the
         // wipe is the safety net for when the atlas genuinely runs out.
         if (evictedBrick !== null
@@ -877,7 +877,7 @@ export async function createBrickVolumeRenderer(
           // and biasing them at 1e9 permanently privileges them over CURRENT-t landings
           // (frameNow ~1500). LRU then evicts the freshly-arrived boundT bricks to make room
           // for MORE prev-t and prefetch, atlas can't accumulate at the current t, chip stays
-          // at "24 res / 57 needed" while bytes burn (Dominik 2026-08-29). Plain frameNow
+          // at "24 res / 57 needed" while bytes burn. Plain frameNow
           // keeps prev-t bricks LRU-fresh for this frame; next scrub they naturally age out.
           atlas.pageTable.touch(prevKey, frameNow)
         }
@@ -889,7 +889,6 @@ export async function createBrickVolumeRenderer(
     // prev-pageTable stays frozen at whatever displayT the last level swap snapshotted (line
     // 951's `set(pageTableCpu)`) — so a play-past-swap shows the swap-time frame as a still
     // image "on top", masking any newly-arriving prev-level bricks for the current displayT
-    // (Dominik 2026-09-02, "l2 bricks being reloaded underneath but a still image on top").
     // Also updates when `rebuildPageTableForDisplayT` is called at swap (line 971), which then
     // supersedes the swap-time snapshot at 951 — that snapshot is kept for the case where
     // pageTable holds nothing at displayT yet (fallback: name the empty state).
@@ -937,7 +936,7 @@ export async function createBrickVolumeRenderer(
     // The "OR !displayDrawable" clause exists because a scrub-then-play-then-stop sequence can
     // leave displayT pointing at a t whose bricks were LRU-evicted while playback moved past
     // — without this the shader draws a fully black canvas from an all-EMPTY pageTableCpu
-    // (Dominik, 2026-08-29). `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
+    //. `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
     // stays in sync with what the volume is drawing.
     if (boundT !== displayT) {
       // Snap-advance: displayT tracks boundT immediately. Any brick position still empty at the
@@ -972,7 +971,7 @@ export async function createBrickVolumeRenderer(
     // Hold-going-finer: only advance to a finer level once the CURRENT level is fully resident
     // at the viewport. Otherwise a rapid zoom cascades L5→L3→L1→... and each swap's prev-page-
     // table snapshot is partial. Two swaps deep the shader has nowhere to fall back to — the
-    // "black rectangle in the middle" symptom Dominik hit 2026-08-29. Coarser is always allowed
+    // "black rectangle in the middle" symptom observed 2026-08-29. Coarser is always allowed
     // (going the other way is a viewport-widening move; the coarser bricks are cheap and the
     // prev-page-table is definitionally more complete). Initial `undefined → floor` always fires.
     const goingFiner = atlas.currentLevel !== undefined && dec.level < atlas.currentLevel
@@ -1011,7 +1010,7 @@ export async function createBrickVolumeRenderer(
       // a zoom-out-then-zoom-in leaves earlier L0 bricks in the atlas (still in `pageTable`)
       // but with pageTableCpu[gridIndex] == EMPTY_SLOT — the fetch loop's `has(key)` check
       // skips them, so they never get re-written and the shader falls back to prev-level (or
-      // black) at their positions. Dominik screenshot #37/#38: "when i zoom in some bricks go
+      // black) at their positions. screenshot #37/#38: "when i zoom in some bricks go
       // blank. but it thinks these were already loaded". `rebuildPageTableForDisplayT` clears
       // to EMPTY_SLOT then re-populates for the current (displayT, currentLevel) entries.
       rebuildPageTableForDisplayT()
@@ -1034,8 +1033,7 @@ export async function createBrickVolumeRenderer(
       // at swap time, which reflects the OLD displayT after swap and gets updated to reflect
       // the NEW displayT on show(t) via rebuildPageTableForDisplayT). Prev-level residents at
       // OTHER t's have no defensive value — the shader can't reach them. Blanket-protecting
-      // them (the previous behavior) caused the "roulette wheel" symptom Dominik 2026-09-02 on
-      // VJy1Nx: after a zoom-in swap from L2→L0, 441 L2 residents from a prior scrub across
+      // them (the previous behavior) caused the "roulette wheel" symptom on // VJy1Nx: after a zoom-in swap from L2→L0, 441 L2 residents from a prior scrub across
       // 62 timepoints all had PREV_TOUCH_BIAS applied every tick. Any L0 boundT arrival landed
       // at BOUND_T_TOUCH_BIAS (5e8) < PREV_TOUCH_BIAS (1e9), then became LRU victim on the
       // next L0 arrival — bricks flickering in and out one at a time on an L2 background.
@@ -1061,7 +1059,7 @@ export async function createBrickVolumeRenderer(
     // prefetch t's get plain `frameNow`. When the atlas is at capacity (prefetch × scheduled >
     // atlas.slotCapacity, e.g. Dml3RG at cacheMB=2048), the untouched-this-tick prefetch bricks
     // now die BEFORE any current-render brick, preventing the rectangular black holes symptom
-    // Dominik hit 2026-09-02. Prefetch churn under overload continues (expected — want > atlas);
+    // observed 2026-09-02. Prefetch churn under overload continues (expected — want > atlas);
     // this fix only stops that churn from bleeding into the visible frame.
     const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
     const ts = [boundT]
@@ -1381,13 +1379,12 @@ export async function createBrickVolumeRenderer(
         // Fire the display-advanced hook so ViewerWindow's `shownT` follows displayT — the
         // residency map filters by shownT, so if we advance without notifying, the map keeps
         // showing the OLD t's residency instead of what the shader is actually drawing
-        // (Dominik, 2026-08-29: "the map stays purple even when half the bricks aren't loaded").
         onDisplayAdvanced?.(displayT)
       }
       // Nudge the frame loop so tickScheduler runs with the new boundT — the caller's own
       // showT skips its `frame.redraw()` on a false return, and without this a scrub past the
-      // atlas's residency would never kick fetches for the new t (dead-atlas symptom Dominik
-      // hit 2026-08-29).
+      // atlas's residency would never kick fetches for the new t (dead-atlas symptom observed
+      // 2026-08-29).
       needsRedraw?.()
       return ready
     },
@@ -1594,8 +1591,8 @@ export async function createBrickVolumeRenderer(
     setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
     setZPlane(zLo) {
       // Fast plane switch. `setImage` would `dropAtlas()` (destroys a ~64 MB 3D texture) then
-      // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D
-      // (Dominik 2026-08-29). The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
+      // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D.
+      // The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
       // × nch), so we can keep the texture and just invalidate every brick's contents:
       // atlas.pageTable.clear() rewinds the free-slot stack so incoming fetches reuse the
       // same slots. Same discipline as level swap, but without the level/grid churn.
@@ -1641,7 +1638,7 @@ export async function createBrickVolumeRenderer(
       }
       // How many core viewport bricks at (displayT, currentLevel) are NOT in `pageTable`. If this
       // is > 0 with inflight == 0, we've stalled — kickFetch didn't fire for bricks that need it.
-      // A specific case Dominik keeps hitting: the chip stays on "Loading bricks…" and no new
+      // A specific case observed: the chip stays on "Loading bricks…" and no new
       // requests go out. This value is the smoking gun.
       let missing = 0
       let missingAtBoundT = 0
@@ -1725,7 +1722,7 @@ export async function createBrickVolumeRenderer(
       // Detach the canvas swap chain BEFORE the device dies (Vulkan/Chromium leaves the swap
       // chain in a state a subsequent `ctx.configure(newDevice)` can't recover from otherwise).
       // Then release the device so its texture pool doesn't pile up across kind swaps — 3D→2D→3D
-      // would OOM brick's next atlas alloc without this (Dominik, 2026-09-03: "vkAllocateMemory
+      // would OOM brick's next atlas alloc without this ("vkAllocateMemory
       // failed with VK_ERROR_OUT_OF_DEVICE_MEMORY"). Both steps, in this order.
       ctx.unconfigure()
       device.destroy()

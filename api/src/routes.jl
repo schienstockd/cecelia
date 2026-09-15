@@ -431,8 +431,8 @@ function api_task_definitions(req::HTTP.Request)
     # (`task_previewable`, task.jl) rather than written into the JSON, because the JSON is the PARAM
     # spec — a capability of the compute doesn't belong in it, and duplicating it there would let the
     # two disagree. Composites resolve through their own overload, so `segment.cellposeMeasure` reports
-    # true. One loop, one resolution: this used to be a second pass with its own `_fun_name_map`
-    # lookup, carrying the identical built-ins-only bug (a plugin task was never stamped at all).
+    # true. One loop, one resolution — both the option-source pass and the task-preview stamp iterate
+    # over the same `raw` spec, so a plugin task cannot be stamped by one path and missed by the other.
     form = _form_params(query)
     for specs in values(raw), spec in specs
         fn = string(get(spec, "fun_name", ""))

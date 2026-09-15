@@ -170,7 +170,7 @@ const popValueName = computed<string>({
 const tailWidth    = computed<number>({ get: () => cfg.value.tailWidth ?? 4,         set: v => patch({ tailWidth: v }) })
 const pointsSize   = computed<number>({ get: () => cfg.value.pointsSize ?? 6,        set: v => patch({ pointsSize: v }) })
 
-// Title card (Phase H) — merge-patch so each control keeps the others' values.
+// Title card — merge-patch so each control keeps the others' values.
 function patchTitle(p: Partial<TitleCardCfg>) {
   patch({ titleCard: { ...TITLE_CARD_DEFAULT, ...(cfg.value.titleCard ?? {}), ...p } })
 }
@@ -471,7 +471,7 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     // WHICH SET, from the movie's own images rather than from whichever set happens to be active — and
     // switch to it. Config, output and selection are all stored per set, so this has to be settled
     // before anything is written. Checking the active set instead used to report "images from another
-    // set" and leave the user to go and switch (Dominik, 2026-08-10); a restore is one click and should
+    // set" and leave the user to go and switch; a restore is one click and should
     // repair what it can. Images spanning two sets have no single answer, so that keeps the active set
     // and says what it dropped.
     const known = new Set(project.sets.flatMap(s => s.images).map(i => i.uid))
@@ -501,8 +501,8 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     // AFTER the current tick, because arriving here is a NAVIGATION: `ImageTable` seeds its checkboxes
     // from this same store slot `onMounted`, and on the first visit that mount can land after this
     // callback — reading the old (empty) selection and committing it straight back over ours. On a
-    // second click the page is already mounted, which is exactly why it worked the second time
-    // (Dominik, 2026-08-10). One tick puts us unambiguously after the seed either way.
+    // second click the page is already mounted, which is exactly why it worked the second time.
+    // One tick puts us unambiguously after the seed either way.
     if (wanted.length) nextTick(() => project.setImageSelection('batchMovies', set, wanted))
 
     const dropped = [...r.dropped]
@@ -724,14 +724,14 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 /* The tasks half OWNS its overflow, the way TaskRunner's `.tasks-section`/`.tasks-scroll` pair does.
    Without a scroll container here a wide task row (a long image name, the five row buttons) made the
    whole PANEL wider and put a horizontal scrollbar under the config — every section shifted left
-   while a task ran (Dominik, 2026-08-10). `min-height: 0` is what lets it scroll instead of growing
+   while a task ran. `min-height: 0` is what lets it scroll instead of growing
    the column; `min-width: 0` the same for the cross axis. */
 .bm-tasks {
   display: flex; flex-direction: column;
   flex: 1 1 auto; min-width: 0;
   /* A FLOOR, not `min-height: 0`. The config half above has no cap (TaskRunner's `.params-section` is
      capped at 45vh), so `flex: 1` handed the list whatever was left — which on a long config was a
-     clipped sliver (Dominik, 2026-08-10). It scrolls itself from here rather than shrinking away. */
+     clipped sliver. It scrolls itself from here rather than shrinking away. */
   min-height: 14rem;
   overflow: auto;
 }

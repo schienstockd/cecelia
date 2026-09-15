@@ -1,5 +1,5 @@
 <!--
-  Vector scale bar + timestamp for a captured still (Phase E2). An SVG whose viewBox is the frame's
+  Vector scale bar + timestamp for a captured still. An SVG whose viewBox is the frame's
   physical extent (µm) with preserveAspectRatio "xMidYMid meet" — the SAME fit as the frame <img>'s
   object-fit: contain — so annotations stay geometrically correct AND aligned to the image content even
   when the frame is letterboxed. The scale bar length is drawn in µm (viewBox units), so it's correct by
@@ -23,7 +23,7 @@ const props = withDefaults(defineProps<{
    * `'proportional'` scales them with the frame, which is what a strip thumbnail wants: the same still
    * reads the same at any card size. `'fixed'` sizes them in screen pixels, which is what a full-bleed
    * interactive canvas wants — proportional chrome on a 700 px viewer renders a 35 px label
-   * ("massive scale bar, tiny timestamp" — Dominik, 2026-08-24) and, worse, changes size as you zoom.
+   * ("massive scale bar, tiny timestamp" — ) and, worse, changes size as you zoom.
    */
   chrome?: 'proportional' | 'fixed'
   /** Screen px for the scale-bar label / the timestamp, under `chrome: 'fixed'`. Separate numbers
@@ -41,7 +41,7 @@ const ok = computed(() => ex.value > 0 && ey.value > 0)
 const bar = computed(() => niceScaleBar(ex.value, props.extentUm?.unit ?? 'µm'))
 
 // Margin in screen px for `chrome: 'fixed'`; the bar's thickness follows its label so a large label
-// does not sit on a hairline. The 20 px default is Dominik's call (2026-08-24) — the viewer's own overlays
+// does not sit on a hairline. The 20 px default is the call (2026-08-24) — the viewer's own overlays
 // are 12 px, which read as too small on a full window.
 const MARGIN_PX = 12
 const barPx = computed(() => Math.max(3, props.barFontPx * 0.3))

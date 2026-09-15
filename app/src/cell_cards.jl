@@ -241,7 +241,7 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
                       init_object(String(proj_uid), medoid.uid))
         bbox = track_bbox(med_img, medoid.value_name, medoid.track_id; pad_px=8)
         # First / mid / last timepoint — the detail panel needs at least three so a reader can see
-        # the track's start, middle and end (Dominik 2026-09-09). The grid tile only shows the last
+        # the track's start, middle and end. The grid tile only shows the last
         # one (`filmstrip[end]`), so the extra two ride along cheaply for the detail view.
         mid = (bbox.t0 + bbox.t1) ÷ 2
         frames_ts = bbox.t0 == bbox.t1 ? Int[bbox.t1] : sort!(unique(Int[bbox.t0, mid, bbox.t1]))

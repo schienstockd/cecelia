@@ -7,7 +7,7 @@
 // and `render()` appends an `<svg>` INTO the observed element. Every one of them sizes that svg with a
 // floor (`Math.max(200, host.clientWidth)`), so in a panel narrower than the floor the svg is wider
 // than its host, the host grows, the observer fires again — and the browser reports
-// "ResizeObserver loop completed with undelivered notifications". Dominik saw exactly that in the log
+// "ResizeObserver loop completed with undelivered notifications". observed exactly that in the log
 // rail. It is not fatal (the browser breaks the loop itself) but it is a real loop: the panel re-renders
 // forever at frame rate, and the message is the only symptom.
 //

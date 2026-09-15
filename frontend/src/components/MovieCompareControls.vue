@@ -41,7 +41,7 @@ const emit = defineEmits<{
 
 // No per-option `tip` on any row here. A chip row already carries ONE tooltip for the whole control,
 // and a second one anchored on the individual chip renders on top of it — two overlapping boxes over
-// the thing you were about to click (Dominik, 2026-08-07). So the group tooltip has to say what the
+// the thing you were about to click. So the group tooltip has to say what the
 // per-option tips would have, and the icon rows below get labels a tooltip can name.
 const options = computed<ChipOption[]>(() =>
   props.available.map(v => ({ value: v, label: v })))

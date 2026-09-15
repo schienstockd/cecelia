@@ -92,7 +92,7 @@ export const cohortKey = (ctx: TrackCohortCtx): string => {
  * coordinate frames, and even a star/rose fan (where position has been discarded) becomes an unreadable
  * scribble the moment two conditions share it — the shape IS the readout. The group's name is the facet
  * title instead of a legend entry, so nothing needs colour to identify it and `colorBy` keeps the whole
- * colour channel for the measure it was picked for. (Dominik, 2026-08-19: star and rose split too.)
+ * colour channel for the measure it was picked for.
  *
  * `facetBy` is therefore not honoured here, so it says so rather than leaving the control lying — the
  * same rule the summary charts follow when a chart type cannot facet (`_facetIgnored` in `plots/plot.ts`).

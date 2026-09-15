@@ -61,7 +61,7 @@ const missing = computed(() => unknownPaths(editing.value?.items, availablePaths
 
 // Deliberately NO per-option `tip`. The nav item's own tip describes what that PAGE does, which is not
 // what someone picking pages needs — and ChipSelect renders it as a tooltip on the chip, so it fired on
-// top of this control's own tooltip (two tooltips at once, Dominik 2026-08-17). One tooltip per control,
+// top of this control's own tooltip (two tooltips at once, ). One tooltip per control,
 // on the control, explaining the interaction: docs/UI.md → Tooltips.
 function optionsFor(heading: string) {
   const g = groups.value.find(x => x.heading === heading)

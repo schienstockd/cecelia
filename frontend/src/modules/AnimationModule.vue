@@ -2,7 +2,7 @@
   Animation page (/animation) — a "super-simple OpenShot": a per-image TIMELINE of view snapshots
   (keyframes), rendered to an mp4 by interpolating between them. See docs/todo/ANIMATION_PLAN.md (F2).
 
-  A module page like every other one (Dominik, 2026-08-10): it used to be a standalone `ModulePage` that
+  A module page like every other one: it used to be a standalone `ModulePage` that
   read whichever image the viewer happened to have open, so its empty state — "open an image in the
   viewer" — could only be acted on by leaving the page. The image table IS that action, and it brings
   the set bar, the filters and the eye with it. The controls moved into the side panel

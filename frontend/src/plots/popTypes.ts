@@ -111,7 +111,7 @@ export function granularityFor(spec: PopTypeSpecLike, popType: string): 'cell' |
 /**
  * Narrow a panel's selected series to the pop type it is actually plotting. Selection keys are tagged
  * with their pop type (`popType::valueName/pop`) and are deliberately NOT pruned across families — that
- * is what stops switching pop type from wiping other plots' selections (commit 4c8e677). The flip side
+ * is what stops switching pop type from wiping other plots' selections. The flip side
  * is that a panel's own list can still hold keys from a pop type it no longer shows, so it must filter
  * at request time or it would ask the backend for `flow` populations under `popType=clust`.
  *

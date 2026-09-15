@@ -587,9 +587,8 @@ without touching the network.
 **Why this exists.** `docs/examples/plugins/<name>/` is the source; the GitHub repo is a mirror
 published at release time (`scripts/publish_plugin.jl`). So on a dev checkout the newest copy of a
 plugin is already on disk, and installing it "properly" meant pushing to GitHub and pulling the same
-files back — with a window in which the two disagree. That window is not hypothetical: Dominik
-installed `ccia-trackMeasures` from GitHub and got a form three commits stale, while the fixed spec
-sat in his own worktree.
+files back — with a window in which the two disagree. That window is not hypothetical: an install
+from GitHub can serve a form several commits stale while the fixed spec sits in a local worktree.
 
 Empty when the directory is absent, which is the honest test for "is this a checkout" — structural,
 like `series_base`, rather than a dev flag that has to be kept in step with reality. An installed app

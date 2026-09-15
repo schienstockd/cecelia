@@ -69,53 +69,22 @@ end
 """
     af_qc_findings(per_channel) -> (findings, worst)
 
-QC for AF correction, from the per-channel output stats the runner writes.
+QC for AF correction from the per-channel output stats. Advisory only, per `docs/MODULES.md` — never
+an `error`, never a gate.
 
-This task used to be QC-exempt, with a comment calling itself the weakest exemption in the codebase.
-It now has two findings, and both are about things the user can act on OUTSIDE this task:
+Two findings, both about things the user can act on OUTSIDE this task:
 
-* **saturated input** → the channel was clipped at the sensor, before we saw it. `saturatedFrac`. No
-  correction recovers a clipped voxel's true value, so this is a warning about the acquisition and the
-  action is at the microscope. Measured across the nine kSUFux movies, CH3 saturation ranged from
-  0.001% to 0.018% of voxels — a 13x spread within one experiment at identical settings.
+* **saturated input** (`af.saturated_input`) — the channel was clipped at the sensor, before we saw
+  it. No correction recovers a clipped voxel's true value; the action is at the microscope.
+* **bleedthrough detected** (`af.bleedthrough`) — a derived, non-zero `alpha` for some source
+  channel (`correction_utils.af_bleedthrough_alphas`), one finding per source. A leak is a property
+  of the filter set; one image of a cohort differing from its peers is a real optics signal. No
+  invented threshold: the coefficient is already floored at `AF_ALPHA_MIN` on the Python side, so
+  anything reported is something the estimator was willing to claim.
 
-* **bleedthrough detected** → a derived, non-zero `alpha` for some source channel
-  (`correction_utils.af_bleedthrough_alphas`). The correction subtracts it, so this is not a failure —
-  it is the diagnostic the audit said this task had never had. A leak is a property of the FILTER SET,
-  so it should be the same across a set acquired the same way; one image differing is a real signal
-  about the optics. There is no invented threshold here: the coefficient is already floored at
-  `AF_ALPHA_MIN` on the Python side, so anything reported is something the estimator was willing to
-  claim, and the finding simply says so. Measured on `WIaUjL/p6t4mC`: 0.113 from CH3 into CH2, and
-  exactly zero for the other eleven ordered pairs among four channels. (The first run reported 0.0248;
-  that pair is two distinct cell types, and the coefficient is ~5x larger once the combination says so
-  through `exclusive` — see `correction_utils.af_bleedthrough_alphas`.)
-
-**`af-low-range` is deleted, not re-tuned, and that is the interesting part.** It warned when the output
-used under 20% of the dtype's levels. That was a real signal under the RATIO, whose output was stretched
-to fill the range through a derived ceiling — using little of it meant the ceiling had been derived too
-high. The power weight outputs in INPUT COUNTS, so a 16-bit channel carrying signal in the low thousands
-legitimately occupies a sliver: measured on Dominik's own runs, 735-3576 of 65536 levels (1.1-5.5%) on
-every channel of every image. The threshold survived the mechanism change with its premise inverted, so
-it fired on everything and meant nothing. `levelsUsedFrac` is still banked and still a COHORT metric —
-an image far below its peers is informative even when the absolute number is not.
-
-Nothing replaced it. The tempting substitute was "warn when a target channel was almost entirely
-suppressed", but there is no observed instance of that, so the threshold would have been invented rather
-than derived — the trap `docs/MODULES.md` names ("do not invent a meaningless metric"). If such a case
-ever appears it supplies both the failure mode and the number.
-
-**It appeared — `WIaUjL/p6t4mC` — and it was a missing MECHANISM, not a missing warning.** CH3 leaked
-2.3% into CH2 and was ~7x brighter, so the dominance weight (which scales) read every co-positive voxel
-as CH3's: corrected CH2 came out 98-99% zero and segmenting it found CH3. The fix was to unmix the leak
-first and drop that competitor from the weight — see `correction_utils.af_correct_frame`, which takes
-co-positive retention there from 5.6-7.4% to 82-83%. A suppression finding is still unbuilt, and now
-has a harder case to justify itself against: near-total suppression is a legitimate answer when a
-channel genuinely loses on its own merits.
-
-`clippedFrac` and `ceiling` went with the ratio too: the output is `b * weight` with `weight <= 1`, so it
-can never reach the top of the range, and there is no derived ceiling left to drift across a set.
-
-Advisory only, per `docs/MODULES.md` — never an `error`, never a gate.
+Cohort metric `levelsUsedFrac` is banked but not gated (its threshold was retired). Full rationale,
+rejected alternatives (a suppression finding; retention of `af-low-range` / `clippedFrac` / `ceiling`),
+and the datasets that shaped these decisions: [`docs/todo/AF_CORRECTION_AUDIT.md`](../../../../docs/todo/AF_CORRECTION_AUDIT.md).
 """
 function af_qc_findings(per_channel::AbstractDict)
     findings = Vector{Dict{String,Any}}()
@@ -128,10 +97,8 @@ function af_qc_findings(per_channel::AbstractDict)
         worst_levels    = min(worst_levels, used / avail)
 
         if saturated > 0.001
-            # short = problem; long = the action; FIGURES GO IN `detail`, as a Dict. This used to
-            # hand-roll the finding with a `detail` STRING and no `long` at all, which the QC panel
-            # rendered as "Channel N saturated → undefined" — visible in the GUI from the day AF QC
-            # shipped. `qc_finding` + QC_TEXT is the one way to build a finding.
+            # short = problem; long = the action; figures go in `detail` as a Dict. Every finding
+            # is built via `qc_finding` + QC_TEXT — no ad-hoc detail strings.
             push!(findings, qc_finding("warn", "af.saturated_input"; channel = ch,
                 detail = Dict{String,Any}(
                     "saturatedFrac" => round(saturated; digits = 5),

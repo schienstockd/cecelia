@@ -91,8 +91,8 @@ export interface PreviewImage {
 
 /**
  * "Highlight ONLY these track ids on the viewer" — the browser-viewer replacement for
- * `showTracksInNapari` (removed in P9 slice 4, commit 842d8d36, without a browser-viewer
- * equivalent). Written by TrackSchemeView's **Show** button; the popup viewer subscribes and
+ * `showTracksInNapari` (removed with napari, without a browser-viewer equivalent). Written by
+ * TrackSchemeView's **Show** button; the popup viewer subscribes and
  * narrows the per-vn track source to just these ids for the named (imageUid, valueName).
  *
  * When `trackIds` is empty (or the whole record is null), highlight mode is OFF and ribbons render

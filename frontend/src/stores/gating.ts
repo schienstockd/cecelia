@@ -355,7 +355,7 @@ export const useGatingStore = defineStore('gating', () => {
   // route resolves valueName+popType server-side when the client sends nothing (which is what the
   // viewer used to do, defaulting to the ACTIVE segmentation + popType=flow) — but the pop manager
   // is the authoring surface. If the user is gating in `(coastalSm15, clust)`, that is what the
-  // viewer should draw, not the active `default` `flow` (Dominik, 2026-08-26: "it should switch
+  // viewer should draw, not the active `default` `flow` ("it should switch
   // depending on the pop manager not depending on the segmentation being shown on the image").
   //
   // Bag keyed by imageUid — one open pop-manager tab per image is the normal shape, and a viewer

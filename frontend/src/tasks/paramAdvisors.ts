@@ -170,7 +170,7 @@ export interface AnisoGridEstimate {
  *
  * Takes the geometry of the ACTIVE version, so it stays right when drift correction has expanded
  * the canvas or a crop has shrunk it. Reading a stored per-image SizeX/SizeY instead was wrong for
- * exactly that reason (Dominik, 2026-07-30) — it described the default import while the task runs on
+ * exactly that reason — it described the default import while the task runs on
  * whichever version is active.
  *
  * `null` when there is not enough to say anything, rather than a guess.
@@ -741,7 +741,7 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
   // Cluster-tracks / cluster-pops compatibility check. A joint clustering only makes sense when the
   // selected pops sit on VNs that (a) exist on every selected image, and (b) share the same channel
   // names — otherwise `mean_intensity_0` means different molecules on different rows. Not a blocker:
-  // R permitted the union with NA→0, but Dominik prefers the flag so a genuine mistake doesn't get
+  // R permitted the union with NA→0, but we prefer the flag so a genuine mistake doesn't get
   // silently zero-padded. Registered under the KEY (both `clustTracks.cluster` and
   // `clustPops.cluster` name their pop param `popsToCluster`).
   popsToCluster: popsCompatAdvisor,

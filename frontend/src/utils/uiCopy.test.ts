@@ -189,7 +189,7 @@ describe('uncoveredControls', () => {
 
   // A chip row is many small hit targets, and a tooltip anchored to it renders ON TOP of the chips —
   // so the hover help hides what you were about to click. The blanket "every control carries its own
-  // v-tooltip" rule is therefore actively wrong here, not merely redundant (Dominik, 2026-08-07).
+  // v-tooltip" rule is therefore actively wrong here, not merely redundant.
   it('a tipped heading covers a chip select that follows it', () => {
     const src = `<template><div class="param-row"><label v-tooltip.left="'Frame lags'">Scales</label>
                  <ChipSelect multiple /></div></template>`
@@ -464,7 +464,7 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
   // target that spans its panel, `.left` puts the tooltip outside that panel by construction, over
   // whatever column is next door, and the library reports it in bounds because it is still on screen.
   // 123 sites were doing this, 26 of them in PlotOptions alone, where every row tip landed on the
-  // plot it described (Dominik, 2026-08-22: "the tooltip just overlays the actual element").
+  // plot it described.
   //
   // Swept to zero in the same change, so this is a plain no-violations check. Before adding an entry:
   // the fix is `.top` on a label or heading and `.bottom` on a control, never a nudge to the other
@@ -676,7 +676,7 @@ const WITHOUT = [{ value: 'a', label: 'A' }]
 
   // The blind spot that let a real double tooltip ship: options built by a FUNCTION rather than bound
   // as an identifier answered a flat `false`, so coverage demanded a tooltip on a chip row whose chips
-  // were already tipped, and the per-option duplicate check never fired (Dominik, 2026-08-17).
+  // were already tipped, and the per-option duplicate check never fired.
   const built = `
 function tippedOptions(k: string) {
   return items(k).map(i => ({ value: i.to, label: i.label, tip: i.tip }))

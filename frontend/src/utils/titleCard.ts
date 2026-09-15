@@ -10,7 +10,7 @@
 
 import { captureViewLegend } from './viewerOverlays'
 
-// The movie title-card payload the recorder consumes (Phase H). Channels are NOT included here — the
+// The movie title-card payload the recorder consumes. Channels are NOT included here — the
 // recorder adds them from the live viewer; the frontend supplies only the non-channel sections + title.
 export interface TitleCardPayload {
   enabled: boolean
@@ -46,7 +46,7 @@ export async function buildTitleCard(
 
 // Merge the layers of several view snapshots into ONE — a layer is present/visible if it's visible in
 // ANY snapshot, with a colormap taken from a snapshot where it's shown. Lets the animation card describe
-// every channel/overlay that appears "at some point" across the keyframes (Phase H4). Pure.
+// every channel/overlay that appears "at some point" across the keyframes. Pure.
 export function unionViewSnapshot(
   snapshots: ({ layers?: Record<string, unknown> } | null | undefined)[],
 ): { layers: Record<string, unknown> } {

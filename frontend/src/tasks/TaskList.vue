@@ -4,7 +4,7 @@
   The HEADING and its two list-wide actions (cancel everything in flight, clear everything finished)
   live here rather than in the host. They were hand-rolled inside `TaskRunner`, so `BatchMoviesPanel`
   — the other place that embeds this list — had a list you could neither tidy nor cancel wholesale
-  (Dominik, 2026-08-10). A list-wide action belongs to the list, not to whoever placed it.
+. A list-wide action belongs to the list, not to whoever placed it.
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
@@ -184,7 +184,7 @@ const TL_COLUMNS: SelectionColumn[] = [
 
         <!-- The original TWO-ROW entry: label on top, image beneath, the running bar under both. One
              cell rather than three columns — at 280px an Image column is squeezed to nothing, and the
-             uid + name were never a thing you sort by here (Dominik, 2026-08-15). -->
+             uid + name were never a thing you sort by here. -->
         <template #cell-task="{ row: r }">
           <div class="tl-entry">
             <span class="tl-title">

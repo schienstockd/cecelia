@@ -193,7 +193,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
 /* The block stops at a reading width, everywhere — see `--cc-movie-block` (style.css) for why the
    cap is on the BLOCK rather than per field. */
 .mo { min-width: 0; max-width: var(--cc-movie-block); }
-/* Groups that take a WHOLE line of their own, everywhere (Dominik, 2026-08-08). Two different
+/* Groups that take a WHOLE line of their own, everywhere. Two different
    reasons, one rule:
 
    NAME — a filename is free text and is the one field here that wants the width. It used to absorb

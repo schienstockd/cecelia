@@ -25,7 +25,7 @@ describe('buildChatPrompt', () => {
 // (mcp/cecelia_mcp/guidance.py: SERVER_INSTRUCTIONS + BRIEFING_GUIDANCE), which is what makes a bare
 // "check my project in cecelia" work with nothing pasted. Re-growing it here would restore the exact
 // bug the move fixed: a second copy of the tool list in a language that cannot import the first, which
-// went stale twice without anyone noticing until Dominik read his own pasted prompt.
+// went stale twice without anyone noticing until reading his own pasted prompt.
 describe('buildChatPrompt — the rules live in the MCP server, not here', () => {
   const p = buildChatPrompt('NRUBxU', 'my-experiment')
 

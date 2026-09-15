@@ -428,7 +428,7 @@ async function clearSelection(): Promise<void> {
   } else {
     // Always clear the store AND the viewer highlight — even when the store is already empty.
     // The persisted `cc.viewer.trackHighlight` outlives a page reload, so a user can inherit a
-    // stale highlight (Dominik's "I still can't get rid of the selected tracks in fXgbTl",
+    // stale highlight (the "I still can't get rid of the selected tracks in fXgbTl",
     // 2026-09-08) that no in-cockpit count reflects. The ✕ button must be the one that always
     // works, so it addresses BOTH signals unconditionally.
     writeSelectedTracks([])
@@ -475,8 +475,8 @@ async function showInViewer(): Promise<void> {
  * writes the same store too, so a Cockpit Read immediately lights the TSV lanes and a TSV lane
  * click immediately updates the cockpit summary. That symmetry is why Draw / Read are NOT
  * duplicated on the timeline — a second copy running against a divergent selection state was
- * the exact "Cockpit Read is a no-op" / "Show highlights different tracks" bug reported by
- * Dominik on 2026-09-07.
+ * the exact "Cockpit Read is a no-op" / "Show highlights different tracks" bug that had been
+ * reported.
  */
 async function drawInViewer(): Promise<void> {
   if (!imageUid.value) return

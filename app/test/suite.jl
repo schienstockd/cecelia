@@ -1181,7 +1181,7 @@ end
     @test issubset(["cpsam_v2", "cpsam"], values)
     # …and exactly ONCE each. `optionsFrom` APPENDS to the spec's literal `options`, so a spec that
     # also declares an option the lister enumerates gets it twice — which is what this picker did,
-    # showing "Cellpose-SAM v2" and "v1" twice each in the browser (Dominik, 2026-08-21). An
+    # showing "Cellpose-SAM v2" and "v1" twice each in the browser. An
     # `issubset` assertion cannot see that, which is why it survived; this can.
     @test length(values) == length(unique(values))
 
@@ -1769,7 +1769,7 @@ end
     # THE recurring bug in this area, twice: an MCP tool is added, one of the prompts describing the
     # toolset is updated and another silently goes stale — an unmentioned tool is an unused one, so the
     # capability just never gets offered (create_chain the first time, then get_analysis_boards /
-    # get_image_attributes). Both surfaced only because Dominik read a prompt and noticed a gap.
+    # get_image_attributes). Both surfaced only because reading a prompt and noticed a gap.
     #
     # The fix was to stop having copies. The MCP server describes its own toolset
     # (mcp/cecelia_mcp/guidance.py: SERVER_INSTRUCTIONS on connect, BRIEFING_GUIDANCE with
@@ -4937,7 +4937,7 @@ end
     # config dir exactly as a user would (`cp -r` into modules/plugins/) and asserts the whole chain.
     root = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "plugins")
     # TWO single-purpose example plugins, not one mixed bag: importing someone else's tracks and
-    # measuring them are different capabilities, so they are different plugins (Dominik, 2026-08-17).
+    # measuring them are different capabilities, so they are different plugins.
     cfg = mktempdir()
     for name in ("ccia-importTracks", "ccia-trackMeasures")
         @test isdir(joinpath(root, name))
@@ -5170,7 +5170,7 @@ end
 
         # RE-IMPORTING THE SAME NAME MUST WORK. The first version refused any existing name, which made
         # the ordinary case impossible — supplying a corrected file and updating the tracking you had
-        # already named ("so i have no chance of updating the tracking", Dominik). Re-running a task
+        # already named ("so i have no chance of updating the tracking"). Re-running a task
         # over its own output is what every other task does.
         @test run_task(t, img, Dict{String,Any}(
             "mode" => "create", "outputValueName" => "tm",
@@ -13393,7 +13393,7 @@ end
 
         # A CLUSTER board must still work: population_summary's first offered popType is "flow", but
         # trackclust pops are only reachable under "trackclust", so the derivation must walk past the
-        # default rather than stamping it. (Dominik's own "Clustering" board is exactly this shape — an
+        # default rather than stamping it. (the "Clustering" board is exactly this shape — an
         # earlier version of this fix, which allowed only the spec's default, would have refused to
         # re-author it.)
         clust = Dict("B/Directed" => "trackclust", "B/Scanning" => "trackclust")
@@ -14349,7 +14349,7 @@ end
     # …and every picker filled this way lists each value ONCE. The append is what makes coastal's
     # "None" work, and it is also what duplicated cellpose's built-ins: the spec declared `cpsam_v2`
     # and `cpsam` as literals while `cellposeModels` enumerates the same tuple, so the Model select
-    # showed both twice (Dominik, 2026-08-21, in the browser). Neither the `issubset` check above nor
+    # showed both twice. Neither the `issubset` check above nor
     # a `Set ==` comparison can see a duplicate — both collapse them — which is why it shipped.
     for (fn, key) in (("segment.cellpose", "model"), ("segment.coastal", "model"),
                       ("opticalFlow.train", "modelName"))
@@ -14448,7 +14448,7 @@ end
     #
     # Every track-CONSUMING task reads the h5ad and nothing else, and all three gated on `labels`
     # anyway: `tracking.track_measures`, `tracking.correct`, and the plugin's
-    # `trackTools.cumulativeChange` (which is where Dominik spotted it, from the word "Segmentation"
+    # `trackTools.cumulativeChange` (which is where spotted it, from the word "Segmentation"
     # on a form that wanted tracks). You could import tracks and then not measure them, with nothing
     # saying why the set was missing from the picker.
     #

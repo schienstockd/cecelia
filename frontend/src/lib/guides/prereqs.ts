@@ -38,7 +38,7 @@ export const PREREQ = {
   // reliable record of the outcome — the image table's Status column shows the per-MODULE task status
   // and reads "—" for an image with none, and `isImported` is what the table itself uses to decide
   // whether the viewer eye is enabled. A second definition of "imported" meant the picker declared this
-  // missing for a project full of perfectly good images (Dominik, 2026-08-12).
+  // missing for a project full of perfectly good images.
   imageImported: {
     id: 'imageImported',
     label: 'an image that finished importing',
@@ -68,7 +68,7 @@ export const PREREQ = {
   // This shipped as a run-log scan for `tracking.*` and was wrong on real data: a project migrated
   // from the R version — or tracked before the run log existed — has no `tracking.*` entry at all, so
   // the picker declared "needs a tracked image" over a project whose tracks were sitting on disk and
-  // already clustered (Dominik, project 4kS67f). The run log records PROVENANCE; a prereq is asking
+  // already clustered (project 4kS67f). The run log records PROVENANCE; a prereq is asking
   // about STATE, and the two are not interchangeable for data that predates the log. Second time this
   // exact substitution bit — see `imageImported` above.
   tracked: {

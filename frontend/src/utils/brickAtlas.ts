@@ -154,7 +154,7 @@ export function pickAtlasLayout(
 
   // Maximise slot count under budget + axis caps. Previously the sizer targeted a square nx×ny
   // and picked nz from the remainder — Dml3RG at cacheMB=2048 landed on 16×16×1=256 slots against
-  // 442 budget-allowed (58%), causing the "wanted > atlas" thrash Dominik hit 2026-09-02. The
+  // 442 budget-allowed (58%), causing the "wanted > atlas" thrash observed 2026-09-02. The
   // brute-force sweep here is cheap (worst case ~3300 candidates at maxDim=2048/brick=128) and
   // deterministic. Tie-break prefers the more-square nx×ny for readable residency maps.
   let best: { nx: number; ny: number; nz: number } | null = null

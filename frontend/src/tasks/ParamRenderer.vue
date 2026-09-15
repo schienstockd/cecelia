@@ -973,7 +973,7 @@ const pct = computed(() => {
     <!-- The tip is on the LABEL, not on the chips. `docs/ui/COPY.md` has this exact case: a tooltip
          anchored to a `ChipSelect` renders on top of the control, so the hover help hides the thing
          you were about to click — and in a narrow column `.right` flips upward onto the chips, which
-         is what Dominik saw. A tipped label preceding it in the same row is how chips are covered. -->
+         is what observed. A tipped label preceding it in the same row is how chips are covered. -->
     <div v-if="param.repeatable && groupEntries.length > 1" class="group-order-row cc-row cc-row-tight">
       <span class="group-order-label cc-muted cc-fs-2xs"
         v-tooltip.right="param.entriesTip

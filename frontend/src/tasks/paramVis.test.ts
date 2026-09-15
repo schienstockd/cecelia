@@ -173,7 +173,7 @@ describe('paramVisColumns', () => {
 describe('caption', () => {
   it('is in the FORM\'s units, matching the row label and the control being edited', () => {
     // A row labelled "Seed window (µm)" whose caption reads "32 px" contradicts both the label and
-    // the slider the user is dragging. That was the first thing Dominik said about it.
+    // the slider the user is dragging. That was the first thing reported about it.
     expect(caption('diameter', 10.61)).toBe('10.61')
     expect(caption('area', 1.1)).toBe('1.1')
   })
@@ -266,7 +266,7 @@ describe('a text row', () => {
 
   it('an EMPTY channel list reads "none", not blank', () => {
     // A blank cell would hide a real mistake: no channels resolves to channel 0 downstream and
-    // segments something nobody picked — which is exactly what one of Dominik's passes was doing.
+    // segments something nobody picked — which is exactly what one of the passes was doing.
     const v = { '0': { cellChannels: [] }, '1': { cellChannels: ['mem-TOM'] } }
     const r = row(paramVisColumns(GROUP, v, ['0', '1']), 'cellChannels')
     expect(r.cells[0].text).toBe('none')

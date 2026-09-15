@@ -16,7 +16,7 @@
  * decision is testable without mounting anything.
  *
  * FLOATING, not inline. Eleven rows above the entry list pushed the whole form down and was the first
- * thing Dominik said about it — a reference you consult while tuning wants to sit beside the
+ * thing reported about it — a reference you consult while tuning wants to sit beside the
  * controls, not between them. `FloatingPanel` remembers where you put it.
  */
 import { ref, watch } from 'vue'

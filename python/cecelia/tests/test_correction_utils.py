@@ -537,8 +537,8 @@ class AfBleedthroughTest(unittest.TestCase):
         # changes the answer where it has something to protect, which is the property that makes a
         # wrong setting survivable on synthetic-clean data.
         #
-        # It does NOT hold on `WIaUjL/p6t4mC`, where they read 0.025 and 0.113 on a pair Dominik
-        # confirms has no overlap. Something real — scattering, out-of-focus competitor, a floor the
+        # It does NOT hold on `WIaUjL/p6t4mC`, where they read 0.025 and 0.113 on a pair confirmed
+        # to have no overlap. Something real — scattering, out-of-focus competitor, a floor the
         # free intercept absorbs — depresses the envelope there, and it is not reproduced by this
         # scene. Recorded rather than explained: the flag is what makes the answer right either way.
         self.assertAlmostEqual(co.alphas.get((3, 1), 0.0), excl.alphas[(3, 1)], delta=0.03)

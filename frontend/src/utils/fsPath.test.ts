@@ -16,10 +16,10 @@ describe('fsBreadcrumbs', () => {
     ])
   })
   it('home path builds the full chain', () => {
-    expect(fsBreadcrumbs('/home/dominik')).toEqual([
+    expect(fsBreadcrumbs('/home/alice')).toEqual([
       { label: '/', path: '/' },
       { label: 'home', path: '/home' },
-      { label: 'dominik', path: '/home/dominik' },
+      { label: 'alice', path: '/home/alice' },
     ])
   })
   it('windows drive path (backslashes normalised)', () => {

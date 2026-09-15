@@ -49,7 +49,7 @@ describe('screenToImagePx', () => {
     // one that USED to sit LEFT of centre → a SMALLER x pixel. The old test asserted the
     // opposite because the picker itself was pan-sign-inverted vs the shader (a mirror that
     // only showed on a panned image, and produced "picks the diagonally opposite cell" reports
-    // from Dominik in the correction cockpit); fixing that turned this test over too.
+    // in the correction cockpit); fixing that turned this test over too.
     const m = meta()
     const W = 200, H = 200
     const cam0 = fittedCam(m, W, H)

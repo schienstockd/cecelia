@@ -572,7 +572,7 @@ export const SAFE_CACHE_BYTES = 1.5e9
 /**
  * Camera that FILLS the frame with the image, looking straight down z.
  *
- * Face-on, not tilted (Dominik, 2026-08-24): what you want when a view opens or is reset is the image,
+ * Face-on, not tilted: what you want when a view opens or is reset is the image,
  * square to the screen, and rotating away from it is then a deliberate act. `yaw = pitch = 0` is safe —
  * the degenerate basis is at `pitch = ±π/2`, where the up vector is parallel to the view direction, and
  * `orbitDrag` clamps just short of it.
@@ -582,7 +582,7 @@ export const SAFE_CACHE_BYTES = 1.5e9
  * whether width or height is the limiting axis. Fitting off `max(extent) * 1.7` — which is what this
  * did first — left the image at ~64% of the viewport height and ~55% of its width.
  *
- * **Both views fill, 2D and 3D** (Dominik, 2026-08-24). An earlier version fitted 3D to the bounding
+ * **Both views fill, 2D and 3D**. An earlier version fitted 3D to the bounding
  * SPHERE so that rotating could never swing a corner out of frame; that traded a permanently zoomed-out
  * reset for a problem the wheel already solves. Do not reinstate it — a reset that does not fill is the
  * bug being fixed, and the x/y rect is exactly right at the face-on orientation a reset returns to.
@@ -590,7 +590,7 @@ export const SAFE_CACHE_BYTES = 1.5e9
  * `perspective` is which projection the shader will use, and it is NOT cosmetic: under perspective the
  * distance is measured to the box CENTRE while what the user sees is bounded by the NEAR face, half a
  * depth closer and therefore magnified. Ignoring it fits the middle of the volume and lets the front of
- * it overflow — reported (Dominik, 2026-08-24) as 3D filling the width and clipping top and bottom,
+ * it overflow — reported as 3D filling the width and clipping top and bottom,
  * which is the signature: a deep stack overflows the tighter axis first. Under orthographic there is no
  * such term, magnification being depth-independent, so the plane view is unaffected either way.
  */
@@ -661,11 +661,10 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *  whole slide is a bounded rectangle — it cannot be lost — so it passes a much smaller `min` so the
  *  user can zoom to actual pixels (`camZoom ≤ 1`) and `pickTileLevel` reaches L0. At 0.15 on a
  *  20k×17k slide, max zoom-in is `camZoom ≈ 2` — L1 is the finest level `pickTileLevel` ever picks
- *  (Dominik, 2026-08-26).
  *
  *  `anchor` — cursor-directed zoom (ImageJ, Fiji, QuPath). When given, the pan is shifted so the
  *  world point under the cursor stays under the cursor after the dolly, so a wheel gesture zooms
- *  INTO what the pointer is over rather than into the viewport centre. Without it, dominik had to
+ *  INTO what the pointer is over rather than into the viewport centre. Without it, someone had to
  *  zoom-in / pan / zoom-in to reach a corner (2026-08-29). `ndcX`, `ndcY` are the cursor in NDC
  *  (right/up positive), `aspect` = canvas W/H. Skipped on the clamp edge: if the dolly hit the
  *  band and dist didn't change, don't shift the pan either — the view would drift on further wheel
@@ -679,7 +678,7 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *  and preserving that across the dolly gives
  *     panX_new = panX_old - ndcX * (halfW_new - halfW_old)
  *     panY_new = panY_old - ndcY * (halfH_new - halfH_old)
- *  The first version of this shipped inverted (dominik, 2026-08-29 — "mouse bottom left, it zooms
+ *  The first version of this shipped inverted (— "mouse bottom left, it zooms
  *  in top right"). The offender was following `screenToImagePx`, which at the time had the
  *  opposite pan sign from the shader; both now agree on the shader convention. */
 export function orbitZoom(
@@ -721,7 +720,7 @@ export function orbitZoom(
  *
  * THE TOP PERCENTILE (2026-09-03). Default 99.99%, user-tunable via
  * `settings.viewerAutoContrastPercent`. Sparse microscopy signal (cells <0.5% of pixels) is what
- * Dominik's data looks like, so the widest option preserves it by default; the knob drops to 99
+ * the data looks like, so the widest option preserves it by default; the knob drops to 99
  * or 99.8 when a brighter tail (dead cells, hot pixels) should be trimmed.
  *
  * THE COLLAPSED-WINDOW GUARD. When most of the range sits above the top percentile — the tell of
@@ -775,7 +774,7 @@ export function slabView(
  * Brightest voxel in the same strided subsample — no percentiles, so no sort, which is what makes it
  * cheap enough to run on EVERY timepoint instead of only the first.
  *
- * That distinction is the fix for a real complaint (Dominik, 2026-08-24): the contrast slider's ceiling
+ * That distinction is the fix for a real complaint: the contrast slider's ceiling
  * came from the first timepoint loaded, so on a movie whose later frames are brighter the window could
  * not be opened far enough to see them — "you might want to push it up a bit, but you can't because
  * it's clipped". The AUTO window still comes from one timepoint (a window that chases each frame's own

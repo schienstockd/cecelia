@@ -10,7 +10,7 @@
 //
 // NO TITLE, and NO SUBTITLE SLOT — both deliberate, and the same argument twice. The three pages
 // carried a paragraph each explaining the feature to a first-time reader; those went first. The `<h1>`
-// followed (Dominik, 2026-08-10): the sidebar already says which page you are on and highlights it, so
+// followed: the sidebar already says which page you are on and highlights it, so
 // a heading repeating that word is chrome the daily user reads past forever. Explanations live in
 // `docs/`, and what the page IS, its controls say.
 //

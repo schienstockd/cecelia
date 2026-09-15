@@ -333,7 +333,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 /* table
    `table-layout: fixed` is load-bearing: with the default `auto`, `width: 100%` is only a MINIMUM and
    the table grows to the min-content width of its widest cell — so one long filename pushed the table
-   past the modal and the body grew a horizontal scrollbar (Dominik, 2026-08-12). Fixed layout honours
+   past the modal and the body grew a horizontal scrollbar. Fixed layout honours
    the three explicit column widths below and gives the name column whatever is left. */
 .fb-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--cc-fs-md); }
 .fb-table thead th {

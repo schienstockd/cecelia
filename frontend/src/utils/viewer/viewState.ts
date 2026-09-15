@@ -93,7 +93,7 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
   // the docstring on ViewerViewState.camera.center below and on `FocusOnCellTarget`. Previously
   // written as `nX/2 - panXpx`, which was consistent with itself but INVERTED from the documented
   // meaning — a `buildFocusViewState({cx: 6})` then panned to `nX - 6` (the mirror), so a track at
-  // the mid-left of the image landed the camera on the bottom-right corner (Dominik, 2026-09-07).
+  // the mid-left of the image landed the camera on the bottom-right corner.
   // Fixed as a pair with `applyViewStateToBrowser` so the round-trip is preserved.
   const panXpx = cam.panX / umPerL0X                      // image-pixel pan X
   const panYpx = -cam.panY / umPerL0Y                     // screen-up = negative image-Y

@@ -2,7 +2,7 @@
 //
 // The viewer's contrast slider defaults to `[0, 65535]`; Auto contrast on sparse microscopy signal
 // typically lands `hi` between 20 and 200 — a window that occupies the first ~0.3% of the linear
-// slider's travel and is impossible to drag precisely (Dominik, 2026-09-10 on nG1jSi). Log gives
+// slider's travel and is impossible to drag precisely. Log gives
 // that band most of the travel and squashes the empty bright tail. `log1p` is used so `v == min`
 // still maps cleanly to position 0 without a special case, and so the map is well-defined all the
 // way down to (but not below) `min`.

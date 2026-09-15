@@ -8,7 +8,7 @@
 
   Kind determines: which endpoints (`/api/optical-flow/*` vs `/api/denoise/*`), what the empty state
   says, and which details modal opens. The "Load these settings into the form" action is currently
-  only wired for flow — the denoise-manifest → form mapper is Phase D — so that button is hidden for
+  only wired for flow — the denoise-manifest → form mapper is not built yet — so that button is hidden for
   the denoise kind rather than shown and broken.
 
   Why the manifest matters: the flow metric set is a SILENT train/inference contract. Inference
@@ -145,7 +145,7 @@ function openDetails(m: VaultRow) {
 
 // ── "that one looks good, but I want to tweak it" — flow only for now ────────
 // A denoise manifest could be mapped back to `opticalFlow.trainSupportDenoise` form values the same
-// way, but that mapper is Phase D. Keeping the button off (rather than showing it and having it do
+// way, but that mapper is not built yet. Keeping the button off (rather than showing it and having it do
 // nothing) is honest.
 const handoff = useParamHandoffStore()
 const metricOptions = ref<string[]>([])

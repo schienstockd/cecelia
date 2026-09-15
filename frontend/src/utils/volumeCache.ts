@@ -71,7 +71,7 @@ export const PREFETCH_MAX_BYTES = 150e6
  * How far the walk should read ahead, in timepoints.
  *
  * The full window when a timepoint is cheap, and NOTHING when it is not — which is the difference
- * between entering the 3D view in ~1.5 s and in ~6 s (Dominik, 2026-08-24: "now it doesn't load
+ * between entering the 3D view in ~1.5 s and in ~6 s ("now it doesn't load
  * anything, or needs like 5 s"). Measured on the real target: one 3D timepoint is ~1 s to fetch 326 MB
  * plus ~0.5 s to upload, and the window holds four, so the walk spent 6 s on a read-ahead that the 3D
  * view can never use — it is far too slow to play, which is the only thing a read-ahead buys.

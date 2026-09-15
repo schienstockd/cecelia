@@ -13,8 +13,8 @@
 //
 // NOTHING TOUCHES THE GPU AFTER THE DEVICE IS GONE, and nothing binds a texture that has been
 // destroyed. Both were reachable and both killed the browser rather than raising anything catchable:
-// Firefox's main process crashed with `Queue[Id(4,2)] does not exist` / `Texture is not submitted`
-// (Dominik, 2026-08-24). A lost device left `draw()` still submitting to a dead queue every frame, and
+// Firefox's main process crashed with `Queue[Id(4,2)] does not exist` / `Texture is not submitted`.
+// A lost device left `draw()` still submitting to a dead queue every frame, and
 // the eviction policy protected the timepoint being LOADED while the bind group pointed at the
 // different timepoint still on screen. `dead`/`destroyed` gate every GPU call, and `boundT` is
 // protected at every eviction site as well as unbound before its texture can go.
@@ -307,7 +307,7 @@ export interface VolumeRenderer {
    * the FLAT renderer the per-timepoint slots stay allocated but stamped stale, so
    * `show`/`hasTimepoint` miss and `uploadFrame` re-uploads on next visit. Both paths avoid
    * the 200 ms+ freeze `setImage` incurs from destroying every cached texture up front — the
-   * pain Dominik hit on Dml3RG's 2D wheel (2026-08-29). Callers that don't have this method
+   * pain observed on Dml3RG's 2D wheel (2026-08-29). Callers that don't have this method
    * fall through to a full `setImage` reallocate.
    */
   setZPlane?(zLo: number): void
@@ -817,7 +817,7 @@ export async function createVolumeRenderer(
         for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
         // Signal OOM to the caller so it can swap in the brick renderer. Fires ONCE per setImage
         // — a repeat message every retry frame would spam. The strict `slots.size === 0` guard
-        // (only signal when the very first frame did not fit) missed a case Dominik hit on
+        // (only signal when the very first frame did not fit) missed a case observed on
         // 2h06xA in 2D mode: the OOM branch runs, `slots.size` sits at 0, but the caller-side
         // fallback never got the signal. Relaxed to fire on the FIRST OOM inside a setImage
         // cycle — a recoverable "shrink and continue" case is rare on plane view (the frame
@@ -1131,7 +1131,7 @@ export async function createVolumeRenderer(
       // Detach the canvas swap chain BEFORE the device dies. Without the `unconfigure()` step,
       // `device.destroy()` on the still-bound context left the swap chain in a state the next
       // `ctx.configure(newDevice)` couldn't fully recover from — 2D→3D rendered an empty
-      // canvas (Dominik, 2026-09-03). Skipping `device.destroy()` instead leaked ~2 GB of
+      // canvas. Skipping `device.destroy()` instead leaked ~2 GB of
       // texture pool and brick's next atlas alloc OOM'd. Both steps, in this order.
       ctx.unconfigure()
       device.destroy()

@@ -45,7 +45,7 @@ const viewerCheck = (what: string, toggleAnchor: string, lookFor: string[]): Gui
   {
     // The step users get stuck on: a finished run puts nothing on the image by itself. Each
     // segmentation has its own row here with a per-overlay switch, and until you flip it the viewer
-    // shows the raw channels and it looks like the run did nothing (Dominik, 2026-08-12).
+    // shows the raw channels and it looks like the run did nothing.
     anchor: toggleAnchor,
     placement: 'left',
     title: `Switch the ${what} on`,
@@ -135,7 +135,7 @@ export const segmentGuide = moduleTaskGuide({
   // The COMPOSITE (segment.cellpose + segment.measureLabels), not plain `segment.cellpose`. Labels on
   // their own carry no measures, so gating/tracking/clustering would have nothing to read and the QC
   // plots — declared on the measure step — would be empty. The guide's whole downstream story depends
-  // on measuring, so it teaches the function that does both (Dominik, 2026-08-12).
+  // on measuring, so it teaches the function that does both.
   taskKey: 'cellposeMeasure',
   funName: 'segment.cellposeMeasure',
   funLabel: 'Cellpose segment + measure',
@@ -191,7 +191,7 @@ export const trackCellsGuide = moduleTaskGuide({
   navLabel: 'Track',
   // The COMPOSITE (tracking.bayesian_tracking + tracking.track_measures), for the same reason segment
   // uses its composite: bare tracks carry no per-track measures, and speed/angle are what the HMM fits
-  // and what track clustering and track gating read (Dominik, 2026-08-12).
+  // and what track clustering and track gating read.
   taskKey: 'bayesianTrackMeasures',
   funName: 'tracking.bayesian_track_measures',
   funLabel: 'Bayesian track + measures',

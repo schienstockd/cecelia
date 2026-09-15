@@ -110,10 +110,9 @@ const pointsOnlyNames = computed(() =>
   (openedImage.value?.labelPropsNames ?? []).filter(vn => !labelNames.value.includes(vn)))
 
 // Mask stores whose spatial dims don't match the OPEN image version (segmented on a
-// drift-expanded / cropped version — same class as commit 860da24b). Published by ViewerWindow on
-// meta load; consumed here to flag those rows. Scoped to the OPEN image: a mismatch payload for a
-// different imageUid is stale and ignored. Empty when the viewer isn't open (no flag until we've
-// checked).
+// drift-expanded / cropped version). Published by ViewerWindow on meta load; consumed here to flag
+// those rows. Scoped to the OPEN image: a mismatch payload for a different imageUid is stale and
+// ignored. Empty when the viewer isn't open (no flag until we've checked).
 const dimMismatchInfo = computed(() => {
   const m = viewerStore.labelsDimMismatch
   const uid = projectStore.openImageUid
@@ -147,7 +146,7 @@ const hasLabelRows = computed(() => labelRows.value.length > 0)
  *
  * Seven registered segmentations is an ordinary number on a real image (`fXgbTl` has seven), and a row
  * each made this section taller than everything under it put together — the panel became a scroll to
- * reach Populations (Dominik, 2026-08-25). The rest are one click away rather than gone, because which
+ * reach Populations. The rest are one click away rather than gone, because which
  * segmentations EXIST is still the question this section answers.
  */
 const activeLabelRows = computed(() => labelRows.value.filter(
@@ -171,11 +170,10 @@ const show3D = computed<boolean>({
     if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v)
   } })
 // Which z slice a 2D recording pins. The LIVE viewer's current z wins over any stored value — a
-// movie captures the plane the user is looking at, so scrubbing z in the viewer moves the movie
-// form's slider too (reported: "the zslice is still not updating in the popover when i scrub in
-// the viewer"). Stored value is the fallback for when no viewer is publishing (fresh session,
-// closed viewer). The LIVE plane is chosen in the WebGPU viewer itself (its own `zPlane`), so
-// setting this here doesn't need a mirror push.
+// movie captures the plane the user is looking at, so scrubbing z in the viewer must also move
+// the movie form's slider. Stored value is the fallback for when no viewer is publishing (fresh
+// session, closed viewer). The LIVE plane is chosen in the WebGPU viewer itself (its own
+// `zPlane`), so setting this here doesn't need a mirror push.
 const zSlice = computed<number | null>({
   get: () => {
     if (viewerZ.value != null) return viewerZ.value
@@ -291,7 +289,7 @@ const movieScaleBar = computed<boolean>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).showScaleBar : true,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { showScaleBar: v }) } })
 
-// Title card (Phase H, H3) — per-set, merge-patched so each control keeps the others' values.
+// Title card — per-set, merge-patched so each control keeps the others' values.
 const movieTitleCard = computed<TitleCardCfg>(() =>
   currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).titleCard : { enabled: true, note: '', durationSec: 3 })
 function patchMovieTitle(p: Partial<TitleCardCfg>) {
@@ -382,7 +380,7 @@ async function recordTimelapse() {
       snapshot = viewerStore.viewState as unknown as ViewStateLike
     }
 
-    // Title card (Phase H): built via the SHARED buildTitleCard — the same path the animation page
+    // Title card: built via the SHARED buildTitleCard — the same path the animation page
     // uses. Channels are added by the recorder from the live viewer, so the frontend supplies only
     // title + non-channel sections.
     const colourBy  = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''
@@ -460,7 +458,7 @@ function togglePopType(popType: string) {
 function toggleTrack(vn: string) {
   // `openImageUid`, not `viewerImageUid`: this write must land whether or not any legacy image-open
   // signal has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
-  // WebGPU viewer never saw the write (Dominik, 2026-08-26: "i can toggle. but nothing happens").
+  // WebGPU viewer never saw the write.
   const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
   if (uid) settings.setTrackVisibility(uid, trackVns.value)
@@ -570,7 +568,7 @@ const legendItems = computed(() => {
 
 /**
  * "Active version" advisory, same shape and severity split as tasks' `paramAdvisors`. Moved out of
- * the popup viewer window (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended, Dominik 2026-08-26): the panel
+ * the popup viewer window (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended, ): the panel
  * is the single control now, so the advisory sits next to the control that changes it.
  *
  * `null` when there is only one version, or `activeValueName` isn't reported — an absent answer
@@ -630,7 +628,7 @@ function toggleLabel(valueName: string) {
   // Radio-like: the WebGPU viewer draws one label mask at a time (r32uint, single-slot bind group;
   // multi-mask is deferred to PX). Ticking a segmentation UNticks the others so what you see in the
   // panel matches what you see in the viewer, instead of the viewer silently picking one of several
-  // ticked (Dominik, 2026-08-25: "dont just show the last one clicked").
+  // ticked.
   const uid = projectStore.openImageUid
   const wasVisible = visibleLabels.value[valueName] ?? false
   const next = !wasVisible

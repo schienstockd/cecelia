@@ -71,8 +71,7 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 
    It used to absorb the leftover width, so where it landed depended on the container: its own row in
    the batch panel, squeezed onto the title row in the viewer's 22rem popover. That is one component
-   rendering as two layouts, which is exactly what having one component is supposed to prevent —
-   Dominik was cross-checking the two surfaces by eye after every change (2026-08-08).
+   rendering as two layouts, which is exactly what having one component is supposed to prevent was cross-checking the two surfaces by eye after every change (2026-08-08).
 
    The rule for this block, stated once so it stops being decided by accident: a group holding a TEXT
    FIELD or a chip row takes its own line; the short numeric groups (fps, px, z) may share one. */

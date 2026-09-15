@@ -111,7 +111,7 @@ const MOVIE_CHANNELS_TOKEN = "__channels__"
 # are dropped. Pure (attr dict + uid + channels) → testable.
 #
 # WHAT TERMINATES THE NAME is a choice, because the two recorders had made it differently and neither
-# was wrong (Dominik, 2026-08-10): a single viewer recording is named after the IMAGE
+# was wrong: a single viewer recording is named after the IMAGE
 # (`_movie_named_path`), a batch after the uid — so regenerating a viewer movie from its restored config
 # produced a differently-named file beside the original. Pass `name` (the image's) to terminate with it
 # instead; blank keeps the uid.
