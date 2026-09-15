@@ -1,6 +1,6 @@
 // "Build an animation" — the third route to a movie, and the one that is genuinely a different job
 // from the other two, which is why it was held back from the record-a-movie guide rather than tacked
-// on as a coda (Dominik, 2026-08-12).
+// on as a coda.
 //
 // The distinction that the guide has to land: the Viewer recorder and Batch movies SWEEP the time axis
 // with a fixed look, whereas an animation TWEENS between views you captured by hand. A keyframe is a

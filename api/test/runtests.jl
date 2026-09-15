@@ -1604,7 +1604,7 @@ end
     # Browser-viewer autosave shape (P5+) — the smoothed sidecar for zolIMa/fXgbTl has NO `Image`
     # array; only `layers` (name-keyed) + `webgpu.channels` (index-ordered). Before this fell back
     # to sampled contrast + `DEFAULT_CMAPS`, so the movie rendered red/green/blue/yellow instead of
-    # the viewer's palette (Dominik, 2026-08-29). Reader walks `webgpu.channels` in index order.
+    # the viewer's palette. Reader walks `webgpu.channels` in index order.
     mktempdir() do d
         p = joinpath(d, "props.json")
         write(p, JSON3.write((;
@@ -2541,7 +2541,7 @@ end
 
     # What TERMINATES the name is a choice: a single viewer recording is named after the IMAGE
     # (`_movie_named_path`), a batch after the uid — so regenerating a restored viewer config wrote a
-    # uid-named twin beside the original (Dominik, 2026-08-10). `name` ends it with the image instead.
+    # uid-named twin beside the original. `name` ends it with the image instead.
     @test _movie_basename(attr, "AbC123", String[]; name = "M2b-MERTK_KAT (cropped)") ==
           "M2b-MERTK_KAT_cropped.mp4"
     @test _movie_basename(attr, "AbC123", ["Day"]; name = "my image") == "3_my_image.mp4"

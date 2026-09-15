@@ -190,7 +190,7 @@ class FrameOverlayStyleTests(unittest.TestCase):
     """The per-frame timestamp + scale bar should MATCH the browser volume viewer's on-image
     overlay (`frontend/src/components/StillOverlay.vue`): white text with a dark stroke outline, a
     white bar with a hairline dark outline, no solid backing rectangles. Regressed once already —
-    the movie had black rects while the viewer had none (Dominik, 2026-08-29 screenshot).
+    the movie had black rects while the viewer had none.
     """
 
     def test_bold_font_is_heavier_than_the_title_card_font(self):

@@ -405,7 +405,7 @@ function moveTo(target: string) {
       </div>
 
       <!-- Filter + Combine + history in one row, `+[icon]` compact form — matches `+ Plot` / `+ Pairs`
-           in the gating toolbar (Dominik, 2026-08-26). Two labelled rows was a whole extra bar of
+           in the gating toolbar. Two labelled rows was a whole extra bar of
            height for a control the user reaches for once per pop, and the icons are what a repeat
            user reads for anyway (pi-filter = filter pop, pi-link = combined pop).
            Decision 15: filter pop = AND-ed filter on any obs measure. Same form creates AND edits.
@@ -777,7 +777,7 @@ function moveTo(target: string) {
   color: var(--cc-text); cursor: pointer; }
 .pm-add-btn:hover { border-color: var(--cc-accent-strong); color: var(--cc-accent-soft); }
 .pm-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-/* `+[icon]` compact add buttons (Dominik, 2026-08-26). Two icons in one primary button — same
+/* `+[icon]` compact add buttons. Two icons in one primary button — same
    idiom as `+ Plot` / `+ Pairs` in the gating toolbar, minus the label. Sized to fit both glyphs
    comfortably (default `.cc-btn-icon` is a 1.5rem square built for ONE glyph and clipped these). */
 .pm-add-icon { padding: 3px 8px; font-size: var(--cc-fs-xs); }

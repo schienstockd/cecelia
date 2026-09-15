@@ -75,7 +75,7 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
   //
   // (3) is easy to miss and was: `.task-runner.pane-bottom` hides the function select, the parameters
   // AND the Run button, while `.pane-top` hides the task list. Pointing at the panel handle in that
-  // state is worse than useless — clicking it hides everything (Dominik, 2026-08-12).
+  // state is worse than useless — clicking it hides everything.
   const revealsFor = (anchorId: string): Reveal[] => [
     {
       needed: c => c.rightPanelCollapsed,
@@ -112,7 +112,7 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
       text: 'Check the active set is the one you mean — functions only see this set.',
       reveal: {
         // With no sets there is nothing to select — a "pick a set" bubble pointing at an empty
-        // dropdown is a dead end, so point at "New set" until one exists (Dominik, 2026-08-12).
+        // dropdown is a dead end, so point at "New set" until one exists.
         needed: c => c.setCount === 0,
         anchor: 'set.new',
         text: 'No sets yet — create one first. A set groups the images you treat together.',

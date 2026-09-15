@@ -11,7 +11,7 @@
 // controlled from uncontrolled. Absent became `false`, so EVERY section in the app — the image table,
 // the plots canvas, the chain palette, export/import — silently became controlled by a parent that was
 // not listening, and every one of them was stuck shut. The image table showed "1 / 1 image" and no
-// rows (Dominik, 2026-08-25).
+// rows.
 //
 // The fix is a type union that suppresses the cast plus an explicit default: `boolean | null` with
 // `default: null`. Verified against Vue's own prop resolution, not reasoned from the docs.

@@ -97,7 +97,7 @@ function fmt(n: number | undefined | null): string {
         <!-- The adapter's own name first, where it gives one. The row below is a proxy off a texture
              limit, and on Linux it is wrong: Mesa's `iris` reports 16384 for Intel integrated, so it
              read "Discrete" on a laptop running the iGPU right up until Mesa segfaulted the browser
-             (Dominik, 2026-08-25). -->
+. -->
         <template v-if="adapterText">
           <span>Adapter</span>
           <span class="ellipsis" :title="adapterText">{{ adapterText }}</span>

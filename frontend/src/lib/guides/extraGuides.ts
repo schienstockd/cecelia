@@ -147,7 +147,7 @@ export const behaviourStatesGuide = moduleTaskGuide({
 // Clustering ends with numbered clusters, which are not yet populations. Turning them into named
 // populations is a distinct move with its own UI — no gate to draw, you create a population and tick
 // cluster IDs into it — and it is the step that makes the result usable downstream, so both cluster
-// guides end here (Dominik, 2026-08-12).
+// guides end here.
 const clusterToPops = (route: string, what: string): GuideStep[] => [
   {
     anchor: 'cluster.popManager',
@@ -234,7 +234,7 @@ export const clusterCellsGuide = moduleTaskGuide({
 // ── Cluster TRACKS: the same engine, a different table ────────────────────────────────────────────
 // Clustering comes in two kinds and they are separate pages: cells (above, needs a segmentation) and
 // tracks (here, needs TRACKING). Same Leiden/UMAP machinery, but the rows are tracks and the features
-// are per-track aggregates, so a user who has only segmented cannot use this one (Dominik, 2026-08-12).
+// are per-track aggregates, so a user who has only segmented cannot use this one.
 export const clusterTracksGuide = moduleTaskGuide({
   id: 'cluster-tracks',
   title: 'Cluster tracks into behaviours',

@@ -149,7 +149,7 @@ export async function showTracksInViewer(
           // ended (or hadn't started) at t is silently dropped from the average — the alternative
           // (a stale sample from an earlier/later frame) would drag the camera off the cluster.
           // Was: bbox centre over all time — a track moving across the field of view then landed
-          // the camera at its path midpoint, not on the cell at t (Dominik, 2026-09-07).
+          // the camera at its path midpoint, not on the cell at t.
           let sxUm = 0, syUm = 0, szUm = 0, nContrib = 0, nContribZ = 0
           for (const id of trackIds) {
             const p = grp.paths[String(id)]

@@ -147,7 +147,7 @@ const hasLabelRows = computed(() => labelRows.value.length > 0)
  *
  * Seven registered segmentations is an ordinary number on a real image (`fXgbTl` has seven), and a row
  * each made this section taller than everything under it put together — the panel became a scroll to
- * reach Populations (Dominik, 2026-08-25). The rest are one click away rather than gone, because which
+ * reach Populations. The rest are one click away rather than gone, because which
  * segmentations EXIST is still the question this section answers.
  */
 const activeLabelRows = computed(() => labelRows.value.filter(
@@ -460,7 +460,7 @@ function togglePopType(popType: string) {
 function toggleTrack(vn: string) {
   // `openImageUid`, not `viewerImageUid`: this write must land whether or not any legacy image-open
   // signal has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
-  // WebGPU viewer never saw the write (Dominik, 2026-08-26: "i can toggle. but nothing happens").
+  // WebGPU viewer never saw the write.
   const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
   if (uid) settings.setTrackVisibility(uid, trackVns.value)
@@ -630,7 +630,7 @@ function toggleLabel(valueName: string) {
   // Radio-like: the WebGPU viewer draws one label mask at a time (r32uint, single-slot bind group;
   // multi-mask is deferred to PX). Ticking a segmentation UNticks the others so what you see in the
   // panel matches what you see in the viewer, instead of the viewer silently picking one of several
-  // ticked (Dominik, 2026-08-25: "dont just show the last one clicked").
+  // ticked.
   const uid = projectStore.openImageUid
   const wasVisible = visibleLabels.value[valueName] ?? false
   const next = !wasVisible

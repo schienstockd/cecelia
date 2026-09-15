@@ -304,7 +304,7 @@ describe('buildBatchMovieConfig — the frame range', () => {
 
 // What TERMINATES a batch filename. The two recorders had chosen differently — a single viewer
 // recording is named after the IMAGE, a batch after the uid — so regenerating a restored viewer config
-// wrote a uid-named twin beside the original (Dominik, 2026-08-10).
+// wrote a uid-named twin beside the original.
 describe('movieFilename — uid vs image name', () => {
   const attrs = { Day: '3' }
   it('ends with the uid by default, which is unique by construction', () => {

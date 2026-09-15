@@ -17,7 +17,7 @@ import SuggestInput from '../../components/SuggestInput.vue'
 // This panel does NOT own its width — `CollapsiblePanel` (its host, via ModuleLayout's `#right`) does.
 // It had its own `usePanelResize` + drag handle, which meant two widths and two stacked handles on one
 // edge: dragging the host widened the host while this stayed pinned at its stored 280px, so the
-// content shifted instead of reflowing (Dominik, 2026-08-15). Same fix as TaskRunner.
+// content shifted instead of reflowing. Same fix as TaskRunner.
 
 const props = defineProps<{
   setUid: string | undefined

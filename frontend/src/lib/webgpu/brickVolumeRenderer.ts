@@ -650,7 +650,7 @@ export async function createBrickVolumeRenderer(
         // destroyed, level mismatch) skips the success-path `needsRedraw` below — so if all the
         // in-flight fetches took an early-return path, the pump never woke and the scheduler
         // never re-issued the missing bricks. "12 inflight forever, 5 missing, doesn't do
-        // anything" (Dominik 2026-08-29). rAF-coalesced, so calling it always is cheap.
+        // anything". rAF-coalesced, so calling it always is cheap.
         needsRedraw?.()
         if (payload === null) return
         if (destroyed || atlas === null) return
@@ -877,7 +877,7 @@ export async function createBrickVolumeRenderer(
           // and biasing them at 1e9 permanently privileges them over CURRENT-t landings
           // (frameNow ~1500). LRU then evicts the freshly-arrived boundT bricks to make room
           // for MORE prev-t and prefetch, atlas can't accumulate at the current t, chip stays
-          // at "24 res / 57 needed" while bytes burn (Dominik 2026-08-29). Plain frameNow
+          // at "24 res / 57 needed" while bytes burn. Plain frameNow
           // keeps prev-t bricks LRU-fresh for this frame; next scrub they naturally age out.
           atlas.pageTable.touch(prevKey, frameNow)
         }
@@ -889,7 +889,6 @@ export async function createBrickVolumeRenderer(
     // prev-pageTable stays frozen at whatever displayT the last level swap snapshotted (line
     // 951's `set(pageTableCpu)`) — so a play-past-swap shows the swap-time frame as a still
     // image "on top", masking any newly-arriving prev-level bricks for the current displayT
-    // (Dominik 2026-09-02, "l2 bricks being reloaded underneath but a still image on top").
     // Also updates when `rebuildPageTableForDisplayT` is called at swap (line 971), which then
     // supersedes the swap-time snapshot at 951 — that snapshot is kept for the case where
     // pageTable holds nothing at displayT yet (fallback: name the empty state).
@@ -937,7 +936,7 @@ export async function createBrickVolumeRenderer(
     // The "OR !displayDrawable" clause exists because a scrub-then-play-then-stop sequence can
     // leave displayT pointing at a t whose bricks were LRU-evicted while playback moved past
     // — without this the shader draws a fully black canvas from an all-EMPTY pageTableCpu
-    // (Dominik, 2026-08-29). `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
+    //. `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
     // stays in sync with what the volume is drawing.
     if (boundT !== displayT) {
       // Snap-advance: displayT tracks boundT immediately. Any brick position still empty at the
@@ -1381,7 +1380,6 @@ export async function createBrickVolumeRenderer(
         // Fire the display-advanced hook so ViewerWindow's `shownT` follows displayT — the
         // residency map filters by shownT, so if we advance without notifying, the map keeps
         // showing the OLD t's residency instead of what the shader is actually drawing
-        // (Dominik, 2026-08-29: "the map stays purple even when half the bricks aren't loaded").
         onDisplayAdvanced?.(displayT)
       }
       // Nudge the frame loop so tickScheduler runs with the new boundT — the caller's own
@@ -1595,7 +1593,7 @@ export async function createBrickVolumeRenderer(
     setZPlane(zLo) {
       // Fast plane switch. `setImage` would `dropAtlas()` (destroys a ~64 MB 3D texture) then
       // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D
-      // (Dominik 2026-08-29). The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
+      //. The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
       // × nch), so we can keep the texture and just invalidate every brick's contents:
       // atlas.pageTable.clear() rewinds the free-slot stack so incoming fetches reuse the
       // same slots. Same discipline as level swap, but without the level/grid churn.

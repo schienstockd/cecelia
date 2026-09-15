@@ -86,7 +86,7 @@ function toggleCell(s: AnimSnapshot, name: string) {
 // ── the row-label column ──────────────────────────────────────────────────────
 // Drag-resizable and persisted, the same primitive the image and movie tables use. An overlay's
 // layer name is long by construction — "(track) (memTom) Tracks /…" — and a fixed label column
-// ellipsised exactly the part that says WHICH one (Dominik, 2026-08-10).
+// ellipsised exactly the part that says WHICH one.
 const LABEL_KEY = 'label'
 const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
   defaultWidth: () => 190, min: 90, storageKey: 'cc.anim.labelw',

@@ -7,7 +7,7 @@
   `ClaudeOverviewDialog.vue`: static content from a lib module, no store of its own beyond the shared
   open flag in `lib/guideOpen.ts`.
 
-  LAYOUT — divided rows inside each group heading, not eleven boxed cards (Dominik, 2026-08-12). Three
+  LAYOUT — divided rows inside each group heading, not eleven boxed cards. Three
   rules, all of them fixing something the first version got wrong:
 
     1. The action column is a FIXED width and holds exactly one button. It used to be a stretch column

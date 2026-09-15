@@ -46,7 +46,7 @@ describe('buildFocusViewState', () => {
 
   it('never zooms IN — a small bbox at low current zoom keeps the current zoom', () => {
     // A nearly-stationary single-cell track has ~1-pixel bbox; the naive fit computed a 30x
-    // zoom, making the cell fill the screen with no context (Dominik, 2026-09-07). Rule now:
+    // zoom, making the cell fill the screen with no context. Rule now:
     // Math.min(fit, current). current=1.5 is lower than fit=~250, so zoom stays at 1.5.
     const src = state({ camera: { center: [0, 0, 0], zoom: 1.5, angles: [0, 0, 0], perspective: 0 } })
     const s = buildFocusViewState(src, { t: 0, cx: 100, cy: 100, halfWpx: 1, halfHpx: 1 })!

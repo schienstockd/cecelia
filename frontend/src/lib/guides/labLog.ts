@@ -2,7 +2,7 @@
 // instruction: two surfaces exist that nobody finds on their own, and the Claude one already has a
 // perfectly good in-app explainer behind its `?` (ClaudeOverviewDialog, content in lib/claudeOverview.ts).
 // Duplicating that here would be a second copy to keep in step, so this guide points at it and stops
-// (Dominik, 2026-08-12: "just to say it's there, click the (?) to see what it can do").
+// to see what it can do").
 //
 // Claude is on-demand only and may not be installed at all, so nothing here promises it works — the
 // `?` dialog is also where the setup state is reported.

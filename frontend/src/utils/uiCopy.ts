@@ -190,7 +190,7 @@ const CONTROL = /^(?:input|select|textarea|CcToggle|SwatchSelect|RangeSlider|Chi
  * A chip row is not one hit target, it is many small ones, and a tooltip anchored to the row renders
  * ON TOP of the chips — so the hover help hides the things you were about to click. That makes the
  * blanket "every settable control carries its own `v-tooltip`" rule actively wrong here, rather than
- * merely redundant (Dominik, 2026-08-07, seeing it on the channel selection).
+ * merely redundant.
  *
  * They are also always rendered under a label or heading that says what the set is — the param row's
  * label and its info icon, a section heading — and that is where the explanation belongs. So a chip
@@ -264,7 +264,7 @@ export function hasPerOptionTips(script: string, attrs: string): boolean | null 
   // flat `false`, which broke the chip-row rule in BOTH directions at once: coverage reported the
   // control as unexplained and pushed a `v-tooltip` onto it, and the per-option duplicate check then
   // stayed quiet about the two tooltips that produced — which is exactly how `ViewProfileEditor`
-  // shipped a chip row that showed its own tooltip on top of each chip's (Dominik, 2026-08-17).
+  // shipped a chip row that showed its own tooltip on top of each chip's.
   // A v-for alias (`g.options`) still resolves to nothing and stays `null` — "cannot tell", not "no".
   const root = ROOT_NAME.exec(opts)?.[1]
   return root ? declaredTips(script, root) : null

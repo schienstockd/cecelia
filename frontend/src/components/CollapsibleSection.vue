@@ -42,7 +42,7 @@ watch(inner, v => {
 // An optional prop typed `boolean` is Boolean-CAST by Vue: absent means `false`, not `undefined`. So a
 // check for `undefined` is never true, every one of the app's own uncontrolled sections silently
 // becomes controlled by a parent that is not listening, and they are all stuck shut — which is how
-// this shipped with the image table showing "1 / 1 image" and no rows (Dominik, 2026-08-25). A type
+// this shipped with the image table showing "1 / 1 image" and no rows. A type
 // union with `null` plus an explicit default suppresses the cast, so absent really is absent.
 //
 // Two modes rather than one because a parent that passes `:open="false"` must still be CONTROLLING it;
@@ -95,7 +95,7 @@ const open = computed({
   overflow-y: auto;
   background: var(--cc-bg);
   /* Breathing room so the first row's control (e.g. a CcToggle taller than its label) is not
-     flush-clipped by the section's top edge (Dominik, 2026-08-26). */
+     flush-clipped by the section's top edge. */
   padding: 0.35rem 0;
 }
 </style>

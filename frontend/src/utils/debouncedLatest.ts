@@ -36,7 +36,7 @@
 // short drags still coalesce cleanly through `wait`. Same one-at-a-time and same `isCurrent()`
 // semantics; the difference is just how often work is allowed to START during a sustained burst.
 // Written for the volume viewer's z-slider, which without it only painted the release plane
-// (Dominik 2026-08-31). The canonical shape for a scrub — no hand-rolled fourth timer.
+//. The canonical shape for a scrub — no hand-rolled fourth timer.
 //
 // Deliberately framework-agnostic (same as `coalesce.ts`) — the caller maps `onState` onto a ref.
 

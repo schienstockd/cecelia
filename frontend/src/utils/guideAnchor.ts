@@ -42,7 +42,7 @@ export function anchorSelector(id: string): string {
 //   2. one inside the ACTIVE panel wins — with two gating plots open, the controls the user is working
 //      in are the ones on the panel the canvas has marked active (`.panel.active`). Taking the first in
 //      DOM order instead rang plot 1 while the user worked in plot 2, and since the ring sits above the
-//      app it drew straight across the panel in front (Dominik, 2026-08-12);
+//      app it drew straight across the panel in front;
 //   3. an unoccluded candidate beats a covered one — a control under another panel is not the one being
 //      pointed at.
 export interface AnchorCandidate { reachable: boolean; inActive: boolean; occluded: boolean }
@@ -61,7 +61,7 @@ export function rankAnchorCandidates(cands: AnchorCandidate[]): number {
 //
 // Exported because the RING needs it too, not just the multi-candidate resolver: clicking a control
 // that opens a dialog leaves the control underneath it, and a ring at z-1499 then floats on top of the
-// dialog, framing something the user can no longer see (Dominik, 2026-08-12 — the lab log's `?`).
+// dialog, framing something the user can no longer see.
 export function isOccluded(el: HTMLElement): boolean {
   const r = el.getBoundingClientRect()
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)

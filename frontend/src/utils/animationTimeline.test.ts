@@ -100,7 +100,7 @@ describe('cellToggle', () => {
   })
 
   // The whole reason this exists: tracks were turned on and captured as a LATER keyframe, so the
-  // earlier columns had no entry and their dots did nothing (Dominik, 2026-08-10).
+  // earlier columns had no entry and their dots did nothing.
   it('adds a layer the keyframe does not have, seeded from one that does', () => {
     expect(cellToggle(frames, frames[0], '(track) tracks'))
       .toEqual({ visible: true, colormap: 'turbo', tail_width: 6 })

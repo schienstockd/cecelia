@@ -46,7 +46,7 @@ export function parseBrickKey(key: string): VirtualBrick | null {
  *  by `maxBg`, reserving `maxTotal - maxBg` slots for boundT bricks — the ones the shader is
  *  currently drawing.
  *
- *  Bug shape (Dominik 2026-09-02): playback fills all `maxTotal=16` sockets with prefetch and
+ *  Bug shape: playback fills all `maxTotal=16` sockets with prefetch and
  *  current-t fetches. Stop, scrub elsewhere: new-boundT kickFetches hit `inflight.size >=
  *  maxTotal` and skip. Retried next tick, but by then prefetch still holds the slots; user waits
  *  ~one browser-fetch time (300 ms–1 s) for the FIFO to drain. With `maxBg=8`, prefetch can only
@@ -75,7 +75,7 @@ export function shouldAdmitKick(
 
 /** Safest prefetch depth given the atlas slot capacity and the per-t core brick count.
  *
- *  Bug shape (Dominik 2026-09-02, Dml3RG at cacheMB=2048): a hardcoded `cap=4` during playback
+ *  Bug shape: a hardcoded `cap=4` during playback
  *  wanted `(1 + 4) × 81 = 405` bricks resident, against an atlas that could hold ~442. On a
  *  bigger L0 or a smaller cache, that inequality flips — prefetch bricks then LRU-evict boundT
  *  bricks (rectangular black holes). `BOUND_T_TOUCH_BIAS` protects boundT ONCE per resident, but

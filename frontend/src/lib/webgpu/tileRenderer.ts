@@ -420,7 +420,6 @@ export async function createTileRenderer(
       // when the atlas gets reallocated to a coarser level with smaller chunks — can arrive with
       // dims LARGER than the atlas can hold, and `writeTexture` then throws "Texture copy range
       // touches outside …". Reject cleanly; the tile pump will re-request at the current level
-      // (Dominik, 2026-08-26).
       if (w > atlasChunkX || h > atlasChunkY) return -1
       // Each channel goes to `slot * nC + c` in the atlas. `writeTexture` returns once the bytes are
       // STAGED — the caller can then read `hasTile` synchronously.

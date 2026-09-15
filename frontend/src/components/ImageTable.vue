@@ -514,7 +514,7 @@ function defaultWidth(key: string): number {
 // the old one would have mapped the wrong column.
 const COLUMNS = computed<SelectionColumn[]>(() => [
   // No separate column for the eye/star gutter: a fixed-width column of its own got CLIPPED as soon as
-  // the table was rescaled (Dominik, 2026-08-10), and the movies table had already shown the answer —
+  // the table was rescaled, and the movies table had already shown the answer —
   // put them in the name cell, where they simply refuse to shrink and the name gives way instead.
   { key: 'name', label: 'Name', sortable: true, sticky: true, width: defaultWidth('name') },
   ...channelIndices.value.map(idx => ({ key: `ch:${idx}`, label: String(idx), width: 90 })),
@@ -630,7 +630,7 @@ const unselectableUids = computed(() =>
         <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
         <!-- Everything ABOUT the image, after the name and never before it. These three used to sit to
              the LEFT, each conditional, so the name started at a different x on nearly every row
-             (Dominik, 2026-08-10). Right-aligned they can come and go without moving anything. -->
+. Right-aligned they can come and go without moving anything. -->
         <span class="name-flags">
           <button v-if="warnIconFor(img)" class="warn-icon-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="physSizeDialogUid = img.uid"
             v-tooltip.left="warnIconFor(img)!.tip">
@@ -871,7 +871,7 @@ const unselectableUids = computed(() =>
 .name-row { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
 /* The name takes the row and ellipsises; everything else is `flex-shrink: 0` and to its RIGHT. That
    is what fixes the name's starting x — badges appearing and disappearing shorten the name rather
-   than pushing it sideways (Dominik, 2026-08-10). */
+   than pushing it sideways. */
 .name-row .cell-text { flex: 1; min-width: 0; }
 .name-flags { flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.25rem; }
 
@@ -1004,7 +1004,7 @@ const unselectableUids = computed(() =>
   padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
   /* Dim at rest rather than INVISIBLE until row hover, which is what it was: in a gutter that now
      reserves the space either way, a hidden control just reads as a hole where the movies table shows
-     an eye. Same treatment as the star beside it and as `.mov-eye` (Dominik, 2026-08-10). */
+     an eye. Same treatment as the star beside it and as `.mov-eye`. */
   opacity: 0.25; transition: opacity 0.12s, color 0.12s, background 0.12s; line-height: 1;
 }
 .sel-row:hover .viewer-btn { opacity: 0.7; }

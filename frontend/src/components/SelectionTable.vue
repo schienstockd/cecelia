@@ -318,7 +318,7 @@ const resizable = computed(() => !!props.columnWidthKey)
  * two were one flag, and that conflated "the user can drag the columns" with "the columns have
  * widths at all": a headerless table fell back to AUTO layout, where a cell grows to its content and
  * an inner `text-overflow: ellipsis` can never engage — so one long image name set the column width
- * and pushed the row's buttons off the side of a 280px panel (Dominik, 2026-08-15).
+ * and pushed the row's buttons off the side of a 280px panel.
  */
 const sized = computed(() => resizable.value || props.headerless)
 
@@ -376,7 +376,7 @@ const declaredWidth = computed(() => {
  * A `table-layout: fixed` table honours its declared column widths only while its own width is
  * DEFINITE. Under an intrinsic keyword the browser has to measure something, so it sizes from the
  * CONTENT — and one long movie name then set the Movie column, ignoring its 190px, with no way to drag
- * it back down because the content held it open (Dominik, 2026-08-10). Both bounds here are definite,
+ * it back down because the content held it open. Both bounds here are definite,
  * so content never enters into it: at least what the columns declare (the wrapper scrolls the rest),
  * and the container's width when there is room to spare.
  */
@@ -512,7 +512,7 @@ const tableStyle = computed(() =>
 /* Dim until the header is hovered — it is a rescue, not something to reach for. ABSOLUTE, so it takes
    no part in the header's layout: as an inline element with a margin it wrapped to a second line in a
    narrow column, which stood the whole header row up at double height for the sake of a 12px icon
-   (Dominik, 2026-08-15 — the task manager's Module column). It sits inside the resize grip's 5px. */
+. It sits inside the resize grip's 5px. */
 .sel-reset-w {
   opacity: 0.25;
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);

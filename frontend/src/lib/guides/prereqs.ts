@@ -38,7 +38,7 @@ export const PREREQ = {
   // reliable record of the outcome — the image table's Status column shows the per-MODULE task status
   // and reads "—" for an image with none, and `isImported` is what the table itself uses to decide
   // whether the viewer eye is enabled. A second definition of "imported" meant the picker declared this
-  // missing for a project full of perfectly good images (Dominik, 2026-08-12).
+  // missing for a project full of perfectly good images.
   imageImported: {
     id: 'imageImported',
     label: 'an image that finished importing',

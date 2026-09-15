@@ -113,7 +113,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // How many z planes either side of the one on screen still draw their cell's marker.
   //
   // 0 is the strict reading — a marker appears only on the plane its centroid falls on. On real data
-  // that reads as RANDOM (Dominik, 2026-08-25): the mask layer draws every cell
+  // that reads as RANDOM: the mask layer draws every cell
   // that INTERSECTS the plane, while the points draw only the few centred on it, so the two look
   // unrelated. A cell spans several planes, so a small tolerance is the honest default; it is a setting
   // rather than a constant because the right number is the cell diameter, which is per experiment.
@@ -195,7 +195,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // The WebGPU viewer's controls sidebar (`ViewerWindow.vue`) uses the same CollapsiblePanel but its
   // collapse is INDEPENDENT — the module-page right panel and the viewer-window sidebar hold
   // different things, and a shared flag folded the viewer's own controls away whenever the module
-  // page's task list was collapsed (Dominik, 2026-08-28). CollapsiblePanel accepts a `collapsedRef`
+  // page's task list was collapsed. CollapsiblePanel accepts a `collapsedRef`
   // override; ViewerWindow points it here.
   const viewerWindowSideCollapsed = ref(localStorage.getItem('cc.viewerWindowSideCollapsed') === 'true')
   // the Viewer controls are a floating dockable panel (not a sidebar section) — this is its
@@ -618,7 +618,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
     // Direct string keys — not JSON, so they don't go through the bag decoder. `storage` events
     // only fire in OTHER windows, so this is the path the popup viewer's mode toggle takes to
-    // reach the main window's settings store (Dominik, 2026-08-26). Without this the pop-manager
+    // reach the main window's settings store. Without this the pop-manager
     // pencil stayed in its old state when the viewer flipped the mode.
     window.addEventListener('storage', e => {
       if (e.key === 'cc.viewerSelectMode') {

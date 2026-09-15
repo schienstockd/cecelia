@@ -92,7 +92,7 @@ const cardSrc = (c: Card, i: number): string | undefined => {
   const aid = c.filmstrip?.[i]?.asset_id
   return aid ? `/api/board-assets?projectUid=${encodeURIComponent(props.projectUid)}&assetId=${encodeURIComponent(aid)}` : undefined
 }
-// Grid tile shows the LAST frame of the filmstrip — the medoid track's end (Dominik 2026-09-09).
+// Grid tile shows the LAST frame of the filmstrip — the medoid track's end.
 // The detail panel iterates the whole filmstrip; the grid card is deliberately a single still, and
 // that still is the end-of-track. Never the middle: an earlier fallback to index `min(1, len-1)`
 // picked the middle of a 3-frame strip and disagreed with the header's timestamp.
@@ -190,7 +190,7 @@ defineExpose({ exportImage })
         <div v-for="c in cards" :key="c.path" class="cc-card ccv-card">
           <!-- Ring as an OUTER border on the wrapper, not StripCell's inset shadow — the inset ring
                sat on top of the image and read as "png overlaps the frame" once the crop cleared
-               its own whitespace (Dominik 2026-09-09). Ring lives outside; image fills its box. -->
+               its own whitespace. Ring lives outside; image fills its box. -->
           <div class="ccv-frame" :style="{ borderColor: c.colour }">
             <StripCell class="ccv-cell"
                        :src="displaySrc(c)" :alt="c.name"

@@ -551,7 +551,7 @@ const FILTERS: ChipOption[] = [
 /* `actions-width` is sized to what can appear AT ONCE, not to the number of buttons declared: cancel
    shows only while running/queued and rerun/dismiss only once terminal, so the most a row ever shows
    is two. Reserving for three left a running row's lone ✕ floating at the far edge of an empty column
-   (Dominik, 2026-08-15). */
+. */
 .tm-table :deep(.sel-actions) .cc-btn { padding: 0.15rem 0.25rem; }
 .tm-table :deep(.sel-actions) > * + * { margin-left: 0.15rem; }
 

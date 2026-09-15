@@ -83,7 +83,7 @@ export function adapterNameText(n: GpuAdapterName): string {
  * (technically on-die) but comfortably run the viewer, so the user-facing "performance will be reduced"
  * warning would be a false positive. An earlier version deferred to the limit, but Safari's WebGPU
  * reports the spec baseline (2048), which flipped Apple back into the reduced bucket — see the readout
- * `apple apple apple apple / maxTextureDimension3D 2048` (Dominik 2026-09-10). Trust the name here.
+ * `apple apple apple apple / maxTextureDimension3D 2048`. Trust the name here.
  */
 export function classifyAdapter(name: GpuAdapterName, maxTextureDimension3D: number): boolean {
   const text = adapterNameText(name).toLowerCase()
@@ -150,7 +150,7 @@ export async function acquireGpuDevice(): Promise<{
   // Ask the adapter for its FULL limits, not the WebGPU defaults. Dawn on Linux Vulkan defaults
   // `maxBufferSize` to 256 MB even on cards that support 4 GB — the tile atlas is a single 800 MB
   // buffer for a whole slide, so leaving it at the default is exactly the "Buffer size exceeds max
-  // buffer size limit" error the first f8gzA2 mount hit (Dominik, 2026-08-25). The adapter reports
+  // buffer size limit" error the first f8gzA2 mount hit. The adapter reports
   // what it can actually give us; asking for that is not asking for anything the adapter did not
   // already offer, so this is safe on every card.
   const requiredLimits: Record<string, number> = {

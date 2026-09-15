@@ -14,7 +14,7 @@
 // NOTHING TOUCHES THE GPU AFTER THE DEVICE IS GONE, and nothing binds a texture that has been
 // destroyed. Both were reachable and both killed the browser rather than raising anything catchable:
 // Firefox's main process crashed with `Queue[Id(4,2)] does not exist` / `Texture is not submitted`
-// (Dominik, 2026-08-24). A lost device left `draw()` still submitting to a dead queue every frame, and
+//. A lost device left `draw()` still submitting to a dead queue every frame, and
 // the eviction policy protected the timepoint being LOADED while the bind group pointed at the
 // different timepoint still on screen. `dead`/`destroyed` gate every GPU call, and `boundT` is
 // protected at every eviction site as well as unbound before its texture can go.
@@ -1131,7 +1131,7 @@ export async function createVolumeRenderer(
       // Detach the canvas swap chain BEFORE the device dies. Without the `unconfigure()` step,
       // `device.destroy()` on the still-bound context left the swap chain in a state the next
       // `ctx.configure(newDevice)` couldn't fully recover from — 2D→3D rendered an empty
-      // canvas (Dominik, 2026-09-03). Skipping `device.destroy()` instead leaked ~2 GB of
+      // canvas. Skipping `device.destroy()` instead leaked ~2 GB of
       // texture pool and brick's next atlas alloc OOM'd. Both steps, in this order.
       ctx.unconfigure()
       device.destroy()

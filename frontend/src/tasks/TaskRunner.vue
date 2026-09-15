@@ -609,7 +609,7 @@ const hiddenTaskNote = computed(() => {
 // This panel does NOT own its width — `CollapsiblePanel` (its host, via ModuleLayout's `#right`) does.
 // It used to have its own `usePanelResize` + drag handle, which meant two widths and two stacked
 // handles on the same edge: dragging the host's handle widened the host while this stayed pinned at
-// its own stored 280px, so the content shifted instead of reflowing (Dominik, 2026-08-15).
+// its own stored 280px, so the content shifted instead of reflowing.
 // `CollapsiblePanel`'s header already recorded this as the half-finished consolidation.
 
 // ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──

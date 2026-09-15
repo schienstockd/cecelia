@@ -170,7 +170,7 @@ export interface AnisoGridEstimate {
  *
  * Takes the geometry of the ACTIVE version, so it stays right when drift correction has expanded
  * the canvas or a crop has shrunk it. Reading a stored per-image SizeX/SizeY instead was wrong for
- * exactly that reason (Dominik, 2026-07-30) — it described the default import while the task runs on
+ * exactly that reason — it described the default import while the task runs on
  * whichever version is active.
  *
  * `null` when there is not enough to say anything, rather than a guess.

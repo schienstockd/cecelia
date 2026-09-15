@@ -13,7 +13,7 @@ const props = withDefaults(defineProps<{
   max?: number
   step?: number
   // Log gives the tiny [0, hi] band its own travel when the full slider spans a dtype range whose
-  // useful signal lives in the first ~0.3% (Dominik, 2026-09-10 on nG1jSi). Values stay linear;
+  // useful signal lives in the first ~0.3%. Values stay linear;
   // only the pixel↔value mapping changes. Log requires min >= 0 — see rangeScale.ts.
   scale?: SliderScale
   // Sample values whose distribution is drawn as a faint histogram behind the rail. Strided
@@ -88,7 +88,7 @@ function onTrackDown(e: PointerEvent) {
 
 // Histogram behind the rail — a smooth filled density curve, not bars: at 16px tall the bar
 // widths and gaps just read as noise, so a single stroked path (a purely visual density hint)
-// is more legible (Dominik, 2026-09-10). Binned in POSITION space (see rangeScale.ts) so log's
+// is more legible. Binned in POSITION space (see rangeScale.ts) so log's
 // left third splits into many bins, not one. `viewBox="0 0 <N> 10"` scales to fill the
 // container, so no resize observer is needed. `computed` memoises, so a drag (which doesn't
 // change samples/min/max/scale) is one cached read per frame.
@@ -154,7 +154,7 @@ const histPaths = computed<{ area: string; line: string } | null>(() => {
    value=min lands on the rail's left end and the thumb CENTRE at value=max lands on the rail's right
    end, with the whole thumb still inside `.rs`. `translateX(-50%)` on the thumb centres it on `left`;
    the inline `left: calc(5.5px + (100% - 11px) * frac)` positions that centre along the inset track,
-   so a hi=max thumb no longer pokes past `.rs` (Dominik, 2026-08-26). */
+   so a hi=max thumb no longer pokes past `.rs`. */
 .rs {
   position: relative;
   height: 1rem;
@@ -166,8 +166,7 @@ const histPaths = computed<{ area: string; line: string } | null>(() => {
   align-items: center;
 }
 /* Histogram-present variant: grow the row and STACK — density silhouette on top, rail + thumbs
-   at the bottom — so the rail's opaque bar doesn't slice through the density (Dominik
-   2026-09-10). Rail/thumbs get explicit `bottom` because the base flex-centre no longer applies
+   at the bottom — so the rail's opaque bar doesn't slice through the density. Rail/thumbs get explicit `bottom` because the base flex-centre no longer applies
    once we've stopped using it here. */
 .rs.rs-hist-on {
   height: 1.75rem;
@@ -194,7 +193,7 @@ const histPaths = computed<{ area: string; line: string } | null>(() => {
   overflow: visible;
 }
 .rs-hist-area {
-  /* Light-blue feather-shaped density (Dominik, 2026-09-10). Opacity keeps it a background hint
+  /* Light-blue feather-shaped density. Opacity keeps it a background hint
      rather than competing with the rail/thumbs for attention. */
   fill: var(--cc-active);
   opacity: 0.55;

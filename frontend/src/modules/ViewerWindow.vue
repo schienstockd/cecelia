@@ -213,7 +213,7 @@ const bricksEnabled = computed<boolean>(() => {
   // to swap in flat also nulled `activeAdapter`, which put the budget back on the static floor,
   // which flipped the classifier back to brick, which recreated the brick renderer, and so on.
   // Symptom on ldYr8J-plane (1.75 GB, sitting between floor 1.5 GB and Auto 2 GB): no renderer
-  // ever stabilised, `Frames 0`, "Loading timepoint N" forever (Dominik, 2026-09-03).
+  // ever stabilised, `Frames 0`, "Loading timepoint N" forever.
   const budget = stableAdapterReport.value !== null ? effectiveCacheBytes.value : CACHE_BUDGET_BYTES
   return shouldUseBricks(m, mode.value, budget)
 })
@@ -492,7 +492,7 @@ const seenMax = ref<number[]>([])
  * usual state right after "Reset to full bit range", which sets `hi = dtypeMax` on data whose
  * `seenMax` is a fraction of that — every drag of `hi` downward pulled the slider's ceiling down
  * with it, so the handle appeared pinned at the right edge and the whole travel range collapsed
- * under the pointer, with no way to drag `hi` back up (Dominik, 2026-09-10 on nG1jSi).
+ * under the pointer, with no way to drag `hi` back up.
  *
  * `hiCeiling` grows monotonically to include every `ch.hi` ever set — via slider drag, Reset, or
  * a restored autosave — so the slider max never shrinks under a value the user has seen. Auto is
@@ -511,7 +511,7 @@ const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
 /** Stash of the LAST fetch's raw per-channel buffers + the row length + bytes-per-voxel needed to
  *  interpret them. Kept so `viewerAutoContrastPercent` can recompute `autoWin` in place without
  *  waiting for the next scrub — the reason the previous "just clear it" approach silently no-op'd
- *  the Auto button (Dominik, 2026-09-03). `shallowRef` because the elements are big ArrayBuffers
+ *  the Auto button. `shallowRef` because the elements are big ArrayBuffers
  *  we never mutate, only replace whole. */
 const lastFetchedBufs = shallowRef<ArrayBuffer[] | null>(null)
 const lastFetchedRowLen = ref(1)
@@ -648,7 +648,7 @@ const canvasProbe = ref<CanvasSample | null>(null)
  * This is a pop-out — a second app instance with its own store and NO console rail (App.vue renders one
  * only for the shell) — so a `logStore` call here would go somewhere nobody can read. The channel puts
  * the line in the app's console you already watch, which is the whole ask: "can't we print this to
- * the console" (Dominik, 2026-08-25).
+ * the console".
  */
 const vlog = (level: 'info' | 'warn' | 'error', message: string, detail?: string) =>
   publishUiLog({ level, message, detail, source: 'viewer' })
@@ -1258,7 +1258,7 @@ const effectiveCacheBytes = computed(() => {
  *  - When the user explicitly picks a level from the dropdown, add that pick so SSE cannot go
  *    finer than the pick. `scheduleBricks`'s `floor` alone is a CAP on coarseness (`chosen =
  *    min(biased, floor)`), not a pin — SSE picks 0 based on zoom, `min(0, 2)` returns 0, and the
- *    "L2" dropdown loads L0 anyway (Dominik 2026-09-02, "when i select l2… it just loads l0").
+ *    "L2" dropdown loads L0 anyway.
  *    Adding `pick` to bias pushes SSE's raw pick past `pick`, then the clamp at `[0, nLevels-1]`
  *    lands biased at `min(sse+pick, nLevels-1)` — coarser or equal to `pick`, never finer.
  *  - During playback, force coarsest available. Blocky-but-in-motion beats sharp-but-frozen —
@@ -1302,7 +1302,7 @@ const gpu = ref({ capacity: 0, bytesPerTimepoint: 0, zDepth: 1, capped: false })
  *
  * It used to light up only while PLAYBACK was stalled, so a manual scrub or the 2D/3D switch showed
  * nothing at all, and those are the slow ones: "I'm left hanging, did it load? is it loading? I have no
- * idea" (Dominik, 2026-08-24). A timepoint in flight is the honest signal, whoever asked for it.
+ * idea". A timepoint in flight is the honest signal, whoever asked for it.
  */
 const busy = computed(() => loadingT.value.length > 0 || waitingFor.value >= 0)
 const cells = computed(() => stripCells(
@@ -1335,7 +1335,7 @@ const frame = usePlotResize(canvas, () => {
     : [zRange.value[0], zRange.value[1]]
   // Widened by the z tolerance: a cell spans several planes, so drawing a marker only on the plane its
   // CENTROID falls on shows a handful of points against a mask layer full of cells — which reads as the
-  // points being random rather than as a strict slice (Dominik, 2026-08-25). 0 is the strict reading and
+  // points being random rather than as a strict slice. 0 is the strict reading and
   // is still available.
   const tol = Math.max(0, settings.viewerPointZTol)
   r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0,
@@ -1609,7 +1609,7 @@ async function loadOverlays() {
     //   1. The panel's per-pop-TYPE gate ("Populations & tracks" icon row). If the popType the pop
     //      manager is currently on (flow / clust / …) is toggled off in the panel, the whole family
     //      is DROPPED from the overlays payload — not just hidden. The overlays panel then reads as
-    //      "no populations gated" (Dominik, 2026-08-26: "there should be no pops in the overlays").
+    //      "no populations gated".
     //      That is what the panel toggle promises: no pops at all, not "pops listed but invisible".
     //   2. Per-pop `pop.show` — authored in the Population Manager, persisted in the gating JSON.
     //      The viewer's row-eye is a transient override for the SAME fetch; the next refetch resyncs.
@@ -1620,7 +1620,6 @@ async function loadOverlays() {
     // to match `settings.getPopVisible` (line 429) and the panel's own `popVisible` fallback (both
     // false). Before this line defaulted to shown, which contradicted the panel — a viewer whose
     // meta.setUid came back empty showed pop dots while every icon in the panel read as off
-    // (Dominik, 2026-08-31: "population dots still pop up despite the gating toggle being off").
     // Empty gating popType = the pop manager hasn't published yet; fall back to the server default
     // (`flow`) — matches the pre-P5 assumption so the pop-family gate stays meaningful.
     const currentPopType = gatingCurrent.value.popType || 'flow'
@@ -2195,7 +2194,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     }))
     // Grow `seenMax` from the tile's own bytes — same discipline as `fetchTimepoint`. Without this
     // the contrast slider's ceiling fell back to `Math.max(ch.hi, 1)`, so dragging `hi` down shrank
-    // the slider until it collapsed to 0-1 with no way back (Dominik, 2026-08-26). Only ever grows —
+    // the slider until it collapsed to 0-1 with no way back. Only ever grows —
     // a ceiling that shrinks re-scales the slider under a value the user set.
     const rowLen = rect.xTo - rect.x + 1
     seenMax.value = bufs.map((b, c) =>
@@ -2414,7 +2413,7 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
     // `drawTiles → scheduleTilePump` rescheduler made the pump supersede itself: `isCurrent` went
     // false mid-run, so tiles that landed after did NOT flip `shownT` and did NOT call
     // `frame.redraw`. Result: the chip stayed on "Loading image…" while the atlas was full, and
-    // the canvas was blank until the user panned (Dominik, 2026-08-26). The gate came from the
+    // the canvas was blank until the user panned. The gate came from the
     // timepoint pump where painting the wrong frame matters — here it never matters.
     // Flip on the first CURRENT-t tile to land — a stale-t fetch racing in after the user scrubbed
     // must not clear the loading chip. `t.value` at fetch time was baked into `key.t`; if they still
@@ -2601,7 +2600,7 @@ function togglePlay() {
  * seen face-on under an orthographic projection, and tilting it shows that plane edge-on — a black
  * frame, from a control that looks like it should work. So the plane view spends its drag on the thing
  * it does have, which is where in the image you are looking. Without a pan there was no way to move
- * around at all once zoomed in (Dominik, 2026-08-25).
+ * around at all once zoomed in.
  */
 const pans = (e: PointerEvent | MouseEvent) => mode.value === 'plane' || e.shiftKey
 // `dragFrom` is the pointer's LAST position (updated per move so `onMove` computes per-event delta).
@@ -2939,7 +2938,7 @@ const keysBtn = ref<HTMLElement | null>(null)
  * ONE panel section open at a time.
  *
  * Not tidiness: with several open, expanding Overlays pushed the 2D/3D toggle off the top of the panel
- * — "once i expand overlays the 2d/3d toggles disappear" (Dominik, 2026-08-25). The sections that stay
+ * — "once i expand overlays the 2d/3d toggles disappear". The sections that stay
  * put (View, Timepoint) are deliberately not in the accordion, because they are the ones you reach for
  * while looking at something else.
  *
@@ -2958,7 +2957,7 @@ watch([openSection, benchEnabled], () => wireFrameTimings(lastWiredRenderer))
  * Binding `@update:open="sectionOpen('channels')"` looks like it binds the returned handler and does
  * not: Vue compiles a CALL expression as an inline STATEMENT, so it runs the outer function on every
  * event and throws the returned one away — the boolean never arrives and nothing ever expands
- * (Dominik, 2026-08-25). Only a bare identifier or a member expression is bound as the handler itself.
+ *. Only a bare identifier or a member expression is bound as the handler itself.
  */
 const setSection = (key: string, v: boolean) => { openSection.value = v ? key : '' }
 /**
@@ -2978,7 +2977,7 @@ const seen = ref<[number, number]>([0, 0])
  * A schematic: the whole image as a bordered rect, the current viewport as an inner rect. No tissue
  * thumbnail yet — the whole-slide coarsest level for f8gzA2 is still ~1300×1000 × 24 ch × 2 B ≈ 60 MB,
  * which is a lot of bytes to fetch for a corner overlay. The rectangle alone answers "where in the
- * slide am I" and "where do I want to be next", which is the ask (Dominik, 2026-08-26).
+ * slide am I" and "where do I want to be next", which is the ask.
  *
  * Click or drag anywhere on the minimap → re-center the camera at that image point. Persists like
  * every other user-settable option; only rendered when there is a real slide to navigate (tile mode).
@@ -3145,7 +3144,7 @@ async function loadOverviewThumbnail() {
 }
 // The canvas is `v-if`'d off when Overview toggles off, so its ref goes null. A fresh canvas mounts
 // blank when the user toggles back on — nothing repaints it until the next channel change, so the
-// thumbnail stays black (Dominik, 2026-08-26). Watch the ref: whenever it mounts (null → element),
+// thumbnail stays black. Watch the ref: whenever it mounts (null → element),
 // repaint. Cheap — one full pass per toggle.
 watch(overviewCanvas, cv => { if (cv) renderOverview() })
 function renderOverview() {
@@ -3234,7 +3233,7 @@ const timeLabel = computed(() => {
   // `shownT`, not `t`: anything drawn ON the image has to describe the PIXELS, and those two disagree
   // for as long as a load takes — deliberately, since keeping the previous frame up beats blanking to
   // black. Off `t` the clock jumped ahead of the picture the moment you scrubbed, which is a
-  // mislabelled frame rather than a lag (Dominik, 2026-08-24). The slider's own readout stays on `t`,
+  // mislabelled frame rather than a lag. The slider's own readout stays on `t`,
   // where it describes the control instead.
   return elapsedLabel(shownT.value, m.frameIntervalMin, 'min', 'clock')
 })
@@ -3248,7 +3247,7 @@ const reload = () => location.reload()
  *  the projection — is the one that is easy to forget and shows up as a 3D reset that clips.
  *  Perspective flag has to match the shader's projection: 3D+Persp needs the near-face margin, but
  *  3D+Ortho (Imaris-style head-on, no depth foreshortening) does NOT — passing `true` there leaves
- *  black margins around the volume (Dominik 2026-09-01). 2D is always ortho. */
+ *  black margins around the volume. 2D is always ortho. */
 const fitNow = (m: ViewerMeta) =>
   fitCamera(extentUm(m, zDepth.value), canvasAspect(),
             mode.value === 'volume' && settings.viewerVolumeProjection === 'persp')
@@ -3272,7 +3271,7 @@ function resetView() {
  *
  * If BOTH flags are already true this session, we've tried both renderers — leave the chip
  * standing for the user to dismiss + lower cache MB. Reset in `start()`; a Try again re-arms.
- * Reported (Dominik, 2026-09-04) on 2h06xA in 2D mode: `Brick atlas: vkAllocateMemory failed with
+ * Reported on 2h06xA in 2D mode: `Brick atlas: vkAllocateMemory failed with
  * VK_ERROR_OUT_OF_DEVICE_MEMORY`, canvas empty, manual toggle to the OTHER kind was the workaround.
  */
 function handleRendererError(kind: 'flat' | 'brick' | 'tile', msg: string) {
@@ -3311,7 +3310,7 @@ function handleRendererError(kind: 'flat' | 'brick' | 'tile', msg: string) {
  * fires `levelPump` which calls `reallocate` on a debounce, and if that fires DURING the first
  * `ensureRenderer` (a real race — the tile atlas allocation takes ~100 ms and the level watch fires
  * within 150 ms of the first `slabLevel` change), two `createTileRenderer` calls execute concurrently.
- * That is the source of the `TextureView … cannot be used with [Device]` error (Dominik, 2026-08-26):
+ * That is the source of the `TextureView … cannot be used with [Device]` error:
  * D1 configures the canvas, then D2 reconfigures it, and D1's draws now hit D2's canvas texture.
  * The guard turns the second call into an await on the first, and only ever creates one device.
  */
@@ -3462,7 +3461,7 @@ async function reallocate(refit = false) {
   // new viewport — `scheduleTilePump` selectively aborts what the new viewport does NOT want), and
   // keeps `shownT` so the overlay does not flash "Loading timepoint 0…" on every wheel notch. Without
   // this split, a burst of level swaps aborted every fetch mid-air and the pump got stuck retrying
-  // aborted work — reported (Dominik, 2026-08-26) as "the loading got stuck and never returned".
+  // aborted work — reported as "the loading got stuck and never returned".
   pump.cancel()
   tilePump.cancel()
   if (!useTiles.value) {
@@ -3517,7 +3516,7 @@ async function reallocate(refit = false) {
     // Channels/LUT: the renderer is freshly built (or its LUT texture was reset by a preceding
     // destroy). Without this, a mode-toggle swap (e.g. 2D→3D flat→brick) leaves the new
     // renderer's LUT at its zero-initialised state — the raycast accumulates zeros and the
-    // canvas renders empty even though bricks are landing in the atlas (Dominik, 2026-09-03).
+    // canvas renders empty even though bricks are landing in the atlas.
     // On the initial load `loadVersion`'s post-restore `pushChannels()` also covers it; here
     // we make reallocate self-sufficient so the toggle path doesn't rely on that follow-up.
     r.setChannels(m.channels)
@@ -3552,7 +3551,7 @@ async function reallocate(refit = false) {
 /**
  * Reset a channel to the FULL bit range of the image — `[0, dtype_max]`. Deliberately not a
  * percentile / server-default restore: the semantics that make Reset useful is "put me back to
- * the raw sensor range so I can see what's actually there, unclipped" (Dominik, 2026-09-03). If a
+ * the raw sensor range so I can see what's actually there, unclipped". If a
  * user wants a smart window they hit Auto instead; Reset now can never LAND at Auto's numbers,
  * which was the redundancy that made both buttons look broken.
  */
@@ -3605,7 +3604,7 @@ function autoAllContrast() {
  * Auto is the pair to Reset — Reset grows the slider ceiling to the raw dtype range, Auto shrinks
  * it back to a data-appropriate range. Without this, after a Reset the ceiling stays at
  * dtypeMax forever and Auto's tight window (typically hi < 1% of dtypeMax on sparse microscopy)
- * lives in the leftmost sliver of the slider with no way back (Dominik, 2026-09-10 on nG1jSi).
+ * lives in the leftmost sliver of the slider with no way back.
  * The `hiCeiling` monotone-grow watch would immediately raise this to the new `hi` if the shrink
  * target were smaller — but `w.max` is `>= w.hi` by construction, so this settles as written.
  */
@@ -3618,7 +3617,7 @@ function shrinkHiCeilingToAuto(c: number, wMax: number) {
 // The top-percentile knob for Auto is a fetch-time computation. On change, recompute IN PLACE
 // from the last-fetched buffers so pressing Auto right after picking a chip lands at the new
 // percentile — the earlier "just clear it" approach silently no-op'd the button until the next
-// scrub (Dominik, 2026-09-03).
+// scrub.
 watch(() => settings.viewerAutoContrastPercent, () => { recomputeAutoWin() })
 
 // Grow `hiCeiling` from every `ch.hi` we see — see the ref's docstring. All hi-writing paths
@@ -3725,7 +3724,7 @@ async function loadVersion(refit: boolean) {
           // Clamp restored z-state to THIS image's depth. A saved zRange from an image with a
           // deeper stack (or an off-by-one leaked into persistence) would otherwise flow through
           // as `zRange[1] = m.nZ`, making `zDepth = m.nZ + 1` and every brick payload get
-          // rejected on shape mismatch (Dominik 2026-09-02, VJy1Nx: constant reload loop).
+          // rejected on shape mismatch.
           // Same clamp discipline `applyT` already has for t.
           const maxZ = Math.max(m.nZ - 1, 0)
           zPlane.value = Math.max(0, Math.min(zp, maxZ))
@@ -3798,7 +3797,7 @@ watch(valueName, () => propsSink.schedule())
 // valid on the fresh image's meta — but loadVersion is about to run the primary reallocate itself
 // and already consults `getShow3D` to seed the default mode. Firing here would race the primary
 // reallocate: destroy its just-built atlas, then Vulkan OOMs on the second createTexture before
-// the first is reclaimed (Dominik 2026-09-09 on XcPcu8/LUkCpP). Live panel-toggle flips still
+// the first is reclaimed. Live panel-toggle flips still
 // fire because `starting.value` is `''` by then.
 watch(() => setUid.value ? settings.getShow3D(setUid.value) : null, want => {
   if (want === null || starting.value) return
@@ -4398,7 +4397,7 @@ onUnmounted(() => {
            against any tile content, and out of the way of the pointer. The error variant carries the
            canonical severity icon and colour (`lib/severity.ts`) — grey-on-image was unreadable
            against a bright whole-slide render, and a centred error left the app looking dead when it
-           was still holding the previous frame (Dominik, 2026-08-26). -->
+           was still holding the previous frame. -->
       <div v-else-if="error" class="vw-status-chip vw-status-chip-error">
         <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
         <span>{{ error }}</span>
@@ -4413,7 +4412,7 @@ onUnmounted(() => {
       </div>
       <!-- The timepoint ASKED FOR, not a literal 0: this overlay is not only the first load. A 2D/3D
            switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
-           hardcoded 0 there said the wrong thing (Dominik, 2026-08-24). -->
+           hardcoded 0 there said the wrong thing. -->
       <div v-else-if="starting" class="vw-status-chip">{{ starting }}…</div>
       <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
       <div v-else-if="shownT < 0" class="vw-status-chip">
@@ -4431,7 +4430,7 @@ onUnmounted(() => {
         <span>Loading bricks…</span>
       </div>
       <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
-           a small image still benefits from a corner reference while zoomed in (Dominik, 2026-08-26).
+           a small image still benefits from a corner reference while zoomed in.
            Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
            takes all the pointer events (click/drag to reposition). -->
       <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
@@ -4472,7 +4471,7 @@ onUnmounted(() => {
       <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
         <!-- Table with a column per mode: same gesture does different things in pan vs select
-             (Dominik, 2026-08-26). The current row's active-mode column is highlighted so a user
+. The current row's active-mode column is highlighted so a user
              can read "what does drag do RIGHT NOW" in one glance. -->
         <table class="vw-keys">
           <thead>
@@ -4576,8 +4575,7 @@ onUnmounted(() => {
           />
           <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
                (click does nothing, drag pans/rotates). Same knob the pop-manager pencil writes so the
-               user can stay in the viewer without reaching back to the module page (Dominik,
-               2026-08-26). Icon shows the CURRENT mode, not the ACTION. -->
+               user can stay in the viewer without reaching back to the module page. Icon shows the CURRENT mode, not the ACTION. -->
           <button class="cc-btn cc-btn-ghost cc-btn-icon"
                   :class="{ 'cc-btn-on cc-btn-on-tint': selectModeActive }"
                   @click="toggleSelectMode"
@@ -4596,7 +4594,7 @@ onUnmounted(() => {
             <i class="pi pi-sliders-h" />
           </button>
           <!-- Shortcuts sits at the far right — a reference popover, not a live control, so it
-               reads as separate from the mode/renderer group (Dominik 2026-08-31). -->
+               reads as separate from the mode/renderer group. -->
           <div class="vw-grow" />
           <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
                   v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
@@ -4631,7 +4629,7 @@ onUnmounted(() => {
                   @change="reallocate()">
             <!-- 3D-mode Auto: the dropdown is a FLOOR the SSE picker clamps against. On the brick
                  renderer the atlas's active level moves with zoom; show it in the label so the
-                 3D control matches the 2D one's live readout (Dominik 2026-08-29). Flat renderer:
+                 3D control matches the 2D one's live readout. Flat renderer:
                  `brickCurrentLevel` is undefined and the label collapses to plain "Auto". -->
             <option :value="-1">Auto{{ bricksEnabled && brickCurrentLevel !== undefined
               ? ` (L${brickCurrentLevel} — zoom-driven)` : '' }}</option>
@@ -4707,7 +4705,7 @@ onUnmounted(() => {
              the tile/brick residency map slotted directly under it. Reset used to sit BETWEEN Loop
              and Overview, and the residency maps landed at the bottom after every other section,
              so the reset action was in the middle of a row of switches and the map wasn't visibly
-             tied to Reset's siblings (Dominik 2026-08-31). Left column carries a compact `Fps`
+             tied to Reset's siblings. Left column carries a compact `Fps`
              control too — no need to spend a full sidebar row on a 1–30 slider. -->
         <div class="vw-compact">
           <div class="vw-compact-left">
@@ -4749,7 +4747,7 @@ onUnmounted(() => {
               <CcToggle v-model="gizmoShown" aria-label="Show the orientation gizmo" />
             </div>
             <!-- Tile residency: toggle row + the map, packed together as one block so the map
-                 sits directly under the switch that controls it (Dominik 2026-09-02). One cell
+                 sits directly under the switch that controls it. One cell
                  per tile at the current level; blue = in the atlas, amber = fetching. -->
             <div v-if="tileMapGrid" class="vw-mapblock">
               <div class="cc-row cc-row-tight">
@@ -4786,8 +4784,7 @@ onUnmounted(() => {
                   </div>
                   <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
                        plane mode `nBz === 1` so a single "z0" label just added a row of vertical
-                       space under the grid with nothing to compare it against (Dominik
-                       2026-08-31). -->
+                       space under the grid with nothing to compare it against. -->
                   <span v-if="brickMapSlices.slices.length > 1"
                         class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
                 </div>
@@ -4816,7 +4813,7 @@ onUnmounted(() => {
                   v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
             <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
             <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
-                 a panel this dense (Dominik, 2026-08-25) — it says "there is something here" and then
+                 a panel this dense — it says "there is something here" and then
                  refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
             <template v-if="settings.viewerScaleBar">
               <input
@@ -4844,8 +4841,7 @@ onUnmounted(() => {
 
         <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
              image has 24+ channels and the sidebar's own scroll never engages, so the section body was
-             flooding off the bottom of the panel with no way to reach the controls below (Dominik,
-             2026-08-26). All-on/all-off buttons at the top so a 24-channel image can be soloed to one
+             flooding off the bottom of the panel with no way to reach the controls below. All-on/all-off buttons at the top so a 24-channel image can be soloed to one
              marker in two clicks instead of 23. -->
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                             :open="openSection === 'channels'"
@@ -4853,7 +4849,7 @@ onUnmounted(() => {
           <!-- One canonical toggle (docs/ui/PRIMITIVES.md → CcToggle), same idiom as every other
                on/off in the app — a pair of buttons was a second variant of a decision that already
                has one right way to render it. A little breathing room below so the master row does
-               not run into the first channel card (Dominik, 2026-08-26). -->
+               not run into the first channel card. -->
           <div class="cc-row cc-row-tight vw-ch-master">
             <span class="cc-muted cc-fs-2xs cc-lbl-col">All channels</span>
             <CcToggle :model-value="allChannelsVisible" @update:model-value="setAllChannels"
@@ -4963,7 +4959,7 @@ onUnmounted(() => {
                track set with a table and no mask does not offer a phantom row.
                Empty state: same shape as Populations and Tracks — one-liner "No X shown — action in
                the viewer panel" using .cc-empty-inline, so the three sections read coherently
-               (Dominik, 2026-08-26). -->
+. -->
           <template v-if="labelName">
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
@@ -5011,7 +5007,7 @@ onUnmounted(() => {
                Panel gate off = the whole section reads as inactive rather than as a cell-count summary
                (Dominik, 2026-08-26: "how you can show a pops stats when the pops toggle in the viewer
                controls is off").
-               Empty-state phrasing lines up with Segmentation and Tracks (Dominik, 2026-08-26). -->
+               Empty-state phrasing lines up with Segmentation and Tracks. -->
           <template v-if="!popsPanelOn">
             <div class="cc-empty-inline cc-fs-2xs">
               No populations shown — enable in the viewer panel
@@ -5392,7 +5388,7 @@ onUnmounted(() => {
 /* Shortcuts table — gesture rows × mode columns. Highlight the active mode's column so a user
    reads the CURRENT effect first; the other column stays legible as a reference for the swap. */
 /* Caption row above a full-width slider — label on left, readout on right. Compact so it
-   reads as a slider title, not another row of controls (Dominik 2026-08-31). */
+   reads as a slider title, not another row of controls. */
 .vw-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
 /* Resolved-value caption under a control in the Advanced popover: sits just under the chip, one
    line, "Using: X" — Dominik 2026-08-31: an Auto option must show what was picked. */
@@ -5468,32 +5464,32 @@ onUnmounted(() => {
      stay here — the panel deliberately owns no padding so its consumers pad their own root. */
   flex: 1; min-width: 0; padding: 0.6rem;
   /* x:hidden, y:auto — leaving x at the default `visible` lets the RangeSlider's thumb overhang
-     and any tight row visually escape past the sidebar's right edge (Dominik, 2026-08-26). Only
+     and any tight row visually escape past the sidebar's right edge. Only
      the vertical axis needs to scroll. */
   overflow: hidden auto;
   display: flex; flex-direction: column; gap: 0.35rem;
 }
 /* Every row is its own height — no vertical shrinking. In a tall column with more content than
    fits, the default `flex-shrink: 1` was compressing every row (the 2D/3D segmented toggle,
-   Reset view button, brick-map grid) instead of letting `.vw-side` scroll (Dominik, 2026-08-29).
+   Reset view button, brick-map grid) instead of letting `.vw-side` scroll.
    `CollapsibleSection` already sets `flex-shrink: 0` on its own root; this covers everything else.
    `flex-grow: 0` for the mirror case: the Depth range slider (`.rs` has `flex: 1` so it grows in
    its intended horizontal `.cc-row` parent) and the Plane / Fps `<input type=range>` (`.vw-grow`
    is `flex: 1` for the same horizontal fill) are direct children of `.vw-side` in the current
    template. In a column flex parent, `flex-grow: 1` stretches them along the VERTICAL axis,
    leaving huge gaps between the caption and the slider, and the slider and the next control
-   (Dominik, 2026-08-31). The `.vw-side > .vw-grow`/`.rs` overrides carry a third simple selector
+. The `.vw-side > .vw-grow`/`.rs` overrides carry a third simple selector
    so they beat `.vw-grow { flex: 1 }` on specificity — under Vue scoped compilation only the LAST
    simple selector gets the `[data-v-…]` suffix, so `.vw-side > *` and `.vw-grow` tied at (0,2,0)
    and declaration order let `.vw-grow` win, which is why the earlier `.vw-side > * { flex-grow: 0 }`
-   didn't actually take (Dominik 2026-08-31, follow-up). */
+   didn't actually take. */
 .vw-side > * { flex-shrink: 0; flex-grow: 0; }
 .vw-side > .vw-grow, .vw-side > .rs { flex-grow: 0; }
 .vw-title { font-weight: 600; word-break: break-word; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
      card (a stray-wide readout, a wrapping row) is clipped rather than poking past the card border
-     (Dominik, 2026-08-26). */
+. */
   min-width: 0; overflow: clip; }
 .vw-ch :deep(.rs) { min-width: 0; }
 .vw-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -5522,7 +5518,7 @@ onUnmounted(() => {
 .vw-ch-master-slot { flex: none; width: calc(2 * 1.1rem + 0.35rem); height: 1.1rem; }
 /* min-width sized for the widest reading ("0–65535") — without it the readout column shrinks as
    `hi` drops, the flex-1 slider gains width, and the histogram silhouette appears to breathe with
-   every drag (Dominik, 2026-09-10). Same fix as .vw-num above. `tabular-nums` on .cc-readout keeps
+   every drag. Same fix as .vw-num above. `tabular-nums` on .cc-readout keeps
    the character width deterministic. */
 .vw-ch-val { flex: none; white-space: nowrap; min-width: 3rem; text-align: right; }
 .vw-grow { flex: 1; min-width: 0; }
@@ -5589,7 +5585,7 @@ onUnmounted(() => {
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
    with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:
    center` keeps the value baselines centered against the taller label text — grid's default
-   `start` alignment left values crowded to the top of each row (Dominik 2026-09-02). */
+   `start` alignment left values crowded to the top of each row. */
 .vw-bench-grid {
   display: grid; grid-template-columns: auto 1fr;
   align-items: center;

@@ -50,7 +50,7 @@ export function niceScaleBar(
   //
   // The pattern has to cover what OME actually writes. `PhysicalSizeUnit` is the literal string
   // **"micrometer"**, which `micron` does not match — so the bar read "100 micrometer" and never rolled
-  // up to mm (Dominik, 2026-08-24). `micro` covers micron / micrometer / micrometre alike.
+  // up to mm. `micro` covers micron / micrometer / micrometre alike.
   const isMicron = /^(µm|um|micro)/i.test(u)
   const label = isMicron && pick >= 1000 ? `${pick / 1000} mm` : `${pick} ${isMicron ? 'µm' : u}`
   return { um: pick, label }

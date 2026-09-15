@@ -128,7 +128,7 @@ window.addEventListener('error', e => {
   // Suppress the benign ResizeObserver loop message — the browser fires it as a bare ErrorEvent
   // when an observer callback resizes something the observer sees, and it means the browser skipped
   // ONE notification tick (it'll fire again next frame). Nothing actionable to log; without this,
-  // it fills the rail during ordinary layout work (Dominik, 2026-08-26). In dev the
+  // it fills the rail during ordinary layout work. In dev the
   // `installRoLoopTrace` hook below still lands one attributed warn per observer creation site,
   // which is the useful signal.
   if (e.message && /ResizeObserver loop/.test(e.message)) return
