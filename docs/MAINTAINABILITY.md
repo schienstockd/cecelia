@@ -131,9 +131,31 @@ a comment. A comment saying "expects X" is a risk-register entry, not a specific
 
 ### Enums for state machines
 
-A `Symbol` field with a known set of legal values (`:queued`, `:running`, `:done`, `:failed`,
-`:cancelled`) is a state machine documented only by convention. Prefer `@enum` + a typed setter
-(`set_status!(rec, ::TaskStatus)`) — the terminality check comes with the type.
+A `Symbol` or `String` field with a known set of legal values is a state machine documented only
+by convention. Prefer `@enum` + a typed setter (`set_status!(rec, ::TaskStatus)`) — the terminality
+check comes with the type; a typo in the value becomes a compile-time error instead of a silent
+default.
+
+**This is the single most systemic P4 pattern in this codebase.** The Phase-4 register found six
+instances of the same shape (a `String`/`Symbol` field, 4–7 legal values, enum-in-a-comment):
+`TaskRecord.status`, `ChainNode.scope`, `ChainNode.barrier_policy`, `ImageNodeState.status`,
+`CciaImage.status`, `Population.pop_type` (+ `popType` in `gating_api.jl`). One `@enum` pass
+across these resolves six risk-register entries in one PR. Fix template:
+
+```julia
+@enum TaskStatus TASK_QUEUED TASK_RUNNING TASK_DONE TASK_FAILED TASK_CANCELLED
+mutable struct TaskRecord
+    ...
+    status::TaskStatus
+end
+function set_status!(rec::TaskRecord, s::TaskStatus)
+    rec.status in (TASK_DONE, TASK_FAILED, TASK_CANCELLED) && return  # terminal
+    rec.status = s
+end
+```
+
+Full list of instances + fix template details: [`docs/archive/comment-audit-findings.md`](archive/comment-audit-findings.md)
+→ *Risk register* → *State machines*.
 
 ### Sum types over `Union{Nothing, T}` discriminants
 

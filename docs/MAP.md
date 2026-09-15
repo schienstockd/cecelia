@@ -71,9 +71,27 @@ Files where comments document lock ordering, cancellation races, or silent-failu
 ## Structure register — files where new functionality should NOT be appended by default
 
 The next feature in this area belongs in its own file, not on the end of the existing one.
-See [`MAINTAINABILITY.md`](MAINTAINABILITY.md) → *File responsibility*.
+See [`MAINTAINABILITY.md`](MAINTAINABILITY.md) → *File responsibility*. Full register with
+proposed seams: [`docs/archive/comment-audit-findings.md`](archive/comment-audit-findings.md) →
+*Structure register*.
 
-- `app/src/tasks/cleanupImages/af_correct.jl` — carries run + QC + param translation. Cleaner
+**Highest ROI (Tier 1):**
+- `app/src/config.jl` (1488 L, 49 commits/6mo — top-churned in the repo). Four distinct
+  domains: model catalogs, CPU/scheduling, runner config, storage. Split by `config/*.jl`.
+- `app/src/tasks/task.jl` (1657 L, 14 sections, 45 commits/6mo). ~14 mixed responsibilities.
+  Split by `task/spec.jl`, `task/validate.jl`, `task/composite.jl`, `task/dispatch.jl`, etc.
+- `app/src/gating/population_manager.jl` (2412 L, 16 sections, 36 commits/6mo). Splitting
+  **requires preserving the `uid_index` sync invariant** — tests must pin uid_index/pops parity.
+- `app/src/tasks/chain.jl` (1415 L, 19 sections). Splitting **requires preserving the
+  `ChainRun._lock` + `_barriers` invariants** — same class as `scheduler.jl`, milder.
+
+**Worthwhile (Tier 2):**
+- `app/src/tasks/importImages/omezarr.jl` (1074 L) — separable metadata reader.
+- `app/src/qc.jl` (1015 L) — `QC_TEXT` catalog is separable.
+- `api/src/routes.jl` (3053 L) — split by route family.
+
+**Anchor (Tier 3):**
+- `app/src/tasks/cleanupImages/af_correct.jl` — run + QC + param translation. Cleaner
   seams: `af/run.jl`, `af/qc.jl`, `af/translate.jl`.
 - `app/src/tasks/scheduler.jl` — 733 lines, five responsibilities. Splitting requires explicit
   lock-ordering-invariant proof; not a routine cleanup.
