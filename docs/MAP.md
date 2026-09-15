@@ -76,8 +76,6 @@ proposed seams: [`docs/archive/comment-audit-findings.md`](archive/comment-audit
 *Structure register*.
 
 **Highest ROI (Tier 1):**
-- `app/src/config.jl` (1488 L, 49 commits/6mo — top-churned in the repo). Four distinct
-  domains: model catalogs, CPU/scheduling, runner config, storage. Split by `config/*.jl`.
 - `app/src/tasks/task.jl` (1657 L, 14 sections, 45 commits/6mo). ~14 mixed responsibilities.
   Split by `task/spec.jl`, `task/validate.jl`, `task/composite.jl`, `task/dispatch.jl`, etc.
 - `app/src/gating/population_manager.jl` (2412 L, 16 sections, 36 commits/6mo). Splitting
