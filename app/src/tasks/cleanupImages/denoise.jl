@@ -17,6 +17,22 @@ task_output_effect(::Denoise) = "new-version"
 # within-run cohort comparison is meaningless. See SUPPORT_PERCHANNEL_PLAN.md → D4(b).
 const _COLLAPSE_RATIO_FACTOR = 0.5
 
+# Typed shape of what `_run_task(::Denoise, …)` reads from `params`.
+Base.@kwdef struct DenoiseParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    model::String     = ""       # stem or filename; resolved via denoise_model_resolve
+    channels::Any     = nothing  # channel name(s); resolved via channel_indices
+    batchSize::Int    = 2
+end
+
+function parse_denoise_params(d::AbstractDict)::DenoiseParams
+    DenoiseParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        model     = string(get(d, "model", "")),
+        channels  = get(d, "channels", nothing),
+        batchSize = Int(get(d, "batchSize", 2)))
+end
+
 function _denoise_qc_findings(meta)
     findings = Dict{String,Any}[]
     skipped = collect(Int, get(meta, "channelsSkipped", Int[]))
@@ -80,13 +96,13 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_denoise_params(params)
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -103,25 +119,24 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
     # user-visible error — the runner can't infer the network shape without one. The resolver picks
     # between pooled (single `.pt`) and perChannel (bundle folder); either lands the runner with the
     # weights + arch it needs. See SUPPORT_PERCHANNEL_PLAN.md → D3.
-    model_field = string(get(params, "model", ""))
-    if isempty(strip(model_field))
+    if isempty(strip(p.model))
         on_log("[ERROR] No denoise model selected. Train one on the Model Training page, then pick it here.")
         return nothing
     end
-    resolved = denoise_model_resolve(model_field)
+    resolved = denoise_model_resolve(p.model)
     if isnothing(resolved)
-        on_log("[ERROR] Model '$(model_field)' not found in $(denoise_models_dir())")
+        on_log("[ERROR] Model '$(p.model)' not found in $(denoise_models_dir())")
         return nothing
     end
     if resolved.kind === :pooled && isempty(resolved.manifest)
-        on_log("[ERROR] Model '$(model_field)' has no manifest sidecar. " *
+        on_log("[ERROR] Model '$(p.model)' has no manifest sidecar. " *
                "SUPPORT does not encode its architecture in the checkpoint; without the manifest " *
                "the runner cannot rebuild the network. Retrain via the Model Training page.")
         return nothing
     end
 
     ch_names = ccid_channel_names(raw)
-    channel_idx = channel_indices(get(params, "channels", nothing), ch_names; what = "channels")
+    channel_idx = channel_indices(p.channels, ch_names; what = "channels")
     if isempty(channel_idx)
         on_log("[ERROR] Pick at least one channel to denoise — SUPPORT is per-channel.")
         return nothing
@@ -145,8 +160,6 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
             channel_idx = keep
         end
     end
-
-    batch_size = Int(get(params, "batchSize", 2))
 
     on_log("[INFO] Input:    $im_path")
     on_log("[INFO] Output:   $im_output_path")
@@ -189,7 +202,7 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
            perChannelModels = per_channel_models,
            channels      = channel_idx,
            channelsSkipped = saturated,
-           batchSize     = batch_size,
+           batchSize     = p.batchSize,
            qcOutPath     = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

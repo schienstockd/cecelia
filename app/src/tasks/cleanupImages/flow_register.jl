@@ -17,6 +17,28 @@ const FLOW_REGISTER_WINSIZE = Dict{String,Int}(
     "strong"   => 25,
 )
 
+# Typed shape of what `_run_task(::FlowRegister, …)` reads from `params`.
+Base.@kwdef struct FlowRegisterParams
+    valueName::String          = VERSIONED_DEFAULT_VAL
+    registerChannel::Any       = nothing  # channel name(s); resolved via channel_indices
+    structuralChannels::Any    = nothing  # channel name(s); resolved via channel_indices
+    referenceMode::String      = "previous"
+    aggressiveness::String     = "strong"
+    pyrLevels::Int             = 5
+    maxShiftPx::Float64        = 16.0
+end
+
+function parse_flow_register_params(d::AbstractDict)::FlowRegisterParams
+    FlowRegisterParams(;
+        valueName          = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        registerChannel    = get(d, "registerChannel", nothing),
+        structuralChannels = get(d, "structuralChannels", nothing),
+        referenceMode      = string(get(d, "referenceMode", "previous")),
+        aggressiveness     = string(get(d, "aggressiveness", "strong")),
+        pyrLevels          = Int(get(d, "pyrLevels", 5)),
+        maxShiftPx         = Float64(get(d, "maxShiftPx", 16.0)))
+end
+
 function _flow_register_qc_findings(meta)
     findings = Dict{String,Any}[]
     flow_max = get(meta, "flowMax", nothing)
@@ -64,13 +86,13 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_flow_register_params(params)
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -84,8 +106,7 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
     end
 
     ch_names = ccid_channel_names(raw)
-    ch_sel = channel_indices(get(params, "registerChannel", nothing), ch_names;
-                             what = "registerChannel")
+    ch_sel = channel_indices(p.registerChannel, ch_names; what = "registerChannel")
     register_channel_idx = 0
     if isempty(ch_sel)
         on_log("[WARN] No registration reference channel selected — using channel 0" *
@@ -95,22 +116,17 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
         register_channel_idx = first(ch_sel)
     end
 
-    structural_idx = channel_indices(get(params, "structuralChannels", nothing), ch_names;
-                                      what = "structuralChannels")
+    structural_idx = channel_indices(p.structuralChannels, ch_names; what = "structuralChannels")
 
-    reference_mode = string(get(params, "referenceMode", "previous"))
-    aggressiveness = string(get(params, "aggressiveness", "strong"))
-    winsize        = get(FLOW_REGISTER_WINSIZE, aggressiveness, FLOW_REGISTER_WINSIZE["strong"])
-    pyr_levels     = Int(get(params, "pyrLevels", 5))
-    max_shift_px   = Float64(get(params, "maxShiftPx", 16.0))
+    winsize = get(FLOW_REGISTER_WINSIZE, p.aggressiveness, FLOW_REGISTER_WINSIZE["strong"])
 
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_out_path")
     on_log("[INFO] Channel:     $register_channel_idx")
     isempty(structural_idx) ||
         on_log("[INFO] Structural: $(collect(structural_idx)) — passed through unwarped")
-    on_log("[INFO] Reference:   $reference_mode  (aggressiveness=$aggressiveness → winsize=$winsize, " *
-           "pyr_levels=$pyr_levels, max_shift=$max_shift_px px)")
+    on_log("[INFO] Reference:   $(p.referenceMode)  (aggressiveness=$(p.aggressiveness) → winsize=$winsize, " *
+           "pyr_levels=$(p.pyrLevels), max_shift=$(p.maxShiftPx) px)")
 
     qc_out_path = joinpath(task_run_dir(img._dir), "flow_register_shifts.json")
 
@@ -119,10 +135,10 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
            imOutPath           = im_out_path,
            registerChannel     = register_channel_idx,
            structuralChannels  = collect(structural_idx),
-           referenceMode       = reference_mode,
+           referenceMode       = p.referenceMode,
            winsize             = winsize,
-           pyrLevels           = pyr_levels,
-           maxShiftPx          = max_shift_px,
+           pyrLevels           = p.pyrLevels,
+           maxShiftPx          = p.maxShiftPx,
            qcOutPath           = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
