@@ -1,9 +1,11 @@
 # ── Self-signed dev TLS cert ─────────────────────────────────────────────────────
 #
 # HTTP/2 in the browser requires TLS — Chromium refuses cleartext h2 (h2c) by policy. This
-# gets a working https:// dev server going without any third-party tooling: OpenSSL_jll is
-# already in the transitive dep tree via HTTP.jl → Reseau, so shelling out to it here has
-# zero install surface.
+# gets a working https:// dev server going by shelling out to the system `openssl` binary.
+# (OpenSSL_jll — stdlib on Julia 1.12 — only exposes `libssl`/`libcrypto`, not the CLI.
+# System openssl is present by default on Linux and macOS and via git-for-windows on
+# Windows; when it isn't, `ensure_dev_cert` returns nothing and the server falls back to
+# HTTP/1.1 cleanly.)
 #
 # One-time-per-install cert: `<config_dir>/tls/{cert.pem,key.pem}`. Regenerated only if the
 # key file is missing (rotate by deleting both). Users click through Chrome's "Not secure"
@@ -11,8 +13,6 @@
 # at the cost of bundling a third-party binary and writing the OS trust store — not worth
 # the packaging surface for a research tool; revisit if the click-through actually bites.
 # See `docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U4.
-
-using OpenSSL_jll: openssl
 
 const TLS_SUBDIR = "tls"
 const TLS_CERT_NAME = "cert.pem"
@@ -51,6 +51,11 @@ function ensure_dev_cert(dev_dir::Union{String,Nothing} = nothing)::Union{Tuple{
     if isfile(cert_path) && isfile(key_path)
         return (cert_path, key_path)
     end
+    openssl_bin = Sys.which("openssl")
+    if openssl_bin === nothing
+        @warn "TLS: system `openssl` not found on PATH — HTTPS will not start, falling back to HTTP/1.1"
+        return nothing
+    end
     tls_dir = dirname(cert_path)
     try
         mkpath(tls_dir)
@@ -66,7 +71,7 @@ function ensure_dev_cert(dev_dir::Union{String,Nothing} = nothing)::Union{Tuple{
     #  -subj /CN=localhost  no interactive prompts
     #  -addext subjectAltName=…  SANs so `https://localhost`, `https://127.0.0.1`,
     #                            `https://[::1]` all validate against the same cert
-    cmd = `$(openssl()) req -x509 -newkey rsa:2048 -nodes -days 365
+    cmd = `$(openssl_bin) req -x509 -newkey rsa:2048 -nodes -days 365
            -subj /CN=localhost
            -addext subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1
            -keyout $(key_path) -out $(cert_path)`

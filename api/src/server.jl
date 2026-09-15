@@ -715,9 +715,18 @@ function start(; host=HOST, port=PORT)
     # HTTP/2 requires TLS (browsers refuse cleartext h2). Bootstrap a self-signed dev cert
     # on first launch; on failure fall back to HTTP/1.1 so the server never fails to start
     # just because openssl isn't available. See `docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U4.
-    tls = ensure_dev_cert()
+    #
+    # Skip TLS under `pixi run dev` (CECELIA_DEV=1). Vite's dev proxy (http-proxy) is HTTP/1.1
+    # only both ways — it can't multiplex h2 to the backend, so ALPN would just downgrade to
+    # http/1.1 anyway, and switching the socket to TLS would ALSO force us to swap every proxy
+    # target to https:// with `secure:false`. Not worth the churn for a protocol that never
+    # actually wins through the proxy. In `pixi run prod` (no CECELIA_DEV), the API serves the
+    # built frontend/dist at same origin, browser talks directly to :8080, ALPN picks h2, real
+    # multiplexing kicks in. That's where U4 pays off.
+    tls = get(ENV, "CECELIA_DEV", "") == "1" ? nothing : ensure_dev_cert()
     if tls === nothing
-        @info "CeceliaAPI starting (HTTP/1.1, no TLS)" host port threads=Threads.nthreads() projects_dir=projects_dir()
+        reason = get(ENV, "CECELIA_DEV", "") == "1" ? "dev, Vite proxy" : "no TLS"
+        @info "CeceliaAPI starting (HTTP/1.1, $reason)" host port threads=Threads.nthreads() projects_dir=projects_dir()
         HTTP.listen(handle_stream, host, port)
     else
         cert_path, key_path = tls
