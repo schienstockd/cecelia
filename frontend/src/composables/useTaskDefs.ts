@@ -44,7 +44,14 @@ export function useTaskDefs(category: string | string[]) {
       // `hidden` tasks stay registered and runnable (REPL, chains) but are kept out of the module
       // page's function list — their job has a purpose-built UI. Filtered HERE, not at the route:
       // ChainModule and the taskDefs label store fetch the same endpoint and must still see them.
-      defs.value = cats.flatMap(c => data[c] ?? []).filter(d => !d.hidden)
+      // Sort alphabetically WITHIN a category (server order is directory-scan, so random-looking),
+      // preserving the caller's cross-category order so a multi-category page still reads
+      // import-then-export rather than one mixed alphabetised block.
+      defs.value = cats.flatMap(c =>
+        (data[c] ?? [])
+          .filter(d => !d.hidden)
+          .sort((a, b) => a.label.localeCompare(b.label))
+      )
     } catch (e) {
       if (attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, RETRY_DELAY))
