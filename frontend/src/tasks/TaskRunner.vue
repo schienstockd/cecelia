@@ -701,12 +701,14 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
            ask when a chain node was tuned once and the next run wants a clean slate. -->
       <div class="params-heading-row">
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
-        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                v-tooltip.left="'Copy settings from a previous run on another image'"
-                @click="copyOpen = true"><i class="pi pi-copy" /></button>
-        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                v-tooltip.left="'Reset to defaults'"
-                @click="resetParamsToDefaults"><i class="pi pi-refresh" /></button>
+        <div class="params-heading-actions">
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                  v-tooltip.left="'Copy settings from a previous run on another image'"
+                  @click="copyOpen = true"><i class="pi pi-copy" /></button>
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                  v-tooltip.left="'Reset to defaults'"
+                  @click="resetParamsToDefaults"><i class="pi pi-refresh" /></button>
+        </div>
       </div>
       <div class="params-list" data-guide="task.params">
         <ParamRenderer
@@ -869,13 +871,15 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .pool-throttle:hover  { color: var(--cc-text); }
 
 .section-heading { margin: 0 0 0.5rem; }
-/* Heading + a single trailing icon-button. Both stay on the same baseline; the button eats its own
-   half-rem so the row still lines up with a bare heading on the sections that have no button. */
+/* Heading on the left, trailing icon-buttons grouped on the right so they stay together no matter
+   how many there are — `justify-content: space-between` with three children would strand a middle
+   button in the centre. */
 .params-heading-row {
   display: flex; align-items: center; justify-content: space-between;
   margin: 0 0 0.5rem;
 }
 .params-heading-row .section-heading { margin: 0; }
+.params-heading-actions { display: flex; align-items: center; gap: 0.15rem; }
 
 /* function selector */
 .fn-select {
