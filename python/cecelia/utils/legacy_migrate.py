@@ -405,6 +405,35 @@ def migrate_image(src_proj: str, uid: str, dst_zero_dir: str, dst_meta_dir: str,
              "use copy mode for napari channel recognition")
 
     _log(f"[PROGRESS] 1/3")
+    # Label-side pyramid + metadata normalisation. Legacy R stores use `multiscales.labels`
+    # (not `datasets`) and often lack axes/scale, so the browser's `?labels=` request falls
+    # back to nlvl=1 even when the pyramid is already on disk — labels then render 2^L too
+    # large at any non-zero level (api/src/viewer_api.jl:479-491). Read axes + calibration
+    # from the (already-copied) image and hand them to the backfill helper.
+    from cecelia.utils import zarr_utils
+    img_path = str(new0 / img_file)
+    try:
+        img_ms = zarr_utils.read_multiscales_meta(img_path)
+        target_nscales = len(img_ms.get("datasets", [])) or 1
+        img_axes_lower = zarr_utils.read_axes(img_path) or []
+        # Label axes drop the channel axis.
+        label_axes = [ax.upper() for ax in img_axes_lower if str(ax).upper() != 'C']
+        img_scale = zarr_utils.read_scale(img_path) or []
+        img_units = zarr_utils.read_axis_units(img_path) or {}
+        scale_for_axis = None
+        unit_for_axis = None
+        if img_axes_lower and len(img_scale) == len(img_axes_lower):
+            scale_for_axis = {ax.upper(): float(s)
+                              for ax, s in zip(img_axes_lower, img_scale)
+                              if ax.upper() != 'C'}
+            unit_for_axis = {ax.upper(): u for ax, u in img_units.items()
+                             if ax.upper() != 'C'}
+    except Exception as e:
+        _log(f"! could not read image multiscales for label backfill: {e}")
+        target_nscales = 1
+        label_axes = None
+        scale_for_axis = None
+        unit_for_axis = None
     labels_out: dict = {}
     for vn, files in r.get("labels", {}).items():
         if vn not in r.get("labelprops", {}):
@@ -413,6 +442,17 @@ def migrate_image(src_proj: str, uid: str, dst_zero_dir: str, dst_meta_dir: str,
         for fn in files:
             if (old1 / "labels" / fn).exists():
                 _copy_or_link(old1 / "labels" / fn, new1 / "labels" / fn, mode)
+                if mode == "copy" and target_nscales > 1:
+                    try:
+                        added, rewrote = zarr_utils.backfill_label_pyramid(
+                            str(new1 / "labels" / fn), target_nscales,
+                            axes=label_axes,
+                            scale_for_axis=scale_for_axis,
+                            unit_for_axis=unit_for_axis)
+                        if added or rewrote:
+                            _log(f"label {fn}: added={added} metadata_rewritten={rewrote}")
+                    except Exception as e:
+                        _log(f"! label pyramid backfill failed on {fn}: {e}")
                 kept.append(fn)
         if kept:
             labels_out[vn] = kept

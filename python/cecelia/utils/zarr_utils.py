@@ -1402,6 +1402,135 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
                     on_progress(i * n_t + t + 1, total)
 
 
+def backfill_label_pyramid(label_path, target_nscales, axes=None,
+                           scale_for_axis=None, unit_for_axis=None, on_progress=None):
+    """Bring an existing label store up to ``target_nscales`` levels with usable NGFF metadata.
+    Two-part fix; returns ``(levels_added, metadata_rewritten)``.
+
+    A store can be broken in either direction and this helper handles both:
+
+    * **Missing levels.** Segmentation runs before commit 8ec784a3 (2026-07-23) — and any legacy
+      import via `legacy_migrate` — produced a single-level label store against a multi-level
+      image. The browser's `?labels=` request clamps to the served level; L0 voxels get drawn
+      into an L2-sized slot at 4× stride → outlines render 2^L too large
+      (api/src/viewer_api.jl:479-491).
+
+    * **Unreadable metadata.** Old-R stores wrote `multiscales[0].labels: [{path:"0"},…]` instead
+      of `datasets`, sometimes with the pyramid already on disk. `read_multiscales_meta` returns
+      an empty ``datasets``, `store_pyramid_levels` returns 1, same bug.
+
+    ``axes`` / ``scale_for_axis`` / ``unit_for_axis`` are what to stamp into the rewritten
+    metadata (typically read from the sibling image via `read_axes` + `calibration_for_axes`).
+    None on any means "keep whatever the current metadata carries", which is only correct when
+    the metadata is already `datasets`-shaped and has axes.
+
+    Preserves the store's existing chunk shape, dtype, format (v2/v3), codec and separator.
+    """
+    base = series_base(label_path)
+    g = zarr.open_group(base, mode='a')
+    fmt = _group_format(g)
+    sep = _group_separator(g)
+
+    ms_raw = _raw_label_multiscales(label_path)
+    on_disk_lvls = sorted(int(name) for name in g.array_keys() if str(name).isdigit())
+    if 0 not in on_disk_lvls:
+        raise ValueError(f"{label_path}: no level-0 array — not a label store this helper can extend")
+
+    # Prefer caller-provided axes/scale; otherwise fall back to what the metadata already says
+    # (datasets shape only). Axes are always upper-cased so downstream lookups are case-safe.
+    ms_axes = [str(a['name']).upper() for a in ms_raw.get('axes', [])]
+    axes = [str(a).upper() for a in axes] if axes else ms_axes
+    if not axes:
+        raise ValueError(f"{label_path}: no axes on disk and none supplied; cannot pick XY for downsampling")
+    if scale_for_axis is None:
+        scale_for_axis = _existing_scale_map(ms_raw, axes)
+    unit_for_axis = dict(unit_for_axis or (read_axis_units(label_path) or {}))
+    unit_for_axis = {ax.upper(): u for ax, u in unit_for_axis.items()}
+
+    level0 = g['0']
+    chunks = list(level0.chunks)
+    x_idx = axes.index('X')
+    y_idx = axes.index('Y')
+    t_idx = axes.index('T') if 'T' in axes else None
+
+    from cecelia.utils import slice_utils
+    shape0 = tuple(level0.shape)
+    slices = slice_utils.create_slices_multiscales(
+        shape0, dim_utils=None, x_idx=x_idx, y_idx=y_idx,
+        nscales=target_nscales - 1)
+
+    n_t = 1 if t_idx is None else shape0[t_idx]
+    added = 0
+    for i, x in enumerate(slices):
+        lvl = i + 1
+        if lvl in on_disk_lvls:
+            continue  # skip levels that are already on disk (whether or not metadata knew about them)
+        dest_shape = tuple(len(range(*x[d].indices(shape0[d]))) for d in range(len(shape0)))
+        dest_chunks = tuple(max(1, min(c, s)) for c, s in zip(chunks, dest_shape))
+        dest = g.create_array(
+            str(lvl), shape=dest_shape, chunks=dest_chunks,
+            dtype=native_dtype(level0.dtype),
+            **_codec_kwargs('labels', fmt, separator=sep))
+        if t_idx is None:
+            dest[:] = level0[tuple(x)]
+        else:
+            for t in range(n_t):
+                rd = list(x);              rd[t_idx] = slice(t, t + 1, 1)
+                wr = [slice(None)] * len(dest_shape); wr[t_idx] = slice(t, t + 1, 1)
+                dest[tuple(wr)] = level0[tuple(rd)]
+                if on_progress is not None:
+                    on_progress(added * n_t + t + 1,
+                                (target_nscales - len(on_disk_lvls)) * n_t)
+        added += 1
+
+    final_lvls = sorted(int(name) for name in g.array_keys() if str(name).isdigit())
+    nscales = max(target_nscales, len(final_lvls))
+
+    # Rewrite metadata if the on-disk shape is legacy (`labels` key), or the level count changed,
+    # or axes weren't stamped. Non-multiscales keys on the original entry are preserved.
+    needs_rewrite = (
+        'labels' in ms_raw and 'datasets' not in ms_raw
+        or len(ms_raw.get('datasets', [])) != nscales
+        or not ms_raw.get('axes'))
+    if needs_rewrite:
+        built = multiscales_metadata(
+            axes, nscales, scale_for_axis=scale_for_axis,
+            unit_for_axis=unit_for_axis)[0]
+        # Drop keys that don't belong in the current shape (the legacy `labels` alias would
+        # otherwise coexist with `datasets` and confuse readers that check either).
+        preserved = {k: v for k, v in ms_raw.items()
+                     if k not in ('datasets', 'axes', 'labels', 'version')}
+        write_multiscales_attrs(g, [{**preserved, **built}], fmt)
+    return added, needs_rewrite
+
+
+def _raw_label_multiscales(path):
+    """Return the raw first multiscales entry, WITHOUT the empty-datasets fallback in
+    `read_multiscales_meta` — needed here because we want to see the legacy `labels` key too.
+    ``{}`` if no NGFF attrs at all."""
+    for candidate in (os.path.join(path, "0"), path):
+        if not os.path.isdir(candidate):
+            continue
+        try:
+            g = zarr.open_group(candidate, mode='r')
+            ms = ngff_attrs(g.attrs).get('multiscales')
+            if ms:
+                return ms[0] if isinstance(ms, list) else {}
+        except Exception:
+            continue
+    return {}
+
+
+def _existing_scale_map(ms_entry, axes):
+    """Read a base per-axis scale from a multiscales entry's first dataset, keyed by axis name.
+    None if the entry has no scale (a legacy store — caller must supply one)."""
+    for ds in ms_entry.get('datasets', [])[:1]:
+        for tr in ds.get('coordinateTransformations', []):
+            if tr.get('type') == 'scale' and len(tr['scale']) == len(axes):
+                return {ax: float(tr['scale'][i]) for i, ax in enumerate(axes)}
+    return None
+
+
 def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
                                  nscales=1, keyword='datasets', mode='w', kind='image',
                                  axes=None,
