@@ -7,6 +7,23 @@
 
 struct MigrateLegacy <: CciaTask end
 
+# Typed shape of what `_run_task(::MigrateLegacy, …)` reads from `params`. Each field also has a
+# fall-through to `img.meta` (recorded at register time); handled in the handler after parse.
+Base.@kwdef struct MigrateLegacyParams
+    sourceProjectDir::String = ""
+    sourceUid::String        = ""
+    mode::String             = "copy"
+    rscript::String          = ""
+end
+
+function parse_migrate_legacy_params(d::AbstractDict)::MigrateLegacyParams
+    MigrateLegacyParams(;
+        sourceProjectDir = string(get(d, "sourceProjectDir", "")),
+        sourceUid        = string(get(d, "sourceUid", "")),
+        mode             = string(get(d, "mode", "copy")),
+        rscript          = string(get(d, "rscript", "")))
+end
+
 # JSON3 object → Dict{String,String} (versioned filepath / label_props / attr)
 _to_str_str(o) = Dict{String,String}(String(k) => string(v) for (k, v) in pairs(o))
 # JSON3 object {vn => [names], _active => vn} → Dict{String,Any} (imChannelNames)
@@ -37,13 +54,13 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    src_proj = string(get(params, "sourceProjectDir", get(img.meta, "legacySourceDir", "")))
-    src_uid  = string(get(params, "sourceUid",        get(img.meta, "legacySourceUid", "")))
-    mode     = string(get(params, "mode",    "copy"))
+    p        = parse_migrate_legacy_params(params)
+    src_proj = isempty(p.sourceProjectDir) ? string(get(img.meta, "legacySourceDir", "")) : p.sourceProjectDir
+    src_uid  = isempty(p.sourceUid)        ? string(get(img.meta, "legacySourceUid", "")) : p.sourceUid
+    mode     = p.mode
     # rscript: explicit task param (if set) → the one chosen at register (meta), resolved through
     # rscript_bin_path so a bare "Rscript" is upgraded to an absolute path where possible.
-    rp       = string(get(params, "rscript", ""))
-    rscript  = rscript_bin_path(!isempty(rp) ? rp : string(get(img.meta, "legacyRscript", "")))
+    rscript  = rscript_bin_path(!isempty(p.rscript) ? p.rscript : string(get(img.meta, "legacyRscript", "")))
 
     if isempty(src_proj) || isempty(src_uid)
         on_log("[ERROR] No legacy source (sourceProjectDir / sourceUid) on this image.")

@@ -18610,3 +18610,178 @@ end
         @test p.patience === 5
     end
 end
+
+# Typed per-task params for the remaining families — closing out the ChainNode.params arc.
+# Bundles the small tail families (importImages, exportImages, clust{Pops,Tracks,Regions},
+# behaviour, spatialAnalysis) into one testset; each parser is the ONE place its task reads the
+# params bag.
+@testset "typed params — remaining families" begin
+    # exportImages.ExportOmeTiff — `timepoint` accepts strings + -1 sentinel; `outDir` is stripped.
+    let p = Cecelia.parse_export_ome_tiff_params(Dict{String,Any}(
+            "valueName" => "corrected", "channels" => ["mem-TOM"],
+            "zMip" => true, "timepoint" => "5", "outDir" => "  /tmp/out  "))
+        @test p.valueName == "corrected"
+        @test p.channels == ["mem-TOM"]
+        @test p.zMip === true
+        @test p.timepoint === 5
+        @test p.outDir == "/tmp/out"
+    end
+    let p = Cecelia.parse_export_ome_tiff_params(Dict{String,Any}())
+        @test p.zMip === false
+        @test p.timepoint === -1                    # sentinel: export every frame
+        @test p.outDir == ""                        # empty → default_export_dir()
+    end
+
+    # clustPops
+    let p = Cecelia.parse_clust_pops_params(Dict{String,Any}(
+            "popsToCluster" => ["A/root", "B/root", "NONE", ""],
+            "valueNameSuffix" => "immune",
+            "clusterMeasures" => ["mean_intensity_0"],
+            "resolution" => 0.5, "usePaga" => true))
+        @test p.popsToCluster == ["A/root", "B/root"]     # NONE + blank stripped
+        @test p.valueNameSuffix == "immune"
+        @test p.clusterMeasures == ["mean_intensity_0"]
+        @test p.resolution === 0.5
+        @test p.usePaga === true
+    end
+    let p = Cecelia.parse_clust_pops_params(Dict{String,Any}())
+        @test isempty(p.popsToCluster)
+        @test p.valueNameSuffix == "default"
+        @test p.resolution === 1.0
+        @test p.transformation == "NONE"
+    end
+
+    # clustTracks — same shape as clustPops plus popType + minTracklength.
+    let p = Cecelia.parse_clust_tracks_params(Dict{String,Any}(
+            "popsToCluster" => ["A/_tracked"], "popType" => "track",
+            "minTracklength" => 10, "resolution" => 2.0))
+        @test p.popsToCluster == ["A/_tracked"]
+        @test p.popType == "track"
+        @test p.minTracklength === 10
+    end
+    let p = Cecelia.parse_clust_tracks_params(Dict{String,Any}())
+        @test p.popType == "live"                   # default: _tracked cells
+        @test p.minTracklength === 5
+    end
+
+    # clustRegions
+    let p = Cecelia.parse_clust_regions_params(Dict{String,Any}(
+            "basisPops" => ["A/B", "A/T"], "graphSuffix" => "delaunay",
+            "clusterMethod" => "kmeans", "numClusters" => 8))
+        @test p.basisPops == ["A/B", "A/T"]
+        @test p.graphSuffix == "delaunay"
+        @test p.clusterMethod == "kmeans"
+        @test p.numClusters === 8
+    end
+    let p = Cecelia.parse_clust_regions_params(Dict{String,Any}())
+        @test p.clusterMethod == "leiden"
+        @test p.numClusters === 5
+        @test p.includeOther === true
+    end
+
+    # behaviour.hmm_states
+    let p = Cecelia.parse_hmm_states_params(Dict{String,Any}(
+            "pops" => ["A/_tracked"], "colName" => "cd8",
+            "modelMeasurements" => ["live.cell.speed"],
+            "numStates" => 3, "normaliseTo" => "1", "normaliseMeasurements" => ["live.cell.speed"]))
+        @test p.pops == ["A/_tracked"]
+        @test p.colName == "cd8"
+        @test p.modelMeasurements == ["live.cell.speed"]
+        @test p.numStates === 3
+        @test p.normaliseTo == "1"
+        @test p.normaliseMeasurements == ["live.cell.speed"]
+    end
+    let p = Cecelia.parse_hmm_states_params(Dict{String,Any}())
+        @test p.modelMeasurements == ["live.cell.speed", "live.cell.angle"]
+        @test p.numStates === 2
+        @test p.normaliseTo == "none"
+    end
+
+    # behaviour.hmm_transitions — hmmStates honours nothing → derived from colName
+    let p = Cecelia.parse_hmm_transitions_params(Dict{String,Any}(
+            "pops" => ["A/_tracked"], "colName" => "cd8",
+            "hmmStates" => ["live.cell.hmm.state.cd8", "live.cell.hmm.state.mp"],
+            "includeStart" => true))
+        @test p.colName == "cd8"
+        @test p.hmmStates == ["live.cell.hmm.state.cd8", "live.cell.hmm.state.mp"]
+        @test p.includeStart === true
+    end
+    let p = Cecelia.parse_hmm_transitions_params(Dict{String,Any}())
+        @test isnothing(p.hmmStates)                # nothing → derived from colName in the handler
+        @test p.includeSelfTransitions === true
+    end
+
+    # spatialAnalysis (spot-check the parsers; each is small).
+    let p = Cecelia.parse_aggregates_meshes_params(Dict{String,Any}(
+            "pops" => ["A/B"], "maxClusterDist" => 7.5, "minCells" => 10))
+        @test p.pops == ["A/B"]
+        @test p.maxClusterDist === 7.5
+        @test p.minCells === 10
+    end
+    let p = Cecelia.parse_cell_contacts_params(Dict{String,Any}(
+            "popsA" => ["A/T"], "popsB" => ["A/B"], "maxContactDist" => 15.0))
+        @test p.popsA == ["A/T"] && p.popsB == ["A/B"]
+        @test p.maxContactDist === 15.0
+    end
+    let p = Cecelia.parse_cell_neighbours_params(Dict{String,Any}(
+            "neighbourMethod" => "knn", "pops" => ["A/"], "graphSuffix" => "knn6",
+            "nNeighbours" => 12, "perTimepoint" => true))
+        @test p.neighbourMethod == "knn"
+        @test p.pops == ["A/"]
+        @test p.graphSuffix == "knn6"
+        @test p.nNeighbours === 12
+        @test p.perTimepoint === true
+    end
+    let p = Cecelia.parse_cell_neighbours_params(Dict{String,Any}())
+        @test p.neighbourMethod == "delaunay"
+        @test p.perTimepoint === false
+        @test p.neighbourRadius === 30.0
+    end
+    let p = Cecelia.parse_contacts_meshes_params(Dict{String,Any}(
+            "popsA" => ["A/T"], "popsB" => ["A/B"]))
+        @test p.maxContactDist === 5.0
+    end
+    let p = Cecelia.parse_detect_aggregates_params(Dict{String,Any}(
+            "pops" => ["A/B"], "clustDiameter" => 20.0, "perTimepoint" => true))
+        @test p.clustDiameter === 20.0
+        @test p.perTimepoint === true
+    end
+    let p = Cecelia.parse_neighbour_stats_params(Dict{String,Any}(
+            "basisPops" => ["A/B", "A/T"], "nPermutations" => 500))
+        @test p.basisPops == ["A/B", "A/T"]
+        @test p.nPermutations === 500
+    end
+
+    # importImages
+    let p = Cecelia.parse_import_omezarr_params(Dict{String,Any}(
+            "src_path" => "/data/foo.czi", "pyramidLevels" => 5,
+            "stageLocal" => true, "chunkSize" => 512,
+            "maxWorkers" => "2", "jvmHeapGiB" => "16"))
+        @test p.src_path == "/data/foo.czi"
+        @test p.pyramidLevels == 5
+        @test p.stageLocal === true
+        @test p.chunkSize == 512
+        @test p.maxWorkers == "2"
+        @test p.jvmHeapGiB == "16"
+    end
+    let p = Cecelia.parse_import_omezarr_params(Dict{String,Any}())
+        @test p.src_path == ""                       # empty → fall back to img.meta.ori_path in the handler
+        @test isnothing(p.pyramidLevels)             # nothing → fall back to pyramidScale
+        @test p.pyramidScale === 2
+        @test p.maxWorkers == "auto"                 # sentinel, resolved per-reader in the handler
+        @test p.jvmHeapGiB == "auto"
+        @test isnothing(p.ngffVersion)               # nothing → Settings default (store_layout())
+    end
+    let p = Cecelia.parse_migrate_legacy_params(Dict{String,Any}(
+            "sourceProjectDir" => "/old/proj", "sourceUid" => "abc123", "rscript" => "Rscript"))
+        @test p.sourceProjectDir == "/old/proj"
+        @test p.sourceUid == "abc123"
+        @test p.rscript == "Rscript"
+        @test p.mode == "copy"
+    end
+    let p = Cecelia.parse_remove_image_params(Dict{String,Any}(
+            "valueName" => "old", "newDefault" => "corrected"))
+        @test p.valueName == "old"
+        @test p.newDefault == "corrected"
+    end
+end

@@ -28,6 +28,25 @@ using DataFrames: nrow, groupby
 
 struct CellNeighbours <: CciaTask end
 
+Base.@kwdef struct CellNeighboursParams
+    neighbourMethod::String = "delaunay"
+    pops::Vector{String}    = String[]
+    graphSuffix::String     = "default"
+    perTimepoint::Bool      = false
+    neighbourRadius::Float64 = 30.0
+    nNeighbours::Int        = 6
+end
+
+function parse_cell_neighbours_params(d::AbstractDict)::CellNeighboursParams
+    CellNeighboursParams(;
+        neighbourMethod = string(get(d, "neighbourMethod", "delaunay")),
+        pops            = _str_list(d, "pops"),
+        graphSuffix     = string(get(d, "graphSuffix", "default")),
+        perTimepoint    = Bool(get(d, "perTimepoint", false)),
+        neighbourRadius = Float64(get(d, "neighbourRadius", 30.0)),
+        nNeighbours     = Int(get(d, "nNeighbours", 6)))
+end
+
 # Pure QC helper (unit-tested per docs/MODULES.md): objective graph metrics → advisory findings. The
 # unambiguous problems are an empty graph (no edges — usually a radius far below the cell spacing, or
 # wrong units) and a majority of isolated cells. Counts themselves bank as metrics, not findings.
@@ -77,34 +96,31 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    method = string(get(params, "neighbourMethod", "delaunay"))
-    pops   = _str_list(params, "pops")     # shared helper (clustPops/cluster.jl) — module-visible
-    isempty(pops) && (on_log("[ERROR] cellNeighbours: select the segmentation's 'all cells' root (or \
+    p = parse_cell_neighbours_params(params)
+    isempty(p.pops) && (on_log("[ERROR] cellNeighbours: select the segmentation's 'all cells' root (or \
         populations) to build the graph over"); return nothing)
-    suffix = string(get(params, "graphSuffix", "default"))
-    per_t  = Bool(get(params, "perTimepoint", false))
     on_progress(1, 3)
 
-    segments = _graph_segments(img, pops)
+    segments = _graph_segments(img, p.pops)
     isempty(segments) &&
-        (on_log("[ERROR] cellNeighbours: no cells for pops=$(pops)"); return nothing)
+        (on_log("[ERROR] cellNeighbours: no cells for pops=$(p.pops)"); return nothing)
 
-    graph_path = img_spatial_graph_path(img, suffix)
+    graph_path = img_spatial_graph_path(img, p.graphSuffix)
     (sizes, _) = img_physical_sizes(img)       # [sz, sy, sx] (skimage order, matches centroid cols)
     qc_out_path = joinpath(task_run_dir(img._dir), "spatial_qc.json")
 
     vns = String[seg["valueName"] for seg in segments]
-    on_log("[INFO] cellNeighbours: segmentations=$(join(vns, ", ")) method=$(method) " *
-           (per_t ? "per-timepoint " : "") * "→ spatialGraph/$(suffix).h5ad")
+    on_log("[INFO] cellNeighbours: segmentations=$(join(vns, ", ")) method=$(p.neighbourMethod) " *
+           (p.perTimepoint ? "per-timepoint " : "") * "→ spatialGraph/$(p.graphSuffix).h5ad")
     on_progress(2, 3)
 
     task_params = Dict{String,Any}(
         "segments" => segments, "graphPath" => graph_path,
         "physicalSizes" => sizes,
-        "neighbourMethod" => method,
-        "neighbourRadius" => Float64(get(params, "neighbourRadius", 30.0)),
-        "nNeighbours" => Int(get(params, "nNeighbours", 6)),
-        "perTimepoint" => per_t,
+        "neighbourMethod" => p.neighbourMethod,
+        "neighbourRadius" => p.neighbourRadius,
+        "nNeighbours" => p.nNeighbours,
+        "perTimepoint" => p.perTimepoint,
         "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_neighbours_run.py", task_params, task_run_dir(img._dir);
@@ -118,7 +134,7 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
         n_cells = Int(get(qc, "nCells", 0)); n_edges = Int(get(qc, "nEdges", 0))
         isolated_frac = Float64(get(qc, "isolatedFrac", 0.0))
         mean_degree   = Float64(get(qc, "meanDegree", 0.0))
-        write_qc(img, "spatialAnalysis.cellNeighbours", suffix,
+        write_qc(img, "spatialAnalysis.cellNeighbours", p.graphSuffix,
                  _neighbours_qc_findings(n_cells, n_edges, isolated_frac);
                  metrics = Dict{String,Any}("nCells" => n_cells, "nEdges" => n_edges, "meanDegree" => mean_degree))
         on_log("[QC] neighbour graph: $(n_edges) edge(s) over $(n_cells) cell(s).")
@@ -127,6 +143,6 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
     end
     on_progress(3, 3)
 
-    on_log("[INFO] cellNeighbours done → spatialGraph/$(suffix).h5ad")
-    Dict{String,Any}("graphSuffix" => suffix, "valueNames" => vns, "graphPath" => graph_path)
+    on_log("[INFO] cellNeighbours done → spatialGraph/$(p.graphSuffix).h5ad")
+    Dict{String,Any}("graphSuffix" => p.graphSuffix, "valueNames" => vns, "graphPath" => graph_path)
 end

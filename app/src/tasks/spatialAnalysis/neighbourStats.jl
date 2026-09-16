@@ -22,6 +22,21 @@ using DataFrames: nrow
 
 struct NeighbourStats <: CciaTask end
 
+Base.@kwdef struct NeighbourStatsParams
+    basisPops::Vector{String}   = String[]
+    statsSuffix::String         = "default"
+    graphSuffix::String         = "default"
+    nPermutations::Int          = 1000
+end
+
+function parse_neighbour_stats_params(d::AbstractDict)::NeighbourStatsParams
+    NeighbourStatsParams(;
+        basisPops     = _str_list(d, "basisPops"),
+        statsSuffix   = string(get(d, "statsSuffix", "default")),
+        graphSuffix   = string(get(d, "graphSuffix", "default")),
+        nPermutations = Int(get(d, "nPermutations", 1000)))
+end
+
 # Pure QC helpers (unit-tested per docs/MODULES.md). Advisory only — never gates.
 # `coverage` = the fraction of GRAPH nodes that fell into one of the selected populations. A low value
 # means the graph was built over a much wider cell set than the analysis asks about, so most of each
@@ -49,42 +64,39 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    pops = _str_list(params, "basisPops")
-    isempty(pops) && (on_log("[ERROR] neighbourStats: select ≥2 populations"); return nothing)
-    suffix   = string(get(params, "statsSuffix", "default"))
-    graph_sfx = string(get(params, "graphSuffix", "default"))
+    p = parse_neighbour_stats_params(params)
+    isempty(p.basisPops) && (on_log("[ERROR] neighbourStats: select ≥2 populations"); return nothing)
     on_progress(1, 3)
 
     # the graph is a REQUIRED input, not something this task builds — fail with the available names
     # rather than silently falling back to a graph of its own (that fallback is the divergence this
     # design removes; see cellNeighbours.jl).
-    graph_path = img_spatial_graph_path(img, graph_sfx)
+    graph_path = img_spatial_graph_path(img, p.graphSuffix)
     if !isfile(graph_path)
         have = img_spatial_graph_suffixes(img)
-        on_log("[ERROR] neighbourStats: no neighbour graph \"$(graph_sfx)\" for this image — " *
+        on_log("[ERROR] neighbourStats: no neighbour graph \"$(p.graphSuffix)\" for this image — " *
                (isempty(have) ? "run 'Neighbour graph' first" : "available: $(join(have, ", "))"))
         return nothing
     end
 
     # pops may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves each
     # under its own type; set-scope form carries uID (shared _basis_segments).
-    df = pop_df_multi([img], [img.uid], pops; pop_cols = String[], granularity = :cell)
-    nrow(df) == 0 && (on_log("[ERROR] neighbourStats: no cells for pops=$(pops)"); return nothing)
+    df = pop_df_multi([img], [img.uid], p.basisPops; pop_cols = String[], granularity = :cell)
+    nrow(df) == 0 && (on_log("[ERROR] neighbourStats: no cells for pops=$(p.basisPops)"); return nothing)
     basis, segments = _basis_segments([img], df)
     length(basis) < 2 &&
         (on_log("[ERROR] neighbourStats: need ≥2 populations for pairwise stats (got $(basis))"); return nothing)
 
-    stats_path = img_stats_path(img, suffix)
+    stats_path = img_stats_path(img, p.statsSuffix)
     qc_out_path = joinpath(task_run_dir(img._dir), "neighbour_stats_qc.json")
-    n_perm = Int(get(params, "nPermutations", 1000))
-    on_log("[INFO] neighbourStats: graph=$(graph_sfx) basis=$(basis) permutations=$(n_perm) → $(suffix)")
+    on_log("[INFO] neighbourStats: graph=$(p.graphSuffix) basis=$(basis) permutations=$(p.nPermutations) → $(p.statsSuffix)")
     on_progress(2, 3)
 
     task_params = Dict{String,Any}(
-        "graphPath" => graph_path, "graphSuffix" => graph_sfx,
+        "graphPath" => graph_path, "graphSuffix" => p.graphSuffix,
         "segments" => segments, "basis" => basis,
         "statsPath" => stats_path,
-        "nPermutations" => n_perm,
+        "nPermutations" => p.nPermutations,
         "randomState" => 0,
         "qcOutPath" => qc_out_path)
 
@@ -98,7 +110,7 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
         mean_degree = Float64(get(qc, "meanDegree", 0.0))
         coverage    = Float64(get(qc, "coverage", 1.0))
         n_sig       = Int(get(qc, "nSignificant", -1))
-        write_qc(img, "spatialAnalysis.neighbourStats", suffix,
+        write_qc(img, "spatialAnalysis.neighbourStats", p.statsSuffix,
                  _neighbour_stats_findings(n_cells, n_edges, coverage, n_sig);
                  metrics = Dict{String,Any}("nCells" => n_cells, "nEdges" => n_edges,
                                             "meanDegree" => mean_degree, "coverage" => coverage,
@@ -111,5 +123,5 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
     on_progress(3, 3)
 
     on_log("[INFO] neighbourStats done → $(basename(stats_path))")
-    Dict{String,Any}("statsPath" => stats_path, "basis" => length(basis), "graphSuffix" => graph_sfx)
+    Dict{String,Any}("statsPath" => stats_path, "basis" => length(basis), "graphSuffix" => p.graphSuffix)
 end
