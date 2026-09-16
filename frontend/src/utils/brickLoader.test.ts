@@ -167,7 +167,7 @@ describe('padBrickPayload', () => {
   it('leaves the interior intact, zero-fills the padded columns', () => {
     // 1 channel × 2 z × 4 y × 2 x uint8, all 0x11. Padded to 1×2×4×4.
     const src = new Uint8Array(1 * 2 * 4 * 2).fill(0x11)
-    const out = new Uint8Array(padBrickPayload(src.buffer, { nc: 1, nz: 2, ny: 4, nx: 2 },
+    const out = new Uint8Array(padBrickPayload(src, { nc: 1, nz: 2, ny: 4, nx: 2 },
                                                layout, 1))
     // Expected: for each z, each y-row: two 0x11 + two 0x00.
     for (let z = 0; z < 2; z++) {
@@ -182,7 +182,7 @@ describe('padBrickPayload', () => {
     // 2 channels; ch0 = 0xAA, ch1 = 0xBB. Actual 1×1×2 (nz=1, ny=1, nx=2). Layout [4, 4, 2]
     // ⇒ padded to 2 × 2 z × 4 y × 4 x.
     const src = new Uint8Array([0xAA, 0xAA, 0xBB, 0xBB])
-    const out = new Uint8Array(padBrickPayload(src.buffer, { nc: 2, nz: 1, ny: 1, nx: 2 },
+    const out = new Uint8Array(padBrickPayload(src, { nc: 2, nz: 1, ny: 1, nx: 2 },
                                                layout, 1))
     // Channel 0 sits at bytes 0..(z*y*x=2*4*4)-1 = 0..31. First row (z=0, y=0): 0xAA, 0xAA, 0, 0.
     expect(Array.from(out.subarray(0, 4))).toEqual([0xAA, 0xAA, 0x00, 0x00])

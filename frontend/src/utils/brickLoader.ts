@@ -9,6 +9,8 @@
 
 import { slabUrl, type ViewerMeta, type SlabQuery } from './volumeViewer'
 import type { VirtualBrick } from './pageTable'
+import type { BrickPayloadRing, BrickPayloadLease } from './brickPayloadRing'
+import { drainResponseIntoBuffer } from './brickPayloadRing'
 
 /** Shape of a `cTo`-carrying slab response, parsed from `X-Slab-Shape: nc,nz,ny,nx`. */
 export interface BrickSlabShape {
@@ -150,27 +152,32 @@ export function brickLabelSlabUrl(
 
 /** Fetch one label brick. Shape guard: nc must be 1 (labels are single-plane), nz must match,
  *  nx/ny may be smaller when the server clamped an edge brick. Returns null on any failure so a
- *  missed label brick leaves the shader drawing intensity without labels rather than crashing. */
+ *  missed label brick leaves the shader drawing intensity without labels rather than crashing.
+ *
+ *  Returns bytes as `Uint8Array` (view over a fresh ArrayBuffer) — same shape as `fetchBrick`
+ *  so both paths hand `padBrickPayload` and `writeTexture` the same type. The label path does
+ *  NOT use the U3 payload ring: label bricks are small (u32 × single channel), the write path
+ *  is per-slot not per-tick, and one ring per atlas is simpler than two. */
 export async function fetchLabelBrick(
   url: string,
   expectedBrickSize: readonly [number, number, number],
   signal?: AbortSignal,
-): Promise<{ bytes: ArrayBuffer; shape: BrickSlabShape } | null> {
+): Promise<{ bytes: Uint8Array; shape: BrickSlabShape } | null> {
   let res: Response
   try { res = await fetch(url, { signal }) } catch { return null }
   if (!res.ok) return null
   const header = res.headers.get('X-Slab-Shape')
   const shape = parseBrickSlabShape(header)
   if (!shape) return null
-  const bytes = await res.arrayBuffer()
+  const buf = await res.arrayBuffer()
   // Labels are always u32 ids -- 4 bytes/voxel, nc=1. Skip brickShapeError (which is
   // channel-aware) and roll a smaller check inline.
   const [ebx, eby, ebz] = expectedBrickSize
   if (shape.nc !== 1) return null
   if (shape.nx > ebx || shape.ny > eby || shape.nz > ebz) return null
   const want = shape.nc * shape.nz * shape.ny * shape.nx * 4
-  if (bytes.byteLength !== want) return null
-  return { bytes, shape }
+  if (buf.byteLength !== want) return null
+  return { bytes: new Uint8Array(buf), shape }
 }
 
 /**
@@ -220,9 +227,13 @@ export function brickShapeError(
  * leaving the padded voxels as zero. The layout is x-fastest → y → z → c (column-major, the shape
  * the server writes). Used ONLY when the server clamped x or y at a store edge; interior bricks
  * skip this call and use the response bytes directly.
+ *
+ * `bytes` is `ArrayBufferView` because the U3 ring hands out a `Uint8Array` VIEW into a leased
+ * buffer that may be larger than the payload's actual bytes — reading `.byteLength` off a
+ * `.buffer` would drain the whole slot.
  */
 export function padBrickPayload(
-  bytes: ArrayBuffer,
+  bytes: ArrayBufferView,
   actual: BrickSlabShape,
   expectedBrickSize: readonly [number, number, number],
   bytesPerVoxel: number,
@@ -230,7 +241,7 @@ export function padBrickPayload(
   const [ebx, eby, ebz] = expectedBrickSize
   const total = actual.nc * ebz * eby * ebx * bytesPerVoxel
   const out = new Uint8Array(total)
-  const src = new Uint8Array(bytes)
+  const src = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const rowBytes = actual.nx * bytesPerVoxel
   const dstRow = ebx * bytesPerVoxel
   // Per c → per z → per y: copy actual.nx*bpv bytes into the row's leading edge; the rest stays
@@ -247,10 +258,24 @@ export function padBrickPayload(
   return out.buffer
 }
 
+/** What `fetchBrick` returns on success — a Uint8Array VIEW of the payload plus, when the
+ *  caller passed a `ring`, a `release()` to hand the buffer back once the bytes are done.
+ *  `release` is a no-op when the ring wasn't used (fallback allocation path). */
+export interface FetchedBrick {
+  bytes: Uint8Array
+  shape: BrickSlabShape
+  release(): void
+}
+
 /**
- * Thin fetch wrapper — the runtime side of P3. The URL construction and shape guard above are
- * the parts worth testing; this is the plumbing that ties them to `fetch`. Returns the raw
- * `ArrayBuffer` on success or `null` on any failure (HTTP error, shape mismatch, abort).
+ * Fetch one brick. When a `ring` is passed, streams the response body into a leased
+ * ArrayBuffer via `body.getReader()` — no fresh allocation, no aggregating memcpy at the end.
+ * When no `ring` is passed, falls back to `res.arrayBuffer()` for callers that don't want the
+ * pool (tests, ad-hoc bench). See `docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U3.
+ *
+ * Returns `null` on any failure (HTTP error, shape mismatch, abort, ring destroyed mid-flight,
+ * body overflows the leased buffer). The ring lease — if one was acquired — is always
+ * released before returning null, so a failed fetch never leaks a slot.
  *
  * `signal` — the caller cancels an in-flight brick fetch when the atlas evicts the destination
  * slot or the viewport moves past the brick before it lands. `AbortController` on the caller
@@ -262,7 +287,8 @@ export async function fetchBrick(
   expectedNC: number,
   expectedBrickSize: readonly [number, number, number],
   signal?: AbortSignal,
-): Promise<{ bytes: ArrayBuffer; shape: BrickSlabShape } | null> {
+  ring?: BrickPayloadRing,
+): Promise<FetchedBrick | null> {
   let res: Response
   try {
     res = await fetch(url, { signal })
@@ -273,10 +299,39 @@ export async function fetchBrick(
   const header = res.headers.get('X-Slab-Shape')
   const shape = parseBrickSlabShape(header)
   if (!shape) return null
-  const bytes = await res.arrayBuffer()
+
+  let lease: BrickPayloadLease | null = null
+  let bytes: Uint8Array
+  if (ring !== undefined && !ring.destroyed) {
+    try {
+      lease = await ring.lease()
+    } catch {
+      // Ring was destroyed while we waited (level swap, unmount). Drop.
+      return null
+    }
+    const written = await drainResponseIntoBuffer(res.body!, lease.buffer)
+    if (written === null) {
+      lease.release()
+      return null
+    }
+    bytes = new Uint8Array(lease.buffer, 0, written)
+  } else {
+    const buf = await res.arrayBuffer()
+    bytes = new Uint8Array(buf)
+  }
+
   const err = brickShapeError(
     header, bytes.byteLength, meta.bytesPerVoxel, expectedNC, expectedBrickSize,
   )
-  if (err !== null) return null
-  return { bytes, shape }
+  if (err !== null) {
+    lease?.release()
+    return null
+  }
+  // Capture the lease so `release` closes over it; when there's no lease, release is a no-op.
+  const heldLease = lease
+  return {
+    bytes,
+    shape,
+    release() { heldLease?.release() },
+  }
 }

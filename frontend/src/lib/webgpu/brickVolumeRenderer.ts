@@ -26,7 +26,8 @@ import {
 import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
-import { createBrickAtlasTextures, type BrickAtlasTexture } from './brickAtlasTexture'
+import { createBrickAtlasTextures, brickPayloadBytes, type BrickAtlasTexture } from './brickAtlasTexture'
+import { createBrickPayloadRing, type BrickPayloadRing } from '../../utils/brickPayloadRing'
 import {
   PageTable, brickKey, parseBrickKey, shouldAdmitKick,
   maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
@@ -134,6 +135,12 @@ interface AtlasState {
    *  capacity) = `perAtlasCapacity * textures.length`. Decision 2: slot ID is global; atlas
    *  index is derived as `Math.floor(slot / perAtlasCapacity)`. */
   perAtlasCapacity: number
+  /** Pool of reusable ArrayBuffers, one per inflight fetch slot, sized to
+   *  `brickPayloadBytes(layout)`. `fetchBrick` leases a slot per request instead of allocating
+   *  a fresh ArrayBuffer via `res.arrayBuffer()` — measured 6.7 ms/brick JS-side (§C of
+   *  `docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U3). Owned per-atlas: dropped alongside the
+   *  atlas textures when the layout changes. */
+  payloadRing: BrickPayloadRing
   pageTable: PageTable
   /** Grid at the CURRENT level — `nBx × nBy × nBz` bricks. Recomputed on level switch. Shader
    *  reads these from the uniform to translate `vi.xyz` (a level-scaled voxel coord) into
@@ -491,6 +498,10 @@ export async function createBrickVolumeRenderer(
     for (const t of atlas.textures) t.destroy()
     atlas.pageTableBuffer.destroy()
     atlas.prevPageTableBuffer.destroy()
+    // Reject any pending payload-ring leases — an inflight fetchBrick that was waiting for a
+    // slot will resolve to `null` and the caller drops it, matching the same-atlas-changed
+    // behaviour of the abort path a few lines up.
+    atlas.payloadRing.destroy()
     // Only destroy the real per-image label texture — the shared placeholder is renderer-lived.
     if (atlas.labelsEnabled) atlas.labelTexture.destroy()
     atlas = null
@@ -623,8 +634,17 @@ export async function createBrickVolumeRenderer(
       ],
     })
 
+    // U3 payload ring — one ArrayBuffer per inflight slot, sized to the full-brick payload
+    // (edge bricks fill less; the buffer is oversized rather than shrinking per-fetch). Owned
+    // per-atlas so a layout change (level swap, new image) rebuilds it with the new shape;
+    // capacity equals `MAX_INFLIGHT` because that's the caller's admission cap.
+    const payloadRing = createBrickPayloadRing({
+      capacity: MAX_INFLIGHT,
+      payloadBytes: brickPayloadBytes(layout),
+    })
+
     atlas = {
-      layout, layouts, texture, textures, perAtlasCapacity, pageTable,
+      layout, layouts, texture, textures, perAtlasCapacity, payloadRing, pageTable,
       gridNx: gridNxL0, gridNy: gridNyL0, gridNz: gridNzL0,     // start at L0
       gridNxL0, gridNyL0, gridNzL0,
       pageTableBuffer, pageTableCpu, pageTableDirty: true,
@@ -671,7 +691,8 @@ export async function createBrickVolumeRenderer(
     const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox, currentZLo)
     const ac = new AbortController()
     inflight.set(key, ac)
-    void fetchBrick(url, currentMeta, layout.channelsPerBrick, layout.brickSizeVox, ac.signal)
+    void fetchBrick(url, currentMeta, layout.channelsPerBrick, layout.brickSizeVox, ac.signal,
+                    atlas.payloadRing)
       .then(payload => {
         // The atlas or the level could have changed while the request was in flight — drop the
         // bytes rather than writing them into a slot that no longer represents this brick.
@@ -684,8 +705,11 @@ export async function createBrickVolumeRenderer(
         // anything". rAF-coalesced, so calling it always is cheap.
         needsRedraw?.()
         if (payload === null) return
-        if (destroyed || atlas === null) return
-        if (atlas.currentLevel !== brick.level) return
+        // Any early return past this point MUST call `payload.release()` — the leased ring
+        // buffer stays out of circulation until then, and forgetting to release leaks a slot
+        // per drop until the atlas rebuilds (level swap, unmount).
+        if (destroyed || atlas === null) { payload.release(); return }
+        if (atlas.currentLevel !== brick.level) { payload.release(); return }
         // Insert with the tiered stamp so a boundT brick is protected the moment it lands,
         // not a tick later. Under overload the next `insertOrEvictLru` may fire from another
         // arrival before the next tick — without this, a freshly-arrived boundT brick has
@@ -702,11 +726,15 @@ export async function createBrickVolumeRenderer(
         const [ebx, eby, ebz] = atlas.layout.brickSizeVox
         const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
                     || payload.shape.nz !== ebz
-        const bytes = isEdge
-          ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], atlas.layout.bytesPerVoxel)
+        // Non-edge: pass the leased buffer's view straight to `writeBrick` (no memcpy).
+        // Edge: allocate a padded output; the leased buffer's contents are copied out inside
+        // `padBrickPayload`, so it can be released as soon as that returns (see below). U6 in
+        // WEBGPU_UPLOAD_PATH_PLAN.md — folding this allocation into the ring needs a second
+        // buffer per slot; not worth it for the edge-only path.
+        const brickBytes: Uint8Array = isEdge
+          ? new Uint8Array(padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], atlas.layout.bytesPerVoxel))
           : payload.bytes
         const writeT0 = onBrickWritten !== null ? performance.now() : 0
-        const brickBytes = new Uint8Array(bytes)
         // Multi-atlas slot decode (Decision 2): global slot ID → (atlasIndex, localSlot).
         // In Phase 2 the shader still binds `textures[0]`; a brick that lands in
         // `textures[1..]` gets its bytes uploaded (so the LRU still evicts it correctly and a
@@ -720,6 +748,7 @@ export async function createBrickVolumeRenderer(
         }
         if (!ok) {
           atlas.pageTable.evict(key)
+          payload.release()
           return
         }
         // pageTableCpu is the SHADER's map: it can only address ONE timepoint at a time (the one
@@ -777,11 +806,23 @@ export async function createBrickVolumeRenderer(
           const perChBytes = payload.shape.nz * payload.shape.ny * payload.shape.nx * bpv
           const perChannelMax: number[] = []
           for (let ci = 0; ci < payload.shape.nc; ci++) {
-            const slice = payload.bytes.slice(ci * perChBytes, (ci + 1) * perChBytes)
+            // Slice on the underlying ArrayBuffer (with the view's offset) — `slabView` does
+            // `new Uint16Array(buf)` on r16uint, which reinterprets bytes; `new Uint16Array`
+            // over a Uint8Array numerically-copies instead, so we can't hand `.slice()` on the
+            // typed-array view through. `.buffer.slice()` copies just this channel's bytes.
+            const off = payload.bytes.byteOffset + ci * perChBytes
+            // Cast: our ring allocates plain ArrayBuffers, so payload.bytes.buffer is one too;
+            // Uint8Array's `.buffer` is typed `ArrayBuffer | SharedArrayBuffer` in the DOM lib.
+            const slice = (payload.bytes.buffer as ArrayBuffer).slice(off, off + perChBytes)
             perChannelMax.push(slabMax(slabView(slice, bpv), payload.shape.nx))
           }
           onBrickLoaded(perChannelMax)
         }
+        // Done reading payload — return the leased buffer to the ring so the next fetch can
+        // use it. writeBrick already synchronously copied bytes into the GPU staging area
+        // (writeBuffer/writeTexture semantics), and the padded copy (edge case) is a fresh
+        // ArrayBuffer, not the leased one.
+        payload.release()
         // Labels: fire a parallel fetch for the same brick's mask if the source names a
         // labelName and this atlas has the real label texture bound. Written into the same slot
         // — a resident brick has both intensity + labels, or intensity alone (opacity is 0 or the
@@ -834,8 +875,8 @@ export async function createBrickVolumeRenderer(
                 || payload.shape.nz !== ebz
     // Pad through the same helper as intensity — u32 is 4 bytes/voxel, and the helper's per-c/z/y
     // copy is bpv-agnostic. nc = 1 here.
-    const bytes = isEdge
-      ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], 4)
+    const brickBytes: Uint8Array = isEdge
+      ? new Uint8Array(padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], 4))
       : payload.bytes
     // Label atlas has no channel stacking — slot origin z is `sz * brickZ`, not `sz * brickZ * nC`.
     // Slot coords are in the SINGLE label atlas (Phase 2), so this is exactly `expectedSlot`,
@@ -848,7 +889,7 @@ export async function createBrickVolumeRenderer(
     device.queue.writeTexture(
       { texture: atlas.labelTexture,
         origin: [sx * ebx, sy * eby, sz * ebz] },
-      new Uint8Array(bytes),
+      brickBytes,
       { bytesPerRow: ebx * 4, rowsPerImage: eby },
       [ebx, eby, ebz],
     )
