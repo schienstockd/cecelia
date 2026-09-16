@@ -153,6 +153,52 @@ The rare pre-parse guard — a shape check that only makes sense on the raw bag 
 `# ratchet-ok: <reason>` on the exact line, same escape-hatch discipline as the H5AD/zarr readers.
 Bare `get(params, …)` inside `_run_task` without that marker fails the ratchet.
 
+### Image / OME-ZARR access — one reader, dask opt-in in runners
+
+Every image or label store goes through `python/cecelia/utils/zarr_utils.py`, every OME-XML parse
+through `python/cecelia/utils/ome_xml_utils.py`. Bare `zarr.open`, `tifffile.imread`, `.from_zarr`,
+or a hand-rolled `xml.etree`/`lxml` parse in a new file is a boundary bypass — the same drift that
+had `.h5ad` accesses fragmenting into a private napari reader stack before the label-props view
+consolidated them. Full rule and the sanctioned entry points: root [`CLAUDE.md`](../CLAUDE.md) →
+*Image / OME-ZARR access*.
+
+`dask.array` inside a task runner (`app/src/tasks/**/*.py`) is opt-in — the sanctioned entry is
+`zarr_utils.open_as_zarr(as_dask=True)`, and per-frame reads go through `zarr_utils.read_timepoint`.
+A runner that pulls `import dask.array` directly needs `# DASK-OK: <reason>` on that import line;
+library utils under `python/cecelia/**` are unrestricted. This exists because the streaming ratchet
+(`test_streaming_convention.py`) landed after `segment.ridges` shipped a per-timepoint hand-rolled
+zarr read *and* accumulate-then-write; the shape of that failure was "dask looked like an equal
+option to numpy" and this makes the answer visible.
+
+**Enforced** by `python/cecelia/tests/test_zarr_access_convention.py` (Python side — bare imports,
+`.from_zarr`, dask in runners) and the `zarr-access ratchet` testset in `app/test/suite.jl`
+(Julia side — only `api/src/image_render.jl` may `using Zarr`, and only for its documented "narrow
+carve-out" role). Baseline files with a reason are listed inline; new bypasses fail.
+
+### Cohort-comparable metrics — every task that banks QC registers or explicitly opts out
+
+Every task calling `write_qc(img, "<fun_name>", …, metrics = …)` either registers cohort keys in
+`COHORT_METRICS` (`app/src/qc_cohort.jl`) or carries an inline `# COHORT-EXEMPT: <reason>` marker
+in its `.jl` file. Without one or the other, the per-image number is banked but no cohort outlier
+check ever fires — the exact regression `segment.ridges` shipped with. Canonical example:
+`segment.cellpose` (in `COHORT_METRICS` with `["nCells"]`); canonical exempt: `cleanupImages.smooth`
+(its `zeroFracIn` is an acquisition property, not a cohort-comparable process metric — currently
+baselined pending a marker in the file).
+
+**Enforced** by the `cohort-metrics ratchet` testset in `app/test/suite.jl`. Same shape as the
+typed-params ratchet: baseline of currently-uncovered tasks that MAY SHRINK, MUST NEVER GROW.
+
+### Task JSON — collapse advanced params behind a `type: "section"`
+
+A task with more than 6 top-level params in its `.json` spec puts the advanced/tuning ones behind
+a `type: "section"` block with `collapsed: true`, matching `segment.cellpose` / `segment.coastal` /
+`segment.ridges`. This exists because `segment.ridges` shipped `threshold` / `darkRidges` /
+`minSizePx` (all tunables) visible on the main picker; the picker looked like an expert dashboard.
+This is a UX rule mirrored into a lint so a new task can't ship a wall of controls.
+
+**Enforced** by `python/cecelia/tests/test_task_json_convention.py`. Baseline files with a reason
+are listed inline; a new task with a flat 7+-param list fails.
+
 ### Enums for state machines
 
 A `Symbol` or `String` field with a known set of legal values is a state machine documented only

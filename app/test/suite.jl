@@ -15580,3 +15580,140 @@ end
     end
     @test length(canonical) >= 41   # cleanupImages (6) + editImages (9) + tracking (3) + segment (6) + opticalFlow (2) + tail (15)
 end
+
+# ── Cohort-metrics ratchet ────────────────────────────────────────────────────
+# Every task that BANKS QC (calls `write_qc`) either registers cohort-comparable metrics in
+# `COHORT_METRICS` (app/src/qc_cohort.jl) OR carries a `# COHORT-EXEMPT: <reason>` marker in its
+# `.jl` file. Same shape as the typed-params ratchet: MAY SHRINK, MUST NEVER GROW.
+#
+# The ridges post-mortem exposed the discipline gap: `segment.ridges` shipped `write_qc(...,
+# metrics = ...)` calls but was absent from `COHORT_METRICS`, so its per-image counts couldn't be
+# outlier-checked across the cohort. The `docs/MODULES.md` "adding a task" checklist already lists
+# both (bank QC + add to COHORT_METRICS) as boxes; this makes the second box mechanical.
+#
+# Marker discipline mirrors the H5AD/zarr readers (CLAUDE.md → deviations need an inline comment
+# with a reason). `# COHORT-EXEMPT: <reason>` anywhere in the task's `.jl` file exempts it.
+@testset "cohort-metrics ratchet — write_qc callers are in COHORT_METRICS or marked exempt" begin
+    tasks_root = joinpath(@__DIR__, "..", "src", "tasks")
+
+    # Baseline: tasks that bank QC today without a COHORT_METRICS entry and no exemption marker.
+    # Each entry is a candidate to close — either register cohort metrics OR add an inline
+    # `# COHORT-EXEMPT: <reason>` and remove from this list, in one PR. MAY SHRINK, MUST NEVER GROW.
+    COHORT_METRICS_BASELINE = Set([
+        # `cleanupImages.smooth` — `zeroFracIn` reads acquisition properties (sparsity), not a
+        # cohort-comparable process metric. Test at suite.jl also asserts this is deliberately out
+        # (`@test !haskey(COHORT_METRICS, "cleanupImages.smooth")`).
+        joinpath("tasks", "cleanupImages", "smooth.jl"),
+        # `cleanupImages.denoise`, `cleanupImages.stackAlign` — pending review whether these have
+        # cohort-comparable output signals; on-list until the owner decides.
+        joinpath("tasks", "cleanupImages", "denoise.jl"),
+        joinpath("tasks", "cleanupImages", "stack_align.jl"),
+        # `opticalFlow.trainSupportDenoise` — companion training task to opticalFlow.train; same
+        # decision-pending as the two above.
+        joinpath("tasks", "opticalFlow", "train_support_denoise.jl"),
+        # `exportImages.ome_tiff` — an EXPORT (writes a downstream file). No per-image processing
+        # metric that a cohort comparison would clarify.
+        joinpath("tasks", "exportImages", "ome_tiff.jl"),
+        # `segment.ridges` — the incident this ratchet exists to catch. Registered by name on the
+        # baseline so this PR doesn't couple to a scientific decision about which ridge counts are
+        # cohort-comparable. Close in a follow-up.
+        joinpath("tasks", "segment", "ridges.jl"),
+    ])
+
+    # Extract the `fun_name` a task's write_qc call names (`write_qc(img, "segment.ridges", …)`).
+    _fun_from_write_qc = function (src::AbstractString)
+        m = match(r"write_qc\([^,]+,\s*\"([a-zA-Z_.]+)\"", src)
+        return isnothing(m) ? nothing : m.captures[1]
+    end
+
+    offenders = String[]
+    stale_baseline = String[]
+    coverage = 0
+    for (dir, _, files) in walkdir(tasks_root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        src = read(path, String)
+        occursin("write_qc(", src) || continue
+        fun_name = _fun_from_write_qc(src)
+        isnothing(fun_name) && continue
+        coverage += 1
+        rel = relpath(path, joinpath(@__DIR__, "..", "src"))
+        in_cohort = haskey(COHORT_METRICS, fun_name)
+        marked = occursin("COHORT-EXEMPT", src)
+        if rel in COHORT_METRICS_BASELINE
+            if in_cohort || marked
+                push!(stale_baseline, "$rel: no longer needs baseline ($(in_cohort ? "in COHORT_METRICS" : "carries COHORT-EXEMPT marker"))")
+            end
+            continue
+        end
+        if !in_cohort && !marked
+            push!(offenders, "$rel: `write_qc(\"$fun_name\", …)` — add `$fun_name` to `COHORT_METRICS` (app/src/qc_cohort.jl) OR add `# COHORT-EXEMPT: <reason>` in this file")
+        end
+    end
+
+    if !isempty(offenders)
+        @error "cohort-metrics ratchet: NEW task(s) banking QC without a COHORT_METRICS entry.\n" *
+               "See docs/MODULES.md → *Cohort metrics*.\n" *
+               "Offending file(s):\n  " * join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+
+    if !isempty(stale_baseline)
+        @error "cohort-metrics ratchet: baseline names file(s) that are now compliant. " *
+               "Remove them from `COHORT_METRICS_BASELINE` in the same change that landed the " *
+               "registration/marker (the list may shrink, must never grow):\n  " *
+               join(stale_baseline, "\n  ")
+    end
+    @test isempty(stale_baseline)
+
+    # Sanity: a wrong scan root would let real offenders slip through with an empty offender list.
+    @test coverage >= 20
+end
+
+# ── Julia zarr-access ratchet ────────────────────────────────────────────────
+# Companion to `python/cecelia/tests/test_zarr_access_convention.py`, for the Julia side. The
+# Python side goes through `zarr_utils`; the Julia side has one sanctioned reader —
+# `api/src/image_render.jl` (its header declares itself a "SANCTIONED, NARROW carve-out" for
+# lightweight preview renders, with "Do NOT grow this into a general image reader"). Any other
+# `using`/`import` of `Zarr`, `EzXML`, or `LightXML` in `app/src/**` or `api/src/**` fails this
+# ratchet. Empty baseline today.
+@testset "zarr-access ratchet — Julia files don't `using Zarr` outside the sanctioned reader" begin
+    banned = (r"^\s*(?:using|import)\s+Zarr(?:\s|$|,)",
+              r"^\s*(?:using|import)\s+EzXML(?:\s|$|,)",
+              r"^\s*(?:using|import)\s+LightXML(?:\s|$|,)")
+    # Sanctioned narrow reader. Its module header pins the "do not grow this" contract.
+    exempt = Set([joinpath("api", "src", "image_render.jl")])
+
+    roots = [joinpath(@__DIR__, "..", "..", "app", "src"),
+             joinpath(@__DIR__, "..", "..", "api", "src")]
+    offenders = String[]
+    for root in roots, (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        rel = relpath(path, joinpath(@__DIR__, "..", ".."))
+        rel in exempt && continue
+        src = read(path, String)
+        for (i, line) in enumerate(split(src, '\n'; keepempty = true))
+            for pat in banned
+                if occursin(pat, line)
+                    push!(offenders, "$rel:$i: `$(strip(line))`")
+                end
+            end
+        end
+    end
+
+    if !isempty(offenders)
+        @error "zarr-access ratchet: Julia file(s) import Zarr/EzXML/LightXML outside the " *
+               "sanctioned reader. On the Julia side, only `api/src/image_render.jl` is allowed to " *
+               "hold this — the browser viewer / bricks path goes through the Python `zarr_utils` " *
+               "reader indirectly. See CLAUDE.md → *Image / OME-ZARR access*.\n" *
+               "Offending line(s):\n  " * join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+
+    # Coverage: the sanctioned exempt must still exist and still import Zarr — otherwise we're
+    # ratcheting on nothing (a moved file would silently make the scan pass).
+    exempt_path = joinpath(@__DIR__, "..", "..", "api", "src", "image_render.jl")
+    @test isfile(exempt_path)
+    @test occursin(r"\busing\s+Zarr\b", read(exempt_path, String))
+end
