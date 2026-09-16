@@ -124,6 +124,8 @@ function api_diagnostics(::HTTP.Request)
         replEnabled = _repl_on[],           # runtime toggle state
         replAvailable = _repl_available(),  # toggle on AND loopback-bound → console usable
         dev         = _is_dev(),            # dev server (pixi run dev sets CECELIA_DEV); prod/app.py never does
+        protocol    = _PROTOCOL[],          # what the server ACTUALLY started with — HTTPS/HTTP2 or HTTP/1.1
+        tlsDesired  = Cecelia.tls_desired(is_dev = _is_dev()),   # what the resolver wants (may differ from protocol on cert failure)
         previewPort   = Cecelia.PREVIEW_PORT, # child-service ports Cecelia occupies (backend `port`
         notebooksPort = NOTEBOOKS_PORT,       # is above), surfaced so the panel shows the "don't
         runnerPort    = Cecelia.RUNNER_PORT,  # bind here" list; runner = the detached task runner

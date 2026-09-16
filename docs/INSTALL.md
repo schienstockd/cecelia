@@ -186,21 +186,26 @@ Config is per-user at `~/.cecelia/custom.toml` (`%USERPROFILE%\.cecelia\custom.t
 dev checkout, `cecelia-feijoa/.env` (`CECELIA_DEV_DIR`) overrides that to your dev dir. The *why*
 and the config-resolution rules live in `docs/SHIPPING.md` and `docs/todo/ONBOARDING_PLAN.md`.
 
-## HTTPS + HTTP/2 (opt-in)
+## HTTPS + HTTP/2
 
-The server runs cleartext HTTP/1.1 by default. Set `CECELIA_TLS=1` in the environment to switch
-production to HTTPS + HTTP/2 — Chromium refuses cleartext h2, so TLS is the only way to actually
-get h2 in a browser. On first launch with `CECELIA_TLS=1` Cecelia shells out to the system
-`openssl` binary to generate a self-signed cert at `~/.cecelia/tls/{cert,key}.pem` (dev checkouts:
-`$CECELIA_DEV_DIR/tls/`); regenerate by deleting both files. The browser will show a "Not secure"
-warning the first time; click through it once and the exception is remembered per browser.
+An installed app defaults to HTTPS + HTTP/2 — Chromium refuses cleartext h2, and h2 is what
+multiplexes the brick fetches the viewer needs during a scrub. On first launch Cecelia shells
+out to the system `openssl` binary to generate a self-signed cert at `~/.cecelia/tls/{cert,key}.pem`,
+and the browser shows a "Not secure" warning once; click through and the exception is
+remembered per browser. Regenerate by deleting both files.
 
-If `openssl` is not on `PATH` (default on Linux + macOS; via git-for-windows on Windows) the
-server logs `HTTP/1.1, no TLS` and starts cleanly, so opting in never breaks the launch — worst
-case you fall back to the default.
+**Toggle** — Settings → System has a *Serve over HTTPS + HTTP/2* switch that flips the
+preference; the current wire protocol shows as `h2` or `h1.1` next to the app port. Toggling
+requires a server restart to switch protocols.
 
-Don't set `CECELIA_TLS=1` under `pixi run dev`: Vite's proxy is HTTP/1.1-only both ways, so ALPN
-downgrades and TLS just adds a cert warning without buying anything.
+**Overrides.** `CECELIA_TLS=1` or `=0` in the environment overrides both the toggle and the
+default for the session. If `openssl` is not on `PATH` (default on Linux + macOS; via
+git-for-windows on Windows) the server logs `HTTP/1.1, no TLS` and starts cleanly on plain
+HTTP — the click-through never blocks launch.
+
+Dev checkouts (`pixi run dev`) default to plain HTTP/1.1 because Vite's proxy is HTTP/1.1-only
+both ways — ALPN downgrades under dev and TLS earns nothing there. Set `CECELIA_TLS=1` against
+`pixi run prod` if you're testing an installed-app codepath from a dev tree.
 
 ## Shared / lab machines (system-wide install)
 
