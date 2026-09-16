@@ -163,7 +163,7 @@ Options in preference order:
 `docs/todo/spike/webgpu/reports/u2_before.json` and `u2_after.json` on the same store
 demonstrating the working-set improvement.
 
-### U3 — Persistent staging buffer, kill `Response.arrayBuffer()` allocation per brick.
+### U3 — Persistent staging buffer, kill `Response.arrayBuffer()` allocation per brick. **SHIPPED 2026-09-16.**
 
 **Trigger:** §C shows `Response.arrayBuffer()` costs > 10 % of total brick cost on either
 machine, AND §H shows `arrayBufferMs` scaling badly with concurrency.
@@ -181,6 +181,15 @@ in the §C read-out before shipping.
 
 **Deliverable:** ring implementation in `utils/brickPayloadRing.ts` (new), `fetchBrick`
 switched, `brickLoader.test.ts` updated, before/after numbers.
+
+**Shipped as `feat/webgpu-payload-ring`** (2026-09-16). `frontend/src/utils/brickPayloadRing.ts`
+holds a FIFO pool of `MAX_INFLIGHT` ArrayBuffers sized to `brickPayloadBytes(layout)`; owned
+per-atlas, destroyed on layout change alongside the atlas textures. `fetchBrick` gained an
+optional `ring` param — when passed, streams `res.body.getReader()` into a leased buffer
+(saving the whole-body memcpy) and returns a `Uint8Array` view + `release()`. Non-edge bricks
+pass the view straight to `writeBrick` (no wrap-copy); edge bricks allocate the padded output
+(U6 territory). Label path (`fetchLabelBrick`) stayed on `res.arrayBuffer()` — labels are
+smaller and one ring per atlas is simpler than two. §C re-measurement pending on live viewer.
 
 ### U4 — HTTP/2 on `api/` via self-signed TLS. TRIGGER FIRED (2026-09-15).
 
