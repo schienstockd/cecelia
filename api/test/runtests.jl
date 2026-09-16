@@ -8204,3 +8204,30 @@ end
         end
     end
 end
+
+# gating_api._require_ids — audit task #33. Sites that used to hand-roll `body["projectUid"]`
+# now go through this helper so a missing id is a 400 with the field name, never a bare
+# KeyError. Both empty AND absent should behave the same.
+@testset "API: _require_ids returns 400 on missing/empty ids" begin
+    # gating_api.jl is already included by server.jl at the top of this file, so `_require_ids`
+    # is available at top level.
+    let body = Dict{String,Any}("projectUid" => "p", "imageUid" => "i")
+        pu, iu, err = _require_ids(body)
+        @test err === nothing && pu == "p" && iu == "i"
+    end
+    let body = Dict{String,Any}("imageUid" => "i")   # projectUid absent
+        _, _, err = _require_ids(body)
+        @test err !== nothing
+        st, msg = err
+        @test st == 400
+        @test occursin("projectUid", msg)             # field name in the message
+    end
+    let body = Dict{String,Any}("projectUid" => "", "imageUid" => "i")   # empty
+        _, _, err = _require_ids(body)
+        @test err !== nothing && err[1] == 400 && occursin("projectUid", err[2])
+    end
+    let body = Dict{String,Any}("projectUid" => "p", "imageUid" => "")   # empty
+        _, _, err = _require_ids(body)
+        @test err !== nothing && err[1] == 400 && occursin("imageUid", err[2])
+    end
+end

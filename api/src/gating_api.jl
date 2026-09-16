@@ -340,7 +340,7 @@ _can_redo(proj, image_uid, vn, pop_type) = is_gating_pop_type(pop_type) &&
 # made the edit is self-sufficient. The broadcast carries them too, but a client must not need its
 # WS to be up to know whether it can undo what it just did.
 function _persist_and_broadcast!(m::PopulationMap, img::CciaImage, body, vn, pop_type)
-    proj, image_uid = String(body["projectUid"]), String(body["imageUid"])
+    proj, image_uid, err = _require_ids(body); err === nothing || return err
     _history_record!(proj, image_uid, vn, pop_type, img)
     save_pop_map!(m, img)
     _inject_pick_pop!(m, img)
@@ -360,7 +360,7 @@ api_gating_redo(body_bytes::Vector{UInt8}) = _history_step(body_bytes, :redo)
 function _history_step(body_bytes::Vector{UInt8}, dir::Symbol)
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     is_gating_pop_type(pt) || return _gerr(400, "Undo is for hand-drawn gating only (flow/track), not $pt")
-    proj, image_uid = String(body["projectUid"]), String(body["imageUid"])
+    proj, image_uid, err = _require_ids(body); err === nothing || return err
     _with_popmap_lock() do
         h = _history_for(_history_key(proj, image_uid, vn, pt))
         from, to = dir === :undo ? (h.undo, h.redo) : (h.redo, h.undo)
@@ -1023,6 +1023,21 @@ end
 
 # ── POST mutations (add / set-gate / delete / rename) ─────────────────────────
 
+# Extract (projectUid, imageUid) from a parsed body without raising `KeyError`. Every gating
+# handler in this file went through `_gating_post` first, which already errors 400 when they are
+# missing — so the sites that read them again (`_persist_and_broadcast!`, `_history_step`,
+# `api_gating_copy`) were `body["projectUid"]` on the belief that the earlier check made a raw
+# access safe. It IS safe today, but two different access shapes for the same fields is exactly
+# the drift risk the audit flagged: a hand-rolled call site that skips `_gating_post` gets a bare
+# stack-traced `KeyError` instead of the 400 the rest of the API returns. One helper for both.
+function _require_ids(body::AbstractDict)
+    pu = String(get(body, "projectUid", ""))
+    iu = String(get(body, "imageUid", ""))
+    isempty(pu) && return (nothing, nothing, _gerr(400, "projectUid required"))
+    isempty(iu) && return (nothing, nothing, _gerr(400, "imageUid required"))
+    (pu, iu, nothing)
+end
+
 # parse + resolve common fields from a POST body
 function _gating_post(body_bytes::Vector{UInt8})
     body = try
@@ -1222,8 +1237,7 @@ function api_gating_copy(body_bytes::Vector{UInt8})
     is_gating_pop_type(pt) || return _gerr(400, "Not a gating pop type: $pt (only flow/track)")
     tgt_raw = get(body, "toImageUids", nothing)
     (tgt_raw isa AbstractVector && !isempty(tgt_raw)) || return _gerr(400, "toImageUids required")
-    proj    = String(body["projectUid"])
-    src_uid = String(body["imageUid"])
+    proj, src_uid, err = _require_ids(body); err === nothing || return err
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         isempty(m.order) && return _gerr(400, "Source image has no $pt gating to copy")

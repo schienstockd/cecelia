@@ -18785,3 +18785,65 @@ end
         @test p.newDefault == "corrected"
     end
 end
+
+# label_props boundary types (audit task #26): `add_obs` refuses non-numeric columns at entry
+# with a named-column error; `CategoricalObsColumn` names the drift instead of dying deep in the
+# Python subprocess. Pure-Julia tests — no h5ad needed.
+@testset "label_props boundary types" begin
+    using DataFrames: DataFrame
+
+    # add_obs — numeric passes; String / Bool refused with the column name.
+    let df = DataFrame("label" => [1, 2, 3], "live.cell.speed" => [0.1, 0.2, 0.3])
+        @test Cecelia._assert_float_convertible(df) === nothing
+    end
+    let df = DataFrame("label" => [1, 2, 3], "state" => ["A", "B", "A"])
+        try
+            Cecelia._assert_float_convertible(df); @test false  # should raise
+        catch e
+            msg = sprint(showerror, e)
+            @test occursin("`state`", msg)                      # column name is IN the message
+            @test occursin("write_categorical_obs", msg)        # points at the right helper
+        end
+    end
+    let df = DataFrame("label" => [1, 2], "gated" => [true, false])
+        # Bool refused deliberately — silently coerces to 0.0/1.0 and misrepresents the semantic.
+        @test_throws Exception Cecelia._assert_float_convertible(df)
+    end
+    let df = DataFrame("label" => [1, 2], "mixed" => [missing, 0.5])
+        # `missing` is allowed (maps to NaN in save!).
+        @test Cecelia._assert_float_convertible(df) === nothing
+    end
+
+    # CategoricalObsColumn — direct construction, dict entry, NamedTuple entry, and error naming.
+    let c = Cecelia.CategoricalObsColumn(; name = "state", labels = [1, 2, 3],
+                                          values = ["A", "B", missing])
+        @test c.name == "state"
+        @test c.labels == [1, 2, 3]
+        @test c.values[3] === nothing                  # missing → nothing (JSON null → Python)
+        @test c.values[1] == "A"
+    end
+    let c = Cecelia._to_categorical_obs_column(
+                Dict("name" => "state", "labels" => [1, 2], "values" => ["A", "B"]))
+        @test c isa Cecelia.CategoricalObsColumn
+        @test c.name == "state"
+        @test c.labels == [1, 2]
+    end
+    let nt = (; name = "state", labels = [1, 2], values = ["A", "B"])
+        @test Cecelia._to_categorical_obs_column(nt).labels == [1, 2]
+    end
+    let bad = Dict("nmae" => "state", "labels" => [1], "values" => ["A"])
+        # missing "name" — error names the missing field
+        try
+            Cecelia._to_categorical_obs_column(bad); @test false
+        catch e
+            @test occursin("`name`", sprint(showerror, e))
+        end
+    end
+    let bad_nt = (; labels = [1], values = ["A"])
+        try
+            Cecelia._to_categorical_obs_column(bad_nt); @test false
+        catch e
+            @test occursin("`name`", sprint(showerror, e))
+        end
+    end
+end
