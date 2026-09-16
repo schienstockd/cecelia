@@ -1159,34 +1159,29 @@ class SegmentationUtils:
 
     def _open_label_store(self, out_path, label_shape, label_axes, nscales):
         """Create the label multiscales group + an EMPTY level-0 array on disk, streamed one frame
-        at a time by predict_from_zarr. Returns ``(group, level0, chunks)``. Writes the shared NGFF
-        metadata (see zarr_utils.multiscales_metadata) — one layout for image and label stores;
-        ``label_axes`` already excludes the channel axis.
+        at a time by predict_from_zarr. Returns ``(group, level0, chunks)``.
+
+        Delegates to `zarr_utils.open_multiscales_for_writing` — the ONE streaming writer every
+        other task (drift/AF/smooth/bin/dtype/tProject/zProject/crop/resampleZ/segment.correct/
+        segment.ridges/segment.branching) already uses. This used to be a hand-rolled twin that
+        called `multiscales_metadata` directly, and it had already drifted: no `unit_for_axis`,
+        so every cellpose/coastal label store shipped scale numbers with no physical unit stamped
+        on any axis (a viewer reading `.zattrs` saw `scale: [1.0, …, 0.596, 0.596]` and no way to
+        know what the numbers meant). Collapsing to one call fixes that and pins format inheritance
+        + label chunker + label codec at one site — the same "one canonical helper per job"
+        discipline that `staged_store`, `store_compressor` and `carry_valid_box` already follow.
 
         ``out_path`` is a STAGING path handed over by ``zarr_utils.staged_store`` — never the final
         store path. Nothing is cleared here: the staging path is guaranteed absent on entry, and
-        clearing the final path is exactly the truncation that staging exists to prevent."""
-        dim_utils = self.dim_utils
-        full_scale = dim_utils.im_scale()  # one value per image axis (including C)
-        # Map base scale by axis NAME so it survives the label array dropping the channel axis.
-        ax_to_scale = {ax: full_scale[i] for i, ax in enumerate(dim_utils.im_dim_order)}
-
-        # A label set INHERITS the format of the image it segments (ZARR_V3_PLAN D9) — a v3 image must
-        # not acquire v2 labels. The CODEC is not inherited: labels are plain zstd for a measured reason
-        # (LABEL_COMPRESSOR), so format and codec stay separate axes.
-        enc = zarr_utils.store_encoding_of(self.params.get('imPath'))
-        fmt = enc['zarr_format']
-        g = zarr.open_group(out_path, mode='w', zarr_format=fmt)
-        ms_meta = zarr_utils.multiscales_metadata(
-            label_axes, nscales, scale_for_axis=ax_to_scale)
-        # Same stamp as the image writers — where this format keeps it, versioned.
-        zarr_utils.write_multiscales_attrs(g, ms_meta, fmt)
-
-        chunks = self._label_chunks(tuple(label_shape), label_axes)
-        level0 = g.create_array('0', shape=tuple(label_shape),
-                                chunks=chunks, dtype=self.LABEL_DTYPE,
-                                **zarr_utils._codec_kwargs('labels', fmt, separator=enc['separator']))
-        return g, level0, chunks
+        clearing the final path is exactly the truncation that staging exists to prevent.
+        """
+        return zarr_utils.open_multiscales_for_writing(
+            out_path, tuple(label_shape), self.LABEL_DTYPE, self.dim_utils,
+            axes=label_axes,
+            nscales=nscales,
+            kind='labels',
+            reference_zarr=self.params.get('imPath'),
+        )
 
     def _finalize_label_pyramid(self, g, level0, label_axes, nscales, chunks):
         """Build downsampled label pyramid levels from the on-disk level 0 (bounded per timepoint).
@@ -1198,9 +1193,3 @@ class SegmentationUtils:
         zarr_utils.write_multiscale_pyramid(
             g, level0, None, nscales, list(chunks),
             x_idx=la_x, y_idx=la_y, t_idx=la_t, kind='labels')
-
-    def _label_chunks(self, shape, label_axes):
-        return tuple(
-            min(shape[i], 512) if ax in ('Y', 'X') else 1
-            for i, ax in enumerate(label_axes)
-        )
