@@ -51,7 +51,7 @@ end
 function _boolean_mask(p, memb::Dict{String,BitVector}, n::Int, path::AbstractString)::BitVector
     inc = p.boolean_pops === nothing ? String[] : p.boolean_pops
     exc = p.boolean_not  === nothing ? String[] : p.boolean_not
-    orop = p.boolean_op == "or"
+    orop = p.boolean_op == BOOL_OR
     mask = trues(n)                        # no included term ⇒ start from the parent's cells
     if !isempty(inc)
         mask = orop ? falses(n) : trues(n)

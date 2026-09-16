@@ -89,6 +89,27 @@ _coerce_pop_type(x::AbstractString) = parse_pop_type(x)
 # with `string(pop_type)` (already what most helpers do). Signature stays permissive.
 const PopTypeArg = Union{PopType,AbstractString}
 
+# ── BoolMembership enum ──────────────────────────────────────────────────────────
+# The operator on a boolean population — the two ways `boolean_pops` combine before `boolean_not`
+# is subtracted. On-wire (API `"op"`) and on-disk (gating sidecar `"boolean.op"`) stays the lowercase
+# string via `Base.string(::BoolMembership)`. Field type upgrade from `Union{String,Nothing}` so an
+# assignment of "xor" or a typo fails at the type boundary rather than surfacing later in
+# `_normalise_boolean` — same reasoning as the enum sweep in #900/#901 (PopType/ChainScope).
+#
+# `"not"` is deliberately NOT a value: `_normalise_boolean` accepts it as an input alias, canonicalises
+# to `BOOL_AND` with the terms moved to the exclusion list, and only then stores it.
+@enum BoolMembership BOOL_AND BOOL_OR
+const _BOOL_MEMBERSHIP_STR = Dict(BOOL_AND => "and", BOOL_OR => "or")
+const _BOOL_MEMBERSHIP_PARSE = Dict(v => k for (k, v) in _BOOL_MEMBERSHIP_STR)
+Base.string(s::BoolMembership) = _BOOL_MEMBERSHIP_STR[s]
+Base.String(s::BoolMembership) = _BOOL_MEMBERSHIP_STR[s]
+Base.print(io::IO, s::BoolMembership) = print(io, _BOOL_MEMBERSHIP_STR[s])
+function parse_bool_membership(s::AbstractString)::BoolMembership
+    haskey(_BOOL_MEMBERSHIP_PARSE, s) || throw(ArgumentError(
+        "unknown boolean_op: '$s' (must be one of $(join(sort(collect(keys(_BOOL_MEMBERSHIP_PARSE))), ", ")))"))
+    _BOOL_MEMBERSHIP_PARSE[s]
+end
+
 # ── Population ───────────────────────────────────────────────────────────────────
 mutable struct Population
     # Stable identity — 6-char `gen_uid`, assigned at creation, persisted in the gating JSON, unchanged
@@ -123,7 +144,7 @@ mutable struct Population
     #   mem-TOM+ AND nuc-GFP+ BUT NOT CD169 → op="and", pops=[TOM,GFP], not=[CD169]
     #   NOT CD169 (a plain "not gate")      → op="and", pops=[],        not=[CD169]
     # Still ∩ parent like every other population, so an empty include list means "the parent's cells".
-    boolean_op::Union{String,Nothing}                   # how `boolean_pops` combine: "and" | "or"
+    boolean_op::Union{BoolMembership,Nothing}           # how `boolean_pops` combine — see @enum BoolMembership above
     boolean_pops::Union{Vector{String},Nothing}         # included terms (empty ⇒ all of the parent)
     boolean_not::Union{Vector{String},Nothing}          # excluded terms, always subtracted
     # explicit-label membership: when set, this pop's cells ARE these label IDs (∩ parent),
@@ -267,7 +288,11 @@ descendants(m::PopulationMap, path::AbstractString) =
 # A pop whose membership is a set operation over OTHER pops in the same map, rather than a gate or a
 # filter: "nuc-GFP+ OR mem-TOM+". The tree is still the tree (∩ parent as always) — these add a
 # second kind of edge on top of it, which is why dependency order below is no longer just depth.
-const BOOLEAN_OPS = ("and", "or")
+
+# Retained as a derived tuple for the exported public surface (`Cecelia.BOOLEAN_OPS`) — the source
+# of truth is `@enum BoolMembership`, this just re-exposes the wire-form strings for consumers that
+# were coded against the pre-enum name.
+const BOOLEAN_OPS = Tuple(_BOOL_MEMBERSHIP_STR[s] for s in instances(BoolMembership))
 
 """
     _normalise_boolean(op, pops, nots; self) -> (op, pops, nots) | (nothing, nothing, nothing)
@@ -276,22 +301,26 @@ Validate + canonicalise a boolean spec. Empty/`nothing` op ⇒ not a boolean pop
 as an operator and normalised into the exclusion list (`op="not", pops=[A]` ≡ `op="and", not=[A]`),
 so a hand-written sidecar — and the one-click "everything except this" — say the obvious thing. At
 least one term is required, and `self` (the path the spec is attached to) may not be one of them.
+
+Returned `op` is a `BoolMembership` enum value (`BOOL_AND` / `BOOL_OR`); the caller stores it as
+the canonical form on `Population.boolean_op`.
 """
 function _normalise_boolean(op, pops, nots; self::Union{AbstractString,Nothing}=nothing)
     (op === nothing || (op isa AbstractString && isempty(op))) && return (nothing, nothing, nothing)
-    o = lowercase(String(op))
+    # Accept enum, String, or Symbol at the boundary; error on anything else via `String(op)`.
+    raw = op isa BoolMembership ? _BOOL_MEMBERSHIP_STR[op] : lowercase(String(op))
     lst(x) = unique(String[String(v) for v in (x === nothing ? () : x)])
     ps, ns = lst(pops), lst(nots)
-    if o == "not"                     # alias: everything of the parent except these
-        o = "and"; ns = unique([ns; ps]); ps = String[]
+    if raw == "not"                   # alias: everything of the parent except these
+        raw = "and"; ns = unique([ns; ps]); ps = String[]
     end
-    o in BOOLEAN_OPS ||
-        error("boolean pop: unknown operator \"$op\" — one of $(join(BOOLEAN_OPS, ", ")) or \"not\"")
+    haskey(_BOOL_MEMBERSHIP_PARSE, raw) ||
+        error("boolean pop: unknown operator \"$op\" — one of $(join(sort(collect(keys(_BOOL_MEMBERSHIP_PARSE))), ", ")) or \"not\"")
     (isempty(ps) && isempty(ns)) &&
         error("boolean pop: pick at least one population to combine")
     (self !== nothing && (String(self) in ps || String(self) in ns)) &&
         error("boolean pop: a population cannot reference itself")
-    (o, ps, ns)
+    (_BOOL_MEMBERSHIP_PARSE[raw], ps, ns)
 end
 
 """Populations `path` needs before its own membership can be derived: its parent, plus (boolean) the
@@ -600,7 +629,7 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
                                                            "values" => c.values) for c in p.filter_conditions])
     end
     p.boolean_op === nothing ||
-        (d["boolean"] = Dict{String,Any}("op" => p.boolean_op, "pops" => p.boolean_pops,
+        (d["boolean"] = Dict{String,Any}("op" => string(p.boolean_op), "pops" => p.boolean_pops,
                                          "not" => p.boolean_not))
     p.is_track && (d["is_track"] = true)
     p.transient && (d["transient"] = true)
