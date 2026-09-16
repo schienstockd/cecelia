@@ -15065,7 +15065,10 @@ end
     # UNQUEUED. Neither node runner wired `on_progress` either, so no chain node ever showed progress.
     #
     # The durable fix is that there is no longer a second implementation to drift from. This pins it.
-    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+    chain_dir = joinpath(@__DIR__, "..", "src", "tasks", "chain")
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String) * "\n" *
+          join([read(f, String) for f in
+                filter(f -> endswith(f, ".jl"), readdir(chain_dir; join=true))], "\n")
 
     for (fname, label) in (("_execute_image_chain!", "image-scope"),
                            ("_run_set_scope_node!",  "set-scope"))
@@ -15110,7 +15113,10 @@ end
     # literal string "set" where a uid belongs — so the lookup matched nothing and a set-scope node's
     # Tasks-page log read "no output yet" while the same line reached the console and the log file
     # perfectly well. It was invisible until the node HAD a task row to attribute to.
-    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+    chain_dir = joinpath(@__DIR__, "..", "src", "tasks", "chain")
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String) * "\n" *
+          join([read(f, String) for f in
+                filter(f -> endswith(f, ".jl"), readdir(chain_dir; join=true))], "\n")
 
     # The regex the frontend uses, transcribed: prefix, slash, node id, space.
     fe = r"^\[([^/\]]+)/([^\]]+)\] (.*)$"
@@ -15172,7 +15178,10 @@ end
     end
 
     # Both node runners must actually wire it — the whole bug was that neither did.
-    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+    chain_dir = joinpath(@__DIR__, "..", "src", "tasks", "chain")
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String) * "\n" *
+          join([read(f, String) for f in
+                filter(f -> endswith(f, ".jl"), readdir(chain_dir; join=true))], "\n")
     @test length(collect(eachmatch(r"on_progress\s+= \(n, t\) ->", src))) == 2
 end
 # ── Pooling several images into one reading (track_cohort.jl / pooled_track_frame) ─────────────

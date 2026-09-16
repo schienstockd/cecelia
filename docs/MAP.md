@@ -77,12 +77,8 @@ proposed seams: [`docs/archive/comment-audit-findings.md`](archive/comment-audit
 *Structure register*.
 
 **Highest ROI (Tier 1):**
-- `app/src/tasks/task.jl` (1657 L, 14 sections, 45 commits/6mo). ~14 mixed responsibilities.
-  Split by `task/spec.jl`, `task/validate.jl`, `task/composite.jl`, `task/dispatch.jl`, etc.
 - `app/src/gating/population_manager.jl` (2412 L, 16 sections, 36 commits/6mo). Splitting
   **requires preserving the `uid_index` sync invariant** — tests must pin uid_index/pops parity.
-- `app/src/tasks/chain.jl` (1415 L, 19 sections). Splitting **requires preserving the
-  `ChainRun._lock` + `_barriers` invariants** — same class as `scheduler.jl`, milder.
 
 **Worthwhile (Tier 2):**
 - `app/src/tasks/importImages/omezarr.jl` (1074 L) — separable metadata reader.
