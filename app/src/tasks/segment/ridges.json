@@ -68,23 +68,6 @@
       "tip": "Largest fibre width to detect, in pixels"
     },
     {
-      "key": "threshold",
-      "label": "Threshold",
-      "type": "float",
-      "min": 0.0,
-      "max": 1.0,
-      "step": 0.01,
-      "default": 0.0,
-      "tip": "Ridge-response cutoff (0..1). 0 = Otsu, chosen automatically"
-    },
-    {
-      "key": "darkRidges",
-      "label": "Dark ridges",
-      "type": "bool",
-      "default": false,
-      "tip": "Off for bright fibres on dark background (fluorescence, SHG, THG)"
-    },
-    {
       "key": "perZ",
       "label": "Per z-plane",
       "type": "bool",
@@ -92,14 +75,39 @@
       "tip": "Off collapses Z to a max projection before ridge detection"
     },
     {
-      "key": "minSizePx",
-      "label": "Min size (px)",
-      "type": "int",
-      "min": 0,
-      "max": 100,
-      "step": 1,
-      "default": 5,
-      "tip": "Drop connected components smaller than this in pixels; 0 keeps everything"
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "threshold",
+          "label": "Threshold",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01,
+          "default": 0.0,
+          "tip": "Ridge-response cutoff (0..1). 0 = Otsu, chosen automatically"
+        },
+        {
+          "key": "darkRidges",
+          "label": "Dark ridges",
+          "type": "bool",
+          "default": false,
+          "tip": "Off for bright fibres on dark background (fluorescence, SHG, THG)"
+        },
+        {
+          "key": "minSizePx",
+          "label": "Min size (px)",
+          "type": "int",
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "default": 5,
+          "tip": "Drop connected components smaller than this in pixels; 0 keeps everything"
+        }
+      ]
     }
   ]
 }

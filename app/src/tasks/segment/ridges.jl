@@ -10,8 +10,9 @@ struct Ridges <: CciaTask end
 # wins depends on the data. Meijering was the ranking winner on Unimelb 3P SHG on Cohen's d and
 # fibre/bg ratio; Sato tied it; Frangi was sparse-but-clean.
 #
-# Not used: coastal / cellpose / any learned model. See docs/archive/shg-optical-flow-viability-prompt.md
-# (colleague probe) — coastal's flow-warp supervision is a noise-driven signal on this data.
+# Not used: coastal / cellpose / any learned model — coastal's flow-warp supervision is a
+# noise-driven signal on SHG (structured noise from the laser speckle carries the temporal
+# consistency the learner exploits), which makes a classical Hessian filter the honest choice.
 
 Base.@kwdef struct RidgesParams
     valueName::String              = VERSIONED_DEFAULT_VAL

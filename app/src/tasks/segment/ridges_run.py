@@ -13,8 +13,8 @@ Filter rankings measured on Unimelb 3P SHG (EaMaVq Z=9 t=10):
   sato       d=4.03  ratio=5.22   ← ties meijering; slightly more background haze
   frangi     d=2.06  ratio=13.9   ← sparse but very clean; misses side branches
 
-For the rejection of coastal on this data (why we ship a classical filter, not a learned model),
-see `docs/archive/shg-optical-flow-viability-prompt.md`.
+Not learned (no coastal, no cellpose): coastal's flow-warp supervision is a noise-driven signal
+on SHG, so a classical Hessian filter is the honest choice here.
 
 Parameter contract (JSON written by Julia):
   imPath          - source image path
