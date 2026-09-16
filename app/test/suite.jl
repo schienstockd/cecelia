@@ -13504,7 +13504,18 @@ end
         jl = replace(spec_path, r"\.json$" => ".jl")
         isfile(jl) || continue        # a composite resolves nothing itself; its steps are checked
         push!(checked, fun)
-        @test occursin("channel_indices", read(jl, String)) ||
+        # A task file may have been split into a family (e.g. af_correct/{translate,qc,run}.jl next
+        # to af_correct.jl) — check the aggregator PLUS any siblings under a same-named dir, since
+        # the handler that actually calls `channel_indices` may live in a sub-file.
+        family = String[jl]
+        subdir = replace(jl, r"\.jl$" => "")
+        if isdir(subdir)
+            for f in readdir(subdir; join = true)
+                endswith(f, ".jl") && push!(family, f)
+            end
+        end
+        combined = join((read(f, String) for f in family), "\n")
+        @test occursin("channel_indices", combined) ||
               error("$fun declares a channelSelection param but its handler never calls " *
                     "`channel_indices`. Resolve names with it (0-based, errors by name) rather " *
                     "than converting them by hand — see CLAUDE.md and channel_index's own comment.")
