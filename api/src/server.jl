@@ -215,6 +215,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/runner/status" => (req, body_bytes) -> (api_runner_status(req)),
     "/api/storage/compressor" => (req, body_bytes) -> (api_compressor_get(req)),
     "/api/storage/layout" => (req, body_bytes) -> (api_store_layout_get(req)),
+    "/api/config/tls" => (req, body_bytes) -> (api_tls_get(req)),
     "/api/tasks" => (req, body_bytes) -> (api_tasks_list(req)),
     "/api/chains" => (req, body_bytes) -> (api_chains_list(req)),
     "/api/chains/get" => (req, body_bytes) -> (api_chains_get(req)),
@@ -269,6 +270,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/runner/enabled" => (req, body_bytes) -> (api_runner_set_enabled(body_bytes)),
     "/api/storage/compressor/set" => (req, body_bytes) -> (api_compressor_set(body_bytes)),
     "/api/storage/layout/set" => (req, body_bytes) -> (api_store_layout_set(body_bytes)),
+    "/api/config/tls/set" => (req, body_bytes) -> (api_tls_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
     "/api/tasks/validate" => (req, body_bytes) -> (api_task_validate(req, body_bytes)),
     "/api/correction-plan/recommend" => (req, body_bytes) -> (api_correction_plan_recommend(req, body_bytes)),
@@ -647,6 +649,11 @@ const PORT = parse(Int, get(ENV, "CECELIA_PORT", "8080"))
 # The address the server is ACTUALLY bound to (set in `start`). The debug REPL keys off this: it only
 # runs when the bind is loopback, so a loopback bind — not a spoofable header — is the network control.
 const _BOUND_HOST = Ref{String}("")
+# Effective server protocol, set once inside `start()` after the TLS handshake is either up
+# or has fallen back. Read by `api_diagnostics` — a client wanting to confirm "am I really
+# on HTTP/2?" reads this instead of guessing from `tls_desired` (which can disagree with
+# reality when openssl is missing).
+const _PROTOCOL = Ref{String}("HTTP/1.1")
 
 # Stop when our SUPERVISOR goes away without stopping us.
 #
@@ -716,16 +723,25 @@ function start(; host=HOST, port=PORT)
     # on first launch; on failure fall back to HTTP/1.1 so the server never fails to start
     # just because openssl isn't available.
     #
-    # OPT-IN via CECELIA_TLS=1. Default (dev + prod + CI) stays HTTP/1.1 for two independent
-    # reasons: (1) Vite's dev proxy (http-proxy) is HTTP/1.1-only both ways, so ALPN
-    # downgrades to http/1.1 anyway and switching to TLS would just make every proxy request
-    # ECONNRESET; (2) the smoke-test workflow curls plain http://localhost:8080/ to health-
-    # check `pixi run prod`, and would fail the same way. Users flip CECELIA_TLS=1 explicitly
-    # to test HTTP/2 (browser talks direct to :8080 same-origin in a built prod install, ALPN
-    # picks h2, real multiplexing kicks in).
-    tls = get(ENV, "CECELIA_TLS", "") == "1" ? ensure_dev_cert() : nothing
+    # Default: TLS ON in prod (installed app), OFF in dev + CI. Two reasons dev stays off:
+    # (1) Vite's dev proxy is HTTP/1.1-only both ways under `pixi run dev`, so ALPN downgrades
+    # and TLS earns nothing; (2) the CI smoke workflow curls plain http://localhost:8080/
+    # against `pixi run prod` and would break. Prod flip landed after U4 shipped opt-in and
+    # nobody flipped `CECELIA_TLS=1` — a feature nobody sees is a zombie feature.
+    #
+    # `Cecelia.tls_desired` resolves order: `CECELIA_TLS` env → `[tls].enabled` in
+    # custom.toml (Settings toggle) → default (`!_is_dev`). The effective protocol is
+    # published to `/api/diagnostics` via `_PROTOCOL[]` — separate from `tls_desired`
+    # because openssl-missing falls back to HTTP/1.1 with a warning.
+    want_tls = Cecelia.tls_desired(is_dev = _is_dev())
+    tls = want_tls ? ensure_dev_cert() : nothing
     if tls === nothing
-        @info "CeceliaAPI starting (HTTP/1.1)" host port threads=Threads.nthreads() projects_dir=projects_dir()
+        _PROTOCOL[] = "HTTP/1.1"
+        if want_tls
+            @info "CeceliaAPI starting (HTTP/1.1 — TLS wanted but cert unavailable)" host port threads=Threads.nthreads() projects_dir=projects_dir()
+        else
+            @info "CeceliaAPI starting (HTTP/1.1)" host port threads=Threads.nthreads() projects_dir=projects_dir()
+        end
         HTTP.listen(handle_stream, host, port)
     else
         cert_path, key_path = tls
@@ -739,6 +755,7 @@ function start(; host=HOST, port=PORT)
         )
         address = string(host, ":", port)
         listener = TLS.listen("tcp", address, tls_config)
+        _PROTOCOL[] = "HTTPS/HTTP2"
         @info "CeceliaAPI starting (HTTPS/HTTP2)" host port threads=Threads.nthreads() projects_dir=projects_dir() cert=cert_path
         server = HTTP.listen!(handle_stream, listener)
         wait(server)

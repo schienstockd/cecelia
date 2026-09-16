@@ -300,6 +300,8 @@ interface Diag {
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
   replEnabled: boolean; replAvailable: boolean; dev: boolean
+  protocol: 'HTTPS/HTTP2' | 'HTTP/1.1'   // what the server actually started with
+  tlsDesired: boolean                    // what the resolver wants (may differ if openssl missing)
   previewPort: number; notebooksPort: number; runnerPort: number
 }
 const diag = ref<Diag | null>(null)
@@ -351,6 +353,35 @@ function replKeydown(e: KeyboardEvent) {
 onMounted(loadDiag)
 onMounted(loadCompressor)
 onMounted(loadLayout)
+onMounted(loadTls)
+
+// ── TLS preference (HTTPS + HTTP/2) ────────────────────────────────────────────
+// Persisted server preference (`[tls] enabled` in custom.toml) plus the effective protocol
+// (what the server actually started with — may differ on cert failure). Flip requires a
+// restart to take effect on the wire, per the "restart" hint below.
+interface TlsCfg { desired: boolean; protocol: 'HTTPS/HTTP2' | 'HTTP/1.1'; envOverride: boolean }
+const tls = ref<TlsCfg | null>(null)
+const tlsBusy = ref(false)
+const tlsRestart = ref(false)
+async function loadTls() {
+  try { tls.value = await (await fetch('/api/config/tls')).json() as TlsCfg }
+  catch { tls.value = null }
+}
+async function tlsToggle(on: boolean) {
+  tlsBusy.value = true
+  try {
+    const res = await fetch('/api/config/tls/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on }),
+    })
+    const d = await res.json() as TlsCfg & { restartRequired: boolean }
+    if (res.ok) {
+      tls.value = { desired: d.desired, protocol: d.protocol, envOverride: d.envOverride }
+      tlsRestart.value = !!d.restartRequired
+    }
+  } catch { /* keep previous state; loadTls on next open re-syncs */ }
+  finally { tlsBusy.value = false }
+}
 
 // ── System: service control panel ─────────────────────────────────────────────
 // Live status of the backend's child processes + per-component and global controls. Status is
@@ -1034,6 +1065,10 @@ async function switchWt(path: string) {
         <span class="svc-name">Application</span>
         <span class="svc-pill ok"><span class="dot" /> Running</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
+        <span v-if="diag?.protocol" class="svc-port cc-muted cc-fs-xs"
+              v-tooltip.top="diag.protocol === 'HTTPS/HTTP2' ? 'HTTPS + HTTP/2 — brick fetches multiplex on one socket' : 'Cleartext HTTP/1.1 — Chromium caps at 6 fetches per origin'">
+          {{ diag.protocol === 'HTTPS/HTTP2' ? 'h2' : 'h1.1' }}
+        </span>
         <span class="svc-actions">
           <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
                   v-tooltip.top="'Restart the backend (dev); the page reconnects'">
@@ -1065,6 +1100,25 @@ async function switchWt(path: string) {
             {{ wtFolder(w.path) }} — {{ w.branch }}{{ w.primary ? ' (main)' : '' }}{{ w.current ? ' (current)' : '' }}
           </option>
         </select>
+      </div>
+
+      <!-- HTTPS + HTTP/2 preference. Default: on in prod, off in dev (Vite is HTTP/1.1-only).
+           Requires a restart to switch protocol on the wire (server binds the socket once at
+           startup). CECELIA_TLS env, when set, overrides the toggle for the session. -->
+      <div v-if="tls" class="field" style="margin: 0.2rem 0 0.6rem;">
+        <CcToggle class="toggle-row"
+               :disabled="tlsBusy || tls.envOverride"
+               :model-value="tls.desired"
+               @update:model-value="tlsToggle($event)"
+               v-tooltip.bottom="'HTTPS + HTTP/2 — restart required to switch protocol'">
+          Serve over HTTPS + HTTP/2
+        </CcToggle>
+        <span v-if="tls.envOverride" class="field-hint cc-muted cc-fs-xs">
+          CECELIA_TLS is set for this session — env overrides the setting.
+        </span>
+        <span v-else-if="tlsRestart" class="field-hint cc-muted cc-fs-xs">
+          Restart the app to switch protocol.
+        </span>
       </div>
 
       <div class="svc-row">

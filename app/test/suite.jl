@@ -6649,6 +6649,44 @@ end
     end
 end
 
+@testset "TLS desired: env overrides toml overrides default (prod on / dev off)" begin
+    # Parallel to the runner testset above — same resolution shape. The default IS the
+    # feature that changed (opt-in → prod-on), so it is the one pinned by every branch here.
+    cfg = mktempdir()
+    try
+        # PROD default (no dev, no env, no toml key): TLS on. The whole point of the flip.
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => nothing) do
+            init_cecelia!()
+            @test tls_desired(is_dev = false) == true
+        end
+        # DEV default: TLS off. Vite proxy is HTTP/1.1-only, TLS earns nothing.
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => "1", "CECELIA_TLS" => nothing) do
+            init_cecelia!()
+            @test tls_desired(is_dev = true) == false
+        end
+        # Settings toggle persists in both modes and takes precedence over the default.
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => nothing) do
+            init_cecelia!()
+            @test set_tls_desired!(false; is_dev = false) == false
+            @test occursin("[tls]", read(custom_toml_path(), String))
+            init_cecelia!()
+            @test tls_desired(is_dev = false) == false     # …survives a reload
+        end
+        # …and env still wins over the file, in both directions.
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => "1") do
+            init_cecelia!()
+            @test tls_desired(is_dev = false) == true       # env-on beats toml-off
+        end
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => "0") do
+            init_cecelia!()
+            @test set_tls_desired!(true; is_dev = false) == false   # written but env forces off
+            @test tls_desired(is_dev = false) == false
+        end
+    finally
+        init_cecelia!()
+    end
+end
+
 @testset "runner client refuses a dead port cleanly" begin
     # Every one of these runs on the API server's request path. A runner that is simply not there must
     # read as absent — never a throw that takes a route down, and never a hang.

@@ -905,6 +905,35 @@ function api_compressor_set(body_bytes)
     end
 end
 
+# ── TLS toggle — persisted preference for HTTPS + HTTP/2 ─────────────────────
+#
+# The server's ACTUAL protocol lives in `/api/diagnostics` as `protocol` (either
+# `HTTPS/HTTP2` or `HTTP/1.1`); this endpoint is the persisted PREFERENCE. Requires a
+# server restart to take effect on the wire — the UI shows a "restart required" hint when
+# `desired != current-on-wire`.
+function api_tls_get(_req)
+    is_dev = _is_dev()
+    200, JSON3.write((;
+        desired = Cecelia.tls_desired(is_dev = is_dev),
+        protocol = _PROTOCOL[],
+        envOverride = haskey(ENV, "CECELIA_TLS"),   # settings toggle is a no-op while env forces it
+    ))
+end
+
+function api_tls_set(body_bytes)
+    data = JSON3.read(body_bytes)
+    on = get(data, :on, nothing)
+    (on === true || on === false) || return 400, JSON3.write((; error = "on (bool) required"))
+    is_dev = _is_dev()
+    effective = Cecelia.set_tls_desired!(on; is_dev = is_dev)
+    200, JSON3.write((;
+        desired = effective,
+        protocol = _PROTOCOL[],
+        envOverride = haskey(ENV, "CECELIA_TLS"),
+        restartRequired = effective != (_PROTOCOL[] == "HTTPS/HTTP2"),
+    ))
+end
+
 # ── Store LAYOUT defaults (zarr format + chunk separator) ─────────────────────────
 # GET → { current, default, measuredOn, choices: [...] }. Shaped like the compressor endpoint on
 # purpose: it is the same kind of decision and Settings renders it the same way, as a TABLE with the

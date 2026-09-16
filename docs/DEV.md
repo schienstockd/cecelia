@@ -612,10 +612,12 @@ switch), so do NOT run `pixi run frontend` alongside `dev`. The standalone `pixi
 backend. `pixi run prod` runs the server without Revise (production). `pixi run stop` stops all by port.
 Revise reloads function bodies on save. Struct/macro changes still need a restart.
 
-**Testing HTTP/2 locally** — HTTPS is opt-in via `CECELIA_TLS=1`. Run against `pixi run prod`, not
-`pixi run dev` (Vite's proxy is HTTP/1.1-only, so ALPN downgrades under dev and TLS earns nothing).
-First launch generates a self-signed cert at `$CECELIA_DEV_DIR/tls/{cert,key}.pem` via the system
-`openssl`; rotate by deleting both files. Verify h2 is actually on the wire:
+**Testing HTTP/2 locally** — installed apps default to HTTPS + HTTP/2; a dev checkout defaults
+to plain HTTP/1.1 (Vite's proxy is HTTP/1.1-only both ways, so ALPN downgrades under
+`pixi run dev` and TLS earns nothing). Set `CECELIA_TLS=1` against `pixi run prod` from a dev
+tree to exercise the installed-app codepath — that generates a self-signed cert at
+`$CECELIA_DEV_DIR/tls/{cert,key}.pem` via the system `openssl` (rotate by deleting both files).
+Verify h2 is actually on the wire:
 
 ```bash
 pixi run build
@@ -624,9 +626,11 @@ curl -sI -k --http2 https://127.0.0.1:8080/api/version -o /dev/null -w 'proto=%{
 # → proto=2
 ```
 
-The `-k` skips validation of the self-signed cert (same click-through the browser does). Design
-rationale and the fallback logic — openssl missing on PATH silently falls back to HTTP/1.1 rather
-than refusing to start — live in `docs/SHIPPING.md` → *Runtime flow* and `api/src/tls.jl`.
+The `-k` skips validation of the self-signed cert (same click-through the browser does).
+Settings → System also shows the effective protocol as `h2` or `h1.1` next to the port. Full
+resolution order (env → `[tls].enabled` in `custom.toml` → `!is_dev`) and the fallback logic —
+openssl missing on PATH falls back to HTTP/1.1 with a warning rather than refusing to start —
+live in `docs/SHIPPING.md` → *Runtime flow* and `app/src/config/tls.jl`.
 
 ---
 
