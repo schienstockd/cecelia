@@ -18459,3 +18459,104 @@ end
         @test p.forceRecompute === true              # default is force-recompute
     end
 end
+
+# Typed per-task params structs for the segment family. Same pattern as
+# `typed params — cleanupImages` — each parser is the ONE place its task reads the params bag.
+@testset "typed params — segment" begin
+    # CellposeSegment — `models` stays a bag (resolved separately by cellpose_models_for_python).
+    let p = Cecelia.parse_cellpose_segment_params(Dict{String,Any}(
+            "valueName" => "corrected", "outputValueName" => "cells",
+            "blockSize" => 1024, "overlap" => 128, "matchThreshold" => 0.5,
+            "removeUnmatched" => true, "normaliseToWhole" => false))
+        @test p.valueName == "corrected"
+        @test p.outputValueName == "cells"
+        @test p.blockSize === 1024
+        @test p.overlap === 128
+        @test p.matchThreshold === 0.5
+        @test p.removeUnmatched === true
+        @test p.normaliseToWhole === false
+    end
+    let p = Cecelia.parse_cellpose_segment_params(Dict{String,Any}())
+        @test p.blockSize === 512
+        @test p.overlap === 64
+        @test p.matchThreshold === 0.3
+        @test p.normaliseToWhole === true         # default: normalise to whole image
+    end
+
+    # CoastalSegment — same shape as cellpose plus temporalScaleMode.
+    let p = Cecelia.parse_coastal_segment_params(Dict{String,Any}(
+            "outputValueName" => "flow-cells", "temporalScaleMode" => "seconds",
+            "labelSmoothing" => 1.0))
+        @test p.outputValueName == "flow-cells"
+        @test p.temporalScaleMode == "seconds"
+        @test p.labelSmoothing === 1.0
+    end
+    let p = Cecelia.parse_coastal_segment_params(Dict{String,Any}())
+        @test p.temporalScaleMode == "frames"    # default: as trained
+        @test p.labelSmoothing === 0.5           # coastal's default differs from cellpose (0.0)
+    end
+
+    # Branching — fibreChannels stays a bag (resolved via channel_indices in the handler).
+    let p = Cecelia.parse_branching_params(Dict{String,Any}(
+            "refPops" => "T/tracked", "calcAnisotropy" => true,
+            "fibreChannels" => ["SHG"], "anisotropySource" => "channel",
+            "structureTensorSigmaUm" => 5.0, "anisotropyBoxUm" => 3.0,
+            "integrateTime" => true))
+        @test p.refPops == "T/tracked"
+        @test p.calcAnisotropy === true
+        @test p.fibreChannels == ["SHG"]
+        @test p.anisotropySource == "channel"
+        @test p.structureTensorSigmaUm === 5.0
+        @test p.anisotropyBoxUm === 3.0
+        @test p.integrateTime === true
+    end
+    let p = Cecelia.parse_branching_params(Dict{String,Any}())
+        @test p.refPops == "NONE"                # default: skeletonise whole segmentation
+        @test p.calcAnisotropy === false
+        @test p.anisotropySource == "skeleton"
+    end
+
+    # SegmentCorrect — same JSON-string trackOps pattern as tracking.correct.
+    let p = Cecelia.parse_segment_correct_params(Dict{String,Any}(
+            "valueName" => "cells",
+            "labelOps" => Any[Dict{String,Any}(
+                "op" => "label.merge", "t" => 0, "ids" => Any[3, 5], "into" => 3)]))
+        @test p.valueName == "cells"
+        @test length(p.labelOps) == 1
+        @test p.labelOps[1]["op"] == "label.merge"
+        @test p.labelOps[1]["into"] == 3
+    end
+    let p = Cecelia.parse_segment_correct_params(Dict{String,Any}("labelOps" => nothing))
+        @test isempty(p.labelOps)
+    end
+    let p = Cecelia.parse_segment_correct_params(Dict{String,Any}(
+            "labelOps" => "[{\"op\":\"label.remove\",\"t\":0,\"ids\":[7]}]"))
+        @test length(p.labelOps) == 1
+        @test p.labelOps[1]["op"] == "label.remove"
+    end
+
+    # SegmentCorrectCarryOver — a single shared struct for both phases (they read only valueName).
+    let p = Cecelia.parse_segment_correct_carry_over_params(Dict{String,Any}(
+            "valueName" => "corrected"))
+        @test p.valueName == "corrected"
+    end
+    let p = Cecelia.parse_segment_correct_carry_over_params(Dict{String,Any}())
+        @test p.valueName == Cecelia.VERSIONED_DEFAULT_VAL
+    end
+
+    # MeasureLabels
+    let p = Cecelia.parse_measure_labels_params(Dict{String,Any}(
+            "outputValueName" => "cells", "intensityValueName" => "corrected",
+            "intensityMeasure" => "median", "gaussianFilter" => 1.0,
+            "extendedMeasures" => true))
+        @test p.outputValueName == "cells"
+        @test p.intensityValueName == "corrected"
+        @test p.intensityMeasure == "median"
+        @test p.gaussianFilter === 1.0
+        @test p.extendedMeasures === true
+    end
+    let p = Cecelia.parse_measure_labels_params(Dict{String,Any}())
+        @test p.intensityMeasure == "mean"       # default
+        @test p.extendedMeasures === false
+    end
+end

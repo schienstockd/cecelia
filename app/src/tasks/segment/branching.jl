@@ -1,5 +1,45 @@
 struct Branching <: CciaTask end
 
+# Typed shape of what `_run_task(::Branching, …)` reads from `params`. `fibreChannels` stays a bag
+# here (resolved via `channel_indices` inside the handler; the image's channel names live there,
+# not in the parser).
+Base.@kwdef struct BranchingParams
+    valueName::String              = VERSIONED_DEFAULT_VAL
+    outputValueName::String        = VERSIONED_DEFAULT_VAL
+    refPops::String                = "NONE"
+    calcAnisotropy::Bool           = false
+    fibreChannels::Any             = Any[]
+    anisotropySource::String       = "skeleton"
+    structureTensorSigmaUm::Float64 = 7.0
+    anisotropyBoxUm::Float64       = 5.0
+    preDilationSize::Int           = 2
+    postDilationSize::Int          = 2
+    useBorders::Bool               = false
+    flattenBranching::Bool         = false
+    integrateTime::Bool            = false
+    integrateTimeMode::String      = "max"
+    calcFlattened::Bool            = false
+end
+
+function parse_branching_params(d::AbstractDict)::BranchingParams
+    BranchingParams(;
+        valueName              = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        outputValueName        = string(get(d, "outputValueName", VERSIONED_DEFAULT_VAL)),
+        refPops                = string(get(d, "refPops", "NONE")),
+        calcAnisotropy         = Bool(get(d, "calcAnisotropy", false)),
+        fibreChannels          = get(d, "fibreChannels", Any[]),
+        anisotropySource       = string(get(d, "anisotropySource", "skeleton")),
+        structureTensorSigmaUm = Float64(get(d, "structureTensorSigmaUm", 7.0)),
+        anisotropyBoxUm        = Float64(get(d, "anisotropyBoxUm", 5.0)),
+        preDilationSize        = Int(get(d, "preDilationSize", 2)),
+        postDilationSize       = Int(get(d, "postDilationSize", 2)),
+        useBorders             = Bool(get(d, "useBorders", false)),
+        flattenBranching       = Bool(get(d, "flattenBranching", false)),
+        integrateTime          = Bool(get(d, "integrateTime", false)),
+        integrateTimeMode      = string(get(d, "integrateTimeMode", "max")),
+        calcFlattened          = Bool(get(d, "calcFlattened", false)))
+end
+
 # skan branch-type codes → semantic pop names (BRANCHING_PLAN Decision 3). Stable + documented
 # in skan (see https://skeleton-analysis.org/stable/getting_started/quickstart.html): 0 = a lone
 # segment with two termini, 1 = one junction + one endpoint, 2 = two junctions, 3 = a closed loop.
@@ -71,11 +111,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name     = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
-    ref_pops       = string(get(params, "refPops", "NONE"))
-    calc_anisotropy = Bool(get(params, "calcAnisotropy", false))
-
+    p = parse_branching_params(params)
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
@@ -83,15 +119,13 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # ACTIVE image version's channel names (nothing → `_active`; falls back to `default`) so a
     # corrected image with extra/renamed channels resolves correctly.
     ch_names = ccid_channel_names(raw, nothing)          # nothing → the ACTIVE version
-    fibre_indices = channel_indices(get(params, "fibreChannels", []), ch_names;
-                                    what = "fibreChannels")
+    fibre_indices = channel_indices(p.fibreChannels, ch_names; what = "fibreChannels")
     # Only `anisotropySource="channel"` reads raw pixels; "skeleton"/"mask" work off the labels, so
     # an empty fibreChannels is only a problem for the channel source.
-    aniso_source = string(get(params, "anisotropySource", "skeleton"))
-    if calc_anisotropy && aniso_source == "channel" && isempty(fibre_indices)
+    if p.calcAnisotropy && p.anisotropySource == "channel" && isempty(fibre_indices)
         on_log("[WARN] anisotropySource=channel but fibreChannels resolved to []; anisotropy will not be computed.")
     end
-    run_anisotropy = calc_anisotropy && (aniso_source != "channel" || !isempty(fibre_indices))
+    run_anisotropy = p.calcAnisotropy && (p.anisotropySource != "channel" || !isempty(fibre_indices))
 
     # ── µm → px for the two anisotropy scales ──────────────────────────────────────────────────
     # In-plane resolution: the box grid and the tensor smoothing both act on Y/X. `:x` by name, never
@@ -100,8 +134,8 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     um_per_px = physical_size_for_axis(img, :x)
     uncalibrated = !(um_per_px > 0) || um_per_px == 1.0
     um_per_px = um_per_px > 0 ? um_per_px : 1.0
-    sigma_um = Float64(get(params, "structureTensorSigmaUm", 7.0))
-    box_um   = Float64(get(params, "anisotropyBoxUm", 5.0))
+    sigma_um = p.structureTensorSigmaUm
+    box_um   = p.anisotropyBoxUm
     st_sigma_px, sigma_clamped = _um_to_px(sigma_um, um_per_px; minimum_px = _ANISO_MIN_SIGMA_PX)
     box_px_f,    box_clamped   = _um_to_px(box_um,   um_per_px; minimum_px = _ANISO_MIN_BOX_PX)
     box_px = round(Int, box_px_f)
@@ -129,11 +163,11 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     im_path = joinpath(dirname(dirname(img._dir)), "0", img.uid, string(filename))
 
     # Resolve input labels zarr — a segmentation the user chose from `img.labels`
-    if !haskey(img.labels, value_name) || isempty(img.labels[value_name])
-        on_log("[ERROR] No labels registered for valueName='$value_name'")
+    if !haskey(img.labels, p.valueName) || isempty(img.labels[p.valueName])
+        on_log("[ERROR] No labels registered for valueName='$(p.valueName)'")
         return nothing
     end
-    labels_path = joinpath(img._dir, "labels", first(img.labels[value_name]))
+    labels_path = joinpath(img._dir, "labels", first(img.labels[p.valueName]))
     if !ispath(labels_path)
         on_log("[ERROR] Input labels not found: $labels_path")
         return nothing
@@ -142,29 +176,29 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # Resolve refPops in Julia (Decision 7): Python receives a plain list of label IDs, never a
     # pop map. Multi-accept picker → resolve_pop_type discovers which map to load.
     label_ids = nothing
-    if ref_pops != "NONE"
-        vn, path = _split_pop_ref(ref_pops, value_name)
+    if p.refPops != "NONE"
+        vn, path = _split_pop_ref(p.refPops, p.valueName)
         pt = resolve_pop_type(img, vn, path)
         m = try; load_pop_map(img; value_name = vn, pop_type = pt); catch; nothing; end
         if isnothing(m) || !has_pop(m, path)
-            on_log("[ERROR] Population not found for refPops='$ref_pops' (value_name=$vn, pop_type=$pt)")
+            on_log("[ERROR] Population not found for refPops='$(p.refPops)' (value_name=$vn, pop_type=$pt)")
             return nothing
         end
         recompute!(m, cols -> (label_props(img; value_name = vn) |>
                                lp -> select_cols(lp, cols) |> as_df))
         label_ids = collect(Int, cells_in_pop(m, path))
-        on_log("[INFO] Restricting to $(length(label_ids)) label(s) from population '$ref_pops'")
+        on_log("[INFO] Restricting to $(length(label_ids)) label(s) from population '$(p.refPops)'")
         if isempty(label_ids)
-            on_log("[ERROR] Population '$ref_pops' is empty — nothing to skeletonise")
+            on_log("[ERROR] Population '$(p.refPops)' is empty — nothing to skeletonise")
             return nothing
         end
     end
 
     task_dir       = img._dir
-    branch_zarr    = "$(out_value_name).zarr"
+    branch_zarr    = "$(p.outputValueName).zarr"
     branch_lbl_dir = img_branch_labels_dir(img)
     branch_lbl_out = joinpath(branch_lbl_dir, branch_zarr)
-    branch_props   = img_branch_props_path(img, out_value_name)
+    branch_props   = img_branch_props_path(img, p.outputValueName)
     qc_out_path    = joinpath(task_run_dir(task_dir), "branching_counts.json")
 
     isdir(branch_lbl_dir) || mkpath(branch_lbl_dir)
@@ -180,15 +214,15 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
            branchPropsOutPath   = branch_props,
            qcOutPath            = qc_out_path,
            labelIds             = something(label_ids, Int[]),
-           preDilationSize      = Int(get(params, "preDilationSize", 2)),
-           postDilationSize     = Int(get(params, "postDilationSize", 2)),
-           useBorders           = Bool(get(params, "useBorders", false)),
-           flattenBranching     = Bool(get(params, "flattenBranching", false)),
-           integrateTime        = Bool(get(params, "integrateTime", false)),
-           integrateTimeMode    = string(get(params, "integrateTimeMode", "max")),
+           preDilationSize      = p.preDilationSize,
+           postDilationSize     = p.postDilationSize,
+           useBorders           = p.useBorders,
+           flattenBranching     = p.flattenBranching,
+           integrateTime        = p.integrateTime,
+           integrateTimeMode    = p.integrateTimeMode,
            calcAnisotropy       = run_anisotropy,
-           calcFlattened        = Bool(get(params, "calcFlattened", false)),
-           anisotropySource     = aniso_source,
+           calcFlattened        = p.calcFlattened,
+           anisotropySource     = p.anisotropySource,
            fibreChannels        = fibre_indices,
            # Python works in ARRAY space; the µm→px conversion happened above, where the image's
            # calibration lives. The µm values ride along so the runner can record what was asked.
@@ -207,7 +241,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
         bl_dict = Dict{String,Vector{String}}(
             String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
             for (k, v) in get(raw, "branch_labels", Dict{String,Any}()))
-        bl_dict[out_value_name] = [branch_zarr]
+        bl_dict[p.outputValueName] = [branch_zarr]
         raw["branch_labels"] = bl_dict
     end
 
@@ -242,7 +276,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
                 end
                 uncalibrated && push!(findings, qc_finding("warn", "branching.uncalibrated"))
             end
-            write_qc(img, "segment.branching", out_value_name, findings; metrics = metrics)
+            write_qc(img, "segment.branching", p.outputValueName, findings; metrics = metrics)
             on_log("[QC] $n_branches branch(es) across $n_skeletons skeleton(s).")
         catch e
             on_log("[QC] could not compute branching QC: $e")
@@ -253,15 +287,15 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # Idempotent (ensure_filter_pop! replaces an existing name), so re-runs stay clean.
     for bt in branch_types
         name = get(_BRANCH_TYPE_POP_NAME, bt, "branch-type-$(bt)")
-        ensure_filter_pop!(img, "branch", out_value_name, ["/"], name;
+        ensure_filter_pop!(img, "branch", p.outputValueName, ["/"], name;
                            filter_measure = "branch-type",
                            filter_fun = "eq", filter_values = bt)
     end
     isempty(branch_types) || on_log("[INFO] Auto-created $(length(branch_types)) branch-type filter pop(s).")
 
-    Dict{String,Any}("outputValueName" => out_value_name,
+    Dict{String,Any}("outputValueName" => p.outputValueName,
                      "branchLabelFile" => branch_zarr,
-                     "branchPropsFile" => "$(out_value_name)$(BRANCH_PROPS_SUFFIX).h5ad",
+                     "branchPropsFile" => "$(p.outputValueName)$(BRANCH_PROPS_SUFFIX).h5ad",
                      "nBranches"       => n_branches,
                      "branchTypes"     => branch_types)
 end

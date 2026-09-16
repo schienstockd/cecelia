@@ -1,5 +1,51 @@
 struct CoastalSegment <: CciaTask end
 
+# Typed shape of what `_run_task(::CoastalSegment, …)` reads from `params`. `models` stays a bag
+# here (parsed separately by `coastal_models_for_python`, which needs channel names to resolve
+# NAMES → 0-based indices and the model NAME → vault path).
+Base.@kwdef struct CoastalSegmentParams
+    valueName::String            = VERSIONED_DEFAULT_VAL
+    outputValueName::String      = VERSIONED_DEFAULT_VAL
+    blockSize::Int               = 512
+    overlap::Int                 = 64
+    blockSizeZ::Int              = 0
+    overlapZ::Int                = 0
+    labelOverlap::Float64        = 0.0
+    matchThreshold::Float64      = 0.3
+    removeUnmatched::Bool        = false
+    minCellSize::Float64         = 0.0
+    cellSizeMax::Float64         = 0.0
+    labelSmoothing::Float64      = 0.5
+    labelExpansion::Float64      = 0.0
+    labelErosion::Float64        = 0.0
+    clearTouchingBorder::Bool    = false
+    clearDepth::Bool             = false
+    normaliseToWhole::Bool       = true
+    temporalScaleMode::String    = "frames"
+end
+
+function parse_coastal_segment_params(d::AbstractDict)::CoastalSegmentParams
+    CoastalSegmentParams(;
+        valueName           = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        outputValueName     = string(get(d, "outputValueName", VERSIONED_DEFAULT_VAL)),
+        blockSize           = Int(get(d, "blockSize", 512)),
+        overlap             = Int(get(d, "overlap", 64)),
+        blockSizeZ          = Int(get(d, "blockSizeZ", 0)),
+        overlapZ            = Int(get(d, "overlapZ", 0)),
+        labelOverlap        = Float64(get(d, "labelOverlap", 0.0)),
+        matchThreshold      = Float64(get(d, "matchThreshold", 0.3)),
+        removeUnmatched     = Bool(get(d, "removeUnmatched", false)),
+        minCellSize         = Float64(get(d, "minCellSize", 0.0)),
+        cellSizeMax         = Float64(get(d, "cellSizeMax", 0.0)),
+        labelSmoothing      = Float64(get(d, "labelSmoothing", 0.5)),
+        labelExpansion      = Float64(get(d, "labelExpansion", 0.0)),
+        labelErosion        = Float64(get(d, "labelErosion", 0.0)),
+        clearTouchingBorder = Bool(get(d, "clearTouchingBorder", false)),
+        clearDepth          = Bool(get(d, "clearDepth", false)),
+        normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)),
+        temporalScaleMode   = String(get(d, "temporalScaleMode", "frames")))
+end
+
 # Coastal ships no built-in models — the picker IS the vault. An empty vault therefore means an
 # empty dropdown, deliberately: there is nothing sensible to segment with until the user trains a
 # model on the Optical Flow page. Same runtime-enumeration hook as cellpose, so a model appears
@@ -92,14 +138,13 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name     = string(get(params, "valueName",     VERSIONED_DEFAULT_VAL))
-    out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
+    p    = parse_coastal_segment_params(params)
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -120,7 +165,7 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
     end
 
     on_log("[INFO] Input:  $im_path")
-    on_log("[INFO] Output: $(joinpath(task_dir, "labels", out_value_name)).zarr")
+    on_log("[INFO] Output: $(joinpath(task_dir, "labels", p.outputValueName)).zarr")
     on_log("[INFO] Models: $(length(models_converted))")
 
     qc_out_path = joinpath(task_run_dir(task_dir), "segment_counts.json")
@@ -128,37 +173,37 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
     ok = run_py("tasks/segment/coastal_run.py",
         (; imPath              = im_path,
            taskDir             = task_dir,
-           outputValueName     = out_value_name,
+           outputValueName     = p.outputValueName,
            qcOutPath           = qc_out_path,
            models              = models_converted,
-           blockSize           = Int(get(params, "blockSize", 512)),
-           overlap             = Int(get(params, "overlap", 64)),
-           blockSizeZ          = Int(get(params, "blockSizeZ", 0)),
-           overlapZ            = Int(get(params, "overlapZ", 0)),
-           labelOverlap        = Float64(get(params, "labelOverlap", 0.0)),
-           matchThreshold      = Float64(get(params, "matchThreshold", 0.3)),
-           removeUnmatched     = Bool(get(params, "removeUnmatched", false)),
-           minCellSize         = Float64(get(params, "minCellSize", 0.0)),
-           cellSizeMax         = Float64(get(params, "cellSizeMax", 0.0)),
-           labelSmoothing      = Float64(get(params, "labelSmoothing", 0.5)),
-           labelExpansion      = Float64(get(params, "labelExpansion", 0.0)),
-           labelErosion        = Float64(get(params, "labelErosion", 0.0)),
-           clearTouchingBorder = Bool(get(params, "clearTouchingBorder", false)),
-           clearDepth          = Bool(get(params, "clearDepth", false)),
-           normaliseToWhole    = Bool(get(params, "normaliseToWhole", true)),
+           blockSize           = p.blockSize,
+           overlap             = p.overlap,
+           blockSizeZ          = p.blockSizeZ,
+           overlapZ            = p.overlapZ,
+           labelOverlap        = p.labelOverlap,
+           matchThreshold      = p.matchThreshold,
+           removeUnmatched     = p.removeUnmatched,
+           minCellSize         = p.minCellSize,
+           cellSizeMax         = p.cellSizeMax,
+           labelSmoothing      = p.labelSmoothing,
+           labelExpansion      = p.labelExpansion,
+           labelErosion        = p.labelErosion,
+           clearTouchingBorder = p.clearTouchingBorder,
+           clearDepth          = p.clearDepth,
+           normaliseToWhole    = p.normaliseToWhole,
            # `frames` (as trained) or `seconds` (same durations, re-resolved for THIS movie's frame
            # interval) — see docs/SEGMENTATION.md → *Temporal scale*. Listed here because this
            # NamedTuple is a whitelist: the PREVIEW forwards the whole param bag, so a param missing
            # from this list is honoured on screen and ignored by the run.
-           temporalScaleMode   = String(get(params, "temporalScaleMode", "frames"))),
+           temporalScaleMode   = p.temporalScaleMode),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 
     on_log("[INFO] Segmentation complete.")
 
-    label_files = segment_label_files(out_value_name, models_converted)
-    register_label_files!(img, out_value_name, label_files)
+    label_files = segment_label_files(p.outputValueName, models_converted)
+    register_label_files!(img, p.outputValueName, label_files)
 
     # QC (advisory): the same objective per-type cell count every segmenter banks.
     if isfile(qc_out_path)
@@ -166,7 +211,7 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
             qmeta  = JSON3.read(read(qc_out_path, String))
             counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
             findings, primary = segment_qc_findings(counts)
-            write_qc(img, "segment.coastal", out_value_name, findings;
+            write_qc(img, "segment.coastal", p.outputValueName, findings;
                      metrics = Dict{String,Any}("nCells" => primary, "byType" => counts))
             on_log("[QC] segmented $primary cell(s)" *
                    (length(counts) > 1 ? " ($(join(["$k=$v" for (k, v) in counts], ", ")))" : "") * ".")
@@ -175,7 +220,7 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
         end
     end
 
-    Dict{String,Any}("outputValueName"  => out_value_name,
-                     "labelValueName"   => out_value_name,
+    Dict{String,Any}("outputValueName"  => p.outputValueName,
+                     "labelValueName"   => p.outputValueName,
                      "labelFiles"       => label_files)
 end

@@ -30,6 +30,20 @@ using JSON3
 
 struct SegmentCorrect <: CciaTask end
 
+# Typed shape of what `_run_task(::SegmentCorrect, …)` reads from `params`. `labelOps` is
+# normalised by `parse_label_ops` (Vector | JSON string) — a separate helper because it throws
+# `ParamValidationError` on malformed input; the struct just carries the normalised vector.
+Base.@kwdef struct SegmentCorrectParams
+    valueName::String                    = VERSIONED_DEFAULT_VAL
+    labelOps::Vector{Dict{String,Any}}   = Dict{String,Any}[]
+end
+
+function parse_segment_correct_params(d::AbstractDict)::SegmentCorrectParams
+    SegmentCorrectParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        labelOps  = parse_label_ops(get(d, "labelOps", nothing)))
+end
+
 """
     parse_label_ops(value) -> Vector{Dict{String,Any}}
 
@@ -88,17 +102,17 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    p          = parse_segment_correct_params(params)
     task_dir   = img._dir
     ccid       = state_file(task_dir)
     raw        = read_ccid_raw(ccid)
 
-    ops = parse_label_ops(get(params, "labelOps", nothing))
+    ops = p.labelOps
     if isempty(ops)
         on_log("[INFO] No correction ops — nothing to do.")
-        return Dict{String,Any}("valueName" => value_name, "nOps" => 0)
+        return Dict{String,Any}("valueName" => p.valueName, "nOps" => 0)
     end
-    on_log("[INFO] $(length(ops)) label correction op(s) on $value_name")
+    on_log("[INFO] $(length(ops)) label correction op(s) on $(p.valueName)")
     on_progress(1, 5)
 
     # Resolve the labels zarr — same lookup measure_labels uses. Only the PRIMARY `<vn>.zarr` gets
@@ -108,16 +122,16 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
     # can propagate the rewrite to siblings uniformly if needed. Not built here; when the first
     # matched-store use case appears we add a `matchStores` param, not a second engine.
     labels_dict_raw = get(raw, "labels", Dict{String,Any}())
-    label_entry = get(labels_dict_raw, value_name,
-                      get(labels_dict_raw, Symbol(value_name), nothing))
+    label_entry = get(labels_dict_raw, p.valueName,
+                      get(labels_dict_raw, Symbol(p.valueName), nothing))
     if isnothing(label_entry)
-        on_log("[ERROR] No labels registered for valueName='$value_name'")
+        on_log("[ERROR] No labels registered for valueName='$(p.valueName)'")
         return nothing
     end
     label_files = label_entry isa AbstractVector ?
                   collect(String, label_entry) : [string(label_entry)]
     isempty(label_files) && begin
-        on_log("[ERROR] labels entry for '$value_name' is empty")
+        on_log("[ERROR] labels entry for '$(p.valueName)' is empty")
         return nothing
     end
     labels_dir  = joinpath(task_dir, "labels")
@@ -159,7 +173,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
         (; taskDir     = task_dir,
            imPath      = im_path,
            labelsPath  = labels_path,
-           valueName   = value_name,
+           valueName   = p.valueName,
            ops         = ops,
            resultFile  = result_file),
         task_run_dir(task_dir);
@@ -193,7 +207,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
         push!(entries, rec)
     end
     journal = try
-        append_label_corrections!(task_dir, value_name, entries)
+        append_label_corrections!(task_dir, p.valueName, entries)
     catch e
         on_log("[WARN] could not write the label correction journal: $e")
         nothing
@@ -204,7 +218,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
     metrics = label_correction_metrics(ops, per_op_pixels;
                                        n_labels_before = n_before, n_labels_after = n_after)
     try
-        write_qc(img, "segment.correct", value_name,
+        write_qc(img, "segment.correct", p.valueName,
                  label_correction_qc_findings(metrics); metrics = metrics)
         on_log("[QC] $(metrics["nLabelsRemoved"]) label(s) removed across " *
                "$(metrics["nFramesTouched"]) frame(s); $(metrics["nPixelsRewritten"]) pixel(s) rewritten.")
@@ -238,8 +252,8 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
     # `skipDownstream` is honoured by the composite executor (`task.jl` → CompositeTask) to stop the
     # chain cleanly after this step when the correction was a no-op. Not a failure — the run is
     # complete, there just isn't anything for the follow-up steps to do.
-    Dict{String,Any}("valueName"       => value_name,
-                     "outputValueName" => value_name,
+    Dict{String,Any}("valueName"       => p.valueName,
+                     "outputValueName" => p.valueName,
                      "nOps"            => length(ops),
                      "metrics"         => metrics,
                      "skipDownstream"  => n_pixels == 0)
