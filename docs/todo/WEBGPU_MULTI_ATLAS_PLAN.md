@@ -101,12 +101,39 @@ WGSL:
 ```
 
 `binding_array` is the only mechanism that lets a runtime slot ID pick which texture to
-sample. It requires the `binding_array` feature — check on adapter init, fall back to
-single-atlas (Phase 1 mode) if unavailable. All target browsers (Chromium/Firefox/Safari
-recent) support it as of 2026-09.
+sample. It's the `binding_array` proposal (gpuweb/gpuweb#binding-array — status
+"explored", not yet in the stable spec as of 2026-09), so support needs a two-part probe,
+NOT a single feature check:
 
-If a real driver doesn't support `binding_array`, the fallback is Phase 1's behaviour
-(single atlas at `min(budget, maxBufferSize)`) — no crash, just the old capacity ceiling.
+1. **WGSL parse.** Can the shader compiler even accept `binding_array<T, N>`?
+2. **Runtime bindGroup.** Does WebGPU's `createBindGroupLayout` accept an entry with
+   `arraySize: N`, and `createBindGroup` accept `resource: [view0, view1, …]`?
+
+Both must be true to ship P3 without a fallback. `docs/todo/spike/webgpu/diagnostic.html`
+§A probes both and reports `probe.wgsl.bindingArray4.{wgslCompiles, bindGroupAccepts,
+supported}` — re-run on the target device before merging P3.
+
+**Confirmed on RTX 2000 Ada / Brave 151 / Dawn Vulkan (2026-09-16, two independent runs
+with `--enable-unsafe-webgpu --enable-webgpu-developer-features --use-vulkan=native`)**:
+`wgslCompiles = true`, `bindGroupAccepts = false`. Error text (verbatim, both runs):
+
+> Failed to execute 'createBindGroup' on 'GPUDevice': Failed to read the 'entries' property
+> from 'GPUBindGroupDescriptor': Failed to read the 'resource' property from
+> 'GPUBindGroupEntry': Failed to read the 'buffer' property from 'GPUBufferBinding':
+> Required member is undefined.
+
+The runtime API for `resource: [view0, view1, …]` is not shipped in Chromium 151 even with
+experimental WebGPU flags on. This is the "WGSL parses, runtime rejects" split the two-part
+probe exists to catch. **P3 is blocked on this device.** Re-check trigger: a Chromium
+version bump that flips `bindGroupAccepts` in the diagnostic, or a different device that
+exposes the runtime.
+
+The fallback is Phase 2's behaviour **with a runtime clamp**: `probeBindingArraySupport`
+runs once at device acquisition (`utils/webgpuProbe.ts`), and `pickAtlasLayout` accepts a
+`maxAtlases` param — the renderer passes `1` when the probe returns false so N stays clamped
+to 1 regardless of budget. See P2 below. No crash, no user-visible holes, and the multi-atlas
+allocation code paths stay under test coverage so the day the runtime unblocks it's a
+one-line flip.
 
 ## Files touched, per phase
 
@@ -133,7 +160,7 @@ If a real driver doesn't support `binding_array`, the fallback is Phase 1's beha
 - **Ship criterion:** `pixi run test-frontend` green, `pixi run dev` renders fXgbTl same as
   today, PR-A's T1.1 clamp still works.
 
-### P2 — Allocate N atlases when budget > `min(maxBufferSize, per-atlas cap)`.
+### P2 — Allocate N atlases when budget > `min(maxBufferSize, per-atlas cap)`. **SHIPPED 2026-09-16 in PR #912, with runtime clamp keeping N=1 until P3 unblocks.**
 
 - `pickAtlasLayout` divides remaining budget by `atlasVramBytes(layouts[0])`, adds atlases
   up to `MAX_ATLASES`. Ragged tail rounds down.
@@ -151,7 +178,7 @@ If a real driver doesn't support `binding_array`, the fallback is Phase 1's beha
   `viewerCacheMB < 2048`) AND renders correctly-with-holes at N=2 (bricks past
   `perAtlasCapacity` render as their placeholder colour, not garbage).
 
-### P3 — WGSL `binding_array` — shader samples the correct atlas.
+### P3 — WGSL `binding_array` — shader samples the correct atlas. **BLOCKED (2026-09-16) — Chromium/Dawn 151 rejects the runtime bindGroup even with `--enable-unsafe-webgpu`; see Decision 6.**
 
 - `brickShader.ts` swaps `texture_3d<u32>` for `binding_array<texture_3d<u32>, MAX_ATLASES>`.
   Same for the label atlas (Decision 1: bind group handles both).

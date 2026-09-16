@@ -118,8 +118,22 @@ const PREV_TOUCH_BIAS = 1_000_000_000
 const BOUND_T_TOUCH_BIAS = 500_000_000
 
 interface AtlasState {
+  /** Per-atlas layout, identical for every entry (Decision 3 of the multi-atlas plan).
+   *  `layout` aliases `layouts[0]` — code that needs the sizing (page-table dims, atlas
+   *  texture dims, brick shape) reads either interchangeably. See
+   *  `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` Phase 2. */
   layout: AtlasLayout
+  layouts: readonly AtlasLayout[]
+  /** `texture` aliases `textures[0]` — the shader binds only the first atlas in Phase 2
+   *  (WEBGPU_MULTI_ATLAS_PLAN.md P2 guard: slots ≥ `perAtlasCapacity` land in `textures[1..]`
+   *  and are invisible to the render). Phase 3 replaces the binding with a `binding_array`
+   *  and every `textures[i]` becomes reachable. */
   texture: BrickAtlasTexture
+  textures: readonly BrickAtlasTexture[]
+  /** Slots per single atlas = `atlasSlotCapacity(layout)`. Total capacity (and the PageTable's
+   *  capacity) = `perAtlasCapacity * textures.length`. Decision 2: slot ID is global; atlas
+   *  index is derived as `Math.floor(slot / perAtlasCapacity)`. */
+  perAtlasCapacity: number
   pageTable: PageTable
   /** Grid at the CURRENT level — `nBx × nBy × nBz` bricks. Recomputed on level switch. Shader
    *  reads these from the uniform to translate `vi.xyz` (a level-scaled voxel coord) into
@@ -473,7 +487,8 @@ export async function createBrickVolumeRenderer(
 
   const dropAtlas = () => {
     if (atlas === null) return
-    atlas.texture.destroy()
+    // Multi-atlas P2: destroy every allocated atlas texture (in P1 there's always exactly one).
+    for (const t of atlas.textures) t.destroy()
     atlas.pageTableBuffer.destroy()
     atlas.prevPageTableBuffer.destroy()
     // Only destroy the real per-image label texture — the shared placeholder is renderer-lived.
@@ -525,17 +540,18 @@ export async function createBrickVolumeRenderer(
       maxBufferSize: device.limits.maxBufferSize,
     }
     // Clamp against the device's own `maxBufferSize` — Chromium/Dawn caps every backend at
-    // ~4 GiB regardless of card VRAM, so a Settings pick above that (or a browser that
-    // reports a smaller cap) would otherwise land in `validateAtlasLayout`'s size guard and
-    // error-toast with no fallback. Silently downgrading here is the honest behaviour: the
-    // user asked for the biggest atlas the hardware would give, and that IS the biggest.
-    // Multi-atlas (WEBGPU_UPLOAD_PATH_PLAN.md → U5) is the way past this ceiling.
-    const requestedBudget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
-    const budget = Math.min(requestedBudget, limits.maxBufferSize)
-    // Multi-atlas P1: `pickAtlasLayout` now returns an array (length always 1 here) so the
-    // pipeline is ready for P2 to allocate N > 1 atlases past the `maxBufferSize` cap
-    // without another API break. See `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` P1.
-    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
+    // Multi-atlas (P2): pass the FULL requested budget through — `pickAtlasLayout` clamps its
+    // per-atlas sizer at `maxBufferSize` internally, then allocates up to `MAX_ATLASES`
+    // atlases so total VRAM exceeds the single-buffer cap. See
+    // `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decision 4. When the budget fits in one atlas,
+    // `nAtlases = 1` and the behaviour is identical to Phase 1.
+    const budget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
+    // Runtime clamp (Decision 6): if `binding_array<T, N>` runtime is missing on this device the
+    // shader binds only `textures[0]`, so allocating N > 1 would silently strand bricks in
+    // unrendered textures. `acquireGpuDevice` already ran the two-part probe; feed the result
+    // straight into the sizer.
+    const maxAtlases = report.bindingArraySupported ? undefined : 1
+    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits, maxAtlases)
     if (layouts === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return
@@ -545,7 +561,10 @@ export async function createBrickVolumeRenderer(
     if (textures === null) return
     const texture = textures[0]
 
-    const capacity = atlasSlotCapacity(layout)
+    // Global slot ID (Decision 2). PageTable's capacity spans all N atlases; the shader's
+    // slot decode still uses layout[0]'s atlasSlotCounts because all layouts are homogeneous.
+    const perAtlasCapacity = atlasSlotCapacity(layout)
+    const capacity = perAtlasCapacity * textures.length
     const pageTable = new PageTable(capacity)
 
     // L0 grid is the largest we ever address — allocate the page-table CPU + GPU buffer for it, so a
@@ -605,7 +624,7 @@ export async function createBrickVolumeRenderer(
     })
 
     atlas = {
-      layout, texture, pageTable,
+      layout, layouts, texture, textures, perAtlasCapacity, pageTable,
       gridNx: gridNxL0, gridNy: gridNyL0, gridNz: gridNzL0,     // start at L0
       gridNxL0, gridNyL0, gridNzL0,
       pageTableBuffer, pageTableCpu, pageTableDirty: true,
@@ -688,7 +707,14 @@ export async function createBrickVolumeRenderer(
           : payload.bytes
         const writeT0 = onBrickWritten !== null ? performance.now() : 0
         const brickBytes = new Uint8Array(bytes)
-        const ok = atlas.texture.writeBrick(result.entry.slot, brickBytes)
+        // Multi-atlas slot decode (Decision 2): global slot ID → (atlasIndex, localSlot).
+        // In Phase 2 the shader still binds `textures[0]`; a brick that lands in
+        // `textures[1..]` gets its bytes uploaded (so the LRU still evicts it correctly and a
+        // future promotion into atlas[0] costs no refetch) but the shader can't sample it, so
+        // it renders as if it weren't resident. See docstring on `AtlasState` above.
+        const atlasIndex = Math.floor(result.entry.slot / atlas.perAtlasCapacity)
+        const localSlot = result.entry.slot % atlas.perAtlasCapacity
+        const ok = atlas.textures[atlasIndex].writeBrick(localSlot, brickBytes)
         if (onBrickWritten !== null && ok) {
           onBrickWritten(performance.now() - writeT0, brickBytes.byteLength)
         }
@@ -797,6 +823,12 @@ export async function createBrickVolumeRenderer(
     const key = brickKey(brick)
     const entry = atlas.pageTable.get(key)
     if (entry === undefined || entry.slot !== expectedSlot) return
+    // Multi-atlas P2 guard: the label atlas is single-per-image; a brick that landed in
+    // intensity `textures[1..]` can't be sampled by the shader (which binds `textures[0]`
+    // only), so a matching label brick has nowhere to render. Drop it silently. When P3
+    // replaces the intensity binding with a `binding_array`, this gate goes away and the
+    // label atlas becomes N textures too.
+    if (expectedSlot >= atlas.perAtlasCapacity) return
     const [ebx, eby, ebz] = layout.brickSizeVox
     const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
                 || payload.shape.nz !== ebz
@@ -806,6 +838,8 @@ export async function createBrickVolumeRenderer(
       ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], 4)
       : payload.bytes
     // Label atlas has no channel stacking — slot origin z is `sz * brickZ`, not `sz * brickZ * nC`.
+    // Slot coords are in the SINGLE label atlas (Phase 2), so this is exactly `expectedSlot`,
+    // guaranteed < `perAtlasCapacity` by the guard above.
     const [sxCount] = layout.atlasSlotCounts
     const syCount = layout.atlasSlotCounts[1]
     const sx = expectedSlot % sxCount

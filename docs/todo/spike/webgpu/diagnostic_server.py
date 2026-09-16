@@ -43,9 +43,16 @@ STATE = {}
 
 
 def _load_zstd():
-    """`numcodecs.Zstd` — the same codec cecelia writes with. Loaded once at startup so a
-    missing dependency fails loud instead of on the first zstd request."""
-    import numcodecs
+    """`numcodecs.Zstd` — the same codec cecelia writes with. Loaded once at startup;
+    a missing `numcodecs` install (running the server outside `pixi run …`) is
+    tolerated by returning None, and §H's `enc=zstd` row then serves `503 zstd
+    unavailable`. §A/§B/§C/§D and §H `enc=identity` still work."""
+    try:
+        import numcodecs
+    except ImportError:
+        print('WARN: numcodecs not installed — §H zstd-encoded path disabled. '
+              'Run under `pixi run python …` to enable it.', flush=True)
+        return None
     return numcodecs.Zstd(level=1)
 
 
@@ -189,6 +196,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 encoding = None
                 srv_compress_ms = 0.0
                 if enc == 'zstd':
+                    if STATE['zstd'] is None:
+                        return self._send(503, b'zstd unavailable - install numcodecs (or run via pixi)',
+                                          'text/plain')
                     t_c = time.perf_counter()
                     body = STATE['zstd'].encode(body)
                     encoding = 'zstd'
@@ -226,6 +236,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 encoding = None
                 srv_compress_ms = 0.0
                 if enc == 'zstd':
+                    if STATE['zstd'] is None:
+                        return self._send(503, b'zstd unavailable - install numcodecs (or run via pixi)',
+                                          'text/plain')
                     t_c = time.perf_counter()
                     body = STATE['zstd'].encode(body)
                     encoding = 'zstd'

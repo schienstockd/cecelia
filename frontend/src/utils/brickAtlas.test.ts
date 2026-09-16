@@ -114,13 +114,64 @@ describe('pickAtlasLayout — real-world sizing', () => {
 
   it('respects maxTextureDimension3D when growing atlas axes', () => {
     // A tiny limit that only allows 2 bricks per axis; validate it stays within.
+    // Budget sized to one atlas so we isolate the axis-limit assertion — multi-atlas division
+    // is covered separately below.
     const tight: DeviceLimits = { maxTextureDimension3D: 256, maxBufferSize: 1 << 30 }
-    const l = pickAtlasLayout([128, 128, 4], 1, 1, 128 * 1024 * 1024, tight)
+    const l = pickAtlasLayout([128, 128, 4], 1, 1, 16 * 1024 * 1024, tight)
     expect(l).not.toBeNull()
     expect(l!).toHaveLength(1)
     expect(l![0].atlasSlotCounts[0]).toBeLessThanOrEqual(2)   // 256 / 128 = 2 bricks per axis
     expect(l![0].atlasSlotCounts[1]).toBeLessThanOrEqual(2)
     expect(validateAtlasLayout(l![0], tight)).toBeNull()
+  })
+
+  it('allocates N > 1 atlases when budget exceeds one atlas at maxBufferSize (multi-atlas P2)', () => {
+    // brickSize=[128,128,4], bpv=1, nc=1 → tiny per-brick (64 KB).
+    // Under a tight 256-axis limit + 16 MB per-atlas cap: sizer picks 2×2×64 = 256 slots =
+    // 16 MB atlas. Total budget = 64 MB → 64/16 = 4 atlases, exactly MAX_ATLASES.
+    // Documents Decision 4: sizer per atlas, then divide.
+    const tight: DeviceLimits = { maxTextureDimension3D: 256, maxBufferSize: 16 * 1024 * 1024 }
+    const l = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight)
+    expect(l).not.toBeNull()
+    expect(l!).toHaveLength(4)
+    // Homogeneity (Decision 3) — every entry is the same layout.
+    for (const layout of l!) {
+      expect(layout.atlasSlotCounts).toEqual(l![0].atlasSlotCounts)
+      expect(layout.bytesPerVoxel).toBe(l![0].bytesPerVoxel)
+      expect(layout.channelsPerBrick).toBe(l![0].channelsPerBrick)
+      expect(validateAtlasLayout(layout, tight)).toBeNull()
+    }
+  })
+
+  it('caps at MAX_ATLASES even when budget could hold more', () => {
+    // A 1 GB budget over a 16 MB per-atlas cap wants 64 atlases; cap holds at 4.
+    const tight: DeviceLimits = { maxTextureDimension3D: 256, maxBufferSize: 16 * 1024 * 1024 }
+    const l = pickAtlasLayout([128, 128, 4], 1, 1, 1024 * 1024 * 1024, tight)
+    expect(l).not.toBeNull()
+    expect(l!.length).toBeLessThanOrEqual(4)
+    expect(l!).toHaveLength(4)   // exactly MAX_ATLASES; the extra 960 MB of budget is ceded.
+  })
+
+  it('clamps to N=1 when caller passes maxAtlases=1 (binding_array runtime unsupported)', () => {
+    // Same setup as the "N > 1 allocation" case — a budget that would allocate 4 atlases when
+    // uncapped MUST stay at 1 when the caller passes maxAtlases=1, because the shader can't
+    // sample past textures[0] on this device. See WEBGPU_MULTI_ATLAS_PLAN.md → Decision 6.
+    const tight: DeviceLimits = { maxTextureDimension3D: 256, maxBufferSize: 16 * 1024 * 1024 }
+    const uncapped = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight)
+    expect(uncapped).toHaveLength(4)   // sanity: uncapped path really did want 4
+    const clamped = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight, 1)
+    expect(clamped).not.toBeNull()
+    expect(clamped!).toHaveLength(1)
+    // Same per-atlas layout in both — clamp only shrinks the array, never resizes the atlas.
+    expect(clamped![0].atlasSlotCounts).toEqual(uncapped![0].atlasSlotCounts)
+  })
+
+  it('stays at N=1 when budget only fits one atlas', () => {
+    // Budget exactly fits one atlas — nAtlases must be 1, never 0.
+    const REAL_2GB: DeviceLimits = { maxTextureDimension3D: 2048, maxBufferSize: 4 * 1024 * 1024 * 1024 }
+    const l = pickAtlasLayout([128, 128, 37], 2, 4, 2 * 1024 * 1024 * 1024, REAL_2GB)
+    expect(l).not.toBeNull()
+    expect(l!).toHaveLength(1)
   })
 
   it('maximises slot count under budget instead of pinning nz=1 — the fix for Dml3RG atlas under-provisioning', () => {
