@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
@@ -8,6 +9,7 @@ import { openIconLegend } from '../lib/iconLegendOpen'
 import { openColorLegend } from '../lib/colorLegendOpen'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
+import { shortVersionLabel } from '../utils/versionLabel'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -23,6 +25,10 @@ function openUpdate() { openWhatsNew() }
 // of the daily launch tip a way to browse them again, and makes the header brand mark do useful
 // double-duty as the "what can this thing do?" entry point.
 function openTips() { openWhatsNew({ withTip: true }) }
+
+// Compact form of appCtl.updateCurrent for the header chip; long dev-provenance line collapses to
+// `dev@<sha7>` (or `<branch>@<sha7>` off-main). Full string stays in the tooltip.
+const versionShort = computed(() => shortVersionLabel(appCtl.updateCurrent))
 
 const statusLabel: Record<string, string> = {
   connected:    'Connected',
@@ -132,6 +138,17 @@ const statusTip: Record<string, string> = {
       </button>
     </span>
 
+    <!-- Version chip — the running version as `/api/update/check` reports it (verbatim: a tag like
+         `v0.2.4` for stable, `dev @ main 1a2b3c4` for dev). Matches what Settings → Software's
+         Version field shows, but visible at a glance so a user answering "what version are you on?"
+         doesn't have to hunt. NOT clickable — the Cecelia brand mark to the left already opens
+         What's New. Hidden until the first update-check completes so we never render an empty pill. -->
+    <span v-if="versionShort" class="version-chip"
+          data-guide="header.version"
+          v-tooltip.bottom="'Cecelia ' + appCtl.updateCurrent">
+      {{ versionShort }}
+    </span>
+
     <span
       class="ws-badge"
       data-guide="header.wsBadge"
@@ -186,6 +203,21 @@ const statusTip: Record<string, string> = {
 .help-link:hover { background: var(--cc-surface-2); }
 
 .spacer { flex: 1; }
+
+/* Version chip — muted, monospace-numeric, same pill shape as ws-badge for visual rhyme.
+   Deliberately status-only, not a control: the Cecelia brand mark is the release-notes entry. */
+.version-chip {
+  font-size: var(--cc-fs-sm);
+  font-weight: 500;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--cc-radius-pill);
+  background: var(--cc-surface-2);
+  color: var(--cc-text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  line-height: 1;
+  cursor: default;
+}
 
 .ws-badge {
   display: flex;
