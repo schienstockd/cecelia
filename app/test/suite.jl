@@ -8989,7 +8989,7 @@ end
     @test !isfile(gating_path(td, "B"; pop_type="flow"))
     m2 = load_pop_map(td, "B"; pop_type="clust")
     @test pop_at(m2, "/myeloid").filter_measure == "clusters.default"
-    @test pop_at(m2, "/myeloid").filter_fun == "in"
+    @test pop_at(m2, "/myeloid").filter_fun == Cecelia.FILTER_IN
     @test Set(pop_at(m2, "/myeloid").filter_values) == Set([1, 3])
 end
 
@@ -9228,7 +9228,7 @@ end
 
     # single fields mirror conditions[1] so single-field readers still work
     p = pop_at(m, "/CD4hi_fast")
-    @test p.filter_measure == "live.cell.cd4" && p.filter_fun == "gt" && length(p.filter_conditions) == 2
+    @test p.filter_measure == "live.cell.cd4" && p.filter_fun == Cecelia.FILTER_GT && length(p.filter_conditions) == 2
 
     # round-trip through to_tree/from_tree preserves the conditions + membership
     m2 = from_tree(to_tree(m)); recompute!(m2, fetch)
@@ -9239,6 +9239,69 @@ end
     fetch1 = _ -> DataFrame("label" => [1, 2], "live.cell.cd4" => [0.9, 0.1])   # speed absent
     @test_logs (:warn, r"live\.cell\.speed") match_mode=:any recompute!(m, fetch1)
     @test isempty(cells_in_pop(m, "/CD4hi_fast"))
+end
+
+@testset "FilterFun enum + FilterCondition — boundary coercion + JSON round-trip" begin
+    # `filter_fun` is stored as a `FilterFun` enum; string/Symbol kwargs at add_pop! and API-body
+    # boundaries are coerced via `parse_filter_fun`. `filter_conditions` is a `Vector{FilterCondition}`
+    # after normalisation (JSON dicts and NamedTuples both accepted at the boundary).
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "single"; filter_measure="x", filter_fun="gt", filter_values=1)
+    add_pop!(m, "enum_kwarg"; filter_measure="x", filter_fun=Cecelia.FILTER_GTE, filter_values=1)
+    @test pop_at(m, "/single").filter_fun === Cecelia.FILTER_GT
+    @test pop_at(m, "/enum_kwarg").filter_fun === Cecelia.FILTER_GTE
+    @test pop_at(m, "/single").filter_conditions === nothing
+
+    # compound: string funs and Symbol funs both coerce, and the produced conditions ARE typed
+    add_pop!(m, "compound"; filter_conditions=[
+        Dict("measure" => "a", "fun" => "in",  "values" => [1, 2]),
+        Dict("measure" => "b", "fun" => :neq, "values" => 0)])
+    p = pop_at(m, "/compound")
+    @test p.filter_conditions isa Vector{Cecelia.FilterCondition}
+    @test p.filter_conditions[1].fun === Cecelia.FILTER_IN
+    @test p.filter_conditions[2].fun === Cecelia.FILTER_NEQ
+    # single-field mirror still works (conditions[1] onto the single fields)
+    @test p.filter_measure == "a" && p.filter_fun === Cecelia.FILTER_IN
+
+    # sidecar serialises the wire string (`"in"`, NOT `"FILTER_IN"`) — enforced so the frontend and
+    # any older Julia consumer keep reading a raw string.
+    td = mktempdir(); save_pop_map!(m, td)
+    raw = JSON3.read(read(gating_path(td, "B"), String))
+    funs = String[]
+    walk = node -> begin
+        f = get(node, :filter, nothing)
+        if f !== nothing
+            push!(funs, String(get(f, :fun, "")))
+            for c in get(f, :conditions, [])
+                push!(funs, String(get(c, :fun, "")))
+            end
+        end
+        for c in get(node, :children, [])
+            walk(c)
+        end
+    end
+    for root in raw.populations
+        walk(root)
+    end
+    @test Set(funs) ⊆ Set(["gt", "gte", "in", "neq"])   # all wire-form strings
+    @test !any(startswith(f, "FILTER_") for f in funs)
+
+    # read back — the loader coerces sidecar strings into the enum + typed FilterCondition
+    m2 = load_pop_map(td, "B")
+    @test pop_at(m2, "/single").filter_fun === Cecelia.FILTER_GT
+    p2 = pop_at(m2, "/compound")
+    @test p2.filter_conditions isa Vector{Cecelia.FilterCondition}
+    @test p2.filter_conditions[1].fun === Cecelia.FILTER_IN
+
+    # parse_filter_fun rejects garbage with an ArgumentError; catalog covers all wire forms
+    @test Cecelia.parse_filter_fun("lte") === Cecelia.FILTER_LTE
+    @test_throws ArgumentError Cecelia.parse_filter_fun("gtish")
+
+    # gating_engine._filter_mask now takes FilterFun | Nothing directly (no string branching)
+    col = [1.0, 2.0, 3.0, 4.0]
+    @test Cecelia._filter_mask(col, Cecelia.FILTER_GT,  2.0, false) == BitVector([false, false, true, true])
+    @test Cecelia._filter_mask(col, Cecelia.FILTER_IN,  [1.0, 3.0], false) == BitVector([true, false, true, false])
+    @test Cecelia._filter_mask(col, nothing, nothing, true) == BitVector([true, true, true, true])
 end
 
 @testset "recompute! — a missing filter/gate column degrades to empty (no crash)" begin
@@ -9580,7 +9643,7 @@ end
                  filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)
     @test created == ["/qc/" * AGGREGATED_POP_NAME]
     p = pop_at(load_pop_map(img; value_name="B", pop_type="flow"), "/qc/" * AGGREGATED_POP_NAME)
-    @test p.filter_measure == "flow.cell.is.aggregate" && p.filter_fun == "gt" && p.filter_values == 0
+    @test p.filter_measure == "flow.cell.is.aggregate" && p.filter_fun == Cecelia.FILTER_GT && p.filter_values == 0
     @test pop_category(p.pop_type, p.path) == "aggregated" && !is_track_pop(p.pop_type, p.path)
 
     # idempotent: re-running REDEFINES (a probability cutoff — measure-agnostic), never duplicates
@@ -9588,7 +9651,7 @@ end
                  filter_measure="flow.cell.aggregate.score", filter_fun="gte", filter_values=0.5)
     m3 = load_pop_map(img; value_name="B", pop_type="flow")
     @test count(pp -> endswith(pp, AGGREGATED_POP_NAME), pop_paths(m3)) == 1
-    @test pop_at(m3, "/qc/" * AGGREGATED_POP_NAME).filter_fun == "gte"
+    @test pop_at(m3, "/qc/" * AGGREGATED_POP_NAME).filter_fun == Cecelia.FILTER_GTE
 
     # a parent absent from the map is skipped; the all-cells root ("/") maps to ROOT and is created
     created2 = ensure_filter_pop!(img, "flow", "B", ["/nonexistent", "/"], AGGREGATED_POP_NAME;
