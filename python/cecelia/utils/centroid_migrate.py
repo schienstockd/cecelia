@@ -33,9 +33,27 @@ def normalise_centroids(adata):
     changes = []
 
     if "spatial" in adata.obsm:
-        # Case A — relabel positional/legacy names; the obsm matrix is untouched.
+        # Case A — relabel positional/legacy names; the obsm matrix is untouched EXCEPT for the
+        # 4-column TZYX case below.
         sc = [str(x) for x in adata.uns.get("spatial_cols", [])]
         if sc and not all(_EXPLICIT_SPATIAL.match(x) for x in sc):
+            # Legacy 4D live image: skimage names centroid columns in axis order, so a TZYX label
+            # table yields centroid-0 (T), centroid-1 (Z), centroid-2 (Y), centroid-3 (X). Old
+            # Feijoa stored all four in obsm['spatial']. Split the leading column into
+            # obsm['temporal'] IF the file doesn't already carry a temporal obsm; otherwise trust
+            # the file's temporal and just drop the leading spatial column as duplicate. Either
+            # way the resulting spatial is 3 columns (Z, Y, X) so `skimage_centroid_axis_names`
+            # doesn't hit its 3-cap.
+            if len(sc) == 4:
+                mat = np.asarray(adata.obsm["spatial"])
+                if "temporal" not in adata.obsm:
+                    adata.obsm["temporal"]      = mat[:, :1].astype(np.float32, copy=False)
+                    adata.uns["temporal_cols"]  = np.array(["centroid_t"], dtype=object)
+                    changes.append("split leading spatial column -> obsm['temporal'] (legacy 4D TZYX)")
+                else:
+                    changes.append("dropped duplicate leading spatial column (temporal already present)")
+                adata.obsm["spatial"] = mat[:, 1:].astype(np.float32, copy=False)
+                sc = sc[1:]
             new = skimage_centroid_axis_names(len(sc))
             adata.uns["spatial_cols"] = np.array(new, dtype=object)
             changes.append(f"spatial_cols {sc} -> {new}")

@@ -124,6 +124,37 @@ class TestNormaliseCentroids(unittest.TestCase):
         a, _ = normalise_centroids(_legacy_obsm(2, temporal=False))
         self.assertEqual(list(a.uns["spatial_cols"]), ["centroid_y", "centroid_x"])
 
+    def test_case_a_4d_TZYX_splits_temporal_out(self):
+        # Legacy 4D live image: skimage names TZYX centroids centroid-0..3 and old Feijoa stored all
+        # four in spatial. The 3-cap on skimage_centroid_axis_names then crashed the migrate. The
+        # converter now peels the first column into obsm['temporal'] and keeps 3 spatial.
+        a = _legacy_obsm(4, temporal=False)
+        mat = a.obsm["spatial"].copy()
+        a, changes = normalise_centroids(a)
+        self.assertEqual(list(a.uns["spatial_cols"]), ["centroid_z", "centroid_y", "centroid_x"])
+        self.assertEqual(list(a.uns["temporal_cols"]), ["centroid_t"])
+        self.assertEqual(a.obsm["spatial"].shape, (4, 3))
+        self.assertEqual(a.obsm["temporal"].shape, (4, 1))
+        np.testing.assert_array_equal(a.obsm["temporal"][:, 0], mat[:, 0])   # T came from column 0
+        np.testing.assert_array_equal(a.obsm["spatial"], mat[:, 1:])         # Z,Y,X kept in order
+        self.assertTrue(changes)
+        # idempotent — a second pass finds no work
+        _, again = normalise_centroids(a)
+        self.assertEqual(again, [])
+
+    def test_case_a_4d_with_existing_temporal_drops_leading_spatial(self):
+        # Odd shape but possible: file already had obsm['temporal'] AND four spatial columns. Trust
+        # the file's temporal; drop the duplicate leading spatial column so downstream sees 3+1.
+        a = _legacy_obsm(4, temporal=True)
+        mat = a.obsm["spatial"].copy()
+        tmat = a.obsm["temporal"].copy()
+        a, changes = normalise_centroids(a)
+        self.assertEqual(list(a.uns["spatial_cols"]), ["centroid_z", "centroid_y", "centroid_x"])
+        self.assertEqual(list(a.uns["temporal_cols"]), ["centroid_t"])
+        self.assertEqual(a.obsm["spatial"].shape, (4, 3))
+        np.testing.assert_array_equal(a.obsm["temporal"], tmat)              # file's temporal untouched
+        np.testing.assert_array_equal(a.obsm["spatial"], mat[:, 1:])         # kept Z,Y,X
+
     def test_case_b_flat_lifted(self):
         a, changes = normalise_centroids(_flat_var())
         self.assertIn("spatial", a.obsm)
