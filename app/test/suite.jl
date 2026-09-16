@@ -8749,7 +8749,7 @@ end
     @test Set(cells_in_pop(m, "/dp not kat")) == Set{Int}()      # only cell 3 is double+, and it is kat+
     @test Set(cells_in_pop(m, "/not kat")) == Set([1, 2, 4])
     # "not" is stored as an exclusion, not a third operator
-    @test pop_at(m, "/not kat").boolean_op == "and"
+    @test pop_at(m, "/not kat").boolean_op == Cecelia.BOOL_AND
     @test pop_at(m, "/not kat").boolean_pops == String[]
     @test pop_at(m, "/not kat").boolean_not == ["/kat+"]
 
@@ -8769,11 +8769,60 @@ end
     # round-trips through the sidecar, references and all
     td = mktempdir(); save_pop_map!(m, td)
     m2 = load_pop_map(td, "B")
-    @test pop_at(m2, "/dp not kat").boolean_op == "and"
+    @test pop_at(m2, "/dp not kat").boolean_op == Cecelia.BOOL_AND
     @test pop_at(m2, "/dp not kat").boolean_pops == ["/gfp+", "/tom+"]
     @test pop_at(m2, "/dp not kat").boolean_not == ["/kat+"]
     recompute!(m2, fetch)
     @test Set(cells_in_pop(m2, "/gfp+ or tom+")) == Set([1, 2, 3])
+end
+
+@testset "BoolMembership enum — boundary coercion + JSON round-trip" begin
+    # boolean_op is stored as a `BoolMembership` enum (BOOL_AND / BOOL_OR); string kwargs at the
+    # add_pop!/set_boolean!/JSON-load boundaries are coerced through `_normalise_boolean`, and the
+    # sidecar's `"boolean.op"` writes the lowercase wire string via `Base.string(::BoolMembership)`.
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 1.0, 0.0, 1.0))
+    add_pop!(m, "b"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 1.0, 0.0, 1.0))
+
+    # string kwarg → enum stored, both operators
+    add_pop!(m, "and_pop"; parent=ROOT, boolean_op="and", boolean_pops=["/a", "/b"])
+    add_pop!(m, "or_pop";  parent=ROOT, boolean_op="or",  boolean_pops=["/a", "/b"])
+    @test pop_at(m, "/and_pop").boolean_op === Cecelia.BOOL_AND
+    @test pop_at(m, "/or_pop").boolean_op  === Cecelia.BOOL_OR
+
+    # passing the enum itself also works — accepts BoolMembership | AbstractString | Symbol
+    add_pop!(m, "enum_pop"; parent=ROOT, boolean_op=Cecelia.BOOL_OR, boolean_pops=["/a"])
+    @test pop_at(m, "/enum_pop").boolean_op === Cecelia.BOOL_OR
+
+    # sidecar serialises the wire string, not the enum name (`"or"`, not `"BOOL_OR"`)
+    td = mktempdir(); save_pop_map!(m, td)
+    raw = JSON3.read(read(gating_path(td, "B"), String))
+    ops = String[]
+    walk = node -> begin
+        b = get(node, :boolean, nothing)
+        b === nothing || push!(ops, String(get(b, :op, "")))
+        for c in get(node, :children, [])
+            walk(c)
+        end
+    end
+    for root in raw.populations
+        walk(root)
+    end
+    @test Set(ops) == Set(["and", "or", "or"])
+    @test all(o in ("and", "or") for o in ops)   # no "BOOL_AND"/"BOOL_OR" leaking to disk
+
+    # and read back — the loader must coerce the sidecar string into the enum
+    m2 = load_pop_map(td, "B")
+    @test pop_at(m2, "/and_pop").boolean_op === Cecelia.BOOL_AND
+    @test pop_at(m2, "/or_pop").boolean_op  === Cecelia.BOOL_OR
+
+    # parse_bool_membership rejects garbage with an ArgumentError
+    @test Cecelia.parse_bool_membership("and") === Cecelia.BOOL_AND
+    @test Cecelia.parse_bool_membership("or")  === Cecelia.BOOL_OR
+    @test_throws ArgumentError Cecelia.parse_bool_membership("xor")
+
+    # exported backward-compat surface: BOOLEAN_OPS still enumerates the wire strings
+    @test Set(Cecelia.BOOLEAN_OPS) == Set(("and", "or"))
 end
 
 @testset "boolean references follow rename/move, and refuse to loop" begin

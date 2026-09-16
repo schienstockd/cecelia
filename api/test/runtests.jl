@@ -6142,7 +6142,7 @@ end
                                                                     "pops" => ["/gfp+", "/tom+"])))
         @test st == 200
         p = pop_at(loaded(), "/either")
-        @test p.boolean_op == "or" && p.boolean_pops == ["/gfp+", "/tom+"] && p.gate === nothing
+        @test p.boolean_op == Cecelia.BOOL_OR && p.boolean_pops == ["/gfp+", "/tom+"] && p.gate === nothing
 
         # rewritten wholesale by pop/update — including an exclusion ("but not …")
         st, _ = post(api_gating_pop_update,
@@ -6151,7 +6151,7 @@ end
                                                                     "not" => ["/tom+"])))
         @test st == 200
         p = pop_at(loaded(), "/either")
-        @test p.boolean_op == "and" && p.boolean_pops == ["/gfp+"] && p.boolean_not == ["/tom+"]
+        @test p.boolean_op == Cecelia.BOOL_AND && p.boolean_pops == ["/gfp+"] && p.boolean_not == ["/tom+"]
 
         # a reference that isn't a population, a loop, and an empty term list are all 400s
         st, _ = post(api_gating_pop_add,
