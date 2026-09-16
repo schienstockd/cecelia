@@ -186,6 +186,22 @@ Config is per-user at `~/.cecelia/custom.toml` (`%USERPROFILE%\.cecelia\custom.t
 dev checkout, `cecelia-feijoa/.env` (`CECELIA_DEV_DIR`) overrides that to your dev dir. The *why*
 and the config-resolution rules live in `docs/SHIPPING.md` and `docs/todo/ONBOARDING_PLAN.md`.
 
+## HTTPS + HTTP/2 (opt-in)
+
+The server runs cleartext HTTP/1.1 by default. Set `CECELIA_TLS=1` in the environment to switch
+production to HTTPS + HTTP/2 — Chromium refuses cleartext h2, so TLS is the only way to actually
+get h2 in a browser. On first launch with `CECELIA_TLS=1` Cecelia shells out to the system
+`openssl` binary to generate a self-signed cert at `~/.cecelia/tls/{cert,key}.pem` (dev checkouts:
+`$CECELIA_DEV_DIR/tls/`); regenerate by deleting both files. The browser will show a "Not secure"
+warning the first time; click through it once and the exception is remembered per browser.
+
+If `openssl` is not on `PATH` (default on Linux + macOS; via git-for-windows on Windows) the
+server logs `HTTP/1.1, no TLS` and starts cleanly, so opting in never breaks the launch — worst
+case you fall back to the default.
+
+Don't set `CECELIA_TLS=1` under `pixi run dev`: Vite's proxy is HTTP/1.1-only both ways, so ALPN
+downgrades and TLS just adds a cert warning without buying anything.
+
 ## Shared / lab machines (system-wide install)
 
 For one shared install serving every account, pass `CECELIA_INSTALL_SCOPE=system` (needs root /

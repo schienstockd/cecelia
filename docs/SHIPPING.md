@@ -93,6 +93,20 @@ calls `/api/...` and `ws://<host>/ws` relatively, so it works identically whethe
 dev (:5173, proxying to :8080) or by the Julia server in production (:8080). No CORS, no API-base
 configuration, no second process for the user.
 
+**HTTPS + HTTP/2 is opt-in via `CECELIA_TLS=1`.** Default (dev, prod, CI) is cleartext HTTP/1.1
+for two independent reasons: (1) Vite's dev proxy is HTTP/1.1-only both ways, so ALPN downgrades
+under `pixi run dev` and TLS earns nothing; (2) the smoke-test workflow curls plain
+`http://localhost:8080/` against `pixi run prod`, and switching to HTTPS by default would break
+that path on every install. When `CECELIA_TLS=1` is set, `api/src/tls.jl:ensure_dev_cert`
+generates a 365-day self-signed cert at `<config_dir>/tls/{cert,key}.pem` via the system `openssl`
+binary (idempotent: existing files are reused; delete both to rotate). ALPN advertises `h2` then
+`http/1.1`; Chromium picks h2 and real multiplexing kicks in — the fix the WebGPU viewer's brick
+loader needed once it hit Chromium's 6-per-origin queue on HTTP/1.1 (`WEBGPU_UPLOAD_PATH_PLAN.md`
+U4). If `openssl` is missing on `PATH`, the server logs `HTTP/1.1, no TLS` and starts cleanly —
+opting in never blocks launch. The reason we skipped mkcert (warning-free but bundles a
+third-party binary and writes the OS trust store during install) is documented in the top comment
+of `tls.jl`; revisit if the one-time click-through becomes a support problem.
+
 ### First-run configuration (setup wizard)
 
 An installed app has no `custom.toml`, so on first launch the backend reports `setupRequired` (via
