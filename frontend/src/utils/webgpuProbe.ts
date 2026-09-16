@@ -46,6 +46,12 @@ export interface AdapterReport {
   /** The adapter's own identification, reported rather than interpreted — the point is to put the real
    *  answer beside the proxy above instead of replacing one guess with another. */
   name: GpuAdapterName
+  /** Runtime support for `binding_array<texture_3d<u32>, N>` — the WGSL feature the multi-atlas
+   *  renderer needs to actually sample `textures[1..]`. Two-part check (WGSL parse + bindGroup
+   *  runtime) mirrored from `docs/todo/spike/webgpu/diagnostic.html` §A. When false, the atlas
+   *  sizer clamps to N=1 so the P2 machinery stays dormant. See
+   *  `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decision 6. */
+  bindingArraySupported: boolean
 }
 
 /** `adapter.info`, defaulted. Typed loosely because `info` is still optional in the DOM lib on some
@@ -167,14 +173,77 @@ export async function acquireGpuDevice(): Promise<{
   const requiredFeatures: GPUFeatureName[] = []
   if (adapter.features.has('timestamp-query')) requiredFeatures.push('timestamp-query')
   const device = await adapter.requestDevice({ requiredLimits, requiredFeatures })
+  const bindingArraySupported = await probeBindingArraySupport(device)
   const report: AdapterReport = {
     maxTextureDimension3D: maxDim3D,
     maxBufferSize: device.limits.maxBufferSize,
     looksDiscrete: classifyAdapter(name, maxDim3D),
     hasTimestamps: adapter.features.has('timestamp-query'),
     name,
+    bindingArraySupported,
   }
   return { adapter, device, report }
+}
+
+/**
+ * Runtime probe for `binding_array<texture_3d<u32>, 4>`. Two checks — WGSL parse AND runtime
+ * bindGroup — both must pass, otherwise the shader has no way to sample atlases past `[0]`.
+ *
+ * Mirrors `docs/todo/spike/webgpu/diagnostic.html` §A tryBindingArray exactly; kept in sync so a
+ * device flip in the diagnostic (Chromium version bump, driver update) reads the same way in
+ * production. Never throws. On Brave/Chromium 151 + Dawn Vulkan (2026-09-16 run, two passes)
+ * this returns false because the runtime API for `resource: [view0, view1, …]` isn't shipped —
+ * the WGSL side parses but createBindGroup errors with "Failed to read the 'buffer' property".
+ * See `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decision 6.
+ */
+export async function probeBindingArraySupport(device: GPUDevice): Promise<boolean> {
+  device.pushErrorScope('validation')
+  let ok = false
+  const created: GPUTexture[] = []
+  try {
+    const mod = device.createShaderModule({
+      code: `@group(0) @binding(0) var atlases: binding_array<texture_3d<u32>, 4>;
+             @fragment fn fs() -> @location(0) vec4<f32> {
+               let v: vec4<u32> = textureLoad(atlases[0], vec3<i32>(0,0,0), 0);
+               return vec4<f32>(f32(v.x), 0.0, 0.0, 1.0);
+             }`,
+    })
+    const info = await mod.getCompilationInfo()
+    if (info.messages.some(m => m.type === 'error')) {
+      await device.popErrorScope()
+      return false
+    }
+    // `arraySize` on a bindGroupLayoutEntry + `resource: <array>` on the bindGroup is the runtime
+    // half of binding_array. Not in the DOM lib types yet, so cast — that's the whole reason we
+    // probe rather than trust `device.features`.
+    const layout = device.createBindGroupLayout({
+      entries: [{
+        binding: 0, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'uint', viewDimension: '3d' },
+        arraySize: 4,
+      } as unknown as GPUBindGroupLayoutEntry],
+    })
+    const views: GPUTextureView[] = []
+    for (let i = 0; i < 4; i++) {
+      const t = device.createTexture({
+        size: [1, 1, 1], dimension: '3d', format: 'r32uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING,
+      })
+      created.push(t)
+      views.push(t.createView())
+    }
+    device.createBindGroup({
+      layout,
+      entries: [{ binding: 0, resource: views as unknown as GPUTextureView }],
+    })
+    ok = true
+  } catch {
+    ok = false
+  } finally {
+    created.forEach(t => t.destroy())
+  }
+  const err = await device.popErrorScope()
+  return ok && !err
 }
 
 /**

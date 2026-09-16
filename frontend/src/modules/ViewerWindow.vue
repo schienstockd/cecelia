@@ -4083,6 +4083,12 @@ async function start() {
         looksDiscrete: probe.looksDiscrete,
         hasTimestamps: probe.hasTimestamps,
         name: probe.name,
+        // The Settings-diagnostic probe doesn't have a device to test binding_array against —
+        // the renderer path (`acquireGpuDevice`) fills this in with the real answer as soon as
+        // the viewer opens. False here is the safe pre-answer default: it means the atlas sizer
+        // clamps to N=1 until the renderer refreshes the report, which matches today's Chromium
+        // ceiling. See WEBGPU_MULTI_ATLAS_PLAN.md → Decision 6.
+        bindingArraySupported: false,
       }
     }
 

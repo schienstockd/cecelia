@@ -546,7 +546,12 @@ export async function createBrickVolumeRenderer(
     // `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decision 4. When the budget fits in one atlas,
     // `nAtlases = 1` and the behaviour is identical to Phase 1.
     const budget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
-    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
+    // Runtime clamp (Decision 6): if `binding_array<T, N>` runtime is missing on this device the
+    // shader binds only `textures[0]`, so allocating N > 1 would silently strand bricks in
+    // unrendered textures. `acquireGpuDevice` already ran the two-part probe; feed the result
+    // straight into the sizer.
+    const maxAtlases = report.bindingArraySupported ? undefined : 1
+    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits, maxAtlases)
     if (layouts === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return

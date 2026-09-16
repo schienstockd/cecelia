@@ -152,6 +152,20 @@ describe('pickAtlasLayout — real-world sizing', () => {
     expect(l!).toHaveLength(4)   // exactly MAX_ATLASES; the extra 960 MB of budget is ceded.
   })
 
+  it('clamps to N=1 when caller passes maxAtlases=1 (binding_array runtime unsupported)', () => {
+    // Same setup as the "N > 1 allocation" case — a budget that would allocate 4 atlases when
+    // uncapped MUST stay at 1 when the caller passes maxAtlases=1, because the shader can't
+    // sample past textures[0] on this device. See WEBGPU_MULTI_ATLAS_PLAN.md → Decision 6.
+    const tight: DeviceLimits = { maxTextureDimension3D: 256, maxBufferSize: 16 * 1024 * 1024 }
+    const uncapped = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight)
+    expect(uncapped).toHaveLength(4)   // sanity: uncapped path really did want 4
+    const clamped = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight, 1)
+    expect(clamped).not.toBeNull()
+    expect(clamped!).toHaveLength(1)
+    // Same per-atlas layout in both — clamp only shrinks the array, never resizes the atlas.
+    expect(clamped![0].atlasSlotCounts).toEqual(uncapped![0].atlasSlotCounts)
+  })
+
   it('stays at N=1 when budget only fits one atlas', () => {
     // Budget exactly fits one atlas — nAtlases must be 1, never 0.
     const REAL_2GB: DeviceLimits = { maxTextureDimension3D: 2048, maxBufferSize: 4 * 1024 * 1024 * 1024 }
