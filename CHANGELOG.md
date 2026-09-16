@@ -15,6 +15,34 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.4] — 2026-09-16
+
+Follow-up patch after v0.2.3 hit real-world users. Three unrelated fixes surfaced by one macOS
+user working through legacy import + dev-channel upgrade.
+
+### Fixed
+
+- **Legacy migrate — three run-time errors in one flow.** First real end-to-end migrate turned up
+  a `shutil.rmtree` race on macOS APFS (Zarr chunk trees with thousands of tiny files hit
+  `_rmtree_safe_fd`'s ENOTEMPTY race), a `value_names` → `versioned_keys` typo at three sites in
+  `migrateLegacy.jl` that crashed after the Python side succeeded, and a misleading fallback log
+  line that blamed Rscript for any Python-side exception. `_rmtree_robust` retries only on
+  ENOTEMPTY; the typo is corrected; the message now points at the traceback already streamed
+  above.
+- **macOS — silent `.app` deaths are now diagnosable.** A `.app` launched from Finder / Dock runs
+  headlessly, so an update-time failure (reprovision crash, server crash-loop past `CRASH_LIMIT`)
+  showed the user only *"The application 'Cecelia' is not open anymore."* on the next Dock click,
+  with no cause anywhere. `Contents/MacOS/cecelia` now redirects the whole session to
+  `~/Library/Logs/Cecelia/launcher.log` (kept as `launcher.log.prev` on next launch) — Console.app
+  reads from there, so a bad update is a diff away.
+- **Dev channel no longer needs system Node.js.** Dev-channel installs (`install.sh --channel dev`)
+  and in-app dev-channel apply used to shell out to `npm` directly, so a macOS user without Node
+  hit *"npm was not found on PATH"* and could not take a dev update. Both paths now use
+  `pixi exec --spec nodejs -- npm …`, which fetches Node into an ephemeral pixi env (~40 MB,
+  cached in `~/.cache/pixi/`) — no host Node needed. Precheck now guards on `pixi` instead. Not
+  `nodejs` in `pixi.toml` because that would grow every install by ~40 MB and chicken-and-egg its
+  own delivery (the frontend build runs before `_apply_pending_update` reprovisions the env).
+
 ## [0.2.3] — 2026-09-15
 
 Patch cut so a macOS user with a legacy R/Shiny project can actually import it. Three unrelated
