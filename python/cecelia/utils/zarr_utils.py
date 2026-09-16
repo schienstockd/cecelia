@@ -1404,6 +1404,7 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
 
 def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
                                  nscales=1, keyword='datasets', mode='w', kind='image',
+                                 axes=None,
                                  reference_zarr=None, zarr_format=None, shards=None, separator=None):
     """Create a multiscales group + an EMPTY, per-plane-chunked level-0 array on disk, write the
     NGFF ``multiscales`` metadata, and return ``(group, level0, pchunks)``.
@@ -1417,6 +1418,14 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     layout — only the fill is streamed. Both derive their calibration from `calibration_for_axes`,
     which is what makes "exactly" true: this writer used to derive its own, without units, so the
     corrected stores it produces carried a unit-less t axis and leant on the OME-XML fallback.
+
+    ``axes``: explicit axis letters for the array being written, overriding the ones derived from
+    ``dim_utils``. Symmetric with `create_multiscales` — pass this whenever the stored array's rank
+    differs from the source image's (a LABEL store with no channel axis, or one that collapsed Z/T).
+    Without it a label writer streaming through here would inherit the source's ``t,c,z,y,x`` while
+    filling a channel-less array and end up with the branch-labels bug (finding A8): a positional
+    scale reader gave Y the Z step. Calibration is looked up by axis NAME (`calibration_for_axes`),
+    so any subset of the source axes stays correctly calibrated.
 
     ``reference_zarr``/``zarr_format``: the source store to INHERIT the format from, or an explicit
     format. This is the streaming writer the correction tasks use, so it is the main path by which a
@@ -1437,7 +1446,10 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
         separator = enc['separator'] if enc else None
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=zarr_format)
 
-    axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
+    if axes is not None:
+        axes = [str(a).upper() for a in axes]
+    else:
+        axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
     scale_for_axis, unit_for_axis = calibration_for_axes(dim_utils, axes)
     ms_meta = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
