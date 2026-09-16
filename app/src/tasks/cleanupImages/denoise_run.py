@@ -26,6 +26,10 @@ Parameter contract (JSON written by Julia):
 import numpy as np
 import torch
 
+# STREAMING-READ-EXEMPT: this task reads the full [T, Y, X] volume for one (c, z) pair — the
+# temporal denoiser needs the whole time series for that plane. `read_timepoint` returns ONE
+# frame with T squeezed, which is the wrong slice for this task; a (c, z)-volume helper would
+# be a fresh primitive with a different signature. Streaming per-frame doesn't apply.
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils

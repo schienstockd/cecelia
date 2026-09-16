@@ -53,7 +53,9 @@ const PREVIEW_PORT   = 7656
 # inline block or a 501. The browser flips each corrected channel's slab URL onto the scratch store
 # through `preview_af=1&sourceChannel=N`. A protocol-13 worker would still raise `NotImplementedError`
 # on AF against a backend that believes it works.
-const PREVIEW_PROTOCOL = 14
+# 15 adds `segment.ridges` to the previewable set. A protocol-14 worker answers "no preview backend
+# for 'segment.ridges'", which reads on the page as the preview button being dead.
+const PREVIEW_PROTOCOL = 15
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker

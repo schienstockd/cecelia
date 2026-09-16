@@ -505,7 +505,6 @@ def run(params: dict):
     im_data = im_list[0] if (calc_anisotropy and aniso_source == "channel" and fibre_channels) else None
 
     paths_tables = []
-    skeleton_frames = []      # one np.ndarray per timepoint (or one for a static image)
     n_skeletons_total = 0
     label_offset = 0
     aniso_coor, ev_frames, evec_frames = [], [], []
@@ -518,51 +517,102 @@ def run(params: dict):
     total_ticks = n_t if has_time else 1
     log.progress(0, total_ticks)
 
-    for t_index, labels_slice in _frame_source():
-        log.log(f"> skeletonise{'' if t_index is None else f' T={t_index}'}")
-        bin_im = _binary_mask(labels_slice, label_ids, use_borders)
-        skeleton_bool = _skeletonise(bin_im, pre_dilation_size, is_3d)
-        df, skeleton_arr = _summarise_paths(skeleton_bool, t_index)
-        skeleton_arr = _dilate_label_image(skeleton_arr, post_dilation_size, is_3d)
+    # ── Streaming LABEL WRITE ──────────────────────────────────────────────────────────────
+    # Write each skeleton frame straight into level 0 as we go, no accumulator. Previously we
+    # collected every frame in `skeleton_frames` and handed the whole T-stack to
+    # `create_multiscales(stacked, …)`, which peaks at ~4 GB on a 201×20×544×548 uint32 label
+    # movie — the very footprint `_read_labels_frame` was rewritten to avoid on read (finding
+    # A8 already fixed the axes; this fixes the corresponding write). Enforced by
+    # `test_streaming_convention.StreamingWriteConventionTest`.
+    #
+    # `axes=` overrides the source's `t,c,z,y,x` for a store that dropped C and may have dropped
+    # T (integrateTime) or Z (flattenBranching); without the override a positional scale reader
+    # gave Y the Z step (finding A8).
+    #
+    # `dtype=np.uint32`, `kind='labels'`: label store — `store_compressor` picks the label codec.
+    label_axes = [ax for ax in dim_utils.im_dim_order if ax != "C"]
+    _drop_pos = set()
+    if not has_time and "T" in label_axes:
+        _drop_pos.add(label_axes.index("T"))
+    if not is_3d and "Z" in label_axes:
+        _drop_pos.add(label_axes.index("Z"))
+    out_shape = tuple(s for i, s in enumerate(labels_level.shape) if i not in _drop_pos)
+    store_axes = _store_axes(dim_utils.im_dim_order, has_time, is_3d)
+    t_out_pos = store_axes.index("T") if has_time else None
 
-        df, arr, label_offset = _globalise_labels(df, skeleton_arr, label_offset)
-        skeleton_frames.append(arr)
-        if not df.empty:
-            paths_tables.append(df)
-            n_skeletons_total += int(df["skeleton-id"].nunique())
+    log.log(f"> stage labels zarr {branch_labels_out}")
+    os.makedirs(os.path.dirname(branch_labels_out), exist_ok=True)
+    # Staged: the store lands on its final path only once complete, so cancelling this task can't
+    # leave a registered branch-label set truncated.
+    # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
+    with zarr_utils.staged_store(branch_labels_out) as staging:
+        group, level0_out, _ = zarr_utils.open_multiscales_for_writing(
+            staging, out_shape, np.uint32, dim_utils,
+            axes=store_axes,
+            nscales=1,
+            kind='labels',
+            reference_zarr=labels_path,
+        )
 
-        # A4: run the anisotropy pass for EVERY timepoint, including ones whose skeleton came back
-        # empty. Skipping empties (as this used to, by sitting after a `continue`) made the stacked
-        # leading axis "index among non-empty frames" rather than `t`, so any consumer indexing
-        # orientation_eigvec[t] silently read the wrong frame. An empty frame yields a zero field, which
-        # is the correct answer for it, and `aniso_t_index` records the mapping either way.
-        if calc_anisotropy:
-            fibre_im = (_extract_fibre_image(im_data, dim_utils, fibre_channels, t_index)
-                        if im_data is not None else None)
-            if fibre_im is not None and integrate_time and dim_utils.is_timeseries():
-                # t_index is None here (the stack was collapsed), so _extract_fibre_image returned
-                # every timepoint — reduce it the way the user asked.
-                fibre_im = _collapse_time(fibre_im, 0, integrate_time_mode)
-            aniso_im = _anisotropy_input(aniso_source, fibre_im, labels_slice, skeleton_bool)
-            sk_bool = skeleton_bool
-            if calc_flattened and sk_bool.ndim == 3:
-                sk_bool = np.max(sk_bool, axis=0)
-            # A3: reconcile ranks — the fibre channel can still be 3D when the labels were Z-MIPed.
-            aniso_im = _match_rank(aniso_im, sk_bool.ndim)
+        for t_index, labels_slice in _frame_source():
+            log.log(f"> skeletonise{'' if t_index is None else f' T={t_index}'}")
+            bin_im = _binary_mask(labels_slice, label_ids, use_borders)
+            skeleton_bool = _skeletonise(bin_im, pre_dilation_size, is_3d)
+            df, skeleton_arr = _summarise_paths(skeleton_bool, t_index)
+            skeleton_arr = _dilate_label_image(skeleton_arr, post_dilation_size, is_3d)
 
-            coor, ev, evec, coh = aniso.structure_tensor_field(aniso_im, st_sigma, aniso_box_size)
-            blen = aniso.box_lengths(sk_bool, aniso_box_size)
-            aniso_coor.append(coor); ev_frames.append(ev); evec_frames.append(evec)
-            aniso_box_len.append(blen); aniso_box_aniso.append(coh)
-            # -1 marks a T-collapsed frame, so a reader can tell it from real frame 0.
-            aniso_t_index.append(int(t_index) if t_index is not None else (-1 if integrate_time else 0))
-            pxsz = float(dim_utils.im_physical_size("x"))
-            summary_frames.append(_scalar_summary(
-                aniso_im, sk_bool, pxsz, aniso.weighted_anisotropy(coh, blen)))
+            df, arr, label_offset = _globalise_labels(df, skeleton_arr, label_offset)
+            # Write this frame straight into level 0 — one frame in RAM, not the movie.
+            if t_out_pos is not None:
+                wr = [slice(None)] * len(out_shape)
+                wr[t_out_pos] = slice(int(t_index), int(t_index) + 1)
+                level0_out[tuple(wr)] = np.expand_dims(arr, axis=t_out_pos)
+            else:
+                level0_out[:] = arr
 
-        # tick at the END of the timepoint so anisotropy's cost (when on) rolls into this frame's
-        # tick, not the next one. For a static image t_index is None → single 1/1 tick.
-        log.progress((t_index if t_index is not None else 0) + 1, total_ticks)
+            if not df.empty:
+                paths_tables.append(df)
+                n_skeletons_total += int(df["skeleton-id"].nunique())
+
+            # A4: run the anisotropy pass for EVERY timepoint, including ones whose skeleton came back
+            # empty. Skipping empties (as this used to, by sitting after a `continue`) made the stacked
+            # leading axis "index among non-empty frames" rather than `t`, so any consumer indexing
+            # orientation_eigvec[t] silently read the wrong frame. An empty frame yields a zero field, which
+            # is the correct answer for it, and `aniso_t_index` records the mapping either way.
+            if calc_anisotropy:
+                fibre_im = (_extract_fibre_image(im_data, dim_utils, fibre_channels, t_index)
+                            if im_data is not None else None)
+                if fibre_im is not None and integrate_time and dim_utils.is_timeseries():
+                    # t_index is None here (the stack was collapsed), so _extract_fibre_image returned
+                    # every timepoint — reduce it the way the user asked.
+                    fibre_im = _collapse_time(fibre_im, 0, integrate_time_mode)
+                aniso_im = _anisotropy_input(aniso_source, fibre_im, labels_slice, skeleton_bool)
+                sk_bool = skeleton_bool
+                if calc_flattened and sk_bool.ndim == 3:
+                    sk_bool = np.max(sk_bool, axis=0)
+                # A3: reconcile ranks — the fibre channel can still be 3D when the labels were Z-MIPed.
+                aniso_im = _match_rank(aniso_im, sk_bool.ndim)
+
+                coor, ev, evec, coh = aniso.structure_tensor_field(aniso_im, st_sigma, aniso_box_size)
+                blen = aniso.box_lengths(sk_bool, aniso_box_size)
+                aniso_coor.append(coor); ev_frames.append(ev); evec_frames.append(evec)
+                aniso_box_len.append(blen); aniso_box_aniso.append(coh)
+                # -1 marks a T-collapsed frame, so a reader can tell it from real frame 0.
+                aniso_t_index.append(int(t_index) if t_index is not None else (-1 if integrate_time else 0))
+                pxsz = float(dim_utils.im_physical_size("x"))
+                summary_frames.append(_scalar_summary(
+                    aniso_im, sk_bool, pxsz, aniso.weighted_anisotropy(coh, blen)))
+
+            # tick at the END of the timepoint so anisotropy's cost (when on) rolls into this frame's
+            # tick, not the next one. For a static image t_index is None → single 1/1 tick.
+            log.progress((t_index if t_index is not None else 0) + 1, total_ticks)
+
+        # Carry the IMAGE's valid box when this store still shares its geometry. Unconditional on
+        # purpose: `carry_valid_box` compares only the BOXED axes, so a 3D run (which keeps Z)
+        # carries, while a flattened (Z-MIP) or time-collapsed one refuses — the runner never has to
+        # branch on its own mode. Must come after the store exists, since the guard reads its axes.
+        if zarr_utils.carry_valid_box(im_path, staging):
+            log.log('   carried the image valid box onto the branch labels')
 
     if paths_tables:
         paths_df = pd.concat(paths_tables, axis=0, ignore_index=True)
@@ -573,54 +623,6 @@ def run(params: dict):
         )
 
     log.log(f"> {len(paths_df)} branch(es) across {n_skeletons_total} skeleton(s)")
-
-    # Write the labels zarr — a fresh multiscales store (canonical create path).
-    if flatten_branching or not has_time:
-        stacked = skeleton_frames[0] if len(skeleton_frames) == 1 else np.stack(skeleton_frames, axis=0)
-    else:
-        t_idx = dim_utils.dim_idx("T", ignore_channel=True)
-        # Re-insert time axis at the original position
-        stacked = np.stack(skeleton_frames, axis=t_idx)
-
-    log.log(f"> write labels zarr {branch_labels_out}")
-    os.makedirs(os.path.dirname(branch_labels_out), exist_ok=True)
-    # `create_multiscales`' numpy branch needs `im_chunks` — otherwise `create_zarr_from_ndarray`
-    # calls `chunks(None)` and TypeErrors. Chunk against the IMAGE shape (with C) because
-    # `ignore_channel=True` pops the C entry INSIDE create_zarr_from_ndarray — passing label-sized
-    # chunks would then pop the wrong axis. plane_chunks: 1 along non-spatial, 512-capped on Y/X.
-    # A8: describe the store by the axes it ACTUALLY has. The label array never has C, and may have
-    # lost T (integrateTime) or Z (flattenBranching). Deriving both the axes and the chunks from the
-    # source image instead wrote `t,c,z,y,x` with scale [1, 1, 3.0, 0.596, 0.596] over a 3-axis
-    # (T, Y, X) array — a positional reader gave Y the Z step, a 5× stretch — and the chunk vector
-    # was rescued only by `create_zarr_from_ndarray`'s `pop(0)` rank fallback, which drops a LEADING
-    # entry and so misassigns the rest. Compute both here, exactly, and let neither be guessed:
-    # `ignore_channel=False` because these chunks already have no C to pop.
-    store_axes = _store_axes(dim_utils.im_dim_order, has_time, is_3d)
-    store_chunks = zarr_utils.plane_chunks(stacked.shape)   # store_axes always end …Y, X
-    # Staged: the store lands on its final path only once complete, so cancelling this task can't
-    # leave a registered branch-label set truncated.
-    # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
-    with zarr_utils.staged_store(branch_labels_out) as staging:
-        zarr_utils.create_multiscales(
-            stacked, staging,
-            dim_utils=dim_utils,
-            axes=store_axes,
-            im_chunks=store_chunks,
-            nscales=1,
-            # `datasets` (the default) is what `zarr_data_to_list` reads. `keyword='labels'` was for
-            # a legacy R store layout only; using it here writes a store no cecelia reader can open.
-            ignore_channel=False,
-            squeeze=False,
-            # branch-type LABELS, not intensity — picks the label compressor (see store_compressor)
-            kind='labels',
-        )
-
-        # Carry the IMAGE's valid box when this store still shares its geometry. Unconditional on
-        # purpose: `carry_valid_box` compares only the BOXED axes, so a 3D run (which keeps Z)
-        # carries, while a flattened (Z-MIP) or time-collapsed one refuses — the runner never has to
-        # branch on its own mode. Must come after the store exists, since the guard reads its axes.
-        if zarr_utils.carry_valid_box(im_path, staging):
-            log.log('   carried the image valid box onto the branch labels')
 
     aniso_uns = None
     image_anisotropy = 0.0

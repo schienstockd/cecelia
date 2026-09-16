@@ -49,6 +49,10 @@ from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 
+# STREAMING-READ-EXEMPT: temporal smoothing reads a t-window (half…half around each frame)
+# with per-plane caching keyed on (t, c, z). `read_timepoint` returns ONE full frame — folding
+# to it would need a window cache built on top; the current per-(t, c, z) plane reads are
+# already chunk-aligned. Refactor when the window cache becomes reusable.
 import cecelia.utils.cpu_utils as cpu_utils
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils

@@ -33,6 +33,10 @@ import os
 
 import numpy as np
 
+# STREAMING-READ-EXEMPT: reads/writes are on LABEL stores (no C axis), whose T axis this file
+# already asserts is at index 0. `src[tt]` returns one full label frame (chunk-aligned) and
+# `read_timepoint(..., ignore_channel=True)` would return the same shape — the direct index
+# is used because it matches the write pattern `level0[tt] = frame` symmetrically.
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.script_utils as script_utils

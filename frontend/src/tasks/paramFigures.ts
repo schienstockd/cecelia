@@ -22,6 +22,7 @@ import type { VisColumns } from './paramVis'
 import type { Severity } from '../lib/severity'
 import type { ColumnCta } from '../components/VisualAid.vue'
 import { smoothFigure, smoothSpatialFigure } from './smoothVis'
+import { ridgesFigure } from './ridgesVis'
 import { driftFigure } from './driftVis'
 import { driftSmoothFigure } from './driftSmoothVis'
 import { driftZSmoothFigure } from './driftZSmoothVis'
@@ -80,6 +81,29 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
    * as measured-and-bad when what was measured is that the median smears moving cells and the gate
    * does not (#554). What stays worth saying at the point of choosing is the trade the figure shows.
    */
+  /**
+   * Ridge segmentation filter (`segment.ridges`). Same construction as `smoothMethod` — a
+   * schematic drawn from the real algorithms at 32×32, and a verdict line read off the frames.
+   * The three filter columns share every other setting on the form; what differs is what each
+   * ONE does to a curvilinear structure on noise. See `frontend/src/tasks/ridgesVis.ts`.
+   */
+  ridgesFilter: ctx => {
+    const { vis, note } = ridgesFigure({
+      filter: (String(ctx.values?.filter ?? 'meijering') as 'meijering' | 'sato' | 'frangi'),
+      sigmaMinPx: num(ctx.values?.sigmaMinPx, 1),
+      sigmaMaxPx: num(ctx.values?.sigmaMaxPx, 5),
+    })
+    return {
+      vis,
+      note,
+      title: 'Ridge filter',
+      tip: 'Show what each Hessian-based ridge filter does to a curvilinear field',
+      headings: ['Input', 'Meijering', 'Sato', 'Frangi'],
+      storageKey: 'ridges-filter-figure',
+      defaultW: 420, defaultH: 260,
+    }
+  },
+
   smoothMethod: ctx => {
     const { vis, note } = smoothFigure({
       frames: num(ctx.values?.temporalFrames, 3),

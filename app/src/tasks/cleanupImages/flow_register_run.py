@@ -43,6 +43,10 @@ import cv2
 import numpy as np
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher.
+# STREAMING-READ-EXEMPT: optical-flow registration reads FRAME PAIRS (ref, moving) per Z, with
+# per-channel warping in the same loop. `read_timepoint` returns one full frame at a time;
+# there is no "pair" primitive, and the per-plane cv2.remap needs the plane, not the volume.
+# The runner assumes a fixed [T, C, Z] axis order (documented in the task JSON).
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
