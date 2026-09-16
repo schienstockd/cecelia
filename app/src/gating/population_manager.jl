@@ -150,7 +150,11 @@ mutable struct Population
     # explicit-label membership: when set, this pop's cells ARE these label IDs (∩ parent),
     # bypassing gate/filter. Used by the transient napari selection (docs/POPULATION.md) so a
     # spatial selection in napari lights up the same cells on the flow plots. Not persisted.
-    explicit_labels::Union{Vector,Nothing}
+    # Label IDs are integers on disk (`label_props.jl` obs `label`, `_pick_sel::Dict{...,Vector{Int}}`
+    # in `api/src/gating_api.jl`); typing here as `Vector{Int}` closes the last untyped hop between
+    # the boundary and the engine, so `Set(p.explicit_labels)` and `Int.(p.explicit_labels)` need
+    # no runtime element-type check.
+    explicit_labels::Union{Vector{Int},Nothing}
     transient::Bool                        # ephemeral (napari selection) — never written to disk
 end
 
@@ -456,7 +460,7 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                               filter_measure === nothing ? nothing : String(filter_measure),
                               filter_fun === nothing ? nothing : String(filter_fun),
                               filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
-                              explicit_labels === nothing ? nothing : collect(explicit_labels), transient)
+                              explicit_labels === nothing ? nothing : Int[Int(l) for l in explicit_labels], transient)
     m.uid_index[resolved_uid] = path
     push!(m.order, path)
     _invalidate!(m)
@@ -637,7 +641,7 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
     # from gate/filter alone that membership changed (e.g. the user resizes the selection shape).
     # Emit a membership signature so the client bumps its per-pop version and refreshes the plots.
     p.explicit_labels === nothing ||
-        (d["membership_sig"] = string(hash(sort(collect(Int, p.explicit_labels)))))
+        (d["membership_sig"] = string(hash(sort(p.explicit_labels))))
     children = direct_children(m, path)
     include_transient || (children = [c for c in children if !m.pops[c].transient])
     d["children"] = [_node_dict(m, c; include_transient = include_transient) for c in children]
