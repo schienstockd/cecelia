@@ -1,0 +1,105 @@
+{
+  "task": "ridges",
+  "fun_name": "segment.ridges",
+  "label": "Ridge segmentation",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "requires": { "scale": ["xy"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image",
+      "type": "valueNameSelection",
+      "field": "filepaths",
+      "default": "default",
+      "tip": "Which image version to segment ridges on"
+    },
+    {
+      "key": "outputValueName",
+      "label": "Output name",
+      "type": "valueNameInput",
+      "namespace": "labels",
+      "default": "ridges",
+      "tip": "Name for the resulting label set"
+    },
+    {
+      "key": "channel",
+      "label": "Fibre channel",
+      "type": "channelSelection",
+      "multiple": false,
+      "default": [],
+      "tip": "One channel to detect ridges in (SHG for collagen, THG for other label-free structure)"
+    },
+    {
+      "key": "filter",
+      "label": "Filter",
+      "type": "select",
+      "default": "meijering",
+      "options": [
+        { "label": "Meijering", "value": "meijering",
+          "help": "Neuriteness filter — clean background, best for elongated structures. Default." },
+        { "label": "Sato",      "value": "sato",
+          "help": "Tubeness — very close to Meijering; slightly more background haze." },
+        { "label": "Frangi",    "value": "frangi",
+          "help": "Vesselness — high-precision, low-recall. Only the strongest ridges; misses side branches." }
+      ],
+      "tip": "Meijering keeps the cleanest background; Frangi picks only the strongest ridges",
+      "figure": "ridgesFilter"
+    },
+    {
+      "key": "sigmaMinPx",
+      "label": "Sigma min (px)",
+      "type": "int",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 1,
+      "tip": "Smallest fibre width to detect, in pixels"
+    },
+    {
+      "key": "sigmaMaxPx",
+      "label": "Sigma max (px)",
+      "type": "int",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 5,
+      "tip": "Largest fibre width to detect, in pixels"
+    },
+    {
+      "key": "threshold",
+      "label": "Threshold",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.0,
+      "tip": "Ridge-response cutoff (0..1). 0 = Otsu, chosen automatically"
+    },
+    {
+      "key": "darkRidges",
+      "label": "Dark ridges",
+      "type": "bool",
+      "default": false,
+      "tip": "Off for bright fibres on dark background (fluorescence, SHG, THG)"
+    },
+    {
+      "key": "perZ",
+      "label": "Per z-plane",
+      "type": "bool",
+      "default": true,
+      "tip": "Off collapses Z to a max projection before ridge detection"
+    },
+    {
+      "key": "minSizePx",
+      "label": "Min size (px)",
+      "type": "int",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "default": 5,
+      "tip": "Drop connected components smaller than this in pixels; 0 keeps everything"
+    }
+  ]
+}

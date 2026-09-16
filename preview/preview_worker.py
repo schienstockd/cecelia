@@ -233,7 +233,11 @@ def _cellpose_imports():
 #:     `/api/viewer/slab?preview_af=1&sourceChannel=N` in place of the source channel — same reader,
 #:     same texture upload as a normal image slab. An adopted protocol-13 worker would still 501 on
 #:     AF, so the browser AF toggle would keep looking broken against a backend that believes it works.
-PROTOCOL = 14
+#: 15: `segment.ridges` (skimage meijering/sato/frangi + threshold + CC) enters the previewable set.
+#:     Same reply shape as `segment.cellpose` — one `labels` layer on disk via `_stage_labels_store`.
+#:     A protocol-14 worker responds "no preview backend for 'segment.ridges'", which reads to a user
+#:     as the button being dead on the Ridges page.
+PROTOCOL = 15
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -1181,11 +1185,100 @@ def _preview_af(ctx):
 # on the page people use. This has now shipped broken twice for exactly that reason, so the pairing is
 # asserted by `test_preview_backends_cover_composites.py` rather than left to whoever adds the next
 # composite noticing that this file exists.
+def _preview_ridges(ctx):
+    """Ridge-detect the visible region with the task's own filter+threshold+CC.
+
+    Same reply shape as `_preview_cellpose` — one labels layer on disk. Mirrors the run:
+    the filter+threshold+CC is applied per-Z when `perZ=True`, otherwise on a Z-MIP over the
+    cropped region. No tiling and no multi-model merge, so there are no seams or per-pass
+    outputs to report."""
+    from skimage.filters import frangi, meijering, sato, threshold_otsu
+    from skimage.measure import label as cc_label
+    from skimage.morphology import remove_small_objects
+
+    p = ctx.params
+    filt_name = str(p.get('filter', 'meijering'))
+    filters = {'meijering': meijering, 'sato': sato, 'frangi': frangi}
+    if filt_name not in filters:
+        raise ValueError(f'unknown filter {filt_name!r}; expected one of {sorted(filters)}')
+
+    sig_min   = int(p.get('sigmaMin', p.get('sigmaMinPx', 1)))
+    sig_max   = int(p.get('sigmaMax', p.get('sigmaMaxPx', 5)))
+    threshold = float(p.get('threshold', 0.0))
+    dark      = bool(p.get('darkRidges', False))
+    per_z     = bool(p.get('perZ', True))
+    min_size  = int(p.get('minSizePx', 5))
+    ch        = p.get('channelIndex', p.get('channel'))
+    if ch is None or (isinstance(ch, str) and not ch.isdigit()):
+        raise ValueError('channel index missing — pick the fibre channel on the page')
+    ch = int(ch)
+    if sig_min <= 0 or sig_max < sig_min:
+        raise ValueError(f'invalid sigma range: min={sig_min} max={sig_max}')
+    sigmas = range(sig_min, sig_max + 1)
+    fn = filters[filt_name]
+
+    def _binarise(response):
+        if threshold > 0:
+            return response > threshold
+        nz = response[response > 0]
+        if nz.size < 32:
+            return np.zeros_like(response, dtype=bool)
+        return response > threshold_otsu(nz)
+
+    def _label_2d(frame_2d, offset):
+        resp = fn(frame_2d.astype(np.float32), sigmas=sigmas, black_ridges=dark).astype(np.float32)
+        mask = _binarise(resp)
+        if min_size > 0:
+            mask = remove_small_objects(mask, min_size=min_size)
+        lab, _ = cc_label(mask, connectivity=2, return_num=True)
+        lab = lab.astype(np.uint32)
+        if offset > 0:
+            lab = np.where(lab > 0, lab + offset, 0).astype(np.uint32)
+        n_here = int(lab.max()) - offset if lab.size else 0
+        return lab, offset + max(0, n_here)
+
+    tile = ctx.crop()                            # [C, Y, X] or [C, Z, Y, X]
+    axes, full_shape, block_shape = ctx.block_geometry()
+
+    if ch >= tile.shape[0]:
+        raise ValueError(f'channel {ch} out of range (image has {tile.shape[0]} channels)')
+    ch_data = tile[ch]                           # (Y, X) or (Z, Y, X)
+
+    # Output block shape MUST equal block_shape. block_geometry() derives it from the same axes as
+    # the image sans C, so it is 2D for a T=Z=1 crop, 3D when a Z-slab is being previewed, etc.
+    offset = 0
+    if ch_data.ndim == 2:
+        block, offset = _label_2d(ch_data, offset)
+    elif ch_data.ndim == 3:
+        if per_z:
+            block = np.zeros(ch_data.shape, dtype=np.uint32)
+            for z in range(ch_data.shape[0]):
+                block[z], offset = _label_2d(ch_data[z], offset)
+        else:
+            proj, offset = _label_2d(ch_data.max(axis=0), offset)
+            block = np.broadcast_to(proj, ch_data.shape).astype(np.uint32)
+    else:
+        raise ValueError(f'unexpected channel data rank {ch_data.ndim}')
+
+    block = np.reshape(block, block_shape)
+    has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
+    preview_path = _stage_labels_store(
+        block, axes, full_shape, ctx.bounds, ctx.task_dir, ctx.value_name, im_path=ctx.im_path)
+    return {
+        'counts': {'base': int(offset)},
+        'passes': [],
+        'hasSignal': has_signal,
+        'noSignalWhy': why,
+        'layers': [_layer_disk('labels', 'Preview', ctx.value_name, preview_path, axes, full_shape)],
+    }
+
+
 _BACKENDS = {
     'segment.cellpose': _preview_cellpose,
     'segment.cellposeMeasure': _preview_cellpose,
     'segment.coastal': _preview_coastal,
     'segment.coastalMeasure': _preview_coastal,
+    'segment.ridges': _preview_ridges,
     'opticalFlow.inspect': _preview_flow_inspect,
     'opticalFlow.probability': _preview_flow_probability,
     'cleanupImages.afCorrect': _preview_af,
