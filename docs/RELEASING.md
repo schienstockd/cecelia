@@ -15,8 +15,9 @@ things as he hits them, plus the occasional ad-hoc request ("here's my image, ma
 Two install channels exist (see SHIPPING.md), but **only one of them has users**:
 
 - **stable channel = a tag.** This is how *every* real user installs. Biologists do not install from
-  a branch, and there is no reason they should — the dev channel needs Node on PATH and builds the
-  frontend locally.
+  a branch, and there is no reason they should — the dev channel builds the frontend locally (Node
+  is fetched via `pixi exec`, no host requirement, but a stable install is still zero moving parts
+  by comparison).
 - **dev channel = `main` HEAD.** This is for **people who want to work ON Cecelia** — contributors
   tracking HEAD, not people using it to analyse images. **It has no users today.** That may change
   if the project picks up contributors; if it does, they are still developers, not the audience a

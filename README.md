@@ -64,8 +64,8 @@ Re-run the install command, run `pixi run update` from the install directory, or
 ## Bleeding-edge builds (dev channel)
 
 Set `CECELIA_CHANNEL=dev` to track `main` instead of the latest release; the frontend is built
-locally, so **[Node.js](https://nodejs.org) (npm) ≥ 20** must be installed. Re-run the same command
-to update.
+locally. Node.js is fetched on demand via `pixi exec` (~40 MB, cached), so no host Node is required.
+Re-run the same command to update.
 
 ```sh
 # Linux / macOS

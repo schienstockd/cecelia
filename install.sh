@@ -219,7 +219,11 @@ if [ "$CHANNEL" = "dev" ]; then
   # `npm install`, not `npm ci`: npm silently skips a platform-specific optional native dep (the
   # rolldown binding vite 8 bundles with) when the lockfile was made on another OS (npm/cli#4828) —
   # `npm ci` can leave the build without its native binding. See .github/workflows/ci.yml.
-  ( cd "$INSTALL_DIR/frontend" && npm install && npm run build )
+  #
+  # Node/npm come from `pixi exec --spec nodejs` (ephemeral env, ~40 MB cached), NOT the host, so a
+  # user with no system Node still gets a working install. Same reasoning as api/src/update_api.jl's
+  # dev-channel apply path — see the header there for why not `nodejs` in `pixi.toml`.
+  ( cd "$INSTALL_DIR/frontend" && "$PIXI" exec --spec nodejs -- npm install && "$PIXI" exec --spec nodejs -- npm run build )
 fi
 
 # Record what was installed (channel + tag/commit) for provenance and bug reports, plus the scope so
