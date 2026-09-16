@@ -265,6 +265,30 @@ class MidRunReadabilityTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class LabelStoreCalibrationTest(unittest.TestCase):
+    """Every streaming writer stamps `unit` on every calibrated axis via `calibration_for_axes`.
+    `_open_label_store` used to be a hand-rolled twin of `open_multiscales_for_writing` that called
+    `multiscales_metadata(...)` with a plain `scale_for_axis` and NO `unit_for_axis`, so cellpose /
+    coastal label stores shipped scale numbers with no physical unit stamped on any axis. Collapsing
+    the twin into a delegator fixed it; this test pins the invariant so it can't drift back."""
+
+    def test_label_store_axes_carry_units(self):
+        with tempfile.TemporaryDirectory() as d:
+            du = DimUtils(ome_types.from_xml(_ome_xml(*_CASE_2D[0])), use_channel_axis=True)
+            du.calc_image_dimensions(_CASE_2D[1])
+            seg = _StubSeg({'taskDir': d, 'outputValueName': 'stub'}, du)
+            label_axes = [ax for ax in du.im_dim_order if ax != 'C']
+            label_shape = [du.im_dim[i] for i, ax in enumerate(du.im_dim_order) if ax != 'C']
+            path = os.path.join(d, 'labels', 'stub.zarr')
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            seg._open_label_store(path, label_shape, label_axes, 1)
+            axes_meta = zarr_utils.read_multiscales_meta(path)['axes']
+            # Every spatial axis carries a µm unit — no silent unit-less label store.
+            by_name = {a['name'].upper(): a for a in axes_meta}
+            self.assertEqual(by_name['Y'].get('unit'), 'micrometer')
+            self.assertEqual(by_name['X'].get('unit'), 'micrometer')
+
+
 class _TemporalStub(_StubSeg):
     """Declares a temporal requirement and records what the base handed it."""
 
