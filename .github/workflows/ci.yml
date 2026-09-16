@@ -228,8 +228,11 @@ jobs:
             done ) > server.log &
           # Wait up to ~5 min for the API (first request JIT-compiles the handler; slower on
           # Windows/macOS runners than the warm Linux one).
+          # `pixi run prod` defaults to HTTPS + HTTP/2 (tls_desired defaults `true` outside dev,
+          # so `!_is_dev` is true on CI). Smoke against the shipped path — `-k` to accept the
+          # self-signed dev cert bootstrapped on first launch.
           for i in $(seq 1 300); do
-            curl -fsS http://localhost:8080/api/health >/dev/null 2>&1 && break
+            curl -kfsS https://localhost:8080/api/health >/dev/null 2>&1 && break
             sleep 1
           done
           # ATTRIBUTION, not decoration. This poll loop is the single slowest step in the job, and it
@@ -242,11 +245,11 @@ jobs:
           echo "wall to first healthy response: $(( $(date +%s) - t0 ))s"
           cat server.log
           echo "== /api/health =="
-          curl -fsS http://localhost:8080/api/health \
+          curl -kfsS https://localhost:8080/api/health \
             || { echo "server never became healthy"; cat server.log; exit 1; }
           echo
           echo "== / (server-served frontend) =="
-          curl -fsS -o /dev/null -w "%{http_code} %{content_type}\n" http://localhost:8080/
+          curl -kfsS -o /dev/null -w "%{http_code} %{content_type}\n" https://localhost:8080/
           pixi run stop || true
 
   # ── Python + MCP ──────────────────────────────────────────────────────────────────────────────
