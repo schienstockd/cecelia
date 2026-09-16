@@ -230,7 +230,7 @@ end
 #     content-hashed copy of the template it ran, so past runs are unaffected either way.
 #   • VALIDATED (400 naming the offender) — the whiteboard cannot express an invalid template, but an
 #     outside author can, and until now nothing checked until run_chain, i.e. after the USER pressed
-#     Run. See validate_chain_template (app/src/tasks/chain.jl) for what is and isn't checkable here.
+#     Run. See validate_chain_template (app/src/tasks/chain/validate.jl) for what is and isn't checkable here.
 #
 # Params may be SPARSE: send only what you mean to set. The whiteboard merges each task's spec
 # defaults when it loads the template (applyTemplate), so an omitted param means "use the default".
