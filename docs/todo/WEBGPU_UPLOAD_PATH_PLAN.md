@@ -1,8 +1,11 @@
 ## WebGPU viewer upload path — diagnose then close the gaps
 
-**Status:** planning (2026-09-15) · branch `feat/webgpu-upload-path` (main), plus
-`feat/api-tls-http2` for U4. Diagnostic built + laptop numbers landed (see *Numbers*).
-T1.1 clamp + T2a Method B upload shipped in this branch. Workstation numbers pending.
+**Status:** nearly complete (2026-09-16) — U0 diagnostic + laptop numbers landed, U1 clamp
++ U2a writeBuffer method shipped in PR #904, U3 payload ring shipped in #919, U4 TLS/HTTP2
+opt-in shipped in #907 (docs in #918), U5 P1/P2 shipped (P2 with runtime clamp) via
+`WEBGPU_MULTI_ATLAS_PLAN.md` — see there for the Chromium `binding_array` gate on P3. U6
+parked (analysis below). Workstation numbers still pending — the plan carries on for that
+one signal.
 
 **Owns:** the whole load path from `/api/viewer/slab` HTTP response to a resident brick in
 the atlas texture, and every constant that gates it (`MAX_INFLIGHT`, `DEFAULT_ATLAS_BUDGET`,
@@ -247,7 +250,7 @@ layouts` list from §B is the input.
 **Deliverable:** design sub-plan (`docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md`) if this fires;
 implementation phased separately.
 
-### U6 — `padBrickPayload` allocation elision.
+### U6 — `padBrickPayload` allocation elision. **PARKED 2026-09-16 — measurement analysis said skip.**
 
 **Trigger:** §C's padBrickPayload row shows > 2 % of total per-brick cost AND user hits
 a store where `nZ % brickZ ≠ 0`.
@@ -257,6 +260,31 @@ allocating. If U3 didn't ship, skip: the alloc is edge-brick-only and unlikely t
 
 **Deliverable:** patch to `brickLoader.padBrickPayload`, or a note explaining why the
 measurement said skip.
+
+**Parked (post-U3) — the alloc is nearly free, the memcpy IS the padding.** The 1.9 ms/brick
+estimate the plan carried was the TOTAL cost of `padBrickPayload` (alloc + row-by-row copy of
+the actual bytes); after re-reading the implementation the alloc is ~50 µs (OS-zeroed pages
+for a 4 MB brick) and the memcpy is the remaining ~1.85 ms. "Pad in place inside the U3 ring"
+was the plan's shape, but:
+
+- The receive buffer holds the actual bytes at the FRONT; the padded output puts them in a
+  CORNER of a full-brick grid. Packed→padded requires a stride change (source row is
+  `actual.nx * bpv`, dest row is `ebx * bpv`), so an in-place walk has to run last-row-first
+  and STILL rearranges every row's position within the buffer.
+- The regions between real data and padded end must be ZERO — the fragment shader reads them
+  and expects zero (`p.dims` guard alone doesn't cover the last-row-in-slot case). An OS-zeroed
+  fresh alloc gives this for free; a reused buffer needs an explicit `.fill(0)` of the padded
+  regions, which is comparable memcpy to what U6 was supposed to eliminate.
+- Alternative attack surface — pass `writeTexture` a `size` smaller than the slot region, so
+  only the actual bytes upload and the padded region is untouched. Requires slot-clearing on
+  every reuse (so a small edge brick doesn't inherit a previous full brick's bytes in the
+  padded region). Adds a writeTexture-worth of zero-write per reuse — likely nets to zero.
+
+Real-world impact bound: Z-edge bricks only, on stores where `nZ % brickZ ≠ 0`. SRPabw
+(nZ=193, brickZ=128) is the poster case — half of Z-bricks. On a store with 16 Z-bricks, it's
+1/16. No user-facing complaint about edge-brick scrub perf specifically. **If measured cost
+ever rises past 2% of per-brick total, revisit the `writeTexture(size=…)` variant with an
+explicit slot-clear on evict.**
 
 ## Retiring this plan
 
