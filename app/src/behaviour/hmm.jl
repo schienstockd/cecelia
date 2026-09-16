@@ -196,6 +196,17 @@ with no speed/angle) are excluded from the fit and returned as `missing`.
 Preprocessing order: order-within-track → drop NA/Inf → per-track noise filter (running mean) →
 global normalise → global scale → fit → Viterbi decode.
 """
+# Fail LOUDLY at the boundary rather than late with `KeyError`, so an upstream rename in `pop_df`
+# or a caller feeding the wrong table names — not just its data — the missing columns in one shot.
+# (`what` labels the caller so a hmm_states / hmm_transitions mix-up doesn't mislead the reader.)
+function _require_cols(df::DataFrame, cols::AbstractVector{<:AbstractString}, what::AbstractString)
+    have = Set(names(df))
+    miss = [c for c in cols if !(c in have)]
+    isempty(miss) && return
+    error("$what: DataFrame is missing column(s) [", join(miss, ", "),
+          "] — got [", join(names(df), ", "), "]")
+end
+
 function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString};
                         num_states::Int,
                         time_col::AbstractString,
@@ -206,6 +217,8 @@ function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString
                         post_filter::Int=0, post_iterations::Int=1,
                         max_iter::Int=200)
     measures = String.(collect(measures))
+    _require_cols(df, vcat(measures, String[String(time_col)], String.(group_cols)),
+                  "hmm_fit_states")
     n = nrow(df)
     states = Vector{Union{Int,Missing}}(missing, n)
     n == 0 && return states
@@ -269,9 +282,27 @@ end
 
 # ── Transitions ──────────────────────────────────────────────────────────────────
 
-# state value → label string (1, 2, … — drop the float decimal a numeric obs column carries)
-_state_str(v) = v isa Integer ? string(v) :
-                (v isa AbstractFloat ? string(Int(round(v))) : string(v))
+# State columns arrive here two ways: as Ints from an in-memory fresh fit, or as Strings read back
+# from a categorical obs column (composite hmm_states → hmm_transitions). Normalise ONCE at the
+# read boundary — one canonical `Vector{Union{String,Missing}}` — so the transition loop only asks
+# "missing or not?". The audit called out the scattered Int-vs-String defensive checks; this is
+# where they belonged all along.
+function _normalise_state_col(col)::Vector{Union{String,Missing}}
+    out = Vector{Union{String,Missing}}(missing, length(col))
+    @inbounds for i in eachindex(col)
+        v = col[i]
+        v === missing && continue
+        if v isa Number
+            isfinite(Float64(v)) || continue                 # NaN/Inf → missing
+            out[i] = string(v isa Integer ? v : Int(round(v)))
+        else
+            s = strip(string(v))
+            isempty(s) && continue                           # ""/whitespace → missing
+            out[i] = String(s)
+        end
+    end
+    out
+end
 
 """
     hmm_transitions(df, state_cols; time_col, group_cols=["uID","value_name","track_id"],
@@ -290,29 +321,25 @@ function hmm_transitions(df::DataFrame, state_cols::AbstractVector{<:AbstractStr
                          group_cols::AbstractVector{<:AbstractString}=["uID", "value_name", "track_id"],
                          include_start::Bool=false, include_self::Bool=true)
     state_cols = String.(collect(state_cols))
+    _require_cols(df, vcat(state_cols, String[String(time_col)], String.(group_cols)),
+                  "hmm_transitions")
     n = nrow(df)
     trans = Vector{Union{String,Missing}}(missing, n)
     n == 0 && return trans
 
-    # a state value is "present" if not missing and not an empty/NaN placeholder. State columns may
-    # arrive as Ints (in-memory, fresh fit) OR as Strings (read back from a categorical obs column,
-    # which is how the composite hmm_states → hmm_transitions step sees them).
-    _present(v) = !(v === missing) &&
-                  (v isa Number ? isfinite(Float64(v)) : !isempty(strip(string(v))))
-
     # hybrid per row (missing if any state col is absent)
     hybrid = Vector{Union{String,Missing}}(missing, n)
-    cols = [df[!, c] for c in state_cols]
+    norm_cols = [_normalise_state_col(df[!, c]) for c in state_cols]
     for i in 1:n
         ok = true
         parts = String[]
         for c in 1:length(state_cols)
-            v = cols[c][i]
-            if !_present(v)
+            v = norm_cols[c][i]
+            if v === missing
                 ok = false
                 break
             end
-            push!(parts, _state_str(v))
+            push!(parts, v)
         end
         ok && (hybrid[i] = join(parts, "."))
     end

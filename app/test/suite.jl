@@ -11483,6 +11483,77 @@ end
     @test task_scope(_task_from_fun_name("tracking.track_measures")) == "image"
 end
 
+# The two entry points into hmm.jl expect a `pop_df`-shaped DataFrame (uID / value_name / track_id
+# / time_col / measures-or-state-cols). A rename upstream — the audit called this out for `pop_df`
+# too — used to fail late with a bare `KeyError`; `_require_cols` names every missing column at once
+# so a report reads "missing [t]" not "column name :t not found". The second block pins the
+# read-boundary normalisation for `hmm_transitions`: state columns may arrive as Int (fresh fit) or
+# String (categorical obs read-back), and both must yield the same "1" / "1.2" hybrid strings.
+@testset "HMM entry guards + transition state normalisation" begin
+    # A minimal well-formed DataFrame — we build DROP variants by column-subscript, because the
+    # test suite only imports DataFrames.DataFrame + nrow (no `select`/`Not`).
+    good = DataFrame("uID" => ["A"], "value_name" => ["V"], "track_id" => [1], "t" => [1.0],
+                     "live.cell.speed" => [0.5])
+    drop(df, col) = df[:, filter(!=(col), names(df))]
+
+    # hmm_fit_states — every missing column is named in one shot (not one at a time on retry).
+    err = try
+        hmm_fit_states(drop(good, "live.cell.speed"), ["live.cell.speed"];
+                       num_states=2, time_col="t")
+        nothing
+    catch e; e end
+    @test err isa ErrorException
+    @test occursin("hmm_fit_states", err.msg) && occursin("live.cell.speed", err.msg)
+
+    err = try
+        hmm_fit_states(drop(good, "t"), ["live.cell.speed"]; num_states=2, time_col="t")
+        nothing
+    catch e; e end
+    @test err isa ErrorException && occursin("t", err.msg)
+
+    # hmm_transitions — same guard, same shape.
+    st_df = copy(good)
+    st_df[!, "state"] = [1]
+    err = try
+        hmm_transitions(drop(st_df, "uID"), ["state"]; time_col="t")
+        nothing
+    catch e; e end
+    @test err isa ErrorException && occursin("hmm_transitions", err.msg) && occursin("uID", err.msg)
+
+    # Int and String state columns yield IDENTICAL transitions — normalisation at the read boundary
+    # is what makes the composite (which reads back as categorical String) match a fresh in-memory
+    # fit (Int). The float column proves the Int(round(v)) branch survives too.
+    base = DataFrame("uID" => fill("A", 4), "value_name" => fill("V", 4),
+                     "track_id" => fill(1, 4), "t" => [1.0, 2.0, 3.0, 4.0])
+    int_df = copy(base);   int_df[!, "state"]   = [1, 1, 2, 2]
+    str_df = copy(base);   str_df[!, "state"]   = ["1", "1", "2", "2"]
+    flt_df = copy(base);   flt_df[!, "state"]   = [1.0, 1.0, 2.0, 2.0]
+    tr_int = hmm_transitions(int_df, ["state"]; time_col="t", include_self=true)
+    tr_str = hmm_transitions(str_df, ["state"]; time_col="t", include_self=true)
+    tr_flt = hmm_transitions(flt_df, ["state"]; time_col="t", include_self=true)
+    # First cell has no prev — always missing; the rest agree exactly across all three arms.
+    @test isequal(tr_int, tr_str) && isequal(tr_int, tr_flt)
+    @test collect(skipmissing(tr_int)) == ["1_1", "1_2", "2_2"]
+
+    # Missing / NaN / "" all collapse to missing hybrid (and therefore missing transition), same
+    # behaviour whether the state col is numeric or a string.
+    for (col, tag) in ((Union{Int,Missing}[1, missing, 2, 2],   "Int+missing"),
+                       (Union{Float64,Missing}[1.0, NaN, 2.0, 2.0], "Float+NaN"),
+                       (["1", "", "2", "2"],                       "String+empty"))
+        d = copy(base); d[!, "state"] = col
+        tr = hmm_transitions(d, ["state"]; time_col="t", include_self=true)
+        @test ismissing(tr[2])                                     # the gap breaks the chain
+        @test collect(skipmissing(tr)) == ["2_2"]                  # only 3→4 survives ($tag)
+    end
+
+    # Hybrid column pastes with "." — Float second col rounds to "1"/"2", not "1.0"/"2.0".
+    hyb = copy(base)
+    hyb[!, "a"] = [1, 1, 2, 2]
+    hyb[!, "b"] = [1.0, 1.0, 2.0, 2.0]
+    tr_h = collect(skipmissing(hmm_transitions(hyb, ["a", "b"]; time_col="t", include_self=true)))
+    @test tr_h == ["1.1_1.1", "1.1_2.2", "2.2_2.2"]
+end
+
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
 
 # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
