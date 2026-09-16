@@ -110,6 +110,41 @@ function parse_bool_membership(s::AbstractString)::BoolMembership
     _BOOL_MEMBERSHIP_PARSE[s]
 end
 
+# ── FilterFun enum + FilterCondition ─────────────────────────────────────────────
+# `filter_fun` names one of seven comparison operators the gating engine understands
+# (`_filter_mask` in gating_engine.jl). Same wire-form / on-disk pattern as PopType and
+# BoolMembership: the lowercase string via `Base.string(::FilterFun)`, a typo fails at the type
+# boundary rather than at `_filter_mask("Unknown filter_fun: ...")`.
+@enum FilterFun FILTER_GT FILTER_GTE FILTER_LT FILTER_LTE FILTER_EQ FILTER_NEQ FILTER_IN
+const _FILTER_FUN_STR = Dict(
+    FILTER_GT  => "gt",  FILTER_GTE => "gte",
+    FILTER_LT  => "lt",  FILTER_LTE => "lte",
+    FILTER_EQ  => "eq",  FILTER_NEQ => "neq",
+    FILTER_IN  => "in",
+)
+const _FILTER_FUN_PARSE = Dict(v => k for (k, v) in _FILTER_FUN_STR)
+Base.string(f::FilterFun) = _FILTER_FUN_STR[f]
+Base.String(f::FilterFun) = _FILTER_FUN_STR[f]
+Base.print(io::IO, f::FilterFun) = print(io, _FILTER_FUN_STR[f])
+function parse_filter_fun(s::AbstractString)::FilterFun
+    haskey(_FILTER_FUN_PARSE, s) || throw(ArgumentError(
+        "unknown filter_fun: '$s' (must be one of $(join(sort(collect(keys(_FILTER_FUN_PARSE))), ", ")))"))
+    _FILTER_FUN_PARSE[s]
+end
+_coerce_filter_fun(x::FilterFun) = x
+_coerce_filter_fun(x::AbstractString) = parse_filter_fun(String(x))
+_coerce_filter_fun(x::Symbol) = parse_filter_fun(String(x))
+
+# One entry of a compound filter (Decision 15). Multiple conditions AND to give a compound filter
+# pop: e.g. `CD4 > 0.5 AND speed > 5`. Replaces the earlier `NamedTuple{(measure, fun, values)}`
+# — typing at the boundary means `_normalise_conditions` is the ONLY place that has to accept a
+# string `fun` value; everything downstream already has a `FilterFun`.
+struct FilterCondition
+    measure::String
+    fun::FilterFun
+    values::Any
+end
+
 # ── Population ───────────────────────────────────────────────────────────────────
 mutable struct Population
     # Stable identity — 6-char `gen_uid`, assigned at creation, persisted in the gating JSON, unchanged
@@ -126,16 +161,16 @@ mutable struct Population
     pop_type::PopType             # see @enum PopType above
     value_name::String
     gate::Union{Gate,Nothing}              # flow
-    # filtered-pop spec (clust/live; e.g. _tracked = filter_measure="track_id", fun="gt", values=0)
+    # filtered-pop spec (clust/live; e.g. _tracked = filter_measure="track_id", fun=FILTER_GT, values=0)
     filter_measure::Union{String,Nothing}
-    filter_fun::Union{String,Nothing}      # gt|gte|lt|lte|eq|neq|in
+    filter_fun::Union{FilterFun,Nothing}       # see @enum FilterFun above
     filter_values::Any
     filter_default_all::Bool
-    # compound filter (Decision 15): a list of AND-ed conditions, each `(; measure, fun, values)`.
-    # `nothing` → the single filter_measure/fun/values above (back-compat: existing sidecars). When set
-    # (non-empty), it is the source of truth and the single fields mirror conditions[1] for readers that
-    # only look at one. Lets a user-defined filter pop combine e.g. CD4>0.5 AND speed>5 in ONE pop.
-    filter_conditions::Union{Vector,Nothing}
+    # compound filter (Decision 15): a list of AND-ed `FilterCondition`s. `nothing` → the single
+    # filter_measure/fun/values above (back-compat: existing sidecars). When set (non-empty), it is
+    # the source of truth and the single fields mirror conditions[1] for readers that only look at
+    # one. Lets a user-defined filter pop combine e.g. CD4>0.5 AND speed>5 in ONE pop.
+    filter_conditions::Union{Vector{FilterCondition},Nothing}
     is_track::Bool
     # boolean membership (Decision 16): this pop's cells are a set operation over OTHER populations
     # in the same map, not a gate or a column — it LINKS existing gates. One form covers all three
@@ -400,16 +435,18 @@ function topo_order(m::PopulationMap)::Vector{String}
 end
 
 # Normalise a compound-filter spec (Decision 15): `nothing` | a list of `{measure, fun, values}`
-# (dicts, from JSON, or NamedTuples) → `Vector{NamedTuple}` of `(; measure, fun, values)`, dropping
-# entries missing a measure/fun. Empty → `nothing` (treated as no compound filter).
+# (dicts, from JSON, NamedTuples, or already-typed `FilterCondition`s) → `Vector{FilterCondition}`,
+# dropping entries missing a measure/fun. Empty → `nothing` (treated as no compound filter). The
+# `fun` field is coerced string/symbol → `FilterFun` here, so every downstream reader gets an enum.
 function _normalise_conditions(conds)
     conds === nothing && return nothing
-    out = NamedTuple[]
+    out = FilterCondition[]
     for c in conds
+        c isa FilterCondition && (push!(out, c); continue)
         gc(k) = c isa AbstractDict ? get(c, k, get(c, Symbol(k), nothing)) : getproperty(c, Symbol(k))
         mz = gc("measure"); fz = gc("fun")
         (mz === nothing || fz === nothing) && continue
-        push!(out, (; measure = String(mz), fun = String(fz), values = gc("values")))
+        push!(out, FilterCondition(String(mz), _coerce_filter_fun(fz), gc("values")))
     end
     isempty(out) ? nothing : out
 end
@@ -458,7 +495,7 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                               String(name), path, parent, String(colour), show,
                               m.pop_type, m.value_name, gate,
                               filter_measure === nothing ? nothing : String(filter_measure),
-                              filter_fun === nothing ? nothing : String(filter_fun),
+                              filter_fun === nothing ? nothing : _coerce_filter_fun(filter_fun),
                               filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
                               explicit_labels === nothing ? nothing : Int[Int(l) for l in explicit_labels], transient)
     m.uid_index[resolved_uid] = path
@@ -625,11 +662,13 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
     d = Dict{String,Any}("name" => p.name, "uid" => p.uid, "colour" => p.colour, "show" => p.show)
     p.gate !== nothing && (d["gate"] = gate_spec(p.gate))
     if p.filter_measure !== nothing
-        d["filter"] = Dict{String,Any}("measure" => p.filter_measure, "fun" => p.filter_fun,
-                                       "values" => p.filter_values, "default_all" => p.filter_default_all)
+        d["filter"] = Dict{String,Any}("measure" => p.filter_measure,
+                                       "fun"     => p.filter_fun === nothing ? nothing : string(p.filter_fun),
+                                       "values"  => p.filter_values,
+                                       "default_all" => p.filter_default_all)
         # compound filter (Decision 15): emit the AND-ed conditions so a multi-condition pop round-trips.
         p.filter_conditions === nothing ||
-            (d["filter"]["conditions"] = [Dict{String,Any}("measure" => c.measure, "fun" => c.fun,
+            (d["filter"]["conditions"] = [Dict{String,Any}("measure" => c.measure, "fun" => string(c.fun),
                                                            "values" => c.values) for c in p.filter_conditions])
     end
     p.boolean_op === nothing ||

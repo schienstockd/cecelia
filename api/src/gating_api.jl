@@ -1144,7 +1144,8 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
         flt = get(body, "filter", nothing)
         if flt !== nothing
             haskey(flt, "measure")     && (p.filter_measure = get(flt, "measure", nothing))
-            haskey(flt, "fun")         && (p.filter_fun = get(flt, "fun", nothing))
+            haskey(flt, "fun")         && (fv = get(flt, "fun", nothing);
+                                           p.filter_fun = fv === nothing ? nothing : Cecelia.parse_filter_fun(String(fv)))
             haskey(flt, "values")      && (p.filter_values = get(flt, "values", nothing))
             haskey(flt, "default_all") && (p.filter_default_all = Bool(get(flt, "default_all", false)))
             # compound filter (Decision 15): replace the AND-ed conditions, mirroring conditions[1] onto

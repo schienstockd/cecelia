@@ -6,17 +6,19 @@
 # builds on this lives with the pop-map infrastructure in population_manager.jl.
 
 # ── Filter mask for filtered populations (clust/live; e.g. tracked = track_id > 0) ─
-function _filter_mask(col::AbstractVector, fun, vals, default_all::Bool)::BitVector
+# `fun` is `FilterFun | Nothing` — the `Nothing` branch is the "no filter" fast path used by
+# _tracked-style pops. Any string coming in from JSON is coerced to the enum at
+# `_normalise_conditions` / `add_pop!`, so this function never sees raw strings anymore.
+function _filter_mask(col::AbstractVector, fun::Union{FilterFun,Nothing}, vals, default_all::Bool)::BitVector
     n = length(col)
     fun === nothing && return default_all ? trues(n) : falses(n)
-    fun = String(fun)
-    if fun == "in"
+    if fun === FILTER_IN
         s = Set(vals isa AbstractVector ? vals : [vals])
         return BitVector(!ismissing(x) && (x in s) for x in col)
     end
-    cmp = fun == "gt"  ? (>)  : fun == "gte" ? (>=) :
-          fun == "lt"  ? (<)  : fun == "lte" ? (<=) :
-          fun == "eq"  ? (==) : fun == "neq" ? (!=) :
+    cmp = fun === FILTER_GT  ? (>)  : fun === FILTER_GTE ? (>=) :
+          fun === FILTER_LT  ? (<)  : fun === FILTER_LTE ? (<=) :
+          fun === FILTER_EQ  ? (==) : fun === FILTER_NEQ ? (!=) :
           error("Unknown filter_fun: $fun")
     BitVector(!ismissing(x) && cmp(x, vals) for x in col)
 end
