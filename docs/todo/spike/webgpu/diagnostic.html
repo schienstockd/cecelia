@@ -200,6 +200,26 @@ actual renderer. See § "What this measures and why" at the bottom.
   <pre id="liveOut">—</pre>
 </section>
 
+<section id="variants">
+  <h2>I · Shader-variant probe — N ∈ {1,2,3,4} static-binding switch</h2>
+  <p class="note">Gates <code>docs/todo/WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md</code> S0. §A's
+    <code>binding_array</code> probe reported <code>bindGroupAccepts=false</code> on shipping
+    Chromium/Dawn, so P3 of the parent plan falls back to <b>one shader per possible atlas count</b>
+    with N static <code>texture_3d&lt;u32&gt;</code> bindings and a <code>switch(atlasIndex)</code>
+    over compile-time <code>textureLoad</code>s. This section proves that shape parses, pipelines,
+    and returns the right value on real Dawn <b>before</b> any renderer code lands. For each N,
+    creates N r32uint 3D textures (1×1×1) holding known values, compiles a compute shader with N
+    static bindings + N-way switch, dispatches once, reads the storage output back, and reports
+    per-N <code>wgslCompiles</code> / <code>pipelineCreates</code> / <code>sampleOk</code>. Plan
+    Decision 3 verbatim; the if/else fallback and the fully-inlined N-shaders variant only get
+    written if this variant fails somewhere.</p>
+  <div class="row">
+    <button id="btnVariants">Run variant probe</button>
+    <span id="variantsStatus" class="sub">idle</span>
+  </div>
+  <pre id="variantsOut">—</pre>
+</section>
+
 <section id="all">
   <h2>Report</h2>
   <div class="row">
@@ -272,6 +292,7 @@ const REPORT = {
   sustained: null,
   granularity: null,
   live: null,
+  variants: null,
 };
 
 let adapter = null, device = null, hasTimestamps = false;
@@ -1233,6 +1254,180 @@ async function runLive() {
 }
 
 // ── Run all + copy report ─────────────────────────────────────────────────────────
+// ── § I · Shader-variant probe — N static bindings + switch(atlasIndex) ──────────
+// Proves the WGSL shape Decision 3 of WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md relies on:
+// per-N shader with N distinct texture bindings and one switch arm per binding, each arm calling
+// textureLoad on a compile-time-known literal. This is what WGSL requires today; binding_array
+// (§A) is the alternative that doesn't ship. If S0 clears here, S1..S4 unblock.
+function makeVariantShader(nAtlases) {
+  const bindings = [];
+  const arms = [];
+  for (let i = 0; i < nAtlases; i++) {
+    bindings.push(`@group(0) @binding(${i + 1}) var atlas${i}: texture_3d<u32>;`);
+    // Last arm uses `default:` to match WGSL's exhaustiveness requirement without a fallthrough.
+    const head = (i === nAtlases - 1) ? 'default' : `case ${i}u`;
+    arms.push(`    ${head}: { return textureLoad(atlas${i}, coord, 0).r; }`);
+  }
+  return `
+@group(0) @binding(0) var<storage, read_write> outBuf: array<u32>;
+${bindings.join('\n')}
+
+fn sample_brick(atlasIndex: u32, coord: vec3<i32>) -> u32 {
+  switch atlasIndex {
+${arms.join('\n')}
+  }
+}
+
+@compute @workgroup_size(4)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x < ${nAtlases}u) {
+    outBuf[gid.x] = sample_brick(gid.x, vec3<i32>(0, 0, 0));
+  }
+}
+`;
+}
+
+async function probeShaderVariant(nAtlases) {
+  const result = {
+    nAtlases,
+    wgslCompiles: false,
+    pipelineCreates: false,
+    sampleOk: false,
+    messages: [],
+    readback: null,
+    expected: null,
+  };
+  const code = makeVariantShader(nAtlases);
+  result.wgsl = code;
+
+  // Step 1 — parse. Push a validation scope so a hard failure doesn't nuke the device.
+  device.pushErrorScope('validation');
+  let mod = null;
+  try {
+    mod = device.createShaderModule({ code });
+    const info = await mod.getCompilationInfo();
+    result.messages = info.messages.map(m => ({ type: m.type, message: m.message, lineNum: m.lineNum }));
+    result.wgslCompiles = !info.messages.some(m => m.type === 'error');
+  } catch (e) {
+    result.messages.push({ type: 'error', message: 'createShaderModule threw: ' + String(e?.message ?? e) });
+  }
+  const parseErr = await device.popErrorScope();
+  if (parseErr) {
+    result.messages.push({ type: 'error', message: 'validation: ' + parseErr.message });
+    result.wgslCompiles = false;
+  }
+  if (!result.wgslCompiles) return result;
+
+  // Step 2 — build the bind-group layout (N textures + 1 storage buffer), pipeline it, wire
+  // N distinct r32uint 3D textures each seeded with a distinct value we can round-trip.
+  device.pushErrorScope('validation');
+  let pipeline = null, layout = null, textures = [], out = null, readbackBuf = null;
+  try {
+    const entries = [
+      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    ];
+    for (let i = 0; i < nAtlases; i++) {
+      entries.push({
+        binding: i + 1, visibility: GPUShaderStage.COMPUTE,
+        texture: { sampleType: 'uint', viewDimension: '3d' },
+      });
+    }
+    layout = device.createBindGroupLayout({ entries });
+    pipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+      compute: { module: mod, entryPoint: 'main' },
+    });
+    result.pipelineCreates = true;
+  } catch (e) {
+    result.messages.push({ type: 'error', message: 'pipeline: ' + String(e?.message ?? e) });
+  }
+  const pipeErr = await device.popErrorScope();
+  if (pipeErr) {
+    result.messages.push({ type: 'error', message: 'validation: ' + pipeErr.message });
+    result.pipelineCreates = false;
+  }
+  if (!result.pipelineCreates) return result;
+
+  // Step 3 — dispatch. Seed each atlas with `100 + i`, read back N u32s, verify.
+  const expected = [];
+  for (let i = 0; i < nAtlases; i++) {
+    const t = device.createTexture({
+      size: [1, 1, 1], dimension: '3d', format: 'r32uint',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    const val = new Uint32Array([100 + i]);
+    device.queue.writeTexture({ texture: t }, val, { bytesPerRow: 4, rowsPerImage: 1 }, [1, 1, 1]);
+    textures.push(t);
+    expected.push(100 + i);
+  }
+  result.expected = expected;
+
+  out = device.createBuffer({
+    size: 4 * nAtlases,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+  });
+  readbackBuf = device.createBuffer({
+    size: 4 * nAtlases,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+
+  const bgEntries = [{ binding: 0, resource: { buffer: out } }];
+  for (let i = 0; i < nAtlases; i++) {
+    bgEntries.push({ binding: i + 1, resource: textures[i].createView() });
+  }
+  const bg = device.createBindGroup({ layout, entries: bgEntries });
+
+  device.pushErrorScope('validation');
+  try {
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bg);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+    enc.copyBufferToBuffer(out, 0, readbackBuf, 0, 4 * nAtlases);
+    device.queue.submit([enc.finish()]);
+    await readbackBuf.mapAsync(GPUMapMode.READ);
+    const got = Array.from(new Uint32Array(readbackBuf.getMappedRange().slice(0)));
+    readbackBuf.unmap();
+    result.readback = got;
+    result.sampleOk = got.length === expected.length &&
+      got.every((v, i) => v === expected[i]);
+  } catch (e) {
+    result.messages.push({ type: 'error', message: 'dispatch: ' + String(e?.message ?? e) });
+  }
+  const runErr = await device.popErrorScope();
+  if (runErr) {
+    result.messages.push({ type: 'error', message: 'validation: ' + runErr.message });
+    result.sampleOk = false;
+  }
+  for (const t of textures) t.destroy();
+  out.destroy();
+  readbackBuf.destroy();
+  return result;
+}
+
+async function runVariants() {
+  say('variantsStatus', 'running…');
+  await ensureDevice();
+  const results = [];
+  for (const n of [1, 2, 3, 4]) {
+    const r = await probeShaderVariant(n);
+    results.push(r);
+  }
+  const allOk = results.every(r => r.wgslCompiles && r.pipelineCreates && r.sampleOk);
+  REPORT.variants = {
+    ship: allOk,
+    perN: results,
+  };
+  if (!allOk) {
+    REPORT.notes.push('SHADER-VARIANTS S0 FAILED — parent plan blocks. See variants.perN for the first N that failed and its messages; fall back to if/else if or inlined N shaders per WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md.');
+  }
+  el('variantsOut').textContent = JSON.stringify(REPORT.variants, null, 2);
+  say('variantsStatus', allOk ? 'all four variants OK — S0 clears.' : 'FAILED — see report.',
+      allOk ? 'good' : 'bad');
+}
+
 async function runAll() {
   say('allStatus', 'running…');
   el('btnAll').disabled = true;
@@ -1245,6 +1440,7 @@ async function runAll() {
     await runSustained();
     await runGranularity();
     await runLive();
+    await runVariants();
     el('reportOut').textContent = JSON.stringify(REPORT, null, 2);
     say('allStatus', 'done — Copy report JSON to paste back.', 'good');
   } catch (e) {
@@ -1263,6 +1459,7 @@ el('btnAlign').onclick = () => runAlign().catch(e => say('alignStatus', 'FAILED:
 el('btnSustained').onclick = () => runSustained().catch(e => say('sustainedOut', 'FAILED: ' + e.message, 'bad'));
 el('btnGranularity').onclick = () => runGranularity().catch(e => say('granStatus', 'FAILED: ' + e.message, 'bad'));
 el('btnLive').onclick = () => runLive().catch(e => say('liveStatus', 'FAILED: ' + e.message, 'bad'));
+el('btnVariants').onclick = () => runVariants().catch(e => say('variantsStatus', 'FAILED: ' + e.message, 'bad'));
 el('btnAll').onclick = runAll;
 
 el('btnCopy').onclick = async () => {
