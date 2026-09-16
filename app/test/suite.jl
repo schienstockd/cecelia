@@ -14320,9 +14320,13 @@ end
     root      = dirname(dirname(dirname(pathof(Cecelia))))
     types_ts  = read(joinpath(root, "frontend", "src", "tasks", "types.ts"), String)
     modules   = read(joinpath(root, "docs", "MODULES.md"), String)
-    julia_src = join([read(f, String) for f in
-                      [joinpath(root, "app", "src", "tasks", "task.jl"),
-                       joinpath(root, "api", "src", "routes.jl")]], "\n")
+    # task.jl is a small aggregator now — its structural spec-field references (`"composite"`,
+    # `"steps"`, `"scope"`, …) live in the split fragments under `tasks/task/*.jl`.
+    task_dir  = joinpath(root, "app", "src", "tasks", "task")
+    julia_src = join([read(f, String) for f in vcat(
+                        joinpath(root, "app", "src", "tasks", "task.jl"),
+                        filter(f -> endswith(f, ".jl"), readdir(task_dir; join=true)),
+                        joinpath(root, "api", "src", "routes.jl"))], "\n")
 
     # Structural keys of the params array itself, not fields a spec author sets on a param.
     STRUCTURAL = Set(["key", "label", "type", "default", "\$include"])
@@ -14948,8 +14952,14 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # missing was a silent bug: a nested `blockSize` defaulting to 512, then `<group>Order`
         # ignored so the order chips did nothing. Neither failed loudly. So the LIST is pinned by
         # reading both call sites, and this fails when `run_task` gains a step the preview does not.
-        src   = read(joinpath(@__DIR__, "..", "src", "tasks", "task.jl"), String)
-        sched = read(joinpath(@__DIR__, "..", "src", "tasks", "scheduler.jl"), String)
+        # `task.jl` is a small aggregator; `preview_params_for_run` and the flatten/order/defaults
+        # steps live in the split fragments under `tasks/task/*.jl`. Read the whole family so a
+        # future move within the family stays invisible to this test.
+        task_dir = joinpath(@__DIR__, "..", "src", "tasks", "task")
+        src      = read(joinpath(@__DIR__, "..", "src", "tasks", "task.jl"), String) * "\n" *
+                   join([read(f, String) for f in
+                         filter(f -> endswith(f, ".jl"), readdir(task_dir; join=true))], "\n")
+        sched    = read(joinpath(@__DIR__, "..", "src", "tasks", "scheduler.jl"), String)
 
         prep = ["_flatten_sections", "_apply_group_order", "_apply_spec_defaults",
                 "_apply_param_requires"]
@@ -18864,12 +18874,15 @@ end
     tasks_root = joinpath(@__DIR__, "..", "src", "tasks")
 
     # Structurally exempt — never need typing:
-    #   • `task.jl` — the CciaTask / CompositeTask dispatcher; its `_run_task` methods delegate to
-    #     concrete task methods and legitimately pass the raw bag through.
+    #   • `task.jl` — the CciaTask / CompositeTask dispatcher; its base `_run_task` methods delegate
+    #     to concrete task methods and legitimately pass the raw bag through.
+    #   • `task/composite.jl` — the CompositeTask `_run_task` overloads (split out of `task.jl`);
+    #     same exemption reason as the aggregator.
     #   • `testTasks/*` — minimal in-tree fixtures used ONLY by the test suite to exercise the
     #     scheduler; typing them would double their surface with zero production value.
     STRUCTURAL_EXEMPTIONS = Set([
         joinpath("tasks", "task.jl"),
+        joinpath("tasks", "task", "composite.jl"),
         joinpath("tasks", "testTasks", "image_task.jl"),
         joinpath("tasks", "testTasks", "incremental_plot_task.jl"),
         joinpath("tasks", "testTasks", "set_task.jl"),
