@@ -478,7 +478,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
 end
 
 @testset "QC framework" begin
-    # ── The QC copy catalog (app/src/qc.jl → QC_TEXT) ─────────────────────────────────────────
+    # ── The QC copy catalog (app/src/qc/text.jl → QC_TEXT) ────────────────────────────────────
     #
     # QC prose used to live inline in the analysis functions, which made it the least reviewable
     # copy in the app. It now sits in one table; these pin the contract that table has to keep.

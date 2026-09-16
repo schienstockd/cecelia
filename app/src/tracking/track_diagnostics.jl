@@ -512,7 +512,7 @@ function track_diagnostic_findings(diag)::Vector{Dict{String,Any}}
     out = Dict{String,Any}[]
     s = diag.summary
 
-    # Text lives in `QC_TEXT` (app/src/qc.jl), not here — same rule as every other findings function,
+    # Text lives in `QC_TEXT` (app/src/qc/text.jl), not here — same rule as every other findings function,
     # so the wording can be reviewed as a set and re-rendered at read time.
     diag.drift.test.drifting &&
         push!(out, qc_finding("warn", "tracking.field_drift";

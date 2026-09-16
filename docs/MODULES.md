@@ -179,12 +179,12 @@ writer, never a hand-rolled sidecar:
    long = the imperative action; numbers go in `detail`).
 
 **The text lives in `QC_TEXT`, not at the call site.** Add an entry keyed by the finding's `code` to
-the catalog at the top of `app/src/qc.jl`, then emit it by code. Wording is then reviewable as a set
+the catalog in `app/src/qc/text.jl`, then emit it by code. Wording is then reviewable as a set
 (`pixi run ui-copy` lists every QC string alongside the rest of the app's copy) instead of being
 buried in an analysis function:
 
 ```julia
-# app/src/qc.jl — QC_TEXT
+# app/src/qc/text.jl — QC_TEXT
 "mycat.no_output" => (
     short = "No objects produced",
     long  = "Check the inputs/params and re-run this step."),
