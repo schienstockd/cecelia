@@ -81,7 +81,6 @@ proposed seams: [`docs/archive/comment-audit-findings.md`](archive/comment-audit
   **requires preserving the `uid_index` sync invariant** — tests must pin uid_index/pops parity.
 
 **Worthwhile (Tier 2):**
-- `app/src/tasks/importImages/omezarr.jl` (1074 L) — separable metadata reader.
 - `api/src/routes.jl` (3053 L) — split by route family.
 
 **Anchor (Tier 3):**
