@@ -129,6 +129,30 @@ a comment. A comment saying "expects X" is a risk-register entry, not a specific
    with nothing preventing the reverse — needs either structural enforcement (a builder that only
    produces valid states) or a runtime assertion at B's entry.
 
+### Typed task params — every `_run_task` reads through `parse_<task>_params`
+
+Every task's params bag is a **typed `Base.@kwdef` struct** built by a `parse_<task>_params(::AbstractDict)`
+helper — `_run_task` calls it once at the top, then reads `p.field`. Scattered `get(params, "foo",
+default)` calls inside `_run_task` are the pattern-4 boundary drift this rule exists to prevent: a
+spec rename that isn't mirrored produces a silent default at the read site instead of a struct-field
+error at parse. Canonical example: `app/src/tasks/cleanupImages/smooth.jl`.
+
+**Enforced** by `typed params ratchet — _run_task reads params through parse_*_params` in
+`app/test/suite.jl`. Same shape as the CSS ratchet in `frontend/src/utils/cssScenarios.ts` — an
+exact per-file baseline (`TYPED_PARAMS_MIGRATION_BASELINE`) that MAY SHRINK, MUST NEVER GROW; when
+empty, any regression fails immediately.
+
+A field that must stay untyped (a "bag") — a `channelSelection` resolved at runtime via
+`channel_indices`, a JSON blob validated later with `ParamValidationError`, a `models` list resolved
+per-image — is declared as `::Any` in the struct with an inline comment saying why. `nothing`-vs-value
+sentinels (e.g. `flowMetrics = nothing` meaning "no picker in this call") are preserved deliberately,
+not typed away.
+
+The rare pre-parse guard — a shape check that only makes sense on the raw bag (see
+`editImages/cropImage.jl` distinguishing "missing box" from "defaulted zero-box") — carries
+`# ratchet-ok: <reason>` on the exact line, same escape-hatch discipline as the H5AD/zarr readers.
+Bare `get(params, …)` inside `_run_task` without that marker fails the ratchet.
+
 ### Enums for state machines
 
 A `Symbol` or `String` field with a known set of legal values is a state machine documented only

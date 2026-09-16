@@ -76,7 +76,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     # cropBox is required; a missing / wrong-shape value is a hard error (nothing to crop). Checked
     # against the raw params bag rather than the parsed struct so a bad shape is distinguishable
     # from a defaulted `CropBox()` (all zeros — a valid but empty box).
-    raw_box = get(params, "cropBox", nothing)
+    raw_box = get(params, "cropBox", nothing)  # ratchet-ok: pre-parse shape guard, see comment above
     if isnothing(raw_box) || !(raw_box isa AbstractDict)
         on_log("[ERROR] cropBox param missing or not a box")
         return nothing
