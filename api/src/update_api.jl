@@ -245,7 +245,13 @@ end
 #    specific commit rather than `refs/heads/<branch>` means what we install matches what we told the
 #    user is available; between check and apply, HEAD can move.
 #  · The branch archive ships source only, so we build the frontend here — same as `install.sh` on
-#    the `dev` channel. Requires `npm` on PATH; refused with a clear error if absent.
+#    the `dev` channel. Node/npm come from `pixi exec --spec nodejs`, not the user's system PATH:
+#    it fetches into an ephemeral cache on first use (~40 MB, cached for later applies) so a user
+#    who never installed Node.js can still take dev-channel updates. Adding `nodejs` to the resident
+#    pixi env instead would grow every install by 40 MB even for users who never apply a dev update,
+#    and — crucially — would chicken-and-egg the very upgrade that ships it (the frontend build here
+#    runs BEFORE `_apply_pending_update` reprovisions the env, so a nodejs-in-pixi.toml would still
+#    be missing during its own delivery). `pixi exec` sidesteps both.
 #  · No `.sha256` is published for branch archives, so integrity `verified` is always false on dev.
 function api_update_apply(body_bytes::Vector{UInt8})
     body    = try JSON3.read(String(body_bytes)) catch; Dict{Symbol,Any}() end
@@ -263,8 +269,11 @@ function api_update_apply(body_bytes::Vector{UInt8})
 
     if channel == "dev"
         _valid_branch(branch) || return 400, JSON3.write((; error = "invalid branch: $(repr(branch))"))
-        Sys.which("npm") === nothing && return 500, JSON3.write((;
-            error = "`npm` was not found on PATH — dev-channel updates build the frontend locally and need Node.js."))
+        # `pixi` is what launched the app — an install without it is broken, but check anyway so a
+        # bad env produces a targeted error rather than a spawn failure buried in the build log.
+        Sys.which("pixi") === nothing && return 500, JSON3.write((;
+            error = "`pixi` was not found on PATH — the Cecelia install looks broken (dev-channel " *
+                    "updates use `pixi exec` to fetch Node.js on demand)."))
     end
 
     url = channel == "dev" ?
@@ -327,13 +336,14 @@ function api_update_apply(body_bytes::Vector{UInt8})
         end
         # Dev-channel: build the frontend inside the payload so `_apply_pending_update` moves a
         # ready-to-serve `frontend/dist` over the running one. `npm install`, not `ci`, for the same
-        # rolldown optional-binding reason install.sh documents.
+        # rolldown optional-binding reason install.sh documents. Node/npm come via `pixi exec` — see
+        # the header comment on this function for why not `nodejs` in `pixi.toml`.
         if channel == "dev"
             fe = joinpath(payload, "frontend")
             isdir(fe) || return _apply_fail(staging, "dev-channel payload has no frontend/ directory — refusing to stage.")
             try
-                run(Cmd(`npm install`;    dir = fe))
-                run(Cmd(`npm run build`;  dir = fe))
+                run(Cmd(`pixi exec --spec nodejs -- npm install`;    dir = fe))
+                run(Cmd(`pixi exec --spec nodejs -- npm run build`;  dir = fe))
             catch e
                 return _apply_fail(staging, "frontend build failed: $(sprint(showerror, e))")
             end

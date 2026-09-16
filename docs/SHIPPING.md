@@ -215,7 +215,7 @@ launcher.
 | `CECELIA_CHANNEL` | Source | Frontend | To update |
 |---|---|---|---|
 | `stable` (default) | newest tagged Release's `cecelia.tar.gz` | prebuilt (shipped in the bundle) | re-run installer / `pixi run update` / in-app Update |
-| `dev` | `main` branch tarball (`archive/refs/heads/<branch>.tar.gz`) | **built locally** (`npm install && npm run build`) | re-run installer, OR flip Settings → Software → *Track main (dev builds)* and use the in-app Update button (same URL, same local build; needs Node) |
+| `dev` | `main` branch tarball (`archive/refs/heads/<branch>.tar.gz`) | **built locally** (`pixi exec --spec nodejs -- npm install && npm run build`) | re-run installer, OR flip Settings → Software → *Track main (dev builds)* and use the in-app Update button (same URL, same local build; Node comes via `pixi exec`, no system Node needed) |
 
 > The dev-channel local build uses `npm install`, **not** `npm ci`: the rolldown native binding vite 8
 > bundles with is an *optional* dep, and npm can silently skip it on Windows/macOS (a non-fatal optional
@@ -233,12 +233,17 @@ GitHub
 serves any branch as a tarball at `archive/refs/heads/<branch>.tar.gz` — no release, no asset upload —
 so the dev path just points the *same* installer at that URL. `CECELIA_BRANCH` overrides the branch.
 
-**The one extra requirement: Node.** A release bundle ships a prebuilt `frontend/dist`; a branch
-archive is source only, so the dev channel builds the frontend on the machine and therefore needs
-Node.js (npm) on PATH — the installer errors clearly if it's absent. (Node stays on fnm in dev and is
-baked into the release bundle for stable, so this is the one case an end user needs it — see *Julia and
-Node are not in Pixi*.) The multi-GB Pixi env is cached across re-runs, so a dev "update" only
-re-downloads the few-MB source and rebuilds the frontend (seconds), not the environment.
+**Node comes via `pixi exec`.** A release bundle ships a prebuilt `frontend/dist`; a branch archive
+is source only, so the dev channel builds the frontend on the machine. Both the initial
+`install.sh --channel dev` and the in-app dev-channel apply path invoke `pixi exec --spec nodejs --
+npm install/build` — an ephemeral pixi env, ~40 MB cached in `~/.cache/pixi/` on first use, no host
+Node required. That means a biologist who never installed Node.js can still take dev-channel updates.
+The alternative — adding `nodejs` to the resident pixi env — would grow every install by ~40 MB even
+for users who never apply a dev update, and (crucially) would chicken-and-egg the very upgrade that
+delivers it: the frontend build runs *before* the app re-provisions the pixi env, so a
+`nodejs`-in-pixi.toml would still be missing during its own delivery. Node stays on fnm in dev per
+*Julia and Node are not in Pixi*. The multi-GB Pixi env is cached across re-runs, so a dev "update"
+only re-downloads the few-MB source and rebuilds the frontend (seconds), not the environment.
 
 **Provenance.** Both channels write `<install>/.cecelia-version` — the tag for stable, `dev @ <branch>
 <sha>` for dev (the SHA resolved via the commits API) — so a bug report can name the exact state. The
@@ -257,7 +262,7 @@ root). This is the only structural difference between the two paths.
 |---|---|
 | Console | `pixi run update` → `pixi update` (refreshes deps within `pixi.toml` constraints, rewrites `pixi.lock`) |
 | In-app — stable | Settings → Software → *Update to vX.Y.Z*. `/api/update/check` picks the newest GitHub release; `/api/update/apply` downloads `cecelia.tar.gz`, verifies it against the published `.sha256`, and stages it. Launcher applies the staged bundle on the next restart. |
-| In-app — dev channel | Settings → Software → *Track main (dev builds)* toggle. `/api/update/check?channel=dev` compares the installed sha (from `.cecelia-version`) with the tip of `main` via the commits API; apply downloads `archive/<sha>.tar.gz`, unpacks it with `--strip-components=1`, and runs `npm install && npm run build` inside the payload — same shape as `install.sh`'s dev channel. Needs Node.js on PATH. |
+| In-app — dev channel | Settings → Software → *Track main (dev builds)* toggle. `/api/update/check?channel=dev` compares the installed sha (from `.cecelia-version`) with the tip of `main` via the commits API; apply downloads `archive/<sha>.tar.gz`, unpacks it with `--strip-components=1`, and runs `pixi exec --spec nodejs -- npm install && npm run build` inside the payload — same shape as `install.sh`'s dev channel. Node/npm come from an ephemeral pixi env, no host Node required. |
 | In-app — revert | Settings → Software → *Revert to previous version*. Each apply snapshots the files it's about to overwrite into `.previous-release/payload/`; revert stages a `.pending-revert` marker and the launcher moves them back on the next restart. Only ONE step of history is kept — a second apply discards the earlier snapshot. |
 
 **Safety model.** The running server NEVER overwrites its own files. Apply and revert both write a
