@@ -17,6 +17,7 @@ The area-per-area reference: [root doc index](../CLAUDE.md).
 | I want to… | Go to |
 |---|---|
 | Add a new task (module page, JSON spec, Julia handler, Python runner, tests) | [`docs/MODULES.md`](MODULES.md) — the procedural guide |
+| Add a task's typed params struct + parser (`parse_<task>_params`) | Copy the shape from `app/src/tasks/cleanupImages/smooth.jl`. Rule + ratchet in [`docs/MAINTAINABILITY.md`](MAINTAINABILITY.md) → *Typed task params*; enforced by `typed params ratchet` in `app/test/suite.jl` |
 | Change how a task reports QC findings | `app/src/tasks/<category>/<name>.jl` → the `*_qc_findings` function (convention across all tasks); shared helpers in `app/src/qc.jl` |
 | Add or change a cohort-comparable metric | `app/src/qc_cohort.jl` (`COHORT_METRICS`) |
 | Change what a task streams into as it runs (preview stores) | The task's `live_outputs(::CciaTask, params)` overload in `app/src/tasks/<name>.jl` and `app/src/tasks/task.jl` |

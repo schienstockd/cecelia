@@ -18847,3 +18847,192 @@ end
         end
     end
 end
+
+# ── Typed-params ratchet ──────────────────────────────────────────────────────
+# Every task's `_run_task` reads its params bag through a `parse_<task>_params(::AbstractDict)`
+# helper that returns a `Base.@kwdef` struct — one authoritative statement of the task's contract
+# with its inbound bag, so a spec rename becomes a struct-field error at parse rather than a silent
+# default at the read site. This is the mechanical enforcement of what MAINTAINABILITY.md → *Task
+# params are typed* names as a standing rule (pattern-4 fix from the maintainability audit).
+#
+# Ratchet shape: same as `frontend/src/utils/cssScenarios.ts` — an exact per-file baseline of the
+# tasks NOT YET on typed params. New offenders outside the list fail immediately; a file that leaves
+# the list must be removed from `TYPED_PARAMS_MIGRATION_BASELINE`. When the baseline is empty the
+# ratchet becomes "no offenders", the shape docs/ui/PRIMITIVES.md → *Re-implementing a scenario is a
+# test failure* describes.
+@testset "typed params ratchet — _run_task reads params through parse_*_params" begin
+    tasks_root = joinpath(@__DIR__, "..", "src", "tasks")
+
+    # Structurally exempt — never need typing:
+    #   • `task.jl` — the CciaTask / CompositeTask dispatcher; its `_run_task` methods delegate to
+    #     concrete task methods and legitimately pass the raw bag through.
+    #   • `testTasks/*` — minimal in-tree fixtures used ONLY by the test suite to exercise the
+    #     scheduler; typing them would double their surface with zero production value.
+    STRUCTURAL_EXEMPTIONS = Set([
+        joinpath("tasks", "task.jl"),
+        joinpath("tasks", "testTasks", "image_task.jl"),
+        joinpath("tasks", "testTasks", "incremental_plot_task.jl"),
+        joinpath("tasks", "testTasks", "set_task.jl"),
+    ])
+
+    # Migration baseline — tasks currently on raw `Dict` access, awaiting their family-arc PR. This
+    # list MAY SHRINK, MUST NEVER GROW. Remove the entry in the SAME change that lands the parser.
+    # Empty list ⇒ the arc is closed; the ratchet then rejects any regression.
+    #
+    # The arc closed with PRs #906 (cleanupImages), #909 (editImages), #910 (tracking),
+    # #913 (segment), #914 (opticalFlow), #915 (tail: importImages, exportImages, clust*,
+    # behaviour, spatialAnalysis). See docs/archive/comment-audit-findings.md for the register.
+    TYPED_PARAMS_MIGRATION_BASELINE = Set{String}()
+
+    # Walk every _run_task body via Meta.parseall — robust vs regex (docstrings, nested `end`,
+    # helper functions that happen to name their positional arg `params`).
+    function _walk(f, expr)
+        f(expr)
+        if expr isa Expr
+            for a in expr.args
+                _walk(f, a)
+            end
+        end
+    end
+
+    function _is_run_task_def(e::Expr)
+        e.head == :function || return false
+        sig = e.args[1]
+        sig isa Expr || return false
+        # Peel `where` clauses
+        while sig.head == :where || sig.head == :(::)
+            sig = sig.args[1]
+        end
+        sig.head == :call || return false
+        name = sig.args[1]
+        # Bare `_run_task` OR `Foo._run_task` (qualified)
+        name === :_run_task || (name isa Expr && name.head == :. &&
+                                 name.args[2] isa QuoteNode &&
+                                 name.args[2].value === :_run_task)
+    end
+
+    _sym_starts(sym::Symbol, prefix::AbstractString, suffix::AbstractString) =
+        let s = String(sym)
+            startswith(s, prefix) && endswith(s, suffix)
+        end
+
+    # Returns (has_parser_def, run_task_calls_parser, run_task_reads_bag).
+    # An unavoidable pre-parse guard (a shape check that only makes sense on the raw bag) may carry
+    # `# ratchet-ok:` on that exact line + a reason — same escape-hatch discipline as the H5AD/zarr
+    # readers (CLAUDE.md → deviations need an inline comment on that exact line). Everything else
+    # goes through the parser.
+    function _classify(src::AbstractString)
+        expr = try
+            Meta.parseall(src)
+        catch
+            return (false, false, false, "unparseable")
+        end
+        src_lines = split(src, '\n'; keepempty = true)
+        _exempt(line::Int) = 1 <= line <= length(src_lines) &&
+                             occursin("# ratchet-ok", src_lines[line])
+
+        has_parser_def = false
+        calls_parser   = false
+        reads_bag      = false
+        _walk(expr) do e
+            e isa Expr || return
+            if e.head == :function
+                sig = e.args[1]
+                while sig isa Expr && (sig.head == :where || sig.head == :(::))
+                    sig = sig.args[1]
+                end
+                if sig isa Expr && sig.head == :call && sig.args[1] isa Symbol &&
+                   _sym_starts(sig.args[1], "parse_", "_params")
+                    has_parser_def = true
+                end
+            end
+        end
+        _walk(expr) do e
+            e isa Expr || return
+            _is_run_task_def(e) || return
+            body = e.args[2]
+            last_line = Ref(0)
+            _walk(body) do inner
+                if inner isa LineNumberNode
+                    last_line[] = inner.line
+                    return
+                end
+                inner isa Expr || return
+                if inner.head == :call && !isempty(inner.args)
+                    callee = inner.args[1]
+                    if callee isa Symbol && _sym_starts(callee, "parse_", "_params")
+                        length(inner.args) >= 2 && inner.args[2] === :params && (calls_parser = true)
+                    end
+                    if callee === :get && length(inner.args) >= 2 && inner.args[2] === :params
+                        _exempt(last_line[]) || (reads_bag = true)
+                    end
+                end
+                if inner.head == :ref && !isempty(inner.args) && inner.args[1] === :params
+                    _exempt(last_line[]) || (reads_bag = true)
+                end
+            end
+        end
+        (has_parser_def, calls_parser, reads_bag, "")
+    end
+
+    offenders = String[]      # unexpected — not in either list
+    stale_baseline = String[] # still in baseline but actually compliant now (list must shrink)
+    for (dir, _, files) in walkdir(tasks_root)
+        for f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(dir, f)
+            rel_from_src = relpath(path, joinpath(@__DIR__, "..", "src"))
+            src = read(path, String)
+            occursin(r"\bfunction\s+_run_task\b", src) || continue
+            (has_parser, calls_parser, reads_bag, err) = _classify(src)
+            is_offender = !isempty(err) || !has_parser || !calls_parser || reads_bag
+
+            if rel_from_src in STRUCTURAL_EXEMPTIONS
+                # Structural exemptions are silent whether compliant or not — they wouldn't be
+                # exempt if the intent were to type them.
+                continue
+            end
+            if rel_from_src in TYPED_PARAMS_MIGRATION_BASELINE
+                if !is_offender
+                    push!(stale_baseline, rel_from_src)
+                end
+                continue
+            end
+            if is_offender
+                push!(offenders, rel_from_src *
+                      (isempty(err) ? "" : "  ($err)"))
+            end
+        end
+    end
+
+    if !isempty(offenders)
+        @error "typed-params ratchet: NEW file(s) on raw `get(params,…)` access.\n" *
+               "Add a `Base.@kwdef struct <Task>Params` + `parse_<task>_params(::AbstractDict)` and " *
+               "call it once at the top of `_run_task`. See app/src/tasks/cleanupImages/smooth.jl for " *
+               "the canonical shape.\n" *
+               "Offending file(s):\n  " * join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+
+    if !isempty(stale_baseline)
+        @error "typed-params ratchet: baseline names file(s) that are now compliant. " *
+               "Remove them from `TYPED_PARAMS_MIGRATION_BASELINE` in the same change that landed the " *
+               "parser (the list may shrink, must never grow):\n  " * join(stale_baseline, "\n  ")
+    end
+    @test isempty(stale_baseline)
+
+    # Sanity: the scan must actually find `_run_task` bodies; a wrong root would let real offenders
+    # slip through with an empty offender list. cleanupImages + editImages already ship the pattern.
+    canonical = String[]
+    for (dir, _, files) in walkdir(tasks_root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        rel = relpath(path, joinpath(@__DIR__, "..", "src"))
+        rel in STRUCTURAL_EXEMPTIONS && continue
+        rel in TYPED_PARAMS_MIGRATION_BASELINE && continue
+        src = read(path, String)
+        occursin(r"\bfunction\s+_run_task\b", src) || continue
+        occursin(r"\bfunction\s+parse_\w+_params\b", src) && push!(canonical, rel)
+    end
+    @test length(canonical) >= 41   # cleanupImages (6) + editImages (9) + tracking (3) + segment (6) + opticalFlow (2) + tail (15)
+end
