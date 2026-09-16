@@ -2,6 +2,41 @@ struct CropImage <: CciaTask end
 
 task_output_effect(::CropImage) = "new-image"
 
+# The half-open crop box in full-res pixels. `z0/z1 = -1` and `t0/t1 = -1` mean "keep the whole
+# axis" (2D image / no time trim). Emitted by napari's 3D-crop draw via `crop_box` on the bridge.
+Base.@kwdef struct CropBox
+    x0::Int = 0;  x1::Int = 0
+    y0::Int = 0;  y1::Int = 0
+    z0::Int = -1; z1::Int = -1
+    t0::Int = -1; t1::Int = -1
+end
+
+# Typed shape of what `_run_task(::CropImage, …)` reads from `params`. `cropBox` arrives nested
+# because the `imagePicker` widget emits one param whose value is the whole box; parsed into a
+# typed `CropBox` so the axis-keep convention (-1) lives on the struct rather than at each read.
+Base.@kwdef struct CropImageParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    cropBox::CropBox  = CropBox()
+end
+
+function parse_crop_box(d::AbstractDict)::CropBox
+    # JSON3 yields Symbol keys; coerce to String so the getters work for both shapes.
+    b = Dict{String,Any}(String(k) => v for (k, v) in pairs(d))
+    CropBox(;
+        x0 = Int(get(b, "x0", 0)),  x1 = Int(get(b, "x1", 0)),
+        y0 = Int(get(b, "y0", 0)),  y1 = Int(get(b, "y1", 0)),
+        z0 = Int(get(b, "z0", -1)), z1 = Int(get(b, "z1", -1)),
+        t0 = Int(get(b, "t0", -1)), t1 = Int(get(b, "t1", -1)))
+end
+
+function parse_crop_image_params(d::AbstractDict)::CropImageParams
+    box_raw = get(d, "cropBox", nothing)
+    box     = box_raw isa AbstractDict ? parse_crop_box(box_raw) : CropBox()
+    CropImageParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        cropBox   = box)
+end
+
 # Pure: derive the crop's inherited calibration meta from the SOURCE image's `meta` + the (half-open)
 # crop `box`. A crop keeps the same physical pixel size, channels and frame interval — only the extent
 # shrinks — so the physical scale/unit and channel count carry over unchanged; the Z/T counts shrink to
@@ -38,13 +73,23 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    # cropBox is required; a missing / wrong-shape value is a hard error (nothing to crop). Checked
+    # against the raw params bag rather than the parsed struct so a bad shape is distinguishable
+    # from a defaulted `CropBox()` (all zeros — a valid but empty box).
+    raw_box = get(params, "cropBox", nothing)
+    if isnothing(raw_box) || !(raw_box isa AbstractDict)
+        on_log("[ERROR] cropBox param missing or not a box")
+        return nothing
+    end
+
+    p          = parse_crop_image_params(params)
+    b          = p.cropBox
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -65,20 +110,6 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     end
     s = proj._sets[set_idx]
 
-    # box: full-res pixels, half-open. z/t default -1 → keep the whole axis (2D image / no time trim).
-    # Nested under `cropBox` — the `imagePicker` widget emits one param whose value is the whole box.
-    # JSON3 yields Symbol keys; coerce to a plain Dict so `get(_, "x0", …)` works for both shapes.
-    raw_box = get(params, "cropBox", nothing)
-    if isnothing(raw_box) || !(raw_box isa AbstractDict)
-        on_log("[ERROR] cropBox param missing or not a box")
-        return nothing
-    end
-    box = Dict{String,Any}(String(k) => v for (k, v) in pairs(raw_box))
-    x0 = Int(get(box, "x0", 0));  x1 = Int(get(box, "x1", 0))
-    y0 = Int(get(box, "y0", 0));  y1 = Int(get(box, "y1", 0))
-    z0 = Int(get(box, "z0", -1)); z1 = Int(get(box, "z1", -1))
-    t0 = Int(get(box, "t0", -1)); t1 = Int(get(box, "t1", -1))
-
     # Inherit the source image's calibration onto the crop (SizeC/T/Z, PhysicalSize*, TimeIncrement).
     # Carried from the source's ccid `meta` — the same source→crop pattern used for `imChannelNames`
     # below — rather than re-derived from the crop's own store: the crop is written before the box is
@@ -89,10 +120,10 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     crop_meta = Dict{String,Any}(
         "crop_source_uid"        => img.uid,
-        "crop_source_value_name" => value_name,
-        "crop_box" => Dict{String,Any}("x0"=>x0, "x1"=>x1, "y0"=>y0, "y1"=>y1,
-                                       "z0"=>z0, "z1"=>z1, "t0"=>t0, "t1"=>t1))
-    merge!(crop_meta, _crop_inherited_meta(src_meta, (; x0, x1, y0, y1, z0, z1, t0, t1)))
+        "crop_source_value_name" => p.valueName,
+        "crop_box" => Dict{String,Any}("x0"=>b.x0, "x1"=>b.x1, "y0"=>b.y0, "y1"=>b.y1,
+                                       "z0"=>b.z0, "z1"=>b.z1, "t0"=>b.t0, "t1"=>b.t1))
+    merge!(crop_meta, _crop_inherited_meta(src_meta, (; b.x0, b.x1, b.y0, b.y1, b.z0, b.z1, b.t0, b.t1)))
     # provenance: a crop derives from the source's original file, so carry `ori_path` forward. Best-effort
     # — images imported before source-path tracking have none, so the crop's dialog still reads "not
     # recorded" (it inherits the source's gap rather than inventing one).
@@ -111,7 +142,8 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
 
     ok = run_py("tasks/editImages/cropImage_run.py",
         (; imPath = im_path, imOutPath = im_out_path,
-           x0 = x0, x1 = x1, y0 = y0, y1 = y1, z0 = z0, z1 = z1, t0 = t0, t1 = t1),
+           x0 = b.x0, x1 = b.x1, y0 = b.y0, y1 = b.y1,
+           z0 = b.z0, z1 = b.z1, t0 = b.t0, t1 = b.t1),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

@@ -2,6 +2,17 @@ struct ResampleZ <: CciaTask end
 
 task_output_effect(::ResampleZ) = "new-image"
 
+Base.@kwdef struct ResampleZParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    order::String     = "linear"
+end
+
+function parse_resample_z_params(d::AbstractDict)::ResampleZParams
+    ResampleZParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        order     = lowercase(string(get(d, "order", "linear"))))
+end
+
 # Pure: the meta a Z-resample inherits from its SOURCE. XY carries over unchanged. SizeZ is
 # rewritten to match XY spacing (isotropic in-plane targeting X), and PhysicalSizeZ collapses to
 # PhysicalSizeX so the output IS isotropic. Kept out of `_run_task` so it's unit-testable without a
@@ -36,18 +47,17 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    order      = lowercase(string(get(params, "order", "linear")))
-    if !(order in ("nearest", "linear", "cubic"))
-        on_log("[ERROR] order must be nearest, linear or cubic (got '$order')")
+    p = parse_resample_z_params(params)
+    if !(p.order in ("nearest", "linear", "cubic"))
+        on_log("[ERROR] order must be nearest, linear or cubic (got '$(p.order)')")
         return nothing
     end
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -77,8 +87,8 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
 
     resamp_meta = Dict{String,Any}(
         "resampleZ_source_uid"        => img.uid,
-        "resampleZ_source_value_name" => value_name,
-        "resampleZ_order"             => order)
+        "resampleZ_source_value_name" => p.valueName,
+        "resampleZ_order"             => p.order)
     merge!(resamp_meta, _resample_z_inherited_meta(src_meta))
     haskey(src_meta, "ori_path") && (resamp_meta["ori_path"] = src_meta["ori_path"])
 
@@ -86,11 +96,11 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
-    on_log("[INFO] Resample source: $im_path (px_x=$px_x, px_z=$px_z, order=$order)")
+    on_log("[INFO] Resample source: $im_path (px_x=$px_x, px_z=$px_z, order=$(p.order))")
     on_log("[INFO] New image:       $(new_img.uid) → $im_out_path")
 
     ok = run_py("tasks/editImages/resampleZ_run.py",
-        (; imPath = im_path, imOutPath = im_out_path, order = order),
+        (; imPath = im_path, imOutPath = im_out_path, order = p.order),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

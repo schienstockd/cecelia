@@ -2,6 +2,19 @@ struct DtypeConvert <: CciaTask end
 
 task_output_effect(::DtypeConvert) = "new-version"
 
+Base.@kwdef struct DtypeConvertParams
+    valueName::String = VERSIONED_DEFAULT_VAL
+    dtype::String     = "uint8"
+    rescale::String   = "auto"
+end
+
+function parse_dtype_convert_params(d::AbstractDict)::DtypeConvertParams
+    DtypeConvertParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        dtype     = lowercase(string(get(d, "dtype", "uint8"))),
+        rescale   = lowercase(string(get(d, "rescale", "auto"))))
+end
+
 # Convert an image to a target dtype (uint8 / uint16 / float32), optionally rescaling per channel to
 # fill the target's range. Dims are preserved — registered as a NEW VERSION on the same image, same
 # versioned-in-place pattern as af_correct / drift_correct / smooth / flip. The actual conversion
@@ -13,23 +26,21 @@ function _run_task(task::DtypeConvert, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    dtype      = lowercase(string(get(params, "dtype", "uint8")))
-    rescale    = lowercase(string(get(params, "rescale", "auto")))
-    if !(dtype in ("uint8", "uint16", "float32"))
-        on_log("[ERROR] dtype must be uint8, uint16 or float32 (got '$dtype')")
+    p = parse_dtype_convert_params(params)
+    if !(p.dtype in ("uint8", "uint16", "float32"))
+        on_log("[ERROR] dtype must be uint8, uint16 or float32 (got '$(p.dtype)')")
         return nothing
     end
-    if !(rescale in ("auto", "none"))
-        on_log("[ERROR] rescale must be 'auto' or 'none' (got '$rescale')")
+    if !(p.rescale in ("auto", "none"))
+        on_log("[ERROR] rescale must be 'auto' or 'none' (got '$(p.rescale)')")
         return nothing
     end
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", value_name)
+    filename = versioned_get_field(raw, "filepath", p.valueName)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
 
@@ -45,10 +56,10 @@ function _run_task(task::DtypeConvert, img::CciaImage, params::Dict{String,Any};
     im_out_path    = joinpath(proj_dir, "0", img.uid, out_filename)
 
     on_log("[INFO] Dtype source: $im_path")
-    on_log("[INFO] Output:       $im_out_path (dtype=$dtype rescale=$rescale, valueName='$out_value_name')")
+    on_log("[INFO] Output:       $im_out_path (dtype=$(p.dtype) rescale=$(p.rescale), valueName='$out_value_name')")
 
     ok = run_py("tasks/editImages/dtype_run.py",
-        (; imPath = im_path, imOutPath = im_out_path, dtype = dtype, rescale = rescale),
+        (; imPath = im_path, imOutPath = im_out_path, dtype = p.dtype, rescale = p.rescale),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
