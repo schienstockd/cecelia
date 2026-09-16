@@ -18387,3 +18387,75 @@ end
         @test p.op == "median"
     end
 end
+
+# Typed per-task params structs for the tracking family. Same pattern as
+# `typed params — cleanupImages`: each parser is the ONE place its task reads the params bag, so
+# a spec rename that isn't mirrored here becomes a struct-field error rather than a silent default.
+@testset "typed params — tracking" begin
+    # BayesianTracking — full-dict + empty-dict paths. Field spellings match btrack's own names
+    # (`noiseInital` is a typo in the spec; preserved verbatim so a saved run stays reproducible).
+    let p = Cecelia.parse_bayesian_tracking_params(Dict{String,Any}(
+            "valueName"      => "corrected",
+            "popsToTrack"    => "T/tracked",
+            "maxSearchRadius"=> 30,
+            "maxLost"        => 5,
+            "trackBranching" => true,
+            "accuracy"       => 0.9,
+            "distThresh"     => 12.5,
+            "lambdaBranch"   => 100,
+            "thetaDist"      => 7.5))
+        @test p.valueName == "corrected"
+        @test p.popsToTrack == "T/tracked"
+        @test p.maxSearchRadius === 30
+        @test p.maxLost === 5
+        @test p.trackBranching === true
+        @test p.accuracy === 0.9
+        @test p.distThresh === 12.5
+        @test p.lambdaBranch === 100
+        @test p.thetaDist === 7.5
+    end
+    let p = Cecelia.parse_bayesian_tracking_params(Dict{String,Any}())
+        @test p.popsToTrack == "NONE"                # default = track whole segmentation
+        @test p.maxSearchRadius === 20
+        @test p.noiseInital === 300                  # historical spelling preserved
+        @test p.thetaDist === 5.0
+    end
+
+    # TrackCorrect — the parser delegates `trackOps` to `parse_track_ops` (the same helper that
+    # `validate_params` uses); empty/nothing → empty vector, a real op passes through with its
+    # own dict entries preserved.
+    let p = Cecelia.parse_track_correct_params(Dict{String,Any}(
+            "valueName" => "corrected",
+            "trackOps"  => Any[Dict{String,Any}(
+                "op" => "track.join", "trackIds" => Any[78, 92])]))
+        @test p.valueName == "corrected"
+        @test length(p.trackOps) == 1
+        @test p.trackOps[1]["op"] == "track.join"
+        @test p.trackOps[1]["trackIds"] == Any[78, 92]
+    end
+    let p = Cecelia.parse_track_correct_params(Dict{String,Any}("trackOps" => nothing))
+        @test isempty(p.trackOps)
+    end
+    let p = Cecelia.parse_track_correct_params(Dict{String,Any}())
+        @test p.valueName == Cecelia.VERSIONED_DEFAULT_VAL
+        @test isempty(p.trackOps)
+    end
+    # JSON string round-trips the same way as a real Vector (the form path).
+    let p = Cecelia.parse_track_correct_params(Dict{String,Any}(
+            "trackOps" => "[{\"op\":\"track.remove\",\"trackIds\":[10]}]"))
+        @test length(p.trackOps) == 1
+        @test p.trackOps[1]["op"] == "track.remove"
+    end
+
+    # TrackMeasures — `dims` is lower-cased AND stripped at parse so the handler reads one shape.
+    let p = Cecelia.parse_track_measures_params(Dict{String,Any}(
+            "valueName" => "corrected", "forceRecompute" => false, "dims" => "  3D  "))
+        @test p.valueName == "corrected"
+        @test p.forceRecompute === false
+        @test p.dims == "3d"
+    end
+    let p = Cecelia.parse_track_measures_params(Dict{String,Any}())
+        @test p.dims == "auto"                       # default: preflight detects
+        @test p.forceRecompute === true              # default is force-recompute
+    end
+end

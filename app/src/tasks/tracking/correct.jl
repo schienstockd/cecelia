@@ -29,6 +29,20 @@ using DataFrames: DataFrame, select!, Not
 
 struct TrackCorrect <: CciaTask end
 
+# Typed shape of what `_run_task(::TrackCorrect, …)` reads from `params`. `trackOps` is normalised
+# by `parse_track_ops` (Vector | JSON string) — a separate helper because it throws
+# `ParamValidationError` on malformed input; the struct just carries the normalised vector.
+Base.@kwdef struct TrackCorrectParams
+    valueName::String              = VERSIONED_DEFAULT_VAL
+    trackOps::Vector{Dict{String,Any}} = Dict{String,Any}[]
+end
+
+function parse_track_correct_params(d::AbstractDict)::TrackCorrectParams
+    TrackCorrectParams(;
+        valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        trackOps  = parse_track_ops(get(d, "trackOps", nothing)))
+end
+
 """
     parse_track_ops(value) -> Vector{Dict{String,Any}}
 
@@ -108,19 +122,19 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    props_path = img_label_props_path(img, value_name)
+    pcorr      = parse_track_correct_params(params)
+    props_path = img_label_props_path(img, pcorr.valueName)
     isfile(props_path) || begin
-        on_log("[ERROR] No labelProps for valueName='$value_name': $props_path")
+        on_log("[ERROR] No labelProps for valueName='$(pcorr.valueName)': $props_path")
         return nothing
     end
 
-    ops = parse_track_ops(get(params, "trackOps", nothing))
+    ops = pcorr.trackOps
     if isempty(ops)
         on_log("[INFO] No correction ops — nothing to do.")
-        return Dict{String,Any}("valueName" => value_name, "nOps" => 0)
+        return Dict{String,Any}("valueName" => pcorr.valueName, "nOps" => 0)
     end
-    on_log("[INFO] $(length(ops)) correction op(s) on $value_name")
+    on_log("[INFO] $(length(ops)) correction op(s) on $(pcorr.valueName)")
     on_progress(1, 5)
 
     # ── Read the FULL cell table, never a population subset ───────────────────────
@@ -183,7 +197,7 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
 
     # ── Journal (Decision 3/7): durable, per-image, append-only ───────────────────
     journal = try
-        append_corrections!(img._dir, value_name, entries)
+        append_corrections!(img._dir, pcorr.valueName, entries)
     catch e
         on_log("[WARN] could not write the correction journal: $e")
         nothing
@@ -193,7 +207,7 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
     # ── QC (Decision 8) ───────────────────────────────────────────────────────────
     metrics = track_correction_metrics(before, df.track_id, length(ops))
     try
-        write_qc(img, "tracking.correct", value_name,
+        write_qc(img, "tracking.correct", pcorr.valueName,
                  track_correction_qc_findings(metrics); metrics = metrics)
         on_log("[QC] $(metrics["nCellsReassigned"]) cell(s) reassigned, " *
                "$(metrics["nTracksBefore"]) → $(metrics["nTracksAfter"]) track(s).")
@@ -202,5 +216,5 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
     end
     on_progress(5, 5)
 
-    Dict{String,Any}("valueName" => value_name, "nOps" => length(ops), "metrics" => metrics)
+    Dict{String,Any}("valueName" => pcorr.valueName, "nOps" => length(ops), "metrics" => metrics)
 end

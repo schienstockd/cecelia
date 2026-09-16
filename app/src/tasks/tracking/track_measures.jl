@@ -13,6 +13,21 @@ using DataFrames: DataFrame
 
 struct TrackMeasures <: CciaTask end
 
+# Typed shape of what `_run_task(::TrackMeasures, …)` reads from `params`. `dims` is lower-cased at
+# parse so the handler's `"auto" | "2d" | "3d"` switch reads one shape.
+Base.@kwdef struct TrackMeasuresParams
+    valueName::String     = VERSIONED_DEFAULT_VAL
+    forceRecompute::Bool  = true
+    dims::String          = "auto"      # "auto" | "2d" | "3d"
+end
+
+function parse_track_measures_params(d::AbstractDict)::TrackMeasuresParams
+    TrackMeasuresParams(;
+        valueName      = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        forceRecompute = Bool(get(d, "forceRecompute", true)),
+        dims           = lowercase(strip(string(get(d, "dims", "auto")))))
+end
+
 # ── Track data structure ───────────────────────────────────────────────────────
 
 struct Track
@@ -394,19 +409,18 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
 
-    value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    props_path = img_label_props_path(img, value_name)
-    track_path = img_track_props_path(img, value_name)
+    p          = parse_track_measures_params(params)
+    props_path = img_label_props_path(img, p.valueName)
+    track_path = img_track_props_path(img, p.valueName)
 
     isfile(props_path) || begin
-        on_log("[ERROR] No labelProps for valueName='$value_name': $props_path")
+        on_log("[ERROR] No labelProps for valueName='$(p.valueName)': $props_path")
         return nothing
     end
 
-    force = Bool(get(params, "forceRecompute", true))
-    if !force && _track_measures_cached(props_path, track_path)
+    if !p.forceRecompute && _track_measures_cached(props_path, track_path)
         on_log("[INFO] Track measures already cached — skipping (set forceRecompute=true to override)")
-        return Dict{String,Any}("valueName" => value_name, "cached" => true)
+        return Dict{String,Any}("valueName" => p.valueName, "cached" => true)
     end
 
     on_log("[INFO] Reading physical pixel sizes...")
@@ -427,10 +441,9 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     # ── resolve motion dimensionality (2D in-plane vs 3D) — governs ALL measures ──
     # `dims` param: "auto" (detect), "2D", or "3D". The run-form preflight shows the auto
     # recommendation; the user may override (e.g. force 3D despite a 2D recommendation).
-    dims_param = lowercase(strip(string(get(params, "dims", "auto"))))
     det = detect_motion_dims(props_path, pixel_res, time_step)   # cached by mtime
-    resolved = dims_param == "2d" ? 2 : dims_param == "3d" ? 3 : det.dims
-    if dims_param == "auto"
+    resolved = p.dims == "2d" ? 2 : p.dims == "3d" ? 3 : det.dims
+    if p.dims == "auto"
         tag = (resolved == 2 || det.confidence == "low") ? "[WARN]" : "[INFO]"
         on_log("$tag motion dims: auto → $(resolved)D — $(det.reason)")
     else
@@ -502,7 +515,7 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         metrics = Dict{String,Any}("nTracks" => n_tracks, "motionDims" => resolved)
         isnan(ms) || (metrics["meanSpeed"] = round(ms; digits = 4))
         isnan(md) || (metrics["meanDisplacement"] = round(md; digits = 4))
-        findings = track_measures_qc_findings(n_tracks, dims_param, resolved, det.dims,
+        findings = track_measures_qc_findings(n_tracks, p.dims, resolved, det.dims,
                                               det.confidence, det.reason)
 
         # ── the celltrackR diagnostic battery, run whether or not anyone opens the plot ──
@@ -521,12 +534,12 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
             metrics["nDuplicatePairs"] = diag.summary.nDuplicatePairs
         end
 
-        write_qc(img, "tracking.track_measures", value_name, findings; metrics = metrics)
+        write_qc(img, "tracking.track_measures", p.valueName, findings; metrics = metrics)
     catch e
         on_log("[QC] could not compute track-measures QC: $e")
     end
 
     on_log("[INFO] Track measures complete.")
-    Dict{String,Any}("valueName" => value_name, "nTracks" => n_tracks, "trackProps" => track_path,
+    Dict{String,Any}("valueName" => p.valueName, "nTracks" => n_tracks, "trackProps" => track_path,
                      "dims" => resolved, "dimsAuto" => det.dims, "dimsReason" => det.reason)
 end
