@@ -86,7 +86,6 @@ proposed seams: [`docs/archive/comment-audit-findings.md`](archive/comment-audit
 
 **Worthwhile (Tier 2):**
 - `app/src/tasks/importImages/omezarr.jl` (1074 L) — separable metadata reader.
-- `app/src/qc.jl` (1015 L) — `QC_TEXT` catalog is separable.
 - `api/src/routes.jl` (3053 L) — split by route family.
 
 **Anchor (Tier 3):**

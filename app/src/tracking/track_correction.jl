@@ -493,7 +493,7 @@ struct TrackIssue
     centroid::Vector{Float64}       # µm, where to look
     severity::Float64               # for ranking — bigger = more suspicious
     # SHORT = what is wrong, in a phrase; ADVICE = what to do, one sentence. The same split as
-    # `QC_TEXT` (app/src/qc.jl), for the same reason: a worklist row is SCANNED, not read. The first
+    # `QC_TEXT` (app/src/qc/text.jl), for the same reason: a worklist row is SCANNED, not read. The first
     # version put both in one string — "Track 23 jumps 12.7 µm into t=22 — 17.1× its usual step. If
     # that is a different cell, split it here." — and a list of those reads as wallpaper. The row
     # shows `reason`; `advice` is its tooltip.
