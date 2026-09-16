@@ -32,7 +32,14 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _read(rel: str) -> str:
-    return (_REPO / rel).read_text(encoding="utf-8")
+    text = (_REPO / rel).read_text(encoding="utf-8")
+    # `app/test/suite.jl` is split into per-area fragments under `app/test/suite/*.jl` (see suite.jl's
+    # header). GUARANTEES rows still point at the logical "suite.jl" — an anchor that now lives in a
+    # fragment must still resolve. Only concatenate for that one path; other files stay verbatim.
+    if rel == "app/test/suite.jl":
+        for frag in sorted((_REPO / "app" / "test" / "suite").glob("*.jl")):
+            text += "\n" + frag.read_text(encoding="utf-8")
+    return text
 
 
 def _flat(s: str) -> str:
