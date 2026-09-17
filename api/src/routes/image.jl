@@ -4,8 +4,8 @@ function api_images_register(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    set_uid     = String(get(body, :setUid, ""))
+    project_uid = _wstr(body, :projectUid)
+    set_uid     = _wstr(body, :setUid)
     # `filepaths` is either a list of strings (each path = one image, no series pick — the classic
     # single-series case) OR a list of objects `{path, series?, name?}` (series-picker output, one
     # entry per (file, series)). Both shapes go through the same loop; a `series` field lands in
@@ -86,7 +86,7 @@ end
 function api_import_series_probe(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body")) end
-    fp = String(get(body, :filepath, ""))
+    fp = _wstr(body, :filepath)
     isempty(fp) && return 400, JSON3.write((; error="filepath required"))
     abs_path = isabspath(fp) ? fp : joinpath(FS_ROOT, fp)
     isfile(abs_path) || return 404, JSON3.write((; error="File not found: $abs_path"))
@@ -164,7 +164,7 @@ end
 function api_import_scan_legacy(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body")) end
-    src = String(get(body, :sourceProjectDir, ""))
+    src = _wstr(body, :sourceProjectDir)
     isempty(src) && return 400, JSON3.write((; error="sourceProjectDir required"))
     abs_src = isabspath(src) ? src : joinpath(FS_ROOT, src)
     isdir(joinpath(abs_src, "ANALYSIS")) ||
@@ -173,7 +173,7 @@ function api_import_scan_legacy(body_bytes::Vector{UInt8})
     run_dir     = mktempdir()
     result_file = joinpath(run_dir, "scan.result.json")
     params = Dict{String,Any}("sourceProjectDir" => abs_src, "resultPath" => result_file,
-                              "rscript" => Cecelia.rscript_bin_path(String(get(body, :rscript, ""))))
+                              "rscript" => Cecelia.rscript_bin_path(_wstr(body, :rscript)))
     haskey(body, :imageUids) && (params["imageUids"] = [String(u) for u in body.imageUids])
     logs = String[]
     ok = try
@@ -199,10 +199,10 @@ end
 function api_import_register_legacy(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body")) end
-    project_uid = String(get(body, :projectUid, ""))
-    set_uid     = String(get(body, :setUid, ""))
-    src         = String(get(body, :sourceProjectDir, ""))
-    rsc         = String(get(body, :rscript, ""))
+    project_uid = _wstr(body, :projectUid)
+    set_uid     = _wstr(body, :setUid)
+    src         = _wstr(body, :sourceProjectDir)
+    rsc         = _wstr(body, :rscript)
     imgs_in     = get(body, :images, [])
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
@@ -660,7 +660,7 @@ function api_observer_labarchives_set(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
+    project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     proj = try load_project(project_uid) catch e
         return 404, JSON3.write((; error=sprint(showerror, e)))
@@ -670,7 +670,7 @@ function api_observer_labarchives_set(body_bytes::Vector{UInt8})
                       source     = json_native(get(body, :source, Dict{String,Any}())),
                       sections   = json_native(get(body, :sections, Any[])),
                       cohort     = json_native(get(body, :cohort, Any[])),
-                      synced_by  = String(get(body, :syncedBy, "claude")))
+                      synced_by  = _wstr(body, :syncedBy, "claude"))
     catch e
         return 400, JSON3.write((; error=sprint(showerror, e)))
     end
@@ -703,15 +703,15 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, "")); set_uid = String(get(body, :setUid, ""))
-    fun_name    = String(get(body, :funName, ""))
+    project_uid = _wstr(body, :projectUid); set_uid = _wstr(body, :setUid)
+    fun_name    = _wstr(body, :funName)
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
     haskey(COHORT_METRICS, fun_name) ||
         return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
                                    known = sort(collect(keys(COHORT_METRICS)))))
-    vn_param = String(get(body, :valueName, ""))
-    run_param = String(get(body, :run, ""))   # clustering: check only this run's value_names (see cohort_runs)
+    vn_param = _wstr(body, :valueName)
+    run_param = _wstr(body, :run)   # clustering: check only this run's value_names (see cohort_runs)
     tv  = get(body, :threshold, nothing)
     thr = tv isa Real ? Float64(tv) : Cecelia._COHORT_MODZ_THRESHOLD
     set = try
@@ -762,9 +762,9 @@ function api_images_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    set_uid     = String(get(body, :setUid, ""))
-    image_uid   = String(get(body, :imageUid, ""))
+    project_uid = _wstr(body, :projectUid)
+    set_uid     = _wstr(body, :setUid)
+    image_uid   = _wstr(body, :imageUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
@@ -790,11 +790,11 @@ function api_images_move(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid  = String(get(body, :projectUid, ""))
-    image_uid    = String(get(body, :imageUid, ""))
-    from_set_uid = String(get(body, :fromSetUid, ""))
-    to_set_uid   = String(get(body, :toSetUid, ""))
-    new_set_name = strip(String(get(body, :newSetName, "")))
+    project_uid  = _wstr(body, :projectUid)
+    image_uid    = _wstr(body, :imageUid)
+    from_set_uid = _wstr(body, :fromSetUid)
+    to_set_uid   = _wstr(body, :toSetUid)
+    new_set_name = strip(_wstr(body, :newSetName))
     isempty(project_uid)  && return 400, JSON3.write((; error="projectUid required"))
     isempty(image_uid)    && return 400, JSON3.write((; error="imageUid required"))
     isempty(from_set_uid) && return 400, JSON3.write((; error="fromSetUid required"))
@@ -844,10 +844,10 @@ function api_images_version_remove(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    image_uid   = String(get(body, :imageUid,   ""))
-    value_name  = String(get(body, :valueName,  ""))
-    new_default = String(get(body, :newDefault, VERSIONED_DEFAULT_VAL))
+    project_uid = _wstr(body, :projectUid)
+    image_uid   = _wstr(body, :imageUid)
+    value_name  = _wstr(body, :valueName)
+    new_default = _wstr(body, :newDefault, VERSIONED_DEFAULT_VAL)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
     isempty(value_name)  && return 400, JSON3.write((; error="valueName required"))
@@ -876,7 +876,7 @@ function api_images_analysis_reset(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
+    project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     image_uids = get(body, :imageUids, nothing)
     (image_uids isa AbstractVector && !isempty(image_uids)) ||
