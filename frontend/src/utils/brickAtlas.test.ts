@@ -152,18 +152,21 @@ describe('pickAtlasLayout — real-world sizing', () => {
     expect(l!).toHaveLength(4)   // exactly MAX_ATLASES; the extra 960 MB of budget is ceded.
   })
 
-  it('clamps to N=1 when caller passes maxAtlases=1 (binding_array runtime unsupported)', () => {
-    // Same setup as the "N > 1 allocation" case — a budget that would allocate 4 atlases when
-    // uncapped MUST stay at 1 when the caller passes maxAtlases=1, because the shader can't
-    // sample past textures[0] on this device. See WEBGPU_MULTI_ATLAS_PLAN.md → Decision 6.
+  it('respects the caller-supplied maxAtlases cap at any N (used by the ?maxAtlases URL knob)', () => {
+    // Post-S3 (WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md), the renderer no longer clamps
+    // routinely — the shader-variant path handles every N ∈ 1..MAX_ATLASES. The `maxAtlases`
+    // arg on pickAtlasLayout stays as a caller-controlled override (`?maxAtlases=N` URL knob
+    // for regression testing). Sweep 1..MAX_ATLASES to make sure the cap holds and the
+    // per-atlas layout stays homogeneous regardless of how many atlases the caller allows.
     const tight: DeviceLimits = { maxTextureDimension3D: 256, maxBufferSize: 16 * 1024 * 1024 }
     const uncapped = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight)
-    expect(uncapped).toHaveLength(4)   // sanity: uncapped path really did want 4
-    const clamped = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight, 1)
-    expect(clamped).not.toBeNull()
-    expect(clamped!).toHaveLength(1)
-    // Same per-atlas layout in both — clamp only shrinks the array, never resizes the atlas.
-    expect(clamped![0].atlasSlotCounts).toEqual(uncapped![0].atlasSlotCounts)
+    expect(uncapped).toHaveLength(4)   // budget wants 4 atlases when uncapped
+    for (let cap = 1; cap <= 4; cap++) {
+      const capped = pickAtlasLayout([128, 128, 4], 1, 1, 64 * 1024 * 1024, tight, cap)
+      expect(capped).not.toBeNull()
+      expect(capped!).toHaveLength(cap)
+      expect(capped![0].atlasSlotCounts).toEqual(uncapped![0].atlasSlotCounts)
+    }
   })
 
   it('stays at N=1 when budget only fits one atlas', () => {
