@@ -5,6 +5,8 @@
 
     variant="pill"       rounded capsules (border-radius 999px) — the default; wraps.
     variant="segmented"  a joined segmented control (the old `.seg`) — single row, no wrap.
+    variant="grid"       joined segmented look but WRAPS into a CSS grid with `columns` cells
+                         per row (default 4). Use when a segmented set outgrows its container.
 
   Selection modes:
     single  (default)     modelValue is a `string`  (or '' when `allowEmpty` and the active one is re-clicked)
@@ -37,7 +39,8 @@ const props = withDefaults(defineProps<{
   modelValue: string | string[] | null
   multiple?: boolean
   reorderable?: boolean
-  variant?: 'pill' | 'segmented'
+  variant?: 'pill' | 'segmented' | 'grid'
+  columns?: number         // grid variant only: cells per row (default 4).
   disabled?: boolean
   allowEmpty?: boolean     // single-select: re-clicking the active chip clears the selection
   selectAll?: boolean      // multiple: prepend an All chip that fills the selection, or clears a full one
@@ -46,6 +49,7 @@ const props = withDefaults(defineProps<{
   multiple: false,
   reorderable: false,
   variant: 'pill',
+  columns: 4,
   disabled: false,
   allowEmpty: false,
   selectAll: false,
@@ -124,6 +128,7 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
 
 <template>
   <div class="chip-select" :class="[variant, { 'is-disabled': disabled }]"
+       :style="variant === 'grid' ? { '--cc-chip-cols': String(columns) } : undefined"
        role="group" :aria-label="ariaLabel">
     <!-- Reads "All" and shows the current tally, so it doubles as the answer to "how many of these
          are on?" — which is otherwise a counting exercise on a long channel list. -->
@@ -192,4 +197,26 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
 .segmented .chip { border: none; border-radius: 0; padding: 4px 8px; font-size: var(--cc-fs-sm); }
 .segmented .chip + .chip { border-left: 1px solid var(--cc-border); }
 .segmented .chip:hover:not(.disabled) { border-color: transparent; }
+
+/* ── grid dialect: same joined look as segmented but wraps into N cells per row.
+     The 1px `gap` fills with the container background, which reads as a border between
+     both adjacent columns AND adjacent rows — no `:nth-child(Nn+1)` gymnastics needed. */
+.chip-select.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cc-chip-cols, 4), minmax(0, 1fr));
+  gap: 1px;
+  background: var(--cc-border);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-sm);
+  overflow: hidden;
+}
+.grid .chip {
+  border: none; border-radius: 0; padding: 4px 8px; font-size: var(--cc-fs-sm);
+  background: var(--cc-surface-2);
+  justify-content: center;
+}
+/* Explicit re-assertion — the `.grid .chip` selector above is more specific than the base
+   `.chip.on`, so the accent background gets shadowed without this. */
+.grid .chip.on { background: var(--cc-accent); color: #fff; }
+.grid .chip:hover:not(.disabled) { border-color: transparent; }
 </style>

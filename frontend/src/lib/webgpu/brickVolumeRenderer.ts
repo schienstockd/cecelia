@@ -24,7 +24,8 @@ import {
   MAX_CHANNELS, LUT_STOPS,
 } from '../../utils/volumeViewer'
 import {
-  pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
+  pickAtlasLayout, atlasSlotCapacity, atlasVramBytes,
+  type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
 import { createBrickAtlasTextures, brickPayloadBytes, type BrickAtlasTexture } from './brickAtlasTexture'
 import { createBrickPayloadRing, type BrickPayloadRing } from '../../utils/brickPayloadRing'
@@ -1812,8 +1813,19 @@ export async function createBrickVolumeRenderer(
           resident: [], inflight: [], currentLevel: undefined,
           brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
           displayT: -1, boundT: 0, displayValid: false, missing: 0, missingAtBoundT: 0,
+          nAtlases: 0, perAtlasCapacity: 0,
+          atlasBytes: 0, labelAtlasBytes: 0, labelsEnabled: false,
         }
       }
+      // Atlas info (S4): the numbers the Debug panel needs to answer "which variant am I
+      // running on and what's it costing?". Derived from the layout — cheap enough to fold
+      // into the per-frame residency return instead of a separate call.
+      const perAtlasBytes = atlasVramBytes(atlas.layout)
+      const [lbx, lby, lbz] = atlas.layout.brickSizeVox
+      const [lsx, lsy, lsz] = atlas.layout.atlasSlotCounts
+      const labelBytesPerAtlas = atlas.labelsEnabled
+        ? (lbx * lsx) * (lby * lsy) * (lbz * lsz) * 4   // r32uint, no channel stacking
+        : 0
       const resident = atlas.pageTable.entries().map(e => ({
         t: e.brick.t, level: e.brick.level,
         bx: e.brick.bx, by: e.brick.by, bz: e.brick.bz,
@@ -1863,6 +1875,11 @@ export async function createBrickVolumeRenderer(
         brickSizeVox: atlas.layout.brickSizeVox,
         missing,
         missingAtBoundT,
+        nAtlases: atlas.variantN,
+        perAtlasCapacity: atlas.perAtlasCapacity,
+        atlasBytes: perAtlasBytes,
+        labelAtlasBytes: labelBytesPerAtlas,
+        labelsEnabled: atlas.labelsEnabled,
       }
     },
 
