@@ -61,6 +61,10 @@ const color = computed(() => props.severity ? SEVERITY[props.severity].color : u
   gap: 0.3rem;
 }
 .inline-note > .pi { font-size: 0.85em; }
+/* Let the short-text span honour `\n` so a caller can break a message into two lines when it
+   carries two facts (see `paramAdvisors.ts::pyramidLevelsAdvisory`). Harmless when the caller has
+   no newline — `pre-line` collapses ordinary whitespace runs the same as the default `normal`. */
+.inline-note > span { white-space: pre-line; }
 /* Colour follows the severity, but never alone — the icon shape already carries it. */
 .inline-note.sev-warn { color: var(--cc-sev-warn); }
 .inline-note.sev-fail { color: var(--cc-sev-fail); }

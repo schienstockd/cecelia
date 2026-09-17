@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
   paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
-  cellposeModelAdvisory,
+  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -608,5 +608,87 @@ describe('cellposeModelAdvisory', () => {
   it('says nothing when the happy path is met (v3 model, v3 env installed)', () => {
     expect(cellposeModelAdvisory('cyto3', 'osx-arm64', true)).toBeNull()
     expect(cellposeModelAdvisory('cyto2', 'osx-arm64', true)).toBeNull()
+  })
+})
+
+describe('pyramidDeepestDims — powers-of-two downsample of the source', () => {
+  it('returns the source at N=1', () => {
+    expect(pyramidDeepestDims(1, { nX: 1111, nY: 1057, nZ: 31 })).toEqual({ w: 1111, h: 1057, z: 31 })
+  })
+
+  it('halves XY per level and keeps Z (bf2raw does not downsample Z)', () => {
+    // VJy1Nx: at N=3 the deepest is ~278×265×31 — the "not enough for 3D playback" case
+    expect(pyramidDeepestDims(3, { nX: 1111, nY: 1057, nZ: 31 })).toEqual({ w: 278, h: 265, z: 31 })
+    // At N=4 it's ~139×132×31 — Dominik's "good" answer
+    expect(pyramidDeepestDims(4, { nX: 1111, nY: 1057, nZ: 31 })).toEqual({ w: 139, h: 133, z: 31 })
+  })
+
+  it('drops the Z field when the source is not a stack', () => {
+    expect(pyramidDeepestDims(2, { nX: 1024, nY: 1024, nZ: 1 })?.z).toBeNull()
+  })
+
+  it('never returns dims below 1 px, even for a deeply zoomed pyramid on a small image', () => {
+    const d = pyramidDeepestDims(20, { nX: 512, nY: 512, nZ: 1 })!
+    expect(d.w).toBeGreaterThanOrEqual(1)
+    expect(d.h).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('pyramidLevelsAdvisory — pre-import level count advice', () => {
+  const peek = (n: number, opts: { xy?: [number, number]; nT?: number; nZ?: number } = {}) =>
+    ({
+      reader: 'h5py',
+      nX: opts.xy?.[0] ?? 2048, nY: opts.xy?.[1] ?? 2048,
+      nT: opts.nT ?? 1, nZ: opts.nZ ?? 1,
+      recommendedPyramidLevels: n,
+      targetChunk: 1024,
+    }) as const
+
+  it('says nothing when the peek is missing or unsupported', () => {
+    expect(pyramidLevelsAdvisory(2, null)).toBeNull()
+    expect(pyramidLevelsAdvisory(2, { reader: 'unsupported' })).toBeNull()
+    expect(pyramidLevelsAdvisory(2, { reader: 'error', error: 'x' })).toBeNull()
+  })
+
+  it("shows the deepest dims at the currently-selected N so the user sees what N buys them", () => {
+    // VJy1Nx: current=3, recommended=4 — should show BOTH so the user can compare
+    const a = pyramidLevelsAdvisory(3, peek(4, { xy: [1111, 1057], nT: 181, nZ: 31 }))!
+    expect(a.message).toMatch(/3 levels → deepest 278×265×31/)
+    expect(a.message).toMatch(/Suggested: 4 \(139×133×31\) for playback/)
+  })
+
+  it("omits the 'suggested' clause when the current value equals the recommendation", () => {
+    const a = pyramidLevelsAdvisory(4, peek(4, { xy: [1111, 1057], nT: 181, nZ: 31 }))!
+    expect(a.severity).toBe('ok')
+    expect(a.message).toMatch(/4 levels → deepest 139×133×31/)
+    expect(a.message).not.toMatch(/Suggested/)
+  })
+
+  it('warns when the current value is below the recommendation', () => {
+    const a = pyramidLevelsAdvisory(2, peek(4))!
+    expect(a.severity).toBe('warn')
+    expect(a.message).toMatch(/Suggested: 4/)
+  })
+
+  it("doesn't warn when the current value exceeds the recommendation", () => {
+    // over-recommended is a storage-only cost, not a playability regression
+    expect(pyramidLevelsAdvisory(5, peek(3))?.severity).toBe('ok')
+  })
+
+  it('handles the single-level case with correct singular wording', () => {
+    const a = pyramidLevelsAdvisory(1, peek(1, { xy: [512, 512] }))!
+    expect(a.message).toMatch(/1 level(?!s) → /)   // "1 level", not "1 levels"
+  })
+
+  it("names the shape reason (playback vs still) when the current N differs from the suggestion", () => {
+    expect(pyramidLevelsAdvisory(3, peek(4, { nT: 181, nZ: 31 }))!.message).toMatch(/for playback/)
+    expect(pyramidLevelsAdvisory(3, peek(4, { nT: 100, nZ: 1  }))!.message).toMatch(/for playback/)
+    expect(pyramidLevelsAdvisory(1, peek(2, { nT: 1,   nZ: 31 }))!.message).toMatch(/for still/)
+    expect(pyramidLevelsAdvisory(1, peek(2, { nT: 1,   nZ: 1  }))!.message).toMatch(/for still/)
+  })
+
+  it("uses the recommendation when `value` is missing/NaN so the user always sees SOMETHING", () => {
+    const a = pyramidLevelsAdvisory(undefined, peek(4, { xy: [1111, 1057], nT: 181, nZ: 31 }))!
+    expect(a.message).toMatch(/4 levels → deepest 139×133×31/)
   })
 })
