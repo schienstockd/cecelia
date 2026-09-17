@@ -314,6 +314,73 @@ end
     @test st == 400
 end
 
+@testset "API: running version prefers dev marker over stale VERSION" begin
+    # A dev-channel apply moves the branch archive's payload over the install root, but that archive
+    # contains no VERSION file (only release.yml writes one). So on a stable→dev flip, ROOT/VERSION
+    # keeps the previous release's tag — preferring it would report the stale semver while the
+    # dev-channel update check correctly reports "dev @ main <sha>", and the two surfaces would
+    # disagree (that was the reported bug: one panel showed the release tag, another the dev sha).
+    # `_running_version` checks `.cecelia-version` first and returns "dev" whenever it declares a dev
+    # build, collapsing the mismatch to one answer.
+    withenv("CECELIA_VERSION" => nothing) do
+        mktempdir() do root
+            @test _running_version(root) == "dev"                          # no markers → dev
+            write(joinpath(root, "VERSION"), "v0.2.1")
+            @test _running_version(root) == "v0.2.1"                       # stable install
+            write(joinpath(root, ".cecelia-version"), "dev @ main 1a2b3c4")
+            @test _running_version(root) == "dev"                          # dev marker beats stale VERSION
+            write(joinpath(root, ".cecelia-version"), "v0.2.1")            # non-dev marker → VERSION wins
+            @test _running_version(root) == "v0.2.1"
+        end
+    end
+    # Env override still wins over both files.
+    withenv("CECELIA_VERSION" => "v9.9.9") do
+        mktempdir() do root
+            write(joinpath(root, "VERSION"), "v0.2.1")
+            write(joinpath(root, ".cecelia-version"), "dev @ main 1a2b3c4")
+            @test _running_version(root) == "v9.9.9"
+        end
+    end
+end
+
+@testset "API: _find_pixi falls back past PATH" begin
+    # `Sys.which` alone was too strict: the desktop shortcut wrapper exports pixi on PATH, but a
+    # `.desktop` launch with a minimal inherited env, or `pixi run app` from a shell where pixi is
+    # not on PATH, arrives at the update apply with a stripped PATH and the pre-fix code errored
+    # with "the Cecelia install looks broken". `_find_pixi` mirrors install.sh's install locations.
+    exe = Sys.iswindows() ? "pixi.exe" : "pixi"
+    withenv("PIXI_HOME" => nothing) do
+        mktempdir() do root
+            # Nothing on disk and (assume) nothing on PATH from this shell → empty. If the CI runner
+            # happens to have pixi on PATH we can't test the empty case here, so just require the
+            # non-empty result to be a file that exists.
+            r = _find_pixi(root)
+            @test isempty(r) || isfile(r)
+
+            # System-scope layout: `<root>/pixi/bin/pixi` — the install.sh location.
+            sys_bin = joinpath(root, "pixi", "bin")
+            mkpath(sys_bin)
+            fake = joinpath(sys_bin, exe)
+            write(fake, "")
+            # If PATH happened to have a real pixi, that still wins — but the disk fallback must at
+            # least resolve to a real file (either PATH or our fake).
+            @test isfile(_find_pixi(root))
+        end
+    end
+    # PIXI_HOME env var: honoured over the ~/.pixi default.
+    mktempdir() do home
+        bin = joinpath(home, "bin")
+        mkpath(bin)
+        fake = joinpath(bin, exe)
+        write(fake, "")
+        withenv("PIXI_HOME" => home) do
+            # A random root that has no `pixi/bin` — PIXI_HOME must resolve. Falls through to PATH
+            # only if PATH itself has a real pixi, so the assertion is "some real file".
+            @test isfile(_find_pixi(mktempdir()))
+        end
+    end
+end
+
 @testset "API: update scope" begin
     # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
     # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.
