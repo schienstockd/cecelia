@@ -314,6 +314,35 @@ end
     @test st == 400
 end
 
+@testset "API: running version prefers dev marker over stale VERSION" begin
+    # A dev-channel apply moves the branch archive's payload over the install root, but that archive
+    # contains no VERSION file (only release.yml writes one). So on a stable→dev flip, ROOT/VERSION
+    # keeps the previous release's tag — preferring it would report the stale semver while the
+    # dev-channel update check correctly reports "dev @ main <sha>", and the two surfaces would
+    # disagree (that was the reported bug: one panel showed the release tag, another the dev sha).
+    # `_running_version` checks `.cecelia-version` first and returns "dev" whenever it declares a dev
+    # build, collapsing the mismatch to one answer.
+    withenv("CECELIA_VERSION" => nothing) do
+        mktempdir() do root
+            @test _running_version(root) == "dev"                          # no markers → dev
+            write(joinpath(root, "VERSION"), "v0.2.1")
+            @test _running_version(root) == "v0.2.1"                       # stable install
+            write(joinpath(root, ".cecelia-version"), "dev @ main 1a2b3c4")
+            @test _running_version(root) == "dev"                          # dev marker beats stale VERSION
+            write(joinpath(root, ".cecelia-version"), "v0.2.1")            # non-dev marker → VERSION wins
+            @test _running_version(root) == "v0.2.1"
+        end
+    end
+    # Env override still wins over both files.
+    withenv("CECELIA_VERSION" => "v9.9.9") do
+        mktempdir() do root
+            write(joinpath(root, "VERSION"), "v0.2.1")
+            write(joinpath(root, ".cecelia-version"), "dev @ main 1a2b3c4")
+            @test _running_version(root) == "v9.9.9"
+        end
+    end
+end
+
 @testset "API: update scope" begin
     # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
     # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.

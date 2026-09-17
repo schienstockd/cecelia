@@ -7,6 +7,7 @@ import { frameTargetsOpenProject } from '../utils/taskScope'
 import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
+import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
 import { parseRailTime } from '../utils/taskElapsed'
@@ -194,6 +195,15 @@ export const useWsStore = defineStore('ws', () => {
     if (type === 'lab_log_updated') {
       const puid = String(data.projectUid ?? '')
       if (puid && puid === useProjectMetaStore().current?.uid) useLabCaptureStore().notifyAppended()
+    }
+
+    // Software-update apply is one long POST (download → extract → on dev, `npm install` + `npm run
+    // build`, minutes on a fresh box). Without a live signal the "Updating…" button reads as a hang.
+    // Backend broadcasts a step string per stage; mirror it into `appCtl.updateMsg` so the Settings
+    // panel shows what's happening. Completion still comes from the POST response.
+    if (type === 'update:progress') {
+      const step = String(data.step ?? '')
+      if (step) useAppControlStore().updateMsg = `Updating — ${step}…`
     }
 
     if (type === 'task:progress') {

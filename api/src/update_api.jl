@@ -20,11 +20,23 @@ const _UPDATE_REPO = "schienstockd/cecelia"
 # strikethrough, tables). Julia's Markdown stdlib is incomplete for GFM so we don't use it.
 const _APP_ROOT    = abspath(joinpath(@__DIR__, "..", ".."))   # api/src → repo / install root
 
-# Running version: env override (testing) → VERSION file (written into release bundles) → "dev".
-function _running_version()::String
+# Running version: env override (testing) → `.cecelia-version` "dev @ …" marker → VERSION file
+# (written into release bundles by release.yml) → "dev". `root` param is for tests.
+#
+# Why `.cecelia-version` wins over VERSION when it declares a dev build: a dev-channel apply moves
+# the branch archive's payload over `<root>/`, but that archive contains NO `VERSION` file — only
+# release.yml writes one. So on a stable→dev flip, `<root>/VERSION` keeps the old release's tag,
+# and preferring it here would report the stale semver while `_installed_version_provenance()` (used
+# by the dev-channel update check) correctly reports "dev @ main <sha>" — the two surfaces would
+# disagree. Checking `.cecelia-version` first collapses that mismatch to a single answer.
+function _running_version(root::AbstractString = _APP_ROOT)::String
     v = get(ENV, "CECELIA_VERSION", "")
     !isempty(v) && return strip(v)
-    vf = joinpath(_APP_ROOT, "VERSION")
+    cv = joinpath(root, ".cecelia-version")
+    if isfile(cv) && startswith(strip(read(cv, String)), "dev ")
+        return "dev"
+    end
+    vf = joinpath(root, "VERSION")
     isfile(vf) && return strip(read(vf, String))
     "dev"
 end
@@ -281,6 +293,13 @@ function api_update_apply(body_bytes::Vector{UInt8})
         "https://github.com/$_UPDATE_REPO/releases/download/$tag/cecelia.tar.gz"
     staging = joinpath(_APP_ROOT, ".update-staging")
     job_id  = "update-apply"
+    # Progress signal for the UI. The apply HTTP POST is one long request (download + extract, plus
+    # `pixi exec -- npm install` + `npm run build` on the dev channel — minutes on a fresh box), so
+    # without this the button just says "Updating…" for the whole stretch and reads as a hang.
+    # Frontend `ws.ts` mirrors each step into `updateMsg`; final completion still comes from the POST
+    # response.
+    progress(step) = broadcast_ws(Dict("type" => "update:progress",
+        "channel" => channel, "version" => tag, "step" => step))
     try
         rm(staging; recursive = true, force = true)
         payload = joinpath(staging, "payload"); mkpath(payload)
@@ -288,6 +307,7 @@ function api_update_apply(body_bytes::Vector{UInt8})
         # NO total `timeout` on purpose. Downloads.jl already aborts after 20s with NO DATA
         # RECEIVED, which is the actual hang we care about; a total cap would instead kill a
         # legitimately slow download of a large bundle on a poor connection. Don't "fix" this.
+        progress("downloading")
         Downloads.download(url, tarball)
 
         # Integrity: check the bundle against the `.sha256` published beside it. HTTPS covers the
@@ -327,6 +347,7 @@ function api_update_apply(body_bytes::Vector{UInt8})
         tar_cmd = channel == "dev" ?
             `tar -xzf $tarball -C $payload --strip-components=1` :
             `tar -xzf $tarball -C $payload`
+        progress("extracting")
         if !Cecelia._run_tar(tar_cmd, job_id)
             # Clear the half-unpacked payload BEFORE returning. `.pending-update` is deliberately
             # not written, so the launcher has nothing to apply on the next restart.
@@ -342,7 +363,9 @@ function api_update_apply(body_bytes::Vector{UInt8})
             fe = joinpath(payload, "frontend")
             isdir(fe) || return _apply_fail(staging, "dev-channel payload has no frontend/ directory — refusing to stage.")
             try
+                progress("installing dependencies")
                 run(Cmd(`pixi exec --spec nodejs -- npm install`;    dir = fe))
+                progress("building frontend")
                 run(Cmd(`pixi exec --spec nodejs -- npm run build`;  dir = fe))
             catch e
                 return _apply_fail(staging, "frontend build failed: $(sprint(showerror, e))")
@@ -351,6 +374,12 @@ function api_update_apply(body_bytes::Vector{UInt8})
             # copies it over `<root>/.cecelia-version` when it applies the update.
             short = length(tag) >= 7 ? tag[1:7] : tag
             write(joinpath(payload, ".cecelia-version"), "dev @ $branch $short\n")
+            # ALSO write a VERSION file so the launcher overwrites any stale one from a prior stable
+            # install (branch archives contain no VERSION — release.yml writes it). Without this
+            # `_running_version()` would keep reading the previous release's tag; the `.cecelia-version`
+            # "dev @" marker in `_running_version` covers the same case if VERSION is stale, but
+            # cleaning the file on disk is the durable fix.
+            write(joinpath(payload, "VERSION"), "dev\n")
         end
         pending_marker = channel == "dev" ? "dev@$tag" : tag
         write(joinpath(_APP_ROOT, ".pending-update"), pending_marker)   # marker the launcher looks for
