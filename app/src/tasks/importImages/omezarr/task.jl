@@ -117,7 +117,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     ngff_version = isnothing(p.ngffVersion) ? store_layout().ngffVersion : p.ngffVersion
     fmt_flags = bf2raw_format_flags(ngff_version, p.shardSize;
         shard_depth = p.shardDepth,
-        z_planes    = Int(get(img.meta, "SizeZ", 0)))
+        z_planes    = something(meta_int(img.meta, "SizeZ"), 0))
     on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")
 
     # Worker/heap controls — key defaults on the SOURCE extension so Imaris (`.ims`) gets the safe

@@ -357,7 +357,7 @@ function set_channel_names!(img::CciaImage, names::Vector{String};
                              value_name::String="default",
                              check_length::Bool=true)::CciaImage
     if check_length
-        size_c = parse(Int, string(get(img.meta, "SizeC", "0")))
+        size_c = something(meta_int(img.meta, "SizeC"), 0)
         if size_c > 0 && length(names) != size_c
             error("Expected $size_c channel names (SizeC), got $(length(names))")
         end
@@ -782,6 +782,31 @@ tryparse_i(::Any) = nothing
 tryparse_f64(v::Real) = Float64(v)
 tryparse_f64(v::AbstractString) = tryparse(Float64, v)
 tryparse_f64(::Any) = nothing
+
+# ── img.meta typed accessors ──────────────────────────────────────────────
+#
+# `img.meta` is an open Dict{String,Any} that captures OME-XML metadata verbatim at import (SizeC/T/Z
+# as strings, PhysicalSize* as strings or numbers depending on the source, ori_path as a String, plus
+# whatever extras the loader recorded). Every call site that reads a KNOWN-TYPE key used to hand-roll
+# its own parse: `parse(Int, string(get(meta, "SizeC", "0")))` in image.jl, `tryparse_i(get(...))` in
+# opticalFlow, `Int(get(meta, "SizeZ", 0))` in importImages/omezarr (which errors on a String), and
+# a private `_meta_int`/`_meta_float`/`_meta_str` family in api/src/routes/helpers.jl. Three of those
+# handle "missing" differently, and one (the `Int(...)` cast) crashes on the ordinary String case.
+#
+# These are the ONE way: `nothing` on missing/malformed, the parsed value on the happy path. Ancient
+# `Int(get(img.meta, k, 0))` is a bug — the meta bag can legitimately hold Strings — swap it for
+# `something(meta_int(img.meta, k), 0)` if you need a fallback.
+"""Read `key` from an `img.meta` bag as an `Int`, or `nothing` if missing / unparseable / non-numeric."""
+meta_int(meta::AbstractDict, key::AbstractString)::Union{Int,Nothing} =
+    tryparse_i(get(meta, String(key), nothing))
+"""Read `key` from an `img.meta` bag as a `Float64`, or `nothing` if missing / unparseable / non-numeric."""
+meta_float(meta::AbstractDict, key::AbstractString)::Union{Float64,Nothing} =
+    tryparse_f64(get(meta, String(key), nothing))
+"""Read `key` from an `img.meta` bag as a `String`, or `nothing` if the key is absent."""
+function meta_str(meta::AbstractDict, key::AbstractString)::Union{String,Nothing}
+    v = get(meta, String(key), nothing)
+    isnothing(v) ? nothing : string(v)
+end
 
 """
 Task subdirs images used to be given at import that **no writer in the codebase has**. Ported over

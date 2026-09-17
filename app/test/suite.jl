@@ -3142,6 +3142,41 @@ end
     rm(proj2.root; recursive=true)
 end
 
+# ── Typed meta accessors (meta_int / meta_float / meta_str) ──────────────
+#
+# `img.meta` is Dict{String,Any} and carries OME-XML metadata in whatever shape the loader wrote —
+# `SizeC` is typically a String ("3"), `PhysicalSizeX` a String or Real depending on the source.
+# Every reader used to hand-roll its own parse (bare `Int(get(...))` crashed on the String case,
+# `tryparse_i(get(...))` didn't return the caller's default, three separate `_meta_*` variants lived
+# in `api/src/routes/helpers.jl` alone). These accessors are the ONE way; the testset pins the
+# missing/malformed contract so a call site can rely on `something(meta_int(...), default)`.
+@testset "meta_int / meta_float / meta_str contract" begin
+    m = Dict{String,Any}(
+        "SizeC" => "3",           # OME-XML strings — the common case
+        "SizeT" => 1,             # numeric passes through
+        "PhysicalSizeX" => "0.5",
+        "PhysicalSizeY" => 0.5,   # Real → Float64
+        "PhysicalSizeUnit" => "µm",
+        "ori_path" => "/data/img.tif",
+        "garbage" => "not a number",
+    )
+    @test meta_int(m, "SizeC")   === 3
+    @test meta_int(m, "SizeT")   === 1
+    @test meta_int(m, "SizeZ")   === nothing            # missing
+    @test meta_int(m, "garbage") === nothing            # unparseable
+    @test meta_float(m, "PhysicalSizeX") === 0.5
+    @test meta_float(m, "PhysicalSizeY") === 0.5
+    @test meta_float(m, "SizeZ")         === nothing
+    @test meta_str(m, "PhysicalSizeUnit") == "µm"
+    @test meta_str(m, "ori_path")         == "/data/img.tif"
+    @test meta_str(m, "SizeC")            == "3"        # coerces non-strings, doesn't drop them
+    @test meta_str(m, "missing")          === nothing
+
+    # `something(meta_int(...), default)` is the fallback idiom the drift-consolidation depends on.
+    @test something(meta_int(m, "SizeZ"), 0) === 0
+    @test something(meta_int(m, "SizeC"), 0) === 3
+end
+
 # ── Axis gating (task_applies + img_axes) ────────────────────────────────
 @testset "Axis gating — img_axes + task_applies" begin
     # img_axes: SizeT > 1 → :T; TimeIncrement present as fallback for pre-SizeT projects.
