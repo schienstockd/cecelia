@@ -1,8 +1,10 @@
 # WebGPU multi-atlas — shader-variants unblock for P3
 
-Status: **planning** (2026-09-16) · branch `docs/multi-atlas-shader-variants` (docs only) ·
-follow-up to [`WEBGPU_MULTI_ATLAS_PLAN.md`](WEBGPU_MULTI_ATLAS_PLAN.md) → Phase 3 (blocked
-on WGSL `binding_array` runtime).
+Status: **SHIPPED S0–S4** (2026-09-17) · PRs #941 (S0 diagnostic) · #944 (S1 pipeline
+variants) · #949 (S2 label atlas + orphan-gate drop) · #952 (S3 runtime clamp retired) ·
+#958 (S4 cache chips + Debug atlas row). Multi-atlas contract lives in
+`docs/ARCHITECTURE.md` → *Viewer* → *Multi-atlas contract*; this plan is kept as the design
+record. Supersedes [`WEBGPU_MULTI_ATLAS_PLAN.md`](WEBGPU_MULTI_ATLAS_PLAN.md) → P3.
 
 ## Why this exists
 

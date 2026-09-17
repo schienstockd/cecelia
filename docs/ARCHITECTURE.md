@@ -293,6 +293,41 @@ time, read from different places, and narrowing one of them was enough to break 
 The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays and recording. See
 `docs/todo/WEB_VIEWER_PLAN.md` for the migration and the current architecture.
 
+### Multi-atlas contract (WebGPU brick renderer)
+
+The brick renderer allocates N ∈ 1..`MAX_ATLASES` (=4) atlas textures per image — where N is what
+`pickAtlasLayout` returns for the user's `viewerCacheMB` budget on this device's
+`maxBufferSize`. Chromium/Dawn's per-buffer ceiling (~4 GiB) is the reason N > 1 exists at all:
+workstation-sized budgets can't fit in one atlas but can in several.
+
+- **Shader variants, not `binding_array`.** `frontend/src/lib/webgpu/brickShader.ts::makeBrickShader({ nAtlases })`
+  emits one WGSL variant per N. Each variant declares N `texture_3d<u32>` bindings for the
+  intensity atlas + N for the label atlas, and reads through `switch(atlasIndex)` over
+  compile-time-literal `textureLoad`s. Standard WGSL — no `binding_array` runtime, which
+  Chromium doesn't ship. `brickVolumeRenderer.ts` builds all four variants at construction
+  (measured in ms on Dawn) and picks the matching one at atlas creation via
+  `AtlasState.variantN`.
+- **Slot encoding.** The page table stores a GLOBAL slot ID that spans all N atlases;
+  `atlasIndex = slot / perAtlasCapacity`, `localSlot = slot % perAtlasCapacity`. Both the
+  intensity writer (`writeBrick`) and the label writer (`kickLabelFetch`) decode and route
+  bytes to `textures[atlasIndex]` / `labelTextures[atlasIndex]` at the local coord; the shader
+  does the same decode before its `switch`.
+- **Binding-number shift formula** (uniform at every N; N=1 collapses to today's layout):
+  `atlas[i] = 2 + i`, `prevPt = 2 + N`, `lut = 3 + N`, `labAtlas[i] = 4 + N + i`,
+  `pal = 4 + 2N`, `pick = 5 + 2N`. Each variant has its own bind-group layout — WebGPU forbids
+  absent slots, so N < 4 doesn't leave gaps.
+- **User surface.** `viewerCacheMB` (Viewer Advanced popover) is the only knob; N is emergent.
+  Chip labels annotate multi-atlas picks (`, N×`); the caption reads "X MB across N atlases";
+  the Debug panel → Bricks → Atlas row shows the actual N + VRAM the renderer chose.
+  `?maxAtlases=N` URL knob pins the picker for debugging.
+- **`binding_array` migration hook.** If Chromium ever ships the `binding_array` runtime
+  (probe `report.bindingArraySupported` flips true), add one more shader variant using it and
+  select on that flag. The existing fan-out is retirable behind a release or two of the
+  runtime variant being the default. `probeBindingArraySupport` stays wired as advisory.
+
+Design record: `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` (P1+P2) and
+`docs/todo/WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md` (S0–S4), both shipped 2026-09-17.
+
 ---
 
 ## Linked brushing (viewer → gating)
