@@ -12784,6 +12784,33 @@ end
         @test p.rscript == "Rscript"
         @test p.mode == "copy"
     end
+    # `_merge_meta_preserving_legacy`: the register-time source pointers survive the meta rewrite
+    # applied at the end of a successful migration, so a second run (e.g. copy → symlink) still
+    # knows what to migrate. Without this the second run hits the `no legacy source` guard.
+    let old = Dict{String,Any}("legacySourceDir" => "/old/proj", "legacySourceUid" => "abc123",
+                               "legacyRscript" => "/usr/bin/Rscript", "orifilepath" => "/x")
+        new_ = Dict{String,Any}("SizeX" => 512, "SizeY" => 512, "name" => "img1")
+        merged = Cecelia._merge_meta_preserving_legacy(new_, old)
+        @test merged["legacySourceDir"] == "/old/proj"
+        @test merged["legacySourceUid"] == "abc123"
+        @test merged["legacyRscript"]   == "/usr/bin/Rscript"
+        @test merged["SizeX"] == 512                    # new-side OME content preserved
+        @test !haskey(merged, "orifilepath")            # non-legacy old-side keys NOT carried
+    end
+    let old = Dict{String,Any}("legacySourceDir" => "/old", "legacySourceUid" => "abc")
+        # new side wins if it happens to carry a legacy key (would only happen if the Python side
+        # started returning one) — nothing gets silently overwritten by the carry-over.
+        new_ = Dict{String,Any}("legacySourceDir" => "/from-python")
+        merged = Cecelia._merge_meta_preserving_legacy(new_, old)
+        @test merged["legacySourceDir"] == "/from-python"
+        @test merged["legacySourceUid"] == "abc"
+    end
+    let old = Dict{String,Any}("legacySourceDir" => "", "legacySourceUid" => "abc")
+        # An empty string on the old side is treated as absent (guard on read uses `isempty`).
+        merged = Cecelia._merge_meta_preserving_legacy(Dict{String,Any}(), old)
+        @test !haskey(merged, "legacySourceDir")
+        @test merged["legacySourceUid"] == "abc"
+    end
     let p = Cecelia.parse_remove_image_params(Dict{String,Any}(
             "valueName" => "old", "newDefault" => "corrected"))
         @test p.valueName == "old"

@@ -45,6 +45,24 @@ Only the unambiguous bad case is a finding: an image that migrated with **no seg
 the silent failure — the task reports success, the image appears in the table, and every downstream
 page is simply empty — so it is worth a badge rather than a log line nobody reads.
 """
+"""
+    _merge_meta_preserving_legacy(new_meta, old_meta) -> Dict{String,Any}
+
+Return `new_meta` with the register-time legacy source pointers from `old_meta` carried across
+(`legacySourceDir`, `legacySourceUid`, `legacyRscript`). Pure so the re-run guarantee is unit-tested.
+Missing on the old side = not carried; present on the new side = new side wins (nothing overwritten).
+"""
+function _merge_meta_preserving_legacy(new_meta::AbstractDict, old_meta::AbstractDict)
+    out = Dict{String,Any}(String(k) => v for (k, v) in new_meta)
+    for k in ("legacySourceDir", "legacySourceUid", "legacyRscript")
+        if !haskey(out, k)
+            v = get(old_meta, k, nothing)
+            (v === nothing || (v isa AbstractString && isempty(v))) || (out[k] = v)
+        end
+    end
+    out
+end
+
 function migrate_qc_findings(value_names::AbstractVector)
     isempty(value_names) ?
         [qc_finding("warn", "migrate.no_segmentation", "No segmentation migrated",
@@ -100,7 +118,11 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     img.im_channel_names = _to_channel_names(f.imChannelNames)
     img.attr        = _to_str_str(f.attr)
     img.included    = Bool(get(f, :included, true))
-    img.meta        = Dict{String,Any}(String(k) => v for (k, v) in pairs(f.meta))
+    # New meta is the OME block returned by the Python side; carry the register-time legacy source
+    # pointers across so a re-run (e.g. copy → symlink) still knows what to migrate. Without this,
+    # the second run has empty params AND empty meta and dies at the `no legacy source` guard above.
+    img.meta        = _merge_meta_preserving_legacy(
+        Dict{String,Any}(String(k) => v for (k, v) in pairs(f.meta)), img.meta)
     save!(img)
     rm(result_file; force = true)
 
