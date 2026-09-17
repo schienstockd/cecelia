@@ -101,15 +101,66 @@ function _to_str_dict(params)::Dict{String,Any}
     Dict{String,Any}()
 end
 
+# The wire-facing verb every frame carries in its `type` field (`task:run`, `movie:record`, …). The
+# dispatch used to compare a bare String against ~12 literals; a stray typo in the handler switch
+# looked exactly like a client-side bug because the fallback branch was already `@warn "unknown"`.
+# Parsing the string ONCE at the boundary and switching on the enum makes the shape of the protocol
+# visible (`_WS_MSG_TYPE_STR` is the whole registry) and closes that class of typo — the compiler
+# refuses `kind === WS_TASK_CANCLE`. `WS_UNKNOWN` is the parse's out-of-band value; the handler still
+# treats it as log-and-drop, so wire-level behaviour is unchanged. Enforced by the WS-message-typing
+# testset in `app/test/suite.jl`.
+@enum WsMsgType begin
+    WS_PING
+    WS_TASK_RUN
+    WS_TASK_RESTART
+    WS_TASK_CANCEL
+    WS_MOVIE_BATCH
+    WS_MOVIE_RECORD
+    WS_CHAIN_RUN
+    WS_CHAIN_CANCEL
+    WS_MAINT_RUN
+    WS_MAINT_CANCEL
+    WS_PROJ_EXPORT
+    WS_PROJ_IMPORT
+    WS_UNKNOWN
+end
+
+const _WS_MSG_TYPE_STR = Dict{WsMsgType,String}(
+    WS_PING         => "ping",
+    WS_TASK_RUN     => "task:run",
+    WS_TASK_RESTART => "task:restart",
+    WS_TASK_CANCEL  => "task:cancel",
+    WS_MOVIE_BATCH  => "movie:batch",
+    WS_MOVIE_RECORD => "movie:record",
+    WS_CHAIN_RUN    => "chain:run",
+    WS_CHAIN_CANCEL => "chain:cancel",
+    WS_MAINT_RUN    => "maintenance:run",
+    WS_MAINT_CANCEL => "maintenance:cancel",
+    WS_PROJ_EXPORT  => "project:export",
+    WS_PROJ_IMPORT  => "project:import",
+    WS_UNKNOWN      => "unknown",
+)
+const _WS_MSG_TYPE_PARSE = Dict{String,WsMsgType}(
+    v => k for (k, v) in _WS_MSG_TYPE_STR if k != WS_UNKNOWN)
+Base.string(t::WsMsgType) = _WS_MSG_TYPE_STR[t]
+Base.print(io::IO, t::WsMsgType) = print(io, string(t))
+
+# A malformed WS frame from a client is not fatal to the server: unrecognised (or missing) `type`
+# parses to WS_UNKNOWN and the caller logs + drops it. That is the ONLY exit for garbage input, so
+# the enum can appear unadorned everywhere else — no `Union{WsMsgType,Nothing}` in call sites.
+parse_ws_msg_type(s::AbstractString)::WsMsgType =
+    get(_WS_MSG_TYPE_PARSE, String(s), WS_UNKNOWN)
+
 function handle_message(ws, raw::AbstractString)
     data = JSON3.read(raw)
-    type = get(data, :type, "")
+    type_str = String(get(data, :type, ""))
+    kind = parse_ws_msg_type(type_str)
 
-    if type == "ping"
+    if kind === WS_PING
         HTTP.WebSockets.send(ws, JSON3.write((; type="pong")))
-    elseif type == "task:run" || type == "task:restart"
+    elseif kind === WS_TASK_RUN || kind === WS_TASK_RESTART
         handle_task_run(ws, data)
-    elseif type == "task:cancel"
+    elseif kind === WS_TASK_CANCEL
         task_id = _wstr(data, :taskId)
         # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in
         # the scheduler's _TASKS: background jobs (cancel_job! kills the subprocess(es) — data
@@ -119,29 +170,29 @@ function handle_message(ws, raw::AbstractString)
         # task happens to be running.
         isempty(task_id) || (cancel_task!(task_id);
                              cancel_job!(task_id); _cancel_on_runner(task_id))
-    elseif type == "movie:batch"
+    elseif kind === WS_MOVIE_BATCH
         handle_movie_batch(ws, data)
-    elseif type == "movie:record"
+    elseif kind === WS_MOVIE_RECORD
         handle_movie_record(ws, data)
-    elseif type == "chain:run"
+    elseif kind === WS_CHAIN_RUN
         handle_chain_run(ws, data)
-    elseif type == "chain:cancel"
+    elseif kind === WS_CHAIN_CANCEL
         run_id = _wstr(data, :runId)
         # Both processes: the run may be executing here (fallback) or on the runner. Each is a no-op
         # for an id it does not know, so asking both is free — asking one is a Cancel that silently
         # does nothing depending on where the run happens to be.
         isempty(run_id) || (cancel_chain_run!(run_id); _cancel_chain_on_runner(run_id))
-    elseif type == "maintenance:run"
+    elseif kind === WS_MAINT_RUN
         handle_maintenance_run(ws, data)
-    elseif type == "maintenance:cancel"
+    elseif kind === WS_MAINT_CANCEL
         task_id = _wstr(data, :taskId)
         isempty(task_id) || cancel_maintenance!(task_id)
-    elseif type == "project:export"
+    elseif kind === WS_PROJ_EXPORT
         handle_project_export(ws, data)
-    elseif type == "project:import"
+    elseif kind === WS_PROJ_IMPORT
         handle_project_import(ws, data)
     else
-        @warn "Unknown WS message type" type
+        @warn "Unknown WS message type" type = type_str
     end
 end
 
