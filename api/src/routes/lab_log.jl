@@ -38,9 +38,11 @@ function api_lablog_dismiss(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    entry_id    = String(get(body, :id, ""))
-    dismissed   = Bool(get(body, :dismissed, false))
+    # `_wstr` / `_wbool` (sockets.jl) absorb an explicit JSON null at the boundary — a client sending
+    # `{"projectUid": null}` reaches `String(nothing)`/`Bool(nothing)` otherwise and aborts the handler.
+    project_uid = _wstr(body, :projectUid)
+    entry_id    = _wstr(body, :id)
+    dismissed   = _wbool(body, :dismissed)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(entry_id)    && return 400, JSON3.write((; error="id required"))
     proj = try load_project(project_uid) catch e
@@ -60,8 +62,8 @@ function api_lablog_append(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    author      = String(get(body, :author, ""))
+    project_uid = _wstr(body, :projectUid)
+    author      = _wstr(body, :author)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(author)      && return 400, JSON3.write((; error="author required"))
     lines_raw = get(body, :lines, nothing)
@@ -117,7 +119,7 @@ function api_lablog_capture(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
+    project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     proj = try load_project(project_uid) catch e
         return 404, JSON3.write((; error=sprint(showerror, e)))
