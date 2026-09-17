@@ -766,8 +766,8 @@ end
 # through the frontend's debouncedSave scheduler — one write per settle, not per input event.
 function api_viewer_props_post(body_bytes::Vector{UInt8})
     body = JSON3.read(body_bytes, Dict{String,Any})
-    pu = String(get(body, "projectUid", ""))
-    iu = String(get(body, "imageUid", ""))
+    pu = _wstr(body, "projectUid")
+    iu = _wstr(body, "imageUid")
     vnr = get(body, "valueName", nothing)
     vnn = (vnr === nothing || (vnr isa AbstractString && isempty(vnr))) ? nothing : String(vnr)
     zp, td, err = resolve_image_version(pu, iu, vnn)
@@ -801,12 +801,12 @@ end
 # response is still 200; the selection is unchanged.
 function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     body = JSON3.read(body_bytes, Dict{String,Any})
-    pu   = String(get(body, "projectUid", ""))
-    iu   = String(get(body, "imageUid", ""))
-    pt   = String(get(body, "popType", "flow"))
+    pu   = _wstr(body, "projectUid")
+    iu   = _wstr(body, "imageUid")
+    pt   = _wstr(body, "popType", "flow")
     img, err = _gating_image(pu, iu)
     err === nothing || return err
-    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    vn   = _resolve_vn(img, _wstr(body, "valueName"))
     # Which mask on disk. `label_store_path` answers the base mask for that segmentation — the
     # same one the WebGPU viewer and rendered by the WebGPU viewer's mask slot.
     zp, lerr = label_store_path(pu, iu, vn)
@@ -831,7 +831,7 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     # Label 0 is background. Report and leave the selection alone — resetting on a background
     # click would surprise the user who missed a cell by one pixel.
     label == 0 && return 200, JSON3.write((; label = 0, nSelected = 0))
-    mode = String(get(body, "mode", "replace"))
+    mode = _wstr(body, "mode", "replace")
     cur  = something(_get_pick_selection(img._dir, vn), Int[])
     labs = if mode == "add"
         label in cur ? cur : vcat(cur, label)
@@ -865,12 +865,12 @@ end
 # many voxels contributes one label).
 function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     body = JSON3.read(body_bytes, Dict{String,Any})
-    pu   = String(get(body, "projectUid", ""))
-    iu   = String(get(body, "imageUid", ""))
-    pt   = String(get(body, "popType", "flow"))
+    pu   = _wstr(body, "projectUid")
+    iu   = _wstr(body, "imageUid")
+    pt   = _wstr(body, "popType", "flow")
     img, err = _gating_image(pu, iu)
     err === nothing || return err
-    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    vn   = _resolve_vn(img, _wstr(body, "valueName"))
     zp, lerr = label_store_path(pu, iu, vn)
     zp === nothing && return 404, JSON3.write((; error = lerr))
     tint = _to_int(get(body, "t", 0))
@@ -907,7 +907,7 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     catch e
         return 500, JSON3.write((; error = "rect read failed: " * sprint(showerror, e)))
     end
-    mode = String(get(body, "mode", "replace"))
+    mode = _wstr(body, "mode", "replace")
     cur  = something(_get_pick_selection(img._dir, vn), Int[])
     labs = if mode == "add"
         collect(union(Set(cur), Set(labels_uniq)))
@@ -935,9 +935,9 @@ end
 # Response: `{ok, colourBy, populations}` — same shape captureViewLegend consumes.
 function api_viewer_overlay_legend(body_bytes::Vector{UInt8})
     data        = JSON3.read(String(body_bytes))
-    project_uid = String(get(data, :projectUid, ""))
-    image_uid   = String(get(data, :imageUid, ""))
-    column      = String(get(data, :colourBy, ""))
+    project_uid = _wstr(data, :projectUid)
+    image_uid   = _wstr(data, :imageUid)
+    column      = _wstr(data, :colourBy)
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
     content = overlay_legend_content(img, column, get(data, :overlayPops, nothing),
@@ -953,12 +953,12 @@ end
 # `labels=[]` behaves like pick-clear. Same broadcast path.
 function api_viewer_pick_set(body_bytes::Vector{UInt8})
     body = JSON3.read(body_bytes, Dict{String,Any})
-    pu   = String(get(body, "projectUid", ""))
-    iu   = String(get(body, "imageUid", ""))
-    pt   = String(get(body, "popType", "flow"))
+    pu   = _wstr(body, "projectUid")
+    iu   = _wstr(body, "imageUid")
+    pt   = _wstr(body, "popType", "flow")
     img, err = _gating_image(pu, iu)
     err === nothing || return err
-    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    vn   = _resolve_vn(img, _wstr(body, "valueName"))
     raw  = get(body, "labels", Any[])
     raw isa AbstractVector || return 400, JSON3.write((; error = "labels must be an array"))
     # Cap the list. A cockpit click strip won't approach this; anything larger is a client bug
@@ -988,12 +988,12 @@ end
 # frontend caller can reuse its existing body builder. Response: {nSelected: 0}.
 function api_viewer_pick_clear(body_bytes::Vector{UInt8})
     body = JSON3.read(body_bytes, Dict{String,Any})
-    pu   = String(get(body, "projectUid", ""))
-    iu   = String(get(body, "imageUid", ""))
-    pt   = String(get(body, "popType", "flow"))
+    pu   = _wstr(body, "projectUid")
+    iu   = _wstr(body, "imageUid")
+    pt   = _wstr(body, "popType", "flow")
     img, err = _gating_image(pu, iu)
     err === nothing || return err
-    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    vn   = _resolve_vn(img, _wstr(body, "valueName"))
     _set_pick_selection!(img._dir, vn, Int[])
     m = load_pop_map(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)                               # no-op now (selection gone)
@@ -1271,8 +1271,8 @@ end
 function api_viewer_record_test(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)) catch; nothing end
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
-    pu = String(get(data, :projectUid, ""))
-    iu = String(get(data, :imageUid, ""))
+    pu = _wstr(data, :projectUid)
+    iu = _wstr(data, :imageUid)
     (isempty(pu) || isempty(iu)) &&
         return 400, JSON3.write((; error = "projectUid and imageUid required"))
     vn_raw = get(data, :valueName, nothing)
@@ -1388,8 +1388,8 @@ end
 function api_viewer_thumbnail(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)) catch; nothing end
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
-    pu = String(get(data, :projectUid, ""))
-    iu = String(get(data, :imageUid, ""))
+    pu = _wstr(data, :projectUid)
+    iu = _wstr(data, :imageUid)
     (isempty(pu) || isempty(iu)) &&
         return 400, JSON3.write((; error = "projectUid and imageUid required"))
     vn_raw = get(data, :viewState, nothing)
