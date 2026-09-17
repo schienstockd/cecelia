@@ -81,7 +81,6 @@ proposed seams: [`docs/archive/comment-audit-findings.md`](archive/comment-audit
   **requires preserving the `uid_index` sync invariant** — tests must pin uid_index/pops parity.
 
 **Worthwhile (Tier 2):**
-- `api/src/routes.jl` (3053 L) — split by route family.
 
 **Anchor (Tier 3):**
 - `app/src/tasks/cleanupImages/af_correct.jl` — run + QC + param translation. Cleaner

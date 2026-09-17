@@ -10811,13 +10811,16 @@ end
     root      = dirname(dirname(dirname(pathof(Cecelia))))
     types_ts  = read(joinpath(root, "frontend", "src", "tasks", "types.ts"), String)
     modules   = read(joinpath(root, "docs", "MODULES.md"), String)
-    # task.jl is a small aggregator now — its structural spec-field references (`"composite"`,
-    # `"steps"`, `"scope"`, …) live in the split fragments under `tasks/task/*.jl`.
-    task_dir  = joinpath(root, "app", "src", "tasks", "task")
+    # Both `tasks/task.jl` and `api/src/routes.jl` are small aggregators now — their structural
+    # spec-field references (`"composite"`, `"steps"`, `"scope"`, …) live in split fragments under
+    # `tasks/task/*.jl` and `api/src/routes/*.jl` respectively.
+    task_dir   = joinpath(root, "app", "src", "tasks", "task")
+    routes_dir = joinpath(root, "api", "src", "routes")
     julia_src = join([read(f, String) for f in vcat(
                         joinpath(root, "app", "src", "tasks", "task.jl"),
-                        filter(f -> endswith(f, ".jl"), readdir(task_dir; join=true)),
-                        joinpath(root, "api", "src", "routes.jl"))], "\n")
+                        filter(f -> endswith(f, ".jl"), readdir(task_dir;   join=true)),
+                        joinpath(root, "api", "src", "routes.jl"),
+                        filter(f -> endswith(f, ".jl"), readdir(routes_dir; join=true)))], "\n")
 
     # Structural keys of the params array itself, not fields a spec author sets on a param.
     STRUCTURAL = Set(["key", "label", "type", "default", "\$include"])
