@@ -47,8 +47,10 @@ import {
 } from '../../utils/viewerLabels'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import {
-  BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
-  BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT, BRICK_PICK_BINDING,
+  BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
+  BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
+  BRICK_MAX_ATLASES, makeBrickShader,
+  type BrickShaderBindings,
 } from './brickShader'
 import type { GpuFrameSample } from '../../utils/benchRecorder'
 
@@ -118,6 +120,24 @@ const PREV_TOUCH_BIAS = 1_000_000_000
  *  fallback matters more than the target. */
 const BOUND_T_TOUCH_BIAS = 500_000_000
 
+/** S1 smoke-test knob for the multi-atlas shader-variants workstream. `?maxAtlases=N` forces
+ *  the layout picker to `min(N, BRICK_MAX_ATLASES)` — used to exercise the N>=2 shader paths
+ *  before S3 retires the `report.bindingArraySupported ? 1 : undefined` clamp. Returns
+ *  `undefined` (defer to the shipped clamp) when the query string is absent or invalid; not a
+ *  hidden setting, just a plumbing knob. No SSR guard: this module only ever runs in the
+ *  browser (WebGPU device already acquired). */
+function readMaxAtlasesFromUrl(): number | undefined {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('maxAtlases')
+    if (raw === null || raw === '') return undefined
+    const n = Number.parseInt(raw, 10)
+    if (!Number.isInteger(n) || n < 1 || n > BRICK_MAX_ATLASES) return undefined
+    return n
+  } catch {
+    return undefined
+  }
+}
+
 interface AtlasState {
   /** Per-atlas layout, identical for every entry (Decision 3 of the multi-atlas plan).
    *  `layout` aliases `layouts[0]` — code that needs the sizing (page-table dims, atlas
@@ -178,11 +198,32 @@ interface AtlasState {
   currentLevel: number | undefined
   /** Per-image label atlas (r32uint), OR the shared placeholder when the source has no
    *  labelName. Same slot geometry as `texture` except brickZ isn't multiplied by channelsPerBrick
-   *  — labels are single-channel. Bound at binding 5. */
+   *  — labels are single-channel. Bound at the variant's `labAtlas` slot (shifted by N-1 at N>=2;
+   *  S2 grows this to N textures + drops the P2 orphan-brick gate). */
   labelTexture: GPUTexture
   /** Whether the atlas above is the real per-image r32uint atlas (true) or the placeholder
    *  (false). Fetches use this to decide whether to fire label brick requests. */
   labelsEnabled: boolean
+  /** Which shader / pipeline variant this atlas rides on. Equals `textures.length` — S1 compiles
+   *  a variant for every N ∈ 1..BRICK_MAX_ATLASES at construction; the setImage path picks the
+   *  matching variant from `variants[variantN - 1]` when the atlas is (re)allocated. Level swaps
+   *  that change N drop the atlas (Decision 5 of the parent plan), so this is stable within an
+   *  AtlasState's lifetime. */
+  variantN: number
+}
+
+/** One compiled shader + pipeline set per atlas count, built once at renderer construction.
+ *  See `docs/todo/WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md` S1. `variants[N-1]` holds the
+ *  N-atlas variant; the raycast, points, and segments pipelines share the same bind-group
+ *  layout so `setImage`'s single bind group serves all three draws in the pass. */
+interface BrickPipelineVariant {
+  nAtlases: number
+  bindings: BrickShaderBindings
+  bindGroupLayout: GPUBindGroupLayout
+  pipelineLayout: GPUPipelineLayout
+  pipeline: GPURenderPipeline
+  pointsPipeline: GPURenderPipeline
+  segPipeline: GPURenderPipeline
 }
 
 export async function createBrickVolumeRenderer(
@@ -200,120 +241,141 @@ export async function createBrickVolumeRenderer(
   const { base: canvasFormat, viewFormat: format } = pickSrgbCanvasFormats()
   ctx.configure({ device, format: canvasFormat, viewFormats: [format], alphaMode: 'opaque' })
 
-  // Pipeline: same one-triangle vs + raycast fs as the flat renderer, different bindings. The
-  // bind group layout is EXPLICIT (not `auto`) so the raycast, points and segments pipelines all
-  // share ONE layout — the overlays reuse the raycast's bind group verbatim so a marker sits on
-  // the cell that the raycast drew rather than beside it. Binding 0's visibility MUST include
-  // VERTEX because the overlay passes project a point in their vertex stage; missing that flag
-  // is a pipeline-creation validation error that hands back an INVALID pipeline (same trap the
-  // flat renderer already documents — see `volumeRenderer.ts:296`).
-  const bindGroupLayout = device.createBindGroupLayout({
-    entries: [
-      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        buffer: { type: 'uniform', minBindingSize: BRICK_UNIFORM_BYTES } },
-      { binding: 1, visibility: GPUShaderStage.FRAGMENT,
-        buffer: { type: 'read-only-storage' } },
-      { binding: 2, visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'uint', viewDimension: '3d' } },
-      { binding: 3, visibility: GPUShaderStage.FRAGMENT,
-        buffer: { type: 'read-only-storage' } },
-      { binding: 4, visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float', viewDimension: '2d' } },
-      // Label atlas + palette. ALWAYS bound (WebGPU has no optional binding); when no
-      // segmentation is picked, a 1x1x1 r32uint placeholder rides here and the shader skips the
-      // label path via `p.lab.x == 0`. Same discipline as `volumeRenderer.ts:309`.
-      { binding: 5, visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'uint', viewDimension: '3d' } },
-      { binding: 6, visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float', viewDimension: '2d' } },
-      // Pick storage buffer — twin of the flat renderer's binding 5, same shape, different slot
-      // (labels + palette occupy 5/6 on the brick side). Always bound; writes an all-zero buffer
-      // at init and `setPickSet` uploads the real state.
-      { binding: BRICK_PICK_BINDING, visibility: GPUShaderStage.FRAGMENT,
-        buffer: { type: 'read-only-storage', minBindingSize: PICK_BUFFER_BYTES } },
-    ],
-  })
-  const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] })
-
-  const module = device.createShaderModule({ code: BRICK_WGSL })
-  const pipeline = device.createRenderPipeline({
-    layout: pipelineLayout,
-    vertex: { module, entryPoint: 'vs' },
-    fragment: { module, entryPoint: 'fs', targets: [{ format }] },
-    primitive: { topology: 'triangle-list' },
-  })
-
-  // Overlay pipelines share the SAME bind group layout as the raycast (they use only binding 0,
-  // but WebGPU has no partial layout — every slot must be declared). Alpha-blended over the
-  // finished raycast, in the same pass: `loadOp: 'clear'` runs once, then the raycast writes,
-  // then the overlays composite on top. See the flat renderer for the "one pass, one clear"
-  // rationale (`volumeRenderer.ts:492`).
+  // Per-atlas-count pipeline variants (S1 of WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md).
+  // ONE bind-group layout per N, ONE pipelineLayout per N, ONE main + points + segments
+  // pipeline per N. The raycast, points and segments pipelines of a given variant share ONE
+  // layout so the overlays reuse the raycast's bind group verbatim — a marker sits on the cell
+  // the raycast drew rather than beside it. Binding 0's visibility MUST include VERTEX because
+  // the overlay passes project a point in their vertex stage; missing that flag is a
+  // pipeline-creation validation error that hands back an INVALID pipeline (same trap the flat
+  // renderer already documents — see `volumeRenderer.ts:296`).
+  //
+  // Compile cost: measured in ms on Dawn for one shader; 4× at construction is invisible per
+  // the plan. If a future measurement shows otherwise, drop to lazy compile-on-first-N-atlas.
   const pointsModule = device.createShaderModule({ code: BRICK_POINTS_WGSL })
   const pointsErrs = (await pointsModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
   if (pointsErrs.length) {
     throw new WebGpuUnavailable(
       'Brick points shader: ' + pointsErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
   }
-  const pointsPipeline = device.createRenderPipeline({
-    layout: pipelineLayout,
-    vertex: {
-      module: pointsModule, entryPoint: 'vs',
-      buffers: [{
-        arrayStride: POINT_STRIDE * 4,
-        stepMode: 'instance',
-        attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // centre µm
-          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // rgb
-          { shaderLocation: 2, offset: 24, format: 'float32' },    // z plane
-        ],
-      }],
-    },
-    fragment: {
-      module: pointsModule, entryPoint: 'fs',
-      targets: [{
-        format,
-        blend: {
-          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-        },
-      }],
-    },
-    primitive: { topology: 'triangle-list' },
-  })
-
   const segModule = device.createShaderModule({ code: BRICK_SEGMENTS_WGSL })
   const segErrs = (await segModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
   if (segErrs.length) {
     throw new WebGpuUnavailable(
       'Brick segments shader: ' + segErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
   }
-  const segPipeline = device.createRenderPipeline({
-    layout: pipelineLayout,
-    vertex: {
-      module: segModule, entryPoint: 'vs',
-      buffers: [{
-        arrayStride: SEG_STRIDE * 4,
-        stepMode: 'instance',
-        attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // from µm
-          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
-          { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
-          { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane
-        ],
-      }],
-    },
-    fragment: {
-      module: segModule, entryPoint: 'fs',
-      targets: [{
-        format,
-        blend: {
-          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-        },
-      }],
-    },
-    primitive: { topology: 'triangle-list' },
-  })
+
+  const buildVariant = async (nAtlases: number): Promise<BrickPipelineVariant> => {
+    const shader = makeBrickShader({ nAtlases })
+    const b = shader.bindings
+    // BGL entries: uniform + pt storage + N atlas textures + prevPt storage + lut + labAtlas
+    // + pal + pick storage. Numbers come from the variant's bindings map so the shift lands
+    // in the right slots at N>=2.
+    const atlasEntries = b.atlas.map(binding => ({
+      binding, visibility: GPUShaderStage.FRAGMENT,
+      texture: { sampleType: 'uint' as const, viewDimension: '3d' as const },
+    }))
+    const bindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: b.uniform, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform', minBindingSize: BRICK_UNIFORM_BYTES } },
+        { binding: b.pt, visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'read-only-storage' } },
+        ...atlasEntries,
+        { binding: b.prevPt, visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'read-only-storage' } },
+        { binding: b.lut, visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float', viewDimension: '2d' } },
+        // Label atlas + palette. ALWAYS bound (WebGPU has no optional binding); when no
+        // segmentation is picked, a 1x1x1 r32uint placeholder rides here and the shader skips
+        // the label path via `p.lab.x == 0`.
+        { binding: b.labAtlas, visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'uint', viewDimension: '3d' } },
+        { binding: b.pal, visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float', viewDimension: '2d' } },
+        // Pick storage buffer — always bound; writes an all-zero buffer at init and
+        // `setPickSet` uploads the real state.
+        { binding: b.pick, visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'read-only-storage', minBindingSize: PICK_BUFFER_BYTES } },
+      ],
+    })
+    const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] })
+
+    const module = device.createShaderModule({ code: shader.code })
+    const errs = (await module.getCompilationInfo()).messages.filter(m => m.type === 'error')
+    if (errs.length) {
+      throw new WebGpuUnavailable(
+        `Brick shader (N=${nAtlases}): ` + errs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
+    }
+    const pipeline = device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: { module, entryPoint: 'vs' },
+      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+      primitive: { topology: 'triangle-list' },
+    })
+    const pointsPipeline = device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: pointsModule, entryPoint: 'vs',
+        buffers: [{
+          arrayStride: POINT_STRIDE * 4,
+          stepMode: 'instance',
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },   // centre µm
+            { shaderLocation: 1, offset: 12, format: 'float32x3' },  // rgb
+            { shaderLocation: 2, offset: 24, format: 'float32' },    // z plane
+          ],
+        }],
+      },
+      fragment: {
+        module: pointsModule, entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list' },
+    })
+    const segPipeline = device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: segModule, entryPoint: 'vs',
+        buffers: [{
+          arrayStride: SEG_STRIDE * 4,
+          stepMode: 'instance',
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },   // from µm
+            { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
+            { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
+            { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane
+          ],
+        }],
+      },
+      fragment: {
+        module: segModule, entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list' },
+    })
+    return { nAtlases, bindings: b, bindGroupLayout, pipelineLayout, pipeline, pointsPipeline, segPipeline }
+  }
+
+  const variants: BrickPipelineVariant[] = []
+  for (let n = 1; n <= BRICK_MAX_ATLASES; n++) variants.push(await buildVariant(n))
+  const pickVariant = (n: number): BrickPipelineVariant => {
+    const v = variants[n - 1]
+    if (!v) throw new Error(`No brick pipeline variant for N=${n} (built 1..${BRICK_MAX_ATLASES})`)
+    return v
+  }
 
   const uniformBuf = device.createBuffer({
     size: BRICK_UNIFORM_BYTES,
@@ -557,11 +619,16 @@ export async function createBrickVolumeRenderer(
     // `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decision 4. When the budget fits in one atlas,
     // `nAtlases = 1` and the behaviour is identical to Phase 1.
     const budget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
-    // Runtime clamp (Decision 6): if `binding_array<T, N>` runtime is missing on this device the
-    // shader binds only `textures[0]`, so allocating N > 1 would silently strand bricks in
-    // unrendered textures. `acquireGpuDevice` already ran the two-part probe; feed the result
-    // straight into the sizer.
-    const maxAtlases = report.bindingArraySupported ? undefined : 1
+    // Runtime clamp (Decision 6 of the parent plan): `binding_array<T, N>` runtime is missing
+    // on shipping Chromium, so today's clamp forces `maxAtlases = 1`. Retired in S3 of
+    // WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md once S1 (this) proves the variant path in
+    // production. Until then, `?maxAtlases=N` overrides for smoke testing — same shape as
+    // `?cacheMB=` and `?brickThr=`. Values outside 1..BRICK_MAX_ATLASES are ignored so a
+    // typo can't wedge the layout picker.
+    const urlMaxAtlases = readMaxAtlasesFromUrl()
+    const maxAtlases = urlMaxAtlases !== undefined
+      ? urlMaxAtlases
+      : (report.bindingArraySupported ? undefined : 1)
     const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits, maxAtlases)
     if (layouts === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
@@ -620,17 +687,26 @@ export async function createBrickVolumeRenderer(
       labelTexture = noLabelAtlas
     }
 
+    // Per-N variant (S1). `variantN = textures.length` — the layout picker's N drives which
+    // shader we bind against. Every atlas texture goes in at its per-variant `atlas[i]` slot;
+    // downstream bindings shift up by N-1 (see `brickShader.ts` for the shift rule).
+    const variantN = textures.length
+    const variant = pickVariant(variantN)
+    const vb = variant.bindings
+    const atlasEntries = textures.map((tex, i) => ({
+      binding: vb.atlas[i]!, resource: tex.texture.createView(),
+    }))
     const bindGroup = device.createBindGroup({
-      layout: bindGroupLayout,
+      layout: variant.bindGroupLayout,
       entries: [
-        { binding: 0, resource: { buffer: uniformBuf } },
-        { binding: 1, resource: { buffer: pageTableBuffer } },
-        { binding: 2, resource: texture.texture.createView() },
-        { binding: 3, resource: { buffer: prevPageTableBuffer } },
-        { binding: 4, resource: lutTex.createView() },
-        { binding: 5, resource: labelTexture.createView() },
-        { binding: 6, resource: palTex.createView() },
-        { binding: BRICK_PICK_BINDING, resource: { buffer: pickBuffer } },
+        { binding: vb.uniform, resource: { buffer: uniformBuf } },
+        { binding: vb.pt, resource: { buffer: pageTableBuffer } },
+        ...atlasEntries,
+        { binding: vb.prevPt, resource: { buffer: prevPageTableBuffer } },
+        { binding: vb.lut, resource: lutTex.createView() },
+        { binding: vb.labAtlas, resource: labelTexture.createView() },
+        { binding: vb.pal, resource: palTex.createView() },
+        { binding: vb.pick, resource: { buffer: pickBuffer } },
       ],
     })
 
@@ -654,6 +730,7 @@ export async function createBrickVolumeRenderer(
       bindGroup,
       currentLevel: undefined,
       labelTexture, labelsEnabled,
+      variantN,
     }
     uniform.nch = nC
   }
@@ -1309,18 +1386,23 @@ export async function createBrickVolumeRenderer(
    */
   const encodePass = (pass: GPURenderPassEncoder, withOverlays: boolean) => {
     if (atlas === null) return
-    pass.setPipeline(pipeline)
+    // Pick the pipeline set matching this atlas's variant (S1). At the shipped default
+    // (`maxAtlases = report.bindingArraySupported ? undefined : 1` clamp still in place per
+    // S3) `atlas.variantN === 1`, so this is the byte-identical N=1 pipeline until S3 lifts
+    // the clamp or the `?maxAtlases=N` URL knob overrides it.
+    const v = pickVariant(atlas.variantN)
+    pass.setPipeline(v.pipeline)
     pass.setBindGroup(0, atlas.bindGroup)
     pass.draw(3, 1, 0, 0)
     if (!withOverlays) return
     if (segBuf !== null && segCount > 0) {
-      pass.setPipeline(segPipeline)
+      pass.setPipeline(v.segPipeline)
       pass.setBindGroup(0, atlas.bindGroup)
       pass.setVertexBuffer(0, segBuf)
       pass.draw(6, segCount, 0, segFirst)
     }
     if (pointBuf !== null && pointCount > 0) {
-      pass.setPipeline(pointsPipeline)
+      pass.setPipeline(v.pointsPipeline)
       pass.setBindGroup(0, atlas.bindGroup)
       pass.setVertexBuffer(0, pointBuf)
       pass.draw(6, pointCount, 0, pointFirst)
