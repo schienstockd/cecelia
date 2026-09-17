@@ -289,9 +289,9 @@ end
 #  · No `.sha256` is published for branch archives, so integrity `verified` is always false on dev.
 function api_update_apply(body_bytes::Vector{UInt8})
     body    = try JSON3.read(String(body_bytes)) catch; Dict{Symbol,Any}() end
-    tag     = String(get(body, :version, ""))
-    channel = String(get(body, :channel, "stable"))
-    branch  = String(get(body, :branch,  "main"))
+    tag     = _wstr(body, :version)
+    channel = _wstr(body, :channel, "stable")
+    branch  = _wstr(body, :branch, "main")
 
     pre = _apply_precheck(tag; scope = _install_scope(), installed = _is_installed(), channel)
     pre === nothing || return pre[1], JSON3.write((; error = pre[2]))

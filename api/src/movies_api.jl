@@ -276,7 +276,7 @@ end
 # lose one side's edit, since each read predates the other's write. Categorising a selection is exactly
 # the case that produces N of them at once.
 function _movie_targets(uid::AbstractString, body)::Tuple{Vector{String},Vector{String}}
-    raw = haskey(body, :names) ? collect(String, body[:names]) : [String(get(body, :name, ""))]
+    raw = haskey(body, :names) ? collect(String, body[:names]) : [_wstr(body, :name)]
     dir = _movies_dir_for_project(uid)
     ok, bad = String[], String[]
     for n in raw
@@ -299,7 +299,7 @@ function api_movies_meta_set(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, ""))
+    uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     names, rejected = _movie_targets(uid, body)
@@ -336,7 +336,7 @@ function api_movies_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, ""))
+    uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     names, rejected = _movie_targets(uid, body)

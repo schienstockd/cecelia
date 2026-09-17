@@ -81,7 +81,7 @@ function api_system_envs_install(body_bytes)
     catch
         return 400, JSON3.write((; error = "invalid JSON body"))
     end
-    name = String(get(body, :env, ""))
+    name = _wstr(body, :env)
     haskey(_OPT_IN_ENVS, name) || return 400, JSON3.write((; error = "unknown env: $name"))
     meta = _OPT_IN_ENVS[name]
     plat = _current_pixi_platform()

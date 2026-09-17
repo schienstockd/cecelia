@@ -26,7 +26,7 @@ function api_optical_flow_rename(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
     from = safe_vault_model_name(get(body, :name, ""))
     isnothing(from) && return 400, JSON3.write((; error = "name required"))
-    vault_rename(Cecelia.coastal_models_dir(), from, String(get(body, :newName, "")))
+    vault_rename(Cecelia.coastal_models_dir(), from, _wstr(body, :newName))
 end
 
 function api_optical_flow_delete(body_bytes::Vector{UInt8})

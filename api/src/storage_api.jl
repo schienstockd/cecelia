@@ -25,7 +25,7 @@ function api_storage_reclaim(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
+    project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     image_uids = get(body, :imageUids, nothing)
     (image_uids isa AbstractVector && !isempty(image_uids)) ||

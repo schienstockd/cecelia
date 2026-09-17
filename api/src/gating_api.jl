@@ -1072,13 +1072,13 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         try
             add_pop!(m, String(body["name"]); parent = _wstr(body, "parent", ROOT),
                      gate = gate, colour = _wstr(body, "colour", "#ffffff"),
-                     show = Bool(get(body, "show", true)),
+                     show = _wbool(body, "show", true),
                      filter_measure = flt === nothing ? nothing : get(flt, "measure", nothing),
                      filter_fun     = flt === nothing ? nothing : get(flt, "fun", nothing),
                      filter_values  = flt === nothing ? nothing : get(flt, "values", nothing),
                      filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", false)),
                      filter_conditions = flt === nothing ? nothing : get(flt, "conditions", nothing),
-                     is_track = Bool(get(body, "is_track", false)),
+                     is_track = _wbool(body, "is_track", false),
                      boolean_op   = bl === nothing ? nothing : get(bl, "op", nothing),
                      boolean_pops = bl === nothing ? nothing : get(bl, "pops", nothing),
                      boolean_not  = bl === nothing ? nothing : get(bl, "not", nothing))
@@ -1114,7 +1114,7 @@ function api_gating_pop_delete(body_bytes::Vector{UInt8})
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
         _path = String(body["path"])
-        _children_only = Bool(get(body, "childrenOnly", false))
+        _children_only = _wbool(body, "childrenOnly", false)
         # A boolean pop (Decision 16) references pops by PATH, so deleting one it combines would leave
         # it silently pointing at nothing (empty membership + a server warning nobody reads). Refuse
         # and name the dependants instead — rename/move rewrite references, only delete can orphan them.

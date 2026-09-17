@@ -155,7 +155,7 @@ end
 # and not just cleanup.
 function api_preview_stop(body_bytes::Vector{UInt8})
     data = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch; Dict{String,Any}(); end
-    task_dir = String(get(data, "taskDir", ""))
+    task_dir = _wstr(data, "taskDir")
 
     # sweep first — if stopping the worker throws, the browser is not left with a preview slab route
     # pointing at debris
@@ -189,9 +189,9 @@ function api_preview_run(body_bytes::Vector{UInt8})
     data = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch
         return 400, JSON3.write((; error = "invalid JSON body")); end
 
-    project_uid = String(get(data, "projectUid", ""))
-    image_uid   = String(get(data, "imageUid", ""))
-    value_name  = String(get(data, "valueName", VERSIONED_DEFAULT_VAL))
+    project_uid = _wstr(data, "projectUid")
+    image_uid   = _wstr(data, "imageUid")
+    value_name  = _wstr(data, "valueName", VERSIONED_DEFAULT_VAL)
     params      = get(data, "params", nothing)
     region      = get(data, "region", nothing)
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
@@ -205,8 +205,8 @@ function api_preview_run(body_bytes::Vector{UInt8})
     # `useViewerStore().openImage` and the FE body-carries those fields. No viewer open ⇒ no region
     # to preview; the FE's `previewBlocker` catches this before the POST, and this refusal is the
     # server-side belt for anything that gets past it.
-    open_zarr_path = String(get(data, "zarrPath", ""))
-    open_task_dir  = String(get(data, "taskDir",  ""))
+    open_zarr_path = _wstr(data, "zarrPath")
+    open_task_dir  = _wstr(data, "taskDir")
     (isempty(open_zarr_path) || isempty(open_task_dir)) &&
         return 409, JSON3.write((;
             error = "Open the image in the browser viewer window to preview.",
@@ -243,7 +243,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
     # (`"CH3"` where an int was expected; a nested `blockSize` silently defaulting to 512). A missing
     # custom checkpoint raises with a message worth showing.
     task = try
-        Cecelia._task_from_fun_name(String(get(data, "funName", "")))
+        Cecelia._task_from_fun_name(_wstr(data, "funName"))
     catch
         nothing
     end
@@ -272,7 +272,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
             w === nothing && error("preview worker is not running")
             send(w, preview_request(open_zarr_path, open_task_dir, params, region;
                                     value_name = value_name,
-                                    fun_name = String(get(data, "funName", "")),
+                                    fun_name = _wstr(data, "funName"),
                                     channel_names = chan_names))
         end
     catch e

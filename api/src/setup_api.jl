@@ -55,7 +55,7 @@ function api_setup_init(body_bytes::Vector{UInt8})
     catch
         return 400, JSON3.write((; error = "invalid JSON body"))
     end
-    raw = strip(String(get(body, "projectsDir", "")))
+    raw = strip(_wstr(body, "projectsDir"))
     isempty(raw) && return 400, JSON3.write((; error = "projectsDir required"))
     ok, message, _ = _check_projects_dir(raw)
     ok || return 400, JSON3.write((; error = message))

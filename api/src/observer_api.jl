@@ -136,7 +136,7 @@ function api_observer_feedback(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
+    project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     proj = try
         load_project(project_uid)                                # the agent will read this project
@@ -146,7 +146,7 @@ function api_observer_feedback(body_bytes::Vector{UInt8})
     # allow-listed model (default Sonnet); the panel sends the user's pick, auto-Watch included.
     model = observer_valid_model(get(body, :model, ""))
     # trigger: "manual" (Ask Claude button) or "auto" (Watch) — recorded in the activity log.
-    trigger = String(get(body, :trigger, "manual"))
+    trigger = _wstr(body, :trigger, "manual")
     agent = ClaudeAgent(; model = model)
     if !agent_available(agent)
         return 200, JSON3.write((; ok = false, available = false,
@@ -178,7 +178,7 @@ function api_observer_clear(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    puid = String(get(body, :projectUid, ""))
+    puid = _wstr(body, :projectUid)
     isempty(puid) && return 400, JSON3.write((; error = "projectUid required"))
     proj = try load_project(puid) catch e
         return 404, JSON3.write((; error = sprint(showerror, e)))
