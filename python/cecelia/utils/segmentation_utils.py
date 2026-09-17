@@ -14,7 +14,6 @@ import typing
 
 import numpy as np
 import dask.array as da
-import zarr
 
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.script_utils as script_utils

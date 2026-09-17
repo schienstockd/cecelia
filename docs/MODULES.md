@@ -17,12 +17,16 @@ This document is the authoritative how-to for adding a new analysis function (ta
 ## Checklist — adding a task (go through every box)
 
 This doc has grown; use this as the run-list. Details for each are in the numbered sections.
+Each box that has a mechanical gate names the ratchet — a green suite means the box got checked.
 
 - [ ] **Two co-located files, same base name** — `.jl` (struct + `_run_task`) + `.json` (param spec). §1, §3
 - [ ] **Register** in `task_registry.jl` — `_spec_path` overload + `"category.myTask"` in `_fun_name_map`. §4
 - [ ] **`resource_pool`** in the JSON. §3
-- [ ] **Bank QC** — `write_qc` with an objective `metrics` count + a `warn` finding for the bad case, under the task's **`value_name`/`outputValueName`** (NOT hardcoded `"default"` — per label set, so cohort works). §1 → *QC*
-- [ ] **Cohort metrics** — add the keys to `COHORT_METRICS` (built-in) or call `register_cohort_metrics!` (custom). §1 → *QC*
+- [ ] **Typed params** — a `Base.@kwdef struct <Task>Params` + `parse_<task>_params(::AbstractDict)`; `_run_task` calls it at the top and reads `p.field` thereafter. §1 → *Struct*. Enforced by `typed params ratchet` in `app/test/suite.jl`.
+- [ ] **Collapse advanced params** — task JSONs with more than 6 top-level params put the tuning ones behind a `type: "section"` block with `collapsed: true` (see `segment/cellpose.json`). §3. Enforced by `test_task_json_convention.py`.
+- [ ] **Zarr / OME-XML only through `zarr_utils` / `ome_xml_utils`** — never bare `zarr.open`, `tifffile.imread`, `.from_zarr`, or a hand-rolled OME-XML parse. Per-frame reads through `zarr_utils.read_timepoint`; `dask.array` inside a runner needs `# DASK-OK: <reason>` on the import. Enforced by `test_zarr_access_convention.py` + `zarr-access ratchet` in `app/test/suite.jl`.
+- [ ] **Bank QC** — `write_qc` with an objective `metrics` count + a `warn` finding for the bad case, under the task's **`value_name`/`outputValueName`** (NOT hardcoded `"default"` — per label set, so cohort works). §1 → *QC*.
+- [ ] **Cohort metrics** — add the keys to `COHORT_METRICS` (built-in) or call `register_cohort_metrics!` (custom). A task that banks QC without either needs `# COHORT-EXEMPT: <reason>` in its `.jl` file. §1 → *QC*. Enforced by `cohort-metrics ratchet` in `app/test/suite.jl`.
 - [ ] **Observer summary layer** — does this task produce analysable data (measures / pops / clusters / behaviour / **phenotype** / lineage) the AI observer should see? If so, extend the read-only summary route + MCP tool (or add a field), per [`docs/todo/OBSERVER_DATA_ACCESS_PLAN.md`](todo/OBSERVER_DATA_ACCESS_PLAN.md). Don't let a new data type land with the observer blind to it.
 - [ ] **Tests** — dispatch + a bad-param `ParamValidationError`, and a QC finding unit test. §7
 - [ ] **Module page + route + nav** if it needs its own page. §7–§9
