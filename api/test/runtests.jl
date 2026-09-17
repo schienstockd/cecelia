@@ -343,6 +343,44 @@ end
     end
 end
 
+@testset "API: _find_pixi falls back past PATH" begin
+    # `Sys.which` alone was too strict: the desktop shortcut wrapper exports pixi on PATH, but a
+    # `.desktop` launch with a minimal inherited env, or `pixi run app` from a shell where pixi is
+    # not on PATH, arrives at the update apply with a stripped PATH and the pre-fix code errored
+    # with "the Cecelia install looks broken". `_find_pixi` mirrors install.sh's install locations.
+    exe = Sys.iswindows() ? "pixi.exe" : "pixi"
+    withenv("PIXI_HOME" => nothing) do
+        mktempdir() do root
+            # Nothing on disk and (assume) nothing on PATH from this shell → empty. If the CI runner
+            # happens to have pixi on PATH we can't test the empty case here, so just require the
+            # non-empty result to be a file that exists.
+            r = _find_pixi(root)
+            @test isempty(r) || isfile(r)
+
+            # System-scope layout: `<root>/pixi/bin/pixi` — the install.sh location.
+            sys_bin = joinpath(root, "pixi", "bin")
+            mkpath(sys_bin)
+            fake = joinpath(sys_bin, exe)
+            write(fake, "")
+            # If PATH happened to have a real pixi, that still wins — but the disk fallback must at
+            # least resolve to a real file (either PATH or our fake).
+            @test isfile(_find_pixi(root))
+        end
+    end
+    # PIXI_HOME env var: honoured over the ~/.pixi default.
+    mktempdir() do home
+        bin = joinpath(home, "bin")
+        mkpath(bin)
+        fake = joinpath(bin, exe)
+        write(fake, "")
+        withenv("PIXI_HOME" => home) do
+            # A random root that has no `pixi/bin` — PIXI_HOME must resolve. Falls through to PATH
+            # only if PATH itself has a real pixi, so the assertion is "some real file".
+            @test isfile(_find_pixi(mktempdir()))
+        end
+    end
+end
+
 @testset "API: update scope" begin
     # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
     # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.

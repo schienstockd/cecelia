@@ -41,6 +41,28 @@ function _running_version(root::AbstractString = _APP_ROOT)::String
     "dev"
 end
 
+# Locate the `pixi` binary. The dev-channel apply invokes `pixi exec --spec nodejs -- npm …` to
+# fetch Node.js on demand (see `api_update_apply`), and `Sys.which("pixi")` alone is not enough: the
+# desktop shortcut on Linux + macOS goes through a `cecelia-launch.sh` wrapper that exports the
+# shared runtime's PATH, but a user launching from a `.desktop` file with a minimal inherited env, or
+# running `pixi run app` from a shell where pixi is not on PATH, arrives here with a stripped PATH.
+# Fallback chain mirrors install.sh's install locations (system-scope inside `<root>/pixi/bin`,
+# user-scope in `~/.pixi/bin`) and app.py's `_reprovision_env`. Returns "" when nothing is found.
+# Windows: `pixi.exe`.
+function _find_pixi(root::AbstractString = _APP_ROOT)::String
+    exe = Sys.iswindows() ? "pixi.exe" : "pixi"
+    on_path = Sys.which("pixi")
+    on_path === nothing || return String(on_path)
+    for cand in (
+        joinpath(root, "pixi", "bin", exe),           # system-scope install (install.sh line 67)
+        get(ENV, "PIXI_HOME", "") |> h -> isempty(h) ? "" : joinpath(h, "bin", exe),
+        joinpath(expand_user("~/.pixi"), "bin", exe), # user-scope default
+    )
+        !isempty(cand) && isfile(cand) && return cand
+    end
+    ""
+end
+
 # Installed bundle (safe to self-update) vs dev checkout (must not be clobbered). `root` param is for
 # tests; production always uses the real install root. `VERSION` is written by release.yml into the
 # release bundle (stable installs), `.cecelia-version` is written by install.sh regardless of channel
@@ -279,13 +301,18 @@ function api_update_apply(body_bytes::Vector{UInt8})
     Cecelia._tar_available() || return 500, JSON3.write((;
         error = "`tar` was not found on PATH — cannot unpack the update bundle."))
 
+    pixi_bin = ""
     if channel == "dev"
         _valid_branch(branch) || return 400, JSON3.write((; error = "invalid branch: $(repr(branch))"))
-        # `pixi` is what launched the app — an install without it is broken, but check anyway so a
-        # bad env produces a targeted error rather than a spawn failure buried in the build log.
-        Sys.which("pixi") === nothing && return 500, JSON3.write((;
-            error = "`pixi` was not found on PATH — the Cecelia install looks broken (dev-channel " *
-                    "updates use `pixi exec` to fetch Node.js on demand)."))
+        # `pixi` may not be on `Sys.which`'s PATH even though the app was launched by it — the desktop
+        # shortcut goes through a wrapper (`cecelia-launch.sh` / `.bat`) that exports the shared
+        # runtime env, but a user who runs `pixi run app` directly from a shell where they don't have
+        # pixi on PATH, or launches on Linux via a `.desktop` file that inherits a minimal env, ends
+        # up here with a stripped PATH. `_find_pixi` mirrors install.sh's + app.py's fallback chain.
+        pixi_bin = _find_pixi()
+        isempty(pixi_bin) && return 500, JSON3.write((;
+            error = "`pixi` was not found — the Cecelia install looks broken (dev-channel updates " *
+                    "use `pixi exec` to fetch Node.js on demand)."))
     end
 
     url = channel == "dev" ?
@@ -364,9 +391,9 @@ function api_update_apply(body_bytes::Vector{UInt8})
             isdir(fe) || return _apply_fail(staging, "dev-channel payload has no frontend/ directory — refusing to stage.")
             try
                 progress("installing dependencies")
-                run(Cmd(`pixi exec --spec nodejs -- npm install`;    dir = fe))
+                run(Cmd(`$pixi_bin exec --spec nodejs -- npm install`;    dir = fe))
                 progress("building frontend")
-                run(Cmd(`pixi exec --spec nodejs -- npm run build`;  dir = fe))
+                run(Cmd(`$pixi_bin exec --spec nodejs -- npm run build`;  dir = fe))
             catch e
                 return _apply_fail(staging, "frontend build failed: $(sprint(showerror, e))")
             end
