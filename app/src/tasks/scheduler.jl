@@ -427,17 +427,52 @@ end
 
 # ── Job execution (runs inside a worker thread) ────────────────────────────────
 
+# ── Task job target ─────────────────────────────────────────────────────────
+#
+# A job runs against EITHER one image or a whole vector of images at once — a set-scope task like
+# `behaviour.hmm` fits jointly across the vector, while every other task takes one. The two-field
+# shape (`img::CciaImage` + `imgs::Union{Nothing,Vector{CciaImage}}`) it used to carry made the
+# distinction implicit: every read site branched on `isnothing(job.imgs)` and threaded the singleton
+# by hand, and a bare `job.imgs` looked like it might return the representative image. Making the
+# scope a sum type turns the branch into a dispatch and closes the "which field do I read" hazard.
+#
+# The representative (log target, status attribution) is the sole image in `SingleImage` or the
+# first image of `MultiImage`; `representative_image` returns it uniformly. `MultiImage` refuses an
+# empty vector at construction — set-scope tasks never queue with zero images (the empty case is
+# caught in `run_task` before a job is built), so an empty vector reaching here is a bug, not a
+# state to tolerate.
+abstract type TaskJobTarget end
+
+struct SingleImage <: TaskJobTarget
+    img::CciaImage
+end
+struct MultiImage <: TaskJobTarget
+    imgs::Vector{CciaImage}
+    function MultiImage(imgs::Vector{CciaImage})
+        isempty(imgs) && throw(ArgumentError("MultiImage: at least one image required"))
+        new(imgs)
+    end
+end
+
+# The scheduler needs BOTH the whole set (log-target list, applicability re-checks) and the value
+# to hand to `_run_task` (one image, or the vector).
+all_images(t::SingleImage)::Vector{CciaImage} = CciaImage[t.img]
+all_images(t::MultiImage)::Vector{CciaImage}  = t.imgs
+run_task_target(t::SingleImage) = t.img
+run_task_target(t::MultiImage)  = t.imgs
+representative_image(t::SingleImage)::CciaImage = t.img
+representative_image(t::MultiImage)::CciaImage  = first(t.imgs)
+
 struct TaskJob
     id::String
     task::CciaTask
-    img::CciaImage              # representative image (logfile, status record)
+    target::TaskJobTarget       # sum type: SingleImage | MultiImage. representative_image → log/status
     params::Dict{String,Any}
     done::Channel{Any}          # worker posts result here; caller takes
     on_log::Function
     on_progress::Function
     on_process::Function
     on_status_change::Function
-    imgs::Union{Nothing,Vector{CciaImage}}   # set-scope: run `_run_task` over all images at once; nothing = single-image
 end
 
 """
@@ -464,7 +499,7 @@ function _execute_job!(job::TaskJob)
         return
     end
     # target images for the run log — the whole vector on a set-scope job, else the one image
-    log_targets = isnothing(job.imgs) ? [job.img] : job.imgs
+    log_targets = all_images(job.target)
     fun_name    = _fun_name_from_task(job.task)
     value_name  = string(get(job.params, "valueName", ""))
     try
@@ -482,7 +517,7 @@ function _execute_job!(job::TaskJob)
         # invokelatest: workers are spawned once at pool init; user-supplied callbacks
         # may be defined in a later world (e.g. in test files or interactive sessions).
         # set-scope job runs _run_task over the whole image vector at once; else single image.
-        job_target = isnothing(job.imgs) ? job.img : job.imgs
+        job_target = run_task_target(job.target)
         result = try
             _run_task(job.task, job_target,
                       merge(job.params, Dict("_task_id" => job.id));
@@ -629,8 +664,8 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
 
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(img, fun_name, on_log)
-    job = TaskJob(task_id, task, img, params, done_ch,
-                  wrapped_log, on_progress, on_process, on_status_change, nothing)
+    job = TaskJob(task_id, task, SingleImage(img), params, done_ch,
+                  wrapped_log, on_progress, on_process, on_status_change)
     put!(pool.queue, job)       # non-blocking; worker picks it up when a slot is free
     result = take!(done_ch)     # blocks (yields thread) until worker posts result
     _deregister_task!(task_id)
@@ -677,8 +712,8 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
 
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(rep, fun_name, on_log)
-    job = TaskJob(task_id, task, rep, params, done_ch,
-                  wrapped_log, on_progress, on_process, on_status_change, imgs)
+    job = TaskJob(task_id, task, MultiImage(imgs), params, done_ch,
+                  wrapped_log, on_progress, on_process, on_status_change)
     put!(pool.queue, job)
     result = take!(done_ch)
     _deregister_task!(task_id)
