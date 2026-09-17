@@ -76,6 +76,24 @@ _wbool(data, key::Symbol, default::Bool = false)::Bool =
 _wbool(data, key::AbstractString, default::Bool = false)::Bool =
     (v = get(data, key, nothing); v === nothing ? default : Bool(v))
 
+"""
+    _wstr_any(data, keys...; default = "") -> String
+
+Try each key in turn; first non-nothing value → coerced to String. All missing / null → `default`.
+
+Handles the String/Symbol fallback chain that some payloads carry
+(`get(src, "valueName", get(src, :valueName, ""))`) without the crash a compound
+`String(get(get))` throws on an outer null. Same null-tolerance contract as `_wstr` — the previous
+sweep landed the single-key case; this closes the remaining nested-fallback holdouts.
+"""
+function _wstr_any(data, keys::Vararg{Union{Symbol,AbstractString}}; default::AbstractString = "")::String
+    for k in keys
+        v = get(data, k, nothing)
+        v === nothing || return String(v)
+    end
+    String(default)
+end
+
 # `look` uses camelCase from the frontend but AbstractDict-safe lookups: try both String and
 # Symbol keys before falling back. JSON3 yields Symbol keys but a hand-authored test may pass
 # a Dict{String,Any}, and we want both to work.

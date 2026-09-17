@@ -235,8 +235,8 @@ function api_cell_cards(body_bytes::Vector{UInt8})
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
 
     pu       = _wstr(data, :projectUid)
-    root_uid = String(get(data, :rootUid,    get(data, :root_uid, "")))
-    vn       = String(get(data, :valueName,  get(data, :value_name, "")))
+    root_uid = _wstr_any(data, :rootUid,    :root_uid)
+    vn       = _wstr_any(data, :valueName,  :value_name)
     suffix   = _wstr(data, :suffix)
     (isempty(pu) || isempty(root_uid) || isempty(suffix)) &&
         return 400, JSON3.write((; error = "projectUid, rootUid, suffix required"))
