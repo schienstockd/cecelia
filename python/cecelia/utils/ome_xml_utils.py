@@ -188,6 +188,30 @@ def read_imagej_metadata(im_path):
   with tifffile.TiffFile(im_path) as tif:
     return tif.imagej_metadata
 
+
+def peek_tiff_shape(im_path):
+  """(nX, nY, nZ, nT, nC) from a TIFF WITHOUT reading pixels. Prefers the OME-XML `Pixels`
+  attrs (right dims for a multi-series OME-TIFF), falls back to the first series' shape + axes
+  string (`'TZCYX'` etc.) for a plain TIFF. Missing axes default to 1. The one place TIFF
+  shape-peek is done — the pyramid-levels advisor calls this rather than opening the file
+  itself so `tifffile` stays exempt at one call site."""
+  with tifffile.TiffFile(im_path) as tf:
+    ome = getattr(tf, 'ome_metadata', None)
+    if ome:
+      import re
+      m = re.search(r'<Pixels[^>]*>', ome)
+      if m:
+        attrs = dict(re.findall(r'(\w+)="([^"]+)"', m.group(0)))
+        def _i(k, d=1):
+          try: return int(attrs.get(k, d))
+          except (ValueError, TypeError): return d
+        return _i('SizeX'), _i('SizeY'), _i('SizeZ'), _i('SizeT'), _i('SizeC')
+    s = tf.series[0]
+    shape = list(s.shape)
+    axes = str(s.axes).upper()
+    get = lambda ax, d=1: shape[axes.index(ax)] if ax in axes else d
+    return get('X'), get('Y'), get('Z'), get('T'), get('C')
+
 """
 Parse metadata from zarr
 """

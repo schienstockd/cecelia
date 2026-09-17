@@ -67,28 +67,10 @@ def recommend_levels(nx, ny, chunk=DEFAULT_CHUNK):
 
 
 def _peek_tiff(path):
-    """OME-TIFF or plain TIFF via tifffile. Prefers OME-XML `Pixels` (right dims for a
-    multi-series OME-TIFF), falls back to the first series' shape + axes for a plain TIFF."""
-    import tifffile
-    with tifffile.TiffFile(path) as tf:
-        ome = getattr(tf, 'ome_metadata', None)
-        if ome:
-            # tifffile parses OME-XML into an OmeXml dataclass tree; but the simpler string path
-            # is more robust across versions — extract Pixels attrs by regex.
-            import re
-            m = re.search(r'<Pixels[^>]*>', ome)
-            if m:
-                attrs = dict(re.findall(r'(\w+)="([^"]+)"', m.group(0)))
-                def _i(k, d=1):
-                    try: return int(attrs.get(k, d))
-                    except (ValueError, TypeError): return d
-                return _i('SizeX'), _i('SizeY'), _i('SizeZ'), _i('SizeT'), _i('SizeC')
-        # Plain TIFF fallback — inspect the first series' axes + shape.
-        s = tf.series[0]
-        shape = list(s.shape)
-        axes = str(s.axes).upper()  # e.g. 'TZCYX'
-        get = lambda ax, d=1: shape[axes.index(ax)] if ax in axes else d
-        return get('X'), get('Y'), get('Z'), get('T'), get('C')
+    """OME-TIFF or plain TIFF — delegates to `ome_xml_utils.peek_tiff_shape` (the sanctioned
+    tifffile call site; see `test_zarr_access_convention`)."""
+    from cecelia.utils.ome_xml_utils import peek_tiff_shape
+    return peek_tiff_shape(path)
 
 
 def _peek_lif(path):
