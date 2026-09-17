@@ -31,8 +31,8 @@ function api_chains_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid  = String(get(body, :projectUid, ""))
-    name = String(get(body, :name, ""))
+    uid  = _wstr(body, :projectUid)
+    name = _wstr(body, :name)
     isempty(uid)  && return 400, JSON3.write((; error="projectUid required"))
     isempty(name) && return 400, JSON3.write((; error="name required"))
     _valid_chain_name(name) || return _bad_chain_name(name)
@@ -94,7 +94,7 @@ function api_chains_save(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     tmpl = get(body, :template, nothing)
     isempty(uid)      && return 400, JSON3.write((; error="projectUid required"))
     isnothing(tmpl)   && return 400, JSON3.write((; error="template required"))
@@ -160,7 +160,7 @@ function api_chains_create(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     tmpl = get(body, :template, nothing)
     isempty(uid)    && return 400, JSON3.write((; error="projectUid required"))
     isnothing(tmpl) && return 400, JSON3.write((; error="template required"))
@@ -220,9 +220,9 @@ function api_chains_rename(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid     = String(get(body, :projectUid, ""))
-    name    = String(get(body, :name, ""))
-    newname = String(strip(String(get(body, :newName, ""))))
+    uid     = _wstr(body, :projectUid)
+    name    = _wstr(body, :name)
+    newname = String(strip(_wstr(body, :newName)))
     isempty(uid)     && return 400, JSON3.write((; error="projectUid required"))
     isempty(name)    && return 400, JSON3.write((; error="name required"))
     isempty(newname) && return 400, JSON3.write((; error="newName required"))

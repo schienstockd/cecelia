@@ -87,9 +87,9 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    image_uid   = String(get(body, :imageUid,   ""))
-    value_name  = String(get(body, :valueName,  ""))
+    project_uid = _wstr(body, :projectUid)
+    image_uid   = _wstr(body, :imageUid)
+    value_name  = _wstr(body, :valueName)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
     isempty(value_name)  && return 400, JSON3.write((; error="valueName required"))
