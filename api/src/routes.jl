@@ -369,7 +369,7 @@ end
 
 function api_view_profile_save(body_bytes::Vector{UInt8})
     body  = isempty(body_bytes) ? Dict{String,Any}() : JSON3.read(String(body_bytes), Dict{String,Any})
-    label = string(get(body, "label", ""))
+    label = _wstr(body, "label")
     isempty(strip(label)) && return 400, JSON3.write((; error="label required"))
     items = get(body, "items", nothing)
     items isa AbstractVector || return 400, JSON3.write((; error="items must be an array of route paths"))
@@ -388,7 +388,7 @@ end
 
 function api_view_profile_delete(body_bytes::Vector{UInt8})
     body = isempty(body_bytes) ? Dict{String,Any}() : JSON3.read(String(body_bytes), Dict{String,Any})
-    id   = string(get(body, "id", ""))
+    id   = _wstr(body, "id")
     isempty(strip(id)) && return 400, JSON3.write((; error="profile id required"))
     try
         200, JSON3.write((; deleted = Cecelia.delete_view_profile!(id)))
@@ -643,7 +643,7 @@ end
 # stores are untouched (a re-write is rechunk_zarr.py's job) — the UI says so.
 function api_compressor_set(body_bytes)
     data = JSON3.read(body_bytes)
-    name = String(get(data, :name, ""))
+    name = _wstr(data, :name)
     isempty(name) && return 400, JSON3.write((; error = "name required"))
     try
         200, JSON3.write((; current = Cecelia.set_image_compressor!(name)))
@@ -706,7 +706,7 @@ end
 
 function api_store_layout_set(body_bytes)
     data = JSON3.read(body_bytes)
-    name = String(get(data, :name, ""))
+    name = _wstr(data, :name)
     isempty(name) && return 400, JSON3.write((; error = "name required"))
     try
         200, JSON3.write((; current = Cecelia.set_store_layout!(name)))
@@ -717,7 +717,7 @@ end
 
 function api_pool_set(body_bytes)
     data  = JSON3.read(body_bytes)
-    name  = String(get(data, :name, ""))
+    name  = _wstr(data, :name)
     limit = Int(get(data, :limit, 0))
     isempty(name) && return 400, JSON3.write((; error = "name required"))
     known = Set(p.name for p in list_pools())
@@ -861,11 +861,11 @@ function api_sets_create(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
+    project_uid = _wstr(body, :projectUid)
     # TRIMMED, like `rename` and the `newSetName` paths on move/copy — this route was the one that
     # wasn't, so " Day 3 " and "Day 3" could become two sets whose picker rows look identical. Same rule
     # as the `attr/*` routes' `_norm_attr`: normalise where the user's keystrokes enter the model.
-    name        = strip(String(get(body, :name, "")))
+    name        = strip(_wstr(body, :name))
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(name)        && return 400, JSON3.write((; error="name required"))
 
@@ -896,9 +896,9 @@ function api_sets_rename(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    set_uid     = String(get(body, :setUid, ""))
-    name        = strip(String(get(body, :name, "")))
+    project_uid = _wstr(body, :projectUid)
+    set_uid     = _wstr(body, :setUid)
+    name        = strip(_wstr(body, :name))
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
     # Trimmed, so a whitespace-only name is an empty one — a set that renders as a blank row in the
@@ -922,8 +922,8 @@ function api_sets_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    project_uid = String(get(body, :projectUid, ""))
-    set_uid     = String(get(body, :setUid, ""))
+    project_uid = _wstr(body, :projectUid)
+    set_uid     = _wstr(body, :setUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
 
