@@ -2877,6 +2877,38 @@ end
         @test _wstr(d, :alsoMissing, "error") == "error"
     end
 
+    # `parse_ws_msg_type` is the ONE place the wire string becomes a typed value. Every dispatch
+    # arm in `handle_message` compares an enum — a stray typo like `WS_TASK_CANCLE` is a compile
+    # error instead of a silently-dropped Cancel button. Pin the full registry both directions so a
+    # rename requires updating the string on this line, and a wire literal added to the dispatch
+    # without a matching enum arm cannot smuggle "unknown" into a running handler.
+    @testset "WsMsgType parses every wire literal (round-trip)" begin
+        expected = Dict(
+            WS_PING         => "ping",
+            WS_TASK_RUN     => "task:run",
+            WS_TASK_RESTART => "task:restart",
+            WS_TASK_CANCEL  => "task:cancel",
+            WS_MOVIE_BATCH  => "movie:batch",
+            WS_MOVIE_RECORD => "movie:record",
+            WS_CHAIN_RUN    => "chain:run",
+            WS_CHAIN_CANCEL => "chain:cancel",
+            WS_MAINT_RUN    => "maintenance:run",
+            WS_MAINT_CANCEL => "maintenance:cancel",
+            WS_PROJ_EXPORT  => "project:export",
+            WS_PROJ_IMPORT  => "project:import",
+        )
+        for (kind, wire) in expected
+            @test parse_ws_msg_type(wire) === kind
+            @test string(kind) == wire
+        end
+        # Unrecognised (including a typo, an empty string, and a null-derived empty) becomes
+        # WS_UNKNOWN. `handle_message`'s fallback branch logs + drops on this value, so the
+        # server survives garbage from a client.
+        for junk in ("", "not:a:type", "task:cancle", "TASK:RUN")
+            @test parse_ws_msg_type(junk) === WS_UNKNOWN
+        end
+    end
+
     # run_task validates params FIRST and throws before any job runs. handle_task_run must catch that
     # and STILL emit a task log + a terminal task:status:failed frame — otherwise the throw dies in
     # the @spawn silently and the observer's "Watch" auto-trigger (which keys off the terminal frame)
