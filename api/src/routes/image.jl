@@ -114,9 +114,11 @@ end
 
 # POST /api/import/peek-pyramid {paths:[...], chunk?} → per-path {reader, nX,nY,nZ,nT,nC,
 # recommendedPyramidLevels, targetChunk}. Metadata-only, no pixels. The wizard uses it to pre-fill
-# the omezarr import form's `pyramidLevels`. Fast-path readers only (tifffile/readlif/h5py);
-# unsupported formats come back with `reader: "unsupported"` and no recommendation — the caller
-# keeps the current default. See peek_pyramid_run.py for the tiering rule.
+# the omezarr import form's `pyramidLevels`. Fast-path readers (tifffile/readlif/h5py) come back
+# instantly; JVM-only formats (CZI/ND2/OIR/LSM/OIB/...) route through Bio-Formats' `showinf` when
+# bftools is installed (~2 s cold-start — the FRONTEND fires those lazily, one path per wizard
+# open, not on set-add). Missing bftools ⇒ JVM formats come back `reader: "unsupported"` and the
+# caller keeps the current default. See peek_pyramid_run.py for the tiering rule.
 function api_import_peek_pyramid(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body")) end
@@ -132,6 +134,9 @@ function api_import_peek_pyramid(body_bytes::Vector{UInt8})
     isempty(paths) && return 400, JSON3.write((; error="no usable paths in request"))
     params = Dict{String,Any}("paths" => paths, "resultPath" => "")
     haskey(body, :chunk) && (params["chunk"] = Int(body.chunk))
+    # Opt the JVM (`showinf`) fallback in whenever bftools is present, so a wizard peek on a
+    # .czi/.nd2/.oir/... resolves to real dims instead of `unsupported`. Empty ⇒ Python skips it.
+    let sh = Cecelia.showinf_bin(); isempty(sh) || (params["showinfBin"] = sh) end
 
     run_dir     = mktempdir()
     result_file = joinpath(run_dir, "peek.result.json")

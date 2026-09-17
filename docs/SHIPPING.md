@@ -200,6 +200,13 @@ comes from the Pixi env, so only the JARs are downloaded. This also means the **
 gets bioformats2raw too** — the branch tarball never contained it (it's not in git), so before this
 the dev channel had no working image import.
 
+**bftools is NOT in the bundle either**, and is fetched the same way (~30 MB into `<install>/bftools/`,
+`showinf_bin()` in `config/binaries.jl` resolves it). Used by the import wizard's pyramid-levels
+advisor to peek dims on JVM-only formats (.czi/.nd2/.oir/.lsm/.oib/...) via `showinf -nopix
+-omexml-only`. The download is soft-failing — a network error just logs a warning and the wizard
+degrades to `unsupported` for those formats (the import default of 2 pyramid levels still applies),
+so an offline install stays workable.
+
 **Custom cellpose checkpoints are NOT in the bundle either**, and as of the cellpose 4 migration
 they are not fetched at install time either: everything in
 [`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) is a cellpose 3

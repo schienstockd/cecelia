@@ -4,10 +4,11 @@ wizard can pre-fill the `pyramidLevels` field with a level count that ends at ~o
 
 Called by the Julia `/api/import/peek-pyramid` route. Reads metadata only — no pixels — through
 three format-native readers already in the pixi env: `tifffile` (.tif / .ome.tif), `readlif`
-(.lif), `h5py` (.ims — Imaris HDF5). Bioformats-only formats (LSM, ND2, CZI, LIF-variants, OIB…)
-fall through as ``reader: "unsupported"`` — the wizard shows no recommendation for those (the
-import default of 2 still applies). A JVM-backed fallback via ``showinf`` can be bolted on later;
-skipped here so the peek stays instantaneous for the common case.
+(.lif), `h5py` (.ims — Imaris HDF5). Everything else (CZI, ND2, OIR, LSM, OIB, ZVI, SVS…) is a
+Bio-Formats-only format and falls through to a JVM fallback: ``showinf -nopix -omexml-only``
+from the bundled ``bftools`` (~2 s cold; the wizard fires this LAZILY, per file, only when the
+user opens the import wizard on a JVM-eligible source — see paramAdvisors.ts). When ``bftools``
+is not installed the JVM path is skipped and the file comes back as ``reader: "unsupported"``.
 
 Recommendation formula: ``max(1, ceil(log2(max(nX, nY) / TARGET)) + 1)``. TARGET depends on
 whether the image is a timelapse:
@@ -30,15 +31,19 @@ Parameter contract (JSON written by Julia):
   paths      - list of absolute source file paths
   resultPath - where to write the result JSON
   chunk      - optional; when absent, the shape-based TARGET above is used. Force with an int.
+  showinfBin - optional; absolute path to `showinf` (Bio-Formats CLI). When present, JVM-eligible
+               formats (see JVM_EXTS below) route through it; when absent or empty, they come
+               back as `reader: "unsupported"`.
 
 Result JSON:
   {"results": [
-     {"path": "...", "reader": "tifffile"|"readlif"|"h5py"|"unsupported"|"error",
+     {"path": "...", "reader": "tifffile"|"readlif"|"h5py"|"showinf"|"unsupported"|"error",
       "nX": …, "nY": …, "nZ": …, "nT": …, "nC": …,
       "recommendedPyramidLevels": N, "error": "..." (optional)}, ...]}
 """
 import math
 import os
+import subprocess
 
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.atomic_io import write_json_atomic
@@ -140,6 +145,11 @@ _READERS_BY_SUFFIX = (
     ('.tiff', 'tifffile', _peek_tiff),
 )
 
+# Formats we don't have a fast Python reader for but Bio-Formats does. Peek via `showinf`. Kept
+# narrow deliberately — any other suffix falls through as `unsupported` rather than paying a JVM
+# spin for a probably-unreadable file. Add here when a real user hits an unsupported extension.
+_JVM_EXTS = ('.czi', '.nd2', '.oir', '.lsm', '.oib', '.zvi', '.svs', '.vsi', '.scn', '.mrxs')
+
 
 def _pick_reader(path):
     low = path.lower()
@@ -149,19 +159,49 @@ def _pick_reader(path):
     return None, None
 
 
-def peek_one(path, chunk=None):
+def _peek_showinf(path, showinf_bin):
+    """Shell out to `showinf -nopix -omexml-only -novalid -no-upgrade <path>`, parse the OME-XML
+    it writes to stdout, extract SizeX/Y/Z/T/C. The single Bio-Formats-CLI call site; keeps the
+    JVM cost bounded to one process per peek. `showinf_bin` must be an absolute path (the resolver
+    lives in Julia; see `showinf_bin()` in binaries.jl)."""
+    from cecelia.utils.ome_xml_utils import get_im_size_dict
+    from ome_types import from_xml
+    result = subprocess.run(
+        [showinf_bin, '-nopix', '-omexml-only', '-novalid', '-no-upgrade', path],
+        capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError(f'showinf exited {result.returncode}: '
+                           f'{(result.stderr or result.stdout or "").strip()[:200]}')
+    # showinf prints a banner before the XML; strip anything up to the first `<?xml`.
+    xml = result.stdout
+    i = xml.find('<?xml')
+    if i > 0:
+        xml = xml[i:]
+    omexml = from_xml(xml)
+    dims = get_im_size_dict(omexml)
+    return (int(dims.get('X', 1)), int(dims.get('Y', 1)), int(dims.get('Z', 1)),
+            int(dims.get('T', 1)), int(dims.get('C', 1)))
+
+
+def peek_one(path, chunk=None, showinf_bin=None):
     """`chunk` = None ⇒ derive the target from the shape (see `target_for_shape`); an int
-    forces that target regardless of shape (the caller's override)."""
+    forces that target regardless of shape (the caller's override). `showinf_bin` = an absolute
+    path opts the JVM fallback in for JVM-eligible extensions; None/empty leaves them
+    `unsupported`."""
     name, fn = _pick_reader(path)
-    if fn is None:
-        return {'path': path, 'reader': 'unsupported'}
+    reader = None
     try:
-        nx, ny, nz, nt, nc = fn(path)
+        if fn is not None:
+            nx, ny, nz, nt, nc = fn(path); reader = name
+        elif showinf_bin and path.lower().endswith(_JVM_EXTS):
+            nx, ny, nz, nt, nc = _peek_showinf(path, showinf_bin); reader = 'showinf'
+        else:
+            return {'path': path, 'reader': 'unsupported'}
     except Exception as e:
         return {'path': path, 'reader': 'error', 'error': f'{type(e).__name__}: {e}'}
     effective_chunk = int(chunk) if chunk is not None else target_for_shape(nz, nt)
     return {
-        'path': path, 'reader': name,
+        'path': path, 'reader': reader,
         'nX': int(nx), 'nY': int(ny), 'nZ': int(nz), 'nT': int(nt), 'nC': int(nc),
         'recommendedPyramidLevels': recommend_levels(nx, ny, effective_chunk),
         'targetChunk': effective_chunk,
@@ -176,6 +216,7 @@ def run(params):
     if chunk is not None:
         try: chunk = int(chunk)
         except (ValueError, TypeError): chunk = None
+    showinf_bin = params.get('showinfBin') or None
     result_path = params['resultPath']
 
     results = []
@@ -185,7 +226,7 @@ def run(params):
                             'error': 'file not found'})
             log.log(f'[{i+1}/{len(paths)}] not a file: {p}')
             continue
-        r = peek_one(p, chunk)
+        r = peek_one(p, chunk, showinf_bin)
         results.append(r)
         summary = f"{r['reader']}"
         if 'recommendedPyramidLevels' in r:
