@@ -45,6 +45,14 @@ Only the unambiguous bad case is a finding: an image that migrated with **no seg
 the silent failure — the task reports success, the image appears in the table, and every downstream
 page is simply empty — so it is worth a badge rather than a log line nobody reads.
 """
+function migrate_qc_findings(value_names::AbstractVector)
+    isempty(value_names) ?
+        [qc_finding("warn", "migrate.no_segmentation", "No segmentation migrated",
+            "The legacy image came across without a cell table, so gating, plots and tracking will " *
+            "be empty. Check the source project still has its labelProps, then re-run the migration.")] :
+        Dict{String,Any}[]
+end
+
 """
     _merge_meta_preserving_legacy(new_meta, old_meta) -> Dict{String,Any}
 
@@ -61,14 +69,6 @@ function _merge_meta_preserving_legacy(new_meta::AbstractDict, old_meta::Abstrac
         end
     end
     out
-end
-
-function migrate_qc_findings(value_names::AbstractVector)
-    isempty(value_names) ?
-        [qc_finding("warn", "migrate.no_segmentation", "No segmentation migrated",
-            "The legacy image came across without a cell table, so gating, plots and tracking will " *
-            "be empty. Check the source project still has its labelProps, then re-run the migration.")] :
-        Dict{String,Any}[]
 end
 
 function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any};
