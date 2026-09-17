@@ -1113,8 +1113,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 per_source = Any[]
                 for src in track_sources
                     src isa AbstractDict || continue
-                    vn_src  = String(get(src, "valueName", get(src, :valueName, "")))
-                    col_src = String(get(src, "colour",    get(src, :colour, all_tracks_col)))
+                    vn_src  = _wstr_any(src, "valueName", :valueName)
+                    col_src = _wstr_any(src, "colour",    :colour; default = String(all_tracks_col))
                     isempty(vn_src) && continue
                     cl = try
                         build_overlays_for(img; value_name = vn_src, pop_type = ov_pt,
