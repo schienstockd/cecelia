@@ -1,11 +1,12 @@
 ## WebGPU viewer upload path — diagnose then close the gaps
 
-**Status:** nearly complete (2026-09-16) — U0 diagnostic + laptop numbers landed, U1 clamp
+**Status:** nearly complete (2026-09-17) — U0 diagnostic + laptop numbers landed, U1 clamp
 + U2a writeBuffer method shipped in PR #904, U3 payload ring shipped in #919, U4 TLS/HTTP2
-opt-in shipped in #907 (docs in #918), U5 P1/P2 shipped (P2 with runtime clamp) via
-`WEBGPU_MULTI_ATLAS_PLAN.md` — see there for the Chromium `binding_array` gate on P3. U6
-parked (analysis below). Workstation numbers still pending — the plan carries on for that
-one signal.
+opt-in shipped in #907 (docs in #918), **U5 fully shipped** — `WEBGPU_MULTI_ATLAS_PLAN.md`
+P1/P2 via PR #912 (Chromium `binding_array` gate on P3) plus
+`WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md` S0–S4 via PRs #941/#944/#949/#952/#958 which
+unblocked P3 with a shader-variant fan-out. U6 parked (analysis below). Workstation numbers
+still pending — the plan carries on for that one signal.
 
 **Owns:** the whole load path from `/api/viewer/slab` HTTP response to a resident brick in
 the atlas texture, and every constant that gates it (`MAX_INFLIGHT`, `DEFAULT_ATLAS_BUDGET`,
@@ -233,22 +234,31 @@ same problem (fewer round trips) from different angles and don't conflict.
 re-running `curl -sI --http2 https://…/api/version → protocol=2`), `?cert=…` config
 docs.
 
-### U5 — Multi-atlas support.
+### U5 — Multi-atlas support. **SHIPPED 2026-09-17.**
 
-**Trigger:** §A returns `maxTextureDimension3D = 2048` on the workstation (Dawn/Linux
-Vulkan case), OR §B says even at 4 GiB `maxBufferSize` the working-set-per-image exceeds
-one atlas' capacity on any real store.
+**Trigger fired 2026-09-16** — §B (laptop) showed 8 GB / 32 GB budgets rejected by
+`validateAtlasLayout` (single-atlas can't exceed 4 GiB `maxBufferSize`); ~5 GB of the
+laptop's VRAM was architecturally unreachable. The plan's own trigger.
 
-**Shape:** `pickAtlasLayout` gains a `maxAtlases` param and can return an array of layouts
-covering N atlas textures. `PageTable` gains an atlas index per slot. `writeBrick` routes
-to atlas[slot / perAtlasCapacity]. Shader binds N atlas textures at build time (bounded —
-say max 4 — WGSL doesn't do runtime-sized bind groups).
+**Shipped in two waves:**
+- `WEBGPU_MULTI_ATLAS_PLAN.md` P1+P2 (PR #912, 2026-09-16) — `pickAtlasLayout` returns
+  `AtlasLayout[]`, `PageTable` slots span all N atlases, `writeBrick` routes to the right
+  atlas. P2 shipped with a runtime clamp forcing N=1 because P3 needed WGSL `binding_array`
+  which Chromium/Dawn 151 rejects even with `--enable-unsafe-webgpu`.
+- `WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md` S0–S4 (PRs #941/#944/#949/#952/#958,
+  2026-09-17) — compiled one shader per N ∈ 1..MAX_ATLASES with N static texture bindings +
+  `switch(atlasIndex)` (no `binding_array`), grew the label atlas to N, retired the runtime
+  clamp, lifted the `viewerCacheMB` chip ceiling to `MAX_ATLASES × maxBufferSize` (~16 GiB
+  on a 4 GiB-`maxBufferSize` device), and added a Debug panel Atlas row showing the actual
+  N + VRAM cost.
 
-**Cost:** real, multi-week. Only shipped if U5's trigger actually fires. The `oversized
-layouts` list from §B is the input.
+**Reachable VRAM post-U5:** up to ~16 GiB on a `maxBufferSize = 4 GiB` device
+(4 atlases × 4 GiB minus label atlas cost when enabled). Laptop / workstation reference
+measurements in the *Numbers* section below (workstation number still pending — feeds the
+laptop-vs-workstation comparison this plan tracks).
 
-**Deliverable:** design sub-plan (`docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md`) if this fires;
-implementation phased separately.
+**Multi-atlas contract** lives in `docs/ARCHITECTURE.md` → *Viewer* → *Multi-atlas contract*
+(bind numbers, slot encoding, migration hook if `binding_array` ever ships).
 
 ### U6 — `padBrickPayload` allocation elision. **PARKED 2026-09-16 — measurement analysis said skip.**
 

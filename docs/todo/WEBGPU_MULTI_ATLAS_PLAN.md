@@ -1,7 +1,12 @@
 # WebGPU multi-atlas support — reaching VRAM past the single-buffer cap
 
-Status: **planning** (2026-09-15) · branch `feat/webgpu-multi-atlas` (not yet cut) · sub-plan of
-[`WEBGPU_UPLOAD_PATH_PLAN.md`](WEBGPU_UPLOAD_PATH_PLAN.md) → U5.
+Status: **SHIPPED** (2026-09-17) · P1+P2 shipped via PR #912 (2026-09-16) ·
+P3 SUPERSEDED by [`WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md`](WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md)
+— shader-variant fan-out unblocks P3 without `binding_array`, shipped S0–S4 via
+PRs #941 / #944 / #949 / #952 / #958. Sub-plan of
+[`WEBGPU_UPLOAD_PATH_PLAN.md`](WEBGPU_UPLOAD_PATH_PLAN.md) → U5. Kept as design record
+for the P1/P2 refactor + slot-encoding contract that stays live. Multi-atlas contract lives
+in `docs/ARCHITECTURE.md` → *Viewer* → *Multi-atlas contract*.
 
 ## Goal
 
@@ -178,7 +183,15 @@ one-line flip.
   `viewerCacheMB < 2048`) AND renders correctly-with-holes at N=2 (bricks past
   `perAtlasCapacity` render as their placeholder colour, not garbage).
 
-### P3 — WGSL `binding_array` — shader samples the correct atlas. **BLOCKED (2026-09-16) — Chromium/Dawn 151 rejects the runtime bindGroup even with `--enable-unsafe-webgpu`; see Decision 6.**
+### P3 — WGSL `binding_array` — shader samples the correct atlas. **SUPERSEDED (2026-09-17) — `WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md` ships the same capability without `binding_array`.**
+
+Original block cause: Chromium/Dawn 151 rejected the runtime bindGroup even with
+`--enable-unsafe-webgpu` (Decision 6's ship criterion). Rather than wait on Chromium, the
+follow-up plan compiles one shader per N ∈ 1..MAX_ATLASES with N static texture bindings and
+a compile-time `switch(atlasIndex)` — standard WGSL, no `binding_array` runtime. Same slot
+encoding (Decision 2), same allocation machinery (P2), same page-table decode — only the
+final `textureLoad` moves inside a switch. See the follow-up plan for locked decisions and
+the S0 diagnostic that verified the shape on real Dawn.
 
 - `brickShader.ts` swaps `texture_3d<u32>` for `binding_array<texture_3d<u32>, MAX_ATLASES>`.
   Same for the label atlas (Decision 1: bind group handles both).
