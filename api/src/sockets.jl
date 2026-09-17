@@ -58,6 +58,12 @@ absorbed — not in every caller, and not once per field.
 _wstr(data, key::Symbol, default::AbstractString = "") =
     (v = get(data, key, nothing); v === nothing ? String(default) : String(v))
 
+# String-key variant — some handlers `JSON3.read(bytes, Dict{String,Any})` up front (viewer_api's
+# view-state and pop-selection endpoints) rather than working directly with a JSON3.Object. The
+# null-tolerance contract is identical; only the key type differs.
+_wstr(data, key::AbstractString, default::AbstractString = "") =
+    (v = get(data, key, nothing); v === nothing ? String(default) : String(v))
+
 """
     _wbool(data, key, default = false) -> Bool
 
@@ -66,6 +72,8 @@ bug: a client sending `{"dismissed": null}` reaches `Bool(nothing)` — MethodEr
 JSON null both fall back to `default`; anything else is coerced through `Bool`.
 """
 _wbool(data, key::Symbol, default::Bool = false)::Bool =
+    (v = get(data, key, nothing); v === nothing ? default : Bool(v))
+_wbool(data, key::AbstractString, default::Bool = false)::Bool =
     (v = get(data, key, nothing); v === nothing ? default : Bool(v))
 
 # `look` uses camelCase from the frontend but AbstractDict-safe lookups: try both String and
