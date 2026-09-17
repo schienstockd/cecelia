@@ -58,6 +58,16 @@ absorbed — not in every caller, and not once per field.
 _wstr(data, key::Symbol, default::AbstractString = "") =
     (v = get(data, key, nothing); v === nothing ? String(default) : String(v))
 
+"""
+    _wbool(data, key, default = false) -> Bool
+
+Same shape as `_wstr` for a Bool field. `Bool(get(body, :dismissed, false))` has the same latent
+bug: a client sending `{"dismissed": null}` reaches `Bool(nothing)` — MethodError. Missing key OR
+JSON null both fall back to `default`; anything else is coerced through `Bool`.
+"""
+_wbool(data, key::Symbol, default::Bool = false)::Bool =
+    (v = get(data, key, nothing); v === nothing ? default : Bool(v))
+
 # `look` uses camelCase from the frontend but AbstractDict-safe lookups: try both String and
 # Symbol keys before falling back. JSON3 yields Symbol keys but a hand-authored test may pass
 # a Dict{String,Any}, and we want both to work.

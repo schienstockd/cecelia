@@ -2063,6 +2063,18 @@ end
         end
         @test _post(api_lablog_dismiss, Dict("projectUid"=>uid, "dismissed"=>true))[1] == 400            # id missing
         @test _post(api_lablog_dismiss, Dict("id"=>"x", "dismissed"=>true))[1] == 400                    # projectUid missing
+
+        # An explicit JSON null on a required field is ordinary — `String(get(body,:x,""))` and
+        # `Bool(get(body,:x,false))` USED to crash (MethodError: no method matching String(::Nothing)),
+        # aborting the handler with no status frame. `_wstr` / `_wbool` (sockets.jl) absorb that at
+        # the boundary; every lab_log handler now reads through them.
+        @test _post(api_lablog_dismiss, Dict("projectUid"=>nothing, "id"=>"x", "dismissed"=>true))[1] == 400
+        @test _post(api_lablog_dismiss, Dict("projectUid"=>uid,      "id"=>nothing, "dismissed"=>true))[1] == 400
+        # a null Bool takes the default — dismissed = false — and reaches the handler cleanly
+        @test _post(api_lablog_dismiss, Dict("projectUid"=>uid, "id"=>"aa11bb", "dismissed"=>nothing))[1] == 200
+        @test _post(api_lablog_append,  Dict("projectUid"=>nothing, "author"=>"User", "lines"=>"x"))[1] == 400
+        @test _post(api_lablog_append,  Dict("projectUid"=>uid,      "author"=>nothing, "lines"=>"x"))[1] == 400
+        @test _post(api_lablog_capture, Dict("projectUid"=>nothing))[1] == 400
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)
