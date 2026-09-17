@@ -5228,6 +5228,35 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── TaskJob target sum type (SingleImage / MultiImage) ─────────────────────
+#
+# The scheduler used to carry the scope as `img::CciaImage` + `imgs::Union{Nothing,Vector{CciaImage}}`
+# — `nothing` meant "single image, use img". Every read branched on `isnothing`, and a bare read of
+# `job.imgs` looked like it might return the representative. The `TaskJobTarget` ADT (SingleImage |
+# MultiImage) makes the two shapes distinct types and moves the branch into `all_images` /
+# `run_task_target` / `representative_image` — one dispatch each, no `isnothing`.
+@testset "TaskJobTarget: SingleImage | MultiImage" begin
+    proj = create_project!(name="tjt-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    a    = add_image!(s; name="a")
+    b    = add_image!(s; name="b")
+
+    st = Cecelia.SingleImage(a)
+    @test Cecelia.all_images(st) == CciaImage[a]
+    @test Cecelia.run_task_target(st) === a
+    @test Cecelia.representative_image(st) === a
+
+    mt = Cecelia.MultiImage(CciaImage[a, b])
+    @test Cecelia.all_images(mt) == CciaImage[a, b]
+    @test Cecelia.run_task_target(mt) == CciaImage[a, b]       # the vector, contents unchanged
+    @test Cecelia.representative_image(mt) === a               # first is the representative
+
+    # An empty set-scope job is a bug at THIS layer — the empty vector is caught earlier in
+    # `run_task(::CciaTask, ::Vector{CciaImage}, …)`. Refusing at construction closes the "queued
+    # a job that will crash on the worker" path.
+    @test_throws ArgumentError Cecelia.MultiImage(CciaImage[])
+end
+
 # ── A task crash is recorded in the per-image log, not just the console ──────
 # Regression: a Julia-side failure (caught in _execute_job!) used to only @warn to the console —
 # it never reached {img._dir}/logs/{fun}.log, so a crashed task looked like it just stopped
