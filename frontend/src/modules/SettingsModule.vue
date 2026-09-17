@@ -1065,10 +1065,6 @@ async function switchWt(path: string) {
         <span class="svc-name">Application</span>
         <span class="svc-pill ok"><span class="dot" /> Running</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
-        <span v-if="diag?.protocol" class="svc-port cc-muted cc-fs-xs"
-              v-tooltip.top="diag.protocol === 'HTTPS/HTTP2' ? 'HTTPS + HTTP/2 — brick fetches multiplex on one socket' : 'Cleartext HTTP/1.1 — Chromium caps at 6 fetches per origin'">
-          {{ diag.protocol === 'HTTPS/HTTP2' ? 'h2' : 'h1.1' }}
-        </span>
         <span class="svc-actions">
           <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
                   v-tooltip.top="'Restart the backend (dev); the page reconnects'">
@@ -1292,6 +1288,11 @@ async function switchWt(path: string) {
         <span>Julia</span><span class="mono">{{ diag.julia }}</span>
         <span>Memory</span><span class="mono">{{ diag.memFreeGB }} / {{ diag.memTotalGB }} GB free · GC live {{ diag.gcLiveMB }} MB</span>
         <span>Host</span><span class="mono">{{ diag.host }}:{{ diag.port }}</span>
+        <span v-if="diag.protocol">Protocol</span>
+        <span v-if="diag.protocol" class="mono"
+              v-tooltip.top="diag.protocol === 'HTTPS/HTTP2' ? 'HTTPS + HTTP/2 — brick fetches multiplex on one socket' : 'Cleartext HTTP/1.1 — Chromium caps at 6 fetches per origin'">
+          {{ diag.protocol === 'HTTPS/HTTP2' ? 'h2' : 'h1.1' }}
+        </span>
         <span>Projects dir</span><span class="mono">{{ diag.projectsDir }}</span>
       </div>
 
