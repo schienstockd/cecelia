@@ -28,7 +28,7 @@ function api_projects_create(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    name = String(strip(String(get(body, :name, ""))))
+    name = String(strip(_wstr(body, :name)))
     isempty(name) && return 400, JSON3.write((; error="Project name is required"))
 
     existing = _scan_projects_raw()
@@ -50,7 +50,7 @@ function api_projects_load(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :uid, ""))
+    uid = _wstr(body, :uid)
     isempty(uid) && return 400, JSON3.write((; error="Project UID is required"))
 
     projects = _scan_projects_raw()
@@ -135,7 +135,7 @@ function api_projects_boards(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, ""))
+    uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     boards = get(body, :boards, nothing)
@@ -164,7 +164,7 @@ function api_projects_boards(body_bytes::Vector{UInt8})
         # add-a-board route), which is correct: every browser should pick that one up.
         broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid,
                                       "version" => version,
-                                      "clientId" => String(get(body, :clientId, ""))))
+                                      "clientId" => _wstr(body, :clientId)))
         return 200, JSON3.write((; ok=true, version))
     catch e
         return 500, JSON3.write((; error=sprint(showerror, e)))
@@ -186,7 +186,7 @@ function api_boards_add(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, ""))
+    uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     proj = try load_project(uid) catch e
@@ -197,9 +197,9 @@ function api_boards_add(body_bytes::Vector{UInt8})
     # it without this route); `board_display_name` is idempotent, so doing both costs nothing. Without
     # this, an agent that HTML-escaped an ampersand got a tab titled "Behaviour &amp; tracking" that it
     # could not rename — add_analysis_board is add-only.
-    name = board_display_name(String(get(body, :name, "")))
+    name = board_display_name(_wstr(body, :name))
     plots = get(body, :plots, nothing)
-    template = String(get(body, :template, ""))
+    template = _wstr(body, :template)
     path = boards_doc_path(joinpath(projects_dir(), uid))
     try
         doc = read_boards_doc(path)
@@ -214,7 +214,7 @@ function api_boards_add(body_bytes::Vector{UInt8})
                                        code="duplicate_board_name"))
         end
         layout = expand_board(proj, name, plots; template = template,
-                              compare_by = String(get(body, :compareBy, "")))
+                              compare_by = _wstr(body, :compareBy))
         updated, id = append_board(doc, name, layout)
         version = write_boards_doc(path, updated; version = doc.version + 1)
         broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
@@ -245,7 +245,7 @@ function api_projects_animations(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, ""))
+    uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     animations = get(body, :animations, nothing)
@@ -268,7 +268,7 @@ function api_board_asset_save(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, "")); png = String(get(body, :png, ""))
+    uid = _wstr(body, :projectUid); png = _wstr(body, :png)
     (isempty(uid) || isempty(png)) && return 400, JSON3.write((; error="projectUid and png required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     b64 = replace(png, r"^data:image/[^;]+;base64," => "")   # tolerate a data-URL prefix
@@ -290,7 +290,7 @@ function api_board_asset_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, "")); aid = String(get(body, :assetId, ""))
+    uid = _wstr(body, :projectUid); aid = _wstr(body, :assetId)
     (isempty(uid) || isempty(aid)) && return 400, JSON3.write((; error="projectUid and assetId required"))
     _valid_asset_id(aid) || return 400, JSON3.write((; error="Invalid assetId"))
     f = joinpath(_board_assets_dir(uid), aid * ".png")
@@ -305,7 +305,7 @@ function api_board_asset_copy(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, "")); aid = String(get(body, :assetId, ""))
+    uid = _wstr(body, :projectUid); aid = _wstr(body, :assetId)
     (isempty(uid) || isempty(aid)) && return 400, JSON3.write((; error="projectUid and assetId required"))
     _valid_asset_id(aid) || return 400, JSON3.write((; error="Invalid assetId"))
     src = joinpath(_board_assets_dir(uid), aid * ".png")
@@ -328,7 +328,7 @@ function api_projects_canvases(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :projectUid, ""))
+    uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     objects = get(body, :objects, nothing)
@@ -354,8 +354,8 @@ function api_images_value_name_check(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    proj = String(get(body, :projectUid, ""))
-    vn   = String(get(body, :valueName, ""))
+    proj = _wstr(body, :projectUid)
+    vn   = _wstr(body, :valueName)
     uids = get(body, :imageUids, nothing)
     (uids isa AbstractVector) || return 400, JSON3.write((; error="imageUids required"))
     isdir(joinpath(projects_dir(), proj)) || return 404, JSON3.write((; error="Project not found: $proj"))
@@ -375,8 +375,8 @@ function api_projects_rename(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid  = String(get(body, :uid,  ""))
-    name = String(strip(String(get(body, :name, ""))))
+    uid  = _wstr(body, :uid)
+    name = String(strip(_wstr(body, :name)))
     isempty(uid)  && return 400, JSON3.write((; error="uid required"))
     isempty(name) && return 400, JSON3.write((; error="name required"))
     proj_dir = joinpath(projects_dir(), uid)
@@ -400,7 +400,7 @@ function api_projects_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :uid, ""))
+    uid = _wstr(body, :uid)
     isempty(uid) && return 400, JSON3.write((; error="uid required"))
     proj_dir = joinpath(projects_dir(), uid)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
