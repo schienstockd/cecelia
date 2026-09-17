@@ -234,10 +234,10 @@ function api_cell_cards(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)); catch; nothing end
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
 
-    pu       = String(get(data, :projectUid, ""))
+    pu       = _wstr(data, :projectUid)
     root_uid = String(get(data, :rootUid,    get(data, :root_uid, "")))
     vn       = String(get(data, :valueName,  get(data, :value_name, "")))
-    suffix   = String(get(data, :suffix,     ""))
+    suffix   = _wstr(data, :suffix)
     (isempty(pu) || isempty(root_uid) || isempty(suffix)) &&
         return 400, JSON3.write((; error = "projectUid, rootUid, suffix required"))
 

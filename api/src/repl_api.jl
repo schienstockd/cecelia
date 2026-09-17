@@ -41,7 +41,7 @@ const _GIT_COMMIT = _git_short(_REPO_ROOT)
 # loopback bind), so it's safe to accept from the UI; returns the resulting state.
 function api_repl_config(body_bytes::Vector{UInt8})
     body = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch; return 400, JSON3.write((; error="invalid JSON body")); end
-    _repl_on[] = Bool(get(body, "enabled", false))
+    _repl_on[] = _wbool(body, "enabled", false)
     200, JSON3.write((; replEnabled = _repl_on[], loopback = _host_is_loopback(), replAvailable = _repl_available()))
 end
 

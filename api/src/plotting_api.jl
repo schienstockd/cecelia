@@ -236,16 +236,16 @@ function api_plot_data(body_bytes::Vector{UInt8})
     measure_v = get(body, "measure", nothing)
     measure   = measure_v === nothing ? nothing : string(measure_v)
     nbins     = Int(round(Float64(get(body, "bins", 30))))
-    normalize = Bool(get(body, "normalize", false)) ? :fraction : :none
+    normalize = _wbool(body, "normalize", false) ? :fraction : :none
     scope     = Symbol(string(get(body, "scope", "per_image")))
     vn_req    = string(get(body, "valueName", ""))
-    raw_pts   = Bool(get(body, "rawPoints", false))
-    raw       = Bool(get(body, "raw", false))          # export mode: per-datapoint rows, not summaries
+    raw_pts   = _wbool(body, "rawPoints", false)
+    raw       = _wbool(body, "raw", false)          # export mode: per-datapoint rows, not summaries
     stat_unit = Symbol(string(get(body, "statUnit", "individual")))   # individual cell/track, or per-image agg
     image_agg = Symbol(string(get(body, "imageAgg", "mean")))         # per-image collapse: mean | median
     gb_v      = get(body, "groupBy", nothing)
     group_by  = (gb_v === nothing || isempty(string(gb_v))) ? nothing : string(gb_v)
-    collapse  = Bool(get(body, "collapseSeries", false))   # pool pops/images → series by groupBy only
+    collapse  = _wbool(body, "collapseSeries", false)   # pool pops/images → series by groupBy only
 
     # matrix/heatmap (chartType="matrix"): pools the whole frame into one grid (docs/PLOTS.md §9).
     # `matrixMode` profile → `measures` rows × `category` levels (z-scorable); crosstab → split the
@@ -257,7 +257,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
     measures_v = get(body, "measures", nothing)
     measures  = measures_v === nothing ? nothing : String[string(m) for m in measures_v]
     separator = string(get(body, "separator", "_"))
-    zscore    = Bool(get(body, "zscore", false))
+    zscore    = _wbool(body, "zscore", false)
     mnorm_v   = string(get(body, "matrixNormalize", "none"))
     matrix_normalize = mnorm_v in ("row", "col", "total") ? Symbol(mnorm_v) : :none
     # clustering run suffix (cluster pop_types only): lets the per-population cluster heatmap resolve

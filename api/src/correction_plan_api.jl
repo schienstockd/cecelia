@@ -73,8 +73,8 @@ end
 function api_correction_plan_recommend(req::HTTP.Request, body_bytes::Vector{UInt8})
     body, err = _parse_recommend_body(body_bytes)
     body === nothing && return err
-    img, gerr = _gating_image(String(get(body, :projectUid, "")),
-                              String(get(body, :imageUid, "")))
+    img, gerr = _gating_image(_wstr(body, :projectUid),
+                              _wstr(body, :imageUid))
     img === nothing && return gerr
 
     card_id, wizard = _pick_card_and_wizard(body)
@@ -85,8 +85,8 @@ end
 function api_correction_plan_save(req::HTTP.Request, body_bytes::Vector{UInt8})
     body, err = _parse_recommend_body(body_bytes)
     body === nothing && return err
-    img, gerr = _gating_image(String(get(body, :projectUid, "")),
-                              String(get(body, :imageUid, "")))
+    img, gerr = _gating_image(_wstr(body, :projectUid),
+                              _wstr(body, :imageUid))
     img === nothing && return gerr
 
     card_id, wizard = _pick_card_and_wizard(body)
@@ -138,8 +138,8 @@ end
 function api_correction_plan_mount(req::HTTP.Request, body_bytes::Vector{UInt8})
     body, err = _parse_recommend_body(body_bytes)
     body === nothing && return err
-    proj_uid = String(get(body, :projectUid, ""))
-    img, gerr = _gating_image(proj_uid, String(get(body, :imageUid, "")))
+    proj_uid = _wstr(body, :projectUid)
+    img, gerr = _gating_image(proj_uid, _wstr(body, :imageUid))
     img === nothing && return gerr
 
     plan = Cecelia.load_plan(img)
