@@ -14,32 +14,36 @@ import {
 } from './brickShader'
 
 describe('makeBrickShader — bindings per N', () => {
-  it('N=1 keeps the N=1 slot map (uniform 0, pt 1, atlas 2, prevPt 3, lut 4, labAtlas 5, pal 6, pick 7)', () => {
+  it('N=1 keeps today\'s slot map (uniform 0, pt 1, atlas 2, prevPt 3, lut 4, labAtlas 5, pal 6, pick 7)', () => {
     const v = makeBrickShader({ nAtlases: 1 })
     expect(v.bindings).toEqual({
-      uniform: 0, pt: 1, atlas: [2], prevPt: 3, lut: 4, labAtlas: 5, pal: 6, pick: BRICK_PICK_BINDING,
+      uniform: 0, pt: 1, atlas: [2], prevPt: 3, lut: 4, labAtlas: [5], pal: 6, pick: BRICK_PICK_BINDING,
     })
     expect(v.bindings).toEqual(BRICK_N1_BINDINGS)
   })
 
-  it('atlas bindings occupy 2..2+N-1 for every N; downstream bindings shift by N-1', () => {
+  it('atlas + labAtlas each occupy N contiguous slots; pal/pick shift by 2*(N-1) at N>=2', () => {
     for (let n = 1; n <= BRICK_MAX_ATLASES; n++) {
       const v = makeBrickShader({ nAtlases: n })
+      // Intensity atlases at 2..2+N-1.
       expect(v.bindings.atlas).toHaveLength(n)
       expect(v.bindings.atlas[0]).toBe(2)
       expect(v.bindings.atlas[n - 1]).toBe(2 + n - 1)
       expect(v.bindings.prevPt).toBe(2 + n)
-      expect(v.bindings.lut).toBe(2 + n + 1)
-      expect(v.bindings.labAtlas).toBe(2 + n + 2)
-      expect(v.bindings.pal).toBe(2 + n + 3)
-      expect(v.bindings.pick).toBe(2 + n + 4)
+      expect(v.bindings.lut).toBe(3 + n)
+      // Label atlases at 4+N..4+2N-1 (S2).
+      expect(v.bindings.labAtlas).toHaveLength(n)
+      expect(v.bindings.labAtlas[0]).toBe(4 + n)
+      expect(v.bindings.labAtlas[n - 1]).toBe(4 + 2 * n - 1)
+      expect(v.bindings.pal).toBe(4 + 2 * n)
+      expect(v.bindings.pick).toBe(5 + 2 * n)
     }
   })
 
   it('binding numbers are pairwise distinct at every N (no double-binding)', () => {
     for (let n = 1; n <= BRICK_MAX_ATLASES; n++) {
       const b = makeBrickShader({ nAtlases: n }).bindings
-      const all = [b.uniform, b.pt, ...b.atlas, b.prevPt, b.lut, b.labAtlas, b.pal, b.pick]
+      const all = [b.uniform, b.pt, ...b.atlas, b.prevPt, b.lut, ...b.labAtlas, b.pal, b.pick]
       expect(new Set(all).size).toBe(all.length)
     }
   })
@@ -60,29 +64,33 @@ describe('makeBrickShader — code shape per N', () => {
     expect(v.code).toBe(BRICK_WGSL)
   })
 
-  it('N>=2 declares exactly N atlas texture bindings', () => {
+  it('N>=2 declares exactly N intensity atlas + N label atlas texture bindings', () => {
     for (let n = 2; n <= BRICK_MAX_ATLASES; n++) {
       const code = makeBrickShader({ nAtlases: n }).code
-      const bindings = code.match(/var atlas\d+: texture_3d<u32>/g) ?? []
-      expect(bindings).toHaveLength(n)
+      const atlases = code.match(/var atlas\d+: texture_3d<u32>/g) ?? []
+      const labAtlases = code.match(/var labAtlas\d+: texture_3d<u32>/g) ?? []
+      expect(atlases).toHaveLength(n)
+      expect(labAtlases).toHaveLength(n)
     }
   })
 
-  it('N>=2 emits N-1 case arms + one default (switch is exhaustive)', () => {
+  it('N>=2 emits one switch per sampler — N-1 case arms + one default each', () => {
     for (let n = 2; n <= BRICK_MAX_ATLASES; n++) {
       const code = makeBrickShader({ nAtlases: n }).code
+      // Two switches: intensity + label. Each has N-1 case arms and 1 default.
       const cases = code.match(/case \d+u:/g) ?? []
       const defaults = code.match(/default:/g) ?? []
-      expect(cases).toHaveLength(n - 1)
-      expect(defaults).toHaveLength(1)
+      expect(cases).toHaveLength(2 * (n - 1))
+      expect(defaults).toHaveLength(2)
     }
   })
 
-  it('N>=2 references every atlas index in the switch (no orphan bindings)', () => {
+  it('N>=2 references every intensity + label atlas index in its switch (no orphan bindings)', () => {
     for (let n = 2; n <= BRICK_MAX_ATLASES; n++) {
       const code = makeBrickShader({ nAtlases: n }).code
       for (let i = 0; i < n; i++) {
         expect(code).toContain(`textureLoad(atlas${i}, coord, 0)`)
+        expect(code).toContain(`textureLoad(labAtlas${i}, coord, 0)`)
       }
     }
   })
@@ -92,9 +100,10 @@ describe('makeBrickShader — code shape per N', () => {
       const v = makeBrickShader({ nAtlases: n })
       expect(v.code).toContain(`@binding(${v.bindings.prevPt}) var<storage, read> prevPt`)
       expect(v.code).toContain(`@binding(${v.bindings.lut}) var lut`)
-      expect(v.code).toContain(`@binding(${v.bindings.labAtlas}) var labAtlas`)
+      for (let i = 0; i < n; i++) {
+        expect(v.code).toContain(`@binding(${v.bindings.labAtlas[i]}) var labAtlas${i}`)
+      }
       expect(v.code).toContain(`@binding(${v.bindings.pal}) var pal`)
-      // pickBufferWgsl emits its own @binding line — check the number appears.
       expect(v.code).toMatch(new RegExp(`@binding\\(${v.bindings.pick}\\)`))
     }
   })

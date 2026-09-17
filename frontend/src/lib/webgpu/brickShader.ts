@@ -497,15 +497,17 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
  *  this instead of the top-level `BRICK_PICK_BINDING` etc. constants — those only describe
  *  the N=1 shape. See the module header for the shift rule.
  *
- *  `atlas` is length `nAtlases` — atlas 0 sits at binding 2 (matches the N=1 shader), atlas
- *  `i` at binding `2 + i`. Everything downstream shifts up by `nAtlases - 1`. */
+ *  Both `atlas` and `labAtlas` are length `nAtlases` — S2 grew the label atlas to N alongside
+ *  the intensity atlas. At N=1 the layout is exactly today's numbering (atlas[0]=2, labAtlas[0]=5,
+ *  pal=6, pick=7). At N>=2 both atlas arrays occupy N contiguous slots and everything past pal/pick
+ *  shifts by 2*(N-1). */
 export interface BrickShaderBindings {
   uniform: number
   pt: number
   atlas: readonly number[]
   prevPt: number
   lut: number
-  labAtlas: number
+  labAtlas: readonly number[]
   pal: number
   pick: number
 }
@@ -517,16 +519,19 @@ export interface BrickShaderVariant {
 }
 
 const N1_BINDINGS: BrickShaderBindings = {
-  uniform: 0, pt: 1, atlas: [2], prevPt: 3, lut: 4, labAtlas: 5, pal: 6, pick: BRICK_PICK_BINDING,
+  uniform: 0, pt: 1, atlas: [2], prevPt: 3, lut: 4, labAtlas: [5], pal: 6, pick: BRICK_PICK_BINDING,
 }
 
 function bindingsForN(n: number): BrickShaderBindings {
+  // Layout formula, applied uniformly at every N. N=1 collapses to today's numbering, which is
+  // why `BRICK_WGSL` still parses against `N1_BINDINGS` verbatim (Decision 2 byte-identity).
   const atlas = Array.from({ length: n }, (_, i) => 2 + i)
-  const base = 2 + n
-  return {
-    uniform: 0, pt: 1, atlas, prevPt: base, lut: base + 1, labAtlas: base + 2, pal: base + 3,
-    pick: base + 4,
-  }
+  const prevPt = 2 + n
+  const lut = 3 + n
+  const labAtlas = Array.from({ length: n }, (_, i) => 4 + n + i)
+  const pal = 4 + 2 * n
+  const pick = 5 + 2 * n
+  return { uniform: 0, pt: 1, atlas, prevPt, lut, labAtlas, pal, pick }
 }
 
 function makeMultiAtlasBrickWgsl(nAtlases: number): string {
@@ -536,13 +541,24 @@ function makeMultiAtlasBrickWgsl(nAtlases: number): string {
   const atlasDecls = b.atlas
     .map((bi, i) => `@group(0) @binding(${bi}) var atlas${i}: texture_3d<u32>;`)
     .join('\n')
-  // `switch(atlasIndex)` fan-out — one arm per binding, last is `default:` to satisfy WGSL's
+  // switch(atlasIndex) fan-out — one arm per binding, last is default: to satisfy WGSL's
   // exhaustiveness for u32 switches without a fallthrough. Verified on Chromium/Dawn Vulkan by
   // S0's diagnostic — see WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md Decision 3.
   const atlasSwitch = b.atlas
     .map((_, i) => {
       const head = i === b.atlas.length - 1 ? 'default' : `case ${i}u`
       return `    ${head}: { return textureLoad(atlas${i}, coord, 0).r; }`
+    })
+    .join('\n')
+  // Label atlas gets the same treatment (S2) — one texture per intensity atlas, sized to the
+  // same per-atlas slot grid. Bindings live past prevPt/lut per the shift formula above.
+  const labAtlasDecls = b.labAtlas
+    .map((bi, i) => `@group(0) @binding(${bi}) var labAtlas${i}: texture_3d<u32>;`)
+    .join('\n')
+  const labAtlasSwitch = b.labAtlas
+    .map((_, i) => {
+      const head = i === b.labAtlas.length - 1 ? 'default' : `case ${i}u`
+      return `    ${head}: { return textureLoad(labAtlas${i}, coord, 0).r; }`
     })
     .join('\n')
   return `
@@ -554,9 +570,10 @@ ${atlasDecls}
 // Previous-level page table — same convention as pt, indexed by the OLDER level's grid.
 @group(0) @binding(${b.prevPt}) var<storage, read> prevPt: array<u32>;
 @group(0) @binding(${b.lut}) var lut: texture_2d<f32>;
-// Label atlas — S1 keeps this single-textured; S2 grows it to N. Slots > perAtlasCapacity
-// are guarded upstream (P2 orphan-brick gate) until S2 removes it.
-@group(0) @binding(${b.labAtlas}) var labAtlas: texture_3d<u32>;
+// Label atlas grew to N (S2) — each per-atlas slot grid has its own r32uint texture. The
+// P2 orphan-brick gate in kickLabelFetch is dropped in the same change; label bricks now
+// route to labAtlas[atlasIndex] alongside their intensity twin.
+${labAtlasDecls}
 @group(0) @binding(${b.pal}) var pal: texture_2d<f32>;
 ${pickBufferWgsl(b.pick)}
 
@@ -647,10 +664,16 @@ fn atlasSample(vi: vec3<i32>, ch: i32) -> u32 {
     vec3<i32>(originX + lx, originY + ly, originZBase + ch * bzSize + lz));
 }
 
-// Label atlas stays single-textured in S1 — the P2 orphan-brick guard drops label bricks
-// whose global slot lands in atlas 1..N-1, so the single texture only ever holds slots
-// 0..perAtlasCapacity-1. localSlot decode is defensive (masks the atlas bits) so a stray
-// out-of-range slot renders as no-label rather than OOB. S2 grows this to N.
+// Label atlas: N textures (S2), one per intensity atlas, same slot grid but no channel
+// stacking (labels are single-channel, r32uint). Decodes (atlasIndex, localSlot) from the
+// shared page-table slot and dispatches through sampleLabAtlas — same shape as the intensity
+// path. The old P2 orphan-brick guard is retired in the same change.
+fn sampleLabAtlas(atlasIndex: u32, coord: vec3<i32>) -> u32 {
+  switch atlasIndex {
+${labAtlasSwitch}
+  }
+}
+
 fn labAtlasSample(vi: vec3<i32>) -> u32 {
   let nx = i32(p.dims.x); let ny = i32(p.dims.y); let nz = i32(p.dims.z);
   if (vi.x < 0 || vi.y < 0 || vi.z < 0 || vi.x >= nx || vi.y >= ny || vi.z >= nz) { return 0u; }
@@ -667,6 +690,7 @@ fn labAtlasSample(vi: vec3<i32>) -> u32 {
   let nC = i32(p.brick.w);
   let slotsZ = max(i32(p.atlas.z) / max(bzSize * nC, 1), 1);
   let perAtlas = u32(slotsX * slotsY * slotsZ);
+  let atlasIdx = slot / perAtlas;
   let localSlot = i32(slot % perAtlas);
   let sx = localSlot % slotsX;
   let sy = (localSlot / slotsX) % slotsY;
@@ -674,8 +698,8 @@ fn labAtlasSample(vi: vec3<i32>) -> u32 {
   let lx = vi.x - bx * bxSize;
   let ly = vi.y - by * bySize;
   let lz = vi.z - bz * bzSize;
-  return textureLoad(labAtlas,
-    vec3<i32>(sx * bxSize + lx, sy * bySize + ly, sz * bzSize + lz), 0).r;
+  return sampleLabAtlas(atlasIdx,
+    vec3<i32>(sx * bxSize + lx, sy * bySize + ly, sz * bzSize + lz));
 }
 
 fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {

@@ -196,13 +196,14 @@ interface AtlasState {
   bindGroup: GPUBindGroup
   /** Currently-sourced LOD level. `undefined` before the first schedule tick. */
   currentLevel: number | undefined
-  /** Per-image label atlas (r32uint), OR the shared placeholder when the source has no
-   *  labelName. Same slot geometry as `texture` except brickZ isn't multiplied by channelsPerBrick
-   *  — labels are single-channel. Bound at the variant's `labAtlas` slot (shifted by N-1 at N>=2;
-   *  S2 grows this to N textures + drops the P2 orphan-brick gate). */
-  labelTexture: GPUTexture
-  /** Whether the atlas above is the real per-image r32uint atlas (true) or the placeholder
-   *  (false). Fetches use this to decide whether to fire label brick requests. */
+  /** Per-image label atlases (r32uint), one per intensity atlas (S2). Same slot geometry as
+   *  `textures[i]` except brickZ isn't multiplied by channelsPerBrick — labels are
+   *  single-channel. When `labelsEnabled` is false, every entry aliases the shared placeholder
+   *  (`noLabelAtlas`) and the shader skips the label path via `p.lab.x == 0`. Bound at the
+   *  variant's `labAtlas[i]` slots. */
+  labelTextures: readonly GPUTexture[]
+  /** Whether `labelTextures` holds real per-image r32uint atlases (true) or the placeholder
+   *  N times over (false). Fetches use this to decide whether to fire label brick requests. */
   labelsEnabled: boolean
   /** Which shader / pipeline variant this atlas rides on. Equals `textures.length` — S1 compiles
    *  a variant for every N ∈ 1..BRICK_MAX_ATLASES at construction; the setImage path picks the
@@ -275,6 +276,12 @@ export async function createBrickVolumeRenderer(
       binding, visibility: GPUShaderStage.FRAGMENT,
       texture: { sampleType: 'uint' as const, viewDimension: '3d' as const },
     }))
+    // S2: N label textures alongside N intensity atlases. Same shape as `atlasEntries` — the
+    // shader treats them symmetrically (one switch per sampler over compile-time bindings).
+    const labAtlasEntries = b.labAtlas.map(binding => ({
+      binding, visibility: GPUShaderStage.FRAGMENT,
+      texture: { sampleType: 'uint' as const, viewDimension: '3d' as const },
+    }))
     const bindGroupLayout = device.createBindGroupLayout({
       entries: [
         { binding: b.uniform, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
@@ -286,11 +293,10 @@ export async function createBrickVolumeRenderer(
           buffer: { type: 'read-only-storage' } },
         { binding: b.lut, visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float', viewDimension: '2d' } },
-        // Label atlas + palette. ALWAYS bound (WebGPU has no optional binding); when no
-        // segmentation is picked, a 1x1x1 r32uint placeholder rides here and the shader skips
-        // the label path via `p.lab.x == 0`.
-        { binding: b.labAtlas, visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'uint', viewDimension: '3d' } },
+        // Label atlases: ALWAYS bound (WebGPU has no optional binding); when no segmentation
+        // is picked, every entry aliases a 1x1x1 r32uint placeholder and the shader skips the
+        // label path via `p.lab.x == 0`.
+        ...labAtlasEntries,
         { binding: b.pal, visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float', viewDimension: '2d' } },
         // Pick storage buffer — always bound; writes an all-zero buffer at init and
@@ -564,8 +570,9 @@ export async function createBrickVolumeRenderer(
     // slot will resolve to `null` and the caller drops it, matching the same-atlas-changed
     // behaviour of the abort path a few lines up.
     atlas.payloadRing.destroy()
-    // Only destroy the real per-image label texture — the shared placeholder is renderer-lived.
-    if (atlas.labelsEnabled) atlas.labelTexture.destroy()
+    // Only destroy the real per-image label textures — the shared placeholder is
+    // renderer-lived. S2: N textures instead of one; destroy all when labels are enabled.
+    if (atlas.labelsEnabled) for (const t of atlas.labelTextures) t.destroy()
     atlas = null
     // displayT tracks pageTableCpu residency at the current atlas — a fresh atlas has neither,
     // so reset here or the next show(t) would think it's still holding the previous image.
@@ -674,27 +681,43 @@ export async function createBrickVolumeRenderer(
     // pre-declare labels here for the same reason the flat renderer does (a texture allocation is
     // expensive; toggling between real and placeholder without warning would drop every landed
     // brick on the floor). Fetches then gate on `source.labelName` separately.
-    const labelsEnabled = !!withLabels
-    let labelTexture: GPUTexture
-    if (labelsEnabled) {
-      const [bx, by, bz] = layout.brickSizeVox
-      const [sx, sy, sz] = layout.atlasSlotCounts
-      labelTexture = device.createTexture({
-        size: [bx * sx, by * sy, bz * sz], dimension: '3d', format: 'r32uint',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      })
-    } else {
-      labelTexture = noLabelAtlas
-    }
-
     // Per-N variant (S1). `variantN = textures.length` — the layout picker's N drives which
     // shader we bind against. Every atlas texture goes in at its per-variant `atlas[i]` slot;
-    // downstream bindings shift up by N-1 (see `brickShader.ts` for the shift rule).
+    // downstream bindings shift by the label-atlas addition (S2) — see `brickShader.ts` for
+    // the shift rule.
     const variantN = textures.length
     const variant = pickVariant(variantN)
     const vb = variant.bindings
+
+    // Label atlases (S2): one per intensity atlas, each sized to that atlas's slot grid. When
+    // labels are off we bind the shared placeholder N times over — WebGPU allows the same
+    // texture view at multiple binding slots, and the shader skips the label path anyway
+    // (p.lab.x == 0). Same allocation discipline as pre-S2: the atlas ALLOCATION is decoupled
+    // from whether label bytes are actually fetched, because toggling between real and
+    // placeholder would drop every landed brick.
+    const labelsEnabled = !!withLabels
+    let labelTextures: GPUTexture[]
+    if (labelsEnabled) {
+      const [bx, by, bz] = layout.brickSizeVox
+      // Homogeneous layouts (parent plan Decision 3) — every entry in `layouts` has the same
+      // per-atlas slot grid. Size a label texture per intensity atlas so `writeTexture` can
+      // route to the right (atlas, slot) pair below (kickLabelFetch).
+      labelTextures = layouts.map(l => {
+        const [sx, sy, sz] = l.atlasSlotCounts
+        return device.createTexture({
+          size: [bx * sx, by * sy, bz * sz], dimension: '3d', format: 'r32uint',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        })
+      })
+    } else {
+      labelTextures = Array.from({ length: variantN }, () => noLabelAtlas)
+    }
+
     const atlasEntries = textures.map((tex, i) => ({
       binding: vb.atlas[i]!, resource: tex.texture.createView(),
+    }))
+    const labAtlasEntries = labelTextures.map((tex, i) => ({
+      binding: vb.labAtlas[i]!, resource: tex.createView(),
     }))
     const bindGroup = device.createBindGroup({
       layout: variant.bindGroupLayout,
@@ -704,7 +727,7 @@ export async function createBrickVolumeRenderer(
         ...atlasEntries,
         { binding: vb.prevPt, resource: { buffer: prevPageTableBuffer } },
         { binding: vb.lut, resource: lutTex.createView() },
-        { binding: vb.labAtlas, resource: labelTexture.createView() },
+        ...labAtlasEntries,
         { binding: vb.pal, resource: palTex.createView() },
         { binding: vb.pick, resource: { buffer: pickBuffer } },
       ],
@@ -729,7 +752,7 @@ export async function createBrickVolumeRenderer(
       prevLevel: undefined,
       bindGroup,
       currentLevel: undefined,
-      labelTexture, labelsEnabled,
+      labelTextures, labelsEnabled,
       variantN,
     }
     uniform.nch = nC
@@ -941,12 +964,6 @@ export async function createBrickVolumeRenderer(
     const key = brickKey(brick)
     const entry = atlas.pageTable.get(key)
     if (entry === undefined || entry.slot !== expectedSlot) return
-    // Multi-atlas P2 guard: the label atlas is single-per-image; a brick that landed in
-    // intensity `textures[1..]` can't be sampled by the shader (which binds `textures[0]`
-    // only), so a matching label brick has nowhere to render. Drop it silently. When P3
-    // replaces the intensity binding with a `binding_array`, this gate goes away and the
-    // label atlas becomes N textures too.
-    if (expectedSlot >= atlas.perAtlasCapacity) return
     const [ebx, eby, ebz] = layout.brickSizeVox
     const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
                 || payload.shape.nz !== ebz
@@ -955,16 +972,21 @@ export async function createBrickVolumeRenderer(
     const brickBytes: Uint8Array = isEdge
       ? new Uint8Array(padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], 4))
       : payload.bytes
-    // Label atlas has no channel stacking — slot origin z is `sz * brickZ`, not `sz * brickZ * nC`.
-    // Slot coords are in the SINGLE label atlas (Phase 2), so this is exactly `expectedSlot`,
-    // guaranteed < `perAtlasCapacity` by the guard above.
+    // S2: the label atlas grew to N textures alongside intensity. Decode the global slot into
+    // (atlasIndex, localSlot) the same way `writeBrick` routes intensity bytes (Decision 2 of
+    // WEBGPU_MULTI_ATLAS_PLAN.md), then write to `labelTextures[atlasIndex]` at the localSlot
+    // origin. The old P2 orphan-brick guard (`if (expectedSlot >= perAtlasCapacity) return`)
+    // is retired here — with the shader able to render from atlas > 0, orphan avoidance no
+    // longer applies. Labels have no channel stacking — slot origin z is `sz * brickZ`.
+    const atlasIndex = Math.floor(expectedSlot / atlas.perAtlasCapacity)
+    const localSlot = expectedSlot % atlas.perAtlasCapacity
     const [sxCount] = layout.atlasSlotCounts
     const syCount = layout.atlasSlotCounts[1]
-    const sx = expectedSlot % sxCount
-    const sy = Math.floor(expectedSlot / sxCount) % syCount
-    const sz = Math.floor(expectedSlot / (sxCount * syCount))
+    const sx = localSlot % sxCount
+    const sy = Math.floor(localSlot / sxCount) % syCount
+    const sz = Math.floor(localSlot / (sxCount * syCount))
     device.queue.writeTexture(
-      { texture: atlas.labelTexture,
+      { texture: atlas.labelTextures[atlasIndex]!,
         origin: [sx * ebx, sy * eby, sz * ebz] },
       brickBytes,
       { bytesPerRow: ebx * 4, rowsPerImage: eby },
