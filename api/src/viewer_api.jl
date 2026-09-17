@@ -244,7 +244,7 @@ function api_viewer_meta(req::HTTP.Request)
             (something(channel_names(img; value_name = vnn), String[]),
              [sizes[3], sizes[2], sizes[1]],           # → [x, y, z], the renderer's axis order
              (; xy = :XY in ax, z = :Z in ax, t = has_t),
-             _meta_str(img.meta, "PhysicalSizeUnit"),
+             meta_str(img.meta, "PhysicalSizeUnit"),
              has_t ? ts : nothing,
              img.name)
         catch

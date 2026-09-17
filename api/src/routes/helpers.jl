@@ -26,22 +26,9 @@ function _scan_projects_raw()::Vector{Dict{String,Any}}
     projects
 end
 
-function _meta_int(meta::AbstractDict, key::String)
-    v = get(meta, key, nothing)
-    isnothing(v) && return nothing
-    v isa Integer ? v : tryparse(Int, string(v))
-end
-
-function _meta_float(meta::AbstractDict, key::String)
-    v = get(meta, key, nothing)
-    isnothing(v) && return nothing
-    v isa Real ? Float64(v) : tryparse(Float64, string(v))
-end
-
-function _meta_str(meta::AbstractDict, key::String)
-    v = get(meta, key, nothing)
-    isnothing(v) ? nothing : string(v)
-end
+# `meta_int` / `meta_float` / `meta_str` (`app/src/model/image.jl`) are the ONE way to read a
+# typed value out of an `img.meta` bag — see the docstring block there for the drift they exist to
+# close. The three private wrappers this file used to carry moved into the package and are exported.
 
 # QC docs for the payload — persisted sidecars + the computed calibration fallback (see all_qc_docs).
 # ONE canonical merge in the package (Cecelia.all_qc_docs), shared with the observer session briefing,
@@ -142,26 +129,26 @@ function _image_payload(img::CciaImage)
         uid             = img.uid,
         name            = img.name,
         status          = string(img.status),
-        sizeC           = _meta_int(img.meta, "SizeC"),
-        sizeT           = _meta_int(img.meta, "SizeT"),
-        sizeZ           = _meta_int(img.meta, "SizeZ"),
+        sizeC           = meta_int(img.meta, "SizeC"),
+        sizeT           = meta_int(img.meta, "SizeT"),
+        sizeZ           = meta_int(img.meta, "SizeZ"),
         # Raw/nullable — NOT img_physical_sizes' 1.0-default-for-computation fallback. The UI
         # needs to tell "genuinely missing" apart from "explicitly confirmed 1.0".
-        physicalSizeX     = _meta_float(img.meta, "PhysicalSizeX"),
-        physicalSizeY     = _meta_float(img.meta, "PhysicalSizeY"),
-        physicalSizeZ     = _meta_float(img.meta, "PhysicalSizeZ"),
-        physicalSizeUnit  = _meta_str(img.meta, "PhysicalSizeUnit"),
+        physicalSizeX     = meta_float(img.meta, "PhysicalSizeX"),
+        physicalSizeY     = meta_float(img.meta, "PhysicalSizeY"),
+        physicalSizeZ     = meta_float(img.meta, "PhysicalSizeZ"),
+        physicalSizeUnit  = meta_str(img.meta, "PhysicalSizeUnit"),
         # set when the ImageJ-TIFF Z-spacing auto-fix overrode bioformats2raw's value at import
         # (see omezarr.jl) — the corrected number is still only as good as the source file's own
         # ImageJ tag, so the frontend keeps flagging it for the user to confirm, not just silently
         # trusting it because the ratio now looks plausible.
         physicalSizeZCorrected = haskey(img.meta, "PhysicalSizeZ_raw"),
-        timeIncrement     = _meta_float(img.meta, "TimeIncrement"),
-        timeIncrementUnit = _meta_str(img.meta, "TimeIncrementUnit"),
+        timeIncrement     = meta_float(img.meta, "TimeIncrement"),
+        timeIncrementUnit = meta_str(img.meta, "TimeIncrementUnit"),
         channelNames    = isnothing(ch) ? String[] : ch,
         # Original source file location (before OME-Zarr conversion), kept in meta as `ori_path`.
         # The image-info dialog surfaces it so users can trace a converted image back to its raw file.
-        oriPath         = _meta_str(img.meta, "ori_path"),
+        oriPath         = meta_str(img.meta, "ori_path"),
         # Any other meta the dialog can show generically (see _extra_meta) — empty for most images.
         extraMeta       = _extra_meta(img.meta),
         filepath        = active_fn,

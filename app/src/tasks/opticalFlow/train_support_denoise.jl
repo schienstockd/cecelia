@@ -81,7 +81,7 @@ function _support_temporal_window_advisory(value, imgs::Vector{CciaImage}, _sibl
     v > 0 || return nothing
     ts = Int[]
     for img in imgs
-        t = something(tryparse_i(get(img.meta, "SizeT", nothing)), 0)
+        t = something(meta_int(img.meta, "SizeT"), 0)
         t > 0 && push!(ts, t)
     end
     isempty(ts) && return nothing
@@ -201,7 +201,7 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
             on_log("[WARN] $(img.uid): channel names differ from $(imgs[1].uid) — skipped")
             continue
         end
-        size_t = something(tryparse_i(get(img.meta, "SizeT", nothing)), 0)
+        size_t = something(meta_int(img.meta, "SizeT"), 0)
         if size_t < p.inputFrames
             push!(short_ts, (String(img.uid), size_t))
             on_log("[WARN] $(img.uid): T=$size_t < inputFrames=$(p.inputFrames) — skipped")

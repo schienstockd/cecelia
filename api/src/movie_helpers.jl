@@ -579,7 +579,7 @@ _share_contrast(mode)::Bool = String(mode) != "version"
 # Mirrors the bridge's own range arithmetic (`napari_utils.record_timelapse`): one frame per timepoint,
 # both ends inclusive.
 function _t_sweep_frames(img, t_start::Int, t_end)::Int
-    n = _to_int(get(img.meta, "SizeT", nothing))
+    n = something(meta_int(img.meta, "SizeT"), 0)
     n <= 1 && return 0
     t0 = max(0, t_start)
     t1 = t_end === nothing ? n - 1 : min(_to_int(t_end), n - 1)
