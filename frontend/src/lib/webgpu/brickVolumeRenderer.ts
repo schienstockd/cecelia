@@ -120,12 +120,11 @@ const PREV_TOUCH_BIAS = 1_000_000_000
  *  fallback matters more than the target. */
 const BOUND_T_TOUCH_BIAS = 500_000_000
 
-/** S1 smoke-test knob for the multi-atlas shader-variants workstream. `?maxAtlases=N` forces
- *  the layout picker to `min(N, BRICK_MAX_ATLASES)` — used to exercise the N>=2 shader paths
- *  before S3 retires the `report.bindingArraySupported ? 1 : undefined` clamp. Returns
- *  `undefined` (defer to the shipped clamp) when the query string is absent or invalid; not a
- *  hidden setting, just a plumbing knob. No SSR guard: this module only ever runs in the
- *  browser (WebGPU device already acquired). */
+/** Debug override for the multi-atlas layout picker. `?maxAtlases=N` pins the picker to N
+ *  regardless of `viewerCacheMB` — useful for regression testing a specific variant. Returns
+ *  `undefined` (let the picker pick, capped only by BRICK_MAX_ATLASES) when the query string
+ *  is absent or invalid. No SSR guard: this module only ever runs in the browser (WebGPU
+ *  device already acquired). */
 function readMaxAtlasesFromUrl(): number | undefined {
   try {
     const raw = new URLSearchParams(window.location.search).get('maxAtlases')
@@ -626,17 +625,15 @@ export async function createBrickVolumeRenderer(
     // `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decision 4. When the budget fits in one atlas,
     // `nAtlases = 1` and the behaviour is identical to Phase 1.
     const budget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
-    // Runtime clamp (Decision 6 of the parent plan): `binding_array<T, N>` runtime is missing
-    // on shipping Chromium, so today's clamp forces `maxAtlases = 1`. Retired in S3 of
-    // WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md once S1 (this) proves the variant path in
-    // production. Until then, `?maxAtlases=N` overrides for smoke testing — same shape as
-    // `?cacheMB=` and `?brickThr=`. Values outside 1..BRICK_MAX_ATLASES are ignored so a
-    // typo can't wedge the layout picker.
+    // The `binding_array<T, N>` runtime clamp is retired (S3 of
+    // WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md) — S1 + S2 shipped the shader-variant path
+    // that renders correctly without `binding_array` on any N ∈ 1..BRICK_MAX_ATLASES, so
+    // limiting the layout picker to N=1 no longer buys anything. `report.bindingArraySupported`
+    // stays wired through the probe as advisory (the Settings → WebGPU diagnostic row still
+    // shows it) but no longer gates ship. `?maxAtlases=N` remains as a debug override that
+    // pins the picker to a specific N regardless of budget — useful for regression testing.
     const urlMaxAtlases = readMaxAtlasesFromUrl()
-    const maxAtlases = urlMaxAtlases !== undefined
-      ? urlMaxAtlases
-      : (report.bindingArraySupported ? undefined : 1)
-    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits, maxAtlases)
+    const layouts = pickAtlasLayout(brickSize, bpv, nC, budget, limits, urlMaxAtlases)
     if (layouts === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return
@@ -1408,10 +1405,9 @@ export async function createBrickVolumeRenderer(
    */
   const encodePass = (pass: GPURenderPassEncoder, withOverlays: boolean) => {
     if (atlas === null) return
-    // Pick the pipeline set matching this atlas's variant (S1). At the shipped default
-    // (`maxAtlases = report.bindingArraySupported ? undefined : 1` clamp still in place per
-    // S3) `atlas.variantN === 1`, so this is the byte-identical N=1 pipeline until S3 lifts
-    // the clamp or the `?maxAtlases=N` URL knob overrides it.
+    // Pick the pipeline set matching this atlas's variant (S1). Post-S3 the layout picker
+    // returns whatever N fits `viewerCacheMB` — `atlas.variantN` follows and this binds the
+    // matching shader.
     const v = pickVariant(atlas.variantN)
     pass.setPipeline(v.pipeline)
     pass.setBindGroup(0, atlas.bindGroup)
