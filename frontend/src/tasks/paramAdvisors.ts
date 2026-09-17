@@ -93,6 +93,9 @@ export interface AdvisorImage {
   /** valueName → segmentation label filenames (matches `CciaImage.labels`). Used by cross-image
    *  advisors to check whether a selected pop's VN is present on every image. */
   labels?: Record<string, string[]>
+  /** Source file path (pre-import). Present on newly registered, not-yet-imported rows — the
+   *  pre-import pyramid advisor reads it to peek dims through `/api/import/peek-pyramid`. */
+  oriPath?: string | null
 }
 
 /** Frame geometry of ONE resolved image version — what the grid estimate actually needs. */
@@ -674,7 +677,88 @@ export const popsCompatAdvisor: ParamAdvisor = {
   },
 }
 
+// ── pyramid levels — advises the omezarr importer's `pyramidLevels` field ──────────────────────
+//
+// Peeks the source file's XY through `/api/import/peek-pyramid` (metadata only, no pixels) and
+// says which level count fits the tiering rule (peek_pyramid_run.py::target_for_shape). Two-tier:
+// 256 for a timelapse (each frame is a fetch, deeper = smoother playback), 1024 for a still
+// (matches `qc.jl::pyramid_layout` so pre-import advice and post-import QC agree).
+//
+// The cache lives in `pyramidPeek.ts` — shared with `TaskRunner`, which reads it synchronously
+// to pre-fill the field on form load. `ManageImagesModule.submitRegister` primes it eagerly on
+// add so the form's first open finds the recommendation already settled. Silent when the source
+// is missing (already-imported image, or a format the fast-path readers can't handle).
+
+import { peekPyramid, type PeekResult } from './pyramidPeek'
+
+/** Deepest-level XY (+Z when the source is a stack) at N levels of the source dims. Powers-of-two
+ *  downsampling matches what bioformats2raw actually writes, so the number the advisor shows is
+ *  the number the imported store will have. */
+export function pyramidDeepestDims(
+  n: number, peek: Pick<PeekResult, 'nX' | 'nY' | 'nZ'>,
+): { w: number; h: number; z: number | null } | null {
+  const nx = peek.nX, ny = peek.nY
+  if (!nx || !ny || nx <= 0 || ny <= 0) return null
+  const scale = 2 ** Math.max(0, Math.floor(n) - 1)
+  return {
+    w: Math.max(1, Math.ceil(nx / scale)),
+    h: Math.max(1, Math.ceil(ny / scale)),
+    z: (peek.nZ && peek.nZ > 1) ? peek.nZ : null,
+  }
+}
+
+function _formatDeepest(d: { w: number; h: number; z: number | null }): string {
+  return d.z !== null ? `${d.w}×${d.h}×${d.z}` : `${d.w}×${d.h}`
+}
+
+export function pyramidLevelsAdvisory(
+  value: unknown, peek: PeekResult | null,
+): ParamAdvisory | null {
+  if (!peek || peek.reader === 'unsupported' || peek.reader === 'error') return null
+  const rec = peek.recommendedPyramidLevels
+  if (!rec || rec <= 0) return null
+  const nRaw = Number(value)
+  const n = Number.isFinite(nRaw) && nRaw > 0 ? Math.floor(nRaw) : rec
+  const current = pyramidDeepestDims(n, peek)
+  if (!current) return null
+  // Severity: neutral if the user is already at (or above) the recommendation, warn if below —
+  // a shallower pyramid means zoomed-out reads pull more data. Same rule as `qc.jl::pyramid_layout`.
+  const behind = n < rec
+  const playback = (peek.nT ?? 1) > 1
+  const reason = playback ? 'playback' : 'still'
+  // Message: current-N always shown ("this is what you'll get"). The recommendation is called out
+  // ONLY when it disagrees — otherwise the value is right and the extra clause is noise. Two lines
+  // (separated by `\n`, rendered by `.param-advisory` in ParamRenderer's `white-space: pre-line`)
+  // rather than one long "A · B" run — cheaper to scan when both halves carry dims.
+  const parts = [`${n} level${n === 1 ? '' : 's'} → deepest ${_formatDeepest(current)}`]
+  if (n !== rec) {
+    const suggested = pyramidDeepestDims(rec, peek)
+    if (suggested) parts.push(`Suggested: ${rec} (${_formatDeepest(suggested)}) for ${reason}`)
+  }
+  return {
+    severity: behind ? 'warn' : 'ok',
+    message: parts.join('\n'),
+    tip: `Deepest level shrinks by 2× per level. Suggested N picks the smallest that fits ${peek.targetChunk ?? 1024} px on the long XY side — 256 for a timelapse (each frame is a fetch, smaller is smoother), 1024 for a still (matches the post-import QC finding qc.jl::pyramid_layout).`,
+  }
+}
+
 export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
+  // Peek the source file for a level-count recommendation. Registered under the KEY (only the
+  // omezarr importer has a `pyramidLevels` param). Silently no-op when the setting is off.
+  pyramidLevels: {
+    reloadOn: ctx => [ctx.images?.[0]?.uid, ctx.images?.[0]?.oriPath ?? ''],
+    advise: async (value, ctx) => {
+      // Lazy import: avoid a top-level dep between advisors and the settings store (advisors run in
+      // every task form and the store's Pinia setup shouldn't be a load-time requirement for a test).
+      const { useSettingsStore } = await import('../stores/settings')
+      if (!useSettingsStore().importPyramidAdvisor) return null
+      const img = ctx.images?.[0]
+      if (!img?.oriPath) return null
+      const peek = await peekPyramid(img.oriPath)
+      return pyramidLevelsAdvisory(value, peek)
+    },
+  },
+
   // Registered under the KEY, not `chipSelect`: every chipSelect in every task would match the type,
   // and this judgement is about what a temporal LAG means.
   temporalScales: {

@@ -1185,6 +1185,11 @@ const pct = computed(() => {
    no-op the cssScenarios shadowing detector (rightly) fails on. */
 /* layout only — `InlineNote` owns the icon/text/gap and the severity colour */
 .param-advisory { display: flex; }
+/* InlineNote centres the severity icon against the whole text block; for a message with a `\n`
+   in it (see `paramAdvisors.ts::pyramidLevelsAdvisory`) that puts the tick between the two
+   lines. Anchor to the first line instead — same rendering as before for single-line messages
+   (top and centre coincide). InlineNote's own scoped style enables `white-space: pre-line`. */
+.param-advisory { align-items: flex-start; }
 .param-advisory-flag { margin-left: 0.1rem; }
 .param-advisory-action-row { margin-top: 0.25rem; }
 

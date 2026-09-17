@@ -18,6 +18,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
+import { cachedPyramidRecommendation } from './pyramidPeek'
+import { useSettingsStore } from '../stores/settings'
 import { vaultManifestParams } from '../utils/vaultManifest'
 import { syncGroupOrder } from '../utils/chipSelect'
 import { usePaneExpand } from '../composables/usePaneExpand'
@@ -215,8 +217,24 @@ async function initParams(def: TaskDef | undefined) {
   // `null` → the load did not happen, so LEAVE THE FORM ALONE rather than stamping defaults over it.
   // The watches below re-run this once the project/set/selection is known, which is the case that used
   // to arrive too late and find the form already reset.
-  const next = resolveInitialParams(def, undefined, saved)
+  const next = resolveInitialParams(def, undefined, applyImportPrefills(def, saved))
   if (next !== null) { paramValues.value = next; refreshOptionsForForm(def) }
+}
+
+// Per-image seeds injected on TOP of `saved` before it hits `resolveInitialParams`. One case
+// today: the OME-ZARR importer's `pyramidLevels` gets pre-filled from the shape-aware peek
+// recommendation (`tasks/pyramidPeek.ts`), primed on add in `ManageImagesModule`. Seeding into
+// `saved` — not mutating the spec default — means a user's previously-saved value wins, and a
+// user's edit persists (drafts write on edit and load first).
+function applyImportPrefills(def: TaskDef, saved: ParamValues | null): ParamValues | null {
+  if (def.fun_name !== 'importImages.omezarr') return saved
+  if (!useSettingsStore().importPyramidAdvisor) return saved
+  const img = paramContext.value.images[0]
+  if (!img?.oriPath) return saved
+  const rec = cachedPyramidRecommendation(img.oriPath)
+  if (typeof rec !== 'number') return saved      // undefined (not yet primed) OR null (nothing to say)
+  if (saved && saved.pyramidLevels !== undefined && saved.pyramidLevels !== null) return saved
+  return { ...(saved ?? {}), pyramidLevels: rec }
 }
 
 // Options were re-resolved only when the user EDITED a `triggersOptions` param, so a form POPULATED

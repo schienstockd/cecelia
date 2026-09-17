@@ -13,6 +13,8 @@ import { useTaskDefs } from '../composables/useTaskDefs'
 import { buildRegisterRecords, isProbeableMultiSeriesPath,
          unsupportedMultiSeriesExts,
          type ProbeResult, type RegisterRecord, type SeriesEntry } from '../utils/seriesPicker'
+import { primePyramidPeekBatch } from '../tasks/pyramidPeek'
+import { useSettingsStore } from '../stores/settings'
 import { formatSupportRequestUrl } from '../lib/links'
 
 // The page is 'Manage images', not 'Import': it hosts add/copy/move/delete alongside the import
@@ -185,6 +187,13 @@ async function submitRegister() {
       `Added ${imgs.length} image${imgs.length !== 1 ? 's' : ''} to "${set.name}".`,
       { source: 'manageImages' }
     )
+    // Prime the pyramid-recommendation cache so the omezarr form opens with a pre-fill (see
+    // tasks/pyramidPeek.ts). Setting-gated, and fire-and-forget: a slow or failing peek must not
+    // block the add flow.
+    if (useSettingsStore().importPyramidAdvisor) {
+      const paths = imgs.map(i => i?.oriPath).filter((p): p is string => typeof p === 'string' && !!p)
+      if (paths.length) void primePyramidPeekBatch(paths)
+    }
   } catch (e) {
     log.error(
       `Failed to register images: ${e instanceof Error ? e.message : String(e)}`,

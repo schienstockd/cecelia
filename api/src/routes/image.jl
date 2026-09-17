@@ -61,7 +61,13 @@ function api_images_register(body_bytes::Vector{UInt8})
             "name"      => img.name,
             "status"    => "pending",
             "filepath"  => abs_path,            # SOURCE path, for display only (not the converted zarr)
-            "oriSeries" => something(series, nothing),
+            "oriPath"   => abs_path,            # kept in `meta.ori_path`; surfaced here for the
+                                                 # pre-import pyramid advisor (paramAdvisors.ts) so
+                                                 # the freshly-registered rows carry it without a
+                                                 # separate refresh trip to the image listing route.
+            "oriSeries" => series,               # nothing or an Int — `something(x, nothing)` throws
+                                                 # when x is also nothing ("No value arguments"),
+                                                 # so pass the value through directly.
             # No versioned `filepaths` yet — the OME-ZARR doesn't exist until the import task converts it.
             # (Faking `{default: …}` here made a pending row look "imported" — see isImported / the crop
             # + open gates. The conversion task writes the real versioned filepath.)
@@ -100,6 +106,47 @@ function api_import_series_probe(body_bytes::Vector{UInt8})
         tail = isempty(logs) ? "no output" : join(last(logs, 8), " | ")
         rm(run_dir; recursive=true, force=true)
         return 500, JSON3.write((; error="Series probe failed: $tail"))
+    end
+    payload = read(result_file, String)
+    rm(run_dir; recursive=true, force=true)
+    200, payload
+end
+
+# POST /api/import/peek-pyramid {paths:[...], chunk?} → per-path {reader, nX,nY,nZ,nT,nC,
+# recommendedPyramidLevels, targetChunk}. Metadata-only, no pixels. The wizard uses it to pre-fill
+# the omezarr import form's `pyramidLevels`. Fast-path readers only (tifffile/readlif/h5py);
+# unsupported formats come back with `reader: "unsupported"` and no recommendation — the caller
+# keeps the current default. See peek_pyramid_run.py for the tiering rule.
+function api_import_peek_pyramid(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body")) end
+    raw_paths = get(body, :paths, nothing)
+    (raw_paths === nothing || isempty(raw_paths)) &&
+        return 400, JSON3.write((; error="paths required (non-empty list)"))
+    paths = String[]
+    for p in raw_paths
+        s = String(p)
+        isempty(s) && continue
+        push!(paths, isabspath(s) ? s : joinpath(FS_ROOT, s))
+    end
+    isempty(paths) && return 400, JSON3.write((; error="no usable paths in request"))
+    params = Dict{String,Any}("paths" => paths, "resultPath" => "")
+    haskey(body, :chunk) && (params["chunk"] = Int(body.chunk))
+
+    run_dir     = mktempdir()
+    result_file = joinpath(run_dir, "peek.result.json")
+    params["resultPath"] = result_file
+    logs = String[]
+    ok = try
+        Cecelia.run_py("tasks/importImages/peek_pyramid_run.py", params, run_dir; on_log = l -> push!(logs, l))
+    catch e
+        rm(run_dir; recursive=true, force=true)
+        return 500, JSON3.write((; error="peek failed: $(sprint(showerror, e))"))
+    end
+    if !(ok && isfile(result_file))
+        tail = isempty(logs) ? "no output" : join(last(logs, 8), " | ")
+        rm(run_dir; recursive=true, force=true)
+        return 500, JSON3.write((; error="Pyramid peek failed: $tail"))
     end
     payload = read(result_file, String)
     rm(run_dir; recursive=true, force=true)

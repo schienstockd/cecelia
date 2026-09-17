@@ -662,6 +662,11 @@ async function switchWt(path: string) {
           v-tooltip.bottom="'Reload plots automatically when a task finishes'" />
       </div>
 
+      <div class="field">
+        <CcToggle class="toggle-row" v-model="settings.importPyramidAdvisor" label="Suggest pyramid levels on import"
+          v-tooltip.bottom="'Peek source dims to suggest a level count under the pyramid field'" />
+      </div>
+
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
            pages stay reachable by URL — this declutters, it does not restrict. -->
       <div class="field">
