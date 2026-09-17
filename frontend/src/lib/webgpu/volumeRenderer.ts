@@ -350,6 +350,19 @@ export interface VolumeRenderer {
      *  (missing@bound > 0 while missing@display = 0) from "actual scheduler stall"
      *  (missing@display > 0). */
     missingAtBoundT: number
+    /** Shader-variant N — how many intensity + label atlas textures the renderer allocated
+     *  (WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md S1–S3). Zero when no atlas is allocated
+     *  yet. Feeds the Debug panel's Atlas row. */
+    nAtlases: number
+    /** Slots per single atlas — total resident-brick capacity = `nAtlases × perAtlasCapacity`. */
+    perAtlasCapacity: number
+    /** VRAM cost of ONE intensity atlas texture (bytes). Multiply by `nAtlases` for total. */
+    atlasBytes: number
+    /** VRAM cost of ONE label atlas texture (bytes). 0 when labels are off. */
+    labelAtlasBytes: number
+    /** True when the label atlas is the real per-image r32uint texture, false when it's the
+     *  shared placeholder (source has no `labelName`). */
+    labelsEnabled: boolean
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>

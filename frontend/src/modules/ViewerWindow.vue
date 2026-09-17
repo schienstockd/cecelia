@@ -56,6 +56,7 @@ import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
 import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
+import { MAX_ATLASES } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
@@ -1208,31 +1209,70 @@ const BASE_CACHE_OPTIONS: Array<{ value: string; label: string; mb: number; tip:
   { value: '512', label: '512 MB', mb: 512, tip: 'Small — leaves VRAM for other apps' },
   { value: '1024', label: '1 GB', mb: 1024, tip: '' },
   { value: '2048', label: '2 GB', mb: 2048, tip: 'Large — more timepoints / bricks resident' },
-  { value: '4096', label: '4 GB', mb: 4096, tip: 'Aggressive — only on discrete GPU with headroom' },
+  { value: '4096', label: '4 GB', mb: 4096, tip: 'Fills one atlas at Chromium/Dawn\'s ~4 GiB buffer cap' },
+  // S4 (WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md): budgets above ~4 GiB spill into
+  // additional atlas textures — one shader variant compiles per N ∈ 1..MAX_ATLASES so
+  // the picker's choice is bound only by hardware. Chip disabled/enabled state and the
+  // N annotation on the label communicate the trade-off per device.
+  { value: '8192',  label: '8 GB',  mb: 8192,  tip: 'Two atlases — needs a discrete GPU with headroom' },
+  { value: '12288', label: '12 GB', mb: 12288, tip: 'Three atlases — workstation-class VRAM' },
+  { value: '16384', label: '16 GB', mb: 16384, tip: 'Four atlases — MAX_ATLASES ceiling' },
 ]
-// Same reasoning as `AUTO_CACHE_MB` — the "which chips are disabled" answer depends on the
-// hardware, not on which renderer happens to be alive right now.
+/** Hard cap for the cache chips: `MAX_ATLASES × maxBufferSize`. No AUTO_CACHE_SAFETY here —
+ *  the safety margin only exists for AUTO's conservative default (leave VRAM for other apps);
+ *  a user explicitly picking a chip should be able to hit the full multi-atlas ceiling.
+ *  Renderers still self-guard against actual OOM at texture allocation. */
 const cacheHardCapMB = computed(() => {
   const a = stableAdapterReport.value
-  return a ? Math.floor((a.maxBufferSize * AUTO_CACHE_SAFETY) / (1024 * 1024)) : Infinity
+  return a ? Math.floor((a.maxBufferSize * MAX_ATLASES) / (1024 * 1024)) : Infinity
 })
+/** How many atlases the picker will allocate for this budget on this hardware. Approximation:
+ *  ceil(budgetBytes / maxBufferSize), capped at MAX_ATLASES. The real picker in
+ *  `frontend/src/utils/brickAtlas.ts` can return fewer if a single brick already exceeds the
+ *  per-atlas budget (pathological cases only) — for the chip strip this budget-only estimate
+ *  is close enough, and doesn't depend on which image is loaded. */
+function estimateAtlasesForBudget(budgetMB: number): number {
+  const a = stableAdapterReport.value
+  if (!a || budgetMB <= 0) return 1
+  const budgetBytes = budgetMB * 1024 * 1024
+  const perAtlas = Math.max(1, a.maxBufferSize)
+  return Math.max(1, Math.min(MAX_ATLASES, Math.ceil(budgetBytes / perAtlas)))
+}
 const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
   const overCap = o.mb > 0 && o.mb > cacheHardCapMB.value
+  // Auto chip labels itself with its resolved value (matches the "Auto shows what was picked"
+  // convention); the resolved budget uses AUTO_CACHE_MB, not the user's mb=0 sentinel.
+  const resolvedMB = o.mb > 0 ? o.mb : AUTO_CACHE_MB.value
+  const nAtlases = estimateAtlasesForBudget(resolvedMB)
+  // Only annotate N when it's > 1 — the strip already has 8 chips and "1×" on every
+  // single-atlas option is pure clutter. Multi-atlas chips carry the N because that's the
+  // trade-off the user needs to see before picking.
+  const nSuffix = nAtlases > 1 ? `, ${nAtlases}×` : ''
+  const label = o.value === 'auto'
+    ? `Auto · ${formatCacheMB(resolvedMB)}${nSuffix}`
+    : `${o.label}${nSuffix}`
   return {
     value: o.value,
-    label: o.label,
+    label,
     disabled: overCap,
     tip: overCap
-      ? `Beyond this GPU's buffer cap (${cacheHardCapMB.value} MB)`
+      ? `Would need ${estimateAtlasesForBudget(o.mb)} atlases — beyond this GPU's ${cacheHardCapMB.value} MB ceiling (max ${MAX_ATLASES} × maxBufferSize)`
       : o.tip,
   }
 }))
+/** Short MB → GB formatter for chip labels ("2 GB" not "2048 MB", "512 MB" stays as-is). */
+function formatCacheMB(mb: number): string {
+  return mb >= 1024 ? `${Math.round(mb / 1024)} GB` : `${mb} MB`
+}
 /** Human-readable resolved values for the "Using: X" captions under the Advanced chips. Applies
  *  whether the user picked Auto or forced a value — a caption that only appears under Auto would
  *  jump the layout on every flip. */
 const effectiveRendererLabel = computed(() => bricksEnabled.value ? 'Brick' : 'Flat')
-const effectiveCacheMBLabel = computed(() =>
-  `${Math.round(effectiveCacheBytes.value / (1024 * 1024))} MB`)
+const effectiveCacheMBLabel = computed(() => {
+  const mb = Math.round(effectiveCacheBytes.value / (1024 * 1024))
+  const n = estimateAtlasesForBudget(mb)
+  return `${mb} MB across ${n} ${n === 1 ? 'atlas' : 'atlases'}`
+})
 /** Colour class for the cache-size caption: green when the pick is comfortably below the GPU's
  *  buffer cap, amber when it's within the top half of the safe range. Chips above `cacheHardCapMB`
  *  are already disabled, so amber flags "you're picking large for this GPU", not "you'll crash". */
@@ -1762,6 +1802,11 @@ const syncCacheState = () => {
     brickMissingAtBoundT.value = br.missingAtBoundT ?? 0
     brickDisplayT.value = br.displayT
     brickBoundT.value = br.boundT
+    brickNAtlases.value = br.nAtlases ?? 0
+    brickPerAtlasCapacity.value = br.perAtlasCapacity ?? 0
+    brickAtlasBytes.value = br.atlasBytes ?? 0
+    brickLabelAtlasBytes.value = br.labelAtlasBytes ?? 0
+    brickLabelsEnabled.value = br.labelsEnabled ?? false
     // Record a play-health sample when playback is active — one per syncCacheState call, which
     // fires on the same rhythm as the tick pump plus incidental redraws. `trimSamples` bounds
     // both the age (2 s rolling window) and the count (300 hard cap) so a long play doesn't
@@ -3047,6 +3092,31 @@ const brickMissingAtBoundT = ref<number>(0)
 const brickDisplayT = ref<number>(-1)
 /** Timepoint the scheduler is chasing (mirror of `brickResidency().boundT`). */
 const brickBoundT = ref<number>(0)
+/** Atlas layout snapshot — mirrors of `brickResidency()`'s S4 additions. All zero when no
+ *  atlas is allocated. Feed the Debug panel's "Atlas" row so a user can see which shader
+ *  variant is live and what it's costing in VRAM. */
+const brickNAtlases = ref<number>(0)
+const brickPerAtlasCapacity = ref<number>(0)
+const brickAtlasBytes = ref<number>(0)
+const brickLabelAtlasBytes = ref<number>(0)
+const brickLabelsEnabled = ref<boolean>(false)
+/** Human-readable atlas summary for the Debug panel. Shape: "3× 1024 slots · 6.0 GB
+ *  (5.0 img + 1.0 lab)" or "3× 1024 slots · 5.0 GB img" when labels are off. Dash when
+ *  no atlas is allocated. Answers the question "which variant is running and what's it
+ *  costing in VRAM?" the shader-variants workstream introduces. */
+const brickAtlasSummary = computed(() => {
+  const n = brickNAtlases.value
+  if (n === 0) return '—'
+  const capPerAtlas = brickPerAtlasCapacity.value
+  const imgMB = brickAtlasBytes.value / (1024 * 1024)
+  const labMB = brickLabelAtlasBytes.value / (1024 * 1024)
+  const totalMB = (imgMB + labMB) * n
+  const asGB = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(0)} MB`
+  const breakdown = brickLabelsEnabled.value
+    ? ` (${asGB(imgMB * n)} img + ${asGB(labMB * n)} lab)`
+    : ' img'
+  return `${n}× ${capPerAtlas} slots · ${asGB(totalMB)}${breakdown}`
+})
 /** Rolling window of play-health samples. Fed by `syncCacheState` while `playing.value` is true;
  *  reduced by `playHealthSummary` for the debug readout. Sized to give p95 headroom without
  *  growing unbounded on a long play — see `trimSamples`. */
@@ -4526,9 +4596,11 @@ onUnmounted(() => {
                   v-tooltip.right="cacheMBFromUrl
                     ? `?cacheMB=${cacheMBUrl} overrides the setting`
                     : 'VRAM the viewer may hold — bigger = smoother scrub'">Cache</span>
+            <!-- S4: 8 cache chips (Auto + 7 sizes) wrap into a 3-cell grid so the popover
+                 stays narrow — 3 rows × 3 columns (last row has 2). Same segmented visual. -->
             <ChipSelect
               :options="CACHE_MB_OPTIONS" :model-value="cacheMBAsString"
-              variant="segmented" aria-label="Viewer cache size"
+              variant="grid" :columns="3" aria-label="Viewer cache size"
               :disabled="cacheMBFromUrl"
               @update:model-value="v => (settings.viewerCacheMB = v === 'auto' ? -1 : Number(v))"
             />
@@ -5310,6 +5382,9 @@ onUnmounted(() => {
               <span>{{ brickDisplayT }} → {{ brickBoundT }}</span>
               <span class="cc-muted" v-tooltip.left="'?brickThr=N · ?brickBias=N · ?brickHold=0|1'">Knobs</span>
               <span>thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}</span>
+              <span class="cc-muted"
+                    v-tooltip.left="'N × slots per atlas · VRAM allocated · ?maxAtlases=N pins the picker'">Atlas</span>
+              <span>{{ brickAtlasSummary }}</span>
             </div>
           </template>
           <template v-else>
