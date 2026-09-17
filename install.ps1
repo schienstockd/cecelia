@@ -179,6 +179,28 @@ if (Get-Command bioformats2raw -ErrorAction SilentlyContinue) {
   Say 'Installed bioformats2raw.'
 }
 
+# ── bftools (import wizard: pyramid-levels advisor for JVM-only formats) ───────
+# ~30 MB. showinf peeks .czi/.nd2/.oir/... dims before import; skipped when a system showinf is on
+# PATH or when offline (the wizard degrades to `unsupported` for those formats in that case).
+if (Get-Command showinf -ErrorAction SilentlyContinue) {
+  Say 'Using showinf already on PATH.'
+} else {
+  $BftVersion = if ($env:CECELIA_BFTOOLS_VERSION) { $env:CECELIA_BFTOOLS_VERSION } else { '8.4.0' }
+  $BftUrl = "https://downloads.openmicroscopy.org/bio-formats/$BftVersion/artifacts/bftools.zip"
+  Say "Fetching bftools $BftVersion (import-wizard advisor; ~30 MB)..."
+  $bftZip = Join-Path ([System.IO.Path]::GetTempPath()) ('bft-' + [System.IO.Path]::GetRandomFileName() + '.zip')
+  $bftTmp = Join-Path ([System.IO.Path]::GetTempPath()) ('bft-' + [System.IO.Path]::GetRandomFileName())
+  try {
+    Invoke-WebRequest -Uri $BftUrl -OutFile $bftZip -ErrorAction Stop
+    Expand-Archive -Path $bftZip -DestinationPath $bftTmp -Force
+    Move-Item -Path (Join-Path $bftTmp 'bftools') -Destination (Join-Path $InstallDir 'bftools')
+    Remove-Item $bftZip; Remove-Item -Recurse -Force $bftTmp
+    Say 'Installed bftools.'
+  } catch {
+    Say 'bftools download failed - the import wizard dim-peek will be skipped for JVM-only formats.'
+  }
+}
+
 # ── Custom cellpose models (segmentation) ───────────────────────────────────────
 # NOT fetched — `schienstockd/ceceliaModels` holds cellpose 3 checkpoints and cellpose 4 cannot
 # load them. The drop-in slot is unchanged and takes a v4 checkpoint; cellpose downloads its own

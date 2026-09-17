@@ -197,6 +197,28 @@ else
   say "Installed bioformats2raw."
 fi
 
+# ── bftools (import wizard: pyramid-levels advisor for JVM-only formats) ─────
+# ~30 MB. The advisor calls `showinf` to peek dims for .czi/.nd2/.oir/.lsm/... before import;
+# resolved at <install>/bftools (showinf_bin() in config/binaries.jl). Java comes from the Pixi
+# env. Skipped when a system `showinf` is on PATH, OR when we're offline (missing bftools just
+# disables the JVM peek path — the wizard degrades to `unsupported` for those formats).
+if have showinf; then
+  say "Using showinf already on PATH ($(command -v showinf))."
+else
+  have unzip || err "unzip is required to install bftools."
+  BFT_VERSION="${CECELIA_BFTOOLS_VERSION:-8.4.0}"
+  BFT_URL="https://downloads.openmicroscopy.org/bio-formats/$BFT_VERSION/artifacts/bftools.zip"
+  say "Fetching bftools $BFT_VERSION (import-wizard advisor; ~30 MB)…"
+  if curl -fSL "$BFT_URL" -o "$TMP/bft.zip"; then
+    unzip -q "$TMP/bft.zip" -d "$TMP/bft"
+    mv "$TMP"/bft/bftools "$INSTALL_DIR/bftools"
+    [ -x "$INSTALL_DIR/bftools/showinf" ] || err "bftools missing after unpack."
+    say "Installed bftools."
+  else
+    say "bftools download failed — the import wizard's dim-peek will be skipped for JVM-only formats."
+  fi
+fi
+
 # ── Custom cellpose models (segmentation) ─────────────────────────────────────
 # NOT fetched. `schienstockd/ceceliaModels` holds cellpose 3 checkpoints (`ccia.fluo`), and
 # cellpose 4 cannot load them — it raises "This model does not appear to be a CP4 model". The

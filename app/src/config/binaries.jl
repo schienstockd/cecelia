@@ -19,6 +19,24 @@ function bioformats2raw_bin()::String
     joinpath(_cfg_dir("bioformats2raw", "/path/to/bioformats2raw"), "bin", exe)
 end
 
+# Resolve `showinf` (Bio-Formats CLI) — the pyramid-levels advisor uses it to peek dims for formats
+# without a fast Python reader (.czi/.nd2/.oir/.lsm/.oib/...). Same resolution shape as
+# `bioformats2raw_bin()`: bundled next to the app (`<install>/bftools/`) → PATH → empty on miss (the
+# caller then falls back to skipping the peek). Explicit override via `[dirs] bftools`. Fetched by
+# `install.sh`; ~30 MB, so downloaded at install time (like bf2raw) rather than shipped in the bundle.
+function showinf_bin()::String
+    exe = Sys.iswindows() ? "showinf.bat" : "showinf"
+    d   = get(get(cecelia_conf(), "dirs", Dict{String,Any}()), "bftools", "")
+    if !isempty(string(d)) && string(d) != "/path/to/bftools"
+        return joinpath(expand_user(string(d)), exe)
+    end
+    bundled = joinpath(@__DIR__, "..", "..", "..", "bftools", exe)
+    isfile(bundled) && return bundled
+    found = Sys.which(exe)
+    found === nothing || return string(found)
+    ""  # empty ⇒ caller skips the JVM peek path silently
+end
+
 # The shipped `[dirs] python` value. Must match `app/config.toml` — it is the sentinel for "nobody
 # chose this", the same role `_PROJECTS_DIR_PLACEHOLDER` plays for the projects dir.
 const _PYTHON_BIN_DEFAULT = "python3"

@@ -689,7 +689,10 @@ export const popsCompatAdvisor: ParamAdvisor = {
 // add so the form's first open finds the recommendation already settled. Silent when the source
 // is missing (already-imported image, or a format the fast-path readers can't handle).
 
-import { peekPyramid, type PeekResult } from './pyramidPeek'
+import {
+  primePyramidPeek, cachedPyramidPeek, isPeekInFlight, isFastPeekPath,
+  pyramidPeekRev, type PeekResult,
+} from './pyramidPeek'
 
 /** Deepest-level XY (+Z when the source is a stack) at N levels of the source dims. Powers-of-two
  *  downsampling matches what bioformats2raw actually writes, so the number the advisor shows is
@@ -745,17 +748,46 @@ export function pyramidLevelsAdvisory(
 export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
   // Peek the source file for a level-count recommendation. Registered under the KEY (only the
   // omezarr importer has a `pyramidLevels` param). Silently no-op when the setting is off.
+  //
+  // Two peek priming strategies (see pyramidPeek.ts): fast-reader formats (.tif/.lif/.ims) are
+  // primed on set-add and are already settled by the time the wizard opens; JVM-only formats
+  // (.czi/.nd2/.oir/...) are primed LAZILY here — the fetch fires on wizard open, the advisor
+  // shows a "Peeking source dims…" placeholder, and `pyramidPeekRev()` in `reloadOn` re-runs
+  // this once the peek settles (~2 s cold for the JVM cold-start). The peek is a NO-AWAIT
+  // trigger so `advise` can return the placeholder synchronously — awaiting would block the
+  // first render for the whole JVM spin.
   pyramidLevels: {
-    reloadOn: ctx => [ctx.images?.[0]?.uid, ctx.images?.[0]?.oriPath ?? ''],
+    reloadOn: ctx => [ctx.images?.[0]?.uid, ctx.images?.[0]?.oriPath ?? '', pyramidPeekRev()],
     advise: async (value, ctx) => {
       // Lazy import: avoid a top-level dep between advisors and the settings store (advisors run in
       // every task form and the store's Pinia setup shouldn't be a load-time requirement for a test).
       const { useSettingsStore } = await import('../stores/settings')
       if (!useSettingsStore().importPyramidAdvisor) return null
       const img = ctx.images?.[0]
-      if (!img?.oriPath) return null
-      const peek = await peekPyramid(img.oriPath)
-      return pyramidLevelsAdvisory(value, peek)
+      const oriPath = img?.oriPath
+      if (!oriPath) return null
+
+      const cached = cachedPyramidPeek(oriPath)
+      // Fast-reader path — the set-add primer already settled this. Just render.
+      if (cached !== undefined) return pyramidLevelsAdvisory(value, cached)
+
+      // Not primed yet. Fast extensions will be picked up by the set-add primer any moment; JVM
+      // extensions need a lazy trigger here — the wizard is what motivates paying the JVM cost.
+      if (!isFastPeekPath(oriPath)) primePyramidPeek(oriPath)
+
+      // Still in flight (either fast primer racing us, or the JVM peek we just kicked off): show
+      // a placeholder so the field doesn't look ignored. The rev counter re-runs us on settle.
+      if (isPeekInFlight(oriPath)) {
+        return {
+          severity: 'ok',
+          message: 'Peeking source dims…',
+          tip: 'Reading the source file\'s XY through Bio-Formats to suggest a level count. Cold '
+             + 'JVM start takes a couple of seconds; the recommendation appears when it lands.',
+        }
+      }
+      // Race — fell through before the fetch was registered. `reloadOn(pyramidPeekRev)` will
+      // pick it up on the next tick.
+      return null
     },
   },
 
