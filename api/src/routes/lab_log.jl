@@ -141,7 +141,7 @@ end
 function api_images_meta_resync(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
-    project_uid = String(get(data, :projectUid, ""))
+    project_uid = _wstr(data, :projectUid)
     image_uids  = [String(u) for u in get(data, :imageUids, [])]
     isempty(image_uids) && return 400, JSON3.write((; error="imageUids required"))
 
