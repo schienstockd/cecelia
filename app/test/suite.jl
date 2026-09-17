@@ -5967,7 +5967,7 @@ end
     _mk_ver!(a, "import.ome.zarr"); _mk_ver!(a, "af.ome.zarr"); _mk_ver!(a, "drift.ome.zarr")
     a.filepath = Dict("default"=>"import.ome.zarr", "afCorrected"=>"af.ome.zarr",
                       "driftCorrected"=>"drift.ome.zarr", "_active"=>"driftCorrected")
-    a.im_channel_names = Dict{String,Any}("default"=>["ch0","ch1"], "_active"=>"default")
+    a.im_channel_names = Dict{String,Union{Vector{String},String}}("default"=>["ch0","ch1"], "_active"=>"default")
     a.meta = Dict{String,Any}("SizeC"=>2, "SizeT"=>1, "SizeZ"=>5)
     a.status = IMAGE_DONE; save!(a)
 
@@ -6018,7 +6018,7 @@ end
     zdir = joinpath(img_zero_dir(img), "import.ome.zarr"); mkpath(zdir)
     write(joinpath(zdir, "chunk"), rand(UInt8, 2048))
     img.filepath = Dict("default"=>"import.ome.zarr", "_active"=>"default")
-    img.im_channel_names = Dict{String,Any}("default"=>["ch0"], "_active"=>"default")
+    img.im_channel_names = Dict{String,Union{Vector{String},String}}("default"=>["ch0"], "_active"=>"default")
     img.meta   = Dict{String,Any}("SizeC"=>1, "SizeT"=>1, "SizeZ"=>3)
     img.attr   = Dict{String,Any}("treatment"=>"CTRL")
     img.status = IMAGE_DONE

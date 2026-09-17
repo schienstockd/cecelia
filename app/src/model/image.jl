@@ -31,7 +31,12 @@ mutable struct CciaImage
     # `labels` picker (measure/track/segment dropdowns) unpolluted. See docs/todo/BRANCHING_PLAN.md
     # Decision 6. Files live at `{proj}/1/{uid}/branchLabels/{filename}.zarr` (mirrors `labels/`).
     branch_labels::Dict{String,Vector{String}}
-    im_channel_names::Dict{String,Any} # versioned: {value_name => [names], _active => value_name}
+    # Versioned channel-name registry: each real entry is `value_name => [names]`, plus one
+    # `_active => value_name` String sentinel written by `versioned_set!`. The union type documents
+    # the two shapes actually stored and closes the `Any` escape hatch — a stray write of anything
+    # else now errors at the field, not later at a `String(...)` call. `channel_names(img)` reads
+    # via the sentinel when no explicit `value_name` is given, so the sentinel is load-bearing.
+    im_channel_names::Dict{String,Union{Vector{String},String}}
     attr::Dict{String,String}         # user-defined metadata attributes
     meta::Dict{String,Any}
     # Include/exclude an image from further processing & analysis (the systematic successor to the
@@ -58,7 +63,7 @@ function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, 
     CciaImage(uid, name, status,
               Dict{String,String}(), Dict{String,Vector{String}}(), Dict{String,String}(),
               Dict{String,Vector{String}}(),      # branch_labels (Decision 6)
-              Dict{String,Any}(),                 # im_channel_names (versioned)
+              Dict{String,Union{Vector{String},String}}(),   # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
               true, "", false,                    # included (default), note, starred
               dir,
@@ -217,9 +222,10 @@ This is the `defaultOnly = TRUE` half of R's `valueNames(x, valueType, defaultOn
 
 R took the field as a parameter (`x`) because in R **every** registry was versioned with an active
 key. This port is narrower, and by *type* rather than by decision: `filepath`, `label_props` and
-`imChannelNames` map to `String`/`Any` values and can hold an `_active` entry, but `labels` and
-`branch_labels` are `Dict{String,Vector{String}}` — a `String` active marker does not fit the value
-type at all. So they carry no active pointer, and this resolver is `label_props`-only rather than
+`imChannelNames` map to values that can carry an `_active` `String` entry (`filepath`/`label_props`
+are `Dict{String,String}`; `im_channel_names` is `Dict{String,Union{Vector{String},String}}`), but
+`labels` and `branch_labels` are `Dict{String,Vector{String}}` — a `String` active marker does not
+fit the value type at all. So they carry no active pointer, and this resolver is `label_props`-only rather than
 field-parameterised; a generic version would silently return `"default"` for them (or stringify a
 vector). Today that works out because a segmentation's label store and props table share one
 value_name, so `label_props`' pointer serves both, and branch labels — which can exist with no
@@ -821,7 +827,12 @@ function _load_image(dir::String)::CciaImage
     to_labels(key) = Dict{String,Vector{String}}(
         string(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
         for (k, v) in get(d, key, Dict{String,Any}()))
-    icn = Dict{String,Any}(string(k) => v for (k, v) in get(d, "imChannelNames", Dict{String,Any}()))
+    # im_channel_names: `Vector{String}` per real version, `String` for the `_active` sentinel.
+    # Construct the tight union type directly so a stray value shape (e.g. an Int leaking in from
+    # a hand-edited ccid.json) fails here rather than later at a `String(...)` call.
+    icn = Dict{String,Union{Vector{String},String}}(
+        string(k) => (v isa AbstractString ? String(v) : String[String(x) for x in v])
+        for (k, v) in get(d, "imChannelNames", Dict{String,Any}()))
     # Legacy `kind` field silently ignored — project-wide static/live/flow distinction was dropped
     # in favour of per-image axis gating (see Cecelia.task_applies). Legacy ccid.jsons round-trip
     # into memory without kind; next save! strips it from disk.

@@ -26,9 +26,12 @@ end
 
 # JSON3 object → Dict{String,String} (versioned filepath / label_props / attr)
 _to_str_str(o) = Dict{String,String}(String(k) => string(v) for (k, v) in pairs(o))
-# JSON3 object {vn => [names], _active => vn} → Dict{String,Any} (imChannelNames)
-_to_str_any(o) = Dict{String,Any}(String(k) => (v isa AbstractString ? String(v) : collect(v))
-                                  for (k, v) in pairs(o))
+# JSON3 object {vn => [names], _active => vn} → the tightened field type on `CciaImage.im_channel_names`
+# — `Vector{String}` per version, `String` for the `_active` sentinel. Written this way (rather than
+# via `Dict{String,Any}` + a later convert) so the two shapes are checked at construction, not later.
+_to_channel_names(o) = Dict{String,Union{Vector{String},String}}(
+    String(k) => (v isa AbstractString ? String(v) : String[String(x) for x in v])
+    for (k, v) in pairs(o))
 # JSON3 object {vn => [fn,...]} → Dict{String,Vector{String}} (labels)
 _to_labels(o) = Dict{String,Vector{String}}(String(k) => String.(collect(v)) for (k, v) in pairs(o))
 
@@ -94,7 +97,7 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     img.filepath    = _to_str_str(f.filepath)
     img.labels      = _to_labels(f.labels)
     img.label_props = _to_str_str(f.label_props)
-    img.im_channel_names = _to_str_any(f.imChannelNames)
+    img.im_channel_names = _to_channel_names(f.imChannelNames)
     img.attr        = _to_str_str(f.attr)
     img.included    = Bool(get(f, :included, true))
     img.meta        = Dict{String,Any}(String(k) => v for (k, v) in pairs(f.meta))

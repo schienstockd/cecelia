@@ -33,7 +33,12 @@ end
 # Equivalent: .setVersionedVar(valueList, itemValue, valueName, setDefault)
 # Mutates d in-place.  Pass nothing as item_value to remove the entry and
 # reset _active to "default" (mirrors R's NULL behaviour).
-function versioned_set!(d::Dict{String,Any}, item_value, value_name::String = VERSIONED_DEFAULT_VAL;
+#
+# Accepts any String-keyed AbstractDict — was `Dict{String,Any}`-only, but the tightened
+# `CciaImage.im_channel_names::Dict{String,Union{Vector{String},String}}` field is not a subtype
+# of that (Dict is invariant in its value type). Widened so both concrete field types can share
+# this helper; Julia checks that the actual `item_value` fits the dict's value type at assignment.
+function versioned_set!(d::AbstractDict{String}, item_value, value_name::String = VERSIONED_DEFAULT_VAL;
                         set_active::Bool = true)
     if isnothing(item_value)
         delete!(d, value_name)
