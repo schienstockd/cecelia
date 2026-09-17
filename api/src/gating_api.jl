@@ -1031,8 +1031,8 @@ end
 # the drift risk the audit flagged: a hand-rolled call site that skips `_gating_post` gets a bare
 # stack-traced `KeyError` instead of the 400 the rest of the API returns. One helper for both.
 function _require_ids(body::AbstractDict)
-    pu = String(get(body, "projectUid", ""))
-    iu = String(get(body, "imageUid", ""))
+    pu = _wstr(body, "projectUid")
+    iu = _wstr(body, "imageUid")
     isempty(pu) && return (nothing, nothing, _gerr(400, "projectUid required"))
     isempty(iu) && return (nothing, nothing, _gerr(400, "imageUid required"))
     (pu, iu, nothing)
@@ -1045,10 +1045,10 @@ function _gating_post(body_bytes::Vector{UInt8})
     catch
         return (nothing, nothing, nothing, nothing, _gerr(400, "Invalid JSON body"))
     end
-    img, err = _gating_image(String(get(body, "projectUid", "")), String(get(body, "imageUid", "")))
+    img, err = _gating_image(_wstr(body, "projectUid"), _wstr(body, "imageUid"))
     err === nothing || return (nothing, nothing, nothing, body, err)
-    vn = _resolve_vn(img, String(get(body, "valueName", "")))
-    pt = String(get(body, "popType", "flow"))
+    vn = _resolve_vn(img, _wstr(body, "valueName"))
+    pt = _wstr(body, "popType", "flow")
     (img, vn, pt, body, nothing)
 end
 
@@ -1058,7 +1058,7 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
     # name-uniqueness guard: reject a name already used by a DIFFERENT pop type in this segmentation, so
     # the mixed-type module picker (which resolves a pop by path alone) is never ambiguous.
     _name = String(body["name"])
-    _parent = String(get(body, "parent", ROOT))
+    _parent = _wstr(body, "parent", ROOT)
     _intended = pop_path(is_root(_parent) ? ROOT : _parent, _name)
     _conflict = pop_name_conflict(img, vn, _intended; pop_type = pt)
     _conflict === nothing || return _gerr(400,
@@ -1070,8 +1070,8 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         flt = get(body, "filter", nothing)
         bl = get(body, "boolean", nothing)      # Decision 16: a set operation over other pops
         try
-            add_pop!(m, String(body["name"]); parent = String(get(body, "parent", ROOT)),
-                     gate = gate, colour = String(get(body, "colour", "#ffffff")),
+            add_pop!(m, String(body["name"]); parent = _wstr(body, "parent", ROOT),
+                     gate = gate, colour = _wstr(body, "colour", "#ffffff"),
                      show = Bool(get(body, "show", true)),
                      filter_measure = flt === nothing ? nothing : get(flt, "measure", nothing),
                      filter_fun     = flt === nothing ? nothing : get(flt, "fun", nothing),

@@ -110,7 +110,7 @@ end
 # POST /api/notebooks/launch  { projectUid }  → { url, starting }
 function api_notebooks_launch(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
 
@@ -411,7 +411,7 @@ end
 # POST /api/notebooks/create  { projectUid, name, description? }  → { file }
 function api_notebooks_create(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     file = _safe_nb_file(get(body, :name, ""))
@@ -425,7 +425,7 @@ function api_notebooks_create(body_bytes::Vector{UInt8})
     cp(template, dest)
 
     reg = _read_registry(uid)
-    reg[file] = Dict{String,Any}("description" => _cap_desc(String(get(body, :description, ""))),
+    reg[file] = Dict{String,Any}("description" => _cap_desc(_wstr(body, :description)),
                                  "current" => 0, "updatedAt" => string(Dates.now()))
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true, file = file))
@@ -526,7 +526,7 @@ end
 # the user iterates in Pluto. The user then owns/edits it freely. Backs the create_notebook MCP tool.
 function api_notebooks_write(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     file = _safe_nb_file(get(body, :name, ""))
@@ -540,7 +540,7 @@ function api_notebooks_write(body_bytes::Vector{UInt8})
     write_atomic(io -> write(io, _pluto_notebook_source(collect(cells))), dest)
 
     reg = _read_registry(uid)
-    reg[file] = Dict{String,Any}("description" => _cap_desc(String(get(body, :description, ""))),
+    reg[file] = Dict{String,Any}("description" => _cap_desc(_wstr(body, :description)),
                                  "current" => 0, "updatedAt" => string(Dates.now()))
     _write_registry!(uid, reg)
     # snapshot v1 — an immediate restore point before the user starts editing in Pluto
@@ -553,14 +553,14 @@ end
 # POST /api/notebooks/describe  { projectUid, file, description }  → { ok }
 function api_notebooks_describe(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
     isfile(joinpath(_project_notebooks_dir(uid), file)) || return 404, JSON3.write((; error = "Notebook not found"))
 
     reg = _read_registry(uid)
     e = get(reg, file, Dict{String,Any}("current" => 0))
-    e["description"] = _cap_desc(String(get(body, :description, "")))
+    e["description"] = _cap_desc(_wstr(body, :description))
     e["updatedAt"]   = string(Dates.now())
     reg[file] = e
     _write_registry!(uid, reg)
@@ -574,7 +574,7 @@ end
 # doesn't exist (use /write to create a new one). See docs/NOTEBOOKS.md → Versioning.
 function api_notebooks_revise(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     file = _safe_nb_file(get(body, :file, ""))
@@ -594,7 +594,7 @@ function api_notebooks_revise(body_bytes::Vector{UInt8})
 
     reg = _read_registry(uid)
     e = get(reg, file, Dict{String,Any}("current" => 0))
-    haskey(body, :description) && (e["description"] = _cap_desc(String(get(body, :description, ""))))
+    haskey(body, :description) && (e["description"] = _cap_desc(_wstr(body, :description)))
     e["updatedAt"] = string(Dates.now())
     reg[file] = e
     _write_registry!(uid, reg)
@@ -606,7 +606,7 @@ end
 # POST /api/notebooks/delete  { projectUid, file }  → { ok }
 function api_notebooks_delete(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
     # Guard: Pluto owns an open notebook's file and can re-create it after deletion. If the server is
@@ -637,9 +637,9 @@ end
 # Copies a project OR example notebook into this project's notebooks/ under a fresh name.
 function api_notebooks_duplicate(body_bytes::Vector{UInt8})
     body  = JSON3.read(String(body_bytes))
-    uid   = String(get(body, :projectUid, ""))
+    uid   = _wstr(body, :projectUid)
     file  = _safe_nb_file(get(body, :file, ""))
-    scope = String(get(body, :scope, "project"))
+    scope = _wstr(body, :scope, "project")
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
 
@@ -666,7 +666,7 @@ end
 # the notebook's `current` to N. Answers "which version made Figure 3" without git/file-watching.
 function api_notebooks_snapshot(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
     dir  = _project_notebooks_dir(uid)
@@ -706,7 +706,7 @@ end
 # against losing un-snapshotted edits.
 function api_notebooks_restore(body_bytes::Vector{UInt8})
     body    = JSON3.read(String(body_bytes))
-    uid     = String(get(body, :projectUid, ""))
+    uid     = _wstr(body, :projectUid)
     file    = _safe_nb_file(get(body, :file, ""))
     version = get(body, :version, nothing)
     (isempty(uid) || file === nothing || version === nothing) &&
@@ -743,7 +743,7 @@ end
 # it aborts rather than wiping the whole history (so an unset pointer can't nuke everything).
 function api_notebooks_prune(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))
-    uid  = String(get(body, :projectUid, ""))
+    uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
