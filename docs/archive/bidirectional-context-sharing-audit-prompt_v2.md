@@ -492,7 +492,15 @@ mechanisms — don't collapse them into one:
      cells (spreadsheet-style, e.g. tile B3), computed from geometry alone, no
      image analysis required. Always available, always cheap. This turns
      "point at the exact pixel" into "name the cell it's roughly in" — a much
-     easier and more verifiable claim.
+     easier and more verifiable claim. **This mechanism has direct published
+     precedent — pick one, don't re-derive:** SCAFFOLD (Lei et al., arXiv
+     2402.12058) overlays a uniform labelled dot matrix and extends to 3D
+     (t,x,y); Marked-Grid Scaffold (2024 GUI-grounding follow-up) uses an
+     8×8 / 9×9 labelled grid, discretising coordinate prediction into
+     classification-over-grid-IDs; Grid-Augmented Vision (Chen 2024, arXiv
+     2411.18270) is a plain 9×9 grid overlay, no training, improves
+     localization on GUI / robotics / medical images. See
+     `docs/archive/landscape-anchor-prior-art-audit.md` for the comparison.
   2. **A cheap "landscape resolution" pass** — not full segmentation, a fast,
      rough semantic layer over the grid: k-means-style clustering (already
      tried informally, worth formalizing) rather than full linear unmixing,
@@ -517,27 +525,48 @@ mechanisms — don't collapse them into one:
 
   **Precedent, and a real alternative worth weighing, not just validating the
   chosen approach:** Set-of-Mark prompting (Yang et al., Microsoft Research,
-  2023 — overlay a segmentation model's regions as speakable marks;
-  GPT-4V+SoM beat a fully-finetuned referring-segmentation model zero-shot on
-  RefCOCOg) is direct precedent for "discrete labeled marks beat asking a
-  multimodal model for raw coordinates" — worth taking as inspiration for the
-  *shape* of this mechanism, not ported wholesale (SoM was validated on
-  natural photos; fluorescence/intravital microscopy is a real distribution
-  shift, and a "semantically meaningful region" from a general segmentation
-  model may not correspond to a biologically meaningful one — this needs its
-  own validation, not an assumption it transfers). Concretely, evaluate
-  whether a lightweight, already-trained general segmentation model (e.g. a
-  fast SAM variant) run once on the raw channels produces better candidate
-  regions than the k-means pass, rather than assuming clustering is the only
-  lightweight option. Marks should be "speakable" (numbers/letters), not
-  arbitrary ids, so Claude can reference them naturally in text.
+  2023, arXiv 2310.11441 — overlay a segmentation model's regions as
+  speakable marks; GPT-4V+SoM beat a fully-finetuned referring-segmentation
+  model zero-shot on RefCOCOg) is direct precedent for "discrete labeled
+  marks beat asking a multimodal model for raw coordinates" — worth taking as
+  inspiration for the *shape* of this mechanism, not ported wholesale (SoM
+  was validated on natural photos; fluorescence/intravital microscopy is a
+  real distribution shift, and a "semantically meaningful region" from a
+  general segmentation model may not correspond to a biologically meaningful
+  one — this needs its own validation, not an assumption it transfers).
+  **No published SoM evaluation on fluorescence / intravital microscopy
+  surfaced in a targeted 2026-09-18 search** (see
+  `docs/archive/landscape-anchor-prior-art-audit.md`) — treat as a real
+  unknown. The design must include a small internal evaluation on Cecelia
+  data (a handful of frames from `zolIMa` / `jFWePN` with expert-marked
+  ground-truth ROIs, compared across SoM+SAM, SoM+μSAM, SoM+Cellpose-SAM,
+  and the plain grid overlay) *before* locking the region source, not after.
+
+  Concretely for the region source, evaluate at least three candidates rather
+  than defaulting to raw SAM: (a) a fast SAM variant — MobileSAM, FastSAM,
+  EfficientSAM, or SAM 2 for temporal — as the visual-region baseline; (b)
+  **μSAM / MicroSAM** (Archit et al., *Nature Methods* 22, 579–591, 2025) —
+  the canonical microscopy-prompted segmentation model, LM+EM, napari plugin
+  shipping; (c) **Cellpose-SAM** (Pachitariu lab, bioRxiv 2025) — SAM
+  backbone inside the Cellpose stack that Cecelia already runs. For
+  fluorescence/intravital data, raw SAM regions are usually contrast blobs
+  that split cells; μSAM and Cellpose-SAM produce biologically-meaningful
+  regions and should be the default, not the fallback. Reserve the plain SAM
+  variant for cases where you truly want *visual* over-segmentation to feed
+  the marks scheme rather than semantic regions. Marks should be "speakable"
+  (numbers/letters), not arbitrary ids, so Claude can reference them
+  naturally in text.
 
   Separately: **automated ROI-targeting in microscopy without any LLM is
-  already a mature field** (e.g. Micropilot, Conrad et al., *Nature Methods*
-  2011 — real-time classifier-driven acquisition changes; iSBEM and similar
-  volume-EM workflows — automated targeting from a lower-res map). This is
-  evidence that *detection itself* is often already a solved classical-CV
-  problem; the open question for using Claude here at all is whether
+  already a mature field, and shipping commercially today** — Micropilot
+  (Conrad et al., *Nature Methods* 2011, doi:10.1038/nmeth.1558) is the
+  citable early example (real-time classifier-driven acquisition changes);
+  SBEMimage (Titze et al., *Front Neural Circuits* 2018) covers volume-EM
+  acquisition; ZEISS ZEN Smart Acquisition Toolkit and Nikon NIS.ai are the
+  current commercial state, both shipping DL-driven event/target adaptive
+  acquisition; see the smart-microscopy roadmap review (*npj Imaging* 2026)
+  for the current landscape. This is evidence that *detection itself* is
+  often already a solved classical-CV problem; the open question for using Claude here at all is whether
   natural-language-specified criteria (flexibility) is worth trading against
   the reliability of a purpose-built classical detector for well-specified,
   repeated criteria. Don't treat "route ROI-finding through Claude" as the
@@ -716,8 +745,10 @@ alongside everything else:
   enough that forcing one component was more friction than it was worth? Say
   so plainly if two or three related-but-separate implementations is the
   honest answer.
-- Given classical, non-LLM automated ROI-targeting is already mature
-  (Micropilot, iSBEM-style approaches): for Cecelia's actual use cases, is
+- Given classical, non-LLM automated ROI-targeting is already mature and
+  already shipping commercially (Micropilot 2011; ZEISS ZEN Smart
+  Acquisition Toolkit and Nikon NIS.ai today): for Cecelia's actual use
+  cases, is
   routing ROI-finding through Claude likely to add real value over a
   purpose-built classical detector, or is the honest answer "only for ad hoc,
   language-specified, one-off criteria — build the classical path too, and
