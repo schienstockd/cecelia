@@ -480,4 +480,4 @@ Not blocking the design — resolve during their PRs.
 - Correction cockpit highlights: `frontend/src/stores/viewer.ts` (`setTrackHighlight`, `setPickHighlight`)
 - Notebook versioning to mirror: `api/src/notebooks_api.jl`, `frontend/src/components/NotebookTable.vue`
 - Observer arc (adjacent, not this): [`docs/ai-assist/OBSERVER.md`](../ai-assist/OBSERVER.md)
-- MHS positioning: [`~/Downloads/prompts/claude-imaging-pitch.md`](../../../Downloads/prompts/claude-imaging-pitch.md) (framing input, not authoritative)
+- MHS positioning: `~/Downloads/prompts/claude-imaging-pitch.md` (framing input, external to the repo — not authoritative)
