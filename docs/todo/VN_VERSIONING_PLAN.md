@@ -1,6 +1,8 @@
 # Value-name versioning — every writer targets a new `vn@v`, never overwrites
 
-**Status:** planning (2026-09-18). No branch. Comes out of the chain-execution-prerequisites prompt
+**Status:** **P1a shipped** (2026-09-18, branch `feat/vn-versioning-p1a`) — helpers +
+composer + tests, additive, no callers changed. P1b/c/d + P2–P6 planning. Comes out of the
+chain-execution-prerequisites prompt
 (`docs/archive/chain-execution-prerequisites-prompt.md`) — closing items **#1** (non-destructive
 default) and **#3** (mechanically-can't-overwrite invariant) collapses into this one primitive.
 Worth building on its own merit for human-triggered runs; not conditional on ever granting execution
@@ -102,10 +104,25 @@ denoise `{name}.json` model manifest (project-scope under `<config_dir>/models/d
 
 Each phase is an independently-shippable PR.
 
-### P1 — `ccid.json` schema + **three** resolvers (Julia app, Julia API, Python)
+### P1a — Schema helpers + composer, additive — **SHIPPED** (2026-09-18)
 
-Add per-(vn, kind) version list + `latest` pointer to `ccid.json` (extend `helpers.jl`
-versioned-field helpers). Grow **three** resolvers to return `(vn, version)`:
+Split out from P1 before writing code, because the schema decision is load-bearing.
+
+- `_latest` sentinel + `version_latest` / `version_get` / `version_set!` / `version_keys` +
+  `is_versioned_entry` in `app/src/helpers.jl`, symmetric to the existing outer `versioned_*` set.
+- Composer `versioned_get_field_at(raw, field, value_name; version=nothing)` walks BOTH axes:
+  returns the leaf value on new-shape entries, the entry unchanged on legacy (bare scalar / vector),
+  `nothing` on missing.
+- **Additive only.** Struct field types unchanged; no writer produces new-shape entries yet; every
+  existing reader keeps working because a bare scalar is treated as implicit `v1`.
+- 37 new tests in `app/test/suite/labelprops.jl` — legacy shape, new shape, mixed shape, Symbol-key
+  (JSON3) shape.
+- Docs updated: `docs/OBJECTMODEL.md` (schema section), `docs/inventory/DATA_ACCESS.md` (new helpers row).
+
+### P1b/c/d — Reader routing (Julia app, Julia API, Python)
+
+The composer in P1a is available but no reader calls it yet. P1b/c/d route the existing readers
+through it and grow **three** value-name resolvers to return `(vn, version)`:
 
 - **Julia app-layer**: extend `resolve_value_name(img[, value_name])` at `app/src/model/image.jl:246`.
 - **Julia API-layer**: extend `resolve_image_version` at `api/src/image_geometry.jl:157` (the ONE

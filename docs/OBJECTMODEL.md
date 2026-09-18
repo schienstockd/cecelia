@@ -261,6 +261,28 @@ Several fields (`filepath`, `imChannelNames`, `labels`, `label_props`) follow th
 - Correction tasks add named entries (e.g. `"driftCorrected"`, `"afCorrected"`, `"smoothed"`).
 - `_active` is updated to the new name after each correction.
 
+### Inner version axis — per-value_name history (P1a landed, writers pending)
+
+A second, orthogonal versioning axis lives **inside each entry**: multiple *versions* of a value_name's
+output on disk, keyed `v1..vN` with a `_latest` pointer. Same shape as the outer axis, one level down:
+
+```json
+{
+  "default": { "v1": "image.zarr", "v2": "image.zarr", "_latest": "v2" },
+  "cropped": { "v1": "cropped.zarr", "_latest": "v1" },
+  "_active": "default"
+}
+```
+
+- **A bare scalar at the value_name key is implicit `v1`.** Old projects load unchanged; every existing
+  reader keeps working.
+- Helpers in `app/src/helpers.jl`: `version_latest` / `version_get` / `version_set!` / `version_keys` +
+  `is_versioned_entry` + composer `versioned_get_field_at(raw, field, value_name; version=nothing)`,
+  which walks both axes and returns the leaf value (new shape) or the entry unchanged (legacy shape).
+- **P1a is additive** — no writer produces new-shape entries yet. Writers migrate in P2 of
+  `docs/todo/VN_VERSIONING_PLAN.md`; struct-type widening happens with the first writer.
+- On-disk layout for a new version: `default/<vn>/vN/<contents>` — see the plan's Decision D4.
+
 **Removing a version** — `remove_image_version!` (`storage.jl`) is the ONE path (used by the
 `RemoveImage` task and the storage-reclaim API): it deletes the version's store, clears its
 `filepath` entry and re-points `_active`. It only **un-imports** the image (also clears

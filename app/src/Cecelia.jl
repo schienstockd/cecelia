@@ -40,6 +40,9 @@ export LOG_SOURCE_BACKEND, LOG_SOURCE_NAPARI, LOG_SOURCE_PREVIEW, LOG_SOURCE_RUN
 export VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL
 export versioned_active, versioned_get, versioned_set!
 export versioned_get_field, versioned_set_field!, versioned_keys, read_ccid_raw, read_state_json
+export version_latest, version_get, version_set!, version_keys
+export versioned_get_field_at, is_versioned_entry
+export LATEST_ACTIVE_KEY, LATEST_DEFAULT_VAL
 export json_native
 export project_storage_summary, reclaim_inactive!, remove_image_version!, reclaimable_versions, image_storage
 export reset_image_analysis!, analysis_bytes_of, ANALYSIS_KEEP

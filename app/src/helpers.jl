@@ -90,6 +90,83 @@ function versioned_keys(d::AbstractDict)::Vector{String}
     [string(k) for k in keys(d) if string(k) != VERSIONED_ACTIVE_KEY]
 end
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Inner-level versioning — multiple VERSIONS per value_name
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The `versioned_*` helpers above answer "which value_name variant is active?"
+# (the OUTER axis: default, dtype, cropped, driftCorrected, …). The `version_*`
+# helpers below answer "for a given value_name, which VERSION of its output is
+# on disk?" (the INNER axis: v1, v2, v3, …).
+#
+# On-disk shape — nested inside a versioned_* dict entry:
+#   { "filepath": { "default": { "v1": "image.zarr", "v2": "image.zarr", "_latest": "v2" },
+#                   "_active": "default" } }
+#
+# Legacy shape — a bare scalar at the value_name key — is treated as implicit
+# v1, so old projects load unchanged and every existing reader keeps working.
+#
+# Full design: docs/todo/VN_VERSIONING_PLAN.md (Decisions D1, D2, D4).
+
+const LATEST_ACTIVE_KEY = "_latest"
+const LATEST_DEFAULT_VAL = "v1"
+
+# True when `x` is an inner versioned entry (has a `_latest` pointer). Handles
+# both String and Symbol keys — the same JSON3 gotcha the outer helpers guard.
+is_versioned_entry(x)::Bool =
+    x isa AbstractDict &&
+    (haskey(x, LATEST_ACTIVE_KEY) || haskey(x, Symbol(LATEST_ACTIVE_KEY)))
+
+# Equivalent of `versioned_active`, for the inner axis.
+function version_latest(d::AbstractDict)::String
+    string(get(d, LATEST_ACTIVE_KEY, get(d, Symbol(LATEST_ACTIVE_KEY), LATEST_DEFAULT_VAL)))
+end
+
+# Equivalent of `versioned_get`, for the inner axis. Returns the value stored
+# under `version` (or under the latest entry when `version === nothing`).
+function version_get(d::AbstractDict, version = nothing)
+    ver = isnothing(version) ? version_latest(d) : string(version)
+    get(d, ver, get(d, Symbol(ver), nothing))
+end
+
+# Equivalent of `versioned_set!`, for the inner axis. Pass `nothing` as
+# `item_value` to remove the version entry and reset `_latest` to `v1`
+# (mirrors R's NULL behaviour, matching versioned_set!).
+function version_set!(d::AbstractDict{String}, item_value, version::String = LATEST_DEFAULT_VAL;
+                     set_latest::Bool = true)
+    if isnothing(item_value)
+        delete!(d, version)
+        d[LATEST_ACTIVE_KEY] = LATEST_DEFAULT_VAL
+    else
+        d[version] = item_value
+        if set_latest
+            d[LATEST_ACTIVE_KEY] = version
+        end
+    end
+    d
+end
+
+# All user-facing version names (excludes `_latest`).
+version_keys(d::AbstractDict)::Vector{String} =
+    [string(k) for k in keys(d) if string(k) != LATEST_ACTIVE_KEY]
+
+# ── Composer: read a field, resolving BOTH the value_name axis and the ──────
+# version axis. Returns:
+#   - the leaf value when the entry is a versioned entry (new shape),
+#   - the entry unchanged when it is a bare scalar / vector (legacy shape),
+#   - `nothing` if the field is absent.
+#
+# Callers that need to preserve the old behaviour (return the raw inner value
+# for a value_name, regardless of shape) keep using `versioned_get_field`.
+# Callers that need the leaf value at a specific version use this.
+function versioned_get_field_at(d::AbstractDict, field::String, value_name = nothing;
+                                version = nothing)
+    inner = versioned_get_field(d, field, value_name)
+    isnothing(inner) && return nothing
+    is_versioned_entry(inner) || return inner   # legacy: bare scalar / vector
+    version_get(inner, version)
+end
+
 # Read a ccid.json / project.json into a String-keyed Dict{String,Any} ready for the versioned_*
 # helpers. JSON3 yields Symbol keys that make `get(d, "field", …)` silently miss (see the JSON3
 # gotcha in CLAUDE.md); this is the one place that normalizes them. Use it instead of hand-rolling
