@@ -127,6 +127,57 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── resolve_version — inner-axis companion to resolve_value_name ─────────────
+# Legacy shape (bare scalar / vector at the value_name key) always resolves to `v1`.
+# Struct field types are not widened in P1b, so today every real project resolves this way;
+# the new-shape branch is exercised via unit tests in labelprops.jl (`unversion_value`). End-to-end
+# proof through a real struct happens in P2 when writers start producing versioned entries.
+# See docs/todo/VN_VERSIONING_PLAN.md.
+@testset "resolve_version — legacy always resolves to v1" begin
+    proj = create_project!(name="resolve-ver-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    img.filepath["default"] = "ccidImage.ome.zarr"
+    img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+    img.label_props["default"] = "default.h5ad"
+    img.label_props[VERSIONED_ACTIVE_KEY] = "default"
+    img.labels["default"] = ["labels.zarr"]
+
+    @test resolve_version(img, :filepath) == LATEST_DEFAULT_VAL
+    @test resolve_version(img, :label_props) == LATEST_DEFAULT_VAL
+    @test resolve_version(img, :labels) == LATEST_DEFAULT_VAL
+    @test resolve_version(img, :filepath, "default") == LATEST_DEFAULT_VAL
+    # Missing value_name entry still resolves to v1 (the default), not an error.
+    @test resolve_version(img, :filepath, "nonexistent") == LATEST_DEFAULT_VAL
+    rm(proj.root; recursive=true)
+end
+
+# ── img_*_path helpers ignore the `version` kwarg on legacy shape ────────────
+# Backward-compat verification: passing an explicit `version` on today's data must not change the
+# result (the entry is a bare scalar, so `unversion_value` returns it unchanged either way).
+@testset "img_*_path — legacy shape, version kwarg is a no-op" begin
+    proj = create_project!(name="ver-noop-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    img.filepath["default"] = "ccidImage.ome.zarr"
+    img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+    img.label_props["default"] = "default.h5ad"
+    img.label_props[VERSIONED_ACTIVE_KEY] = "default"
+    img.labels["default"] = ["labels.zarr"]
+    img.branch_labels["stroma"] = ["stroma.zarr"]
+
+    for ver in (nothing, "v1", "v99")
+        @test img_filepath(img; version = ver) == joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
+        @test img_label_props_path(img, "default"; version = ver) ==
+              joinpath(img_label_props_dir(img), "default.h5ad")
+        @test img_labels_path(img, "default"; version = ver) ==
+              joinpath(img_labels_dir(img), "labels.zarr")
+        @test img_branch_labels_path(img, "stroma"; version = ver) ==
+              joinpath(img_branch_labels_dir(img), "stroma.zarr")
+    end
+    rm(proj.root; recursive=true)
+end
+
 # ── Reserved value_name suffixes ─────────────────────────────────────────────
 # __tracks and __branch are companion-table markers, not legal user segmentation names.
 @testset "Reserved value_name suffixes" begin

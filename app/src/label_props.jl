@@ -60,9 +60,10 @@ Construct a lazy `LabelProps` view. The image form resolves the `.h5ad` under
 `{task_dir}/labelProps/` via the versioned `label_props` field; the path form is for
 tests / REPL use.
 """
-function label_props(img::CciaImage; value_name=nothing)
-    filename = isnothing(value_name) ? versioned_get(img.label_props) :
-               get(img.label_props, string(value_name), nothing)
+function label_props(img::CciaImage; value_name=nothing, version=nothing)
+    inner = isnothing(value_name) ? versioned_get(img.label_props) :
+            get(img.label_props, string(value_name), nothing)
+    filename = unversion_value(inner, version)
     isnothing(filename) && error("No labelProps for value_name=$(value_name) on image $(img.uid)")
     path = joinpath(img_label_props_dir(img), filename)
     cn = channel_names(img; value_name=value_name)

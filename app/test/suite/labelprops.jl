@@ -267,6 +267,29 @@ end
     @test versioned_get_field_at(sym_new, "filepath"; version = "v1") == "sym1.zarr"
 end
 
+@testset "unversion_value — one-arg composer for a resolved inner value" begin
+    # LEGACY: bare scalar / vector passes through unchanged
+    @test unversion_value("bare.zarr") == "bare.zarr"
+    @test unversion_value(["a.zarr", "b.zarr"]) == ["a.zarr", "b.zarr"]
+    @test unversion_value(nothing) === nothing
+
+    # NEW shape: versioned entry unwraps to the latest (or specified) version
+    ve_scalar = Dict{String,Any}("v1" => "a.zarr", "v2" => "b.zarr", LATEST_ACTIVE_KEY => "v2")
+    @test unversion_value(ve_scalar) == "b.zarr"
+    @test unversion_value(ve_scalar, "v1") == "a.zarr"
+    @test isnothing(unversion_value(ve_scalar, "v3"))
+
+    # NEW shape with Vector leaf (labels shape after P2 widening)
+    ve_vec = Dict{String,Any}("v1" => ["a.zarr"], "v2" => ["a.zarr", "b.zarr"],
+                              LATEST_ACTIVE_KEY => "v2")
+    @test unversion_value(ve_vec) == ["a.zarr", "b.zarr"]
+    @test unversion_value(ve_vec, "v1") == ["a.zarr"]
+
+    # Legacy branch: a plain AbstractDict WITHOUT _latest is not a versioned entry — return as-is.
+    plain_dict = Dict{String,Any}("foo" => 1)
+    @test unversion_value(plain_dict) === plain_dict
+end
+
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────
 @testset "LabelProps reader" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")

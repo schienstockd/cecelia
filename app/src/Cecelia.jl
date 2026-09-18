@@ -41,7 +41,7 @@ export VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL
 export versioned_active, versioned_get, versioned_set!
 export versioned_get_field, versioned_set_field!, versioned_keys, read_ccid_raw, read_state_json
 export version_latest, version_get, version_set!, version_keys
-export versioned_get_field_at, is_versioned_entry
+export versioned_get_field_at, is_versioned_entry, unversion_value
 export LATEST_ACTIVE_KEY, LATEST_DEFAULT_VAL
 export json_native
 export project_storage_summary, reclaim_inactive!, remove_image_version!, reclaimable_versions, image_storage
@@ -59,7 +59,7 @@ export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physica
        image_included
 export img_axes, img_has_time
 export meta_int, meta_float, meta_str
-export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name
+export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name, resolve_version
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes

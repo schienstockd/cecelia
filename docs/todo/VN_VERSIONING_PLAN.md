@@ -1,8 +1,8 @@
 # Value-name versioning — every writer targets a new `vn@v`, never overwrites
 
-**Status:** **P1a shipped** (2026-09-18, branch `feat/vn-versioning-p1a`) — helpers +
-composer + tests, additive, no callers changed. P1b/c/d + P2–P6 planning. Comes out of the
-chain-execution-prerequisites prompt
+**Status:** **P1a + P1b shipped** (2026-09-18) — helpers + composer + Julia app-layer reader
+routing, additive, backward-compat verified via full test suite. P1c/d + P2–P6 planning. Comes out
+of the chain-execution-prerequisites prompt
 (`docs/archive/chain-execution-prerequisites-prompt.md`) — closing items **#1** (non-destructive
 default) and **#3** (mechanically-can't-overwrite invariant) collapses into this one primitive.
 Worth building on its own merit for human-triggered runs; not conditional on ever granting execution
@@ -119,12 +119,27 @@ Split out from P1 before writing code, because the schema decision is load-beari
   (JSON3) shape.
 - Docs updated: `docs/OBJECTMODEL.md` (schema section), `docs/inventory/DATA_ACCESS.md` (new helpers row).
 
-### P1b/c/d — Reader routing (Julia app, Julia API, Python)
+### P1b — Julia app-layer reader routing — **SHIPPED** (2026-09-18)
 
-The composer in P1a is available but no reader calls it yet. P1b/c/d route the existing readers
-through it and grow **three** value-name resolvers to return `(vn, version)`:
+- `unversion_value(value, version=nothing)` in `helpers.jl` — the one-argument composer, for
+  callers that already have the resolved value_name entry in hand (e.g. struct-field accessors).
+- Four `img_*_path` helpers in `app/src/model/image.jl` grow an optional `version` kwarg and route
+  through `unversion_value`: `img_filepath`, `img_label_props_path`, `img_labels_path`,
+  `img_branch_labels_path`.
+- `label_props(img; value_name, version)` in `app/src/label_props.jl` — same treatment.
+- `resolve_version(img, field, value_name=nothing)::String` — companion to `resolve_value_name`
+  for callers that need the version string for pinning / logging (P3 chain-planner surface).
+- Legacy is a no-op end-to-end: every existing test suite passes unchanged, and a new testset
+  proves `img_*_path(...; version="v99")` returns the legacy path today (bare scalar unwraps to
+  itself).
+- Struct field types **not** widened yet — that lands with the first writer (P2). Today every
+  `resolve_version` call returns `LATEST_DEFAULT_VAL`, since struct fields still preclude versioned
+  entries.
 
-- **Julia app-layer**: extend `resolve_value_name(img[, value_name])` at `app/src/model/image.jl:246`.
+### P1c/d — Julia API-layer resolver + Python resolver
+
+Two remaining resolver surfaces (P1b handled Julia app-layer):
+
 - **Julia API-layer**: extend `resolve_image_version` at `api/src/image_geometry.jl:157` (the ONE
   api-side VN resolver — 12 callers across viewer/crop/movie/optical-flow APIs). The audit surfaced
   this as a separate resolver the plan initially missed. Different return shape (`(zarr_path,

@@ -167,6 +167,21 @@ function versioned_get_field_at(d::AbstractDict, field::String, value_name = not
     version_get(inner, version)
 end
 
+# ── Given ONE inner value (already resolved on the value_name axis), unwrap ──
+# it on the version axis. This is the entry point for helpers that hold a
+# struct field like `img.filepath` and index it by value_name themselves —
+# they get a value back, then call `unversion_value` to reach the leaf. It's
+# the shorter half of `versioned_get_field_at` for callers that don't want to
+# pass the whole outer dict + field name.
+#
+# Legacy (bare scalar / vector) — returns unchanged.
+# New shape (versioned entry) — returns `version_get(value, version)`.
+function unversion_value(value, version = nothing)
+    isnothing(value) && return nothing
+    is_versioned_entry(value) || return value
+    version_get(value, version)
+end
+
 # Read a ccid.json / project.json into a String-keyed Dict{String,Any} ready for the versioned_*
 # helpers. JSON3 yields Symbol keys that make `get(d, "field", …)` silently miss (see the JSON3
 # gotcha in CLAUDE.md); this is the one place that normalizes them. Use it instead of hand-rolling

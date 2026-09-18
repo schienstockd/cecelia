@@ -85,9 +85,15 @@ was copied into another project belongs to that project, whatever any baked-in v
 """
 img_project_uid(img::CciaImage)::String = basename(img_project_dir(img))
 
-"""Absolute path to the active (or named) filepath version. Resolves into the 0 (image) dir."""
-function img_filepath(img::CciaImage, name::Union{String,Nothing}=nothing)::Union{String,Nothing}
-    filename = isnothing(name) ? versioned_get(img.filepath) : get(img.filepath, name, nothing)
+"""
+Absolute path to the active (or named) filepath value_name, at the specified `version` (defaults to
+`_latest` on new-shape entries; unchanged on legacy bare-scalar entries). See
+`docs/todo/VN_VERSIONING_PLAN.md` for the two-axis versioning model.
+"""
+function img_filepath(img::CciaImage, name::Union{String,Nothing}=nothing;
+                      version::Union{String,Nothing}=nothing)::Union{String,Nothing}
+    inner = isnothing(name) ? versioned_get(img.filepath) : get(img.filepath, name, nothing)
+    filename = unversion_value(inner, version)
     isnothing(filename) ? nothing : joinpath(img_zero_dir(img), filename)
 end
 
@@ -107,8 +113,11 @@ Uses the registered filename when present, else the conventional `{value_name}.h
 the single owner of the labelProps path convention — readers (`label_props`) and tasks
 (segmentation/tracking) resolve here rather than joining `"labelProps"` inline.
 """
-function img_label_props_path(img::CciaImage, value_name::AbstractString="default")::String
-    filename = get(img.label_props, String(value_name), "$(value_name).h5ad")
+function img_label_props_path(img::CciaImage, value_name::AbstractString="default";
+                                version::Union{String,Nothing}=nothing)::String
+    entry = get(img.label_props, String(value_name), nothing)
+    filename = unversion_value(entry, version)
+    isnothing(filename) && (filename = "$(value_name).h5ad")
     joinpath(img_label_props_dir(img), filename)
 end
 
@@ -129,9 +138,11 @@ in-progress path — `segment_live_outputs` is the caller that needs it.
 Image-owned + pop_type-neutral, exactly like `img_label_props_path`; a `labels` value_name can carry
 SEVERAL files (base + nuc), so use `img.labels[vn]` directly when you need all of them.
 """
-function img_labels_path(img::CciaImage, value_name::AbstractString="default")::String
-    filenames = get(img.labels, String(value_name), String[])
-    filename = isempty(filenames) ? "$(value_name).zarr" : first(filenames)
+function img_labels_path(img::CciaImage, value_name::AbstractString="default";
+                          version::Union{String,Nothing}=nothing)::String
+    entry = get(img.labels, String(value_name), nothing)
+    filenames = unversion_value(entry, version)
+    filename = (isnothing(filenames) || isempty(filenames)) ? "$(value_name).zarr" : first(filenames)
     joinpath(img_labels_dir(img), filename)
 end
 
@@ -246,6 +257,24 @@ than in gating, where most of the copies had accumulated.
 resolve_value_name(img::CciaImage, value_name = nothing)::String =
     something(value_name, versioned_active(img.label_props))
 
+"""
+    resolve_version(img, field, value_name = nothing) -> String
+
+Companion to `resolve_value_name`, for the inner version axis. Returns the `version` string
+(`v1`, `v2`, …) for the entry `img.<field>[value_name]`, falling back to `LATEST_DEFAULT_VAL`
+(`v1`) on legacy bare-scalar entries. Pass `field` as one of `:filepath`, `:label_props`,
+`:labels`, `:branch_labels`. Callers that need to pin a chain input to a concrete version at plan
+time (D3) or record what version a run consumed use this; ordinary readers get the same value
+implicitly through `img_*_path(...; version=nothing)`. See `docs/todo/VN_VERSIONING_PLAN.md`.
+"""
+function resolve_version(img::CciaImage, field::Symbol,
+                         value_name::Union{AbstractString,Nothing} = nothing)::String
+    vn = resolve_value_name(img, value_name)
+    dict = getfield(img, field)
+    entry = get(dict, vn, nothing)
+    is_versioned_entry(entry) ? version_latest(entry) : LATEST_DEFAULT_VAL
+end
+
 # Per-track table suffix. A tracked segmentation gets a companion `.h5ad` holding ONE row per
 # track (track measures in X/var, lineage in obs) alongside the per-cell labelProps. The double
 # underscore keeps it distinct from a segmentation literally named "{x}_tracks" and marks the
@@ -333,9 +362,11 @@ Absolute path to a branch labels zarr for a value_name — resolves the register
 `img.branch_labels` (mirrors `img_labels_path`/`img_label_props_path`). Falls back to
 `{value_name}.zarr` if the value_name isn't registered yet (write path).
 """
-function img_branch_labels_path(img::CciaImage, value_name::AbstractString="default")::String
-    filenames = get(img.branch_labels, String(value_name), String[])
-    filename = isempty(filenames) ? "$(value_name).zarr" : first(filenames)
+function img_branch_labels_path(img::CciaImage, value_name::AbstractString="default";
+                                 version::Union{String,Nothing}=nothing)::String
+    entry = get(img.branch_labels, String(value_name), nothing)
+    filenames = unversion_value(entry, version)
+    filename = (isnothing(filenames) || isempty(filenames)) ? "$(value_name).zarr" : first(filenames)
     joinpath(img_branch_labels_dir(img), filename)
 end
 
