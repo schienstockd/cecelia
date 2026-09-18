@@ -44,16 +44,17 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(DisallowedRoute):
             self.c._request("GET", "/api/gating/save")
 
-    def test_writes_are_only_the_seven_recoverable_routes(self):
-        # The no-mutation guarantee: the only non-GET routes are lab-log append (append-only), notebook
-        # write (create-only), notebook describe (description text only), notebook revise (snapshots
-        # first, so it's recoverable), chain create (create-only + validated — and a template is
-        # inert until a human presses Run), and the LabArchives context set (REPLACES a sidecar that
-        # is a cache of an external, versioned system of record, so the rewrite loses nothing).
-        # None can edit/delete cell data, images, gates, or QC.
+    def test_writes_are_only_the_recoverable_routes(self):
+        # The no-mutation guarantee: the only non-GET routes are lab-log append (append-only),
+        # notebook write (create-only), notebook describe (description text only), notebook revise
+        # (snapshots first, so it's recoverable), chain create (create-only + validated — and a
+        # template is inert until a human presses Run), the LabArchives context set (REPLACES a
+        # sidecar that is a cache of an external, versioned system of record, so the rewrite loses
+        # nothing), and the point-out mark writes (BIDIR PR #4 — EPHEMERAL, in-memory only, 5-min
+        # default TTL). None can edit/delete cell data, images, gates, or QC.
         #
-        # Changing this list is the GATE on widening what Claude can do to a project. If you are here
-        # to add a route, the question to answer first is whether it can destroy something.
+        # Changing this list is the GATE on widening what Claude can do to a project. If you are
+        # here to add a route, the question to answer first is whether it can destroy something.
         writes = sorted((m, p) for (m, p) in ALLOWED_ROUTES if m != "GET")
         self.assertEqual(writes, [
             ("POST", "/api/boards/add"),
@@ -63,6 +64,8 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/notebooks/revise"),
             ("POST", "/api/notebooks/write"),
             ("POST", "/api/observer/labarchives/set"),
+            ("POST", "/api/viewer/marks/cells"),
+            ("POST", "/api/viewer/marks/tracks"),
         ])
 
     def test_every_route_the_client_calls_is_on_the_allow_list(self):
@@ -182,6 +185,42 @@ class ClientTest(unittest.TestCase):
     def test_notebook_read_routes_allow_listed(self):
         self.assertIn(("GET", "/api/notebooks"), ALLOWED_ROUTES)
         self.assertIn(("GET", "/api/notebooks/content"), ALLOWED_ROUTES)
+
+    def test_mark_tracks_posts_the_right_body(self):
+        # Point-out: track ids, per (image, vn), optional focus + label + TTL. Reaches the popup
+        # viewer via the WS `viewer:mark` frame; no persistence.
+        with _patch_urlopen({"ok": True, "markerId": "mark-abc"}) as u:
+            self.c.mark_tracks("p", "img1", "flowTom", [3, 7, 42],
+                               focus_id=7, label="two of interest", ttl_s=60)
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "POST")
+        self.assertTrue(req.full_url.endswith("/api/viewer/marks/tracks"))
+        self.assertEqual(json.loads(req.data.decode()), {
+            "projectUid": "p", "imageUid": "img1", "valueName": "flowTom",
+            "trackIds": [3, 7, 42], "focusId": 7, "label": "two of interest", "ttl_s": 60,
+        })
+
+    def test_mark_tracks_omits_optional_fields_when_default(self):
+        # Sparse body — a mark without a label or explicit TTL should send only the required fields
+        # so the server's own defaults (5-min TTL per Decision 18) apply.
+        with _patch_urlopen({"ok": True, "markerId": "mark-abc"}) as u:
+            self.c.mark_tracks("p", "img1", "flowTom", [3])
+        req = u.call_args[0][0]
+        body = json.loads(req.data.decode())
+        self.assertNotIn("focusId", body)
+        self.assertNotIn("label", body)
+        self.assertNotIn("ttl_s", body)
+
+    def test_mark_cells_uses_labelIds_key(self):
+        # `label_ids` on the tool becomes `labelIds` in the body — the server key that the pick
+        # membership uses. A `focusId` on the cell mark is the one distinct cell within the set.
+        with _patch_urlopen({"ok": True, "markerId": "mark-def"}) as u:
+            self.c.mark_cells("p", "img1", "flowTom", [101, 202], focus_id=101, label="lead")
+        req = u.call_args[0][0]
+        body = json.loads(req.data.decode())
+        self.assertEqual(body["labelIds"], [101, 202])
+        self.assertEqual(body["focusId"], 101)
+        self.assertEqual(body["label"], "lead")
 
     def test_list_notebooks_builds_url(self):
         with _patch_urlopen({"notebooks": []}) as u:

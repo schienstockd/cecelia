@@ -28,6 +28,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "get_recent_logs", "read_lab_log", "append_lab_log", "create_notebook",
             "set_notebook_description", "revise_notebook", "list_notebooks", "get_notebook",
             "create_chain",
+            "mark_tracks", "mark_cells",   # bidir point-out (BIDIR_CONTEXT_PLAN PR #4)
         ):
             self.assertIn(tool, self.names)
 

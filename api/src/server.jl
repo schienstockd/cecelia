@@ -48,6 +48,7 @@ include("cell_cards_api.jl") # /api/cell_cards — snapshot cards on the offline
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
+include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -245,6 +246,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/meta" => (req, body_bytes) -> (api_viewer_meta(req)),
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),
+    "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),
@@ -353,6 +355,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/app/restart" => (req, body_bytes) -> (api_app_restart(body_bytes)),
     "/api/app/switch-worktree" => (req, body_bytes) -> (api_app_switch_worktree(body_bytes)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_post(body_bytes)),
+    # bidir point-out (BIDIR_CONTEXT_PLAN Part 3) — Claude authors these via MCP; not user-facing.
+    "/api/viewer/marks/tracks" => (req, body_bytes) -> (api_viewer_marks_tracks(body_bytes)),
+    "/api/viewer/marks/cells"  => (req, body_bytes) -> (api_viewer_marks_cells(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),

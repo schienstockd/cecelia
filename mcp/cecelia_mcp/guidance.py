@@ -121,6 +121,16 @@ you left at defaults, and what genuinely could not be resolved yet — a populat
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
 that part is the user's.
 
+ON POINTING AT WHAT YOU MEAN. You can point back at specific tracks or cells on the user's \
+viewer with `mark_tracks(image_uid, value_name, track_ids, focus_id?, label?, ttl_s?)` and \
+`mark_cells(image_uid, value_name, label_ids, focus_id?, label?, ttl_s?)`. These are EPHEMERAL — \
+5-min default TTL, in-memory only, no persistence — for "look at THESE" during a conversation. \
+Pick tracks for trajectories, cells for objects-at-a-timepoint; a tracked cell has both, usually \
+you want tracks. Scope is per (image_uid, value_name) because ids are per-vn — a track 42 on \
+`flowTom` is a different cell from track 42 on `default`; get the vn from `get_analysis_lineage` \
+if you're not sure. Nothing gets saved by pointing; if the finding is worth keeping, propose a \
+board or a notebook instead.
+
 ON QC. A task that finished "done" can still have produced far too few cells, or clustered \
 degenerately — invisible in get_task_history, which only knows the run succeeded. Check the cohort \
 numbers for whatever actually ran (get_task_history first, then get_cohort_qc for that fun), and \

@@ -1221,6 +1221,85 @@ end
     end
 end
 
+@testset "API: viewer/marks — track + cell POST publishes WS frame; list drops expired" begin
+    # BIDIR_CONTEXT_PLAN Part 3 (point-out). Every mark takes the same delivery path as `task:status`:
+    # HTTP write → in-memory bag → WS broadcast. Frontend reads it and dispatches to the existing
+    # setTrackHighlight / setPickHighlight setters (nothing image-render-specific here).
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _reset_marks!()
+    cap = Channel{String}(64); key = gensym("test-marks")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    drain() = (fs = []; while isready(cap); push!(fs, JSON3.read(take!(cap))); end; fs)
+    try
+        uid = "TESTMARK"; mkpath(joinpath(tmp, uid))
+        # tracks
+        t(b) = _post(api_viewer_marks_tracks, b)
+        @test t(Dict("imageUid"=>"I", "valueName"=>"v", "trackIds"=>[1]))[1] == 400   # projectUid required
+        @test t(Dict("projectUid"=>"NOPE", "imageUid"=>"I", "valueName"=>"v", "trackIds"=>[1]))[1] == 400
+        @test t(Dict("projectUid"=>uid, "imageUid"=>"I", "valueName"=>"v"))[1] == 400 # trackIds required
+        @test t(Dict("projectUid"=>uid, "imageUid"=>"I", "valueName"=>"v", "trackIds"=>[]))[1] == 400
+        drain()
+
+        st, body = t(Dict("projectUid"=>uid, "imageUid"=>"IMG1", "valueName"=>"default",
+                          "trackIds"=>[3, 7, 42], "focusId"=>7, "label"=>"two of interest", "ttl_s"=>60))
+        @test st == 200
+        r = JSON3.read(body)
+        @test r.ok == true && startswith(String(r.markerId), "mark-")
+        # WS frame — same shape TrackHighlight uses (trackIds), plus the marker envelope.
+        frames = drain()
+        @test length(frames) == 1
+        f = frames[1]
+        @test String(f.type) == "viewer:mark"
+        @test String(f.kind) == "track"
+        @test String(f.imageUid) == "IMG1"
+        @test collect(f.trackIds) == [3, 7, 42]
+        @test Int(f.focusId) == 7
+        @test String(f.label) == "two of interest"
+
+        # cells
+        c(b) = _post(api_viewer_marks_cells, b)
+        @test c(Dict("projectUid"=>uid, "imageUid"=>"I", "valueName"=>"v"))[1] == 400 # labelIds required
+        drain()
+        st2, body2 = c(Dict("projectUid"=>uid, "imageUid"=>"IMG1", "valueName"=>"default",
+                            "labelIds"=>[101, 202], "focusId"=>101))
+        @test st2 == 200
+        r2 = JSON3.read(body2)
+        f2 = drain()[1]
+        @test String(f2.kind) == "cell"
+        @test collect(f2.labels) == [101, 202]
+        @test Int(f2.focusId) == 101
+
+        # list — both live entries
+        st3, body3 = api_viewer_marks_list(HTTP.Request("GET", "/api/viewer/marks?projectUid=$uid"))
+        @test st3 == 200
+        items = JSON3.read(body3).items
+        @test length(items) == 2
+
+        # TTL: a mark with a 1-second TTL is skipped once it's aged past that.
+        _reset_marks!()
+        st4, body4 = t(Dict("projectUid"=>uid, "imageUid"=>"IMG1", "valueName"=>"default",
+                            "trackIds"=>[9], "ttl_s"=>1))
+        @test st4 == 200
+        # Force-age by rewriting the mark's createdAt via the bag. This is white-box on purpose —
+        # sleeping 2s in a testset punishes CI, and the TTL branch is what needs proving.
+        lock(_MARKS_LOCK) do
+            for (_, m) in _MARKS_BY_PROJECT[uid]
+                _MARKS_BY_PROJECT[uid][m.id] = Mark(m.id, m.kind, m.projectUid, m.imageUid,
+                    m.valueName, m.ids, m.focusId, m.label, m.createdAt - 10.0, m.ttlSeconds)
+            end
+        end
+        st5, body5 = api_viewer_marks_list(HTTP.Request("GET", "/api/viewer/marks?projectUid=$uid"))
+        @test st5 == 200 && isempty(JSON3.read(body5).items)
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        _reset_marks!()
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: notebooks sysimage status" begin
     # status always carries a `sysimage` field, one of the valid states (machine-independent: deps.so
     # may or may not exist here). Pins the response contract the frontend's first-run build reads.
@@ -5048,6 +5127,7 @@ end
         "/api/correction-plan/get",
         "/api/correction-plan/presets",
         "/api/crop/frame", "/api/crop/info",
+        "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
         "/api/viewer/overlays",
         "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
@@ -5127,6 +5207,8 @@ end
         "/api/notebooks/restart", "/api/notebooks/restore",
         "/api/notebooks/revise", "/api/notebooks/shutdown",
         "/api/notebooks/snapshot", "/api/notebooks/write",
+        "/api/viewer/marks/tracks", "/api/viewer/marks/cells",   # bidir point-out write (PR #4)
+
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
         "/api/optical-flow/rename",
         "/api/denoise/delete", "/api/denoise/rename",
@@ -5198,7 +5280,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 90 && length(POST_ROUTES) == 114
+    @test length(GET_ROUTES) == 91 && length(POST_ROUTES) == 116
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
