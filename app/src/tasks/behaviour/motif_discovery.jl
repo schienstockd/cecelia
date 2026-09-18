@@ -36,7 +36,7 @@ const _MOTIF_FEATURE_COLS = String["live.cell.speed", "live.cell.angle",
 
 # Typed shape of what `_run_task(::MotifDiscovery, …)` reads from `params`.
 Base.@kwdef struct MotifDiscoveryParams
-    pops::Vector{String}   = String["/live"]
+    pops::Vector{String}   = String[]
     valueName::String      = "default"
     windowSize::Int        = 8
     topK::Int              = 100
@@ -45,7 +45,7 @@ Base.@kwdef struct MotifDiscoveryParams
 end
 
 function _motif_pops(params)::Vector{String}
-    raw  = get(params, "pops", String["/live"])
+    raw  = get(params, "pops", String[])
     pops = raw isa AbstractString ? String[raw] : String[string(x) for x in raw]
     filter(p -> !isempty(p) && p != "NONE", pops)
 end

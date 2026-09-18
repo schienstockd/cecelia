@@ -527,7 +527,7 @@ end
         @test p.resolutionLocked === true
     end
     let p = Cecelia.parse_motif_discovery_params(Dict{String,Any}())
-        @test p.pops == ["/live"]
+        @test p.pops == String[]
         @test p.valueName == "default"
         @test p.windowSize === 8
         @test p.topK === 100
@@ -538,7 +538,11 @@ end
     # rejects it as ParamValidationError before the handler ever runs.
     @test_throws Cecelia.ParamValidationError Cecelia.validate_params(
         Cecelia.MotifDiscovery(),
-        Dict{String,Any}("pops" => ["/live"], "windowSize" => 0))
+        Dict{String,Any}("pops" => ["flowTom/qc/CD169-/cells"], "windowSize" => 0))
+    # `pops` is required (matches hmm_states) — empty list is rejected by the spec's `required: true`.
+    @test_throws Cecelia.ParamValidationError Cecelia.validate_params(
+        Cecelia.MotifDiscovery(),
+        Dict{String,Any}("pops" => String[]))
 
     # spatialAnalysis (spot-check the parsers; each is small).
     let p = Cecelia.parse_aggregates_meshes_params(Dict{String,Any}(
