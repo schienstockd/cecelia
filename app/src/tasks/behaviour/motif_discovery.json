@@ -10,12 +10,14 @@
   "params": [
     {
       "key": "pops",
+      "required": true,
+      "requiredMessage": "Select at least one tracked population",
       "label": "Populations",
       "type": "popSelection",
       "popScope": "tracks",
       "multiple": true,
       "acrossSegmentations": true,
-      "default": ["/live"],
+      "default": [],
       "tip": "Tracked populations whose cells feed motif detection (pooled across the set)"
     },
     {
