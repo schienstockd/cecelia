@@ -65,6 +65,9 @@ class MeasureUtils:
         self.dim_utils          = dim_utils
         self.task_dir           = params['taskDir']
         self.output_value_name  = params.get('outputValueName', 'default')
+        # P1d pass-through: chain-run pinned version (docs/todo/VN_VERSIONING_PLAN.md → D3);
+        # stored for logs / future writer routing. Path assembly stays legacy (P4b rewrites).
+        self.version            = params.get('version')
         self.intensity_measure  = params.get('intensityMeasure', 'mean')
         self.gaussian_filter    = float(params.get('gaussianFilter', 0.0))
         self.extended_measures  = bool(params.get('extendedMeasures', False))

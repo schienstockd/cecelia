@@ -131,6 +131,9 @@ class SegmentationUtils:
         # reused, which is the property a subclass caching against it depends on.
         self._context_counter = 0
         self.output_value_name = params.get('outputValueName', 'default')
+        # P1d pass-through: chain-run pinned version (docs/todo/VN_VERSIONING_PLAN.md → D3);
+        # stored for logs / future writer routing. Path assembly stays legacy (P4b rewrites).
+        self.version = params.get('version')
 
     def px_from_um(self, um):
         """Microns → pixels on this image's X axis. 0 stays 0, so "off" survives the conversion."""
