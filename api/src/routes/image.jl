@@ -195,6 +195,14 @@ end
 # POST /api/import/register-legacy {projectUid, setUid, sourceProjectDir, images:[{uid,name,kind}]}
 # Registers a placeholder image per legacy image, PRESERVING its UID and stashing the source in meta,
 # so the per-image importImages.migrateLegacy task can run. Mirrors api_images_register.
+#
+# **Doubles as a REPAIR path for an image whose legacy pointers were scrubbed.** Any
+# `importImages.migrateLegacy` run before 2026-09-17 overwrote `img.meta` wholesale with the OME block
+# and lost `legacySourceDir`/`legacySourceUid`, so a subsequent re-run (copy → symlink, or a partial
+# retry) dies at the "no legacy source" guard with nothing to fall back to. When the UID already
+# exists in the set we PATCH the two pointers into the existing image (never `add_image!` which would
+# clobber the migrated `filepath` / `label_props` fields) and mark the response `repaired` — the
+# migrated data on disk is untouched and the task can now run again.
 function api_import_register_legacy(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body
@@ -220,13 +228,24 @@ function api_import_register_legacy(body_bytes::Vector{UInt8})
         uid  = String(get(im, :uid, ""))
         isempty(uid) && continue
         name = String(get(im, :name, uid))
-        # Legacy `kind` on the R side (static/live/flow) is intentionally dropped — the new app
-        # gates per-image on axes (Cecelia.task_applies), not project-wide.
-        meta = Dict{String,Any}("legacySourceDir" => abs_src, "legacySourceUid" => uid)
-        isempty(rsc) || (meta["legacyRscript"] = rsc)
-        img = add_image!(s; name=name, uid=uid, meta=meta)
-        push!(registered, Dict{String,Any}(
-            "uid" => img.uid, "name" => img.name, "status" => "pending"))
+        existing = image_by_uid(s; uid = uid)
+        if !isnothing(existing)
+            # Repair path: patch legacy pointers into the existing image without touching filepath /
+            # label_props / attr / im_channel_names. Legacy `kind` on the R side (static/live/flow)
+            # is intentionally dropped — the new app gates per-image on axes (Cecelia.task_applies).
+            existing.meta["legacySourceDir"] = abs_src
+            existing.meta["legacySourceUid"] = uid
+            isempty(rsc) || (existing.meta["legacyRscript"] = rsc)
+            save!(existing)
+            push!(registered, Dict{String,Any}(
+                "uid" => existing.uid, "name" => existing.name, "status" => "repaired"))
+        else
+            meta = Dict{String,Any}("legacySourceDir" => abs_src, "legacySourceUid" => uid)
+            isempty(rsc) || (meta["legacyRscript"] = rsc)
+            img = add_image!(s; name=name, uid=uid, meta=meta)
+            push!(registered, Dict{String,Any}(
+                "uid" => img.uid, "name" => img.name, "status" => "pending"))
+        end
     end
     @info "Registered legacy images" count=length(registered) set=set_uid
     200, JSON3.write((; images=registered))
