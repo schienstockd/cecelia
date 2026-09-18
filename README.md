@@ -37,10 +37,32 @@ the latest release, and provisions the environment (a few GB on first run; later
 Bioformats2raw and the Cellpose checkpoints download on first launch. Installs **just for you** by
 default — no admin rights needed.
 
-| OS | Install — in a terminal | Run |
-|---|---|---|
-| Linux · macOS | `curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh \| sh` | Launch **Cecelia** from your applications menu |
-| Windows | `irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 \| iex` (PowerShell) | Launch **Cecelia** from the Start Menu |
+**Install** — in a terminal:
+
+```sh
+# Linux / macOS
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
+```
+
+**Run** — launch **Cecelia** from your applications menu (Start Menu on Windows), or from a terminal:
+
+```sh
+# Linux / macOS
+cd ~/.local/share/cecelia && pixi run app
+```
+
+```powershell
+# Windows (PowerShell)
+cd $env:LOCALAPPDATA\cecelia ; pixi run app
+```
+
+Running from a terminal streams stdout/stderr live — useful when diagnosing a launch failure. On
+macOS the `.app` bundle redirects logs to `~/Library/Logs/Cecelia/launcher.log` instead.
 
 **First launch.** Cecelia opens in your browser at <http://localhost:8080>. A one-screen wizard asks
 where to store your projects — accept the default or pick a folder. The choice is saved to
@@ -70,7 +92,10 @@ Re-run the same command to update.
 ```sh
 # Linux / macOS
 curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_CHANNEL=dev sh
-# Windows PowerShell
+```
+
+```powershell
+# Windows (PowerShell)
 $env:CECELIA_CHANNEL='dev'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
 ```
 
@@ -85,7 +110,10 @@ concurrency (cpu/gpu/io/network). Run alongside the app, from the install direct
 ```sh
 # Linux / macOS
 cd ~/.local/share/cecelia && pixi run console
-# Windows
+```
+
+```powershell
+# Windows (PowerShell)
 cd $env:LOCALAPPDATA\cecelia ; pixi run console
 ```
 
