@@ -84,7 +84,14 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     rscript  = rscript_bin_path(!isempty(p.rscript) ? p.rscript : string(get(img.meta, "legacyRscript", "")))
 
     if isempty(src_proj) || isempty(src_uid)
-        on_log("[ERROR] No legacy source (sourceProjectDir / sourceUid) on this image.")
+        # Most likely cause: the image was migrated once on pre-2026-09-17 code that overwrote
+        # img.meta wholesale, wiping legacySourceDir/legacySourceUid — see
+        # _merge_meta_preserving_legacy below. Recovery: re-open Migrate legacy dialog and point at the
+        # same source project; `api_import_register_legacy` will PATCH the pointers back in without
+        # touching the migrated data. That routing tip is the whole reason the message is verbose.
+        on_log("[ERROR] No legacy source recorded on this image (legacySourceDir / legacySourceUid missing). " *
+               "Open the Migrate legacy dialog again and point at the original project — the pointers " *
+               "will be restored without touching the already-migrated data, and the task can then re-run.")
         return nothing
     end
     if !isdir(joinpath(src_proj, "ANALYSIS"))

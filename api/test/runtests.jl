@@ -122,6 +122,67 @@ end
     end
 end
 
+@testset "API: register-legacy REPAIRS an existing image instead of clobbering it" begin
+    # Recovery path for images migrated on pre-2026-09-17 code: that build overwrote `img.meta`
+    # wholesale at the end of the migrate task, wiping `legacySourceDir`/`legacySourceUid`. A later
+    # re-run (copy → symlink, or a partial retry) then dies at the "no legacy source" guard because
+    # the task falls back to `img.meta` and there is nothing to fall back to. Users landed on the
+    # `Migrate legacy` dialog to fix it and pointed at the same source project — but the dialog was
+    # calling `add_image!` which would CLOBBER the migrated `filepath` / `label_props` / attr, so
+    # repair through the UI destroyed the migrated data. This test pins the repair path: existing UID
+    # → PATCH the two pointers, do not touch anything else.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-legacy-repair")
+        s    = add_set!(proj; name = "s")
+        # Simulate a post-migration image: has filepath / label_props / attr but its meta was
+        # clobbered by the pre-fix migrate — no legacy pointers left.
+        img  = add_image!(s; name = "a", uid = "leg1",
+                          meta = Dict{String,Any}("SizeX" => 512, "SizeY" => 512))
+        img.filepath    = Dict{String,String}("default" => "ccidImage.ome.zarr")
+        img.label_props = Dict{String,String}("default" => "seg.h5ad")
+        img.attr        = Dict{String,String}("mouse" => "m1")
+        save!(img)
+
+        body = Dict("projectUid" => proj.uid, "setUid" => s.uid,
+                    "sourceProjectDir" => "/legacy/proj",
+                    "images" => [Dict("uid" => "leg1", "name" => "a")])
+        code, resp = _post(api_import_register_legacy, body)
+        @test code == 200
+        parsed = JSON3.read(resp)
+        @test length(parsed.images) == 1
+        @test parsed.images[1].status == "repaired"
+
+        # Reload from disk and check: legacy pointers restored, everything else INTACT.
+        proj2 = load_project(proj.uid)
+        s2    = proj2._sets[1]
+        img2  = image_by_uid(s2; uid = "leg1")
+        @test !isnothing(img2)
+        @test img2.meta["legacySourceDir"] == "/legacy/proj"
+        @test img2.meta["legacySourceUid"] == "leg1"
+        @test img2.meta["SizeX"] == 512                   # existing meta preserved
+        @test img2.filepath["default"]    == "ccidImage.ome.zarr"   # migrated data untouched
+        @test img2.label_props["default"] == "seg.h5ad"
+        @test img2.attr["mouse"]          == "m1"
+        # image_uids should NOT have grown (existing image reused, not appended)
+        @test count(==("leg1"), s2.image_uids) == 1
+
+        # NEW image on the same call goes through add_image! → status "pending".
+        body2 = Dict("projectUid" => proj.uid, "setUid" => s.uid,
+                     "sourceProjectDir" => "/legacy/proj",
+                     "images" => [Dict("uid" => "leg2", "name" => "b")])
+        code2, resp2 = _post(api_import_register_legacy, body2)
+        @test code2 == 200
+        @test JSON3.read(resp2).images[1].status == "pending"
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: /api/tasks/funparams/sources lists per-image (image, valueName) pairs" begin
     # The Copy-from-a-previous-run picker reaches for records that live PER IMAGE. Same set as the
     # form; two sources, unioned: `meta.funParamsByName[fun]` keys (the by-name blob) and matching

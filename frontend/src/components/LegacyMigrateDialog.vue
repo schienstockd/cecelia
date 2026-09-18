@@ -37,6 +37,9 @@ const error = ref('')
 const manifest = ref<Manifest | null>(null)
 const selected = ref<string[]>([])   // v-model:selected on the table (ids, in pick order)
 const done = ref(0)              // >0 after a successful import → show the next-step panel
+const repaired = ref(0)          // subset of `done` whose legacy pointers were RESTORED on an
+                                 // already-registered image (recovery path for images migrated on
+                                 // pre-2026-09-17 code that wiped legacySourceDir/legacySourceUid)
 
 // Typed by the FIELD each needs rather than by `LegacyImage`, so they can be called from a
 // `#cell-` slot (whose row is a generic record) without a cast at every call site.
@@ -109,10 +112,13 @@ async function confirmImport() {
         ...(rs ? { rscript: rs } : {}),
       }),
     })
-    const body = await res.json().catch(() => ({})) as { images?: unknown[]; error?: string }
+    type Registered = { uid: string; name: string; status?: string }
+    const body = await res.json().catch(() => ({})) as { images?: Registered[]; error?: string }
     if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`)
-    done.value = (body.images ?? images).length
-    emit('imported', body.images ?? [])   // parent adds to the set; dialog stays open to show next step
+    const returned = body.images ?? []
+    done.value = returned.length || images.length
+    repaired.value = returned.filter(i => i.status === 'repaired').length
+    emit('imported', returned)   // parent adds to the set; dialog stays open to show next step
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -125,12 +131,27 @@ async function confirmImport() {
   <BaseModal title="Migrate legacy project" width="820px" @close="$emit('close')">
     <!-- success / next-step panel -->
     <div v-if="done" class="lm lm-donebox">
-      <p class="lm-doneline"><i class="pi pi-check-circle" /> Added <strong>{{ done }}</strong>
-        image{{ done === 1 ? '' : 's' }} to the set.</p>
+      <p class="lm-doneline"><i class="pi pi-check-circle" />
+        <template v-if="repaired && repaired === done">
+          Restored legacy source on <strong>{{ done }}</strong> image{{ done === 1 ? '' : 's' }}.
+        </template>
+        <template v-else-if="repaired">
+          Added <strong>{{ done - repaired }}</strong>, restored legacy source on
+          <strong>{{ repaired }}</strong>.
+        </template>
+        <template v-else>
+          Added <strong>{{ done }}</strong> image{{ done === 1 ? '' : 's' }} to the set.
+        </template>
+      </p>
       <p class="lm-lead cc-muted cc-fs-lg">
-        These are placeholders — no data has moved yet. To transfer the images, segmentation and
-        tracking, select them and run the <strong>“Migrate legacy image”</strong> task from the task
-        panel.
+        <template v-if="repaired === done">
+          Re-run <strong>“Migrate legacy image”</strong> on the affected images to finish.
+        </template>
+        <template v-else>
+          These are placeholders — no data has moved yet. To transfer the images, segmentation and
+          tracking, select them and run the <strong>“Migrate legacy image”</strong> task from the task
+          panel.
+        </template>
       </p>
     </div>
 
