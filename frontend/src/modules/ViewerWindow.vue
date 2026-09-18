@@ -93,6 +93,7 @@ import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
 import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
+import GridOverlay from '../components/GridOverlay.vue'
 import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -4454,6 +4455,10 @@ onUnmounted(() => {
         :show-scale-bar="settings.viewerScaleBar" :show-timestamp="settings.viewerTimestamp"
         :bar-font-px="settings.viewerScaleBarPx" :time-font-px="settings.viewerTimestampPx"
       />
+      <!-- Set-of-Mark grid — user-facing region names ("look at C4"). PR #2 of BIDIR_CONTEXT_PLAN.md.
+           Viewport coords: at zoom-in "C4" is a quarter of the current view, not a quarter of the
+           image scrolled off screen. Toggled from the Annotations section of the viewer panel. -->
+      <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity" />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
            cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
       <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">
@@ -4913,6 +4918,22 @@ onUnmounted(() => {
                 v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
               >
               <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+            </template>
+          </div>
+          <!-- Set-of-Mark grid: named cells (A1..H8 at 8×8) over the current viewport, so a share-in
+               / point-out session can cite a region by name. Density slider appears with the toggle
+               — same pattern as the scale-bar text-size slider above. -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Named cells (A1..H8) over the viewport'">Grid</span>
+            <CcToggle v-model="settings.viewerGrid" aria-label="Show the region grid" />
+            <template v-if="settings.viewerGrid">
+              <input
+                type="range" class="vw-grow vw-px" :min="4" :max="16" :step="1"
+                v-model.number="settings.viewerGridDensity"
+                v-tooltip.bottom="'Cells per side (4..16)'" aria-label="Grid density"
+              >
+              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerGridDensity }}</span>
             </template>
           </div>
         </CollapsibleSection>
