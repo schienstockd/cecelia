@@ -29,6 +29,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "set_notebook_description", "revise_notebook", "list_notebooks", "get_notebook",
             "create_chain",
             "mark_tracks", "mark_cells",   # bidir point-out (BIDIR_CONTEXT_PLAN PR #4)
+            "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
         ):
             self.assertIn(tool, self.names)
 

@@ -25,6 +25,7 @@ import IconLegendDialog from './components/IconLegendDialog.vue'
 import ColorLegendDialog from './components/ColorLegendDialog.vue'
 import CallForDatasetsModal from './components/CallForDatasetsModal.vue'
 import GuideBubble from './components/GuideBubble.vue'
+import PointerBubble from './components/PointerBubble.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
 import { isGuidesOpen } from './lib/guideOpen'
 import { isIconLegendOpen } from './lib/iconLegendOpen'
@@ -211,6 +212,9 @@ const bare = computed(() => popout || route.meta.bare === true)
          `?ask=<id>`. -->
     <CallForDatasetsModal v-if="isCallForDatasetsOpen" />
     <GuideBubble v-if="guide.active" />
+    <!-- Claude's "click here" pointers — BIDIR PR #5. Always mounted (poll is off when the
+         viewerStore.uiMarks bag is empty), so a mark that lands mid-session appears instantly. -->
+    <PointerBubble />
   </div>
 </template>
 

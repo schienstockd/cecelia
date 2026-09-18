@@ -356,8 +356,10 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/app/switch-worktree" => (req, body_bytes) -> (api_app_switch_worktree(body_bytes)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_post(body_bytes)),
     # bidir point-out (BIDIR_CONTEXT_PLAN Part 3) — Claude authors these via MCP; not user-facing.
-    "/api/viewer/marks/tracks" => (req, body_bytes) -> (api_viewer_marks_tracks(body_bytes)),
-    "/api/viewer/marks/cells"  => (req, body_bytes) -> (api_viewer_marks_cells(body_bytes)),
+    "/api/viewer/marks/tracks"   => (req, body_bytes) -> (api_viewer_marks_tracks(body_bytes)),
+    "/api/viewer/marks/cells"    => (req, body_bytes) -> (api_viewer_marks_cells(body_bytes)),
+    "/api/viewer/marks/ui"       => (req, body_bytes) -> (api_viewer_marks_ui(body_bytes)),
+    "/api/viewer/marks/freeform" => (req, body_bytes) -> (api_viewer_marks_freeform(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),

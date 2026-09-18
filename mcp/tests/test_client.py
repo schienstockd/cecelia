@@ -65,7 +65,9 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/notebooks/write"),
             ("POST", "/api/observer/labarchives/set"),
             ("POST", "/api/viewer/marks/cells"),
+            ("POST", "/api/viewer/marks/freeform"),
             ("POST", "/api/viewer/marks/tracks"),
+            ("POST", "/api/viewer/marks/ui"),
         ])
 
     def test_every_route_the_client_calls_is_on_the_allow_list(self):
@@ -221,6 +223,25 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(body["labelIds"], [101, 202])
         self.assertEqual(body["focusId"], 101)
         self.assertEqual(body["label"], "lead")
+
+    def test_mark_ui_posts_the_anchor(self):
+        with _patch_urlopen({"ok": True, "markerId": "mark-u1"}) as u:
+            self.c.mark_ui("p", "nav:/segment", label="here", ttl_s=60)
+        req = u.call_args[0][0]
+        self.assertTrue(req.full_url.endswith("/api/viewer/marks/ui"))
+        self.assertEqual(json.loads(req.data.decode()),
+                         {"projectUid": "p", "anchor": "nav:/segment", "label": "here", "ttl_s": 60})
+
+    def test_mark_freeform_posts_target_and_overlay(self):
+        with _patch_urlopen({"ok": True, "markerId": "mark-f1"}) as u:
+            self.c.mark_freeform("p", "cap-20260918T175413-a1b2c3",
+                                 overlay=[{"kind": "circle", "geom": {"cx": 0.5, "cy": 0.5, "r": 0.1}}])
+        req = u.call_args[0][0]
+        self.assertTrue(req.full_url.endswith("/api/viewer/marks/freeform"))
+        body = json.loads(req.data.decode())
+        self.assertEqual(body["target"], "cap-20260918T175413-a1b2c3")
+        self.assertEqual(len(body["overlay"]), 1)
+        self.assertNotIn("imageUid", body)
 
     def test_list_notebooks_builds_url(self):
         with _patch_urlopen({"notebooks": []}) as u:

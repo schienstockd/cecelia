@@ -18,6 +18,12 @@ using Dates
 # The bag lives in the process, not per-project on disk (Decision 18). One lock guards insertion
 # and read; a mark is small (a handful of ids + a label) so a naive Dict is fine. Keyed by
 # projectUid → id → Mark, so a lookup is O(1) per project.
+#
+# TWO STRUCTS on purpose. `Mark` is DATA-ANCHOR (track / cell — PR #4): a handful of ints under a
+# per-vn identity. `UiFreeformMark` is DOM-ANCHOR (ui / freeform — PR #5): a dom-anchor string OR
+# a target (captureId / "live_viewer") plus a payload bag the frontend consumes verbatim. Trying
+# to squeeze both into one struct meant either half a dozen nullable fields or a JSON-schemaless
+# bag masquerading as typed — this cleaner two-way split lets each kind own its own shape.
 struct Mark
     id::String
     kind::String              # "track" | "cell"
@@ -31,14 +37,29 @@ struct Mark
     ttlSeconds::Int
 end
 
+struct UiFreeformMark
+    id::String
+    kind::String              # "ui" | "freeform"
+    projectUid::String
+    label::Union{String,Nothing}
+    createdAt::Float64
+    ttlSeconds::Int
+    # Kind-specific bag — the frontend routes on `kind` and reads what it needs.
+    # For "ui":       {anchor: String}
+    # For "freeform": {target: "live_viewer" | "<captureId>", imageUid?: String, valueName?: String,
+    #                  overlay: [{kind, geom, label?}]}  (`overlay` shape matches captureAddress.ts)
+    payload::Dict{String,Any}
+end
+
 const _MARKS_LOCK = ReentrantLock()
-const _MARKS_BY_PROJECT = Dict{String, Dict{String, Mark}}()
+const _MARKS_BY_PROJECT = Dict{String, Dict{String, Union{Mark, UiFreeformMark}}}()
+const AnyMark = Union{Mark, UiFreeformMark}
 const _MARK_TTL_DEFAULT = 300      # 5 min per Decision 18
 const _MARK_TTL_MAX     = 3600     # cap — a "mark" that lasts an hour is no longer ephemeral
 const _MARK_LABEL_MAX   = 120
 
 _now_epoch() = time()
-_mark_alive(m::Mark, now::Float64 = _now_epoch()) = (now - m.createdAt) < m.ttlSeconds
+_mark_alive(m::AnyMark, now::Float64 = _now_epoch()) = (now - m.createdAt) < m.ttlSeconds
 
 # `mark-<8 hex>` — short, no timestamp (already carried in `createdAt`), collision-free at this scale.
 _new_mark_id() = string("mark-", bytes2hex(rand(UInt8, 4)))
@@ -67,9 +88,9 @@ _clean_focus(v) = begin
     try; Int(v); catch; nothing; end
 end
 
-function _store_mark!(m::Mark)
+function _store_mark!(m::AnyMark)
     lock(_MARKS_LOCK) do
-        bag = get!(_MARKS_BY_PROJECT, m.projectUid, Dict{String,Mark}())
+        bag = get!(_MARKS_BY_PROJECT, m.projectUid, Dict{String,AnyMark}())
         bag[m.id] = m
     end
 end
@@ -95,6 +116,27 @@ function _mark_ws_payload(m::Mark)::Dict{String,Any}
     else   # "cell"
         common["labels"]  = m.ids
         common["focusId"] = something(m.focusId, 0)
+    end
+    common
+end
+
+# UI + freeform envelope (PR #5). No image identity — a UI mark points at a `data-guide` anchor
+# that lives outside any image (a sidebar item, a settings button); a freeform mark carries its own
+# target (a captureId or "live_viewer"). The `payload` dict is merged verbatim into the WS frame so
+# the frontend routes on `kind` and reads what it needs — same principle as the capture envelope's
+# schemaless `overlay` bag (`captures_api.jl`).
+function _mark_ws_payload(m::UiFreeformMark)::Dict{String,Any}
+    common = Dict{String,Any}(
+        "type"       => "viewer:mark",
+        "kind"       => m.kind,
+        "markerId"   => m.id,
+        "projectUid" => m.projectUid,
+        "label"      => something(m.label, ""),
+        "ttlSeconds" => m.ttlSeconds,
+        "createdAt"  => m.createdAt,
+    )
+    for (k, v) in m.payload
+        common[k] = v
     end
     common
 end
@@ -176,7 +218,7 @@ function api_viewer_marks_list(req::HTTP.Request)
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     now = _now_epoch()
     items = lock(_MARKS_LOCK) do
-        bag = get(_MARKS_BY_PROJECT, uid, Dict{String,Mark}())
+        bag = get(_MARKS_BY_PROJECT, uid, Dict{String,AnyMark}())
         # Drop dead marks lazily — a client that never asks means the bag can grow slowly; a
         # cleanup here on every read keeps the memory footprint bounded by live marks alone.
         expired = [k for (k, m) in bag if !_mark_alive(m, now)]
@@ -184,6 +226,112 @@ function api_viewer_marks_list(req::HTTP.Request)
         [_mark_ws_payload(m) for m in values(bag)]
     end
     200, JSON3.write((; items = items))
+end
+
+# ── UI + freeform (PR #5 of BIDIR_CONTEXT_PLAN.md) ────────────────────────────
+
+# Same anchor scheme as `frontend/src/utils/guideAnchor.ts`: `<area>.<control>` for a `data-guide`
+# attribute, or `nav:/<route>` for a sidebar item by href. We ACCEPT any string here (the anchor
+# may be an id the frontend hasn't shipped yet, and being too strict would reject legitimate future
+# ids) but cap the length to keep a runaway payload bounded.
+const _ANCHOR_MAX = 200
+_clean_anchor(v) = begin
+    s = strip(String(v === nothing ? "" : v))
+    isempty(s) && return ""
+    length(s) > _ANCHOR_MAX ? String(first(s, _ANCHOR_MAX)) : String(s)
+end
+
+const _FREEFORM_TARGET_LIVE = "live_viewer"
+const _CAPTURE_ID_RE = r"^cap-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}$"   # matches captures_api.jl
+_clean_freeform_target(v) = begin
+    s = strip(String(v === nothing ? "" : v))
+    s == _FREEFORM_TARGET_LIVE && return s
+    isnothing(match(_CAPTURE_ID_RE, s)) ? "" : s
+end
+
+# Overlay marks arrive in the same shape captures_api.jl already validates (rect | poly | stroke |
+# circle | arrow, geom + optional label). We re-use the exact same set here rather than importing —
+# both files pin the vocabulary; a mismatch is a real bug.
+const _FREEFORM_OVERLAY_KINDS = Set(["rect", "poly", "stroke", "circle", "arrow"])
+function _clean_overlay_mark(m)::Union{Dict{String,Any},Nothing}
+    m isa AbstractDict || return nothing
+    kind = String(get(m, "kind", get(m, :kind, "")))
+    kind in _FREEFORM_OVERLAY_KINDS || return nothing
+    out = Dict{String,Any}("kind" => kind)
+    for k in ("geom", "label")
+        v = get(m, k, get(m, Symbol(k), nothing))
+        v === nothing || (out[k] = v)
+    end
+    out
+end
+_clean_freeform_overlay(raw) = begin
+    raw isa AbstractVector || return Dict{String,Any}[]
+    filter(!isnothing, [_clean_overlay_mark(m) for m in raw])
+end
+
+"""
+    POST /api/viewer/marks/ui
+
+Body: `{ projectUid, anchor: "<area>.<control>" | "nav:/<route>", label?, ttl_s? }`
+Reply: `{ ok:true, markerId }`
+
+Publishes a `viewer:mark` frame with `kind: "ui"`. The frontend routes it to the UI-pointer store
+(`stores/viewer.ts::uiMarks`), a small `PointerBubble.vue` resolves the anchor via
+`utils/guideAnchor.ts::resolveAnchor` and paints a bare "point" indicator beside it.
+"""
+function api_viewer_marks_ui(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
+    anchor = _clean_anchor(get(body, :anchor, nothing))
+    isempty(anchor) && return 400, JSON3.write((; error = "anchor required (e.g. 'viewer.movieSection' or 'nav:/segment')"))
+    label = _clean_label(get(body, :label, nothing))
+    ttl   = _clean_ttl(get(body, :ttl_s, get(body, :ttlSeconds, _MARK_TTL_DEFAULT)))
+    m = UiFreeformMark(_new_mark_id(), "ui", project_uid, label, _now_epoch(), ttl,
+                       Dict{String,Any}("anchor" => anchor))
+    _store_mark!(m)
+    broadcast_ws(_mark_ws_payload(m))
+    200, JSON3.write((; ok = true, markerId = m.id))
+end
+
+"""
+    POST /api/viewer/marks/freeform
+
+Body: `{ projectUid, target: "live_viewer" | "<captureId>", overlay: [{kind, geom, label?}, …],
+         imageUid?, valueName?, label?, ttl_s? }`
+Reply: `{ ok:true, markerId }`
+
+Publishes a `viewer:mark` frame with `kind: "freeform"`. Two coordinate modes (per Decision 17 of
+the plan): if `target == "live_viewer"`, the overlay renders on the popup viewer in viewport-px
+(same coord frame `DrawSurface` produces on the viewer). If `target` is a captureId, the overlay
+renders on top of that stored capture in the same 0..1 frame-relative coords `captures_api.jl`
+already uses — the freeform is a pointer AT the shared frame, not a viewer overlay.
+"""
+function api_viewer_marks_freeform(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
+    target = _clean_freeform_target(get(body, :target, ""))
+    isempty(target) && return 400, JSON3.write((; error = "target required — 'live_viewer' or a captureId"))
+    overlay = _clean_freeform_overlay(get(body, :overlay, nothing))
+    isempty(overlay) && return 400, JSON3.write((; error = "overlay required (a non-empty list of marks)"))
+    label = _clean_label(get(body, :label, nothing))
+    ttl   = _clean_ttl(get(body, :ttl_s, get(body, :ttlSeconds, _MARK_TTL_DEFAULT)))
+    payload = Dict{String,Any}("target" => target, "overlay" => overlay)
+    # imageUid / valueName scope only make sense for live_viewer — kept as hints for the renderer,
+    # not validated as "must match the open image" (that's the frontend's judgement call).
+    image_uid  = _wstr(body, :imageUid)
+    value_name = _wstr(body, :valueName)
+    isempty(image_uid)  || (payload["imageUid"]  = image_uid)
+    isempty(value_name) || (payload["valueName"] = value_name)
+    m = UiFreeformMark(_new_mark_id(), "freeform", project_uid, label, _now_epoch(), ttl, payload)
+    _store_mark!(m)
+    broadcast_ws(_mark_ws_payload(m))
+    200, JSON3.write((; ok = true, markerId = m.id))
 end
 
 # Test-only reset. Not registered as a route — tests import the module and call it directly to
