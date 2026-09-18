@@ -1,19 +1,18 @@
 # Sub-behavior motif discovery — plan
 
-> **Status: P1 in progress (2026-09-18).** Branch
-> `feat/motif-discovery-p1`, worktree `cecelia-motif-discovery/`. Comment
-> audit merged; freeze lifted. Design + feasibility done — see
-> `docs/archive/motif-discovery-audit-prompt.md` and the full report at
-> `~/Downloads/prompts/motif-discovery-audit-report.md` (outside the tree
-> per the audit-queue rule).
+> **Status: P1 shipped (2026-09-18).** Landed via PR #1019 + follow-ups
+> #1023 (pops required, notebook moved to project scope). Live-validated
+> on `zolIMa/obWDNS/fXgbTl`: 3452 cells pooled → 16 STUMPY survivors → 2
+> Leiden classes → 124/3452 cells assigned. Verdict per Decision 8: signal
+> weak on cohort-of-one, real answer needs P2 cohort scale. **P2 not yet
+> scheduled.** Design + feasibility: `docs/archive/motif-discovery-audit-prompt.md`
+> + `~/Downloads/prompts/motif-discovery-audit-report.md`.
 >
 > Downstream reader: `docs/todo/BEHAVIOUR_READOUT_PLAN.md` P3 is gated on
 > this plan's P2. It reads `motif.class.{suffix}` + `motif.distance.{suffix}`
 > and emits them as `labels[].source = "motif"` in the canonical MCP shape.
 > **Column names on disk are a stable contract** — Decision 12 here is
 > load-bearing for BEHAVIOUR_READOUT and must not drift.
->
-> Phase 1 (POC) is ~1–2 focused sessions on `zolIMa/obWDNS/fXgbTl`.
 
 ## Goal
 
