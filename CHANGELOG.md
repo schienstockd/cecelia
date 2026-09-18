@@ -15,6 +15,77 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.5] — 2026-09-18
+
+Follow-up patch after v0.2.4 focused on the legacy-migrate flow, plus the WebGPU multi-atlas
+shader-variants arc (S1–S4), HTTPS-by-default in prod, and a shape-aware import advisor. Also a
+large Julia-side refactor sweep (split modules, typed API boundary) that is invisible to a user
+but ratcheted by tests.
+
+### Format & default changes — read first
+
+- **Legacy migrate now backfills the label pyramid and rewrites legacy NGFF on the fly.** A newly
+  migrated project's label stores are written in the current NGFF layout with a full pyramid.
+  Projects migrated before v0.2.5 are unaffected until you re-migrate. Nothing user-visible
+  changes, but the on-disk shape does.
+- **HTTPS + HTTP/2 are the default in `pixi run prod` and installed builds.** A self-signed cert
+  lands automatically; the browser shows a one-time click-through on first launch. Toggle in
+  Settings → Diagnostics (or the `CECELIA_TLS` env var). Dev (`pixi run dev`) is unchanged.
+
+### Fixed
+
+- **Legacy migrate — 4D live images no longer crash.** The T-first (TZYX) centroid split errored
+  out after the Python side had already succeeded; the split is now shape-aware.
+- **Legacy migrate — label store backfilled and rewritten** on migrate; existing legacy NGFF used
+  to be read but not upgraded, so gaps showed up downstream.
+- **Legacy migrate — register-time legacy source pointers preserved across the meta rewrite** (was
+  losing them silently).
+- **Legacy migrate — precompile succeeds after aligning the migrate-flow docstrings** with their
+  functions.
+- **In-app dev-channel update finds `pixi` off `PATH`.** A GUI-launched macOS `.app` inherits a
+  stripped environment (`/usr/bin:/bin:/usr/sbin:/sbin`); dev-apply now discovers `pixi` regardless.
+- **Dev-channel toggle no longer "sticks" and reports one version** (was drifting between two).
+- **Import — the metadata peek reads TIFF via `ome_xml_utils`** (was going around the shared
+  reader).
+- **Settings — the HTTP protocol pill lives in the Diagnostics grid** now, next to the port/host
+  rows it belongs with.
+- **Tasks — function picker sorts alphabetically within each category**; copy/reset icons are
+  right-aligned in the params heading row.
+- **`segment.ridges` — live σ in the vis, corrected ratio, advanced-params collapse, covered by
+  CI.**
+- **CI smoke test runs over HTTPS** to match the new prod TLS default.
+
+### Added
+
+- **Import — JVM peek fallback for CZI/ND2/OIR/… via bundled bftools.** When the Python-side
+  metadata reader can't parse a vendor format, the peek falls back to Java Bio-Formats. Fewer
+  "unsupported file" errors on microscope-native formats.
+- **Import — shape-aware pyramid-levels advisor + pre-fill.** The import wizard recommends a
+  pyramid depth from the image dimensions and pre-fills the field.
+- **Viewer — WebGPU multi-atlas shader variants (S1–S4).** The label atlas grows to N — replacing
+  the single-atlas ceiling. Per-N shader variants replace the runtime `binding_array` clamp; the
+  orphan-brick gate is dropped; per-atlas cache chips + a Debug atlas row are visible from the
+  viewer for diagnostics. Ends the MULTI_ATLAS_SHADER_VARIANTS arc.
+- **Segmentation — `segment.ridges` task** using Hessian filters.
+- **Header — running version chip beside the WS badge.**
+
+### Changed (internal — you shouldn't notice)
+
+- **Big Julia-side split-by-responsibility refactor.** `api/src/routes.jl` (3082 L) into
+  `routes/*.jl` families; `app/src/gating/population_manager.jl`, `app/src/tasks/scheduler.jl`,
+  `app/src/tasks/chain.jl`, `app/src/tasks/task.jl`, and `app/src/cleanupImages/af_correct.jl` each
+  split into sub-module directories. Segmentation label-store writers collapsed into
+  `open_multiscales_for_writing`; per-frame zarr streaming enforced.
+- **API — null-safety sweep** across every `_api.jl` handler and `routes/*.jl` family: body reads
+  now go through typed `_wstr` / `_wstr_any` / `_wbool` at a shared boundary. Ratcheted by tests.
+- **Model / gating / scheduler type tightening** — `img.meta` accessors unified as `meta_int` /
+  `meta_float` / `meta_str`; `filter_fun` a `FilterFun` sum type with a `FilterCondition` struct;
+  `Population.boolean_op` a `BoolMembership` sum type; `Population.explicit_labels` typed
+  `Vector{Int}`; `TaskJob.imgs` a `TaskJobTarget` ADT; `CciaImage.im_channel_names` value type
+  tightened; `sockets.jl` WS message dispatch typed via `WsMsgType`.
+- **Test suite reorganised into per-topic files under `app/test/suite/`** — same behaviour, easier
+  to navigate.
+
 ## [0.2.4] — 2026-09-16
 
 Follow-up patch after v0.2.3 hit real-world users. Three unrelated fixes surfaced by one macOS
@@ -900,7 +971,10 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/schienstockd/cecelia/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/schienstockd/cecelia/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/schienstockd/cecelia/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/schienstockd/cecelia/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/schienstockd/cecelia/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/schienstockd/cecelia/compare/v0.1.3...v0.2.0
