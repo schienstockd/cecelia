@@ -94,6 +94,7 @@ import { PALETTES, distinctColors } from '../plots/plot'
 import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
+import { plotHostToImageURL, loadImg } from '../plots/export'
 import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -4366,6 +4367,33 @@ interface ViewerCapture {
     imageUid, valueName: valueName.value, overlayLayers: layers,
   }
 }
+
+// User-facing "Save PNG" (napari-parity screenshot). Different from `__cceceliaViewerCapture`
+// above — that one is the strip's canvas-pixels-only path, used by an internal reader that already
+// draws its own scale bar / legend. This one is what a HUMAN wants when they hit a Screenshot button:
+// the WebGPU canvas WITH the SVG overlays composited on top (StillOverlay's scale bar + timestamp,
+// GridOverlay's mesh), so the shot matches what the eye sees.
+//
+// Composited through `plots/export.ts::plotHostToImageURL` — the canonical canvas-pixels + HTML/SVG
+// overlay compositor (the plot/board exports already use it): it clones the host, inlines computed
+// styles onto the clone (Vue scoped styles do not survive `XMLSerializer` otherwise), rasterises
+// the overlays through an SVG foreignObject wrapper, and drawImages canvas pixels + overlay onto
+// one target. The WebGPU canvas is fed in via the `hiRes` hook rather than `drawImage(cv, …)`
+// because a WebGPU presentation backbuffer is consumed by the browser compositor between frames
+// and reads back blank — `canvas.toDataURL()` is a different readback path that does return pixels
+// (it's what `__cceceliaViewerCapture` uses too).
+;(window as unknown as { __cceceliaViewerScreenshot?: () => Promise<{ png: string; imageName: string }> }).__cceceliaViewerScreenshot = async () => {
+  const el = canvas.value
+  if (!el) throw new Error('viewer canvas not ready')
+  const host = el.parentElement as HTMLElement | null
+  if (!host) throw new Error('viewer host not found')
+  const webgpuImg = await loadImg(el.toDataURL('image/png'))
+  const png = await plotHostToImageURL(host, 'black', {
+    hiRes: async (cv) => cv === el ? webgpuImg : null,   // other canvases (overview minimap) fall through
+  })
+  if (!png) throw new Error('screenshot composite failed')
+  return { png, imageName: imageName.value ?? '' }
+}
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSelectModeTick)
@@ -4422,6 +4450,7 @@ onUnmounted(() => {
   window.removeEventListener('storage', onSelectModeTick)
   window.removeEventListener('focus', publishViewerFocus)
   delete (window as unknown as { __cceceliaViewerCapture?: unknown }).__cceceliaViewerCapture
+  delete (window as unknown as { __cceceliaViewerScreenshot?: unknown }).__cceceliaViewerScreenshot
   stopCacheClearWatch?.(); stopCacheClearWatch = null
   stopPlay()
   pump.cancel()

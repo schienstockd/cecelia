@@ -8,6 +8,9 @@ import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
 import { useViewerStore } from '../stores/viewer'
 import { openViewerWindow } from '../utils/viewerWindow'
+import { getOpenPopoutWindow } from '../lib/popout'
+import { screenshotFilename } from '../utils/viewerScreenshot'
+import { downloadDataUrl } from '../plots/export'
 import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
 import {
   colourLegend, colourLegendLabels, resetColourLegend,
@@ -347,6 +350,38 @@ function openInViewer(valueName: string) {
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid) return
   openViewerWindow({ projectUid, imageUid: uid, valueName: valueName || undefined })
+}
+
+// Napari-parity Save PNG. Reads the current composed frame from the popped-out viewer window
+// (`modules/ViewerWindow.vue`'s `__cceceliaViewerScreenshot`) and downloads it — no project side
+// effect, no task, no server round-trip. Fails cleanly when the viewer popup is not open, matching
+// the same pattern `components/plots/ImageStripView.vue` uses for its own capture path: the panel
+// cannot screenshot what the user cannot see.
+interface ScreenshotNote { severity: 'warn' | 'fail'; short: string; detail?: string }
+const screenshotBusy = ref(false)
+const screenshotNote = ref<ScreenshotNote | null>(null)
+async function saveScreenshot() {
+  screenshotNote.value = null
+  const vw = getOpenPopoutWindow('/viewer-window')
+  if (!vw) {
+    screenshotNote.value = { severity: 'warn', short: 'Open the viewer window first',
+      detail: 'Click the eye on an image in the table to pop the viewer out, then try again.' }
+    return
+  }
+  const shot = (vw as unknown as { __cceceliaViewerScreenshot?: () => Promise<{ png: string; imageName: string }> }).__cceceliaViewerScreenshot
+  if (!shot) {
+    screenshotNote.value = { severity: 'warn', short: 'Viewer not ready yet',
+      detail: 'The viewer window is still loading. Wait for the image to appear and try again.' }
+    return
+  }
+  screenshotBusy.value = true
+  try {
+    const { png, imageName } = await shot()
+    downloadDataUrl(screenshotFilename(imageName || openedImage.value?.name), png)
+  } catch (e) {
+    screenshotNote.value = { severity: 'fail', short: 'Screenshot failed',
+      detail: e instanceof Error ? e.message : String(e) }
+  } finally { screenshotBusy.value = false }
 }
 
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
@@ -941,6 +976,20 @@ onUnmounted(() => {
           <button class="cby-reset" @click="resetColours"
                   v-tooltip.right="'Reset colours to population colours / the default palette'">Reset</button>
         </div>
+      </div>
+
+      <!-- ── Screenshot: save the CURRENT viewport as a PNG (napari-parity, canvas + overlays) ── -->
+      <div class="viewer-section">
+        <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Screenshot</div>
+        <div class="cc-row cc-row-tight">
+          <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :disabled="screenshotBusy"
+                  @click="saveScreenshot"
+                  v-tooltip.bottom="'Save the viewport as a PNG (canvas + overlays)'">
+            <i :class="['pi', screenshotBusy ? 'pi-spin pi-spinner' : 'pi-camera']" />
+          </button>
+        </div>
+        <InlineNote v-if="screenshotNote" :severity="screenshotNote.severity"
+                    :short="screenshotNote.short" :detail="screenshotNote.detail" />
       </div>
 
       <!-- ── Movie: record the CURRENT view over time → mp4 (project's movies/ folder) ──
