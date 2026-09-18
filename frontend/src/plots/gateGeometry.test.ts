@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { orientGate, convertGateKind, otherGateKind,
-         isClickNotDrag, polygonAreaPx, isDegeneratePolygon } from './gateGeometry'
+import { orientGate, convertGateKind, otherGateKind } from './gateGeometry'
 import type { GateSpec } from '../stores/gating'
+// Click-vs-drag / polygon-degeneracy primitives moved to `utils/drawGeometry.ts` — tests too.
 
 const XT: GateSpec['x_transform'] = { kind: 'logicle', T: 262144 }
 const YT: GateSpec['y_transform'] = { kind: 'linear' }
@@ -64,21 +64,3 @@ describe('convertGateKind', () => {
   })
 })
 
-describe('a click is not a gate', () => {
-  it('rejects a release that never moved, and accepts a real drag', () => {
-    expect(isClickNotDrag([100, 100], [100, 100])).toBe(true)   // plain click: the zero-area gate
-    expect(isClickNotDrag([100, 100], [102, 101])).toBe(true)   // trackpad jitter
-    expect(isClickNotDrag([100, 100], [140, 130])).toBe(false)  // a gate
-    expect(isClickNotDrag([100, 100], [100, 140])).toBe(false)  // a sliver on one axis is deliberate
-  })
-
-  it('measures a polygon in pixels and rejects a collapsed one', () => {
-    expect(polygonAreaPx([[0, 0], [10, 0], [10, 10], [0, 10]])).toBe(100)
-    expect(polygonAreaPx([[0, 0], [10, 0], [10, 10], [0, 10]].reverse() as [number, number][])).toBe(100)
-    expect(polygonAreaPx([[0, 0], [10, 0]] as [number, number][])).toBe(0)      // not a polygon yet
-    expect(isDegeneratePolygon([[0, 0], [5, 0], [10, 0]]))                      // three points in a line
-      .toBe(true)
-    expect(isDegeneratePolygon([[0, 0], [1, 0], [1, 1]])).toBe(true)            // closed on the spot
-    expect(isDegeneratePolygon([[0, 0], [20, 0], [20, 20]])).toBe(false)
-  })
-})
