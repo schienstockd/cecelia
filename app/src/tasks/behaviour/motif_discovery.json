@@ -1,0 +1,66 @@
+{
+  "task": "motifDiscovery",
+  "fun_name": "behaviour.motif_discovery",
+  "label": "Motif discovery",
+  "category": "Behaviour",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "scope": "set",
+  "requires": { "axes": ["T"] },
+  "params": [
+    {
+      "key": "pops",
+      "label": "Populations",
+      "type": "popSelection",
+      "popScope": "tracks",
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": ["/live"],
+      "tip": "Tracked populations whose cells feed motif detection (pooled across the set)"
+    },
+    {
+      "key": "valueName",
+      "label": "Name",
+      "type": "text",
+      "default": "default",
+      "tip": "Suffix for the output columns (motif.class.<name>, etc.)"
+    },
+    {
+      "key": "windowSize",
+      "label": "Window (frames)",
+      "type": "int",
+      "min": 3,
+      "max": 64,
+      "step": 1,
+      "default": 8,
+      "tip": "Sub-track window length passed to STUMPY mstump; motifs of exactly this many frames"
+    },
+    {
+      "key": "topK",
+      "label": "Top K motifs",
+      "type": "int",
+      "min": 10,
+      "max": 1000,
+      "step": 10,
+      "default": 100,
+      "tip": "How many best matrix-profile positions to feed into the k-NN + Leiden clustering step"
+    },
+    {
+      "key": "numClasses",
+      "label": "Target classes",
+      "type": "int",
+      "min": 2,
+      "max": 12,
+      "step": 1,
+      "default": 3,
+      "tip": "Approximate number of motif classes to aim for (hint only, not enforced)"
+    },
+    {
+      "key": "resolutionLocked",
+      "label": "Lock resolution",
+      "type": "bool",
+      "default": false,
+      "tip": "Freeze Leiden resolution for cross-image comparison (advisory in v1)"
+    }
+  ]
+}

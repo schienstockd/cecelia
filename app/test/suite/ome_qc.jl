@@ -512,7 +512,10 @@ end
                      "n", "s", "channels",
                      # correction staleness: `scope` is "labels" or "tracks" — see
                      # correction.stale_artefacts
-                     "scope"])
+                     "scope",
+                     # motif discovery (behaviour.motif_discovery) — see qc/text.jl
+                     # motif.resolution_choice
+                     "resolution", "numClasses", "medianConfidence", "boundaryFraction"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]

@@ -113,6 +113,10 @@ coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "dc7
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
+# Multivariate matrix profile for sub-track behavioural motifs. See
+# docs/todo/MOTIF_DISCOVERY_PLAN.md (P1 uses `stumpy.mstump` at windowSize=8, top_k=100). PyPI-only.
+# Cite: Law (2019), JOSS 4(39):1504 https://doi.org/10.21105/joss.01504.
+stumpy       = ">=1.13"
 # MCP observer server (top-level mcp/ dir — read-only Claude access to a running project). Only the
 # `mcp` run task needs it; the client + its tests are stdlib-only. See mcp/README.md, docs/ai-assist/OBSERVER.md.
 mcp          = ">=1.2"

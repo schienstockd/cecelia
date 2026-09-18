@@ -79,6 +79,13 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "No state transitions found",
         long  = "Tracks may be too short or the model produced one state — check HMM states and track lengths."),
 
+    # motif discovery (behaviour.motif_discovery) — advisory only in v1 (MOTIF_DISCOVERY_PLAN
+    # Decision 8). One info-level receipt per run recording the Leiden resolution + summary stats,
+    # so a cross-group comparison can be audited against the resolution it was clustered at.
+    "motif.resolution_choice" => (
+        short = "Ran at resolution {resolution} → {numClasses} class(es)",
+        long  = "Median confidence {medianConfidence}, boundary fraction {boundaryFraction} — lock the resolution before comparing across attribute groups."),
+
     # tracking (track_measures_qc_findings)
     "tracking.motion_dims_uncertain" => (
         short = "Motion dimensionality uncertain ({dims}D)",
