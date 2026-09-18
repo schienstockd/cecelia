@@ -24,9 +24,11 @@ by discovered motif class, x-axis = frame. If nothing shows, run the
 per-cell obs columns via `pop_df` and paints them.
 
 > **Prerequisite.** This notebook is READ-ONLY over `motif.class.{suffix}` +
-> `motif.distance.{suffix}` (per-cell obs written by the task). Set `SUFFIX` below to the
-> `valueName` you gave the run. Dataset defaults follow MOTIF_DISCOVERY_PLAN §P1:
-> `proj_uid = zolIMa`, `uid = fXgbTl` (set: `obWDNS`).
+> `motif.distance.{suffix}` (per-cell obs written by the task). This example is **UID-free**:
+> set the project/image + motif suffix below (or use `CECELIA_EXAMPLE_PROJ` / `_UID` /
+> `CECELIA_MOTIF_SUFFIX`). `SUFFIX` = the source segmentation's value_name that the task ran
+> against (whatever you selected under Populations — e.g. `flowTom` if your tracked pop lives
+> on the `flowTom` value_name).
 """
 
 # ╔═╡ a3000000-0000-0000-0000-000000000000
@@ -36,13 +38,13 @@ Cecelia.init_cecelia!()
 md"## 1 · Load the image"
 
 # ╔═╡ b1000000-0000-0000-0000-000000000000
-proj_uid = get(ENV, "CECELIA_EXAMPLE_PROJ", "zolIMa")
+proj_uid = get(ENV, "CECELIA_EXAMPLE_PROJ", "")   # ← your project UID
 
 # ╔═╡ b2000000-0000-0000-0000-000000000000
-uid = get(ENV, "CECELIA_EXAMPLE_UID", "fXgbTl")
+uid = get(ENV, "CECELIA_EXAMPLE_UID", "")         # ← your image UID
 
 # ╔═╡ b3000000-0000-0000-0000-000000000000
-SUFFIX = get(ENV, "CECELIA_MOTIF_SUFFIX", "default")   # ← the valueName you used when running the task
+SUFFIX = get(ENV, "CECELIA_MOTIF_SUFFIX", "default")   # ← source segmentation's value_name (e.g. "flowTom")
 
 # ╔═╡ b4000000-0000-0000-0000-000000000000
 img = (isempty(proj_uid) || isempty(uid)) ? nothing : init_object(proj_uid, uid)
