@@ -41,18 +41,21 @@ behaviour module page (`frontend/src/modules/BehaviourModule.vue`).
 Berman/MotionMapper spirit — let stereotyped sub-behaviours surface first, no
 template required.
 
-**Cluster time = pairwise subsequence DTW via `DynamicAxisWarping.jl` in
-Julia on the top-K survivors** (Decision 4), then feed the K×K distance
+**Cluster time = pairwise subsequence DTW via `dtaidistance` in Python
+on the top-K survivors** (Decision 4), then feed the K×K distance
 matrix into the existing Leiden path (`find_populations` in
-`python/cecelia/utils/clustering_utils.py`, `use_rep="X_dtw"` with a
-precomputed obsp).
+`python/cecelia/utils/clustering_utils.py`, precomputed obsp).
 
 Not to be re-proposed: DTW for detection with a hand-crafted template
 (there is no ground truth to hand-craft against); PythonCall.jl for the
 STUMPY leg (violates the "no resident Python in the Julia server" layer
 contract in `docs/ARCHITECTURE.md`); matrix profile in Julia
 (`MatrixProfile.jl` is not in `app/Project.toml` today, and its multivariate
-maturity vs. STUMPY was not verified — treat STUMPY as the default).
+maturity vs. STUMPY was not verified — treat STUMPY as the default);
+Julia DTW via `DynamicAxisWarping.jl` (rejected 2026-09-18 — the
+original plan called it but gave no rationale; STUMPY already runs in
+Python via `run_py`, and moving DTW to Julia forces a
+Python→Julia→Python sandwich for no architectural benefit).
 
 ## Locked decisions
 
@@ -72,11 +75,13 @@ Decision N`).
    write-back mirrors `hmm_states.jl:44`. No per-image variant ships.
 3. **Detection method = STUMPY `mstump`** through `run_py`. See "Method"
    above. Adds one Python dep (`stumpy`) — bank via `pixi.toml`.
-4. **Cluster-time metric = subsequence DTW via `DynamicAxisWarping.jl`.**
-   Adds one Julia dep to `app/`. Triggers the three-manifest
-   `Pkg.resolve()` dance (`docs/ARCHITECTURE.md` — the trap where `Pkg.add`
-   in `app/` breaks `api/` and `pluto/` precompile). Verify all three envs
-   precompile before landing.
+4. **Cluster-time metric = subsequence DTW via `dtaidistance`
+   (Python).** Adds one Python dep to `pixi.toml`. Kept in Python
+   because STUMPY already runs there via `run_py`; putting DTW in
+   Julia would force a Python→Julia→Python sandwich for no benefit
+   (original plan called Julia via `DynamicAxisWarping.jl`; flipped
+   2026-09-18). One runner does mstump → top-K → DTW K×K → Leiden
+   on precomputed obsp → medoid.
 5. **Discrete hard clusters as default; mandatory confidence
    (`distance_to_centroid`) per instance.** Every motif instance carries
    its hard label AND the DTW distance from the instance to its class
@@ -237,8 +242,8 @@ Only after P1 shows sub-behavior structure.
   `spatialAnalysis.cellContactsPerT` task + shared
   `per_timepoint_min_distance` helper in `spatial_utils.py`).
 - **DTW at cluster time** — Decision 4 lands. K×K subsequence DTW via
-  `DynamicAxisWarping.jl` on top-K survivors, then Leiden on the
-  k-NN graph (`use_rep="X_dtw"` precomputed obsp).
+  `dtaidistance` (Python) on top-K survivors, then Leiden on the
+  precomputed distance obsp via an extended `find_populations`.
 - **Cohort-scale run** — same code, more images. Set at 10–20 images
   runs in minutes on CPU (STUMPY documents linear scaling in n;
   multivariate is O(n·m·d)); DTW is bounded by `top_k` per Decision 4.
@@ -329,11 +334,10 @@ Copy of the report's §6, kept here so the plan is self-contained.
    comparison. The failure mode is scientific integrity of a
    comparison, not data corruption — an advisory + a sidecar receipt
    is arguably the right ratchet. Confirm.
-5. **DTW dependency addition.** Verify `DynamicAxisWarping.jl`
-   precompiles in `app/`, `api/`, and `pluto/` before the P2 task
-   lands. The three-manifest trap (`docs/ARCHITECTURE.md`) has bitten
-   before; a `Pkg.add` here without the resolve dance breaks the
-   other two envs.
+5. ~~**DTW dependency addition.**~~ Resolved 2026-09-18: DTW moved
+   from Julia (`DynamicAxisWarping.jl`) to Python (`dtaidistance`),
+   so the three-manifest resolve dance is no longer on the P2
+   critical path — one `pixi.toml` line adds the dep.
 
 ## Files touched (once unblocked)
 
@@ -352,9 +356,9 @@ Grouped by phase for grep-by-file-path.
 - `app/src/tasks/spatialAnalysis/cellContactsPerT.json` (new).
 - `app/src/tasks/spatialAnalysis/cell_contacts_per_t_run.py` (new).
 - `python/cecelia/utils/spatial_utils.py` (+ `per_timepoint_min_distance`).
-- `app/Project.toml` (+`DynamicAxisWarping`, three-manifest resolve).
-- `app/src/tasks/behaviour/motif_discovery.jl` (add DTW cluster step).
-- `python/cecelia/utils/clustering_utils.py` (small path for `use_rep="X_dtw"` + precomputed obsp — verify already supported by the existing `find_populations`).
+- `pixi.toml` (+`dtaidistance`).
+- `app/src/tasks/behaviour/motif_discovery_run.py` (swap Euclidean for DTW pairwise K×K, hand it to `find_populations` via precomputed obsp).
+- `python/cecelia/utils/clustering_utils.py` (extend `find_populations` to accept a precomputed distance matrix).
 - `app/src/pops/pop_namespace.jl` and siblings — new `motifs` pop_type.
 - `app/src/pops/pop_df.jl` and siblings — routing.
 - `frontend/src/registries/interactiveViews.ts` — new `motifCards`, `motifRibbon`.
