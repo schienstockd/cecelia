@@ -81,6 +81,10 @@ function _spec_path(::HmmTransitions)
     joinpath(@__DIR__, "behaviour", "hmm_transitions.json")
 end
 
+function _spec_path(::MotifDiscovery)
+    joinpath(@__DIR__, "behaviour", "motif_discovery.json")
+end
+
 function _spec_path(::ClustPops)
     joinpath(@__DIR__, "clustPops", "cluster.json")
 end
@@ -236,6 +240,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "behaviour.hmm_states"              => HmmStates(),
         "behaviour.hmm_transitions"         => HmmTransitions(),
         "behaviour.hmm"                     => CompositeTask("behaviour.hmm"),
+        "behaviour.motif_discovery"         => MotifDiscovery(),
         "clustPops.cluster"                 => ClustPops(),
         "clustTracks.cluster"               => ClustTracks(),
         "spatialAnalysis.cellNeighbours"    => CellNeighbours(),

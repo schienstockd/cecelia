@@ -513,6 +513,33 @@ end
         @test p.includeSelfTransitions === true
     end
 
+    # behaviour.motif_discovery (P1 POC) — mirror hmm_states: good case + defaults, and a
+    # validate_params bad-case (windowSize=0 violates the JSON spec's min=3).
+    let p = Cecelia.parse_motif_discovery_params(Dict{String,Any}(
+            "pops" => ["/live"], "valueName" => "poc",
+            "windowSize" => 8, "topK" => 100, "numClasses" => 3,
+            "resolutionLocked" => true))
+        @test p.pops == ["/live"]
+        @test p.valueName == "poc"
+        @test p.windowSize === 8
+        @test p.topK === 100
+        @test p.numClasses === 3
+        @test p.resolutionLocked === true
+    end
+    let p = Cecelia.parse_motif_discovery_params(Dict{String,Any}())
+        @test p.pops == ["/live"]
+        @test p.valueName == "default"
+        @test p.windowSize === 8
+        @test p.topK === 100
+        @test p.numClasses === 3
+        @test p.resolutionLocked === false
+    end
+    # Spec-level validation: windowSize=0 is below the JSON spec's min=3, so validate_params
+    # rejects it as ParamValidationError before the handler ever runs.
+    @test_throws Cecelia.ParamValidationError Cecelia.validate_params(
+        Cecelia.MotifDiscovery(),
+        Dict{String,Any}("pops" => ["/live"], "windowSize" => 0))
+
     # spatialAnalysis (spot-check the parsers; each is small).
     let p = Cecelia.parse_aggregates_meshes_params(Dict{String,Any}(
             "pops" => ["A/B"], "maxClusterDist" => 7.5, "minCells" => 10))
