@@ -3997,36 +3997,95 @@ end
 # `movie_config` is assembled in sockets.jl and read, field by field, by
 # `frontend/src/utils/movieRestore.ts`. Nothing type-checks across that boundary and nothing fails when
 # a key goes missing — the page just quietly restores less and says so in a note nobody wrote. So the
-# keys the edit path cannot work without are pinned here, at the one place that writes them.
+# keys the edit path cannot work without are pinned here, at the one place that names them.
 #
-# Source-level because the writers are two socket HANDLERS, not functions with a return value: they
-# assemble the dict and hand it straight to an `@async` recorder that needs a live napari.
+# `MovieRecordConfig` / `MovieBatchConfig` (`api/src/movie_config.jl`) are the ONE place the shape is
+# named; the socket handlers hand a live napari through the struct as a kwarg bundle. The struct field
+# name IS the on-disk JSON key (StructTypes.Struct()), so a rename here surfaces as a broken restore
+# on `movieRestore.ts` — this test breaks first. Handler-source is still checked for `_t_range(data)`
+# because that lives at the boundary, not on the config.
 @testset "API: movie config banks what the edit page reads" begin
     src = read(joinpath(@__DIR__, "..", "src", "sockets.jl"), String)
     single = src[findfirst("function handle_movie_record", src)[1]:end]
     single = single[1:findfirst("\nend", single)[1]]
-    batch  = src[findfirst("function handle_movie_batch", src)[1]:end]
-    batch  = batch[1:findfirst("\nend", batch)[1]]
 
     # WHICH IMAGE. A movie is named after its image, but nothing can turn that name back into a uid, so
     # without this an edited look has no idea what it was recorded on.
-    @test occursin("\"imageUid\" => image_uid", single)
-    @test occursin("\"imageUids\" => image_uids", batch)
+    @test :imageUid  in fieldnames(MovieRecordConfig)
+    @test :imageUids in fieldnames(MovieBatchConfig)
     # The editor's half of a keyframe — thumbnail, title, seconds. `keyframes` alone is the RENDER
     # payload, which restores a timeline with no strip and durations rounded to whole frames.
-    @test occursin("\"keyframeMeta\"", single)
+    @test :keyframeMeta in fieldnames(MovieRecordConfig)
     # The look itself, and the kinds it is filed under (MOVIE_MANAGEMENT_PLAN Decision 7).
-    @test occursin("\"look\"", single) && occursin("\"keyframes\"", single)
-    @test occursin("\"config\" => config", batch) && occursin("\"fileAttrs\"", batch)
+    @test :look      in fieldnames(MovieRecordConfig)
+    @test :keyframes in fieldnames(MovieRecordConfig)
+    @test :config    in fieldnames(MovieBatchConfig)
+    @test :fileAttrs in fieldnames(MovieBatchConfig)
     # The output half both kinds share — restoring a look at the wrong size or fps is not restoring it.
-    for k in ("\"fps\"", "\"sizeX\"", "\"sizeY\"", "\"suffix\"")
-        @test occursin(k, single) && occursin(k, batch)
+    for k in (:fps, :sizeX, :sizeY, :suffix)
+        @test k in fieldnames(MovieRecordConfig)
+        @test k in fieldnames(MovieBatchConfig)
     end
     # The frame range: banked at the top level for a viewer recording, and inside the authored config
     # for a batch (`buildBatchMovieConfig` always emits the pair). A recreate that silently records the
     # whole timelapse is not a recreate.
-    @test occursin("\"tStart\" => t_start", single) && occursin("\"tEnd\" => t_end", single)
+    @test :tStart in fieldnames(MovieRecordConfig)
+    @test :tEnd   in fieldnames(MovieRecordConfig)
     @test occursin("_t_range(data)", single)
+end
+
+# ── MovieConfig on-disk shape: JSON round-trip preserves every field ──────────
+# `settings/movies.json` is written verbatim from `register_movie!(config = <the struct>)` — the file
+# a user has after this PR must be readable by a Cecelia server that predates it (the on-disk shape
+# hasn't changed), AND by every future one (the shape is now pinned to the struct fields via
+# StructTypes.Struct()). Both directions matter: a silent field rename would be a Phase-6-edit
+# regression that only surfaces later when someone opens their old movie in the animation editor.
+@testset "MovieConfig JSON round-trip preserves the on-disk shape" begin
+    rec = MovieRecordConfig(;
+        imageUid = "img-abc",
+        keyframeMeta = Dict{String,Any}("dur" => [1, 2, 3]),
+        fps = 30, sizeX = 1024, sizeY = 768, suffix = "-a",
+        titleCard = Dict{String,Any}("enabled" => true, "title" => "T"),
+        valueNames = ["default", "smoothed"],
+        labelValueNames = ["Tcell"], branchValueNames = nothing,
+        labelContour = 2, show3D = true, zSlice = nothing,
+        tStart = 5, tEnd = 20,
+        compareLayout = "grid", compareContrast = "shared",
+        showTimestamp = false, showScaleBar = true,
+        look = Dict{String,Any}("colourBy" => "cluster"),
+        keyframes = Any[Dict{String,Any}("t" => 1.0)])
+    round = JSON3.read(JSON3.write(rec))
+    # Every declared field survives a JSON round-trip under the SAME wire name — the frontend restore
+    # path reads by these exact keys (movieRestore.ts).
+    for f in fieldnames(MovieRecordConfig)
+        @test haskey(round, f)
+    end
+    @test String(get(round, :imageUid, "")) == "img-abc"
+    @test Int(get(round, :fps, 0)) == 30
+    @test Bool(get(round, :show3D, false)) === true
+    @test Bool(get(round, :showTimestamp, true)) === false
+    @test collect(String, get(round, :valueNames, String[])) == ["default", "smoothed"]
+
+    # `nothing` fields survive as JSON `null`, not as an absent key — the edit page needs to tell "no
+    # value on record" apart from "the writer forgot", which is why `_wstr`/`_wbool` were built.
+    rec_min = MovieRecordConfig(imageUid = "img-null")
+    round_min = JSON3.read(JSON3.write(rec_min))
+    @test haskey(round_min, :zSlice) && get(round_min, :zSlice, "sentinel") === nothing
+    @test haskey(round_min, :look)   && get(round_min, :look,   "sentinel") === nothing
+
+    # Batch flavour — every declared field survives round-trip too. `imageUids` is the whole selection
+    # (banked on EVERY movie in the batch — see `handle_movie_batch`), NOT `imageUid`; conflating the
+    # two is what the enum wall in `_entry_image_uid` (movies_api.jl) exists to close.
+    batch = MovieBatchConfig(;
+        config = Dict{String,Any}("valueNames" => ["default"], "fps" => 15),
+        fileAttrs = ["date"], fps = 15, sizeX = nothing, sizeY = nothing,
+        suffix = "", imageUids = ["a", "b", "c"])
+    bround = JSON3.read(JSON3.write(batch))
+    for f in fieldnames(MovieBatchConfig)
+        @test haskey(bround, f)
+    end
+    @test collect(String, get(bround, :imageUids, String[])) == ["a", "b", "c"]
+    @test !haskey(bround, :imageUid)  # batch has NO singular imageUid — flavour is disjoint
 end
 
 # Which stretch of the timelapse a movie sweeps. ONE reader for both entry points — the viewer's

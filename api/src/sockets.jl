@@ -388,15 +388,18 @@ function handle_movie_record(ws, data)
     # was recorded on was simply unrecoverable. And `keyframes` is the RENDER payload — `{viewState,
     # steps}` — which is everything the recorder needs and none of what the timeline editor needs, so
     # the thumbnail/title/seconds ride along in a parallel array rather than doubling every view state.
-    movie_config = Dict{String,Any}(
-        "imageUid" => image_uid, "keyframeMeta" => get(data, :keyframeMeta, nothing),
-        "fps" => fps, "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix,
-        "titleCard" => tc, "valueNames" => value_names, "labelValueNames" => label_vns,
-        "branchValueNames" => branch_vns, "labelContour" => contour,
-        "show3D" => show_3d, "zSlice" => z_slice, "tStart" => t_start, "tEnd" => t_end,
-        "compareLayout" => layout, "compareContrast" => get(data, :compareContrast, ""),
-        "showTimestamp" => show_ts, "showScaleBar" => show_sb,
-        "look" => get(data, :look, nothing), "keyframes" => keyframes)
+    movie_config = MovieRecordConfig(;
+        imageUid = image_uid,
+        keyframeMeta = get(data, :keyframeMeta, nothing),
+        fps = fps, sizeX = size_x, sizeY = size_y, suffix = suffix,
+        titleCard = tc,
+        valueNames = value_names, labelValueNames = label_vns,
+        branchValueNames = branch_vns, labelContour = contour,
+        show3D = show_3d, zSlice = z_slice, tStart = t_start, tEnd = t_end,
+        compareLayout = layout,
+        compareContrast = String(get(data, :compareContrast, "")),
+        showTimestamp = show_ts, showScaleBar = show_sb,
+        look = get(data, :look, nothing), keyframes = keyframes)
     # Route decision: everything runs through the offline renderer — plain timelapse, compare grids,
     # and keyframe animations.
     n_vns = max(1, length(value_names))
@@ -455,7 +458,7 @@ function handle_movie_record(ws, data)
     if keyframes === nothing && is_compare
         # Build the same config a batch would author (versions + masks + share_contrast + layout + the
         # pop/track flags read from `look`) so `_compare_grid` produces the same MovieRow vector.
-        look_cfg = movie_config === nothing ? nothing : get(movie_config, "look", nothing)
+        look_cfg = movie_config.look
         compare_cfg = Dict{Symbol,Any}()
         look_cfg isa AbstractDict &&
             (for (k, v) in look_cfg; compare_cfg[Symbol(k)] = v; end)
@@ -533,9 +536,10 @@ function handle_movie_batch(ws, data)
     # The authored config IS the batch's provenance — one config, one movie per image (Phase 4).
     # `imageUids` is the whole selection, banked on EVERY movie in the batch: the edit side reopens the
     # authoring page, and the run it is reproducing was over all of them, not just the one row clicked.
-    movie_config = Dict{String,Any}("config" => config, "fileAttrs" => file_attrs, "fps" => fps,
-                                    "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix,
-                                    "imageUids" => image_uids)
+    movie_config = MovieBatchConfig(;
+        config = config, fileAttrs = file_attrs, fps = fps,
+        sizeX = size_x, sizeY = size_y, suffix = suffix,
+        imageUids = image_uids)
     # `run_batch_offline` detects a compare grid per image and dispatches to `_render_grid_offline`.
     @async try
         run_batch_offline(task_id, project_uid, image_uids, config, file_attrs, fps;

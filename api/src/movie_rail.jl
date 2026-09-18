@@ -238,7 +238,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             # snapshots without a camera + canvas return `nothing`, which falls
                             # through to the previous behaviour.
                             view_state::Union{Nothing,AbstractDict} = nothing,
-                            movie_config = nothing)
+                            movie_config::Union{Nothing,MovieRecordConfig} = nothing)
     fun = "movie:record"
     img, ierr = _gating_image(project_uid, image_uid)
     if ierr !== nothing
@@ -286,7 +286,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     # Overlays: an explicit `overlays_raw` on the request wins (smoke-route shape). Otherwise, translate
     # the on-screen `look` (banked in `movie_config`) into that shape so the offline record doesn't
     # regress to channels-only. `has_mask` reflects the request's `labelValueNames`.
-    look_cfg = movie_config === nothing ? nothing : get(movie_config, "look", nothing)
+    look_cfg = movie_config === nothing ? nothing : movie_config.look
     has_mask = label_value_name !== nothing
     effective_overlays = if overlays_raw isa AbstractDict
         overlays_raw
@@ -344,7 +344,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         else
             # Bank how it was made, keyed by the file just written (Phase 4). A viewer recording is a
             # "look" — the same shape the batch authors, so both edit on the page that owns that kind.
-            look  = movie_config === nothing ? nothing : get(movie_config, "look", nothing)
+            look  = movie_config === nothing ? nothing : movie_config.look
             shown = look isa AbstractDict ?
                 _shown_channel_names(img, look, isempty(value_name) ? nothing : String(value_name)) :
                 String[]
@@ -383,7 +383,7 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                            size_x::Union{Int,Nothing} = nothing,
                            size_y::Union{Int,Nothing} = nothing,
                            suffix::AbstractString = "",
-                           movie_config = nothing)
+                           movie_config::Union{Nothing,MovieBatchConfig} = nothing)
     n   = length(image_uids)
     rep = isempty(image_uids) ? "" : first(image_uids)
     if n == 0
@@ -806,7 +806,7 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                   # `_resolve_grid_cell`). 3D snapshots return `nothing`, leaving
                                   # the cell at whole-image aspect.
                                   view_state::Union{Nothing,AbstractDict} = nothing,
-                                  movie_config = nothing)
+                                  movie_config::Union{Nothing,MovieRecordConfig} = nothing)
     fun = "movie:record"
     img, ierr = _gating_image(project_uid, image_uid)
     if ierr !== nothing
@@ -841,7 +841,7 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
             status = "cancelled"
             ws_log(nothing, task_id, "[CANCELLED] stopped — nothing written")
         else
-            look  = movie_config === nothing ? nothing : get(movie_config, "look", nothing)
+            look  = movie_config === nothing ? nothing : movie_config.look
             shown = look isa AbstractDict ?
                 _shown_channel_names(img, look, nothing) : String[]
             register_movie!(project_uid, basename(out_path);
@@ -888,7 +888,7 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
                                        # (`_overlays_raw_from_config` shape + `valueName` +
                                        # `popType`). See `record_keyframes_view_movie`.
                                        overlays_config::Union{Nothing,AbstractDict} = nothing,
-                                       movie_config = nothing)
+                                       movie_config::Union{Nothing,MovieRecordConfig} = nothing)
     fun = "movie:animation"
     img, ierr = _gating_image(project_uid, image_uid)
     if ierr !== nothing
