@@ -1,7 +1,8 @@
 # Value-name versioning — every writer targets a new `vn@v`, never overwrites
 
-**Status:** **P1a + P1b shipped** (2026-09-18) — helpers + composer + Julia app-layer reader
-routing, additive, backward-compat verified via full test suite. P1c/d + P2–P6 planning. Comes out
+**Status:** **P1a + P1b + P1d shipped** (2026-09-18) — helpers + composer + Julia app-layer reader
+routing + Python resolver + Python reader routing, additive, backward-compat verified via full test
+suite. P1c + P2–P6 planning. Comes out
 of the chain-execution-prerequisites prompt
 (`docs/archive/chain-execution-prerequisites-prompt.md`) — closing items **#1** (non-destructive
 default) and **#3** (mechanically-can't-overwrite invariant) collapses into this one primitive.
@@ -136,27 +137,41 @@ Split out from P1 before writing code, because the schema decision is load-beari
   `resolve_version` call returns `LATEST_DEFAULT_VAL`, since struct fields still preclude versioned
   entries.
 
-### P1c/d — Julia API-layer resolver + Python resolver
-
-Two remaining resolver surfaces (P1b handled Julia app-layer):
+### P1c — Julia API-layer resolver
 
 - **Julia API-layer**: extend `resolve_image_version` at `api/src/image_geometry.jl:157` (the ONE
   api-side VN resolver — 12 callers across viewer/crop/movie/optical-flow APIs). The audit surfaced
   this as a separate resolver the plan initially missed. Different return shape (`(zarr_path,
-  meta_dir, error)` vs `(vn, active_key)`); both grow versions.
-- **Python**: **create** `resolve_value_name` in `python/cecelia/utils/` — no equivalent exists
-  today (`LabelPropsView`'s constructor defaults `value_name="default"` and never falls back to an
-  active pointer).
+  meta_dir, error)` vs `(vn, active_key)`); grows versions.
 
-Route every existing reader through them: `label_props`, `img_*_path` family (`img_filepath`,
-`img_label_props_path`, `img_track_props_path`, `img_branch_props_path`, `img_labels_path`,
-`img_branch_labels_path`), `gating_path`, `load_pop_map`; Python side `LabelPropsView`,
-`zarr_utils.open_as_zarr`/`open_zarr`, `series_base`, `read_axes`/`read_scale`,
-`tracking_utils.props_path`, `measure_utils.out_path`, `segmentation_utils._store_path`; API side
-every caller of `resolve_image_version`. Legacy single-version projects return `v1` implicitly.
+Route every existing api caller through it: `api/src/crop_api.jl`, `api/src/movie_rail.jl`,
+`api/src/optical_flow_api.jl`, `api/src/viewer_api.jl`, `api/src/image_geometry.jl:456`. Legacy
+single-version projects return `v1` implicitly.
 
-**No writer changes yet.** Test-enforced: extend `test_zarr_access_convention.py` and the
-`zarr-access ratchet` testset to catch bare `default/<vn>/…` joins that bypass a resolver.
+**No writer changes yet.** Test-enforced: extend the `zarr-access ratchet` testset to catch bare
+`default/<vn>/…` joins that bypass a resolver.
+
+### P1d — Python resolver + reader routing — **SHIPPED** (2026-09-18)
+
+- Created `python/cecelia/utils/vn_versioning.py` — full Python mirror of the Julia composer.
+  Exports `resolve_value_name`, `resolve_version`, `versioned_active`/`_get`/`_get_field`/`_keys`,
+  inner-axis `is_versioned_entry`/`version_latest`/`version_get`/`version_keys`, composers
+  `versioned_get_field_at` and one-argument `unversion_value`, plus constants
+  (`VERSIONED_ACTIVE_KEY`, `VERSIONED_DEFAULT_VAL`, `LATEST_ACTIVE_KEY`, `LATEST_DEFAULT_VAL`).
+- Reader pass-through — additive `version=None` kwarg / attr on: `LabelPropsView.__init__`,
+  `LabelPropsUtils.__init__` / `.label_props_filepath` / `.label_props_view`. Class inits that
+  take a `params: dict` now read `params.get('version')` and store it as `self.version`:
+  `BayesianTrackingUtils` (`tracking_utils.py`), `MeasureUtils` (`measure_utils.py`),
+  `SegmentationUtils` (`segmentation_utils.py`).
+- `zarr_utils.open_as_zarr`/`open_zarr`/`series_base`/`read_axes`/`read_scale` unchanged — they
+  take fully-resolved paths from the Julia side (Julia's `img_filepath` does the routing), so
+  they need no signature change. Their internals continue to work with grouped-layout paths.
+- Legacy is a no-op end-to-end: version kwarg on legacy scalar / list / None entries returns
+  unchanged, verified by a `LabelPropsPassthroughTest.test_label_props_utils_filepath_version_kwarg_is_a_noop`
+  test and the composer suite in `test_vn_versioning.py`.
+- **Legacy path helpers (`labelProps/{vn}.h5ad`, `labels/{outputValueName}.zarr`, etc) NOT
+  rewritten** — that lands with P4b so it stays independently reviewable. Today the version kwarg
+  is stored but does not affect path assembly.
 
 ### P2 — Writer path: versioned target + can't-overwrite guard
 

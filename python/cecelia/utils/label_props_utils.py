@@ -134,10 +134,14 @@ class LabelPropsView:
     """A chainable, read-only view over one label-props H5AD. Methods return ``self`` so
     calls compose: ``view.view_centroid_cols().filter_by_label(ids).as_df()``."""
 
-    def __init__(self, filepath: str, channel_names=None):
+    def __init__(self, filepath: str, channel_names=None, version=None):
         self.filepath = filepath
         self.adata = ad.read_h5ad(filepath)
         self.channel_names = list(channel_names) if channel_names else None  # image channels, for name↔raw
+        # P1d pass-through: chain-run pinning (docs/todo/VN_VERSIONING_PLAN.md → D3) — stored for
+        # logs / future writer routing; no-op today because path assembly is legacy (§10 of the audit,
+        # rewritten in P4b).
+        self.version = version
         self._cols = None            # None = all feature columns; else a subset
         self._with_centroids = False
         self._only_centroids = False
@@ -382,16 +386,24 @@ class LabelPropsUtils:
     """Resolves and opens label-props views for an image's task dir. Keeps the old cecelia
     ``label_props_view(value_name=...)`` entry point so `pop_utils.pop_df` is unchanged."""
 
-    def __init__(self, task_dir: str, value_name: str = "default", channel_names=None):
+    def __init__(self, task_dir: str, value_name: str = "default", channel_names=None,
+                 version=None):
         self.task_dir = task_dir
         self.value_name = value_name
         # the image's channel names (from ccid.json, passed by the caller) — enables channel-name column
         # selection in the views this opens; None ⇒ raw names only (unchanged behaviour).
         self.channel_names = list(channel_names) if channel_names else None
+        # P1d pass-through: default version for opened views (docs/todo/VN_VERSIONING_PLAN.md → D3).
+        self.version = version
 
-    def label_props_filepath(self, value_name: str = None) -> str:
+    def label_props_filepath(self, value_name: str = None, version: str = None) -> str:
         vn = value_name or self.value_name
+        # `version` is stored for the view; path assembly stays legacy today (rewritten in P4b to
+        # compose through the resolver for the grouped `labelProps/{vn}/{vN}/…` layout).
+        _ = version if version is not None else self.version
         return os.path.join(self.task_dir, "labelProps", f"{vn}.h5ad")
 
-    def label_props_view(self, value_name: str = None) -> LabelPropsView:
-        return LabelPropsView(self.label_props_filepath(value_name), channel_names=self.channel_names)
+    def label_props_view(self, value_name: str = None, version: str = None) -> LabelPropsView:
+        ver = version if version is not None else self.version
+        return LabelPropsView(self.label_props_filepath(value_name, version=ver),
+                              channel_names=self.channel_names, version=ver)

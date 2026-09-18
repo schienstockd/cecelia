@@ -54,6 +54,9 @@ class BayesianTrackingUtils:
         self.log = logger
         self.task_dir   = params["taskDir"]
         self.value_name = params.get("valueName", "default")
+        # P1d pass-through: chain-run pinned version (docs/todo/VN_VERSIONING_PLAN.md → D3);
+        # stored for logs / future writer routing. Path assembly stays legacy (P4b rewrites).
+        self.version = params.get("version")
         # Vendored btrack base config — path supplied by the caller (the tracking task runner ships
         # it beside itself), so this IO helper never reaches into package-data. Loaded from disk so
         # headless/production runs never hit btrack's network download.
