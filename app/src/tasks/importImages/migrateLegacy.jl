@@ -126,6 +126,14 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     save!(img)
     rm(result_file; force = true)
 
+    # Fill anything the migrator's own OME-XML peek missed by re-reading the copied store with the
+    # canonical NGFF reader — same path every fresh import takes, including the `_delta_t_fallback`
+    # that scrapes per-`Plane` `DeltaT` when the top-level `Pixels.TimeIncrement` isn't set (Leica
+    # LIF via bioformats2raw is the case that motivated this). Fill-only, so nothing already on the
+    # image is clobbered. Without this, a migrated live timelapse whose OME-XML carries only DeltaT
+    # ships with no `TimeIncrement` and the Duration column reads "—" until a manual resync.
+    resync_ome_meta!(img) && save!(img)
+
     on_log("[INFO] Migrated $(src_uid): $(length(img.label_props) > 0 ? join(versioned_keys(img.label_props), ", ") : "no segmentation")")
 
     # QC (advisory): the objective signal a migration has is how much came across. A legacy image that
