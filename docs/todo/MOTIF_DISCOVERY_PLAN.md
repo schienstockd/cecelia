@@ -1,16 +1,19 @@
 # Sub-behavior motif discovery — plan
 
-> **Status: parked (2026-09-15).** Blocked on the maintainability audit
-> (`cecelia-comment-audit/`, `docs/archive/comment-audit-prompt.md`) finishing —
-> `MAP.md` and `MAINTAINABILITY.md` need to be fleshed out beyond the current
-> skeletons before this plan spawns new-file work. Design + feasibility already
-> done — see the audit report on `docs/archive/motif-discovery-audit-prompt.md`
-> and the full report at `~/Downloads/prompts/motif-discovery-audit-report.md`
-> (kept outside the tree per the audit-queue rule).
+> **Status: P1 in progress (2026-09-18).** Branch
+> `feat/motif-discovery-p1`, worktree `cecelia-motif-discovery/`. Comment
+> audit merged; freeze lifted. Design + feasibility done — see
+> `docs/archive/motif-discovery-audit-prompt.md` and the full report at
+> `~/Downloads/prompts/motif-discovery-audit-report.md` (outside the tree
+> per the audit-queue rule).
 >
-> Once unblocked, work resumes on a fresh branch off `origin/main` in a
-> dedicated worktree (`cecelia-motif-discovery`). Phase 1 (POC) is ~1–2
-> focused sessions.
+> Downstream reader: `docs/todo/BEHAVIOUR_READOUT_PLAN.md` P3 is gated on
+> this plan's P2. It reads `motif.class.{suffix}` + `motif.distance.{suffix}`
+> and emits them as `labels[].source = "motif"` in the canonical MCP shape.
+> **Column names on disk are a stable contract** — Decision 12 here is
+> load-bearing for BEHAVIOUR_READOUT and must not drift.
+>
+> Phase 1 (POC) is ~1–2 focused sessions on `zolIMa/obWDNS/fXgbTl`.
 
 ## Goal
 
@@ -86,7 +89,7 @@ Decision N`).
 6. **Distance-to-target uses a new per-t column, not the existing
    `min_distance#{target}`.** `cellContacts` today builds one KDTree over
    the whole A/B frame regardless of `centroid_t` (verified at
-   `app/src/tasks/spatialAnalysis/cellContacts.jl:73-85`), so its output
+   `app/src/tasks/spatialAnalysis/cellContacts.jl:84-85`), so its output
    collapses across timepoints — wrong for motif use where a fast-moving
    B cell three frames away must not appear as a spurious match. Add a
    sibling task `spatialAnalysis.cellContactsPerT` writing
@@ -152,8 +155,14 @@ Decision N`).
     - `motif.class.{suffix}` — categorical string, span-broadcast over
       the motif instance's `(t_start, t_end)`; overlap resolved per
       Decision 9.
-    - `motif.distance.{suffix}` — Float32 confidence (DTW distance from
-      the instance to its class medoid), span-broadcast.
+    - `motif.distance.{suffix}` — Float32 DTW distance from the instance
+      to its class medoid, span-broadcast. **Unnormalized, unbounded above
+      — lower is better.** A per-run `confidence ∈ [0,1]` transform is a
+      **read-side** concern (see `docs/todo/BEHAVIOUR_READOUT_PLAN.md` P3,
+      which derives `labels[].confidence` from this column). No
+      `motif.confidence.{suffix}` column is banked — banking one would
+      pin the transform choice, and the natural scale (window length ×
+      channel count) shifts between runs.
     - `motif.instance_id.{suffix}` — Int (per-run instance UID) so
       "which instance did this cell belong to?" is answerable.
 
@@ -205,7 +214,7 @@ surface. ~1–2 focused sessions.
   class. No new InteractiveView, no new Vue component.
 - **Files added**:
   - `app/src/tasks/behaviour/motif_discovery.jl` (~200 LOC — mirror
-    `hmm_states.jl:44`).
+    `hmm_states.jl` `_run_task` pattern at line 74).
   - `app/src/tasks/behaviour/motif_discovery.json` (~50 LOC).
   - `app/src/tasks/behaviour/motif_discovery_run.py` (~150 LOC —
     reads params, runs STUMPY, JSON out).
@@ -381,6 +390,11 @@ Repo-relative paths so the plan survives a checkout anywhere.
   `split_back_and_write`, `spatial_utils.py`.
 - `docs/inventory/FRONTEND.md` — `ModuleLayout` / `TaskRunner` shell,
   `InteractiveView` registry, image-version advisory pattern.
+- `docs/todo/BEHAVIOUR_READOUT_PLAN.md` — downstream reader of
+  `motif.class.{suffix}` + `motif.distance.{suffix}` (its P3, gated on this
+  plan's P2). Emits them as `labels[].source = "motif"` in the canonical
+  MCP shape (Decision 3 there). Column names on disk are a stable contract
+  across both plans.
 - `docs/todo/CLUSTERING_PLAN.md` — Decisions 6 (set-scope), 8 (sub-clustering
   via suffix + restricted parent pop), 9 (track feature matrix = celltrackR
   + HMM + transitions), 10 (`pop/add` + `filter`).
@@ -404,11 +418,11 @@ Specific file:line anchors used by the audit:
   decode.
 - `app/src/behaviour/hmm.jl:296-358` — `hmm_transitions` produces
   `"prev_cur"` categorical.
-- `app/src/tasks/behaviour/hmm_states.jl:44-130` — set-scope task pattern
-  (copy for `motif_discovery.jl`); pooling via `pop_df(imgs, uids, "live",
-  pops; granularity=:cell)`.
-- `app/src/tasks/behaviour/hmm_states.jl:96,107` — writes integer state
-  codes as Float64.
+- `app/src/tasks/behaviour/hmm_states.jl:74-` — `_run_task` set-scope
+  pattern (copy for `motif_discovery.jl`); pooling via
+  `pop_df(imgs, uids, "live", pops; granularity=:cell)`.
+- `app/src/tasks/behaviour/hmm_states.jl:105` — `hmm_fit_states` call site;
+  integer state codes are written as Float64.
 - `app/src/tasks/behaviour/hmm_states.json` — task-JSON shape (params,
   `scope: "set"`, `requires: {"axes": ["T"]}`).
 - `app/src/tasks/tracking/track_measures.jl:216` — `centroid_t` frame-index
