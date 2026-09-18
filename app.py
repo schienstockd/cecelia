@@ -13,6 +13,7 @@ Close this window (or Ctrl-C) to stop the server.
 """
 import os
 import shutil
+import ssl
 import sys
 import time
 import subprocess
@@ -31,19 +32,40 @@ def _find_julia() -> str:
     candidate = os.path.expanduser("~/.juliaup/bin/julia")
     return candidate if os.path.exists(candidate) else "julia"
 PORT = os.environ.get("CECELIA_PORT", "8080")
+# The server decides HTTP vs HTTPS from `[tls].enabled` / `CECELIA_TLS` (see app/src/config/tls.jl);
+# prod defaults to HTTPS + HTTP/2, dev to HTTP/1.1, and a missing openssl silently falls back to HTTP.
+# The launcher can't reproduce that resolution without shelling into Julia, so it probes both on the
+# same port and remembers whichever answered. `URL` is set by `_server_ready`; the browser open and
+# the shutdown POST both read it back so they use the same scheme the health check succeeded on.
 URL = f"http://localhost:{PORT}"
-HEALTH = f"{URL}/api/health"
+# Self-signed loopback cert — verification would always fail. urllib's default HTTPSHandler enforces
+# it, so we pass an unverified context explicitly for the probe.
+_NOVERIFY = ssl._create_unverified_context()
+
+
+def _probe(url: str) -> bool:
+    try:
+        opener = (urllib.request.build_opener(urllib.request.HTTPSHandler(context=_NOVERIFY))
+                  if url.startswith("https:") else urllib.request.build_opener())
+        with opener.open(url + "/api/health", timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def _server_ready(timeout: float = 180.0) -> bool:
+    """Probe HTTPS first, then HTTP, on the same port. Sets the module-level `URL` to whichever
+    answered so downstream (browser open, shutdown POST) speaks the same scheme as the server."""
+    global URL
+    https_url = f"https://localhost:{PORT}"
+    http_url  = f"http://localhost:{PORT}"
     deadline = time.time() + timeout
     while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(HEALTH, timeout=2) as resp:
-                if resp.status == 200:
-                    return True
-        except Exception:
-            time.sleep(0.5)
+        for candidate in (https_url, http_url):
+            if _probe(candidate):
+                URL = candidate
+                return True
+        time.sleep(0.5)
     return False
 
 
@@ -66,7 +88,8 @@ def _stop_gracefully(proc, timeout: float = 20.0) -> bool:
         req = urllib.request.Request(
             f"{URL}/api/app/shutdown", data=b"{}",
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        ctx = _NOVERIFY if URL.startswith("https:") else None
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
             if resp.status != 200:
                 return False
     except Exception:
@@ -219,7 +242,7 @@ def main() -> int:
             env=env,
         )
         try:
-            print(f"Starting Cecelia… (waiting for {HEALTH})")
+            print(f"Starting Cecelia… (waiting for /api/health on port {PORT})")
             if _server_ready():
                 if first:
                     webbrowser.open(URL)   # only pop a browser on the initial launch, not each restart
