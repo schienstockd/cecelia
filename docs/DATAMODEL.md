@@ -95,6 +95,34 @@ The Leiden clustering tasks write their result back through the `LabelProps` wri
 - `obsm['X_umap.{suffix}']` is the plotting embedding (the UMAP chart reads it); written only when
   *Calculate UMAP* is on.
 
+### Motif discovery output — `motif.*.{suffix}` obs
+
+The `behaviour.motif_discovery` task (set-scope) writes sub-track motif discovery back through
+the `LabelProps` writer, on the SAME segmentation the pops came from (the suffix is derived at
+run-time; see `MOTIF_DISCOVERY_PLAN.md` Decision 12 for the stable-contract rationale — these
+column names are load-bearing for `BEHAVIOUR_READOUT_PLAN` P3 and must not drift).
+
+| Column | Where | Type | Meaning |
+|---|---|---|---|
+| `motif.class.{suffix}` | `{value_name}.h5ad` per-cell obs | categorical string | e.g. `"Motif 1"` — span-broadcast over each instance's window; overlap resolved to the highest-confidence class (Decision 9) |
+| `motif.distance.{suffix}` | same | Float32 | DTW distance from the instance's window to its class medoid (lower = more confident) |
+| `motif.instance_id.{suffix}` | same | Int | per-run instance UID so overlapping structure remains answerable off the sidecar |
+| `motif.sequence.{suffix}` | `{value_name}__tracks.h5ad` per-track obs | categorical string | `"A_B_A_C"` — the ordered classes of every instance whose window contained ≥1 cell of the track |
+
+- **`{suffix}` = the source pops' `value_name`.** The task's `pops` param requires all populations
+  to come from a single segmentation (`acrossSegmentations: false`); the suffix is derived from
+  that group and is NOT a free-text param — cross-segmentation would silently mis-name columns.
+- **Cells outside any instance's window are left unset** (categorical missing / NaN Float32);
+  they're not "unassigned" — they simply had no motif discovered under them. Coverage is
+  intentionally sparse (P1 on `zolIMa/fXgbTl` covered ~3.6% of cells, cohort scale on `4kS67f`
+  reached ~9% on T-cell pops).
+- The per-run sidecar `{props}.motiffeatures.json` records feature list + partOf UIDs +
+  `resolutionLockedAt` (Decision 8's advisory receipt). Family `"motifs"` to prevent clashing
+  with a sibling `clustfeatures.json`/`regionfeatures.json` on the same suffix.
+- See also: the `motifClassFrequency` plot (`app/src/plotDefinitions/motif_class_frequency.json`),
+  which reads `motif.class.{suffix}` via the `obsMeasurePatterns` shape used by
+  `hmm_state_frequency` — same three popTypes, same granularity.
+
 ### Feature names
 
 **Morphology (2D)**

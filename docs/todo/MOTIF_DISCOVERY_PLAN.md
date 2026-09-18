@@ -1,12 +1,22 @@
 # Sub-behavior motif discovery — plan
 
-> **Status: P1 shipped (2026-09-18).** Landed via PR #1019 + follow-ups
-> #1023 (pops required, notebook moved to project scope). Live-validated
-> on `zolIMa/obWDNS/fXgbTl`: 3452 cells pooled → 16 STUMPY survivors → 2
-> Leiden classes → 124/3452 cells assigned. Verdict per Decision 8: signal
-> weak on cohort-of-one, real answer needs P2 cohort scale. **P2 not yet
-> scheduled.** Design + feasibility: `docs/archive/motif-discovery-audit-prompt.md`
+> **Status: P1 + P2 slice 1 (DTW) shipped (2026-09-18).**
+> P1 landed via #1019 + #1023 + #1033 (pops required, notebook moved
+> to project scope, suffix derived from source pops). P1.5 plot via
+> #1035 (`motifClassFrequency` on the Behaviour canvas). P2 Decision 4
+> (DTW cluster metric via `dtaidistance`) shipped via #1036 + #1038.
+> Live-verified across two scales:
+> - `zolIMa/fXgbTl` alone: 3452 cells → 16 survivors → 2 classes (target 3);
+>   124 assigned (3.6%). DTW == Euclidean at this K.
+> - `4kS67f` 3P spleen cohort (7 imgs): T pop 4197 cells → 59 survivors
+>   → **3 classes** (target hit); B pop 1952 cells → 64 survivors → **3
+>   classes**. Signal separates at cohort scale, matching Decision 8's
+>   prediction. **Remaining P2 slices**: `motifs` pop_type,
+>   `motifTransitionMatrix` plot, Cards + ribbon interactive views.
+> Design + feasibility: `docs/archive/motif-discovery-audit-prompt.md`
 > + `~/Downloads/prompts/motif-discovery-audit-report.md`.
+> On-disk column contract per Decision 12 now promoted to
+> `docs/DATAMODEL.md` → *Motif discovery output*.
 >
 > Downstream reader: `docs/todo/BEHAVIOUR_READOUT_PLAN.md` P3 is gated on
 > this plan's P2. It reads `motif.class.{suffix}` + `motif.distance.{suffix}`
@@ -241,12 +251,16 @@ Only after P1 shows sub-behavior structure.
 - **Distance-to-target channel** — Decision 6 lands (new
   `spatialAnalysis.cellContactsPerT` task + shared
   `per_timepoint_min_distance` helper in `spatial_utils.py`).
-- **DTW at cluster time** — Decision 4 lands. K×K subsequence DTW via
-  `dtaidistance` (Python) on top-K survivors, then Leiden on the
-  precomputed distance obsp via an extended `find_populations`.
-- **Cohort-scale run** — same code, more images. Set at 10–20 images
-  runs in minutes on CPU (STUMPY documents linear scaling in n;
-  multivariate is O(n·m·d)); DTW is bounded by `top_k` per Decision 4.
+- **DTW at cluster time** — **landed via #1036 + #1038 (2026-09-18)**.
+  K×K subsequence DTW via `dtaidistance` (Python) on top-K survivors,
+  then Leiden with `metric="precomputed"`. Runner-local
+  `_leiden_cluster` sidesteps `find_populations`'s transform/normalise/
+  UMAP surface (irrelevant at K≈100); matches plan spirit, not
+  phrasing.
+- **Cohort-scale run** — **verified 2026-09-18** on `4kS67f` 3P spleen
+  (7 images, B + T pops). T: 4197 cells → 59 survivors → 3 classes
+  (target hit). B: 1952 cells → 64 survivors → 3 classes. Signal
+  separates at cohort scale where P1's cohort-of-one collapsed to 2.
 - **`motifs` pop_type** — Decision 1 wired end-to-end:
   - `pop_df` / `pop_df_multi` / `pop_namespace` / `resolve_pop_type`
     routing (`docs/POPULATION.md`).
