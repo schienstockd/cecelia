@@ -368,12 +368,13 @@ function api_view_profiles(::HTTP.Request)
 end
 
 function api_view_profile_save(body_bytes::Vector{UInt8})
-    body  = isempty(body_bytes) ? Dict{String,Any}() : JSON3.read(String(body_bytes), Dict{String,Any})
-    label = _wstr(body, "label")
+    body = _parse_body(body_bytes; allow_empty = true)
+    body isa Tuple && return body
+    label = _wstr(body, :label)
     isempty(strip(label)) && return 400, JSON3.write((; error="label required"))
-    items = get(body, "items", nothing)
+    items = get(body, :items, nothing)
     items isa AbstractVector || return 400, JSON3.write((; error="items must be an array of route paths"))
-    id = get(body, "id", nothing)
+    id = get(body, :id, nothing)
     try
         prof = Cecelia.write_view_profile(label, items;
                                          id = id === nothing ? nothing : string(id))
@@ -387,8 +388,9 @@ function api_view_profile_save(body_bytes::Vector{UInt8})
 end
 
 function api_view_profile_delete(body_bytes::Vector{UInt8})
-    body = isempty(body_bytes) ? Dict{String,Any}() : JSON3.read(String(body_bytes), Dict{String,Any})
-    id   = _wstr(body, "id")
+    body = _parse_body(body_bytes; allow_empty = true)
+    body isa Tuple && return body
+    id = _wstr(body, :id)
     isempty(strip(id)) && return 400, JSON3.write((; error="profile id required"))
     try
         200, JSON3.write((; deleted = Cecelia.delete_view_profile!(id)))
@@ -604,7 +606,8 @@ end
 # `CECELIA_TASK_WORKERS`. Applied locally too, so the in-process fallback path stays governed by the
 # same number. Best-effort — a runner that is down must not fail the control.
 function api_task_threads_set(body_bytes)
-    data = JSON3.read(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
     # `widen` alone: the linear-stage flag without touching the budget. Two controls on one endpoint
     # because they are one setting to the user ("how wide may a task go"), and a second route would
     # let the two disagree about which took effect.
@@ -616,7 +619,7 @@ function api_task_threads_set(body_bytes)
                                    derived = Cecelia.task_workers_derived(),
                                    widen = applied))
     end
-    n = try Int(get(data, :workers, 0)) catch; return 400, JSON3.write((; error = "workers must be an integer")) end
+    n = try _wint(data, :workers, 0) catch; return 400, JSON3.write((; error = "workers must be an integer")) end
     applied = Cecelia.set_task_worker_threads!(n)
     if _runner_enabled()
         try; Cecelia.runner_set_task_workers(_RUNNER, n)
@@ -642,7 +645,8 @@ end
 # Set it live: persists to custom.toml + hot-reloads, so the NEXT task writes with it. Existing
 # stores are untouched (a re-write is rechunk_zarr.py's job) — the UI says so.
 function api_compressor_set(body_bytes)
-    data = JSON3.read(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
     name = _wstr(data, :name)
     isempty(name) && return 400, JSON3.write((; error = "name required"))
     try
@@ -668,7 +672,8 @@ function api_tls_get(_req)
 end
 
 function api_tls_set(body_bytes)
-    data = JSON3.read(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
     on = get(data, :on, nothing)
     (on === true || on === false) || return 400, JSON3.write((; error = "on (bool) required"))
     is_dev = _is_dev()
@@ -705,7 +710,8 @@ function api_store_layout_get(_req)
 end
 
 function api_store_layout_set(body_bytes)
-    data = JSON3.read(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
     name = _wstr(data, :name)
     isempty(name) && return 400, JSON3.write((; error = "name required"))
     try
@@ -716,9 +722,10 @@ function api_store_layout_set(body_bytes)
 end
 
 function api_pool_set(body_bytes)
-    data  = JSON3.read(body_bytes)
+    data  = _parse_body(body_bytes)
+    data isa Tuple && return data
     name  = _wstr(data, :name)
-    limit = Int(get(data, :limit, 0))
+    limit = _wint(data, :limit, 0)
     isempty(name) && return 400, JSON3.write((; error = "name required"))
     known = Set(p.name for p in list_pools())
     name in known || return 400, JSON3.write((; error = "unknown pool '$name'"))
@@ -858,9 +865,8 @@ include(joinpath(@__DIR__, "routes", "project.jl"))
 # ── Set management ────────────────────────────────────────────────────────────
 
 function api_sets_create(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     # TRIMMED, like `rename` and the `newSetName` paths on move/copy — this route was the one that
     # wasn't, so " Day 3 " and "Day 3" could become two sets whose picker rows look identical. Same rule
@@ -893,9 +899,8 @@ end
 # same shape of refusal — 409, "the target name is taken". Renaming to the set's own name is a 200
 # no-op, which is what makes a re-run idempotent.
 function api_sets_rename(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     set_uid     = _wstr(body, :setUid)
     name        = strip(_wstr(body, :name))
@@ -919,9 +924,8 @@ function api_sets_rename(body_bytes::Vector{UInt8})
 end
 
 function api_sets_delete(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     set_uid     = _wstr(body, :setUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))

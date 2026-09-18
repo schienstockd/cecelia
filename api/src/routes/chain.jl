@@ -28,9 +28,8 @@ function api_chains_get(req::HTTP.Request)
 end
 
 function api_chains_delete(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     name = _wstr(body, :name)
     isempty(uid)  && return 400, JSON3.write((; error="projectUid required"))
@@ -91,9 +90,8 @@ function api_chains_run(req::HTTP.Request)
 end
 
 function api_chains_save(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     tmpl = get(body, :template, nothing)
     isempty(uid)      && return 400, JSON3.write((; error="projectUid required"))
@@ -157,9 +155,8 @@ end
 # Params may be SPARSE: send only what you mean to set. The whiteboard merges each task's spec
 # defaults when it loads the template (applyTemplate), so an omitted param means "use the default".
 function api_chains_create(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     tmpl = get(body, :template, nothing)
     isempty(uid)    && return 400, JSON3.write((; error="projectUid required"))
@@ -217,9 +214,8 @@ end
 # template by name for its column layout (and already falls back to a task-derived layout when the
 # name misses), which is why the GUI disables the control while the chain has a live run.
 function api_chains_rename(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid     = _wstr(body, :projectUid)
     name    = _wstr(body, :name)
     newname = String(strip(_wstr(body, :newName)))

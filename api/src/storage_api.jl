@@ -22,9 +22,8 @@ end
 # reclaim_inactive! / remove_image_version! path). Returns bytes freed + the uids actually reclaimed
 # (an image with nothing to reclaim is skipped).
 function api_storage_reclaim(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error = "Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     image_uids = get(body, :imageUids, nothing)

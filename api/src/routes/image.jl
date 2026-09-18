@@ -1,9 +1,8 @@
 # ── Image management ──────────────────────────────────────────────────────────
 
 function api_images_register(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     set_uid     = _wstr(body, :setUid)
     # `filepaths` is either a list of strings (each path = one image, no series pick — the classic
@@ -84,13 +83,13 @@ end
 # Python probe via run_py; no image is registered here — the wizard shows the picker and only then
 # calls /api/images/register with the chosen (path, series) pairs. See probe_series_run.py.
 function api_import_series_probe(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body")) end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     fp = _wstr(body, :filepath)
     isempty(fp) && return 400, JSON3.write((; error="filepath required"))
     abs_path = isabspath(fp) ? fp : joinpath(FS_ROOT, fp)
     isfile(abs_path) || return 404, JSON3.write((; error="File not found: $abs_path"))
-    max_px = Int(get(body, :maxPx, 128))
+    max_px = _wint(body, :maxPx, 128)
 
     run_dir     = mktempdir()
     result_file = joinpath(run_dir, "probe.result.json")
@@ -120,8 +119,8 @@ end
 # open, not on set-add). Missing bftools ⇒ JVM formats come back `reader: "unsupported"` and the
 # caller keeps the current default. See peek_pyramid_run.py for the tiering rule.
 function api_import_peek_pyramid(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body")) end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     raw_paths = get(body, :paths, nothing)
     (raw_paths === nothing || isempty(raw_paths)) &&
         return 400, JSON3.write((; error="paths required (non-empty list)"))
@@ -162,8 +161,8 @@ end
 # of a legacy R/Shiny cecelia project (what will/won't transfer per image). See
 # app/src/tasks/importImages/scan_legacy_run.py and docs/todo/LEGACY_MIGRATION_PLAN.md.
 function api_import_scan_legacy(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body")) end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     src = _wstr(body, :sourceProjectDir)
     isempty(src) && return 400, JSON3.write((; error="sourceProjectDir required"))
     abs_src = isabspath(src) ? src : joinpath(FS_ROOT, src)
@@ -197,8 +196,8 @@ end
 # Registers a placeholder image per legacy image, PRESERVING its UID and stashing the source in meta,
 # so the per-image importImages.migrateLegacy task can run. Mirrors api_images_register.
 function api_import_register_legacy(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body")) end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     set_uid     = _wstr(body, :setUid)
     src         = _wstr(body, :sourceProjectDir)
@@ -657,9 +656,8 @@ api_observer_labarchives(req::HTTP.Request) =
 # syncedBy}. The one write; cecelia never fetches from LabArchives itself (no credentials, by design —
 # the connector lives in the user's Claude session), so this is how the context arrives.
 function api_observer_labarchives_set(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     proj = try load_project(project_uid) catch e
@@ -700,9 +698,8 @@ end
 # (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:
 # {projectUid, setUid, funName, valueName?, threshold?}. This is the ONLY cohort write path.
 function api_qc_cohort_check(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error = "Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid); set_uid = _wstr(body, :setUid)
     fun_name    = _wstr(body, :funName)
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
@@ -759,9 +756,8 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
 end
 
 function api_images_delete(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     set_uid     = _wstr(body, :setUid)
     image_uid   = _wstr(body, :imageUid)
@@ -787,9 +783,8 @@ end
 # `newSetName` to create the destination set on the fly. Manifest-only — no image data moves on
 # disk (see move_image!). Returns the resolved destination {toSetUid, toSetName, createdSet}.
 function api_images_move(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid  = _wstr(body, :projectUid)
     image_uid    = _wstr(body, :imageUid)
     from_set_uid = _wstr(body, :fromSetUid)
@@ -841,9 +836,8 @@ end
 # The caller loops for several versions and must order `default` LAST (docs/todo/IMAGE_DELETE_PLAN.md
 # Decision 11), so the safe-primary un-import lands at the end rather than mid-loop.
 function api_images_version_remove(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     image_uid   = _wstr(body, :imageUid)
     value_name  = _wstr(body, :valueName)
@@ -873,9 +867,8 @@ end
 # — shedding a version is /api/images/version/remove's job (IMAGE_DELETE_PLAN Decision 9). Core:
 # `reset_image_analysis!` (app/src/storage.jl).
 function api_images_analysis_reset(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     image_uids = get(body, :imageUids, nothing)
