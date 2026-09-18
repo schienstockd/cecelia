@@ -1,0 +1,22 @@
+{
+  "id": "motif_class_frequency",
+  "label": "Motif class frequency",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["frequency", "stacked", "stacked100"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "live",       "granularity": "cell" },
+      { "popType": "track",      "granularity": "cell" },
+      { "popType": "trackclust", "granularity": "cell" }
+    ],
+    "obsMeasurePatterns": [
+      { "match": "motif.class.", "label": "Motif class" }
+    ]
+  },
+  "scopeModes": ["per_image", "summarised"],
+  "params": [
+    { "key": "normalize", "label": "As proportion", "type": "bool", "default": true }
+  ]
+}

@@ -252,11 +252,13 @@ Only after P1 shows sub-behavior structure.
   - napari colour-by via `napari.show_populations` — cluster pops
     today colour cells by `clusters.{suffix}`; motif pops colour
     by `motif.class.{suffix}`, same code path.
-- **SummaryCanvas plots** — two new `plotDefinitions/*.json`:
-  - `motifClassFrequency` — 100% stacked bar per image or per
-    attribute group; `_matrix_agg` category mode.
+- **SummaryCanvas plots** — one still to build:
   - `motifTransitionMatrix` — from→to grid of motif classes;
     reuses the HMM transitions plot builder.
+  - `motifClassFrequency` — **landed early as P1.5** via
+    `app/src/plotDefinitions/motif_class_frequency.json` (PR #TBD).
+    Mirrors `hmm_state_frequency.json` exactly (3 popTypes at cell
+    granularity, `obsMeasurePatterns: [{match: "motif.class."}]`).
 - **`motifCards` InteractiveView** — mirror `cellCards`
   (`docs/todo/CELL_CARDS_PLAN.md` Decisions 0/1/3/4). One card per
   motif class; medoid = motif instance closest to its class centroid
@@ -356,8 +358,8 @@ Grouped by phase for grep-by-file-path.
 - `app/src/pops/pop_namespace.jl` and siblings — new `motifs` pop_type.
 - `app/src/pops/pop_df.jl` and siblings — routing.
 - `frontend/src/registries/interactiveViews.ts` — new `motifCards`, `motifRibbon`.
-- `frontend/src/plotDefinitions/motifClassFrequency.json` (new).
-- `frontend/src/plotDefinitions/motifTransitionMatrix.json` (new).
+- ~~`app/src/plotDefinitions/motif_class_frequency.json`~~ landed early as P1.5.
+- `app/src/plotDefinitions/motif_transition_matrix.json` (new).
 - No new module page. `BehaviourModule.vue` is untouched.
 
 **P3**: only under an ask. Files enumerated at that point.
