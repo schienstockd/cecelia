@@ -14,6 +14,7 @@ Cecelia.load_custom_modules!()
 # ── Sub-modules ───────────────────────────────────────────────────────────────
 
 include("tls.jl")             # self-signed dev cert bootstrap for HTTP/2 via ALPN
+include("movie_config.jl")    # MovieConfig / MovieRecordConfig / MovieBatchConfig — used from sockets.jl onward
 include("sockets.jl")
 include("routes.jl")
 include("movie_helpers.jl")   # shared movie / legend / view helpers (formerly napari_api.jl)

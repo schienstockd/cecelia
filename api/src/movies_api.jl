@@ -149,7 +149,12 @@ and attributes beside its movies without parsing a filename.
 """
 function register_movie!(project_uid::AbstractString, filename::AbstractString;
                          produced_by::AbstractString = "", image_uid::AbstractString = "",
-                         channels = nothing, suffix::AbstractString = "", config = nothing,
+                         channels = nothing, suffix::AbstractString = "",
+                         # A `MovieConfig` at write time; `AbstractDict` when a legacy on-disk
+                         # entry (read as JSON3.Object) is being merged back — see
+                         # `_read_movies_registry`. `nothing` keeps a previously banked config
+                         # standing rather than blanking it on a re-record.
+                         config::Union{Nothing,MovieConfig,AbstractDict} = nothing,
                          config_kind::AbstractString = "", config_version::Int = MOVIE_CONFIG_VERSION)
     try
         _valid_movie_name(filename) || return nothing
