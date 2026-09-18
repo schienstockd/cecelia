@@ -22,15 +22,14 @@ Citations
   behavioural motif emergence.
 """
 
-import json
 import os
-from collections import defaultdict
 
 import numpy as np
 import pandas as pd
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl).
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 # STUMPY is bundled in the default pixi env. Import lazily so a missing install fails loudly here
 # rather than at module load, keeping the "params-only" test path in Julia usable.
@@ -280,8 +279,7 @@ def run(params):
         "run_stats":           run_stats,
     }
     os.makedirs(os.path.dirname(results_path), exist_ok=True)
-    with open(results_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f)
+    write_json_atomic(results_path, payload)
     log.log(f">> wrote results: {results_path} "
             f"({sum(1 for c in class_by_cell if c is not None)} cells assigned)")
     log.progress(6, 6)
