@@ -130,11 +130,18 @@ REQUIRED for every new task*.
 
 ## Versioned variable pattern (ccid.json)
 
+Two orthogonal axes on the same shape:
+
 ```json
-{ "default": "ccidImage.ome.zarr", "_active": "default" }
+{ "default": { "v1": "ccidImage.ome.zarr", "_latest": "v1" }, "_active": "default" }
 ```
-- Read: `versioned_get_field(raw, "filepath", value_name)` (falls back to `"default"`)
-- Write: `versioned_set_field!(raw, "filepath", value, value_name)`
+
+- **Outer axis — value_name variant** (`default`, `dtype`, `cropped`, …). Read: `versioned_get_field(raw, "filepath", value_name)`; write: `versioned_set_field!(raw, "filepath", value, value_name)`.
+- **Inner axis — version per value_name** (`v1`, `v2`, …). Read: `version_get(inner, version)` or the composer `versioned_get_field_at(raw, "filepath", value_name; version=nothing)`; write (P2): `version_set!(inner, value, version)`. For a struct-field accessor that already has the resolved inner value, use `unversion_value(value, version=nothing)`.
+- A bare scalar / vector at the value_name key is treated as **implicit `v1`** — old projects and every legacy reader keep working.
+- Companion: `resolve_version(img, field, value_name=nothing)::String` for callers that need the version string (chain-planner pinning, logging).
+
+Full design: `docs/todo/VN_VERSIONING_PLAN.md`.
 
 **JSON3 gotcha — Symbol keys**: JSON3 yields Symbol keys (`:default`, `:_active`). Always convert when building a `Dict`:
 ```julia
