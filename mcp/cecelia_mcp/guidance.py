@@ -121,6 +121,15 @@ you left at defaults, and what genuinely could not be resolved yet — a populat
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
 that part is the user's.
 
+ON WHAT THE USER JUST SHOWED YOU. A CAPTURE here is specifically a frozen VIEWER FRAME the user \
+shared via cecelia's Share-with-Claude button — NOT a manual screenshot, an image file, or a \
+list_images entry. Two tools reach it and only those: get_recent_captures (newest-first) and \
+get_capture(captureId). Reach for them when the user says "look at this" / "I just shared \
+something" / "capture <id>" / when your last message asked them to point at something. Each \
+capture carries an `address` (projectUid, imageUid, valueName, t, z, extent) so you don't have to \
+ask "which image" — read it. Empty list ⇒ nothing new; do NOT fall back to list_images and pass \
+off a pending-image or a screenshot as the shared frame.
+
 ON POINTING AT WHAT YOU MEAN. Four ways to point back at the user's screen — pick the one that \
 matches what you're referring to, all ephemeral (5-min default TTL, in-memory only):
 

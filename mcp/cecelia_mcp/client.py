@@ -77,6 +77,11 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/lablog"),
         ("GET", "/api/notebooks"),         # list a project's notebooks (file, description, version)
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
+        ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
+        ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
+        # NB: /api/viewer/capture (POST) is NOT allow-listed. Captures are AUTHORED by the frontend
+        # Share button; Claude only READS them. Keeping the write off the observer's surface prevents
+        # a fabricated "the user shared this" from ever landing in the project's captures dir.
         ("POST", "/api/lablog/append"),  # write 1/7 — append-only, server-guarded
         ("POST", "/api/notebooks/write"),  # write 2/7 — create-only (409 on existing); serialises cells to a Pluto notebook
         ("POST", "/api/notebooks/describe"),  # write 3/7 — edits ONLY a notebook's description string (registry sidecar); not its content
@@ -329,6 +334,17 @@ class CeceliaClient:
 
     def list_notebooks(self, project_uid: str):
         return self._request("GET", "/api/notebooks", params={"projectUid": project_uid})
+
+    def get_recent_captures(self, project_uid: str, limit: int | None = None):
+        # Newest-first list — capture id + timestamp + surface + address only, no frame bytes.
+        return self._request("GET", "/api/viewer/captures",
+                             {"projectUid": project_uid, "limit": limit})
+
+    def get_capture(self, project_uid: str, capture_id: str):
+        # Full envelope + the frame inlined as a data URL (the MCP tool re-wraps it as an image
+        # content block).
+        return self._request("GET", "/api/viewer/capture",
+                             {"projectUid": project_uid, "captureId": capture_id})
 
     def get_notebook(self, project_uid: str, file: str):
         # Returns {file, scope, content} — the notebook's current Pluto source (with the user's edits).

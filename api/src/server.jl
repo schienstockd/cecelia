@@ -48,6 +48,7 @@ include("cell_cards_api.jl") # /api/cell_cards — snapshot cards on the offline
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
+include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
@@ -247,6 +248,8 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
+    "/api/viewer/captures" => (req, body_bytes) -> (api_viewer_captures_list(req)),
+    "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),
@@ -335,6 +338,8 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/optical-flow/delete" => (req, body_bytes) -> (api_optical_flow_delete(body_bytes)),
     "/api/denoise/rename" => (req, body_bytes) -> (api_denoise_rename(body_bytes)),
     "/api/denoise/delete" => (req, body_bytes) -> (api_denoise_delete(body_bytes)),
+    # bidir share-in — POST-only; MCP client never authors a capture (see captures_api.jl).
+    "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture(body_bytes)),
     "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),
     "/api/notebooks/write" => (req, body_bytes) -> (api_notebooks_write(body_bytes)),
     "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),

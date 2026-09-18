@@ -95,6 +95,9 @@ import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import { plotHostToImageURL, loadImg } from '../plots/export'
+import DrawSurface from '../components/DrawSurface.vue'
+import { buildCaptureAddress, type OverlayMark } from '../utils/captureAddress'
+import { copyText } from '../utils/clipboard'
 import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -4394,6 +4397,84 @@ interface ViewerCapture {
   if (!png) throw new Error('screenshot composite failed')
   return { png, imageName: imageName.value ?? '' }
 }
+
+// ── Share-in draw mode (BIDIR PR #3 of docs/todo/BIDIR_CONTEXT_PLAN.md) ────────────────────────
+// Draw directly on the viewer (no modal, no frozen frame): the caller in the OPENER window (the
+// main-window ViewerPanel's Share button) invokes `__cceceliaViewerBeginDraw()` on this popup,
+// which flips `drawMode` on. `DrawSurface.vue` mounts as a peer of the canvas + StillOverlay /
+// GridOverlay, absolute-positioned to cover the canvas, and drives its own tools. On Save it
+// hands back the overlay marks; we grab the CURRENT canvas pixels (same toDataURL trick
+// __cceceliaViewerCapture uses), build the address from live viewer state, and POST.
+const drawMode  = ref(false)
+const drawBusy  = ref(false)
+// Post-save toast: the draw layer dismisses on Save, taking the "paste to Claude" hint with it,
+// so we surface the same message inside the viewer itself for a few seconds — long enough to
+// Cmd-Tab and paste. `ok` on success (clipboard prefilled), `fail` if the POST didn't land.
+const shareToast = ref<{ kind: 'ok' | 'fail'; message: string } | null>(null)
+let shareToastTimer: number | null = null
+function showShareToast(kind: 'ok' | 'fail', message: string, ms = 7000) {
+  shareToast.value = { kind, message }
+  if (shareToastTimer) clearTimeout(shareToastTimer)
+  shareToastTimer = window.setTimeout(() => { shareToast.value = null; shareToastTimer = null }, ms)
+}
+function dismissShareToast() {
+  shareToast.value = null
+  if (shareToastTimer) { clearTimeout(shareToastTimer); shareToastTimer = null }
+}
+const drawAddressLine = computed(() => {
+  const bits: string[] = []
+  if (imageUid) bits.push(imageUid)
+  if (valueName.value) bits.push(valueName.value)
+  if (shownT.value >= 0) bits.push(`t=${shownT.value}`)
+  if (zPlane.value >= 0) bits.push(`z=${zPlane.value}`)
+  return bits.join(' · ')
+})
+;(window as unknown as { __cceceliaViewerBeginDraw?: () => void }).__cceceliaViewerBeginDraw =
+  () => { drawMode.value = true }
+async function onDrawSave(payload: { overlay: OverlayMark[] }) {
+  const el = canvas.value
+  if (!el || !projectUid) { drawMode.value = false; return }
+  drawBusy.value = true
+  try {
+    const png = el.toDataURL('image/png')
+    const ext = overlayExtent.value
+    const address = buildCaptureAddress({
+      projectUid, imageUid, valueName: valueName.value,
+      t: shownT.value >= 0 ? shownT.value : undefined,
+      z: zPlane.value >= 0 ? zPlane.value : undefined,
+      extentUm: ext && ext.x > 0 && ext.y > 0 ? { x: ext.x, y: ext.y, unit: ext.unit ?? 'µm' } : undefined,
+    })
+    const res = await fetch('/api/viewer/capture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,
+                             frames: [{ png }], overlay: payload.overlay }),
+    })
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`
+      try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* ignore */ }
+      throw new Error(msg)
+    }
+    // Prefill the clipboard with a one-liner the user can paste into their Claude Code session —
+    // the practical stand-in for MCP not being able to alert a running session. Word choice:
+    // "shared frame in cecelia" is distinctive; "capture" alone collided with "screenshot" and
+    // Claude fell back to listing images. Guidance.py's ON WHAT THE USER JUST SHOWED YOU block
+    // is what actually routes it to get_recent_captures.
+    const prompt = 'Read my shared frame in cecelia.'
+    const copied = await copyText(prompt)
+    showShareToast('ok', copied
+      ? 'Capture saved — prompt in your clipboard. Switch to Claude and paste.'
+      : `Capture saved — copy manually: "${prompt}"`)
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[share-in] capture POST failed', e)
+    showShareToast('fail', e instanceof Error ? e.message : String(e))
+  } finally {
+    drawBusy.value = false
+    drawMode.value = false
+  }
+}
+function onDrawCancel() { drawMode.value = false }
+
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSelectModeTick)
@@ -4451,6 +4532,7 @@ onUnmounted(() => {
   window.removeEventListener('focus', publishViewerFocus)
   delete (window as unknown as { __cceceliaViewerCapture?: unknown }).__cceceliaViewerCapture
   delete (window as unknown as { __cceceliaViewerScreenshot?: unknown }).__cceceliaViewerScreenshot
+  delete (window as unknown as { __cceceliaViewerBeginDraw?: unknown }).__cceceliaViewerBeginDraw
   stopCacheClearWatch?.(); stopCacheClearWatch = null
   stopPlay()
   pump.cancel()
@@ -4488,6 +4570,11 @@ onUnmounted(() => {
            Viewport coords: at zoom-in "C4" is a quarter of the current view, not a quarter of the
            image scrolled off screen. Toggled from the Annotations section of the viewer panel. -->
       <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity" />
+      <!-- Share-in draw overlay (BIDIR PR #3): mounts DIRECTLY on the viewer so users draw on
+           what they're looking at. Triggered from the main-window ViewerPanel's Share button
+           via `__cceceliaViewerBeginDraw()` exposed above. -->
+      <DrawSurface :visible="drawMode" :address-line="drawAddressLine" :busy="drawBusy"
+                   @save="onDrawSave" @cancel="onDrawCancel" />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
            cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
       <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">
@@ -4538,6 +4625,19 @@ onUnmounted(() => {
            v-tooltip.top="'The canvas is not yet showing every brick for the current timepoint'">
         <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
         <span>Loading bricks…</span>
+      </div>
+      <!-- Share-in: post-Save toast. Same `.vw-status-chip` visual family as errors/loading so it
+           reads as "the viewer is telling you something", but INDEPENDENT of that v-if/v-else-if
+           cascade — a settled viewer is the only state in which Save fires, and a load happening
+           concurrently must not swallow it. Auto-dismisses after ~7s (see showShareToast). -->
+      <div v-if="shareToast" class="vw-status-chip vw-share-chip"
+           :class="{ 'vw-status-chip-error': shareToast.kind === 'fail' }">
+        <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
+                    'vw-status-chip-icon']" />
+        <span>{{ shareToast.message }}</span>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-status-chip-dismiss"
+                @click="dismissShareToast" v-tooltip.top="'Dismiss'"
+                aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
       </div>
       <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
            a small image still benefits from a corner reference while zoomed in.

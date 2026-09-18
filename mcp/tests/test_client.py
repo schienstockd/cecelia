@@ -243,6 +243,33 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(len(body["overlay"]), 1)
         self.assertNotIn("imageUid", body)
 
+    def test_bidir_capture_read_routes_allow_listed_but_write_is_not(self):
+        # BIDIR share-in: Claude may READ the captures the user shares, but the write route (POST
+        # /api/viewer/capture) is deliberately absent — captures are authored by the frontend
+        # Share button, not by Claude, so a fabricated "the user shared this" cannot land in the
+        # project's captures dir.
+        self.assertIn(("GET", "/api/viewer/captures"), ALLOWED_ROUTES)
+        self.assertIn(("GET", "/api/viewer/capture"), ALLOWED_ROUTES)
+        self.assertNotIn(("POST", "/api/viewer/capture"), ALLOWED_ROUTES)
+
+    def test_get_recent_captures_builds_url(self):
+        with _patch_urlopen({"items": []}) as u:
+            self.c.get_recent_captures("p", limit=5)
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/viewer/captures?", req.full_url)
+        self.assertIn("projectUid=p", req.full_url)
+        self.assertIn("limit=5", req.full_url)
+
+    def test_get_capture_builds_url(self):
+        with _patch_urlopen({"capture": {}, "frame": ""}) as u:
+            self.c.get_capture("p", "cap-20260918T140000-abcdef")
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/viewer/capture?", req.full_url)
+        self.assertIn("projectUid=p", req.full_url)
+        self.assertIn("captureId=cap-20260918T140000-abcdef", req.full_url)
+
     def test_list_notebooks_builds_url(self):
         with _patch_urlopen({"notebooks": []}) as u:
             self.c.list_notebooks("p")
