@@ -218,7 +218,8 @@ function api_viewer_meta(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
     pu = get(q, "projectUid", ""); iu = get(q, "imageUid", "")
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, td, err = resolve_image_version(pu, iu, vnn)
+    vv = get(q, "version", "");   vvn = isempty(vv) ? nothing : vv
+    zp, td, err = resolve_image_version(pu, iu, vnn; version = vvn)
     err === nothing || return 404, JSON3.write((; error = err))
     try
         arr, caxes = open_level0(zp)
@@ -389,6 +390,7 @@ end
 function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     q  = HTTP.queryparams(HTTP.URI(target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
+    vv = get(q, "version", "");   vvn = isempty(vv) ? nothing : vv
     # `labels=<value_name>` serves the MASK for that segmentation instead of the image. Same reader,
     # same headers, same shape guard — a mask is just another zarr of the same geometry, which is what
     # makes P4 cheap. The dtype differs (label ids, not intensities), and `X-Slab-Bpv` already says so.
@@ -418,7 +420,8 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
             lerr === nothing || return false
         end
     else
-        zp, meta_dir, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+        zp, meta_dir, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn;
+                                                  version = vvn)
         err === nothing || return false
         if preview_af
             # `sourceChannel` must be present (the store is per-channel) and `previewValueName` names
@@ -749,7 +752,8 @@ function api_viewer_props_get(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
     pu = get(q, "projectUid", ""); iu = get(q, "imageUid", "")
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, td, err = resolve_image_version(pu, iu, vnn)
+    vv = get(q, "version", "");   vvn = isempty(vv) ? nothing : vv
+    zp, td, err = resolve_image_version(pu, iu, vnn; version = vvn)
     err === nothing || return 404, JSON3.write((; error = err))
     p = _viewer_props_path(td, zp)
     isfile(p) || return 404, JSON3.write((; error = "No saved viewer props"))
@@ -770,7 +774,9 @@ function api_viewer_props_post(body_bytes::Vector{UInt8})
     iu = _wstr(body, "imageUid")
     vnr = get(body, "valueName", nothing)
     vnn = (vnr === nothing || (vnr isa AbstractString && isempty(vnr))) ? nothing : String(vnr)
-    zp, td, err = resolve_image_version(pu, iu, vnn)
+    vvr = get(body, "version", nothing)
+    vvn = (vvr === nothing || (vvr isa AbstractString && isempty(vvr))) ? nothing : String(vvr)
+    zp, td, err = resolve_image_version(pu, iu, vnn; version = vvn)
     err === nothing || return 404, JSON3.write((; error = err))
     vs = get(body, "viewState", nothing)
     vs === nothing && return 400, JSON3.write((; error = "viewState missing"))
@@ -1278,7 +1284,9 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error = "projectUid and imageUid required"))
     vn_raw = get(data, :valueName, nothing)
     vnn = (vn_raw === nothing || String(vn_raw) == "") ? nothing : String(vn_raw)
-    zp, td, err = resolve_image_version(pu, iu, vnn)
+    vv_raw = get(data, :version, nothing)
+    vvn = (vv_raw === nothing || String(vv_raw) == "") ? nothing : String(vv_raw)
+    zp, td, err = resolve_image_version(pu, iu, vnn; version = vvn)
     err === nothing || return 404, JSON3.write((; error = err))
     # Specs — saved viewer props if present, else sampled. Sampled has the frame-flicker property
     # (decision 5), so a movie without saved props is louder than one with them; the test is a smoke
@@ -1399,7 +1407,9 @@ function api_viewer_thumbnail(body_bytes::Vector{UInt8})
     vs_dict = vn_raw
     val_raw = get(data, :valueName, nothing)
     vnn = (val_raw === nothing || String(val_raw) == "") ? nothing : String(val_raw)
-    zp, td, err = resolve_image_version(pu, iu, vnn)
+    vv_raw = get(data, :version, nothing)
+    vvn = (vv_raw === nothing || String(vv_raw) == "") ? nothing : String(vv_raw)
+    zp, td, err = resolve_image_version(pu, iu, vnn; version = vvn)
     err === nothing || return 404, JSON3.write((; error = err))
     arr, caxes = open_level0(zp)
     d = axis_dims(caxes, ndims(arr))

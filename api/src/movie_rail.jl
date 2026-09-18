@@ -18,9 +18,11 @@
 
 # The frame's zarr + task dir + specs, the same three inputs `api_viewer_record_test` reads. Pulled out
 # so the batch loop doesn't repeat the boilerplate per image.
-function _resolve_frame_for_record(pu::AbstractString, iu::AbstractString, value_name)
+function _resolve_frame_for_record(pu::AbstractString, iu::AbstractString, value_name;
+                                   version = nothing)
     vnn = (value_name === nothing || String(value_name) == "") ? nothing : String(value_name)
-    zp, td, err = resolve_image_version(pu, iu, vnn)
+    vvn = (version === nothing || String(version) == "") ? nothing : String(version)
+    zp, td, err = resolve_image_version(pu, iu, vnn; version = vvn)
     err === nothing || return (nothing, nothing, nothing, nothing, err)
     arr, caxes = open_level0(zp)
     d  = axis_dims(caxes, ndims(arr))

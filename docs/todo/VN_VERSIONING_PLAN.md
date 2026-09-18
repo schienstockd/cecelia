@@ -1,8 +1,8 @@
 # Value-name versioning — every writer targets a new `vn@v`, never overwrites
 
-**Status:** **P1a + P1b + P1d shipped** (2026-09-18) — helpers + composer + Julia app-layer reader
-routing + Python resolver + Python reader routing, additive, backward-compat verified via full test
-suite. P1c + P2–P6 planning. Comes out
+**Status:** **P1a + P1b + P1c + P1d shipped** (2026-09-18) — helpers + composer + Julia app-layer +
+Julia API-layer + Python resolver + Python reader routing, additive, backward-compat verified via
+full test suite. P2–P6 planning. Comes out
 of the chain-execution-prerequisites prompt
 (`docs/archive/chain-execution-prerequisites-prompt.md`) — closing items **#1** (non-destructive
 default) and **#3** (mechanically-can't-overwrite invariant) collapses into this one primitive.
@@ -137,19 +137,23 @@ Split out from P1 before writing code, because the schema decision is load-beari
   `resolve_version` call returns `LATEST_DEFAULT_VAL`, since struct fields still preclude versioned
   entries.
 
-### P1c — Julia API-layer resolver
+### P1c — Julia API-layer resolver — **SHIPPED** (2026-09-18)
 
-- **Julia API-layer**: extend `resolve_image_version` at `api/src/image_geometry.jl:157` (the ONE
-  api-side VN resolver — 12 callers across viewer/crop/movie/optical-flow APIs). The audit surfaced
-  this as a separate resolver the plan initially missed. Different return shape (`(zarr_path,
-  meta_dir, error)` vs `(vn, active_key)`); grows versions.
-
-Route every existing api caller through it: `api/src/crop_api.jl`, `api/src/movie_rail.jl`,
-`api/src/optical_flow_api.jl`, `api/src/viewer_api.jl`, `api/src/image_geometry.jl:456`. Legacy
-single-version projects return `v1` implicitly.
-
-**No writer changes yet.** Test-enforced: extend the `zarr-access ratchet` testset to catch bare
-`default/<vn>/…` joins that bypass a resolver.
+- `resolve_image_version(project_uid, image_uid, value_name; version=nothing)`
+  (`api/src/image_geometry.jl`) — the ONE api-side VN resolver grew an optional `version` kwarg and
+  routes through `unversion_value`. Legacy bare-scalar entries unwrap to themselves (`version` is a
+  no-op); versioned entries default to `_latest` and honour an explicit version. A missing version
+  reports a specific error instead of a generic miss.
+- 11 callers (audit said 12; one line was a `_gating_image` diff, off by one — recorded here for
+  future audits): `crop_api.api_crop_info`/`api_crop_frame`; `movie_rail._resolve_frame_for_record`;
+  `optical_flow_api.api_optical_flow_inspect`; `viewer_api.api_viewer_meta`/`try_serve_slab`/
+  `api_viewer_props_get`/`api_viewer_props_post`/`api_viewer_record_test`/(record body handler);
+  `image_geometry.api_image_geometry`. Each takes an optional `version` query/body param and threads
+  it through unchanged. Legacy callers (no `version` supplied) keep their behaviour verbatim.
+- New testset in `api/test/runtests.jl` — `API: resolve_image_version — inner version axis` —
+  builds a versioned filepath entry directly on disk and verifies: legacy → `version` kwarg is a
+  no-op; versioned → default resolves `_latest`; explicit `v1` addresses the older store; missing
+  version returns a specific error.
 
 ### P1d — Python resolver + reader routing — **SHIPPED** (2026-09-18)
 
