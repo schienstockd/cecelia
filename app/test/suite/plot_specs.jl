@@ -76,7 +76,7 @@
     # supported `track`/`trackclust` at either granularity (`_pop_df_track_gating` expands track
     # membership to its member cells), so this was a spec omission, not a capability gap.
     BEHAVIOUR = ("cell_properties.json", "hmm_state_frequency.json", "state_signature.json",
-                 "transition_matrix.json", "track_measures.json")
+                 "transition_matrix.json", "track_measures.json", "motif_class_frequency.json")
     for f in BEHAVIOUR
         ds = specs[f]["dataSource"]
         @test !haskey(ds, "popType")            # legacy single-family form is gone
