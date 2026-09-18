@@ -37,7 +37,6 @@ const _MOTIF_FEATURE_COLS = String["live.cell.speed", "live.cell.angle",
 # Typed shape of what `_run_task(::MotifDiscovery, …)` reads from `params`.
 Base.@kwdef struct MotifDiscoveryParams
     pops::Vector{String}   = String[]
-    valueName::String      = "default"
     windowSize::Int        = 8
     topK::Int              = 100
     numClasses::Int        = 3
@@ -53,7 +52,6 @@ end
 function parse_motif_discovery_params(d::AbstractDict)::MotifDiscoveryParams
     MotifDiscoveryParams(;
         pops              = _motif_pops(d),
-        valueName         = string(get(d, "valueName", "default")),
         windowSize        = Int(get(d, "windowSize", 8)),
         topK              = Int(get(d, "topK", 100)),
         numClasses        = Int(get(d, "numClasses", 3)),
@@ -109,7 +107,14 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
     on_progress(1, 5)
 
     default_vn = get(imgs[1].label_props, VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL)
-    vn0, tcol  = _motif_temporal(imgs, p.pops, default_vn)
+    # Derive the output suffix from the source pops' value_name: motif columns land on the
+    # segmentation the pops belong to, so the two must match. Prevents the "pops on flowTom,
+    # valueName=default → columns land on default.h5ad which has no tracked cells" footgun.
+    vn_groups = _group_pops_by_value_name(p.pops, default_vn)
+    length(vn_groups) == 1 ||
+        (on_log("[ERROR] Motif discovery: all populations must come from a single segmentation (got value_names $(sort(collect(keys(vn_groups)))))"); return nothing)
+    suffix = first(keys(vn_groups))
+    vn0, tcol = _motif_temporal(imgs, p.pops, default_vn)
     isnothing(tcol) &&
         (on_log("[ERROR] No temporal column in the selected segmentation(s) — motif discovery needs a timecourse"); return nothing)
 
@@ -127,7 +132,7 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
     # NaN → nothing so JSON is well-formed; Python re-hydrates as NaN.
     _nanless(v) = ismissing(v) ? nothing : (v isa AbstractFloat && isnan(v) ? nothing : v)
     task_params = Dict{String,Any}(
-        "suffix"       => p.valueName,
+        "suffix"       => suffix,
         "windowSize"   => p.windowSize,
         "topK"         => p.topK,
         "numClasses"   => p.numClasses,
@@ -168,10 +173,10 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
            "$(count(!isnothing, instance_id_by_cell)) / $(nrow(df)) cells")
     on_progress(4, 5)
 
-    class_col    = "motif.class.$(p.valueName)"
-    distance_col = "motif.distance.$(p.valueName)"
-    instance_col = "motif.instance_id.$(p.valueName)"
-    sequence_col = "motif.sequence.$(p.valueName)"
+    class_col    = "motif.class.$(suffix)"
+    distance_col = "motif.distance.$(suffix)"
+    instance_col = "motif.instance_id.$(suffix)"
+    sequence_col = "motif.sequence.$(suffix)"
 
     df[!, :_motif_class]       = class_by_cell
     df[!, :_motif_distance]    = distance_by_cell
@@ -206,7 +211,7 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
                 [(name = class_col, labels = cat_labels, values = cat_values)];
                 drop = [class_col], on_log = on_log, on_process = on_process)
             ok_cat || (on_log("[WARN] categorical class write failed: $(img.uid)/$vn"); continue)
-            _write_motif_features!(cell_props_path, p.valueName, _MOTIF_FEATURE_COLS, uids;
+            _write_motif_features!(cell_props_path, suffix, _MOTIF_FEATURE_COLS, uids;
                                    resolution_locked_at = resolved_at)
 
             # per-track sequence: order each track's cells by t, drop unassigned, join with "_".
@@ -259,7 +264,7 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
     on_progress(5, 5)
     on_log("[INFO] Motif discovery done → $class_col ($n_ok image-segmentations written)")
 
-    Dict{String,Any}("suffix"     => p.valueName,
+    Dict{String,Any}("suffix"     => suffix,
                      "images"     => length(imgs),
                      "cells"      => nrow(df),
                      "classes"    => length(class_names),

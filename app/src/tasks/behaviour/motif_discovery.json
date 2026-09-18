@@ -16,16 +16,9 @@
       "type": "popSelection",
       "popScope": "tracks",
       "multiple": true,
-      "acrossSegmentations": true,
+      "acrossSegmentations": false,
       "default": [],
-      "tip": "Tracked populations whose cells feed motif detection (pooled across the set)"
-    },
-    {
-      "key": "valueName",
-      "label": "Name",
-      "type": "text",
-      "default": "default",
-      "tip": "Suffix for the output columns (motif.class.<name>, etc.)"
+      "tip": "Tracked populations from ONE segmentation (motif output columns land on that value_name)"
     },
     {
       "key": "windowSize",
