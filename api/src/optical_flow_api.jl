@@ -23,14 +23,16 @@ function api_optical_flow_models(::HTTP.Request)
 end
 
 function api_optical_flow_rename(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     from = safe_vault_model_name(get(body, :name, ""))
     isnothing(from) && return 400, JSON3.write((; error = "name required"))
     vault_rename(Cecelia.coastal_models_dir(), from, _wstr(body, :newName))
 end
 
 function api_optical_flow_delete(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     name = safe_vault_model_name(get(body, :name, ""))
     isnothing(name) && return 400, JSON3.write((; error = "name required"))
     vault_delete(Cecelia.coastal_models_dir(), name)

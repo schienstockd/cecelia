@@ -934,7 +934,8 @@ end
 #   overlayPops = `[{valueName, popType, path}, …]` parsed from the snapshot's overlay layer names.
 # Response: `{ok, colourBy, populations}` — same shape captureViewLegend consumes.
 function api_viewer_overlay_legend(body_bytes::Vector{UInt8})
-    data        = JSON3.read(String(body_bytes))
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
     project_uid = _wstr(data, :projectUid)
     image_uid   = _wstr(data, :imageUid)
     column      = _wstr(data, :colourBy)

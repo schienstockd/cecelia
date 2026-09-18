@@ -1,9 +1,8 @@
 # ── Metadata management ───────────────────────────────────────────────────────
 
 function _parse_meta_request(body_bytes)
-    data = try JSON3.read(String(body_bytes)) catch
-        return nothing, nothing, "Invalid JSON body"
-    end
+    data = _parse_body(body_bytes)
+    data isa Tuple && return nothing, nothing, "Invalid JSON body"
     project_uid = _wstr(data, :projectUid)
     isempty(project_uid) && return nothing, nothing, "projectUid required"
     proj_dir = joinpath(projects_dir(), project_uid)
@@ -39,7 +38,7 @@ function api_images_attr_create(body_bytes::Vector{UInt8})
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = _wstr(data, :projectUid)
     attr_name   = _norm_attr(_wstr(data, :attrName))
-    image_uids  = [String(u) for u in get(data, :imageUids, [])]
+    image_uids  = _wvec_str(data, :imageUids)
     isempty(attr_name) && return 400, JSON3.write((; error="attrName required"))
 
     _mutate_images!(project_uid, image_uids) do img
@@ -53,7 +52,7 @@ function api_images_attr_delete(body_bytes::Vector{UInt8})
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = _wstr(data, :projectUid)
     attr_name   = _norm_attr(_wstr(data, :attrName))
-    image_uids  = [String(u) for u in get(data, :imageUids, [])]
+    image_uids  = _wvec_str(data, :imageUids)
     isempty(attr_name) && return 400, JSON3.write((; error="attrName required"))
 
     _mutate_images!(project_uid, image_uids) do img
@@ -84,9 +83,8 @@ function api_images_attr_set(body_bytes::Vector{UInt8})
 end
 
 function api_images_delete_labels(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     image_uid   = _wstr(body, :imageUid)
     value_name  = _wstr(body, :valueName)
@@ -158,7 +156,7 @@ function api_images_channelnames(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = _wstr(data, :projectUid)
-    image_uids  = [String(u) for u in get(data, :imageUids, [])]
+    image_uids  = _wvec_str(data, :imageUids)
     ch_names    = [String(n) for n in get(data, :channelNames, [])]
     isempty(image_uids) && return 400, JSON3.write((; error="imageUids required"))
     isempty(ch_names)   && return 400, JSON3.write((; error="channelNames required"))

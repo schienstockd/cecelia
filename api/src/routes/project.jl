@@ -25,9 +25,8 @@ function api_projects_bundle_info(req::HTTP.Request)
 end
 
 function api_projects_create(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     name = String(strip(_wstr(body, :name)))
     isempty(name) && return 400, JSON3.write((; error="Project name is required"))
 
@@ -47,9 +46,8 @@ function api_projects_create(body_bytes::Vector{UInt8})
 end
 
 function api_projects_load(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :uid)
     isempty(uid) && return 400, JSON3.write((; error="Project UID is required"))
 
@@ -132,9 +130,8 @@ end
 # OPEN (api_projects_load), so there's nothing to touch in project.json here. Replaces the old
 # api_projects_save + the manual save button.
 function api_projects_boards(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
@@ -183,9 +180,8 @@ end
 # renders an empty panel with no error at all. The expansion and every check live in the package
 # (`expand_board`), so they are headless-testable and identical from the REPL.
 function api_boards_add(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
@@ -242,9 +238,8 @@ end
 # frame PNGs are sidecar files (board-assets/, shared with the board strip), so this JSON stays small.
 # Mirrors api_projects_boards. Opaque frontend JSON, stored verbatim.
 function api_projects_animations(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
@@ -265,9 +260,8 @@ end
 # MIGRATE legacy boards that still carry inline base64 in a cell's `src` into a sidecar on first load.
 # (Fresh captures are saved directly by the screenshot endpoint — no base64 round-trip.)
 function api_board_asset_save(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid); png = _wstr(body, :png)
     (isempty(uid) || isempty(png)) && return 400, JSON3.write((; error="projectUid and png required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
@@ -287,9 +281,8 @@ end
 # POST /api/board-assets/delete  { projectUid, assetId }  → { ok }
 # Best-effort removal of a sidecar board image (when a frame/board is deleted). Missing file is fine.
 function api_board_asset_delete(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid); aid = _wstr(body, :assetId)
     (isempty(uid) || isempty(aid)) && return 400, JSON3.write((; error="projectUid and assetId required"))
     _valid_asset_id(aid) || return 400, JSON3.write((; error="Invalid assetId"))
@@ -302,9 +295,8 @@ end
 # Duplicate a sidecar board image to a NEW id — so a duplicated board owns independent asset files
 # (deleting a frame in one board must not orphan the copy that shares it). Missing source → 404.
 function api_board_asset_copy(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid); aid = _wstr(body, :assetId)
     (isempty(uid) || isempty(aid)) && return 400, JSON3.write((; error="projectUid and assetId required"))
     _valid_asset_id(aid) || return 400, JSON3.write((; error="Invalid assetId"))
@@ -325,9 +317,8 @@ end
 # object → survives with it and is removed when it's deleted; the debounced autosave rewrites only the
 # object(s) that changed, never a global blob. Opaque frontend JSON, stored verbatim.
 function api_projects_canvases(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
@@ -351,9 +342,8 @@ end
 # building block for any feature that must skip images lacking a value_name (e.g. copy gating across
 # images). Just a value_name-presence check per image (img_has_value_name); returns {available, missing}.
 function api_images_value_name_check(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     proj = _wstr(body, :projectUid)
     vn   = _wstr(body, :valueName)
     uids = get(body, :imageUids, nothing)
@@ -372,9 +362,8 @@ function api_images_value_name_check(body_bytes::Vector{UInt8})
 end
 
 function api_projects_rename(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :uid)
     name = String(strip(_wstr(body, :name)))
     isempty(uid)  && return 400, JSON3.write((; error="uid required"))
@@ -397,9 +386,8 @@ end
 # deleting the currently-open project; this is the raw removal (the recent list is a scan of
 # projects_dir, so it refreshes automatically). Destructive + irreversible.
 function api_projects_delete(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :uid)
     isempty(uid) && return 400, JSON3.write((; error="uid required"))
     proj_dir = joinpath(projects_dir(), uid)

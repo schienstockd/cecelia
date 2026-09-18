@@ -76,11 +76,8 @@ const _ENV_INSTALL_JOB_PREFIX = "system-env-install:"
 _env_install_job_id(name::AbstractString)::String = _ENV_INSTALL_JOB_PREFIX * String(name)
 
 function api_system_envs_install(body_bytes)
-    body = try
-        JSON3.read(body_bytes)
-    catch
-        return 400, JSON3.write((; error = "invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     name = _wstr(body, :env)
     haskey(_OPT_IN_ENVS, name) || return 400, JSON3.write((; error = "unknown env: $name"))
     meta = _OPT_IN_ENVS[name]

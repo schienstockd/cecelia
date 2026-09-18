@@ -35,9 +35,8 @@ end
 # dismiss → hide/un-hide a single entry from the PANEL (config sidecar; the log file is never edited —
 # append-only). Body {projectUid, id, dismissed}. Returns the updated dismissed-id list.
 function api_lablog_dismiss(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     # `_wstr` / `_wbool` (sockets.jl) absorb an explicit JSON null at the boundary — a client sending
     # `{"projectUid": null}` reaches `String(nothing)`/`Bool(nothing)` otherwise and aborts the handler.
     project_uid = _wstr(body, :projectUid)
@@ -59,9 +58,8 @@ end
 # append → one dated, author-tagged block. Server injects date + author tag (append-only, lock-guarded
 # in append_lab_log!); body is {projectUid, author, lines: string | [string]}.
 function api_lablog_append(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     author      = _wstr(body, :author)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
@@ -116,9 +114,8 @@ end
 # Returns captured=false (and appends nothing) when there's no new activity. Backs the panel's
 # "Capture" button and the auto-on-open toggle.
 function api_lablog_capture(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     proj = try load_project(project_uid) catch e
@@ -142,7 +139,7 @@ function api_images_meta_resync(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = _wstr(data, :projectUid)
-    image_uids  = [String(u) for u in get(data, :imageUids, [])]
+    image_uids  = _wvec_str(data, :imageUids)
     isempty(image_uids) && return 400, JSON3.write((; error="imageUids required"))
 
     images = Dict{String,Any}()

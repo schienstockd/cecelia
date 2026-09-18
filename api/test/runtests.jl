@@ -2956,6 +2956,50 @@ end
         @test _wstr(d, :alsoMissing, "error") == "error"
     end
 
+    # `_parse_body` is the ONE boundary every route setter goes through — malformed JSON
+    # returns a uniform 400 rather than a stack-tracing 500. Before this helper, some setters
+    # had a copy of the same try/catch and some had none (raw `JSON3.read(body_bytes)`), so a
+    # `{` was a server crash for one endpoint and a clean 400 for its neighbour. Pinning the
+    # tuple shape here matches how handlers dispatch: `data = _parse_body(...); data isa Tuple
+    # && return data`.
+    @testset "_parse_body: malformed JSON is a uniform 400, empty body is opt-in" begin
+        # a normal parse
+        body = _parse_body(Vector{UInt8}("{\"name\":\"raw\"}"))
+        @test !(body isa Tuple)
+        @test _wstr(body, :name) == "raw"
+
+        # empty body defaults to 400 unless allow_empty
+        res = _parse_body(UInt8[])
+        @test res isa Tuple && res[1] == 400
+        empty_ok = _parse_body(UInt8[]; allow_empty = true)
+        @test empty_ok isa AbstractDict && isempty(empty_ok)
+
+        # a garbage body is always 400 — an "invalid JSON body" from the server, not a stack trace
+        for junk in ("{", "not json", "\0")
+            r = _parse_body(Vector{UInt8}(junk))
+            @test r isa Tuple && r[1] == 400
+            @test occursin("Invalid JSON body", r[2])
+        end
+    end
+
+    # Typed field getters — same null-tolerance contract as `_wstr`/`_wbool`. Absence and
+    # explicit JSON `null` both fall back to `default`; anything else is coerced. Before this,
+    # `Int(get(data, :limit, 0))` and `[String(u) for u in get(data, :imageUids, [])]` were
+    # inline and CRASHED on a client sending `null` (Int(nothing) / iterating nothing) — the
+    # bug `_wstr` was written to close, one field type at a time.
+    @testset "_wint / _wvec_str null-tolerance" begin
+        d = JSON3.read(JSON3.write((; limit = nothing, count = 5, imageUids = nothing,
+                                     names = ["a", "b"], other = [1, 2])))
+        @test _wint(d, :limit)               == 0        # explicit null → default
+        @test _wint(d, :limit, 3)            == 3        # explicit null → given default
+        @test _wint(d, :missingKey)          == 0        # absent → default
+        @test _wint(d, :count)               == 5        # number → Int
+        @test _wvec_str(d, :imageUids)       == String[] # explicit null → empty Vector{String}
+        @test _wvec_str(d, :missingKey)      == String[] # absent → empty Vector{String}
+        @test _wvec_str(d, :names)           == ["a", "b"]
+        @test _wvec_str(d, :other)           == ["1", "2"]  # non-string entries coerced
+    end
+
     # `parse_ws_msg_type` is the ONE place the wire string becomes a typed value. Every dispatch
     # arm in `handle_message` compares an enum — a stray typo like `WS_TASK_CANCLE` is a compile
     # error instead of a silently-dropped Cancel button. Pin the full registry both directions so a

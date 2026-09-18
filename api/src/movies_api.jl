@@ -296,9 +296,8 @@ end
 # Registers a movie that has no entry yet — every movie on disk predates this registry, so starring an
 # old one has to be able to create its row.
 function api_movies_meta_set(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error = "Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
@@ -333,9 +332,8 @@ end
 # `_movie_targets` is what keeps this inside the movies dir: it admits only `[A-Za-z0-9._-]+.mp4`, so
 # no separator and no `..` can appear, and it drops anything that isn't a file that's actually there.
 function api_movies_delete(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error = "Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))

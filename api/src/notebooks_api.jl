@@ -109,7 +109,8 @@ end
 
 # POST /api/notebooks/launch  { projectUid }  → { url, starting }
 function api_notebooks_launch(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
@@ -410,7 +411,8 @@ end
 
 # POST /api/notebooks/create  { projectUid, name, description? }  → { file }
 function api_notebooks_create(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
@@ -525,7 +527,8 @@ end
 # the name exists, so it never clobbers a notebook the user may have edited — Claude picks a new name or
 # the user iterates in Pluto. The user then owns/edits it freely. Backs the create_notebook MCP tool.
 function api_notebooks_write(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
@@ -552,7 +555,8 @@ end
 
 # POST /api/notebooks/describe  { projectUid, file, description }  → { ok }
 function api_notebooks_describe(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
@@ -573,7 +577,8 @@ end
 # This is how a notebook gets a new version from the MCP — never a "<name>-v2" copy. 404 if the file
 # doesn't exist (use /write to create a new one). See docs/NOTEBOOKS.md → Versioning.
 function api_notebooks_revise(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
@@ -605,7 +610,8 @@ end
 
 # POST /api/notebooks/delete  { projectUid, file }  → { ok }
 function api_notebooks_delete(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
@@ -636,7 +642,8 @@ end
 # POST /api/notebooks/duplicate  { projectUid, file, scope, newName? }  → { file }
 # Copies a project OR example notebook into this project's notebooks/ under a fresh name.
 function api_notebooks_duplicate(body_bytes::Vector{UInt8})
-    body  = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid   = _wstr(body, :projectUid)
     file  = _safe_nb_file(get(body, :file, ""))
     scope = _wstr(body, :scope, "project")
@@ -665,7 +672,8 @@ end
 # Freeze an immutable copy to notebooks/.snapshots/<name>@v<N>.jl (N = next number on disk) and set
 # the notebook's `current` to N. Answers "which version made Figure 3" without git/file-watching.
 function api_notebooks_snapshot(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
@@ -705,7 +713,8 @@ end
 # Pluto auto-reloads the file (launch.jl `auto_reload_from_file`). The UI two-click-confirms to guard
 # against losing un-snapshotted edits.
 function api_notebooks_restore(body_bytes::Vector{UInt8})
-    body    = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid     = _wstr(body, :projectUid)
     file    = _safe_nb_file(get(body, :file, ""))
     version = get(body, :version, nothing)
@@ -742,7 +751,8 @@ end
 # "I'm happy with this version, drop the rest." No-op-safe: if `current` is 0 or its snapshot is missing,
 # it aborts rather than wiping the whole history (so an unset pointer can't nuke everything).
 function api_notebooks_prune(body_bytes::Vector{UInt8})
-    body = JSON3.read(String(body_bytes))
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
     file = _safe_nb_file(get(body, :file, ""))
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))

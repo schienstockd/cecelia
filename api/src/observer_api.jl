@@ -133,9 +133,8 @@ function api_observer_register(::Vector{UInt8})
 end
 
 function api_observer_feedback(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error = "Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     project_uid = _wstr(body, :projectUid)
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     proj = try
@@ -175,9 +174,8 @@ end
 
 # Clear context: reset the project's assistant session + token totals (next run starts fresh).
 function api_observer_clear(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error = "Invalid JSON body"))
-    end
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
     puid = _wstr(body, :projectUid)
     isempty(puid) && return 400, JSON3.write((; error = "projectUid required"))
     proj = try load_project(puid) catch e

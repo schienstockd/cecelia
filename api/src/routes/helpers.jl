@@ -3,6 +3,60 @@
 # graph). Image/set payloads are sourced from the model (CciaImage/CciaSet) so
 # ccid.json parsing lives in one place; the API only shapes the response.
 
+# ── Typed request-body boundary ───────────────────────────────────────────────
+#
+# The route setters used to inline `data = JSON3.read(body_bytes)` (or a per-handler
+# `try JSON3.read(...) catch return 400 ...` block copied 40+ times). Two silent problems
+# came with the direct read: a MALFORMED body threw and the server responded 500 rather than
+# 400 (the client had no way to tell "my JSON was bad" from "your server crashed"), and the
+# per-handler try/catch drifted (different messages, different empty-body handling, some paths
+# had no catch at all). `_parse_body` is the ONE boundary — every setter runs through it —
+# so a malformed body is a uniform 400 everywhere and empty-body policy is a keyword, not a
+# per-file convention.
+#
+# Returns either the parsed JSON3.Object / Dict, OR the (status, response) tuple every setter
+# already speaks. Handlers do:
+#
+#     data = _parse_body(body_bytes)
+#     data isa Tuple && return data
+#     name = _wstr(data, :name)
+#     ...
+#
+# Same shape as `_wstr` / `_wbool` (sockets.jl) — a route boundary helper that produces
+# already-typed values so callers do not re-derive them. The catch is deliberately broad: any
+# JSON parse failure is a client error, not a server one, and the specific message
+# (`JSON3.JSONError` vs `Base.ArgumentError`) never reached a user in the old paths either.
+function _parse_body(body_bytes::Vector{UInt8}; allow_empty::Bool = false)
+    if isempty(body_bytes)
+        allow_empty && return Dict{String,Any}()
+        return 400, JSON3.write((; error = "Invalid JSON body"))
+    end
+    try
+        JSON3.read(String(body_bytes))
+    catch
+        400, JSON3.write((; error = "Invalid JSON body"))
+    end
+end
+
+# Typed field getters — same null-tolerance contract as `_wstr` / `_wbool` (sockets.jl):
+# missing key OR explicit JSON `null` fall back to `default`; anything else is coerced. Their
+# absence is why several setters used `Int(get(data, :limit, 0))` and `[String(u) for u in
+# get(data, :imageUids, [])]` inline — patterns that CRASH on a client sending `null`
+# (`Int(nothing)` / iterating `nothing`) rather than falling back cleanly. Centralised here so a
+# handler asking for an Int or a Vector{String} gets the same null-tolerance the String and Bool
+# getters already have.
+_wint(data, key::Symbol, default::Integer = 0)::Int =
+    (v = get(data, key, nothing); v === nothing ? Int(default) : Int(v))
+_wint(data, key::AbstractString, default::Integer = 0)::Int =
+    (v = get(data, key, nothing); v === nothing ? Int(default) : Int(v))
+
+# A Vector{String} field. `null`, missing, and `[]` all read as an empty vector — never
+# `Nothing`, so callers never need a `something(..., String[])` wrapper.
+_wvec_str(data, key::Symbol)::Vector{String} =
+    (v = get(data, key, nothing); v === nothing ? String[] : String[string(x) for x in v])
+_wvec_str(data, key::AbstractString)::Vector{String} =
+    (v = get(data, key, nothing); v === nothing ? String[] : String[string(x) for x in v])
+
 function _scan_projects_raw()::Vector{Dict{String,Any}}
     isdir(projects_dir()) || return Dict{String,Any}[]
     projects = Dict{String,Any}[]
