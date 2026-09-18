@@ -4,7 +4,7 @@
 # populations' per-cell stream (speed, angle, HMM state) across every image in the set, hands
 # the pooled frame to `motif_discovery_run.py` which runs STUMPY multivariate matrix profile
 # (Yeh et al. 2017 / Law 2019 JOSS), takes the top-K matrix-profile positions as motif
-# instances, clusters them with Euclidean k-NN + Leiden into a small number of motif classes
+# instances, clusters them with DTW-precomputed k-NN + Leiden into a small number of motif classes
 # (Berman et al. 2014, J. R. Soc. Interface), and writes three per-cell obs columns +
 # one per-track obs column back to each image's labelProps.
 #
@@ -12,8 +12,8 @@
 #   • motif.class.{suffix}       — categorical string ("Motif 1", "Motif 2", …), span-broadcast
 #                                  over each instance's window; overlap = highest-confidence wins
 #                                  (MOTIF_DISCOVERY_PLAN Decision 9).
-#   • motif.distance.{suffix}    — Float32 Euclidean distance from the instance's feature vector
-#                                  to its class medoid (lower = more confident); span-broadcast.
+#   • motif.distance.{suffix}    — Float32 DTW distance from the instance's window to its
+#                                  class medoid (lower = more confident); span-broadcast.
 #   • motif.instance_id.{suffix} — Int per-run instance UID so overlapping structure remains
 #                                  answerable off the sidecar (Decision 12).
 #
@@ -22,8 +22,9 @@
 #                                  instance whose window contains ≥1 cell of the track. Ordered
 #                                  by t within the track.
 #
-# The Python leg is DTW-free in P1 (Decision 4 lands in P2). No `motifs` pop_type wiring here
-# (Decision 1) — this POC only banks obs columns.
+# Python leg computes pairwise subsequence DTW via `dtaidistance.dtw_ndim` on top-K windows
+# and feeds the K×K matrix to Leiden as a precomputed distance metric (Decision 4). No `motifs`
+# pop_type wiring here (Decision 1) — this task only banks obs columns.
 
 using DataFrames: nrow, DataFrame, groupby, sort
 import Dates

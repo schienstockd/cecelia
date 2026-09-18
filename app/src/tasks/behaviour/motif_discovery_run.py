@@ -1,13 +1,19 @@
 """
-behaviour.motif_discovery (set-scope) — Python runner. P1 POC.
+behaviour.motif_discovery (set-scope) — Python runner. P2 (DTW cluster-time metric).
 
 Reads a pooled per-cell frame from the Julia side (columns as JSON arrays: uID, valueName,
 label, track_id, t, speed, angle, hmm_state), runs multivariate matrix profile per track via
-STUMPY `stumpy.mstump`, keeps the top-K positions by lowest matrix-profile distance across the
-set, extracts each position's (window x 3) feature vector, clusters those vectors with a
-Euclidean k-NN graph + Leiden (scanpy), assigns each cell that falls within any instance's
-window its class + medoid-distance + instance id (overlap = highest-confidence wins per
-MOTIF_DISCOVERY_PLAN Decision 9), and writes a results JSON the Julia side reads.
+STUMPY `stumpy.mstump`, keeps the top-K positions by lowest matrix-profile distance across
+the set, extracts each position's (window x 3) time-series window, computes pairwise
+subsequence DTW between windows via `dtaidistance.dtw_ndim` (K×K distance matrix), clusters
+those windows with a DTW-precomputed k-NN graph + Leiden (scanpy), and assigns each cell
+that falls within any instance's window its class + medoid-DTW-distance + instance id
+(overlap = highest-confidence wins per MOTIF_DISCOVERY_PLAN Decision 9). Writes a results
+JSON the Julia side reads.
+
+The DTW step lives here (not in Julia) — MOTIF_DISCOVERY_PLAN Decision 4 was flipped
+2026-09-18 so the whole pipeline is one runner; the plan's original Julia-DTW leg forced a
+Python→Julia→Python sandwich without an architectural benefit.
 
 Citations
 ---------
@@ -20,6 +26,8 @@ Citations
   flies." J. R. Soc. Interface 11(99): 20140672.
   https://doi.org/10.1098/rsif.2014.0672  -- closest published analogue for unsupervised
   behavioural motif emergence.
+- dtaidistance: Meert, W. et al. (2020). "wannesm/dtaidistance." Zenodo.
+  https://doi.org/10.5281/zenodo.7158824 - https://github.com/wannesm/dtaidistance
 """
 
 import os
@@ -88,42 +96,69 @@ def _per_track_mp(track_rows, window, log):
     return all_dim_mp, pos_row_index
 
 
-def _extract_feature_vector(pooled, start_row, window):
-    """Concatenated [speed, angle, hmm] window flattened to length 3*window.
-
-    Windows containing NaN (across the flattened vector) are rejected -- returns None.
-    """
+def _extract_window(pooled, start_row, window):
+    """(window, 3) time-series slice [speed, angle, hmm]. NaN-containing → None."""
     speed = pooled["speed"].to_numpy()[start_row: start_row + window]
     angle = pooled["angle"].to_numpy()[start_row: start_row + window]
     hmm = pooled["hmm"].to_numpy()[start_row: start_row + window]
     if speed.size < window or np.any(np.isnan(speed)) or np.any(np.isnan(angle)) or np.any(np.isnan(hmm)):
         return None
-    return np.concatenate([speed, angle, hmm]).astype(np.float32)
+    return np.stack([speed, angle, hmm], axis=1).astype(np.float64)   # (W, 3)
 
 
-def _leiden_cluster(feature_matrix, resolution, random_state, log):
-    """k-NN + Leiden on a (K, F) feature matrix. Returns integer class codes (0..C-1)."""
+def _pairwise_dtw(windows, log):
+    """K×K symmetric multivariate DTW distance matrix over (K, W, 3) windows.
+
+    `dtw_ndim.distance_matrix_fast` takes list of (W, D)-shaped series and returns an upper-tri
+    K×K matrix (lower is inf); mirror it into symmetric. Multivariate DTW is O(K² · W · D)
+    which at K=100, W=8, D=3 is ≈ 240k cell ops — trivial. The `use_c=True` path is the C
+    backend (compiled at install time); it falls back to Python if the C extension isn't
+    available.
+    """
+    from dtaidistance import dtw_ndim
+    K = len(windows)
+    log(f">> pairwise DTW (K={K}, W={windows[0].shape[0]}, D={windows[0].shape[1]})")
+    # dtaidistance's fast path wants a list of contiguous (W, D) arrays.
+    series = [np.ascontiguousarray(w) for w in windows]
+    mat = dtw_ndim.distance_matrix_fast(series)
+    # Fold upper→symmetric (lower is inf, diagonal is 0).
+    for i in range(K):
+        for j in range(i):
+            mat[i, j] = mat[j, i]
+    np.fill_diagonal(mat, 0.0)
+    return mat.astype(np.float64)
+
+
+def _leiden_cluster(dist_matrix, resolution, random_state, log):
+    """k-NN + Leiden on a K×K precomputed distance matrix. Returns integer class codes.
+
+    Passes `metric='precomputed'` so `sc.pp.neighbors` treats `adata.X` (== the K×K distance
+    matrix) as the pairwise distances rather than a feature matrix — this is the entry point
+    for feeding DTW into the same Leiden path the other clustering tasks use, without pulling
+    `find_populations`'s transform/normalise/UMAP surface (irrelevant at K≈100).
+    """
     import anndata as ad
     import scanpy as sc
-    K, _F = feature_matrix.shape
+    K = dist_matrix.shape[0]
     n_neighbors = int(min(15, max(3, K // 4)))
-    adata = ad.AnnData(feature_matrix.astype(np.float32))
+    adata = ad.AnnData(dist_matrix.astype(np.float32))
     adata.obs_names = [str(i) for i in range(K)]
-    log(f">> k-NN Leiden: K={K}, n_neighbors={n_neighbors}, resolution={resolution}")
-    sc.pp.neighbors(adata, use_rep="X", n_neighbors=n_neighbors)
+    log(f">> k-NN Leiden (precomputed DTW): K={K}, n_neighbors={n_neighbors}, resolution={resolution}")
+    sc.pp.neighbors(adata, use_rep="X", n_neighbors=n_neighbors, metric="precomputed")
     sc.tl.leiden(adata, resolution=resolution, key_added="motif_class",
                  flavor="leidenalg", random_state=random_state)
     codes = adata.obs["motif_class"].astype(int).to_numpy()
     return codes
 
 
-def _medoid_distances(feature_matrix, codes):
-    """For each row: Euclidean distance to its class' medoid.
+def _medoid_distances(dist_matrix, codes):
+    """For each row: DTW distance to its class' medoid.
 
-    Medoid = the class member minimising the sum of pairwise Euclidean distances to the other
-    class members. Returns (distances shape (K,), medoid_row_by_class dict[int,int]).
+    Medoid = class member minimising the sum of pairwise DTW distances to the rest of its class
+    (row-sum argmin over the precomputed matrix — no re-computation). Returns
+    (distances shape (K,), medoid_row_by_class dict[int,int]).
     """
-    K = feature_matrix.shape[0]
+    K = dist_matrix.shape[0]
     dists = np.zeros(K, dtype=np.float32)
     medoid_by_class = {}
     for cls in np.unique(codes):
@@ -132,14 +167,12 @@ def _medoid_distances(feature_matrix, codes):
             medoid_by_class[int(cls)] = int(idx[0])
             dists[idx] = 0.0
             continue
-        sub = feature_matrix[idx].astype(np.float64)
-        # pairwise squared distances
-        d2 = np.sum((sub[:, None, :] - sub[None, :, :]) ** 2, axis=2)
-        sums = np.sqrt(d2).sum(axis=1)
+        sub = dist_matrix[np.ix_(idx, idx)]           # (m, m) DTW sub-matrix
+        sums = sub.sum(axis=1)
         medoid_local = int(np.argmin(sums))
-        medoid_by_class[int(cls)] = int(idx[medoid_local])
-        centroid_vec = sub[medoid_local]
-        dists[idx] = np.linalg.norm(sub - centroid_vec, axis=1).astype(np.float32)
+        medoid_row = int(idx[medoid_local])
+        medoid_by_class[int(cls)] = medoid_row
+        dists[idx] = dist_matrix[idx, medoid_row].astype(np.float32)
     return dists, medoid_by_class
 
 
@@ -214,26 +247,26 @@ def run(params):
     log.log(f">> keeping top {len(survivors)} positions (MP min={survivors[0][0]:.4f}, "
             f"max={survivors[-1][0]:.4f})")
 
-    # Build (K, 3*window) feature matrix; drop any window that contains NaN.
-    feats = []
+    # Build list of (W, 3) windows; drop any that contain NaN.
+    windows = []
     kept_meta = []
     for mp_val, start_row, uid, vn, tid in survivors:
-        v = _extract_feature_vector(pooled, start_row, window)
-        if v is None:
+        w = _extract_window(pooled, start_row, window)
+        if w is None:
             continue
-        feats.append(v)
+        windows.append(w)
         kept_meta.append((mp_val, start_row, uid, vn, tid))
-    if len(feats) < 2:
-        log.log("[ERROR] motif_discovery: no usable feature vectors after NaN filter"); return
-    feature_matrix = np.stack(feats, axis=0)
+    if len(windows) < 2:
+        log.log("[ERROR] motif_discovery: no usable windows after NaN filter"); return
     log.progress(4, 6)
 
-    codes = _leiden_cluster(feature_matrix, resolution=resolution,
+    dtw_matrix = _pairwise_dtw(windows, log.log)
+    codes = _leiden_cluster(dtw_matrix, resolution=resolution,
                             random_state=random_state, log=log.log)
     n_classes_found = int(len(np.unique(codes)))
     log.log(f">> Leiden produced {n_classes_found} class(es) (target hint: {num_classes})")
 
-    dists, medoid_by_class = _medoid_distances(feature_matrix, codes)
+    dists, medoid_by_class = _medoid_distances(dtw_matrix, codes)
     class_names = [f"Motif {i + 1}" for i in range(n_classes_found)]
     class_id_to_name = {cls: class_names[i] for i, cls in enumerate(sorted(medoid_by_class))}
     log.progress(5, 6)
