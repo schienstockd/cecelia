@@ -219,7 +219,7 @@ surface. ~1–2 focused sessions.
   - `app/src/tasks/behaviour/motif_discovery_run.py` (~150 LOC —
     reads params, runs STUMPY, JSON out).
   - Task registration in `app/src/tasks/task_registry.jl` (2 lines).
-  - `pluto/notebooks/motif_ribbon.jl` reading the banked columns.
+  - A project-scope Pluto notebook reading the banked columns. Not shipped as an example (P1 signal on cohort-of-one is too weak to demonstrate — users author their own copy under `<project>/notebooks/`).
 - **Validation bar** (real-data visual check per `CLAUDE.md`): on
   fXgbTl the ribbon should show stretches of HMM state 1 (49% of
   cells) broken up into visually-distinct classes if there is
@@ -343,7 +343,7 @@ Grouped by phase for grep-by-file-path.
 - `app/src/tasks/behaviour/motif_discovery.json` (new, ~50 LOC).
 - `app/src/tasks/behaviour/motif_discovery_run.py` (new, ~150 LOC).
 - `app/src/tasks/task_registry.jl` (+2 LOC).
-- `pluto/notebooks/motif_ribbon.jl` (new).
+- (No shipped notebook — the ribbon lives as a project-scope Pluto notebook, authored by the user under `<project>/notebooks/`.)
 - `pixi.toml` (+1 dep: `stumpy`).
 
 **P2**:
