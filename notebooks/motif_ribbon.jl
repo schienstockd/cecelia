@@ -57,9 +57,10 @@ img === nothing ? md"➡️ set `proj_uid` + `uid` above (or `CECELIA_EXAMPLE_PR
 md"""
 ## 2 · Pull the per-cell motif columns
 
-`pop_df` with `pop_type="live"` pools the tracked cells across the pop's segmentations. We ask
-for the three per-cell obs columns `behaviour.motif_discovery` writes plus the temporal + track
-columns to order the ribbon.
+The motif task writes its output back onto the source segmentation's `.h5ad` — so the
+columns `motif.class.<SUFFIX>` live on `<SUFFIX>.h5ad`. We read directly through the
+`label_props` chain (`select_cols → as_df`) rather than via `pop_df` because the
+gating tree isn't the filter here — the motif columns themselves are.
 """
 
 # ╔═╡ c1000000-0000-0000-0000-000000000000
@@ -68,30 +69,32 @@ class_col    = "motif.class.$(SUFFIX)"
 # ╔═╡ c2000000-0000-0000-0000-000000000000
 distance_col = "motif.distance.$(SUFFIX)"
 
-# ╔═╡ c3000000-0000-0000-0000-000000000000
-# Guarded pull — returns an empty frame (not an error) if the population / columns aren't present.
-safe_pop_df(args...; kw...) = try pop_df(args...; kw...) catch; DataFrame() end
-
 # ╔═╡ c4000000-0000-0000-0000-000000000000
-# temporal column name — pick whichever the image exposes (centroid_t is the common one)
+# temporal column name — pick whichever the SUFFIX value_name exposes (centroid_t is the common one)
 tcol = img === nothing ? nothing : begin
-    tc = temporal_columns(label_props(img))
+    tc = temporal_columns(label_props(img; value_name = SUFFIX))
     isempty(tc) ? nothing : first(tc)
 end
 
 # ╔═╡ c5000000-0000-0000-0000-000000000000
-cells = (img === nothing || tcol === nothing) ? DataFrame() :
-    safe_pop_df(img, "live", ["/live"];
-                pop_cols = [class_col, distance_col, "track_id", tcol])
+# Read the SUFFIX value_name's cell obs directly. Returns an empty frame if any of the
+# requested columns aren't there yet (task hasn't been run for this suffix).
+cells = (img === nothing || tcol === nothing) ? DataFrame() : try
+    label_props(img; value_name = SUFFIX) |>
+        lp -> select_cols(lp, [class_col, distance_col, "track_id", tcol]) |>
+        as_df
+catch e
+    DataFrame()
+end
 
 # ╔═╡ c6000000-0000-0000-0000-000000000000
 have_motif = !isempty(cells) && all(c -> c in names(cells), [class_col, "track_id", tcol])
 
 # ╔═╡ c7000000-0000-0000-0000-000000000000
 have_motif ? md"Loaded **$(nrow(cells))** cells with `$(class_col)`." :
-    md"""_No motif columns found under suffix **`$(SUFFIX)`**. Run the
-    `behaviour.motif_discovery` task first (any set-scope run under `pops = ["/live"]`
-    will write these columns back), then re-open this notebook._"""
+    md"""_No motif columns found on `$(SUFFIX).h5ad`. Run the
+    `behaviour.motif_discovery` task first (Populations = tracked pops on the
+    `$(SUFFIX)` segmentation; Name = `$(SUFFIX)`), then re-open this notebook._"""
 
 # ╔═╡ d0000000-0000-0000-0000-000000000000
 md"""
@@ -147,7 +150,6 @@ class_counts = isempty(ribbon_data) ? DataFrame() :
 # ╟─c0000000-0000-0000-0000-000000000000
 # ╠═c1000000-0000-0000-0000-000000000000
 # ╠═c2000000-0000-0000-0000-000000000000
-# ╠═c3000000-0000-0000-0000-000000000000
 # ╠═c4000000-0000-0000-0000-000000000000
 # ╠═c5000000-0000-0000-0000-000000000000
 # ╠═c6000000-0000-0000-0000-000000000000
