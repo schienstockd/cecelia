@@ -117,6 +117,9 @@ leidenalg    = ">=0.10"
 # docs/todo/MOTIF_DISCOVERY_PLAN.md (P1 uses `stumpy.mstump` at windowSize=8, top_k=100). PyPI-only.
 # Cite: Law (2019), JOSS 4(39):1504 https://doi.org/10.21105/joss.01504.
 stumpy       = ">=1.13"
+# Pairwise subsequence DTW on the top-K STUMPY survivors (P2, Decision 4). PyPI-only.
+# Cite: Meert et al. (2020), dtaidistance https://doi.org/10.5281/zenodo.7158824.
+dtaidistance = ">=2.3"
 # MCP observer server (top-level mcp/ dir — read-only Claude access to a running project). Only the
 # `mcp` run task needs it; the client + its tests are stdlib-only. See mcp/README.md, docs/ai-assist/OBSERVER.md.
 mcp          = ">=1.2"
