@@ -6,6 +6,11 @@ default) and **#3** (mechanically-can't-overwrite invariant) collapses into this
 Worth building on its own merit for human-triggered runs; not conditional on ever granting execution
 rights.
 
+**Grounded by `docs/audit/vn-versioning-touchpoints.md` (2026-09-18).** The pre-audit touchpoint
+estimate below was 3–5× too low on callsite counts; the geometry (few primitives, many callsites)
+still holds. See §*Touchpoints* for the corrected numbers and §*Reservations from the audit* for the
+three revisions to the phasing that fell out.
+
 ## Goal
 
 Every chain-produced output — zarr image store, zarr label store, `.h5ad`, `gating/{vn}.json`, and
@@ -80,26 +85,46 @@ All of these are versioned per `(vn, kind)`:
 
 - Image stores (`default/<vn>/vN/` — image data)
 - Label stores (`default/<vn>/vN/` — label data)
-- `.h5ad` files (label props / cell tables)
-- `gating/{vn}.json`
-- Any per-vn sidecar (denoise manifest, correction `plan.json` when keyed by vn, per-vn track output)
+- Branch label stores (`branchLabels/…` — separate ccid key `img.branch_labels`)
+- `.h5ad` files: cell (`{vn}.h5ad`), tracks (`{vn}__tracks.h5ad`), branch (`{vn}__branch.h5ad`)
+- `gating/{vn}[__suffix].json`
+- Per-(vn, run) sidecars written via `write_json_atomic`: `qc/{fun}/{vn}.json`,
+  `corrections/{vn}.json`, `corrections/labels_{vn}.json`, `corrections/{vn}.staleness.json`,
+  `{props}.clustfeatures.json`, motif sidecar
+- Per-vn image attrs written by `omezarr/calibration.jl` (`.zattrs` + OME-XML under `default/<vn>/…`)
 
-**Not versioned here:** raw input (immutable by convention), `ccid.json` itself (already versioned
-fields), project-scope files.
+**Not versioned here** (audit-confirmed): raw input; `ccid.json` itself (schema grows fields per D2
+but the file is project-scope); `spatialGraph/{suffix}.h5ad` and `spatialStats/{suffix}.json`
+(keyed by run suffix, not vn); `plan.json` (per image, not per vn); `runlog.json`, `project.json`;
+denoise `{name}.json` model manifest (project-scope under `<config_dir>/models/denoiseModels/`).
 
 ## Phases
 
 Each phase is an independently-shippable PR.
 
-### P1 — `ccid.json` schema + reader resolution
+### P1 — `ccid.json` schema + **three** resolvers (Julia app, Julia API, Python)
 
-Add per-vn version list + `latest` pointer to `ccid.json`. Add (or extend) `resolve_value_name(vn)`
-on both sides — Julia (`app/src/model/image.jl`), Python (`python/cecelia/utils/…`) — returning
-`(vn, version)`. Route every existing reader (`label_props`, `zarr_utils.open_zarr` /
-`open_as_zarr`, `series_base`, `read_axes` / `read_scale`, `LabelPropsView`, gating loader,
-frontend vn pickers) through it. Legacy single-version projects return `v1` implicitly.
+Add per-(vn, kind) version list + `latest` pointer to `ccid.json` (extend `helpers.jl`
+versioned-field helpers). Grow **three** resolvers to return `(vn, version)`:
 
-**No writer changes yet.**
+- **Julia app-layer**: extend `resolve_value_name(img[, value_name])` at `app/src/model/image.jl:246`.
+- **Julia API-layer**: extend `resolve_image_version` at `api/src/image_geometry.jl:157` (the ONE
+  api-side VN resolver — 12 callers across viewer/crop/movie/optical-flow APIs). The audit surfaced
+  this as a separate resolver the plan initially missed. Different return shape (`(zarr_path,
+  meta_dir, error)` vs `(vn, active_key)`); both grow versions.
+- **Python**: **create** `resolve_value_name` in `python/cecelia/utils/` — no equivalent exists
+  today (`LabelPropsView`'s constructor defaults `value_name="default"` and never falls back to an
+  active pointer).
+
+Route every existing reader through them: `label_props`, `img_*_path` family (`img_filepath`,
+`img_label_props_path`, `img_track_props_path`, `img_branch_props_path`, `img_labels_path`,
+`img_branch_labels_path`), `gating_path`, `load_pop_map`; Python side `LabelPropsView`,
+`zarr_utils.open_as_zarr`/`open_zarr`, `series_base`, `read_axes`/`read_scale`,
+`tracking_utils.props_path`, `measure_utils.out_path`, `segmentation_utils._store_path`; API side
+every caller of `resolve_image_version`. Legacy single-version projects return `v1` implicitly.
+
+**No writer changes yet.** Test-enforced: extend `test_zarr_access_convention.py` and the
+`zarr-access ratchet` testset to catch bare `default/<vn>/…` joins that bypass a resolver.
 
 ### P2 — Writer path: versioned target + can't-overwrite guard
 
@@ -121,6 +146,13 @@ Sweep every existing project's `default/<vn>/<contents>` into `default/<vn>/v1/<
 update `ccid.json`. Idempotent, atomic per-vn. Runs on first project open after upgrade, with a
 progress log entry.
 
+**The audit surfaced 18 path-joining helpers** that hard-code `default/<vn>/` shape without a
+version segment — image.jl (6 helpers), gating persistence, track/label correction paths, qc paths,
+LabelPropsView.label_props_filepath, tracking_utils.props_path, measure_utils out_path,
+segmentation_utils._store_path, store_sweep. Each is a rewrite site. P4 breaks into a
+sub-plan (`P4a` migrator + `P4b` rewrite these helpers to compose through the resolver) so it is
+independently reviewable.
+
 ### P5 — Prune surface (Settings + route + UI)
 
 Settings → Storage: per vn, list versions with size + timestamp + "in use by chain run X" flag;
@@ -132,22 +164,65 @@ Every place a vn is selected — LabelView, PopManager, plot vn selectors, Chain
 worklists — gets an optional version chip. Default `latest`; explicit past-version selection is
 read-only downstream (a task run against `v2` writes `v4`, not overwriting `v3`).
 
-## Touchpoints — grep-free estimate
+**The audit surfaced 43 `.vue` files touching `valueName`** — one declarative `valueNameSelection`
+widget in `ParamRenderer.vue` (P6 lands here cleanly), but ~30 components hand-roll their own
+`<select v-model="valueName">`. That sprawl overlaps with `VALUE_NAME_INPUT_PLAN` P3
+("namespaces with nothing to suggest from"). **Coordinate P6 with `VALUE_NAME_INPUT_PLAN`** — either
+fold P6 into that plan as a new phase, or collapse the ad-hoc selects onto the declarative widget
+in a preceding PR and then let P6 add the version chip in one place. Decision deferred until P1
+lands; the corrected numbers make consolidation the obviously cheaper path.
 
-Central helpers (few) drive many callsites:
+**Movie compare** already models the "versions + segmentations as chip sets" pattern
+(`frontend/src/utils/movieCompare.ts` + `MovieCompareControls.vue`); the version chip should extend
+this shape rather than introduce a second control.
 
-- **Julia readers:** `label_props`, `zarr_utils.open_zarr` / `open_as_zarr`, `series_base`,
-  `read_axes` / `read_scale`, gating loader — ~4 helpers, ~15–20 callsites.
-- **Julia writers:** `staged_store`, `create_multiscales`, `write_atomic`, chain-node writers —
-  ~3 helpers, ~10 callsites.
-- **Python:** `LabelPropsView`, `zarr_utils.staged_store`, `write_h5ad_atomic`, `open_as_zarr` —
-  same shape.
-- **`ccid.json` schema:** one migration.
-- **Chain planner:** one pin site.
-- **Frontend vn pickers:** ~5 components.
-- **MCP tools referencing `value_name`:** audit in P1.
+## Touchpoints — grep-verified 2026-09-18
 
-The refactor is many callsites but few primitives — that's what makes it tractable.
+From `docs/audit/vn-versioning-touchpoints.md` (against origin/main at `20a4fa73`). The pre-audit
+column shows the plan's original grep-free estimate.
+
+| Category | Helpers | Callsites (verified) | Pre-audit estimate |
+|---|---|---|---|
+| Julia writers (`staged_store` / `create_multiscales`) | 3 | 15 | ~10 |
+| Julia writers (`versioned_set_field!` on filepath) | — | 15+20 label registry | not counted |
+| Julia writers (per-vn `write_json_atomic` sidecars) | — | ~20 | not counted |
+| Python writers (`staged_store`, `write_h5ad_atomic`) | 2 | 15 + 5 h5ad | same shape |
+| Julia readers keyed by vn | 8 | ~65 | ~15–20 |
+| Python readers keyed by vn | 5 | ~40 | included above |
+| API-side resolvers (`resolve_image_version` + payload builders) | 2 | ~15 | **missing** |
+| ccid.json versioned-field helpers | 8 | schema + ~40 callers | one migration |
+| Frontend vn pickers | 1 widget + ~30 ad-hoc | 43 `.vue` files | ~5 |
+| Chain planner refs (composite snapshot) | 3 | ~10 | one pin |
+| MCP tools referencing `value_name` | 2 | 3 callers | audit in P1 |
+| Legacy `default/<vn>/` path assumptions | — | 18 helpers | not counted |
+
+**The geometry holds:** ~4 Julia helpers + ~5 Python helpers + one api resolver + one ccid schema
+are the primitives to change. Callsites are many but they cluster on those primitives — that's what
+keeps the refactor tractable.
+
+## Reservations from the audit
+
+Three phasing revisions fell out of the grep sweep — folded into P1/P4/P6 above; recorded here so
+the deltas are visible:
+
+1. **P1 needs three resolvers, not one.** Julia app-layer (`resolve_value_name`), Julia API-layer
+   (`resolve_image_version` — 12 callers, different return shape), and a **new** Python
+   `resolve_value_name` (does not exist today). Missed in the original plan.
+2. **P4 is a two-part phase.** 18 legacy path-joining helpers hard-code `default/<vn>/` shape
+   without a version segment. Sub-plan into P4a (data migrator) + P4b (rewrite the helpers to
+   compose through the resolver). Independently reviewable.
+3. **P6 must coordinate with `VALUE_NAME_INPUT_PLAN`.** 30 of the 43 `.vue` files hand-roll their
+   own `<select v-model="valueName">` instead of using the declarative widget. Consolidating them
+   is cheaper than adding a version chip to every one — the two plans overlap enough that P6 might
+   fold into `VALUE_NAME_INPUT_PLAN` as a new phase. Decision deferred until P1 lands.
+
+Two smaller surfaces the audit called out that don't change the phasing but are worth citing here:
+
+- **Two resolvers behave differently today.** `resolve_image_version` returns
+  `(zarr_path, meta_dir, error)`; `resolve_value_name` returns `(vn, active_key)`. Both grow
+  versions in P1, but the shapes stay distinct.
+- **A `write_json_atomic` per-vn sidecar class** (qc, corrections, staleness, clustfeatures, motif)
+  was missing from D7's original list. Now folded in.
 
 ## Open questions — non-blocking, decide in-phase
 
