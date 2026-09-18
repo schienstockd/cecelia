@@ -514,13 +514,15 @@ end
     end
 
     # behaviour.motif_discovery (P1 POC) — mirror hmm_states: good case + defaults, and a
-    # validate_params bad-case (windowSize=0 violates the JSON spec's min=3).
+    # validate_params bad-case (windowSize=0 violates the JSON spec's min=3). The output
+    # suffix is derived from the source pops' value_name at run-time (not a param), so any
+    # legacy `valueName` key in a saved chain is silently ignored — no field on the struct.
     let p = Cecelia.parse_motif_discovery_params(Dict{String,Any}(
             "pops" => ["/live"], "valueName" => "poc",
             "windowSize" => 8, "topK" => 100, "numClasses" => 3,
             "resolutionLocked" => true))
         @test p.pops == ["/live"]
-        @test p.valueName == "poc"
+        @test !hasproperty(p, :valueName)
         @test p.windowSize === 8
         @test p.topK === 100
         @test p.numClasses === 3
@@ -528,7 +530,6 @@ end
     end
     let p = Cecelia.parse_motif_discovery_params(Dict{String,Any}())
         @test p.pops == String[]
-        @test p.valueName == "default"
         @test p.windowSize === 8
         @test p.topK === 100
         @test p.numClasses === 3
