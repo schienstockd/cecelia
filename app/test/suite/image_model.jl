@@ -520,6 +520,112 @@ end
     @test sort(versioned_keys(d)) == ["default", "v2"] # excludes _active
 end
 
+# ── P2 infra: widened CciaImage fields carry versioned entries roundtripped through ccid.json.
+# The value type of `filepath` / `label_props` is `Union{String, Dict{String,Any}}` (and the labels
+# fields carry `Union{Vector{String}, Dict{String,Any}}`) so a partially-migrated project — some
+# value_names still on the legacy scalar shape, others already versioned — loads cleanly and saves
+# back with the same shape. No writer has produced a versioned entry yet; this test builds one on
+# disk directly, which is what P2's first writer will otherwise land as. See
+# `docs/todo/VN_VERSIONING_PLAN.md` — P2 (writer path).
+@testset "CciaImage widened fields — versioned entry roundtrips through ccid.json" begin
+    mktempdir() do d
+        p = joinpath(d, "ccid.json")
+        # Mixed on-disk shape: `default` versioned (two versions), `dtype` legacy scalar. Same
+        # story for label_props. Labels/branch_labels also mixed.
+        write(p, """{"class":"CciaImage","uid":"IMG","name":"n","status":"done",
+                      "filepath":{"default":{"v1":"a.zarr","v2":"b.zarr","_latest":"v2"},
+                                  "dtype":"legacy.zarr","_active":"default"},
+                      "label_props":{"default":{"v1":"a.h5ad","_latest":"v1"},
+                                     "gated":"g.h5ad"},
+                      "labels":{"default":{"v1":["a.zarr","a_nuc.zarr"],"_latest":"v1"},
+                                "bare":["b.zarr"]},
+                      "branch_labels":{"skel":{"v1":["s.zarr"],"_latest":"v1"}}
+                    }""")
+        # `read_ccid_raw` normalises only the top-level keys — nested values arrive as JSON3.Object
+        # with Symbol keys (see the JSON3 gotcha in app/CLAUDE.md). For deep mutation (the writer
+        # path), go through `json_native` on the JSON3 tree directly. This is the canonical
+        # deep-normalise pattern for `versioned_upgrade_entry!` / `version_write!` callers.
+        raw = json_native(JSON3.read(read(p, String)))
+
+        # Loaded through the same code path CciaImage uses on init — verify the composer sees the
+        # right shape end-to-end.
+        @test versioned_get_field_at(raw, "filepath") == "b.zarr"             # active→_latest
+        @test versioned_get_field_at(raw, "filepath", "default"; version = "v1") == "a.zarr"
+        @test versioned_get_field_at(raw, "filepath", "dtype") == "legacy.zarr"
+        @test versioned_get_field_at(raw, "label_props", "default") == "a.h5ad"
+        @test versioned_get_field_at(raw, "label_props", "gated") == "g.h5ad"
+        @test versioned_get_field_at(raw, "labels", "default") == ["a.zarr", "a_nuc.zarr"]
+        @test versioned_get_field_at(raw, "labels", "bare") == ["b.zarr"]
+
+        # Field-type ratchet: version_write! composes with an upgraded outer entry — this is
+        # exactly the code path a P2 writer will take on the first v2 write.
+        entry = versioned_upgrade_entry!(raw["label_props"], "gated")
+        @test entry["v1"] == "g.h5ad"
+        version_write!(entry, "g_v2.h5ad")
+        @test raw["label_props"]["gated"]["v2"] == "g_v2.h5ad"
+        @test versioned_get_field_at(raw, "label_props", "gated") == "g_v2.h5ad"
+    end
+end
+
+@testset "CciaImage load path — widened field types accept a versioned Dict entry" begin
+    # Build an image on disk with a versioned filepath entry, then load through the model. This
+    # verifies both the widened struct field types AND the `to_spaths`/`to_labels` load helpers.
+    proj = create_project!(name="widen-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+
+    # Hand-write a mixed-shape ccid.json — some value_names versioned, some legacy — the way a
+    # partially-migrated project sits on disk.
+    ccid = joinpath(img._dir, "ccid.json")
+    raw  = JSON3.read(read(ccid, String), Dict{String,Any})
+    raw["filepath"] = Dict{String,Any}(
+        "default"            => Dict{String,Any}("v1" => "a.zarr", "v2" => "b.zarr",
+                                                 LATEST_ACTIVE_KEY => "v2"),
+        "dtype"              => "legacy.zarr",
+        VERSIONED_ACTIVE_KEY => "default",
+    )
+    raw["label_props"] = Dict{String,Any}(
+        "default"            => Dict{String,Any}("v1" => "a.h5ad", LATEST_ACTIVE_KEY => "v1"),
+        VERSIONED_ACTIVE_KEY => "default",
+    )
+    raw["labels"] = Dict{String,Any}(
+        "default" => Dict{String,Any}("v1" => ["a.zarr", "a_nuc.zarr"],
+                                      LATEST_ACTIVE_KEY => "v1"),
+    )
+    raw["branch_labels"] = Dict{String,Any}(
+        "skel" => Dict{String,Any}("v1" => ["s.zarr"], LATEST_ACTIVE_KEY => "v1"),
+    )
+    write(ccid, JSON3.write(raw))
+
+    # Load through the ordinary path — the widened field type must accept the Dict entry.
+    r = init_object(proj.uid, img.uid)
+    @test r.filepath["default"] isa AbstractDict
+    @test r.filepath["dtype"] == "legacy.zarr"
+    @test r.label_props["default"] isa AbstractDict
+    @test r.labels["default"] isa AbstractDict
+    @test r.branch_labels["skel"] isa AbstractDict
+
+    # Readers unwrap the version axis — `img_filepath` returns the leaf.
+    @test endswith(img_filepath(r, "default"), joinpath("0", img.uid, "b.zarr"))
+    @test endswith(img_filepath(r, "default"; version = "v1"), joinpath("0", img.uid, "a.zarr"))
+    @test endswith(img_filepath(r, "dtype"), joinpath("0", img.uid, "legacy.zarr"))
+    @test endswith(img_label_props_path(r, "default"), joinpath("labelProps", "a.h5ad"))
+    @test endswith(img_labels_path(r, "default"), joinpath("labels", "a.zarr"))
+    @test endswith(img_branch_labels_path(r, "skel"), joinpath("branchLabels", "s.zarr"))
+
+    # Save back — the union type must serialise cleanly. Then re-load and re-check to prove the
+    # roundtrip is stable (no shape drift, no loss on the second load).
+    save!(r)
+    r2 = init_object(proj.uid, img.uid)
+    @test r2.filepath["default"] isa AbstractDict
+    @test r2.filepath["default"][LATEST_ACTIVE_KEY] == "v2"
+    @test r2.filepath["default"]["v1"] == "a.zarr"
+    @test r2.filepath["default"]["v2"] == "b.zarr"
+    @test r2.filepath["dtype"] == "legacy.zarr"
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Destructive ops ──────────────────────────────────────────────────────────
 @testset "delete_image! / delete_set!" begin
     proj = create_project!(name="del-test-$(rand(1000:9999))")

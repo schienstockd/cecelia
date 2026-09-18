@@ -290,6 +290,93 @@ end
     @test unversion_value(plain_dict) === plain_dict
 end
 
+# ── P2 infra: mint next version + guarded writer + upgrade-in-place ─────────
+# The primitive that turns the versioning scheme from routing-only (P1) into
+# an actual writer (P2). Three responsibilities: pick the next `vN` key
+# without colliding with anything already there; refuse to overwrite (D6);
+# lazily wrap a legacy scalar so a task's second-ever write turns it into a
+# versioned entry without needing a schema migration.
+@testset "version_next — pick the next unused vN" begin
+    # Empty entry mints v1.
+    @test version_next(Dict{String,Any}()) == "v1"
+
+    # Sequential mint from the running max, ignoring `_latest`.
+    d1 = Dict{String,Any}("v1" => "a", LATEST_ACTIVE_KEY => "v1")
+    @test version_next(d1) == "v2"
+
+    # Non-monotonic ordering — pick max+1, not len+1.
+    d2 = Dict{String,Any}("v1" => "a", "v3" => "c", "v2" => "b", LATEST_ACTIVE_KEY => "v3")
+    @test version_next(d2) == "v4"
+
+    # Non-numeric keys are ignored — a hand-labelled "draft" doesn't skew the mint.
+    d3 = Dict{String,Any}("v1" => "a", "draft" => "x", LATEST_ACTIVE_KEY => "v1")
+    @test version_next(d3) == "v2"
+
+    # `_latest` alone (no vN yet) still mints v1.
+    d4 = Dict{String,Any}(LATEST_ACTIVE_KEY => "v1")
+    @test version_next(d4) == "v1"
+end
+
+@testset "version_write! — guarded writer (D6, can't-overwrite)" begin
+    d = Dict{String,Any}()
+
+    # First write on an empty dict mints v1 and sets `_latest`.
+    @test version_write!(d, "a.zarr") == "v1"
+    @test d["v1"] == "a.zarr"
+    @test version_latest(d) == "v1"
+
+    # Subsequent writes mint the next key and move `_latest`.
+    @test version_write!(d, "b.zarr") == "v2"
+    @test version_latest(d) == "v2"
+    @test version_get(d) == "b.zarr"
+
+    # An EXPLICIT `version` kwarg pins the key — but only if it doesn't exist.
+    @test version_write!(d, "z.zarr"; version = "v9") == "v9"
+    @test version_latest(d) == "v9"
+
+    # Guard fires on collision — critical D6 invariant.
+    @test_throws ErrorException version_write!(d, "OOPS"; version = "v1")
+    @test d["v1"] == "a.zarr"     # unchanged
+    @test version_latest(d) == "v9" # unchanged
+
+    # After the mint, the next mint still picks max+1 (the guard didn't
+    # accidentally register the failed key).
+    @test version_next(d) == "v10"
+end
+
+@testset "versioned_upgrade_entry! — legacy scalar → versioned entry on first v2 write" begin
+    # OUTER dict — the shape the raw ccid.json (or an img field) carries. Two value_names:
+    # `default` is legacy (bare scalar), `dtype` is already versioned.
+    outer = Dict{String,Any}(
+        "default"            => "ccidImage.ome.zarr",
+        "dtype"              => Dict{String,Any}("v1" => "dtype.zarr", LATEST_ACTIVE_KEY => "v1"),
+        VERSIONED_ACTIVE_KEY => "default",
+    )
+
+    # Upgrade `default` — wraps the bare scalar as v1 in place.
+    upgraded = versioned_upgrade_entry!(outer, "default")
+    @test upgraded isa AbstractDict
+    @test upgraded["v1"] == "ccidImage.ome.zarr"
+    @test upgraded[LATEST_ACTIVE_KEY] == "v1"
+    @test outer["default"] === upgraded          # mutated in place
+
+    # Second call is idempotent — already versioned, returns unchanged.
+    same = versioned_upgrade_entry!(outer, "default")
+    @test same === upgraded
+
+    # The upgrade path composes with `version_write!` — the whole point.
+    version_write!(upgraded, "v2.zarr")
+    @test upgraded["v2"] == "v2.zarr"
+    @test version_latest(upgraded) == "v2"
+
+    # An entry that's already versioned is untouched by upgrade.
+    dtype = versioned_upgrade_entry!(outer, "dtype")
+    @test dtype["v1"] == "dtype.zarr"
+
+    # Absent value_name errors — nothing to upgrade means the caller has a bug.
+    @test_throws ErrorException versioned_upgrade_entry!(outer, "nonexistent")
+end
+
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────
 @testset "LabelProps reader" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")

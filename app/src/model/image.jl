@@ -23,14 +23,20 @@ mutable struct CciaImage
     uid::String
     name::String
     status::ImageStatus               # see @enum ImageStatus above
-    filepath::Dict{String,String}     # versioned filenames (relative to zero dir)
-    labels::Dict{String,Vector{String}}  # valueName → [filename, ...] (e.g. labels.zarr, labels_cyto.zarr)
-    label_props::Dict{String,String}
+    # Value-name → filename (legacy) OR versioned entry (inner axis, `v1`/`v2`/…/`_latest`). Union
+    # value type carries both shapes so a task that writes v2 can widen an entry in place without
+    # a schema migration; the readers (`img_filepath`, `resolve_image_version`) unwrap either shape
+    # via `unversion_value`. See `docs/todo/VN_VERSIONING_PLAN.md` — P2 lands the writer path.
+    filepath::Dict{String,Union{String,Dict{String,Any}}}
+    # `labels[vn]` is a Vector{String} (base + nuc + …) legacy-shape, or a versioned entry whose
+    # inner values are those Vectors — same two-axis shape as `filepath`.
+    labels::Dict{String,Union{Vector{String},Dict{String,Any}}}
+    label_props::Dict{String,Union{String,Dict{String,Any}}}
     # Skeleton (branch) label sets — a separate registry from `labels`. Branch labels are a different
     # granularity (paths/edges, not cell regions), so they get their own field to keep the generic
     # `labels` picker (measure/track/segment dropdowns) unpolluted. See docs/todo/BRANCHING_PLAN.md
     # Decision 6. Files live at `{proj}/1/{uid}/branchLabels/{filename}.zarr` (mirrors `labels/`).
-    branch_labels::Dict{String,Vector{String}}
+    branch_labels::Dict{String,Union{Vector{String},Dict{String,Any}}}
     # Versioned channel-name registry: each real entry is `value_name => [names]`, plus one
     # `_active => value_name` String sentinel written by `versioned_set!`. The union type documents
     # the two shapes actually stored and closes the `Any` escape hatch — a stray write of anything
@@ -61,8 +67,10 @@ end
 
 function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, dir="")
     CciaImage(uid, name, status,
-              Dict{String,String}(), Dict{String,Vector{String}}(), Dict{String,String}(),
-              Dict{String,Vector{String}}(),      # branch_labels (Decision 6)
+              Dict{String,Union{String,Dict{String,Any}}}(),
+              Dict{String,Union{Vector{String},Dict{String,Any}}}(),
+              Dict{String,Union{String,Dict{String,Any}}}(),
+              Dict{String,Union{Vector{String},Dict{String,Any}}}(),  # branch_labels (Decision 6)
               Dict{String,Union{Vector{String},String}}(),   # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
               true, "", false,                    # included (default), note, starred
@@ -877,12 +885,30 @@ end
 function _load_image(dir::String)::CciaImage
     d = read_state_json(state_file(dir); as = Dict{String,Any})
     _drop_dead_task_dirs(dir)
-    to_spaths(key) = Dict{String,String}(
-        string(k) => string(v) for (k, v) in get(d, key, Dict{String,Any}()))
-    # labels: Dict{String, Vector{String}} — value can be a list or a bare string (legacy)
-    to_labels(key) = Dict{String,Vector{String}}(
-        string(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
-        for (k, v) in get(d, key, Dict{String,Any}()))
+        # Load a `spaths` field (filepath / label_props). A value_name entry is either a legacy String
+    # or a versioned entry — a Dict with `_latest` — whose inner values are Strings. The two shapes
+    # cohabit under `Union{String, Dict{String,Any}}` so mid-migration projects (some entries
+    # upgraded to v2, others not) roundtrip in one go. See `docs/todo/VN_VERSIONING_PLAN.md`.
+    _spath_entry(v) = v isa AbstractDict ?
+        Dict{String,Any}(String(k) => (vv isa AbstractDict ?
+                                          Dict{String,Any}(String(kk) => string(vvv)
+                                                           for (kk, vvv) in vv) :
+                                          string(vv))
+                         for (k, vv) in v) :
+        string(v)
+    to_spaths(key) = Dict{String,Union{String,Dict{String,Any}}}(
+        string(k) => _spath_entry(v) for (k, v) in get(d, key, Dict{String,Any}()))
+    # Labels: same two-shape story, but the leaf is a Vector{String} (labels.zarr + labels_cyto.zarr).
+    _labels_entry(v) = v isa AbstractDict && haskey(v, LATEST_ACTIVE_KEY) ?
+        # versioned entry — inner values are Vector{String}
+        Dict{String,Any}(String(k) =>
+                          (vv isa AbstractVector ? collect(String, vv) :
+                           vv isa AbstractString ? String(vv) : vv)
+                         for (k, vv) in v) :
+        # legacy: a Vector or a stray scalar
+        (v isa AbstractVector ? collect(String, v) : [string(v)])
+    to_labels(key) = Dict{String,Union{Vector{String},Dict{String,Any}}}(
+        string(k) => _labels_entry(v) for (k, v) in get(d, key, Dict{String,Any}()))
     # im_channel_names: `Vector{String}` per real version, `String` for the `_active` sentinel.
     # Construct the tight union type directly so a stray value shape (e.g. an Int leaking in from
     # a hand-edited ccid.json) fails here rather than later at a `String(...)` call.

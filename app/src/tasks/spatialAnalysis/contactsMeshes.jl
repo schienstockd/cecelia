@@ -26,7 +26,7 @@ function parse_contacts_meshes_params(d::AbstractDict)::ContactsMeshesParams
 end
 
 _label_zarr_path(img::CciaImage, vn::AbstractString) =
-    joinpath(img._dir, "labels", first(img.labels[vn]))
+    joinpath(img._dir, "labels", first(unversion_value(img.labels[vn])))
 
 function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
