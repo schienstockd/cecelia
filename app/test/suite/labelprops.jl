@@ -176,6 +176,97 @@ end
     @test isnothing(get(d["filepath"], "driftCorrected", nothing))
 end
 
+# ── Inner-version helpers ─────────────────────────────────────────────────
+# Symmetry with the outer versioned_* set above. The composer
+# `versioned_get_field_at` walks BOTH axes and is what P1b/c/d readers will
+# migrate to. Legacy (bare scalar) entries must keep resolving as implicit v1.
+# Full design: docs/todo/VN_VERSIONING_PLAN.md.
+@testset "Inner version helpers" begin
+    # bare version dict — the inner shape used by P2 writers
+    v = Dict{String,Any}("v1" => "a.zarr", "v2" => "b.zarr", LATEST_ACTIVE_KEY => "v2")
+    @test is_versioned_entry(v)
+    @test version_latest(v) == "v2"
+    @test version_get(v) == "b.zarr"              # latest
+    @test version_get(v, "v1") == "a.zarr"        # explicit
+    @test isnothing(version_get(v, "v3"))         # missing
+    @test sort(version_keys(v)) == ["v1", "v2"]   # excludes _latest
+
+    # set adds a new version and moves _latest
+    version_set!(v, "c.zarr", "v3")
+    @test version_latest(v) == "v3"
+    @test version_get(v) == "c.zarr"
+    @test sort(version_keys(v)) == ["v1", "v2", "v3"]
+
+    # set with set_latest=false leaves _latest alone
+    version_set!(v, "d.zarr", "v4"; set_latest = false)
+    @test version_latest(v) == "v3"
+    @test version_get(v, "v4") == "d.zarr"
+
+    # remove entry — mirrors versioned_set!'s NULL behaviour
+    version_set!(v, nothing, "v4")
+    @test isnothing(get(v, "v4", nothing))
+    @test version_latest(v) == LATEST_DEFAULT_VAL
+
+    # default: empty dict resolves to v1 implicitly
+    empty_d = Dict{String,Any}()
+    @test version_latest(empty_d) == "v1"
+    @test isnothing(version_get(empty_d))
+    @test !is_versioned_entry(empty_d)             # no _latest → not a versioned entry
+    @test !is_versioned_entry("scalar")            # not a dict
+    @test !is_versioned_entry([1, 2])              # not a dict
+end
+
+@testset "versioned_get_field_at — legacy + new shape" begin
+    # LEGACY shape (bare scalar): the composer returns the scalar unchanged
+    legacy = Dict{String,Any}(
+        "filepath" => Dict{String,Any}("default" => "ccidImage.ome.zarr",
+                                       VERSIONED_ACTIVE_KEY => "default"),
+    )
+    @test versioned_get_field_at(legacy, "filepath") == "ccidImage.ome.zarr"
+    @test versioned_get_field_at(legacy, "filepath", "default") == "ccidImage.ome.zarr"
+    @test isnothing(versioned_get_field_at(legacy, "filepath", "nonexistent"))
+    @test isnothing(versioned_get_field_at(legacy, "missing_field"))
+
+    # NEW shape (versioned inner dict): the composer walks BOTH axes
+    new_shape = Dict{String,Any}(
+        "filepath" => Dict{String,Any}(
+            "default" => Dict{String,Any}("v1" => "a.zarr", "v2" => "b.zarr",
+                                          LATEST_ACTIVE_KEY => "v2"),
+            VERSIONED_ACTIVE_KEY => "default",
+        ),
+    )
+    @test versioned_get_field_at(new_shape, "filepath") == "b.zarr"                # latest via active vn
+    @test versioned_get_field_at(new_shape, "filepath", "default") == "b.zarr"
+    @test versioned_get_field_at(new_shape, "filepath"; version = "v1") == "a.zarr"
+    @test versioned_get_field_at(new_shape, "filepath", "default"; version = "v2") == "b.zarr"
+    @test isnothing(versioned_get_field_at(new_shape, "filepath"; version = "v3"))  # missing version
+
+    # MIXED shape (one vn legacy, one vn new): each resolves independently
+    mixed = Dict{String,Any}(
+        "filepath" => Dict{String,Any}(
+            "default"        => "old.zarr",                                    # legacy
+            "driftCorrected" => Dict{String,Any}("v1" => "d1.zarr", "v2" => "d2.zarr",
+                                                 LATEST_ACTIVE_KEY => "v2"),   # new
+            VERSIONED_ACTIVE_KEY => "driftCorrected",
+        ),
+    )
+    @test versioned_get_field_at(mixed, "filepath") == "d2.zarr"                    # active → new-shape latest
+    @test versioned_get_field_at(mixed, "filepath", "default") == "old.zarr"        # legacy branch
+    @test versioned_get_field_at(mixed, "filepath", "driftCorrected"; version = "v1") == "d1.zarr"
+
+    # Symbol keys — JSON3 hands us Symbol keys on read; the helpers must not silently miss.
+    # Mirrors the guard in versioned_get / versioned_get_field.
+    sym_new = Dict{String,Any}(
+        "filepath" => Dict{Symbol,Any}(
+            :default => Dict{Symbol,Any}(:v1 => "sym1.zarr", :v2 => "sym2.zarr",
+                                         Symbol(LATEST_ACTIVE_KEY) => "v2"),
+            Symbol(VERSIONED_ACTIVE_KEY) => "default",
+        ),
+    )
+    @test versioned_get_field_at(sym_new, "filepath") == "sym2.zarr"
+    @test versioned_get_field_at(sym_new, "filepath"; version = "v1") == "sym1.zarr"
+end
+
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────
 @testset "LabelProps reader" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
