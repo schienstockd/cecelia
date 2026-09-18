@@ -215,7 +215,13 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         src      = read(joinpath(_SUITE_APP_SRC, "tasks", "task.jl"), String) * "\n" *
                    join([read(f, String) for f in
                          filter(f -> endswith(f, ".jl"), readdir(task_dir; join=true))], "\n")
-        sched    = read(joinpath(_SUITE_APP_SRC, "tasks", "scheduler.jl"), String)
+        # Same shape as task.jl above: scheduler.jl is a small aggregator; run_task and the
+        # flatten/order/defaults steps live in the split fragments under `tasks/scheduler/*.jl`.
+        # Read the whole family so a future move within the family stays invisible to this test.
+        sched_dir = joinpath(_SUITE_APP_SRC, "tasks", "scheduler")
+        sched     = read(joinpath(_SUITE_APP_SRC, "tasks", "scheduler.jl"), String) * "\n" *
+                    join([read(f, String) for f in
+                          filter(f -> endswith(f, ".jl"), readdir(sched_dir; join=true))], "\n")
 
         prep = ["_flatten_sections", "_apply_group_order", "_apply_spec_defaults",
                 "_apply_param_requires"]
