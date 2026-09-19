@@ -9104,22 +9104,29 @@ end
         p1 = JSON3.read(r1, Dict{String,Any})
         @test p1["paired"] == false && p1["alive"] == false
 
-        # (2) alive — bind a local UDS in a background task, probe it.
-        live_path = joinpath(tmp, "live.sock")
-        server = Sockets.listen(live_path)
-        accept_task = @async try Sockets.accept(server) catch _ end
-        try
-            write_json_atomic(target_json, Dict{String,Any}(
-                "socketPath" => live_path, "token" => "t",
-            ))
-            st2, r2 = api_push_target_probe(make_body())
-            @test st2 == 200
-            p2 = JSON3.read(r2, Dict{String,Any})
-            @test p2["paired"] == true && p2["alive"] == true
-            @test isfile(target_json)   # alive ⇒ record preserved
-        finally
-            close(server)
-            try wait(accept_task) catch _ end
+        # (2) alive — bind a local UDS in a background task, probe it. Skipped on native
+        # Windows: `Sockets.listen(<file path>)` requires a `\\.\pipe\...` name there rather
+        # than a plain filesystem path, so a temp-dir socket file is a portable server we can't
+        # spin up. The probe under test itself IS Windows-safe (Julia's `Sockets.connect`
+        # dispatches on the transport transparently — see push_writer.jl); the dead-socket
+        # branch below still exercises the code path on every platform.
+        if !Sys.iswindows()
+            live_path = joinpath(tmp, "live.sock")
+            server = Sockets.listen(live_path)
+            accept_task = @async try Sockets.accept(server) catch _ end
+            try
+                write_json_atomic(target_json, Dict{String,Any}(
+                    "socketPath" => live_path, "token" => "t",
+                ))
+                st2, r2 = api_push_target_probe(make_body())
+                @test st2 == 200
+                p2 = JSON3.read(r2, Dict{String,Any})
+                @test p2["paired"] == true && p2["alive"] == true
+                @test isfile(target_json)   # alive ⇒ record preserved
+            finally
+                close(server)
+                try wait(accept_task) catch _ end
+            end
         end
 
         # (3) dead — point at a socket path nobody is listening on.
