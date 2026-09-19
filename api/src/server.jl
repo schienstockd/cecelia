@@ -347,11 +347,16 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/denoise/delete" => (req, body_bytes) -> (api_denoise_delete(body_bytes)),
     # bidir share-in — POST-only; MCP client never authors a capture (see captures_api.jl).
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture(body_bytes)),
+    # Kiwi capture management — user-driven, not on MCP surface (additive-write discipline).
+    "/api/viewer/capture/delete" => (req, body_bytes) -> (api_viewer_capture_delete(body_bytes)),
+    "/api/viewer/captures/clear" => (req, body_bytes) -> (api_viewer_captures_clear(body_bytes)),
     # bidir Part 5 (push pairing) — MCP client auto-pairs via middleware; also called by the
     # explicit register_push_target tool. See push_api.jl.
     "/api/push/target" => (req, body_bytes) -> (api_push_target_post(body_bytes)),
     # Kiwi PR #3 — manual unpair. Deletes the pairing record; next MCP tool call re-pairs.
     "/api/push/target/clear" => (req, body_bytes) -> (api_push_target_clear(body_bytes)),
+    # Kiwi probe (post-PR #3 follow-up) — connect-only liveness check; clears + broadcasts if dead.
+    "/api/push/target/probe" => (req, body_bytes) -> (api_push_target_probe(body_bytes)),
     "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),
     "/api/notebooks/write" => (req, body_bytes) -> (api_notebooks_write(body_bytes)),
     "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),

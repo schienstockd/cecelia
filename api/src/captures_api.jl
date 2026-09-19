@@ -240,3 +240,76 @@ function api_viewer_capture_get(req::HTTP.Request)
     end
     200, JSON3.write((; capture = envelope, frame = frame))
 end
+
+"""
+    POST /api/viewer/capture/delete
+
+Body: `{projectUid, captureId}`. User-driven single-capture delete from Kiwi
+(docs/todo/KIWI_PLAN.md — post-PR #3 follow-up). Removes `<proj>/captures/<captureId>/`
+recursively. Idempotent: missing captureId returns 200 `deleted:false`.
+
+Why this endpoint exists at all: BIDIR_CONTEXT_PLAN.md ruled out a delete tool on the
+*MCP surface* (additive-write discipline for assistant-authored writes). This is different —
+a user driving the frontend can prune their own capture directory the way they can prune a
+notebook or a movie. Same shape as `POST /api/notebooks/delete`.
+
+The captureId regex + directory containment check keep this from turning into a "delete an
+arbitrary path" surface: `_valid_capture_id` rejects anything that isn't `cap-…`, and the
+joinpath is anchored under `_captures_dir_for_project(uid)`, so a `..` in a payload gets
+regex-rejected before it can escape the tree.
+"""
+function api_viewer_capture_delete(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :projectUid)
+    id  = _wstr(body, :captureId)
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isempty(id)  && return 400, JSON3.write((; error = "captureId required"))
+    _valid_capture_id(id) || return 400, JSON3.write((; error = "Invalid captureId"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    dir = joinpath(_captures_dir_for_project(uid), id)
+    existed = isdir(dir)
+    existed && rm(dir; recursive = true, force = true)
+    # Broadcast so any open Kiwi in another window (or a second Cecelia session on this
+    # project) drops the row from its recent-captures list without a manual refresh.
+    broadcast_ws(Dict{String,Any}(
+        "type" => "captures:changed", "projectUid" => uid,
+    ))
+    200, JSON3.write((; ok = true, deleted = existed))
+end
+
+"""
+    POST /api/viewer/captures/clear
+
+Body: `{projectUid}`. User-driven bulk delete — the "Clear all captures" button in Kiwi.
+Removes every `cap-…` subdir under `<proj>/captures/`. Skips non-matching entries so a stray
+file or a future format lives on. Returns the count so the UI can report "cleared 42".
+"""
+function api_viewer_captures_clear(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :projectUid)
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    dir = _captures_dir_for_project(uid)
+    cleared = 0
+    if isdir(dir)
+        for name in readdir(dir)
+            _valid_capture_id(name) || continue
+            entry = joinpath(dir, name)
+            isdir(entry) || continue
+            try
+                rm(entry; recursive = true, force = true)
+                cleared += 1
+            catch e
+                @warn "captures/clear: rm failed" path = entry exception = e
+            end
+        end
+    end
+    broadcast_ws(Dict{String,Any}(
+        "type" => "captures:changed", "projectUid" => uid,
+    ))
+    200, JSON3.write((; ok = true, cleared = cleared))
+end

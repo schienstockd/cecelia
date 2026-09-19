@@ -19,6 +19,7 @@
 # any tool with a `project_uid`, so a fresh Claude Code session auto-pairs on its first tool
 # call without the user typing anything (Decision 1 amendment).
 using Dates
+using Sockets
 
 const _PUSH_TARGET_FILE = "push_target.json"
 
@@ -112,6 +113,71 @@ function api_push_target_post(body_bytes::Vector{UInt8})
         "sessionLabel" => _wstr(body, :sessionLabel),
     ))
     200, JSON3.write((; ok = true))
+end
+
+"""
+    POST /api/push/target/probe
+
+Body: `{projectUid}`. Cheap liveness check for the paired session's socket. Opens the socket,
+immediately closes; if `connect()` throws (ECONNREFUSED / ENOENT / EPERM / …) the pairing is
+treated as dead — the record is cleared and `push_target:changed { paired: false }` is
+broadcast, matching the self-heal path `push_writer.jl` already runs on a failed push.
+
+Reply: `{ ok, paired, alive?, reason? }`.
+  * unpaired ⇒ `{ok:true, paired:false, alive:false}`.
+  * alive    ⇒ `{ok:true, paired:true, alive:true}`.
+  * dead     ⇒ `{ok:true, paired:false, alive:false, reason:"<Exception>"}` — the record has
+    been cleared server-side; the frontend chip flips via the WS broadcast that fires here.
+
+Why POST not GET: this endpoint MUTATES on a dead socket (deletes the record, broadcasts a WS
+event). GET should be safe/idempotent-ish; POST names the effect honestly.
+
+Called by Kiwi on panel mount + project change + a small "Check" button next to the pairing
+chip (docs/todo/KIWI_PLAN.md — follow-up to PR #3). Same discipline as clear: idempotent on an
+already-not-paired project (returns `alive: false` with no side effect).
+"""
+function api_push_target_probe(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :projectUid)
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    path = _push_target_path(uid)
+    isfile(path) || return 200, JSON3.write((; ok = true, paired = false, alive = false))
+    record = try
+        JSON3.read(read(path, String), Dict{String,Any})
+    catch
+        # Unreadable record ⇒ treat as unpaired (self-heal on next auto-pair). Symmetric with GET.
+        return 200, JSON3.write((; ok = true, paired = false, alive = false))
+    end
+    socket_path = String(get(record, "socketPath", ""))
+    if isempty(socket_path)
+        return 200, JSON3.write((; ok = true, paired = false, alive = false))
+    end
+
+    # The probe itself. `Sockets.connect(<path>)` returns immediately on success or throws;
+    # cheap enough to run on every Kiwi mount. We DELIBERATELY don't send the auth line — the
+    # Claude Code inbox will drop the connection eventually on silence, but that costs nothing
+    # here and we don't care about the server's response, only whether the connect succeeded.
+    reason = ""
+    ok = try
+        sock = Sockets.connect(socket_path)
+        close(sock)
+        true
+    catch e
+        reason = sprint(showerror, e)
+        false
+    end
+
+    if !ok
+        rm(path; force = true)
+        broadcast_ws(Dict{String,Any}(
+            "type" => "push_target:changed", "projectUid" => uid, "paired" => false,
+        ))
+        return 200, JSON3.write((; ok = true, paired = false, alive = false, reason = reason))
+    end
+    200, JSON3.write((; ok = true, paired = true, alive = true))
 end
 
 """
