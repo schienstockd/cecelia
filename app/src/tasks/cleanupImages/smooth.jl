@@ -107,7 +107,11 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
 
     proj_dir       = dirname(dirname(img._dir))
     im_path        = joinpath(proj_dir, "0", img.uid, string(filename))
-    im_output_path = joinpath(proj_dir, "0", img.uid, "ccidSmoothed.ome.zarr")
+    out_value_name = _spec_output_value_name(task, "smoothed")
+    out_filename   = "ccidSmoothed.ome.zarr"
+    im_output_path, store_rel, as_new_version =
+        plan_versioned_target(img, out_value_name, out_filename)
+    as_new_version && mkpath(dirname(im_output_path))
 
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
@@ -179,9 +183,6 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] Smoothing complete.")
 
-    out_value_name = _spec_output_value_name(task, "smoothed")
-    out_filename   = "ccidSmoothed.ome.zarr"
-
     if isfile(qc_out_path)
         try
             qmeta = JSON3.read(read(qc_out_path, String))
@@ -209,8 +210,8 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     end
 
     commit_state!(img) do raw
-        versioned_set_field!(raw, "filepath", out_filename, out_value_name)
+        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version)
     end
 
-    Dict{String,Any}("valueName" => out_value_name, "filename" => out_filename)
+    Dict{String,Any}("valueName" => out_value_name, "filename" => store_rel)
 end

@@ -189,7 +189,13 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
 
     proj_dir           = dirname(dirname(img._dir))
     im_path            = joinpath(proj_dir, "0", img.uid, string(filename))
-    im_correction_path = joinpath(proj_dir, "0", img.uid, "ccidDriftCorrected.ome.zarr")
+    # Compute the output target through the shared writer planner — flat overwrite when the toggle
+    # is off, next `vN` subdir sibling when it's on. `store_rel` lands verbatim in ccid.json.
+    out_value_name = _spec_output_value_name(task, "driftCorrected")
+    out_filename   = "ccidDriftCorrected.ome.zarr"
+    im_correction_path, store_rel, as_new_version =
+        plan_versioned_target(img, out_value_name, out_filename)
+    as_new_version && mkpath(dirname(im_correction_path))
 
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
@@ -249,9 +255,6 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] Drift correction complete.")
 
-    out_value_name = _spec_output_value_name(task, "driftCorrected")
-    out_filename   = "ccidDriftCorrected.ome.zarr"
-
     # QC: read the persisted drift trajectory, compute findings, write the qc/ sidecar (advisory).
     if isfile(qc_out_path)
         try
@@ -269,8 +272,8 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
     end
 
     commit_state!(img) do raw
-        versioned_set_field!(raw, "filepath", out_filename, out_value_name)
+        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version)
     end
 
-    Dict{String,Any}("valueName" => out_value_name, "filename" => out_filename)
+    Dict{String,Any}("valueName" => out_value_name, "filename" => store_rel)
 end

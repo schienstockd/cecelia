@@ -53,7 +53,9 @@ function _run_task(task::DtypeConvert, img::CciaImage, params::Dict{String,Any};
 
     out_value_name = _spec_output_value_name(task, "dtype")
     out_filename   = "ccidDtype.ome.zarr"
-    im_out_path    = joinpath(proj_dir, "0", img.uid, out_filename)
+    im_out_path, store_rel, as_new_version =
+        plan_versioned_target(img, out_value_name, out_filename)
+    as_new_version && mkpath(dirname(im_out_path))
 
     on_log("[INFO] Dtype source: $im_path")
     on_log("[INFO] Output:       $im_out_path (dtype=$(p.dtype) rescale=$(p.rescale), valueName='$out_value_name')")
@@ -65,9 +67,9 @@ function _run_task(task::DtypeConvert, img::CciaImage, params::Dict{String,Any};
     ok || return nothing
 
     commit_state!(img) do raw2
-        versioned_set_field!(raw2, "filepath", out_filename, out_value_name)
+        versioned_filepath_write!(raw2, out_value_name, store_rel; as_new_version = as_new_version)
     end
 
     on_log("[INFO] Dtype conversion complete → version '$out_value_name'")
-    Dict{String,Any}("valueName" => out_value_name, "filename" => out_filename)
+    Dict{String,Any}("valueName" => out_value_name, "filename" => store_rel)
 end

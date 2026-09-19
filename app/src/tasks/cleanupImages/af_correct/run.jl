@@ -42,7 +42,11 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
 
     proj_dir           = dirname(dirname(img._dir))
     im_path            = joinpath(proj_dir, "0", img.uid, string(filename))
-    im_correction_path = joinpath(proj_dir, "0", img.uid, "ccidAfCorrected.ome.zarr")
+    out_value_name = _spec_output_value_name(task, "afCorrected")
+    out_filename   = "ccidAfCorrected.ome.zarr"
+    im_correction_path, store_rel, as_new_version =
+        plan_versioned_target(img, out_value_name, out_filename)
+    as_new_version && mkpath(dirname(im_correction_path))
 
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
@@ -77,11 +81,8 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] AF correction complete.")
 
-    out_value_name = _spec_output_value_name(task, "afCorrected")
-    out_filename   = "ccidAfCorrected.ome.zarr"
-
     commit_state!(img) do raw
-        versioned_set_field!(raw, "filepath", out_filename, out_value_name)
+        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version)
     end
 
     # QC: the correction itself has no free parameter left to land badly, so the objective signals are
@@ -108,5 +109,5 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
         end
     end
 
-    Dict{String,Any}("valueName" => out_value_name, "filename" => out_filename)
+    Dict{String,Any}("valueName" => out_value_name, "filename" => store_rel)
 end

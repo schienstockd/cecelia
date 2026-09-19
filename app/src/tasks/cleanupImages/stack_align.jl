@@ -117,7 +117,11 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
 
     proj_dir         = dirname(dirname(img._dir))
     im_path          = joinpath(proj_dir, "0", img.uid, string(filename))
-    im_aligned_path  = joinpath(proj_dir, "0", img.uid, "ccidStackAligned.ome.zarr")
+    out_value_name = _spec_output_value_name(task, "stackAligned")
+    out_filename   = "ccidStackAligned.ome.zarr"
+    im_aligned_path, store_rel, as_new_version =
+        plan_versioned_target(img, out_value_name, out_filename)
+    as_new_version && mkpath(dirname(im_aligned_path))
 
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
@@ -159,9 +163,6 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] Stack alignment complete.")
 
-    out_value_name = _spec_output_value_name(task, "stackAligned")
-    out_filename   = "ccidStackAligned.ome.zarr"
-
     # QC (advisory): findings on reliability + peak shift, metrics on applied fraction. Read the
     # persisted trajectory back so the QC and the writer share ONE derivation.
     if isfile(qc_out_path)
@@ -184,8 +185,8 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
     end
 
     commit_state!(img) do raw
-        versioned_set_field!(raw, "filepath", out_filename, out_value_name)
+        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version)
     end
 
-    Dict{String,Any}("valueName" => out_value_name, "filename" => out_filename)
+    Dict{String,Any}("valueName" => out_value_name, "filename" => store_rel)
 end

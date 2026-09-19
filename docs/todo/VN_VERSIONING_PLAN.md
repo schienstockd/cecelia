@@ -209,32 +209,36 @@ Everything needed for a writer to land its data as a versioned entry, minus the 
   through `read_ccid_raw`; widened field types accept a versioned Dict entry through init_object
   → save! → re-init).
 
-#### P2 pilot — writer conversion — **SHIPPED** (2026-09-19)
+#### P2 writer conversions — **SHIPPED** (2026-09-19)
 
-Ingest (`app/src/tasks/importImages/omezarr/ccid_sync.jl:91`, via `_merge_zarr_meta_into_ccid!`) is
-the pilot writer. New surface:
+Shared helpers `plan_versioned_target` + `versioned_filepath_write!` in `app/src/helpers.jl` are
+the one canonical routing every image-store-producing task calls. Both:
 
-- `keep_previous_version()::Bool` / `set_keep_previous_version!` in
+- **Config** `keep_previous_version()::Bool` / `set_keep_previous_version!` in
   `app/src/config/image_format.jl` — persisted as `[zarr].keepPreviousVersion` in `custom.toml`,
   default `false`. Same knob future autonomous execution flips programmatically (the
   mechanically-can't-overwrite invariant this whole primitive exists for). API:
-  `GET/POST /api/storage/keep-previous-version`.
-- `_plan_import_target(img, value_name)` in `task.jl` decides between the legacy flat path
-  (overwrite semantics) and a versioned subdir (`{img_zero_dir}/{value_name}/vN/ccidImage.ome.zarr`,
-  `version_write!`-guarded).
-- `_merge_zarr_meta_into_ccid!` accepts `as_new_version::Bool` and routes ccid.json between
-  `versioned_set_field!` (legacy scalar) and `versioned_upgrade_entry!` + `version_write!`
-  (versioned entry).
+  `GET/POST /api/storage/keep-previous-version` (+ Settings → Storage toggle in the UI).
+- **`plan_versioned_target(img, value_name, filename) -> (abs_path, rel_path, as_new_version)`**
+  decides between the legacy flat path (overwrite semantics, matches every pre-toggle project) and
+  the next `vN` subdir sibling (`{img_zero_dir}/{value_name}/vN/{filename}`, `version_write!`-guarded).
+- **`versioned_filepath_write!(raw, value_name, rel_path; as_new_version)`** runs inside
+  `commit_state!` and routes ccid.json between `versioned_set_field!` (legacy scalar) and
+  `versioned_upgrade_entry!` + `version_write!` (versioned entry).
 - **v1 always stays flat**; only v2+ nest under the vN subdir — legacy pre-toggle projects
   roundtrip unchanged.
-- Tests: 28 new (config toggle roundtrip, `_plan_import_target` fresh vs prior-scalar vs
-  prior-versioned, `_merge_zarr_meta_into_ccid!` legacy → versioned upgrade, second-append v2→v3,
-  fresh-value_name defensive guard).
+- **Tasks converted (9)**: ingest (`ImportOmezarr` — the pilot), `DriftCorrect`, `FlowRegister`,
+  `StackAlign`, `AfCorrect`, `Denoise`, `Smooth`, `Flip`, `Dtype` — every task that reprocesses an
+  existing image in place.
+- **Tasks NOT converted (7 — versioning doesn't apply)**: `ZProject`, `TProject`, `CopyImage`,
+  `Bin`, `CropImage`, `Register`, `ResampleZ`. Each of these creates a fresh CciaImage under a new
+  UID rather than a new version of the source, so versioning is redundant — the "keep previous
+  version" story is already served by keeping the source image alongside the derived one.
 
 **Deferred to a follow-up:** `test_zarr_access_convention.py` / `zarr-access ratchet` extension
 for bare `default/<vn>/…` joins — under Q2's answer (Bucket B stays flat), there's no new join
-shape to ratchet against for anything except Bucket A families, and each of those has its own
-per-writer conversion PR to come.
+shape to ratchet against for anything except Bucket A families, and Bucket A's readers were
+already routed in P1b.
 
 ### P3 — Chain planner pins inputs
 
