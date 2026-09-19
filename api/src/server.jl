@@ -50,6 +50,7 @@ include("storage_api.jl")
 include("setup_api.jl")
 include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
+include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
@@ -251,6 +252,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
     "/api/viewer/captures" => (req, body_bytes) -> (api_viewer_captures_list(req)),
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
+    "/api/push/target" => (req, body_bytes) -> (api_push_target_get(req)),
     "/api/labels/ids" => (req, body_bytes) -> (api_labels_ids(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
@@ -342,6 +344,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/denoise/delete" => (req, body_bytes) -> (api_denoise_delete(body_bytes)),
     # bidir share-in — POST-only; MCP client never authors a capture (see captures_api.jl).
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture(body_bytes)),
+    # bidir Part 5 (push pairing) — MCP client auto-pairs via middleware; also called by the
+    # explicit register_push_target tool. See push_api.jl.
+    "/api/push/target" => (req, body_bytes) -> (api_push_target_post(body_bytes)),
     "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),
     "/api/notebooks/write" => (req, body_bytes) -> (api_notebooks_write(body_bytes)),
     "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),

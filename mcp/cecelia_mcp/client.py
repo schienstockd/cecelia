@@ -31,6 +31,7 @@ dependency; the ``mcp`` SDK is needed only by ``server.py`` which wires these ca
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -101,6 +102,11 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/cells"),    # outline a set of label ids (cells) on the mask
         ("POST", "/api/viewer/marks/ui"),       # point at a UI anchor (a data-guide id or a nav path)
         ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a stored capture (cap-…) — 0..1 frame-relative coords
+        # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
+        # + auth token to the project so PR #2's Julia writer can push a capture-arrived
+        # notification directly. Auto-called by middleware on any tool with a project_uid so a
+        # fresh session pairs on first use without the user typing anything.
+        ("POST", "/api/push/target"),
     }
 )
 
@@ -183,10 +189,53 @@ class CeceliaClient:
     def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        # Auto-pair cache: project_uid → (socket_path, token) already POSTed for this session.
+        # Skips the round-trip after the first tool call per project as long as the env vars
+        # haven't rotated; a Claude Code session restart gets a new socket path (PID-named) and
+        # a fresh token, so any future MCP-server subprocess spawns with new env and repairs
+        # automatically. Set to None when running outside a Claude Code session (env vars
+        # absent) — then _maybe_pair is a no-op.
+        self._paired: dict[str, tuple[str, str]] = {}
+
+    def _maybe_pair(self, project_uid: str) -> None:
+        """If this Python process was spawned by a Claude Code session and the socket/token env
+        vars are readable, register (or refresh) this project's pairing record. Called on every
+        tool with a `project_uid`; no-op after the first hit per (project, socket, token). Silent
+        on any failure — a broken pair must never break a read tool.
+        """
+        socket_path = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET", "")
+        token       = os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN", "")
+        if not socket_path or not token or not project_uid:
+            return
+        if self._paired.get(project_uid) == (socket_path, token):
+            return
+        try:
+            self._request("POST", "/api/push/target", body={
+                "projectUid":    project_uid,
+                "socketPath":    socket_path,
+                "token":         token,
+                "sessionLabel":  os.environ.get("CLAUDE_CODE_SESSION_ID", "")[:8],
+                "pairedFromPid": os.environ.get("CLAUDE_PID", ""),
+            })
+            self._paired[project_uid] = (socket_path, token)
+        except Exception:  # noqa: BLE001 — pairing is best-effort, never surfaces as a tool error
+            pass
 
     def _request(self, method: str, path: str, params: dict | None = None, body: dict | None = None):
         if (method, path) not in ALLOWED_ROUTES:
             raise DisallowedRoute(f"{method} {path} is not an allowed observer route")
+        # Bidir Part 5 auto-pair: any request that names a project registers this Claude
+        # session's inbox socket for that project. Skips the pairing route itself (else
+        # infinite recursion). The first call per (project, socket, token) tuple triggers a
+        # single POST; every subsequent call is an in-memory cache hit. Silent on failure.
+        if path != "/api/push/target":
+            project_uid = ""
+            if isinstance(body, dict):
+                project_uid = str(body.get("projectUid", "") or "")
+            elif isinstance(params, dict):
+                project_uid = str(params.get("projectUid", "") or "")
+            if project_uid:
+                self._maybe_pair(project_uid)
         url = self.base_url + path
         if params:
             q = {k: v for k, v in params.items() if v is not None}  # drop unset optional params
@@ -422,6 +471,28 @@ class CeceliaClient:
             "/api/lablog/append",
             body={"projectUid": project_uid, "author": author, "lines": lines},
         )
+
+    def register_push_target(self, project_uid: str, session_label: str = ""):
+        # Explicit re-pair path: reads the same env vars `_maybe_pair` would, but forces a
+        # POST even when the in-memory cache says nothing changed. Used by the
+        # `register_push_target` MCP tool (`server.py`) so a user can nudge a stale record
+        # without waiting for the natural next tool call to auto-refresh it.
+        socket_path = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET", "")
+        token       = os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN", "")
+        if not socket_path or not token:
+            raise ApiError(0, "no CLAUDE_CODE_MESSAGING_SOCKET/TOKEN in this process — is the MCP "
+                              "server running under Claude Code v2.1.224+?")
+        label = session_label or os.environ.get("CLAUDE_CODE_SESSION_ID", "")[:8]
+        pid   = os.environ.get("CLAUDE_PID", "")
+        out = self._request("POST", "/api/push/target", body={
+            "projectUid":    project_uid,
+            "socketPath":    socket_path,
+            "token":         token,
+            "sessionLabel":  label,
+            "pairedFromPid": pid,
+        })
+        self._paired[project_uid] = (socket_path, token)
+        return out
 
     def create_notebook(self, project_uid: str, name: str, cells: list[str], description: str = ""):
         # Create-only (409 if the name exists). `cells` = Julia cell sources; the env-activation cell

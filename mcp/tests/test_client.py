@@ -64,6 +64,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/notebooks/revise"),
             ("POST", "/api/notebooks/write"),
             ("POST", "/api/observer/labarchives/set"),
+            ("POST", "/api/push/target"),
             ("POST", "/api/viewer/marks/cells"),
             ("POST", "/api/viewer/marks/freeform"),
             ("POST", "/api/viewer/marks/tracks"),
@@ -561,14 +562,101 @@ class ClientTest(unittest.TestCase):
         )
 
     def test_http_error_becomes_apierror_with_detail(self):
-        err = urllib.error.HTTPError(
-            "http://x", 404, "nf", {}, io.BytesIO(json.dumps({"error": "Project not found"}).encode())
-        )
-        with mock.patch("cecelia_mcp.client.urllib.request.urlopen", side_effect=err):
+        # clear=True on os.environ isolates the test from the bidir Part 5 auto-pair middleware
+        # (which would fire an extra /api/push/target POST if CLAUDE_CODE_MESSAGING_* were set,
+        # consuming the shared HTTPError body). Factory raises a fresh HTTPError per call so a
+        # future test that keeps env set still gets a virgin body pointer on each urlopen.
+        def make_err(*a, **kw):
+            raise urllib.error.HTTPError(
+                "http://x", 404, "nf", {},
+                io.BytesIO(json.dumps({"error": "Project not found"}).encode()),
+            )
+        with mock.patch.dict("os.environ", {}, clear=True), \
+             mock.patch("cecelia_mcp.client.urllib.request.urlopen", side_effect=make_err):
             with self.assertRaises(ApiError) as ctx:
                 self.c.list_images("nope")
         self.assertEqual(ctx.exception.status, 404)
         self.assertIn("Project not found", ctx.exception.message)
+
+    # ── Bidir Part 5 push pairing (BIDIR_PUSH_PLAN PR #1) ────────────────────────
+    def test_auto_pair_noop_when_env_missing(self):
+        # No CLAUDE_CODE_MESSAGING_SOCKET / TOKEN in the process (running under an old Claude Code,
+        # standalone, or outside any Claude session) ⇒ auto-pair must be silent, and the real
+        # tool call still goes through. This is the "runs anywhere" contract for the middleware.
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"images": []}) as up:
+            self.c.list_images("proj-abc")
+        # exactly one HTTP call: the tool's own, no auto-pair POST
+        self.assertEqual(up.call_count, 1)
+        req = up.call_args[0][0]
+        self.assertTrue(req.full_url.endswith("/api/images?projectUid=proj-abc"))
+        self.assertEqual({}, self.c._paired)
+
+    def test_auto_pair_fires_once_per_project(self):
+        # First tool call in a session with the env vars set: two HTTP calls — the pairing POST
+        # and the real tool. Second call: cache hit, only the tool call.
+        env = {
+            "CLAUDE_CODE_MESSAGING_SOCKET": "/run/user/1000/cc-socks/12345.sock",
+            "CLAUDE_CODE_MESSAGING_TOKEN":  "tok-abc",
+            "CLAUDE_CODE_SESSION_ID":       "abcdef12-3456-7890",
+            "CLAUDE_PID":                   "12345",
+        }
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"images": []}) as up:
+            self.c.list_images("proj-abc")
+            self.assertEqual(up.call_count, 2)  # pair POST + list_images GET
+            # first call is the auto-pair POST — assert its body carries the socket+token
+            pair_req = up.call_args_list[0][0][0]
+            self.assertEqual(pair_req.method, "POST")
+            self.assertTrue(pair_req.full_url.endswith("/api/push/target"))
+            body = json.loads(pair_req.data.decode())
+            self.assertEqual(body["projectUid"], "proj-abc")
+            self.assertEqual(body["socketPath"], "/run/user/1000/cc-socks/12345.sock")
+            self.assertEqual(body["token"], "tok-abc")
+            self.assertEqual(body["pairedFromPid"], "12345")
+            # second tool call on the same project ⇒ no extra pair POST
+            up.reset_mock()
+            self.c.list_images("proj-abc")
+            self.assertEqual(up.call_count, 1)
+            self.assertTrue(up.call_args[0][0].full_url.endswith("/api/images?projectUid=proj-abc"))
+
+    def test_auto_pair_refires_on_different_project(self):
+        # Two projects touched in one session ⇒ two pair POSTs (one per project), then cached.
+        env = {"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s.sock",
+               "CLAUDE_CODE_MESSAGING_TOKEN":  "t"}
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"images": []}) as up:
+            self.c.list_images("proj-a")
+            self.c.list_images("proj-b")
+            self.c.list_images("proj-a")   # cached
+            self.c.list_images("proj-b")   # cached
+        # 4 tool calls + 2 pair POSTs = 6
+        self.assertEqual(up.call_count, 6)
+        methods = [call[0][0].method for call in up.call_args_list]
+        # first two calls: pair POST then list_images GET for proj-a
+        self.assertEqual(methods[0], "POST")
+        self.assertEqual(methods[1], "GET")
+        # third + fourth: pair POST then list_images GET for proj-b
+        self.assertEqual(methods[2], "POST")
+        self.assertEqual(methods[3], "GET")
+        # last two: cached — no pair POST
+        self.assertEqual(methods[4], "GET")
+        self.assertEqual(methods[5], "GET")
+
+    def test_auto_pair_never_recurses_on_the_pairing_route(self):
+        # A POST to /api/push/target must not itself trigger auto-pair (infinite recursion). The
+        # explicit register_push_target path exercises this: only ONE POST hits urlopen.
+        env = {"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s.sock",
+               "CLAUDE_CODE_MESSAGING_TOKEN":  "t"}
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"ok": True}) as up:
+            self.c.register_push_target("proj-a")
+        self.assertEqual(up.call_count, 1)
+        self.assertEqual(up.call_args[0][0].method, "POST")
+
+    def test_register_push_target_errors_without_env(self):
+        # Explicit re-pair when env vars are absent ⇒ ApiError with an actionable message so the
+        # user knows the fix is to upgrade Claude Code (not to keep retrying).
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ApiError) as ctx:
+                self.c.register_push_target("proj-a")
+        self.assertIn("CLAUDE_CODE_MESSAGING", ctx.exception.message)
 
     def test_unreachable_api_becomes_apierror(self):
         with mock.patch(

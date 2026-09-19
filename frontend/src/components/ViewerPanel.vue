@@ -9,6 +9,7 @@ import { useTaskStore } from '../stores/tasks'
 import { useViewerStore } from '../stores/viewer'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { getOpenPopoutWindow } from '../lib/popout'
+import { fetchPushTarget, pushChipLabel, type PairedState } from '../utils/pushTarget'
 import { screenshotFilename } from '../utils/viewerScreenshot'
 import { downloadDataUrl } from '../plots/export'
 import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
@@ -403,7 +404,24 @@ function openShare() {
   begin()
   // Focus the pop-out so the user sees the drawing toolbar without alt-tab.
   try { vw.focus() } catch { /* nicety */ }
+  // Refresh the pairing chip on Share — a fresh auto-pair from any MCP tool call landed on
+  // the server by now, so the state the user sees under the button reflects reality at the
+  // moment they shared. Cheap read; no wire cost when unpaired (empty file, 200 fast).
+  void refreshPushTarget()
 }
+
+// ── Push pairing chip (BIDIR Part 5, BIDIR_PUSH_PLAN PR #1) ────────────────────────────────
+// Shows "paired ✓" / "paired ✓ <label>" / "not paired" beside the Share button so the user
+// knows whether a shared frame will notify their Claude session over the socket (PR #2), or
+// silently fall back to the existing clipboard/toast when it lands. The chip observes only —
+// pairing is written by the MCP client middleware on any tool with a project_uid, or by the
+// explicit register_push_target MCP tool.
+const pushTarget = ref<PairedState>({ paired: false })
+async function refreshPushTarget() {
+  const uid = projectMeta.current?.uid
+  pushTarget.value = uid ? await fetchPushTarget(uid) : { paired: false }
+}
+watch(() => projectMeta.current?.uid ?? '', () => { void refreshPushTarget() }, { immediate: true })
 
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
 // populations/colour-by are shown) to an .mp4 under the project's movies/ folder.
@@ -1031,6 +1049,13 @@ onUnmounted(() => {
                   v-tooltip.bottom="'Draw on the viewer and share it with Claude (BIDIR share-in)'">
             <i class="pi pi-send" />
           </button>
+          <span class="cc-muted cc-fs-2xs push-chip"
+                :class="{ 'push-chip-paired': pushTarget.paired }"
+                v-tooltip.bottom="pushTarget.paired
+                  ? `Paired — shared frames post to your Claude session\nSocket: ${pushTarget.socketPath}`
+                  : 'No paired Claude session — shared frames fall back to the clipboard'">
+            {{ pushChipLabel(pushTarget) }}
+          </span>
         </div>
         <InlineNote v-if="shareNote" :severity="shareNote.severity"
                     :short="shareNote.short" :detail="shareNote.detail" />
@@ -1211,5 +1236,10 @@ onUnmounted(() => {
   letter-spacing: 0.03em;
   line-height: 1;
 }
+
+/* Push pairing chip beside the Share button — advisory only, so it sits at eyebrow weight in
+   muted foreground when unpaired and inherits the accent when a Claude session is registered. */
+.push-chip { padding-inline: 0.35rem; line-height: 1; align-self: center; }
+.push-chip-paired { color: var(--cc-accent); }
 
 </style>
