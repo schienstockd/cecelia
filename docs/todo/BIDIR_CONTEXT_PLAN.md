@@ -326,6 +326,18 @@ Decision 24. Renders Markdown via `marked` (already used by `lib/whatsNew.ts`) +
 ```` ```mermaid ```` fences. Version list UI mirrors `NotebookTable.vue`'s Restore + Prune inline
 pattern.
 
+**Ship 2026-09-19 — backend + MCP first, Vue page held for eyeballing.** `api/src/blackboard_api.jl`
+lands with the full CRUD/versioning shape (create + revise + restore + prune + delete + list + read
+at a version). Storage is per-project `<proj>/blackboard/<entryId>/{entry.md, meta.json,
+.snapshots/entry@v<N>.md}` + registry at `<proj>/settings/blackboard.json`, mirroring the
+notebooks shape (Decision 21 — reimplement locally, no shared versioning helper before rule-of-
+three fires). MCP exposes `list_blackboard_entries`, `read_blackboard_entry`,
+`create_blackboard_entry`, `revise_blackboard_entry` (server + client + guidance + allow-list;
+restore / prune / delete stay off the MCP surface, matching notebooks). Restore also snapshots
+CURRENT before restoring, fixing the "un-snapshotted edits vanish" papercut called out in
+Decision 21. Vue page ships in a follow-up PR (Markdown + Mermaid rendering is untestable via
+unit tests and wants a browser eyeball).
+
 **Versioning + pruning.** Reimplement notebook shape locally (Decision 21). Fix the "restore loses
 un-snapshotted edits" papercut in Blackboard.
 
