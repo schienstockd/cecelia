@@ -9,10 +9,12 @@
   the canvas rect and re-labels what they now see. Pure decoration — `pointer-events: none`, no
   click handling, doesn't intercept the viewer's own pan/zoom.
 
-  SVG with `viewBox="0 0 100 100"` + `preserveAspectRatio="none"` so a percentage-of-viewport
-  layout scales cleanly to whatever CSS size the canvas actually settles at (the viewer canvas is
-  responsive; a fixed pixel viewBox would tear on resize). Labels are counter-scaled to real px so
-  they read the same at any density.
+  Two layers because SVG text sizing and non-uniform viewBox don't mix: lines are an SVG with
+  `viewBox="0 0 100 100"` + `preserveAspectRatio="none"` (percentage-of-viewport, stretches to
+  whatever CSS size the canvas settles at); labels are absolutely-positioned HTML at fractional
+  `top`/`left` so the font stays at a real CSS px size regardless of viewport aspect or density.
+  A single SVG can't do both — `font-size` in SVG is in user units, so a stretched 100×100 viewBox
+  renders 12-unit text as many CSS pixels; a non-square viewport also distorts it.
 
   Cell math + labels live in `utils/gridOverlay.ts` (pure, tested). This component is layout only.
 -->
@@ -38,42 +40,47 @@ const cellH = computed(() => vbH / nRows.value)
 </script>
 
 <template>
-  <svg class="cc-grid-overlay" aria-hidden="true"
-       :viewBox="`0 0 ${vbW} ${vbH}`" preserveAspectRatio="none">
-    <!-- interior column dividers: N-1 vertical lines at fractional x positions; skip the outer
-         edges so the border doesn't double against the canvas frame. -->
-    <line v-for="i in nCols - 1" :key="`v${i}`" :x1="i * cellW" :y1="0" :x2="i * cellW" :y2="vbH"
-          class="cc-grid-line" vector-effect="non-scaling-stroke" />
-    <line v-for="i in nRows - 1" :key="`h${i}`" :x1="0" :y1="i * cellH" :x2="vbW" :y2="i * cellH"
-          class="cc-grid-line" vector-effect="non-scaling-stroke" />
-    <!-- labels centred in each cell. `vector-effect` doesn't apply to text; the counter-scale
-         is unnecessary because we use screen-px font sizing (SVG `font-size` in the CSS below,
-         combined with `preserveAspectRatio="none"` on a stretched viewBox, still renders at the
-         CSS font size because SVG text metrics come from CSS, not viewBox units). -->
-    <text v-for="c in cells" :key="c.label"
-          :x="(c.col + 0.5) * cellW" :y="(c.row + 0.5) * cellH"
-          class="cc-grid-label" text-anchor="middle" dominant-baseline="central">{{ c.label }}</text>
-  </svg>
+  <div class="cc-grid-overlay" aria-hidden="true">
+    <svg class="cc-grid-lines"
+         :viewBox="`0 0 ${vbW} ${vbH}`" preserveAspectRatio="none">
+      <!-- interior column / row dividers: N-1 lines at fractional positions; outer edges skipped
+           so the border doesn't double against the canvas frame. `non-scaling-stroke` pins the
+           line at 1 CSS pixel regardless of viewport size. -->
+      <line v-for="i in nCols - 1" :key="`v${i}`" :x1="i * cellW" :y1="0" :x2="i * cellW" :y2="vbH"
+            class="cc-grid-line" vector-effect="non-scaling-stroke" />
+      <line v-for="i in nRows - 1" :key="`h${i}`" :x1="0" :y1="i * cellH" :x2="vbW" :y2="i * cellH"
+            class="cc-grid-line" vector-effect="non-scaling-stroke" />
+    </svg>
+    <span v-for="c in cells" :key="c.label" class="cc-grid-label"
+          :style="{ top: `${(c.row + 0.5) * cellH}%`, left: `${(c.col + 0.5) * cellW}%` }">
+      {{ c.label }}
+    </span>
+  </div>
 </template>
 
 <style scoped>
 .cc-grid-overlay {
   position: absolute; inset: 0;
-  width: 100%; height: 100%;
   pointer-events: none;                        /* never blocks the viewer's own pan/zoom */
   user-select: none;
+}
+.cc-grid-lines {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
 }
 .cc-grid-line {
   stroke: rgba(255, 255, 255, 0.35);
   stroke-width: 1;                             /* non-scaling-stroke keeps this at 1 CSS pixel */
 }
 .cc-grid-label {
-  fill: #fff;
-  font: 600 12px system-ui, sans-serif;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font: 600 11px system-ui, sans-serif;
   /* dark halo for legibility over any frame, matching StillOverlay's white/dark chrome pattern */
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.75);
-  stroke-width: 3;
-  stroke-linejoin: round;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.9),
+    0 0 3px rgba(0, 0, 0, 0.75);
+  white-space: nowrap;
 }
 </style>
