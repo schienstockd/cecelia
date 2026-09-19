@@ -13,7 +13,9 @@
 # `limit` ids across the full population — same first + last, but the middle is thinned — so a
 # consumer that wants to "point at a few random cells" gets coverage, not just the first N.
 
-using DataFrames
+# NB: `api/` does not `using DataFrames` — every other handler pulls columns off DataFrames via
+# `df.label` (which is `getproperty`, no DataFrames methods needed) and lengths via `length(...)`
+# rather than `nrow`/`names`. Same convention as tracking_api.jl / viewer_api.jl.
 
 const _LABELS_KINDS = ("cells", "tracks")
 const _LABELS_DEFAULT_LIMIT = 200
