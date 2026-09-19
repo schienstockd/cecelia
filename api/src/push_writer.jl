@@ -76,8 +76,22 @@ function push_capture_notification(project_uid::AbstractString, capture_id::Abst
     end
     if !ok
         _clear_push_target_silent(project_uid)
+        # BIDIR Part 5 PR #3: broadcast so the chip flips from "paired ✓" → "not paired"
+        # without waiting for the next Share click. Same shape as the pair-write broadcast
+        # (push_api.jl), just with `paired: false`.
+        broadcast_ws(Dict{String,Any}(
+            "type" => "push_target:changed", "projectUid" => String(project_uid),
+            "paired" => false,
+        ))
         return (:fallback, content)
     end
+    # Push landed. Announce it so the frontend chip can show a transient "sent ✓" state.
+    # Include capture_id so a viewer showing that capture can react specifically. No user
+    # content — this is a delivery signal, not a data channel.
+    broadcast_ws(Dict{String,Any}(
+        "type" => "push:sent", "projectUid" => String(project_uid),
+        "captureId" => String(capture_id),
+    ))
     (:sent, content)
 end
 

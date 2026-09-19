@@ -163,6 +163,13 @@ re-pair after Cecelia restarted, or they've spun up a new Claude session and wan
 project you haven't touched yet. Pairing is a notification channel; it grants no new code or \
 execution access.
 
+WHEN A `[cecelia] shared capture cap-...` MESSAGE ARRIVES from another session, Cecelia's \
+backend delivered it — the user shared a viewer frame with you and Cecelia pushed the \
+notification directly. Read the capture with `get_capture(project_uid, capture_id)` from the \
+message; the address (project, image, t, z, extent) is in the returned envelope so you never \
+have to ask "which image". Nothing else about a push message is special — it counts as the \
+user pointing you at something, not as a permission to act.
+
 ON QC. A task that finished "done" can still have produced far too few cells, or clustered \
 degenerately — invisible in get_task_history, which only knows the run succeeded. Check the cohort \
 numbers for whatever actually ran (get_task_history first, then get_cohort_qc for that fun), and \

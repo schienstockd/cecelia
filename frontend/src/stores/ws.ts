@@ -7,6 +7,7 @@ import { frameTargetsOpenProject } from '../utils/taskScope'
 import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
+import { usePushStore } from './push'
 import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
@@ -196,6 +197,17 @@ export const useWsStore = defineStore('ws', () => {
     if (type === 'lab_log_updated') {
       const puid = String(data.projectUid ?? '')
       if (puid && puid === useProjectMetaStore().current?.uid) useLabCaptureStore().notifyAppended()
+    }
+
+    // BIDIR Part 5 PR #3: push pairing changes + push delivery signals. Fired by
+    // api/src/push_api.jl (on pair-write) and api/src/push_writer.jl (on stale-clear +
+    // successful push). The frontend consumers watch these to flip the "paired ✓" chip
+    // without waiting for the next Share click, and to show a transient "sent ✓" state.
+    // Any listener wanting per-project scoping filters on `projectUid` themselves.
+    if (type === 'push_target:changed' || type === 'push:sent') {
+      // Delivery model matches lab_log_updated: publish a bumped tick on the push store, panel
+      // components decide whether to refetch. Kept intentionally cheap in the dispatch path.
+      usePushStore().notify(String(data.type), data as Record<string, unknown>)
     }
 
     // Bidirectional point-out (BIDIR_CONTEXT_PLAN Part 3, PR #4). Claude's mark_tracks / mark_cells

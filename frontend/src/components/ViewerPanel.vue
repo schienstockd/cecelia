@@ -10,6 +10,7 @@ import { useViewerStore } from '../stores/viewer'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { getOpenPopoutWindow } from '../lib/popout'
 import { fetchPushTarget, pushChipLabel, type PairedState } from '../utils/pushTarget'
+import { usePushStore } from '../stores/push'
 import { screenshotFilename } from '../utils/viewerScreenshot'
 import { downloadDataUrl } from '../plots/export'
 import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
@@ -410,17 +411,44 @@ function openShare() {
   void refreshPushTarget()
 }
 
-// ── Push pairing chip (BIDIR Part 5, BIDIR_PUSH_PLAN PR #1) ────────────────────────────────
+// ── Push pairing chip (BIDIR Part 5, BIDIR_PUSH_PLAN PR #1 + #3) ───────────────────────────
 // Shows "paired ✓" / "paired ✓ <label>" / "not paired" beside the Share button so the user
 // knows whether a shared frame will notify their Claude session over the socket (PR #2), or
-// silently fall back to the existing clipboard/toast when it lands. The chip observes only —
-// pairing is written by the MCP client middleware on any tool with a project_uid, or by the
-// explicit register_push_target MCP tool.
+// silently fall back to the existing clipboard/toast when it lands. PR #3 adds: a transient
+// "sent ✓" flash when a push lands, and WS-driven refresh on pair changes (no wait for the
+// next Share click).
 const pushTarget = ref<PairedState>({ paired: false })
+const pushSentFlash = ref(false)  // ~3 s "sent ✓" state after a successful push
+let pushFlashTimer: ReturnType<typeof setTimeout> | null = null
+
 async function refreshPushTarget() {
   const uid = projectMeta.current?.uid
   pushTarget.value = uid ? await fetchPushTarget(uid) : { paired: false }
 }
+
+const pushStore = usePushStore()
+// React to backend push events. Filter by current project — a stray broadcast for another
+// project is silently ignored. Same filter shape as `viewer:mark` in stores/ws.ts.
+watch(() => pushStore.tick, () => {
+  const evt = pushStore.lastEvent
+  if (!evt) return
+  const openProj = projectMeta.current?.uid ?? ''
+  if (evt.projectUid && openProj && evt.projectUid !== openProj) return
+  if (evt.kind === 'push_target:changed') {
+    // Refetch rather than trusting the payload — the file is small and this happens once per
+    // change, and the GET response is what the chip already reads on mount / Share click.
+    void refreshPushTarget()
+  } else if (evt.kind === 'push:sent') {
+    // Transient "sent ✓" flash; auto-dismisses after 3 s so the chip returns to its steady
+    // "paired ✓" reading. The push writer's success message already reached the user's
+    // Claude session — this is just a local acknowledgement.
+    pushSentFlash.value = true
+    if (pushFlashTimer) clearTimeout(pushFlashTimer)
+    pushFlashTimer = setTimeout(() => { pushSentFlash.value = false; pushFlashTimer = null }, 3000)
+  }
+})
+onUnmounted(() => { if (pushFlashTimer) clearTimeout(pushFlashTimer) })
+
 watch(() => projectMeta.current?.uid ?? '', () => { void refreshPushTarget() }, { immediate: true })
 
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
@@ -1050,11 +1078,13 @@ onUnmounted(() => {
             <i class="pi pi-send" />
           </button>
           <span class="cc-muted cc-fs-2xs push-chip"
-                :class="{ 'push-chip-paired': pushTarget.paired }"
-                v-tooltip.bottom="pushTarget.paired
-                  ? `Paired — shared frames post to your Claude session\nSocket: ${pushTarget.socketPath}`
-                  : 'No paired Claude session — shared frames fall back to the clipboard'">
-            {{ pushChipLabel(pushTarget) }}
+                :class="{ 'push-chip-paired': pushTarget.paired, 'push-chip-sent': pushSentFlash }"
+                v-tooltip.bottom="pushSentFlash
+                  ? 'Sent to your paired Claude session'
+                  : pushTarget.paired
+                    ? `Paired — shared frames post to your Claude session\nSocket: ${pushTarget.socketPath}`
+                    : 'No paired Claude session — shared frames fall back to the clipboard'">
+            {{ pushSentFlash ? 'sent ✓' : pushChipLabel(pushTarget) }}
           </span>
         </div>
         <InlineNote v-if="shareNote" :severity="shareNote.severity"
@@ -1239,7 +1269,11 @@ onUnmounted(() => {
 
 /* Push pairing chip beside the Share button — advisory only, so it sits at eyebrow weight in
    muted foreground when unpaired and inherits the accent when a Claude session is registered. */
-.push-chip { padding-inline: 0.35rem; line-height: 1; align-self: center; }
+.push-chip { padding-inline: 0.35rem; line-height: 1; align-self: center;
+             transition: color 0.15s ease; }
 .push-chip-paired { color: var(--cc-accent); }
+/* transient "sent ✓" flash lands on the successful-severity token so it reads as good news;
+   auto-dismisses after 3 s from usePushStore → pushSentFlash timeout in the setup. */
+.push-chip-sent   { color: var(--cc-sev-ok, var(--cc-accent)); font-weight: 600; }
 
 </style>
