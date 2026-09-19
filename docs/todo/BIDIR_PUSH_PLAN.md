@@ -1,6 +1,7 @@
 # Real Push Delivery for Share-In — plan
 
-**Status:** PR #1 shipped 2026-09-19 (`#1048`); PR #2–#3 planning. Design work archived at
+**Status:** PR #1 shipped 2026-09-19 (`#1048`); PR #2 shipped 2026-09-19 (`#1049`, stacked on
+#1048); PR #3 planning. Design work archived at
 [`docs/archive/cross-session-push-prompt.md`](../archive/cross-session-push-prompt.md); this doc is
 the settled version. Sits under `Part 5` of
 [`docs/todo/BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md) as a follow-up to PR #3 (share-in
@@ -147,19 +148,30 @@ leaves the system in a worse state than `#1040`'s stand-in.
    ~450 lines (5 new client tests + 5 new frontend tests). Design shifted from the plan's
    original "one Claude-side command" model to fully implicit auto-pair — see Decision 1
    amendment.
-2. **Push writer + fallback wiring.** `api/src/push_writer.jl` (Unix socket writer with the
-   auth line + message + Windows named-pipe branch); `format_capture_message` helper; wire
-   from `captures_api.jl::api_viewer_capture_post` after the file write; any failure ⇒
-   `:fallback`, stale-socket clearing per Decision 12. Frontend chip renders the four states
-   from Decision 10. ~300 lines.
-3. **UI polish + optional delivery ACK.** Chip visual states; `paired: delivered` via
-   Decision 11's optional MCP counter (only if the "sent vs delivered" distinction proves
-   useful in real use — the value is unclear without running it). Doc updates: append to
-   `BRIEFING_GUIDANCE` per Decision 15; append to
-   [`docs/BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md) → *PR sequence* as PR #8; add row to
-   `docs/MAP.md`; add outcome note to
+2. **Push writer + fallback wiring (shipped PR #1049, 2026-09-19).** `api/src/push_writer.jl`
+   opens the paired session's inbox socket, sends the auth line + message line, closes; any
+   exception ⇒ `:fallback` + stale record cleared. `format_capture_message` locked as the ONE
+   wording (Decision 5). `captures_api.jl::api_viewer_capture` calls it after the capture is
+   on disk; response body carries `push: "sent" | "fallback" | "not_paired"`.
+   `ViewerWindow.vue` reads the outcome — `"sent"` shows a "sent to your Claude session"
+   toast and skips the clipboard; anything else keeps the existing `#1040` clipboard/toast
+   flow. 4 new `@testset`s cover wording, unpaired, socket round-trip, stale clearing.
+   Native Windows named-pipe branch untested (Open Item 2). ~300 lines. Chip stays at the
+   two-state "paired ✓ / not paired" for this PR; the four-state chip from Decision 10 lands
+   in PR #3.
+3. **UI polish + delivery ACK via `crossSessionInbound` notice-back (planning).** The docs
+   confirm the receiver sends notices back — held / delivered / denied / expired — on the
+   same socket connection the sender opened. PR #2's writer opens the connection, writes
+   both lines and closes immediately; PR #3 keeps the connection open for a short window
+   (~2 s) after the message, reads and parses any inbound notice frames, and records the
+   outcome per `captureId` in an in-memory registry the frontend can query (GET
+   `/api/push/status?captureId=…`). Chip then renders the four states from Decision 10
+   truthfully — `sent → held / delivered / denied` — with a fifth `fell back to clipboard`
+   already correct today. Also: WS `push_target:changed` broadcast so the chip flips
+   without waiting for the next Share click; guidance addition per Decision 15; row to
+   `docs/MAP.md`; outcome note on
    [`docs/archive/cross-session-push-prompt.md`](../archive/cross-session-push-prompt.md).
-   ~150 lines.
+   ~250 lines.
 
 Dependencies: PR #2 depends on PR #1's `push_target.json` reader. PR #3 depends on both. Nothing
 else cross-depends.
