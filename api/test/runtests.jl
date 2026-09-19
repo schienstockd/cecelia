@@ -5496,6 +5496,7 @@ end
         "/api/viewer/record-test",
         "/api/viewer/thumbnail",
         "/api/push/target",   # bidir push (PR #1048) — POST writes/refreshes the per-project pairing record
+        "/api/push/target/clear",   # Kiwi PR #3 — manual unpair; deletes the pairing record
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -5536,7 +5537,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 96 && length(POST_ROUTES) == 121
+    @test length(GET_ROUTES) == 96 && length(POST_ROUTES) == 122
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -9001,6 +9002,48 @@ end
         @test outcome === :fallback
         # Stale record cleared silently — no leftover file to re-attempt next time.
         @test !isfile(target_json)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: POST /api/push/target/clear removes the pairing record (Kiwi PR #3)" begin
+    # Manual unpair — the Kiwi cockpit's "Clear pairing" button. Deletes the file if present;
+    # succeeds silently when it wasn't there (idempotent).
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-push-clear")
+        target_dir = joinpath(tmp, proj.uid, "settings")
+        mkpath(target_dir)
+        target_json = joinpath(target_dir, "push_target.json")
+        write_json_atomic(target_json, Dict{String,Any}(
+            "socketPath" => "/tmp/nowhere.sock", "token" => "t",
+        ))
+        @test isfile(target_json)
+
+        # Clear it via the HTTP handler. Rebuild the body each call — `_parse_body` moves the
+        # bytes into a String, so a reused Vector{UInt8} reads empty on the second dispatch.
+        make_body() = Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid)))
+        status, resp = api_push_target_clear(make_body())
+        @test status == 200
+        parsed = JSON3.read(resp, Dict{String,Any})
+        @test parsed["ok"] == true
+        @test parsed["cleared"] == true
+        @test !isfile(target_json)
+
+        # Second clear on an already-gone file — still 200, cleared: false.
+        status2, resp2 = api_push_target_clear(make_body())
+        @test status2 == 200
+        @test JSON3.read(resp2, Dict{String,Any})["cleared"] == false
+
+        # Bad inputs — 400 on empty projectUid, 404 on unknown project.
+        st400, _ = api_push_target_clear(Vector{UInt8}(JSON3.write(Dict("projectUid" => ""))))
+        @test st400 == 400
+        st404, _ = api_push_target_clear(Vector{UInt8}(JSON3.write(Dict("projectUid" => "does-not-exist"))))
+        @test st404 == 404
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

@@ -350,6 +350,8 @@ const _POST_ROUTES = Dict{String, Function}(
     # bidir Part 5 (push pairing) — MCP client auto-pairs via middleware; also called by the
     # explicit register_push_target tool. See push_api.jl.
     "/api/push/target" => (req, body_bytes) -> (api_push_target_post(body_bytes)),
+    # Kiwi PR #3 — manual unpair. Deletes the pairing record; next MCP tool call re-pairs.
+    "/api/push/target/clear" => (req, body_bytes) -> (api_push_target_clear(body_bytes)),
     "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),
     "/api/notebooks/write" => (req, body_bytes) -> (api_notebooks_write(body_bytes)),
     "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),
