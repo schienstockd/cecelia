@@ -292,12 +292,13 @@ Only after P1 shows sub-behavior structure.
     `app/src/plotDefinitions/motif_class_frequency.json` (PR #TBD).
     Mirrors `hmm_state_frequency.json` exactly (3 popTypes at cell
     granularity, `obsMeasurePatterns: [{match: "motif.class"}]`).
-- **`motifCards` InteractiveView** — mirror `cellCards`
-  (`docs/todo/CELL_CARDS_PLAN.md` Decisions 0/1/3/4). One card per
-  motif class; medoid = motif instance closest to its class centroid
-  in DTW space; filmstrip cropped to `(t_start, t_end)` via
-  `render_view_frame` (`api/src/image_render.jl`). Rides the Cell
-  Cards Phase-2 StripCell extraction rather than growing its own.
+- **`motifCards` InteractiveView** — **subsumed into
+  `docs/todo/BEHAVIOUR_CARDS_PLAN.md`** (2026-09-19). motifCards ships
+  as one instance of the shared `CardsPanelBase` extraction alongside
+  `cellCards` (existing) and `hmmCards` (new). One card per motif
+  class; medoid = motif instance closest to its class centroid in DTW
+  space (Decision 5 above provides the medoids on the sidecar);
+  filmstrip cropped to `(t_start, t_start + windowSize - 1)`.
 - **`motifRibbon` InteractiveView** — per-track colour-bar over
   time, one lane per (image × track); grouped by `track_plot_groups`
   (`app/src/tracking/track_cohort.jl`). regl-scatterplot rect mode
