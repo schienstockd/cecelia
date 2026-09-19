@@ -1346,6 +1346,76 @@ end
     end
 end
 
+@testset "API: viewer/capture write + list + read round-trip" begin
+    # BIDIR_CONTEXT_PLAN Part 2 (share-in). Envelope lands under <proj>/captures/<id>/{meta.json,
+    # frame.png}; list returns newest-first with `address`; read inlines the frame as a data URL.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    # a 1×1 PNG (base64) — smallest legal payload
+    png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg=="
+    frame_data_url = "data:image/png;base64," * png_b64
+    try
+        uid = "TESTCAP"; mkpath(joinpath(tmp, uid))
+        w(b) = _post(api_viewer_capture, b)
+        # guards
+        @test w(Dict("frames"=>[Dict("png"=>frame_data_url)]))[1] == 400              # projectUid required
+        @test w(Dict("projectUid"=>"NOPE", "frames"=>[Dict("png"=>frame_data_url)]))[1] == 404
+        @test w(Dict("projectUid"=>uid))[1] == 400                                     # frames required
+        @test w(Dict("projectUid"=>uid, "frames"=>[Dict("png"=>"not-a-png")]))[1] == 400
+        @test w(Dict("projectUid"=>uid, "frames"=>[Dict("png"=>"data:image/jpeg;base64,/9j/AA==")]))[1] == 400  # not a PNG
+
+        addr = Dict("projectUid"=>uid, "imageUid"=>"IMG1", "valueName"=>"default", "t"=>3)
+        overlay = [Dict("kind"=>"rect", "geom"=>Dict("x"=>0.1, "y"=>0.1, "w"=>0.2, "h"=>0.2)),
+                   Dict("kind"=>"bogus", "geom"=>Dict()),               # unknown kind — dropped
+                   Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.0,0.0],[1.0,1.0]]), "label"=>"trail")]
+        st, body = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
+                          "frames"=>[Dict("png"=>frame_data_url)], "overlay"=>overlay))
+        @test st == 200
+        r = JSON3.read(body)
+        @test r.ok == true && !isempty(String(r.captureId))
+        cap_id = String(r.captureId)
+        @test occursin(r"^cap-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}$", cap_id)
+        cap_dir = joinpath(tmp, uid, "captures", cap_id)
+        @test isdir(cap_dir) && isfile(joinpath(cap_dir, "meta.json")) && isfile(joinpath(cap_dir, "frame.png"))
+
+        # list — newest first, address preserved, item is the one we just wrote
+        st2, body2 = api_viewer_captures_list(HTTP.Request("GET",
+            "/api/viewer/captures?projectUid=$uid&limit=5"))
+        @test st2 == 200
+        items = JSON3.read(body2).items
+        @test length(items) == 1
+        @test String(items[1].captureId) == cap_id
+        @test String(items[1].surface) == "viewer_frame"
+        @test String(items[1].address.imageUid) == "IMG1"
+
+        # get — envelope round-trips, unknown overlay kind is dropped, frame is inlined
+        st3, body3 = api_viewer_capture_get(HTTP.Request("GET",
+            "/api/viewer/capture?projectUid=$uid&captureId=$cap_id"))
+        @test st3 == 200
+        got = JSON3.read(body3)
+        @test String(got.capture.captureId) == cap_id
+        @test length(got.capture.overlay) == 2                # bogus kind stripped
+        @test startswith(String(got.frame), "data:image/png;base64,")
+
+        # guards on the read side
+        @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture"))[1] == 400
+        @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture?projectUid=$uid"))[1] == 400
+        @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture?projectUid=$uid&captureId=nope"))[1] == 400
+        @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture?projectUid=$uid&captureId=cap-20260101T000000-abcdef"))[1] == 404
+        @test api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures"))[1] == 400
+        @test api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures?projectUid=NOPE"))[1] == 404
+
+        # empty list when the project has no captures dir yet
+        uid2 = "TESTCAP2"; mkpath(joinpath(tmp, uid2))
+        st4, body4 = api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures?projectUid=$uid2"))
+        @test st4 == 200 && isempty(JSON3.read(body4).items)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: notebooks sysimage status" begin
     # status always carries a `sysimage` field, one of the valid states (machine-independent: deps.so
     # may or may not exist here). Pins the response contract the frontend's first-run build reads.
@@ -5242,6 +5312,8 @@ end
         "/api/viewer/meta",
         "/api/viewer/overlays",
         "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
+        "/api/viewer/captures",   # bidir share-in list; POST /api/viewer/capture at the same singular path
+        "/api/viewer/capture",    # bidir share-in read one; POST at same path writes (below)
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -5320,6 +5392,7 @@ end
         "/api/notebooks/snapshot", "/api/notebooks/write",
         "/api/viewer/marks/tracks", "/api/viewer/marks/cells",   # bidir point-out write (PR #4)
         "/api/viewer/marks/ui", "/api/viewer/marks/freeform",    # bidir point-out UI + freeform (PR #5)
+        "/api/viewer/capture",   # bidir share-in write (POST); GET at same path is the read handler
 
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
         "/api/optical-flow/rename",
@@ -5392,7 +5465,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 91 && length(POST_ROUTES) == 118
+    @test length(GET_ROUTES) == 93 && length(POST_ROUTES) == 119
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

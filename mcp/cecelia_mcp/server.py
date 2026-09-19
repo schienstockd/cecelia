@@ -24,9 +24,10 @@ adjust_params, acknowledge_flag) is deliberately NOT wired here.
 """
 from __future__ import annotations
 
+import base64
 import os
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 
 from cecelia_mcp.client import CeceliaClient
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
@@ -874,6 +875,59 @@ def mark_freeform(project_uid: str, target: str, overlay: list,
     Returns `{ok: true, markerId}`.
     """
     return _client.mark_freeform(project_uid, target, overlay, image_uid, value_name, label, ttl_s)
+
+
+@mcp.tool()
+def get_recent_captures(project_uid: str, limit: int = 10) -> list:
+    """What the user has SHARED with you from their viewer — the "look at this" surface (BIDIR).
+
+    A capture is a frozen viewer frame + a drawing overlay the user marked on it, addressed by
+    project / image / t / z / extent so you never have to ask "which image". Returned NEWEST-FIRST
+    as `[{captureId, createdAt, surface, address}, …]` — metadata only, no pixels; call
+    get_capture(captureId) for the frame + overlay themselves.
+
+    Call this when the user says "look at this" / "I just shared something" / when your last
+    message asked them to point at something on the viewer, or when you notice they've gone quiet
+    after being asked to. Empty list ⇒ nothing new; don't invent a capture.
+
+    `address` is what disambiguates the frame: `{projectUid, imageUid?, valueName?, t?, z?,
+    extentUm?}`. Use it exactly as authored — don't re-ask for an image uid a capture already
+    carries. `surface` is `"viewer_frame"` for now; slabs (video), UI and plot captures will
+    appear as `"viewer_slab"` / `"ui"` / `"plot"` in later PRs of the same feature.
+    """
+    return _client.get_recent_captures(project_uid, limit).get("items", [])
+
+
+@mcp.tool()
+def get_capture(project_uid: str, capture_id: str) -> list:
+    """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
+
+    Returns TWO content blocks: (1) the frame as an image (so you can actually SEE it), and (2) a
+    JSON envelope with the address, overlay marks, and any view-state snapshot. Read both — the
+    image tells you what they're looking at, the overlay tells you WHERE they're pointing, and
+    the address tells you which image / t / z it is so any follow-up tool call has the ids
+    already.
+
+    `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
+    hallucinated id, a project the user has since deleted, or a capture from a different install
+    — the storage is per-project, not per-user).
+
+    Overlay `kind` is one of `"rect" | "poly" | "stroke" | "circle" | "arrow"`; `geom` is
+    payload-relative (0..1 in the frame's own coord space) — the caller (frontend) authored
+    them, and their exact rendering is not this tool's concern. `label` on a mark is what the
+    user typed for it, if anything.
+    """
+    envelope = _client.get_capture(project_uid, capture_id)
+    frame_url = envelope.get("frame") or ""
+    frame_b64 = frame_url.split(",", 1)[1] if frame_url.startswith("data:") else ""
+    blocks: list = []
+    if frame_b64:
+        try:
+            blocks.append(Image(data=base64.b64decode(frame_b64), format="png"))
+        except Exception:  # noqa: BLE001 — a corrupt frame must not sink the envelope; keep going
+            pass
+    blocks.append(envelope.get("capture", {}))
+    return blocks
 
 
 @mcp.tool()

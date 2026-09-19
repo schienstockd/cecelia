@@ -30,8 +30,33 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "create_chain",
             "mark_tracks", "mark_cells",   # bidir point-out (BIDIR_CONTEXT_PLAN PR #4)
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
+            "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
         ):
             self.assertIn(tool, self.names)
+
+    def test_get_capture_returns_image_and_envelope(self):
+        # Wiring, not text: the tool must actually split the API's data-URL frame into an Image
+        # content block AND the envelope, so Claude both SEES the frame and reads the address.
+        original = server._client.get_capture
+        # a 1x1 png (base64) — smallest legal payload
+        png_b64 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAD"
+                   "UlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==")
+        server._client.get_capture = lambda uid, cid: {
+            "capture": {"captureId": cid, "surface": "viewer_frame",
+                        "address": {"projectUid": uid, "imageUid": "IMG1"}},
+            "frame": f"data:image/png;base64,{png_b64}",
+        }
+        try:
+            out = server.get_capture("NRUBxU", "cap-20260918T140000-abcdef")
+        finally:
+            server._client.get_capture = original
+        self.assertEqual(2, len(out))
+        # first block is the Image content, second is the envelope dict
+        from mcp.server.fastmcp import Image
+        self.assertIsInstance(out[0], Image)
+        self.assertEqual({"captureId": "cap-20260918T140000-abcdef",
+                          "surface": "viewer_frame",
+                          "address": {"projectUid": "NRUBxU", "imageUid": "IMG1"}}, out[1])
 
     def test_no_tool_can_start_work(self):
         # Claude designs, the user runs. No tool may launch a chain or submit a task — enforced by the
