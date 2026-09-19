@@ -5421,6 +5421,7 @@ end
         "/api/system/envs",
         "/api/update/check",
         "/api/version",
+        "/api/push/target",   # bidir push (PR #1048) — GET reads the pairing record (never returns token)
     ]
     POST_ROUTES = [
         "/api/app/restart", "/api/app/shutdown",
@@ -5493,6 +5494,7 @@ end
         "/api/viewer/overlay-legend",
         "/api/viewer/record-test",
         "/api/viewer/thumbnail",
+        "/api/push/target",   # bidir push (PR #1048) — POST writes/refreshes the per-project pairing record
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -5533,7 +5535,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 94 && length(POST_ROUTES) == 119
+    @test length(GET_ROUTES) == 95 && length(POST_ROUTES) == 120
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

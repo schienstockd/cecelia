@@ -562,13 +562,12 @@ class ClientTest(unittest.TestCase):
         )
 
     def test_http_error_becomes_apierror_with_detail(self):
-        # A factory (not a single instance) — the bidir Part 5 auto-pair middleware may fire a
-        # /api/push/target POST before the real tool call when CLAUDE_CODE_MESSAGING_* env vars
-        # are set, so a shared HTTPError's response body would be consumed by the first call
-        # and leave the second one with "". clear=True on os.environ also isolates the test
-        # from that env-var interaction directly.
+        # clear=True on os.environ isolates the test from the bidir Part 5 auto-pair middleware
+        # (which would fire an extra /api/push/target POST if CLAUDE_CODE_MESSAGING_* were set,
+        # consuming the shared HTTPError body). Factory raises a fresh HTTPError per call so a
+        # future test that keeps env set still gets a virgin body pointer on each urlopen.
         def make_err(*a, **kw):
-            return urllib.error.HTTPError(
+            raise urllib.error.HTTPError(
                 "http://x", 404, "nf", {},
                 io.BytesIO(json.dumps({"error": "Project not found"}).encode()),
             )
