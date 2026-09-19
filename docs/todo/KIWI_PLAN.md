@@ -1,4 +1,4 @@
-# Assist cockpit — plan
+# Kiwi (assist cockpit) — plan
 
 **Status:** planning (2026-09-19). Written to be picked up cold after a context break.
 
@@ -8,6 +8,12 @@ A dedicated always-visible surface for AI-assistant-adjacent controls, so "using
 any future MCP assistant) with Cecelia" doesn't require an open image or a scavenger hunt
 across three unrelated panels. Same shape as `CorrectionCockpit` (a floating panel gated by
 a settings toggle, mounted from `App.vue`) — hence the "cockpit" name.
+
+**Codename Kiwi** (locked 2026-09-19). Fruit lineage from Feijoa. Kiwi is the *panel*, not
+the assistant; the panel's job is to display + control whatever assistant is paired, not to
+be one. All identifiers (`stores/kiwi.ts`, `components/kiwi/`, `--cc-kiwi` accent token,
+`Ctrl+Shift+K` shortcut) take the codename; the assistant itself is referred to in neutral
+terms ("the paired assistant", "your assistant session").
 
 **Provider-agnostic on purpose.** Claude is primary today, but the MCP protocol the observer
 speaks is a standard, and other assistants could pair against Cecelia in the future. Every
@@ -62,20 +68,22 @@ place where "what's my assistant doing / what can I make it do" is a single glan
 Numbered so code / other docs can cite them (`Decision N`). Marked **OPEN** where user input
 is needed before implementation.
 
-1. **UI label = the codename picked in OPEN 1** (a fruit name, matching the project's
-   Feijoa codename lineage). Provider-agnostic. Working title in this plan is `Kiwi` for
-   readability — swap globally when the name is locked.
+1. **UI label = Kiwi** (locked 2026-09-19). Fruit name, matching the project's Feijoa
+   codename lineage. Provider-agnostic — Kiwi is the *panel*, not the assistant; the
+   distinction is important because the panel's job is to display + control whatever
+   assistant is paired, not to be one. Store / component / file names take the `kiwi` /
+   `Kiwi` prefix accordingly (`stores/kiwi.ts`, `components/kiwi/KiwiCockpit.vue`,
+   `utils/kiwi.ts`).
 2. **Primitive = `CorrectionCockpit`-shape floating panel.** Same file layout
-   (`components/assist/AssistCockpit.vue`), same mount point (`App.vue` at the same level
-   as the correction cockpit), same visibility gating (`settings.assistCockpitOpen`), same
+   (`components/kiwi/KiwiCockpit.vue`), same mount point (`App.vue` at the same level as
+   the correction cockpit), same visibility gating (`settings.kiwiOpen`), same
    drag-across-viewport + remembers-position behaviour. Reuse `CorrectionCockpit.vue`'s
    `<style scoped>` panel chrome patterns verbatim; do not invent a second floating-panel
-   look. Colour: propose `--cc-accent-2` (or a new token) to distinguish from correction
-   cockpit's purple. See OPEN 4.
+   look. Colour: a new `--cc-kiwi` token to distinguish from correction cockpit's purple
+   — see OPEN 4.
 3. **Entry = sidebar footer button + keyboard shortcut.** Same footer band + button
    pattern the correction cockpit uses in `AppSidebar.vue`. Keyboard shortcut default
-   `Ctrl+Shift+A` (A for "assistant" — grep confirms it's free in `frontend/src`). See
-   OPEN 5.
+   `Ctrl+Shift+K` (K for "Kiwi" — grep confirms free in `frontend/src`). See OPEN 5.
 4. **v1 content set** — the six rows below in *Contents — v1*.
 5. **v2 candidate content** — the list below in *Contents — v2 candidates*; needs OPEN 2
    input before locking.
@@ -95,15 +103,15 @@ is needed before implementation.
    pretending pairing might work.
 10. **State ownership.** All cockpit state derives from existing stores — `pushStore` (WS
     dispatcher shipped in `#1051`), `projectMeta`, `useSettingsStore().observer*` — plus a
-    new thin `stores/assistCockpit.ts` for view state (open/closed, position, minimize).
-    No new backend endpoint; every read is a route that already exists.
-11. **Test discipline.** Pure logic in `frontend/src/utils/assistCockpit*.ts`; no
-    component-level tests per frontend rule. `utils/pushTarget.ts` is the template.
+    new thin `stores/kiwi.ts` for view state (open/closed, position, minimize). No new
+    backend endpoint; every read is a route that already exists.
+11. **Test discipline.** Pure logic in `frontend/src/utils/kiwi*.ts`; no component-level
+    tests per frontend rule. `utils/pushTarget.ts` is the template.
 12. **Naming discipline enforcement.** A frontend test greps
-    `frontend/src/components/assist/` for the literal word "Claude" and fails if it
-    appears anywhere outside comments / `data-guide` attributes / the specific Claude Code
-    setup CTA row. Provider-neutral wording ratchet, same shape as the existing
-    zarr-access / h5ad ratchets.
+    `frontend/src/components/kiwi/` for the literal word "Claude" and fails if it appears
+    anywhere outside comments / `data-guide` attributes / the specific Claude Code setup
+    CTA row. Provider-neutral wording ratchet, same shape as the existing zarr-access /
+    h5ad ratchets. Kiwi is the panel, not the assistant.
 
 ## Contents — v1
 
@@ -160,24 +168,18 @@ Prospective, in rough dependency order:
 
 ## Open items — resolve before implementation
 
-1. **UI label / codename.** Fruit name, provider-agnostic. Options with rationale:
-   - **Kiwi** (recommended working title) — short, memorable, common enough to not seem
-     obscure; distinct from Feijoa.
-   - **Loquat** — distinctive, unusual, memorable.
-   - **Lychee** — short, distinct, sweet connotation fits a helper role.
-   - **Papaya** — the "papa/AI hidden inside" pun user hinted at ("plays on a fruit").
-2. **v2 content set.** The whole reason the surface exists is that it grows. Give a rough
+1. **v2 content set.** The whole reason the surface exists is that it grows. Give a rough
    list of the "other controls" beyond v1 so the plan can bound them; the v2-candidates
    list above is prospective, not confirmed.
-3. **v1 displacement scope.** Decision 6 is explicit: chat button leaves LabLogPanel at
+2. **v1 displacement scope.** Decision 6 is explicit: chat button leaves LabLogPanel at
    v1 (per user 2026-09-19). Decision 7 defers the ViewerPanel push chip to v2 to prove
    the cockpit first. Confirm this split, or flip Decision 7 to also-v1 if you want the
    ViewerPanel chip gone immediately.
-4. **Cockpit accent colour.** Correction cockpit uses `--cc-accent` (purple) as its
-   floating-panel border. Assist cockpit needs its own hue so a user with both open can
-   tell them apart at a glance. Propose a warm tone (amber / green); needs a token
-   allocation in `docs/ui/PRIMITIVES.md`.
-5. **Keyboard shortcut.** `Ctrl+Shift+A` (A for "assistant"). Confirm or override — the
+3. **Cockpit accent colour.** Correction cockpit uses `--cc-accent` (purple) as its
+   floating-panel border. Kiwi needs its own hue so a user with both open can tell them
+   apart at a glance. Propose kiwi green (`#93c47d`-ish, plays on the codename); needs a
+   `--cc-kiwi` token allocation in `docs/ui/PRIMITIVES.md`.
+4. **Keyboard shortcut.** `Ctrl+Shift+K` (Decision 3). Confirm or override — the
    correction cockpit's shortcut convention is worth checking against.
 
 ## PR sequence
@@ -185,12 +187,11 @@ Prospective, in rough dependency order:
 Independently mergeable in this order. Each PR ships a working, tested slice.
 
 1. **Cockpit primitive + chat handoff migration.** New
-   `components/assist/AssistCockpit.vue` (floating panel via `CorrectionCockpit`'s pattern);
-   new `stores/assistCockpit.ts` (view state); new sidebar footer button in
-   `AppSidebar.vue`; keyboard shortcut wired; **chat-to-assistant button moved from
-   `LabLogPanel.vue` to the cockpit** (Decision 6); pairing chip mirrored inside via
-   `usePushStore` + `fetchPushTarget`. ~350 lines. Ships the surface + the first
-   displacement.
+   `components/kiwi/KiwiCockpit.vue` (floating panel via `CorrectionCockpit`'s pattern);
+   new `stores/kiwi.ts` (view state); new sidebar footer button in `AppSidebar.vue`;
+   keyboard shortcut wired; **chat-to-assistant button moved from `LabLogPanel.vue` to the
+   cockpit** (Decision 6); pairing chip mirrored inside via `usePushStore` +
+   `fetchPushTarget`. ~350 lines. Ships the surface + the first displacement.
 2. **Recent captures + observer state.** Two `CollapsibleSection` blocks. Reuses
    `/api/viewer/captures` and `/api/observer/status`. Row-click on captures: pick between
    open-surface vs copy-id — needs a small ADR at PR time. ~200 lines.
