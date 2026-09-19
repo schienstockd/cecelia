@@ -31,6 +31,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "mark_tracks", "mark_cells",   # bidir point-out (BIDIR_CONTEXT_PLAN PR #4)
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
+            "get_object_ids",   # bidir follow-up: real cell/track ids for mark_cells / mark_tracks
         ):
             self.assertIn(tool, self.names)
 

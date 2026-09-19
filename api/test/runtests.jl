@@ -1416,6 +1416,78 @@ end
     end
 end
 
+@testset "API: labels/ids — cells + tracks enumeration + stride sampling" begin
+    # BIDIR follow-up. Claude's mark_cells / mark_tracks kept renderering nothing because the ids
+    # were guessed; this endpoint hands over the real ones. Uses the same `_gating_image` loader
+    # every gating endpoint uses, so a valid id here is a valid id there.
+    fx = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(fx)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            g(qs) = api_labels_ids(HTTP.Request("GET", "/api/labels/ids?" * qs))
+
+            # Guards
+            @test g("")[1] == 400                                          # projectUid required
+            @test g("projectUid=testpr")[1] == 400                          # imageUid required
+            @test g("projectUid=testpr&imageUid=KDIeEm")[1] == 400          # valueName required
+            @test g("projectUid=testpr&imageUid=KDIeEm&valueName=B&kind=nope")[1] == 400  # unknown kind
+            @test g("projectUid=NOPE&imageUid=KDIeEm&valueName=B")[1] == 404
+            @test g("projectUid=testpr&imageUid=NOPE&valueName=B")[1] == 404
+
+            # Cells — real ids from the fixture. Ask for the FULL population (limit big enough)
+            # so subsequent sample/limit checks have a real reference for "first" and "last".
+            st, body = g("projectUid=testpr&imageUid=KDIeEm&valueName=B&kind=cells&limit=5000")
+            @test st == 200
+            r = JSON3.read(body)
+            @test String(r.kind) == "cells"
+            @test String(r.valueName) == "B"
+            @test !isempty(r.ids)
+            @test all(x -> x isa Integer, r.ids)
+            @test Int(r.total) == length(r.ids)   # full population fetched
+            @test r.sampled == false
+            @test r.truncated == false
+
+            # Limit is honoured — response ids don't exceed `limit` and `truncated` flips when the
+            # population is larger.
+            st2, body2 = g("projectUid=testpr&imageUid=KDIeEm&valueName=B&kind=cells&limit=3")
+            r2 = JSON3.read(body2)
+            @test st2 == 200
+            @test length(r2.ids) <= 3
+            if Int(r2.total) > 3
+                @test r2.truncated == true
+                @test r2.sampled == false
+            end
+
+            # Sampling — same length as limit, but sampled=true and truncated=false. The stride
+            # sample is deterministic and preserves first + last of the FULL population.
+            if Int(r.total) > 3
+                st3, body3 = g("projectUid=testpr&imageUid=KDIeEm&valueName=B&kind=cells&limit=3&sample=true")
+                r3 = JSON3.read(body3)
+                @test st3 == 200
+                @test length(r3.ids) == 3
+                @test r3.sampled == true
+                @test r3.truncated == false
+                @test Int(r3.ids[1])   == Int(r.ids[1])
+                @test Int(r3.ids[end]) == Int(r.ids[end])
+            end
+
+            # Tracks — no track_props on this fixture, so 404 rather than 500. Confirms the "no
+            # tracks for this vn" branch reads as a not-found, not a server bug.
+            st4, _ = g("projectUid=testpr&imageUid=KDIeEm&valueName=B&kind=tracks")
+            @test st4 in (200, 404)  # tolerant: some fixtures may grow track_props later
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+            rm(dir; recursive = true, force = true)
+        end
+    end
+end
+
 @testset "API: notebooks sysimage status" begin
     # status always carries a `sysimage` field, one of the valid states (machine-independent: deps.so
     # may or may not exist here). Pins the response contract the frontend's first-run build reads.
@@ -5314,6 +5386,7 @@ end
         "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
         "/api/viewer/captures",   # bidir share-in list; POST /api/viewer/capture at the same singular path
         "/api/viewer/capture",    # bidir share-in read one; POST at same path writes (below)
+        "/api/labels/ids",        # bidir follow-up: enumerate cell/track ids for mark_cells / mark_tracks
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -5465,7 +5538,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 93 && length(POST_ROUTES) == 119
+    @test length(GET_ROUTES) == 94 && length(POST_ROUTES) == 119
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

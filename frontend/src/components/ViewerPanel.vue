@@ -24,6 +24,9 @@ import MovieTimeRange from './MovieTimeRange.vue'
 import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
 import InlineNote from './InlineNote.vue'
+import CapturePreviewModal from './CapturePreviewModal.vue'
+import { listCaptures, capturesTickKey, addressLine, relativeAgo,
+         type CaptureListItem } from '../utils/capturesApi'
 import { movieSizeParams } from '../utils/movieSize'
 import { clampContour, seedConfigFromViewState, type ViewStateLike } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
@@ -404,6 +407,38 @@ function openShare() {
   // Focus the pop-out so the user sees the drawing toolbar without alt-tab.
   try { vw.focus() } catch { /* nicety */ }
 }
+
+// ── Shared-frames strip (PR #5 follow-up) ─────────────────────────────────────────────────────
+// After Save, the pop-out's drawing surface dismisses and the user never sees the frozen frame
+// again — which meant Claude's freeform circles (which target that captureId) had nowhere to
+// read. This strip surfaces the last few shared frames with a thumbnail; click one to open the
+// preview modal (frame + user overlay + Claude's marks targeting that capture).
+const captures    = ref<CaptureListItem[]>([])
+const capturesErr = ref<string>('')
+const openCaptureId = ref<string>('')
+
+async function refreshCaptures() {
+  const proj = projectMeta.current?.uid
+  if (!proj) { captures.value = []; return }
+  try {
+    capturesErr.value = ''
+    captures.value = await listCaptures(proj, 5)
+  } catch (e) {
+    capturesErr.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+// Cross-window Save→refetch: ViewerWindow bumps `capturesTickKey()` in localStorage after a
+// successful POST. `storage` events don't fire in the writer's own window, so this listener runs
+// in the main window where the panel lives.
+function onCapturesTick(e: StorageEvent) { if (e.key === capturesTickKey()) refreshCaptures() }
+onMounted(() => { refreshCaptures(); window.addEventListener('storage', onCapturesTick) })
+onUnmounted(() => window.removeEventListener('storage', onCapturesTick))
+// Refetch when the project changes — same trigger the rest of the panel uses.
+watch(() => projectMeta.current?.uid, () => refreshCaptures())
+
+function openCapture(id: string) { openCaptureId.value = id }
+function closeCapture() { openCaptureId.value = '' }
 
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
 // populations/colour-by are shown) to an .mp4 under the project's movies/ folder.
@@ -1034,6 +1069,16 @@ onUnmounted(() => {
         </div>
         <InlineNote v-if="shareNote" :severity="shareNote.severity"
                     :short="shareNote.short" :detail="shareNote.detail" />
+        <!-- Shared frames — click one to see it + any of Claude's marks against it. Bounded to 5
+             most-recent so the panel doesn't grow into scroll. -->
+        <ul v-if="captures.length" class="shared-list">
+          <li v-for="c in captures" :key="c.captureId" class="shared-row"
+              @click="openCapture(c.captureId)"
+              v-tooltip.left="'Open shared frame with marks'">
+            <span class="shared-time cc-fs-2xs cc-muted">{{ relativeAgo(c.createdAt) }}</span>
+            <span class="shared-addr cc-fs-2xs">{{ addressLine(c.address) || c.captureId }}</span>
+          </li>
+        </ul>
       </div>
 
       <div class="viewer-section" data-guide="viewer.movieSection">
@@ -1070,6 +1115,11 @@ onUnmounted(() => {
     </template>
     <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open.</span></div>
   </div>
+  <!-- Capture preview modal (BIDIR PR #5 follow-up). Opens when a "Shared frames" row is
+       clicked; shows the frame, the user's overlay, and Claude's freeform marks against it. -->
+  <CapturePreviewModal v-if="openCaptureId && projectMeta.current?.uid"
+                       :project-uid="projectMeta.current.uid" :capture-id="openCaptureId"
+                       @close="closeCapture" />
 </template>
 
 <style scoped>
@@ -1079,6 +1129,20 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.35rem;
 }
+
+/* Shared-frames strip (BIDIR PR #5 follow-up). One row per capture, clickable, keeps the panel
+ * narrow — no thumbnails yet (would need one getCapture per row); the modal is the payoff. */
+.shared-list { list-style: none; margin: 0.25rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.shared-row {
+  display: flex; align-items: baseline; gap: 0.4rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
+  background: var(--cc-surface-1);
+  cursor: pointer;
+}
+.shared-row:hover { border-color: var(--cc-accent); }
+.shared-time { flex-shrink: 0; min-width: 4rem; }
+.shared-addr { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* stale-bridge warning strip — amber, brief; the Restart button is the action */
 .viewer-stale {

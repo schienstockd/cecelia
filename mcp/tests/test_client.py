@@ -270,6 +270,28 @@ class ClientTest(unittest.TestCase):
         self.assertIn("projectUid=p", req.full_url)
         self.assertIn("captureId=cap-20260918T140000-abcdef", req.full_url)
 
+    def test_get_object_ids_builds_url_with_kind(self):
+        # BIDIR follow-up: real cell/track id enumeration. Body carries kind + limit + optional
+        # sample so the server can stride-sample a big population without churning the JSON.
+        with _patch_urlopen({"ids": [1, 2, 3], "total": 3, "truncated": False, "sampled": False}) as u:
+            self.c.get_object_ids("p", "img1", "flowTom", kind="cells", limit=200)
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/labels/ids?", req.full_url)
+        self.assertIn("projectUid=p", req.full_url)
+        self.assertIn("imageUid=img1", req.full_url)
+        self.assertIn("valueName=flowTom", req.full_url)
+        self.assertIn("kind=cells", req.full_url)
+        self.assertIn("limit=200", req.full_url)
+        self.assertNotIn("sample=", req.full_url)   # default false ⇒ omitted
+
+    def test_get_object_ids_passes_sample_when_true(self):
+        with _patch_urlopen({"ids": [], "total": 0, "truncated": False, "sampled": False}) as u:
+            self.c.get_object_ids("p", "img1", "flowTom", kind="tracks", limit=50, sample=True)
+        req = u.call_args[0][0]
+        self.assertIn("kind=tracks", req.full_url)
+        self.assertIn("sample=true", req.full_url)
+
     def test_list_notebooks_builds_url(self):
         with _patch_urlopen({"notebooks": []}) as u:
             self.c.list_notebooks("p")

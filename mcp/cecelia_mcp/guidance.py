@@ -138,6 +138,11 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   from `default`'s track 42, so get the vn from `get_analysis_lineage` if you're not sure.
 - `mark_cells(image_uid, value_name, label_ids, focus_id?, label?, ttl_s?)` — objects at a \
   timepoint. Same per-vn scope. Prefer tracks over cells for a tracked segmentation.
+
+  Get real ids first with `get_object_ids(image_uid, value_name, kind="cells"|"tracks", \
+  sample=True)` — the segmentation's own labels. Marking made-up ids renders nothing, which \
+  looks the same as a broken tool. Set `sample=True` for coverage across the whole population \
+  rather than "the first 200 in one corner".
 - `point_at_ui(anchor, label?, ttl_s?)` — a CONTROL, not data. `anchor` is a `data-guide` id \
   (`"viewer.movieSection"`) or a `nav:/<route>`. Prefer naming a SECTION over a single button — \
   ids may shift; sections are stable.

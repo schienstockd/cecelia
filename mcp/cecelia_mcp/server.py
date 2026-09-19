@@ -931,6 +931,29 @@ def get_capture(project_uid: str, capture_id: str) -> list:
 
 
 @mcp.tool()
+def get_object_ids(project_uid: str, image_uid: str, value_name: str,
+                   kind: str = "cells", limit: int = 200, sample: bool = False) -> dict:
+    """Real cell / track ids for a segmentation — call this BEFORE mark_cells / mark_tracks.
+
+    The point-out tools take literal ids (`labels=[…]` for cells, `trackIds=[…]` for tracks).
+    Without this tool you'd be guessing — ids are per-vn and start at whatever the segmentation
+    banked, not necessarily 1. A mark on an id that doesn't exist renders as nothing.
+
+    `kind`: `"cells"` (per-cell label ids from `label_props`) or `"tracks"` (per-track ids from
+    `track_props`, one row per track). A segmentation with no tracks returns `ids=[]`, `total=0`.
+
+    Payload is capped at `limit` (default 200, max 5000) so a 50-000-cell segmentation doesn't
+    ship half a MB per call. Response reports `total` + `truncated` so you know when you're
+    seeing a slice. Set `sample=True` to get a stride-uniform sample across the WHOLE population
+    (deterministic — same call, same sample) — useful when you want coverage rather than "the
+    first 200 which are all in one corner".
+
+    Returns `{kind, valueName, ids: [Int, …], total, truncated, sampled}`.
+    """
+    return _client.get_object_ids(project_uid, image_uid, value_name, kind, limit, sample)
+
+
+@mcp.tool()
 def get_recent_logs(level: str = "", source: str = "", limit: int = 100) -> list:
     """Recent lines from the app's console — everything the backend SIDE says, newest last.
 

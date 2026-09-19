@@ -98,6 +98,7 @@ import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import FreeformOverlay from '../components/FreeformOverlay.vue'
 import { buildCaptureAddress, type OverlayMark } from '../utils/captureAddress'
+import { publishCapturesTick } from '../utils/capturesApi'
 import { copyText } from '../utils/clipboard'
 import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
@@ -4460,6 +4461,9 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
     // "shared frame in cecelia" is distinctive; "capture" alone collided with "screenshot" and
     // Claude fell back to listing images. Guidance.py's ON WHAT THE USER JUST SHOWED YOU block
     // is what actually routes it to get_recent_captures.
+    // Cross-window nudge: the main-window ViewerPanel's shared-frames strip listens for this key
+    // and refetches, so the new capture shows up without waiting for a focus event.
+    publishCapturesTick()
     const prompt = 'Read my shared frame in cecelia.'
     const copied = await copyText(prompt)
     showShareToast('ok', copied

@@ -79,6 +79,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
         ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
         ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
+        ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
         # NB: /api/viewer/capture (POST) is NOT allow-listed. Captures are AUTHORED by the frontend
         # Share button; Claude only READS them. Keeping the write off the observer's surface prevents
         # a fabricated "the user shared this" from ever landing in the project's captures dir.
@@ -345,6 +346,16 @@ class CeceliaClient:
         # content block).
         return self._request("GET", "/api/viewer/capture",
                              {"projectUid": project_uid, "captureId": capture_id})
+
+    def get_object_ids(self, project_uid: str, image_uid: str, value_name: str,
+                       kind: str = "cells", limit: int = 200, sample: bool = False):
+        # Enumerate real cell / track ids so `mark_cells` / `mark_tracks` don't have to guess.
+        # `kind` is "cells" | "tracks"; the server rejects anything else with a 400.
+        params = {"projectUid": project_uid, "imageUid": image_uid,
+                  "valueName": value_name, "kind": kind, "limit": str(limit)}
+        if sample:
+            params["sample"] = "true"
+        return self._request("GET", "/api/labels/ids", params)
 
     def get_notebook(self, project_uid: str, file: str):
         # Returns {file, scope, content} — the notebook's current Pluto source (with the user's edits).
