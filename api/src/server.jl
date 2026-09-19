@@ -50,6 +50,7 @@ include("storage_api.jl")
 include("setup_api.jl")
 include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
+include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -250,6 +251,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
     "/api/viewer/captures" => (req, body_bytes) -> (api_viewer_captures_list(req)),
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
+    "/api/labels/ids" => (req, body_bytes) -> (api_labels_ids(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),

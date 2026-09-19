@@ -96,6 +96,7 @@ import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
+import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, type OverlayMark } from '../utils/captureAddress'
 import { copyText } from '../utils/clipboard'
 import AxesGizmo from '../components/AxesGizmo.vue'
@@ -4429,8 +4430,22 @@ const drawAddressLine = computed(() => {
   if (zPlane.value >= 0) bits.push(`z=${zPlane.value}`)
   return bits.join(' · ')
 })
+// Sharing over an already-open capture starts fresh: close the capture view so DrawSurface
+// mounts on the LIVE viewer (what the user is currently looking at), not on the frozen PNG.
 ;(window as unknown as { __cceceliaViewerBeginDraw?: () => void }).__cceceliaViewerBeginDraw =
-  () => { drawMode.value = true }
+  () => { captureView.value = null; drawMode.value = true }
+
+// The frozen frame that survives Save (`CaptureViewSurface` renders it). Set here on a
+// successful POST; cleared by the surface's close button or by a new draw.
+interface CaptureView {
+  captureId: string
+  frameDataUrl: string
+  overlay: OverlayMark[]
+  addressLine: string
+}
+const captureView = ref<CaptureView | null>(null)
+function closeCaptureView() { captureView.value = null }
+
 async function onDrawSave(payload: { overlay: OverlayMark[] }) {
   const el = canvas.value
   if (!el || !projectUid) { drawMode.value = false; return }
@@ -4449,16 +4464,24 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
       body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,
                              frames: [{ png }], overlay: payload.overlay }),
     })
+    // Response body is a one-shot stream — read once. On !ok extract .error if present; on ok
+    // extract .captureId so the viewer can carry it into CaptureViewSurface.
+    let respJson: Record<string, unknown> | null = null
+    try { respJson = await res.json() as Record<string, unknown> } catch { /* legacy */ }
     if (!res.ok) {
-      let msg = `HTTP ${res.status}`
-      try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* ignore */ }
-      throw new Error(msg)
+      const err = respJson?.error ? String(respJson.error) : `HTTP ${res.status}`
+      throw new Error(err)
     }
-    // Prefill the clipboard with a one-liner the user can paste into their Claude Code session —
-    // the practical stand-in for MCP not being able to alert a running session. Word choice:
-    // "shared frame in cecelia" is distinctive; "capture" alone collided with "screenshot" and
-    // Claude fell back to listing images. Guidance.py's ON WHAT THE USER JUST SHOWED YOU block
-    // is what actually routes it to get_recent_captures.
+    const captureId = String(respJson?.captureId ?? '')
+    // Frozen frame stays visible: user can discuss it with Claude while seeing exactly what was
+    // shared, and Claude's marks land where they were drawn. Replaces the earlier
+    // clipboard-toast+modal design (removed with this change).
+    captureView.value = {
+      captureId, frameDataUrl: png, overlay: payload.overlay,
+      addressLine: drawAddressLine.value,
+    }
+    // Clipboard prefill stays — the drawing surface just dismissed and the user still needs to
+    // paste into Claude to trigger the read.
     const prompt = 'Read my shared frame in cecelia.'
     const copied = await copyText(prompt)
     showShareToast('ok', copied
@@ -4575,6 +4598,14 @@ onUnmounted(() => {
            via `__cceceliaViewerBeginDraw()` exposed above. -->
       <DrawSurface :visible="drawMode" :address-line="drawAddressLine" :busy="drawBusy"
                    @save="onDrawSave" @cancel="onDrawCancel" />
+      <!-- Frozen-frame view after Save: keep the shared frame visible on the viewer so the user
+           can discuss it with Claude, and Claude's `mark_freeform` marks land ON the frame they
+           address (rather than a modal that hides the context). Close chip returns to live. -->
+      <CaptureViewSurface v-if="captureView" :capture-id="captureView.captureId"
+                          :frame-data-url="captureView.frameDataUrl"
+                          :overlay="captureView.overlay"
+                          :address-line="captureView.addressLine"
+                          @close="closeCaptureView" />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
            cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
       <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">

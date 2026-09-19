@@ -99,24 +99,24 @@ function dismiss(id: string) { viewer.dismissUiMark(id) }
   position: absolute; transform: translateY(-50%);
   display: flex; align-items: center; gap: 0.35rem;
   padding: 0.15rem 0.4rem 0.15rem 0.55rem;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-accent);
+  background: var(--cc-surface-1); border: 1px solid var(--cc-warn);
   border-radius: var(--cc-radius-pill);
   pointer-events: auto;
   box-shadow: 0 0 0 2px rgba(0,0,0,0.35);
 }
 .pb-pulse {
   width: 0.5rem; height: 0.5rem; border-radius: 50%;
-  background: var(--cc-accent);
+  background: var(--cc-warn);
   animation: pb-pulse 1.4s ease-out infinite;
   flex-shrink: 0;
 }
-/* Halo colour is a fixed rgba rather than the --cc-accent token — the token is an HSL/hex
- * variable and `rgba(var(...), a)` can't wrap it. A visual match with the accent, not a strict
- * token pull. */
+/* Halo colour is a fixed rgba to match --cc-warn (#f59e0b) — the token is a hex variable and
+ * `rgba(var(...), a)` can't wrap it. Amber, not the app's accent purple, so a Claude pointer
+ * stands out against surfaces already coloured with the brand accent. */
 @keyframes pb-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(128, 90, 220, 0.7); }
-  70%  { box-shadow: 0 0 0 10px rgba(128, 90, 220, 0); }
-  100% { box-shadow: 0 0 0 0   rgba(128, 90, 220, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+  70%  { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(245, 158, 11, 0); }
 }
 .pb-label { color: var(--cc-text); white-space: nowrap; max-width: 20rem;
             overflow: hidden; text-overflow: ellipsis; }

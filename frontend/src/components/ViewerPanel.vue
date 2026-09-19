@@ -1080,6 +1080,7 @@ onUnmounted(() => {
   gap: 0.35rem;
 }
 
+
 /* stale-bridge warning strip — amber, brief; the Restart button is the action */
 .viewer-stale {
   display: flex;
