@@ -9,18 +9,22 @@
 # one per-track obs column back to each image's labelProps.
 #
 # Per-cell obs (in `{value_name}.h5ad`):
-#   • motif.class.{suffix}       — categorical string ("Motif 1", "Motif 2", …), span-broadcast
-#                                  over each instance's window; overlap = highest-confidence wins
-#                                  (MOTIF_DISCOVERY_PLAN Decision 9).
-#   • motif.distance.{suffix}    — Float32 DTW distance from the instance's window to its
-#                                  class medoid (lower = more confident); span-broadcast.
-#   • motif.instance_id.{suffix} — Int per-run instance UID so overlapping structure remains
-#                                  answerable off the sidecar (Decision 12).
+#   • motif.class       — categorical string ("Motif 1", "Motif 2", …), span-broadcast over
+#                         each instance's window; overlap = highest-confidence wins
+#                         (MOTIF_DISCOVERY_PLAN Decision 9).
+#   • motif.distance    — Float32 DTW distance from the instance's window to its class medoid
+#                         (lower = more confident); span-broadcast.
+#   • motif.instance_id — Int per-run instance UID so overlapping structure remains answerable
+#                         off the sidecar.
 #
 # Per-track obs (in `{value_name}__tracks.h5ad`):
-#   • motif.sequence.{suffix}    — categorical string, "A_B_A_C", the ordered classes of every
-#                                  instance whose window contains ≥1 cell of the track. Ordered
-#                                  by t within the track.
+#   • motif.sequence    — categorical string, "A_B_A_C", the ordered classes of every instance
+#                         whose window contains ≥1 cell of the track. Ordered by t.
+#
+# Columns are unsuffixed — matches the HMM convention (`live.cell.hmm.state.movement` in every
+# `{vn}.h5ad`). The h5ad file's own value_name already carries the pop namespace, so a per-vn
+# column suffix would be redundant and would prevent B and T pops co-plotting on one axis. The
+# per-run manifest keyed by suffix is still on the `{props}.motiffeatures.json` sidecar.
 #
 # Python leg computes pairwise subsequence DTW via `dtaidistance.dtw_ndim` on top-K windows
 # and feeds the K×K matrix to Leiden as a precomputed distance metric (Decision 4). No `motifs`
@@ -174,10 +178,10 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
            "$(count(!isnothing, instance_id_by_cell)) / $(nrow(df)) cells")
     on_progress(4, 5)
 
-    class_col    = "motif.class.$(suffix)"
-    distance_col = "motif.distance.$(suffix)"
-    instance_col = "motif.instance_id.$(suffix)"
-    sequence_col = "motif.sequence.$(suffix)"
+    class_col    = "motif.class"
+    distance_col = "motif.distance"
+    instance_col = "motif.instance_id"
+    sequence_col = "motif.sequence"
 
     df[!, :_motif_class]       = class_by_cell
     df[!, :_motif_distance]    = distance_by_cell

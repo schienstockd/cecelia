@@ -12,7 +12,7 @@
       { "popType": "trackclust", "granularity": "cell" }
     ],
     "obsMeasurePatterns": [
-      { "match": "motif.class.", "label": "Motif class" }
+      { "match": "motif.class", "label": "Motif class" }
     ]
   },
   "scopeModes": ["per_image", "summarised"],

@@ -19,10 +19,18 @@
 > `docs/DATAMODEL.md` → *Motif discovery output*.
 >
 > Downstream reader: `docs/todo/BEHAVIOUR_READOUT_PLAN.md` P3 is gated on
-> this plan's P2. It reads `motif.class.{suffix}` + `motif.distance.{suffix}`
-> and emits them as `labels[].source = "motif"` in the canonical MCP shape.
+> this plan's P2. It reads `motif.class` + `motif.distance` and emits them as
+> `labels[].source = "motif"` in the canonical MCP shape.
 > **Column names on disk are a stable contract** — Decision 12 here is
 > load-bearing for BEHAVIOUR_READOUT and must not drift.
+>
+> **Decision 12 revised (2026-09-19)**: columns are UNSUFFIXED
+> (`motif.class`, `motif.distance`, `motif.instance_id`, `motif.sequence`) —
+> matches the HMM convention and lets B+T pops co-plot on one axis. The
+> per-vn suffix was redundant with the `{vn}.h5ad` file namespace and forked
+> the column identity across pops (SummaryPanel treats each `motif.class.T` /
+> `motif.class.B` as a separate measure). Migration on existing on-disk
+> data via rename (in place, per h5ad).
 
 ## Goal
 
@@ -95,11 +103,11 @@ Decision N`).
 5. **Discrete hard clusters as default; mandatory confidence
    (`distance_to_centroid`) per instance.** Every motif instance carries
    its hard label AND the DTW distance from the instance to its class
-   medoid, side by side in the cell obs (`motif.class.{suffix}` +
-   `motif.distance.{suffix}`). Continuum representation (arXiv 2506.15190
+   medoid, side by side in the cell obs (`motif.class` +
+   `motif.distance`). Continuum representation (arXiv 2506.15190
    basis-function motif weights) deferred to v2 as an *additive* obsm
    layer that doesn't retire the hard label. Reserving the obsm slot
-   `M_weights.{suffix}` upfront is an open question (Decision 3 in §Open).
+   `M_weights` upfront is an open question (Decision 3 in §Open).
 6. **Distance-to-target uses a new per-t column, not the existing
    `min_distance#{target}`.** `cellContacts` today builds one KDTree over
    the whole A/B frame regardless of `centroid_t` (verified at
@@ -136,7 +144,7 @@ Decision N`).
    highest-confidence instance covering each cell.** Matrix profile
    discovers overlapping motifs by construction. Options considered:
    (a) highest-confidence-wins (chosen), (b) comma-join into a composite
-   label, (c) top-N ranked columns `motif.class.{suffix}.{rank}`.
+   label, (c) top-N ranked columns `motif.class.{rank}`.
    (a) matches how gating handles membership, keeps `pop_df` filters
    simple. Instance-level detail (all overlapping instances with their
    spans and confidences) lives in the `.motiffeatures.json` sidecar for
@@ -164,27 +172,33 @@ Decision N`).
                                                         # resolutionLockedAt? }
     ```
 
+    **Columns are unsuffixed** — matches HMM (`live.cell.hmm.state.movement`
+    in every `{vn}.h5ad`). The h5ad file's own value_name is the pop
+    namespace; a per-vn suffix on the column would repeat what the file
+    path already says and would fork column identity across pops, breaking
+    B+T co-plot. The sidecar manifest is still keyed by suffix for per-run
+    params/medoids.
+
     Per-cell obs (in `{vn}.h5ad`):
 
-    - `motif.class.{suffix}` — categorical string, span-broadcast over
-      the motif instance's `(t_start, t_end)`; overlap resolved per
-      Decision 9.
-    - `motif.distance.{suffix}` — Float32 DTW distance from the instance
-      to its class medoid, span-broadcast. **Unnormalized, unbounded above
-      — lower is better.** A per-run `confidence ∈ [0,1]` transform is a
+    - `motif.class` — categorical string, span-broadcast over the motif
+      instance's `(t_start, t_end)`; overlap resolved per Decision 9.
+    - `motif.distance` — Float32 DTW distance from the instance to its
+      class medoid, span-broadcast. **Unnormalized, unbounded above —
+      lower is better.** A per-run `confidence ∈ [0,1]` transform is a
       **read-side** concern (see `docs/todo/BEHAVIOUR_READOUT_PLAN.md` P3,
       which derives `labels[].confidence` from this column). No
-      `motif.confidence.{suffix}` column is banked — banking one would
-      pin the transform choice, and the natural scale (window length ×
-      channel count) shifts between runs.
-    - `motif.instance_id.{suffix}` — Int (per-run instance UID) so
-      "which instance did this cell belong to?" is answerable.
+      `motif.confidence` column is banked — banking one would pin the
+      transform choice, and the natural scale (window length × channel
+      count) shifts between runs.
+    - `motif.instance_id` — Int (per-run instance UID) so "which instance
+      did this cell belong to?" is answerable.
 
     Per-track obs (in `{vn}__tracks.h5ad`):
 
-    - `motif.sequence.{suffix}` — categorical string, `"A_B_A_C"`, the
-      ordered classes of every motif whose span contains ≥1 cell of the
-      track. This is the "track annotated as a sequence of sub-behaviours"
+    - `motif.sequence` — categorical string, `"A_B_A_C"`, the ordered
+      classes of every motif whose span contains ≥1 cell of the track.
+      This is the "track annotated as a sequence of sub-behaviours"
       surface for downstream classifier / KM-survival-style analysis.
 
 13. **On-disk units follow the standing invariant.** Centroids on disk
@@ -266,18 +280,18 @@ Only after P1 shows sub-behavior structure.
     routing (`docs/POPULATION.md`).
   - Tick-cluster-into-pop UX (mirror
     `docs/todo/CLUSTERING_PLAN.md` Decision 10: `pop/add` with
-    `filter: {measure: "motif.class.{suffix}", fun: "in", values:
+    `filter: {measure: "motif.class", fun: "in", values:
     ["Approach"]}`).
   - napari colour-by via `napari.show_populations` — cluster pops
     today colour cells by `clusters.{suffix}`; motif pops colour
-    by `motif.class.{suffix}`, same code path.
+    by `motif.class`, same code path.
 - **SummaryCanvas plots** — one still to build:
   - `motifTransitionMatrix` — from→to grid of motif classes;
     reuses the HMM transitions plot builder.
   - `motifClassFrequency` — **landed early as P1.5** via
     `app/src/plotDefinitions/motif_class_frequency.json` (PR #TBD).
     Mirrors `hmm_state_frequency.json` exactly (3 popTypes at cell
-    granularity, `obsMeasurePatterns: [{match: "motif.class."}]`).
+    granularity, `obsMeasurePatterns: [{match: "motif.class"}]`).
 - **`motifCards` InteractiveView** — mirror `cellCards`
   (`docs/todo/CELL_CARDS_PLAN.md` Decisions 0/1/3/4). One card per
   motif class; medoid = motif instance closest to its class centroid
@@ -409,11 +423,10 @@ Repo-relative paths so the plan survives a checkout anywhere.
   `split_back_and_write`, `spatial_utils.py`.
 - `docs/inventory/FRONTEND.md` — `ModuleLayout` / `TaskRunner` shell,
   `InteractiveView` registry, image-version advisory pattern.
-- `docs/todo/BEHAVIOUR_READOUT_PLAN.md` — downstream reader of
-  `motif.class.{suffix}` + `motif.distance.{suffix}` (its P3, gated on this
-  plan's P2). Emits them as `labels[].source = "motif"` in the canonical
-  MCP shape (Decision 3 there). Column names on disk are a stable contract
-  across both plans.
+- `docs/todo/BEHAVIOUR_READOUT_PLAN.md` — downstream reader of `motif.class`
+  + `motif.distance` (its P3, gated on this plan's P2). Emits them as
+  `labels[].source = "motif"` in the canonical MCP shape (Decision 3
+  there). Column names on disk are a stable contract across both plans.
 - `docs/todo/CLUSTERING_PLAN.md` — Decisions 6 (set-scope), 8 (sub-clustering
   via suffix + restricted parent pop), 9 (track feature matrix = celltrackR
   + HMM + transitions), 10 (`pop/add` + `filter`).
@@ -424,7 +437,7 @@ Repo-relative paths so the plan survives a checkout anywhere.
   (pooled always), 1 (`cellCards` InteractiveView, rail `'clusterPops'`), 3
   (medoid), 4 (image + trace + stats footer). `motifCards` is the sibling.
 - `docs/todo/PLOTTING_CANVAS_AND_TRACK_DF_PLAN.md` — `{vn}__tracks.h5ad`
-  layout; `motif.sequence.{suffix}` rides this.
+  layout; `motif.sequence` rides this.
 - `docs/todo/MULTI_POP_TRACKING_PLAN.md` — per-pop `has_tracks` flag +
   provenance-aware `_write_back` (touches if motif pops need track-
   annotation variants).
