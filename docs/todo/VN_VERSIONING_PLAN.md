@@ -240,12 +240,36 @@ for bare `default/<vn>/…` joins — under Q2's answer (Bucket B stays flat), t
 shape to ratchet against for anything except Bucket A families, and Bucket A's readers were
 already routed in P1b.
 
-### P3 — Chain planner pins inputs
+### P3 — Chain planner pins inputs — **SHIPPED backend** (2026-09-19); frontend UI deferred
 
-`chain.jl` freezes `input_value_name` refs to `vn@version` at plan time (D3). Chain params grow an
-optional explicit version qualifier for advanced use; default is "pin to `latest` now." Also settle
-how gating references a specific version — probably "the gate is authored against `vn@v` and only
-follows `latest` if the user opts in" (see *Open questions*).
+The mechanics: every task's `_run_task` reads its input via
+`versioned_get_field_at(raw, "filepath", value_name; version = get(params, "version", nothing))`.
+A chain node whose `params["version"]` is unset (the default) follows `_latest`; a node with a
+concrete `vN` reads that version specifically, no matter what the current `_latest` says. Chain
+executor is unchanged — `node.params` already flow through `execute_task` → `_run_task` — so
+pinning is a data-only change.
+
+- **Ratchet-enforced** (`P3 pinning ratchet` in `app/test/suite/vn_pilot_writer.jl`): every
+  task's `versioned_get_field_at(raw, "filepath", …)` line MUST also thread
+  `get(params, "version", nothing)`. A new task that forgets this silently no-ops chain pinning
+  for itself and fails the ratchet.
+- Also fixes a live bug introduced by #1058: 24 task readers were still using
+  `versioned_get_field` (returns the whole versioned Dict, breaks `string(filename)` downstream)
+  instead of `versioned_get_field_at` (returns the leaf). Switching to `_at` restores correct
+  reads for versioned entries, in addition to enabling pinning.
+
+**Frontend UI (deferred to a follow-up PR):** chain designer needs per-node version selector +
+"freeze all" button + rendered version badge when a step is pinned. Backend is ready to receive
+`params["version"] = "vN"` from anywhere — REPL, direct JSON edit, MCP, future UI. Chain planner
+UI decision + memo: [[project-vn-versioning-p3-pinning]] — per-plan toggle, default
+resolve-at-run, surface pinned versions when frozen.
+
+**Not shipped:** gating pin semantics (still `latest`-follows). Under Q2 (Bucket B stays flat),
+gating stores are single-file per (image, vn), and every gate reads the current `_latest` value
+of the underlying label store's cell IDs. If a task minted a new label vN via the toggle, the
+gate silently applies against the new cells' IDs. Chain-level pinning covers chain runs; a
+standalone gate re-open against a re-segmented image is where the risk sits. Fold into a P3
+follow-up once frontend UI lands or when a concrete break surfaces.
 
 ### P4 — One-shot migration for existing projects
 

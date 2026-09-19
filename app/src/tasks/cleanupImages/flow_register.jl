@@ -90,7 +90,7 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field(raw, "filepath", p.valueName)
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

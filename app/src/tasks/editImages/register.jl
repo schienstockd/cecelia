@@ -100,7 +100,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
             on_log("[ERROR] $(im.uid): $(e isa ErrorException ? e.msg : sprint(showerror, e))")
             return nothing
         end
-        filename = versioned_get_field(raw, "filepath", VERSIONED_DEFAULT_VAL)
+        filename = versioned_get_field_at(raw, "filepath", VERSIONED_DEFAULT_VAL; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
         if isnothing(filename)
             on_log("[ERROR] $(im.uid): no filepath registered on the default version.")
             return nothing
