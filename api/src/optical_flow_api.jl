@@ -125,10 +125,12 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     project_uid = String(get(data, "projectUid", ""))
     image_uid   = String(get(data, "imageUid", ""))
     value_name  = String(get(data, "valueName", VERSIONED_DEFAULT_VAL))
+    version_raw = get(data, "version", nothing)
+    version     = (version_raw === nothing || String(version_raw) == "") ? nothing : String(version_raw)
     (isempty(project_uid) || isempty(image_uid)) &&
         return 400, JSON3.write((; error = "projectUid + imageUid required"))
 
-    zp, task_dir, err = resolve_image_version(project_uid, image_uid, value_name)
+    zp, task_dir, err = resolve_image_version(project_uid, image_uid, value_name; version = version)
     err === nothing || return 404, JSON3.write((; error = err))
 
     raw = read_ccid_raw(state_file(joinpath(projects_dir(), project_uid), image_uid))

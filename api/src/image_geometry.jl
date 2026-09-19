@@ -148,22 +148,30 @@ function axis_dims(c_axes::Vector{String}, nd::Int)
 end
 
 """
-    resolve_image_version(project_uid, image_uid, value_name) -> (zarr_path, meta_dir, error)
+    resolve_image_version(project_uid, image_uid, value_name; version=nothing)
+        -> (zarr_path, meta_dir, error)
 
-On-disk path of ONE image version. `value_name === nothing` resolves the ACTIVE version (what a task
-would run against). Returns `(nothing, nothing, message)` on any failure — the caller shapes the
-HTTP status, so this stays usable off the request path.
+On-disk path of ONE image version. `value_name === nothing` resolves the ACTIVE version on the OUTER
+axis (what a task would run against). `version === nothing` resolves the `_latest` pointer on the
+INNER axis (per-value_name versioning — `docs/todo/VN_VERSIONING_PLAN.md`); a legacy bare-scalar
+entry unwraps to itself unchanged, so `version = "v99"` is a no-op on old projects. Returns
+`(nothing, nothing, message)` on any failure — the caller shapes the HTTP status, so this stays
+usable off the request path.
 """
-function resolve_image_version(project_uid::AbstractString, image_uid::AbstractString, value_name)
+function resolve_image_version(project_uid::AbstractString, image_uid::AbstractString, value_name;
+                               version::Union{AbstractString,Nothing} = nothing)
     (isempty(project_uid) || isempty(image_uid)) &&
         return (nothing, nothing, "projectUid + imageUid required")
     proj_dir = joinpath(projects_dir(), project_uid)
     meta = state_file(proj_dir, image_uid)
     (isdir(proj_dir) && isfile(meta)) || return (nothing, nothing, "Image not found")
-    raw = read_ccid_raw(meta)
-    fn  = versioned_get_field(raw, "filepath", value_name)
-    fn === nothing &&
+    raw   = read_ccid_raw(meta)
+    inner = versioned_get_field(raw, "filepath", value_name)
+    inner === nothing &&
         return (nothing, nothing, "No filepath registered — run a conversion task first")
+    fn = unversion_value(inner, version)
+    fn === nothing &&
+        return (nothing, nothing, "No filepath registered for version $(version)")
     zp = joinpath(proj_dir, "0", image_uid, string(fn))
     isdir(zp) || return (nothing, nothing, "Zarr not found on disk")
     (zp, joinpath(proj_dir, "1", image_uid), nothing)
@@ -453,7 +461,9 @@ function api_image_geometry(req::HTTP.Request)
     pu = get(q, "projectUid", "")
     iu = get(q, "imageUid", "")
     vn = get(q, "valueName", "")
-    zp, _, err = resolve_image_version(pu, iu, isempty(vn) ? nothing : vn)
+    vv = get(q, "version", "")
+    zp, _, err = resolve_image_version(pu, iu, isempty(vn) ? nothing : vn;
+                                       version = isempty(vv) ? nothing : vv)
     err === nothing || return 404, JSON3.write((; error = err))
     try
         g = image_geometry(zp)

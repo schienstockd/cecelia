@@ -1605,6 +1605,71 @@ end
     @test e2 == "Image not found"
 end
 
+# ── Inner-axis (per-value_name) version routing ──────────────────────────────
+# P1c makes `resolve_image_version` version-aware without changing legacy behaviour: a bare-scalar
+# filepath (today's shape) must unwrap to itself even when a `version` kwarg is passed, and a
+# versioned-entry filepath (P2 forward) must default to the entry's `_latest` and honour an explicit
+# `version = "vN"`. Struct field types are not widened in P1c — this testset constructs the
+# versioned shape on disk directly (a Dict at the value_name key) which is what the reader will see
+# once P2's writers land. See docs/todo/VN_VERSIONING_PLAN.md → P1c.
+@testset "API: resolve_image_version — inner version axis" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        puid = "TESTVER"
+        # Two images: one legacy (bare scalar), one versioned (Dict with `_latest`).
+        iuid_legacy = "IMGLEG"; iuid_ver = "IMGVER"
+        for iuid in (iuid_legacy, iuid_ver); mkpath(joinpath(tmp, puid, "1", iuid)); end
+        write(joinpath(tmp, puid, "project.json"),
+              JSON3.write((; uid = puid, name = "T", set_uids = String[])))
+
+        # Legacy: `filepath[default]` is a bare scalar. Two versions of the store on disk, but the
+        # scalar addresses only one — the `version` kwarg must have no effect.
+        mkpath(joinpath(tmp, puid, "0", iuid_legacy, "legacy.ome.zarr"))
+        write(state_file(joinpath(tmp, puid), iuid_legacy), JSON3.write(Dict{String,Any}(
+            "class"    => "CciaImage",
+            "filepath" => Dict{String,Any}("default" => "legacy.ome.zarr",
+                                           "_active" => "default"))))
+
+        # Versioned: the value_name entry is a Dict with `_latest` = "v2". Both stores exist.
+        mkpath(joinpath(tmp, puid, "0", iuid_ver, "img_v1.ome.zarr"))
+        mkpath(joinpath(tmp, puid, "0", iuid_ver, "img_v2.ome.zarr"))
+        write(state_file(joinpath(tmp, puid), iuid_ver), JSON3.write(Dict{String,Any}(
+            "class"    => "CciaImage",
+            "filepath" => Dict{String,Any}(
+                "default" => Dict{String,Any}("v1" => "img_v1.ome.zarr",
+                                              "v2" => "img_v2.ome.zarr",
+                                              "_latest" => "v2"),
+                "_active" => "default"))))
+
+        # Legacy: `version` is a no-op — every value routes to the one scalar.
+        for ver in (nothing, "v1", "v99")
+            zp, _, err = resolve_image_version(puid, iuid_legacy, "default"; version = ver)
+            @test err === nothing
+            @test zp == joinpath(tmp, puid, "0", iuid_legacy, "legacy.ome.zarr")
+        end
+
+        # Versioned: no `version` kwarg → walks `_latest` to `v2`.
+        zp, _, err = resolve_image_version(puid, iuid_ver, "default")
+        @test err === nothing
+        @test zp == joinpath(tmp, puid, "0", iuid_ver, "img_v2.ome.zarr")
+
+        # Explicit `version = "v1"` addresses the older store.
+        zp, _, err = resolve_image_version(puid, iuid_ver, "default"; version = "v1")
+        @test err === nothing
+        @test zp == joinpath(tmp, puid, "0", iuid_ver, "img_v1.ome.zarr")
+
+        # A version that doesn't exist reports a specific error instead of a generic miss.
+        _, _, err = resolve_image_version(puid, iuid_ver, "default"; version = "v99")
+        @test err !== nothing
+        @test occursin("version", err)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: store compression (what a version is encoded with)" begin
     # The label a version shows in the metadata modal must be the SAME name Settings uses, or the two
     # surfaces describe one codec two ways.

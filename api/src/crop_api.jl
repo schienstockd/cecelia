@@ -12,7 +12,9 @@
 function api_crop_info(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+    vv = get(q, "version", "");   vvn = isempty(vv) ? nothing : vv
+    zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn;
+                                       version = vvn)
     err === nothing || return 404, JSON3.write((; error = err))
     try
         arr, caxes = open_level0(zp)
@@ -34,7 +36,9 @@ end
 function api_crop_frame(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, td, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+    vv = get(q, "version", "");   vvn = isempty(vv) ? nothing : vv
+    zp, td, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn;
+                                        version = vvn)
     err === nothing || return 404, JSON3.write((; error = err))
     t = something(tryparse(Int, get(q, "t", "0")), 0)
     max_px = something(tryparse(Int, get(q, "maxPx", "512")), 512)
