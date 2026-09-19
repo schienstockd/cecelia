@@ -1,6 +1,6 @@
 # Real Push Delivery for Share-In — plan
 
-**Status:** planning (2026-09-19). Design work archived at
+**Status:** PR #1 shipped 2026-09-19 (`#1048`); PR #2–#3 planning. Design work archived at
 [`docs/archive/cross-session-push-prompt.md`](../archive/cross-session-push-prompt.md); this doc is
 the settled version. Sits under `Part 5` of
 [`docs/todo/BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md) as a follow-up to PR #3 (share-in
@@ -40,14 +40,22 @@ a capture exists, not what Claude can do with it.
 
 Numbered so code and other docs can cite them (`Decision N`).
 
-1. **Pairing is a Claude-side action, not a manual copy from `/status`.** Verified 2026-09-19 on
+1. **Pairing is implicit via MCP middleware — no user command at all** (amended 2026-09-19,
+   PR #1048; supersedes the original "one Claude-side command" wording). Verified live on
    Claude Code v2.1.273: `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` are
-   both present as env vars inside a session. Claude Bash-reads them and calls
-   `register_push_target`; the user runs one command in their Claude session to pair. No manual
-   copy.
-2. **`register_push_target(project_uid, socket_path, token, session_label?)` is the one MCP tool
-   for pairing.** Stores the tuple at `<proj>/settings/push_target.json`. Overwrites on re-pair
-   (a session close/reopen just re-pairs, no explicit unpair required).
+   both env-var-readable inside the MCP process (which inherits them from the spawning Claude
+   Code session at MCP startup). `CeceliaClient._maybe_pair` fires from any MCP tool with a
+   `project_uid` on the first call per (project, socket, token) tuple; cached in-memory.
+   Zero ceremony: a fresh Claude session pairs the moment it checks a project. If either env
+   var is missing (older Claude Code, standalone MCP process), the middleware is silent and the
+   fallback path applies as normal.
+2. **An explicit `register_push_target(project_uid, session_label?)` MCP tool is kept as a
+   debug / manual re-pair path only** (amended 2026-09-19). Auto-pair from Decision 1 is the
+   primary entry; this tool exists for the small number of "force a re-pair now" moments — e.g.
+   after Cecelia's own backend restarted and the user wants to check pairing without waiting
+   for the next natural tool call. Zero-arg on the runtime data — reads the env vars itself,
+   POSTs unconditionally, bypasses the cache. Errors with an actionable message if the env
+   vars are missing (upgrade Claude Code, don't retry).
 3. **Per-project pairing, not global, not per-image.** A user with two Cecelia projects open
    against two Claude sessions pairs each independently. The Julia push writer looks up the
    record by `projectUid`, no ambient state.
@@ -68,14 +76,23 @@ Numbered so code and other docs can cite them (`Decision N`).
    socket, write auth line + message, close, return the outcome. Any exception ⇒ `:fallback`.
    Wired from `captures_api.jl` on successful capture POST. No retry, no queue — a missed push
    is not a crash-severity event; the clipboard/toast is right there.
-7. **Auth line format follows Claude Code docs verbatim.** Julia writer opens the Unix socket,
-   sends `AUTH <token>\n` first, then the plain-text message, then `\n\n` terminator per the
-   protocol reference. On native Windows the same helper uses a named pipe; the protocol above
-   the transport is identical.
-8. **`crossSessionInbound` default preserved as `unset`/`prompt`.** Do not recommend the user
-   flip to `accept` in the shipping default. The pairing tool's MCP docstring may mention that
-   `accept` skips the approval click for users who want fewer prompts, but the plan does not
-   default it that way and Cecelia's UI does not offer a toggle.
+7. **Auth line is JSON, not `AUTH <token>`** (amended 2026-09-19 after fetching the docs page).
+   The Julia writer opens the Unix socket and sends `{"type":"auth","token":"<token>"}\n` as
+   the FIRST line — that literal format, JSON not a bare `AUTH`. What comes after the auth
+   line (the message frame) is NOT documented — my probe against my own inbox with four
+   candidate shapes (`{type:"message",text:...}`, `{type:"user_message",text:...}`,
+   `{type:"message",content:...}`, plain text) all had bytes accepted but nothing delivered.
+   **PR #2's opening step is to resolve the frame format**; strace-ing a real Claude→Claude
+   `SendMessage` on a target with `ptrace_scope=0` is the cheapest path.
+8. **Held-for-approval is NOT the universal default** (amended 2026-09-19). The docs' inbound
+   rules: with no `crossSessionInbound` set, the receiving session's permission-mode class
+   decides. **Receiving session PROMPTS for permissions (the ordinary case) ⇒ the message is
+   DELIVERED**, not held — a non-Claude sender like Cecelia has no bypass class to identify
+   with, so it's treated as non-bypassing, which delivers. Only when the receiver is in
+   `bypassPermissions` mode does the message get held for approval. This is a better UX than
+   the plan assumed: for most users PR #2 will feel like real cross-session delivery, not an
+   approval ceremony. Cecelia still doesn't recommend the user set `accept` and doesn't offer
+   a toggle — the default just doesn't require it.
 9. **Fallback is the existing `#1040` clipboard-prefill + `.vw-status-chip` toast, unchanged.**
    No refactor of the fallback in this PR sequence; that path already works. The push writer's
    `:fallback` return signals the frontend to render the existing chip.
@@ -84,14 +101,14 @@ Numbered so code and other docs can cite them (`Decision N`).
     delivered` / `paired: fell back to clipboard`. Never `delivered` optimistically — that word
     only appears when the frontend sees a real ACK, otherwise `sent`. Held-for-approval is a
     real state, name it plainly.
-11. **No delivery ACK from Claude Code.** The inbox socket has no round-trip confirmation on
-    write; a successful `write()` means the byte reached the socket, not that the model saw it.
-    UI stops at `sent` unless the paired Claude session subsequently reaches back through MCP
-    (e.g. calls `get_capture` on that id) — that's the only observable that the message
-    actually landed. Optional Decision-24-style follow-up (Blackboard's revision auto-log
-    pattern): the MCP `get_capture` tool notes "capture served post-push" in an in-memory
-    counter so `ViewerPanel` can flip `sent` → `delivered`. Ship without this in PR #2; add in
-    PR #3 UI polish if wanted.
+11. **ACK path exists via `crossSessionInbound` notices** (amended 2026-09-19 after fetching
+    the docs page). When the receiver holds/delivers/denies/expires a message, Claude Code
+    sends a notice back to the sender through the same socket transport. For an interactive
+    Claude sender the notice appears in the transcript; for a script sender the notice
+    arrives on the connection Cecelia opened, so Cecelia CAN observe delivery state without
+    a Decision-24-style MCP counter. PR #3 UI polish uses this to render `sent → held →
+    delivered/denied/expired` truthfully. PR #2 ships with a simpler `sent` state until the
+    ACK reader is written; the socket transport itself doesn't need re-designing.
 12. **A stale socket path is invisible until you try to write.** The Unix socket file exists on
     disk after the session closes; `connect()` fails on EPIPE / ECONNREFUSED. Push writer
     treats any connect/write error as `:fallback` and also **clears the stored
@@ -121,13 +138,15 @@ Numbered so code and other docs can cite them (`Decision N`).
 Independently mergeable in this order. Each ships a working, tested slice; nothing between PRs
 leaves the system in a worse state than `#1040`'s stand-in.
 
-1. **Pairing infra + MCP tool.** `register_push_target` MCP tool; `/api/push/target` HTTP
-   endpoint (POST to write, GET for the frontend to read the paired-or-not state); per-project
-   record at `<proj>/settings/push_target.json`. **No push wire-up yet** — this PR is
-   purely the pairing surface; the frontend can show "paired" but capture POSTs still take the
-   clipboard/toast path. Enables real Claude Code + user testing of the pairing UX in
-   isolation. ~200 lines (Python + Julia + one test each; frontend read of `/api/push/target`
-   for the status chip).
+1. **Pairing infra (shipped PR #1048, 2026-09-19).** `/api/push/target` HTTP endpoint (POST
+   to write, GET for the frontend to read the paired-or-not state); per-project record at
+   `<proj>/settings/push_target.json`; MCP client middleware (`_maybe_pair`) auto-registers on
+   first tool call per (project, socket, token); explicit `register_push_target` MCP tool for
+   manual re-pair; frontend chip beside the Share button. **No push wire-up yet** — the
+   frontend can show "paired" but capture POSTs still take the clipboard/toast path. 12 files,
+   ~450 lines (5 new client tests + 5 new frontend tests). Design shifted from the plan's
+   original "one Claude-side command" model to fully implicit auto-pair — see Decision 1
+   amendment.
 2. **Push writer + fallback wiring.** `api/src/push_writer.jl` (Unix socket writer with the
    auth line + message + Windows named-pipe branch); `format_capture_message` helper; wire
    from `captures_api.jl::api_viewer_capture_post` after the file write; any failure ⇒
