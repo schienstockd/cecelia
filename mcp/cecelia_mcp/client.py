@@ -81,6 +81,8 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
         ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
         ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
+        ("GET", "/api/blackboard"),        # bidir Part 4 — list a project's blackboard entries (title + version + updatedAt)
+        ("GET", "/api/blackboard/entry"),  # bidir Part 4 — read one entry's Markdown (optionally at a snapshot version)
         # NB: /api/viewer/capture (POST) is NOT allow-listed. Captures are AUTHORED by the frontend
         # Share button; Claude only READS them. Keeping the write off the observer's surface prevents
         # a fabricated "the user shared this" from ever landing in the project's captures dir.
@@ -88,6 +90,11 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/notebooks/write"),  # write 2/7 — create-only (409 on existing); serialises cells to a Pluto notebook
         ("POST", "/api/notebooks/describe"),  # write 3/7 — edits ONLY a notebook's description string (registry sidecar); not its content
         ("POST", "/api/notebooks/revise"),  # write 4/7 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
+        ("POST", "/api/blackboard/create"),  # bidir Part 4 — new Markdown entry (title + content_md + optional attach_capture_ids)
+        ("POST", "/api/blackboard/revise"),  # bidir Part 4 — SNAPSHOTS current content, then overwrites (real versioning, no "-v2" copies)
+        # NB: /api/blackboard/{restore,prune,delete} are NOT allow-listed — those are user-driven
+        # via Kiwi / the /blackboard page, matching the notebooks discipline (Claude never restores
+        # a version FOR the user, and never deletes their notes).
         ("POST", "/api/chains/create"),  # write 5/7 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
         ("POST", "/api/observer/labarchives/set"),  # write 7/7 — REPLACES the LabArchives context
                                           # sidecar (a cache of an external system of record, so a
@@ -512,6 +519,38 @@ class CeceliaClient:
             "/api/notebooks/describe",
             body={"projectUid": project_uid, "file": file, "description": description},
         )
+
+    # ── Blackboard (BIDIR_CONTEXT_PLAN Part 4) ──────────────────────────────
+    # Read routes (list + entry) are non-mutating; the two write routes (create + revise) are the
+    # additive-only MCP surface. restore / prune / delete stay off the MCP client — those are
+    # user-driven via the Kiwi / /blackboard page.
+    def list_blackboard_entries(self, project_uid: str):
+        return self._request("GET", "/api/blackboard", params={"projectUid": project_uid})
+
+    def read_blackboard_entry(self, project_uid: str, entry_id: str, version: int | None = None):
+        params: dict = {"projectUid": project_uid, "entryId": entry_id}
+        if version is not None:
+            params["version"] = str(version)
+        return self._request("GET", "/api/blackboard/entry", params=params)
+
+    def create_blackboard_entry(self, project_uid: str, title: str, content_md: str,
+                                attach_capture_ids: list[str] | None = None):
+        body = {"projectUid": project_uid, "title": title, "content": content_md}
+        if attach_capture_ids:
+            body["attachments"] = attach_capture_ids
+        return self._request("POST", "/api/blackboard/create", body=body)
+
+    def revise_blackboard_entry(self, project_uid: str, entry_id: str, content_md: str,
+                                 attach_capture_ids: list[str] | None = None, note: str = ""):
+        body: dict = {"projectUid": project_uid, "entryId": entry_id, "content": content_md}
+        # attachments is only sent when explicitly given — omitted → server keeps the existing set.
+        # `note` is accepted by the server for a future changelog view but not stored today; we still
+        # pass it so a caller can start recording it now.
+        if attach_capture_ids is not None:
+            body["attachments"] = attach_capture_ids
+        if note:
+            body["note"] = note
+        return self._request("POST", "/api/blackboard/revise", body=body)
 
     def revise_notebook(self, project_uid: str, file: str, cells: list[str], description: str = ""):
         # New version of an EXISTING notebook: the server snapshots the current one (restorable via the

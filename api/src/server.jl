@@ -50,6 +50,7 @@ include("storage_api.jl")
 include("setup_api.jl")
 include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
+include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
 include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
@@ -237,6 +238,10 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/notebooks/content" => (req, body_bytes) -> (api_notebooks_content(req)),
     "/api/notebooks/status" => (req, body_bytes) -> (api_notebooks_status(req)),
     "/api/notebooks/snapshots" => (req, body_bytes) -> (api_notebooks_snapshots(req)),
+    # bidir Blackboard (BIDIR_CONTEXT_PLAN Part 4) — Markdown notes + attached captureIds,
+    # versioned like notebooks. Read routes are GET; writes are POSTs below.
+    "/api/blackboard" => (req, body_bytes) -> (api_blackboard_list(req)),
+    "/api/blackboard/entry" => (req, body_bytes) -> (api_blackboard_entry_get(req)),
     "/api/gating/channels" => (req, body_bytes) -> (api_gating_channels(req)),
     "/api/gating/popmap" => (req, body_bytes) -> (api_gating_popmap(req)),
     "/api/gating/stats" => (req, body_bytes) -> (api_gating_stats(req)),
@@ -372,6 +377,12 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/shutdown" => (req, body_bytes) -> (api_notebooks_shutdown(body_bytes)),
     "/api/notebooks/restart" => (req, body_bytes) -> (api_notebooks_restart(body_bytes)),
     "/api/notebooks/build-sysimage" => (req, body_bytes) -> (api_notebooks_build_sysimage(body_bytes)),
+    # bidir Blackboard writes — create + revise are MCP-facing; restore / prune / delete are user-only.
+    "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
+    "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
+    "/api/blackboard/restore" => (req, body_bytes) -> (api_blackboard_restore(body_bytes)),
+    "/api/blackboard/prune"   => (req, body_bytes) -> (api_blackboard_prune(body_bytes)),
+    "/api/blackboard/delete"  => (req, body_bytes) -> (api_blackboard_delete(body_bytes)),
     "/api/setup/init" => (req, body_bytes) -> (api_setup_init(body_bytes)),
     "/api/app/shutdown" => (req, body_bytes) -> (api_app_shutdown(body_bytes)),
     "/api/app/restart" => (req, body_bytes) -> (api_app_restart(body_bytes)),
