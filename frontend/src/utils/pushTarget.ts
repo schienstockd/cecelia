@@ -43,3 +43,20 @@ export function pushChipLabel(state: PairedState): string {
   if (!state.paired) return 'not paired'
   return state.sessionLabel ? `paired ✓ ${state.sessionLabel}` : 'paired ✓'
 }
+
+/** Manual unpair for Kiwi (docs/todo/KIWI_PLAN.md PR #3). Deletes the pairing record; the next
+ *  auto-pair from any MCP tool call rewrites it. Idempotent. Any network failure ⇒ `false` so
+ *  the caller can show a small error without throwing — same discipline as `fetchPushTarget`. */
+export async function clearPushTarget(projectUid: string, apiBase = ''): Promise<boolean> {
+  if (!projectUid) return false
+  try {
+    const res = await fetch(`${apiBase}/api/push/target/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

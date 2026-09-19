@@ -113,3 +113,35 @@ function api_push_target_post(body_bytes::Vector{UInt8})
     ))
     200, JSON3.write((; ok = true))
 end
+
+"""
+    POST /api/push/target/clear
+
+Body: `{projectUid}`. Deletes `<proj>/settings/push_target.json` (if present) and broadcasts
+`push_target:changed` with `paired = false` so any open frontend flips the chip in real time.
+
+This is the manual "unpair" button in Kiwi (docs/todo/KIWI_PLAN.md PR #3). Kiwi cannot call the
+`register_push_target` MCP tool from the browser — that tool reads env vars visible only inside
+the MCP process — so the analogue for a user-driven reset is "clear the record and let the next
+auto-pair rewrite it." The push writer already self-clears a stale record on a socket error
+(`push_writer.jl` :fallback path); this endpoint is the pre-emptive version of that behaviour.
+
+Missing file ⇒ 200 (idempotent — clearing a not-paired project is a no-op, not an error).
+"""
+function api_push_target_clear(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :projectUid)
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    path = _push_target_path(uid)
+    existed = isfile(path)
+    existed && rm(path; force = true)
+    # Broadcast even when the file didn't exist — a frontend that missed the last change
+    # still gets a re-render, and the "paired: false" payload is idempotent.
+    broadcast_ws(Dict{String,Any}(
+        "type" => "push_target:changed", "projectUid" => uid, "paired" => false,
+    ))
+    200, JSON3.write((; ok = true, cleared = existed))
+end

@@ -8,8 +8,12 @@
 //   - Copy chat starter (moved from LabLogPanel)
 //   - Recent captures — click a row to copy its captureId
 //   - Observer state — CLI availability + terminal setup state
+//   - Session identity — sessionLabel + pairedAt + pairedFromPid + "Clear pairing" button
 //
-// PR #3 will add: explicit re-pair button + session identity block.
+// The "Clear pairing" button deletes push_target.json rather than "re-pair now" — the plan's
+// `register_push_target` MCP tool reads env vars that live only inside the paired MCP process,
+// so a browser button cannot force that write. Clearing the record lets the next auto-pair
+// rewrite it, which is the honest equivalent for a user-driven reset.
 //
 // v2 adds MCP health, setup CTA merge, lab-log peek, Blackboard list — see
 // docs/todo/KIWI_PLAN.md → *Contents — v2*. The provider-neutral wording is enforced by
@@ -22,10 +26,12 @@
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import FloatingPanel from '../FloatingPanel.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
+import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCopyFlash } from '../../composables/useCopyFlash'
 import { useObserverStore } from '../../stores/observer'
-import { fetchPushTarget, pushChipLabel, type PairedState } from '../../utils/pushTarget'
+import { fetchPushTarget, pushChipLabel, clearPushTarget,
+         type PairedState } from '../../utils/pushTarget'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, formatWhen,
@@ -97,6 +103,19 @@ onMounted(() => { nowTimer = setInterval(() => { nowTick.value = Date.now() }, 3
 onUnmounted(() => { if (nowTimer) { clearInterval(nowTimer); nowTimer = null } })
 function whenLabel(iso: string): string { return formatWhen(iso, new Date(nowTick.value)) }
 
+// ── Session identity (paired-session details + clear button) ─────────────────
+const clearing = ref(false)
+async function clearPairing() {
+  if (!projectUid.value || clearing.value) return
+  clearing.value = true
+  try {
+    await clearPushTarget(projectUid.value)
+    // The backend broadcasts push_target:changed on clear, which the WS watcher already
+    // handles by re-fetching. Belt-and-braces refresh in case the socket dropped mid-op.
+    await refreshPushTarget()
+  } finally { clearing.value = false }
+}
+
 // ── Observer state (availability + terminal setup) ───────────────────────────
 const observer = useObserverStore()
 const terminalStateLabel = computed(() => {
@@ -118,7 +137,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 <template>
   <FloatingPanel title="Kiwi" icon="pi-comments" storage-key="kiwi"
                  accent="var(--cc-kiwi)"
-                 :default-x="260" :default-y="100" :default-w="320" :default-h="440"
+                 :default-x="260" :default-y="100" :default-w="320" :default-h="520"
                  @close="$emit('close')">
     <div class="kiwi-body">
       <div v-if="!projectUid" class="kiwi-empty cc-muted cc-fs-sm">
@@ -169,6 +188,49 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                  :class="capCopied(c.captureId) ? 'pi-check' : 'pi-copy'" />
             </li>
           </ul>
+        </CollapsibleSection>
+
+        <CollapsibleSection label="Session identity" storage-key="kiwi.session.open"
+                            tip="Which assistant session is paired here — and a button to unpair.">
+          <div v-if="!pushTarget.paired" class="kiwi-empty cc-muted cc-fs-xs">
+            Not paired. Your assistant session pairs on its next MCP tool call.
+          </div>
+          <template v-else>
+            <div class="kiwi-obs-row">
+              <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">Label</span>
+              <span class="cc-fs-xs kiwi-mono">{{ (pushTarget as Extract<PairedState, { paired: true }>).sessionLabel || '—' }}</span>
+            </div>
+            <div class="kiwi-obs-row">
+              <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">Paired</span>
+              <span class="cc-fs-xs">{{ (pushTarget as Extract<PairedState, { paired: true }>).pairedAt || '—' }}</span>
+            </div>
+            <div class="kiwi-obs-row">
+              <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">PID</span>
+              <span class="cc-fs-xs kiwi-mono"
+                    v-tooltip.bottom="`Socket: ${(pushTarget as Extract<PairedState, { paired: true }>).socketPath || '—'}`">
+                {{ (pushTarget as Extract<PairedState, { paired: true }>).pairedFromPid || '—' }}
+              </span>
+            </div>
+            <div class="kiwi-obs-row kiwi-clear-row">
+              <ConfirmButton @confirm="clearPairing" v-slot="{ armed, arm, confirm, cancel }">
+                <button v-if="!armed" class="cc-btn cc-btn-ghost cc-fs-xs kiwi-btn"
+                        :disabled="clearing" @click="arm"
+                        v-tooltip.bottom="'Unpair — your session re-pairs on its next MCP tool call'">
+                  <i class="pi pi-times-circle" /> Clear pairing
+                </button>
+                <template v-else>
+                  <button class="cc-btn cc-btn-ghost cc-fs-xs kiwi-btn danger"
+                          @click="confirm" v-tooltip.bottom="'Confirm — clear the pairing record'">
+                    <i class="pi pi-check" /> Confirm
+                  </button>
+                  <button class="cc-btn cc-btn-ghost cc-fs-xs kiwi-btn"
+                          @click="cancel" v-tooltip.bottom="'Cancel'">
+                    <i class="pi pi-times" />
+                  </button>
+                </template>
+              </ConfirmButton>
+            </div>
+          </template>
         </CollapsibleSection>
 
         <CollapsibleSection label="Assistant" storage-key="kiwi.observer.open"
@@ -225,12 +287,16 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                  font-family: var(--cc-mono); }
 .kiwi-cap-icon { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
 
-/* Assistant / observer section */
+/* Assistant / observer + session identity sections */
 .kiwi-obs-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; }
 .kiwi-obs-lbl { min-width: 4rem; }
+.kiwi-mono   { font-family: var(--cc-mono); overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
 .kiwi-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cc-text-dim);
             flex-shrink: 0; }
 .kiwi-dot-ok   { background: var(--cc-sev-ok); }
 .kiwi-dot-warn { background: var(--cc-sev-warn); }
 .kiwi-dot-fail { background: var(--cc-sev-fail); }
+.kiwi-clear-row { margin-top: 0.4rem; }
+.kiwi-clear-row .kiwi-btn.danger { color: var(--cc-sev-fail); border-color: var(--cc-sev-fail); }
 </style>
