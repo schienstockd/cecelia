@@ -234,6 +234,82 @@ function unversion_value(value, version = nothing)
     version_get(value, version)
 end
 
+# ── Writer-side helpers ─────────────────────────────────────────────────────
+# One pair used by every task that produces an image store — decides where the store lands (flat
+# legacy path vs `{value_name}/vN/…` subdir) AND how ccid.json's `filepath` entry records it. Splits
+# the responsibility cleanly: `plan_versioned_target` runs BEFORE the store writer (needs the parent
+# dir mkpath'd for a new-version subdir), `versioned_filepath_write!` runs INSIDE `commit_state!`
+# once the store has been written successfully. Full design + Q1-Q3 rationale:
+# `docs/audit/vn-versioning-p4-design.md`.
+#
+# Semantics — v1 always stays flat (legacy-friendly); only v2+ nest under the vN subdir. This
+# preserves the "user projects imported before this landed roundtrip unchanged" property.
+"""
+    plan_versioned_target(img, value_name, filename) -> (abs_path, rel_path, as_new_version)
+
+Where a task should write its next image store, and how ccid.json should record it. Reads
+`keep_previous_version()`.
+
+- Fresh (no prior `img.filepath[value_name]`), OR toggle off:
+  `abs = img_zero_dir/{filename}`, `rel = filename`, `as_new_version = false` — legacy overwrite
+  semantics.
+- Re-run with the toggle on: `abs = img_zero_dir/{value_name}/vN/{filename}`,
+  `rel = {value_name}/vN/{filename}`, `as_new_version = true` — appends the next `vN` sibling to
+  the existing versioned entry.
+
+Callers `mkpath(dirname(abs_path))` before writing the store when `as_new_version` is true (the
+parent dir does not exist yet). The `rel_path` is what lands in `ccid.json` via
+`versioned_filepath_write!`.
+"""
+function plan_versioned_target(img, value_name::AbstractString, filename::AbstractString)
+    flat_rel = String(filename)
+    flat_abs = joinpath(img_zero_dir(img), flat_rel)
+    prior = get(img.filepath, String(value_name), nothing)
+    (isnothing(prior) || !keep_previous_version()) && return (flat_abs, flat_rel, false)
+    # `version_next` needs the versioned inner dict; wrap the legacy scalar in memory for the path
+    # calculation only. The ccid.json write path re-does this via `versioned_upgrade_entry!` on the
+    # raw dict inside `commit_state!`.
+    inner = prior isa AbstractDict ?
+                prior :
+                Dict{String,Any}(LATEST_DEFAULT_VAL => prior, LATEST_ACTIVE_KEY => LATEST_DEFAULT_VAL)
+    next_v = version_next(inner)
+    ver_rel = joinpath(String(value_name), next_v, flat_rel)
+    (joinpath(img_zero_dir(img), ver_rel), ver_rel, true)
+end
+
+"""
+    versioned_filepath_write!(raw, value_name, rel_path; as_new_version)
+
+Inside `commit_state!`, record `filepath[value_name] = rel_path` — either overwrite semantics
+(`versioned_set_field!`, legacy scalar shape) or version-append (`versioned_upgrade_entry!` +
+`version_write!`, D6-guarded so an existing `vN` can't be clobbered).
+
+`as_new_version=true` requires a prior entry at `filepath[value_name]` — `plan_versioned_target`
+guarantees this by only returning `true` when there's a prior. If misused (no prior), errors; the
+outer `commit_state!` typically swallows the error and logs it, so callers that don't route through
+`plan_versioned_target` first will silently no-op the ccid.json write.
+"""
+function versioned_filepath_write!(raw::Dict{String,Any}, value_name::AbstractString,
+                                    rel_path::AbstractString; as_new_version::Bool)
+    if as_new_version
+        existing = get(raw, "filepath", nothing)
+        (existing isa AbstractDict && (haskey(existing, value_name) ||
+                                        haskey(existing, Symbol(value_name)))) ||
+            error("versioned_filepath_write!: as_new_version requires a prior filepath[$(value_name)] entry")
+        # `read_ccid_raw` only normalizes TOP-LEVEL keys — nested values (the outer value_name dict
+        # AND the inner versioned entry when one already exists) are JSON3 objects with Symbol keys,
+        # which the mutating `versioned_*` helpers can't write into. `json_native` deep-normalizes so
+        # both `versioned_upgrade_entry!` and the subsequent `version_write!` mutate concrete
+        # `Dict{String,Any}` all the way down. See the JSON3 gotcha in `app/CLAUDE.md`.
+        outer = existing isa Dict{String,Any} ? existing : json_native(existing)
+        raw["filepath"] = outer
+        inner = versioned_upgrade_entry!(outer, String(value_name))
+        version_write!(inner, String(rel_path))
+    else
+        versioned_set_field!(raw, "filepath", String(rel_path), String(value_name))
+    end
+end
+
 # Read a ccid.json / project.json into a String-keyed Dict{String,Any} ready for the versioned_*
 # helpers. JSON3 yields Symbol keys that make `get(d, "field", …)` silently miss (see the JSON3
 # gotcha in CLAUDE.md); this is the one place that normalizes them. Use it instead of hand-rolling
