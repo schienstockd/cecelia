@@ -186,6 +186,8 @@ const DECLARED_TIMERS: Record<string, string> = {
     'two, both deliberate: a POLL that re-reads DOM-derived gate state while a guide is open (Vue cannot track a <select>\'s value), and a one-shot delay before advancing a satisfied step so the user sees it acknowledged',
   'modules/ViewerWindow.vue':
     'the playback clock — a chosen frame rate, so a timer and not rAF; each tick arms the next, and a tick that finds the frame uncached holds instead of advancing',
+  'components/ViewerPanel.vue':
+    'clears the "sent ✓" push chip flash; re-armed so a second push:sent restarts the 3 s flash',
 }
 
 describe('nobody hand-rolls a fourth debounce', () => {
