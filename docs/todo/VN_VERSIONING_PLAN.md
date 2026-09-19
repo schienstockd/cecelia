@@ -1,8 +1,9 @@
 # Value-name versioning — every writer targets a new `vn@v`, never overwrites
 
-**Status:** **P1a + P1b + P1c + P1d shipped** (2026-09-18) — helpers + composer + Julia app-layer +
-Julia API-layer + Python resolver + Python reader routing, additive, backward-compat verified via
-full test suite. P2–P6 planning. Comes out
+**Status:** **P1a + P1b + P1c + P1d + P2 infra shipped** (2026-09-18) — helpers + composer + Julia
+app-layer + Julia API-layer + Python resolver + Python reader routing + guarded writer composer +
+widened CciaImage field types, additive, backward-compat verified via full test suite. P2 pilot
+writer + P3–P6 planning. Comes out
 of the chain-execution-prerequisites prompt
 (`docs/archive/chain-execution-prerequisites-prompt.md`) — closing items **#1** (non-destructive
 default) and **#3** (mechanically-can't-overwrite invariant) collapses into this one primitive.
@@ -179,10 +180,40 @@ Split out from P1 before writing code, because the schema decision is load-beari
 
 ### P2 — Writer path: versioned target + can't-overwrite guard
 
-`zarr_utils.staged_store`, `write_h5ad_atomic`, and Julia `write_atomic` take a `(vn, version)`
-target. Version defaults to `latest+1` at plan time. Refuse if `default/<vn>/vN/` exists (D6).
-`test_zarr_access_convention.py` + the `zarr-access ratchet` testset extend to cover this. Item #3
-lands here.
+Two independent pieces of P2 ship as separate PRs so the review surface stays small:
+
+#### P2 infra — **SHIPPED** (2026-09-18)
+
+Everything needed for a writer to land its data as a versioned entry, minus the actual writer:
+
+- `version_next(d)::String` — pick the next unused `vN` (max numeric suffix + 1). Non-numeric keys
+  are ignored so a hand-labelled `"draft"` doesn't skew the mint.
+- `version_write!(d, item_value; version=nothing)::String` — the guarded writer (D6). Refuses
+  `error` on collision; updates `_latest` to the version just written. `version_set!` remains the
+  unguarded escape hatch for the P4a legacy migrator (stamp existing content as `v1` in place).
+- `versioned_upgrade_entry!(d, value_name)` — writer's on-ramp: wraps a legacy bare scalar/vector
+  entry as `v1` in place, so a task's first-ever v2 write doesn't require a schema migration.
+  Idempotent on already-versioned entries.
+- `CciaImage.filepath` / `.label_props` / `.labels` / `.branch_labels` widened to
+  `Dict{String, Union{legacy_shape, Dict{String,Any}}}`, so a partially-migrated project (some
+  value_names versioned, some not) loads and roundtrips through `save!` unchanged.
+- `to_spaths` / `to_labels` load helpers accept the two-shape entry.
+- Two lingering direct-access sites routed through `unversion_value`:
+  `_image_payload` (`api/src/routes/helpers.jl`), `_label_zarr_path`
+  (`app/src/tasks/spatialAnalysis/contactsMeshes.jl`),
+  `segment/branching.jl` labels resolution. `test_zarr_access_convention.py` + the `zarr-access
+  ratchet` testset extension moves to the pilot-writer PR.
+- 3 new testsets in `app/test/suite/labelprops.jl` (`version_next`, `version_write!`,
+  `versioned_upgrade_entry!`) and 2 in `app/test/suite/image_model.jl` (mixed-shape roundtrip
+  through `read_ccid_raw`; widened field types accept a versioned Dict entry through init_object
+  → save! → re-init).
+
+#### P2 pilot — writer conversion (deferred)
+
+A canonical writer opts into `version_write!` — probably ingest/conversion (`filepath`), since
+that's the field with full P1c API-layer routing in place. Extends
+`test_zarr_access_convention.py` and the `zarr-access ratchet` testset to catch bare
+`default/<vn>/…` joins that bypass a resolver. Item #3 lands here.
 
 ### P3 — Chain planner pins inputs
 

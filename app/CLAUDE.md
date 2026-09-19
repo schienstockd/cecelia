@@ -137,7 +137,7 @@ Two orthogonal axes on the same shape:
 ```
 
 - **Outer axis — value_name variant** (`default`, `dtype`, `cropped`, …). Read: `versioned_get_field(raw, "filepath", value_name)`; write: `versioned_set_field!(raw, "filepath", value, value_name)`.
-- **Inner axis — version per value_name** (`v1`, `v2`, …). Read: `version_get(inner, version)` or the composer `versioned_get_field_at(raw, "filepath", value_name; version=nothing)`; write (P2): `version_set!(inner, value, version)`. For a struct-field accessor that already has the resolved inner value, use `unversion_value(value, version=nothing)`.
+- **Inner axis — version per value_name** (`v1`, `v2`, …). Read: `version_get(inner, version)` or the composer `versioned_get_field_at(raw, "filepath", value_name; version=nothing)`. Write: `version_write!(inner, value)` — mints the next `vN` (via `version_next`), refuses to overwrite (D6), updates `_latest`. `version_set!` remains as the unguarded escape hatch for the P4a legacy migrator. First-ever v2 write on a legacy value_name goes through `versioned_upgrade_entry!(outer, value_name)` first — that wraps the bare scalar/vector as `v1` in place and returns the versioned entry ready for `version_write!`. For a struct-field accessor that already has the resolved inner value, use `unversion_value(value, version=nothing)`.
 - A bare scalar / vector at the value_name key is treated as **implicit `v1`** — old projects and every legacy reader keep working.
 - Companion: `resolve_version(img, field, value_name=nothing)::String` for callers that need the version string (chain-planner pinning, logging).
 

@@ -162,12 +162,15 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     end
     im_path = joinpath(dirname(dirname(img._dir)), "0", img.uid, string(filename))
 
-    # Resolve input labels zarr — a segmentation the user chose from `img.labels`
-    if !haskey(img.labels, p.valueName) || isempty(img.labels[p.valueName])
+    # Resolve input labels zarr — a segmentation the user chose from `img.labels`. `unversion_value`
+    # unwraps the inner-axis versioned entry (P2) to the leaf Vector{String}; on legacy shape it's
+    # the identity, so this stays a no-op today.
+    label_files = unversion_value(get(img.labels, p.valueName, nothing))
+    if isnothing(label_files) || isempty(label_files)
         on_log("[ERROR] No labels registered for valueName='$(p.valueName)'")
         return nothing
     end
-    labels_path = joinpath(img._dir, "labels", first(img.labels[p.valueName]))
+    labels_path = joinpath(img._dir, "labels", first(label_files))
     if !ispath(labels_path)
         on_log("[ERROR] Input labels not found: $labels_path")
         return nothing

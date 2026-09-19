@@ -171,13 +171,21 @@ end
 # (camelCase, field selection) is the API's job; data access goes through CciaImage
 # so ccid.json parsing has a single home.
 function _image_payload(img::CciaImage)
-    fps = Dict{String,String}(k => v for (k, v) in img.filepath if k != VERSIONED_ACTIVE_KEY)
+    # Per-value_name filename for the payload — unwrap the inner version axis to a leaf String so
+    # a versioned entry (`{ "v1": "…", "_latest": "v1" }`) presents as a scalar filename here. The
+    # frontend consumes one filename per value_name; version choice is a separate UI concern (P6).
+    fps = Dict{String,String}()
+    for (k, v) in img.filepath
+        k == VERSIONED_ACTIVE_KEY && continue
+        leaf = unversion_value(v)
+        leaf isa AbstractString && (fps[String(k)] = String(leaf))
+    end
     # Lenient (no write-back): surface the default zarr if present but unregistered (legacy data).
     if isempty(fps) && isdir(joinpath(img_zero_dir(img), "ccidImage.ome.zarr"))
         fps["default"] = "ccidImage.ome.zarr"
     end
     active_vn = versioned_active(img.filepath)
-    active_fn = something(versioned_get(img.filepath), get(fps, VERSIONED_DEFAULT_VAL, ""))
+    active_fn = something(unversion_value(versioned_get(img.filepath)), get(fps, VERSIONED_DEFAULT_VAL, ""))
     ch        = channel_names(img)
     (;
         uid             = img.uid,

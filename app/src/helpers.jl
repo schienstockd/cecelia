@@ -150,6 +150,58 @@ end
 version_keys(d::AbstractDict)::Vector{String} =
     [string(k) for k in keys(d) if string(k) != LATEST_ACTIVE_KEY]
 
+# ── Mint the next version key (`v1`, `v2`, …) for a versioned entry. Chooses
+# `v<N+1>` where N is the max numeric suffix already present; returns `v1` on
+# an empty dict. Non-standard version names ("draft") are ignored by the
+# numeric scan, so a hand-labelled version doesn't skew the next mint.
+function version_next(d::AbstractDict)::String
+    n = 0
+    for k in keys(d)
+        s = string(k)
+        s == LATEST_ACTIVE_KEY && continue
+        if startswith(s, "v")
+            tail = tryparse(Int, s[2:end])
+            (tail !== nothing && tail > n) && (n = tail)
+        end
+    end
+    "v$(n + 1)"
+end
+
+# ── Guarded writer (D6 — mechanically-can't-overwrite invariant). Writes
+# `item_value` at `version` (defaults to `version_next(d)`), refusing if that
+# key already exists. Updates `_latest` to the version just written.
+# Returns the version key.
+#
+# The unguarded escape hatch is `version_set!` (above) — use it for the legacy
+# migration path (P4a) that stamps existing content as `v1` in-place.
+function version_write!(d::AbstractDict{String}, item_value;
+                        version::Union{AbstractString,Nothing} = nothing)::String
+    ver = isnothing(version) ? version_next(d) : string(version)
+    (haskey(d, ver) || haskey(d, Symbol(ver))) &&
+        error("version_write!: refusing to overwrite existing version $(ver)")
+    d[ver] = item_value
+    d[LATEST_ACTIVE_KEY] = ver
+    ver
+end
+
+# ── Given an outer versioned_* dict (`_active`-marked), ensure `value_name`'s
+# entry is a versioned entry — wrapping a legacy bare scalar/vector as `v1`.
+# Returns the versioned entry (a `Dict{String,Any}`) so the caller can hand
+# it straight to `version_write!` for the next version.
+#
+# This is the writer's on-ramp: the first time a task writes v2 for a
+# previously-legacy value_name, the entry must be upgraded in place. No-op if
+# already versioned. Errors if the value_name is absent (nothing to upgrade).
+function versioned_upgrade_entry!(d::AbstractDict{String}, value_name::AbstractString)
+    vn = String(value_name)
+    haskey(d, vn) || error("versioned_upgrade_entry!: value_name $(vn) is absent — register it before upgrading")
+    entry = d[vn]
+    is_versioned_entry(entry) && return entry::AbstractDict
+    upgraded = Dict{String,Any}(LATEST_DEFAULT_VAL => entry, LATEST_ACTIVE_KEY => LATEST_DEFAULT_VAL)
+    d[vn] = upgraded
+    upgraded
+end
+
 # ── Composer: read a field, resolving BOTH the value_name axis and the ──────
 # version axis. Returns:
 #   - the leaf value when the entry is a versioned entry (new shape),
