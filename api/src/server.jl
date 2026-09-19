@@ -51,6 +51,7 @@ include("setup_api.jl")
 include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
+include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────

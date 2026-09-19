@@ -4473,20 +4473,29 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
       throw new Error(err)
     }
     const captureId = String(respJson?.captureId ?? '')
-    // Frozen frame stays visible: user can discuss it with Claude while seeing exactly what was
-    // shared, and Claude's marks land where they were drawn. Replaces the earlier
-    // clipboard-toast+modal design (removed with this change).
+    // BIDIR PR #2: backend reports `push: "sent" | "fallback" | "not_paired"`. "sent" means the
+    // Julia writer landed the plain-text notification on the paired Claude Code session's inbox
+    // socket — the user doesn't need the clipboard round-trip. Anything else falls back to the
+    // existing `#1040` clipboard/toast flow so a broken push never blocks a share.
+    const pushOutcome = String(respJson?.push ?? 'not_paired')
+    // Frozen frame stays visible regardless of push outcome: user can discuss it with Claude
+    // while seeing exactly what was shared, and Claude's marks land where they were drawn.
     captureView.value = {
       captureId, frameDataUrl: png, overlay: payload.overlay,
       addressLine: drawAddressLine.value,
     }
-    // Clipboard prefill stays — the drawing surface just dismissed and the user still needs to
-    // paste into Claude to trigger the read.
-    const prompt = 'Read my shared frame in cecelia.'
-    const copied = await copyText(prompt)
-    showShareToast('ok', copied
-      ? 'Capture saved — prompt in your clipboard. Switch to Claude and paste.'
-      : `Capture saved — copy manually: "${prompt}"`)
+    if (pushOutcome === 'sent') {
+      // Push landed — skip the clipboard. Toast tells the user delivery happened; they can
+      // switch to their Claude session and see the incoming message there.
+      showShareToast('ok', 'Sent to your Claude session — check for the incoming message.')
+    } else {
+      // Not paired / socket dead / any write error ⇒ fallback path unchanged from #1040.
+      const prompt = 'Read my shared frame in cecelia.'
+      const copied = await copyText(prompt)
+      showShareToast('ok', copied
+        ? 'Capture saved — prompt in your clipboard. Switch to Claude and paste.'
+        : `Capture saved — copy manually: "${prompt}"`)
+    }
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[share-in] capture POST failed', e)

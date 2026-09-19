@@ -8846,3 +8846,134 @@ end
         @test err !== nothing && err[1] == 400 && occursin("imageUid", err[2])
     end
 end
+
+# ── BIDIR Part 5 push writer (BIDIR_PUSH_PLAN PR #2) ────────────────────────
+@testset "API: format_capture_message builds the locked-format one-liner" begin
+    # The exact wording is load-bearing — a chat-side grep for `"[cecelia] shared capture"`
+    # must find every incident, past and future. Change the wording only if you're changing
+    # the plan's Decision 5.
+    m1 = format_capture_message("zolIMa", "cap-20260919T140000-abcdef",
+        Dict{String,Any}("surface" => "viewer_frame", "imageUid" => "1SqevM",
+                         "t" => 3, "z" => 7))
+    @test m1 == "[cecelia] shared capture cap-20260919T140000-abcdef from project zolIMa " *
+                "(viewer_frame, image 1SqevM, t=3, z=7). Read it with " *
+                "get_capture(\"zolIMa\", \"cap-20260919T140000-abcdef\")."
+
+    # A UI-surface capture with no image / t / z reads cleanly — parts that are empty are
+    # dropped rather than showing "()" or "image ".
+    m2 = format_capture_message("p", "cap-x", Dict{String,Any}("surface" => "ui"))
+    @test m2 == "[cecelia] shared capture cap-x from project p (ui). Read it with " *
+                "get_capture(\"p\", \"cap-x\")."
+
+    # Zero-address capture (address stripped or absent) still names project + id.
+    m3 = format_capture_message("p", "cap-y", nothing)
+    @test occursin("[cecelia] shared capture cap-y from project p", m3)
+    @test occursin("get_capture(\"p\", \"cap-y\")", m3)
+end
+
+@testset "API: push_capture_notification without pairing ⇒ :not_paired, silent" begin
+    # No push_target.json on disk ⇒ we skip the socket work and return :not_paired. This is
+    # the common "user hasn't paired a session yet" case; the frontend renders it the same as
+    # :fallback (both trigger the clipboard/toast path).
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-push-unpaired")
+        outcome, msg = push_capture_notification(proj.uid, "cap-x",
+            Dict{String,Any}("surface" => "viewer_frame"))
+        @test outcome === :not_paired
+        @test msg === nothing
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: push_capture_notification round-trips to a local Unix socket" begin
+    # The full wire test: bind a Unix socket in the test process, listen, then have the writer
+    # connect + send both lines. Assert the receiver saw the exact bytes documented above.
+    # Skips on Windows — the named-pipe branch would need a different listener setup and this
+    # PR doesn't have a Windows box to verify against.
+    Sys.iswindows() && (@test_skip "push writer round-trip (Windows named pipes)"; return)
+
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    sock_path = joinpath(tmp, "probe.sock")
+    server = Sockets.listen(sock_path)
+    received = String[]
+    receiver = @async begin
+        try
+            s = Sockets.accept(server)
+            while !eof(s)
+                line = readline(s; keep = false)
+                isempty(line) || push!(received, line)
+            end
+            close(s)
+        catch  # server closed during test teardown
+        end
+    end
+    try
+        proj = create_project!(name = "api-push-uds")
+        # Write a pairing record ourselves — mirrors what /api/push/target POST would do.
+        target_dir = joinpath(tmp, proj.uid, "settings")
+        mkpath(target_dir)
+        write_json_atomic(joinpath(target_dir, "push_target.json"), Dict{String,Any}(
+            "socketPath" => sock_path, "token" => "test-token-abc",
+            "sessionLabel" => "probe", "pairedAt" => "2026-09-19T14:00:00",
+            "pairedFromPid" => "0",
+        ))
+        outcome, sent_content = push_capture_notification(proj.uid, "cap-y",
+            Dict{String,Any}("surface" => "viewer_frame", "imageUid" => "IMG1",
+                             "t" => 2, "z" => 5))
+        @test outcome === :sent
+        @test sent_content !== nothing
+        @test occursin("cap-y", sent_content::String)
+        # Give the receiver a moment to drain both lines from the socket buffer.
+        for _ in 1:20
+            length(received) >= 2 && break
+            sleep(0.05)
+        end
+        @test length(received) == 2
+        auth = JSON3.read(received[1], Dict{String,Any})
+        msg  = JSON3.read(received[2], Dict{String,Any})
+        @test auth["type"]  == "auth"
+        @test auth["token"] == "test-token-abc"
+        @test msg["type"]   == "user"
+        @test msg["message"]["role"]    == "user"
+        @test msg["message"]["content"] == sent_content
+    finally
+        try; close(server); catch; end
+        # The @async receiver exits on eof/close; give it a moment.
+        try; wait(receiver); catch; end
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: push writer clears stale target on connect failure ⇒ :fallback" begin
+    # A pairing record pointing at a dead socket path ⇒ the writer catches the connect
+    # exception, removes the record, and returns :fallback. Next auto-pair (from any MCP
+    # tool call) rewrites it; until then GET /api/push/target reads "not paired".
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-push-stale")
+        target_dir = joinpath(tmp, proj.uid, "settings")
+        mkpath(target_dir)
+        stale_path = joinpath(tmp, "definitely-not-a-socket.sock")
+        target_json = joinpath(target_dir, "push_target.json")
+        write_json_atomic(target_json, Dict{String,Any}(
+            "socketPath" => stale_path, "token" => "t",
+        ))
+        outcome, _ = push_capture_notification(proj.uid, "cap-z", nothing)
+        @test outcome === :fallback
+        # Stale record cleared silently — no leftover file to re-attempt next time.
+        @test !isfile(target_json)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
