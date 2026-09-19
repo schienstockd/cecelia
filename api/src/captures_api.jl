@@ -39,6 +39,11 @@ _valid_capture_id(id::AbstractString)::Bool = !isnothing(match(_CAPTURE_ID_RE, S
 # every time the frontend adds a field. Anything unknown at read time is ignored by Claude.
 const _CAPTURE_SURFACES = Set(["viewer_frame", "viewer_slab", "ui", "plot"])
 const _CAPTURE_OVERLAY_KINDS = Set(["rect", "poly", "stroke", "circle", "arrow"])
+# CVD-safe palette locked 2026-09-19 (see `frontend/src/utils/overlayCompose.ts`). Safelisted so
+# a tampered payload can't smuggle arbitrary CSS through; unknown names are DROPPED (the frontend
+# resolver then falls back to `white`), not stored — a value that would render is a value the
+# canvas already treats as legitimate.
+const _CAPTURE_OVERLAY_COLORS = Set(["magenta", "cyan", "yellow", "white"])
 
 # The PNG can be a base64 data URL (`data:image/png;base64,...`) or bare base64 bytes. We accept
 # both and store the raw bytes on disk so downstream readers don't repeat the prefix strip. Cap
@@ -85,6 +90,16 @@ function _clean_overlay_mark(m)::Union{Dict{String,Any},Nothing}
         v = get(m, k, get(m, Symbol(k), nothing))
         v === nothing || (out[k] = v)
     end
+    # Colour name — safelisted against `_CAPTURE_OVERLAY_COLORS`. An unknown name is silently
+    # dropped so the mark still stores + renders (frontend resolves the absent field to `white`);
+    # a nil-payload capture never gains a stray CSS value it didn't send. Symbol lookup first
+    # because the body arrives as a `JSON3.Object` (native `Symbol` keys); the String fallback
+    # covers a caller that hands over a plain `Dict{String,Any}`.
+    color_v = get(m, :color, get(m, "color", nothing))
+    if color_v isa AbstractString
+        c = String(color_v)
+        c in _CAPTURE_OVERLAY_COLORS && (out["color"] = c)
+    end
     out
 end
 _clean_overlay(raw)::Vector{Dict{String,Any}} =
@@ -97,7 +112,7 @@ function _build_capture_envelope(body::AbstractDict, id::String, ts::String,
                                   png_bytes::Vector{UInt8})::Dict{String,Any}
     surface = String(get(body, :surface, "viewer_frame"))
     surface in _CAPTURE_SURFACES || (surface = "viewer_frame")
-    Dict{String,Any}(
+    envelope = Dict{String,Any}(
         "captureId"       => id,
         "createdAt"       => ts,
         "surface"         => surface,
@@ -110,6 +125,15 @@ function _build_capture_envelope(body::AbstractDict, id::String, ts::String,
         "viewStateSnapshot" => get(body, :viewStateSnapshot, nothing),
         "viewerPropsRef"    => get(body, :viewerPropsRef, nothing),
     )
+    # Re-annotation lineage (Kiwi PR B): a capture created by drawing MORE marks on top of a
+    # frozen frame carries the previous capture's id so the two can be linked in the Kiwi list
+    # ("this refines cap-…"). Additive; validated only for shape (a real capture id string). An
+    # unknown / malformed value is dropped — an unlinked capture is fine, a lie is not.
+    prev = get(body, :previousCaptureId, nothing)
+    if prev isa AbstractString && _valid_capture_id(String(prev))
+        envelope["previousCaptureId"] = String(prev)
+    end
+    envelope
 end
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
@@ -160,6 +184,14 @@ function api_viewer_capture(body_bytes::Vector{UInt8})
     # writer picks the fields it needs (surface / imageUid / t / z).
     push_outcome, _msg = push_capture_notification(uid, id, get(envelope, "address", nothing))
 
+    # Nudge any open Kiwi (this window OR another Cecelia session on this project) to refresh its
+    # Recent-captures list. Symmetric with delete/clear — both surfaces should reflect a WRITE the
+    # same way they reflect a delete. Kiwi PR B (re-annotate) needs this so a follow-up capture
+    # from CaptureViewSurface shows up in the list without a page reload.
+    broadcast_ws(Dict{String,Any}(
+        "type" => "captures:changed", "projectUid" => uid,
+    ))
+
     200, JSON3.write((; ok = true, captureId = id, path = dir, push = String(push_outcome)))
 end
 
@@ -196,12 +228,15 @@ function api_viewer_captures_list(req::HTTP.Request)
         isfile(meta_path) || continue
         try
             meta = JSON3.read(read(meta_path, String))
-            push!(items, Dict{String,Any}(
+            row = Dict{String,Any}(
                 "captureId" => String(get(meta, :captureId, id)),
                 "createdAt" => String(get(meta, :createdAt, "")),
                 "surface"   => String(get(meta, :surface, "")),
                 "address"   => _capture_dict(get(meta, :address, nothing)),
-            ))
+            )
+            prev = get(meta, :previousCaptureId, nothing)
+            prev isa AbstractString && (row["previousCaptureId"] = String(prev))
+            push!(items, row)
         catch e
             @warn "Skipping unreadable capture meta" path = meta_path exception = e
         end

@@ -51,10 +51,18 @@ export function buildCaptureAddress(input: CaptureAddress): CaptureAddress {
 // Rect / poly / stroke are what `drawGeometry.ts` produces today; circle + arrow are reserved for
 // PR #5 (freeform point-out) so the schema doesn't churn when they land.
 export type OverlayKind = 'rect' | 'poly' | 'stroke' | 'circle' | 'arrow'
+
+// Palette-name slot on a mark. The 4 CVD-safe / microscopy-neutral choices are locked in
+// `utils/overlayCompose.ts::ANNOTATION_PALETTE` and safelisted by the server so a stray value
+// gets dropped rather than stored as arbitrary CSS. Absent ⇒ `white` (also the pre-palette
+// default), matching every capture written before this field existed.
+export type OverlayColor = 'magenta' | 'cyan' | 'yellow' | 'white'
+
 export interface OverlayMark {
   kind: OverlayKind
   geom: Record<string, unknown>
   label?: string
+  color?: OverlayColor
 }
 
 // Scale a pixel point into the [0,1] frame-relative space. `w`/`h` are the CAPTURED FRAME's pixel
