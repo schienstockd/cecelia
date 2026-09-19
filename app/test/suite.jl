@@ -329,6 +329,8 @@ include(joinpath(@__DIR__, "suite", "tracking_hmm.jl"))
 
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
 
+include(joinpath(@__DIR__, "suite", "vn_pilot_writer.jl"))
+
 # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
 #
 # All three copy testsets below walk THIS list. They each used to hardcode `src/tasks`, which

@@ -18,6 +18,7 @@ export IMAGE_COMPRESSOR_MEASURED_ON
 export ngff_version, chunk_separator, set_store_layout!
 export NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_DEFAULT
 export store_layout, STORE_LAYOUT_CHOICES, STORE_LAYOUT_DEFAULT, STORE_LAYOUT_MEASURED_ON
+export keep_previous_version, set_keep_previous_version!, KEEP_PREVIOUS_VERSION_DEFAULT
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH

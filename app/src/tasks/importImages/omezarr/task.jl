@@ -32,6 +32,31 @@ function parse_import_omezarr_params(d::AbstractDict)::ImportOmezarrParams
         jvmHeapGiB    = get(d, "jvmHeapGiB", "auto"))
 end
 
+# Where the next import writes, and whether it's a version-append or an overwrite.
+#
+# Rules (see `docs/audit/vn-versioning-p4-design.md`):
+#   - Fresh import (no `img.filepath[value_name]`): flat `img_zero_dir/ccidImage.ome.zarr`, `false`.
+#     v1 always lives at the legacy path so a project imported with the toggle on is still readable
+#     by anything that hasn't yet been P1-routed (belt-and-braces, given P2 infra's union type
+#     already handles it in-model).
+#   - `keep_previous_version()` false: same as fresh — overwrite semantics preserved.
+#   - Re-import with toggle on: next `vN` at `img_zero_dir/{value_name}/vN/ccidImage.ome.zarr`,
+#     `true`. `_merge_zarr_meta_into_ccid!` routes the ccid.json write through
+#     `versioned_upgrade_entry!` + `version_write!` at the end of the run.
+function _plan_import_target(img::CciaImage, value_name::AbstractString)
+    flat = joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
+    prior = get(img.filepath, String(value_name), nothing)
+    (isnothing(prior) || !keep_previous_version()) && return (flat, false)
+    # `version_next` needs the versioned inner dict; wrap the legacy scalar in memory (the ccid.json
+    # write path re-does this via `versioned_upgrade_entry!` on the raw dict — this copy is
+    # ephemeral, for the path calculation only).
+    inner = prior isa AbstractDict ?
+                prior :
+                Dict{String,Any}(LATEST_DEFAULT_VAL => prior, LATEST_ACTIVE_KEY => LATEST_DEFAULT_VAL)
+    next_v = version_next(inner)
+    (joinpath(img_zero_dir(img), String(value_name), next_v, "ccidImage.ome.zarr"), true)
+end
+
 function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -47,7 +72,16 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         return nothing
     end
 
-    zarr_out       = joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
+    # Two write modes — decided ONCE per run:
+    #   - flat (default): `img_zero_dir/ccidImage.ome.zarr`, overwrite in place, ccid.json records
+    #     legacy scalar. Backward-compatible with every existing project.
+    #   - versioned: re-import with `keep_previous_version()`=true → next `vN` at
+    #     `img_zero_dir/{value_name}/vN/ccidImage.ome.zarr` alongside the prior version. Ccid.json
+    #     entry gets upgraded to versioned shape on the write. First-ever import stays flat regardless
+    #     of the toggle — v1 always lives at the legacy path, only v2+ nest.
+    # `_plan_import_target` returns (zarr_out, as_new_version); `as_new_version` threads through to
+    # `_merge_zarr_meta_into_ccid!` at the end of the run.
+    zarr_out, as_new_version = _plan_import_target(img, value_name)
     pyramid_levels = isnothing(p.pyramidLevels) ? p.pyramidScale : Int(p.pyramidLevels)
 
     # Multi-series source (LIF, CZI, …): the register step (or the series picker) recorded which
@@ -68,7 +102,10 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         return nothing
     end
 
-    # clean any previous outputs (the final store, a leftover stage dir)
+    # clean any previous outputs (the final store, a leftover stage dir).
+    # Versioned target: `zarr_out` is a fresh vN subdir; anything there is crashed-run debris, safe to
+    # clean. Also ensure the parent dir exists — bioformats2raw creates its own leaf, not the
+    # `default/vN/` intermediate.
     stage_dir = joinpath(img_zero_dir(img), "_stage_src")
     for d in unique([zarr_out, stage_dir])
         if isdir(d)
@@ -76,6 +113,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
             rm(d; recursive = true)
         end
     end
+    as_new_version && mkpath(dirname(zarr_out))
 
     # Stage the source locally first when reading from a slow/network location (SMB): copies the whole
     # companion set to local scratch, then bioformats2raw reads at disk speed. Deleted right after the
@@ -186,8 +224,12 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # `img_filepath(img)` → `series_base(...)` resolves to this same directory (flat-store branch).
     resolved_zarr = isnothing(series_subdir) || isempty(series_subdir) ? zarr_out :
                     joinpath(zarr_out, series_subdir)
-    store_rel     = isnothing(series_subdir) || isempty(series_subdir) ? basename(zarr_out) :
-                    joinpath(basename(zarr_out), series_subdir)
+    # `store_rel` is the path RECORDED in ccid.json — relative to `img_zero_dir(img)`. Flat imports
+    # keep the legacy basename (`ccidImage.ome.zarr`); versioned imports carry the vN subdir
+    # (`{value_name}/vN/ccidImage.ome.zarr`) so a v1 sibling can coexist.
+    store_rel_root = relpath(zarr_out, img_zero_dir(img))
+    store_rel      = isnothing(series_subdir) || isempty(series_subdir) ? store_rel_root :
+                     joinpath(store_rel_root, series_subdir)
 
     # Read calibration metadata from the bioformats2raw (nested) output — the only layout
     # read_ome_metadata understands (CLAUDE.md → OME-ZARR dual-format).
@@ -276,9 +318,10 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
 
     _update_image_status!(img, IMAGE_DONE)
     _merge_zarr_meta_into_ccid!(img, zarr_meta;
-                                zarr_filename = store_rel,
-                                value_name    = value_name,
-                                on_log        = on_log)
+                                zarr_filename  = store_rel,
+                                value_name     = value_name,
+                                as_new_version = as_new_version,
+                                on_log         = on_log)
     # bank calibration QC (missing/untrustworthy physical sizes) — the single source the image-table
     # indicator, whiteboard, lab log and MCP all read (replaces the frontend's own re-derivation).
     write_metadata_qc!(img)

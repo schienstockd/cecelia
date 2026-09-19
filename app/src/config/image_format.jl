@@ -430,3 +430,48 @@ function bf2raw_java_env(heap_gib::Integer)::Dict{String,String}
     opt  = "-Xmx$(heap_gib)g"
     Dict{String,String}("BIOFORMATS2RAW_OPTS" => isempty(prev) ? opt : "$opt $prev")
 end
+
+# ── Reprocessing: keep previous version? ──────────────────────────────────────────────────────────
+#
+# `[zarr].keepPreviousVersion` — when true, a re-run of a producing task (starting with ingest) mints
+# the next `vN` alongside the current one via `version_write!` (the P2 infra guarded writer), so the
+# prior version's store survives on disk. When false (default), the task overwrites in place — the
+# behaviour every existing user relies on.
+#
+# The toggle is a niche opt-in for humans (A/B compare, publication freeze, chain branching,
+# regression investigation, sharing intermediates); the same knob is what future autonomous execution
+# flips programmatically so a Claude that runs a task can't destroy the user's data. Design:
+# `docs/todo/VN_VERSIONING_PLAN.md`, `docs/audit/vn-versioning-p4-design.md`.
+
+const KEEP_PREVIOUS_VERSION_DEFAULT = false
+
+"""
+    keep_previous_version() -> Bool
+
+Whether a re-run of a producing task should mint the next `vN` instead of overwriting the current
+version. Reads `[zarr].keepPreviousVersion` from `custom.toml`, falls back to the default when unset
+or unparseable — a typo in the config must not fail the write path.
+"""
+function keep_previous_version()::Bool
+    v = get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "keepPreviousVersion",
+            KEEP_PREVIOUS_VERSION_DEFAULT)
+    v isa Bool ? v : KEEP_PREVIOUS_VERSION_DEFAULT
+end
+
+"""
+    set_keep_previous_version!(val::Bool) -> Bool
+
+Persist the toggle to `custom.toml` and hot-reload config. Mirrors `set_image_compressor!`. Returns
+the value that was persisted.
+"""
+function set_keep_previous_version!(val::Bool)::Bool
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    z   = get(cfg, "zarr", Dict{String,Any}())
+    z["keepPreviousVersion"] = val
+    cfg["zarr"] = z
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()
+    val
+end

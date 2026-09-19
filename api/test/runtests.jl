@@ -5410,7 +5410,7 @@ end
         "/api/qc/cohort", "/api/qc/cohort/runs",
         "/api/repl/api", "/api/setup/defaults",
         "/api/setup/validate", "/api/config/tls",
-        "/api/storage/compressor", "/api/storage/layout",
+        "/api/storage/compressor", "/api/storage/layout", "/api/storage/keep-previous-version",
         "/api/storage/summary",
         "/api/profiles",
         "/api/tasks", "/api/tasks/custom-modules",
@@ -5479,7 +5479,8 @@ end
         "/api/repl/config", "/api/sets/create",
         "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
         "/api/config/tls/set",
-        "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
+        "/api/storage/compressor/set", "/api/storage/layout/set",
+        "/api/storage/keep-previous-version/set", "/api/storage/reclaim",
         "/api/profiles/save", "/api/profiles/delete",
         "/api/tasks/custom-modules/reload", "/api/tasks/validate",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
@@ -5535,7 +5536,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 95 && length(POST_ROUTES) == 120
+    @test length(GET_ROUTES) == 96 && length(POST_ROUTES) == 121
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -6575,6 +6576,34 @@ end
     # bad input is rejected rather than silently persisted — this writes custom.toml
     @test _post(api_store_layout_set, Dict("name" => "nope"))[1] == 400
     @test _post(api_store_layout_set, Dict("name" => ""))[1] == 400
+end
+
+@testset "API: keep-previous-version toggle (VN versioning pilot)" begin
+    # The Settings toggle that flips `Cecelia.keep_previous_version()` — a re-run of ingest (the
+    # pilot writer) mints the next `vN` instead of overwriting. Same knob future autonomous
+    # execution flips programmatically. Runs hermetic against the throwaway CECELIA_DEV_DIR.
+    prior = Cecelia.keep_previous_version()
+    try
+        Cecelia.set_keep_previous_version!(false)
+        st, body = api_keep_previous_version_get(HTTP.Request("GET", "/api/storage/keep-previous-version"))
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.current === false
+        @test d.default === false                          # global default is off
+
+        @test _post(api_keep_previous_version_set, Dict("value" => true))[1] == 200
+        @test Cecelia.keep_previous_version() === true
+
+        @test _post(api_keep_previous_version_set, Dict("value" => false))[1] == 200
+        @test Cecelia.keep_previous_version() === false
+
+        # missing key + wrong type both 400 — no silent partial toggles
+        @test _post(api_keep_previous_version_set, Dict{String,Any}())[1]      == 400
+        @test _post(api_keep_previous_version_set, Dict("value" => "yes"))[1]  == 400
+        @test _post(api_keep_previous_version_set, Dict("value" => 1))[1]      == 400
+    finally
+        Cecelia.set_keep_previous_version!(prior)
+    end
 end
 
 # ── `_json_safe` covers the shape handlers actually return ────────────────────

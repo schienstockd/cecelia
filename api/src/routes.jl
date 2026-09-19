@@ -656,6 +656,25 @@ function api_compressor_set(body_bytes)
     end
 end
 
+# ── Reprocessing: keep previous version ──────────────────────────────────────
+# Global toggle for the guarded-writer path — see `Cecelia.keep_previous_version`. Default off;
+# users flip it on for the niche cases (A/B compare, publication freeze, chain branching,
+# regression investigation, sharing intermediates). Same knob future autonomous execution flips
+# programmatically so a Claude-triggered run can't overwrite user data.
+function api_keep_previous_version_get(_req)
+    200, JSON3.write((; current = Cecelia.keep_previous_version(),
+                        default = Cecelia.KEEP_PREVIOUS_VERSION_DEFAULT))
+end
+
+function api_keep_previous_version_set(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
+    haskey(data, :value) || return 400, JSON3.write((; error = "value required (Bool)"))
+    v = data[:value]
+    v isa Bool || return 400, JSON3.write((; error = "value must be Bool"))
+    200, JSON3.write((; current = Cecelia.set_keep_previous_version!(v)))
+end
+
 # ── TLS toggle — persisted preference for HTTPS + HTTP/2 ─────────────────────
 #
 # The server's ACTUAL protocol lives in `/api/diagnostics` as `protocol` (either
