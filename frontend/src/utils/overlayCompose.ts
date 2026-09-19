@@ -124,13 +124,35 @@ export async function composeFrameWithOverlay(
   const w = frameCanvas.width, h = frameCanvas.height
   const framePng = frameCanvas.toDataURL('image/png')
   if (w === 0 || h === 0 || marks.length === 0) return framePng
+  const img = await loadImg(framePng)
+  if (!img) return framePng
+  return composeOverImage(img, w, h, marks) ?? framePng
+}
+
+/** Composite `marks` onto a copy of an already-loaded `HTMLImageElement` and return the PNG data
+ *  URL. Used by CaptureViewSurface's re-annotate flow (Kiwi PR B): the frozen frame is already an
+ *  `<img>` in the DOM, so we skip the WebGPU readback entirely — no toDataURL/`loadImg` round-trip
+ *  needed, no async gymnastics. `w × h` is the pixel box you want the composite in (usually the
+ *  image's natural size, so the marks land where a downstream `get_capture` reader expects). */
+export function composeImageWithOverlay(
+  frame: HTMLImageElement,
+  marks: OverlayMark[],
+): string | null {
+  const w = frame.naturalWidth, h = frame.naturalHeight
+  if (w === 0 || h === 0) return null
+  return composeOverImage(frame, w, h, marks)
+}
+
+/** Shared innards: 2D offscreen canvas of size w×h, drawImage the source, paint the marks, return
+ *  the PNG data URL. Any failure ⇒ `null`; callers pick their own fallback. */
+function composeOverImage(
+  frame: CanvasImageSource, w: number, h: number, marks: OverlayMark[],
+): string | null {
   const off = document.createElement('canvas')
   off.width = w; off.height = h
   const ctx = off.getContext('2d')
-  if (!ctx) return framePng
-  const img = await loadImg(framePng)
-  if (!img) return framePng
-  ctx.drawImage(img, 0, 0)
-  paintOverlayOnCanvas(ctx, marks, w, h)
+  if (!ctx) return null
+  ctx.drawImage(frame, 0, 0, w, h)
+  if (marks.length > 0) paintOverlayOnCanvas(ctx, marks, w, h)
   return off.toDataURL('image/png')
 }

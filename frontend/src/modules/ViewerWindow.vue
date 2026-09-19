@@ -52,6 +52,7 @@ import {
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
+import { subscribeViewerSeek } from '../utils/viewerSeekChannel'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
@@ -97,7 +98,7 @@ import GridOverlay from '../components/GridOverlay.vue'
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
-import { buildCaptureAddress, type OverlayMark } from '../utils/captureAddress'
+import { buildCaptureAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
 import { copyText } from '../utils/clipboard'
 import AxesGizmo from '../components/AxesGizmo.vue'
@@ -4442,10 +4443,25 @@ interface CaptureView {
   captureId: string
   frameDataUrl: string
   overlay: OverlayMark[]
+  // Full address envelope from the ORIGINAL capture — re-annotate reuses it so the refined
+  // capture stays anchored to the same frame.
+  address: CaptureAddress
   addressLine: string
 }
 const captureView = ref<CaptureView | null>(null)
 function closeCaptureView() { captureView.value = null }
+function onReannotate(payload: {
+  captureId: string; frameDataUrl: string; overlay: OverlayMark[]
+}) {
+  // Preserve the same address on a refined capture (server also links via `previousCaptureId`).
+  if (!captureView.value) return
+  captureView.value = {
+    ...captureView.value,
+    captureId: payload.captureId,
+    frameDataUrl: payload.frameDataUrl,
+    overlay: payload.overlay,
+  }
+}
 
 async function onDrawSave(payload: { overlay: OverlayMark[] }) {
   const el = canvas.value
@@ -4487,7 +4503,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
     // while seeing exactly what was shared, and Claude's marks land where they were drawn.
     captureView.value = {
       captureId, frameDataUrl: png, overlay: payload.overlay,
-      addressLine: drawAddressLine.value,
+      address, addressLine: drawAddressLine.value,
     }
     if (pushOutcome === 'sent') {
       // Push landed — skip the clipboard. Toast tells the user delivery happened; they can
@@ -4512,11 +4528,23 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
 }
 function onDrawCancel() { drawMode.value = false }
 
+let stopSeekWatch: (() => void) | null = null
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSelectModeTick)
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
+  // Kiwi PR B: Kiwi rows publish a seek when clicked. Filter by this viewer's imageUid so a row
+  // for a different image doesn't move us; a match schedules a `gotoT` (fetch is coalesced by the
+  // usual tile pump) and sets zPlane synchronously (its own watcher does the fetch).
+  stopSeekWatch = subscribeViewerSeek(
+    (msg) => {
+      if (!meta.value) return
+      if (typeof msg.t === 'number' && msg.t < meta.value.nT && msg.t !== t.value) gotoT(msg.t)
+      if (typeof msg.z === 'number' && msg.z < meta.value.nZ && msg.z !== zPlane.value) zPlane.value = msg.z
+    },
+    (msg) => msg.imageUid === imageUid,
+  )
   stopCacheClearWatch = onViewerCacheClear(async (ev) => {
     if (ev.rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
     // Scope filter: an event named for a different image, or for a vn we don't render, isn't for
@@ -4571,6 +4599,7 @@ onUnmounted(() => {
   delete (window as unknown as { __cceceliaViewerScreenshot?: unknown }).__cceceliaViewerScreenshot
   delete (window as unknown as { __cceceliaViewerBeginDraw?: unknown }).__cceceliaViewerBeginDraw
   stopCacheClearWatch?.(); stopCacheClearWatch = null
+  stopSeekWatch?.(); stopSeekWatch = null
   stopPlay()
   pump.cancel()
   zPump.cancel()
@@ -4615,11 +4644,14 @@ onUnmounted(() => {
       <!-- Frozen-frame view after Save: keep the shared frame visible on the viewer so the user
            can discuss it with Claude, and Claude's `mark_freeform` marks land ON the frame they
            address (rather than a modal that hides the context). Close chip returns to live. -->
-      <CaptureViewSurface v-if="captureView" :capture-id="captureView.captureId"
+      <CaptureViewSurface v-if="captureView && projectUid"
+                          :project-uid="projectUid"
+                          :capture-id="captureView.captureId"
                           :frame-data-url="captureView.frameDataUrl"
                           :overlay="captureView.overlay"
+                          :address="captureView.address"
                           :address-line="captureView.addressLine"
-                          @close="closeCaptureView" />
+                          @close="closeCaptureView" @reannotate="onReannotate" />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
            cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
       <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">

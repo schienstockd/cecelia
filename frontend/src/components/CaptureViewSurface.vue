@@ -25,9 +25,11 @@ import { useViewerStore } from '../stores/viewer'
 import {
   paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow, type Paintable,
 } from '../utils/freeformRender'
-import type { OverlayMark } from '../utils/captureAddress'
-import { ANNOTATION_PALETTE, DEFAULT_ANNOTATION_COLOR } from '../utils/overlayCompose'
+import type { OverlayMark, CaptureAddress } from '../utils/captureAddress'
+import { ANNOTATION_PALETTE, DEFAULT_ANNOTATION_COLOR,
+         composeImageWithOverlay } from '../utils/overlayCompose'
 import type { OverlayColor } from '../utils/captureAddress'
+import DrawSurface from './DrawSurface.vue'
 
 // User-mark stroke — resolve the palette name to a hex, defaulting to white for older captures
 // that didn't carry a colour field. Claude marks keep their fixed amber (`--cc-warn`) for now;
@@ -38,16 +40,30 @@ function userStroke(p: Paintable): string {
 }
 
 const props = defineProps<{
+  projectUid: string
   captureId: string
   frameDataUrl: string
   overlay: OverlayMark[]    // user's own overlay from the Save moment
+  // Full address envelope from the ORIGINAL capture (image / valueName / t / z / extent /
+  // domAnchor). Passed through unchanged on a re-annotate so the refined capture stays anchored to
+  // the same frame — the user is still discussing the SAME pixels, only with more strokes on top.
+  address: CaptureAddress
   addressLine?: string      // short human line (imageUid · valueName · t · z)
 }>()
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{
+  (e: 'close'): void
+  // Re-annotate save: a NEW capture was written that refines this one; parent updates the
+  // captureView to the new envelope so DrawSurface remounts fresh and the frame carries all
+  // strokes drawn so far. Kiwi's list refreshes via `captures:changed` (backend broadcasts).
+  (e: 'reannotate', payload: {
+    captureId: string; frameDataUrl: string; overlay: OverlayMark[]
+  }): void
+}>()
 
 const viewer = useViewerStore()
 
 const wrap = ref<HTMLElement | null>(null)
+const frameImg = ref<HTMLImageElement | null>(null)
 const boxW = ref(0)
 const boxH = ref(0)
 function measureBox() {
@@ -57,6 +73,59 @@ function measureBox() {
 }
 onMounted(() => { window.addEventListener('resize', measureBox); measureBox() })
 onBeforeUnmount(() => window.removeEventListener('resize', measureBox))
+
+// ── Re-annotate (Kiwi PR B) ────────────────────────────────────────────────────────────────────
+// The frozen frame is what the user is discussing WITH Claude; sometimes that discussion needs
+// more marks ("look, here too, and this one over there…"). This mode mounts DrawSurface as a peer
+// of the frozen `img`. On Save we composite the NEW marks OVER the already-composited frame (which
+// carries the previous session of marks burned in) — so the resulting PNG carries the full history
+// of strokes, and the vector overlay records them so a subsequent re-annotate can layer again.
+// The lineage is preserved server-side via `previousCaptureId` so Kiwi's list can show it later.
+const reannotating = ref(false)
+const reannotateBusy = ref(false)
+function beginReannotate() { reannotating.value = true }
+function cancelReannotate() { reannotating.value = false }
+
+async function onReannotateSave(payload: { overlay: OverlayMark[] }) {
+  const img = frameImg.value
+  if (!img || !props.projectUid) { reannotating.value = false; return }
+  reannotateBusy.value = true
+  try {
+    const composited = composeImageWithOverlay(img, payload.overlay) ?? props.frameDataUrl
+    // The vector overlay records BOTH the original marks and the new ones (colour info preserved)
+    // so a further re-annotate can render them without re-fetching, and Claude can read the whole
+    // conversation of shapes if it prefers vector to pixels.
+    const mergedOverlay: OverlayMark[] = [...props.overlay, ...payload.overlay]
+    const res = await fetch('/api/viewer/capture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectUid: props.projectUid,
+        surface: 'viewer_frame',
+        // Address is inherited — the user is still discussing the same frame.
+        address: props.address,
+        frames: [{ png: composited }],
+        overlay: mergedOverlay,
+        previousCaptureId: props.captureId,
+      }),
+    })
+    if (!res.ok) {
+      // A silent failure would leave the user in re-annotate mode wondering why nothing happened;
+      // exit the mode and let the toast/log system elsewhere flag the error path.
+      reannotating.value = false
+      return
+    }
+    const body = await res.json() as { captureId?: string }
+    if (!body.captureId) { reannotating.value = false; return }
+    reannotating.value = false
+    emit('reannotate', {
+      captureId: body.captureId,
+      frameDataUrl: composited,
+      overlay: mergedOverlay,
+    })
+  } finally {
+    reannotateBusy.value = false
+  }
+}
 
 // User's overlay from the share moment — one-shot, doesn't change.
 const userPaintables = computed(() => {
@@ -98,8 +167,10 @@ function dismissAllClaudeMarks() {
   <div ref="wrap" class="cvs-root">
     <!-- Frozen frame — covers the WebGPU canvas so the user is looking at what they shared, not
          at whatever the live viewer has moved to. `object-fit: contain` matches the viewer's
-         own aspect on any wrap size. -->
-    <img :src="frameDataUrl" class="cvs-frame" alt="Shared frame" @load="measureBox" />
+         own aspect on any wrap size. `crossorigin=anonymous` isn't needed (data URL, same origin
+         by definition) but the ref is — re-annotate composites over THIS <img> so a fresh Image
+         load isn't needed on Save. -->
+    <img ref="frameImg" :src="frameDataUrl" class="cvs-frame" alt="Shared frame" @load="measureBox" />
 
     <!-- SVG in the wrap's OWN CSS-px frame. Both overlay groups run through the same paintables
          helper so the shapes read identically. -->
@@ -150,10 +221,15 @@ function dismissAllClaudeMarks() {
     <!-- Chip at the top: identifies the capture + offers "Return to live" and a way to clear
          Claude's marks against this capture. Absolute so it doesn't shift when the frame
          resizes. Uses the same status-chip family the viewer's other toasts use. -->
-    <div class="cvs-chip cc-fs-2xs">
+    <div v-if="!reannotating" class="cvs-chip cc-fs-2xs">
       <i class="pi pi-camera cvs-chip-icon" />
       <span class="cvs-chip-label">Viewing shared frame</span>
       <span v-if="addressLine" class="cvs-chip-addr cc-muted">{{ addressLine }}</span>
+      <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+              @click="beginReannotate"
+              v-tooltip.bottom="'Draw more marks on this frame and share the refined capture with Claude'">
+        <i class="pi pi-pencil" />
+      </button>
       <button v-if="claudePaintables.length" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
               @click="dismissAllClaudeMarks" v-tooltip.bottom="'Clear pointer marks'">
         <i class="pi pi-eraser" />
@@ -163,6 +239,14 @@ function dismissAllClaudeMarks() {
         <i class="pi pi-times" />
       </button>
     </div>
+
+    <!-- Re-annotate mode: DrawSurface mounted over the frozen frame. When the user saves, the
+         parent's `onReannotateSave` composites the new marks over the current frame image and
+         POSTs a new capture that references this one via `previousCaptureId`. Cancel just dismisses
+         the surface and drops back to the read-only chip above. `addressLine` is threaded through
+         so the DrawSurface toolbar carries the same orientation label as the chip. -->
+    <DrawSurface v-else :visible="true" :address-line="addressLine" :busy="reannotateBusy"
+                 @save="onReannotateSave" @cancel="cancelReannotate" />
   </div>
 </template>
 

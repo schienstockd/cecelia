@@ -34,9 +34,10 @@ import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
-import { fetchRecentCaptures, formatAddress, formatWhen,
+import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureFrame,
          deleteCapture, clearAllCaptures,
          type CaptureRow } from '../../utils/kiwiCaptures'
+import { publishViewerSeek } from '../../utils/viewerSeekChannel'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -105,10 +106,46 @@ async function copyChatStarter() {
 const captures = ref<CaptureRow[]>([])
 const capturesLoading = ref(false)
 async function refreshCaptures() {
-  if (!projectUid.value) { captures.value = []; return }
+  if (!projectUid.value) { captures.value = []; thumbs.value = {}; return }
   capturesLoading.value = true
-  try { captures.value = await fetchRecentCaptures(projectUid.value, 10) }
+  try {
+    captures.value = await fetchRecentCaptures(projectUid.value, 10)
+    // Kick thumbnail loads for any row not already cached. Fire in parallel — the list caps at 10,
+    // and dropping a thumb load is cheaper than blocking the row on it.
+    for (const row of captures.value) {
+      if (thumbs.value[row.captureId]) continue
+      void loadThumb(row.captureId)
+    }
+  }
   finally { capturesLoading.value = false }
+}
+
+// ── Row thumbnails (PR B trinity) ────────────────────────────────────────────
+// Cached in-memory keyed by captureId. A stray failed fetch leaves the slot empty (falsy) so the
+// row falls back to an "unknown" placeholder; we never retry inside one Kiwi session — the row is
+// still copiable, and a refetch would re-hammer a stale backend.
+const thumbs = ref<Record<string, string>>({})
+async function loadThumb(id: string) {
+  if (!projectUid.value) return
+  const url = await fetchCaptureFrame(projectUid.value, id)
+  if (url) thumbs.value = { ...thumbs.value, [id]: url }
+}
+
+// ── Refocus in viewer (PR B trinity) ─────────────────────────────────────────
+// Publishes a BroadcastChannel seek — a pop-out ViewerWindow with the matching imageUid picks it
+// up (subscribeViewerSeek). Silent no-op when the pop-out isn't open OR when the row's address
+// carries no imageUid (a `ui` / `plot` capture, or a viewer capture from a broken older payload).
+function refocusRow(row: CaptureRow) {
+  const a = row.address; if (!a || !a.imageUid) return
+  // A t-range (slab capture) refocuses to the first frame — the range end is still visible via
+  // the pop-out's own scrubber. A per-axis undefined stays undefined; the receiver leaves that
+  // axis untouched.
+  const t = Array.isArray(a.t) ? a.t[0] : a.t
+  publishViewerSeek({
+    projectUid: projectUid.value, imageUid: a.imageUid,
+    ...(typeof t === 'number' ? { t } : {}),
+    ...(typeof a.z === 'number' ? { z: a.z } : {}),
+  })
 }
 // Per-row copy flash. Separate `useCopyFlash` instance so the chat-starter flash is independent.
 const { isCopied: capCopied, copy: copyCaptureId } = useCopyFlash(2000)
@@ -217,11 +254,29 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                         @click="copyId(c.captureId)"
                         v-tooltip.right="capCopied(c.captureId)
                           ? 'Copied — paste it into your assistant chat'
-                          : `Copy captureId · ${c.captureId}`">
-                  <span class="kiwi-cap-time cc-fs-2xs">{{ whenLabel(c.createdAt) || '—' }}</span>
-                  <span class="kiwi-cap-addr cc-muted cc-fs-2xs">{{ formatAddress(c) }}</span>
+                          : (c.previousCaptureId
+                              ? `Copy captureId · ${c.captureId} (refines an earlier capture)`
+                              : `Copy captureId · ${c.captureId}`)">
+                  <span class="kiwi-cap-thumb" aria-hidden="true">
+                    <img v-if="thumbs[c.captureId]" :src="thumbs[c.captureId]" alt="" />
+                    <i v-else class="pi pi-image" />
+                  </span>
+                  <span class="kiwi-cap-meta">
+                    <span class="kiwi-cap-time cc-fs-2xs">
+                      <i v-if="c.previousCaptureId" class="pi pi-reply kiwi-cap-refine"
+                         aria-hidden="true" />
+                      {{ whenLabel(c.createdAt) || '—' }}
+                    </span>
+                    <span class="kiwi-cap-addr cc-muted cc-fs-2xs">{{ formatAddress(c) }}</span>
+                  </span>
                   <i class="pi kiwi-cap-icon"
                      :class="capCopied(c.captureId) ? 'pi-check' : 'pi-copy'" />
+                </button>
+                <button v-if="c.address && c.address.imageUid"
+                        class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro kiwi-cap-focus"
+                        @click="refocusRow(c)"
+                        v-tooltip.right="'Refocus the pop-out viewer to this capture’s frame'">
+                  <i class="pi pi-search" />
                 </button>
                 <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro kiwi-cap-del"
                         @click="deleteRow(c.captureId)"
@@ -334,7 +389,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 .kiwi-cap-row { display: flex; align-items: center; gap: 0.25rem; }
 .kiwi-cap-copy {
   flex: 1;
-  display: grid; grid-template-columns: 3rem 1fr auto;
+  display: grid; grid-template-columns: 2.4rem 1fr auto;
   gap: 0.4rem; align-items: center;
   padding: 0.25rem 0.4rem;
   border-radius: var(--cc-radius-xs);
@@ -344,10 +399,23 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 .kiwi-cap-copy:hover { background: var(--cc-surface-2); }
 .kiwi-cap-row.copied .kiwi-cap-copy { background: var(--cc-kiwi-tint); }
 .kiwi-cap-row.copied .kiwi-cap-icon { color: var(--cc-sev-ok); }
-.kiwi-cap-time { color: var(--cc-text-dim); text-align: right; }
+/* Thumb slot: fixed 2.4-rem square with a dark chip inside, so an unfetched row shows a neutral
+   "loading" placeholder and a fetched row shows the composed frame at the correct aspect. */
+.kiwi-cap-thumb {
+  width: 2.4rem; height: 2.4rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--cc-radius-xs); background: #000; overflow: hidden;
+  color: var(--cc-text-dim);
+}
+.kiwi-cap-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.kiwi-cap-meta { display: flex; flex-direction: column; min-width: 0; }
+.kiwi-cap-time { color: var(--cc-text-dim); }
+.kiwi-cap-refine { color: var(--cc-kiwi); font-size: 0.7em; margin-right: 0.2em; }
 .kiwi-cap-addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font-family: var(--cc-mono); }
 .kiwi-cap-icon { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
+.kiwi-cap-focus { color: var(--cc-text-dim); flex-shrink: 0; }
+.kiwi-cap-focus:hover { color: var(--cc-kiwi); }
 .kiwi-cap-del { color: var(--cc-text-dim); flex-shrink: 0; }
 .kiwi-cap-del:hover { color: var(--cc-sev-fail); }
 .kiwi-cap-footer { display: flex; justify-content: flex-end; gap: 0.35rem;

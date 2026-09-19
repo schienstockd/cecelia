@@ -101,6 +101,19 @@ Numbered so code and other docs can cite them (`Decision 5`).
    assistant reads pixels-with-marks. Palette is CVD-safe (deutan / protan / tritan) and
    microscopy-neutral (none of the four is a common fluorophore emission). The plan's earlier
    rejection of RASTER paint still stands — this is vector + composited, not raster.
+
+   **Amendment 2026-09-19 — re-annotate + trinity (Kiwi PR B).** Once the user shares a frame,
+   the discussion with Claude often needs MORE strokes ("look here too", "and this one over
+   there") to disambiguate. Ship: (i) DrawSurface mounts as a peer on `CaptureViewSurface`, so
+   the frozen-frame view supports adding new marks. Save composites new marks OVER the already-
+   composited frame and POSTs a NEW capture with `previousCaptureId` linking to the original —
+   additive-only shape, no mutate. (ii) Kiwi's captures list gains thumbnails (backend already
+   serves the composed PNG; row shows a 2.4-rem `<img>` at `object-fit: contain`) and a "refocus"
+   button that seeks the pop-out viewer to the capture's `imageUid + t + z` via a same-origin
+   `BroadcastChannel` (`utils/viewerSeekChannel.ts`; no backend round-trip — the pop-out picks
+   the message up on its own). (iii) The "refined from" glyph on refined rows is a visual only;
+   the parent copy button's tooltip carries the human phrasing so the nested-tooltip ratchet
+   stays green.
 9. **Marks are structured overlay data alongside the frame, not baked into pixels.**
    Round-trippable, editable, Claude reasons about the geometry not just visually, and Part 3's
    Claude-placed marks share the exact schema so the layer is truly one primitive.

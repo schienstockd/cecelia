@@ -25,6 +25,10 @@ export interface CaptureRow {
   createdAt: string        // ISO-ish; the id encodes the same time — see _new_capture_id in Julia
   surface: CaptureSurface
   address: CaptureAddress | null
+  // Kiwi PR B: server sets this when a capture was created by re-annotating an earlier one. Kiwi
+  // shows a small "↳" glyph on such rows so a user reading the list can tell a refinement from a
+  // fresh share. Never used for ordering — the id-encoded timestamp is still the sort key.
+  previousCaptureId?: string
 }
 
 /** Response envelope from GET /api/viewer/captures. */
@@ -56,7 +60,9 @@ function parseCapture(raw: unknown): CaptureRow | null {
   const createdAt = typeof r.createdAt === 'string' ? r.createdAt : ''
   const address = r.address && typeof r.address === 'object'
     ? (r.address as CaptureAddress) : null
-  return { captureId, createdAt, surface, address }
+  const out: CaptureRow = { captureId, createdAt, surface, address }
+  if (typeof r.previousCaptureId === 'string') out.previousCaptureId = r.previousCaptureId
+  return out
 }
 
 /** Compact address label — `image 1SqevM · t=3, z=7` / `plot dotplot` / `ui viewer.share`.
@@ -115,6 +121,26 @@ export async function clearAllCaptures(
     return typeof raw.cleared === 'number' ? raw.cleared : 0
   } catch {
     return null
+  }
+}
+
+/** Fetch a capture's frame as a data URL. Used by Kiwi row thumbnails (PR B) — the endpoint
+ *  returns the FULL PNG (not a downscaled thumb), which is fine at the row cap of 10; a browser
+ *  will decode + downscale for the 48-px slot. Any failure ⇒ empty string so the row still
+ *  renders without a broken-image icon. */
+export async function fetchCaptureFrame(
+  projectUid: string, captureId: string, apiBase = ''
+): Promise<string> {
+  if (!projectUid || !captureId) return ''
+  try {
+    const url = `${apiBase}/api/viewer/capture?projectUid=${encodeURIComponent(projectUid)}`
+              + `&captureId=${encodeURIComponent(captureId)}`
+    const res = await fetch(url)
+    if (!res.ok) return ''
+    const json = await res.json() as { frame?: string }
+    return typeof json.frame === 'string' ? json.frame : ''
+  } catch {
+    return ''
   }
 }
 

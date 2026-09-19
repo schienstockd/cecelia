@@ -1411,6 +1411,34 @@ end
         @test api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures"))[1] == 400
         @test api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures?projectUid=NOPE"))[1] == 404
 
+        # Re-annotate lineage (Kiwi PR B). Post a second capture that references the first via
+        # `previousCaptureId`; assert (a) the field round-trips into the get envelope and (b) the
+        # list response surfaces it, so Kiwi can show a "refined" indicator without a per-row read.
+        # Bogus previousCaptureId is silently dropped rather than stored.
+        st_re, body_re = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
+                                "frames"=>[Dict("png"=>frame_data_url)], "overlay"=>[],
+                                "previousCaptureId"=>cap_id))
+        @test st_re == 200
+        cap_id2 = String(JSON3.read(body_re).captureId)
+        st_r2, body_r2 = api_viewer_capture_get(HTTP.Request("GET",
+            "/api/viewer/capture?projectUid=$uid&captureId=$cap_id2"))
+        @test st_r2 == 200
+        @test String(JSON3.read(body_r2).capture.previousCaptureId) == cap_id
+        st_l2, body_l2 = api_viewer_captures_list(HTTP.Request("GET",
+            "/api/viewer/captures?projectUid=$uid&limit=5"))
+        items_l2 = JSON3.read(body_l2).items
+        refined = first(i for i in items_l2 if String(i.captureId) == cap_id2)
+        @test String(refined.previousCaptureId) == cap_id
+        # Bogus previousCaptureId (not a valid captureId shape) is dropped, not stored.
+        st_re2, body_re2 = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
+                                  "frames"=>[Dict("png"=>frame_data_url)], "overlay"=>[],
+                                  "previousCaptureId"=>"../../../etc/passwd"))
+        @test st_re2 == 200
+        cap_id3 = String(JSON3.read(body_re2).captureId)
+        st_r3, body_r3 = api_viewer_capture_get(HTTP.Request("GET",
+            "/api/viewer/capture?projectUid=$uid&captureId=$cap_id3"))
+        @test !haskey(JSON3.read(body_r3).capture, :previousCaptureId)
+
         # empty list when the project has no captures dir yet
         uid2 = "TESTCAP2"; mkpath(joinpath(tmp, uid2))
         st4, body4 = api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures?projectUid=$uid2"))
@@ -1433,7 +1461,8 @@ end
         # traversal attempt rejected by the captureId regex, not by path magic
         @test api_viewer_capture_delete(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid, "captureId"=>"../../etc/passwd"))))[1] == 400
 
-        # Bulk clear — write a couple more captures, then clear all.
+        # Bulk clear — write a couple more captures, then clear all. Count includes the two
+        # re-annotate captures written above (cap_id2, cap_id3) which weren't individually deleted.
         addr2 = Dict("projectUid"=>uid, "imageUid"=>"IMG2", "t"=>0)
         for _ in 1:3
             w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr2,
@@ -1441,7 +1470,7 @@ end
         end
         st_c, r_c = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c == 200
-        @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 3
+        @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 5
         st_c2, r_c2 = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c2 == 200
         @test JSON3.read(r_c2, Dict{String,Any})["cleared"] == 0
