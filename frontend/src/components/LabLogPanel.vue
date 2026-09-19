@@ -10,8 +10,6 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
-import { buildChatPrompt } from '../lib/chatHandoff'
-import { useCopyFlash } from '../composables/useCopyFlash'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import ClaudeOverviewDialog from './ClaudeOverviewDialog.vue'
@@ -46,19 +44,9 @@ const labarchives = ref<LabArchivesCtx>({ present: false })
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
 const labCapture = useLabCaptureStore()
-// brief "Copied" state on the Chat-to-Claude button — 2.5s, longer than the default flash
-// because the user has to go and paste it somewhere else. Shared helper (docs/ui/PRIMITIVES.md).
-const { isCopied: chatCopied, copy: copyPrompt } = useCopyFlash(2500)
-
-// Chat to Claude: copy a one-line starter (which project + the MCP pointer) to the clipboard for a
-// full external session. Re-copies on each click. Works for any MCP assistant — no `claude` install
-// needed. No toast — the button flashes "Copied" (colour + tooltip) for a couple of seconds instead.
-// The observer's rules are NOT in this line; the MCP server delivers them (see lib/chatHandoff.ts).
-async function chatToClaude() {
-  if (!projectUid.value) return
-  await copyPrompt(buildChatPrompt(projectUid.value, pm.current?.name))
-}
-// Which terminal button the toolbar shows: 'setup' / 'resync' (not set up, or stale) vs 'chat'.
+// Which terminal button the toolbar shows: 'setup' / 'resync' vs 'chat' (empty slot). The
+// chat-handoff button used to live in this slot; it moved to Kiwi (docs/todo/KIWI_PLAN.md
+// Decision 6) so the pairing state and the chat handoff sit side-by-side in one place.
 const terminalCtaMode = computed(() => terminalCta(observer.available, observer.terminalState))
 
 const observerAvailable = computed(() => observer.available)
@@ -307,24 +295,16 @@ async function dismissEntry(entry: LabLogEntry) {
                 v-tooltip.top="'Model Ask Claude runs'">
           <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
         </select>
-        <!-- ONE slot, two states. Until the user's own terminal has the observer MCP, that IS the next
-             step, so it takes the slot instead of hiding in the info dialog; once set up it becomes
-             Chat to Claude. With no `claude` on PATH we always show Chat (the prompt suits any MCP
-             assistant). See utils/observerSetup.ts terminalCta. -->
+        <!-- Setup CTA: shown until the user's terminal has the observer MCP registered. Once set up
+             (`terminalCtaMode === 'chat'`) this slot is empty; the chat-handoff button moved to Kiwi
+             (docs/todo/KIWI_PLAN.md Decision 6), which sits beside the pairing state it depends on.
+             See utils/observerSetup.ts terminalCta. -->
         <button v-if="terminalCtaMode !== 'chat'" class="ll-capture" :disabled="observer.registering"
                 @click="observer.registerMcp()"
                 v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
           <i class="pi pi-download" />
           {{ observer.registering ? 'Setting up…'
              : terminalCtaMode === 'resync' ? 'Fix terminal setup' : 'Set up my terminal' }}
-        </button>
-        <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
-             one-shot. Copies ONE line naming this project — the rules come from the MCP server, so
-             asking it to check your project works without this too. No `claude` install needed. -->
-        <button v-else class="ll-capture" :class="{ copied: chatCopied() }" :disabled="!projectUid" @click="chatToClaude"
-                v-tooltip.top="chatCopied() ? 'Copied — paste it into Claude (or any MCP chat bot)'
-                  : 'Copy a one-line opener naming this project'">
-          <i :class="['pi', chatCopied() ? 'pi-check' : 'pi-comments']" /> {{ chatCopied() ? 'Copied' : 'Chat to Claude' }}
         </button>
         <span v-if="observerTokens" class="ll-tokens cc-muted cc-fs-xs"
               v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
@@ -483,8 +463,6 @@ async function dismissEntry(entry: LabLogEntry) {
   border-radius: var(--cc-radius-sm); padding: 0.2rem 0.5rem; font-size: var(--cc-fs-xs); cursor: pointer;
 }
 .ll-capture:hover:not(:disabled) { border-color: #8b949e; }
-/* brief "copied" flash on the Chat-to-Claude button (replaces the toast) */
-.ll-capture.copied { color: var(--cc-sev-ok); border-color: var(--cc-sev-ok); background: rgba(12, 163, 12, 0.1); }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
 /* .ll-help → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .ll-help:hover { color: var(--cc-accent); }

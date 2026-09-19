@@ -14,6 +14,7 @@ import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
 import LabLogPanel from './components/LabLogPanel.vue'
 import CorrectionCockpit from './components/correction/CorrectionCockpit.vue'
+import KiwiCockpit from './components/kiwi/KiwiCockpit.vue'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useTaskStore } from './stores/tasks'
@@ -197,6 +198,10 @@ const bare = computed(() => popout || route.meta.bare === true)
          so the queue survives popup close/reopen. -->
     <CorrectionCockpit v-if="settings.correctionCockpitOpen"
                        @close="settings.correctionCockpitOpen = false" />
+    <!-- Kiwi (assist cockpit): assistant-adjacent controls (pairing, chat handoff, and — v2 —
+         MCP health, setup CTA, lab-log peek, Blackboard list). One per app, gated behind a
+         settings toggle so it doesn't clutter first-run. See docs/todo/KIWI_PLAN.md. -->
+    <KiwiCockpit v-if="settings.kiwiOpen" @close="settings.kiwiOpen = false" />
     <ErrorConsole />
     <Toast position="bottom-right" />
     <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.

@@ -33,6 +33,14 @@
   --cc-accent-soft:   #c4b5fd;   /* pale violet — text on an accent-tinted surface */
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
   --cc-accent-tint-2: #3b2382;   /* its hover step */
+  /* Kiwi (assist cockpit) accent — teal. Distinct from --cc-accent (violet, form-control chrome)
+     and --cc-viewer (bright green, viewer surface); two on-screen greens would collapse into one
+     UI class. See docs/todo/KIWI_PLAN.md → Decision 2 (locked 2026-09-19). Family shape mirrors
+     accent so a Kiwi-tinted control has the same tools an accent-tinted one does. */
+  --cc-kiwi:         #14b8a6;
+  --cc-kiwi-strong:  #0d9488;   /* deeper teal — borders on an engaged/active kiwi control */
+  --cc-kiwi-soft:    #5eead4;   /* pale teal — text on a kiwi-tinted surface */
+  --cc-kiwi-tint:    #134e4a;   /* dark teal wash — the tinted "option is on" surface */
   /* selection/active highlight for BOXES (panels, cards, timeline keyframes) — amber, matching the
      analysis-board plot panels. Distinct from --cc-accent (purple, form controls) and --cc-warn. */
   --cc-selected:   #ff8c1a;

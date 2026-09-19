@@ -152,10 +152,11 @@ function isNavDisabled(item: NavItem): boolean {
     </div>
 
     <!-- ── Floating-panel launchers ────────────────────────────────────────
-         Three icons in one row (Viewer / Correction / Lab log). Was: three stacked full-width
+         Four icons in one row (Viewer / Correction / Lab log / Kiwi). Was: three stacked full-width
          CTAs — replaced 2026-09-07 because the sidebar was getting too long. Each floating
-         panel keeps its identity colour: green (viewer), purple (correction), white (lab log).
-         The lab-log unseen badge overlays the icon so Claude/Cecelia notes still get noticed. -->
+         panel keeps its identity colour: green (viewer), purple (correction), white (lab log),
+         teal (kiwi). The lab-log unseen badge overlays the icon so Claude/Cecelia notes still
+         get noticed. Kiwi added 2026-09 per docs/todo/KIWI_PLAN.md. -->
     <div class="panel-launcher-row">
       <button class="panel-launcher panel-launcher-viewer cc-btn cc-btn-bare"
               data-guide="sidebar.viewerCta"
@@ -192,6 +193,15 @@ function isNavDisabled(item: NavItem): boolean {
         <i v-if="settings.labLogUnseen"
            :class="['pi', settings.labLogUnseenKind === 'cecelia' ? 'pi-bell' : 'pi-sparkles', 'panel-launcher-badge']"
            :style="labLogBadgeStyle" />
+      </button>
+      <button class="panel-launcher panel-launcher-kiwi cc-btn cc-btn-bare"
+              data-guide="sidebar.kiwiCta"
+              :class="{ on: settings.kiwiOpen }"
+              @click="settings.kiwiOpen = !settings.kiwiOpen"
+              v-tooltip.right="settings.kiwiOpen
+                ? 'Close Kiwi (assist cockpit)'
+                : 'Kiwi — pairing, chat handoff, and other assistant controls'">
+        <i class="pi pi-comments" />
       </button>
     </div>
 
@@ -380,6 +390,10 @@ function isNavDisabled(item: NavItem): boolean {
 .panel-launcher-lablog { color: var(--cc-text); }
 .panel-launcher-lablog:hover { border-color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06); }
 .panel-launcher-lablog.on { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.6); }
+/* Kiwi (assist cockpit) — teal (--cc-kiwi), matching the KiwiCockpit's floating-panel border. */
+.panel-launcher-kiwi { color: var(--cc-kiwi); }
+.panel-launcher-kiwi:hover { border-color: var(--cc-kiwi-strong); background: var(--cc-kiwi-tint); }
+.panel-launcher-kiwi.on { background: var(--cc-kiwi-tint); border-color: var(--cc-kiwi); }
 /* Unseen-note border tint: Claude/Cecelia wrote a lab-log note while the panel was closed. */
 .panel-launcher-lablog.has-unseen { border-color: var(--cc-accent); }
 .panel-launcher-badge {
