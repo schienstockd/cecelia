@@ -4,6 +4,15 @@
 > clipboard/toast stand-in with real cross-session push over Claude Code's `SendMessage`
 > machinery. Kept as a record of what was asked; if this work ships, the current design lives in
 > `docs/<AREA>.md` or a `docs/todo/*_PLAN.md`, and this file should carry an outcome note here.
+>
+> **Outcome (2026-09-19):** Settled design lives at
+> [`docs/todo/BIDIR_PUSH_PLAN.md`](../todo/BIDIR_PUSH_PLAN.md). Q2 (can Claude programmatically
+> surface its own socket path?) verified live on Claude Code v2.1.273: both
+> `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` are Bash-readable inside a
+> session, so pairing collapses to one Claude-side command via a new `register_push_target` MCP
+> tool. Plan locks 16 decisions and a 3-PR sequence (pairing infra → push writer + fallback →
+> UI polish + optional delivery ACK). Held-for-approval is preserved as the shipped default per
+> the brief's guidance.
 
 ## Background
 
