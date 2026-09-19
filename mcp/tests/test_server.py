@@ -135,7 +135,8 @@ class GuidanceTest(unittest.TestCase):
                      "beside",                  # boards/chains are add-only, never edits
                      "included: false",         # an image the user already dropped is not news
                      "excludedCount",           # …and it is not part of the cohort denominator
-                     "`fun`"):                  # which task's QC is talking (a probe ≠ segmentation)
+                     "`fun`",                   # which task's QC is talking (a probe ≠ segmentation)
+                     "shared capture cap-"):    # BIDIR PR #3: how Claude recognises a pushed frame
             self.assertIn(rule, guidance.BRIEFING_GUIDANCE)
 
     def test_the_briefing_ships_the_guidance(self):
