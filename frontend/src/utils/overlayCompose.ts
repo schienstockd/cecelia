@@ -1,0 +1,127 @@
+// BIDIR share-in — annotation palette + frame-with-overlay compositing.
+//
+// The share flow shipped in PR #1040 stored user-drawn marks as a separate vector overlay next to
+// the frame PNG, and DrawSurface rendered them in a fixed accent colour. That produced two
+// downstream failures the moment a user tried to POINT at things visually:
+//   - Every mark was the same colour, so a chat like "red circle around cell A vs green around B"
+//     had no way to disambiguate.
+//   - The PNG the assistant reads through `get_capture(id)` has NO marks in it — the frontend was
+//     `viewerCanvas.toDataURL()`, and DrawSurface is a separate SVG canvas mounted on top. The
+//     assistant sees a bare frame + a colourless polygon.
+//
+// This module fixes both:
+//   - `ANNOTATION_PALETTE` is a small CVD-safe / microscopy-neutral palette (magenta / cyan /
+//     yellow / white). Server safelists these four names (`_CAPTURE_OVERLAY_COLORS` in
+//     `api/src/captures_api.jl`); anything else is dropped rather than stored as arbitrary CSS.
+//   - `composeFrameWithOverlay` composites the marks onto a copy of the frame canvas and returns
+//     a data-URL PNG, so `get_capture` returns pixels-with-marks.
+//
+// Why this palette (locked 2026-09-19 in chat):
+//   Red + green — the obvious "bad vs good" pair — is textbook deuteran/protan hostile. Blue also
+//   clashes with DAPI channels a user will typically have on screen. Magenta / cyan / yellow /
+//   white are distinguishable across all three common CVD types (deutan / protan / tritan) AND
+//   rarely occur as fluorophore emissions, so they don't disappear into a GFP / mCherry overlay.
+//   Napari's default paint tool uses a very similar palette for the same reason.
+
+import type { OverlayColor, OverlayMark } from './captureAddress'
+
+/** The four palette values, keyed by the name that goes on `OverlayMark.color`. */
+export const ANNOTATION_PALETTE: Record<OverlayColor, string> = {
+  magenta: '#ff2fb0',
+  cyan:    '#00e5ff',
+  yellow:  '#ffd800',
+  white:   '#ffffff',
+}
+
+/** The default palette name — applied to any mark that arrived without one, either because it was
+ *  drawn before this field existed or because the payload was tampered with. */
+export const DEFAULT_ANNOTATION_COLOR: OverlayColor = 'white'
+
+/** Resolve a mark's colour name to a CSS hex. Unknown / absent names fall back to the default so a
+ *  round-trip from an older capture never crashes the renderer. */
+export function resolveMarkColor(mark: OverlayMark): string {
+  const c = mark.color
+  return (c && ANNOTATION_PALETTE[c]) || ANNOTATION_PALETTE[DEFAULT_ANNOTATION_COLOR]
+}
+
+/** Iterate over the four palette entries in a stable order — used by the DrawSurface swatch. */
+export const ANNOTATION_COLOR_ORDER: readonly OverlayColor[] = ['magenta', 'cyan', 'yellow', 'white']
+
+// ── Compositing ─────────────────────────────────────────────────────────────────────────────────
+// The frame canvas is the WebGPU viewer surface at its rendered pixel size; marks are stored in
+// [0,1] frame-relative coords (see `captureAddress.ts` normaliser). Composite = "draw marks scaled
+// to the frame's native pixel size onto a copy of the frame, return the data-URL."
+//
+// Line width and font scale with the frame so the marks read the same at any capture resolution
+// (a 512×512 render and a 2048×2048 render both get proportional stroke weight, not a fixed 2 px
+// that vanishes on the larger one).
+
+const MARK_LINE_WIDTH = (w: number) => Math.max(2, Math.round(w / 500))
+const MARK_FONT_PX    = (w: number) => Math.max(12, Math.round(w / 80))
+const MARK_LABEL_HALO = 'rgba(0, 0, 0, 0.75)'
+const MARK_LABEL_LIFT = 6      // pixels above the mark's anchor for the label baseline
+
+/** Paint every mark onto `ctx` in the [0,w]×[0,h] pixel box. Pure DOM canvas — no Vue, no globals. */
+export function paintOverlayOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  marks: OverlayMark[],
+  w: number, h: number,
+): void {
+  const lw = MARK_LINE_WIDTH(w)
+  const font = `${MARK_FONT_PX(w)}px ui-monospace, monospace`
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  for (const m of marks) {
+    const stroke = resolveMarkColor(m)
+    ctx.strokeStyle = stroke
+    ctx.lineWidth = lw
+    const g = m.geom as Record<string, number> & { pts?: [number, number][] }
+    let anchor: [number, number] = [0, 0]
+    if (m.kind === 'rect') {
+      const x = g.x * w, y = g.y * h, rw = g.w * w, rh = g.h * h
+      ctx.strokeRect(x, y, rw, rh)
+      anchor = [x, y]
+    } else if (m.kind === 'poly' || m.kind === 'stroke') {
+      const pts = g.pts ?? []
+      if (pts.length < 2) continue
+      ctx.beginPath()
+      ctx.moveTo(pts[0][0] * w, pts[0][1] * h)
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * w, pts[i][1] * h)
+      if (m.kind === 'poly') ctx.closePath()
+      ctx.stroke()
+      anchor = [pts[0][0] * w, pts[0][1] * h]
+    }
+    // Label: dark halo underneath the coloured fill so it reads on both light and dark pixels.
+    if (m.label) {
+      ctx.font = font
+      ctx.textBaseline = 'alphabetic'
+      const lx = anchor[0], ly = anchor[1] - MARK_LABEL_LIFT
+      ctx.lineWidth = 3
+      ctx.strokeStyle = MARK_LABEL_HALO
+      ctx.strokeText(m.label, lx, ly)
+      ctx.fillStyle = stroke
+      ctx.fillText(m.label, lx, ly)
+      ctx.lineWidth = lw     // restore for the next mark
+      ctx.strokeStyle = stroke
+    }
+  }
+}
+
+/** Composite `marks` onto a copy of `frameCanvas` and return the resulting PNG data URL. Never
+ *  mutates the input canvas — a separate offscreen canvas holds the composite. If the frame is
+ *  empty (zero-dim) or the 2d context can't be acquired, falls back to the frame's own
+ *  `toDataURL` output (unmarked) so a share still succeeds. */
+export function composeFrameWithOverlay(
+  frameCanvas: HTMLCanvasElement,
+  marks: OverlayMark[],
+): string {
+  const w = frameCanvas.width, h = frameCanvas.height
+  if (w === 0 || h === 0) return frameCanvas.toDataURL('image/png')
+  const off = document.createElement('canvas')
+  off.width = w; off.height = h
+  const ctx = off.getContext('2d')
+  if (!ctx) return frameCanvas.toDataURL('image/png')
+  ctx.drawImage(frameCanvas, 0, 0)
+  if (marks.length > 0) paintOverlayOnCanvas(ctx, marks, w, h)
+  return off.toDataURL('image/png')
+}

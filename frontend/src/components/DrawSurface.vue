@@ -29,8 +29,9 @@ import {
 } from '../utils/drawGeometry'
 import {
   rectToOverlayGeom, pointsToOverlayGeom,
-  type OverlayMark,
+  type OverlayMark, type OverlayColor,
 } from '../utils/captureAddress'
+import { ANNOTATION_PALETTE, ANNOTATION_COLOR_ORDER, resolveMarkColor } from '../utils/overlayCompose'
 
 const props = defineProps<{
   visible: boolean
@@ -58,6 +59,19 @@ const TOOL_OPTIONS: ChipOption[] = [
   { value: 'stroke', label: '', icon: 'pi pi-pencil',    tip: 'Freehand' },
 ]
 const tool = ref<Tool>('rect')
+
+// CVD-safe / microscopy-neutral palette (see utils/overlayCompose.ts). Four chips, coloured
+// swatches — the value IS the palette name; the label carries the swatch via inline style so
+// the picker looks like paint chips, not a text menu. Default `white` keeps parity with the
+// pre-palette look (all marks were rendered in white with a dark halo).
+const COLOR_OPTIONS: ChipOption[] = ANNOTATION_COLOR_ORDER.map(name => ({
+  value: name,
+  label: '',
+  tip: `Mark colour: ${name}`,
+  swatch: ANNOTATION_PALETTE[name],
+  accent: ANNOTATION_PALETTE[name],
+}))
+const color = ref<OverlayColor>('white')
 
 // Committed marks + one live draft. Kept as three parallel refs — a discriminated union would need
 // a class per kind and the state machines are already the source of truth.
@@ -258,6 +272,7 @@ function onPointerUp(ev: PointerEvent) {
     const r = finishRect(rectDraft.value, p)
     if (r) marks.value.push({ kind: 'rect',
       geom: rectToOverlayGeom(r, boxW.value, boxH.value),
+      color: color.value,
       ...(label.value ? { label: label.value } : {}) })
     rectDraft.value = null
   }
@@ -265,6 +280,7 @@ function onPointerUp(ev: PointerEvent) {
     const pts = finishStroke(strokeDraft.value)
     if (pts.length >= 2) marks.value.push({ kind: 'stroke',
       geom: pointsToOverlayGeom(pts, boxW.value, boxH.value),
+      color: color.value,
       ...(label.value ? { label: label.value } : {}) })
     strokeDraft.value = null
   }
@@ -275,6 +291,7 @@ function commitPoly() {
   const pts = finishPoly(polyDraft.value!)
   if (pts) marks.value.push({ kind: 'poly',
     geom: pointsToOverlayGeom(pts, boxW.value, boxH.value),
+    color: color.value,
     ...(label.value ? { label: label.value } : {}) })
   polyDraft.value = null
 }
@@ -315,6 +332,7 @@ watch(() => props.visible, async (v) => {
   if (!v) return
   marks.value = []; label.value = ''; clearDraft()
   tool.value = 'rect'
+  color.value = 'white'
   await Promise.resolve()   // let the DOM mount before measuring
   measureBox()
 }, { immediate: true })
@@ -339,20 +357,25 @@ const draftStrokePath = computed(() => {
 const committedShapes = computed(() => marks.value.map((m, i) => {
   const g = m.geom as Record<string, number> & { pts?: [number, number][] }
   const w = boxW.value, h = boxH.value
+  const stroke = resolveMarkColor(m)
   if (m.kind === 'rect') {
     const x = g.x * w, y = g.y * h, width = g.w * w, height = g.h * h
-    return { key: i, idx: i, kind: 'rect', label: m.label, x, y, width, height,
+    return { key: i, idx: i, kind: 'rect', label: m.label, stroke, x, y, width, height,
              labelX: x, labelY: y - 6, deleteX: x + width, deleteY: y }
   }
   if (m.kind === 'poly' || m.kind === 'stroke') {
     const pts = (g.pts ?? []).map(p => [p[0] * w, p[1] * h] as [number, number])
     const cmd = pts.map((p, j) => (j === 0 ? 'M' : 'L') + p[0] + ',' + p[1]).join(' ')
     const x0 = pts[0]?.[0] ?? 0, y0 = pts[0]?.[1] ?? 0
-    return { key: i, idx: i, kind: m.kind, label: m.label, d: m.kind === 'poly' ? cmd + ' Z' : cmd,
+    return { key: i, idx: i, kind: m.kind, label: m.label, stroke,
+             d: m.kind === 'poly' ? cmd + ' Z' : cmd,
              labelX: x0, labelY: y0 - 6, deleteX: x0, deleteY: y0 }
   }
-  return { key: i, idx: i, kind: 'unknown' } as never
+  return { key: i, idx: i, kind: 'unknown', stroke } as never
 }))
+// Live draft strokes use the current colour so the WIP shape reads with the same identity as the
+// committed mark it becomes. Not tied to `resolveMarkColor` — the draft has no mark yet.
+const draftStroke = computed(() => ANNOTATION_PALETTE[color.value])
 const firstVertexMarker = computed(() => {
   const d = polyDraft.value; if (!d || !d.vertices.length) return null
   const [x, y] = d.vertices[0]
@@ -374,9 +397,11 @@ const firstVertexMarker = computed(() => {
          @dblclick="onDblClick">
       <g class="ds-committed">
         <template v-for="s in committedShapes" :key="s.key">
-          <rect v-if="s.kind === 'rect'" :x="s.x" :y="s.y" :width="s.width" :height="s.height" />
-          <path v-else-if="s.kind === 'poly' || s.kind === 'stroke'" :d="s.d" />
-          <text v-if="s.label" :x="s.labelX" :y="s.labelY">{{ s.label }}</text>
+          <rect v-if="s.kind === 'rect'" :x="s.x" :y="s.y" :width="s.width" :height="s.height"
+                :style="{ stroke: s.stroke }" />
+          <path v-else-if="s.kind === 'poly' || s.kind === 'stroke'" :d="s.d"
+                :style="{ stroke: s.stroke }" />
+          <text v-if="s.label" :x="s.labelX" :y="s.labelY" :style="{ fill: s.stroke }">{{ s.label }}</text>
           <g class="ds-delete" @pointerdown.stop @click.stop="removeMark(s.idx)"
              v-tooltip.top="'Delete this mark'">
             <circle :cx="s.deleteX" :cy="s.deleteY" :r="7" />
@@ -386,11 +411,14 @@ const firstVertexMarker = computed(() => {
         </template>
       </g>
       <rect v-if="draftKind === 'rect' && draftRect" class="ds-draft"
+            :style="{ stroke: draftStroke }"
             :x="draftRect.x" :y="draftRect.y" :width="draftRect.w" :height="draftRect.h" />
-      <path v-if="draftKind === 'poly' && draftPolyPath" class="ds-draft" :d="draftPolyPath" />
-      <path v-if="draftKind === 'stroke' && draftStrokePath" class="ds-draft" :d="draftStrokePath" />
+      <path v-if="draftKind === 'poly' && draftPolyPath" class="ds-draft"
+            :style="{ stroke: draftStroke }" :d="draftPolyPath" />
+      <path v-if="draftKind === 'stroke' && draftStrokePath" class="ds-draft"
+            :style="{ stroke: draftStroke }" :d="draftStrokePath" />
       <circle v-if="firstVertexMarker" class="ds-poly-first"
-              :class="{ armed: firstVertexMarker.armed }"
+              :class="{ armed: firstVertexMarker.armed }" :style="{ stroke: draftStroke }"
               :cx="firstVertexMarker.x" :cy="firstVertexMarker.y" :r="firstVertexMarker.radius" />
       <g v-if="editModeActive" class="ds-corners">
         <template v-for="s in committedShapes" :key="'c' + s.key">
@@ -409,6 +437,10 @@ const firstVertexMarker = computed(() => {
       <ChipSelect variant="segmented" allow-empty :options="TOOL_OPTIONS" :model-value="tool"
                   @update:modelValue="(v: string | string[]) =>
                     tool = (Array.isArray(v) ? v[0] : v) as Tool" />
+      <ChipSelect variant="segmented" :options="COLOR_OPTIONS" :model-value="color"
+                  aria-label="Mark colour"
+                  @update:modelValue="(v: string | string[]) =>
+                    color = (Array.isArray(v) ? v[0] : v) as OverlayColor" />
       <input class="cc-input ds-label-input" type="text" v-model="label"
              placeholder="Optional label" maxlength="80"
              v-tooltip.bottom="'Optional text label attached to the next mark you draw'" />

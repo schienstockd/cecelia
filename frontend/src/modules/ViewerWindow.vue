@@ -98,6 +98,7 @@ import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, type OverlayMark } from '../utils/captureAddress'
+import { composeFrameWithOverlay } from '../utils/overlayCompose'
 import { copyText } from '../utils/clipboard'
 import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
@@ -4451,7 +4452,11 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
   if (!el || !projectUid) { drawMode.value = false; return }
   drawBusy.value = true
   try {
-    const png = el.toDataURL('image/png')
+    // Composite the drawn marks INTO the frame PNG so `get_capture(id)` returns pixels-with-marks,
+    // not a bare frame + colourless vector overlay Claude can't tie back to what the user meant.
+    // See utils/overlayCompose.ts for the palette + rationale (2026-09-19 fix — the shipped share
+    // flow stored marks as a separate colourless overlay).
+    const png = composeFrameWithOverlay(el, payload.overlay)
     const ext = overlayExtent.value
     const address = buildCaptureAddress({
       projectUid, imageUid, valueName: valueName.value,

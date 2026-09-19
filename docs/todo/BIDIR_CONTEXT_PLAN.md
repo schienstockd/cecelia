@@ -89,6 +89,18 @@ Numbered so code and other docs can cite them (`Decision 5`).
    (corner / edge / vertex hit-testing). New: freehand stroke via `pointermove` → polyline +
    Douglas-Peucker decimation. Coordinate discipline: steal `StillOverlay.vue`'s
    `object-fit: contain` invariant wholesale.
+
+   **Amendment 2026-09-19 — mark palette + composite.** The original ship gave every mark the
+   same accent-colour stroke and stored marks as a colourless vector overlay next to a bare
+   frame PNG. Two failures the moment a user tried to POINT at things: "red circle vs green
+   circle" was inexpressible, and `get_capture(id)` returned a frame WITHOUT the marks (Claude
+   saw pixels + colourless geometry). Fix: `OverlayMark.color` is a palette-name slot
+   (`magenta | cyan | yellow | white`); server safelists to those four (any other value is
+   dropped) so a tampered payload can't smuggle CSS. On save, DrawSurface's strokes composite
+   onto a copy of the frame canvas *before* `toDataURL` (`utils/overlayCompose.ts`) — the
+   assistant reads pixels-with-marks. Palette is CVD-safe (deutan / protan / tritan) and
+   microscopy-neutral (none of the four is a common fluorophore emission). The plan's earlier
+   rejection of RASTER paint still stands — this is vector + composited, not raster.
 9. **Marks are structured overlay data alongside the frame, not baked into pixels.**
    Round-trippable, editable, Claude reasons about the geometry not just visually, and Part 3's
    Claude-placed marks share the exact schema so the layer is truly one primitive.

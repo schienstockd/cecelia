@@ -1361,9 +1361,13 @@ end
         @test w(Dict("projectUid"=>uid, "frames"=>[Dict("png"=>"data:image/jpeg;base64,/9j/AA==")]))[1] == 400  # not a PNG
 
         addr = Dict("projectUid"=>uid, "imageUid"=>"IMG1", "valueName"=>"default", "t"=>3)
-        overlay = [Dict("kind"=>"rect", "geom"=>Dict("x"=>0.1, "y"=>0.1, "w"=>0.2, "h"=>0.2)),
+        # Overlay mixes: palette-safe colour (magenta), NO colour (older-shape), UNKNOWN kind (dropped),
+        # UNKNOWN colour (dropped from the mark's payload, mark itself preserved). Round-trip below
+        # asserts what actually landed on disk.
+        overlay = [Dict("kind"=>"rect", "geom"=>Dict("x"=>0.1, "y"=>0.1, "w"=>0.2, "h"=>0.2), "color"=>"magenta"),
                    Dict("kind"=>"bogus", "geom"=>Dict()),               # unknown kind — dropped
-                   Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.0,0.0],[1.0,1.0]]), "label"=>"trail")]
+                   Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.0,0.0],[1.0,1.0]]),
+                        "label"=>"trail", "color"=>"chartreuse")]        # unknown colour — dropped from mark
         st, body = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
                           "frames"=>[Dict("png"=>frame_data_url)], "overlay"=>overlay))
         @test st == 200
@@ -1392,6 +1396,12 @@ end
         @test String(got.capture.captureId) == cap_id
         @test length(got.capture.overlay) == 2                # bogus kind stripped
         @test startswith(String(got.frame), "data:image/png;base64,")
+        # Colour safelist round-trip. Magenta survived on the rect; chartreuse was dropped from the
+        # stroke's payload but the stroke itself survived (frontend resolver falls back to `white`).
+        @test String(got.capture.overlay[1].kind) == "rect"
+        @test String(got.capture.overlay[1].color) == "magenta"
+        @test String(got.capture.overlay[2].kind) == "stroke"
+        @test !haskey(got.capture.overlay[2], :color)
 
         # guards on the read side
         @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture"))[1] == 400

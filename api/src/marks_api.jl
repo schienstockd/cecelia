@@ -254,8 +254,16 @@ end
 # Overlay marks arrive in the same shape captures_api.jl already validates (rect | poly | stroke |
 # circle | arrow, geom + optional label). We re-use the exact same set here rather than importing —
 # both files pin the vocabulary; a mismatch is a real bug.
+#
+# The local mark-cleaner used to be named `_clean_overlay_mark`, the same name captures_api.jl
+# gives ITS mark-cleaner. Both files include into the same module; Julia's later definition wins,
+# so this file's shape (kind + geom + label) was silently overriding captures_api.jl's (which now
+# also carries the palette-name `color` field, 2026-09-19 palette amendment). Renamed to
+# `_clean_freeform_mark` — freeform captures point-out marks don't carry a colour field today, so
+# the local shape doesn't need the palette safelist; extract to a shared helper the day either
+# file needs the OTHER's extension.
 const _FREEFORM_OVERLAY_KINDS = Set(["rect", "poly", "stroke", "circle", "arrow"])
-function _clean_overlay_mark(m)::Union{Dict{String,Any},Nothing}
+function _clean_freeform_mark(m)::Union{Dict{String,Any},Nothing}
     m isa AbstractDict || return nothing
     kind = String(get(m, "kind", get(m, :kind, "")))
     kind in _FREEFORM_OVERLAY_KINDS || return nothing
@@ -268,7 +276,7 @@ function _clean_overlay_mark(m)::Union{Dict{String,Any},Nothing}
 end
 _clean_freeform_overlay(raw) = begin
     raw isa AbstractVector || return Dict{String,Any}[]
-    filter(!isnothing, [_clean_overlay_mark(m) for m in raw])
+    filter(!isnothing, [_clean_freeform_mark(m) for m in raw])
 end
 
 """

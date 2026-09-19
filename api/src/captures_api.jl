@@ -39,6 +39,11 @@ _valid_capture_id(id::AbstractString)::Bool = !isnothing(match(_CAPTURE_ID_RE, S
 # every time the frontend adds a field. Anything unknown at read time is ignored by Claude.
 const _CAPTURE_SURFACES = Set(["viewer_frame", "viewer_slab", "ui", "plot"])
 const _CAPTURE_OVERLAY_KINDS = Set(["rect", "poly", "stroke", "circle", "arrow"])
+# CVD-safe palette locked 2026-09-19 (see `frontend/src/utils/overlayCompose.ts`). Safelisted so
+# a tampered payload can't smuggle arbitrary CSS through; unknown names are DROPPED (the frontend
+# resolver then falls back to `white`), not stored — a value that would render is a value the
+# canvas already treats as legitimate.
+const _CAPTURE_OVERLAY_COLORS = Set(["magenta", "cyan", "yellow", "white"])
 
 # The PNG can be a base64 data URL (`data:image/png;base64,...`) or bare base64 bytes. We accept
 # both and store the raw bytes on disk so downstream readers don't repeat the prefix strip. Cap
@@ -84,6 +89,16 @@ function _clean_overlay_mark(m)::Union{Dict{String,Any},Nothing}
     for k in ("geom", "label")
         v = get(m, k, get(m, Symbol(k), nothing))
         v === nothing || (out[k] = v)
+    end
+    # Colour name — safelisted against `_CAPTURE_OVERLAY_COLORS`. An unknown name is silently
+    # dropped so the mark still stores + renders (frontend resolves the absent field to `white`);
+    # a nil-payload capture never gains a stray CSS value it didn't send. Symbol lookup first
+    # because the body arrives as a `JSON3.Object` (native `Symbol` keys); the String fallback
+    # covers a caller that hands over a plain `Dict{String,Any}`.
+    color_v = get(m, :color, get(m, "color", nothing))
+    if color_v isa AbstractString
+        c = String(color_v)
+        c in _CAPTURE_OVERLAY_COLORS && (out["color"] = c)
     end
     out
 end

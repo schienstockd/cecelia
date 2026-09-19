@@ -23,9 +23,19 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useViewerStore } from '../stores/viewer'
 import {
-  paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow,
+  paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow, type Paintable,
 } from '../utils/freeformRender'
 import type { OverlayMark } from '../utils/captureAddress'
+import { ANNOTATION_PALETTE, DEFAULT_ANNOTATION_COLOR } from '../utils/overlayCompose'
+import type { OverlayColor } from '../utils/captureAddress'
+
+// User-mark stroke — resolve the palette name to a hex, defaulting to white for older captures
+// that didn't carry a colour field. Claude marks keep their fixed amber (`--cc-warn`) for now;
+// they're distinct in intent and having them fall into the user palette would blur the line.
+function userStroke(p: Paintable): string {
+  const c = p.color as OverlayColor | undefined
+  return (c && ANNOTATION_PALETTE[c]) || ANNOTATION_PALETTE[DEFAULT_ANNOTATION_COLOR]
+}
 
 const props = defineProps<{
   captureId: string
@@ -100,18 +110,20 @@ function dismissAllClaudeMarks() {
           <rect v-if="p.kind === 'rect'"
                 :x="asRect(p.shape).x" :y="asRect(p.shape).y"
                 :width="asRect(p.shape).w" :height="asRect(p.shape).h"
-                class="cvs-shape cvs-user-shape" />
+                class="cvs-shape" :style="{ stroke: userStroke(p) }" />
           <circle v-else-if="p.kind === 'circle'"
                   :cx="asCircle(p.shape).cx" :cy="asCircle(p.shape).cy" :r="asCircle(p.shape).r"
-                  class="cvs-shape cvs-user-shape" />
+                  class="cvs-shape" :style="{ stroke: userStroke(p) }" />
           <line v-else-if="p.kind === 'arrow'"
                 :x1="asArrow(p.shape).x1" :y1="asArrow(p.shape).y1"
                 :x2="asArrow(p.shape).x2" :y2="asArrow(p.shape).y2"
-                class="cvs-shape cvs-user-shape" />
+                class="cvs-shape" :style="{ stroke: userStroke(p) }" />
           <polygon v-else-if="p.kind === 'poly'"
-                   :points="pointsToSvgAttr(asPoints(p.shape))" class="cvs-shape cvs-user-shape cvs-poly" />
+                   :points="pointsToSvgAttr(asPoints(p.shape))"
+                   class="cvs-shape cvs-poly" :style="{ stroke: userStroke(p) }" />
           <polyline v-else-if="p.kind === 'stroke'"
-                    :points="pointsToSvgAttr(asPoints(p.shape))" class="cvs-shape cvs-user-shape" />
+                    :points="pointsToSvgAttr(asPoints(p.shape))"
+                    class="cvs-shape" :style="{ stroke: userStroke(p) }" />
         </template>
       </g>
       <g class="cvs-claude">
@@ -168,9 +180,10 @@ function dismissAllClaudeMarks() {
 .cvs-svg { position: absolute; inset: 0; pointer-events: none; }
 
 .cvs-shape { fill: none; stroke-width: 2px; vector-effect: non-scaling-stroke; }
-.cvs-user-shape   { stroke: var(--cc-accent); }
+/* User marks: stroke set inline per mark (palette colour). Legacy CSS defaults stay for Claude
+   marks (fixed amber via `--cc-warn`); user's colourless poly tint retired 2026-09 with the
+   palette so the outline colour reads unambiguously. */
 .cvs-claude-shape { stroke: var(--cc-warn); }
-.cvs-poly        { fill: rgba(128, 90, 220, 0.08); }
 .cvs-poly-claude { fill: rgba(245, 158, 11, 0.08); }
 
 /* Chip: same style family as `.vw-status-chip` (the existing viewer toast) so it reads as
