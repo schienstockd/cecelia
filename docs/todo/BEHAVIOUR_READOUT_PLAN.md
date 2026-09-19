@@ -8,8 +8,8 @@
 > looks like on disk before it can be locked; premature standardization
 > risks the same "fits my one dataset" mistake the plan warns against.
 > Revisit once the motif audit → `feat/motif-discovery-p1` chain merges
-> to `main` and the `motif.class.{suffix}` column exists in the real data
-> model, not just the plan.
+> to `main` and the `motif.class` column exists in the real data model,
+> not just the plan.
 
 ## Verdict — read first
 
@@ -77,9 +77,9 @@ Only after P1 lands and the inventory is authoritative.
 
 ### P3 — Extend `labels[]` to motif class (gated on MOTIF_DISCOVERY_PLAN P2)
 
-Only after `motif.class.{suffix}` starts landing on cells (motif plan's P2 wires the `motifs` pop_type).
+Only after `motif.class` starts landing on cells (motif plan's P2 wires the `motifs` pop_type).
 
-- `get_behaviour_summary` reads `motif.class.{suffix}` + `motif.distance.{suffix}` (motif plan Decision 12) and emits them as `labels[].source = "motif"` with `confidence` from the distance. **No shape change** (that is the point of Decision 3).
+- `get_behaviour_summary` reads `motif.class` + `motif.distance` (motif plan Decision 12, revised 2026-09-19 to drop the vn suffix) and emits them as `labels[].source = "motif"` with `confidence` from the distance. **No shape change** (that is the point of Decision 3).
 - Same for user-renamed pops: if a pop has a `renamedFrom: cluster|motif|hmm|filter` provenance, its membership flows as `source = "user_rename"`.
 
 ## Open questions (Dominik's call before P1 starts)
@@ -106,7 +106,7 @@ Only after `motif.class.{suffix}` starts landing on cells (motif plan's P2 wires
 
 **P2**: `app/src/tasks/tracking/track_measures.jl` (+ audit-confirmed descriptors), `docs/inventory/BEHAVIOUR_DESCRIPTORS.md` (+ rows). No new files.
 
-**P3**: `mcp/cecelia_mcp/server.py` (`get_behaviour_summary` reads `motif.class.{suffix}`). No shape change.
+**P3**: `mcp/cecelia_mcp/server.py` (`get_behaviour_summary` reads `motif.class`). No shape change.
 
 ## References
 
