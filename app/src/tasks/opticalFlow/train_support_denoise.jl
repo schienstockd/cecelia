@@ -186,7 +186,7 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
     short_ts = Tuple{String,Int}[]   # (uid, T) for images too short for the current window
     for img in imgs
         raw = read_ccid_raw(state_file(img))
-        filename = versioned_get_field(raw, "filepath", p.valueName)
+        filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
         if isnothing(filename)
             on_log("[WARN] $(img.uid): no filepath for valueName='$(p.valueName)' — skipped")
             continue

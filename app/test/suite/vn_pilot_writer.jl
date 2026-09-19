@@ -185,3 +185,55 @@ end
         set_keep_previous_version!(prior_toggle)
     end
 end
+
+@testset "P3 pinning: versioned_get_field_at follows _latest OR a pinned vN" begin
+    # The one reader helper task handlers use. `_latest` is the default follow-mode; passing
+    # `version = "v1"` (or any concrete vN) pins the read regardless of what `_latest` points at.
+    # This is what chain nodes exploit via `params["version"]` — the executor threads that param
+    # into `versioned_get_field_at` inside each converted task's `_run_task`.
+    raw = Dict{String,Any}(
+        "filepath" => Dict{String,Any}(
+            "default" => Dict{String,Any}(
+                "v1"                => "old.zarr",
+                "v2"                => "new.zarr",
+                LATEST_ACTIVE_KEY   => "v2"),
+            VERSIONED_ACTIVE_KEY => "default"))
+
+    @test versioned_get_field_at(raw, "filepath", "default") == "new.zarr"                    # follows _latest
+    @test versioned_get_field_at(raw, "filepath", "default"; version = nothing) == "new.zarr" # nothing == follow
+    @test versioned_get_field_at(raw, "filepath", "default"; version = "v1") == "old.zarr"    # pin
+    @test versioned_get_field_at(raw, "filepath", "default"; version = "v2") == "new.zarr"    # explicit latest
+    @test isnothing(versioned_get_field_at(raw, "filepath", "default"; version = "v99"))       # missing → nothing
+
+    # Legacy scalar entry stays a no-op regardless of the version kwarg — old projects don't have
+    # a versioned entry to pin against, and every non-versioned reader has always followed the
+    # scalar. This is what made the switch from `versioned_get_field` to `versioned_get_field_at`
+    # safe: every task's reader accepts a version, but legacy entries silently ignore it.
+    legacy = Dict{String,Any}(
+        "filepath" => Dict{String,Any}(
+            "default"             => "ccidImage.ome.zarr",
+            VERSIONED_ACTIVE_KEY => "default"))
+    @test versioned_get_field_at(legacy, "filepath", "default") == "ccidImage.ome.zarr"
+    @test versioned_get_field_at(legacy, "filepath", "default"; version = "v2") == "ccidImage.ome.zarr"
+end
+
+@testset "P3 pinning ratchet: every task reader passes params.version through" begin
+    # A grep-shaped ratchet — every task's `versioned_get_field_at(raw, "filepath", …)` MUST also
+    # thread `params.version` so a chain node's `params["version"]` reaches the reader. If a new
+    # task ships and forgets the kwarg, chain pinning silently no-ops for it. Enforced by
+    # comparing the count of `versioned_get_field_at(raw, "filepath"` sites with the count that
+    # also mention `get(params, "version"` on the same line.
+    task_root = joinpath(@__DIR__, "..", "..", "src", "tasks")
+    all_reads = 0
+    pin_reads = 0
+    for (dir, _, files) in walkdir(task_root), f in files
+        endswith(f, ".jl") || continue
+        for line in eachline(joinpath(dir, f))
+            occursin("versioned_get_field_at(raw, \"filepath\"", line) || continue
+            all_reads += 1
+            occursin("get(params, \"version\", nothing)", line) && (pin_reads += 1)
+        end
+    end
+    @test all_reads > 0                # sanity: the scan finds something
+    @test pin_reads == all_reads       # every reader threads params.version — no drift
+end

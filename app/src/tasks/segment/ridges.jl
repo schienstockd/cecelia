@@ -94,7 +94,7 @@ function _run_task(task::Ridges, img::CciaImage, params::Dict{String,Any};
     end
     ch_index = ch_idxs[1]
 
-    filename = versioned_get_field(raw, "filepath", p.valueName)
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

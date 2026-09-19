@@ -36,7 +36,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     raw                  = read_ccid_raw(ccid)
 
     # Resolve the intensity image path
-    im_filename = versioned_get_field(raw, "filepath", p.intensityValueName)
+    im_filename = versioned_get_field_at(raw, "filepath", p.intensityValueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
     if isnothing(im_filename)
         on_log("[ERROR] No filepath for intensityValueName='$(p.intensityValueName)'")
         return nothing

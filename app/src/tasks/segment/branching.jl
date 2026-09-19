@@ -155,7 +155,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # a segmentation's value_name and any image version. So resolve the raw image via the ACTIVE
     # image version (`nothing` → `_active` → falls back to `default`); anisotropy reads the raw
     # pixels off that store, and OME-XML for physical scale comes from the same file.
-    filename = versioned_get_field(raw, "filepath", nothing)
+    filename = versioned_get_field_at(raw, "filepath", nothing; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
     if isnothing(filename)
         on_log("[ERROR] No image filepath registered on this image — nothing to skeletonise against.")
         return nothing

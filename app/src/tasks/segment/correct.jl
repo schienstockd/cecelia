@@ -142,7 +142,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
     # The labels store has no OME-XML of its own; the Python runner reads dims from the intensity
     # image (same rule measure_labels_run.py follows). Resolve the active image path here so the
     # runner is thin — it just uses what Julia hands it.
-    im_filename = versioned_get_field(raw, "filepath", VERSIONED_DEFAULT_VAL)
+    im_filename = versioned_get_field_at(raw, "filepath", VERSIONED_DEFAULT_VAL; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
     if isnothing(im_filename)
         on_log("[ERROR] No image filepath registered — cannot derive dims for labels correction")
         return nothing

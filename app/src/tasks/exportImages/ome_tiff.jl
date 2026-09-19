@@ -98,7 +98,7 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     p          = parse_export_ome_tiff_params(params)
     raw        = read_ccid_raw(state_file(img))
 
-    filename = versioned_get_field(raw, "filepath", p.valueName)
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
