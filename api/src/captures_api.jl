@@ -152,7 +152,15 @@ function api_viewer_capture(body_bytes::Vector{UInt8})
     end
     write_json_atomic(joinpath(dir, "meta.json"), envelope)
 
-    200, JSON3.write((; ok = true, captureId = id, path = dir))
+    # BIDIR PR #2: try to push a plain-text notification to the paired Claude Code session
+    # over its inbox socket. Any failure ⇒ `:fallback`, and the frontend keeps the existing
+    # clipboard/toast path — a broken push never blocks a share. `:not_paired` is the normal
+    # unpaired case; the frontend renders it the same as `:fallback` today (both mean "no
+    # push happened"). The address here is the same envelope dict the meta.json carries; the
+    # writer picks the fields it needs (surface / imageUid / t / z).
+    push_outcome, _msg = push_capture_notification(uid, id, get(envelope, "address", nothing))
+
+    200, JSON3.write((; ok = true, captureId = id, path = dir, push = String(push_outcome)))
 end
 
 """
