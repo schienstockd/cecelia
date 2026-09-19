@@ -1307,16 +1307,19 @@ end
         @test String(fu.label) == "look here"
         @test Int(fu.ttlSeconds) == 90
 
-        # Freeform marks (PR #5): target validation (live_viewer OR captureId), overlay non-empty,
-        # unknown kinds stripped.
+        # Freeform marks: target MUST be a captureId. live_viewer was removed — a live viewport
+        # has no stable pixel frame Claude can author against without asking, so those marks
+        # landed off-screen or clipped. The frozen shared frame (via CaptureViewSurface) is now
+        # where every freeform mark paints.
         _reset_marks!(); drain()
         f(b) = _post(api_viewer_marks_freeform, b)
         @test f(Dict("projectUid"=>uid, "overlay"=>[Dict("kind"=>"rect")]))[1] == 400   # target required
         @test f(Dict("projectUid"=>uid, "target"=>"other", "overlay"=>[Dict("kind"=>"rect")]))[1] == 400
-        @test f(Dict("projectUid"=>uid, "target"=>"live_viewer"))[1] == 400              # overlay required
-        @test f(Dict("projectUid"=>uid, "target"=>"live_viewer", "overlay"=>[]))[1] == 400
-        # A well-formed captureId is a valid target (frame-relative coords; the frontend renders it
-        # on top of the stored capture, not on the live viewer).
+        @test f(Dict("projectUid"=>uid, "target"=>"live_viewer",
+                 "overlay"=>[Dict("kind"=>"rect")]))[1] == 400   # live_viewer no longer accepted
+        @test f(Dict("projectUid"=>uid, "target"=>"cap-20260918T175413-a1b2c3"))[1] == 400  # overlay required
+        @test f(Dict("projectUid"=>uid, "target"=>"cap-20260918T175413-a1b2c3", "overlay"=>[]))[1] == 400
+        # A well-formed captureId is the only valid target now. Unknown overlay kinds stripped.
         stf, bodyf = f(Dict("projectUid"=>uid,
             "target"=>"cap-20260918T175413-a1b2c3",
             "overlay"=>[
@@ -1330,14 +1333,6 @@ end
         @test String(ff.target) == "cap-20260918T175413-a1b2c3"
         @test length(ff.overlay) == 1
         @test String(ff.overlay[1].kind) == "circle"
-        # live_viewer target + image scope passes through
-        stf2, _ = f(Dict("projectUid"=>uid, "target"=>"live_viewer",
-            "imageUid"=>"IMG1", "valueName"=>"default",
-            "overlay"=>[Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.1,0.1],[0.2,0.2]]))]))
-        @test stf2 == 200
-        ff2 = drain()[1]
-        @test String(ff2.target) == "live_viewer"
-        @test String(ff2.imageUid) == "IMG1"
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
         _reset_marks!()

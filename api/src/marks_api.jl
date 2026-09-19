@@ -21,9 +21,9 @@ using Dates
 #
 # TWO STRUCTS on purpose. `Mark` is DATA-ANCHOR (track / cell — PR #4): a handful of ints under a
 # per-vn identity. `UiFreeformMark` is DOM-ANCHOR (ui / freeform — PR #5): a dom-anchor string OR
-# a target (captureId / "live_viewer") plus a payload bag the frontend consumes verbatim. Trying
-# to squeeze both into one struct meant either half a dozen nullable fields or a JSON-schemaless
-# bag masquerading as typed — this cleaner two-way split lets each kind own its own shape.
+# a captureId target plus a payload bag the frontend consumes verbatim. Trying to squeeze both
+# into one struct meant either half a dozen nullable fields or a JSON-schemaless bag
+# masquerading as typed — this cleaner two-way split lets each kind own its own shape.
 struct Mark
     id::String
     kind::String              # "track" | "cell"
@@ -46,7 +46,7 @@ struct UiFreeformMark
     ttlSeconds::Int
     # Kind-specific bag — the frontend routes on `kind` and reads what it needs.
     # For "ui":       {anchor: String}
-    # For "freeform": {target: "live_viewer" | "<captureId>", imageUid?: String, valueName?: String,
+    # For "freeform": {target: "<captureId>",
     #                  overlay: [{kind, geom, label?}]}  (`overlay` shape matches captureAddress.ts)
     payload::Dict{String,Any}
 end
@@ -122,7 +122,7 @@ end
 
 # UI + freeform envelope (PR #5). No image identity — a UI mark points at a `data-guide` anchor
 # that lives outside any image (a sidebar item, a settings button); a freeform mark carries its own
-# target (a captureId or "live_viewer"). The `payload` dict is merged verbatim into the WS frame so
+# target (a captureId). The `payload` dict is merged verbatim into the WS frame so
 # the frontend routes on `kind` and reads what it needs — same principle as the capture envelope's
 # schemaless `overlay` bag (`captures_api.jl`).
 function _mark_ws_payload(m::UiFreeformMark)::Dict{String,Any}
@@ -241,11 +241,13 @@ _clean_anchor(v) = begin
     length(s) > _ANCHOR_MAX ? String(first(s, _ANCHOR_MAX)) : String(s)
 end
 
-const _FREEFORM_TARGET_LIVE = "live_viewer"
+# A freeform target must be a captureId. The earlier "live_viewer" mode was removed — a live
+# viewer has no stable pixel frame Claude can author against without asking the viewport size,
+# and the payload was landing off-screen or clipped. Every freeform mark now addresses a frozen
+# shared frame; captureId + 0..1 frame-relative coords is the single working path.
 const _CAPTURE_ID_RE = r"^cap-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}$"   # matches captures_api.jl
 _clean_freeform_target(v) = begin
     s = strip(String(v === nothing ? "" : v))
-    s == _FREEFORM_TARGET_LIVE && return s
     isnothing(match(_CAPTURE_ID_RE, s)) ? "" : s
 end
 
@@ -299,15 +301,19 @@ end
 """
     POST /api/viewer/marks/freeform
 
-Body: `{ projectUid, target: "live_viewer" | "<captureId>", overlay: [{kind, geom, label?}, …],
-         imageUid?, valueName?, label?, ttl_s? }`
+Body: `{ projectUid, target: "<captureId>", overlay: [{kind, geom, label?}, …],
+         label?, ttl_s? }`
 Reply: `{ ok:true, markerId }`
 
-Publishes a `viewer:mark` frame with `kind: "freeform"`. Two coordinate modes (per Decision 17 of
-the plan): if `target == "live_viewer"`, the overlay renders on the popup viewer in viewport-px
-(same coord frame `DrawSurface` produces on the viewer). If `target` is a captureId, the overlay
-renders on top of that stored capture in the same 0..1 frame-relative coords `captures_api.jl`
-already uses — the freeform is a pointer AT the shared frame, not a viewer overlay.
+Publishes a `viewer:mark` frame with `kind: "freeform"`. `target` is a captureId (`cap-…`);
+`overlay` coordinates are 0..1 in the capture's frame — the same coord system `captures_api.jl`
+already uses. The frontend renders these ON the frozen shared frame in the pop-out viewer, not
+on the live view.
+
+The earlier "live_viewer" mode was removed: a live viewport has no stable pixel frame Claude
+can author against without asking for its size, so marks landed off-screen or clipped. Every
+freeform mark now points AT a shared frame — which is also where the user is actually looking
+while the CaptureViewSurface is showing.
 """
 function api_viewer_marks_freeform(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -316,18 +322,12 @@ function api_viewer_marks_freeform(body_bytes::Vector{UInt8})
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
     target = _clean_freeform_target(get(body, :target, ""))
-    isempty(target) && return 400, JSON3.write((; error = "target required — 'live_viewer' or a captureId"))
+    isempty(target) && return 400, JSON3.write((; error = "target required — a captureId (cap-…)"))
     overlay = _clean_freeform_overlay(get(body, :overlay, nothing))
     isempty(overlay) && return 400, JSON3.write((; error = "overlay required (a non-empty list of marks)"))
     label = _clean_label(get(body, :label, nothing))
     ttl   = _clean_ttl(get(body, :ttl_s, get(body, :ttlSeconds, _MARK_TTL_DEFAULT)))
     payload = Dict{String,Any}("target" => target, "overlay" => overlay)
-    # imageUid / valueName scope only make sense for live_viewer — kept as hints for the renderer,
-    # not validated as "must match the open image" (that's the frontend's judgement call).
-    image_uid  = _wstr(body, :imageUid)
-    value_name = _wstr(body, :valueName)
-    isempty(image_uid)  || (payload["imageUid"]  = image_uid)
-    isempty(value_name) || (payload["valueName"] = value_name)
     m = UiFreeformMark(_new_mark_id(), "freeform", project_uid, label, _now_epoch(), ttl, payload)
     _store_mark!(m)
     broadcast_ws(_mark_ws_payload(m))

@@ -850,31 +850,29 @@ def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300
 
 
 @mcp.tool()
-def mark_freeform(project_uid: str, target: str, overlay: list,
-                  image_uid: str = "", value_name: str = "",
+def mark_freeform(project_uid: str, capture_id: str, overlay: list,
                   label: str = "", ttl_s: int = 300) -> dict:
-    """Draw a FREEFORM overlay on the viewer OR on a stored capture — your "look right HERE" pointer.
+    """Draw a FREEFORM overlay on a stored CAPTURE — your "look right HERE" pointer.
 
-    `target`: `"live_viewer"` for a mark on the popup viewer as it stands right now, OR a capture
-    id (from `get_recent_captures`) to point at a frame the user already shared. Two coordinate
-    modes per Decision 17: `live_viewer` renders in the popup viewer's viewport-px frame;
-    a captureId renders in the 0..1 frame-relative coords the capture itself uses.
+    `capture_id` is a `cap-…` id from `get_recent_captures`. The frontend renders the marks ON
+    the frozen shared frame in the pop-out viewer (which stays visible after Save), so the user
+    sees exactly the same frame you're pointing at.
 
-    `overlay` is a list of `{kind: "rect"|"poly"|"stroke"|"circle"|"arrow", geom, label?}`. Same
-    shape a share-in capture uses (`get_capture` returns marks in this shape too), so a
-    "point-at-what-you-shared" round-trip works. `geom` is the mark-kind's own shape — rect =
-    `{x, y, w, h}`, poly/stroke = `{pts: [[x, y], …]}`, circle = `{cx, cy, r}`, arrow = `{x1, y1,
-    x2, y2}`. Coordinates in whatever frame `target` establishes (viewport-px for live_viewer,
-    0..1 for a captureId).
+    `overlay` is a list of `{kind: "rect"|"poly"|"stroke"|"circle"|"arrow", geom, label?}`.
+    Coordinates are 0..1 in the FRAME's own space — the same coord system `get_capture` returns
+    the user's overlay in, so a "point-at-what-you-shared" round-trip is exact. `geom` per kind:
+    rect = `{x, y, w, h}`, poly / stroke = `{pts: [[x, y], …]}`, circle = `{cx, cy, r}`,
+    arrow = `{x1, y1, x2, y2}`. Keep values in [0, 1].
 
     EPHEMERAL: 5-min default TTL. When to use this vs `mark_tracks` / `mark_cells`: those point at
-    identified objects (a track id, a cell id). Use `mark_freeform` when there's no id — you saw
-    something in a capture that the segmentation didn't pick up, or you want to circle a REGION
-    rather than a specific cell.
+    identified objects. Use `mark_freeform` when there's no id — you saw something in a capture
+    that the segmentation didn't pick up, or you want to circle a REGION rather than a specific
+    cell. If the user hasn't shared a frame yet, ask them to (Share button in the viewer panel)
+    rather than making up a captureId.
 
     Returns `{ok: true, markerId}`.
     """
-    return _client.mark_freeform(project_uid, target, overlay, image_uid, value_name, label, ttl_s)
+    return _client.mark_freeform(project_uid, capture_id, overlay, label, ttl_s)
 
 
 @mcp.tool()

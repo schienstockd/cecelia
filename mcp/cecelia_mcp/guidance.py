@@ -146,10 +146,12 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
 - `point_at_ui(anchor, label?, ttl_s?)` — a CONTROL, not data. `anchor` is a `data-guide` id \
   (`"viewer.movieSection"`) or a `nav:/<route>`. Prefer naming a SECTION over a single button — \
   ids may shift; sections are stable.
-- `mark_freeform(target, overlay, imageUid?, valueName?, label?, ttl_s?)` — freeform overlay on \
-  the LIVE viewer (`target: "live_viewer"`, viewport-px coords) or on a stored CAPTURE (`target: \
-  <captureId>` from `get_recent_captures`, 0..1 frame-relative coords). Use when there's no id — a \
-  region the segmentation missed, or circling something on a shared frame.
+- `mark_freeform(capture_id, overlay, label?, ttl_s?)` — freeform overlay on a stored CAPTURE. \
+  `capture_id` is a `cap-…` from `get_recent_captures`; coords are 0..1 in the frame's own \
+  space. Paints ON the frozen shared frame in the pop-out viewer (which stays visible after \
+  Save), so the user sees exactly where you're pointing. Use when there's no id — a region the \
+  segmentation missed, or circling something on a shared frame. If the user hasn't shared a \
+  frame yet, ASK them to (Share button in the viewer panel) rather than making up a captureId.
 
 Nothing gets saved by pointing; if the finding is worth keeping, propose a board or a notebook.
 

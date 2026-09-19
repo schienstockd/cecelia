@@ -100,7 +100,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/tracks"),   # highlight a set of track ids on the open viewer
         ("POST", "/api/viewer/marks/cells"),    # outline a set of label ids (cells) on the mask
         ("POST", "/api/viewer/marks/ui"),       # point at a UI anchor (a data-guide id or a nav path)
-        ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a live viewer OR a stored capture
+        ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a stored capture (cap-…) — 0..1 frame-relative coords
     }
 )
 
@@ -405,15 +405,13 @@ class CeceliaClient:
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/ui", body=body)
 
-    def mark_freeform(self, project_uid: str, target: str, overlay: list,
-                      image_uid: str = "", value_name: str = "",
+    def mark_freeform(self, project_uid: str, capture_id: str, overlay: list,
                       label: str = "", ttl_s: int | None = None):
-        # Freeform overlay on the LIVE viewer OR a stored CAPTURE. `target` is "live_viewer" or a
-        # captureId. `overlay` is the same shape captures_api.jl accepts on share-in (rect | poly |
-        # stroke | circle | arrow), so a "point-at what you shared" round-trip works.
-        body: dict = {"projectUid": project_uid, "target": target, "overlay": overlay}
-        if image_uid: body["imageUid"] = image_uid
-        if value_name: body["valueName"] = value_name
+        # Freeform overlay on a stored CAPTURE. `capture_id` is a "cap-…" id from
+        # get_recent_captures; `overlay` is the same shape captures_api.jl accepts on share-in
+        # (rect | poly | stroke | circle | arrow), coords 0..1 in the frame's own space, so a
+        # "point at what you shared" round-trip is exact.
+        body: dict = {"projectUid": project_uid, "target": capture_id, "overlay": overlay}
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/freeform", body=body)
