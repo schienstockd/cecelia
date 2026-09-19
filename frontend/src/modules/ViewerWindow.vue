@@ -96,6 +96,7 @@ import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
+import FreeformOverlay from '../components/FreeformOverlay.vue'
 import { buildCaptureAddress, type OverlayMark } from '../utils/captureAddress'
 import { copyText } from '../utils/clipboard'
 import AxesGizmo from '../components/AxesGizmo.vue'
@@ -4575,6 +4576,10 @@ onUnmounted(() => {
            via `__cceceliaViewerBeginDraw()` exposed above. -->
       <DrawSurface :visible="drawMode" :address-line="drawAddressLine" :busy="drawBusy"
                    @save="onDrawSave" @cancel="onDrawCancel" />
+      <!-- Freeform point-out renderer (BIDIR PR #5 follow-up). Paints Claude's `mark_freeform`
+           marks (0..1 frame-relative for captureId targets, viewport-px for live_viewer). Reads
+           `viewer.freeformMarks`; per-mark ✕ to dismiss. -->
+      <FreeformOverlay />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
            cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
       <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">
