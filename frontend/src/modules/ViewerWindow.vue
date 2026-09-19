@@ -4456,7 +4456,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
     // not a bare frame + colourless vector overlay Claude can't tie back to what the user meant.
     // See utils/overlayCompose.ts for the palette + rationale (2026-09-19 fix — the shipped share
     // flow stored marks as a separate colourless overlay).
-    const png = composeFrameWithOverlay(el, payload.overlay)
+    const png = await composeFrameWithOverlay(el, payload.overlay)
     const ext = overlayExtent.value
     const address = buildCaptureAddress({
       projectUid, imageUid, valueName: valueName.value,

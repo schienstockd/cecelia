@@ -24,6 +24,7 @@
 //   Napari's default paint tool uses a very similar palette for the same reason.
 
 import type { OverlayColor, OverlayMark } from './captureAddress'
+import { loadImg } from '../plots/export'
 
 /** The four palette values, keyed by the name that goes on `OverlayMark.color`. */
 export const ANNOTATION_PALETTE: Record<OverlayColor, string> = {
@@ -107,21 +108,29 @@ export function paintOverlayOnCanvas(
   }
 }
 
-/** Composite `marks` onto a copy of `frameCanvas` and return the resulting PNG data URL. Never
- *  mutates the input canvas — a separate offscreen canvas holds the composite. If the frame is
- *  empty (zero-dim) or the 2d context can't be acquired, falls back to the frame's own
- *  `toDataURL` output (unmarked) so a share still succeeds. */
-export function composeFrameWithOverlay(
+/** Composite `marks` onto a copy of the viewer frame and return the resulting PNG data URL. Never
+ *  mutates the input canvas — a separate offscreen canvas holds the composite. Async because the
+ *  WebGPU presentation backbuffer is consumed by the browser compositor between frames, so
+ *  `ctx.drawImage(webgpuCanvas)` reads back BLANK — we have to route the frame through
+ *  `canvas.toDataURL()` (a different readback path that does return pixels — the same trick
+ *  `__cceceliaViewerCapture` / `__cceceliaViewerScreenshot` use), then `Image.decode` before we can
+ *  paint it back onto a 2D canvas alongside the marks. On any fallback path (zero-dim canvas, no
+ *  2d context, image failed to load) we return the bare frame's `toDataURL` so a share still
+ *  succeeds — the marks vanish but the frame doesn't. */
+export async function composeFrameWithOverlay(
   frameCanvas: HTMLCanvasElement,
   marks: OverlayMark[],
-): string {
+): Promise<string> {
   const w = frameCanvas.width, h = frameCanvas.height
-  if (w === 0 || h === 0) return frameCanvas.toDataURL('image/png')
+  const framePng = frameCanvas.toDataURL('image/png')
+  if (w === 0 || h === 0 || marks.length === 0) return framePng
   const off = document.createElement('canvas')
   off.width = w; off.height = h
   const ctx = off.getContext('2d')
-  if (!ctx) return frameCanvas.toDataURL('image/png')
-  ctx.drawImage(frameCanvas, 0, 0)
-  if (marks.length > 0) paintOverlayOnCanvas(ctx, marks, w, h)
+  if (!ctx) return framePng
+  const img = await loadImg(framePng)
+  if (!img) return framePng
+  ctx.drawImage(img, 0, 0)
+  paintOverlayOnCanvas(ctx, marks, w, h)
   return off.toDataURL('image/png')
 }
