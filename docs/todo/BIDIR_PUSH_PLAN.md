@@ -1,7 +1,8 @@
 # Real Push Delivery for Share-In — plan
 
 **Status:** PR #1 shipped 2026-09-19 (`#1048`); PR #2 shipped 2026-09-19 (`#1049`, stacked on
-#1048); PR #3 planning. Design work archived at
+#1048); PR #3 shipped 2026-09-19 (`#1051`, stacked on #1049) — all three PRs of the sequence
+merged in one afternoon after the wire-protocol probe. Design work archived at
 [`docs/archive/cross-session-push-prompt.md`](../archive/cross-session-push-prompt.md); this doc is
 the settled version. Sits under `Part 5` of
 [`docs/todo/BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md) as a follow-up to PR #3 (share-in
@@ -159,19 +160,19 @@ leaves the system in a worse state than `#1040`'s stand-in.
    Native Windows named-pipe branch untested (Open Item 2). ~300 lines. Chip stays at the
    two-state "paired ✓ / not paired" for this PR; the four-state chip from Decision 10 lands
    in PR #3.
-3. **UI polish + delivery ACK via `crossSessionInbound` notice-back (planning).** The docs
-   confirm the receiver sends notices back — held / delivered / denied / expired — on the
-   same socket connection the sender opened. PR #2's writer opens the connection, writes
-   both lines and closes immediately; PR #3 keeps the connection open for a short window
-   (~2 s) after the message, reads and parses any inbound notice frames, and records the
-   outcome per `captureId` in an in-memory registry the frontend can query (GET
-   `/api/push/status?captureId=…`). Chip then renders the four states from Decision 10
-   truthfully — `sent → held / delivered / denied` — with a fifth `fell back to clipboard`
-   already correct today. Also: WS `push_target:changed` broadcast so the chip flips
-   without waiting for the next Share click; guidance addition per Decision 15; row to
-   `docs/MAP.md`; outcome note on
-   [`docs/archive/cross-session-push-prompt.md`](../archive/cross-session-push-prompt.md).
-   ~250 lines.
+3. **UI polish + WS signals (shipped PR #1051, 2026-09-19). NO ACK reader** — the plan's
+   original Decision 11 amendment sketched reading `crossSessionInbound` notices on the
+   sender's connection, but binary inspection (v2.1.278) confirmed those notices go to the
+   SENDER'S OWN inbox socket via `sendPeerReceipt`. Cecelia binds no inbox as a raw-socket
+   sender, so the notice never arrives. Reading it would require Cecelia to bind an inbox
+   and register a from-address, deliberately out of scope. What did ship: (a) WS
+   `push_target:changed` broadcast from `push_api.jl` (pair-write) + `push_writer.jl`
+   (stale-clear) so the chip flips in real time; (b) WS `push:sent {projectUid, captureId}`
+   from a successful push, driving a transient 3 s "sent ✓" chip flash; (c)
+   `BRIEFING_GUIDANCE` addition per Decision 15 pinned by `test_server.py`. Chip stays at
+   `not paired / paired ✓ / transient sent ✓`, not Decision 10's four-state pitch —
+   held/denied/expired are unobservable from our side. ~120 lines. New
+   `frontend/src/stores/push.ts` (thin WS dispatcher).
 
 Dependencies: PR #2 depends on PR #1's `push_target.json` reader. PR #3 depends on both. Nothing
 else cross-depends.
