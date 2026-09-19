@@ -235,6 +235,13 @@ segmentation_utils._store_path, store_sweep. Each is a rewrite site. P4 breaks i
 sub-plan (`P4a` migrator + `P4b` rewrite these helpers to compose through the resolver) so it is
 independently reviewable.
 
+**Design analysis (2026-09-19):** `docs/audit/vn-versioning-p4-design.md` — post-P1+P2, the
+"18 helpers" split into TWO buckets: 4 already routed (via `unversion_value`), 14 not yet routed.
+Design doc surfaces Q1 (on-disk layout suffix vs subdir), Q2 (per-family — do QC/corrections/gating
+truly need per-version files?), Q3 (re-import UX default). Also raises whether an eager migrator is
+needed at all given P2 infra's union type support. **Decision pending — answers direct P4b PR
+sequencing.**
+
 ### P5 — Prune surface (Settings + route + UI)
 
 Settings → Storage: per vn, list versions with size + timestamp + "in use by chain run X" flag;
