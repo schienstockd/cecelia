@@ -167,3 +167,35 @@ export async function setStoreLayout(name: string): Promise<string> {
   if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
   return (data as any).current as string
 }
+
+/**
+ * VN versioning: when true, a re-run of a producing task mints the next `vN` alongside the current
+ * version instead of overwriting. Backend routes through `version_write!` (the P2 guarded writer).
+ *
+ * Server-side setting persisted as `[zarr].keepPreviousVersion`, default off — a niche opt-in for
+ * humans (A/B comparison, publication freeze, chain branching, regression investigation, sharing
+ * intermediates). Same knob future autonomous execution flips programmatically so a Claude that
+ * runs a task can't destroy the user's prior work.
+ */
+export interface KeepPrevVersionSettings {
+  current: boolean
+  default: boolean
+}
+
+export async function fetchKeepPrevVersion(): Promise<KeepPrevVersionSettings> {
+  const res = await fetch('/api/storage/keep-previous-version')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return data as KeepPrevVersionSettings
+}
+
+export async function setKeepPrevVersion(value: boolean): Promise<boolean> {
+  const res = await fetch('/api/storage/keep-previous-version/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return Boolean((data as any).current)
+}

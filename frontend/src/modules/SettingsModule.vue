@@ -13,8 +13,9 @@ import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
 import ViewProfileEditor from '../components/ViewProfileEditor.vue'
 import ChipSelect from '../components/ChipSelect.vue'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
-         fetchStoreLayout, setStoreLayout,
-         type StorageSummary, type CompressorSettings, type StoreLayoutSettings } from '../utils/storage'
+         fetchStoreLayout, setStoreLayout, fetchKeepPrevVersion, setKeepPrevVersion,
+         type StorageSummary, type CompressorSettings, type StoreLayoutSettings,
+         type KeepPrevVersionSettings } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
@@ -95,6 +96,24 @@ async function changeCompressor(name: string) {
   try { compressor.value.current = await setCompressor(name) }
   catch (e: any) { compressorError.value = e?.message ?? 'Could not change compression' }
   finally { compressorBusy.value = false }
+}
+
+// VN versioning reprocess toggle. Off by default; when on, the pilot writer (ingest) — and every
+// task that ships the same routing next — mints a new `vN` on re-run instead of overwriting. See
+// `docs/audit/vn-versioning-p4-design.md`.
+const keepPrev      = ref<KeepPrevVersionSettings | null>(null)
+const keepPrevBusy  = ref(false)
+const keepPrevError = ref('')
+async function loadKeepPrev() {
+  try { keepPrev.value = await fetchKeepPrevVersion() }
+  catch { /* advanced, optional — a failure here must not break the Settings page */ }
+}
+async function changeKeepPrev(value: boolean) {
+  if (!keepPrev.value || value === keepPrev.value.current) return
+  keepPrevBusy.value = true; keepPrevError.value = ''
+  try { keepPrev.value.current = await setKeepPrevVersion(value) }
+  catch (e: any) { keepPrevError.value = e?.message ?? 'Could not change the toggle' }
+  finally { keepPrevBusy.value = false }
 }
 
 async function scanStorage() {
@@ -353,6 +372,7 @@ function replKeydown(e: KeyboardEvent) {
 onMounted(loadDiag)
 onMounted(loadCompressor)
 onMounted(loadLayout)
+onMounted(loadKeepPrev)
 onMounted(loadTls)
 
 // ── TLS preference (HTTPS + HTTP/2) ────────────────────────────────────────────
@@ -796,6 +816,21 @@ async function switchWt(path: string) {
         <span class="field-hint cc-muted cc-fs-xs">Default for new imports; existing images keep theirs</span>
       </div>
       <span v-if="layoutError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ layoutError }}</span>
+
+      <!-- VN versioning reprocess toggle. Default off (matches long-standing overwrite semantics);
+           when on, a re-run of a producing task mints the next `vN` sibling instead of overwriting
+           the current output. Niche opt-in — most users leave it off. Full design + scenarios:
+           `docs/audit/vn-versioning-p4-design.md`. Currently exercised by ingest only (the pilot
+           writer); other writers will opt in as their per-family PRs land. -->
+      <div v-if="keepPrev" class="field">
+        <CcToggle class="toggle-row"
+          :model-value="keepPrev.current" :disabled="keepPrevBusy"
+          label="Keep previous version on reprocess"
+          v-tooltip.bottom="'A re-run of a task mints a new vN sibling instead of overwriting the current output'"
+          @update:model-value="changeKeepPrev" />
+        <span class="field-hint cc-muted cc-fs-xs">Off by default; the current output is overwritten on re-run</span>
+      </div>
+      <span v-if="keepPrevError" class="field-hint cc-muted-error cc-fs-xs">{{ keepPrevError }}</span>
 
       <div class="field">
         <div class="field-row">
