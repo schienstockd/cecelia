@@ -39,6 +39,27 @@ struct MotifDiscovery <: CciaTask end
 const _MOTIF_FEATURE_COLS = String["live.cell.speed", "live.cell.angle",
                                    "live.cell.hmm.state.movement"]
 
+# Per-cell / per-track obs column names on the value_name's h5ad. UNSUFFIXED — matches the HMM
+# convention (`live.cell.hmm.state.movement` in every `{vn}.h5ad`), so B+T pops co-plot on one
+# axis. See `MOTIF_DISCOVERY_PLAN.md` Decision 12 (revised 2026-09-19) and
+# `docs/DATAMODEL.md` → *Motif discovery output*. Exposed at module level so a plot spec, test,
+# or downstream reader can cite the same source of truth (the `motif_class_frequency.json` plot
+# expects EXACTLY `motif.class` — a drift here breaks the co-plot silently).
+const MOTIF_CLASS_COL       = "motif.class"
+const MOTIF_DISTANCE_COL    = "motif.distance"
+const MOTIF_INSTANCE_ID_COL = "motif.instance_id"
+const MOTIF_SEQUENCE_COL    = "motif.sequence"
+
+# Pre-2026-09-19 runs banked `motif.class.{vn}` etc. Anyone re-running on a vn whose h5ad still
+# carries those columns would end up with BOTH the new unsuffixed name and the stale suffixed
+# copy side by side, and the summary panel's measure picker would offer both — the stale one
+# renders empty on the other vn's series. Names are dropped at write time via the same chain
+# that writes the new column so cleanup is automatic per re-run; there is no separate migration.
+_legacy_motif_cell_cols(vn::AbstractString)  = String["$(MOTIF_CLASS_COL).$(vn)",
+                                                      "$(MOTIF_DISTANCE_COL).$(vn)",
+                                                      "$(MOTIF_INSTANCE_ID_COL).$(vn)"]
+_legacy_motif_track_cols(vn::AbstractString) = String["$(MOTIF_SEQUENCE_COL).$(vn)"]
+
 # Typed shape of what `_run_task(::MotifDiscovery, …)` reads from `params`.
 Base.@kwdef struct MotifDiscoveryParams
     pops::Vector{String}   = String[]
@@ -178,10 +199,10 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
            "$(count(!isnothing, instance_id_by_cell)) / $(nrow(df)) cells")
     on_progress(4, 5)
 
-    class_col    = "motif.class"
-    distance_col = "motif.distance"
-    instance_col = "motif.instance_id"
-    sequence_col = "motif.sequence"
+    class_col    = MOTIF_CLASS_COL
+    distance_col = MOTIF_DISTANCE_COL
+    instance_col = MOTIF_INSTANCE_ID_COL
+    sequence_col = MOTIF_SEQUENCE_COL
 
     df[!, :_motif_class]       = class_by_cell
     df[!, :_motif_distance]    = distance_by_cell
@@ -199,22 +220,28 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
             cell_props_path = img_label_props_path(img, string(vn))
             isfile(cell_props_path) || (on_log("[WARN] no labelProps: $cell_props_path — skipped"); continue)
             # numeric obs (distance, instance_id) via the Julia writer chain — NaN for unlabelled cells.
+            # `drop_obs` cleans up any legacy `motif.distance.{vn}` / `motif.instance_id.{vn}` columns
+            # from pre-2026-09-19 runs on this h5ad; names absent from the file are silently ignored.
             dist_vals = Float64[x === nothing ? NaN : Float64(x) for x in vsub._motif_distance]
             inst_vals = Float64[x === nothing ? NaN : Float64(x) for x in vsub._motif_instance_id]
             cell_num_df = DataFrame("label" => Int.(vsub.label),
                                     distance_col => dist_vals,
                                     instance_col => inst_vals)
             try
-                label_props(cell_props_path) |> add_obs(cell_num_df) |> save!
+                label_props(cell_props_path) |>
+                    drop_obs(_legacy_motif_cell_cols(string(vn))) |>
+                    add_obs(cell_num_df) |> save!
             catch e
                 on_log("[WARN] numeric obs write failed: $(img.uid)/$vn — $e"); continue
             end
             # categorical obs (class name) via the Python-backed writer; missing → left unset.
+            # Legacy `motif.class.{vn}` name dropped in the same call for the same reason as above.
             cat_labels = Int[Int(l) for l in vsub.label]
             cat_values = Any[x === nothing ? nothing : String(x) for x in vsub._motif_class]
             ok_cat = write_categorical_obs(cell_props_path,
                 [(name = class_col, labels = cat_labels, values = cat_values)];
-                drop = [class_col], on_log = on_log, on_process = on_process)
+                drop = vcat([class_col], String["$(class_col).$(vn)"]),
+                on_log = on_log, on_process = on_process)
             ok_cat || (on_log("[WARN] categorical class write failed: $(img.uid)/$vn"); continue)
             _write_motif_features!(cell_props_path, suffix, _MOTIF_FEATURE_COLS, uids;
                                    resolution_locked_at = resolved_at)
@@ -238,7 +265,8 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
                     tk_values = Any[seq_by_track[k] for k in tk_labels]
                     ok_seq = write_categorical_obs(track_path,
                         [(name = sequence_col, labels = tk_labels, values = tk_values)];
-                        drop = [sequence_col], on_log = on_log, on_process = on_process)
+                        drop = vcat([sequence_col], String["$(sequence_col).$(vn)"]),
+                        on_log = on_log, on_process = on_process)
                     ok_seq || on_log("[WARN] track sequence write failed: $(img.uid)/$vn")
                 end
             end
