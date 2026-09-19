@@ -80,6 +80,44 @@ export function formatAddress(row: CaptureRow): string {
   return bits.length > 0 ? `${head} · ${bits.join(', ')}` : head
 }
 
+/** Delete a single capture (Kiwi post-PR #3 follow-up). Idempotent on the server;
+ *  network failure ⇒ `false` so the caller can leave the row visible without throwing. */
+export async function deleteCapture(
+  projectUid: string, captureId: string, apiBase = ''
+): Promise<boolean> {
+  if (!projectUid || !captureId) return false
+  try {
+    const res = await fetch(`${apiBase}/api/viewer/capture/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, captureId }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Bulk-clear every capture for a project. Returns the count the server actually removed,
+ *  or `null` on a network failure. */
+export async function clearAllCaptures(
+  projectUid: string, apiBase = ''
+): Promise<number | null> {
+  if (!projectUid) return null
+  try {
+    const res = await fetch(`${apiBase}/api/viewer/captures/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid }),
+    })
+    if (!res.ok) return null
+    const raw = await res.json() as Record<string, unknown>
+    return typeof raw.cleared === 'number' ? raw.cleared : 0
+  } catch {
+    return null
+  }
+}
+
 /** Relative "how long ago" — `just now` / `5m` / `2h` / `3d`. Not localized; a glance row is
  *  meant to be short. `createdAt` is ISO-ish; anything unparseable ⇒ empty (the row still shows,
  *  just without a timestamp — better than hiding the capture). */

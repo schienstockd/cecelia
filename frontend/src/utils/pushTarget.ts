@@ -60,3 +60,32 @@ export async function clearPushTarget(projectUid: string, apiBase = ''): Promise
     return false
   }
 }
+
+/** Kiwi pairing liveness. Cheap `connect()` probe on the paired session's socket. Backend
+ *  clears the record + broadcasts `push_target:changed` when the socket is dead — the caller
+ *  doesn't need to do anything on failure; the WS listener will refresh the chip.
+ *
+ *  Returns the parsed body so callers can render the reason when a dead session is detected.
+ *  Network failure ⇒ `null` (probe skipped, don't scare the user). */
+export interface ProbeResult { paired: boolean; alive: boolean; reason?: string }
+export async function probePushTarget(
+  projectUid: string, apiBase = ''
+): Promise<ProbeResult | null> {
+  if (!projectUid) return null
+  try {
+    const res = await fetch(`${apiBase}/api/push/target/probe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid }),
+    })
+    if (!res.ok) return null
+    const raw = await res.json() as Record<string, unknown>
+    return {
+      paired: !!raw.paired,
+      alive: !!raw.alive,
+      reason: typeof raw.reason === 'string' ? raw.reason : undefined,
+    }
+  } catch {
+    return null
+  }
+}

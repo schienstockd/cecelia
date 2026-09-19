@@ -30,11 +30,12 @@ import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCopyFlash } from '../../composables/useCopyFlash'
 import { useObserverStore } from '../../stores/observer'
-import { fetchPushTarget, pushChipLabel, clearPushTarget,
+import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, formatWhen,
+         deleteCapture, clearAllCaptures,
          type CaptureRow } from '../../utils/kiwiCaptures'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -47,9 +48,20 @@ const projectName = computed(() => pm.current?.name ?? undefined)
 const pushTarget = ref<PairedState>({ paired: false })
 const pushSentFlash = ref(false)
 let pushFlashTimer: ReturnType<typeof setTimeout> | null = null
+const probing = ref(false)
 
 async function refreshPushTarget() {
   pushTarget.value = projectUid.value ? await fetchPushTarget(projectUid.value) : { paired: false }
+}
+
+// Liveness probe. Auto-run on project change (below); the "Check" icon-button beside the chip
+// re-runs it on demand. Server clears + broadcasts push_target:changed on a dead socket, so no
+// local chip-flip logic is needed — the WS watcher already refreshes on that broadcast.
+async function checkPairing() {
+  if (!projectUid.value || probing.value) return
+  probing.value = true
+  try { await probePushTarget(projectUid.value) }
+  finally { probing.value = false }
 }
 
 const pushStore = usePushStore()
@@ -67,12 +79,20 @@ watch(() => pushStore.tick, () => {
     // A successful push means a fresh capture just landed on disk — reload the list without waiting
     // for the user to reopen the panel.
     void refreshCaptures()
+  } else if (evt.kind === 'captures:changed') {
+    void refreshCaptures()
   }
 })
 
 onUnmounted(() => { if (pushFlashTimer) clearTimeout(pushFlashTimer) })
 // observer.refresh() is already installed app-wide in App.vue on project change — don't double it.
-watch(projectUid, () => { void refreshPushTarget(); void refreshCaptures() }, { immediate: true })
+// The probe runs after refreshPushTarget so the chip renders once with the stored state, then
+// silently updates if the socket is dead. Order: read → probe → maybe self-heal via WS broadcast.
+watch(projectUid, async () => {
+  await refreshPushTarget()
+  void refreshCaptures()
+  void checkPairing()
+}, { immediate: true })
 
 // ── Chat handoff ──────────────────────────────────────────────────────────────
 const { isCopied: chatCopied, copy: copyChatPrompt } = useCopyFlash(2500)
@@ -93,6 +113,16 @@ async function refreshCaptures() {
 // Per-row copy flash. Separate `useCopyFlash` instance so the chat-starter flash is independent.
 const { isCopied: capCopied, copy: copyCaptureId } = useCopyFlash(2000)
 async function copyId(id: string) { await copyCaptureId(id, id) }
+async function deleteRow(id: string) {
+  // Optimistic: drop from the local list immediately so the row vanishes with the click;
+  // server confirmation refreshes the list anyway via `captures:changed`.
+  captures.value = captures.value.filter(c => c.captureId !== id)
+  await deleteCapture(projectUid.value, id)
+}
+async function clearAll() {
+  captures.value = []
+  await clearAllCaptures(projectUid.value)
+}
 
 // Re-render relative timestamps every ~30 s so "just now" / "5m" don't grow stale mid-session.
 // Cheap — only relabels; captures.value is not refetched. Timer declared in the DECLARED_TIMERS
@@ -155,11 +185,15 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                     : 'No paired assistant session — shared frames fall back to the clipboard'">
             {{ pushSentFlash ? 'sent ✓' : pushChipLabel(pushTarget) }}
           </span>
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                  :disabled="probing || !projectUid" @click="checkPairing"
+                  v-tooltip.bottom="'Check pairing — probe the paired socket for liveness'">
+            <i :class="['pi', probing ? 'pi-spin pi-spinner' : 'pi-refresh']" />
+          </button>
         </div>
         <div class="kiwi-row" data-guide="kiwi.chat">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Chat</span>
-          <button class="kiwi-btn cc-btn cc-btn-ghost cc-fs-xs"
-                  :class="{ copied: chatCopied() }"
+          <button class="cc-btn cc-btn-ghost cc-fs-xs"
                   @click="copyChatStarter"
                   v-tooltip.bottom="chatCopied()
                     ? 'Copied — paste it into your assistant chat'
@@ -170,24 +204,52 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
         </div>
 
         <CollapsibleSection label="Recent captures" storage-key="kiwi.captures.open"
-                            tip="Click a row to copy its captureId — paste it into your assistant chat.">
+                            tip="Click a row to copy its captureId; the × button deletes it from disk.">
           <div v-if="capturesLoading" class="kiwi-empty cc-muted cc-fs-xs">Loading…</div>
           <div v-else-if="captures.length === 0" class="kiwi-empty cc-muted cc-fs-xs">
             No shared captures yet.
           </div>
-          <ul v-else class="kiwi-cap-list">
-            <li v-for="c in captures" :key="c.captureId" class="kiwi-cap-row"
-                :class="{ copied: capCopied(c.captureId) }"
-                @click="copyId(c.captureId)"
-                v-tooltip.right="capCopied(c.captureId)
-                  ? 'Copied — paste it into your assistant chat'
-                  : `Copy captureId · ${c.captureId}`">
-              <span class="kiwi-cap-time cc-fs-2xs">{{ whenLabel(c.createdAt) || '—' }}</span>
-              <span class="kiwi-cap-addr cc-muted cc-fs-2xs">{{ formatAddress(c) }}</span>
-              <i class="pi kiwi-cap-icon"
-                 :class="capCopied(c.captureId) ? 'pi-check' : 'pi-copy'" />
-            </li>
-          </ul>
+          <template v-else>
+            <ul class="kiwi-cap-list">
+              <li v-for="c in captures" :key="c.captureId" class="kiwi-cap-row"
+                  :class="{ copied: capCopied(c.captureId) }">
+                <button class="kiwi-cap-copy cc-btn cc-btn-bare"
+                        @click="copyId(c.captureId)"
+                        v-tooltip.right="capCopied(c.captureId)
+                          ? 'Copied — paste it into your assistant chat'
+                          : `Copy captureId · ${c.captureId}`">
+                  <span class="kiwi-cap-time cc-fs-2xs">{{ whenLabel(c.createdAt) || '—' }}</span>
+                  <span class="kiwi-cap-addr cc-muted cc-fs-2xs">{{ formatAddress(c) }}</span>
+                  <i class="pi kiwi-cap-icon"
+                     :class="capCopied(c.captureId) ? 'pi-check' : 'pi-copy'" />
+                </button>
+                <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro kiwi-cap-del"
+                        @click="deleteRow(c.captureId)"
+                        v-tooltip.right="'Delete this capture from disk'">
+                  <i class="pi pi-times" />
+                </button>
+              </li>
+            </ul>
+            <div class="kiwi-cap-footer">
+              <ConfirmButton @confirm="clearAll" v-slot="{ armed, arm, confirm, cancel }">
+                <button v-if="!armed" class="cc-btn cc-btn-ghost cc-fs-2xs"
+                        @click="arm"
+                        v-tooltip.bottom="'Delete every capture for this project'">
+                  <i class="pi pi-trash" /> Clear all captures
+                </button>
+                <template v-else>
+                  <button class="cc-btn cc-btn-danger cc-fs-2xs" @click="confirm"
+                          v-tooltip.bottom="'Confirm — delete every capture'">
+                    <i class="pi pi-check" /> Delete all
+                  </button>
+                  <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-2xs" @click="cancel"
+                          v-tooltip.bottom="'Cancel'">
+                    <i class="pi pi-times" />
+                  </button>
+                </template>
+              </ConfirmButton>
+            </div>
+          </template>
         </CollapsibleSection>
 
         <CollapsibleSection label="Session identity" storage-key="kiwi.session.open"
@@ -213,17 +275,17 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
             </div>
             <div class="kiwi-obs-row kiwi-clear-row">
               <ConfirmButton @confirm="clearPairing" v-slot="{ armed, arm, confirm, cancel }">
-                <button v-if="!armed" class="cc-btn cc-btn-ghost cc-fs-xs kiwi-btn"
+                <button v-if="!armed" class="cc-btn cc-btn-danger-ghost cc-fs-xs"
                         :disabled="clearing" @click="arm"
                         v-tooltip.bottom="'Unpair — your session re-pairs on its next MCP tool call'">
                   <i class="pi pi-times-circle" /> Clear pairing
                 </button>
                 <template v-else>
-                  <button class="cc-btn cc-btn-ghost cc-fs-xs kiwi-btn danger"
+                  <button class="cc-btn cc-btn-danger cc-fs-xs"
                           @click="confirm" v-tooltip.bottom="'Confirm — clear the pairing record'">
                     <i class="pi pi-check" /> Confirm
                   </button>
-                  <button class="cc-btn cc-btn-ghost cc-fs-xs kiwi-btn"
+                  <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
                           @click="cancel" v-tooltip.bottom="'Cancel'">
                     <i class="pi pi-times" />
                   </button>
@@ -265,27 +327,31 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
              transition: color 0.15s ease; color: var(--cc-text-dim); }
 .kiwi-chip-paired { color: var(--cc-kiwi); }
 .kiwi-chip-sent   { color: var(--cc-sev-ok, var(--cc-kiwi)); font-weight: 600; }
-.kiwi-btn { flex: 1; }
-.kiwi-btn.copied { color: var(--cc-sev-ok); }
 
-/* Recent captures list */
+/* Recent captures list — each row = copy-button (grid inside) + delete-button */
 .kiwi-cap-list { list-style: none; margin: 0; padding: 0;
                  display: flex; flex-direction: column; gap: 0.15rem; }
-.kiwi-cap-row {
+.kiwi-cap-row { display: flex; align-items: center; gap: 0.25rem; }
+.kiwi-cap-copy {
+  flex: 1;
   display: grid; grid-template-columns: 3rem 1fr auto;
   gap: 0.4rem; align-items: center;
   padding: 0.25rem 0.4rem;
   border-radius: var(--cc-radius-xs);
-  cursor: pointer;
+  text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
 }
-.kiwi-cap-row:hover { background: var(--cc-surface-2); }
-.kiwi-cap-row.copied { background: var(--cc-kiwi-tint); }
+.kiwi-cap-copy:hover { background: var(--cc-surface-2); }
+.kiwi-cap-row.copied .kiwi-cap-copy { background: var(--cc-kiwi-tint); }
 .kiwi-cap-row.copied .kiwi-cap-icon { color: var(--cc-sev-ok); }
 .kiwi-cap-time { color: var(--cc-text-dim); text-align: right; }
 .kiwi-cap-addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font-family: var(--cc-mono); }
 .kiwi-cap-icon { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
+.kiwi-cap-del { color: var(--cc-text-dim); flex-shrink: 0; }
+.kiwi-cap-del:hover { color: var(--cc-sev-fail); }
+.kiwi-cap-footer { display: flex; justify-content: flex-end; gap: 0.35rem;
+                   padding: 0.4rem 0.4rem 0.2rem; }
 
 /* Assistant / observer + session identity sections */
 .kiwi-obs-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; }
@@ -297,6 +363,5 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 .kiwi-dot-ok   { background: var(--cc-sev-ok); }
 .kiwi-dot-warn { background: var(--cc-sev-warn); }
 .kiwi-dot-fail { background: var(--cc-sev-fail); }
-.kiwi-clear-row { margin-top: 0.4rem; }
-.kiwi-clear-row .kiwi-btn.danger { color: var(--cc-sev-fail); border-color: var(--cc-sev-fail); }
+.kiwi-clear-row { margin-top: 0.4rem; gap: 0.35rem; }
 </style>

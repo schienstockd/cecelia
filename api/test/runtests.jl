@@ -1405,6 +1405,36 @@ end
         uid2 = "TESTCAP2"; mkpath(joinpath(tmp, uid2))
         st4, body4 = api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures?projectUid=$uid2"))
         @test st4 == 200 && isempty(JSON3.read(body4).items)
+
+        # Kiwi capture management — user-driven delete + bulk clear (post-PR #3 follow-up).
+        # Delete: round-trip via the handler; idempotent on a second call. Guarded regex/paths.
+        del_body(id) = Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid, "captureId"=>id)))
+        st_d1, r_d1 = api_viewer_capture_delete(del_body(cap_id))
+        @test st_d1 == 200
+        @test JSON3.read(r_d1, Dict{String,Any})["deleted"] == true
+        @test !isdir(cap_dir)
+        st_d2, r_d2 = api_viewer_capture_delete(del_body(cap_id))
+        @test st_d2 == 200
+        @test JSON3.read(r_d2, Dict{String,Any})["deleted"] == false      # idempotent
+
+        # Delete guards
+        @test api_viewer_capture_delete(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))[1] == 400
+        @test api_viewer_capture_delete(Vector{UInt8}(JSON3.write(Dict("captureId"=>cap_id))))[1] == 400
+        # traversal attempt rejected by the captureId regex, not by path magic
+        @test api_viewer_capture_delete(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid, "captureId"=>"../../etc/passwd"))))[1] == 400
+
+        # Bulk clear — write a couple more captures, then clear all.
+        addr2 = Dict("projectUid"=>uid, "imageUid"=>"IMG2", "t"=>0)
+        for _ in 1:3
+            w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr2,
+                   "frames"=>[Dict("png"=>frame_data_url)]))
+        end
+        st_c, r_c = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
+        @test st_c == 200
+        @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 3
+        st_c2, r_c2 = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
+        @test st_c2 == 200
+        @test JSON3.read(r_c2, Dict{String,Any})["cleared"] == 0
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
@@ -5497,6 +5527,9 @@ end
         "/api/viewer/thumbnail",
         "/api/push/target",   # bidir push (PR #1048) — POST writes/refreshes the per-project pairing record
         "/api/push/target/clear",   # Kiwi PR #3 — manual unpair; deletes the pairing record
+        "/api/push/target/probe",   # Kiwi post-PR #3 — connect-only liveness probe; clears if dead
+        "/api/viewer/capture/delete",   # Kiwi post-PR #3 — user-driven single-capture delete
+        "/api/viewer/captures/clear",   # Kiwi post-PR #3 — user-driven bulk capture clear
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -5537,7 +5570,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 96 && length(POST_ROUTES) == 122
+    @test length(GET_ROUTES) == 96 && length(POST_ROUTES) == 125
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -9043,6 +9076,75 @@ end
         st400, _ = api_push_target_clear(Vector{UInt8}(JSON3.write(Dict("projectUid" => ""))))
         @test st400 == 400
         st404, _ = api_push_target_clear(Vector{UInt8}(JSON3.write(Dict("projectUid" => "does-not-exist"))))
+        @test st404 == 404
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: POST /api/push/target/probe (Kiwi follow-up)" begin
+    # Liveness probe. Three shapes:
+    #   1. Unpaired ⇒ {paired:false, alive:false} with no side effect.
+    #   2. Paired at a live listener ⇒ {paired:true, alive:true}.
+    #   3. Paired at a dead socket ⇒ {paired:false, alive:false, reason:...} + record cleared.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-push-probe")
+        target_dir = joinpath(tmp, proj.uid, "settings")
+        mkpath(target_dir)
+        target_json = joinpath(target_dir, "push_target.json")
+        make_body() = Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid)))
+
+        # (1) unpaired — no file yet.
+        st1, r1 = api_push_target_probe(make_body())
+        @test st1 == 200
+        p1 = JSON3.read(r1, Dict{String,Any})
+        @test p1["paired"] == false && p1["alive"] == false
+
+        # (2) alive — bind a local UDS in a background task, probe it. Skipped on native
+        # Windows: `Sockets.listen(<file path>)` requires a `\\.\pipe\...` name there rather
+        # than a plain filesystem path, so a temp-dir socket file is a portable server we can't
+        # spin up. The probe under test itself IS Windows-safe (Julia's `Sockets.connect`
+        # dispatches on the transport transparently — see push_writer.jl); the dead-socket
+        # branch below still exercises the code path on every platform.
+        if !Sys.iswindows()
+            live_path = joinpath(tmp, "live.sock")
+            server = Sockets.listen(live_path)
+            accept_task = @async try Sockets.accept(server) catch _ end
+            try
+                write_json_atomic(target_json, Dict{String,Any}(
+                    "socketPath" => live_path, "token" => "t",
+                ))
+                st2, r2 = api_push_target_probe(make_body())
+                @test st2 == 200
+                p2 = JSON3.read(r2, Dict{String,Any})
+                @test p2["paired"] == true && p2["alive"] == true
+                @test isfile(target_json)   # alive ⇒ record preserved
+            finally
+                close(server)
+                try wait(accept_task) catch _ end
+            end
+        end
+
+        # (3) dead — point at a socket path nobody is listening on.
+        dead_path = joinpath(tmp, "definitely-not-a-socket.sock")
+        write_json_atomic(target_json, Dict{String,Any}(
+            "socketPath" => dead_path, "token" => "t",
+        ))
+        st3, r3 = api_push_target_probe(make_body())
+        @test st3 == 200
+        p3 = JSON3.read(r3, Dict{String,Any})
+        @test p3["paired"] == false && p3["alive"] == false
+        @test haskey(p3, "reason")
+        @test !isfile(target_json)   # dead ⇒ record cleared server-side
+
+        # Bad inputs mirror the clear route.
+        st400, _ = api_push_target_probe(Vector{UInt8}(JSON3.write(Dict("projectUid" => ""))))
+        @test st400 == 400
+        st404, _ = api_push_target_probe(Vector{UInt8}(JSON3.write(Dict("projectUid" => "does-not-exist"))))
         @test st404 == 404
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
