@@ -93,6 +93,8 @@ ALLOWED_ROUTES = frozenset(
         # place on the allow-list rather than sneaking through as a read.
         ("POST", "/api/viewer/marks/tracks"),   # highlight a set of track ids on the open viewer
         ("POST", "/api/viewer/marks/cells"),    # outline a set of label ids (cells) on the mask
+        ("POST", "/api/viewer/marks/ui"),       # point at a UI anchor (a data-guide id or a nav path)
+        ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a live viewer OR a stored capture
     }
 )
 
@@ -366,6 +368,28 @@ class CeceliaClient:
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/cells", body=body)
+
+    def mark_ui(self, project_uid: str, anchor: str,
+                label: str = "", ttl_s: int | None = None):
+        # Point-out at a UI ANCHOR — a `data-guide` id or a `nav:/…` route. Ephemeral, same TTL as
+        # the other marks. Resolves via `utils/guideAnchor.ts::resolveAnchor` on the frontend.
+        body: dict = {"projectUid": project_uid, "anchor": anchor}
+        if label: body["label"] = label
+        if ttl_s is not None: body["ttl_s"] = ttl_s
+        return self._request("POST", "/api/viewer/marks/ui", body=body)
+
+    def mark_freeform(self, project_uid: str, target: str, overlay: list,
+                      image_uid: str = "", value_name: str = "",
+                      label: str = "", ttl_s: int | None = None):
+        # Freeform overlay on the LIVE viewer OR a stored CAPTURE. `target` is "live_viewer" or a
+        # captureId. `overlay` is the same shape captures_api.jl accepts on share-in (rect | poly |
+        # stroke | circle | arrow), so a "point-at what you shared" round-trip works.
+        body: dict = {"projectUid": project_uid, "target": target, "overlay": overlay}
+        if image_uid: body["imageUid"] = image_uid
+        if value_name: body["valueName"] = value_name
+        if label: body["label"] = label
+        if ttl_s is not None: body["ttl_s"] = ttl_s
+        return self._request("POST", "/api/viewer/marks/freeform", body=body)
 
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(

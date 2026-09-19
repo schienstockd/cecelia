@@ -1292,6 +1292,52 @@ end
         end
         st5, body5 = api_viewer_marks_list(HTTP.Request("GET", "/api/viewer/marks?projectUid=$uid"))
         @test st5 == 200 && isempty(JSON3.read(body5).items)
+
+        # UI marks (PR #5): anchor validation + WS frame carries the anchor string verbatim.
+        _reset_marks!(); drain()
+        u(b) = _post(api_viewer_marks_ui, b)
+        @test u(Dict("projectUid"=>uid))[1] == 400                                       # anchor required
+        @test u(Dict("projectUid"=>uid, "anchor"=>""))[1] == 400
+        @test u(Dict("projectUid"=>"NOPE", "anchor"=>"viewer.movieSection"))[1] == 404
+        stu, bodyu = u(Dict("projectUid"=>uid, "anchor"=>"nav:/segment", "label"=>"look here", "ttl_s"=>90))
+        @test stu == 200
+        fu = drain()[1]
+        @test String(fu.type) == "viewer:mark" && String(fu.kind) == "ui"
+        @test String(fu.anchor) == "nav:/segment"
+        @test String(fu.label) == "look here"
+        @test Int(fu.ttlSeconds) == 90
+
+        # Freeform marks (PR #5): target validation (live_viewer OR captureId), overlay non-empty,
+        # unknown kinds stripped.
+        _reset_marks!(); drain()
+        f(b) = _post(api_viewer_marks_freeform, b)
+        @test f(Dict("projectUid"=>uid, "overlay"=>[Dict("kind"=>"rect")]))[1] == 400   # target required
+        @test f(Dict("projectUid"=>uid, "target"=>"other", "overlay"=>[Dict("kind"=>"rect")]))[1] == 400
+        @test f(Dict("projectUid"=>uid, "target"=>"live_viewer"))[1] == 400              # overlay required
+        @test f(Dict("projectUid"=>uid, "target"=>"live_viewer", "overlay"=>[]))[1] == 400
+        # A well-formed captureId is a valid target (frame-relative coords; the frontend renders it
+        # on top of the stored capture, not on the live viewer).
+        stf, bodyf = f(Dict("projectUid"=>uid,
+            "target"=>"cap-20260918T175413-a1b2c3",
+            "overlay"=>[
+                Dict("kind"=>"circle", "geom"=>Dict("cx"=>0.5, "cy"=>0.5, "r"=>0.1)),
+                Dict("kind"=>"nope", "geom"=>Dict())                                    # dropped
+            ],
+            "label"=>"this cell"))
+        @test stf == 200
+        ff = drain()[1]
+        @test String(ff.kind) == "freeform"
+        @test String(ff.target) == "cap-20260918T175413-a1b2c3"
+        @test length(ff.overlay) == 1
+        @test String(ff.overlay[1].kind) == "circle"
+        # live_viewer target + image scope passes through
+        stf2, _ = f(Dict("projectUid"=>uid, "target"=>"live_viewer",
+            "imageUid"=>"IMG1", "valueName"=>"default",
+            "overlay"=>[Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.1,0.1],[0.2,0.2]]))]))
+        @test stf2 == 200
+        ff2 = drain()[1]
+        @test String(ff2.target) == "live_viewer"
+        @test String(ff2.imageUid) == "IMG1"
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
         _reset_marks!()
@@ -5273,6 +5319,7 @@ end
         "/api/notebooks/revise", "/api/notebooks/shutdown",
         "/api/notebooks/snapshot", "/api/notebooks/write",
         "/api/viewer/marks/tracks", "/api/viewer/marks/cells",   # bidir point-out write (PR #4)
+        "/api/viewer/marks/ui", "/api/viewer/marks/freeform",    # bidir point-out UI + freeform (PR #5)
 
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
         "/api/optical-flow/rename",
@@ -5345,7 +5392,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 91 && length(POST_ROUTES) == 116
+    @test length(GET_ROUTES) == 91 && length(POST_ROUTES) == 118
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

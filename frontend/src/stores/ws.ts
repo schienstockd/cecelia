@@ -228,6 +228,29 @@ export const useWsStore = defineStore('ws', () => {
         if (imageUid && valueName && labels.length) {
           viewer.setPickHighlight({ imageUid, valueName, labels, focusId, label })
         }
+      } else if (data.kind === 'ui') {
+        // BIDIR PR #5. Ephemeral UI-anchor pointer; PointerBubble resolves the anchor and paints.
+        const markerId = String(data.markerId ?? '')
+        const anchor   = String(data.anchor   ?? '')
+        const ttl      = Number(data.ttlSeconds ?? 300)
+        if (markerId && anchor) viewer.pushUiMark({ markerId, anchor, label, ttlSeconds: ttl })
+      } else if (data.kind === 'freeform') {
+        const markerId = String(data.markerId ?? '')
+        const target   = String(data.target   ?? '')
+        const overlay  = Array.isArray(data.overlay)
+          ? (data.overlay as Array<Record<string, unknown>>).map(o => ({
+              kind: String(o.kind ?? ''),
+              geom: o.geom,
+              ...(o.label ? { label: String(o.label) } : {}),
+            })).filter(o => o.kind)
+          : []
+        const ttl = Number(data.ttlSeconds ?? 300)
+        if (markerId && target && overlay.length) {
+          viewer.pushFreeformMark({
+            markerId, target, overlay, label, ttlSeconds: ttl,
+            imageUid: imageUid || undefined, valueName: valueName || undefined,
+          })
+        }
       }
     }
 

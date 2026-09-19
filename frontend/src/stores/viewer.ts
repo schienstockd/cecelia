@@ -158,6 +158,30 @@ export interface PickHighlight {
   label?: string
 }
 
+/** BIDIR PR #5 UI-anchor pointer — "click here". Ephemeral (5-min default TTL); rendered by
+ *  `components/PointerBubble.vue` which resolves `anchor` via `utils/guideAnchor.ts::resolveAnchor`
+ *  and paints a small point indicator beside the element. Session-only; lives in Pinia not
+ *  localStorage — the ephemeral contract is broken if a mark survives a reload. */
+export interface UiMark {
+  markerId: string
+  anchor: string
+  label: string
+  expiresAt: number       // ms epoch; the store expires the mark on the tick past it
+}
+
+/** BIDIR PR #5 freeform overlay pointer — "look right HERE". Ephemeral. `target` is
+ *  `"live_viewer"` (viewport-px coords) or a captureId (0..1 frame-relative). `overlay` is the
+ *  same shape captures_api.jl accepts (rect | poly | stroke | circle | arrow). */
+export interface FreeformMark {
+  markerId: string
+  target: string
+  overlay: Array<{ kind: string; geom: unknown; label?: string }>
+  imageUid?: string
+  valueName?: string
+  label: string
+  expiresAt: number
+}
+
 function _readJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
   try {
@@ -192,6 +216,9 @@ export const useViewerStore = defineStore('viewer', () => {
   const trackHighlight   = ref<TrackHighlight | null>(_readJson<TrackHighlight>(K_TRACK_HIGHLIGHT))
   const labelsDimMismatch = ref<LabelsDimMismatch | null>(_readJson<LabelsDimMismatch>(K_LABELS_DIM_MISMATCH))
   const pickHighlight    = ref<PickHighlight | null>(_readJson<PickHighlight>(K_PICK_HIGHLIGHT))
+  // BIDIR PR #5 — ephemeral pointer bags. Session-only (see UiMark / FreeformMark docs above).
+  const uiMarks       = ref<UiMark[]>([])
+  const freeformMarks = ref<FreeformMark[]>([])
   /** Monotonic tick bumped whenever the SERVER's `/Pick selection` pop membership changes — the
    *  correction cockpit watches this to know when to re-fetch membership. Same-window signal (a
    *  storage event does NOT fire in the writer's own window); the cross-window channel is
@@ -300,6 +327,38 @@ export const useViewerStore = defineStore('viewer', () => {
     }
   }
 
+  /** BIDIR PR #5. Append a UI-anchor pointer (from Claude's `point_at_ui` MCP tool). The bag is
+   *  session-only; a `setTimeout` prunes the mark past its TTL. Multiple concurrent marks are
+   *  allowed — Claude might point at "the version chip AND the play button" in one turn — but
+   *  a mark for the SAME anchor supersedes rather than stacking. */
+  function pushUiMark(m: Omit<UiMark, 'expiresAt'> & { ttlSeconds: number }) {
+    const expiresAt = Date.now() + m.ttlSeconds * 1000
+    const entry: UiMark = { markerId: m.markerId, anchor: m.anchor, label: m.label, expiresAt }
+    uiMarks.value = [...uiMarks.value.filter(x => x.anchor !== m.anchor), entry]
+    window.setTimeout(() => {
+      uiMarks.value = uiMarks.value.filter(x => x.markerId !== entry.markerId)
+    }, m.ttlSeconds * 1000)
+  }
+  function dismissUiMark(markerId: string) {
+    uiMarks.value = uiMarks.value.filter(x => x.markerId !== markerId)
+  }
+  /** BIDIR PR #5. Append a freeform overlay pointer. Same TTL discipline as `pushUiMark`. Unlike
+   *  UI marks, freeform marks with the same `target` DO stack — Claude may want to circle two
+   *  regions on the same capture, and de-duping by target would drop one of them. */
+  function pushFreeformMark(m: Omit<FreeformMark, 'expiresAt'> & { ttlSeconds: number }) {
+    const expiresAt = Date.now() + m.ttlSeconds * 1000
+    const entry: FreeformMark = { markerId: m.markerId, target: m.target, overlay: m.overlay,
+                                   imageUid: m.imageUid, valueName: m.valueName,
+                                   label: m.label, expiresAt }
+    freeformMarks.value = [...freeformMarks.value, entry]
+    window.setTimeout(() => {
+      freeformMarks.value = freeformMarks.value.filter(x => x.markerId !== entry.markerId)
+    }, m.ttlSeconds * 1000)
+  }
+  function dismissFreeformMark(markerId: string) {
+    freeformMarks.value = freeformMarks.value.filter(x => x.markerId !== markerId)
+  }
+
   /** Correction cockpit calls this whenever pick membership or Review focus changes. `null` (or an
    *  empty labels + zero focus) clears the pick outline. Stamped like `setTrackHighlight` so a
    *  repeat write with the same labels still wakes the popup viewer. */
@@ -338,9 +397,11 @@ export const useViewerStore = defineStore('viewer', () => {
 
   return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
            trackHighlight, labelsDimMismatch, pickHighlight, pickSelectionTick,
+           uiMarks, freeformMarks,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
            consumePendingViewState, setPreviewLabels, setPreviewImages, setTrackHighlight,
-           setLabelsDimMismatch, setPickHighlight, bumpPickSelectionTick }
+           setLabelsDimMismatch, setPickHighlight, bumpPickSelectionTick,
+           pushUiMark, dismissUiMark, pushFreeformMark, dismissFreeformMark }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))
