@@ -1052,8 +1052,8 @@ onUnmounted(() => {
           <span class="cc-muted cc-fs-2xs push-chip"
                 :class="{ 'push-chip-paired': pushTarget.paired }"
                 v-tooltip.bottom="pushTarget.paired
-                  ? `Push notifications enabled — Cecelia will notify your paired Claude session when you share a frame.\nSocket: ${pushTarget.socketPath}`
-                  : 'No Claude session paired for push. A shared frame still lands in the clipboard fallback.'">
+                  ? `Paired — shared frames post to your Claude session\nSocket: ${pushTarget.socketPath}`
+                  : 'No paired Claude session — shared frames fall back to the clipboard'">
             {{ pushChipLabel(pushTarget) }}
           </span>
         </div>
