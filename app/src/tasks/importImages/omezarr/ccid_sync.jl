@@ -66,6 +66,7 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                                       zarr_filename::Union{String,Nothing} = nothing,
                                       value_name::String = VERSIONED_DEFAULT_VAL,
                                       overwrite::Bool = true,
+                                      as_new_version::Bool = false,
                                       on_log::Function = _ -> nothing)::Dict{String,Any}
     merged = Dict{String,Any}()
     isempty(zarr_meta) && isnothing(zarr_filename) && return merged
@@ -87,8 +88,32 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
             end
             raw["meta"] = m
             merged = m
-            !isnothing(zarr_filename) &&
-                versioned_set_field!(raw, "filepath", zarr_filename, value_name)
+            if !isnothing(zarr_filename)
+                if as_new_version
+                    # Version-append (`keep_previous_version()` is on and a prior entry exists —
+                    # `_plan_import_target` in `task.jl` guarantees this branch is only reached when
+                    # `img.filepath[value_name]` already has a value). `versioned_upgrade_entry!`
+                    # wraps a legacy scalar as v1 in place; `version_write!` then mints the next `vN`
+                    # (D6-guarded). The prior version's file stays on disk under its own path.
+                    existing = get(raw, "filepath", nothing)
+                    (existing isa AbstractDict && (haskey(existing, value_name) ||
+                                                    haskey(existing, Symbol(value_name)))) ||
+                        error("as_new_version requires a prior filepath[$(value_name)] entry")
+                    # `read_ccid_raw` only normalizes TOP-LEVEL keys — nested values (the outer
+                    # value_name dict AND the inner versioned entry when one already exists) are
+                    # JSON3 objects with Symbol keys, which the mutating `versioned_*` helpers can't
+                    # write into (JSON3.Object is immutable + wrong key type). `json_native`
+                    # deep-normalizes so both `versioned_upgrade_entry!` and the subsequent
+                    # `version_write!` mutate concrete `Dict{String,Any}` all the way down. See the
+                    # JSON3 gotcha in `app/CLAUDE.md`.
+                    outer = existing isa Dict{String,Any} ? existing : json_native(existing)
+                    raw["filepath"] = outer
+                    inner = versioned_upgrade_entry!(outer, value_name)
+                    version_write!(inner, zarr_filename)
+                else
+                    versioned_set_field!(raw, "filepath", zarr_filename, value_name)
+                end
+            end
         end
     catch e
         @warn "Could not update image metadata" exception = e

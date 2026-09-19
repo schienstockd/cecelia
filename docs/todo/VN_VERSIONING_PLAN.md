@@ -1,9 +1,10 @@
 # Value-name versioning — every writer targets a new `vn@v`, never overwrites
 
-**Status:** **P1a + P1b + P1c + P1d + P2 infra shipped** (2026-09-18) — helpers + composer + Julia
-app-layer + Julia API-layer + Python resolver + Python reader routing + guarded writer composer +
-widened CciaImage field types, additive, backward-compat verified via full test suite. P2 pilot
-writer + P3–P6 planning. Comes out
+**Status:** **P1a + P1b + P1c + P1d + P2 infra shipped** (2026-09-18) + **P2 pilot writer shipped**
+(2026-09-19) — helpers + composer + Julia app-layer + Julia API-layer + Python resolver + Python
+reader routing + guarded writer composer + widened CciaImage field types + ingest writer routed
+through the guarded writer + `keep_previous_version` Settings toggle, all additive and
+backward-compat verified via full test suite. P3–P6 planning. Comes out
 of the chain-execution-prerequisites prompt
 (`docs/archive/chain-execution-prerequisites-prompt.md`) — closing items **#1** (non-destructive
 default) and **#3** (mechanically-can't-overwrite invariant) collapses into this one primitive.
@@ -208,12 +209,32 @@ Everything needed for a writer to land its data as a versioned entry, minus the 
   through `read_ccid_raw`; widened field types accept a versioned Dict entry through init_object
   → save! → re-init).
 
-#### P2 pilot — writer conversion (deferred)
+#### P2 pilot — writer conversion — **SHIPPED** (2026-09-19)
 
-A canonical writer opts into `version_write!` — probably ingest/conversion (`filepath`), since
-that's the field with full P1c API-layer routing in place. Extends
-`test_zarr_access_convention.py` and the `zarr-access ratchet` testset to catch bare
-`default/<vn>/…` joins that bypass a resolver. Item #3 lands here.
+Ingest (`app/src/tasks/importImages/omezarr/ccid_sync.jl:91`, via `_merge_zarr_meta_into_ccid!`) is
+the pilot writer. New surface:
+
+- `keep_previous_version()::Bool` / `set_keep_previous_version!` in
+  `app/src/config/image_format.jl` — persisted as `[zarr].keepPreviousVersion` in `custom.toml`,
+  default `false`. Same knob future autonomous execution flips programmatically (the
+  mechanically-can't-overwrite invariant this whole primitive exists for). API:
+  `GET/POST /api/storage/keep-previous-version`.
+- `_plan_import_target(img, value_name)` in `task.jl` decides between the legacy flat path
+  (overwrite semantics) and a versioned subdir (`{img_zero_dir}/{value_name}/vN/ccidImage.ome.zarr`,
+  `version_write!`-guarded).
+- `_merge_zarr_meta_into_ccid!` accepts `as_new_version::Bool` and routes ccid.json between
+  `versioned_set_field!` (legacy scalar) and `versioned_upgrade_entry!` + `version_write!`
+  (versioned entry).
+- **v1 always stays flat**; only v2+ nest under the vN subdir — legacy pre-toggle projects
+  roundtrip unchanged.
+- Tests: 28 new (config toggle roundtrip, `_plan_import_target` fresh vs prior-scalar vs
+  prior-versioned, `_merge_zarr_meta_into_ccid!` legacy → versioned upgrade, second-append v2→v3,
+  fresh-value_name defensive guard).
+
+**Deferred to a follow-up:** `test_zarr_access_convention.py` / `zarr-access ratchet` extension
+for bare `default/<vn>/…` joins — under Q2's answer (Bucket B stays flat), there's no new join
+shape to ratchet against for anything except Bucket A families, and each of those has its own
+per-writer conversion PR to come.
 
 ### P3 — Chain planner pins inputs
 
