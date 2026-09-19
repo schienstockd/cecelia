@@ -10,6 +10,7 @@ import { useLabCaptureStore } from './labCapture'
 import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
+import { useViewerStore } from './viewer'
 import { parseRailTime } from '../utils/taskElapsed'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
 
@@ -195,6 +196,39 @@ export const useWsStore = defineStore('ws', () => {
     if (type === 'lab_log_updated') {
       const puid = String(data.projectUid ?? '')
       if (puid && puid === useProjectMetaStore().current?.uid) useLabCaptureStore().notifyAppended()
+    }
+
+    // Bidirectional point-out (BIDIR_CONTEXT_PLAN Part 3, PR #4). Claude's mark_tracks / mark_cells
+    // MCP tools deliver here — same delivery model as task:status. Route into the existing highlight
+    // setters so a viewer that already renders track/pick outlines paints Claude's pointer with the
+    // same shader path, no per-consumer branch. Scope is per (image, vn): a mark on a different vn
+    // must not narrow the current one (track/label id namespaces are per-vn — see TrackHighlight /
+    // PickHighlight docstrings in stores/viewer.ts).
+    if (type === 'viewer:mark') {
+      const viewer = useViewerStore()
+      const projectUid = String(data.projectUid ?? '')
+      const imageUid   = String(data.imageUid   ?? '')
+      const valueName  = String(data.valueName  ?? '')
+      const label      = String(data.label      ?? '')
+      const openProj   = useProjectMetaStore().current?.uid ?? ''
+      // Silently drop a mark aimed at a different project (a stray broadcast from a shared server)
+      // — a same-project stale-image mark (image not currently open) still lands so the highlight
+      // shows the moment the user switches to that image.
+      if (projectUid && openProj && projectUid !== openProj) return
+      if (data.kind === 'track') {
+        const trackIds = Array.isArray(data.trackIds)
+          ? (data.trackIds as unknown[]).map(v => Number(v)).filter(n => Number.isFinite(n)) : []
+        if (imageUid && valueName && trackIds.length) {
+          viewer.setTrackHighlight({ imageUid, valueName, trackIds, label })
+        }
+      } else if (data.kind === 'cell') {
+        const labels = Array.isArray(data.labels)
+          ? (data.labels as unknown[]).map(v => Number(v)).filter(n => Number.isFinite(n)) : []
+        const focusId = Number(data.focusId ?? 0)
+        if (imageUid && valueName && labels.length) {
+          viewer.setPickHighlight({ imageUid, valueName, labels, focusId, label })
+        }
+      }
     }
 
     // Software-update apply is one long POST (download → extract → on dev, `npm install` + `npm run

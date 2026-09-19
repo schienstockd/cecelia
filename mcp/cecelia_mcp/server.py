@@ -783,6 +783,50 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
 
 
 @mcp.tool()
+def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: list[int],
+                focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
+    """Highlight a set of TRACKS on the user's viewer — your "look at THESE tracks" pointer.
+
+    Reuses the same setter the TrackSchemeView "Show" button drives (`setTrackHighlight`): the
+    listed track ids are outlined by the WebGPU shader, and `focus_id` (optional) is drawn
+    distinct so the user's eye lands on the one that matters. `label` (optional) rides along in
+    the mark envelope so the correction cockpit + gating plots can label the pointer.
+
+    EPHEMERAL: `ttl_s` defaults to 5 min (Decision 18 of `docs/todo/BIDIR_CONTEXT_PLAN.md`).
+    Nothing about a mark is persisted; a process restart on the backend clears them all. This is
+    for "point at what I just said", not for saving a state — use `add_analysis_board` /
+    `create_notebook` if the finding is worth keeping.
+
+    Scope is per (image_uid, value_name) because track ids are per-vn — a mark on `flowTom`'s
+    track 42 must not narrow `default`'s track 42, which is a different cell. Pick the
+    value_name that carried the tracks (see `get_analysis_lineage` if you're not sure).
+
+    Returns `{ok: true, markerId}`. The id is short-lived — no follow-up read is needed; the
+    frontend paints on receipt.
+    """
+    return _client.mark_tracks(project_uid, image_uid, value_name, track_ids, focus_id, label, ttl_s)
+
+
+@mcp.tool()
+def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: list[int],
+               focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
+    """Outline a set of CELLS on the user's viewer — your "look at THESE cells" pointer.
+
+    `label_ids` are cell/label ids from the segmentation `value_name`. Reuses the correction
+    cockpit's `setPickHighlight` setter; `focus_id` (optional) is the one distinct cell within
+    the outlined set. Same EPHEMERAL contract as `mark_tracks` — 5-min default TTL, in-memory
+    only.
+
+    When to pick this vs `mark_tracks`: if you're pointing at OBJECTS AT A TIMEPOINT (segmented
+    cells the user is looking at in the viewer's mask), use this. If you're pointing at whole
+    TRAJECTORIES over time, use `mark_tracks`. A tracked cell has both; usually you want tracks.
+
+    Scope is per (image_uid, value_name). Returns `{ok: true, markerId}`.
+    """
+    return _client.mark_cells(project_uid, image_uid, value_name, label_ids, focus_id, label, ttl_s)
+
+
+@mcp.tool()
 def get_recent_logs(level: str = "", source: str = "", limit: int = 100) -> list:
     """Recent lines from the app's console — everything the backend SIDE says, newest last.
 

@@ -87,6 +87,12 @@ ALLOWED_ROUTES = frozenset(
                                           # rewrite loses nothing; LabArchives is itself versioned).
                                           # Touches no project or analysis data, and never the lab
                                           # log — a change worth keeping is appended there separately.
+        # bidir point-out (BIDIR_CONTEXT_PLAN Part 3, PR #4). Marks are EPHEMERAL: a 5-min-default
+        # TTL, in-memory only, no persistence. Not "writes" in the destructive sense — nothing on
+        # disk changes — but they DO reach the running viewer (via WS `viewer:mark`), so they earn a
+        # place on the allow-list rather than sneaking through as a read.
+        ("POST", "/api/viewer/marks/tracks"),   # highlight a set of track ids on the open viewer
+        ("POST", "/api/viewer/marks/cells"),    # outline a set of label ids (cells) on the mask
     }
 )
 
@@ -338,6 +344,28 @@ class CeceliaClient:
             body={"projectUid": project_uid, "source": source, "sections": sections,
                   "cohort": cohort, "syncedBy": synced_by},
         )
+
+    def mark_tracks(self, project_uid: str, image_uid: str, value_name: str,
+                    track_ids: list[int], focus_id: int | None = None,
+                    label: str = "", ttl_s: int | None = None):
+        # Point-out at track anchors. Ephemeral by design — see BIDIR_CONTEXT_PLAN Decision 18.
+        body: dict = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
+                      "trackIds": track_ids}
+        if focus_id is not None: body["focusId"] = focus_id
+        if label: body["label"] = label
+        if ttl_s is not None: body["ttl_s"] = ttl_s
+        return self._request("POST", "/api/viewer/marks/tracks", body=body)
+
+    def mark_cells(self, project_uid: str, image_uid: str, value_name: str,
+                   label_ids: list[int], focus_id: int | None = None,
+                   label: str = "", ttl_s: int | None = None):
+        # Point-out at cell/label anchors. Same shape as mark_tracks; delivers via setPickHighlight.
+        body: dict = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
+                      "labelIds": label_ids}
+        if focus_id is not None: body["focusId"] = focus_id
+        if label: body["label"] = label
+        if ttl_s is not None: body["ttl_s"] = ttl_s
+        return self._request("POST", "/api/viewer/marks/cells", body=body)
 
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(

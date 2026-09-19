@@ -108,6 +108,10 @@ export interface TrackHighlight {
   valueName: string
   trackIds: number[]
   updateId: number
+  /** Optional caption for the pointer — set by Claude's `mark_tracks` MCP tool (BIDIR PR #4). A
+   *  visible label overlay is a follow-up; today the field just rides along in the bag so a
+   *  future consumer (correction cockpit, plot balloon) can name what the highlight is FOR. */
+  label?: string
 }
 
 /**
@@ -150,6 +154,8 @@ export interface PickHighlight {
   labels: number[]
   focusId: number
   updateId: number
+  /** Optional caption — same role as TrackHighlight.label. Set by Claude's `mark_cells` (BIDIR PR #4). */
+  label?: string
 }
 
 function _readJson<T>(key: string): T | null {
