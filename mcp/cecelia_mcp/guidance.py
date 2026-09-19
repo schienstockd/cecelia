@@ -155,6 +155,14 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
 
 Nothing gets saved by pointing; if the finding is worth keeping, propose a board or a notebook.
 
+ON PUSH PAIRING. Every tool that names a `project_uid` auto-pairs this session with that project \
+on its first call, so a fresh session's first check registers itself for push delivery without \
+the user typing anything — silent, no confirmation, cached in the MCP process. Reach for \
+`register_push_target(project_uid, session_label?)` explicitly only when: the user asks you to \
+re-pair after Cecelia restarted, or they've spun up a new Claude session and want push for a \
+project you haven't touched yet. Pairing is a notification channel; it grants no new code or \
+execution access.
+
 ON QC. A task that finished "done" can still have produced far too few cells, or clustered \
 degenerately — invisible in get_task_history, which only knows the run succeeded. Check the cohort \
 numbers for whatever actually ran (get_task_history first, then get_cohort_qc for that fun), and \

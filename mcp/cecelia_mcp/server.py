@@ -929,6 +929,33 @@ def get_capture(project_uid: str, capture_id: str) -> list:
 
 
 @mcp.tool()
+def register_push_target(project_uid: str, session_label: str = "") -> dict:
+    """Pair THIS Claude Code session with a Cecelia project for cross-session push (BIDIR Part 5).
+
+    You RARELY need to call this by hand — every other tool with a `project_uid` auto-pairs on
+    its first call per session, so a fresh session pairs the moment you check the project.
+    Call this explicitly when: (a) the user asks you to re-pair after a session restart on
+    Cecelia's side, or (b) they've spun up a new Claude session and want push delivery for a
+    project you haven't touched yet.
+
+    Reads `CLAUDE_CODE_MESSAGING_SOCKET` + `CLAUDE_CODE_MESSAGING_TOKEN` (exported by Claude
+    Code v2.1.224+) from this process's env — no arguments beyond `project_uid` are needed. If
+    those env vars are missing, this session isn't reachable for push and the tool errors; the
+    frontend's clipboard/toast fallback stays active as designed. `session_label` (optional)
+    labels the pairing in the frontend's "paired" chip; defaults to the first 8 chars of the
+    session id.
+
+    Once paired, PR #2's Julia writer (when it ships) can push a plain-text capture-arrived
+    notification directly to this session over its inbox socket, so you learn about a shared
+    frame without the user leaving the viewer. This is a NOTIFICATION channel only — pairing
+    doesn't grant any new code or execution access.
+
+    Returns `{ok: true}` on success.
+    """
+    return _client.register_push_target(project_uid, session_label)
+
+
+@mcp.tool()
 def get_object_ids(project_uid: str, image_uid: str, value_name: str,
                    kind: str = "cells", limit: int = 200, sample: bool = False) -> dict:
     """Real cell / track ids for a segmentation — call this BEFORE mark_cells / mark_tracks.
