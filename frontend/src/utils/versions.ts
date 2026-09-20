@@ -12,6 +12,47 @@ export interface VersionsResult {
   versions: string[]   // e.g. ["v1", "v2", "v3"], numeric-sorted
 }
 
+export interface VersionChipOption {
+  value: string   // `_latest` sentinel | `v1` | `v2` | … — the chip's internal value
+  label: string   // matches `value` — shown on the chip
+}
+
+/**
+ * The chip value that stands for "follow _latest" — the DEFAULT pick and the one the strip leads
+ * with. Distinct from the empty string (which means "no chip selected", a state the strip never
+ * enters once versions exist). Consumers translate this to `null` when writing `params.version`,
+ * since the backend + chain reader treat `null` and missing identically.
+ */
+export const VERSION_LATEST_CHIP = '_latest'
+
+/**
+ * Chip options for the P6 version picker (`docs/todo/VN_VERSIONING_PLAN.md` → P6). Numeric-first
+ * sort matches the backend's `/api/versions` response (also served by `fetchVersions`); the
+ * `_latest` chip leads the strip so the default is a click away.
+ *
+ * Empty when a value_name has fewer than two versions on disk: 0 or 1 leaves nothing to pick, and
+ * the picker hides itself rather than render a chip that only has one option. Every unfamiliar
+ * label ("draft", …) tails the numeric run in stable order — same rule the API uses.
+ */
+export function versionChipOptions(versions: string[]): VersionChipOption[] {
+  if (!versions || versions.length < 2) return []
+  const parseN = (v: string): number | null =>
+    v.startsWith('v') ? (Number.isInteger(Number(v.slice(1))) ? Number(v.slice(1)) : null) : null
+  const numeric = versions.filter(v => parseN(v) !== null)
+                          .sort((a, b) => (parseN(a) ?? 0) - (parseN(b) ?? 0))
+  const other   = versions.filter(v => parseN(v) === null).sort()
+  return [
+    { value: VERSION_LATEST_CHIP, label: VERSION_LATEST_CHIP },
+    ...numeric.map(v => ({ value: v, label: v })),
+    ...other.map(v =>   ({ value: v, label: v })),
+  ]
+}
+
+/** True when `pinnedVersion` (from the form's `params.version`) is `_latest`. Wraps the
+ *  null-or-missing check so a caller doesn't restate the empty-string / undefined / null tri-check. */
+export const isVersionLatest = (pinnedVersion: string | null | undefined): boolean =>
+  !pinnedVersion || pinnedVersion === VERSION_LATEST_CHIP
+
 export async function fetchVersions(params: {
   projectUid: string
   imageUids: string[]

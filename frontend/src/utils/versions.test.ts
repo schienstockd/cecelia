@@ -1,5 +1,45 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchVersions } from './versions'
+import { fetchVersions, versionChipOptions, isVersionLatest, VERSION_LATEST_CHIP } from './versions'
+
+describe('versionChipOptions', () => {
+  it('is empty for < 2 versions (nothing to pick — the strip hides)', () => {
+    expect(versionChipOptions([])).toEqual([])
+    expect(versionChipOptions(['v1'])).toEqual([])
+  })
+
+  it('leads with _latest (sentinel = clears `params.version`) then numeric-sorted vN', () => {
+    expect(versionChipOptions(['v3', 'v1', 'v2'])).toEqual([
+      { value: VERSION_LATEST_CHIP, label: '_latest' },
+      { value: 'v1', label: 'v1' },
+      { value: 'v2', label: 'v2' },
+      { value: 'v3', label: 'v3' },
+    ])
+  })
+
+  it('tails non-vN labels after the numeric run, in stable sort', () => {
+    // A hand-labelled version ("draft") is a valid inner-axis key — the writer ignores it for
+    // the mint counter, and the API sorts numeric-first then the rest, same as this helper.
+    expect(versionChipOptions(['draft', 'v10', 'v2'])).toEqual([
+      { value: VERSION_LATEST_CHIP, label: '_latest' },
+      { value: 'v2',    label: 'v2' },
+      { value: 'v10',   label: 'v10' },
+      { value: 'draft', label: 'draft' },
+    ])
+  })
+})
+
+describe('isVersionLatest', () => {
+  it('collapses the tri-state (null / undefined / "" / sentinel) → true (follow _latest)', () => {
+    expect(isVersionLatest(null)).toBe(true)
+    expect(isVersionLatest(undefined)).toBe(true)
+    expect(isVersionLatest('')).toBe(true)
+    expect(isVersionLatest(VERSION_LATEST_CHIP)).toBe(true)
+  })
+  it('is false for a concrete vN string (a real pin)', () => {
+    expect(isVersionLatest('v1')).toBe(false)
+    expect(isVersionLatest('v42')).toBe(false)
+  })
+})
 
 function mockFetch(status: number, body: unknown) {
   return vi.fn().mockResolvedValue({
