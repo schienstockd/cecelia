@@ -5571,6 +5571,7 @@ end
         "/api/viewer/marks/ui", "/api/viewer/marks/freeform",    # bidir point-out UI + freeform (PR #5)
         "/api/viewer/marks/tile",    # bidir landscape tile mark (PR #6, Decision 14 reframe)
         "/api/viewer/landscape",     # bidir landscape publish (POST); GET at same path is the read handler
+        "/api/viewer/landscape/compute",   # bidir landscape complementary compute — per-channel per-tile stats
         "/api/viewer/capture",   # bidir share-in write (POST); GET at same path is the read handler
 
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
@@ -5651,7 +5652,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 134
+    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 135
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

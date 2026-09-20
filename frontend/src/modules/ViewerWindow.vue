@@ -96,7 +96,8 @@ import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import LandscapeOverlay from '../components/LandscapeOverlay.vue'
-import { computeLandscape, readCanvasImageData, type LandscapeResult } from '../utils/landscape'
+import { computeLandscape, readCanvasImageData, augmentLandscape,
+         type LandscapeResult, type AugmentTile } from '../utils/landscape'
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
@@ -4604,7 +4605,37 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
     // Claude a semantic prior over the same tiles it's looking at. The live in-memory landscape
     // bag is ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
     // Only attached when the user has the overlay on — sharing without the landscape stays lean.
-    const landscapeSnapshot = (settings.viewerLandscape && landscape.value) ? landscape.value : null
+    // Augment the frontend-computed category landscape with per-channel per-tile stats
+    // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1). Only visible channels are sent — the visibility
+    // rule (Decision 3) means the response only carries channels the user is looking at, matching
+    // what the RGB composite shows. Failure is soft: category-only stays a valid v1 landscape.
+    let landscapeSnapshot: LandscapeResult | null = null
+    if (settings.viewerLandscape && landscape.value && meta.value) {
+      const visibleChannels = meta.value.channels
+        .map((ch, i) => ({ index: i, name: ch.name, visible: ch.visible }))
+        .filter(ch => ch.visible)
+        .map(({ index, name }) => ({ index, name }))
+      if (visibleChannels.length > 0 && projectUid) {
+        try {
+          const cRes = await fetch('/api/viewer/landscape/compute', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectUid, imageUid, valueName: valueName.value,
+              t: shownT.value, z: zPlane.value,
+              cols: landscape.value.grid.cols, rows: landscape.value.grid.rows,
+              channels: visibleChannels,
+            }),
+          })
+          if (cRes.ok) {
+            const cJson = await cRes.json() as { tiles?: AugmentTile[] }
+            if (Array.isArray(cJson.tiles)) {
+              landscapeSnapshot = augmentLandscape(landscape.value, cJson.tiles)
+            }
+          }
+        } catch { /* soft fail — fall through to category-only */ }
+      }
+      landscapeSnapshot ??= landscape.value
+    }
     const res = await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,

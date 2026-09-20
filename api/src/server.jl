@@ -403,6 +403,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/marks/tile"     => (req, body_bytes) -> (api_viewer_marks_tile(body_bytes)),
     # bidir landscape — browser publishes (POST), MCP reads (GET, above). Never Claude-authored.
     "/api/viewer/landscape"      => (req, body_bytes) -> (api_viewer_landscape_publish(body_bytes)),
+    "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),

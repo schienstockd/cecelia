@@ -69,6 +69,11 @@ export interface LandscapeTile {
   col: number
   category: LandscapeCategory
   stats: TileStats
+  // `channels` is the per-tile complementary payload (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1):
+  // untangled per-channel mean + SNR from the RAW multi-channel plane on the backend. Only present
+  // on tiles from an AUGMENTED landscape (see `augmentLandscape`); absent on the frontend-only
+  // category-computation. Sparsity rule (Decision 3): only currently-visible channels appear.
+  channels?: Record<string, { mean: number; snr: number }>
 }
 
 export interface LandscapeLegendEntry {
@@ -81,6 +86,35 @@ export interface LandscapeResult {
   grid: { cols: number; rows: number }
   tiles: LandscapeTile[]
   legend: LandscapeLegendEntry[]
+  // Envelope schema version — 1 = category-only (shipped 2026-09-20 in #1083/#1086/#1087);
+  // 2 = augmented with per-tile complementary fields (LANDSCAPE_COMPLEMENTARY_PLAN.md). A reader
+  // consuming a landscape from a capture MUST branch on this rather than probe field presence,
+  // since a v2 landscape can legitimately omit `channels` on some tiles (sparsity by visibility).
+  schemaVersion: 1 | 2
+}
+
+/** Per-tile augmentation payload returned by `POST /api/viewer/landscape/compute`. Same tile-id
+ *  space as `computeLandscape`'s output — the caller merges by id. */
+export interface AugmentTile {
+  tileId: string
+  channels?: Record<string, { mean: number; snr: number }>
+}
+
+/** Merge a per-tile augmentation payload into a category-only landscape. Non-mutating — returns a
+ *  new `LandscapeResult` with `schemaVersion` bumped to 2 and per-tile `channels` populated where
+ *  the augmentation has data. Tiles absent from `augment` keep their original shape (sparse by
+ *  visibility — a channel not currently on isn't in the augmentation, therefore not on the tile). */
+export function augmentLandscape(
+  base: LandscapeResult, augment: AugmentTile[],
+): LandscapeResult {
+  const byId = new Map<string, AugmentTile>()
+  for (const a of augment) byId.set(a.tileId, a)
+  const tiles = base.tiles.map(t => {
+    const a = byId.get(t.id)
+    if (!a || !a.channels || Object.keys(a.channels).length === 0) return t
+    return { ...t, channels: a.channels }
+  })
+  return { ...base, tiles, schemaVersion: 2 }
 }
 
 /** Read `ImageData` from a WebGPU (or 2D) canvas. WebGPU's presentation buffer is consumed by the
@@ -249,5 +283,5 @@ export function computeLandscape(
   const legend: LandscapeLegendEntry[] = LANDSCAPE_CATEGORIES
     .filter(cat => (legendCounts[cat] ?? 0) > 0)
     .map(cat => ({ category: cat, swatch: LANDSCAPE_SWATCHES[cat], nTiles: legendCounts[cat]! }))
-  return { grid: { cols: nCols, rows: nRows }, tiles, legend }
+  return { grid: { cols: nCols, rows: nRows }, tiles, legend, schemaVersion: 1 }
 }

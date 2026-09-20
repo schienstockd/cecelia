@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  tileStatsFor, kmeans, categoriseCluster, computeLandscape,
+  tileStatsFor, kmeans, categoriseCluster, computeLandscape, augmentLandscape,
   LANDSCAPE_CATEGORIES, LANDSCAPE_SWATCHES,
 } from './landscape'
 
@@ -131,5 +131,43 @@ describe('computeLandscape', () => {
     for (const entry of r.legend) {
       expect(entry.swatch).toBe(LANDSCAPE_SWATCHES[entry.category])
     }
+  })
+
+  it('emits schemaVersion 1 (category-only)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const r = computeLandscape(img, { cols: 4, rows: 4 })
+    expect(r.schemaVersion).toBe(1)
+  })
+})
+
+describe('augmentLandscape', () => {
+  it('bumps schemaVersion to 2 and merges channels by tile id', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const augment: import('./landscape').AugmentTile[] = [
+      { tileId: 'A1', channels: { 'Tcells': { mean: 0.42, snr: 12.3 }, 'SHG': { mean: 0.11, snr: 3.1 } } },
+      { tileId: 'D4', channels: { 'Tcells': { mean: 0.05, snr: 1.4 } } },
+    ]
+    const merged = augmentLandscape(base, augment)
+    expect(merged.schemaVersion).toBe(2)
+    expect(merged.tiles.find(t => t.id === 'A1')?.channels).toEqual({
+      Tcells: { mean: 0.42, snr: 12.3 }, SHG: { mean: 0.11, snr: 3.1 },
+    })
+    expect(merged.tiles.find(t => t.id === 'D4')?.channels).toEqual({
+      Tcells: { mean: 0.05, snr: 1.4 },
+    })
+    // Untouched tiles have NO `channels` key — sparsity by construction (visibility rule)
+    expect(merged.tiles.find(t => t.id === 'B2')?.channels).toBeUndefined()
+    // Non-mutating — the input `base` still reads schema 1
+    expect(base.schemaVersion).toBe(1)
+    expect(base.tiles.find(t => t.id === 'A1')?.channels).toBeUndefined()
+  })
+
+  it('ignores empty channel bags (avoids `channels: {}` noise)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(base, [{ tileId: 'A1', channels: {} }])
+    expect(merged.tiles.find(t => t.id === 'A1')?.channels).toBeUndefined()
+    expect(merged.schemaVersion).toBe(2)
   })
 })
