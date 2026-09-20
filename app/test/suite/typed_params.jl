@@ -544,6 +544,22 @@ end
     @test_throws Cecelia.ParamValidationError Cecelia.validate_params(
         Cecelia.MotifDiscovery(),
         Dict{String,Any}("pops" => String[]))
+    # Column-name contract: unsuffixed (matches HMM convention). Load-bearing for
+    # `motif_class_frequency.json` (`match: "motif.class"`) and for B+T co-plot on one axis
+    # (MOTIF_DISCOVERY_PLAN Decision 12, revised 2026-09-19). A drift here — someone
+    # reintroducing `.{suffix}` in a follow-up — forks column identity across pops and the
+    # summary panel silently renders empty on the other vn's series. Full rationale:
+    # docs/DATAMODEL.md → *Motif discovery output*.
+    @test Cecelia.MOTIF_CLASS_COL       == "motif.class"
+    @test Cecelia.MOTIF_DISTANCE_COL    == "motif.distance"
+    @test Cecelia.MOTIF_INSTANCE_ID_COL == "motif.instance_id"
+    @test Cecelia.MOTIF_SEQUENCE_COL    == "motif.sequence"
+    # Legacy-suffix drop list — see the `_legacy_motif_cell_cols` comment in
+    # `motif_discovery.jl`. Guards the re-run cleanup path against silent breakage
+    # (e.g. if MOTIF_*_COL changed but the legacy helper wasn't updated in step).
+    @test Cecelia._legacy_motif_cell_cols("T") ==
+        String["motif.class.T", "motif.distance.T", "motif.instance_id.T"]
+    @test Cecelia._legacy_motif_track_cols("B") == String["motif.sequence.B"]
 
     # spatialAnalysis (spot-check the parsers; each is small).
     let p = Cecelia.parse_aggregates_meshes_params(Dict{String,Any}(
