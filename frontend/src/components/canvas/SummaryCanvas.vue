@@ -35,6 +35,13 @@ import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
 import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
+import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
+import { useCanvasPanelsStore } from '../../stores/canvasPanels'
+import { useCanvasPanelExportsStore } from '../../stores/canvasPanelExports'
+import { useCanvasShareSelection } from '../../composables/useCanvasShareSelection'
+import { useCanvasShareHost } from '../../stores/shareTarget'
+import type { PanelHit } from '../../utils/panelSelectionHit'
+import { composePanelGrid, type PanelTile } from '../../utils/overlayCompose'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
@@ -197,6 +204,73 @@ const activeIsPrecomputed = computed(() => {
   return !!spec && isPrecomputedSpec(spec)
 })
 function removePanel(id: number) { remove(id); delete readouts.value[id] }
+
+// ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
+// Register as the canvas share host so Kiwi's canvas button enables while this canvas is mounted.
+// `beginShare` flips the selection overlay on; the overlay reads panel geoms from the store, the
+// share selection lives in a shared composable so `beginShare` and the overlay see the same set.
+// Composite + POST live in a follow-up commit — for now @share emits the selected panelIds.
+const geomStore = useCanvasPanelsStore()
+const shareSel = useCanvasShareSelection()
+useCanvasShareHost({
+  beginShare: () => shareSel.begin(),
+  // Short human label for Kiwi's tooltip; `module` is the canvas's own filter, so "behaviour ·
+  // plot canvas" for /behaviour, "universal · plot canvas" for the analysis board's wildcard.
+  get label() { return `${props.module ?? 'universal'} · plot canvas` },
+})
+// PanelHit list the overlay hit-tests against. Only PANELS WITH A KNOWN GEOMETRY count — an
+// undocked panel with no persisted geom would appear at (0,0) which would silently swallow every
+// click. This is fine for share: the first render writes geometry immediately (CanvasPanel does it
+// on mount), so a panel that visibly exists is a panel with a geom.
+const sharePanelHits = computed<PanelHit[]>(() => {
+  const out: PanelHit[] = []
+  for (const p of panels.value) {
+    const g = geomStore.getGeom(`${ckey.value}:${p.id}`)
+    if (g && g.w > 0 && g.h > 0) out.push({ id: p.id, geom: g })
+  }
+  return out
+})
+function onShareCancel() { shareSel.end() }
+
+// Compose the selected panels' PNGs into one composite and POST to /api/viewer/capture as
+// surface:'plot'. The envelope only uses fields the server already understands (no new panels[]
+// field yet — that comes in a follow-up along with a per-panel structured payload). The
+// composite alone is enough for the "hey, on plot A B/T look different" conversation shape.
+const exportStore = useCanvasPanelExportsStore()
+const shareBusy = ref(false)
+async function onShareConfirm(payload: { panelIds: number[] }) {
+  if (!projectUid.value || shareBusy.value) return
+  shareBusy.value = true
+  try {
+    // Gather tiles for the selected panels: PNG (via each panel's registered exporter) + its
+    // workspace-relative geom. A panel that failed to register or failed to export still gets a
+    // labelled empty box in the composite rather than dropping the whole share.
+    const selected = sharePanelHits.value.filter(p => payload.panelIds.includes(p.id))
+    const tiles: PanelTile[] = await Promise.all(selected.map(async p => {
+      const exporter = exportStore.get(`${ckey.value}:${p.id}`)
+      const png = exporter ? await exporter() : null
+      return { pngDataUrl: png, geom: p.geom }
+    }))
+    const composite = await composePanelGrid(tiles)
+    if (!composite) { shareBusy.value = false; shareSel.end(); return }
+    const address = {
+      projectUid: projectUid.value,
+      plotSpec: { specId: 'multi-panel', params: { module: props.module ?? 'universal',
+        panelCount: tiles.length } },
+    }
+    await fetch('/api/viewer/capture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectUid: projectUid.value, surface: 'plot',
+        address, frames: [{ png: composite }],
+      }),
+    })
+    // Backend broadcasts `captures:changed`; Kiwi's recent-captures list refreshes on its own.
+  } finally {
+    shareBusy.value = false
+    shareSel.end()
+  }
+}
 // Close all must drop the readouts too — they are keyed by panel id, and a stale entry would be
 // re-adopted by the next panel that reuses a freed id (`activeReadout` reads this map by id).
 function removeAllPanels() { removeAll(); readouts.value = {} }
@@ -352,6 +426,13 @@ watch(segPops, () => {
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
                         @readout="readouts[p.id] = $event" />
         </template>
+        <!-- Share mode: dim veil + drag/click selection + toolbar. Mounted inside .sc-zoom so its
+             SVG coords are in the same workspace-CSS-px frame the panels' geoms are in. -->
+        <CanvasSelectionOverlay v-if="shareSel.active.value"
+                                :panels="sharePanelHits"
+                                :selection="shareSel"
+                                :address-line="`${module ?? 'universal'} · plot canvas`"
+                                @cancel="onShareCancel" @share="onShareConfirm" />
         </div>
         </div>
         <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"

@@ -156,3 +156,75 @@ function composeOverImage(
   if (marks.length > 0) paintOverlayOnCanvas(ctx, marks, w, h)
   return off.toDataURL('image/png')
 }
+
+// ── Multi-panel composite (canvas Share) ────────────────────────────────────────────────────────
+// One PNG assembled from N panels' individual exports, tiled at their positions inside a workspace-
+// relative bounding box. Same DOM-canvas approach as `composeImageWithOverlay`: an offscreen 2D
+// canvas, `drawImage` each panel into place, paint any marks last, return the data URL. No new
+// layout engine — the panels' own `PanelGeom {x,y,w,h}` from the canvas store IS the layout, so
+// what the user was looking at on-screen is what the composite reads as.
+//
+// Coord frame. Panel geoms are in the workspace's own CSS px (the same frame the selection overlay
+// lives in). We translate to the composite by subtracting the union bbox's origin — so a panel at
+// workspace (250, 380) with union origin (250, 0) lands at (0, 380) in the composite.
+
+export interface PanelTile {
+  /** PNG data URL from the panel's own exporter (`SummaryPanel.exportImage`). `null` skips the
+   *  tile — the composite still shows the other panels rather than aborting the whole share. */
+  pngDataUrl: string | null
+  /** The panel's bbox in the canvas workspace's CSS-px frame (from `useCanvasPanelsStore.geom`). */
+  geom: { x: number; y: number; w: number; h: number }
+}
+
+/** Compose selected panels' PNGs into one composite PNG. Fits every tile onto its declared bbox
+ *  (the exporter's rendered pixel size can be higher — a 2× DPR PNG — but the tile position and
+ *  size come from the workspace geom, so overshoot is silently downscaled by `drawImage`). Marks
+ *  are painted in [0,1] frame-relative coords over the composite's OWN box, matching how
+ *  `composeFrameWithOverlay` treats them.
+ *
+ *  Returns `null` if the input list is empty or every tile failed to load — the caller can then
+ *  show an inline note rather than posting a black square. Background is white so a mix of light-
+ *  theme plots reads uniform. */
+export async function composePanelGrid(
+  tiles: PanelTile[],
+  marks: OverlayMark[] = [],
+): Promise<string | null> {
+  if (tiles.length === 0) return null
+  // Union bbox — origin is the composite's (0,0). Translate every tile by (-x0, -y0).
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const t of tiles) {
+    if (t.geom.x < x0) x0 = t.geom.x
+    if (t.geom.y < y0) y0 = t.geom.y
+    if (t.geom.x + t.geom.w > x1) x1 = t.geom.x + t.geom.w
+    if (t.geom.y + t.geom.h > y1) y1 = t.geom.y + t.geom.h
+  }
+  const w = Math.max(1, Math.round(x1 - x0)), h = Math.max(1, Math.round(y1 - y0))
+  const off = document.createElement('canvas')
+  off.width = w; off.height = h
+  const ctx = off.getContext('2d')
+  if (!ctx) return null
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h)
+  // Decode all tile PNGs in parallel; failures fall through to a blank slot with a hairline border
+  // (a totally missing tile in a 2×2 grid is worse than a labelled empty box). The border also
+  // tells Claude "this panel exists but its render was unavailable" if the composite ever ships
+  // with a stale export.
+  const decoded = await Promise.all(tiles.map(t => t.pngDataUrl ? loadImg(t.pngDataUrl) : Promise.resolve(null)))
+  let painted = 0
+  for (let i = 0; i < tiles.length; i++) {
+    const t = tiles[i]
+    const dx = Math.round(t.geom.x - x0), dy = Math.round(t.geom.y - y0)
+    const dw = Math.round(t.geom.w),      dh = Math.round(t.geom.h)
+    const img = decoded[i]
+    if (img) {
+      ctx.drawImage(img, dx, dy, dw, dh)
+      painted++
+    } else {
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'
+      ctx.lineWidth = 1
+      ctx.strokeRect(dx + 0.5, dy + 0.5, dw - 1, dh - 1)
+    }
+  }
+  if (painted === 0) return null
+  if (marks.length > 0) paintOverlayOnCanvas(ctx, marks, w, h)
+  return off.toDataURL('image/png')
+}
