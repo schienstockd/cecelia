@@ -1749,7 +1749,7 @@ onActivated(async () => {
               :value="(selectedNode.data.params as any).version ?? ''"
               @change="updateParam('version',
                                    ($event.target as HTMLSelectElement).value || null)"
-              v-tooltip.bottom="'Pin this node to a specific input version. _latest follows whatever the image most recently produced.'"
+              v-tooltip.bottom="'Pin input to a specific vN — empty follows _latest per image'"
             >
               <option value="">_latest (auto)</option>
               <option v-for="v in availableVersions" :key="v" :value="v">{{ v }}</option>
