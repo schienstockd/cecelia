@@ -345,6 +345,105 @@ function _bin_centroids_to_tiles(xs::AbstractVector, ys::AbstractVector,
     counts
 end
 
+# Per-tile track summary (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 3 — `tracks`). For each
+# tile with any tracked cell at the shown t, emit `{count, meanDuration, meanSpeed}`:
+#   count        = distinct track_ids with a cell in this tile at t
+#   meanDuration = mean of per-track num_cells (full lifetime in frames) across those tracks
+#   meanSpeed    = mean of per-cell `live.cell.speed` across cells in this tile at t
+#                  — an INSTANTANEOUS spatial measure ("how fast are cells moving here right
+#                  now"), not the per-track average speed over its whole lifetime. Present
+#                  only when `live.cell.speed` is on the segmentation's obs.
+#
+# Returns Vector{Union{Nothing,NamedTuple}} — nothing for tiles with no tracked cells at t.
+# Caller decides whether to emit a `tracks` key on the response tile; sparsity carries.
+#
+# `nothing` return (outer): the segmentation is unmeasured / untracked / label_props missing —
+# the compute handler drops the tracks pass entirely, no `tracks` key on any tile.
+function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
+                             ncols::Int, nrows::Int, sizeX::Int, sizeY::Int)::Union{Vector{Union{Nothing,NamedTuple}},Nothing}
+    (sizeX > 0 && sizeY > 0) || return nothing
+    # Ask for the columns we need. `select_cols` @warns for absent columns and drops them —
+    # `live.cell.speed` is optional so a segmentation without it is not an error. `track_id`
+    # is required; a missing one degrades to "no tracks summary" via the guard below.
+    df = try
+        label_props(img; value_name = vn) |>
+            (lp -> select_cols(lp, ["track_id", "live.cell.speed"])) |>
+            view_centroid_cols |> as_df
+    catch
+        return nothing
+    end
+    nm = names(df)
+    (("centroid_x" in nm) && ("centroid_y" in nm) && ("track_id" in nm)) || return nothing
+    has_t = "centroid_t" in nm
+    has_speed = "live.cell.speed" in nm
+    # First pass: per-track lifetime (num_cells across ALL t) so a per-tile mean of durations
+    # reflects the whole track, not just visible frames.
+    duration_by_track = Dict{Int,Int}()
+    @inbounds for i in 1:size(df, 1)
+        tid = df[i, :track_id]
+        (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
+        k = Int(round(Float64(tid)))
+        duration_by_track[k] = get(duration_by_track, k, 0) + 1
+    end
+    # Second pass: bin cells at the shown t into tiles, tracking track_ids + accumulating
+    # per-cell speeds for the instantaneous meanSpeed aggregate.
+    n_tiles = ncols * nrows
+    tile_track_ids = [Set{Int}() for _ in 1:n_tiles]
+    tile_speed_sum = zeros(Float64, n_tiles)
+    tile_speed_n   = zeros(Int, n_tiles)
+    @inbounds for i in 1:size(df, 1)
+        tid = df[i, :track_id]
+        (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
+        px = df[i, :centroid_x]; py = df[i, :centroid_y]
+        (px isa Real && py isa Real && isfinite(Float64(px)) && isfinite(Float64(py))) || continue
+        if has_t
+            tv = df[i, :centroid_t]
+            (tv isa Real && isfinite(Float64(tv))) || continue
+            Int(round(Float64(tv))) == t || continue
+        end
+        c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
+        r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
+        ti = r * ncols + c + 1
+        push!(tile_track_ids[ti], Int(round(Float64(tid))))
+        if has_speed
+            sp = df[i, Symbol("live.cell.speed")]
+            if sp isa Real && isfinite(Float64(sp))
+                tile_speed_sum[ti] += Float64(sp)
+                tile_speed_n[ti]   += 1
+            end
+        end
+    end
+    _track_summary_from_binned(tile_track_ids, tile_speed_sum, tile_speed_n, duration_by_track)
+end
+
+# Pure aggregator — no I/O, hermetically testable. Given per-tile track_id sets + speed
+# accumulators + a global track→duration map, produce the (count, meanDuration, meanSpeed)
+# summary per tile (nothing for empty tiles).
+function _track_summary_from_binned(tile_track_ids::AbstractVector{<:AbstractSet{Int}},
+                                    tile_speed_sum::AbstractVector{<:Real},
+                                    tile_speed_n::AbstractVector{<:Integer},
+                                    duration_by_track::AbstractDict{Int,<:Integer})::Vector{Union{Nothing,NamedTuple}}
+    n = length(tile_track_ids)
+    (length(tile_speed_sum) == n && length(tile_speed_n) == n) ||
+        throw(ArgumentError("_track_summary_from_binned: length mismatch across tile inputs"))
+    out = Vector{Union{Nothing,NamedTuple}}(nothing, n)
+    for i in 1:n
+        s = tile_track_ids[i]
+        isempty(s) && continue
+        count = length(s)
+        dur_sum = 0.0; dur_n = 0
+        for k in s
+            d = get(duration_by_track, k, 0)
+            d > 0 || continue
+            dur_sum += Float64(d); dur_n += 1
+        end
+        mean_duration = dur_n > 0 ? dur_sum / dur_n : NaN
+        mean_speed = tile_speed_n[i] > 0 ? tile_speed_sum[i] / tile_speed_n[i] : NaN
+        out[i] = (count = count, meanDuration = mean_duration, meanSpeed = mean_speed)
+    end
+    out
+end
+
 # Spreadsheet-style cell label, mirroring the frontend `gridOverlay.ts::cellLabel`.
 # Duplicated on purpose — Julia and TypeScript don't share code, and the alternative
 # is a JSON manifest that both sides read at boot, which is heavier than 15 lines of
@@ -365,8 +464,8 @@ end
 
 Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows,
          channels: [{index, name}], labelsValueName?,
-         popValueName?, popType? }`
-Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?, pops?}, ...] }`
+         popValueName?, popType?, tracksValueName? }`
+Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?, pops?, tracks?}, ...] }`
 
 Called by the browser at Share time (or on explicit augmented-recompute) so the
 capture envelope carries per-channel per-tile stats alongside the frontend's
@@ -391,6 +490,16 @@ visible-pop members gets `pops: [{path, name, count}]` for pops with count > 0
 in THAT tile (sparse per Decision 3 — zero-count pops are simply absent, and a
 tile with no member pops has no `pops` key at all). Same coordinate frame as
 segCount: level-0 pixel bins.
+
+`tracksValueName` is the (Phase 3) visibility snapshot for the tracks overlay: the
+first vn the frontend has ticked visible in `getTrackVisibility`. Non-empty ⇒
+each tile with any tracked cell at the shown t gets
+`tracks: {count, meanDuration, meanSpeed}`:
+  count        — distinct track_ids with a cell in this tile at t
+  meanDuration — mean of per-track num_cells (full lifetime) across those tracks
+  meanSpeed    — mean of per-cell `live.cell.speed` in this tile at t (instantaneous
+                 local spatial measure; NaN when the segmentation has no speed obs).
+An untracked vn (no `track_id` obs) drops the pass; no `tracks` key on any tile.
 
 Cost: one plane read per visible channel at a pyramid level chosen to keep the long
 side ≥ 512 px, plus O(ncols*nrows) per channel for the tile aggregations. Typical
@@ -419,10 +528,12 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     pop_vn    = _wstr(body, :popValueName)      # both required for pops — the pop manager's
     pop_type  = _wstr(body, :popType)           # (vn, popType), from `cc.gatingCurrent`
     pops_on   = !isempty(pop_vn) && !isempty(pop_type)
-    # Early-out: nothing to compute (no channels AND no labels layer AND no pops layer visible).
+    tracks_vn = _wstr(body, :tracksValueName)   # empty ⇒ tracks off
+    # Early-out: nothing to compute (no channels AND no labels/pops/tracks layer visible).
     # Return an empty tiles list rather than 400 — the frontend calls this optimistically at
     # Share time and a bare landscape (grid-density picked, no layers on) is a legitimate shape.
-    isempty(channels_raw) && isempty(labels_vn) && !pops_on && return 200, JSON3.write((; tiles = []))
+    isempty(channels_raw) && isempty(labels_vn) && !pops_on && isempty(tracks_vn) &&
+        return 200, JSON3.write((; tiles = []))
 
     vnn = isempty(value_name) ? nothing : String(value_name)
     zp, _td, err = resolve_image_version(project_uid, image_uid, vnn; version = nothing)
@@ -481,13 +592,13 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         end
     end
 
-    # ── Image-object + geometry for the label-props-driven augmentations (Phase 2a + 2b).
+    # ── Image-object + geometry for the label-props-driven augmentations (Phase 2a/2b/3).
     # Resolved once and shared: `init_object` reads ccid.json, and `image_geometry` reads
-    # `.zarray` metadata — either is cheap on its own, but paying twice when segCount and
-    # pops are both on is silly. Channels-only computes skip this block entirely.
+    # `.zarray` metadata — either is cheap on its own, but paying twice when segCount + pops
+    # + tracks all run in one compute is wasteful. Channels-only computes skip this block.
     img_obj = nothing
     sizeX = 0; sizeY = 0
-    if !isempty(labels_vn) || pops_on
+    if !isempty(labels_vn) || pops_on || !isempty(tracks_vn)
         try
             geo = image_geometry(zp)
             sizeX = Int(geo.sizeX); sizeY = Int(geo.sizeY)
@@ -530,6 +641,32 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
                 isempty(bag) && continue
                 tiles[i]["pops"] = [Dict("path" => p.path, "name" => p.name, "count" => p.count)
                                     for p in bag]
+            end
+        end
+    end
+
+    # ── Per-tile tracks summary (Phase 3) — only when the frontend has a tracks layer on
+    # AND the vn actually carries tracks. Empty tiles (no tracked cells at t) get no
+    # `tracks` key — sparsity discipline all the way down.
+    if !isempty(tracks_vn) && img_obj !== nothing
+        track_tiles = try
+            _tile_track_summary(img_obj, tracks_vn, t, ncols, nrows, sizeX, sizeY)
+        catch
+            nothing
+        end
+        if track_tiles !== nothing
+            for i in eachindex(tiles)
+                s = track_tiles[i]
+                s === nothing && continue
+                # Round the floats to keep the envelope tight; NaN → JSON null so the frontend
+                # sees "unknown" (typically meanSpeed when the segmentation has no speed obs)
+                # rather than a raw NaN which some JSON parsers refuse.
+                md = isfinite(s.meanDuration) ? round(Float64(s.meanDuration), digits = 2) : nothing
+                ms = isfinite(s.meanSpeed)    ? round(Float64(s.meanSpeed),    digits = 3) : nothing
+                bag = Dict{String,Any}("count" => s.count)
+                md === nothing || (bag["meanDuration"] = md)
+                ms === nothing || (bag["meanSpeed"]    = ms)
+                tiles[i]["tracks"] = bag
             end
         end
     end

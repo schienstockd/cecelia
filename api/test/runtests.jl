@@ -9665,3 +9665,46 @@ end
     # Empty / off-map pops likewise
     @test all(all(p.path != "/live/empty" && p.path != "/live/offmap" for p in bag) for bag in per_tile)
 end
+
+@testset "API: _track_summary_from_binned (BIDIR landscape Phase 3)" begin
+    # LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 3 — the pure per-tile tracks aggregator.
+    # 4-tile grid: tile 1 has tracks {10, 11} with 2 cells contributing speeds; tile 2 has
+    # only track 12; tile 3 is empty; tile 4 has track 10 again (a long track passing through).
+    # duration_by_track (whole-lifetime frame counts): 10 → 100, 11 → 25, 12 → 8.
+    dur = Dict(10 => 100, 11 => 25, 12 => 8)
+    tile_ids = [Set([10, 11]), Set([12]), Set{Int}(), Set([10])]
+    speed_sum = Float64[3.0, 1.5, 0.0, 4.0]     # tile 1 sum 3.0 across 2 cells → mean 1.5
+    speed_n   = Int[2, 1, 0, 1]
+    out = _track_summary_from_binned(tile_ids, speed_sum, speed_n, dur)
+    @test length(out) == 4
+    @test out[1] !== nothing
+    @test out[1].count == 2
+    @test out[1].meanDuration == (100 + 25) / 2
+    @test out[1].meanSpeed ≈ 1.5
+    @test out[2].count == 1
+    @test out[2].meanDuration == 8
+    @test out[2].meanSpeed ≈ 1.5
+    # Empty tile → nothing (sparsity — caller emits no `tracks` key)
+    @test out[3] === nothing
+    @test out[4].count == 1
+    @test out[4].meanDuration == 100
+    @test out[4].meanSpeed ≈ 4.0
+
+    # No speed observations at all (tracked segmentation without `live.cell.speed`) →
+    # meanSpeed NaN; caller emits `count`/`meanDuration` and omits `meanSpeed`.
+    out2 = _track_summary_from_binned([Set([10])], Float64[0.0], Int[0], dur)
+    @test out2[1].count == 1
+    @test isnan(out2[1].meanSpeed)
+    @test out2[1].meanDuration == 100
+
+    # A track with no known duration (stale h5ad) gets skipped in the meanDuration numerator
+    # but still counts toward `count` — a defensive drop, not a lie about the tile.
+    out3 = _track_summary_from_binned([Set([99, 10])], Float64[0.0], Int[0],
+                                       Dict(10 => 50))    # 99 absent
+    @test out3[1].count == 2                              # both tracks visible in tile
+    @test out3[1].meanDuration == 50                      # only 10 contributes a real duration
+
+    # Length mismatch throws
+    @test_throws ArgumentError _track_summary_from_binned([Set([1])], Float64[0.0, 0.0],
+                                                          Int[1], Dict{Int,Int}())
+end
