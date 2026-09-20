@@ -146,15 +146,62 @@ class GuidanceTest(unittest.TestCase):
 
     def test_the_briefing_ships_the_guidance(self):
         # Wiring, not text: the tool must actually merge `guidance` into its response, or all of the
-        # above is a string nobody reads. Patched client — no server needed.
-        original = server._client.get_session_briefing
-        server._client.get_session_briefing = lambda uid: {"projectUid": uid, "flagged": []}
+        # above is a string nobody reads. Patched client — no server needed. The memory-slice
+        # (Decision 5) also patches list_blackboard_entries / read_blackboard_entry /
+        # get_recent_captures so the shape assertions below are on real merged output, not the
+        # try/except degradation path.
+        c = server._client
+        originals = (c.get_session_briefing, c.list_blackboard_entries,
+                     c.read_blackboard_entry, c.get_recent_captures)
+        c.get_session_briefing = lambda uid: {"projectUid": uid, "flagged": [],
+                                              "recentLabLog": [{"date": "2026-09-19",
+                                                                "author": "User",
+                                                                "summary": "old"}]}
+        c.list_blackboard_entries = lambda uid: {"entries": [
+            {"entryId": "profile", "title": "Project profile", "current": 0,
+             "updatedAt": "2026-09-20", "attachmentsCount": 0, "status": "open"},
+            {"entryId": "bb-20260919T000000-abcdef", "title": "Thread A",
+             "current": 1, "updatedAt": "2026-09-19", "attachmentsCount": 0,
+             "status": "open"},
+            {"entryId": "bb-20260918T000000-fedcba", "title": "Thread B (resolved)",
+             "current": 1, "updatedAt": "2026-09-18", "attachmentsCount": 0,
+             "status": "resolved"},
+        ]}
+        c.read_blackboard_entry = lambda uid, eid, version=None: {"entry": {
+            "entryId": eid, "title": "Project profile",
+            "content": "Subject: MERTK\nGoal: track CD169+",
+            "current": 0, "updatedAt": "2026-09-20",
+            "versions": [], "attachments": [], "status": "open",
+        }}
+        c.get_recent_captures = lambda uid, limit=None: {"items": [
+            {"captureId": "cap-20260920T100000-aaaaaa", "createdAt": "2026-09-20T10:00:00",
+             "surface": "viewer_frame", "address": {"projectUid": uid}},
+            {"captureId": "cap-20260920T090000-bbbbbb", "createdAt": "2026-09-20T09:00:00",
+             "surface": "plot", "address": {"projectUid": uid}},
+        ]}
         try:
             out = server.get_session_briefing("NRUBxU")
         finally:
-            server._client.get_session_briefing = original
+            (c.get_session_briefing, c.list_blackboard_entries,
+             c.read_blackboard_entry, c.get_recent_captures) = originals
         self.assertEqual("NRUBxU", out["projectUid"])
         self.assertEqual(guidance.BRIEFING_GUIDANCE, out["guidance"])
+        # Decision 5 — recentLabLog dropped from the default shape.
+        self.assertNotIn("recentLabLog", out)
+        # Profile body carried in full (short here; real cap is 100 KiB).
+        self.assertIsInstance(out["profile"], dict)
+        self.assertIn("MERTK", out["profile"]["content"])
+        # Open entries: only status=open surface, and the profile itself is stripped out (it has
+        # its own top-level field).
+        titles = [e["title"] for e in out["openBlackboardEntries"]]
+        self.assertIn("Thread A", titles)
+        self.assertNotIn("Thread B (resolved)", titles)
+        self.assertNotIn("Project profile", titles)
+        # Recent captures relayed with the slim shape.
+        self.assertEqual(2, len(out["recentCaptures"]))
+        for c_row in out["recentCaptures"]:
+            self.assertIn("captureId", c_row)
+            self.assertIn("surface", c_row)
 
 
 if __name__ == "__main__":

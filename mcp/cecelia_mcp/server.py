@@ -531,6 +531,68 @@ def get_chains(project_uid: str) -> dict:
     return _client.get_chains(project_uid)
 
 
+_BRIEFING_OPEN_ENTRIES_MAX = 8    # Decision 5 — briefing carries up to this many open blackboard entries
+_BRIEFING_RECENT_CAPTURES = 5     # Decision 5 — briefing carries up to this many recent captures
+
+
+def _memory_briefing_slice(project_uid: str) -> dict:
+    """Compose the PROJECT_MEMORY_PLAN Decision 5 briefing slice: profile body + open Blackboard
+    entries + last N captures. Split out so `get_session_briefing` stays legible, and so each
+    upstream call's failure degrades independently rather than blanking the whole memory slice.
+    Every field's default is empty/None — a fresh project with no memory yet gets an honest shape,
+    not a placeholder.
+    """
+    profile = None
+    open_entries: list[dict] = []
+    try:
+        entries = _client.list_blackboard_entries(project_uid).get("entries", [])
+    except Exception:
+        entries = []
+    for entry in entries:
+        entry_id = entry.get("entryId")
+        if entry_id == "profile":
+            # Fetch the full body — the profile is the "what is this project" record; a truncated
+            # snippet would defeat the point. It's capped at 100 KiB per Blackboard invariants.
+            try:
+                full = _client.read_blackboard_entry(project_uid, "profile")
+                body = full.get("entry", {})
+                profile = {
+                    "content":   body.get("content", ""),
+                    "updatedAt": body.get("updatedAt", ""),
+                    "status":    body.get("status", "open"),
+                }
+            except Exception:
+                profile = None
+            continue
+        if entry.get("status", "open") != "open":
+            continue
+        open_entries.append({
+            "entryId":          entry_id,
+            "title":            entry.get("title", ""),
+            "updatedAt":        entry.get("updatedAt", ""),
+            "attachmentsCount": entry.get("attachmentsCount", 0),
+        })
+        if len(open_entries) >= _BRIEFING_OPEN_ENTRIES_MAX:
+            break
+
+    try:
+        captures = _client.get_recent_captures(
+            project_uid, _BRIEFING_RECENT_CAPTURES).get("items", [])[:_BRIEFING_RECENT_CAPTURES]
+    except Exception:
+        captures = []
+    recent_captures = [{
+        "captureId": c.get("captureId"),
+        "createdAt": c.get("createdAt"),
+        "surface":   c.get("surface"),
+    } for c in captures]
+
+    return {
+        "profile":               profile,
+        "openBlackboardEntries": open_entries,
+        "recentCaptures":        recent_captures,
+    }
+
+
 @mcp.tool()
 def get_session_briefing(project_uid: str) -> dict:
     """Startup context for THIS session — call this FIRST when a chat begins, so you're oriented without
@@ -545,20 +607,43 @@ def get_session_briefing(project_uid: str) -> dict:
         `fun` is the task whose QC banked the finding: check it before believing a number. A probe or
         example module banking a hardcoded threshold looks exactly like a real pipeline finding
         otherwise ("4 images measured 0 cells" once came from a test probe, not segmentation).
-      - `recentLabLog`: entries from the last 7 days, newest-first — `[{date, author, summary}]`
+      - `profile`: the project's Blackboard profile entry (Decision 2) —
+        `{content, updatedAt, status}` — full markdown body, capped at 100 KiB. `null` if the
+        project has no blackboard yet (it will after the first list_blackboard_entries call, so this
+        is usually a fresh-project state). READ IT — this is what the profile exists for; don't
+        skip past it. If empty, offer to fill it in.
+      - `openBlackboardEntries`: up to 8 entries with status="open", newest-first —
+        `[{entryId, title, updatedAt, attachmentsCount}]`. What's currently on the table across
+        sessions. Reach for `read_blackboard_entry` on any that look relevant to what the user is
+        about to ask.
+      - `recentCaptures`: up to 5 shared frames, newest-first — `[{captureId, createdAt, surface}]`.
+        Same shape as `get_recent_captures` minus the address (call `get_capture(captureId)` for
+        the address + pixels when a specific one matters).
 
       - `guidance`: HOW TO WORK WITH THIS PROJECT — the disciplines that span tools (what to check
         before proposing any figure or cross-image comparison, and the rules for the few things you can
         write). Read it before you propose anything; it is written to be followed, not summarised.
 
-    Use it to open with what matters ("3 of 12 images flagged; 2 have too few tracks") and to pick up
-    where the last session left off (the lab log). Then ask the user which direction to take. Read-only."""
+    Deliberately DROPPED from the default response (PROJECT_MEMORY_PLAN Decision 5): the 7-day
+    lab-log slice. The lab-log is a chronological record whose value is post-hoc; the durable
+    "what's on the table" signal now comes from open Blackboard entries. `read_lab_log(project_uid)`
+    is still available for the chronological view when a specific question needs it.
+
+    Use this to open with what matters ("3 of 12 images flagged; 2 have too few tracks; profile
+    says CD169 macrophages under MERTK KO — is that still the focus today?") and to pick up where
+    the last session left off (open Blackboard entries + profile). Then ask the user which
+    direction to take. Read-only."""
     # The guidance rides along with the briefing rather than sitting in the server instructions: it is
     # ~600 words that only matter once a session actually opens a project, and the observer is
     # registered user-scope, so in the instructions it would be in context for every unrelated `claude`
     # session on the machine. Server-side, not pasted by the user — that is the whole point (see
     # guidance.py). Merged into the response so one call orients AND briefs.
-    return {**_client.get_session_briefing(project_uid), "guidance": BRIEFING_GUIDANCE}
+    base = _client.get_session_briefing(project_uid)
+    # PROJECT_MEMORY_PLAN Decision 5 — recentLabLog drops out of the default; the durable memory
+    # comes from the profile + open Blackboard entries. read_lab_log still serves the chronological
+    # view on demand.
+    base.pop("recentLabLog", None)
+    return {**base, **_memory_briefing_slice(project_uid), "guidance": BRIEFING_GUIDANCE}
 
 
 @mcp.tool()
