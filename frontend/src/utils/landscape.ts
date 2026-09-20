@@ -78,6 +78,11 @@ export interface LandscapeTile {
   // the "5 vs 12 cells" answer a downsampled composite can't give. Present only when a labels
   // layer was toggled on at compute time; sparse per Decision 3.
   segCount?: number
+  // Phase 2b: which populations occupy this tile at the shown t, one entry per pop with
+  // count > 0 in THIS tile. `path` is the pop manager's canonical id (e.g. `/live/tnaive`);
+  // `name` is the display name. Populations with zero members in this tile are absent, and
+  // a tile with no member pops has no `pops` key at all (sparse per Decision 3).
+  pops?: Array<{ path: string; name: string; count: number }>
 }
 
 export interface LandscapeLegendEntry {
@@ -105,6 +110,7 @@ export interface AugmentTile {
   tileId: string
   channels?: Record<string, { mean: number; snr: number }>
   segCount?: number
+  pops?: Array<{ path: string; name: string; count: number }>
 }
 
 /** Merge a per-tile augmentation payload into a category-only landscape. Non-mutating — returns a
@@ -122,10 +128,12 @@ export function augmentLandscape(
     if (!a) return t
     const hasChannels = !!a.channels && Object.keys(a.channels).length > 0
     const hasSeg = typeof a.segCount === 'number' && Number.isFinite(a.segCount)
-    if (!hasChannels && !hasSeg) return t
+    const hasPops = Array.isArray(a.pops) && a.pops.length > 0
+    if (!hasChannels && !hasSeg && !hasPops) return t
     const next: LandscapeTile = { ...t }
     if (hasChannels) next.channels = a.channels
     if (hasSeg) next.segCount = a.segCount
+    if (hasPops) next.pops = a.pops
     return next
   })
   return { ...base, tiles, schemaVersion: 2 }

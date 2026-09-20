@@ -1029,11 +1029,16 @@ def get_capture(project_uid: str, capture_id: str) -> list:
             "high mean on Tcells, low mean on SHG" even when its category is `bright-textured`.
           • `tiles[i].segCount` — how many segmented objects have a centroid inside this tile
             at the shown t. The "5 vs 12 cells" answer a downsampled composite can't give.
+          • `tiles[i].pops = [{path, name, count}]` — which populations occupy this tile at
+            the shown t, one entry per pop with count > 0. `path` is the pop manager's
+            canonical id ("/live/tnaive"); use it when calling `mark_cells` back on member
+            cells. Populations with 0 count in a tile are ABSENT — infer nothing from a
+            missing entry beyond "not visible here or not toggled on".
 
     Prefer these fields over guessing from the composite when v2 is available: `channels` for
     "which channel dominates this bright tile", `segCount` for "how densely populated is this
-    region". A missing field on a v2 tile means the corresponding layer was off — fall back to
-    your visual read, don't infer zero.
+    region", `pops` for "which cell type sits here". A missing field on a v2 tile means the
+    corresponding layer was off — fall back to your visual read, don't infer zero.
 
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install

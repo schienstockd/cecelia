@@ -9631,3 +9631,37 @@ end
     @test_throws ArgumentError _bin_centroids_to_tiles(Float64[1.0], Float64[1.0, 2.0],
                                                        nothing, 0, 2, 2, 100, 100)
 end
+
+@testset "API: _pop_counts_from_label_map (BIDIR landscape Phase 2b)" begin
+    # LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2b — the pure per-tile pop aggregator.
+    # Sparsity discipline (Decision 3): hidden pops drop; pops with no member cells in the
+    # visible frame drop; zero-count tiles have no entry in their inner vector.
+    # 4-tile grid, label→tile map: label 1→tile 1, 2→tile 1, 3→tile 2, 4→tile 4.
+    label_map = Dict(1 => 1, 2 => 1, 3 => 2, 4 => 4)
+    pops = [
+        (path = "/live/tnaive", name = "T naive", show = true,  labels = [1, 2, 3]),   # 2 in T1, 1 in T2
+        (path = "/live/tmem",   name = "T mem",   show = true,  labels = [3, 4, 99]),  # 1 in T2, 1 in T4, 99 absent
+        (path = "/live/hidden", name = "Hidden",  show = false, labels = [1, 2, 3, 4]),# entirely skipped
+        (path = "/live/empty",  name = "Empty",   show = true,  labels = Int[]),       # no labels, no entries
+        (path = "/live/offmap", name = "Off",     show = true,  labels = [77, 88]),    # no labels land in any tile
+    ]
+    per_tile = _pop_counts_from_label_map(pops, label_map, 4)
+    @test length(per_tile) == 4
+    # tile 1: T naive count 2, no T mem
+    @test length(per_tile[1]) == 1
+    @test per_tile[1][1].path == "/live/tnaive" && per_tile[1][1].count == 2
+    # tile 2: T naive count 1, T mem count 1
+    paths_t2 = sort([p.path for p in per_tile[2]])
+    counts_t2 = Dict(p.path => p.count for p in per_tile[2])
+    @test paths_t2 == ["/live/tmem", "/live/tnaive"]
+    @test counts_t2["/live/tnaive"] == 1 && counts_t2["/live/tmem"] == 1
+    # tile 3: no visible pops occupy it
+    @test isempty(per_tile[3])
+    # tile 4: only T mem
+    @test length(per_tile[4]) == 1
+    @test per_tile[4][1].path == "/live/tmem" && per_tile[4][1].count == 1
+    # Hidden pop never appears anywhere (Decision 3 sparsity)
+    @test all(all(p.path != "/live/hidden" for p in bag) for bag in per_tile)
+    # Empty / off-map pops likewise
+    @test all(all(p.path != "/live/empty" && p.path != "/live/offmap" for p in bag) for bag in per_tile)
+end
