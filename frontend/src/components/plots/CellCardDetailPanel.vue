@@ -16,7 +16,7 @@ import { openViewerWindow } from '../../utils/viewerWindow'
 import { useProjectStore } from '../../stores/project'
 import { useViewerStore } from '../../stores/viewer'
 import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
-import type { Card } from './cellCards'
+import type { Card } from './cardsPanel'
 
 const props = defineProps<{
   card: Card

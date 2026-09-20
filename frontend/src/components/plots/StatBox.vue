@@ -17,7 +17,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CardStat } from './cellCards'
+import type { CardStat } from './cardsPanel'
 
 const props = defineProps<{
   stat: CardStat
