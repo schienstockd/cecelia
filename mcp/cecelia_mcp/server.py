@@ -1006,12 +1006,19 @@ def get_recent_captures(project_uid: str, limit: int = 10) -> list:
 def get_capture(project_uid: str, capture_id: str) -> list:
     """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
 
-    Returns TWO content blocks: (1) the frame as an image (so you can actually SEE it), and (2) a
-    JSON envelope with the address, overlay marks, any view-state snapshot, and (if the user had
-    the Landscape overlay on at share time) a `landscape` field carrying the tile-level semantic
-    map — `{grid, tiles, legend, schemaVersion}`. Read all three — the image tells you what
-    they're looking at, the overlay tells you WHERE they're pointing, the address tells you which
-    image / t / z it is, and the landscape gives you a rough semantic prior over the tiles.
+    JSON envelope with the address, overlay marks, any view-state snapshot, an optional
+    `landscape` field (tile-level semantic map when the overlay was on at share time), and a
+    `notes` field (free-text context the user typed alongside the frame).
+
+    READ ALL FOUR. `notes` is the user's own words about the capture — "look at the T-cell
+    channel here, segmentation looks under-called". It is the PRIORITY signal — if the user
+    took the trouble to type it, address what they said before commenting on anything you
+    noticed independently. Empty string when nothing was typed.
+
+    The image tells you what they're looking at, the overlay tells you WHERE they're pointing,
+    the address tells you which image / t / z it is, and the landscape gives you a rough semantic
+    prior over the tiles before you squint at raw RGB. `landscape` is absent (or null) when the
+    overlay was off.
 
     Landscape schema is versioned:
       - `schemaVersion: 1` — category-only. `tiles[i] = {id, row, col, category, stats}`.
@@ -1023,7 +1030,7 @@ def get_capture(project_uid: str, capture_id: str) -> list:
 
     Prefer `landscape.tiles[i].channels` over guessing channel dominance from the composite when
     v2 is available; fall back to your visual read on v1 or when a tile has no `channels` (channel
-    was off at share time). `landscape` is absent (or null) when the overlay was off.
+    was off at share time).
 
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install
@@ -1031,8 +1038,7 @@ def get_capture(project_uid: str, capture_id: str) -> list:
 
     Overlay `kind` is one of `"rect" | "poly" | "stroke" | "circle" | "arrow"`; `geom` is
     payload-relative (0..1 in the frame's own coord space) — the caller (frontend) authored
-    them, and their exact rendering is not this tool's concern. `label` on a mark is what the
-    user typed for it, if anything.
+    them, and their exact rendering is not this tool's concern.
 
     Multi-panel plot captures (surface `"plot"` from the module-page canvas Share) also carry a
     `panels: [{panelId, position:{x,y,w,h}, plotRef, dataSlice}]` field on the envelope. `position`

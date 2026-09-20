@@ -152,6 +152,8 @@ export interface CaptureEnvelope {
   viewStateSnapshot: unknown | null // opaque `ViewerViewState`; null for legacy captures
   landscape: unknown | null         // BIDIR PR #6: opaque `LandscapeResult` snapshotted at share
                                     // time when the overlay was on; null otherwise
+  notes: string                     // BIDIR follow-up 2026-09-20: free-text context the user
+                                    // typed on DrawSurface; empty string when nothing was typed
   frame: string                     // data URL, or '' if the PNG is missing
 }
 export async function fetchCaptureEnvelope(
@@ -179,6 +181,7 @@ export async function fetchCaptureEnvelope(
     // at share time. Same opaque-pass-through pattern as viewStateSnapshot.
     const landscape = (env.landscape && typeof env.landscape === 'object')
       ? env.landscape : null
+    const notes = typeof env.notes === 'string' ? env.notes : ''
     return {
       captureId,
       surface,
@@ -186,6 +189,7 @@ export async function fetchCaptureEnvelope(
       overlay,
       viewStateSnapshot,
       landscape,
+      notes,
       frame: typeof json.frame === 'string' ? json.frame : '',
     }
   } catch { return null }

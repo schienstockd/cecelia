@@ -42,7 +42,10 @@ const props = defineProps<{
   busy?: boolean
 }>()
 const emit = defineEmits<{
-  (e: 'save', payload: { overlay: OverlayMark[] }): void
+  // `notes` is the free-text context the user attaches to the whole capture (BIDIR follow-up
+  // 2026-09-20): what they're pointing at + why, delivered to Claude alongside the pixels. Empty
+  // string when nothing was typed — the parent decides whether to include it on the envelope.
+  (e: 'save', payload: { overlay: OverlayMark[]; notes: string }): void
   (e: 'cancel'): void
 }>()
 
@@ -82,7 +85,12 @@ const color = ref<OverlayColor>('magenta')
 // Committed marks + one live draft. Kept as three parallel refs — a discriminated union would need
 // a class per kind and the state machines are already the source of truth.
 const marks = ref<OverlayMark[]>([])
-const label = ref('')
+// Session-wide free-text notes on the capture — sent to Claude alongside the pixels + overlay.
+// Replaces the per-mark `label` input from the shipped version: peers using this in practice have
+// been colour-coding shapes (yellow = missed cells, white = caught cells) rather than typing a
+// label per shape, and what they actually want to send is a SINGLE context line about the whole
+// share ("look at the T-cell channel here, segmentation looks under-called").
+const notes = ref('')
 const rectDraft   = ref<ReturnType<typeof beginRect>   | null>(null)
 const polyDraft   = ref<ReturnType<typeof beginPoly>   | null>(null)
 const strokeDraft = ref<ReturnType<typeof beginStroke> | null>(null)
@@ -278,16 +286,14 @@ function onPointerUp(ev: PointerEvent) {
     const r = finishRect(rectDraft.value, p)
     if (r) marks.value.push({ kind: 'rect',
       geom: rectToOverlayGeom(r, boxW.value, boxH.value),
-      color: color.value,
-      ...(label.value ? { label: label.value } : {}) })
+      color: color.value })
     rectDraft.value = null
   }
   if (strokeDraft.value) {
     const pts = finishStroke(strokeDraft.value)
     if (pts.length >= 2) marks.value.push({ kind: 'stroke',
       geom: pointsToOverlayGeom(pts, boxW.value, boxH.value),
-      color: color.value,
-      ...(label.value ? { label: label.value } : {}) })
+      color: color.value })
     strokeDraft.value = null
   }
   svgRoot.value?.releasePointerCapture?.(ev.pointerId)
@@ -297,15 +303,14 @@ function commitPoly() {
   const pts = finishPoly(polyDraft.value!)
   if (pts) marks.value.push({ kind: 'poly',
     geom: pointsToOverlayGeom(pts, boxW.value, boxH.value),
-    color: color.value,
-    ...(label.value ? { label: label.value } : {}) })
+    color: color.value })
   polyDraft.value = null
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────────────────────
 function undo() { if (marks.value.length) marks.value = marks.value.slice(0, -1); clearDraft() }
-function clearAll() { marks.value = []; clearDraft() }
-function save() { emit('save', { overlay: marks.value }); clearAll() }
+function clearAll() { marks.value = []; notes.value = ''; clearDraft() }
+function save() { emit('save', { overlay: marks.value, notes: notes.value.trim() }); clearAll() }
 function cancel() { emit('cancel'); clearAll() }
 function removeMark(i: number) { marks.value = marks.value.filter((_, j) => j !== i) }
 function onKey(ev: KeyboardEvent) {
@@ -336,7 +341,7 @@ onBeforeUnmount(() => {
 // Reset marks + measure on open.
 watch(() => props.visible, async (v) => {
   if (!v) return
-  marks.value = []; label.value = ''; clearDraft()
+  marks.value = []; notes.value = ''; clearDraft()
   tool.value = 'stroke'
   color.value = 'magenta'
   await Promise.resolve()   // let the DOM mount before measuring
@@ -447,9 +452,9 @@ const firstVertexMarker = computed(() => {
                   aria-label="Mark colour"
                   @update:modelValue="(v: string | string[]) =>
                     color = (Array.isArray(v) ? v[0] : v) as OverlayColor" />
-      <input class="cc-input ds-label-input" type="text" v-model="label"
-             placeholder="Optional label" maxlength="80"
-             v-tooltip.bottom="'Optional text label attached to the next mark you draw'" />
+      <textarea class="cc-input ds-notes-input" v-model="notes" rows="1" maxlength="800"
+                placeholder="Notes for Claude (optional)"
+                v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'"></textarea>
       <button v-if="draftKind === 'poly' && (polyDraft?.vertices.length ?? 0) >= 3"
               class="cc-btn cc-btn-ghost cc-btn-sm" @click="commitPoly"
               v-tooltip.bottom="'Close the polygon (or press Enter, or click near the first vertex)'">Finish</button>
@@ -488,7 +493,12 @@ const firstVertexMarker = computed(() => {
   border-radius: var(--cc-radius-md);
   pointer-events: auto;
 }
-.ds-label-input { flex: 1; min-width: 8rem; max-width: 20rem; }
+.ds-notes-input {
+  flex: 1; min-width: 12rem; max-width: 30rem;
+  min-height: 1.6rem; max-height: 4.5rem;
+  resize: vertical;
+  font-family: inherit;   /* textarea default is monospace on some UAs */
+}
 .ds-address { color: var(--cc-text-dim); font-family: var(--cc-mono); }
 .ds-mode {
   position: absolute; top: 3.4rem; left: 0.75rem;

@@ -31,7 +31,7 @@ using JSON3
 # every incident, past and future. The `content` string travels as-is inside the JSON message
 # frame — the socket writer wraps it, the string itself is human-readable prose.
 function format_capture_message(project_uid::AbstractString, capture_id::AbstractString,
-                                address)::String
+                                address, notes::AbstractString = "")::String
     surface  = address isa AbstractDict ? String(get(address, "surface",   "")) : ""
     image    = address isa AbstractDict ? String(get(address, "imageUid",  "")) : ""
     t_val    = address isa AbstractDict ? get(address, "t", nothing) : nothing
@@ -44,8 +44,16 @@ function format_capture_message(project_uid::AbstractString, capture_id::Abstrac
     t_val === nothing || push!(parts, string("t=", t_val))
     z_val === nothing || push!(parts, string("z=", z_val))
     coords = isempty(parts) ? "" : string(" (", join(parts, ", "), ")")
+    # Free-text notes the user typed on DrawSurface (BIDIR follow-up 2026-09-20). Included INLINE
+    # in the push text so the receiving Claude reads them immediately — the whole point of the
+    # notes field is that it travels alongside the pixels, not that it's discoverable via a
+    # follow-up `get_capture` call. Full envelope is still available via that call for the
+    # overlay / landscape / view-state bits the notes don't cover.
+    notes_clean = strip(String(notes))
+    notes_line = isempty(notes_clean) ? "" : string("\nUser said: ", notes_clean, "\n")
     string("[cecelia] shared capture ", capture_id, " from project ", project_uid, coords,
-           ". Read it with get_capture(\"", project_uid, "\", \"", capture_id, "\").")
+           ".", notes_line,
+           " Read it with get_capture(\"", project_uid, "\", \"", capture_id, "\").")
 end
 
 # ── The writer ───────────────────────────────────────────────────────────────
@@ -59,7 +67,8 @@ end
 # is returned so the caller can log/log-tag it consistently; the frontend only sees the
 # outcome symbol via the JSON response.
 function push_capture_notification(project_uid::AbstractString, capture_id::AbstractString,
-                                   address)::Tuple{Symbol,Union{String,Nothing}}
+                                   address, notes::AbstractString = ""
+                                   )::Tuple{Symbol,Union{String,Nothing}}
     record = _read_push_target(project_uid)
     record === nothing && return (:not_paired, nothing)
     socket_path = String(get(record, "socketPath", ""))
@@ -67,7 +76,7 @@ function push_capture_notification(project_uid::AbstractString, capture_id::Abst
     if isempty(socket_path) || isempty(token)
         return (:not_paired, nothing)
     end
-    content = format_capture_message(project_uid, capture_id, address)
+    content = format_capture_message(project_uid, capture_id, address, notes)
     ok = try
         _write_uds_message(socket_path, token, content)
     catch e

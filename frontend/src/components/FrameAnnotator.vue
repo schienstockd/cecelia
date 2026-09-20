@@ -50,8 +50,10 @@ const emit = defineEmits<{
    *   overlay      — the vector marks, unchanged. Store these in the envelope; Claude reads the
    *                  same shape it would read from a viewer capture.
    *   composedPng  — the frame with marks baked in (or the bare frame on any compose failure —
-   *                  matches `composeFrameWithOverlay`'s degrade). Ready to POST as `frames[0].png`. */
-  (e: 'save', payload: { overlay: OverlayMark[]; composedPng: string }): void
+   *                  matches `composeFrameWithOverlay`'s degrade). Ready to POST as `frames[0].png`.
+   *   notes        — free-text context the user typed on DrawSurface. Empty string when nothing
+   *                  was typed. Forwarded verbatim to the caller's envelope. */
+  (e: 'save', payload: { overlay: OverlayMark[]; composedPng: string; notes: string }): void
   /** DrawSurface Cancel — the caller decides whether that means "close the whole surface" or
    *  "back to a prior state". */
   (e: 'cancel'): void
@@ -63,7 +65,7 @@ const emit = defineEmits<{
 // fall back to the bare frame — the caller still gets a valid PNG.
 const frameImg = ref<HTMLImageElement | null>(null)
 
-function onDrawSave(payload: { overlay: OverlayMark[] }) {
+function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
   const img = frameImg.value
   // The empty-marks case is legitimate ("share the frame with no annotations"); fall through with
   // the original PNG. `composeImageWithOverlay` returns null when the source image hasn't
@@ -75,6 +77,7 @@ function onDrawSave(payload: { overlay: OverlayMark[] }) {
   emit('save', {
     overlay: payload.overlay,
     composedPng: composedPng || '',   // caller fills with bare frameDataUrl when this is empty
+    notes: payload.notes,
   })
 }
 </script>

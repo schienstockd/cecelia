@@ -306,7 +306,7 @@ async function onShareConfirm(payload: { panelIds: number[] }) {
 
 function onAnnotateCancel() { pendingShare.value = null }
 
-async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: string }) {
+async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: string; notes: string }) {
   const pending = pendingShare.value
   if (!pending || !projectUid.value || shareBusy.value) return
   shareBusy.value = true
@@ -326,6 +326,9 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
         address, panels: pending.panels,
         frames: [{ png }],
         overlay: payload.overlay,
+        // Session-wide notes — travel with the capture the same way they do on viewer shares
+        // (BIDIR follow-up 2026-09-20). Omitted when empty to keep the envelope lean.
+        ...(payload.notes ? { notes: payload.notes } : {}),
       }),
     })
     // Backend broadcasts `captures:changed`; Kiwi's Recent-captures list refreshes on its own.
