@@ -754,6 +754,90 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── VN P5 — inner_versions_of + prune_inner_versions! ──────────────────────────
+# The prune surface reads `inner_versions_of` to list what's on disk (dry-run + inventory) and
+# calls `prune_inner_versions!` on confirm. Every guardrail belongs in the helper, not just the
+# route — a REPL / MCP caller must hit the same rules. Full plan: docs/todo/VN_VERSIONING_PLAN.md
+# → P5.
+@testset "VN P5 — inner_versions_of + prune_inner_versions!" begin
+    _mk_ver_dir!(base, rel, bytes) = (p = joinpath(base, rel); mkpath(dirname(p));
+                                       mkpath(p); write(joinpath(p, "chunk"), rand(UInt8, bytes)); rel)
+
+    proj = create_project!(name="prune-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="a")
+
+    # Bucket A exercised via `filepath` (0/{uid}/…) — the more permissively-typed field
+    # (`Union{String,Dict{String,Any}}` on the value; labels/branch_labels enforce Vector-or-Dict so
+    # a hand-built `_active` String literal in a test dict would fail the type check. `labels` is
+    # covered by the API integration test which builds ccid.json via `commit_state!`).
+    # Versioned `default` → {v1, v2, v3}; v3 is _latest. Q1 layout: v2+ nest under `{vn}/vN/`;
+    # v1 stays flat for backward-compat with legacy projects.
+    _mk_ver_dir!(img_zero_dir(img), "img_v1.ome.zarr",              4096)   # legacy flat v1
+    _mk_ver_dir!(img_zero_dir(img), "default/v2/img.ome.zarr",      8192)
+    _mk_ver_dir!(img_zero_dir(img), "default/v3/img.ome.zarr",     16384)
+
+    img.filepath = Dict{String,Union{String,Dict{String,Any}}}(
+        "default" => Dict{String,Any}(
+            "v1" => "img_v1.ome.zarr", "v2" => "default/v2/img.ome.zarr",
+            "v3" => "default/v3/img.ome.zarr", "_latest" => "v3"),
+        "_active" => "default")
+    img.status = IMAGE_DONE; save!(img)
+
+    # inventory: three (value_name, version) triples ⇒ 3 rows on filepath; v3 flagged latest.
+    rows = Cecelia.inner_versions_of(img)
+    fp_rows = [r for r in rows if r.field == "filepath"]
+    @test length(fp_rows) == 3
+    latests = Set((r.valueName, r.version) for r in fp_rows if r.isLatest)
+    @test latests == Set([("default", "v3")])
+    v2bytes = sum(r.bytes for r in fp_rows if r.version == "v2")
+    v1bytes = sum(r.bytes for r in fp_rows if r.version == "v1")
+    @test v2bytes >= 8000                                         # 8192 + fs overhead
+    @test v1bytes >= 4000                                         # 4096 + fs overhead
+
+    # dry-run: nothing removed on disk, `apply=false` in the summary; freedBytes matches the rows
+    dry = Cecelia.prune_inner_versions!(img, "default", ["v1", "v2"]; apply = false)
+    @test dry["apply"] == false
+    @test length(dry["removed"]) == 2
+    @test dry["freedBytes"] >= v1bytes + v2bytes
+    @test isdir(joinpath(img_zero_dir(img), "default/v2/img.ome.zarr"))         # untouched
+    @test isdir(joinpath(img_zero_dir(img), "img_v1.ome.zarr"))                 # untouched
+    @test length(Cecelia.inner_versions_of(img)) == 3                            # ccid untouched too
+
+    # Guardrail: refusing to prune `_latest` — v3 goes to `skipped` with the field names it holds,
+    # v1 still gets pruned (mixed request splits cleanly, doesn't fail the batch).
+    ref = Cecelia.prune_inner_versions!(img, "default", ["v1", "v3"]; apply = false)
+    skipped_vs = Set(String(r["version"]) for r in ref["skipped"])
+    @test skipped_vs == Set(["v3"])
+    @test occursin("_latest", first(ref["skipped"])["reason"])
+    @test length(ref["errors"]) == 1
+    @test length(ref["removed"]) == 1 && String(ref["removed"][1]["version"]) == "v1"
+
+    # apply: v1 + v2 gone on disk, ccid entries removed, v3 (latest) intact — every guardrail on the
+    # LATEST-on-any-field snapshot BEFORE any deletion, so pruning [v2, v3] refuses v3 rather than
+    # silently promoting v2 to _latest.
+    live = Cecelia.prune_inner_versions!(img, "default", ["v1", "v2"]; apply = true)
+    @test live["apply"] == true
+    @test live["freedBytes"] >= v1bytes + v2bytes
+    @test !isdir(joinpath(img_zero_dir(img), "img_v1.ome.zarr"))
+    @test !isdir(joinpath(img_zero_dir(img), "default/v2/img.ome.zarr"))
+    @test  isdir(joinpath(img_zero_dir(img), "default/v3/img.ome.zarr"))         # latest kept
+    # empty vN parent dir is swept — a stray `default/v2/` would otherwise linger forever
+    @test !isdir(joinpath(img_zero_dir(img), "default/v2"))
+
+    # ccid.json side: v3 is the only remaining version on filepath's inner dict
+    ri = init_object(proj.uid, img.uid)
+    @test sort(Cecelia.version_keys(ri.filepath["default"])) == ["v3"]
+
+    # A prune of the sole remaining version (which is _latest) is a no-op — refused.
+    empty_req = Cecelia.prune_inner_versions!(img, "default", String[]; apply = false)
+    @test empty_req["freedBytes"] == 0
+    rf = Cecelia.prune_inner_versions!(ri, "default", ["v3"]; apply = false)
+    @test length(rf["skipped"]) == 1 && length(rf["removed"]) == 0
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Analysis reset: drop everything derived, keep the image ────────────────────
 # The other half of the delete story (docs/todo/IMAGE_DELETE_PLAN.md): `remove_image_version!` sheds
 # STORES, `reset_image_analysis!` sheds NUMBERS, and neither may do the other's job. The keep-list is

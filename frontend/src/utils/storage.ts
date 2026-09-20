@@ -199,3 +199,72 @@ export async function setKeepPrevVersion(value: boolean): Promise<boolean> {
   if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
   return Boolean((data as any).current)
 }
+
+// ── VN P5 — inner-version inventory + prune (docs/todo/VN_VERSIONING_PLAN.md → P5) ──
+// The dry-run+confirm shape mirrors the maintenance-patch precedent (apply: false / true on the
+// same endpoint) so a caller — Settings UI, REPL, MCP — sees the same summary before and after.
+// Bucket B (gating / QC / trackProps / branchProps / clustfeatures) does NOT appear in `versions`
+// (Q2 stays flat, no per-labels-version files there); this only lists what actually has an inner
+// vN axis on disk (Bucket A: filepath / labels / label_props / branch_labels).
+
+export interface VersionRow {
+  version: string     // e.g. "v2"
+  bytes: number       // summed across the four Bucket A fields for this (image, value_name, version)
+  isLatest: boolean   // pruner refuses to touch it — a legacy v1 without newer versions is `isLatest: true`
+  legacy: boolean     // implicit-v1 from a bare-scalar/vector entry (never prunable — nothing else survives)
+}
+
+export interface VersionsInventoryImage {
+  imageUid: string
+  name: string
+  setUid: string
+  valueNames: { valueName: string; versions: VersionRow[] }[]
+}
+
+export interface VersionsInventory {
+  images: VersionsInventoryImage[]
+}
+
+export interface PruneSummary {
+  apply: boolean
+  freedBytes: number
+  removed: { version: string; bytes: number; paths: string[] }[]
+  skipped: { version: string; reason: string }[]
+  errors: string[]
+}
+
+export async function fetchVersionsInventory(projectUid: string): Promise<VersionsInventory> {
+  const res = await fetch(`/api/versions/inventory?projectUid=${encodeURIComponent(projectUid)}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return data as VersionsInventory
+}
+
+export async function pruneVersions(params: {
+  projectUid: string; imageUid: string; valueName: string;
+  versions: string[]; apply: boolean;
+}): Promise<PruneSummary> {
+  const res = await fetch('/api/versions/prune', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return data as PruneSummary
+}
+
+/** True when at least one (image, value_name) has more than one version — the only situation the
+ *  prune surface has anything to show. Used by the Settings section to hide itself when there is
+ *  nothing to prune, matching how the reclaim summary hides an empty list. */
+export function inventoryHasPrunable(inv: VersionsInventory | null | undefined): boolean {
+  if (!inv || !inv.images) return false
+  for (const img of inv.images) {
+    for (const vn of img.valueNames ?? []) {
+      // Only a NON-latest, NON-legacy version is prunable — `[v1]` alone (legacy=true, isLatest=true)
+      // has nothing to offer; `[v1, v2]` has v1 prunable if v2 is _latest.
+      if ((vn.versions ?? []).some(v => !v.isLatest && !v.legacy)) return true
+    }
+  }
+  return false
+}

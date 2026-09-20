@@ -337,8 +337,44 @@ sequencing.**
 
 ### P5 — Prune surface (Settings + route + UI)
 
-Settings → Storage: per vn, list versions with size + timestamp + "in use by chain run X" flag;
-explicit prune button per version. `POST /api/versions/prune {vn, versions[]}`. No autoprune.
+Delete older `vN` entries (Bucket A: filepath / labels / label_props / branch_labels) once the user
+is happy that the current `_latest` is what they want to keep. No autoprune — every deletion is an
+explicit act with a **dry-run preview first**.
+
+**Shape** — mirrors the existing maintenance-patches precedent in Settings (`apply: false` / `apply:
+true` on the same endpoint). Also mirrors `reclaim_inactive!` (existing Storage reclaim of
+non-active outer-axis versions) — this is the same shape, applied to the *inner* version axis.
+
+- **Inventory** — `GET /api/versions/inventory?projectUid=X` walks each image's ccid.json (cheap;
+  no store walk) + hits the disk for `_path_bytes` of every inner version's on-disk path across
+  the four Bucket A fields. Returns one row per (image, value_name, version) with
+  `{bytes, isLatest}`. Bucket B fields (gating / QC / corrections / trackProps / branchProps /
+  clustfeatures) don't have per-version files (Q2 stays flat), so they don't appear in the
+  inventory.
+- **Prune** — `POST /api/versions/prune {projectUid, imageUid, valueName, versions[], apply}`.
+  - `apply=false` returns `{freedBytes, removed: [{version, bytes}], skipped: [...], errors: [...]}`
+    without touching disk — the dry-run answer the confirm dialog shows.
+  - `apply=true` deletes on disk (via `rm; recursive=true` on each field's `{value_name}/vN/`
+    subdir), then `commit_state!` removes the pruned `vN` entries from every Bucket A field's
+    versioned dict.
+  - **Refuses to prune `_latest`** — the guard belongs in the helper, not just the UI. Attempting
+    to prune the current `_latest` returns it in `skipped` with an error message; every other
+    entry proceeds.
+- **UI** — Settings → Storage grows a *Versions* section. On-demand scan (matches the existing
+  storage-summary scan pattern); lists images that have more than one version for at least one
+  value_name; per-row **Prune** button opens a confirm dialog with the dry-run summary. Cancel or
+  confirm; on confirm, the actual prune runs and the section re-scans.
+
+**Deliberate v1 scope**:
+- Bucket A only (Q2 lock). Bucket B artifacts stay flat.
+- No "in use by chain run X" flag yet — the chain executor doesn't hold a version lock (chain
+  pins live on the node's params); a future refinement can scan `_GATING_HISTORY`-alike
+  registries if a real conflict surfaces.
+- Refuses to touch the current `_latest`. Once the user promotes another version to `_latest`,
+  the previous one becomes prunable — this is by design (destructive on an active version needs
+  the same "promote first" affordance a rebase does, and that lever doesn't exist yet).
+- No mtime column in v1 — every version's directory contains many files with different mtimes;
+  a single stat would mislead. Add later if the user asks for it.
 
 ### P6 — Frontend vn pickers grow a version chip
 

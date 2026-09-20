@@ -224,6 +224,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/storage/layout" => (req, body_bytes) -> (api_store_layout_get(req)),
     "/api/storage/keep-previous-version" => (req, body_bytes) -> (api_keep_previous_version_get(req)),
     "/api/versions" => (req, body_bytes) -> (api_versions_list(req)),
+    "/api/versions/inventory" => (req, body_bytes) -> (api_versions_inventory(req)),
     "/api/config/tls" => (req, body_bytes) -> (api_tls_get(req)),
     "/api/tasks" => (req, body_bytes) -> (api_tasks_list(req)),
     "/api/chains" => (req, body_bytes) -> (api_chains_list(req)),
@@ -421,6 +422,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/update/revert" => (req, body_bytes) -> (api_update_revert(body_bytes)),
     "/api/system/envs/install" => (req, body_bytes) -> (api_system_envs_install(body_bytes)),
     "/api/storage/reclaim" => (req, body_bytes) -> (api_storage_reclaim(body_bytes)),
+    "/api/versions/prune" => (req, body_bytes) -> (api_versions_prune(body_bytes)),
 )
 
 

@@ -157,6 +157,176 @@ function analysis_bytes_of(img::CciaImage)::Int
 end
 
 """
+    inner_versions_of(img) -> Vector{Dict}
+
+Every INNER version (P2 axis, `v1`/`v2`/…) that exists across the four Bucket A fields (filepath /
+labels / label_props / branch_labels), one row per (value_name, version, field), tagged with its
+on-disk bytes and whether it is that field's current `_latest`. Rows are grouped downstream — this
+helper stays flat so a caller can filter/aggregate any way it wants. Bucket B fields are single-
+file per (image, vn) (Q2 lock) and don't appear here — nothing to prune along the inner axis.
+
+`bytes` measures the on-disk directory that the entry's relative path points at (per Q1: `{vn}/vN/`
+under the field's root for v2+; the flat legacy path for a bare-scalar v1). A path that has been
+removed out-of-band returns 0 bytes; the entry still appears so a Prune can clean the ccid.json
+side even when disk has moved on.
+
+Full plan: `docs/todo/VN_VERSIONING_PLAN.md` → P5.
+"""
+function inner_versions_of(img::CciaImage)
+    ccid = state_file(img)
+    isfile(ccid) || return NamedTuple[]
+    raw = read_ccid_raw(ccid)
+    rows = NamedTuple[]
+    # (field-name-in-ccid, on-disk-base-dir). Kept as an explicit table — a new Bucket A field is
+    # a new row here AND a P4b sweep site, not something the composer should infer.
+    fields = (
+        ("filepath",       img_zero_dir(img)),
+        ("labels",         img_labels_dir(img)),
+        ("label_props",    img_label_props_dir(img)),
+        ("branch_labels",  img_branch_labels_dir(img)),
+    )
+    for (field, base) in fields
+        entry = get(raw, field, nothing)
+        entry isa AbstractDict || continue
+        for value_name in versioned_keys(entry)
+            inner = get(entry, value_name, nothing)
+            # bare scalar/vector = legacy implicit v1 (no inner versioning yet) → contribute one row so
+            # the surface can show it, but a legacy value_name with a lone v1 is not prunable (nothing
+            # else survives if it goes) — the pruner refuses; the UI hides it.
+            if !is_versioned_entry(inner)
+                # skip legacy entries that resolve to nothing (deleted/half-cleared)
+                unwrapped = unversion_value(inner)
+                unwrapped === nothing && continue
+                p = joinpath(base, string(unwrapped))
+                push!(rows, (; valueName = String(value_name), version = LATEST_DEFAULT_VAL,
+                              field = field, bytes = _path_bytes(p), isLatest = true, legacy = true))
+                continue
+            end
+            latest = version_latest(inner)
+            for v in version_keys(inner)
+                fn = version_get(inner, v)
+                isnothing(fn) && continue
+                p = joinpath(base, string(fn))
+                push!(rows, (; valueName = String(value_name), version = String(v),
+                              field = field, bytes = _path_bytes(p),
+                              isLatest = String(v) == String(latest), legacy = false))
+            end
+        end
+    end
+    rows
+end
+
+"""
+    prune_inner_versions!(img, value_name, versions; apply, on_log) -> Dict
+
+Delete one or more INNER versions (`v2`/`v3`/…) of one (image, value_name) across every Bucket A
+field that carries them, and drop each pruned `vN` from ccid.json. `apply=false` returns the same
+shape without touching disk — the dry-run answer the confirm dialog shows.
+
+**Refuses to prune the current `_latest`** for each field: an entry named in `versions` that
+matches ANY field's `_latest` is returned in `skipped` with an error explaining which field held
+it. Every other version proceeds. This is intentionally strict — moving `_latest` off a version
+first is a promotion step this v1 does not yet expose in the UI.
+
+Returns `Dict("apply"::Bool, "freedBytes"::Int, "removed"::Vector{Dict}, "skipped"::Vector{Dict},
+"errors"::Vector{String})`. `removed` entries carry `{version, bytes, paths[]}`.
+"""
+function prune_inner_versions!(img::CciaImage, value_name::AbstractString,
+                               versions::AbstractVector; apply::Bool = false,
+                               on_log::Function = _ -> nothing)::Dict{String,Any}
+    result = Dict{String,Any}(
+        "apply"      => apply,
+        "freedBytes" => 0,
+        "removed"    => Dict{String,Any}[],
+        "skipped"    => Dict{String,Any}[],
+        "errors"     => String[],
+    )
+    isempty(versions) && return result
+    ccid = state_file(img)
+    isfile(ccid) || (push!(result["errors"], "ccid.json missing"); return result)
+    raw = read_ccid_raw(ccid)
+
+    fields = (
+        ("filepath",       img_zero_dir(img)),
+        ("labels",         img_labels_dir(img)),
+        ("label_props",    img_label_props_dir(img)),
+        ("branch_labels",  img_branch_labels_dir(img)),
+    )
+    # Latest-per-field snapshot BEFORE any deletion, so a request pruning [v2, v3] where v3 is
+    # _latest refuses v3 rather than silently promoting v2 to _latest.
+    latest_of = Dict{String,String}()
+    for (field, _) in fields
+        entry = get(raw, field, nothing)
+        entry isa AbstractDict || continue
+        inner = get(entry, String(value_name), nothing)
+        is_versioned_entry(inner) || continue
+        latest_of[field] = String(version_latest(inner))
+    end
+
+    for v in String.(versions)
+        # refuse if v is `_latest` on any field — the pruner never moves the latest pointer
+        pinned_on = String[f for (f, l) in latest_of if l == v]
+        if !isempty(pinned_on)
+            push!(result["skipped"], Dict{String,Any}("version" => v,
+                "reason" => "is _latest on: " * join(pinned_on, ", ")))
+            push!(result["errors"], "$v is _latest on: " * join(pinned_on, ", "))
+            continue
+        end
+        vbytes = 0
+        paths  = String[]
+        for (field, base) in fields
+            entry = get(raw, field, nothing)
+            entry isa AbstractDict || continue
+            inner = get(entry, String(value_name), nothing)
+            is_versioned_entry(inner) || continue
+            fn = version_get(inner, v)
+            isnothing(fn) && continue
+            p = joinpath(base, string(fn))
+            (isdir(p) || isfile(p)) || continue      # ccid pointer without disk → still worth clearing
+            vbytes += _path_bytes(p)
+            push!(paths, p)
+            if apply
+                on_log("[INFO] Removing: $p")
+                rm(p; recursive = true)
+                # Clean the vN parent dir if empty (Q1 layout: `{vn}/vN/` under `base`) — a stray empty
+                # dir would otherwise linger forever, since no writer sweeps it.
+                d = dirname(p)
+                isdir(d) && isempty(readdir(d)) && rm(d)
+            end
+        end
+        result["freedBytes"] += vbytes
+        push!(result["removed"], Dict{String,Any}("version" => v, "bytes" => vbytes, "paths" => paths))
+    end
+
+    # Commit once — re-read inside the lock so a concurrent task's write isn't clobbered. The
+    # nested value_name dict comes back from `read_ccid_raw` as a JSON3.Object (only top-level keys
+    # are normalised), which is immutable — so coerce to a mutable `Dict{String,Any}` before
+    # dropping the pruned `vN` entries and reassign it back.
+    if apply
+        commit_state!(img) do raw2
+            for (field, _) in fields
+                entry = get(raw2, field, nothing)
+                entry isa AbstractDict || continue
+                inner = get(entry, String(value_name), nothing)
+                is_versioned_entry(inner) || continue
+                # `read_ccid_raw` normalises TOP-LEVEL keys only — nested JSON3.Object values are
+                # immutable. Coerce both the field entry AND its inner value_name dict to mutable
+                # `Dict{String,Any}` before deleting, and reassign into `raw2` (which IS a plain
+                # Dict, so `raw2[field] = …` works).
+                mutable_inner = Dict{String,Any}(String(k) => v for (k, v) in inner)
+                for r in result["removed"]
+                    haskey(mutable_inner, r["version"]) && delete!(mutable_inner, r["version"])
+                end
+                mutable_entry = Dict{String,Any}(String(k) => v for (k, v) in entry)
+                mutable_entry[String(value_name)] = mutable_inner
+                raw2[field] = mutable_entry
+            end
+        end
+    end
+    result
+end
+
+"""
     reset_image_analysis!(img; on_log) -> (freed_bytes, dropped::Vector{String})
 
 Drop everything derived from an image while keeping the image itself: `rm -r` every child of
