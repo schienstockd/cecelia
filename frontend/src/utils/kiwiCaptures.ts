@@ -18,7 +18,7 @@ export interface CaptureAddress {
   t?: number | [number, number]
   z?: number
   domAnchor?: string
-  plotSpec?: { specId?: string }
+  plotSpec?: { specId?: string; params?: Record<string, unknown> }
 }
 
 /** One row in the list. */
@@ -31,6 +31,10 @@ export interface CaptureRow {
   // shows a small "↳" glyph on such rows so a user reading the list can tell a refinement from a
   // fresh share. Never used for ordering — the id-encoded timestamp is still the sort key.
   previousCaptureId?: string
+  // Multi-panel plot capture: how many panels were in the composite (server sets this from
+  // `envelope.panels[].length`). Absent for single-plot / viewer / UI captures. Kiwi uses it
+  // to render "N panels" in the address line without fetching the whole envelope.
+  panelCount?: number
 }
 
 /** Response envelope from GET /api/viewer/captures. */
@@ -64,6 +68,7 @@ function parseCapture(raw: unknown): CaptureRow | null {
     ? (r.address as CaptureAddress) : null
   const out: CaptureRow = { captureId, createdAt, surface, address }
   if (typeof r.previousCaptureId === 'string') out.previousCaptureId = r.previousCaptureId
+  if (typeof r.panelCount === 'number' && r.panelCount > 0) out.panelCount = r.panelCount
   return out
 }
 
@@ -75,6 +80,13 @@ export function formatAddress(row: CaptureRow): string {
     return a?.domAnchor ? `ui · ${a.domAnchor}` : 'ui'
   }
   if (row.surface === 'plot') {
+    // Multi-panel plot capture reads more usefully as "3 panels · behaviourAnalysis" than as its
+    // internal specId "multi-panel". Single-plot captures keep the specId label as before.
+    if (row.panelCount && row.panelCount > 1) {
+      const modParam = a?.plotSpec?.params as { module?: string } | undefined
+      const mod = modParam?.module ? ` · ${modParam.module}` : ''
+      return `plot · ${row.panelCount} panels${mod}`
+    }
     return a?.plotSpec?.specId ? `plot · ${a.plotSpec.specId}` : 'plot'
   }
   // viewer_frame / viewer_slab

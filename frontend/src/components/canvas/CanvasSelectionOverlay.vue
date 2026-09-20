@@ -22,7 +22,7 @@
   the same wrapper, so it grows with the workspace (a wider zoom-out doesn't leave a bare corner).
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { PanelGeom } from '../../stores/canvasPanels'
 import type { useCanvasShareSelection } from '../../composables/useCanvasShareSelection'
 import { panelAt, selectedByDrag, type PanelHit } from '../../utils/panelSelectionHit'
@@ -46,11 +46,29 @@ const emit = defineEmits<{
 // hit-tested against the panels. On release we commit the selection to `props.selection`. A
 // single click without significant motion is treated as click-to-toggle rather than a zero-size
 // drag (which would deselect everything).
+//
+// COORD FRAME. Panel geoms come from `useCanvasPanelsStore.geom`, which stores them in the
+// workspace's CSS-px frame (offsetParent = `.sc-zoom`). The SVG is mounted inside `.sc-zoom` at
+// `inset: 0`, so the SVG's OWN CSS-px box coincides with the workspace box. We measure the SVG
+// box on mount + on resize and set `viewBox` to `0 0 boxW boxH` — that is what forces one SVG
+// unit == one CSS px in the workspace frame, so a panel at workspace (200, 380) renders at
+// exactly (200, 380) inside the overlay. An earlier version used the union-of-panels bbox as
+// the viewBox with `preserveAspectRatio="none"`, which stretched the SVG and offset every ring
+// away from its panel — visible as rings a bit up-and-left of the panels on real data.
 const CLICK_MOTION_PX = 4
 const svgRoot = ref<SVGSVGElement | null>(null)
+const boxW = ref(0)
+const boxH = ref(0)
+function measureBox() {
+  const r = svgRoot.value?.getBoundingClientRect()
+  if (!r) return
+  boxW.value = r.width
+  boxH.value = r.height
+}
+onMounted(() => { measureBox(); window.addEventListener('resize', measureBox) })
+onBeforeUnmount(() => window.removeEventListener('resize', measureBox))
 const dragStart = ref<[number, number] | null>(null)
 const dragCur = ref<[number, number] | null>(null)
-const dragging = computed(() => dragStart.value !== null)
 
 function svgPoint(ev: PointerEvent): [number, number] {
   const r = svgRoot.value?.getBoundingClientRect()
@@ -109,20 +127,6 @@ function onKey(ev: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-
-// ── Render helpers ───────────────────────────────────────────────────────────
-// Bounding box of the panels for the SVG viewBox — grow to at least the drag range so a rect
-// dragged past the last panel still renders. Falls back to a 1×1 box for the very first mount.
-const overlayBox = computed(() => {
-  let x1 = 0, y1 = 0
-  for (const p of props.panels) {
-    if (p.geom.x + p.geom.w > x1) x1 = p.geom.x + p.geom.w
-    if (p.geom.y + p.geom.h > y1) y1 = p.geom.y + p.geom.h
-  }
-  const cur = dragCur.value
-  if (cur) { if (cur[0] > x1) x1 = cur[0]; if (cur[1] > y1) y1 = cur[1] }
-  return { w: Math.max(1, x1), h: Math.max(1, y1) }
-})
 </script>
 
 <template>
@@ -130,19 +134,18 @@ const overlayBox = computed(() => {
     <!-- Dim veil — same trick GNOME uses. Fills the workspace; opaque enough (~55 %) that dimmed
          panels obviously de-emphasise but not so dark that the plot outlines vanish. -->
     <svg ref="svgRoot" class="cso-svg"
-         :viewBox="`0 0 ${overlayBox.w} ${overlayBox.h}`" preserveAspectRatio="none"
+         :viewBox="`0 0 ${boxW || 1} ${boxH || 1}`" preserveAspectRatio="none"
          @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp">
       <!-- Full-canvas veil with a HOLE per selected panel — the mask makes selected panels read
-           at their real brightness while everything else dims. `evenodd` fill-rule turns overlapping
-           panel bboxes into a single visible cutout. -->
+           at their real brightness while everything else dims. -->
       <defs>
         <mask :id="'cso-mask'">
-          <rect x="0" y="0" :width="overlayBox.w" :height="overlayBox.h" fill="white" />
+          <rect x="0" y="0" :width="boxW || 1" :height="boxH || 1" fill="white" />
           <rect v-for="p in panels" v-show="selection.has(p.id)" :key="`m${p.id}`"
                 :x="p.geom.x" :y="p.geom.y" :width="p.geom.w" :height="p.geom.h" fill="black" />
         </mask>
       </defs>
-      <rect x="0" y="0" :width="overlayBox.w" :height="overlayBox.h"
+      <rect x="0" y="0" :width="boxW || 1" :height="boxH || 1"
             class="cso-veil" :mask="`url(#cso-mask)`" />
       <!-- Selection ring per selected panel. Drawn OVER the veil so a selected panel gets a strong
            outline even when the veil is thin. -->
@@ -151,7 +154,7 @@ const overlayBox = computed(() => {
               :x="p.geom.x" :y="p.geom.y" :width="p.geom.w" :height="p.geom.h" />
       </template>
       <!-- Live drag rectangle. -->
-      <rect v-if="dragging && dragRect()" class="cso-drag"
+      <rect v-if="dragStart && dragCur && dragRect()" class="cso-drag"
             :x="dragRect()!.x" :y="dragRect()!.y" :width="dragRect()!.w" :height="dragRect()!.h" />
     </svg>
 

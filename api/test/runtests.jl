@@ -1367,7 +1367,9 @@ end
         overlay = [Dict("kind"=>"rect", "geom"=>Dict("x"=>0.1, "y"=>0.1, "w"=>0.2, "h"=>0.2), "color"=>"magenta"),
                    Dict("kind"=>"bogus", "geom"=>Dict()),               # unknown kind — dropped
                    Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.0,0.0],[1.0,1.0]]),
-                        "label"=>"trail", "color"=>"chartreuse")]        # unknown colour — dropped from mark
+                        "label"=>"trail", "color"=>"chartreuse"),        # unknown colour — dropped from mark
+                   Dict("kind"=>"rect", "geom"=>Dict("x"=>0.5, "y"=>0.5, "w"=>0.1, "h"=>0.1),
+                        "color"=>"black")]                                # black — safelisted for white-composite plots
         st, body = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
                           "frames"=>[Dict("png"=>frame_data_url)], "overlay"=>overlay))
         @test st == 200
@@ -1394,14 +1396,17 @@ end
         @test st3 == 200
         got = JSON3.read(body3)
         @test String(got.capture.captureId) == cap_id
-        @test length(got.capture.overlay) == 2                # bogus kind stripped
+        @test length(got.capture.overlay) == 3                # bogus kind stripped; black rect added
         @test startswith(String(got.frame), "data:image/png;base64,")
         # Colour safelist round-trip. Magenta survived on the rect; chartreuse was dropped from the
         # stroke's payload but the stroke itself survived (frontend resolver falls back to `white`).
+        # Black safelisted for canvas-Share white-composite plots.
         @test String(got.capture.overlay[1].kind) == "rect"
         @test String(got.capture.overlay[1].color) == "magenta"
         @test String(got.capture.overlay[2].kind) == "stroke"
         @test !haskey(got.capture.overlay[2], :color)
+        @test String(got.capture.overlay[3].kind) == "rect"
+        @test String(got.capture.overlay[3].color) == "black"
 
         # guards on the read side
         @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture"))[1] == 400
@@ -1444,6 +1449,62 @@ end
         st4, body4 = api_viewer_captures_list(HTTP.Request("GET", "/api/viewer/captures?projectUid=$uid2"))
         @test st4 == 200 && isempty(JSON3.read(body4).items)
 
+        # Multi-panel plot capture: `panels[]` round-trips, malformed entries are dropped, and the
+        # list surfaces `panelCount` so Kiwi doesn't have to open the envelope for a glance row.
+        panels_in = [
+            Dict("panelId"=>"7", "position"=>Dict("x"=>0,   "y"=>0, "w"=>400, "h"=>300),
+                 "plotRef"=>Dict("specId"=>"track_measures", "ui"=>Dict("measure"=>"live.track.speed",
+                                                                          "chartType"=>"boxplot")),
+                 "dataSlice"=>Dict("imageUids"=>["IMG1"], "scope"=>"per_image")),
+            Dict("panelId"=>"9", "position"=>Dict("x"=>400, "y"=>0, "w"=>400, "h"=>300),
+                 "plotRef"=>Dict("specId"=>"track_measures", "ui"=>Dict("measure"=>"live.track.displacement"))),
+            # Malformed: no panelId → dropped. Malformed: non-numeric position → dropped.
+            Dict("position"=>Dict("x"=>0, "y"=>300, "w"=>400, "h"=>300)),
+            Dict("panelId"=>"11", "position"=>Dict("x"=>"nope", "y"=>0, "w"=>400, "h"=>300)),
+        ]
+        st_mp, body_mp = w(Dict("projectUid"=>uid, "surface"=>"plot",
+                                "address"=>Dict("projectUid"=>uid,
+                                                "plotSpec"=>Dict("specId"=>"multi-panel",
+                                                                  "params"=>Dict("module"=>"behaviourAnalysis",
+                                                                                  "panelCount"=>2))),
+                                "panels"=>panels_in,
+                                "frames"=>[Dict("png"=>frame_data_url)]))
+        @test st_mp == 200
+        cap_mp = String(JSON3.read(body_mp).captureId)
+        st_mpr, body_mpr = api_viewer_capture_get(HTTP.Request("GET",
+            "/api/viewer/capture?projectUid=$uid&captureId=$cap_mp"))
+        @test st_mpr == 200
+        got_mp = JSON3.read(body_mpr).capture
+        @test length(got_mp.panels) == 2                              # two malformed entries dropped
+        @test String(got_mp.panels[1].panelId) == "7"
+        @test got_mp.panels[1].position.x == 0
+        @test got_mp.panels[1].position.w == 400
+        @test String(got_mp.panels[1].plotRef.specId) == "track_measures"
+        @test String(got_mp.panels[1].plotRef.ui.measure) == "live.track.speed"
+        @test String(got_mp.panels[2].plotRef.ui.measure) == "live.track.displacement"
+        # panelCount surfaces on the list row, not just in the envelope.
+        st_lmp, body_lmp = api_viewer_captures_list(HTTP.Request("GET",
+            "/api/viewer/captures?projectUid=$uid&limit=10"))
+        items_lmp = JSON3.read(body_lmp).items
+        row_mp = first(i for i in items_lmp if String(i.captureId) == cap_mp)
+        @test row_mp.panelCount == 2
+
+        # A single-plot capture with no `panels[]` field stays clean — no key added, no glitch.
+        st_sp, body_sp = w(Dict("projectUid"=>uid, "surface"=>"plot",
+                                "address"=>Dict("projectUid"=>uid,
+                                                "plotSpec"=>Dict("specId"=>"track_measures")),
+                                "frames"=>[Dict("png"=>frame_data_url)]))
+        @test st_sp == 200
+        cap_sp = String(JSON3.read(body_sp).captureId)
+        st_spr, body_spr = api_viewer_capture_get(HTTP.Request("GET",
+            "/api/viewer/capture?projectUid=$uid&captureId=$cap_sp"))
+        @test !haskey(JSON3.read(body_spr).capture, :panels)
+        # And the list row DOESN'T sprout panelCount for a single-plot capture.
+        st_lsp, body_lsp = api_viewer_captures_list(HTTP.Request("GET",
+            "/api/viewer/captures?projectUid=$uid&limit=10"))
+        row_sp = first(i for i in JSON3.read(body_lsp).items if String(i.captureId) == cap_sp)
+        @test !haskey(row_sp, :panelCount)
+
         # Kiwi capture management — user-driven delete + bulk clear (post-PR #3 follow-up).
         # Delete: round-trip via the handler; idempotent on a second call. Guarded regex/paths.
         del_body(id) = Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid, "captureId"=>id)))
@@ -1462,7 +1523,8 @@ end
         @test api_viewer_capture_delete(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid, "captureId"=>"../../etc/passwd"))))[1] == 400
 
         # Bulk clear — write a couple more captures, then clear all. Count includes the two
-        # re-annotate captures written above (cap_id2, cap_id3) which weren't individually deleted.
+        # re-annotate captures written above (cap_id2, cap_id3) which weren't individually deleted,
+        # plus the two multi-panel probes written for the panels[] round-trip (cap_mp, cap_sp).
         addr2 = Dict("projectUid"=>uid, "imageUid"=>"IMG2", "t"=>0)
         for _ in 1:3
             w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr2,
@@ -1470,7 +1532,7 @@ end
         end
         st_c, r_c = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c == 200
-        @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 5
+        @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 7
         st_c2, r_c2 = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c2 == 200
         @test JSON3.read(r_c2, Dict{String,Any})["cleared"] == 0

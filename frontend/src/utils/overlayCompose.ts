@@ -26,16 +26,22 @@
 import type { OverlayColor, OverlayMark } from './captureAddress'
 import { loadImg } from '../plots/export'
 
-/** The four palette values, keyed by the name that goes on `OverlayMark.color`. */
+/** The five palette values, keyed by the name that goes on `OverlayMark.color`. `black` earns
+ *  its slot because the canvas Share flow renders selected plots on a white background — the
+ *  original four (magenta / cyan / yellow / white) either disappear on that ground or read too
+ *  faintly to serve as an annotation. `black` is also CVD-safe (pure luminance, no hue), which
+ *  is why it slots into the same palette rather than sitting off to the side. */
 export const ANNOTATION_PALETTE: Record<OverlayColor, string> = {
   magenta: '#ff2fb0',
   cyan:    '#00e5ff',
   yellow:  '#ffd800',
   white:   '#ffffff',
+  black:   '#000000',
 }
 
 /** The default palette name — applied to any mark that arrived without one, either because it was
- *  drawn before this field existed or because the payload was tampered with. */
+ *  drawn before this field existed or because the payload was tampered with. Stays `white` for
+ *  backward compatibility with the viewer captures written before this field existed. */
 export const DEFAULT_ANNOTATION_COLOR: OverlayColor = 'white'
 
 /** Resolve a mark's colour name to a CSS hex. Unknown / absent names fall back to the default so a
@@ -45,8 +51,10 @@ export function resolveMarkColor(mark: OverlayMark): string {
   return (c && ANNOTATION_PALETTE[c]) || ANNOTATION_PALETTE[DEFAULT_ANNOTATION_COLOR]
 }
 
-/** Iterate over the four palette entries in a stable order — used by the DrawSurface swatch. */
-export const ANNOTATION_COLOR_ORDER: readonly OverlayColor[] = ['magenta', 'cyan', 'yellow', 'white']
+/** Iterate over the palette entries in a stable order — used by the DrawSurface swatch. Black
+ *  sits at the end so the four microscopy-neutral options stay in their historic positions and
+ *  the new one reads as an addition, not a re-ordering. */
+export const ANNOTATION_COLOR_ORDER: readonly OverlayColor[] = ['magenta', 'cyan', 'yellow', 'white', 'black']
 
 // ── Compositing ─────────────────────────────────────────────────────────────────────────────────
 // The frame canvas is the WebGPU viewer surface at its rendered pixel size; marks are stored in

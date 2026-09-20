@@ -26,10 +26,9 @@ import {
   paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow, type Paintable,
 } from '../utils/freeformRender'
 import type { OverlayMark, CaptureAddress } from '../utils/captureAddress'
-import { ANNOTATION_PALETTE, DEFAULT_ANNOTATION_COLOR,
-         composeImageWithOverlay } from '../utils/overlayCompose'
+import { ANNOTATION_PALETTE, DEFAULT_ANNOTATION_COLOR } from '../utils/overlayCompose'
 import type { OverlayColor } from '../utils/captureAddress'
-import DrawSurface from './DrawSurface.vue'
+import FrameAnnotator from './FrameAnnotator.vue'
 
 // User-mark stroke — resolve the palette name to a hex, defaulting to white for older captures
 // that didn't carry a colour field. Claude marks keep their fixed amber (`--cc-warn`) for now;
@@ -67,7 +66,6 @@ const emit = defineEmits<{
 const viewer = useViewerStore()
 
 const wrap = ref<HTMLElement | null>(null)
-const frameImg = ref<HTMLImageElement | null>(null)
 const boxW = ref(0)
 const boxH = ref(0)
 function measureBox() {
@@ -90,12 +88,13 @@ const reannotateBusy = ref(false)
 function beginReannotate() { reannotating.value = true }
 function cancelReannotate() { reannotating.value = false }
 
-async function onReannotateSave(payload: { overlay: OverlayMark[] }) {
-  const img = frameImg.value
-  if (!img || !props.projectUid) { reannotating.value = false; return }
+async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: string }) {
+  if (!props.projectUid) { reannotating.value = false; return }
   reannotateBusy.value = true
   try {
-    const composited = composeImageWithOverlay(img, payload.overlay) ?? props.frameDataUrl
+    // FrameAnnotator hands us the composed PNG (marks baked in). Empty ⇒ compose failed or the
+    // user saved with no new marks; fall back to the bare frame so the POST still succeeds.
+    const composited = payload.composedPng || props.frameDataUrl
     // The vector overlay records BOTH the original marks and the new ones (colour info preserved)
     // so a further re-annotate can render them without re-fetching, and Claude can read the whole
     // conversation of shapes if it prefers vector to pixels.
@@ -177,7 +176,7 @@ function dismissAllClaudeMarks() {
          own aspect on any wrap size. `crossorigin=anonymous` isn't needed (data URL, same origin
          by definition) but the ref is — re-annotate composites over THIS <img> so a fresh Image
          load isn't needed on Save. -->
-    <img ref="frameImg" :src="frameDataUrl" class="cvs-frame" alt="Shared frame" @load="measureBox" />
+    <img :src="frameDataUrl" class="cvs-frame" alt="Shared frame" @load="measureBox" />
 
     <!-- SVG in the wrap's OWN CSS-px frame. Both overlay groups run through the same paintables
          helper so the shapes read identically. -->
@@ -247,13 +246,13 @@ function dismissAllClaudeMarks() {
       </button>
     </div>
 
-    <!-- Re-annotate mode: DrawSurface mounted over the frozen frame. When the user saves, the
-         parent's `onReannotateSave` composites the new marks over the current frame image and
-         POSTs a new capture that references this one via `previousCaptureId`. Cancel just dismisses
-         the surface and drops back to the read-only chip above. `addressLine` is threaded through
-         so the DrawSurface toolbar carries the same orientation label as the chip. -->
-    <DrawSurface v-else :visible="true" :address-line="addressLine" :busy="reannotateBusy"
-                 @save="onReannotateSave" @cancel="cancelReannotate" />
+    <!-- Re-annotate mode: FrameAnnotator (shared with canvas Share) mounts the frozen frame +
+         DrawSurface, hands back the composed PNG on save. `onReannotateSave` POSTs a new capture
+         referencing this one via `previousCaptureId`. Cancel dismisses back to the read-only chip
+         above. -->
+    <FrameAnnotator v-else :frame-data-url="frameDataUrl" :address-line="addressLine"
+                    :busy="reannotateBusy"
+                    @save="onReannotateSave" @cancel="cancelReannotate" />
   </div>
 </template>
 

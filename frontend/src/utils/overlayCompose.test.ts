@@ -8,8 +8,12 @@ const M = (over: Partial<OverlayMark>): OverlayMark => ({
 })
 
 describe('ANNOTATION_PALETTE', () => {
-  it('names the four CVD-safe palette values', () => {
-    expect(Object.keys(ANNOTATION_PALETTE).sort()).toEqual(['cyan', 'magenta', 'white', 'yellow'])
+  it('names the five CVD-safe palette values', () => {
+    expect(Object.keys(ANNOTATION_PALETTE).sort())
+      .toEqual(['black', 'cyan', 'magenta', 'white', 'yellow'])
+  })
+  it('black is exactly #000000 — the white-composite plot ink must not have a tint', () => {
+    expect(ANNOTATION_PALETTE.black).toBe('#000000')
   })
   it('every palette value is a 7-char hex', () => {
     for (const v of Object.values(ANNOTATION_PALETTE)) {

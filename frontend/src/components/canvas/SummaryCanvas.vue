@@ -36,12 +36,14 @@ import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
 import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
+import FrameAnnotator from '../FrameAnnotator.vue'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useCanvasPanelExportsStore } from '../../stores/canvasPanelExports'
 import { useCanvasShareSelection } from '../../composables/useCanvasShareSelection'
 import { useCanvasShareHost } from '../../stores/shareTarget'
 import type { PanelHit } from '../../utils/panelSelectionHit'
 import { composePanelGrid, type PanelTile } from '../../utils/overlayCompose'
+import type { OverlayMark } from '../../utils/captureAddress'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
@@ -231,20 +233,33 @@ const sharePanelHits = computed<PanelHit[]>(() => {
   return out
 })
 function onShareCancel() { shareSel.end() }
+// Aliased read so the share serialiser doesn't shadow the reactive `panels` ref later in the block
+// (a `const panels = …` inside `onShareConfirm` is what carries the on-wire array).
+const panelsSnapshot = panels
 
-// Compose the selected panels' PNGs into one composite and POST to /api/viewer/capture as
-// surface:'plot'. The envelope only uses fields the server already understands (no new panels[]
-// field yet — that comes in a follow-up along with a per-panel structured payload). The
-// composite alone is enough for the "hey, on plot A B/T look different" conversation shape.
+// Two-phase Share flow (mirrors what the viewer does — see ViewerWindow → CaptureViewSurface):
+//   Phase 1: SELECT — CanvasSelectionOverlay picks which panels.
+//   Phase 2: ANNOTATE — FrameAnnotator (the shared surface CaptureViewSurface's re-annotate
+//            path also uses) frozes the composited multi-panel PNG and mounts DrawSurface on
+//            top so the user can draw / label before Save. Save is what POSTs — earlier draft
+//            POSTed immediately on Selection confirm, skipping the annotation loop the user
+//            already knows from the viewer.
+// The composite + `panels[]` envelope shape land unchanged from earlier; only the trigger
+// point (annotator's Save, not selection's Share button) moved.
 const exportStore = useCanvasPanelExportsStore()
 const shareBusy = ref(false)
+// Held between Phase 1 and Phase 2. `composite` is the frozen PNG data URL FrameAnnotator draws
+// on; `panels` is the structured envelope for the POST. Cleared on cancel or a completed POST.
+interface PendingShare { composite: string; panels: Array<Record<string, unknown>> }
+const pendingShare = ref<PendingShare | null>(null)
+
 async function onShareConfirm(payload: { panelIds: number[] }) {
   if (!projectUid.value || shareBusy.value) return
   shareBusy.value = true
   try {
     // Gather tiles for the selected panels: PNG (via each panel's registered exporter) + its
-    // workspace-relative geom. A panel that failed to register or failed to export still gets a
-    // labelled empty box in the composite rather than dropping the whole share.
+    // workspace-relative geom. A panel that failed to register or failed to export still gets an
+    // empty box in the composite rather than dropping the whole share.
     const selected = sharePanelHits.value.filter(p => payload.panelIds.includes(p.id))
     const tiles: PanelTile[] = await Promise.all(selected.map(async p => {
       const exporter = exportStore.get(`${ckey.value}:${p.id}`)
@@ -253,22 +268,70 @@ async function onShareConfirm(payload: { panelIds: number[] }) {
     }))
     const composite = await composePanelGrid(tiles)
     if (!composite) { shareBusy.value = false; shareSel.end(); return }
+    // Composite-relative origin: subtract the union bbox origin so each panel's `position` in the
+    // envelope matches where it sits in the shared PNG (not the on-screen workspace).
+    let x0 = Infinity, y0 = Infinity
+    for (const p of selected) {
+      if (p.geom.x < x0) x0 = p.geom.x
+      if (p.geom.y < y0) y0 = p.geom.y
+    }
+    if (!Number.isFinite(x0)) { x0 = 0; y0 = 0 }
+    // panels[] — per-panel structure Claude reads to say "the top-left panel is speed for pops B/T."
+    const panels = selected.map(p => {
+      const panel = panelsSnapshot.value.find(pp => pp.id === p.id)
+      const st = panel?.state as (PanelState | undefined)
+      const specId = st?.kind ? String(st.kind) : (st?.specId ?? '')
+      const plotRef: Record<string, unknown> = { specId }
+      if (st) plotRef.ui = { ...st, sel: undefined, vis: undefined }
+      return {
+        panelId: String(p.id),
+        position: { x: p.geom.x - x0, y: p.geom.y - y0, w: p.geom.w, h: p.geom.h },
+        plotRef,
+        dataSlice: {
+          imageUids: panelImageUids.value,
+          setUid: panelSetUid.value ?? null,
+          scope: panelScope.value,
+          series: st ? panelSeries(p.id, st) : [],
+        },
+      }
+    })
+    // Phase 1 done — flip to Phase 2 (annotator). The selection overlay unmounts once shareSel
+    // exits share mode; FrameAnnotator takes over the canvas box.
+    pendingShare.value = { composite, panels }
+    shareSel.end()
+  } finally {
+    shareBusy.value = false
+  }
+}
+
+function onAnnotateCancel() { pendingShare.value = null }
+
+async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: string }) {
+  const pending = pendingShare.value
+  if (!pending || !projectUid.value || shareBusy.value) return
+  shareBusy.value = true
+  try {
+    // FrameAnnotator hands us a composed PNG (marks baked in). Empty ⇒ no marks drawn / compose
+    // failed; ship the bare composite so the POST still succeeds either way.
+    const png = payload.composedPng || pending.composite
     const address = {
       projectUid: projectUid.value,
       plotSpec: { specId: 'multi-panel', params: { module: props.module ?? 'universal',
-        panelCount: tiles.length } },
+        panelCount: pending.panels.length } },
     }
     await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: projectUid.value, surface: 'plot',
-        address, frames: [{ png: composite }],
+        address, panels: pending.panels,
+        frames: [{ png }],
+        overlay: payload.overlay,
       }),
     })
-    // Backend broadcasts `captures:changed`; Kiwi's recent-captures list refreshes on its own.
+    // Backend broadcasts `captures:changed`; Kiwi's Recent-captures list refreshes on its own.
   } finally {
     shareBusy.value = false
-    shareSel.end()
+    pendingShare.value = null
   }
 }
 // Close all must drop the readouts too — they are keyed by panel id, and a stale entry would be
@@ -433,6 +496,14 @@ watch(segPops, () => {
                                 :selection="shareSel"
                                 :address-line="`${module ?? 'universal'} · plot canvas`"
                                 @cancel="onShareCancel" @share="onShareConfirm" />
+        <!-- Annotate mode (Phase 2): frozen composite + DrawSurface tools + palette + labels,
+             using the SAME FrameAnnotator the viewer's re-annotate flow does. Save fires the
+             POST; Cancel drops the composite and leaves the canvas as it was. -->
+        <FrameAnnotator v-if="pendingShare"
+                        :frame-data-url="pendingShare.composite"
+                        :address-line="`${module ?? 'universal'} · ${pendingShare.panels.length} panels`"
+                        :busy="shareBusy"
+                        @save="onAnnotateSave" @cancel="onAnnotateCancel" />
         </div>
         </div>
         <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
