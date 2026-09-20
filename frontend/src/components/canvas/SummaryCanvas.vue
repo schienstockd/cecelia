@@ -48,6 +48,7 @@ import { composePanelGrid, type PanelTile } from '../../utils/overlayCompose'
 import type { OverlayMark, CaptureAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import { restorePanelsFromCapture, type CapturedPanel } from '../../utils/restorePanels'
+import { announceShareOutcome, shareFailMessage, type ShareOutcome } from '../../utils/shareOutcome'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
@@ -266,6 +267,22 @@ interface PendingShare { composite: string; panels: Array<Record<string, unknown
                          workspaceOrigin: { x: number; y: number } }
 const pendingShare = ref<PendingShare | null>(null)
 
+// Post-Save toast — same role as ViewerWindow.showShareToast: FrameAnnotator dismisses on Save,
+// taking the "paste to Claude" hint with it, so surface the outcome inside the plot canvas for a
+// few seconds. Content built by `announceShareOutcome` so viewer + plot say the same thing on the
+// same push branch. Auto-dismisses after ~7s to match the viewer's timing.
+const shareToast = ref<ShareOutcome | null>(null)
+let shareToastTimer: number | null = null
+function showShareToast(kind: 'ok' | 'fail', message: string, ms = 7000) {
+  shareToast.value = { kind, message }
+  if (shareToastTimer) clearTimeout(shareToastTimer)
+  shareToastTimer = window.setTimeout(() => { shareToast.value = null; shareToastTimer = null }, ms)
+}
+function dismissShareToast() {
+  shareToast.value = null
+  if (shareToastTimer) { clearTimeout(shareToastTimer); shareToastTimer = null }
+}
+
 async function onShareConfirm(payload: { panelIds: number[] }) {
   if (!projectUid.value || shareBusy.value) return
   shareBusy.value = true
@@ -367,6 +384,12 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
     }
     const captureId = String(respJson?.captureId ?? '')
     if (!captureId) throw new Error('capture POST returned no captureId')
+    // Same `push` field the viewer branch reads (BIDIR PR #2): `'sent'` ⇒ Julia landed the notice on
+    // the paired Claude session's inbox socket; anything else ⇒ clipboard fallback. Before this the
+    // plot Save was silent on both branches — a paired push landed unannounced, and an unpaired
+    // Save signalled nothing to Claude at all. The shared helper builds the same message set the
+    // viewer uses so the two surfaces stay in lockstep.
+    const pushOutcome = String(respJson?.push ?? 'not_paired')
     reshown.value = {
       captureId,
       surface: 'plot',
@@ -379,14 +402,30 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
       workspaceOrigin: pending.workspaceOrigin,
       frame: png,
     }
+    // Transition the UI NOW — annotator down, CVS up — before we announce the outcome. The
+    // outcome path awaits `copyText` (Clipboard API), and a stalled clipboard call would
+    // otherwise leave the annotator visible with the POST already landed. Clearing here rather
+    // than in `finally` decouples the visible transition from any async that follows.
+    pendingShare.value = null
+    shareBusy.value = false
+    // Fire-and-forget announcement — a hung clipboard (or a slow user-gesture context) does not
+    // block the UI. Errors get logged; a fail toast surfaces the reason. `void` marks the
+    // deliberate un-awaited promise for the ESLint rule.
+    void announceShareOutcome(pushOutcome, payload.notes)
+      .then(outcome => { showShareToast(outcome.kind, outcome.message) })
+      .catch(e => {
+        // eslint-disable-next-line no-console
+        console.warn('[share-in] plot capture outcome-announce failed', e)
+        showShareToast('fail', shareFailMessage(e))
+      })
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[share-in] plot capture POST failed', e)
-  } finally {
-    // Always drop the annotator — a hang or failure otherwise leaves the user stuck with a
-    // greyed-out Save (busy) and no way to Cancel out (also greyed on some paths).
-    shareBusy.value = false
+    showShareToast('fail', shareFailMessage(e))
+    // On the failure path the UI must also drop — the try above did not reach the transition
+    // block. Mirrors the pre-fix `finally` semantics.
     pendingShare.value = null
+    shareBusy.value = false
   }
 }
 
@@ -654,6 +693,20 @@ watch(segPops, () => {
                             @zoom-to-source="onReshowZoomToSource" />
         </div>
         </div>
+        <!-- Post-Save toast: FrameAnnotator dismisses on Save, taking the "paste to Claude" hint
+             with it, so surface the outcome inside the plot canvas for a few seconds — same role
+             ViewerWindow's `.vw-share-chip` plays for viewer captures. Anchored to `.sc-canvas`
+             (position:relative) rather than `.sc-zoom` so the CSS transform on the workspace can't
+             scale the chip along with the panels. -->
+        <div v-if="shareToast" class="sc-share-chip"
+             :class="{ 'sc-share-chip-error': shareToast.kind === 'fail' }">
+          <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
+                      'sc-share-chip-icon']" />
+          <span>{{ shareToast.message }}</span>
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro sc-share-chip-dismiss"
+                  @click="dismissShareToast" v-tooltip.top="'Dismiss'"
+                  aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
+        </div>
         <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
                       :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                       @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
@@ -686,4 +739,19 @@ watch(segPops, () => {
    grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
 .sc-scroll { position: absolute; inset: 0; overflow: auto; }
 .sc-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
+/* Post-Save share toast — same visual family as ViewerWindow's `.vw-status-chip` so the outcome
+   looks the same on both surfaces. Sits above CaptureViewSurface (z:40) at z:50 so a user reads
+   the "prompt on your clipboard" line whether or not the frozen frame is up. `pointer-events:auto`
+   on the whole chip because the dismiss button needs to be clickable. */
+.sc-share-chip {
+  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
+  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
+  background: rgba(0, 0, 0, 0.78); color: #fff;
+  font-size: var(--cc-fs-xs); pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+}
+.sc-share-chip-error { color: var(--cc-sev-fail); }
+.sc-share-chip-icon { font-size: 1em; }
+.sc-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
+.sc-share-chip-dismiss:hover { opacity: 1; }
 </style>
