@@ -14,8 +14,10 @@ import ViewProfileEditor from '../components/ViewProfileEditor.vue'
 import ChipSelect from '../components/ChipSelect.vue'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
          fetchStoreLayout, setStoreLayout, fetchKeepPrevVersion, setKeepPrevVersion,
+         fetchVersionsInventory, pruneVersions, inventoryHasPrunable,
          type StorageSummary, type CompressorSettings, type StoreLayoutSettings,
-         type KeepPrevVersionSettings } from '../utils/storage'
+         type KeepPrevVersionSettings, type VersionsInventory,
+         type PruneSummary } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
@@ -120,7 +122,13 @@ async function scanStorage() {
   const uid = projectMeta.current?.uid
   if (!uid) return
   storageScan.value = true; storageError.value = ''
-  try { storage.value = await fetchStorageSummary(uid) }
+  // P5: fetch the vN inventory in parallel with the storage summary — one Scan click covers both,
+  // and the Versions section renders inline. See docs/todo/VN_VERSIONING_PLAN.md → P5.
+  try {
+    const [sum, inv] = await Promise.all([fetchStorageSummary(uid), fetchVersionsInventory(uid)])
+    storage.value = sum
+    versionsInventory.value = inv
+  }
   catch (e: any) { storageError.value = e?.message ?? 'Scan failed' }
   finally { storageScan.value = false }
 }
@@ -136,6 +144,50 @@ async function reclaimAll() {
     storageError.value = e?.message ?? 'Reclaim failed'
   } finally {
     storageBusy.value = false
+  }
+}
+
+// ── P5 — VN prune surface (docs/todo/VN_VERSIONING_PLAN.md → P5) ────────────────
+// Dry-run first mirrors the maintenance-patch precedent (apply:false / apply:true). Per row, the
+// ConfirmButton's first click runs `apply=false` (populates `pruneDry` for that row so the armed
+// state can name what would be freed), and the second click runs `apply=true`.
+const versionsInventory = ref<VersionsInventory | null>(null)
+const pruneBusy = ref<string>('')                          // row key currently in flight
+const pruneDry  = ref<Record<string, PruneSummary>>({})    // row key → dry-run summary
+const pruneErr  = ref<Record<string, string>>({})
+const versionsHavePrunable = computed(() => inventoryHasPrunable(versionsInventory.value))
+const pruneKey = (imageUid: string, valueName: string, version: string) =>
+  `${imageUid}|${valueName}|${version}`
+
+async function pruneDryRun(imageUid: string, valueName: string, version: string) {
+  const uid = projectMeta.current?.uid
+  if (!uid) return
+  const key = pruneKey(imageUid, valueName, version)
+  pruneBusy.value = key; pruneErr.value = { ...pruneErr.value, [key]: '' }
+  try {
+    const s = await pruneVersions({ projectUid: uid, imageUid, valueName, versions: [version], apply: false })
+    pruneDry.value = { ...pruneDry.value, [key]: s }
+  } catch (e: any) {
+    pruneErr.value = { ...pruneErr.value, [key]: e?.message ?? 'Dry-run failed' }
+  } finally {
+    pruneBusy.value = ''
+  }
+}
+async function pruneConfirm(imageUid: string, valueName: string, version: string) {
+  const uid = projectMeta.current?.uid
+  if (!uid) return
+  const key = pruneKey(imageUid, valueName, version)
+  pruneBusy.value = key; pruneErr.value = { ...pruneErr.value, [key]: '' }
+  try {
+    await pruneVersions({ projectUid: uid, imageUid, valueName, versions: [version], apply: true })
+    // clear the dry-run so a new arm-cycle starts fresh; re-scan so the row disappears (or the
+    // sizes update if there are still older versions on this vn).
+    const { [key]: _drop, ...rest } = pruneDry.value; pruneDry.value = rest
+    await scanStorage()
+  } catch (e: any) {
+    pruneErr.value = { ...pruneErr.value, [key]: e?.message ?? 'Prune failed' }
+  } finally {
+    pruneBusy.value = ''
   }
 }
 
@@ -909,6 +961,49 @@ async function switchWt(path: string) {
           </ConfirmButton>
         </div>
         <span v-else class="field-hint cc-muted cc-fs-xs">Nothing to reclaim — every image has only its active version.</span>
+      </template>
+
+      <!-- P5 — VN inner-version prune (docs/todo/VN_VERSIONING_PLAN.md → P5). Same Scan click
+           populates the inventory; per-row Prune uses the maintenance-patch dry-run precedent
+           (first arm = apply:false dry-run summary; second arm = apply:true). Hidden when nothing
+           is prunable — every image on _latest across every value_name. -->
+      <template v-if="versionsInventory && versionsHavePrunable">
+        <h3 class="cc-eyebrow subsection-title" style="margin-top:1.25rem">Versions</h3>
+        <ul class="reclaim-list">
+          <template v-for="img in versionsInventory.images" :key="img.imageUid">
+            <template v-for="vn in img.valueNames" :key="`${img.imageUid}:${vn.valueName}`">
+              <li v-for="v in vn.versions.filter(x => !x.isLatest && !x.legacy)"
+                  :key="`${img.imageUid}:${vn.valueName}:${v.version}`" class="stor-row">
+                <span class="stor-name">{{ img.name }}</span>
+                <span class="field-hint cc-muted cc-fs-xs">{{ vn.valueName }} · {{ v.version }}</span>
+                <span class="stor-size">{{ formatBytes(v.bytes) }}</span>
+                <ConfirmButton
+                    @confirm="pruneConfirm(img.imageUid, vn.valueName, v.version)"
+                    v-slot="{ armed, arm, confirm, cancel }">
+                  <button v-if="!armed" class="save-btn ghost"
+                          :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
+                          @click="pruneDryRun(img.imageUid, vn.valueName, v.version); arm()"
+                          v-tooltip.left="`Preview freeing ${v.version} — irreversible when confirmed`">
+                    <i :class="['pi', pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version) ? 'pi-spin pi-spinner' : 'pi-trash']" /> Prune
+                  </button>
+                  <template v-else>
+                    <button class="save-btn danger"
+                            :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
+                            @click="confirm">
+                      <i class="pi pi-trash" />
+                      Free {{ formatBytes(pruneDry[pruneKey(img.imageUid, vn.valueName, v.version)]?.freedBytes ?? v.bytes) }}
+                    </button>
+                    <button class="save-btn ghost" @click="cancel">Cancel</button>
+                  </template>
+                </ConfirmButton>
+                <span v-if="pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)]"
+                      class="field-hint cc-muted cc-fs-xs" style="color:var(--cc-warn)">
+                  {{ pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)] }}
+                </span>
+              </li>
+            </template>
+          </template>
+        </ul>
       </template>
     </section>
 

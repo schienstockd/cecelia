@@ -4090,6 +4090,37 @@ end
     @test st == 400
 end
 
+# ── VN P5 — /api/versions/inventory + /api/versions/prune ─────────────────────
+# Full plan: docs/todo/VN_VERSIONING_PLAN.md → P5. The route surface is validated at the routing
+# level here (guards); the per-image behaviour is unit-tested in the pkg suite where the helpers
+# live (`app/test/suite/image_model.jl` → "VN P5 — inner_versions_of + prune_inner_versions!").
+@testset "API: /api/versions/inventory + /api/versions/prune (VN P5)" begin
+    # inventory requires projectUid; a stale project → 500 (load_project throws)
+    st, body = api_versions_inventory(HTTP.Request("GET", "/api/versions/inventory"))
+    @test st == 400 && haskey(JSON3.read(body), :error)
+
+    # prune requires projectUid, imageUid, valueName, non-empty versions[] — every gate rejects
+    # before touching disk (a mis-shaped request must never proceed to the destructive path).
+    st, _ = _post(api_versions_prune, Dict("projectUid" => ""))
+    @test st == 400
+    st, _ = _post(api_versions_prune, Dict("projectUid" => "p"))
+    @test st == 400
+    st, _ = _post(api_versions_prune, Dict("projectUid" => "p", "imageUid" => "i"))
+    @test st == 400
+    st, _ = _post(api_versions_prune,
+        Dict("projectUid" => "p", "imageUid" => "i", "valueName" => "default"))
+    @test st == 400
+    st, _ = _post(api_versions_prune,
+        Dict("projectUid" => "p", "imageUid" => "i", "valueName" => "default",
+             "versions" => String[]))
+    @test st == 400
+    # A well-formed request against a non-existent project → 404 (checked BEFORE any file op)
+    st, _ = _post(api_versions_prune,
+        Dict("projectUid" => "does-not-exist", "imageUid" => "i", "valueName" => "default",
+             "versions" => ["v1"]))
+    @test st == 404
+end
+
 @testset "API: fs browser" begin
     tmp = mktempdir()
     mkdir(joinpath(tmp, "sub"))
@@ -5483,6 +5514,7 @@ end
         "/api/storage/compressor", "/api/storage/layout", "/api/storage/keep-previous-version",
         "/api/storage/summary",
         "/api/versions",   # VN P3 chain-designer picker — union of vN across images
+        "/api/versions/inventory",   # VN P5 prune surface — per-project inner-version listing
 
         "/api/profiles",
         "/api/tasks", "/api/tasks/custom-modules",
@@ -5555,6 +5587,7 @@ end
         "/api/config/tls/set",
         "/api/storage/compressor/set", "/api/storage/layout/set",
         "/api/storage/keep-previous-version/set", "/api/storage/reclaim",
+        "/api/versions/prune",   # VN P5 prune surface — dry-run first, then destructive
         "/api/profiles/save", "/api/profiles/delete",
         "/api/tasks/custom-modules/reload", "/api/tasks/validate",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
@@ -5614,7 +5647,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 99 && length(POST_ROUTES) == 130
+    @test length(GET_ROUTES) == 100 && length(POST_ROUTES) == 131
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
