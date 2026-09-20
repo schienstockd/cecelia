@@ -129,7 +129,8 @@ export async function clearAllCaptures(
 /** Full capture envelope + PNG data URL, as returned by `GET /api/viewer/capture`. Used by
  *  Kiwi's Refocus + the Blackboard page's attachment thumbnails to get the address (for the
  *  seek payload) AND the drawn marks (for restoring the annotation overlay onto the live
- *  viewer). Failure ⇒ null so the caller can silently degrade. */
+ *  viewer and for compositing marks into attachment thumbnails). Failure ⇒ null so the caller
+ *  can silently degrade. */
 export interface CaptureEnvelope {
   captureId: string
   surface: CaptureSurface
