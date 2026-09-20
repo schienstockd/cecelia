@@ -195,6 +195,20 @@ function _build_capture_envelope(body::AbstractDict, id::String, ts::String,
     # "N panels total but I only know the shape of some" from the surviving entries.
     panels = _clean_panels(get(body, :panels, nothing))
     isempty(panels) || (envelope["panels"] = panels)
+    # Workspace origin: `{x, y}` in workspace CSS px. When a "zoom to source" restores the panels
+    # underneath a capture, positions get shifted back by this so they land at the SAME workspace
+    # pixels the user was looking at when they shared. Absent = restore falls back to composite
+    # coordinates (a tight cluster near the top-left) — the pre-workspaceOrigin capture shape.
+    wo_v = get(body, :workspaceOrigin, nothing)
+    if wo_v isa AbstractDict
+        xf(k) = let v = get(wo_v, Symbol(k), get(wo_v, k, nothing))
+            v isa Real ? Float64(v) : nothing
+        end
+        xw, yw = xf("x"), xf("y")
+        if xw !== nothing && yw !== nothing
+            envelope["workspaceOrigin"] = Dict{String,Any}("x"=>xw, "y"=>yw)
+        end
+    end
     # Re-annotation lineage (Kiwi PR B): a capture created by drawing MORE marks on top of a
     # frozen frame carries the previous capture's id so the two can be linked in the Kiwi list
     # ("this refines cap-…"). Additive; validated only for shape (a real capture id string). An

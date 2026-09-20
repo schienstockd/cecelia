@@ -6,14 +6,11 @@
 // its own `CanvasEntry.panels[]` and `geom[]`, so restoring is a straight translation — no fresh
 // server calls, no re-derivation.
 //
-// The `position` in the envelope is **composite-relative** (top-left of the composite = 0,0). The
-// canvas store's geoms are in the WORKSPACE frame (top-left of the canvas = 0,0). For the first
-// slice we treat these as equivalent — the composite bounding box was originally lifted from the
-// workspace positions minus their min-corner, so restoring at composite-relative positions gives
-// a layout that's PLACED at the workspace's top-left rather than at the original workspace spot.
-// The user gets their panels back in a tight cluster; they can drag them into place. A stricter
-// "restore to the exact workspace pixels" would require snapshotting the workspace origin too,
-// which the envelope doesn't currently carry — an additive follow-up if the feel is off.
+// The `position` in the envelope is **composite-relative** (top-left of the composite = 0,0). To
+// restore at the SAME workspace pixels the user shared from, add back the capture's
+// `workspaceOrigin` (the min-corner of the union bbox in workspace CSS px at share time). A
+// legacy capture without `workspaceOrigin` restores at composite-relative coords — panels land
+// clustered near the top-left, and the user drags from there.
 
 import type { PanelGeom } from '../stores/canvasPanels'
 import type { CanvasItem } from '../composables/useCanvasPanels'
@@ -30,7 +27,9 @@ export interface CapturedPanel {
 /** Restore a canvas's persistence entry from a capture's `panels[]`.
  *  - `store` is the `useCanvasPanelsStore` instance (has `ensure` + `setGeom`).
  *  - `key` is the canvas key (`summary:behaviourAnalysis:none`) — the entry gets overwritten.
- *  - `panels` is the envelope's own panels array.
+ *  - `panels` is the envelope's own panels array (composite-relative positions).
+ *  - `workspaceOrigin` is the offset to add back so panels land at their original workspace
+ *    pixels. Null / absent = restore at composite coords.
  *  Overwrites in place: no attempt to merge with a live layout, because the intent of "Zoom to
  *  source" is precisely "show me THIS shared configuration." */
 export function restorePanelsFromCapture<S>(
@@ -43,7 +42,10 @@ export function restorePanelsFromCapture<S>(
   key: string,
   panels: CapturedPanel[],
   buildState: (p: CapturedPanel) => S,
+  workspaceOrigin: { x: number; y: number } | null = null,
 ): number {
+  const ox = workspaceOrigin?.x ?? 0
+  const oy = workspaceOrigin?.y ?? 0
   const entry = store.ensure(key)
   // Drop any existing geoms under this key — a stale one would drag the restored panel back to
   // wherever it used to sit (the store's `getGeom` win over the mount-time position).
@@ -55,8 +57,8 @@ export function restorePanelsFromCapture<S>(
     const id = ++nextId
     rebuilt.push({ id, arrange: null, state: buildState(cp) as unknown })
     store.setGeom(`${key}:${id}`, {
-      x: Math.max(0, cp.position.x),
-      y: Math.max(0, cp.position.y),
+      x: Math.max(0, cp.position.x + ox),
+      y: Math.max(0, cp.position.y + oy),
       w: Math.max(80, cp.position.w),
       h: Math.max(80, cp.position.h),
     })

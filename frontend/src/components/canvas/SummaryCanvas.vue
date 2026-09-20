@@ -254,7 +254,8 @@ const exportStore = useCanvasPanelExportsStore()
 const shareBusy = ref(false)
 // Held between Phase 1 and Phase 2. `composite` is the frozen PNG data URL FrameAnnotator draws
 // on; `panels` is the structured envelope for the POST. Cleared on cancel or a completed POST.
-interface PendingShare { composite: string; panels: Array<Record<string, unknown>> }
+interface PendingShare { composite: string; panels: Array<Record<string, unknown>>;
+                         workspaceOrigin: { x: number; y: number } }
 const pendingShare = ref<PendingShare | null>(null)
 
 async function onShareConfirm(payload: { panelIds: number[] }) {
@@ -300,8 +301,10 @@ async function onShareConfirm(payload: { panelIds: number[] }) {
       }
     })
     // Phase 1 done — flip to Phase 2 (annotator). The selection overlay unmounts once shareSel
-    // exits share mode; FrameAnnotator takes over the canvas box.
-    pendingShare.value = { composite, panels }
+    // exits share mode; FrameAnnotator takes over the canvas box. `workspaceOrigin` carries the
+    // union bbox min-corner in workspace CSS px so a later "zoom to source" restores the panels
+    // to their exact original workspace positions rather than a clustered top-left copy.
+    pendingShare.value = { composite, panels, workspaceOrigin: { x: x0, y: y0 } }
     shareSel.end()
   } finally {
     shareBusy.value = false
@@ -328,6 +331,11 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
       body: JSON.stringify({
         projectUid: projectUid.value, surface: 'plot',
         address, panels: pending.panels,
+        // Origin of the union bbox in the WORKSPACE frame (what we subtracted when we built
+        // composite-relative positions). Restore adds this back to each panel's position so a
+        // "zoom to source" lands the panels at the SAME workspace pixels the user shared from,
+        // not clustered top-left.
+        workspaceOrigin: pending.workspaceOrigin,
         frames: [{ png }],
         overlay: payload.overlay,
         // Session-wide notes — travel with the capture the same way they do on viewer shares
@@ -407,7 +415,7 @@ function onReshowZoomToSource() {
       sel: [],
       vis: defaultVis(),
     } as PanelState
-  })
+  }, env.workspaceOrigin)
   reshown.value = null
 }
 

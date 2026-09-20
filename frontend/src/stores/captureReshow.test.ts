@@ -5,7 +5,8 @@ import type { CaptureEnvelope } from '../utils/kiwiCaptures'
 
 const ENV: CaptureEnvelope = {
   captureId: 'cap-x', surface: 'plot', address: null, overlay: [],
-  viewStateSnapshot: null, landscape: null, notes: '', panels: null, frame: '',
+  viewStateSnapshot: null, landscape: null, notes: '',
+  panels: null, workspaceOrigin: null, frame: '',
 }
 
 describe('useCaptureReshowStore', () => {
