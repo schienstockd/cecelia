@@ -138,6 +138,8 @@ export interface CaptureEnvelope {
   address: CaptureAddress | null
   overlay: OverlayMark[]           // marks (may be [])
   viewStateSnapshot: unknown | null // opaque `ViewerViewState`; null for legacy captures
+  landscape: unknown | null         // BIDIR PR #6: opaque `LandscapeResult` snapshotted at share
+                                    // time when the overlay was on; null otherwise
   frame: string                     // data URL, or '' if the PNG is missing
 }
 export async function fetchCaptureEnvelope(
@@ -161,12 +163,17 @@ export async function fetchCaptureEnvelope(
     // which knows how to detect an empty (== null / undefined) snapshot vs a real one.
     const viewStateSnapshot = (env.viewStateSnapshot && typeof env.viewStateSnapshot === 'object')
       ? env.viewStateSnapshot : null
+    // Landscape snapshot (BIDIR PR #6 follow-up): only present when the user had the overlay on
+    // at share time. Same opaque-pass-through pattern as viewStateSnapshot.
+    const landscape = (env.landscape && typeof env.landscape === 'object')
+      ? env.landscape : null
     return {
       captureId,
       surface,
       address,
       overlay,
       viewStateSnapshot,
+      landscape,
       frame: typeof json.frame === 'string' ? json.frame : '',
     }
   } catch { return null }

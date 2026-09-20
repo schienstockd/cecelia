@@ -1007,10 +1007,12 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
 
     Returns TWO content blocks: (1) the frame as an image (so you can actually SEE it), and (2) a
-    JSON envelope with the address, overlay marks, and any view-state snapshot. Read both — the
-    image tells you what they're looking at, the overlay tells you WHERE they're pointing, and
-    the address tells you which image / t / z it is so any follow-up tool call has the ids
-    already.
+    JSON envelope with the address, overlay marks, any view-state snapshot, and (if the user had
+    the Landscape overlay on at share time) a `landscape` field carrying the tile-level semantic
+    map — `{grid, tiles: [{id, category, stats}], legend}`. Read all three — the image tells you
+    what they're looking at, the overlay tells you WHERE they're pointing, the address tells you
+    which image / t / z it is, and the landscape gives you a rough semantic prior over the tiles
+    before you squint at raw RGB. `landscape` is absent (or null) when the overlay was off.
 
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install
