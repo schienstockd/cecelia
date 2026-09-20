@@ -5465,6 +5465,7 @@ end
         "/api/movies", "/api/movies/meta",
         "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
+        "/api/blackboard", "/api/blackboard/entry",
         "/api/notebooks/status", "/api/observer/briefing",
         "/api/observer/labarchives",
         "/api/objects/find",
@@ -5522,6 +5523,8 @@ end
         "/api/lablog/dismiss",
         "/api/movies/delete", "/api/movies/meta",
         "/api/notebooks/build-sysimage",
+        "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
+        "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/notebooks/create", "/api/notebooks/delete",
         "/api/notebooks/describe", "/api/notebooks/duplicate",
         "/api/notebooks/launch", "/api/notebooks/prune",
@@ -5609,7 +5612,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 96 && length(POST_ROUTES) == 125
+    @test length(GET_ROUTES) == 98 && length(POST_ROUTES) == 130
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -9185,6 +9188,137 @@ end
         @test st400 == 400
         st404, _ = api_push_target_probe(Vector{UInt8}(JSON3.write(Dict("projectUid" => "does-not-exist"))))
         @test st404 == 404
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: blackboard CRUD + versioning + attachments (BIDIR Part 4)" begin
+    # docs/todo/BIDIR_CONTEXT_PLAN.md Part 4. Backend of the Blackboard: Markdown entries with a
+    # snapshot-per-revise history and attached captureIds. Frontend page + MCP tools are separate
+    # follow-ups; this testset covers the storage discipline end-to-end.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTBB"; mkpath(joinpath(tmp, uid))
+        # A captured frame lives on disk so an attachment reference resolves against something real.
+        # `_clean_attachments` reads the captures dir directly; we just need the folder shape.
+        cap_id = "cap-20260101T000000-aaaaaa"
+        mkpath(joinpath(tmp, uid, "captures", cap_id))
+        w(path, b) = _post(path, b)
+
+        # ── Guards on create ─────────────────────────────────────────────────
+        @test w(api_blackboard_create, Dict("title"=>"t"))[1] == 400
+        @test w(api_blackboard_create, Dict("projectUid"=>"NOPE", "title"=>"t"))[1] == 404
+        @test w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>""))[1] == 400
+        # Content size cap — anything past 100 KiB is rejected before write.
+        oversized = repeat("x", 100 * 1024 + 1)
+        @test w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t", "content"=>oversized))[1] == 400
+
+        # ── Create ───────────────────────────────────────────────────────────
+        # Attachments mix: one valid captureId (kept), one made-up (dropped because the dir is
+        # missing), one malformed (dropped by the id regex before path resolution). Duplicate is
+        # collapsed. The stored list must reflect what actually exists.
+        st_c, body_c = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Chain design for MERTK sample",
+            "content"=>"# Working notes\n\nDiscuss segmentation w/ Claude.",
+            "attachments"=>[cap_id, "cap-19700101T000000-000000", "../../../etc/passwd", cap_id]))
+        @test st_c == 200
+        eid = String(JSON3.read(body_c).entryId)
+        @test occursin(r"^bb-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}$", eid)
+        entry_dir = joinpath(tmp, uid, "blackboard", eid)
+        @test isdir(entry_dir) && isfile(joinpath(entry_dir, "entry.md"))
+        @test isfile(joinpath(entry_dir, "meta.json"))
+        # Registry now knows about it.
+        reg_path = joinpath(tmp, uid, "settings", "blackboard.json")
+        reg = JSON3.read(read(reg_path, String), Dict{String,Any})
+        @test haskey(reg, eid) && String(reg[eid]["title"]) == "Chain design for MERTK sample"
+
+        # ── List — newest-first, attachmentsCount surfaced ───────────────────
+        st_l, body_l = api_blackboard_list(HTTP.Request("GET",
+            "/api/blackboard?projectUid=$uid"))
+        @test st_l == 200
+        entries = JSON3.read(body_l).entries
+        @test length(entries) == 1
+        @test String(entries[1].entryId) == eid
+        @test entries[1].current == 0                # never snapshotted yet
+        @test entries[1].attachmentsCount == 1       # dedup + validation kept one of four
+
+        # ── Read live ────────────────────────────────────────────────────────
+        st_e, body_e = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test st_e == 200
+        e = JSON3.read(body_e).entry
+        @test occursin("Working notes", String(e.content))
+        @test isempty(e.versions)                    # no snapshots yet
+        @test String(e.attachments[1]) == cap_id
+
+        # ── Revise → v1 snapshot of prior content, live now = new content ──
+        st_r1, body_r1 = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
+            "content"=>"# Working notes (v2)\n\nNow with a Mermaid diagram."))
+        @test st_r1 == 200
+        @test JSON3.read(body_r1).version == 1
+        # Snapshot v1 is the OLD content; live is the new.
+        st_v1, body_v1 = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid&version=1"))
+        @test st_v1 == 200
+        @test occursin("Working notes\n", String(JSON3.read(body_v1).entry.content))
+        st_live, body_live = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test occursin("(v2)", String(JSON3.read(body_live).entry.content))
+        @test JSON3.read(body_live).entry.current == 1
+
+        # Second revise → v2 (of pre-revise content), current = 2.
+        w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
+            "content"=>"# Working notes (v3)"))
+        st_l2, body_l2 = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test JSON3.read(body_l2).entry.current == 2
+        @test sort(collect(JSON3.read(body_l2).entry.versions)) == [1, 2]
+
+        # ── Restore v1 → snapshots current first (as v3), then restores v1 ──
+        st_re, body_re = w(api_blackboard_restore, Dict("projectUid"=>uid, "entryId"=>eid,
+            "version"=>"1"))
+        @test st_re == 200
+        @test JSON3.read(body_re).version == 1
+        st_after, body_after = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        e_after = JSON3.read(body_after).entry
+        @test occursin("Working notes\n", String(e_after.content))    # matches v1
+        @test e_after.current == 1
+        # The un-snapshotted-before-restore content is now v3 — critical: we can undo the restore.
+        @test sort(collect(e_after.versions)) == [1, 2, 3]
+
+        # Restore unknown version ⇒ 404
+        @test w(api_blackboard_restore, Dict("projectUid"=>uid, "entryId"=>eid,
+            "version"=>"99"))[1] == 404
+
+        # ── Prune to keep 2 most recent ─────────────────────────────────────
+        st_p, body_p = w(api_blackboard_prune, Dict("projectUid"=>uid, "entryId"=>eid, "keep"=>"2"))
+        @test st_p == 200 && JSON3.read(body_p).pruned == 1
+        st_prune, body_prune = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test sort(collect(JSON3.read(body_prune).entry.versions)) == [2, 3]
+
+        # ── Delete ───────────────────────────────────────────────────────────
+        st_d, body_d = w(api_blackboard_delete, Dict("projectUid"=>uid, "entryId"=>eid))
+        @test st_d == 200 && JSON3.read(body_d).deleted == true
+        @test !isdir(entry_dir)
+        st_d2, body_d2 = w(api_blackboard_delete, Dict("projectUid"=>uid, "entryId"=>eid))
+        @test st_d2 == 200 && JSON3.read(body_d2).deleted == false  # idempotent
+
+        # ── Read guards ─────────────────────────────────────────────────────
+        @test api_blackboard_entry_get(HTTP.Request("GET", "/api/blackboard/entry"))[1] == 400
+        @test api_blackboard_entry_get(HTTP.Request("GET", "/api/blackboard/entry?projectUid=$uid"))[1] == 400
+        @test api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=nope"))[1] == 400
+        @test api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=bb-20260101T000000-abcdef"))[1] == 404
+        @test api_blackboard_list(HTTP.Request("GET", "/api/blackboard"))[1] == 400
+        # Traversal via entryId is rejected by the regex before path composition.
+        @test w(api_blackboard_delete, Dict("projectUid"=>uid, "entryId"=>"../../etc/passwd"))[1] == 400
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

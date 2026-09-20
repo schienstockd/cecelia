@@ -33,6 +33,8 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_object_ids",   # bidir follow-up: real cell/track ids for mark_cells / mark_tracks
             "register_push_target",   # bidir Part 5: explicit re-pair (auto-pair via middleware)
+            "list_blackboard_entries", "read_blackboard_entry",   # bidir Part 4 (Blackboard) — reads
+            "create_blackboard_entry", "revise_blackboard_entry", # bidir Part 4 (Blackboard) — writes
         ):
             self.assertIn(tool, self.names)
 

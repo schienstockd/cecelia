@@ -679,6 +679,67 @@ def set_labarchives_context(project_uid: str, source: dict, sections: list,
 
 
 @mcp.tool()
+def list_blackboard_entries(project_uid: str) -> dict:
+    """List this project's BLACKBOARD entries — shared thinking the user and you have iterated on
+    across sessions, one entry per topic (Markdown + attached captureIds). Returns newest-first
+    `{entries: [{entryId, title, current, updatedAt, attachmentsCount}]}`. Use before writing a new
+    entry so you extend the topic the user already opened instead of creating a parallel one.
+    Distinct from CHAINS (executable pipelines) and NOTEBOOKS (analysis code) — a blackboard entry
+    is prose + diagrams; nothing here starts work."""
+    return _client.list_blackboard_entries(project_uid)
+
+
+@mcp.tool()
+def read_blackboard_entry(project_uid: str, entry_id: str, version: int | None = None) -> dict:
+    """Read a BLACKBOARD entry's current Markdown (or a snapshotted `version`). Returns
+    `{entry: {entryId, title, content, current, updatedAt, versions, attachments}}`. `content` is
+    the Markdown; `versions` is the list of snapshot ids you can pass to `version=` to read an
+    older revision. Reach for this before `revise_blackboard_entry` so you propose the change on
+    top of what actually exists, not a memory of it."""
+    return _client.read_blackboard_entry(project_uid, entry_id, version)
+
+
+@mcp.tool()
+def create_blackboard_entry(project_uid: str, title: str, content_md: str,
+                            attach_capture_ids: list[str] | None = None) -> dict:
+    """Create a new BLACKBOARD entry — a shared idea worth keeping across sessions. Distinct from a
+    CHAIN (executable, needs the user to Run) and a NOTEBOOK (analysis code the user opens and
+    edits). This is prose + Mermaid diagrams (triple-backtick `mermaid` fences render on the
+    frontend); nothing here starts work.
+
+    `title` — ONE short label (capped at 200 chars); shown in the entries list and Kiwi.
+    `content_md` — Markdown body, ≤ 100 KiB. Attach captured frames by id when the visual is
+    load-bearing: `attach_capture_ids=[capX, capY]` — an unknown id is silently dropped (validated
+    against the captures on disk at write time), so a stale reference doesn't fail the write.
+
+    Create when the user asks to "record" / "keep" / "add to the board" a concept the two of you
+    have been developing. Don't create speculatively — an unused entry sits in the list forever.
+    Follow-up edits go through `revise_blackboard_entry`, which snapshots the pre-edit content so
+    nothing is lost. Say "it's on the Blackboard" when you're done, no more."""
+    return _client.create_blackboard_entry(project_uid, title, content_md, attach_capture_ids)
+
+
+@mcp.tool()
+def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
+                            attach_capture_ids: list[str] | None = None,
+                            note: str = "") -> dict:
+    """Rewrite a BLACKBOARD entry's Markdown body. The server SNAPSHOTS the current content first
+    (as a restorable version, visible in Kiwi / the /blackboard page's history), then overwrites —
+    real versioning, nothing lost. Do NOT create a "<title>-v2" copy; that bypasses versioning
+    and clutters the list.
+
+    Flow: read the current entry with `read_blackboard_entry` first, propose the change to the
+    user, THEN call this with the FULL new `content_md` (not a diff). `attach_capture_ids` is
+    optional — OMIT to keep the entry's existing attachment set; pass an explicit list (possibly
+    empty) to REPLACE it. `note` is a short changelog line for a future history view; safe to
+    include but not user-visible today.
+
+    404 if the entry doesn't exist. Use `create_blackboard_entry` for a brand-new entry."""
+    return _client.revise_blackboard_entry(project_uid, entry_id, content_md,
+                                            attach_capture_ids, note)
+
+
+@mcp.tool()
 def create_notebook(project_uid: str, name: str, cells: list[str], description: str = "") -> dict:
     """Create a Pluto NOTEBOOK from Julia cell sources — to answer a "give me the data / plot this"
     request with a runnable, editable artifact the user then owns. Read get_repl_api FIRST so the code

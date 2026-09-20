@@ -57,6 +57,8 @@ class ClientTest(unittest.TestCase):
         # here to add a route, the question to answer first is whether it can destroy something.
         writes = sorted((m, p) for (m, p) in ALLOWED_ROUTES if m != "GET")
         self.assertEqual(writes, [
+            ("POST", "/api/blackboard/create"),
+            ("POST", "/api/blackboard/revise"),
             ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),
             ("POST", "/api/lablog/append"),
@@ -188,6 +190,58 @@ class ClientTest(unittest.TestCase):
     def test_notebook_read_routes_allow_listed(self):
         self.assertIn(("GET", "/api/notebooks"), ALLOWED_ROUTES)
         self.assertIn(("GET", "/api/notebooks/content"), ALLOWED_ROUTES)
+
+    # ── Blackboard (BIDIR_CONTEXT_PLAN Part 4) ──────────────────────────────
+    def test_list_blackboard_entries_builds_url(self):
+        with _patch_urlopen({"entries": []}) as u:
+            self.c.list_blackboard_entries("p")
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/blackboard?projectUid=p", req.full_url)
+
+    def test_read_blackboard_entry_appends_version(self):
+        with _patch_urlopen({"entry": {}}) as u:
+            self.c.read_blackboard_entry("p", "bb-20260919T120000-abcdef", version=3)
+        req = u.call_args[0][0]
+        self.assertIn("entryId=bb-20260919T120000-abcdef", req.full_url)
+        self.assertIn("version=3", req.full_url)
+
+    def test_create_blackboard_entry_posts_content_and_attachments(self):
+        with _patch_urlopen({"ok": True, "entryId": "bb-x"}) as u:
+            self.c.create_blackboard_entry("p", "Chain design", "# hi\n",
+                                            attach_capture_ids=["cap-1", "cap-2"])
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "POST")
+        self.assertTrue(req.full_url.endswith("/api/blackboard/create"))
+        self.assertEqual(
+            json.loads(req.data.decode()),
+            {"projectUid": "p", "title": "Chain design", "content": "# hi\n",
+             "attachments": ["cap-1", "cap-2"]},
+        )
+
+    def test_create_blackboard_entry_omits_empty_attachments(self):
+        with _patch_urlopen({"ok": True, "entryId": "bb-x"}) as u:
+            self.c.create_blackboard_entry("p", "T", "b")
+        self.assertNotIn("attachments", json.loads(u.call_args[0][0].data.decode()))
+
+    def test_revise_blackboard_entry_omits_absent_attachments_and_note(self):
+        # Attachments absent from a revise call MUST NOT be sent — else the server would REPLACE the
+        # existing set with an empty list. The keep-existing-attachments contract is the whole reason
+        # the parameter defaults to None here rather than [].
+        with _patch_urlopen({"ok": True, "version": 4}) as u:
+            self.c.revise_blackboard_entry("p", "bb-x", "# updated\n")
+        body = json.loads(u.call_args[0][0].data.decode())
+        self.assertEqual(body, {"projectUid": "p", "entryId": "bb-x", "content": "# updated\n"})
+        # An empty explicit list DOES get sent — the caller means "drop all attachments".
+        with _patch_urlopen({"ok": True, "version": 5}) as u:
+            self.c.revise_blackboard_entry("p", "bb-x", "# updated\n", attach_capture_ids=[])
+        self.assertEqual(
+            json.loads(u.call_args[0][0].data.decode())["attachments"], [])
+
+    def test_blackboard_destructive_routes_not_allow_listed(self):
+        # Restore / prune / delete stay OFF the MCP surface — user-driven only, matching notebooks.
+        for path in ("/api/blackboard/restore", "/api/blackboard/prune", "/api/blackboard/delete"):
+            self.assertNotIn(("POST", path), ALLOWED_ROUTES)
 
     def test_mark_tracks_posts_the_right_body(self):
         # Point-out: track ids, per (image, vn), optional focus + label + TTL. Reaches the popup
