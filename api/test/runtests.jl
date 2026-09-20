@@ -9425,10 +9425,14 @@ end
         @test haskey(reg, eid) && String(reg[eid]["title"]) == "Chain design for MERTK sample"
 
         # ── List — newest-first, attachmentsCount surfaced ───────────────────
+        # The list endpoint auto-creates the reserved `profile` entry (PROJECT_MEMORY_PLAN P1); the
+        # BIDIR-shape check filters it out so this testset only asserts on the entries this test
+        # created. `profile` sorts before `bb-…` in DESC (p > b), hence position [1].
         st_l, body_l = api_blackboard_list(HTTP.Request("GET",
             "/api/blackboard?projectUid=$uid"))
         @test st_l == 200
-        entries = JSON3.read(body_l).entries
+        all_entries = JSON3.read(body_l).entries
+        entries = [e for e in all_entries if String(e.entryId) != "profile"]
         @test length(entries) == 1
         @test String(entries[1].entryId) == eid
         @test entries[1].current == 0                # never snapshotted yet
