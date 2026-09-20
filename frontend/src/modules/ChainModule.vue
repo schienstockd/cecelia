@@ -37,6 +37,7 @@ import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
+import { fetchVersions } from '../utils/versions'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -1077,6 +1078,49 @@ const paramContext = computed(() => {
            projectUid: projectMeta.current?.uid ?? '', params: selectedTaskDef.value?.params }
 })
 
+// ── VN versioning: per-node "Input version" picker ───────────────────────────
+//
+// The chain planner already threads `params.version` through to `versioned_get_field_at` (P3
+// backend, PR #1060) — a concrete `vN` in `params.version` pins the input to that version, unset
+// (the default) follows `_latest`. This section fetches the union of observed vN across the
+// currently selected run images, for the (field="filepath", valueName=<node's input>), so the
+// picker offers real choices instead of a free-text guess.
+//
+// **Freeze-all is deliberately not shipped here** — a chain runs against N images that may report
+// different `_latest` for the same value_name, so "freeze to current latest" needs a per-image
+// anchor decision that hasn't been designed. Follow-up.
+const selectedNodeInputValueName = computed<string>(() => {
+  const p = selectedNode.value?.data?.params as Record<string, unknown> | undefined
+  const v = p?.valueName
+  return typeof v === 'string' && v.length > 0 ? v : ''   // '' → backend uses active
+})
+const availableVersions = ref<string[]>([])
+const versionsError = ref<string | null>(null)
+async function reloadAvailableVersions() {
+  const projUid = projectMeta.current?.uid
+  const imgs = runSelectedUids.value.length ? runSelectedUids.value
+                                             : includedRunUids.value
+  if (!projUid || !imgs.length || !selectedNode.value) {
+    availableVersions.value = []; versionsError.value = null; return
+  }
+  try {
+    const { versions } = await fetchVersions({
+      projectUid: projUid, imageUids: imgs, valueName: selectedNodeInputValueName.value })
+    availableVersions.value = versions
+    versionsError.value = null
+  } catch (e: any) {
+    availableVersions.value = []
+    versionsError.value = String(e?.message ?? e)
+  }
+}
+// Re-query when the target node, its input value_name, or the run image set changes.
+watch(
+  [selectedNodeId, selectedNodeInputValueName, runSelectedUids, includedRunUids,
+   () => projectMeta.current?.uid],
+  reloadAvailableVersions,
+  { immediate: true },
+)
+
 const runAllSelected = computed(() =>
   includedRunUids.value.length > 0 &&
   includedRunUids.value.every(u => runSelectedUids.value.includes(u))
@@ -1693,6 +1737,27 @@ onActivated(async () => {
               {{ p.name }} (max {{ p.limit }} concurrent)
             </option>
           </select>
+
+          <!-- Input version pin — see the VN P3 comment above `selectedNodeInputValueName`. Empty
+               ('') keeps the default follow-latest semantics; a concrete vN pins the read even if
+               the image's `_latest` moves. Only surfaced for task nodes with params (a `start`
+               node has no data-reading semantics; a QC/plot node is downstream-shaped). -->
+          <template v-if="selectedTaskDef">
+            <label class="config-label cc-eyebrow" style="margin-top:0.5rem">Input version</label>
+            <select
+              class="config-select"
+              :value="(selectedNode.data.params as any).version ?? ''"
+              @change="updateParam('version',
+                                   ($event.target as HTMLSelectElement).value || null)"
+              v-tooltip.bottom="'Pin this node to a specific input version. _latest follows whatever the image most recently produced.'"
+            >
+              <option value="">_latest (auto)</option>
+              <option v-for="v in availableVersions" :key="v" :value="v">{{ v }}</option>
+            </select>
+            <div v-if="versionsError" class="cc-fs-3xs cc-muted" style="margin-top:0.2rem">
+              versions unavailable — {{ versionsError }}
+            </div>
+          </template>
         </div>
 
         <!-- Params -->

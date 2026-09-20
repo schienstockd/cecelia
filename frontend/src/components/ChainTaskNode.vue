@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 
-defineProps<{
+const props = defineProps<{
   id: string
   data: {
     fn: string
@@ -13,6 +14,15 @@ defineProps<{
   }
   selected: boolean
 }>()
+
+// A non-empty `params.version` (e.g. "v2") means the chain planner pins this node's input to that
+// version rather than following `_latest`. Backend read at `versioned_get_field_at(raw, "filepath",
+// value_name; version = params["version"])`. Badge is only rendered when pinned — the common
+// (auto-latest) case stays visually quiet.
+const pinnedVersion = computed(() => {
+  const v = props.data.params?.version
+  return typeof v === 'string' && v.length > 0 ? v : null
+})
 </script>
 
 <template>
@@ -28,6 +38,11 @@ defineProps<{
     <div v-if="data.resource_pool" class="node-pool">
       <i class="pi pi-server" style="font-size:var(--cc-fs-2xs)" />
       {{ data.resource_pool }}
+    </div>
+    <div v-if="pinnedVersion" class="node-version"
+         v-tooltip.bottom="`Input pinned to ${pinnedVersion} (won't follow _latest)`">
+      <i class="pi pi-lock" style="font-size:var(--cc-fs-2xs)" />
+      {{ pinnedVersion }}
     </div>
 
     <Handle type="source" :position="Position.Right" class="node-handle" />
@@ -94,6 +109,15 @@ defineProps<{
   font-size: var(--cc-fs-3xs);
   color: #f97316;
   margin-top: 4px;
+}
+.node-version {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--cc-fs-3xs);
+  color: var(--cc-accent);
+  margin-top: 2px;
+  font-family: var(--cc-mono);
 }
 .node-handle {
   width: 10px;

@@ -223,6 +223,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/storage/compressor" => (req, body_bytes) -> (api_compressor_get(req)),
     "/api/storage/layout" => (req, body_bytes) -> (api_store_layout_get(req)),
     "/api/storage/keep-previous-version" => (req, body_bytes) -> (api_keep_previous_version_get(req)),
+    "/api/versions" => (req, body_bytes) -> (api_versions_list(req)),
     "/api/config/tls" => (req, body_bytes) -> (api_tls_get(req)),
     "/api/tasks" => (req, body_bytes) -> (api_tasks_list(req)),
     "/api/chains" => (req, body_bytes) -> (api_chains_list(req)),

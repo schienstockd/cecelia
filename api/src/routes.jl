@@ -675,6 +675,55 @@ function api_keep_previous_version_set(body_bytes)
     200, JSON3.write((; current = Cecelia.set_keep_previous_version!(v)))
 end
 
+# ── VN versioning: list versions for a (field, value_name) across images ─────
+#
+# GET /api/versions?projectUid=&imageUids=a,b,c&valueName=default&field=filepath
+#   → { versions: ["v1","v2","v3"] }   # union of `version_keys` across the images
+#
+# Feeds the chain-designer's per-node "Input version" picker (P3 frontend). A chain runs against N
+# images that may carry different vN sets per value_name — the union is what the picker offers so
+# the user can pin any real version at least one image has. Backend `versioned_get_field_at`
+# ultimately does the per-image resolve at run time; a pin that a given image lacks falls out then,
+# with a task-log error, rather than being silently unpickable here.
+#
+# `field` defaults to `"filepath"` (the reader threaded through every task). `valueName` empty ⇒
+# the active value_name. A bare scalar / vector at the entry (legacy shape) counts as implicit v1.
+function api_versions_list(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    project_uid = get(q, "projectUid", "")
+    image_uids_raw = get(q, "imageUids", "")
+    value_name = get(q, "valueName", "")
+    field = get(q, "field", "filepath")
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isempty(image_uids_raw) && return 400, JSON3.write((; error = "imageUids required"))
+    image_uids = String.(split(image_uids_raw, ','; keepempty = false))
+    isempty(image_uids) && return 400, JSON3.write((; error = "imageUids empty"))
+    proj_dir = joinpath(projects_dir(), project_uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error = "Project not found"))
+
+    vn = isempty(value_name) ? nothing : value_name
+    seen = Set{String}()
+    for uid in image_uids
+        meta = state_file(proj_dir, uid)
+        isfile(meta) || continue
+        raw = read_ccid_raw(meta)
+        inner = versioned_get_field(raw, field, vn)
+        isnothing(inner) && continue
+        if inner isa AbstractDict
+            for k in Cecelia.version_keys(inner)
+                push!(seen, k)
+            end
+        else
+            push!(seen, "v1")   # legacy bare scalar / vector is implicit v1
+        end
+    end
+    # Sort v1, v2, … numerically; anything hand-labelled (e.g. "draft") sorts by name at the end.
+    _num(v) = startswith(v, "v") ? tryparse(Int, v[2:end]) : nothing
+    numeric = sort([v for v in seen if !isnothing(_num(v))]; by = v -> _num(v))
+    other = sort([v for v in seen if isnothing(_num(v))])
+    200, JSON3.write((; versions = vcat(numeric, other)))
+end
+
 # ── TLS toggle — persisted preference for HTTPS + HTTP/2 ─────────────────────
 #
 # The server's ACTUAL protocol lives in `/api/diagnostics` as `protocol` (either
