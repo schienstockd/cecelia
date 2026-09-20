@@ -1022,15 +1022,18 @@ def get_capture(project_uid: str, capture_id: str) -> list:
 
     Landscape schema is versioned:
       - `schemaVersion: 1` — category-only. `tiles[i] = {id, row, col, category, stats}`.
-      - `schemaVersion: 2` — augmented with per-channel per-tile stats untangled from the
-        colour-blend: `tiles[i].channels = {<channelName>: {mean, snr}}`. Only currently-visible
-        channels appear (sparse by visibility rule). A yellow tile might read "high mean on Tcells,
-        low mean on SHG" here even when its category is `bright-textured` — that channel
-        breakdown IS the complementary payload the composite can't show you.
+      - `schemaVersion: 2` — augmented with backend-only per-tile fields, ALL sparse by
+        visibility (each appears only if the matching layer was on at share time):
+          • `tiles[i].channels = {<channelName>: {mean, snr}}` — per-channel mean + SNR from
+            the raw multi-channel plane, untangling the colour-blend. A yellow tile might read
+            "high mean on Tcells, low mean on SHG" even when its category is `bright-textured`.
+          • `tiles[i].segCount` — how many segmented objects have a centroid inside this tile
+            at the shown t. The "5 vs 12 cells" answer a downsampled composite can't give.
 
-    Prefer `landscape.tiles[i].channels` over guessing channel dominance from the composite when
-    v2 is available; fall back to your visual read on v1 or when a tile has no `channels` (channel
-    was off at share time).
+    Prefer these fields over guessing from the composite when v2 is available: `channels` for
+    "which channel dominates this bright tile", `segCount` for "how densely populated is this
+    region". A missing field on a v2 tile means the corresponding layer was off — fall back to
+    your visual read, don't infer zero.
 
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install

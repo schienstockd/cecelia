@@ -1,7 +1,8 @@
 # Landscape complementary stats — plan
 
-**Status:** planning (drafted 2026-09-20 from
-[`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md)).
+**Status:** building. Phase 1 (channels) shipped 2026-09-20 in #1089; Phase 2a
+(`segCount`) building 2026-09-20. Drafted from
+[`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md).
 Written to be picked up cold by another session.
 
 ## Goal
@@ -159,33 +160,40 @@ Each phase independently mergeable.
    `zolIMa`). Record findings in this file's status section. Confirms /
    disconfirms Decision 6 (keep category). ~1 hour.
 
-2. **Phase 1 — per-channel stats (`channels`).** The highest-value complementary
-   field. `POST /api/viewer/landscape/compute` handler that:
-   - Reads the shown t / z via `zarr_utils.open_as_zarr` (never bare `zarr.open` —
-     the CLAUDE.md rule).
-   - Per visible channel: mean + SNR per tile (SNR = mean / max(σ, floor); floor
-     matched to the noise-floor helper `preview_api.jl` uses).
-   - Snapshots into the capture envelope alongside `category`. Bumps
-     `schemaVersion` to 2.
-   - MCP `get_capture` docstring updated to name the new fields.
-   ~400 lines.
+2. **Phase 1 — per-channel stats (`channels`). SHIPPED 2026-09-20 in #1089.**
+   `POST /api/viewer/landscape/compute` handler that reads the shown t / z at a
+   pyramid level ≥ 512 px on the long side; per visible channel emits mean + SNR
+   per tile (SNR = mean / max(σ, floor)); snapshots into the capture envelope
+   alongside `category` and bumps `schemaVersion` to 2. MCP `get_capture`
+   docstring names the new field.
 
-3. **Phase 2 — `segCount` + `pops`.** Uses `label_props` (Julia side) filtered
-   by the current gating run for `pops`. Per-tile centroid enumeration is a
-   spatial-index query; the plan's dependency is on the label-props
-   view Julia already has (`app/src/label_props.jl`). Sparse per Decision 3.
-   ~500 lines.
+3. **Phase 2a — `segCount` (this pass, 2026-09-20).** Same compute endpoint
+   grows an optional `labelsValueName` in the body — when set to the
+   currently-shown labels vn (from the frontend `getLabelVisibility` /
+   `labelName` computed), the response carries `tiles[i].segCount = <int>`:
+   how many segmented objects have centroids inside that tile at the shown t.
+   Uses `label_props(img; value_name=vn) |> view_centroid_cols |> as_df`,
+   filtered by `centroid_t` when present; bins by level-0 pixel dimensions
+   (`image_geometry.sizeX/Y`), consistent with Phase 1's whole-frame tiling.
+   Sparse per Decision 3 (no `segCount` key when labels layer off). ~250 lines.
 
-4. **Phase 3 — `tracks` summary.** count / meanDuration / meanSpeed from
+4. **Phase 2b — `pops` (next slice, unscheduled).** Per-tile population
+   membership. Bigger than 2a because it needs the gating engine to resolve
+   pop labels for the current run, plus a per-pop-per-tile aggregation. Frontend
+   snapshot grows `visiblePops` (from `getPopVisible`). Emit
+   `tiles[i].pops = [{popId, name, count}]` sparse per visible pop. Reuses the
+   same centroid binning as 2a. ~400 lines.
+
+5. **Phase 3 — `tracks` summary.** count / meanDuration / meanSpeed from
    the track-props view; `hmmStates` / `motifs` gated by run existence
    (Decision 5). Reuse the same tile-index / centroid-filter code from
-   Phase 2. ~350 lines.
+   Phase 2a/b. ~350 lines.
 
-5. **Phase 4 — `sourceRun` provenance.** Per-field bag; every phase that
+6. **Phase 4 — `sourceRun` provenance.** Per-field bag; every phase that
    introduced a computed field also adds its `sourceRun` key. If Phase 1–3
    ship without it, add here in one sweep. ~150 lines.
 
-6. **Phase 5 — legend + envelope-size ratchet test.** Assert that a
+7. **Phase 5 — legend + envelope-size ratchet test.** Assert that a
    `schemaVersion: 2` envelope with all layers on stays under Decision 7's
    500 KB soft budget on a representative frame. Fails when a future field
    is added without weighing it against the budget. Add landscape envelope

@@ -4619,17 +4619,23 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     // Claude a semantic prior over the same tiles it's looking at. The live in-memory landscape
     // bag is ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
     // Only attached when the user has the overlay on — sharing without the landscape stays lean.
-    // Augment the frontend-computed category landscape with per-channel per-tile stats
-    // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1). Only visible channels are sent — the visibility
-    // rule (Decision 3) means the response only carries channels the user is looking at, matching
-    // what the RGB composite shows. Failure is soft: category-only stays a valid v1 landscape.
+    // Augment the frontend-computed category landscape with backend-only fields
+    // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1 + 2a): per-channel mean/SNR untangled from the
+    // colour-blend, plus per-tile segCount from label_props centroids. Visibility rule
+    // (Decision 3): only channels currently ticked on and the currently-shown labels vn
+    // travel — the response only carries what the user is looking at, matching the RGB
+    // composite. Both fields optional; failure is soft (category-only stays a valid v1).
     let landscapeSnapshot: LandscapeResult | null = null
     if (settings.viewerLandscape && landscape.value && meta.value) {
       const visibleChannels = meta.value.channels
         .map((ch, i) => ({ index: i, name: ch.name, visible: ch.visible }))
         .filter(ch => ch.visible)
         .map(({ index, name }) => ({ index, name }))
-      if (visibleChannels.length > 0 && projectUid) {
+      const labelsVn = labelName.value    // '' when the labels layer is off — backend skips segCount
+      // At least one augmentable dimension has to be on before we ask; if the frontend has
+      // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
+      const anyAugment = visibleChannels.length > 0 || !!labelsVn
+      if (anyAugment && projectUid) {
         try {
           const cRes = await fetch('/api/viewer/landscape/compute', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4638,6 +4644,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
               t: shownT.value, z: zPlane.value,
               cols: landscape.value.grid.cols, rows: landscape.value.grid.rows,
               channels: visibleChannels,
+              ...(labelsVn ? { labelsValueName: labelsVn } : {}),
             }),
           })
           if (cRes.ok) {

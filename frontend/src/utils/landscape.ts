@@ -74,6 +74,10 @@ export interface LandscapeTile {
   // on tiles from an AUGMENTED landscape (see `augmentLandscape`); absent on the frontend-only
   // category-computation. Sparsity rule (Decision 3): only currently-visible channels appear.
   channels?: Record<string, { mean: number; snr: number }>
+  // Phase 2a: how many segmented objects have a centroid inside this tile at the shown t —
+  // the "5 vs 12 cells" answer a downsampled composite can't give. Present only when a labels
+  // layer was toggled on at compute time; sparse per Decision 3.
+  segCount?: number
 }
 
 export interface LandscapeLegendEntry {
@@ -94,16 +98,20 @@ export interface LandscapeResult {
 }
 
 /** Per-tile augmentation payload returned by `POST /api/viewer/landscape/compute`. Same tile-id
- *  space as `computeLandscape`'s output — the caller merges by id. */
+ *  space as `computeLandscape`'s output — the caller merges by id. Every field is optional and
+ *  sparse by visibility (Decision 3): a tile carries only the augmentations that the compute
+ *  actually populated at the visibility snapshot the frontend sent. */
 export interface AugmentTile {
   tileId: string
   channels?: Record<string, { mean: number; snr: number }>
+  segCount?: number
 }
 
 /** Merge a per-tile augmentation payload into a category-only landscape. Non-mutating — returns a
- *  new `LandscapeResult` with `schemaVersion` bumped to 2 and per-tile `channels` populated where
- *  the augmentation has data. Tiles absent from `augment` keep their original shape (sparse by
- *  visibility — a channel not currently on isn't in the augmentation, therefore not on the tile). */
+ *  new `LandscapeResult` with `schemaVersion` bumped to 2 and per-tile augmentations populated
+ *  where the payload has data. Tiles absent from `augment` (or entries with no populated field)
+ *  keep their original shape (sparse by visibility — a channel/segmentation not on at compute
+ *  time isn't in the augmentation, therefore not on the tile). */
 export function augmentLandscape(
   base: LandscapeResult, augment: AugmentTile[],
 ): LandscapeResult {
@@ -111,8 +119,14 @@ export function augmentLandscape(
   for (const a of augment) byId.set(a.tileId, a)
   const tiles = base.tiles.map(t => {
     const a = byId.get(t.id)
-    if (!a || !a.channels || Object.keys(a.channels).length === 0) return t
-    return { ...t, channels: a.channels }
+    if (!a) return t
+    const hasChannels = !!a.channels && Object.keys(a.channels).length > 0
+    const hasSeg = typeof a.segCount === 'number' && Number.isFinite(a.segCount)
+    if (!hasChannels && !hasSeg) return t
+    const next: LandscapeTile = { ...t }
+    if (hasChannels) next.channels = a.channels
+    if (hasSeg) next.segCount = a.segCount
+    return next
   })
   return { ...base, tiles, schemaVersion: 2 }
 }
