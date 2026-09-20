@@ -12,6 +12,13 @@
 // the same shape used for viewer-bag sync via `localStorage` — same "main writes → viewer picks up"
 // pattern, different transport (BroadcastChannel doesn't survive a reload, but a seek doesn't
 // need to; the pop-out reads what's fresh, not the last-known state).
+//
+// BIDIR Part 4 follow-up: the message optionally carries `marks` + `captureId` so a blackboard
+// attachment click can also restore the annotation overlay onto the live viewer — same channel,
+// additive fields (a seek without marks is still a valid seek). The viewer mounts `MarksOverlay`
+// while marks are active and drops it (with the chip) when the user leaves the capture's t/z.
+
+import type { OverlayMark } from './captureAddress'
 
 /** Channel name. Kept as a constant so the sender and the receiver can't drift. */
 export const VIEWER_SEEK_CHANNEL = 'cecelia:viewer:seek'
@@ -20,12 +27,15 @@ export const VIEWER_SEEK_CHANNEL = 'cecelia:viewer:seek'
  *  currently showing image B — the receiver ignores mismatches. `t` / `z` are the target
  *  timepoint / z-plane; either may be absent (no move on that axis). `projectUid` is included so
  *  a future multi-project session can filter by it too; today's viewer already implicitly filters
- *  via `imageUid`. */
+ *  via `imageUid`. `marks` + `captureId` are set when a blackboard attachment is the source —
+ *  the viewer paints the marks over the canvas until the user seeks away or dismisses the chip. */
 export interface ViewerSeekMessage {
   projectUid: string
   imageUid: string
   t?: number
   z?: number
+  marks?: OverlayMark[]
+  captureId?: string
 }
 
 /** Broadcast a seek to any listening viewer. No-op on browsers without `BroadcastChannel`; the
@@ -73,5 +83,10 @@ export function parseSeekMessage(raw: unknown): ViewerSeekMessage | null {
   const out: ViewerSeekMessage = { projectUid, imageUid }
   if (typeof r.t === 'number' && Number.isFinite(r.t) && r.t >= 0) out.t = Math.floor(r.t)
   if (typeof r.z === 'number' && Number.isFinite(r.z) && r.z >= 0) out.z = Math.floor(r.z)
+  if (typeof r.captureId === 'string' && r.captureId) out.captureId = r.captureId
+  // Marks: an array (from `capture.overlay`), each element is `{kind, geom, label?, color?}`.
+  // We don't re-validate the mark shape here — the viewer's overlay component is defensive against
+  // a missing `geom.pts` / bad kind. Dropping the array on any non-array keeps the seek valid.
+  if (Array.isArray(r.marks)) out.marks = r.marks as OverlayMark[]
   return out
 }

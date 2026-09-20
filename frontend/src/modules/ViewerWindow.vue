@@ -53,6 +53,7 @@ import {
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
 import { subscribeViewerSeek } from '../utils/viewerSeekChannel'
+import MarksOverlay from '../components/MarksOverlay.vue'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
@@ -4450,6 +4451,26 @@ interface CaptureView {
 }
 const captureView = ref<CaptureView | null>(null)
 function closeCaptureView() { captureView.value = null }
+
+// Live annotation restore (BIDIR Part 4 follow-up). When a blackboard attachment is clicked the
+// main-window publishes a seek + marks payload; we mount `MarksOverlay` over the live canvas + show
+// a dismissible chip. Auto-clears when the user seeks t / z away — the marks are anchored to a
+// specific captured frame, and reading them over a different frame is worse than reading nothing.
+interface ActiveMarks {
+  captureId: string
+  marks: OverlayMark[]
+  t: number     // the capture's t (may be -1 if unknown; still valid for the chip label)
+  z: number     // the capture's z
+}
+const activeMarks = ref<ActiveMarks | null>(null)
+function dismissActiveMarks() { activeMarks.value = null }
+watch([shownT, zPlane], ([t2, z2]) => {
+  const am = activeMarks.value
+  if (!am) return
+  const tOk = am.t < 0 || am.t === t2
+  const zOk = am.z < 0 || am.z === z2
+  if (!tOk || !zOk) activeMarks.value = null
+})
 function onReannotate(payload: {
   captureId: string; frameDataUrl: string; overlay: OverlayMark[]
 }) {
@@ -4542,6 +4563,16 @@ onMounted(() => {
       if (!meta.value) return
       if (typeof msg.t === 'number' && msg.t < meta.value.nT && msg.t !== t.value) gotoT(msg.t)
       if (typeof msg.z === 'number' && msg.z < meta.value.nZ && msg.z !== zPlane.value) zPlane.value = msg.z
+      // BIDIR Part 4 (Blackboard) — a seek with `marks` sets the overlay, anchored to the capture's
+      // t / z so the `[shownT, zPlane]` watcher above auto-clears it once the user browses elsewhere.
+      if (msg.captureId && Array.isArray(msg.marks) && msg.marks.length > 0) {
+        activeMarks.value = {
+          captureId: msg.captureId,
+          marks: msg.marks,
+          t: typeof msg.t === 'number' ? msg.t : -1,
+          z: typeof msg.z === 'number' ? msg.z : -1,
+        }
+      }
     },
     (msg) => msg.imageUid === imageUid,
   )
@@ -4636,6 +4667,23 @@ onUnmounted(() => {
            Viewport coords: at zoom-in "C4" is a quarter of the current view, not a quarter of the
            image scrolled off screen. Toggled from the Annotations section of the viewer panel. -->
       <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity" />
+      <!-- Restored annotations from a blackboard attachment (BIDIR Part 4). Read-only; the source of
+           truth is the capture on disk, and edits happen on the blackboard side, not here. Chip below
+           labels it + dismisses. Auto-drops when the user seeks t / z away — the marks belong to a
+           specific frame. -->
+      <MarksOverlay v-if="activeMarks" :marks="activeMarks.marks" />
+      <div v-if="activeMarks" class="vw-marks-chip" role="status">
+        <i class="pi pi-eye" />
+        <span class="vw-marks-chip-lbl"
+              v-tooltip.bottom="`Restored from capture ${activeMarks.captureId} · auto-clears when you leave t=${activeMarks.t}, z=${activeMarks.z}`">
+          Annotations · {{ activeMarks.captureId }}
+        </span>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-marks-chip-x"
+                @click="dismissActiveMarks"
+                v-tooltip.bottom="'Hide these annotations'">
+          <i class="pi pi-times" />
+        </button>
+      </div>
       <!-- Share-in draw overlay (BIDIR PR #3): mounts DIRECTLY on the viewer so users draw on
            what they're looking at. Triggered from the main-window ViewerPanel's Share button
            via `__cceceliaViewerBeginDraw()` exposed above. -->
@@ -5767,6 +5815,30 @@ onUnmounted(() => {
   border: 1px solid var(--cc-accent-strong);
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
+
+/* Chip that appears when a blackboard attachment restored its annotations onto the live view.
+   Top-right of the canvas, translucent black plate so it's legible over any fluorescence colour;
+   dismissible ✕ hides both the chip and the overlay. Auto-clears when the user seeks t/z away. */
+.vw-marks-chip {
+  position: absolute;
+  top: 0.5rem; right: 0.5rem;
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.25rem 0.35rem 0.25rem 0.55rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: var(--cc-fs-xs);
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  pointer-events: auto;
+  z-index: 5;
+}
+.vw-marks-chip-lbl {
+  font-family: var(--cc-mono);
+  max-width: 20rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vw-marks-chip-x { color: #fff; }
+.vw-marks-chip-x:hover { color: var(--cc-kiwi); }
 .vw-side {
   /* Fills the CollapsiblePanel slot; width and left border come from the panel. Padding + overflow
      stay here — the panel deliberately owns no padding so its consumers pad their own root. */

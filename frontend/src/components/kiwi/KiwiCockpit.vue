@@ -34,7 +34,7 @@ import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
-import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureFrame,
+import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureEnvelope, type CaptureEnvelope,
          deleteCapture, clearAllCaptures,
          type CaptureRow } from '../../utils/kiwiCaptures'
 import { publishViewerSeek } from '../../utils/viewerSeekChannel'
@@ -106,45 +106,53 @@ async function copyChatStarter() {
 const captures = ref<CaptureRow[]>([])
 const capturesLoading = ref(false)
 async function refreshCaptures() {
-  if (!projectUid.value) { captures.value = []; thumbs.value = {}; return }
+  if (!projectUid.value) { captures.value = []; envelopes.value = {}; return }
   capturesLoading.value = true
   try {
     captures.value = await fetchRecentCaptures(projectUid.value, 10)
-    // Kick thumbnail loads for any row not already cached. Fire in parallel — the list caps at 10,
-    // and dropping a thumb load is cheaper than blocking the row on it.
+    // Kick envelope fetches for any row not already cached. Fire in parallel — the list caps at 10,
+    // and dropping an envelope fetch is cheaper than blocking the row on it.
     for (const row of captures.value) {
-      if (thumbs.value[row.captureId]) continue
+      if (envelopes.value[row.captureId]) continue
       void loadThumb(row.captureId)
     }
   }
   finally { capturesLoading.value = false }
 }
 
-// ── Row thumbnails (PR B trinity) ────────────────────────────────────────────
-// Cached in-memory keyed by captureId. A stray failed fetch leaves the slot empty (falsy) so the
-// row falls back to an "unknown" placeholder; we never retry inside one Kiwi session — the row is
-// still copiable, and a refetch would re-hammer a stale backend.
-const thumbs = ref<Record<string, string>>({})
+// ── Row thumbnails + envelope cache (PR B trinity + BIDIR Part 4 follow-up) ─
+// One fetch per row, cached: the full envelope carries the thumbnail's frame PNG, the address the
+// Refocus button reads, AND the drawn marks so Refocus can restore the annotations onto the live
+// viewer. Failure leaves the slot unset — the row falls back to a placeholder icon and refocus is
+// still safe (missing envelope ⇒ no publish). Never retry inside one Kiwi session; a refetch would
+// re-hammer a stale backend.
+const envelopes = ref<Record<string, CaptureEnvelope>>({})
 async function loadThumb(id: string) {
   if (!projectUid.value) return
-  const url = await fetchCaptureFrame(projectUid.value, id)
-  if (url) thumbs.value = { ...thumbs.value, [id]: url }
+  const env = await fetchCaptureEnvelope(projectUid.value, id)
+  if (env) envelopes.value = { ...envelopes.value, [id]: env }
 }
 
 // ── Refocus in viewer (PR B trinity) ─────────────────────────────────────────
 // Publishes a BroadcastChannel seek — a pop-out ViewerWindow with the matching imageUid picks it
 // up (subscribeViewerSeek). Silent no-op when the pop-out isn't open OR when the row's address
 // carries no imageUid (a `ui` / `plot` capture, or a viewer capture from a broken older payload).
+// Also carries the drawn marks (from the cached envelope) so the pop-out restores the annotation
+// overlay for the capture's frame — a dismissible chip on the viewer labels + hides them.
 function refocusRow(row: CaptureRow) {
   const a = row.address; if (!a || !a.imageUid) return
   // A t-range (slab capture) refocuses to the first frame — the range end is still visible via
   // the pop-out's own scrubber. A per-axis undefined stays undefined; the receiver leaves that
   // axis untouched.
   const t = Array.isArray(a.t) ? a.t[0] : a.t
+  const env = envelopes.value[row.captureId]
+  const marks = env?.overlay ?? []
   publishViewerSeek({
     projectUid: projectUid.value, imageUid: a.imageUid,
+    captureId: row.captureId,
     ...(typeof t === 'number' ? { t } : {}),
     ...(typeof a.z === 'number' ? { z: a.z } : {}),
+    ...(marks.length > 0 ? { marks } : {}),
   })
 }
 // Per-row copy flash. Separate `useCopyFlash` instance so the chat-starter flash is independent.
@@ -258,7 +266,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                               ? `Copy captureId · ${c.captureId} (refines an earlier capture)`
                               : `Copy captureId · ${c.captureId}`)">
                   <span class="kiwi-cap-thumb" aria-hidden="true">
-                    <img v-if="thumbs[c.captureId]" :src="thumbs[c.captureId]" alt="" />
+                    <img v-if="envelopes[c.captureId]?.frame" :src="envelopes[c.captureId].frame" alt="" />
                     <i v-else class="pi pi-image" />
                   </span>
                   <span class="kiwi-cap-meta">
