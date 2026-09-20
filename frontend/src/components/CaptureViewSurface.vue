@@ -52,6 +52,9 @@ const props = defineProps<{
   // capture carries the same camera / channels / t / z the user was looking at. Lets a later
   // Refocus take the full-restore branch (Zoom-to-source) instead of the seek-only fallback.
   viewStateSnapshot?: unknown | null
+  // Free-text notes the user typed on DrawSurface at share time — shown on this surface as a chip
+  // at the bottom so the user sees the context Claude received. Preserved on re-annotate.
+  notes?: string
 }>()
 const emit = defineEmits<{
   (e: 'close'): void
@@ -59,7 +62,7 @@ const emit = defineEmits<{
   // captureView to the new envelope so DrawSurface remounts fresh and the frame carries all
   // strokes drawn so far. Kiwi's list refreshes via `captures:changed` (backend broadcasts).
   (e: 'reannotate', payload: {
-    captureId: string; frameDataUrl: string; overlay: OverlayMark[]
+    captureId: string; frameDataUrl: string; overlay: OverlayMark[]; notes: string
   }): void
 }>()
 
@@ -88,7 +91,7 @@ const reannotateBusy = ref(false)
 function beginReannotate() { reannotating.value = true }
 function cancelReannotate() { reannotating.value = false }
 
-async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: string }) {
+async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: string; notes: string }) {
   if (!props.projectUid) { reannotating.value = false; return }
   reannotateBusy.value = true
   try {
@@ -99,6 +102,13 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
     // so a further re-annotate can render them without re-fetching, and Claude can read the whole
     // conversation of shapes if it prefers vector to pixels.
     const mergedOverlay: OverlayMark[] = [...props.overlay, ...payload.overlay]
+    // Notes append with a separator line so the ORIGINAL context stays visible AND the refinement
+    // can add its own. Empty new notes leave the original untouched. If both are empty, we omit
+    // the field so a re-annotate without notes stays lean.
+    const originalNotes = (props.notes ?? '').trim()
+    const newNotes = (payload.notes ?? '').trim()
+    const mergedNotes = originalNotes && newNotes ? `${originalNotes}\n---\n${newNotes}`
+                      : (newNotes || originalNotes)
     const res = await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -112,6 +122,7 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
         // Inherit the ORIGINAL viewStateSnapshot verbatim so a later Refocus on the refined
         // capture restores the exact camera / channels the original share was framed on.
         ...(props.viewStateSnapshot ? { viewStateSnapshot: props.viewStateSnapshot } : {}),
+        ...(mergedNotes ? { notes: mergedNotes } : {}),
       }),
     })
     if (!res.ok) {
@@ -127,6 +138,7 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
       captureId: body.captureId,
       frameDataUrl: composited,
       overlay: mergedOverlay,
+      notes: mergedNotes,
     })
   } finally {
     reannotateBusy.value = false
@@ -246,10 +258,18 @@ function dismissAllClaudeMarks() {
       </button>
     </div>
 
+    <!-- Notes chip at the bottom: the free-text context the user typed on DrawSurface at share
+         time. Shown here so the user sees what Claude received alongside the pixels — no surprise
+         about what was sent. Absolute-positioned so it doesn't shift the frame layout. -->
+    <div v-if="!reannotating && notes" class="cvs-notes cc-fs-2xs">
+      <i class="pi pi-align-left cvs-notes-icon" />
+      <span class="cvs-notes-text">{{ notes }}</span>
+    </div>
+
     <!-- Re-annotate mode: FrameAnnotator (shared with canvas Share) mounts the frozen frame +
          DrawSurface, hands back the composed PNG on save. `onReannotateSave` POSTs a new capture
          referencing this one via `previousCaptureId`. Cancel dismisses back to the read-only chip
-         above. -->
+         above. Notes emitted by DrawSurface come through the save payload. -->
     <FrameAnnotator v-else :frame-data-url="frameDataUrl" :address-line="addressLine"
                     :busy="reannotateBusy"
                     @save="onReannotateSave" @cancel="cancelReannotate" />
@@ -294,4 +314,20 @@ function dismissAllClaudeMarks() {
 .cvs-chip-addr {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 24ch;
 }
+/* Notes chip at the bottom — shape mirrors `.cvs-chip` above but sits at the bottom so it doesn't
+ * overlap the top controls; text wraps across multiple lines since notes can be a paragraph. */
+.cvs-notes {
+  position: absolute; bottom: 8px; left: 8px; right: 8px;
+  display: inline-flex; align-items: flex-start; gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--cc-surface-1); border: 1px solid var(--cc-accent);
+  border-radius: var(--cc-radius-md);
+  color: var(--cc-text);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  max-height: 30%;
+  overflow-y: auto;
+}
+.cvs-notes-icon { color: var(--cc-accent); flex: none; margin-top: 0.15rem; }
+.cvs-notes-text { white-space: pre-wrap; word-break: break-word; }
 </style>

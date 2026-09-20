@@ -51,6 +51,16 @@ const _CAPTURE_OVERLAY_COLORS = Set(["magenta", "cyan", "yellow", "white", "blac
 # and a runaway browser upload should be rejected, not silently written to the project.
 const _CAPTURE_PNG_MAX_BYTES = 8 * 1024 * 1024
 
+# Free-text notes cap. 2 KB fits a couple of paragraphs — the notes field is a context line, not a
+# lab log. Anything longer belongs on the Blackboard entry the user should attach the capture to.
+const _CAPTURE_NOTES_MAX_BYTES = 2048
+_clean_notes(v) = begin
+    v isa AbstractString || return ""
+    s = strip(String(v))
+    isempty(s) && return ""
+    sizeof(s) > _CAPTURE_NOTES_MAX_BYTES ? String(first(s, _CAPTURE_NOTES_MAX_BYTES)) : String(s)
+end
+
 # Strip an optional data-URL prefix, decode base64. Returns `nothing` on any failure — the caller
 # turns that into a 400 rather than surfacing decode internals to the client.
 function _decode_capture_png(raw)::Union{Vector{UInt8},Nothing}
@@ -172,6 +182,12 @@ function _build_capture_envelope(body::AbstractDict, id::String, ts::String,
         # frontend is the authoritative computer; a schema drift is a bug better caught in one
         # place (`utils/landscape.ts` tests) than in a per-field guard here.
         "landscape"         => get(body, :landscape, nothing),
+        # Free-text notes the user typed on DrawSurface (BIDIR follow-up 2026-09-20). Session-wide
+        # context that travels alongside the pixels + marks — replaces the earlier per-mark `label`
+        # inputs. Trimmed + length-capped (2 KB), then passed through verbatim. Nothing here is
+        # user-input-executed, so we keep prose intact rather than sanitising HTML — a downstream
+        # reader treats it as untrusted text.
+        "notes"             => _clean_notes(get(body, :notes, nothing)),
     )
     # Multi-panel plot capture (canvas Share). Additive; absent for viewer / single-plot / UI
     # surfaces. A malformed entry is silently dropped rather than 400'd — one bad panel should
@@ -195,7 +211,7 @@ end
 """
     POST /api/viewer/capture
 
-Body: `{ projectUid, surface?, address, frames:[{png:<dataURL|base64>}], overlay?, viewStateSnapshot?, viewerPropsRef?, landscape? }`
+Body: `{ projectUid, surface?, address, frames:[{png:<dataURL|base64>}], overlay?, viewStateSnapshot?, viewerPropsRef?, landscape?, notes? }`
 Reply: `{ ok:true, captureId, path }`
 
 Writes `<proj>/captures/<captureId>/{meta.json, frame.png}` atomically (via `write_json_atomic` +
@@ -236,7 +252,8 @@ function api_viewer_capture(body_bytes::Vector{UInt8})
     # unpaired case; the frontend renders it the same as `:fallback` today (both mean "no
     # push happened"). The address here is the same envelope dict the meta.json carries; the
     # writer picks the fields it needs (surface / imageUid / t / z).
-    push_outcome, _msg = push_capture_notification(uid, id, get(envelope, "address", nothing))
+    push_outcome, _msg = push_capture_notification(uid, id, get(envelope, "address", nothing),
+                                                    String(get(envelope, "notes", "")))
 
     # Nudge any open Kiwi (this window OR another Cecelia session on this project) to refresh its
     # Recent-captures list. Symmetric with delete/clear — both surfaces should reflect a WRITE the

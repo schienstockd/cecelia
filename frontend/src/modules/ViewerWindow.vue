@@ -4485,6 +4485,10 @@ interface CaptureView {
   // a re-annotate is more strokes on the same frame, so the refined capture inherits it verbatim
   // and a later Refocus takes the full-restore branch rather than the seek-only fallback.
   viewStateSnapshot: unknown | null
+  // Free-text notes the user typed at share time (BIDIR follow-up). Shown on the frozen-frame
+  // surface so the user sees what context Claude received; preserved on re-annotate so a refined
+  // capture doesn't lose the "here's what I meant" line.
+  notes: string
 }
 const captureView = ref<CaptureView | null>(null)
 function closeCaptureView() { captureView.value = null }
@@ -4565,20 +4569,23 @@ watch([shownT, zPlane], () => { if (settings.viewerLandscape) recomputeLandscape
 watch(() => [cam.value.panX, cam.value.panY, cam.value.dist, cam.value.yaw, cam.value.pitch],
       () => { if (settings.viewerLandscape) recomputeLandscape() })
 function onReannotate(payload: {
-  captureId: string; frameDataUrl: string; overlay: OverlayMark[]
+  captureId: string; frameDataUrl: string; overlay: OverlayMark[]; notes: string
 }) {
   // Preserve the same address + viewStateSnapshot on a refined capture (server also links via
   // `previousCaptureId`). The snapshot rides through the spread from the existing captureView.
+  // Notes come pre-merged from CaptureViewSurface (original + new joined with `---`), so the
+  // frozen surface shows the accumulated context of every refine pass.
   if (!captureView.value) return
   captureView.value = {
     ...captureView.value,
     captureId: payload.captureId,
     frameDataUrl: payload.frameDataUrl,
     overlay: payload.overlay,
+    notes: payload.notes,
   }
 }
 
-async function onDrawSave(payload: { overlay: OverlayMark[] }) {
+async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
   const el = canvas.value
   if (!el || !projectUid) { drawMode.value = false; return }
   drawBusy.value = true
@@ -4648,7 +4655,11 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
       body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,
                              frames: [{ png }], overlay: payload.overlay,
                              ...(viewStateSnapshot ? { viewStateSnapshot } : {}),
-                             ...(landscapeSnapshot ? { landscape: landscapeSnapshot } : {}) }),
+                             ...(landscapeSnapshot ? { landscape: landscapeSnapshot } : {}),
+                             // Session-wide notes the user typed on DrawSurface — the free-text
+                             // context that travels alongside the pixels + marks. Only sent when
+                             // non-empty; a Save with no notes stays lean.
+                             ...(payload.notes ? { notes: payload.notes } : {}) }),
     })
     // Response body is a one-shot stream — read once. On !ok extract .error if present; on ok
     // extract .captureId so the viewer can carry it into CaptureViewSurface.
@@ -4670,14 +4681,19 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
       captureId, frameDataUrl: png, overlay: payload.overlay,
       address, addressLine: drawAddressLine.value,
       viewStateSnapshot,
+      notes: payload.notes,
     }
     if (pushOutcome === 'sent') {
       // Push landed — skip the clipboard. Toast tells the user delivery happened; they can
       // switch to their Claude session and see the incoming message there.
       showShareToast('ok', 'Sent to your Claude session — check for the incoming message.')
     } else {
-      // Not paired / socket dead / any write error ⇒ fallback path unchanged from #1040.
-      const prompt = 'Read my shared frame in cecelia.'
+      // Not paired / socket dead / any write error ⇒ fallback path. Include the notes inline in
+      // the clipboard prompt so Claude reads the user's own words alongside the "look at this"
+      // — same principle as the push path (notes travel WITH the delivery signal, not only via
+      // a follow-up get_capture call).
+      const promptBase = 'Read my shared frame in cecelia.'
+      const prompt = payload.notes ? `${promptBase}\nUser said: ${payload.notes}` : promptBase
       const copied = await copyText(prompt)
       showShareToast('ok', copied
         ? 'Capture saved — prompt in your clipboard. Switch to Claude and paste.'
@@ -4828,6 +4844,7 @@ onUnmounted(() => {
                           :address="captureView.address"
                           :address-line="captureView.addressLine"
                           :view-state-snapshot="captureView.viewStateSnapshot"
+                          :notes="captureView.notes"
                           @close="closeCaptureView" @reannotate="onReannotate" />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
            cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
