@@ -235,6 +235,88 @@ function _tile_seg_counts(img::CciaImage, vn::AbstractString, t::Int,
     _bin_centroids_to_tiles(xs, ys, ts, t, ncols, nrows, sizeX, sizeY)
 end
 
+# Per-tile per-visible-pop counts (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2b — `pops`).
+# For each pop the user has toggled visible in the manager, count how many of its labels
+# have centroids inside each tile at the shown t. Returns a Vector{Vector{NamedTuple}} —
+# one entry per tile, each holding the (path, name, count) triples for pops with count > 0
+# in that tile. Empty tile ⇒ empty inner vector (caller decides whether to emit a `pops`
+# key or drop it, matching Decision 3 sparsity for zero-count tiles too).
+#
+# One label_props read shared across all visible pops; per-pop cost is O(|pop.labels|) once
+# the label→tile map is built. Uses `resolve_pops` — the same authoritative population
+# resolver `overlay_author` uses, so a Claude reader and a viewer see the SAME membership.
+#
+# `nothing` return means "can't compute pops for this (image, vn, popType)" — either the
+# resolver failed or centroids are missing. Frontend degrades: no `pops` key on any tile.
+function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::AbstractString,
+                          t::Int, ncols::Int, nrows::Int, sizeX::Int, sizeY::Int)::Union{Vector{Vector{NamedTuple}},Nothing}
+    (sizeX > 0 && sizeY > 0) || return nothing
+    # Centroids: one label_props read, keyed by :label so we can bin per label id.
+    df = try
+        label_props(img; value_name = pop_vn) |> view_centroid_cols |> as_df
+    catch
+        return nothing
+    end
+    nm = names(df)
+    (("centroid_x" in nm) && ("centroid_y" in nm) && ("label" in nm)) || return nothing
+    has_t = "centroid_t" in nm
+    # Build label → tile_index, filtered to this t. A label absent from the map (wrong t,
+    # NaN centroid) is silently skipped when a pop asks about it — same discipline as
+    # `_bin_centroids_to_tiles`, just with a lookup instead of an accumulator.
+    label_to_tile = Dict{Int,Int}()
+    @inbounds for i in 1:size(df, 1)
+        lab = df[i, :label]
+        (lab isa Real && isfinite(Float64(lab))) || continue
+        px = df[i, :centroid_x]; py = df[i, :centroid_y]
+        (px isa Real && py isa Real && isfinite(Float64(px)) && isfinite(Float64(py))) || continue
+        if has_t
+            tv = df[i, :centroid_t]
+            (tv isa Real && isfinite(Float64(tv))) || continue
+            Int(round(Float64(tv))) == t || continue
+        end
+        c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
+        r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
+        label_to_tile[Int(round(Float64(lab)))] = r * ncols + c + 1
+    end
+    # Resolve the pops the manager knows about — SHOW-filtered per Decision 3 (only the ones
+    # the user has ticked visible on the panel). `resolve_pops` gives us (path, name, labels,
+    # show, …) NamedTuples.
+    pops = try
+        resolve_pops(img, pop_type; value_name = pop_vn)
+    catch
+        return nothing
+    end
+    _pop_counts_from_label_map(pops, label_to_tile, ncols * nrows)
+end
+
+# Pure helper: given the visible-pop list (as `resolve_pops` returns) and a label→tile map,
+# produce the per-tile `(path, name, count)` bag. Skips pops with `show == false` and pops
+# whose labels don't land in any tile, and skips zero-count tiles per Decision 3 (an empty
+# inner vector means "no visible pops occupy this tile" — the outer caller decides whether
+# to emit a `pops` key on the response tile).
+function _pop_counts_from_label_map(pops, label_to_tile::AbstractDict{Int,Int},
+                                    n_tiles::Int)::Vector{Vector{NamedTuple}}
+    per_tile = [NamedTuple[] for _ in 1:n_tiles]
+    for p in pops
+        Bool(get(p, :show, true)) || continue
+        labs = get(p, :labels, Int[])
+        isempty(labs) && continue
+        counts = Dict{Int,Int}()
+        for L in labs
+            ti = get(label_to_tile, Int(L), 0)
+            ti == 0 && continue
+            counts[ti] = get(counts, ti, 0) + 1
+        end
+        name = String(get(p, :name, String(get(p, :path, ""))))
+        path = String(get(p, :path, ""))
+        for (ti, n) in counts
+            (1 <= ti <= n_tiles) || continue
+            push!(per_tile[ti], (path = path, name = name, count = n))
+        end
+    end
+    per_tile
+end
+
 # Pure helper — no I/O, no DataFrame dependency, hermetically testable. `xs`/`ys` are
 # centroid coordinates in level-0 pixel units; `ts` is the temporal column when the image
 # is a timecourse (else `nothing` — every centroid counts against the queried `t`).
@@ -282,12 +364,13 @@ end
     POST /api/viewer/landscape/compute
 
 Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows,
-         channels: [{index, name}], labelsValueName? }`
-Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?}, ...] }`
+         channels: [{index, name}], labelsValueName?,
+         popValueName?, popType? }`
+Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?, pops?}, ...] }`
 
 Called by the browser at Share time (or on explicit augmented-recompute) so the
 capture envelope carries per-channel per-tile stats alongside the frontend's
-category — the complementary payload from LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1.
+category — the complementary payload from LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1+.
 
 `channels` is the VISIBILITY snapshot (Decision 3): only currently-visible channels
 appear here, and only those appear in the response. `index` is the 0-based channel
@@ -301,12 +384,21 @@ that tile at the shown t. Empty / omitted ⇒ tiles have no `segCount` key (spar
 by visibility per Decision 3). A vn that has no `label_props` on disk is treated
 as absent (a fresh unmeasured image doesn't 500 the whole compute).
 
+`popValueName` + `popType` are the (Phase 2b) visibility snapshot for the population
+overlay: the pop manager's currently-active (vn, popType) — matches what
+`overlay_author` reads via `resolve_pops`. Both non-empty ⇒ each tile with any
+visible-pop members gets `pops: [{path, name, count}]` for pops with count > 0
+in THAT tile (sparse per Decision 3 — zero-count pops are simply absent, and a
+tile with no member pops has no `pops` key at all). Same coordinate frame as
+segCount: level-0 pixel bins.
+
 Cost: one plane read per visible channel at a pyramid level chosen to keep the long
 side ≥ 512 px, plus O(ncols*nrows) per channel for the tile aggregations. Typical
 call for a 3-channel visible tile at 8×8 is < 200 ms; a 32×32 request on a 4-channel
 image lands in the 500 ms – 2 s budget the plan allocates for the augmented layer.
-segCount adds one `.h5ad` read of centroid columns + `O(nCells)` binning — dominated
-by the h5ad round-trip; well under 200 ms on the intravital timecourses tested.
+segCount / pops each add one `.h5ad` read of centroid columns + `O(nCells + nPops)`
+binning; `resolve_pops` is cached per (vn, popType) on the CciaImage so a re-run for
+the same visibility snapshot pays only the first-call cost.
 """
 function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -324,10 +416,13 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     channels_raw = get(body, :channels, nothing)
     channels_raw isa AbstractVector || return 400, JSON3.write((; error = "channels required (list)"))
     labels_vn = _wstr(body, :labelsValueName)   # empty ⇒ segCount off (Decision 3 sparsity)
-    # Early-out: nothing to compute (no channels AND no labels layer visible). Return an empty
-    # tiles list rather than 400 — the frontend calls this optimistically at Share time and a
-    # bare landscape (grid-density picked, no layers on) is a legitimate shape.
-    isempty(channels_raw) && isempty(labels_vn) && return 200, JSON3.write((; tiles = []))
+    pop_vn    = _wstr(body, :popValueName)      # both required for pops — the pop manager's
+    pop_type  = _wstr(body, :popType)           # (vn, popType), from `cc.gatingCurrent`
+    pops_on   = !isempty(pop_vn) && !isempty(pop_type)
+    # Early-out: nothing to compute (no channels AND no labels layer AND no pops layer visible).
+    # Return an empty tiles list rather than 400 — the frontend calls this optimistically at
+    # Share time and a bare landscape (grid-density picked, no layers on) is a legitimate shape.
+    isempty(channels_raw) && isempty(labels_vn) && !pops_on && return 200, JSON3.write((; tiles = []))
 
     vnn = isempty(value_name) ? nothing : String(value_name)
     zp, _td, err = resolve_image_version(project_uid, image_uid, vnn; version = nothing)
@@ -386,22 +481,55 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         end
     end
 
-    # ── Per-tile segCount (Phase 2a) — only when the frontend has a labels layer on.
-    # We resolve the image object once here (not upstream) so a channels-only compute
-    # doesn't pay for the ccid.json read. A missing/unmeasured vn returns nothing and
-    # tiles just don't get a `segCount` key — the sparsity rule handles it.
-    if !isempty(labels_vn)
-        seg_counts = try
+    # ── Image-object + geometry for the label-props-driven augmentations (Phase 2a + 2b).
+    # Resolved once and shared: `init_object` reads ccid.json, and `image_geometry` reads
+    # `.zarray` metadata — either is cheap on its own, but paying twice when segCount and
+    # pops are both on is silly. Channels-only computes skip this block entirely.
+    img_obj = nothing
+    sizeX = 0; sizeY = 0
+    if !isempty(labels_vn) || pops_on
+        try
             geo = image_geometry(zp)
+            sizeX = Int(geo.sizeX); sizeY = Int(geo.sizeY)
             img_obj = init_object(project_uid, image_uid)
-            img_obj isa CciaImage ? _tile_seg_counts(img_obj, labels_vn, t, ncols, nrows,
-                                                    Int(geo.sizeX), Int(geo.sizeY)) : nothing
+            img_obj isa CciaImage || (img_obj = nothing)
+        catch
+            img_obj = nothing
+        end
+    end
+
+    # ── Per-tile segCount (Phase 2a) — only when the frontend has a labels layer on.
+    # A missing/unmeasured vn returns nothing and tiles just don't get a `segCount` key —
+    # the sparsity rule handles it.
+    if !isempty(labels_vn) && img_obj !== nothing
+        seg_counts = try
+            _tile_seg_counts(img_obj, labels_vn, t, ncols, nrows, sizeX, sizeY)
         catch
             nothing
         end
         if seg_counts !== nothing
             for i in eachindex(tiles)
                 tiles[i]["segCount"] = seg_counts[i]
+            end
+        end
+    end
+
+    # ── Per-tile pops (Phase 2b) — only when the pop manager's (vn, popType) is set AND
+    # the layer is on. `resolve_pops` filters by `.show`, so we get exactly what the viewer
+    # is currently painting. Empty tile ⇒ no `pops` key (Decision 3 sparsity carries all
+    # the way down: an off pop is absent, a zero-count tile is absent, no false zeros).
+    if pops_on && img_obj !== nothing
+        pop_tiles = try
+            _tile_pop_counts(img_obj, pop_vn, pop_type, t, ncols, nrows, sizeX, sizeY)
+        catch
+            nothing
+        end
+        if pop_tiles !== nothing
+            for i in eachindex(tiles)
+                bag = pop_tiles[i]
+                isempty(bag) && continue
+                tiles[i]["pops"] = [Dict("path" => p.path, "name" => p.name, "count" => p.count)
+                                    for p in bag]
             end
         end
     end

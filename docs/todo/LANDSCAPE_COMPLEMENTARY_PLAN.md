@@ -1,7 +1,8 @@
 # Landscape complementary stats — plan
 
 **Status:** building. Phase 1 (channels) shipped 2026-09-20 in #1089; Phase 2a
-(`segCount`) building 2026-09-20. Drafted from
+(`segCount`) shipped 2026-09-20 in #1096; Phase 2b (`pops`) building 2026-09-20.
+Drafted from
 [`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md).
 Written to be picked up cold by another session.
 
@@ -167,22 +168,22 @@ Each phase independently mergeable.
    alongside `category` and bumps `schemaVersion` to 2. MCP `get_capture`
    docstring names the new field.
 
-3. **Phase 2a — `segCount` (this pass, 2026-09-20).** Same compute endpoint
-   grows an optional `labelsValueName` in the body — when set to the
-   currently-shown labels vn (from the frontend `getLabelVisibility` /
-   `labelName` computed), the response carries `tiles[i].segCount = <int>`:
-   how many segmented objects have centroids inside that tile at the shown t.
-   Uses `label_props(img; value_name=vn) |> view_centroid_cols |> as_df`,
-   filtered by `centroid_t` when present; bins by level-0 pixel dimensions
+3. **Phase 2a — `segCount`. SHIPPED 2026-09-20 in #1096.** The compute endpoint
+   grew an optional `labelsValueName` in the body — when set to the currently-shown
+   labels vn (from the frontend `getLabelVisibility` / `labelName` computed), each
+   response tile carries `segCount = <int>`: how many segmented objects have
+   centroids inside that tile at the shown t. Bins by level-0 pixel dimensions
    (`image_geometry.sizeX/Y`), consistent with Phase 1's whole-frame tiling.
-   Sparse per Decision 3 (no `segCount` key when labels layer off). ~250 lines.
 
-4. **Phase 2b — `pops` (next slice, unscheduled).** Per-tile population
-   membership. Bigger than 2a because it needs the gating engine to resolve
-   pop labels for the current run, plus a per-pop-per-tile aggregation. Frontend
-   snapshot grows `visiblePops` (from `getPopVisible`). Emit
-   `tiles[i].pops = [{popId, name, count}]` sparse per visible pop. Reuses the
-   same centroid binning as 2a. ~400 lines.
+4. **Phase 2b — `pops` (this pass, 2026-09-20).** Same compute endpoint grows
+   optional `popValueName` + `popType` — when both non-empty (frontend reads them
+   from `cc.gatingCurrent`, gated by `popsPanelOn` = `getPopVisible(setUid, popType)`),
+   the backend resolves visible pops via `resolve_pops(img, popType; value_name=vn)`
+   (same authoritative resolver `overlay_author` uses), builds a `label → tile` map
+   from label_props centroids once, then counts each pop's labels per tile. Each
+   tile with any member pops gets `pops = [{path, name, count}]` for the pops with
+   count > 0 in THAT tile (sparse per Decision 3 — zero-count pops absent, empty
+   tiles have no `pops` key at all). ~350 lines.
 
 5. **Phase 3 — `tracks` summary.** count / meanDuration / meanSpeed from
    the track-props view; `hmmStates` / `motifs` gated by run existence

@@ -4620,11 +4620,13 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     // bag is ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
     // Only attached when the user has the overlay on — sharing without the landscape stays lean.
     // Augment the frontend-computed category landscape with backend-only fields
-    // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1 + 2a): per-channel mean/SNR untangled from the
-    // colour-blend, plus per-tile segCount from label_props centroids. Visibility rule
-    // (Decision 3): only channels currently ticked on and the currently-shown labels vn
-    // travel — the response only carries what the user is looking at, matching the RGB
-    // composite. Both fields optional; failure is soft (category-only stays a valid v1).
+    // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1 + 2a + 2b): per-channel mean/SNR untangled
+    // from the colour-blend, per-tile segCount from label_props centroids, and per-tile
+    // pops from the current pop manager's visible populations. Visibility rule (Decision 3):
+    // only channels currently ticked on, the currently-shown labels vn, and the pop
+    // manager's active (vn, popType) travel — the response only carries what the user is
+    // looking at, matching the RGB composite. Every field optional; failure is soft
+    // (category-only stays a valid v1).
     let landscapeSnapshot: LandscapeResult | null = null
     if (settings.viewerLandscape && landscape.value && meta.value) {
       const visibleChannels = meta.value.channels
@@ -4632,9 +4634,15 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
         .filter(ch => ch.visible)
         .map(({ index, name }) => ({ index, name }))
       const labelsVn = labelName.value    // '' when the labels layer is off — backend skips segCount
+      // Pops snapshot: the pop manager's currently-authored (vn, popType), gated by whether
+      // the panel has that popType toggled visible. `resolve_pops` on the backend applies
+      // per-pop `.show` — we only pass "is the layer on"; the individual-pop filter lives
+      // there. Empty popVn/popType ⇒ backend skips pops entirely.
+      const popVn = popsPanelOn.value ? (gatingCurrent.value.valueName || '') : ''
+      const popType = popsPanelOn.value ? (gatingCurrent.value.popType || '') : ''
       // At least one augmentable dimension has to be on before we ask; if the frontend has
       // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
-      const anyAugment = visibleChannels.length > 0 || !!labelsVn
+      const anyAugment = visibleChannels.length > 0 || !!labelsVn || (!!popVn && !!popType)
       if (anyAugment && projectUid) {
         try {
           const cRes = await fetch('/api/viewer/landscape/compute', {
@@ -4645,6 +4653,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
               cols: landscape.value.grid.cols, rows: landscape.value.grid.rows,
               channels: visibleChannels,
               ...(labelsVn ? { labelsValueName: labelsVn } : {}),
+              ...(popVn && popType ? { popValueName: popVn, popType } : {}),
             }),
           })
           if (cRes.ok) {

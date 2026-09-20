@@ -197,4 +197,29 @@ describe('augmentLandscape', () => {
     const merged = augmentLandscape(base, [{ tileId: 'A1', segCount: NaN }])
     expect(merged.tiles.find(t => t.id === 'A1')?.segCount).toBeUndefined()
   })
+
+  it('merges pops independently of channels + segCount (Phase 2b)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const augment: import('./landscape').AugmentTile[] = [
+      { tileId: 'A1', pops: [{ path: '/live/tnaive', name: 'T naive', count: 3 }] },
+      { tileId: 'B2', segCount: 4, pops: [
+        { path: '/live/tnaive', name: 'T naive', count: 2 },
+        { path: '/live/tmem', name: 'T mem', count: 1 },
+      ]},
+      { tileId: 'C3', pops: [] },                                       // empty ⇒ no key
+    ]
+    const merged = augmentLandscape(base, augment)
+    expect(merged.schemaVersion).toBe(2)
+    expect(merged.tiles.find(t => t.id === 'A1')?.pops).toEqual([
+      { path: '/live/tnaive', name: 'T naive', count: 3 },
+    ])
+    expect(merged.tiles.find(t => t.id === 'A1')?.segCount).toBeUndefined()
+    expect(merged.tiles.find(t => t.id === 'B2')?.pops?.length).toBe(2)
+    expect(merged.tiles.find(t => t.id === 'B2')?.segCount).toBe(4)
+    // empty pops array ⇒ no `pops` key (sparsity)
+    expect(merged.tiles.find(t => t.id === 'C3')?.pops).toBeUndefined()
+    // untouched tiles have no pops key
+    expect(merged.tiles.find(t => t.id === 'D4')?.pops).toBeUndefined()
+  })
 })
