@@ -4742,7 +4742,8 @@ onUnmounted(() => {
            grid so the "cell B3" both overlays name is the same tile. -->
       <LandscapeOverlay v-if="settings.viewerLandscape && landscape && meta && shownT >= 0"
                         :landscape="landscape" :show-labels="settings.viewerLandscapeLabels" />
-      <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity" />
+      <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity"
+                   :hide-labels="settings.viewerLandscape && settings.viewerLandscapeLabels" />
       <!-- Restored annotations from a blackboard attachment (BIDIR Part 4). Read-only; the source of
            truth is the capture on disk, and edits happen on the blackboard side, not here. Chip below
            labels it + dismisses. Auto-drops when the user seeks t / z away — the marks belong to a
@@ -5260,9 +5261,9 @@ onUnmounted(() => {
             <CcToggle v-model="settings.viewerGrid" aria-label="Show the region grid" />
             <template v-if="settings.viewerGrid">
               <input
-                type="range" class="vw-grow vw-px" :min="4" :max="16" :step="1"
+                type="range" class="vw-grow vw-px" :min="4" :max="32" :step="1"
                 v-model.number="settings.viewerGridDensity"
-                v-tooltip.bottom="'Cells per side (4..16)'" aria-label="Grid density"
+                v-tooltip.bottom="'Cells per side (4..32)'" aria-label="Grid density"
               >
               <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerGridDensity }}</span>
             </template>
@@ -5280,13 +5281,13 @@ onUnmounted(() => {
               <CcToggle v-model="settings.viewerLandscapeLabels" aria-label="Show landscape tile labels" />
             </template>
           </div>
-          <div v-if="settings.viewerLandscape && landscape" class="cc-row cc-row-tight vw-landscape-legend"
-               v-tooltip.bottom="'Tile category legend — cell count in parentheses'">
-            <template v-for="l in landscape.legend" :key="l.category">
+          <ul v-if="settings.viewerLandscape && landscape" class="vw-landscape-legend"
+              v-tooltip.bottom="'Tile category legend — cell count in parentheses'">
+            <li v-for="l in landscape.legend" :key="l.category" class="cc-row cc-row-tight">
               <span class="vw-lg-swatch" :style="{ background: l.swatch }" />
               <span class="cc-fs-3xs">{{ l.category }}<span class="cc-muted">&nbsp;({{ l.nTiles }})</span></span>
-            </template>
-          </div>
+            </li>
+          </ul>
         </CollapsibleSection>
 
         <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
@@ -5831,7 +5832,7 @@ onUnmounted(() => {
    squeezed below — `flex: 1` alone collapses it to nothing in a narrow panel. */
 .vw-px { min-width: 3.5rem; }
 .vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
-.vw-landscape-legend { flex-wrap: wrap; }
+.vw-landscape-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .vw-landscape-sub-lbl { margin-left: 0.4rem; }
 .vw-lg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: var(--cc-radius-xs); border: 1px solid rgba(0,0,0,0.15); }
 /* A population row: swatch, name that can shrink, count, toggle. The name is the only flexible part —

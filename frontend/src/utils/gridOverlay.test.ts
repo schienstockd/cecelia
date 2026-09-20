@@ -8,11 +8,11 @@ describe('density bounds', () => {
   it('exposes the plan-locked default and range (Decision 13)', () => {
     expect(GRID_DENSITY_DEFAULT).toBe(8)
     expect(GRID_DENSITY_MIN).toBe(4)
-    expect(GRID_DENSITY_MAX).toBe(16)
+    expect(GRID_DENSITY_MAX).toBe(32)
   })
   it('clamps + rounds arbitrary input to the range', () => {
     expect(clampDensity(1)).toBe(4)
-    expect(clampDensity(100)).toBe(16)
+    expect(clampDensity(100)).toBe(32)
     expect(clampDensity(8.4)).toBe(8)
     expect(clampDensity(8.6)).toBe(9)
     expect(clampDensity(-5)).toBe(4)
