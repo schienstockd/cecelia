@@ -21,6 +21,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useBlackboardStore } from '../stores/blackboard'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
+import { usePanelResize } from '../composables/usePanelResize'
 import {
   listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
@@ -36,6 +37,12 @@ import { loadImg } from '../plots/export'
 const projectMeta = useProjectMetaStore()
 const bbStore = useBlackboardStore()
 const viewer = useViewerStore()
+
+// List-pane width: draggable + persisted, same composable Tasks + Chain use so the "grab the
+// divider and pull" gesture reads the same across the app. Handle on the list's RIGHT edge.
+const { widthStyle: listWidthStyle, onResizeStart: onListResizeStart } = usePanelResize({
+  min: 220, max: 640, default: 352, storageKey: 'cc-blackboard-list-width', edge: 'right',
+})
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const hasProject = computed(() => projectMeta.hasProject)
@@ -333,7 +340,11 @@ onUnmounted(() => { mermaidRenderSeq++ })
 
       <!-- Split: list left, entry right. Border-only divider, no floating panels. -->
       <div class="bb-split">
-        <aside class="bb-list">
+        <aside class="bb-list" :style="listWidthStyle">
+          <!-- drag the list/entry divider (persisted). Handle on the list's RIGHT edge; drag
+               right widens the list. Sits OUTSIDE the scroll wrapper so it can't scroll away. -->
+          <div class="bb-divider" @mousedown="onListResizeStart"
+               v-tooltip.top="'Drag to resize the list'" />
           <div class="bb-list-scroll">
           <SelectionTable class="bb-list-table"
                           selection-mode="single"
@@ -493,12 +504,15 @@ onUnmounted(() => { mermaidRenderSeq++ })
 }
 
 /* ── entry list ─────────────────────────────────────────────────────────────── */
+/* Width is driven by `usePanelResize` — `flex-shrink: 0` so the flex parent doesn't fight it,
+   `position: relative` so the divider anchors to this pane's right edge. */
 .bb-list {
-  width: 22rem;
+  flex-shrink: 0;
   border-right: 1px solid var(--cc-border);
   display: flex; flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 /* Scroll wrapper: takes the flex space so the TABLE itself sits at natural height at the top.
    Without this, `flex: 1` on the <table> stretches its rows to fill (one row => full-height row
@@ -506,6 +520,15 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-list-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .bb-list-table { width: 100%; }
 .bb-list-title { color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The divider: a grab strip on the pane's right edge, over the border it sits on. Same shape
+   TasksModule uses — 5px wide, `col-resize` cursor, transient accent on hover. */
+.bb-divider {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 4;
+}
+.bb-divider:hover { background: var(--cc-accent); opacity: 0.35; }
 
 /* ── entry pane ─────────────────────────────────────────────────────────────── */
 .bb-pane {
