@@ -4514,18 +4514,26 @@ watch([shownT, zPlane], ([t2, z2]) => {
 // backend lets `get_landscape` MCP tool read the same view the user is looking at — one
 // computation, two consumers (Decision 13's "standalone Vue feature first" pattern).
 const landscape = ref<LandscapeResult | null>(null)
-let landscapeBusy = false
-async function recomputeLandscape() {
-  if (!settings.viewerLandscape || !meta.value || shownT.value < 0) { landscape.value = null; return }
-  const el = canvas.value
-  if (!el || landscapeBusy) return
-  landscapeBusy = true
-  try {
+// Landscape recompute goes through the canonical `debouncedLatest` scheduler — the density
+// slider and the t/z scrubs both fire in bursts, and `readCanvasImageData` synchronously runs
+// `canvas.toDataURL('image/png')` on the WebGPU backbuffer (hundreds of ms on a 4K canvas),
+// which BLOCKS the main thread. Firing per event froze the slider on the second drag tick —
+// the input queue backed up behind the previous compute. `wait: 200` collapses a slider drag
+// into one run after release; `maxWait: 400` gives a scrub cadence while dragging so the
+// heatmap moves with you rather than only landing on release. Same shape as the viewer's
+// other continuous controls (see `frontend/CLAUDE.md` → *A continuous control's effect is
+// coalesced*).
+const recomputeLandscapeSched = debouncedLatest<void>(
+  async (_arg, isCurrent) => {
+    if (!settings.viewerLandscape || !meta.value || shownT.value < 0) { landscape.value = null; return }
+    const el = canvas.value
+    if (!el) return
     const data = await readCanvasImageData(el)
-    if (!data) { landscape.value = null; return }
+    if (!isCurrent() || !data) { if (!data) landscape.value = null; return }
     const result = computeLandscape(data, {
       cols: settings.viewerGridDensity, rows: settings.viewerGridDensity,
     })
+    if (!isCurrent()) return
     landscape.value = result
     if (projectUid) {
       // Fire-and-forget publish so MCP get_landscape can see the same thing. A failed publish
@@ -4538,11 +4546,16 @@ async function recomputeLandscape() {
         }),
       }).catch(() => { /* silent — non-blocking */ })
     }
-  } finally { landscapeBusy = false }
-}
-watch(() => settings.viewerLandscape, on => { if (on) void recomputeLandscape(); else landscape.value = null })
-watch(() => settings.viewerGridDensity, () => { if (settings.viewerLandscape) void recomputeLandscape() })
-watch([shownT, zPlane], () => { if (settings.viewerLandscape) void recomputeLandscape() })
+  },
+  { wait: 200, maxWait: 400 },
+)
+const recomputeLandscape = () => recomputeLandscapeSched.schedule()
+watch(() => settings.viewerLandscape, on => {
+  if (on) recomputeLandscape()
+  else { recomputeLandscapeSched.cancel(); landscape.value = null }
+})
+watch(() => settings.viewerGridDensity, () => { if (settings.viewerLandscape) recomputeLandscape() })
+watch([shownT, zPlane], () => { if (settings.viewerLandscape) recomputeLandscape() })
 function onReannotate(payload: {
   captureId: string; frameDataUrl: string; overlay: OverlayMark[]
 }) {
