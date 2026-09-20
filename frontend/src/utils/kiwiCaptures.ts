@@ -127,16 +127,18 @@ export async function clearAllCaptures(
 }
 
 /** Full capture envelope + PNG data URL, as returned by `GET /api/viewer/capture`. Used by
- *  Kiwi's Refocus + the Blackboard page's attachment thumbnails to get the address (for the
- *  seek payload) AND the drawn marks (for restoring the annotation overlay onto the live
- *  viewer and for compositing marks into attachment thumbnails). Failure ⇒ null so the caller
- *  can silently degrade. */
+ *  Kiwi's Refocus + the Blackboard page's attachment thumbnails to get the address (seek target),
+ *  the drawn marks (for the read-only overlay AND for compositing marks into thumbnails), and —
+ *  when the capture was written after `viewStateSnapshot` started being captured — the full
+ *  viewer view state so Refocus can restore the exact camera / channels / t / z the user saw
+ *  when they shared. Failure ⇒ null so the caller can silently degrade. */
 export interface CaptureEnvelope {
   captureId: string
   surface: CaptureSurface
   address: CaptureAddress | null
-  overlay: OverlayMark[]    // the marks the user drew when this capture was shared (may be [])
-  frame: string             // data URL, or '' if the PNG is missing
+  overlay: OverlayMark[]           // marks (may be [])
+  viewStateSnapshot: unknown | null // opaque `ViewerViewState`; null for legacy captures
+  frame: string                     // data URL, or '' if the PNG is missing
 }
 export async function fetchCaptureEnvelope(
   projectUid: string, captureId: string, apiBase = ''
@@ -155,11 +157,16 @@ export async function fetchCaptureEnvelope(
     const address = env.address && typeof env.address === 'object'
       ? (env.address as CaptureAddress) : null
     const overlay = Array.isArray(env.overlay) ? (env.overlay as OverlayMark[]) : []
+    // viewStateSnapshot is opaque here — the caller hands it straight to `setPendingViewState`
+    // which knows how to detect an empty (== null / undefined) snapshot vs a real one.
+    const viewStateSnapshot = (env.viewStateSnapshot && typeof env.viewStateSnapshot === 'object')
+      ? env.viewStateSnapshot : null
     return {
       captureId,
       surface,
       address,
       overlay,
+      viewStateSnapshot,
       frame: typeof json.frame === 'string' ? json.frame : '',
     }
   } catch { return null }

@@ -28,12 +28,14 @@ import {
 } from '../utils/blackboardApi'
 import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
 import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
-import { publishViewerSeek } from '../utils/viewerSeekChannel'
+import { openViewerWindow } from '../utils/viewerWindow'
+import { useViewerStore } from '../stores/viewer'
 import { composeImageWithOverlay } from '../utils/overlayCompose'
 import { loadImg } from '../plots/export'
 
 const projectMeta = useProjectMetaStore()
 const bbStore = useBlackboardStore()
+const viewer = useViewerStore()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const hasProject = computed(() => projectMeta.hasProject)
@@ -210,21 +212,39 @@ async function onDelete() {
   }
 }
 
-/** Fire-and-forget: publish a viewer-seek for this capture. The marks travel too — the pop-out
- *  viewer restores them as a read-only overlay while it's on the capture's t / z (#1073). */
+/** Open the capture's source image in the browser viewer (opens if not open; focuses if already
+ *  open; no-op if already showing THIS image) + restore the exact view the user saw when they
+ *  shared + paint the marks as a read-only overlay. Same mechanism the analysis-board's Zoom-to-
+ *  source uses: write `pendingViewState` first (persists via localStorage so a fresh popup mount
+ *  reads the seed), then `openViewerWindow(...)`. Modern captures carry `viewStateSnapshot` and
+ *  restore camera / channels / t / z verbatim; legacy captures fall into the seek-only path. */
 function focusCapture(cid: string) {
   const slot = captureCache.value[cid]
   const a = slot?.env?.address
   if (!slot?.env || !a?.imageUid) return
   const t = Array.isArray(a.t) ? a.t[0] : a.t
-  const overlay = slot.env.overlay ?? []
-  publishViewerSeek({
+  const marks = slot.env.overlay ?? []
+  const overlay = marks.length > 0
+    ? { captureId: cid, marks: marks as unknown[] }
+    : undefined
+  if (slot.env.viewStateSnapshot) {
+    viewer.setPendingViewState({
+      viewState: slot.env.viewStateSnapshot,
+      overlay, imageUid: a.imageUid,
+    })
+  } else {
+    viewer.setPendingViewState({
+      focus: {
+        ...(typeof t === 'number' ? { t } : {}),
+        ...(typeof a.z === 'number' ? { z: a.z } : {}),
+      },
+      overlay, imageUid: a.imageUid,
+    })
+  }
+  openViewerWindow({
     projectUid: projectUid.value,
     imageUid: a.imageUid,
-    captureId: cid,
-    ...(typeof t === 'number' ? { t } : {}),
-    ...(typeof a.z === 'number' ? { z: a.z } : {}),
-    ...(overlay.length > 0 ? { marks: overlay } : {}),
+    ...(a.valueName ? { valueName: a.valueName } : {}),
   })
 }
 
@@ -314,6 +334,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
       <!-- Split: list left, entry right. Border-only divider, no floating panels. -->
       <div class="bb-split">
         <aside class="bb-list">
+          <div class="bb-list-scroll">
           <SelectionTable class="bb-list-table"
                           selection-mode="single"
                           id-key="entryId"
@@ -344,6 +365,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
               </span>
             </template>
           </SelectionTable>
+          </div>
         </aside>
 
         <section class="bb-pane">
@@ -478,7 +500,11 @@ onUnmounted(() => { mermaidRenderSeq++ })
   min-height: 0;
   overflow: hidden;
 }
-.bb-list-table { flex: 1 1 auto; min-height: 0; }
+/* Scroll wrapper: takes the flex space so the TABLE itself sits at natural height at the top.
+   Without this, `flex: 1` on the <table> stretches its rows to fill (one row => full-height row
+   because table-layout distributes remaining space across cells). */
+.bb-list-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.bb-list-table { width: 100%; }
 .bb-list-title { color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── entry pane ─────────────────────────────────────────────────────────────── */

@@ -60,16 +60,38 @@ export interface PreviewLabels {
   updateId: number
 }
 
-/** A viewState the AnimationPanel wants the browser viewer to apply — the OTHER direction of the
- *  bridge. AnimationPanel calls `setPendingViewState(vs)` when the user clicks a keyframe with
- *  "sync viewer" on, or when they toggle sync on and want the selected keyframe to appear. The
- *  ViewerWindow watches this ref; on change it converts back to the orbit-camera form and applies.
+/** ONE cross-window handoff for "jump the browser viewer somewhere and, optionally, show these
+ *  annotations." Three shapes ride on this same channel — the writer picks what to fill:
  *
- *  Stamped with `updateId` — same reason as `PreviewLabels`: identical repeat writes across
- *  localStorage return the same JSON and DON'T fire the `storage` event, so a keyframe re-clicked
- *  never wakes the popup viewer. Stamping guarantees the value differs each set. */
+ *   1. **Full restore** (`viewState` set): the analysis-board's Zoom-to-source uses this. The
+ *      popup restores camera + per-channel LUT/lo/hi/visibility + mode + t + z, everything the
+ *      snapshot names. This is how the AnimationPanel's keyframe restore works too.
+ *   2. **Seek only** (`focus` set, no `viewState`): Kiwi's Refocus + Blackboard's attachment
+ *      click on a capture that was written BEFORE `viewStateSnapshot` started being captured. The
+ *      popup nudges t / z and leaves the camera / channels / mode alone.
+ *   3. **Overlay sidecar** (`overlay` set, with either 1 or 2): a capture's stored marks are
+ *      restored as a read-only overlay on the live canvas — the "Annotations from cap-XXX" chip
+ *      dismisses them.
+ *
+ *  `imageUid` (optional) filters the pending: a popup showing a different image drops the message.
+ *  Analysis-board zoom-to-source omits it (the target popup is guaranteed by `openViewerWindow`);
+ *  Kiwi + Blackboard set it so a re-focus for image A doesn't move a popup on image B.
+ *
+ *  Persisted to localStorage — same rationale as before, and now serves the fresh-popup case too
+ *  (the caller writes the pending then `openViewerWindow(...)`, and the freshly-mounted popup
+ *  seeds from localStorage before its first render).
+ *
+ *  Stamped with `updateId` so identical repeat writes still fire the `storage` event (a re-click
+ *  of the same keyframe or capture must still wake the popup). */
 export interface PendingViewState {
-  viewState: unknown       // opaque `ViewerViewState` object; the ViewerWindow parses it
+  /** Set for the full-restore case (Zoom-to-source, keyframe apply). */
+  viewState?: unknown
+  /** Set for the seek-only case (legacy captures without `viewStateSnapshot`). */
+  focus?: { t?: number; z?: number }
+  /** Set when a capture's marks should paint over the live view. */
+  overlay?: { captureId: string; marks: unknown[] }     // marks: OverlayMark[], opaque here
+  /** Optional filter — apply only when the popup is on this image. */
+  imageUid?: string
   updateId: number
 }
 
@@ -248,13 +270,28 @@ export const useViewerStore = defineStore('viewer', () => {
     _writeJson(K_VIEW_STATE, next)
   }
 
-  /** AnimationPanel + ImageStripView.zoomToSource call this to ask the ViewerWindow to jump to a
-   *  captured keyframe. Stamped with a monotonic `updateId` so a re-click of the same keyframe
-   *  fires the storage event (identical writes are suppressed — see `PendingViewState`).
-   *  ViewerWindow watches `pendingViewState`, applies, then calls `consumePendingViewState()` so a
-   *  later reload of the popup doesn't silently re-move the camera to a stale seed. */
-  function setPendingViewState(vs: ViewerViewState | null) {
-    const stamped: PendingViewState | null = vs ? { viewState: vs, updateId: ++_updateIdSeq } : null
+  /** ONE setter for every writer of `pendingViewState`. Three shapes ride here:
+   *
+   *   - AnimationPanel keyframe / ImageStripView.zoomToSource → `{ viewState }` (full restore)
+   *   - Kiwi Refocus / Blackboard attachment (with a fresh capture) → `{ viewState, overlay }`
+   *   - Kiwi Refocus / Blackboard attachment (legacy capture, no `viewStateSnapshot`) →
+   *     `{ focus, overlay?, imageUid }` (seek only, camera + channels preserved)
+   *
+   *  Same monotonic `updateId` disambiguates identical repeat writes so the `storage` event
+   *  fires even when the payload matches (a re-click of the same capture / keyframe wakes the
+   *  popup). Backwards-compatible with the old shape: `setPendingViewState(vs)` still works. */
+  function setPendingViewState(
+    payload: ViewerViewState | Omit<PendingViewState, 'updateId'> | null,
+  ) {
+    let stamped: PendingViewState | null
+    if (payload === null) {
+      stamped = null
+    } else if (payload && typeof payload === 'object' && ('camera' in payload || 'dims' in payload)) {
+      // Bare ViewerViewState — legacy setter shape kept working.
+      stamped = { viewState: payload as ViewerViewState, updateId: ++_updateIdSeq }
+    } else {
+      stamped = { ...(payload as Omit<PendingViewState, 'updateId'>), updateId: ++_updateIdSeq }
+    }
     pendingViewState.value = stamped
     _writeJson(K_PENDING_VIEW, stamped)
   }
