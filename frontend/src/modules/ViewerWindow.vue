@@ -4668,9 +4668,12 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
             }),
           })
           if (cRes.ok) {
-            const cJson = await cRes.json() as { tiles?: AugmentTile[] }
+            const cJson = await cRes.json() as {
+              tiles?: AugmentTile[],
+              sourceRun?: Record<string, Record<string, string | number>>,
+            }
             if (Array.isArray(cJson.tiles)) {
-              landscapeSnapshot = augmentLandscape(landscape.value, cJson.tiles)
+              landscapeSnapshot = augmentLandscape(landscape.value, cJson.tiles, cJson.sourceRun)
             }
           }
         } catch { /* soft fail — fall through to category-only */ }

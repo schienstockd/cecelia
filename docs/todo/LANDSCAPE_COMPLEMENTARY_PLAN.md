@@ -2,7 +2,8 @@
 
 **Status:** building. Phase 1 (channels) shipped 2026-09-20 in #1089; Phase 2a
 (`segCount`) shipped 2026-09-20 in #1096; Phase 2b (`pops`) shipped 2026-09-20
-in #1099; Phase 3 (`tracks`) building 2026-09-20. Drafted from
+in #1099; Phase 3 (`tracks`) shipped 2026-09-20 in #1100; Phase 4 (`sourceRun`)
+building 2026-09-20. Drafted from
 [`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md).
 Written to be picked up cold by another session.
 
@@ -184,27 +185,34 @@ Each phase independently mergeable.
    tile with any member pops gets `pops = [{path, name, count}]` for the pops with
    count > 0 in THAT tile (sparse per Decision 3).
 
-5. **Phase 3 — `tracks` summary (this pass, 2026-09-20).** Compute endpoint grows
-   optional `tracksValueName` — frontend sends the first vn ticked visible under
-   `getTrackVisibility` (same "one at a time" discipline as `labelName`). Backend
-   reads label_props with `[track_id, live.cell.speed]` + centroids, does one pass
-   for whole-lifetime `num_cells` per track, then bins cells at t and emits
-   `tracks = {count, meanDuration, meanSpeed}` per tile (sparse — empty tiles have
-   no `tracks` key). `meanSpeed` is the INSTANTANEOUS per-cell speed averaged in
-   the tile at t (falls back to absent when the segmentation has no speed obs);
-   `meanDuration` reports track lifetimes for the tracks visible in this tile.
-   `hmmStates` / `motifs` deferred to a follow-up (Decision 5 — conditional on
-   the run existing, no free grep for the tile). ~350 lines.
+5. **Phase 3 — `tracks` summary. SHIPPED 2026-09-20 in #1100.** Compute endpoint
+   grew optional `tracksValueName` — backend reads label_props with
+   `[track_id, live.cell.speed]` + centroids, one pass for whole-lifetime
+   `num_cells` per track, second pass bins cells at t and emits
+   `tracks = {count, meanDuration, meanSpeed}` per tile (sparse — empty tiles
+   have no `tracks` key). `meanSpeed` is INSTANTANEOUS per-cell speed averaged
+   in the tile at t (absent when segmentation has no speed obs); `meanDuration`
+   is per-track full-lifetime frame count. `hmmStates` / `motifs` deferred
+   (Decision 5 — conditional on the run existing).
 
-6. **Phase 4 — `sourceRun` provenance.** Per-field bag; every phase that
-   introduced a computed field also adds its `sourceRun` key. If Phase 1–3
-   ship without it, add here in one sweep. ~150 lines.
+6. **Phase 4 — `sourceRun` provenance (this pass, 2026-09-20).** Response body
+   grows optional top-level `sourceRun` — sparse per-field bag naming what
+   produced each augmented field. Per-field values:
+     `segCount = {valueName, labelsVersion}` — vn + resolved vN
+     `pops     = {valueName, popType, gatingMtime}` — same fingerprint
+                 `_pop_df_mtime` uses (on-disk mtime stringified, "∅" when
+                 the gating file is absent)
+     `tracks   = {valueName, labelsVersion}`
+     `channels = {valueName, imageVersion, level}` — pyramid level actually read
+   Frontend `augmentLandscape` grew a third optional `sourceRun` arg and
+   attaches it to the merged `LandscapeResult` (never emits `sourceRun: {}` —
+   same sparsity rule as tile fields). MCP `get_capture` docstring names the
+   bag as the "which run produced this number" answer. ~180 lines.
 
-7. **Phase 5 — legend + envelope-size ratchet test.** Assert that a
+7. **Phase 5 — envelope-size ratchet test.** Assert that a
    `schemaVersion: 2` envelope with all layers on stays under Decision 7's
    500 KB soft budget on a representative frame. Fails when a future field
-   is added without weighing it against the budget. Add landscape envelope
-   size to the frontend cssScenarios / assertion suite. ~50 lines.
+   is added without weighing it against the budget. ~50 lines.
 
 ## Cross-piece linkage
 

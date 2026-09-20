@@ -465,7 +465,8 @@ end
 Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows,
          channels: [{index, name}], labelsValueName?,
          popValueName?, popType?, tracksValueName? }`
-Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?, pops?, tracks?}, ...] }`
+Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?, pops?, tracks?}, ...],
+           sourceRun?: {segCount?, pops?, tracks?, channels?} }`
 
 Called by the browser at Share time (or on explicit augmented-recompute) so the
 capture envelope carries per-channel per-tile stats alongside the frontend's
@@ -501,13 +502,25 @@ each tile with any tracked cell at the shown t gets
                  local spatial measure; NaN when the segmentation has no speed obs).
 An untracked vn (no `track_id` obs) drops the pass; no `tracks` key on any tile.
 
+`sourceRun` is the (Phase 4) per-field provenance bag at the LANDSCAPE level
+(Decision 4 — not sprinkled into each tile). One key per field that was actually
+computed; the value names what the field came from:
+  `segCount = {valueName, labelsVersion}`
+  `pops     = {valueName, popType, gatingMtime}`   (gating file mtime, cache-key parity)
+  `tracks   = {valueName, labelsVersion}`
+  `channels = {valueName, imageVersion, level}`    (pyramid level actually read)
+Sparse — a field absent from the response has no `sourceRun` key. Enables
+"which run produced this number" reads on the capture envelope; also lets Kiwi /
+MCP compare two envelopes and say "the newer one saw a re-tracked h5ad".
+
 Cost: one plane read per visible channel at a pyramid level chosen to keep the long
 side ≥ 512 px, plus O(ncols*nrows) per channel for the tile aggregations. Typical
 call for a 3-channel visible tile at 8×8 is < 200 ms; a 32×32 request on a 4-channel
 image lands in the 500 ms – 2 s budget the plan allocates for the augmented layer.
 segCount / pops each add one `.h5ad` read of centroid columns + `O(nCells + nPops)`
 binning; `resolve_pops` is cached per (vn, popType) on the CciaImage so a re-run for
-the same visibility snapshot pays only the first-call cost.
+the same visibility snapshot pays only the first-call cost. `sourceRun` is metadata
+lookups only (`resolve_version`, `mtime`) — sub-millisecond.
 """
 function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -549,9 +562,16 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
              for r in 0:(nrows - 1), c in 0:(ncols - 1)]
     tiles = vec(permutedims(tiles, (2, 1)))
 
+    # Phase 4 sourceRun bag — populated as each field lands. Only keys for fields that
+    # were actually computed appear (sparse mirrors the tile-level sparsity).
+    source_run = Dict{String,Any}()
+
     # ── Per-channel mean + SNR (Phase 1) — only when the frontend sent channels.
+    channels_emitted = false
+    channels_level = 0
     if !isempty(channels_raw)
         level = _pick_landscape_level(zp)
+        channels_level = level
         # Open once for many channel reads — same pattern as `_sampled_specs`; per-open cost
         # is a metadata round-trip that would dominate if we redid it per channel.
         arr, caxes = try
@@ -589,6 +609,7 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
                 tiles[r * ncols + c + 1]["channels"][cname] = Dict("mean" => round(mean, digits = 4),
                                                                     "snr"  => round(snr,  digits = 3))
             end
+            channels_emitted = true
         end
     end
 
@@ -622,6 +643,7 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
             for i in eachindex(tiles)
                 tiles[i]["segCount"] = seg_counts[i]
             end
+            source_run["segCount"] = _source_run_for_labels(img_obj, labels_vn)
         end
     end
 
@@ -642,6 +664,10 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
                 tiles[i]["pops"] = [Dict("path" => p.path, "name" => p.name, "count" => p.count)
                                     for p in bag]
             end
+            # Record provenance even if all tiles were empty — the compute ran, and a reader
+            # seeing "pops in sourceRun but no `pops` on any tile" learns that the visible-pops
+            # snapshot HAD nothing landing on-screen, not that pops weren't asked for.
+            source_run["pops"] = _source_run_for_pops(img_obj, pop_vn, pop_type)
         end
     end
 
@@ -668,7 +694,30 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
                 ms === nothing || (bag["meanSpeed"]    = ms)
                 tiles[i]["tracks"] = bag
             end
+            source_run["tracks"] = _source_run_for_labels(img_obj, tracks_vn)
         end
+    end
+
+    # ── Phase 4 sourceRun for channels — identity is (valueName, imageVersion, pyramid
+    # level). imageVersion is the resolved vN of the shown filepath (what `_latest` points
+    # at). Load img_obj on demand for a channels-only compute (labels/pops/tracks would
+    # already have loaded it above).
+    if channels_emitted
+        if img_obj === nothing
+            img_obj = try
+                obj = init_object(project_uid, image_uid)
+                obj isa CciaImage ? obj : nothing
+            catch; nothing end
+        end
+        img_version = try
+            iv = img_obj === nothing ? nothing : resolve_version(img_obj, :filepath, vnn)
+            iv isa AbstractString ? String(iv) : LATEST_DEFAULT_VAL
+        catch
+            LATEST_DEFAULT_VAL
+        end
+        source_run["channels"] = Dict("valueName" => isempty(value_name) ? "default" : String(value_name),
+                                       "imageVersion" => img_version,
+                                       "level" => channels_level)
     end
 
     # Drop the empty `channels` bag when this compute didn't populate any (Decision 3
@@ -679,7 +728,41 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         (ch isa AbstractDict && isempty(ch)) && delete!(t_dict, "channels")
     end
 
-    200, JSON3.write((; tiles = tiles))
+    # Only include `sourceRun` in the response when at least one field was actually
+    # computed — matches the sparse-by-visibility discipline the tiles carry.
+    if isempty(source_run)
+        200, JSON3.write((; tiles = tiles))
+    else
+        200, JSON3.write((; tiles = tiles, sourceRun = source_run))
+    end
+end
+
+# Provenance helpers (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 4, Decision 4). Each returns
+# a small Dict identifying the run that produced the corresponding tile field. Kept
+# separate from the compute so a test can call them without a full request round-trip.
+
+function _source_run_for_labels(img::CciaImage, vn::AbstractString)::Dict{String,Any}
+    lv = try
+        String(resolve_version(img, :label_props, vn))
+    catch
+        LATEST_DEFAULT_VAL
+    end
+    Dict("valueName" => String(vn), "labelsVersion" => lv)
+end
+
+function _source_run_for_pops(img::CciaImage, vn::AbstractString,
+                              pop_type::AbstractString)::Dict{String,Any}
+    # Fingerprint the gating map by its on-disk mtime — a reader comparing two envelopes'
+    # `sourceRun.pops.gatingMtime` knows whether the underlying map moved between shares.
+    # String, not Float — JSON round-trips exact seconds with no precision loss, and matches
+    # the shape `Cecelia.gating`'s internal `_pop_df_mtime` cache key uses ("∅" when absent).
+    mtime_s = try
+        path = gating_path(img._dir, String(vn); pop_type = String(pop_type))
+        isfile(path) ? string(mtime(path)) : "∅"
+    catch
+        "∅"
+    end
+    Dict("valueName" => String(vn), "popType" => String(pop_type), "gatingMtime" => mtime_s)
 end
 
 # Test-only reset. Not registered as a route — tests import the module and call it
