@@ -104,7 +104,6 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-camera', means: 'Freeze this version as a snapshot' },
       { icon: 'pi-video', means: 'Record a movie' },
       { icon: 'pi-share-alt', means: 'Apply to the others — and cell tracks; polygon draw tool' },
-      { icon: 'pi-send', means: 'Share the viewer with Claude' },
       { icon: 'pi-power-off', means: 'Quit Cecelia' },
       { icon: 'pi-reply', means: 'Correct what Claude wrote' },
       { icon: 'pi-external-link', means: 'Opens outside the app' },
