@@ -219,7 +219,15 @@ function removePanel(id: number) { remove(id); delete readouts.value[id] }
 const geomStore = useCanvasPanelsStore()
 const shareSel = useCanvasShareSelection()
 useCanvasShareHost({
-  beginShare: () => shareSel.begin(),
+  beginShare: () => {
+    // A fresh Share must land on a clean state. If the user still has a shared/re-shown frame up
+    // (a previous canvas Share, or a Kiwi Refocus), it sits at z:40 alongside FrameAnnotator and
+    // the later-mounted surface eats clicks — which is why the annotator's Cancel and Save looked
+    // dead. Drop both here so the selection overlay is the only surface visible.
+    reshown.value = null
+    pendingShare.value = null
+    shareSel.begin()
+  },
   // Short human label for Kiwi's tooltip; `module` is the canvas's own filter, so "behaviour ·
   // plot canvas" for /behaviour, "universal · plot canvas" for the analysis board's wildcard.
   get label() { return `${props.module ?? 'universal'} · plot canvas` },
@@ -282,12 +290,16 @@ async function onShareConfirm(payload: { panelIds: number[] }) {
     }
     if (!Number.isFinite(x0)) { x0 = 0; y0 = 0 }
     // panels[] — per-panel structure Claude reads to say "the top-left panel is speed for pops B/T."
+    // plotRef.ui carries the FULL panel state (measure, groupBy, chartType, sel, vis, …) so a later
+    // zoom-to-source restores the panel exactly as it was — populations picked, log axes on, bin
+    // width set. `dataSlice.series` is a parallel Claude-facing view of sel (tkey → SeriesTarget);
+    // keeping sel on plotRef.ui too is duplication of a small array, cheap next to the composite PNG.
     const panels = selected.map(p => {
       const panel = panelsSnapshot.value.find(pp => pp.id === p.id)
       const st = panel?.state as (PanelState | undefined)
       const specId = st?.kind ? String(st.kind) : (st?.specId ?? '')
       const plotRef: Record<string, unknown> = { specId }
-      if (st) plotRef.ui = { ...st, sel: undefined, vis: undefined }
+      if (st) plotRef.ui = { ...st }
       return {
         panelId: String(p.id),
         position: { x: p.geom.x - x0, y: p.geom.y - y0, w: p.geom.w, h: p.geom.h },
@@ -317,16 +329,16 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
   const pending = pendingShare.value
   if (!pending || !projectUid.value || shareBusy.value) return
   shareBusy.value = true
+  // FrameAnnotator hands us a composed PNG (marks baked in). Empty ⇒ no marks drawn / compose
+  // failed; ship the bare composite so the POST still succeeds either way.
+  const png = payload.composedPng || pending.composite
+  const address = {
+    projectUid: projectUid.value,
+    plotSpec: { specId: 'multi-panel', params: { module: props.module ?? 'universal',
+      panelCount: pending.panels.length } },
+  }
   try {
-    // FrameAnnotator hands us a composed PNG (marks baked in). Empty ⇒ no marks drawn / compose
-    // failed; ship the bare composite so the POST still succeeds either way.
-    const png = payload.composedPng || pending.composite
-    const address = {
-      projectUid: projectUid.value,
-      plotSpec: { specId: 'multi-panel', params: { module: props.module ?? 'universal',
-        panelCount: pending.panels.length } },
-    }
-    await fetch('/api/viewer/capture', {
+    const res = await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: projectUid.value, surface: 'plot',
@@ -344,7 +356,35 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
       }),
     })
     // Backend broadcasts `captures:changed`; Kiwi's Recent-captures list refreshes on its own.
+    // Match viewer's shape: throw on !ok so the catch below surfaces the error; on success seed
+    // `reshown` so CaptureViewSurface stays up over the canvas — same UX the viewer has after
+    // Save: the frozen frame persists so the user can keep talking to Claude about the same
+    // pixels (re-annotate / zoom-to-source / dismiss are all on the chip).
+    let respJson: Record<string, unknown> | null = null
+    try { respJson = await res.json() as Record<string, unknown> } catch { /* legacy */ }
+    if (!res.ok) {
+      throw new Error(respJson?.error ? String(respJson.error) : `HTTP ${res.status}`)
+    }
+    const captureId = String(respJson?.captureId ?? '')
+    if (!captureId) throw new Error('capture POST returned no captureId')
+    reshown.value = {
+      captureId,
+      surface: 'plot',
+      address,
+      overlay: payload.overlay,
+      viewStateSnapshot: null,
+      landscape: null,
+      notes: payload.notes ?? '',
+      panels: pending.panels,
+      workspaceOrigin: pending.workspaceOrigin,
+      frame: png,
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[share-in] plot capture POST failed', e)
   } finally {
+    // Always drop the annotator — a hang or failure otherwise leaves the user stuck with a
+    // greyed-out Save (busy) and no way to Cancel out (also greyed on some paths).
     shareBusy.value = false
     pendingShare.value = null
   }
@@ -358,9 +398,11 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
 // to the live layout.
 const reshowStore = useCaptureReshowStore()
 const reshown = ref<CaptureEnvelope | null>(null)
-// Consume the bag on mount and whenever the module changes (a navigation IN to this module page
-// triggers `module` change on remount; a live module-switch would too if the parent supported it).
-watch(() => props.module, () => {
+// Consume the bag on mount AND whenever a fresh bag lands. Watching `pending` (not `props.module`)
+// is what makes a Kiwi refocus work when the user is ALREADY on this module page — same-route
+// `router.push` doesn't remount, so a module-only watch would never fire. `consumeFor` still
+// checks the module match, so a bag targeted at another page sits until that page mounts.
+watch(() => reshowStore.pending, () => {
   const env = reshowStore.consumeFor(String(props.module ?? ''))
   if (env) reshown.value = env
 }, { immediate: true })
@@ -403,17 +445,17 @@ function onReshowZoomToSource() {
     })
   }
   restorePanelsFromCapture<PanelState>(geomStore, ckey.value, cps, (cp) => {
-    // Rebuild a `PanelState` from the captured `plotRef.ui`. `sel` and `vis` were stripped at
-    // capture time (the envelope carries them as `dataSlice.series` and canvas-level state
-    // respectively). For a first slice we restore what the envelope has and let the user re-pick
-    // populations from the SeriesPicker; a future addition can hydrate `sel` from `dataSlice`.
+    // Rebuild a `PanelState` from the captured `plotRef.ui` — which now carries the FULL
+    // configuration (sel + vis included). A zoom-to-source lands the panels with populations
+    // already picked and vis (log axes, bin widths, …) preserved. Fallbacks cover legacy
+    // captures written before `sel`/`vis` were preserved.
     const specId = String(cp.plotRef?.specId ?? '')
     const ui = (cp.plotRef?.ui as Partial<PanelState>) ?? {}
     return {
       ...ui,
       specId,
-      sel: [],
-      vis: defaultVis(),
+      sel: Array.isArray(ui.sel) ? ui.sel : [],
+      vis: ui.vis ? { ...defaultVis(), ...ui.vis } : defaultVis(),
     } as PanelState
   }, env.workspaceOrigin)
   reshown.value = null
@@ -583,8 +625,10 @@ watch(segPops, () => {
                                 @cancel="onShareCancel" @share="onShareConfirm" />
         <!-- Annotate mode (Phase 2): frozen composite + DrawSurface tools + palette + labels,
              using the SAME FrameAnnotator the viewer's re-annotate flow does. Save fires the
-             POST; Cancel drops the composite and leaves the canvas as it was. -->
-        <FrameAnnotator v-if="pendingShare"
+             POST; Cancel drops the composite and leaves the canvas as it was. Gated on `!reshown`
+             so an old shared frame can't sit on top of the annotator (both at z:40; later DOM
+             would win and eat clicks). `beginShare` also clears `reshown` up front. -->
+        <FrameAnnotator v-if="pendingShare &amp;&amp; !reshown"
                         :frame-data-url="pendingShare.composite"
                         :address-line="`${module ?? 'universal'} · ${pendingShare.panels.length} panels`"
                         :busy="shareBusy"
@@ -592,8 +636,9 @@ watch(segPops, () => {
         <!-- Reshow mode: same CaptureViewSurface the viewer uses. Mounts over the plot canvas,
              shows the frozen composite + user marks + any Claude freeform paint targeted at this
              captureId. Pencil = re-annotate (chained capture, panels[] inherited via
-             extraPostFields). Zoom-to-source = restore the panel layout underneath. -->
-        <CaptureViewSurface v-if="reshown"
+             extraPostFields). Zoom-to-source = restore the panel layout underneath. Gated on
+             `!pendingShare` for symmetry with FrameAnnotator's `!reshown` guard. -->
+        <CaptureViewSurface v-if="reshown &amp;&amp; !pendingShare"
                             :project-uid="projectUid"
                             :capture-id="reshown.captureId"
                             :frame-data-url="reshown.frame"

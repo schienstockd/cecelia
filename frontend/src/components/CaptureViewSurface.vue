@@ -314,7 +314,9 @@ function dismissAllClaudeMarks() {
 .cvs-root {
   position: absolute; inset: 0;
   background: #000;   /* letterbox around a non-matching aspect frame */
-  z-index: 20;        /* above canvas + StillOverlay/GridOverlay */
+  z-index: 40;        /* above viewer canvas + StillOverlay/GridOverlay AND above the plot
+                         canvas's floating panels — same layer FrameAnnotator uses so the
+                         handoff (annotator → this surface) doesn't dip behind the panels. */
 }
 .cvs-frame {
   position: absolute; inset: 0;
