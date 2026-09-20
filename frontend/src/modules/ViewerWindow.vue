@@ -95,6 +95,8 @@ import { PALETTES, distinctColors } from '../plots/plot'
 import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
+import LandscapeOverlay from '../components/LandscapeOverlay.vue'
+import { computeLandscape, readCanvasImageData, type LandscapeResult } from '../utils/landscape'
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
@@ -4505,6 +4507,42 @@ watch([shownT, zPlane], ([t2, z2]) => {
   const zOk = am.z < 0 || am.z === z2
   if (!tOk || !zOk) activeMarks.value = null
 })
+
+// Landscape overlay (BIDIR PR #6, Decision 14): a categorical heatmap over the same tiles as
+// GridOverlay. Recompute on toggle / density / frame changes; the categorical output is a small
+// prior for Claude AND a pass at "where is the interesting stuff" for the eye. Publishing to the
+// backend lets `get_landscape` MCP tool read the same view the user is looking at — one
+// computation, two consumers (Decision 13's "standalone Vue feature first" pattern).
+const landscape = ref<LandscapeResult | null>(null)
+let landscapeBusy = false
+async function recomputeLandscape() {
+  if (!settings.viewerLandscape || !meta.value || shownT.value < 0) { landscape.value = null; return }
+  const el = canvas.value
+  if (!el || landscapeBusy) return
+  landscapeBusy = true
+  try {
+    const data = await readCanvasImageData(el)
+    if (!data) { landscape.value = null; return }
+    const result = computeLandscape(data, {
+      cols: settings.viewerGridDensity, rows: settings.viewerGridDensity,
+    })
+    landscape.value = result
+    if (projectUid) {
+      // Fire-and-forget publish so MCP get_landscape can see the same thing. A failed publish
+      // just leaves the last-published copy stale for a beat — the UI is unaffected.
+      fetch('/api/viewer/landscape', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectUid, imageUid, valueName: valueName.value,
+          t: shownT.value, z: zPlane.value, landscape: result,
+        }),
+      }).catch(() => { /* silent — non-blocking */ })
+    }
+  } finally { landscapeBusy = false }
+}
+watch(() => settings.viewerLandscape, on => { if (on) void recomputeLandscape(); else landscape.value = null })
+watch(() => settings.viewerGridDensity, () => { if (settings.viewerLandscape) void recomputeLandscape() })
+watch([shownT, zPlane], () => { if (settings.viewerLandscape) void recomputeLandscape() })
 function onReannotate(payload: {
   captureId: string; frameDataUrl: string; overlay: OverlayMark[]
 }) {
@@ -4692,6 +4730,11 @@ onUnmounted(() => {
       <!-- Set-of-Mark grid — user-facing region names ("look at C4"). PR #2 of BIDIR_CONTEXT_PLAN.md.
            Viewport coords: at zoom-in "C4" is a quarter of the current view, not a quarter of the
            image scrolled off screen. Toggled from the Annotations section of the viewer panel. -->
+      <!-- Landscape overlay — cheap categorical heatmap under the grid so the grid's letters stay
+           legible over the fills. BIDIR PR #6 (Decision 14 reframe). Density is shared with the
+           grid so the "cell B3" both overlays name is the same tile. -->
+      <LandscapeOverlay v-if="settings.viewerLandscape && landscape && meta && shownT >= 0"
+                        :landscape="landscape" />
       <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity" />
       <!-- Restored annotations from a blackboard attachment (BIDIR Part 4). Read-only; the source of
            truth is the capture on disk, and edits happen on the blackboard side, not here. Chip below
@@ -5215,6 +5258,21 @@ onUnmounted(() => {
                 v-tooltip.bottom="'Cells per side (4..16)'" aria-label="Grid density"
               >
               <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerGridDensity }}</span>
+            </template>
+          </div>
+          <!-- Landscape heatmap: cheap categorical fill per grid tile so a share-in / MCP reader
+               has a rough semantic prior BEFORE looking at raw pixels. NOT a segmentation; sits at
+               the same tile resolution as the grid above. BIDIR PR #6 (Decision 14 reframe). -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Cheap semantic heatmap over the same grid — categorical, not a segmentation'">Landscape</span>
+            <CcToggle v-model="settings.viewerLandscape" aria-label="Show the landscape heatmap" />
+          </div>
+          <div v-if="settings.viewerLandscape && landscape" class="cc-row cc-row-tight vw-landscape-legend"
+               v-tooltip.bottom="'Tile category legend — cell count in parentheses'">
+            <template v-for="l in landscape.legend" :key="l.category">
+              <span class="vw-lg-swatch" :style="{ background: l.swatch }" />
+              <span class="cc-fs-3xs">{{ l.category }}<span class="cc-muted">&nbsp;({{ l.nTiles }})</span></span>
             </template>
           </div>
         </CollapsibleSection>
@@ -5761,6 +5819,8 @@ onUnmounted(() => {
    squeezed below — `flex: 1` alone collapses it to nothing in a narrow panel. */
 .vw-px { min-width: 3.5rem; }
 .vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
+.vw-landscape-legend { flex-wrap: wrap; }
+.vw-lg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: var(--cc-radius-xs); border: 1px solid rgba(0,0,0,0.15); }
 /* A population row: swatch, name that can shrink, count, toggle. The name is the only flexible part —
    letting the count or the toggle shrink is what made the channel rows overlap. */
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);

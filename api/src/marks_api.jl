@@ -342,6 +342,50 @@ function api_viewer_marks_freeform(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, markerId = m.id))
 end
 
+# ── Landscape tile marks (PR #6, Decision 14 reframe) ────────────────────────
+# `mark_tile` targets a GRID cell by its speakable id (e.g. "B3") — the same coordinate system
+# GridOverlay + the landscape heatmap use. Simpler than freeform / ui because the grid IS the
+# addressing scheme; no anchor resolution, no per-shape overlay. Reuses the UiFreeformMark
+# envelope with `kind: "tile"` so the frontend's existing mark dispatcher routes it to a new
+# `tileMarks` bag without a new WS frame kind.
+
+const _TILE_ID_RE = r"^[A-Z]{1,2}[1-9][0-9]?$"    # A1..P16 range; permissive on rows
+
+_clean_tile_id(v) = begin
+    s = strip(String(v === nothing ? "" : v))
+    isnothing(match(_TILE_ID_RE, s)) ? "" : s
+end
+
+"""
+    POST /api/viewer/marks/tile
+
+Body: `{ projectUid, imageUid, cellId: "B3", label?, ttl_s? }`
+Reply: `{ ok:true, markerId }`
+
+Publishes a `viewer:mark` frame with `kind: "tile"`. The frontend routes it to a `tileMarks`
+bag and paints a highlighted border around the addressed cell of the LandscapeOverlay /
+GridOverlay. `imageUid` scopes the mark so a stale mark for a different image doesn't paint
+when the viewer is on something else.
+"""
+function api_viewer_marks_tile(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
+    image_uid = _wstr(body, :imageUid)
+    isempty(image_uid) && return 400, JSON3.write((; error = "imageUid required"))
+    cell_id = _clean_tile_id(get(body, :cellId, get(body, :cell_id, "")))
+    isempty(cell_id) && return 400, JSON3.write((; error = "cellId required — a grid tile like 'B3'"))
+    label = _clean_label(get(body, :label, nothing))
+    ttl   = _clean_ttl(get(body, :ttl_s, get(body, :ttlSeconds, _MARK_TTL_DEFAULT)))
+    payload = Dict{String,Any}("imageUid" => image_uid, "cellId" => cell_id)
+    m = UiFreeformMark(_new_mark_id(), "tile", project_uid, label, _now_epoch(), ttl, payload)
+    _store_mark!(m)
+    broadcast_ws(_mark_ws_payload(m))
+    200, JSON3.write((; ok = true, markerId = m.id))
+end
+
 # Test-only reset. Not registered as a route — tests import the module and call it directly to
 # get a hermetic state between assertions. Deliberately private (no `export`).
 function _reset_marks!()

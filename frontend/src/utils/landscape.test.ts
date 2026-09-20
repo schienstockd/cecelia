@@ -1,0 +1,135 @@
+import { describe, it, expect } from 'vitest'
+import {
+  tileStatsFor, kmeans, categoriseCluster, computeLandscape,
+  LANDSCAPE_CATEGORIES, LANDSCAPE_SWATCHES,
+} from './landscape'
+
+// Handcraft an ImageData so a test can name the tile it wants and check the number is right —
+// jsdom has no `document.createElement('canvas')` with a working 2D context, so we skip the
+// canvas roundtrip and feed the pipeline data directly, which is the boundary that matters.
+function makeImageData(w: number, h: number, fill: (x: number, y: number) => [number, number, number]): ImageData {
+  const buf = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4
+      const [r, g, b] = fill(x, y)
+      buf[i] = r; buf[i + 1] = g; buf[i + 2] = b; buf[i + 3] = 255
+    }
+  }
+  return { data: buf, width: w, height: h, colorSpace: 'srgb' } as ImageData
+}
+
+describe('tileStatsFor', () => {
+  it('reads intensity 0 for a fully black frame', () => {
+    const img = makeImageData(64, 64, () => [0, 0, 0])
+    const stats = tileStatsFor(img, 4, 4)
+    expect(stats).toHaveLength(16)
+    for (const s of stats) {
+      expect(s.intensity).toBe(0)
+      expect(s.peak).toBe(0)
+      expect(s.variance).toBe(0)
+      expect(s.edges).toBe(0)
+    }
+  })
+
+  it('reads intensity 1 for a fully white frame with no variance', () => {
+    const img = makeImageData(64, 64, () => [255, 255, 255])
+    const stats = tileStatsFor(img, 4, 4)
+    for (const s of stats) {
+      expect(s.intensity).toBeCloseTo(1, 3)
+      expect(s.peak).toBeCloseTo(1, 3)
+      expect(s.variance).toBeCloseTo(0, 2)
+      expect(s.edges).toBe(0)
+    }
+  })
+
+  it('sees high edge density on a checkerboard tile', () => {
+    // 2×2-pixel checker → each pixel flips brightness, edge count is high
+    const img = makeImageData(64, 64, (x, y) => (((x + y) & 1) === 0 ? [255, 255, 255] : [0, 0, 0]))
+    const stats = tileStatsFor(img, 4, 4)
+    for (const s of stats) {
+      expect(s.edges).toBeGreaterThan(0.9)
+      expect(s.variance).toBeGreaterThan(0.5)
+    }
+  })
+})
+
+describe('kmeans', () => {
+  it('splits a bimodal set into two clusters', () => {
+    const vecs: number[][] = []
+    for (let i = 0; i < 10; i++) vecs.push([0.1, 0.1, 0.02, 0.05])
+    for (let i = 0; i < 10; i++) vecs.push([0.9, 0.95, 0.05, 0.10])
+    const { labels } = kmeans(vecs, 2)
+    const first = labels.slice(0, 10)
+    const second = labels.slice(10)
+    // all-in-one label per half — the labels themselves may be 0/1 or 1/0, so compare set size
+    expect(new Set(first).size).toBe(1)
+    expect(new Set(second).size).toBe(1)
+    expect(first[0]).not.toBe(second[0])
+  })
+
+  it('is deterministic on repeated calls with the same input', () => {
+    const vecs = Array.from({ length: 32 }, (_, i) => [i / 32, (i * 2) % 32 / 32, (i * 3) % 32 / 32, 0])
+    const a = kmeans(vecs, 4)
+    const b = kmeans(vecs, 4)
+    expect(a.labels).toEqual(b.labels)
+    expect(a.centroids).toEqual(b.centroids)
+  })
+})
+
+describe('categoriseCluster', () => {
+  it('names a dark centroid `dark`', () => {
+    expect(categoriseCluster([0.02, 0.05, 0.01, 0.0])).toBe('dark')
+  })
+  it('names a bright uniform centroid `bright-uniform`', () => {
+    expect(categoriseCluster([0.5, 0.6, 0.02, 0.1])).toBe('bright-uniform')
+  })
+  it('names a high-edge centroid `edge`', () => {
+    expect(categoriseCluster([0.3, 0.7, 0.4, 0.8])).toBe('edge')
+  })
+  it('names a bright textured centroid `bright-textured`', () => {
+    expect(categoriseCluster([0.4, 0.7, 0.25, 0.2])).toBe('bright-textured')
+  })
+})
+
+describe('computeLandscape', () => {
+  it('labels every tile of an all-black frame as `dark`', () => {
+    const img = makeImageData(64, 64, () => [0, 0, 0])
+    const r = computeLandscape(img, { cols: 4, rows: 4 })
+    expect(r.grid).toEqual({ cols: 4, rows: 4 })
+    expect(r.tiles).toHaveLength(16)
+    for (const t of r.tiles) expect(t.category).toBe('dark')
+    expect(r.legend).toHaveLength(1)
+    expect(r.legend[0].category).toBe('dark')
+    expect(r.legend[0].nTiles).toBe(16)
+  })
+
+  it('assigns different categories to a mixed frame (dark half + bright half)', () => {
+    const img = makeImageData(64, 64, (_x, y) => (y < 32 ? [0, 0, 0] : [220, 220, 220]))
+    const r = computeLandscape(img, { cols: 4, rows: 4 })
+    const categories = new Set(r.tiles.map(t => t.category))
+    expect(categories.size).toBeGreaterThan(1)
+    expect(categories.has('dark')).toBe(true)
+    // legend entries must be in canonical order
+    const legendOrder = r.legend.map(l => l.category)
+    const canonical = LANDSCAPE_CATEGORIES.filter(c => legendOrder.includes(c))
+    expect(legendOrder).toEqual(canonical)
+  })
+
+  it('tile ids match the SoM grid labels (A1..)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const r = computeLandscape(img, { cols: 4, rows: 4 })
+    expect(r.tiles[0].id).toBe('A1')
+    expect(r.tiles[1].id).toBe('B1')
+    expect(r.tiles[4].id).toBe('A2')
+    expect(r.tiles[15].id).toBe('D4')
+  })
+
+  it('every legend swatch is in the LANDSCAPE_SWATCHES table', () => {
+    const img = makeImageData(64, 64, (x, y) => [x * 4, y * 4, 0])
+    const r = computeLandscape(img, { cols: 4, rows: 4 })
+    for (const entry of r.legend) {
+      expect(entry.swatch).toBe(LANDSCAPE_SWATCHES[entry.category])
+    }
+  })
+})

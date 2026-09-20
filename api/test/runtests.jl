@@ -5526,6 +5526,7 @@ end
         "/api/update/check",
         "/api/version",
         "/api/push/target",   # bidir push (PR #1048) — GET reads the pairing record (never returns token)
+        "/api/viewer/landscape",   # bidir landscape read (GET); POST at same path is the publish handler
     ]
     POST_ROUTES = [
         "/api/app/restart", "/api/app/shutdown",
@@ -5567,6 +5568,8 @@ end
         "/api/notebooks/snapshot", "/api/notebooks/write",
         "/api/viewer/marks/tracks", "/api/viewer/marks/cells",   # bidir point-out write (PR #4)
         "/api/viewer/marks/ui", "/api/viewer/marks/freeform",    # bidir point-out UI + freeform (PR #5)
+        "/api/viewer/marks/tile",    # bidir landscape tile mark (PR #6, Decision 14 reframe)
+        "/api/viewer/landscape",     # bidir landscape publish (POST); GET at same path is the read handler
         "/api/viewer/capture",   # bidir share-in write (POST); GET at same path is the read handler
 
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
@@ -5647,7 +5650,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 100 && length(POST_ROUTES) == 131
+    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 133
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

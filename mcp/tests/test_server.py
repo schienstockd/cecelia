@@ -30,6 +30,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "create_chain",
             "mark_tracks", "mark_cells",   # bidir point-out (BIDIR_CONTEXT_PLAN PR #4)
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
+            "mark_tile", "get_landscape",   # bidir landscape overlay (PR #6, Decision 14 reframe)
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_object_ids",   # bidir follow-up: real cell/track ids for mark_cells / mark_tracks
             "register_push_target",   # bidir Part 5: explicit re-pair (auto-pair via middleware)

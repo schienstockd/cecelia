@@ -69,6 +69,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/push/target"),
             ("POST", "/api/viewer/marks/cells"),
             ("POST", "/api/viewer/marks/freeform"),
+            ("POST", "/api/viewer/marks/tile"),
             ("POST", "/api/viewer/marks/tracks"),
             ("POST", "/api/viewer/marks/ui"),
         ])

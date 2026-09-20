@@ -52,6 +52,7 @@ include("setup_api.jl")
 include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
+include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDIR_CONTEXT_PLAN PR #6, Decision 14)
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
 include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
@@ -262,6 +263,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
     "/api/viewer/captures" => (req, body_bytes) -> (api_viewer_captures_list(req)),
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
+    "/api/viewer/landscape" => (req, body_bytes) -> (api_viewer_landscape_get(req)),
     "/api/push/target" => (req, body_bytes) -> (api_push_target_get(req)),
     "/api/labels/ids" => (req, body_bytes) -> (api_labels_ids(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
@@ -396,6 +398,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/marks/cells"    => (req, body_bytes) -> (api_viewer_marks_cells(body_bytes)),
     "/api/viewer/marks/ui"       => (req, body_bytes) -> (api_viewer_marks_ui(body_bytes)),
     "/api/viewer/marks/freeform" => (req, body_bytes) -> (api_viewer_marks_freeform(body_bytes)),
+    "/api/viewer/marks/tile"     => (req, body_bytes) -> (api_viewer_marks_tile(body_bytes)),
+    # bidir landscape — browser publishes (POST), MCP reads (GET, above). Never Claude-authored.
+    "/api/viewer/landscape"      => (req, body_bytes) -> (api_viewer_landscape_publish(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),

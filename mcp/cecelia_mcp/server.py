@@ -942,6 +942,46 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
 
 
 @mcp.tool()
+def mark_tile(project_uid: str, image_uid: str, cell_id: str,
+              label: str = "", ttl_s: int = 300) -> dict:
+    """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when
+    there is no segmented object to name.
+
+    `cell_id` is a spreadsheet-style grid label ("B3", "H8") — the same ids `get_landscape`
+    returns and the same ids the SoM grid on the viewer paints. Use this after `get_landscape`
+    tells you a tile is worth attention (e.g. its category is `bright-textured` in a region where
+    the user hasn't noticed yet), or when you want to point at a REGION rather than an identified
+    cell / track. Prefer `mark_cells` / `mark_tracks` when a segmentation id exists — a tile
+    highlight is a coarser pointer, and using it when a specific cell is meant is misleading.
+
+    EPHEMERAL: 5-min default TTL. Returns `{ok: true, markerId}`.
+    """
+    return _client.mark_tile(project_uid, image_uid, cell_id, label, ttl_s)
+
+
+@mcp.tool()
+def get_landscape(project_uid: str, image_uid: str, value_name: str,
+                  t: int = -1, z: int = -1) -> dict:
+    """The user's current LANDSCAPE HEATMAP — a cheap categorical map over the viewer's grid tiles.
+
+    Returned as `{grid: {cols, rows}, tiles: [{id, row, col, category, stats}], legend: [...]}`.
+    `category` is one of `dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`.
+    Use this BEFORE reading raw pixels from a capture so you have a rough semantic prior — "row 2
+    is dominated by `bright-textured` tiles" beats "I looked at the RGB and guessed". Then
+    `mark_tile(cell_id="B3")` when you want to point back at a region the map surfaces.
+
+    This is NOT a segmentation — it's tile-level (typically 8×8 = 64 tiles), computed on the
+    current shown frame's pixels in the browser. Coarse on purpose. When a segmentation exists,
+    reach for `mark_cells` / `mark_tracks` instead; this tool is the "no segmentation yet" case.
+
+    The landscape only exists if the user has toggled the "Landscape" overlay on in the viewer
+    panel. Returns `{landscape: null}` if not — say so and ask the user to toggle it if you need
+    the map; do not invent tiles.
+    """
+    return _client.get_landscape(project_uid, image_uid, value_name, t, z)
+
+
+@mcp.tool()
 def get_recent_captures(project_uid: str, limit: int = 10) -> list:
     """What the user has SHARED with you from their viewer — the "look at this" surface (BIDIR).
 
