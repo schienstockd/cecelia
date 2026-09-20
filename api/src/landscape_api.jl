@@ -204,6 +204,65 @@ function _tile_channel_stats(plane::AbstractMatrix{<:Real}, ncols::Int, nrows::I
     out
 end
 
+# Count segmented objects per tile from `label_props` centroids for the current t.
+# LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2a (`segCount`) — the "how many objects
+# is Claude looking at in each tile" answer the composite alone doesn't give (a
+# tile that reads bright can be five fused cells or one wash, and the eye can't
+# reliably tell 5 vs 12 in a downsampled frame).
+#
+# Coordinate frame: centroids come out of `label_props` in LEVEL-0 pixel units,
+# and Phase 1's `_tile_channel_stats` bins the full frame — so we do the same,
+# using `image_geometry(zp).sizeX / .sizeY` as the divisor. Independent of the
+# pyramid level Phase 1 read (the fractional bin math is the same at every level).
+#
+# Non-timecourse images (no `centroid_t`): every row counts against t=0 — matches
+# how the frontend treats a still (`shownT` sits at 0). A row with a non-finite
+# centroid is silently dropped rather than 500'ing the whole compute — a stale
+# label_props can carry a NaN centroid from a failed measure run.
+function _tile_seg_counts(img::CciaImage, vn::AbstractString, t::Int,
+                          ncols::Int, nrows::Int, sizeX::Int, sizeY::Int)::Union{Vector{Int},Nothing}
+    (sizeX > 0 && sizeY > 0) || return nothing
+    df = try
+        label_props(img; value_name = vn) |> view_centroid_cols |> as_df
+    catch
+        return nothing
+    end
+    nm = names(df)
+    ("centroid_x" in nm && "centroid_y" in nm) || return nothing
+    xs = df[!, :centroid_x]
+    ys = df[!, :centroid_y]
+    ts = ("centroid_t" in nm) ? df[!, :centroid_t] : nothing
+    _bin_centroids_to_tiles(xs, ys, ts, t, ncols, nrows, sizeX, sizeY)
+end
+
+# Pure helper — no I/O, no DataFrame dependency, hermetically testable. `xs`/`ys` are
+# centroid coordinates in level-0 pixel units; `ts` is the temporal column when the image
+# is a timecourse (else `nothing` — every centroid counts against the queried `t`).
+# Returns the flat row-major count vector; NaN centroids and off-frame timepoints drop.
+function _bin_centroids_to_tiles(xs::AbstractVector, ys::AbstractVector,
+                                 ts::Union{AbstractVector,Nothing}, t::Int,
+                                 ncols::Int, nrows::Int,
+                                 sizeX::Int, sizeY::Int)::Vector{Int}
+    n = length(xs)
+    length(ys) == n || throw(ArgumentError("_bin_centroids_to_tiles: xs / ys length mismatch"))
+    (ts === nothing || length(ts) == n) ||
+        throw(ArgumentError("_bin_centroids_to_tiles: ts length mismatch"))
+    counts = zeros(Int, ncols * nrows)
+    @inbounds for i in 1:n
+        px = xs[i]; py = ys[i]
+        (px isa Real && py isa Real && isfinite(Float64(px)) && isfinite(Float64(py))) || continue
+        if ts !== nothing
+            tv = ts[i]
+            (tv isa Real && isfinite(Float64(tv))) || continue
+            Int(round(Float64(tv))) == t || continue
+        end
+        c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
+        r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
+        counts[r * ncols + c + 1] += 1
+    end
+    counts
+end
+
 # Spreadsheet-style cell label, mirroring the frontend `gridOverlay.ts::cellLabel`.
 # Duplicated on purpose — Julia and TypeScript don't share code, and the alternative
 # is a JSON manifest that both sides read at boot, which is heavier than 15 lines of
@@ -222,8 +281,9 @@ end
 """
     POST /api/viewer/landscape/compute
 
-Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows, channels: [{index, name}] }`
-Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}}, ...] }`
+Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows,
+         channels: [{index, name}], labelsValueName? }`
+Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?}, ...] }`
 
 Called by the browser at Share time (or on explicit augmented-recompute) so the
 capture envelope carries per-channel per-tile stats alongside the frontend's
@@ -234,10 +294,19 @@ appear here, and only those appear in the response. `index` is the 0-based chann
 index in the store; `name` is the display name the frontend uses. Unknown indices
 are silently dropped — a stale visibility snapshot doesn't break the write.
 
+`labelsValueName` is the (Phase 2a) visibility snapshot for the segmentation layer:
+the vn of the labels the user has toggled on in `ViewerPanel`. Non-empty ⇒ each
+tile gets a `segCount` (int) — how many segmented objects have centroids inside
+that tile at the shown t. Empty / omitted ⇒ tiles have no `segCount` key (sparse
+by visibility per Decision 3). A vn that has no `label_props` on disk is treated
+as absent (a fresh unmeasured image doesn't 500 the whole compute).
+
 Cost: one plane read per visible channel at a pyramid level chosen to keep the long
 side ≥ 512 px, plus O(ncols*nrows) per channel for the tile aggregations. Typical
 call for a 3-channel visible tile at 8×8 is < 200 ms; a 32×32 request on a 4-channel
 image lands in the 500 ms – 2 s budget the plan allocates for the augmented layer.
+segCount adds one `.h5ad` read of centroid columns + `O(nCells)` binning — dominated
+by the h5ad round-trip; well under 200 ms on the intravital timecourses tested.
 """
 function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -254,61 +323,95 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     nrows = clamp(_clean_int(get(body, :rows, nothing), ncols), 2, 64)
     channels_raw = get(body, :channels, nothing)
     channels_raw isa AbstractVector || return 400, JSON3.write((; error = "channels required (list)"))
-    isempty(channels_raw) && return 200, JSON3.write((; tiles = []))
+    labels_vn = _wstr(body, :labelsValueName)   # empty ⇒ segCount off (Decision 3 sparsity)
+    # Early-out: nothing to compute (no channels AND no labels layer visible). Return an empty
+    # tiles list rather than 400 — the frontend calls this optimistically at Share time and a
+    # bare landscape (grid-density picked, no layers on) is a legitimate shape.
+    isempty(channels_raw) && isempty(labels_vn) && return 200, JSON3.write((; tiles = []))
 
     vnn = isempty(value_name) ? nothing : String(value_name)
     zp, _td, err = resolve_image_version(project_uid, image_uid, vnn; version = nothing)
     err === nothing || return 404, JSON3.write((; error = err))
 
-    level = _pick_landscape_level(zp)
-    # Open once for many channel reads — same pattern as `_sampled_specs`; per-open cost
-    # is a metadata round-trip that would dominate if we redid it per channel.
-    arr, caxes = try
-        open_level(zp, level)
-    catch e
-        return 500, JSON3.write((; error = "landscape compute: could not open store — $(sprint(showerror, e))"))
-    end
     t = t_raw < 0 ? 0 : t_raw
     z = z_raw < 0 ? nothing : z_raw
 
-    # Parse channel spec: {index, name}. Silently drop entries that are the wrong shape
-    # or point past the store's channel count — a stale visibility snapshot from the
-    # frontend shouldn't 500 the whole compute.
-    dims = axis_dims(caxes, ndims(arr))
-    nc_total = haskey(dims, "c") ? size(arr, dims["c"]) : 1
-    channels = Tuple{Int,String}[]
-    for ch in channels_raw
-        ch isa AbstractDict || continue
-        idx = get(ch, :index, get(ch, "index", nothing))
-        name = get(ch, :name, get(ch, "name", nothing))
-        idx isa Number && name isa AbstractString || continue
-        i = Int(idx)
-        (0 <= i < nc_total) || continue
-        push!(channels, (i, String(name)))
-    end
-    isempty(channels) && return 200, JSON3.write((; tiles = []))
-
-    # Compute per channel: read the plane, run tile stats. `read_slab` gives us a
-    # `(nx, ny, 1, 1)` volume when both z and c are scalar Ints.
+    # Row-major flat tile bag, `channels` empty by default (Decision 3 sparsity — never
+    # emit `channels: {}` on a tile that saw no visible-channel augmentation).
     tiles = [Dict{String,Any}("tileId" => _tile_cell_label(r, c),
                               "channels" => Dict{String,Dict{String,Float64}}())
              for r in 0:(nrows - 1), c in 0:(ncols - 1)]
-    tiles = vec(permutedims(tiles, (2, 1)))   # row-major flat list matching the frontend
-    for (ci, cname) in channels
-        vol, nx, ny, _nz, _nc = try
-            read_slab(arr, caxes, t, ci; z = z)
+    tiles = vec(permutedims(tiles, (2, 1)))
+
+    # ── Per-channel mean + SNR (Phase 1) — only when the frontend sent channels.
+    if !isempty(channels_raw)
+        level = _pick_landscape_level(zp)
+        # Open once for many channel reads — same pattern as `_sampled_specs`; per-open cost
+        # is a metadata round-trip that would dominate if we redid it per channel.
+        arr, caxes = try
+            open_level(zp, level)
+        catch e
+            return 500, JSON3.write((; error = "landscape compute: could not open store — $(sprint(showerror, e))"))
+        end
+        # Parse channel spec: {index, name}. Silently drop entries that are the wrong shape
+        # or point past the store's channel count — a stale visibility snapshot from the
+        # frontend shouldn't 500 the whole compute.
+        dims = axis_dims(caxes, ndims(arr))
+        nc_total = haskey(dims, "c") ? size(arr, dims["c"]) : 1
+        channels = Tuple{Int,String}[]
+        for ch in channels_raw
+            ch isa AbstractDict || continue
+            idx = get(ch, :index, get(ch, "index", nothing))
+            name = get(ch, :name, get(ch, "name", nothing))
+            idx isa Number && name isa AbstractString || continue
+            i = Int(idx)
+            (0 <= i < nc_total) || continue
+            push!(channels, (i, String(name)))
+        end
+        for (ci, cname) in channels
+            vol, nx, ny, _nz, _nc = try
+                read_slab(arr, caxes, t, ci; z = z)
+            catch
+                continue
+            end
+            (nx == 0 || ny == 0) && continue
+            # `vol` is (x, y, [z], [c]) — with scalar z and scalar c, it's a 2D (x, y) plane.
+            plane = ndims(vol) == 2 ? vol : reshape(vol, nx, ny)
+            stats = _tile_channel_stats(plane, ncols, nrows)
+            for r in 0:(nrows - 1), c in 0:(ncols - 1)
+                (mean, snr) = stats[r * ncols + c + 1]
+                tiles[r * ncols + c + 1]["channels"][cname] = Dict("mean" => round(mean, digits = 4),
+                                                                    "snr"  => round(snr,  digits = 3))
+            end
+        end
+    end
+
+    # ── Per-tile segCount (Phase 2a) — only when the frontend has a labels layer on.
+    # We resolve the image object once here (not upstream) so a channels-only compute
+    # doesn't pay for the ccid.json read. A missing/unmeasured vn returns nothing and
+    # tiles just don't get a `segCount` key — the sparsity rule handles it.
+    if !isempty(labels_vn)
+        seg_counts = try
+            geo = image_geometry(zp)
+            img_obj = init_object(project_uid, image_uid)
+            img_obj isa CciaImage ? _tile_seg_counts(img_obj, labels_vn, t, ncols, nrows,
+                                                    Int(geo.sizeX), Int(geo.sizeY)) : nothing
         catch
-            continue
+            nothing
         end
-        (nx == 0 || ny == 0) && continue
-        # `vol` is (x, y, [z], [c]) — with scalar z and scalar c, it's a 2D (x, y) plane.
-        plane = ndims(vol) == 2 ? vol : reshape(vol, nx, ny)
-        stats = _tile_channel_stats(plane, ncols, nrows)
-        for r in 0:(nrows - 1), c in 0:(ncols - 1)
-            (mean, snr) = stats[r * ncols + c + 1]
-            tiles[r * ncols + c + 1]["channels"][cname] = Dict("mean" => round(mean, digits = 4),
-                                                                "snr"  => round(snr,  digits = 3))
+        if seg_counts !== nothing
+            for i in eachindex(tiles)
+                tiles[i]["segCount"] = seg_counts[i]
+            end
         end
+    end
+
+    # Drop the empty `channels` bag when this compute didn't populate any (Decision 3
+    # sparsity — a v2 tile with no visible-channel data has NO `channels` key at all,
+    # matching the frontend `augmentLandscape` merge rule).
+    for t_dict in tiles
+        ch = get(t_dict, "channels", nothing)
+        (ch isa AbstractDict && isempty(ch)) && delete!(t_dict, "channels")
     end
 
     200, JSON3.write((; tiles = tiles))

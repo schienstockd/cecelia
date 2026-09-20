@@ -170,4 +170,31 @@ describe('augmentLandscape', () => {
     expect(merged.tiles.find(t => t.id === 'A1')?.channels).toBeUndefined()
     expect(merged.schemaVersion).toBe(2)
   })
+
+  it('merges segCount independently of channels (Phase 2a)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const augment: import('./landscape').AugmentTile[] = [
+      { tileId: 'A1', segCount: 0 },                                    // legitimate zero
+      { tileId: 'B2', segCount: 7 },                                    // seg only
+      { tileId: 'C3', channels: { 'Tcells': { mean: 0.3, snr: 5 } }, segCount: 2 }, // both
+    ]
+    const merged = augmentLandscape(base, augment)
+    expect(merged.tiles.find(t => t.id === 'A1')?.segCount).toBe(0)
+    expect(merged.tiles.find(t => t.id === 'A1')?.channels).toBeUndefined()
+    expect(merged.tiles.find(t => t.id === 'B2')?.segCount).toBe(7)
+    expect(merged.tiles.find(t => t.id === 'C3')?.segCount).toBe(2)
+    expect(merged.tiles.find(t => t.id === 'C3')?.channels).toEqual({
+      Tcells: { mean: 0.3, snr: 5 },
+    })
+    // A tile with no augmentation stays untouched — sparsity by construction
+    expect(merged.tiles.find(t => t.id === 'D4')?.segCount).toBeUndefined()
+  })
+
+  it('drops NaN / non-finite segCount (a stale h5ad could sneak one through)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(base, [{ tileId: 'A1', segCount: NaN }])
+    expect(merged.tiles.find(t => t.id === 'A1')?.segCount).toBeUndefined()
+  })
 })

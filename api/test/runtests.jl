@@ -9601,3 +9601,33 @@ end
     end
   end
 end
+
+@testset "API: _bin_centroids_to_tiles (BIDIR landscape Phase 2a)" begin
+    # LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2a — the pure binning helper behind segCount.
+    # Bins level-0 centroids into a ncols×nrows grid over the full frame; row-major flat output;
+    # sparse-friendly (NaN centroids drop; off-frame timepoints drop; not throw).
+    # 100×100 frame, 4×4 grid ⇒ each tile is 25 px wide. tileId row-major so (r=0,c=0)="A1".
+    xs = Float64[10.0, 12.0, 60.0,  99.0, 0.0, NaN,  50.0]
+    ys = Float64[10.0, 20.0, 60.0,  99.0, 0.0, 50.0, NaN]
+    ts = Int[    0,    0,    0,     0,    0,   0,    0]
+    counts = _bin_centroids_to_tiles(xs, ys, ts, 0, 4, 4, 100, 100)
+    @test length(counts) == 16
+    @test counts[1] == 3         # (10,10), (12,20), (0,0) all land in top-left tile
+    @test counts[11] == 1        # (60,60) → row 2 col 2 → idx 11
+    @test counts[16] == 1        # (99,99) → row 3 col 3 → idx 16 (clamp keeps the edge tile in bounds)
+    @test sum(counts) == 5       # 7 rows in, 2 NaN-drops
+
+    # Temporal filter: only rows with centroid_t == t are counted
+    xs_t = Float64[10.0, 10.0, 10.0]; ys_t = Float64[10.0, 10.0, 10.0]; ts_t = Int[0, 1, 2]
+    @test _bin_centroids_to_tiles(xs_t, ys_t, ts_t, 1, 2, 2, 100, 100)[1] == 1
+    @test sum(_bin_centroids_to_tiles(xs_t, ys_t, ts_t, 5, 2, 2, 100, 100)) == 0   # no matching t
+
+    # `ts === nothing` (still image, no centroid_t column) counts every centroid against any t
+    counts_still = _bin_centroids_to_tiles(Float64[10.0, 50.0], Float64[10.0, 50.0],
+                                            nothing, 0, 2, 2, 100, 100)
+    @test sum(counts_still) == 2
+
+    # Length mismatch throws — a caller-side bug we want loud, not silent
+    @test_throws ArgumentError _bin_centroids_to_tiles(Float64[1.0], Float64[1.0, 2.0],
+                                                       nothing, 0, 2, 2, 100, 100)
+end
