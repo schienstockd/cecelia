@@ -132,16 +132,26 @@ Numbered so code and other docs can cite them (`Decision 5`).
 13. **Grid/landscape anchors ship as a standalone Vue feature** (viewer toggle + on-request
     landscape button), MCP tool as one consumer. Not a hidden backend-only pass. Grid default
     8×8, cells `A1..H8` (spreadsheet-style, speakable), user-configurable density.
-14. **Landscape region source order (default when caller doesn't specify): Cellpose-SAM → μSAM
-    → plain grid.** Reserve fast SAM variants for cases where the user explicitly wants visual
-    over-segmentation. Locked *after* the internal eval in Decision 15 confirms it — if the eval
-    contradicts this, update here and cite the eval commit.
-15. **Region-source evaluation on Cecelia data before locking Decision 14.** Small internal eval
-    on 3–5 frames from `zolIMa` and `jFWePN`, expert-marked ground-truth ROIs, comparing SoM+SAM /
-    SoM+μSAM / SoM+Cellpose-SAM / plain-grid-only. Executed as part of PR #6 (below), not before.
-16. **Landscape pass compute budget: on-request only, target < 3 s at native res** with the
-    default region source. If the measured cost exceeds this at PR #6, the fallback (plain grid
-    overlay) becomes the default and the semantic pass becomes an explicit user request.
+14. **Landscape = cheap tile-level heatmap over the shown frame, not a segmentation** (2026-09-20
+    reframe — the earlier Cellpose-SAM / μSAM / SAM defaults were wrong; those are the
+    "just run the real pipeline" case the prompt explicitly warned against, and if segmentation
+    exists it's already reached via *data anchors*). The landscape's job is to hand Claude a
+    rough semantic prior BEFORE it reads the RGB — "there's dense signal top-left, sparse
+    bottom-right" — so it can navigate a frame it has no other context for. Per grid cell,
+    compute cheap statistics (mean/max intensity per channel, local variance, edge density) on
+    the shown frame's pixels; k-means (4–6 clusters) over the tile-vectors labels each tile
+    with a human-readable category (`dark` / `bright-uniform` / `bright-textured` / `edge` /
+    `mixed`). No models, no GPU, no segmentation of any kind in this feature category.
+15. **Landscape correlation check on Cecelia data** (replaces the earlier SoM+SAM /
+    SoM+μSAM / SoM+Cellpose-SAM eval — those region sources are out of scope per Decision 14).
+    Small internal eval on 2–3 frames from `zolIMa` and `jFWePN`: does the k-means labelling
+    match what a domain expert would call the tile? Not a segmentation metric; just does the
+    cheap heatmap agree with an eyeball at tile resolution. Executed as part of PR #6.
+16. **Landscape pass compute budget: < 100 ms at native res on the browser's already-decoded
+    frame.** 64 tiles × ~4 stats × N channels + one small k-means is trivial. If it exceeds
+    this, the tile stats are the wrong ones (over-computing) — cut them, don't fall back to
+    "plain grid + Claude squints at pixels" (that IS the current state; the landscape has to
+    add something).
 17. **Freeform marks default target = most-recent shared capture,** with a soft warning if the
     capture is > 15 min old ("this capture is old, are you sure you meant the current viewer?").
     Alternative: `target: "live_viewer"` for the currently-open frame.
@@ -311,11 +321,20 @@ keep each lifecycle explicit and let `guidance.py` teach Claude when to reach fo
 **Grid / landscape anchors.**
 - Grid overlay: `frontend/src/utils/gridOverlay.ts` (pure geometry, tested) + `components/GridOverlay.vue`
   (SVG over the viewer canvas, respects `object-fit: contain`), toggled from viewer panel.
-- MCP: `get_landscape(image_uid, t, z?, region_source?, grid?: {rows: 8, cols: 8})` →
-  `[{cellId, candidateId?, bbox_um, summary}]`
-- MCP: `mark_landscape(image_uid, t, cell_id | candidate_id, label?, ttl_s?)`
-- Standalone Vue feature first (Decision 13); MCP tools expose the same computation.
-- Region source defaults per Decision 14 (Cellpose-SAM → μSAM → grid-only), after PR #6 eval.
+  User-configurable density (Decision 13); default 8×8 with `A1..H8`.
+- Landscape overlay = **cheap tile-level heatmap** (Decision 14 reframe): per-tile stats over
+  the shown frame's pixels (mean/max intensity per channel, local variance, edge density) →
+  small k-means (4–6 clusters) → each tile gets a human-readable category label
+  (`dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`). Translucent tile fills
+  by cluster (CVD-safe palette), a small legend chip in the viewer panel names the categories.
+  Toggleable, on-request only, sits alongside GridOverlay.
+- MCP: `get_landscape(image_uid, t, z?, grid?: {rows: 8, cols: 8})` →
+  `{grid, tiles: [{id: "B3", label, channels: {…}, stats: {…}}], legend: [{label, swatch, n_tiles}]}`
+- MCP: `mark_tile(image_uid, t, cell_id, label?, ttl_s?)` (renamed from `mark_landscape` — you're
+  marking a grid TILE now, there is no "candidate" object to mark).
+- Standalone Vue feature first (Decision 13); MCP is one more consumer of the same computation.
+- **No SAM / μSAM / Cellpose-SAM / any segmentation model in this feature** — that would
+  duplicate the data-anchors path and blow the compute budget (Decisions 14, 16).
 
 **Ephemeral by default.** All markers share Decision 18's lifecycle: 5-min TTL + per-mark pin +
 explicit dismiss chip.
@@ -325,8 +344,10 @@ explicit dismiss chip.
 subscription work grows.
 
 **Grid/landscape false-confidence framing.** Grid cells rendered translucent with speakable labels
-(`A1..H8`), never as authoritative segmentation. Landscape candidates rendered at low opacity with
-per-candidate ids. Framing pinned in the Vue component default styling, not just docs.
+(`A1..H8`), never as authoritative segmentation. Landscape tile fills are *categorical*
+(k-means-cluster colour), not intensity or per-pixel — the visual makes the tile-level nature
+obvious at a glance. Legend names the categories in words (`bright-textured`, not `cluster 3`).
+Framing pinned in the Vue component default styling, not just docs.
 
 ## Part 4 — Blackboard (design)
 
@@ -463,9 +484,13 @@ Independently mergeable in this order. Each ships a working, tested slice.
 5. **Point-out UI anchors + freeform marks.** `mark_ui` + `mark_freeform` MCP tools; bare-style
    `GuideBubble` variant; freeform overlay reuses PR #3's `DrawSurface.vue`. Shares WS
    `viewer:mark` transport with PR #4. ~400 lines.
-6. **Landscape pass + region-source eval.** `get_landscape` + `mark_landscape` MCP tools; on-request
-   pass with region-source options; internal eval on `zolIMa` / `jFWePN` (Decision 15) before locking
-   Decision 14. Depends on PR #2. ~600 lines + eval work.
+6. **Landscape overlay + `get_landscape` / `mark_tile` MCP tools** (rescoped 2026-09-20 —
+   Decision 14 reframe). Cheap tile-level heatmap over the shown frame's pixels:
+   `utils/landscape.ts` (pure — per-tile stats + k-means, tested), `components/LandscapeOverlay.vue`
+   (SVG fills + legend, sits alongside `GridOverlay`), viewer-panel toggle, MCP surface, small
+   correlation eval on `zolIMa` / `jFWePN` (Decision 15). Depends on PR #2 (grid). No SAM /
+   Cellpose / any segmentation — those are out of scope for this feature category. ~300 lines
+   (well down from the earlier ~600, because SAM/Cellpose/eval-of-three-models are gone).
 7. **Blackboard.** `<proj>/blackboard/` storage + local versioning helpers; CRUD MCP tools;
    `/blackboard` Vue page gated on Decision 24; mermaid lazy-load. ~700 lines.
 
@@ -517,7 +542,9 @@ Lower-stakes but plain:
 - **Did the design end up connected?** Yes — see cross-piece linkage table above. Every new
   entity references its neighbours by stable id.
 - **Grid/landscape false-confidence risk?** Real. Mitigation pinned in the Vue component
-  default styling (translucent grid, low-opacity candidates, speakable ids), not just docs.
+  default styling (translucent grid, categorical tile fills with named legend, speakable ids),
+  not just docs. Reframed 2026-09-20 (Decision 14) — the landscape is a cheap tile heatmap, not
+  a segmentation, which drops the "SAM regions look like cells but aren't" failure mode entirely.
 - **UI/viewer/hybrid + plot-as-third-surface cover the real cases?** Yes.
   Auto-detect-by-last-focused-surface works because every relevant surface is well-defined.
 - **Notebook versioning generalize?** Not extracted (Decision 21 — below rule-of-three).
@@ -537,10 +564,9 @@ Not blocking the design — resolve during their PRs.
   work. (Decision 10.)
 - **Mermaid dep verification.** Confirm `mermaid` in `frontend/package.json` or lazy-load as a
   new dep on the `/blackboard` page only. Not blocking; PR #7 concern.
-- **Landscape pass compute measurement on real Cecelia data.** Measure early in PR #6; if
-  Cellpose-SAM / μSAM at native res > 3 s, plain grid becomes the default (Decision 16).
-- **Region-source ground truth.** Expert-marked ROIs on 3–5 frames from `zolIMa` / `jFWePN` for
-  the Decision 15 eval — Dominik's time, not code time.
+- **Landscape correlation check.** 2–3 frames from `zolIMa` / `jFWePN` — does the k-means
+  tile labelling match a domain-expert eyeball at tile resolution? Not a segmentation metric;
+  just "does the heatmap agree." Dominik's time, not code time (Decision 15).
 - **Gating-plot subscription line-count in PR #4.** May exceed the per-PR budget; PR #4b split
   possible.
 
