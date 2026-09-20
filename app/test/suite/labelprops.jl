@@ -216,6 +216,21 @@ end
     @test !is_versioned_entry([1, 2])              # not a dict
 end
 
+# P3 chain-pinning parser — the one canonical way to lift `params["version"]` off the raw bag into a
+# typed `Union{String,Nothing}` Params field. The `""` / `nothing` / missing / non-string cases all
+# collapse to `nothing` (follow `_latest`), matching the composer's default. Full plan:
+# docs/todo/VN_VERSIONING_PLAN.md → P3 + the ratchets in `vn_pilot_writer.jl`.
+@testset "parse_version_pin — canonical params.version parser" begin
+    @test isnothing(parse_version_pin(Dict{String,Any}()))                            # absent
+    @test isnothing(parse_version_pin(Dict{String,Any}("version" => nothing)))        # explicit nothing
+    @test isnothing(parse_version_pin(Dict{String,Any}("version" => "")))             # empty string
+    @test isnothing(parse_version_pin(Dict{String,Any}("version" => missing)))        # JSON3 null → missing
+    @test isnothing(parse_version_pin(Dict{String,Any}("version" => 42)))             # non-string, defensive
+    @test parse_version_pin(Dict{String,Any}("version" => "v1")) == "v1"
+    @test parse_version_pin(Dict{String,Any}("version" => "v42")) == "v42"
+    @test parse_version_pin(Dict{String,Any}("version" => "draft")) == "draft"        # hand-labelled vn
+end
+
 @testset "versioned_get_field_at — legacy + new shape" begin
     # LEGACY shape (bare scalar): the composer returns the scalar unchanged
     legacy = Dict{String,Any}(

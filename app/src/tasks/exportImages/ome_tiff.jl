@@ -9,6 +9,7 @@ Base.@kwdef struct ExportOmeTiffParams
     zMip::Bool        = false
     timepoint::Int    = -1
     outDir::String    = ""
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_export_ome_tiff_params(d::AbstractDict)::ExportOmeTiffParams
@@ -17,7 +18,8 @@ function parse_export_ome_tiff_params(d::AbstractDict)::ExportOmeTiffParams
         channels  = get(d, "channels", nothing),
         zMip      = get(d, "zMip", false) === true,
         timepoint = round(Int, something(tryparse_f64(string(get(d, "timepoint", -1))), -1.0)),
-        outDir    = strip(string(get(d, "outDir", ""))))
+        outDir    = strip(string(get(d, "outDir", ""))),
+        version = parse_version_pin(d))
 end
 
 # Pure: the calibration an export carries into its OME-XML, read from `ccid.json` — which is the
@@ -98,7 +100,7 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     p          = parse_export_ome_tiff_params(params)
     raw        = read_ccid_raw(state_file(img))
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

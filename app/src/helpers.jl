@@ -167,6 +167,21 @@ function version_next(d::AbstractDict)::String
     "v$(n + 1)"
 end
 
+# ── P3 chain-pinning helper — parse the `version` param off the raw bag ──────
+# The 24 task Params structs that declare `version::Union{String,Nothing}=nothing` all parse the
+# incoming `version` field the same way: absent, `nothing`, missing or empty-string ⇒ `nothing`
+# (follow `_latest`); any other string ⇒ that string. One canonical helper so a new task's parser
+# can't drift into a different tri-state answer (silently coercing missing to "v1", or accepting a
+# non-string as valid). Used by `parse_<task>_params(d::AbstractDict)`. Full plan:
+# `docs/todo/VN_VERSIONING_PLAN.md` → P3.
+function parse_version_pin(d::AbstractDict)::Union{String,Nothing}
+    v = get(d, "version", nothing)
+    (v === nothing || v === missing) && return nothing
+    v isa AbstractString || return nothing
+    s = String(v)
+    isempty(s) ? nothing : s
+end
+
 # ── Guarded writer (D6 — mechanically-can't-overwrite invariant). Writes
 # `item_value` at `version` (defaults to `version_next(d)`), refusing if that
 # key already exists. Updates `_latest` to the version just written.

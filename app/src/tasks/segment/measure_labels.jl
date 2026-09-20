@@ -10,6 +10,7 @@ Base.@kwdef struct MeasureLabelsParams
     overlap::Int               = 64
     blockSizeZ::Int            = 0
     overlapZ::Int              = 0
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_measure_labels_params(d::AbstractDict)::MeasureLabelsParams
@@ -22,7 +23,8 @@ function parse_measure_labels_params(d::AbstractDict)::MeasureLabelsParams
         blockSize          = Int(get(d, "blockSize", 512)),
         overlap            = Int(get(d, "overlap", 64)),
         blockSizeZ         = Int(get(d, "blockSizeZ", 0)),
-        overlapZ           = Int(get(d, "overlapZ", 0)))
+        overlapZ           = Int(get(d, "overlapZ", 0)),
+        version = parse_version_pin(d))
 end
 
 function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any};
@@ -36,7 +38,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     raw                  = read_ccid_raw(ccid)
 
     # Resolve the intensity image path
-    im_filename = versioned_get_field_at(raw, "filepath", p.intensityValueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    im_filename = versioned_get_field_at(raw, "filepath", p.intensityValueName; version = p.version)
     if isnothing(im_filename)
         on_log("[ERROR] No filepath for intensityValueName='$(p.intensityValueName)'")
         return nothing

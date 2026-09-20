@@ -18,6 +18,7 @@ Base.@kwdef struct RegisterParams
     autoMask::Bool               = false
     samplesPerParameter::Int     = 5000
     expand::Int                  = 0
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_register_params(d::AbstractDict)::RegisterParams
@@ -30,7 +31,8 @@ function parse_register_params(d::AbstractDict)::RegisterParams
         sigma               = Float64(get(d, "sigma", 1.0)),
         autoMask            = Bool(get(d, "autoMask", false)),
         samplesPerParameter = Int(get(d, "samplesPerParameter", 5000)),
-        expand              = Int(get(d, "expand", 0)))
+        expand              = Int(get(d, "expand", 0)),
+        version = parse_version_pin(d))
 end
 
 # Pure: the meta the registered output inherits from the REFERENCE image + a channel count assembled
@@ -100,7 +102,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
             on_log("[ERROR] $(im.uid): $(e isa ErrorException ? e.msg : sprint(showerror, e))")
             return nothing
         end
-        filename = versioned_get_field_at(raw, "filepath", VERSIONED_DEFAULT_VAL; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+        filename = versioned_get_field_at(raw, "filepath", VERSIONED_DEFAULT_VAL; version = p.version)
         if isnothing(filename)
             on_log("[ERROR] $(im.uid): no filepath registered on the default version.")
             return nothing

@@ -20,6 +20,7 @@ Base.@kwdef struct TrainSupportDenoiseParams
     patience::Int            = 5
     minLossDelta::Float64    = 5e-3
     midZOnly::Bool           = true
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_train_support_denoise_params(d::AbstractDict)::TrainSupportDenoiseParams
@@ -39,7 +40,8 @@ function parse_train_support_denoise_params(d::AbstractDict)::TrainSupportDenois
         earlyStop         = Bool(get(d, "earlyStop", true)),
         patience          = Int(get(d, "patience", 5)),
         minLossDelta      = Float64(get(d, "minLossDelta", 5e-3)),
-        midZOnly          = Bool(get(d, "midZOnly", true)))
+        midZOnly          = Bool(get(d, "midZOnly", true)),
+        version = parse_version_pin(d))
 end
 
 # SET scope, mirroring `TrainFlowModel` above. One denoise model per acquisition-class, reused across
@@ -186,7 +188,7 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
     short_ts = Tuple{String,Int}[]   # (uid, T) for images too short for the current window
     for img in imgs
         raw = read_ccid_raw(state_file(img))
-        filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+        filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
         if isnothing(filename)
             on_log("[WARN] $(img.uid): no filepath for valueName='$(p.valueName)' — skipped")
             continue

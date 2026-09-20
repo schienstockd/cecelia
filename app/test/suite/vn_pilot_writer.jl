@@ -219,10 +219,14 @@ end
 
 @testset "P3 pinning ratchet: every task reader passes params.version through" begin
     # A grep-shaped ratchet — every task's `versioned_get_field_at(raw, "filepath", …)` MUST also
-    # thread `params.version` so a chain node's `params["version"]` reaches the reader. If a new
-    # task ships and forgets the kwarg, chain pinning silently no-ops for it. Enforced by
-    # comparing the count of `versioned_get_field_at(raw, "filepath"` sites with the count that
-    # also mention `get(params, "version"` on the same line.
+    # thread the chain node's `params["version"]` so pinning reaches the reader. If a new task
+    # ships and forgets the kwarg, chain pinning silently no-ops for it. The invariant is simply
+    # that the same line carries `version =` in the composer's kwargs; the value can be either
+    # form (identical run-time semantics):
+    #   • untyped:  `version = get(params, "version", nothing)`   ← the pre-#34 shape (baseline)
+    #   • typed:    `version = p.version`                         ← post-#34 typed-params cleanup
+    # Both keep chain pinning wired end-to-end. See `parse_version_pin` in `helpers.jl` for the
+    # typed shape.
     task_root = joinpath(@__DIR__, "..", "..", "src", "tasks")
     all_reads = 0
     pin_reads = 0
@@ -231,9 +235,9 @@ end
         for line in eachline(joinpath(dir, f))
             occursin("versioned_get_field_at(raw, \"filepath\"", line) || continue
             all_reads += 1
-            occursin("get(params, \"version\", nothing)", line) && (pin_reads += 1)
+            occursin("version =", line) && (pin_reads += 1)
         end
     end
     @test all_reads > 0                # sanity: the scan finds something
-    @test pin_reads == all_reads       # every reader threads params.version — no drift
+    @test pin_reads == all_reads       # every reader threads a version — no drift
 end

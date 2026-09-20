@@ -5,12 +5,14 @@ task_output_effect(::Flip) = "new-version"
 Base.@kwdef struct FlipParams
     valueName::String = VERSIONED_DEFAULT_VAL
     axis::String      = "Y"
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_flip_params(d::AbstractDict)::FlipParams
     FlipParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
-        axis      = uppercase(string(get(d, "axis", "Y"))))
+        axis      = uppercase(string(get(d, "axis", "Y"))),
+        version = parse_version_pin(d))
 end
 
 # Flip an image along one axis (X / Y / Z) and register the result as a NEW VERSION on the same
@@ -33,7 +35,7 @@ function _run_task(task::Flip, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

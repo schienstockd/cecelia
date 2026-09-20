@@ -36,12 +36,14 @@ struct SegmentCorrect <: CciaTask end
 Base.@kwdef struct SegmentCorrectParams
     valueName::String                    = VERSIONED_DEFAULT_VAL
     labelOps::Vector{Dict{String,Any}}   = Dict{String,Any}[]
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_segment_correct_params(d::AbstractDict)::SegmentCorrectParams
     SegmentCorrectParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
-        labelOps  = parse_label_ops(get(d, "labelOps", nothing)))
+        labelOps  = parse_label_ops(get(d, "labelOps", nothing)),
+        version = parse_version_pin(d))
 end
 
 """
@@ -142,7 +144,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
     # The labels store has no OME-XML of its own; the Python runner reads dims from the intensity
     # image (same rule measure_labels_run.py follows). Resolve the active image path here so the
     # runner is thin — it just uses what Julia hands it.
-    im_filename = versioned_get_field_at(raw, "filepath", VERSIONED_DEFAULT_VAL; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    im_filename = versioned_get_field_at(raw, "filepath", VERSIONED_DEFAULT_VAL; version = p.version)
     if isnothing(im_filename)
         on_log("[ERROR] No image filepath registered — cannot derive dims for labels correction")
         return nothing

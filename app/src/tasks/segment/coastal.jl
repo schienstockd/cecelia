@@ -22,6 +22,7 @@ Base.@kwdef struct CoastalSegmentParams
     clearDepth::Bool             = false
     normaliseToWhole::Bool       = true
     temporalScaleMode::String    = "frames"
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_coastal_segment_params(d::AbstractDict)::CoastalSegmentParams
@@ -43,7 +44,8 @@ function parse_coastal_segment_params(d::AbstractDict)::CoastalSegmentParams
         clearTouchingBorder = Bool(get(d, "clearTouchingBorder", false)),
         clearDepth          = Bool(get(d, "clearDepth", false)),
         normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)),
-        temporalScaleMode   = String(get(d, "temporalScaleMode", "frames")))
+        temporalScaleMode   = String(get(d, "temporalScaleMode", "frames")),
+        version = parse_version_pin(d))
 end
 
 # Coastal ships no built-in models — the picker IS the vault. An empty vault therefore means an
@@ -142,7 +144,7 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

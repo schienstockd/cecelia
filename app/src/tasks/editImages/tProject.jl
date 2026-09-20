@@ -5,12 +5,14 @@ task_output_effect(::TProject) = "new-image"
 Base.@kwdef struct TProjectParams
     valueName::String = VERSIONED_DEFAULT_VAL
     op::String        = "mean"
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_t_project_params(d::AbstractDict)::TProjectParams
     TProjectParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
-        op        = string(get(d, "op", "mean")))
+        op        = string(get(d, "op", "mean")),
+        version = parse_version_pin(d))
 end
 
 # Pure: the meta a T-projection inherits from its SOURCE image. T is collapsed to a single frame,
@@ -44,7 +46,7 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

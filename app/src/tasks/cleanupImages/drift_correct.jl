@@ -22,6 +22,7 @@ Base.@kwdef struct DriftCorrectParams
     driftSmoothSigma::Float64    = 6.0
     driftPerPlane::Bool          = false
     driftZSmoothness::Float64    = 0.0
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_drift_correct_params(d::AbstractDict)::DriftCorrectParams
@@ -34,7 +35,8 @@ function parse_drift_correct_params(d::AbstractDict)::DriftCorrectParams
         driftMaxAngle      = Float64(get(d, "driftMaxAngle", 5.0)),
         driftSmoothSigma   = Float64(get(d, "driftSmoothSigma", 6.0)),
         driftPerPlane      = Bool(get(d, "driftPerPlane", false)),
-        driftZSmoothness   = Float64(get(d, "driftZSmoothness", 0.0)))
+        driftZSmoothness   = Float64(get(d, "driftZSmoothness", 0.0)),
+        version = parse_version_pin(d))
 end
 
 # QC findings from the persisted drift trajectory (docs/todo/QC_PLAN.md). Pure, so it is unit-tested
@@ -181,7 +183,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
