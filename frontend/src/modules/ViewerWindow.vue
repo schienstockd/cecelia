@@ -4640,9 +4640,19 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       // there. Empty popVn/popType ⇒ backend skips pops entirely.
       const popVn = popsPanelOn.value ? (gatingCurrent.value.valueName || '') : ''
       const popType = popsPanelOn.value ? (gatingCurrent.value.popType || '') : ''
+      // Tracks snapshot: first vn the panel has ticked visible under the tracks eye. Same
+      // "one at a time" discipline `labelName` uses for the labels layer — the backend
+      // computes ONE tracks summary per tile, not per-vn. Untracked vn ⇒ backend drops.
+      const trackVn = (() => {
+        const names = meta.value?.labelNames ?? []
+        if (!imageUid || !names.length) return ''
+        const vis = settings.getTrackVisibility(imageUid, names)
+        return names.find(n => vis[n]) ?? ''
+      })()
       // At least one augmentable dimension has to be on before we ask; if the frontend has
       // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
-      const anyAugment = visibleChannels.length > 0 || !!labelsVn || (!!popVn && !!popType)
+      const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
+                         (!!popVn && !!popType) || !!trackVn
       if (anyAugment && projectUid) {
         try {
           const cRes = await fetch('/api/viewer/landscape/compute', {
@@ -4654,6 +4664,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
               channels: visibleChannels,
               ...(labelsVn ? { labelsValueName: labelsVn } : {}),
               ...(popVn && popType ? { popValueName: popVn, popType } : {}),
+              ...(trackVn ? { tracksValueName: trackVn } : {}),
             }),
           })
           if (cRes.ok) {

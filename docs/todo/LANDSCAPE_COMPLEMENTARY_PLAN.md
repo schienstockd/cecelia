@@ -1,8 +1,8 @@
 # Landscape complementary stats — plan
 
 **Status:** building. Phase 1 (channels) shipped 2026-09-20 in #1089; Phase 2a
-(`segCount`) shipped 2026-09-20 in #1096; Phase 2b (`pops`) building 2026-09-20.
-Drafted from
+(`segCount`) shipped 2026-09-20 in #1096; Phase 2b (`pops`) shipped 2026-09-20
+in #1099; Phase 3 (`tracks`) building 2026-09-20. Drafted from
 [`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md).
 Written to be picked up cold by another session.
 
@@ -175,20 +175,26 @@ Each phase independently mergeable.
    centroids inside that tile at the shown t. Bins by level-0 pixel dimensions
    (`image_geometry.sizeX/Y`), consistent with Phase 1's whole-frame tiling.
 
-4. **Phase 2b — `pops` (this pass, 2026-09-20).** Same compute endpoint grows
+4. **Phase 2b — `pops`. SHIPPED 2026-09-20 in #1099.** The compute endpoint grew
    optional `popValueName` + `popType` — when both non-empty (frontend reads them
    from `cc.gatingCurrent`, gated by `popsPanelOn` = `getPopVisible(setUid, popType)`),
    the backend resolves visible pops via `resolve_pops(img, popType; value_name=vn)`
    (same authoritative resolver `overlay_author` uses), builds a `label → tile` map
    from label_props centroids once, then counts each pop's labels per tile. Each
    tile with any member pops gets `pops = [{path, name, count}]` for the pops with
-   count > 0 in THAT tile (sparse per Decision 3 — zero-count pops absent, empty
-   tiles have no `pops` key at all). ~350 lines.
+   count > 0 in THAT tile (sparse per Decision 3).
 
-5. **Phase 3 — `tracks` summary.** count / meanDuration / meanSpeed from
-   the track-props view; `hmmStates` / `motifs` gated by run existence
-   (Decision 5). Reuse the same tile-index / centroid-filter code from
-   Phase 2a/b. ~350 lines.
+5. **Phase 3 — `tracks` summary (this pass, 2026-09-20).** Compute endpoint grows
+   optional `tracksValueName` — frontend sends the first vn ticked visible under
+   `getTrackVisibility` (same "one at a time" discipline as `labelName`). Backend
+   reads label_props with `[track_id, live.cell.speed]` + centroids, does one pass
+   for whole-lifetime `num_cells` per track, then bins cells at t and emits
+   `tracks = {count, meanDuration, meanSpeed}` per tile (sparse — empty tiles have
+   no `tracks` key). `meanSpeed` is the INSTANTANEOUS per-cell speed averaged in
+   the tile at t (falls back to absent when the segmentation has no speed obs);
+   `meanDuration` reports track lifetimes for the tracks visible in this tile.
+   `hmmStates` / `motifs` deferred to a follow-up (Decision 5 — conditional on
+   the run existing, no free grep for the tile). ~350 lines.
 
 6. **Phase 4 — `sourceRun` provenance.** Per-field bag; every phase that
    introduced a computed field also adds its `sourceRun` key. If Phase 1–3

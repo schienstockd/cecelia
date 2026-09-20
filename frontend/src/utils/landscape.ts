@@ -83,6 +83,13 @@ export interface LandscapeTile {
   // `name` is the display name. Populations with zero members in this tile are absent, and
   // a tile with no member pops has no `pops` key at all (sparse per Decision 3).
   pops?: Array<{ path: string; name: string; count: number }>
+  // Phase 3: per-tile tracks summary. `count` = distinct tracks with a cell in this tile
+  // at t; `meanDuration` = mean of per-track full-lifetime frame counts across those tracks;
+  // `meanSpeed` = mean instantaneous per-cell speed in this tile at t. Both mean fields are
+  // absent when the segmentation doesn't carry the underlying obs (untracked → no key at
+  // all; tracked-but-no-`live.cell.speed` → `meanSpeed` absent, `count`/`meanDuration`
+  // still present).
+  tracks?: { count: number; meanDuration?: number; meanSpeed?: number }
 }
 
 export interface LandscapeLegendEntry {
@@ -111,6 +118,7 @@ export interface AugmentTile {
   channels?: Record<string, { mean: number; snr: number }>
   segCount?: number
   pops?: Array<{ path: string; name: string; count: number }>
+  tracks?: { count: number; meanDuration?: number; meanSpeed?: number }
 }
 
 /** Merge a per-tile augmentation payload into a category-only landscape. Non-mutating — returns a
@@ -129,11 +137,13 @@ export function augmentLandscape(
     const hasChannels = !!a.channels && Object.keys(a.channels).length > 0
     const hasSeg = typeof a.segCount === 'number' && Number.isFinite(a.segCount)
     const hasPops = Array.isArray(a.pops) && a.pops.length > 0
-    if (!hasChannels && !hasSeg && !hasPops) return t
+    const hasTracks = !!a.tracks && typeof a.tracks.count === 'number' && Number.isFinite(a.tracks.count)
+    if (!hasChannels && !hasSeg && !hasPops && !hasTracks) return t
     const next: LandscapeTile = { ...t }
     if (hasChannels) next.channels = a.channels
     if (hasSeg) next.segCount = a.segCount
     if (hasPops) next.pops = a.pops
+    if (hasTracks) next.tracks = a.tracks
     return next
   })
   return { ...base, tiles, schemaVersion: 2 }

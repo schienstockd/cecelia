@@ -198,6 +198,31 @@ describe('augmentLandscape', () => {
     expect(merged.tiles.find(t => t.id === 'A1')?.segCount).toBeUndefined()
   })
 
+  it('merges tracks independently of channels/segCount/pops (Phase 3)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const augment: import('./landscape').AugmentTile[] = [
+      { tileId: 'A1', tracks: { count: 3, meanDuration: 24.5, meanSpeed: 1.2 } },
+      { tileId: 'B2', segCount: 5, tracks: { count: 1, meanDuration: 10 } },  // no meanSpeed (no obs)
+    ]
+    const merged = augmentLandscape(base, augment)
+    expect(merged.tiles.find(t => t.id === 'A1')?.tracks).toEqual({
+      count: 3, meanDuration: 24.5, meanSpeed: 1.2,
+    })
+    expect(merged.tiles.find(t => t.id === 'B2')?.tracks).toEqual({
+      count: 1, meanDuration: 10,
+    })
+    expect(merged.tiles.find(t => t.id === 'B2')?.segCount).toBe(5)
+    expect(merged.tiles.find(t => t.id === 'C3')?.tracks).toBeUndefined()
+  })
+
+  it('drops tracks payload with non-finite count (defensive)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(base, [{ tileId: 'A1', tracks: { count: NaN } }])
+    expect(merged.tiles.find(t => t.id === 'A1')?.tracks).toBeUndefined()
+  })
+
   it('merges pops independently of channels + segCount (Phase 2b)', () => {
     const img = makeImageData(32, 32, () => [128, 128, 128])
     const base = computeLandscape(img, { cols: 4, rows: 4 })

@@ -1034,11 +1034,17 @@ def get_capture(project_uid: str, capture_id: str) -> list:
             canonical id ("/live/tnaive"); use it when calling `mark_cells` back on member
             cells. Populations with 0 count in a tile are ABSENT — infer nothing from a
             missing entry beyond "not visible here or not toggled on".
+          • `tiles[i].tracks = {count, meanDuration?, meanSpeed?}` — per-tile tracks summary.
+            `count` = distinct tracks with a cell in this tile at t; `meanDuration` = mean
+            full-lifetime frame count across those tracks; `meanSpeed` = mean instantaneous
+            per-cell speed here at t (absent when the segmentation has no `live.cell.speed`).
+            The "is anything moving in this region" answer the static composite can't give.
 
     Prefer these fields over guessing from the composite when v2 is available: `channels` for
     "which channel dominates this bright tile", `segCount` for "how densely populated is this
-    region", `pops` for "which cell type sits here". A missing field on a v2 tile means the
-    corresponding layer was off — fall back to your visual read, don't infer zero.
+    region", `pops` for "which cell type sits here", `tracks` for "is there motion here".
+    A missing field on a v2 tile means the corresponding layer was off — fall back to your
+    visual read, don't infer zero.
 
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install
