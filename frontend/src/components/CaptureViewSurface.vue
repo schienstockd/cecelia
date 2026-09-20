@@ -4,40 +4,30 @@
   earlier "modal + shared-frames strip" design that made captureId marks invisible in-context.
 
   The right frame to talk about is the shared one — the live viewer may have scrubbed. So the
-  captured PNG covers the WebGPU canvas, the user's own overlay from the Save moment paints on
-  top (accent), and Claude's `mark_freeform` marks whose `target` equals this captureId paint on
-  top of that (amber). One layer, one truth.
+  captured PNG covers the WebGPU canvas (the user's own marks are already BAKED into that PNG
+  by `composeImageWithOverlay` at save time — we don't re-paint them here or they'd double from
+  any pixel-size mismatch), and Claude's `mark_freeform` marks whose `target` equals this
+  captureId paint on top in amber. One layer, one truth.
 
   DIVISION OF LABOUR.
     • `stores/viewer.ts::freeformMarks` — the ephemeral bag Claude's marks land in.
     • `utils/freeformRender.ts::paintableFor` — the SAME resolver DrawSurface's payloads went
-      through on the way out, so a mark reads the same coming back in.
-    • This SFC — the PNG cover, both overlay groups, and the "Return to live" close.
+      through on the way out, so Claude's marks read the same coming back in.
+    • This SFC — the PNG cover, the Claude overlay group, and the "Return to live" close.
 
-  Coord frame: the SVG viewBox tracks its own client CSS px, and both overlays are already in
-  0..1 frame-relative coords (captureAddress::normalisePoint). Multiply by box → paint. Same
-  approach as DrawSurface / FreeformOverlay, so a mark drawn while `boxW/H` are known will land
-  exactly where it did when authored.
+  Coord frame: the SVG viewBox tracks its own client CSS px; Claude's overlay is in 0..1
+  frame-relative coords (captureAddress::normalisePoint). Multiply by box → paint. Same
+  approach as DrawSurface / FreeformOverlay.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useViewerStore } from '../stores/viewer'
 import {
-  paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow, type Paintable,
+  paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow,
 } from '../utils/freeformRender'
 import type { OverlayMark, CaptureAddress } from '../utils/captureAddress'
-import { ANNOTATION_PALETTE, DEFAULT_ANNOTATION_COLOR } from '../utils/overlayCompose'
-import type { OverlayColor } from '../utils/captureAddress'
 import type { CaptureSurface } from '../utils/kiwiCaptures'
 import FrameAnnotator from './FrameAnnotator.vue'
-
-// User-mark stroke — resolve the palette name to a hex, defaulting to white for older captures
-// that didn't carry a colour field. Claude marks keep their fixed amber (`--cc-warn`) for now;
-// they're distinct in intent and having them fall into the user palette would blur the line.
-function userStroke(p: Paintable): string {
-  const c = p.color as OverlayColor | undefined
-  return (c && ANNOTATION_PALETTE[c]) || ANNOTATION_PALETTE[DEFAULT_ANNOTATION_COLOR]
-}
 
 const props = withDefaults(defineProps<{
   projectUid: string
@@ -169,12 +159,6 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
   }
 }
 
-// User's overlay from the share moment — one-shot, doesn't change.
-const userPaintables = computed(() => {
-  if (boxW.value <= 0 || boxH.value <= 0) return []
-  return paintableFor(props.overlay, boxW.value, boxH.value, 'norm')
-})
-
 // Claude's freeform marks whose `target` is THIS captureId. Filter here (rather than in the
 // store) so a mark for a different capture waits in the bag rather than painting on the wrong
 // frame — mid-conversation Claude may reference a capture from earlier.
@@ -214,31 +198,16 @@ function dismissAllClaudeMarks() {
          load isn't needed on Save. -->
     <img :src="frameDataUrl" class="cvs-frame" alt="Shared frame" @load="measureBox" />
 
-    <!-- SVG in the wrap's OWN CSS-px frame. Both overlay groups run through the same paintables
-         helper so the shapes read identically. -->
+    <!-- SVG in the wrap's OWN CSS-px frame. Only Claude's freeform marks paint here. The user's
+         own overlay is ALREADY baked into `frameDataUrl` at compose time (see
+         `composeImageWithOverlay` / `composeFrameWithOverlay`) — painting the vector overlay on
+         top gave a visible double because the baked strokes rasterise at the original compose
+         pixel size while the SVG strokes rasterise at the display box, and any mismatch (window
+         resize, re-annotate compositing on top of an already-composited frame) offsets the two
+         copies. Vector overlay stays in the envelope for downstream structural readers; it just
+         doesn't get painted twice here. -->
     <svg v-if="boxW > 0 && boxH > 0" class="cvs-svg"
          :viewBox="`0 0 ${boxW} ${boxH}`" preserveAspectRatio="none">
-      <g class="cvs-user">
-        <template v-for="(p, i) in userPaintables" :key="`u${i}`">
-          <rect v-if="p.kind === 'rect'"
-                :x="asRect(p.shape).x" :y="asRect(p.shape).y"
-                :width="asRect(p.shape).w" :height="asRect(p.shape).h"
-                class="cvs-shape" :style="{ stroke: userStroke(p) }" />
-          <circle v-else-if="p.kind === 'circle'"
-                  :cx="asCircle(p.shape).cx" :cy="asCircle(p.shape).cy" :r="asCircle(p.shape).r"
-                  class="cvs-shape" :style="{ stroke: userStroke(p) }" />
-          <line v-else-if="p.kind === 'arrow'"
-                :x1="asArrow(p.shape).x1" :y1="asArrow(p.shape).y1"
-                :x2="asArrow(p.shape).x2" :y2="asArrow(p.shape).y2"
-                class="cvs-shape" :style="{ stroke: userStroke(p) }" />
-          <polygon v-else-if="p.kind === 'poly'"
-                   :points="pointsToSvgAttr(asPoints(p.shape))"
-                   class="cvs-shape cvs-poly" :style="{ stroke: userStroke(p) }" />
-          <polyline v-else-if="p.kind === 'stroke'"
-                    :points="pointsToSvgAttr(asPoints(p.shape))"
-                    class="cvs-shape" :style="{ stroke: userStroke(p) }" />
-        </template>
-      </g>
       <g class="cvs-claude">
         <template v-for="(p, i) in claudePaintables" :key="`c${i}`">
           <rect v-if="p.kind === 'rect'"
@@ -303,8 +272,13 @@ function dismissAllClaudeMarks() {
     <!-- Re-annotate mode: FrameAnnotator (shared with canvas Share) mounts the frozen frame +
          DrawSurface, hands back the composed PNG on save. `onReannotateSave` POSTs a new capture
          referencing this one via `previousCaptureId`. Cancel dismisses back to the read-only chip
-         above. Notes emitted by DrawSurface come through the save payload. -->
-    <FrameAnnotator v-else :frame-data-url="frameDataUrl" :address-line="addressLine"
+         above. Notes emitted by DrawSurface come through the save payload.
+         Explicit `v-if="reannotating"` — NOT `v-else`. `v-else` chains with the immediately
+         preceding `v-if`, which is the notes div's `!reannotating && notes`. On the common path
+         (Save with no notes typed) that expression is false, and the `v-else` fired, mounting a
+         second FrameAnnotator over the chip that ate every click — leaving the user stuck with
+         a frozen frame, no dismiss, no cancel. -->
+    <FrameAnnotator v-if="reannotating" :frame-data-url="frameDataUrl" :address-line="addressLine"
                     :busy="reannotateBusy"
                     @save="onReannotateSave" @cancel="cancelReannotate" />
   </div>
@@ -315,8 +289,10 @@ function dismissAllClaudeMarks() {
   position: absolute; inset: 0;
   background: #000;   /* letterbox around a non-matching aspect frame */
   z-index: 40;        /* above viewer canvas + StillOverlay/GridOverlay AND above the plot
-                         canvas's floating panels — same layer FrameAnnotator uses so the
-                         handoff (annotator → this surface) doesn't dip behind the panels. */
+                         canvas's CanvasPanels (z:5/6) — same layer FrameAnnotator uses so the
+                         handoff (annotator → this surface) doesn't dip behind the panels. Sits
+                         BELOW FloatingPanels (`PANEL_Z_BASE = 60`) so a Population Manager the
+                         user opened stays reachable while the frozen frame is up. */
 }
 .cvs-frame {
   position: absolute; inset: 0;

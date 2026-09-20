@@ -103,7 +103,7 @@ import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
-import { copyText } from '../utils/clipboard'
+import { announceShareOutcome, shareFailMessage } from '../utils/shareOutcome'
 import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -4710,26 +4710,14 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       viewStateSnapshot,
       notes: payload.notes,
     }
-    if (pushOutcome === 'sent') {
-      // Push landed — skip the clipboard. Toast tells the user delivery happened; they can
-      // switch to their Claude session and see the incoming message there.
-      showShareToast('ok', 'Sent to your Claude session — check for the incoming message.')
-    } else {
-      // Not paired / socket dead / any write error ⇒ fallback path. Include the notes inline in
-      // the clipboard prompt so Claude reads the user's own words alongside the "look at this"
-      // — same principle as the push path (notes travel WITH the delivery signal, not only via
-      // a follow-up get_capture call).
-      const promptBase = 'Read my shared frame in cecelia.'
-      const prompt = payload.notes ? `${promptBase}\nUser said: ${payload.notes}` : promptBase
-      const copied = await copyText(prompt)
-      showShareToast('ok', copied
-        ? 'Capture saved — prompt in your clipboard. Switch to Claude and paste.'
-        : `Capture saved — copy manually: "${prompt}"`)
-    }
+    // Announce the outcome — push landed OR fall back to the clipboard prompt. Shared with the
+    // plot canvas's Save via `utils/shareOutcome.ts` so both surfaces stay in lockstep.
+    const outcome = await announceShareOutcome(pushOutcome, payload.notes)
+    showShareToast(outcome.kind, outcome.message)
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[share-in] capture POST failed', e)
-    showShareToast('fail', e instanceof Error ? e.message : String(e))
+    showShareToast('fail', shareFailMessage(e))
   } finally {
     drawBusy.value = false
     drawMode.value = false
