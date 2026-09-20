@@ -413,7 +413,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 .kiwi-cap-refine { color: var(--cc-kiwi); font-size: 0.7em; margin-right: 0.2em; }
 .kiwi-cap-addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font-family: var(--cc-mono); }
-.kiwi-cap-icon { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
+.kiwi-cap-icon { color: var(--cc-text-dim); }
 .kiwi-cap-focus { color: var(--cc-text-dim); flex-shrink: 0; }
 .kiwi-cap-focus:hover { color: var(--cc-kiwi); }
 .kiwi-cap-del { color: var(--cc-text-dim); flex-shrink: 0; }
