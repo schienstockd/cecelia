@@ -178,6 +178,20 @@ the visual is load-bearing — an unknown id is silently dropped. Extend the top
 opened (list_blackboard_entries + read_blackboard_entry) instead of creating a parallel entry. \
 Nothing here starts work; say "it's on the Blackboard" when you're done.
 
+The reserved entry `entryId="profile"` is auto-created per project and sorts to the top of \
+list_blackboard_entries — it's the project's durable "what is this project" record (subject, \
+imaging modality, cohort/groups, key channels, current goal). Read it BEFORE proposing analysis so \
+you don't rediscover context the profile already carries; revise it (revise_blackboard_entry) as \
+your understanding deepens. If it's empty, offer to fill it in from what you already know about \
+the project — and ask about the parts you can't see (the biological question, the treatment \
+groups, the goal for this session).
+
+Every entry carries a `status`: `open` (still on the table), `resolved` (topic settled, entry \
+stays as a record), `parked` (deliberately set aside). Use `set_blackboard_status` to retire a \
+done thread → `"resolved"`, park an idea for later → `"parked"`, or revive one that has come \
+back up → `"open"`. Don't blanket-close entries as housekeeping; a status change is a state \
+transition on a topic, not a cleanup pass. The profile entry itself normally stays `open`.
+
 ON PUSH PAIRING. Every tool that names a `project_uid` auto-pairs this session with that project \
 on its first call, so a fresh session's first check registers itself for push delivery without \
 the user typing anything — silent, no confirmation, cached in the MCP process. Reach for \

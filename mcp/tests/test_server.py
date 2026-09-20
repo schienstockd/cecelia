@@ -36,6 +36,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "register_push_target",   # bidir Part 5: explicit re-pair (auto-pair via middleware)
             "list_blackboard_entries", "read_blackboard_entry",   # bidir Part 4 (Blackboard) — reads
             "create_blackboard_entry", "revise_blackboard_entry", # bidir Part 4 (Blackboard) — writes
+            "set_blackboard_status",                              # PROJECT_MEMORY_PLAN P1 — status flip (no snapshot)
         ):
             self.assertIn(tool, self.names)
 

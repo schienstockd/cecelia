@@ -682,8 +682,17 @@ def set_labarchives_context(project_uid: str, source: dict, sections: list,
 def list_blackboard_entries(project_uid: str) -> dict:
     """List this project's BLACKBOARD entries — shared thinking the user and you have iterated on
     across sessions, one entry per topic (Markdown + attached captureIds). Returns newest-first
-    `{entries: [{entryId, title, current, updatedAt, attachmentsCount}]}`. Use before writing a new
-    entry so you extend the topic the user already opened instead of creating a parallel one.
+    `{entries: [{entryId, title, current, updatedAt, attachmentsCount, status}]}`. Use before
+    writing a new entry so you extend the topic the user already opened instead of creating a
+    parallel one.
+
+    `status` is one of `open` (still on the table), `resolved` (topic settled, entry kept as record),
+    `parked` (deliberately set aside). The reserved entry `entryId="profile"` is auto-created and
+    sorts to the top — it's the project's durable "what is this project" record (subject, cohort,
+    goal, key channels). Read it FIRST when you open a project so you don't rediscover context
+    the profile already carries. Update it via `revise_blackboard_entry` as your understanding
+    deepens; retire a done thread via `set_blackboard_status(..., "resolved")`.
+
     Distinct from CHAINS (executable pipelines) and NOTEBOOKS (analysis code) — a blackboard entry
     is prose + diagrams; nothing here starts work."""
     return _client.list_blackboard_entries(project_uid)
@@ -692,10 +701,13 @@ def list_blackboard_entries(project_uid: str) -> dict:
 @mcp.tool()
 def read_blackboard_entry(project_uid: str, entry_id: str, version: int | None = None) -> dict:
     """Read a BLACKBOARD entry's current Markdown (or a snapshotted `version`). Returns
-    `{entry: {entryId, title, content, current, updatedAt, versions, attachments}}`. `content` is
-    the Markdown; `versions` is the list of snapshot ids you can pass to `version=` to read an
-    older revision. Reach for this before `revise_blackboard_entry` so you propose the change on
-    top of what actually exists, not a memory of it."""
+    `{entry: {entryId, title, content, current, updatedAt, versions, attachments, status}}`.
+    `content` is the Markdown; `versions` is the list of snapshot ids you can pass to `version=`
+    to read an older revision. `status` (open|resolved|parked) describes the LIVE entry — it's
+    entry-level metadata, not versioned per snapshot, so a `version=` read returns the CURRENT
+    status either way. Reach for this before `revise_blackboard_entry` so you propose the change
+    on top of what actually exists, not a memory of it. `entry_id="profile"` reads the project's
+    profile entry (auto-created, one per project)."""
     return _client.read_blackboard_entry(project_uid, entry_id, version)
 
 
@@ -742,6 +754,26 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
     404 if the entry doesn't exist. Use `create_blackboard_entry` for a brand-new entry."""
     return _client.revise_blackboard_entry(project_uid, entry_id, content_md,
                                             attach_capture_ids, note)
+
+
+@mcp.tool()
+def set_blackboard_status(project_uid: str, entry_id: str, status: str) -> dict:
+    """Flip a BLACKBOARD entry's status without touching its content. `status` is one of `open`
+    (still on the table), `resolved` (topic settled — the entry stays as a record but drops out of
+    the "what's open" briefing), `parked` (deliberately set aside — same drop-out, different
+    semantics). Returns `{ok:true, status}` — or `{ok:true, status, unchanged:true}` if the entry
+    was already in that state.
+
+    Does NOT create a snapshot — status is entry-level metadata, not a content revision. Use
+    `revise_blackboard_entry` for content changes; use this to close a done thread, park an idea,
+    or reopen one you had retired. Reach for it when: the topic of an entry has been resolved in
+    this session (a decision was locked, a bug was fixed, a finding was acted on) → `"resolved"`;
+    when the topic is deliberately set aside for later without deleting the entry → `"parked"`; to
+    revive a parked/resolved entry that has come back up → `"open"`. Don't blanket-close entries
+    as noise — a real transition, not housekeeping.
+
+    404 if the entry doesn't exist. Never deletes; delete stays user-driven."""
+    return _client.set_blackboard_status(project_uid, entry_id, status)
 
 
 @mcp.tool()

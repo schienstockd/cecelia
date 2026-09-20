@@ -21,12 +21,30 @@ _bb_registry_path(uid::AbstractString) = joinpath(_settings_dir_for_project(uid)
 # The prefix + regex keeps a `..` payload from ever escaping the project dir when a client sends a
 # malformed entryId (rejected before joinpath).
 const _BB_ID_RE = r"^bb-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}$"
+# Reserved id for the project profile entry — Decision 2 in `docs/todo/PROJECT_MEMORY_PLAN.md`. One
+# per project, auto-created on first list. Literal `profile` (not a bb-<ts> id) so the profile is
+# recognisable in a path listing without a meta lookup, and so a Claude session can address it
+# without first calling list_blackboard_entries. In DESC name sort `profile` > `bb-…` (p > b), so it
+# naturally lands at the top of the list without a separate pin.
+const _BB_PROFILE_ID = "profile"
 function _new_bb_entry_id()::String
     ts = Dates.format(Dates.now(), dateformat"yyyymmddTHHMMSS")
     tail = bytes2hex(rand(UInt8, 3))
     string("bb-", ts, "-", tail)
 end
-_valid_bb_entry_id(id::AbstractString)::Bool = !isnothing(match(_BB_ID_RE, String(id)))
+_valid_bb_entry_id(id::AbstractString)::Bool =
+    String(id) == _BB_PROFILE_ID || !isnothing(match(_BB_ID_RE, String(id)))
+
+# Entry status — Decision 3 in `docs/todo/PROJECT_MEMORY_PLAN.md`. Additive metadata that answers
+# "is this thread still on the table" without touching the entry's content or version history.
+# `open` = actively being worked on; `resolved` = the topic settled, entry kept as record;
+# `parked` = deliberately set aside, do not surface in the "what's open" briefing. Missing on read
+# (any pre-status entry) backfills as `open` — the read-safe default that keeps a legacy entry
+# visible in the briefing until someone explicitly retires it.
+const _BB_STATUS_VALS = ("open", "resolved", "parked")
+_valid_bb_status(s::AbstractString)::Bool = String(s) in _BB_STATUS_VALS
+_status_from_meta(meta)::String =
+    (s = String(get(meta, "status", "open")); _valid_bb_status(s) ? s : "open")
 
 # Titles are a short label shown in the entries table — cap so a verbose caller can't bloat the
 # row. Same rule as notebooks' `_NB_DESC_MAX`.
@@ -96,7 +114,9 @@ _next_bb_snapshot_version(uid, id) =
     (vs = _bb_snapshot_versions(uid, id); isempty(vs) ? 1 : maximum(vs) + 1)
 
 # One meta.json write, called from every mutation so the field order + defaults stay in one place.
-function _write_bb_meta!(uid::AbstractString, id::AbstractString; title, createdAt, updatedAt, current, attachments, snapshots = Any[])
+function _write_bb_meta!(uid::AbstractString, id::AbstractString;
+    title, createdAt, updatedAt, current, attachments,
+    snapshots = Any[], status::AbstractString = "open")
     dir = _bb_entry_dir(uid, id)
     write_json_atomic(joinpath(dir, "meta.json"), Dict{String,Any}(
         "entryId"     => id,
@@ -111,6 +131,10 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString; title, created
         # "what was attached when v<N> was live". Old meta.json files without this key ⇒ empty list;
         # `read_at_version` falls back to current attachments (best it can do for a legacy entry).
         "snapshots"   => snapshots,
+        # Status is entry-level metadata, not versioned per snapshot — flipping "open" → "resolved"
+        # is a state transition on the WHOLE entry, not a content revision, so it doesn't fire a
+        # snapshot (see api_blackboard_status). PROJECT_MEMORY_PLAN Decision 3.
+        "status"      => _valid_bb_status(status) ? String(status) : "open",
     ))
 end
 function _read_bb_meta(uid::AbstractString, id::AbstractString)::Union{Dict{String,Any},Nothing}
@@ -168,17 +192,50 @@ end
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
 """
+    _ensure_profile_entry!(uid)
+
+Auto-create the reserved `profile` entry for this project if it doesn't already exist. Called at
+the top of `api_blackboard_list` so a project that never asks for its blackboard doesn't get an
+empty entry it never wanted; a session that opens the Blackboard page (or a Claude session that
+lists entries) always finds a profile to write into.
+
+Empty entry.md, title "Project profile", status "open". Same on-disk shape as a normal entry — one
+place in Julia has to know the reserved id, and this is it. PROJECT_MEMORY_PLAN Decision 2.
+"""
+function _ensure_profile_entry!(uid::AbstractString)
+    dir = _bb_entry_dir(uid, _BB_PROFILE_ID)
+    isfile(joinpath(dir, "meta.json")) && return
+    mkpath(dir)
+    write_atomic(joinpath(dir, "entry.md")) do io
+        write(io, "")
+    end
+    ts = string(Dates.now())
+    _write_bb_meta!(uid, _BB_PROFILE_ID;
+        title = "Project profile", createdAt = ts, updatedAt = ts,
+        current = 0, attachments = Any[], status = "open")
+    reg = _read_bb_registry(uid)
+    reg[_BB_PROFILE_ID] = Dict{String,Any}(
+        "title" => "Project profile", "current" => 0, "updatedAt" => ts, "status" => "open")
+    _write_bb_registry!(uid, reg)
+    nothing
+end
+
+"""
     GET /api/blackboard?projectUid=…
 
-Reply: `{ entries: [{ entryId, title, current, updatedAt, attachmentsCount }, …] }`, newest-first
-by id (which encodes a sortable timestamp). Skips an entry whose meta.json is unreadable rather
-than taking the list down — matches the captures/notebooks list convention.
+Reply: `{ entries: [{ entryId, title, current, updatedAt, attachmentsCount, status }, …] }`,
+newest-first by id (which encodes a sortable timestamp). The reserved `profile` entry sorts before
+`bb-…` ids (p > b in DESC), so it naturally lands at the top of the list. Skips an entry whose
+meta.json is unreadable rather than taking the list down — matches the captures/notebooks list
+convention. `status` backfills to "open" for pre-Decision-3 entries.
 """
 function api_blackboard_list(req::HTTP.Request)
     query = HTTP.queryparams(HTTP.URI(req.target))
     uid = get(query, "projectUid", "")
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    _ensure_profile_entry!(uid)
 
     dir = _blackboard_dir_for_project(uid)
     isdir(dir) || return 200, JSON3.write((; entries = Any[]))
@@ -194,6 +251,7 @@ function api_blackboard_list(req::HTTP.Request)
             "current"          => Int(get(meta, "current", 0)),
             "updatedAt"        => String(get(meta, "updatedAt", "")),
             "attachmentsCount" => atts isa AbstractVector ? length(atts) : 0,
+            "status"           => _status_from_meta(meta),
         ))
     end
     200, JSON3.write((; entries = entries))
@@ -246,7 +304,63 @@ function api_blackboard_entry_get(req::HTTP.Request)
         "updatedAt"   => String(get(meta, "updatedAt", "")),
         "versions"    => sort(versions),
         "attachments" => attachments_out,
+        "status"      => _status_from_meta(meta),  # describes the LIVE entry; not versioned per snapshot
     )))
+end
+
+"""
+    POST /api/blackboard/status
+
+Body: `{ projectUid, entryId, status }` where `status ∈ ("open","resolved","parked")`
+Reply: `{ ok:true, status, unchanged? }`
+
+Flips an entry's status field in place. Does NOT touch entry.md or create a snapshot — status is
+entry-level metadata (not content), so a status change and a content revision travel separately.
+A no-op (same status as current) is idempotent: response carries `unchanged:true` and nothing is
+rewritten. Broadcasts `blackboard:changed` on a real transition so a Kiwi / Blackboard list
+refresh picks it up. PROJECT_MEMORY_PLAN Decision 3.
+
+Additive-write from Claude's side: allow-listed in the MCP client so a session can retire a thread
+it has finished with, but never delete an entry (delete stays user-driven, per Part 4's discipline).
+"""
+function api_blackboard_status(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid    = _wstr(body, :projectUid)
+    id     = _wstr(body, :entryId)
+    status = _wstr(body, :status)
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isempty(id)  && return 400, JSON3.write((; error = "entryId required"))
+    _valid_bb_entry_id(id) || return 400, JSON3.write((; error = "Invalid entryId"))
+    _valid_bb_status(status) ||
+        return 400, JSON3.write((; error = "status must be one of $(_BB_STATUS_VALS)"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    meta = _read_bb_meta(uid, id)
+    meta === nothing && return 404, JSON3.write((; error = "Entry not found"))
+
+    prev = _status_from_meta(meta)
+    if prev == status
+        return 200, JSON3.write((; ok = true, status = status, unchanged = true))
+    end
+
+    ts = string(Dates.now())
+    _write_bb_meta!(uid, id;
+        title = String(get(meta, "title", "")),
+        createdAt = String(get(meta, "createdAt", ts)),
+        updatedAt = ts,                                      # status change is a state transition — bumps updatedAt
+        current = Int(get(meta, "current", 0)),
+        attachments = get(meta, "attachments", Any[]),
+        snapshots = get(meta, "snapshots", Any[]),
+        status = status)
+
+    reg = _read_bb_registry(uid)
+    entry = get!(reg, id, Dict{String,Any}())
+    entry["status"]    = status
+    entry["updatedAt"] = ts
+    _write_bb_registry!(uid, reg)
+
+    broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
+    200, JSON3.write((; ok = true, status = status))
 end
 
 """
@@ -274,15 +388,23 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
 
     id  = _new_bb_entry_id()
     ts  = string(Dates.now())
+    # Optional status on create — defaults to "open" so a caller that doesn't care lands on the
+    # right default. Invalid values are rejected rather than silently coerced (a mismatch here is
+    # a caller bug, not a data-migration case).
+    status = String(get(body, :status, "open"))
+    _valid_bb_status(status) ||
+        return 400, JSON3.write((; error = "status must be one of $(_BB_STATUS_VALS)"))
+
     dir = _bb_entry_dir(uid, id); mkpath(dir)
     write_atomic(joinpath(dir, "entry.md")) do io
         write(io, content)
     end
     _write_bb_meta!(uid, id;
-        title = title, createdAt = ts, updatedAt = ts, current = 0, attachments = attachments)
+        title = title, createdAt = ts, updatedAt = ts, current = 0,
+        attachments = attachments, status = status)
 
     reg = _read_bb_registry(uid)
-    reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts)
+    reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)
     _write_bb_registry!(uid, reg)
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
@@ -347,16 +469,21 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
     ts  = string(Dates.now())
     snapshots = _append_snapshot_record(
         get(meta, "snapshots", Any[]), v, old_atts, String(get(meta, "updatedAt", ts)))
+    # Preserve the entry's status across a content revision — a revise is a content-diff, not a
+    # state transition; the two travel separately. Missing on legacy entries backfills to "open".
+    prev_status = _status_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
-        updatedAt = ts, current = v, attachments = atts, snapshots = snapshots)
+        updatedAt = ts, current = v, attachments = atts,
+        snapshots = snapshots, status = prev_status)
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
     entry["current"]   = v
     entry["updatedAt"] = ts
     entry["title"]     = String(get(meta, "title", get(entry, "title", "")))
+    entry["status"]    = prev_status
     _write_bb_registry!(uid, reg)
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
@@ -412,15 +539,17 @@ function api_blackboard_restore(body_bytes::Vector{UInt8})
     restored_atts === nothing && (restored_atts = old_atts_live)
     snapshots = _append_snapshot_record(
         get(meta, "snapshots", Any[]), v_new, old_atts_live, String(get(meta, "updatedAt", ts)))
+    prev_status = _status_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v_asked,
-        attachments = restored_atts, snapshots = snapshots)
+        attachments = restored_atts, snapshots = snapshots, status = prev_status)
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
     entry["current"]   = v_asked
     entry["updatedAt"] = ts
+    entry["status"]    = prev_status
     _write_bb_registry!(uid, reg)
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
     200, JSON3.write((; ok = true, version = v_asked))
@@ -479,7 +608,8 @@ function api_blackboard_prune(body_bytes::Vector{UInt8})
                     updatedAt = String(get(meta, "updatedAt", "")),
                     current = Int(get(meta, "current", 0)),
                     attachments = get(meta, "attachments", Any[]),
-                    snapshots = snapshots)
+                    snapshots = snapshots,
+                    status = _status_from_meta(meta))
             end
         end
     end
