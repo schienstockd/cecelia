@@ -37,11 +37,13 @@ import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureEnvelope, type CaptureEnvelope,
          deleteCapture, clearAllCaptures,
          type CaptureRow } from '../../utils/kiwiCaptures'
-import { publishViewerSeek } from '../../utils/viewerSeekChannel'
+import { openViewerWindow } from '../../utils/viewerWindow'
+import { useViewerStore } from '../../stores/viewer'
 
 defineEmits<{ (e: 'close'): void }>()
 
 const pm = useProjectMetaStore()
+const viewer = useViewerStore()
 const projectUid = computed(() => pm.current?.uid ?? '')
 const projectName = computed(() => pm.current?.name ?? undefined)
 
@@ -134,25 +136,41 @@ async function loadThumb(id: string) {
 }
 
 // ── Refocus in viewer (PR B trinity) ─────────────────────────────────────────
-// Publishes a BroadcastChannel seek — a pop-out ViewerWindow with the matching imageUid picks it
-// up (subscribeViewerSeek). Silent no-op when the pop-out isn't open OR when the row's address
-// carries no imageUid (a `ui` / `plot` capture, or a viewer capture from a broken older payload).
-// Also carries the drawn marks (from the cached envelope) so the pop-out restores the annotation
-// overlay for the capture's frame — a dismissible chip on the viewer labels + hides them.
+// Reopen the capture's image in the pop-out viewer + restore its stored view (camera / channels /
+// t / z) + paint the marks as a read-only overlay. Same mechanism the analysis-board's Zoom-to-source
+// uses (`ImageStripView.zoomToSource`): write `pendingViewState` first (persists to localStorage so
+// a fresh popup mount reads the seed), then `openViewerWindow` — the popup applies via storage
+// event if it's already open, or seeds from localStorage on mount if the caller just opened it.
+//
+// Modern captures (post-2026-09-20) carry `viewStateSnapshot` and restore the exact view. Older
+// captures without it fall into the `focus` path — nudge t / z, leave camera / channels alone.
 function refocusRow(row: CaptureRow) {
   const a = row.address; if (!a || !a.imageUid) return
   // A t-range (slab capture) refocuses to the first frame — the range end is still visible via
-  // the pop-out's own scrubber. A per-axis undefined stays undefined; the receiver leaves that
-  // axis untouched.
+  // the pop-out's own scrubber.
   const t = Array.isArray(a.t) ? a.t[0] : a.t
   const env = envelopes.value[row.captureId]
   const marks = env?.overlay ?? []
-  publishViewerSeek({
+  const overlay = marks.length > 0
+    ? { captureId: row.captureId, marks: marks as unknown[] }
+    : undefined
+  if (env?.viewStateSnapshot) {
+    viewer.setPendingViewState({
+      viewState: env.viewStateSnapshot,
+      overlay, imageUid: a.imageUid,
+    })
+  } else {
+    viewer.setPendingViewState({
+      focus: {
+        ...(typeof t === 'number' ? { t } : {}),
+        ...(typeof a.z === 'number' ? { z: a.z } : {}),
+      },
+      overlay, imageUid: a.imageUid,
+    })
+  }
+  openViewerWindow({
     projectUid: projectUid.value, imageUid: a.imageUid,
-    captureId: row.captureId,
-    ...(typeof t === 'number' ? { t } : {}),
-    ...(typeof a.z === 'number' ? { z: a.z } : {}),
-    ...(marks.length > 0 ? { marks } : {}),
+    ...(a.valueName ? { valueName: a.valueName } : {}),
   })
 }
 // Per-row copy flash. Separate `useCopyFlash` instance so the chat-starter flash is independent.

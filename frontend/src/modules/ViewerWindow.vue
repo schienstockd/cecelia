@@ -52,7 +52,6 @@ import {
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
-import { subscribeViewerSeek } from '../utils/viewerSeekChannel'
 import MarksOverlay from '../components/MarksOverlay.vue'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
@@ -4027,49 +4026,80 @@ watch(() => viewerStore.pickHighlight?.updateId ?? null, () => frame.redraw())
 watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.value] as const, async () => {
   const pending = viewerStore.pendingViewState
   if (!pending) return
-  const vs = pending.viewState as ViewerViewState | null
-  if (!vs) return
   const m = meta.value
   const c = canvas.value
   if (!m || !c) return
+  // imageUid filter — Kiwi Refocus / Blackboard attachment set this so a popup showing a
+  // DIFFERENT image drops the pending. Zoom-to-source / keyframe apply omit it (the caller
+  // already opened the target popup by name via openViewerWindow).
+  if (pending.imageUid && pending.imageUid !== imageUid) return
   const applyingId = pending.updateId
-  const canvasH = Math.max(1, c.clientHeight)
-  const applied = applyViewStateToBrowser({
-    vs, meta: m, currentCam: cam.value, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
-  })
+  const vs = (pending.viewState as ViewerViewState | undefined) ?? null
+  const focus = pending.focus
 
-  // Per-channel state first so the reallocated GPU pipeline picks up the visibility / contrast on
-  // the next fetch — same order the initial mount uses (contrast/vis applied around reallocate).
-  for (const src of applied.channels) {
-    const dst = m.channels.find(ch => ch.name === src.name)
-    if (!dst) continue
-    dst.lo = src.lo
-    dst.hi = src.hi
-    dst.visible = src.visible
+  if (vs) {
+    // Full restore path — Zoom-to-source, keyframe apply, and a modern capture Refocus.
+    const canvasH = Math.max(1, c.clientHeight)
+    const applied = applyViewStateToBrowser({
+      vs, meta: m, currentCam: cam.value, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+
+    // Per-channel state first so the reallocated GPU pipeline picks up the visibility / contrast on
+    // the next fetch — same order the initial mount uses (contrast/vis applied around reallocate).
+    for (const src of applied.channels) {
+      const dst = m.channels.find(ch => ch.name === src.name)
+      if (!dst) continue
+      dst.lo = src.lo
+      dst.hi = src.hi
+      dst.visible = src.visible
+    }
+
+    // Camera pose is cheap — one write + a redraw; the draw loop reads `cam.value` inside.
+    cam.value = applied.cam
+
+    // Mode switch (2D ↔ 3D) needs a `reallocate` — the tile vs volume renderer chain is picked at
+    // that moment (`ensureRenderer`). A bare `mode.value = ...` writes the ref but leaves the wrong
+    // renderer active, which is what the user hit: controls updated but the canvas never redrew
+    // because the plane renderer's watchers didn't fire for the new mode.
+    const modeChanged = mode.value !== (applied.ndisplay === 3 ? 'volume' : 'plane')
+    mode.value = applied.ndisplay === 3 ? 'volume' : 'plane'
+
+    // z uses the canonical `stepZ` (writes the ref + schedules the reallocate pump); a bare
+    // `zPlane.value = …` moves the number but leaves the tile atlas / volume texture on the old
+    // plane. `gotoT` is the canonical t-setter for the same reason: it schedules the tile pump or
+    // the timepoint pump depending on the render path, then redraws.
+    if (modeChanged) {
+      await reallocate(false)
+    } else if (zPlane.value !== applied.zPlane) {
+      stepZ(applied.zPlane)
+    }
+
+    if (t.value !== applied.t) gotoT(applied.t)
+    pushChannels()
+  } else if (focus) {
+    // Seek-only path — legacy captures without `viewStateSnapshot`. Nudge t / z; leave camera,
+    // channels, mode alone (a Refocus that reset those would erase the user's current view).
+    if (typeof focus.t === 'number' && focus.t < m.nT && focus.t !== t.value) gotoT(focus.t)
+    if (typeof focus.z === 'number' && focus.z < m.nZ && focus.z !== zPlane.value) zPlane.value = focus.z
   }
 
-  // Camera pose is cheap — one write + a redraw; the draw loop reads `cam.value` inside.
-  cam.value = applied.cam
-
-  // Mode switch (2D ↔ 3D) needs a `reallocate` — the tile vs volume renderer chain is picked at
-  // that moment (`ensureRenderer`). A bare `mode.value = ...` writes the ref but leaves the wrong
-  // renderer active, which is what the user hit: controls updated but the canvas never redrew
-  // because the plane renderer's watchers didn't fire for the new mode.
-  const modeChanged = mode.value !== (applied.ndisplay === 3 ? 'volume' : 'plane')
-  mode.value = applied.ndisplay === 3 ? 'volume' : 'plane'
-
-  // z uses the canonical `stepZ` (writes the ref + schedules the reallocate pump); a bare
-  // `zPlane.value = …` moves the number but leaves the tile atlas / volume texture on the old
-  // plane. `gotoT` is the canonical t-setter for the same reason: it schedules the tile pump or
-  // the timepoint pump depending on the render path, then redraws.
-  if (modeChanged) {
-    await reallocate(false)
-  } else if (zPlane.value !== applied.zPlane) {
-    stepZ(applied.zPlane)
+  // Overlay sidecar — the capture's stored marks paint over the live canvas until the user
+  // seeks away (the [shownT, zPlane] watcher above auto-clears activeMarks). Applies whether the
+  // main payload was a full restore, a focus-only seek, or nothing (`marks-only` isn't in use
+  // today but the shape allows it).
+  const overlay = pending.overlay as { captureId: string, marks: OverlayMark[] } | undefined
+  if (overlay?.captureId && Array.isArray(overlay.marks) && overlay.marks.length > 0) {
+    const step = (vs as ViewerViewState | null)?.dims?.current_step
+    const anchorT = vs ? (Array.isArray(step) && typeof step[0] === 'number' ? step[0] : -1) : (focus?.t ?? -1)
+    const anchorZ = vs ? (Array.isArray(step) && typeof step[1] === 'number' ? step[1] : -1) : (focus?.z ?? -1)
+    activeMarks.value = {
+      captureId: overlay.captureId,
+      marks: overlay.marks,
+      t: anchorT,
+      z: anchorZ,
+    }
   }
 
-  if (t.value !== applied.t) gotoT(applied.t)
-  pushChannels()
   // Consume the seed so a popup reload doesn't silently re-apply it. Idempotent: if a fresh
   // pending arrived mid-apply, `consumePendingViewState` sees a different `updateId` and no-ops.
   viewerStore.consumePendingViewState(applyingId)
@@ -4501,10 +4531,23 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
       z: zPlane.value >= 0 ? zPlane.value : undefined,
       extentUm: ext && ext.x > 0 && ext.y > 0 ? { x: ext.x, y: ext.y, unit: ext.unit ?? 'µm' } : undefined,
     })
+    // Full viewState snapshot so a later Refocus / Blackboard-attachment click can restore the
+    // exact camera + channels the user saw when they shared — same shape ImageStripView's
+    // zoom-to-source uses. Blackboard + Kiwi push this into the pending-viewState channel; the
+    // popup applies it through the SAME apply path a keyframe restore uses. Backend accepts the
+    // field via `envelope.viewStateSnapshot` (captures_api.jl) and returns it on read.
+    const canvasW = Math.max(1, el.clientWidth)
+    const canvasH = Math.max(1, el.clientHeight)
+    const viewStateSnapshot = meta.value ? buildViewState({
+      cam: cam.value, meta: meta.value, t: shownT.value, zPlane: zPlane.value,
+      ndisplay: mode.value === 'plane' ? 2 : 3,
+      canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+    }) : null
     const res = await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,
-                             frames: [{ png }], overlay: payload.overlay }),
+                             frames: [{ png }], overlay: payload.overlay,
+                             ...(viewStateSnapshot ? { viewStateSnapshot } : {}) }),
     })
     // Response body is a one-shot stream — read once. On !ok extract .error if present; on ok
     // extract .captureId so the viewer can carry it into CaptureViewSurface.
@@ -4549,33 +4592,11 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
 }
 function onDrawCancel() { drawMode.value = false }
 
-let stopSeekWatch: (() => void) | null = null
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSelectModeTick)
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
-  // Kiwi PR B: Kiwi rows publish a seek when clicked. Filter by this viewer's imageUid so a row
-  // for a different image doesn't move us; a match schedules a `gotoT` (fetch is coalesced by the
-  // usual tile pump) and sets zPlane synchronously (its own watcher does the fetch).
-  stopSeekWatch = subscribeViewerSeek(
-    (msg) => {
-      if (!meta.value) return
-      if (typeof msg.t === 'number' && msg.t < meta.value.nT && msg.t !== t.value) gotoT(msg.t)
-      if (typeof msg.z === 'number' && msg.z < meta.value.nZ && msg.z !== zPlane.value) zPlane.value = msg.z
-      // BIDIR Part 4 (Blackboard) — a seek with `marks` sets the overlay, anchored to the capture's
-      // t / z so the `[shownT, zPlane]` watcher above auto-clears it once the user browses elsewhere.
-      if (msg.captureId && Array.isArray(msg.marks) && msg.marks.length > 0) {
-        activeMarks.value = {
-          captureId: msg.captureId,
-          marks: msg.marks,
-          t: typeof msg.t === 'number' ? msg.t : -1,
-          z: typeof msg.z === 'number' ? msg.z : -1,
-        }
-      }
-    },
-    (msg) => msg.imageUid === imageUid,
-  )
   stopCacheClearWatch = onViewerCacheClear(async (ev) => {
     if (ev.rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
     // Scope filter: an event named for a different image, or for a vn we don't render, isn't for
@@ -4630,7 +4651,6 @@ onUnmounted(() => {
   delete (window as unknown as { __cceceliaViewerScreenshot?: unknown }).__cceceliaViewerScreenshot
   delete (window as unknown as { __cceceliaViewerBeginDraw?: unknown }).__cceceliaViewerBeginDraw
   stopCacheClearWatch?.(); stopCacheClearWatch = null
-  stopSeekWatch?.(); stopSeekWatch = null
   stopPlay()
   pump.cancel()
   zPump.cancel()

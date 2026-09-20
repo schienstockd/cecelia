@@ -109,9 +109,10 @@ Numbered so code and other docs can cite them (`Decision 5`).
    composited frame and POSTs a NEW capture with `previousCaptureId` linking to the original —
    additive-only shape, no mutate. (ii) Kiwi's captures list gains thumbnails (backend already
    serves the composed PNG; row shows a 2.4-rem `<img>` at `object-fit: contain`) and a "refocus"
-   button that seeks the pop-out viewer to the capture's `imageUid + t + z` via a same-origin
-   `BroadcastChannel` (`utils/viewerSeekChannel.ts`; no backend round-trip — the pop-out picks
-   the message up on its own). (iii) The "refined from" glyph on refined rows is a visual only;
+   button that reuses the analysis-board's Zoom-to-source mechanism —
+   `stores/viewer.ts::setPendingViewState` + `openViewerWindow(...)` — so the popup restores the
+   exact camera / channels / t / z the capture was written at (from `viewStateSnapshot`), or
+   nudges t / z on a legacy capture without one. (iii) The "refined from" glyph on refined rows is a visual only;
    the parent copy button's tooltip carries the human phrasing so the nested-tooltip ratchet
    stays green.
 9. **Marks are structured overlay data alongside the frame, not baked into pixels.**
@@ -368,22 +369,25 @@ the Analysis group (Analysis board → Blackboard → Notebooks — the two writ
 their canvas). NOT gated on the observer/MCP connection (a bad-connection day still renders every
 diagram). Two-pane: entry list left, one entry right (viewer OR editor). Mermaid is
 dynamic-imported only when the current entry contains a ```mermaid fence — zero cost on entries
-without diagrams. Attachments show as thumbnails via `fetchCaptureEnvelope`; click publishes a
-`publishViewerSeek` so a pop-out viewer jumps to the capture (silent no-op if none is open, same
-fire-and-forget shape Kiwi PR B's Refocus established). Utils: `utils/blackboardApi.ts` (typed
-fetchers), `utils/blackboardMd.ts` (`renderBlackboardMarkdown` + `mermaidBlocks`, tested). Store:
-`stores/blackboard.ts` (WS `blackboard:changed` → tick → silent list reload).
+without diagrams. Utils: `utils/blackboardApi.ts` (typed fetchers), `utils/blackboardMd.ts`
+(`renderBlackboardMarkdown` + `mermaidBlocks`, tested). Store: `stores/blackboard.ts` (WS
+`blackboard:changed` → tick → silent list reload).
 
-**Ship 2026-09-21 — restore annotation overlay on the viewer when a capture is refocused.** The
-seek payload (`utils/viewerSeekChannel.ts`) grows optional `marks: OverlayMark[]` + `captureId`
-fields; Kiwi's Refocus button (and, once #1070 lands, the blackboard attachment click) fills them
-from the cached envelope. The pop-out viewer mounts `components/MarksOverlay.vue` — a read-only
-SVG overlay peer of `StillOverlay` / `GridOverlay` / `DrawSurface`, `viewBox="0 0 1 1"` with
-`preserveAspectRatio="none"` so 0..1 frame-relative marks map straight to the canvas rect. A
-dismissible chip in the top-right of the canvas labels the source capture; the overlay auto-drops
-when the user seeks t or z away — the marks belong to a specific frame, and reading them over a
-different frame is worse than reading nothing. `kiwiCaptures.ts::fetchCaptureEnvelope` grows an
-`overlay` field so this works without any backend or extra network hit.
+**Ship 2026-09-21 — Refocus collapses into Zoom-to-source (one mechanism).** Earlier attempts wrote
+a bespoke `viewerSeekChannel` (BroadcastChannel-based) — that shipped briefly then got called out
+as a duplicate: the analysis-board's Zoom-to-source already had the localStorage-backed handoff
+(`stores/viewer.ts::pendingViewState`) and could apply full view state on the popup, opened or
+not. Collapse: (i) `ViewerWindow.onDrawSave` populates `viewStateSnapshot` on the capture at share
+time via `buildViewState`; (ii) `PendingViewState` grew optional `overlay: {captureId, marks}` +
+`focus: {t?, z?}` fields, plus an optional `imageUid` filter — the ViewerWindow's existing
+pendingViewState apply path branches: full restore (Zoom-to-source / modern capture Refocus) OR
+seek-only (`focus`, for legacy captures without a snapshot); the overlay sidecar sets `activeMarks`
+in both branches. (iii) Kiwi Refocus + Blackboard attachment click both do `setPendingViewState`
++ `openViewerWindow(...)` — same as `ImageStripView.zoomToSource`. `viewerSeekChannel.ts`
++ tests deleted. Attachment thumbnails now composite the marks via
+`overlayCompose.ts::composeImageWithOverlay` (the same fix `Kiwi PR A` applied for shared frames).
+Page shell rebuilt to mirror ChainModule (full-height flex, canonical `SelectionTable` for the
+list, `ConfirmDeleteButton` for delete).
 
 **Versioning + pruning.** Reimplement notebook shape locally (Decision 21). Fix the "restore loses
 un-snapshotted edits" papercut in Blackboard.
