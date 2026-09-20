@@ -374,6 +374,17 @@ fire-and-forget shape Kiwi PR B's Refocus established). Utils: `utils/blackboard
 fetchers), `utils/blackboardMd.ts` (`renderBlackboardMarkdown` + `mermaidBlocks`, tested). Store:
 `stores/blackboard.ts` (WS `blackboard:changed` → tick → silent list reload).
 
+**Ship 2026-09-21 — restore annotation overlay on the viewer when a capture is refocused.** The
+seek payload (`utils/viewerSeekChannel.ts`) grows optional `marks: OverlayMark[]` + `captureId`
+fields; Kiwi's Refocus button (and, once #1070 lands, the blackboard attachment click) fills them
+from the cached envelope. The pop-out viewer mounts `components/MarksOverlay.vue` — a read-only
+SVG overlay peer of `StillOverlay` / `GridOverlay` / `DrawSurface`, `viewBox="0 0 1 1"` with
+`preserveAspectRatio="none"` so 0..1 frame-relative marks map straight to the canvas rect. A
+dismissible chip in the top-right of the canvas labels the source capture; the overlay auto-drops
+when the user seeks t or z away — the marks belong to a specific frame, and reading them over a
+different frame is worse than reading nothing. `kiwiCaptures.ts::fetchCaptureEnvelope` grows an
+`overlay` field so this works without any backend or extra network hit.
+
 **Versioning + pruning.** Reimplement notebook shape locally (Decision 21). Fix the "restore loses
 un-snapshotted edits" papercut in Blackboard.
 

@@ -5,6 +5,8 @@
 // shape*. This module ONLY names the fields Kiwi's one-line row renders; a future v2 detail view
 // would use more.
 
+import type { OverlayMark } from './captureAddress'
+
 /** Capture surface tags — matches api/src/captures_api.jl `envelope.surface`. */
 export type CaptureSurface = 'ui' | 'plot' | 'viewer_frame' | 'viewer_slab'
 
@@ -124,14 +126,16 @@ export async function clearAllCaptures(
   }
 }
 
-/** Full capture envelope + PNG data URL, as returned by `GET /api/viewer/capture`. Used by the
- *  Blackboard page (attachment thumbnails + focus-in-viewer) — it needs the address to publish a
- *  viewer seek, not just the pixels. Failure ⇒ null so the caller can silently degrade. */
+/** Full capture envelope + PNG data URL, as returned by `GET /api/viewer/capture`. Used by
+ *  Kiwi's Refocus + the Blackboard page's attachment thumbnails to get the address (for the
+ *  seek payload) AND the drawn marks (for restoring the annotation overlay onto the live
+ *  viewer). Failure ⇒ null so the caller can silently degrade. */
 export interface CaptureEnvelope {
   captureId: string
   surface: CaptureSurface
   address: CaptureAddress | null
-  frame: string        // data URL, or '' if the PNG is missing
+  overlay: OverlayMark[]    // the marks the user drew when this capture was shared (may be [])
+  frame: string             // data URL, or '' if the PNG is missing
 }
 export async function fetchCaptureEnvelope(
   projectUid: string, captureId: string, apiBase = ''
@@ -149,10 +153,12 @@ export async function fetchCaptureEnvelope(
     const surface = (env.surface as CaptureSurface) ?? 'viewer_frame'
     const address = env.address && typeof env.address === 'object'
       ? (env.address as CaptureAddress) : null
+    const overlay = Array.isArray(env.overlay) ? (env.overlay as OverlayMark[]) : []
     return {
       captureId,
       surface,
       address,
+      overlay,
       frame: typeof json.frame === 'string' ? json.frame : '',
     }
   } catch { return null }

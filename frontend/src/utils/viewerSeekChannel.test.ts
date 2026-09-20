@@ -34,4 +34,18 @@ describe('parseSeekMessage', () => {
     expect(parseSeekMessage('seek me')).toBeNull()
     expect(parseSeekMessage(42)).toBeNull()
   })
+  it('carries an optional captureId + marks payload (blackboard attachment restore)', () => {
+    const marks = [{ kind: 'rect', geom: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, color: 'magenta' }]
+    expect(parseSeekMessage({ projectUid: 'P', imageUid: 'I', t: 3, z: 7,
+                              captureId: 'cap-abc', marks }))
+      .toEqual({ projectUid: 'P', imageUid: 'I', t: 3, z: 7, captureId: 'cap-abc', marks })
+  })
+  it('drops a non-array `marks` (defensive: an unrelated postMessage claiming marks:{} must not crash the overlay)', () => {
+    const parsed = parseSeekMessage({ projectUid: 'P', imageUid: 'I', marks: { not: 'array' } })
+    expect(parsed).toEqual({ projectUid: 'P', imageUid: 'I' })
+  })
+  it('drops an empty-string captureId (nothing to label the chip with)', () => {
+    const parsed = parseSeekMessage({ projectUid: 'P', imageUid: 'I', captureId: '' })
+    expect(parsed).toEqual({ projectUid: 'P', imageUid: 'I' })
+  })
 })
