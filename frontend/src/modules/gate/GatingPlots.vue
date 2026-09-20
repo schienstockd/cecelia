@@ -517,6 +517,29 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
              wrapped over six lines, which is what set the bar's height. It is also orientation a user
              needs exactly once (docs/UI.md → UI copy), so the fix and the right behaviour agree. -->
         <span v-if="!panels.length" class="gp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
+        <!-- P3b labels-version pin badge (docs/todo/VN_VERSIONING_PLAN.md → P3b) — only when the
+             user has picked "Use pinned vN" on the drift banner below. Sits in the bar so the mode
+             is visible at all times, not only when the banner is shown. -->
+        <span v-if="g.labelsVersionPin" class="gp-pin"
+              v-tooltip.bottom="`Gating reads pinned to labels ${g.labelsVersionPin} — plot dots + membership evaluate at that vN`">
+          <i class="pi pi-lock" /> labels {{ g.labelsVersionPin }}
+        </span>
+      </div>
+      <!-- P3b drift banner: authored labels vN ≠ the image's current _latest. Two actions —
+           evaluate at the authored vN (pin), or update to _latest (implicit save-time re-stamp
+           on the next mutation). Autonomous safety: a Claude that bumped labels via
+           keep_previous_version leaves this banner behind for the human to resolve. -->
+      <div v-if="g.driftDetected" class="gp-drift">
+        <i class="pi pi-info-circle" />
+        <span>labels are now <strong>{{ g.currentLatestLabelsVersion }}</strong> — gates were authored on <strong>{{ g.authoredLabelsVersion }}</strong></span>
+        <button class="cc-btn cc-btn-sm" @click="g.pinToAuthored()"
+                v-tooltip.bottom="`Evaluate gates against labels ${g.authoredLabelsVersion}`">
+          <i class="pi pi-lock" /> Use {{ g.authoredLabelsVersion }}
+        </button>
+        <button class="cc-btn cc-btn-sm" @click="g.clearLabelsVersionPin()"
+                v-tooltip.bottom="`Evaluate gates against the current _latest labels (${g.currentLatestLabelsVersion})`">
+          Re-eval on _latest
+        </button>
       </div>
       <div class="gp-canvas">
         <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
@@ -578,6 +601,14 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */
 .gp-hint { opacity: 0.7; white-space: nowrap; }
+/* P3b — see the drift banner block in the template */
+.gp-pin { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+          border-radius: var(--cc-radius-pill); background: var(--cc-surface-2); color: var(--cc-accent);
+          font-family: var(--cc-mono); font-size: var(--cc-fs-2xs); }
+.gp-drift { display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 4px 0;
+            border: 1px solid var(--cc-warn); border-radius: var(--cc-radius-md);
+            background: var(--cc-surface-1); font-size: var(--cc-fs-xs); color: var(--cc-text); }
+.gp-drift .pi-info-circle { color: var(--cc-warn); }
 /* the picker sits with the + buttons, so it must not take the 9rem the segmentation select does */
 .gp-bar select.gp-add { min-width: auto; }
 /* z-slice window stepper (shown only in slice mode) */

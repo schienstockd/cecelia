@@ -167,6 +167,23 @@ export const useGatingStore = defineStore('gating', () => {
     canRedo.value = d.canRedo === true
   }
 
+  // ── P3b — gating labels-version pin (docs/todo/VN_VERSIONING_PLAN.md → P3b) ─────
+  // Two server-reported fields drive the drift banner:
+  //   authoredLabelsVersion       — the labels vN the map was last saved against (`null` on
+  //                                 legacy pre-breadcrumb files and on maps whose value_name has
+  //                                 no label_props yet).
+  //   currentLatestLabelsVersion  — the image's current `_latest` labels vN (`null` when no
+  //                                 label_props entry exists yet).
+  // The banner renders when both are non-null AND they differ. `labelsVersionPin` is the session
+  // choice — `null` = follow `_latest` (default), `"vN"` = pin every gating request to that vN.
+  // Reset on `selectImage` so a per-image drift resolution doesn't leak across images.
+  const authoredLabelsVersion = ref<string | null>(null)
+  const currentLatestLabelsVersion = ref<string | null>(null)
+  const labelsVersionPin = ref<string | null>(null)
+  const driftDetected = computed(() =>
+    !!authoredLabelsVersion.value && !!currentLatestLabelsVersion.value &&
+    authoredLabelsVersion.value !== currentLatestLabelsVersion.value)
+
   function bump(p: string) {
     popVersion.value = { ...popVersion.value, [p]: (popVersion.value[p] ?? 0) + 1 }
   }
@@ -190,7 +207,11 @@ export const useGatingStore = defineStore('gating', () => {
   }
 
   function _params() {
-    return `projectUid=${projectUid()}&imageUid=${imageUid.value}&valueName=${valueName.value}&popType=${popType.value}`
+    const base = `projectUid=${projectUid()}&imageUid=${imageUid.value}&valueName=${valueName.value}&popType=${popType.value}`
+    // P3b: append `labelsVersion` when a session pin is set; the backend threads it into every
+    // `label_props(img; value_name=vn, version=…)` read (membership eval + plot data). Empty on
+    // the common auto-latest path so the URL shape is byte-identical for existing tests.
+    return labelsVersionPin.value ? `${base}&labelsVersion=${labelsVersionPin.value}` : base
   }
 
   async function _post(path: string, body: Record<string, unknown>) {
@@ -233,6 +254,10 @@ export const useGatingStore = defineStore('gating', () => {
     if (vn) valueName.value = vn
     if (pt) popType.value = pt           // 'flow' | 'track' | 'clust' | 'trackclust' | 'region' | 'branch'
     mirrorUids.value = []                // single-image by default; the cluster page re-sets it after
+    // P3b: a labels-version pin is session-and-image scoped — moving to a different image resets it
+    // so a resolved-drift decision on image A doesn't silently follow onto image B (which has its
+    // own authored vN and may have no drift).
+    labelsVersionPin.value = null
     await fetchChannels()
     await fetchPopmap()
   }
@@ -273,12 +298,31 @@ export const useGatingStore = defineStore('gating', () => {
     try {
       const res = await fetch(`/api/gating/popmap?${_params()}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const d = await res.json() as { tree: PopTree; canUndo?: boolean; canRedo?: boolean }
+      const d = await res.json() as { tree: PopTree; canUndo?: boolean; canRedo?: boolean;
+        authoredLabelsVersion?: string | null; currentLatestLabelsVersion?: string | null }
       setTree(d.tree)
       _setHistory(d)
+      // P3b: capture the breadcrumb pair. `undefined` (a pre-P3b backend) reads the same as `null`
+      // → no drift banner, unchanged behaviour. Once populated, `driftDetected` drives the module.
+      authoredLabelsVersion.value = d.authoredLabelsVersion ?? null
+      currentLatestLabelsVersion.value = d.currentLatestLabelsVersion ?? null
     } catch (e) {
       log.error(`Gating popmap: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
     }
+  }
+
+  // P3b banner actions. `pinToAuthored` sets the session pin to the authored vN so every subsequent
+  // gating request reads at that vN — membership + plot dots + density all shift onto the labels
+  // the map was authored against. `clearPin` returns to `_latest`. Both trigger a popmap refresh so
+  // the tree + membership snap to the new evaluation frame in one tick.
+  async function pinToAuthored() {
+    if (!authoredLabelsVersion.value) return
+    labelsVersionPin.value = authoredLabelsVersion.value
+    await fetchPopmap(); await fetchStats()
+  }
+  async function clearLabelsVersionPin() {
+    labelsVersionPin.value = null
+    await fetchPopmap(); await fetchStats()
   }
 
   async function fetchStats() {
@@ -442,6 +486,9 @@ export const useGatingStore = defineStore('gating', () => {
     renamePop, updatePop, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection,
+    // P3b — labels-version pin
+    authoredLabelsVersion, currentLatestLabelsVersion, labelsVersionPin, driftDetected,
+    pinToAuthored, clearLabelsVersionPin,
   }
 })
 

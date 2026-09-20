@@ -9404,3 +9404,62 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+# ── P3b — /api/gating/popmap returns breadcrumb pair; labelsVersion pin threads ──
+# docs/todo/VN_VERSIONING_PLAN.md → P3b. Guardrail so the drift banner is fed a reliable pair:
+#   • authoredLabelsVersion       — the map's persisted breadcrumb (`nothing` on legacy/blank)
+#   • currentLatestLabelsVersion  — the image's current `_latest` labels vN for this value_name
+# The `labelsVersion` query param is only asserted at the routing level here (the endpoint accepts
+# it and doesn't error); its effect on the underlying `label_props(img; version=…)` read is unit-
+# tested where the reader lives (`app/test/suite/labelprops.jl`) — a positive-value assertion here
+# needs a fixture with two labels versions on disk, which the smoke fixture doesn't carry.
+@testset "API: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b)" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir(); cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        common = "projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"
+
+        # Fresh fixture: `gating/B.json` may not exist yet → popmap returns an empty tree with no
+        # breadcrumb (authored = nothing). The image *does* have label_props for B (implicit v1),
+        # so currentLatestLabelsVersion resolves to "v1" (bare-scalar entries → LATEST_DEFAULT_VAL).
+        st, body = api_gating_popmap(HTTP.Request("GET", "/api/gating/popmap?" * common))
+        @test st == 200
+        d = JSON3.read(body, Dict{String,Any})
+        @test isnothing(get(d, "authoredLabelsVersion", nothing))
+        @test get(d, "currentLatestLabelsVersion", nothing) == "v1"
+
+        # A save (via any gating mutation → save_pop_map!(m, img)) stamps the breadcrumb. Add a pop
+        # so the save path fires — then re-read: authored = "v1", drift = false (matches current).
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => "B", "popType" => "flow")
+        gate = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
+                                "x_min" => 0.0, "x_max" => 1.0, "y_min" => 0.0, "y_max" => 1.0)
+        api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+            Dict{String,Any}("name" => "qc", "gate" => gate)))))
+
+        st, body = api_gating_popmap(HTTP.Request("GET", "/api/gating/popmap?" * common))
+        d = JSON3.read(body, Dict{String,Any})
+        @test d["authoredLabelsVersion"] == "v1"
+        @test d["currentLatestLabelsVersion"] == "v1"
+
+        # Route-level: the endpoint accepts the pin without erroring. A vN that doesn't exist on the
+        # image still returns 200 — the pin is a read directive, not a validation gate (a missing
+        # inner version resolves via the composer to `nothing`, the caller handles empty data). We
+        # assert 200 and shape here; the reader-level pin behaviour is pinned in the pkg suite.
+        st, body = api_gating_popmap(HTTP.Request("GET",
+            "/api/gating/popmap?" * common * "&labelsVersion=v1"))
+        @test st == 200
+        st, _ = api_gating_membership(HTTP.Request("GET",
+            "/api/gating/membership?" * common * "&pops=/qc&labelsVersion=v1"))
+        @test st == 200
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
+end
