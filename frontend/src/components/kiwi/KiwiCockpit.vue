@@ -39,6 +39,8 @@ import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureEnvelope, t
          type CaptureRow } from '../../utils/kiwiCaptures'
 import { openViewerWindow } from '../../utils/viewerWindow'
 import { useViewerStore } from '../../stores/viewer'
+import { useShareTargetStore, type BeginShareResult } from '../../stores/shareTarget'
+import InlineNote from '../InlineNote.vue'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -96,6 +98,18 @@ watch(projectUid, async () => {
   void refreshCaptures()
   void checkPairing()
 }, { immediate: true })
+
+// ── Share with Claude ─────────────────────────────────────────────────────────
+// Two targets, one store — see `stores/shareTarget.ts`. Kiwi owns the buttons; the store owns
+// availability + the actual `beginShare` handshake so ViewerPanel's transitional copy and Kiwi's
+// button run the same code. Poll on mount so the viewer button's disabled state stays honest as
+// the pop-out opens / closes over the session.
+const shareStore = useShareTargetStore()
+onMounted(() => shareStore.startViewerPoll())
+onUnmounted(() => shareStore.stopViewerPoll())
+const shareNote = ref<Exclude<BeginShareResult, null> | null>(null)
+function clickShareViewer() { shareNote.value = shareStore.beginViewerShare() }
+function clickShareCanvas() { shareNote.value = shareStore.beginCanvasShare() }
 
 // ── Chat handoff ──────────────────────────────────────────────────────────────
 const { isCopied: chatCopied, copy: copyChatPrompt } = useCopyFlash(2500)
@@ -265,6 +279,32 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
             {{ chatCopied() ? 'Copied' : 'Copy chat starter' }}
           </button>
         </div>
+
+        <!-- Share — two targets, one row. Viewer = the pop-out's WebGPU frame (existing flow);
+             Canvas = whatever module page has registered a shareable plot canvas. Both land in
+             the same capture envelope; buttons stay separately enabled so a stateful toggle
+             doesn't strand the user in an unclickable mode. -->
+        <div class="kiwi-row" data-guide="kiwi.share">
+          <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Share</span>
+          <button class="cc-btn cc-btn-ghost cc-btn-icon"
+                  :disabled="!shareStore.viewerAvailable"
+                  @click="clickShareViewer"
+                  v-tooltip.bottom="shareStore.viewerAvailable
+                    ? 'Draw on the pop-out viewer and share it'
+                    : 'Open the pop-out viewer first'">
+            <i class="pi pi-eye" />
+          </button>
+          <button class="cc-btn cc-btn-ghost cc-btn-icon"
+                  :disabled="!shareStore.canvasHost"
+                  @click="clickShareCanvas"
+                  v-tooltip.bottom="shareStore.canvasHost
+                    ? `Select plots to share — ${shareStore.canvasHost.label}`
+                    : 'The current page has no shareable plot canvas yet'">
+            <i class="pi pi-th-large" />
+          </button>
+        </div>
+        <InlineNote v-if="shareNote" :severity="shareNote.severity"
+                    :short="shareNote.short" :detail="shareNote.detail" />
 
         <CollapsibleSection label="Recent captures" storage-key="kiwi.captures.open"
                             tip="Click a row to copy its captureId; the × button deletes it from disk.">

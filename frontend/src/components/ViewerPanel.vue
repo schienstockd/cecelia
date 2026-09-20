@@ -7,6 +7,7 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
 import { useViewerStore } from '../stores/viewer'
+import { useShareTargetStore, type BeginShareResult } from '../stores/shareTarget'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { getOpenPopoutWindow } from '../lib/popout'
 import { screenshotFilename } from '../utils/viewerScreenshot'
@@ -385,25 +386,12 @@ async function saveScreenshot() {
 }
 
 // ── Share with Claude (BIDIR share-in, PR #3 of docs/todo/BIDIR_CONTEXT_PLAN.md) ───────────────
-// The button trips the popped-out viewer into draw mode via `__cceceliaViewerBeginDraw()`; the
-// user then draws directly on the viewer canvas (no modal, no frozen frame) and Save/Cancel from
-// the floating toolbar in the pop-out. The POST lives in ViewerWindow.vue where the WebGPU pixels
-// + live viewer state (t / z / extent) are.
-type ShareNote = { severity: 'warn' | 'fail'; short: string; detail: string }
-const shareNote = ref<ShareNote | null>(null)
-
-function openShare() {
-  shareNote.value = null
-  const vw = getOpenPopoutWindow('/viewer-window')
-  if (!vw) { shareNote.value = { severity: 'warn', short: 'Viewer not open',
-    detail: 'Open the pop-out viewer first (click the ↗ on an image).' }; return }
-  const begin = (vw as unknown as { __cceceliaViewerBeginDraw?: () => void })?.__cceceliaViewerBeginDraw
-  if (typeof begin !== 'function') { shareNote.value = { severity: 'fail', short: 'Viewer not ready',
-    detail: 'The viewer popup did not expose its draw hook.' }; return }
-  begin()
-  // Focus the pop-out so the user sees the drawing toolbar without alt-tab.
-  try { vw.focus() } catch { /* nicety */ }
-}
+// Both this button and Kiwi's viewer-share button run the same handshake — see
+// `stores/shareTarget.ts::beginViewerShare`. This section will be deleted once Kiwi's Share row
+// is the sole entry point (mirror of the pairing-chip and chat-handoff migrations).
+const shareStore = useShareTargetStore()
+const shareNote = ref<Exclude<BeginShareResult, null> | null>(null)
+function openShare() { shareNote.value = shareStore.beginViewerShare() }
 
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
 // populations/colour-by are shown) to an .mp4 under the project's movies/ folder.
