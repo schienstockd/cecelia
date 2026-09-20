@@ -1,9 +1,9 @@
 # Landscape complementary stats — plan
 
-**Status:** building. Phase 1 (channels) shipped 2026-09-20 in #1089; Phase 2a
-(`segCount`) shipped 2026-09-20 in #1096; Phase 2b (`pops`) shipped 2026-09-20
-in #1099; Phase 3 (`tracks`) shipped 2026-09-20 in #1100; Phase 4 (`sourceRun`)
-building 2026-09-20. Drafted from
+**Status:** feature-complete pending HMM/motifs (deferred). Phases 1–4 shipped
+2026-09-20 (`#1089`, `#1096`, `#1099`, `#1100`, plus Phase 4 building on
+`feat/bidir-landscape-sourcerun`); Phase 5 envelope ratchet building on
+`feat/bidir-landscape-size-ratchet`. Drafted from
 [`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md).
 Written to be picked up cold by another session.
 
@@ -116,11 +116,17 @@ Numbered so code and other docs can cite them (`Decision 5`).
    grounding value — a tile marked `dark` is a canvas-margin cue Claude reads
    without needing per-channel numbers. Cost is trivial; removing it after
    audits confirm it never earns its keep is easy.
-7. **Envelope size cap: soft budget 500 KB per capture, hard cap none.**
-   Baseline (`category` + `channels` × 3 visible channels) at 32×32 = ~150 KB.
-   Full-featured (all layers on) at 32×32 = ~400 KB. If a specific project
-   habitually blows past 500 KB, revisit the density cap for the augmented
-   layer (frontend category can stay at whatever the user picked).
+7. **Envelope size cap: ratchet at the measured ceiling; original 500 KB
+   estimate was low.** Measured 2026-09-20 via Phase 5 ratchet test:
+   a 32×32 v2 envelope with every tile carrying 4 channels + segCount +
+   4 pops + tracks + sourceRun serialises to ~640 KB — pops are the driver
+   (~250 KB alone). Bare v1 category is ~100 KB. Ratchet test in
+   `frontend/src/utils/landscape.test.ts` asserts < 700 KB, leaving room
+   for one small future field before it fires; if it does, either shrink
+   the schema (shorter pop paths / names) or move the density cap for the
+   augmented layer down from 32. Original 500 KB soft budget kept as an
+   aspirational target for typical (not worst-case) captures where pops
+   don't occupy every tile.
 8. **Legend + tile schema versioning.** The augmented landscape gains a
    `schemaVersion: 2` field on the envelope (v1 = category-only, current
    ship). Consumers (Kiwi, MCP `get_capture`, any future reader) branch on
@@ -209,10 +215,14 @@ Each phase independently mergeable.
    same sparsity rule as tile fields). MCP `get_capture` docstring names the
    bag as the "which run produced this number" answer. ~180 lines.
 
-7. **Phase 5 — envelope-size ratchet test.** Assert that a
-   `schemaVersion: 2` envelope with all layers on stays under Decision 7's
-   500 KB soft budget on a representative frame. Fails when a future field
-   is added without weighing it against the budget. ~50 lines.
+7. **Phase 5 — envelope-size ratchet test (this pass, 2026-09-20).**
+   Synthetic 32×32 max-density v2 envelope (every tile: 4 channels +
+   segCount + 4 pops + tracks + sourceRun) serialised via `JSON.stringify` +
+   `TextEncoder`; assert byte length < 700 KB (measured ~640 KB today; +60 KB
+   slack). Fails when a future field lands and pushes past the ceiling.
+   Amends Decision 7 with measured numbers — original 500 KB estimate was
+   optimistic; pops (~250 KB at max density) dominate the payload.
+   ~60 lines in `frontend/src/utils/landscape.test.ts`.
 
 ## Cross-piece linkage
 
