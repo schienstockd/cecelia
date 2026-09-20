@@ -231,6 +231,9 @@ const sharePanelHits = computed<PanelHit[]>(() => {
   return out
 })
 function onShareCancel() { shareSel.end() }
+// Aliased read so the share serialiser doesn't shadow the reactive `panels` ref later in the block
+// (a `const panels = …` inside `onShareConfirm` is what carries the on-wire array).
+const panelsSnapshot = panels
 
 // Compose the selected panels' PNGs into one composite and POST to /api/viewer/capture as
 // surface:'plot'. The envelope only uses fields the server already understands (no new panels[]
@@ -253,16 +256,50 @@ async function onShareConfirm(payload: { panelIds: number[] }) {
     }))
     const composite = await composePanelGrid(tiles)
     if (!composite) { shareBusy.value = false; shareSel.end(); return }
+    // Composite-relative origin: subtract the union bbox origin so each panel's `position` in
+    // the envelope matches where it sits in the shared PNG (not the on-screen workspace).
+    let x0 = Infinity, y0 = Infinity
+    for (const p of selected) {
+      if (p.geom.x < x0) x0 = p.geom.x
+      if (p.geom.y < y0) y0 = p.geom.y
+    }
+    if (!Number.isFinite(x0)) { x0 = 0; y0 = 0 }
+    // panels[] carries per-panel structure: the spec + ui the panel was showing, the data slice
+    // (image + population selection), and the composite-relative position. Everything a downstream
+    // reader (Claude, a future refocus host) needs to say "the top-left panel is speed for pops
+    // B and T, positioned at 0,0 in the shared image". Panels not backed by a plot spec (interactive
+    // views etc.) fall back to a bare `plotRef: { specId: p.state.kind }` — Claude still knows what
+    // it was, refocus can reopen it.
+    const panels = selected.map(p => {
+      const panel = panelsSnapshot.value.find(pp => pp.id === p.id)
+      const st = panel?.state as (PanelState | undefined)
+      const specId = st?.kind ? String(st.kind) : (st?.specId ?? '')
+      const plotRef: Record<string, unknown> = { specId }
+      // The per-panel ui bag holds chart-type / measure / bins / group-by — cheap to include,
+      // and the only place a future replay can read "which measure was this panel on".
+      if (st) plotRef.ui = { ...st, sel: undefined, vis: undefined }
+      return {
+        panelId: String(p.id),
+        position: { x: p.geom.x - x0, y: p.geom.y - y0, w: p.geom.w, h: p.geom.h },
+        plotRef,
+        dataSlice: {
+          imageUids: panelImageUids.value,
+          setUid: panelSetUid.value ?? null,
+          scope: panelScope.value,
+          series: st ? panelSeries(p.id, st) : [],
+        },
+      }
+    })
     const address = {
       projectUid: projectUid.value,
       plotSpec: { specId: 'multi-panel', params: { module: props.module ?? 'universal',
-        panelCount: tiles.length } },
+        panelCount: panels.length } },
     }
     await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: projectUid.value, surface: 'plot',
-        address, frames: [{ png: composite }],
+        address, panels, frames: [{ png: composite }],
       }),
     })
     // Backend broadcasts `captures:changed`; Kiwi's recent-captures list refreshes on its own.

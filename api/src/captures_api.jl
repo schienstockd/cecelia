@@ -105,6 +105,46 @@ end
 _clean_overlay(raw)::Vector{Dict{String,Any}} =
     filter(!isnothing, [_clean_overlay_mark(m) for m in _capture_vec(raw)])
 
+# One entry in a `panels[]` payload — the structured half of a canvas Share (multi-panel plot
+# capture). Everything except `panelId` is passed through as-is; each panel's exact `plotRef` /
+# `dataSlice` shape is decided by the module page that authored it (behaviourAnalysis today,
+# others tomorrow), and pinning a schema here would force server churn every time a page adds
+# a field Claude never had to interpret. The MCP reader hands the whole panel back to Claude,
+# who reads it as a bag of keys.
+#
+# Validated fields:
+#   panelId  — required, coerced to a short string (the same id the compositor tagged the
+#              panel's slot with, so a downstream renderer can line up a mark to its panel).
+#   position — required, `{x, y, w, h}` in the composite's OWN CSS-px frame (relative to the
+#              composite's top-left, NOT the workspace) so a reader knows where each panel sits
+#              in the shared PNG without reproducing the compositor's math.
+# The rest (`plotRef`, `dataSlice`, anything else) rides through untouched.
+function _clean_panel(p)::Union{Dict{String,Any},Nothing}
+    p isa AbstractDict || return nothing
+    panel_id_v = get(p, :panelId, get(p, "panelId", nothing))
+    panel_id = panel_id_v === nothing ? "" : String(panel_id_v)
+    isempty(panel_id) && return nothing
+    pos_v = get(p, :position, get(p, "position", nothing))
+    pos_v isa AbstractDict || return nothing
+    # Coerce numeric fields; a non-numeric position is a bug in the caller, not a shape we store.
+    xf(k) = let v = get(pos_v, Symbol(k), get(pos_v, k, nothing))
+        v isa Real ? Float64(v) : nothing
+    end
+    x, y, w, h = xf("x"), xf("y"), xf("w"), xf("h")
+    (x === nothing || y === nothing || w === nothing || h === nothing) && return nothing
+    out = Dict{String,Any}(
+        "panelId"  => panel_id,
+        "position" => Dict{String,Any}("x"=>x, "y"=>y, "w"=>w, "h"=>h),
+    )
+    for k in ("plotRef", "dataSlice")
+        v = get(p, Symbol(k), get(p, k, nothing))
+        v === nothing || (out[k] = v)
+    end
+    out
+end
+_clean_panels(raw)::Vector{Dict{String,Any}} =
+    filter(!isnothing, [_clean_panel(p) for p in _capture_vec(raw)])
+
 # The envelope written to `meta.json`. Everything except `captureId` / `createdAt` / `frames` comes
 # from the request; the frame PNG is written separately as `frame.png` and the meta records the
 # byte count only (so a diff shows a real change, not a re-encoded but equivalent blob).
@@ -133,6 +173,12 @@ function _build_capture_envelope(body::AbstractDict, id::String, ts::String,
         # place (`utils/landscape.ts` tests) than in a per-field guard here.
         "landscape"         => get(body, :landscape, nothing),
     )
+    # Multi-panel plot capture (canvas Share). Additive; absent for viewer / single-plot / UI
+    # surfaces. A malformed entry is silently dropped rather than 400'd — one bad panel should
+    # not kill the whole capture; the composite PNG still ships and Claude gracefully degrades to
+    # "N panels total but I only know the shape of some" from the surviving entries.
+    panels = _clean_panels(get(body, :panels, nothing))
+    isempty(panels) || (envelope["panels"] = panels)
     # Re-annotation lineage (Kiwi PR B): a capture created by drawing MORE marks on top of a
     # frozen frame carries the previous capture's id so the two can be linked in the Kiwi list
     # ("this refines cap-…"). Additive; validated only for shape (a real capture id string). An
@@ -244,6 +290,12 @@ function api_viewer_captures_list(req::HTTP.Request)
             )
             prev = get(meta, :previousCaptureId, nothing)
             prev isa AbstractString && (row["previousCaptureId"] = String(prev))
+            # Multi-panel plot capture: surface the panel COUNT on the list row so Kiwi can render
+            # "3 panels" without fetching each envelope. The full `panels[]` shape stays in the
+            # detail read; the count is enough for the list glance.
+            panels = get(meta, :panels, nothing)
+            panels isa AbstractVector && !isempty(panels) &&
+                (row["panelCount"] = length(panels))
             push!(items, row)
         catch e
             @warn "Skipping unreadable capture meta" path = meta_path exception = e
