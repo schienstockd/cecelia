@@ -6,12 +6,14 @@ task_output_effect(::AfCorrect) = "new-version"
 Base.@kwdef struct AfCorrectParams
     valueName::String        = VERSIONED_DEFAULT_VAL
     backgroundMethod::String = "triangle"
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_af_correct_params(d::AbstractDict)::AfCorrectParams
     AfCorrectParams(;
         valueName        = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
-        backgroundMethod = string(get(d, "backgroundMethod", "triangle")))
+        backgroundMethod = string(get(d, "backgroundMethod", "triangle")),
+        version = parse_version_pin(d))
 end
 # AF correction is previewable: the worker runs `af_correct_frame` — the run's own per-voxel
 # arithmetic — over the visible region, using globals derived from the whole image and cached
@@ -34,7 +36,7 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

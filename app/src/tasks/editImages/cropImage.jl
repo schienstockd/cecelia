@@ -17,6 +17,7 @@ end
 Base.@kwdef struct CropImageParams
     valueName::String = VERSIONED_DEFAULT_VAL
     cropBox::CropBox  = CropBox()
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_crop_box(d::AbstractDict)::CropBox
@@ -34,7 +35,8 @@ function parse_crop_image_params(d::AbstractDict)::CropImageParams
     box     = box_raw isa AbstractDict ? parse_crop_box(box_raw) : CropBox()
     CropImageParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
-        cropBox   = box)
+        cropBox   = box,
+        version = parse_version_pin(d))
 end
 
 # Pure: derive the crop's inherited calibration meta from the SOURCE image's `meta` + the (half-open)
@@ -87,7 +89,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

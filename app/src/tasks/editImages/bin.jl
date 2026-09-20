@@ -8,6 +8,7 @@ Base.@kwdef struct BinImageParams
     factorX::Int      = 2
     factorY::Int      = 2
     op::String        = "mean"
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_bin_image_params(d::AbstractDict)::BinImageParams
@@ -15,7 +16,8 @@ function parse_bin_image_params(d::AbstractDict)::BinImageParams
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
         factorX   = Int(get(d, "factorX", 2)),
         factorY   = Int(get(d, "factorY", 2)),
-        op        = string(get(d, "op", "mean")))
+        op        = string(get(d, "op", "mean")),
+        version = parse_version_pin(d))
 end
 
 # Pure: the meta an XY-bin inherits from its SOURCE image. Only the spatial fields change — SizeX/Y
@@ -62,7 +64,7 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

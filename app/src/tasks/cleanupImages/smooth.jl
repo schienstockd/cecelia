@@ -18,6 +18,7 @@ Base.@kwdef struct SmoothParams
     temporalStat::String           = "median"
     farnebackMaxShiftPx::Float64   = 8.0
     restoreDynamicRange::Bool      = true
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_smooth_params(d::AbstractDict)::SmoothParams
@@ -32,7 +33,8 @@ function parse_smooth_params(d::AbstractDict)::SmoothParams
         temporalFrames       = Int(get(d, "temporalFrames", 1)),
         temporalStat         = string(get(d, "temporalStat", "median")),
         farnebackMaxShiftPx  = Float64(get(d, "farnebackMaxShiftPx", 8.0)),
-        restoreDynamicRange  = Bool(get(d, "restoreDynamicRange", true)))
+        restoreDynamicRange  = Bool(get(d, "restoreDynamicRange", true)),
+        version = parse_version_pin(d))
 end
 
 # QC from the persisted smoothing stats. The failure modes here are quiet ones — the task always
@@ -99,7 +101,7 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

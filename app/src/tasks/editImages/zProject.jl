@@ -9,12 +9,14 @@ const _ZPROJECT_OPS = ("max", "mean", "median", "sum", "min", "std")
 Base.@kwdef struct ZProjectParams
     valueName::String = VERSIONED_DEFAULT_VAL
     op::String        = "max"
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_z_project_params(d::AbstractDict)::ZProjectParams
     ZProjectParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
-        op        = string(get(d, "op", "max")))
+        op        = string(get(d, "op", "max")),
+        version = parse_version_pin(d))
 end
 
 # Pure: the meta a Z-projection inherits from its SOURCE image. Z is collapsed to a single plane,
@@ -46,7 +48,7 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

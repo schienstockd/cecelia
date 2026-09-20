@@ -21,6 +21,7 @@ Base.@kwdef struct CellposeSegmentParams
     clearTouchingBorder::Bool    = false
     clearDepth::Bool             = false
     normaliseToWhole::Bool       = true
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_cellpose_segment_params(d::AbstractDict)::CellposeSegmentParams
@@ -41,7 +42,8 @@ function parse_cellpose_segment_params(d::AbstractDict)::CellposeSegmentParams
         labelErosion        = Float64(get(d, "labelErosion", 0.0)),
         clearTouchingBorder = Bool(get(d, "clearTouchingBorder", false)),
         clearDepth          = Bool(get(d, "clearDepth", false)),
-        normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)))
+        normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)),
+        version = parse_version_pin(d))
 end
 
 # Cellpose model options are enumerated at runtime — the four built-ins plus any file dropped
@@ -146,7 +148,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     raw  = read_ccid_raw(ccid)
 
     # Resolve input image path
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

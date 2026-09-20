@@ -8,13 +8,15 @@ Base.@kwdef struct CopyImageParams
     valueName::String  = VERSIONED_DEFAULT_VAL
     toSetUid::String   = ""
     newSetName::String = ""
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_copy_image_params(d::AbstractDict)::CopyImageParams
     CopyImageParams(;
         valueName  = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
         toSetUid   = string(get(d, "toSetUid", "")),
-        newSetName = strip(string(get(d, "newSetName", ""))))
+        newSetName = strip(string(get(d, "newSetName", ""))),
+        version = parse_version_pin(d))
 end
 
 # Pure: the meta a copy inherits from its SOURCE image. A copy is a faithful duplicate of ONE version,
@@ -75,7 +77,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

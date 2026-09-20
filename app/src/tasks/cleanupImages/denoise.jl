@@ -23,6 +23,7 @@ Base.@kwdef struct DenoiseParams
     model::String     = ""       # stem or filename; resolved via denoise_model_resolve
     channels::Any     = nothing  # channel name(s); resolved via channel_indices
     batchSize::Int    = 2
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_denoise_params(d::AbstractDict)::DenoiseParams
@@ -30,7 +31,8 @@ function parse_denoise_params(d::AbstractDict)::DenoiseParams
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
         model     = string(get(d, "model", "")),
         channels  = get(d, "channels", nothing),
-        batchSize = Int(get(d, "batchSize", 2)))
+        batchSize = Int(get(d, "batchSize", 2)),
+        version = parse_version_pin(d))
 end
 
 function _denoise_qc_findings(meta)
@@ -100,7 +102,7 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

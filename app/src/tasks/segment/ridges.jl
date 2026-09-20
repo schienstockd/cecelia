@@ -25,6 +25,7 @@ Base.@kwdef struct RidgesParams
     darkRidges::Bool               = false
     perZ::Bool                     = true
     minSizePx::Int                 = 5
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_ridges_params(d::AbstractDict)::RidgesParams
@@ -39,7 +40,7 @@ function parse_ridges_params(d::AbstractDict)::RidgesParams
         darkRidges      = Bool(get(d, "darkRidges", false)),
         perZ            = Bool(get(d, "perZ", true)),
         minSizePx       = Int(get(d, "minSizePx", 5)),
-    )
+        version = parse_version_pin(d))
 end
 
 const _RIDGES_FILTERS = ("meijering", "sato", "frangi")
@@ -94,7 +95,7 @@ function _run_task(task::Ridges, img::CciaImage, params::Dict{String,Any};
     end
     ch_index = ch_idxs[1]
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing

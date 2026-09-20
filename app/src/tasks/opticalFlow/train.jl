@@ -28,6 +28,7 @@ Base.@kwdef struct TrainFlowModelParams
     embeddingDim::Int                    = 16
     seed::Int                            = 42
     normalise::Float64                   = 99.99
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_train_flow_model_params(d::AbstractDict)::TrainFlowModelParams
@@ -53,7 +54,8 @@ function parse_train_flow_model_params(d::AbstractDict)::TrainFlowModelParams
         foregroundBlurSigma      = Float64(get(d, "foregroundBlurSigma", 1.0)),
         embeddingDim             = Int(get(d, "embeddingDim", 16)),
         seed                     = Int(get(d, "seed", 42)),
-        normalise                = Float64(get(d, "normalise", 99.99)))
+        normalise                = Float64(get(d, "normalise", 99.99)),
+        version = parse_version_pin(d))
 end
 
 # `modelName` names into the model VAULT, which is global — shared across projects, not a property of
@@ -240,7 +242,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
     movies = Dict{String,Any}[]
     for img in imgs
         raw = read_ccid_raw(state_file(img))
-        filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+        filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
         if isnothing(filename)
             on_log("[WARN] $(img.uid): no filepath for valueName='$(p.valueName)' — skipped")
             continue

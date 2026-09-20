@@ -9,6 +9,7 @@ Base.@kwdef struct StackAlignParams
     referenceMode::String = "middle"
     minConfidence::Float64 = 0.35
     maxShiftPx::Float64    = 8.0
+    version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_stack_align_params(d::AbstractDict)::StackAlignParams
@@ -17,7 +18,8 @@ function parse_stack_align_params(d::AbstractDict)::StackAlignParams
         alignChannel  = get(d, "alignChannel", nothing),
         referenceMode = string(get(d, "referenceMode", "middle")),
         minConfidence = Float64(get(d, "minConfidence", 0.35)),
-        maxShiftPx    = Float64(get(d, "maxShiftPx", 8.0)))
+        maxShiftPx    = Float64(get(d, "maxShiftPx", 8.0)),
+        version = parse_version_pin(d))
 end
 
 # Fraction of non-reference planes that must survive the confidence gate before we call the
@@ -109,7 +111,7 @@ function _run_task(task::StackAlign, img::CciaImage, params::Dict{String,Any};
     ccid       = state_file(img)
     raw        = read_ccid_raw(ccid)
 
-    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = get(params, "version", nothing))  # ratchet-ok: chain-pinning read, orthogonal to typed params
+    filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
