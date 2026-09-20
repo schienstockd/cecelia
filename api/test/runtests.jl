@@ -5482,6 +5482,8 @@ end
         "/api/setup/validate", "/api/config/tls",
         "/api/storage/compressor", "/api/storage/layout", "/api/storage/keep-previous-version",
         "/api/storage/summary",
+        "/api/versions",   # VN P3 chain-designer picker — union of vN across images
+
         "/api/profiles",
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams", "/api/tasks/funparams/sources",
@@ -5612,7 +5614,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 98 && length(POST_ROUTES) == 130
+    @test length(GET_ROUTES) == 99 && length(POST_ROUTES) == 130
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -6679,6 +6681,84 @@ end
         @test _post(api_keep_previous_version_set, Dict("value" => 1))[1]      == 400
     finally
         Cecelia.set_keep_previous_version!(prior)
+    end
+end
+
+@testset "API: /api/versions unions vN across images (VN P3 chain-designer picker)" begin
+    # Feeds the chain-designer's per-node "Input version" picker. A chain runs against N images
+    # that may carry different vN sets per value_name — the endpoint returns the UNION so the
+    # picker offers every real vN, and per-image resolution happens at run time in the reader
+    # (`versioned_get_field_at`). Legacy bare-scalar shape counts as implicit v1.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        puid = "VNVER"; iuidA = "IMGA"; iuidB = "IMGB"; iuidC = "IMGC"
+        mkpath(joinpath(tmp, puid, "1", iuidA))
+        mkpath(joinpath(tmp, puid, "1", iuidB))
+        mkpath(joinpath(tmp, puid, "1", iuidC))
+        write(joinpath(tmp, puid, "project.json"),
+              JSON3.write((; uid = puid, name = "T", set_uids = String[])))
+
+        # Image A: versioned entry with v1, v2, v3 (_latest=v3) under `default`.
+        write(state_file(joinpath(tmp, puid), iuidA), JSON3.write(Dict{String,Any}(
+            "class" => "CciaImage",
+            "filepath" => Dict{String,Any}(
+                "default" => Dict{String,Any}(
+                    "v1" => "a1.zarr", "v2" => "a2.zarr", "v3" => "a3.zarr", "_latest" => "v3"),
+                "_active" => "default"))))
+        # Image B: versioned entry with v1, v2 only (_latest=v2).
+        write(state_file(joinpath(tmp, puid), iuidB), JSON3.write(Dict{String,Any}(
+            "class" => "CciaImage",
+            "filepath" => Dict{String,Any}(
+                "default" => Dict{String,Any}("v1" => "b1.zarr", "v2" => "b2.zarr", "_latest" => "v2"),
+                "_active" => "default"))))
+        # Image C: legacy bare scalar (no version dict) — counts as implicit v1.
+        write(state_file(joinpath(tmp, puid), iuidC), JSON3.write(Dict{String,Any}(
+            "class" => "CciaImage",
+            "filepath" => Dict{String,Any}("default" => "c.zarr", "_active" => "default"))))
+
+        _get(url) = api_versions_list(HTTP.Request("GET", url))
+
+        # Union across A + B, explicit valueName — v1, v2, v3 (numeric-sorted).
+        st, body = _get("/api/versions?projectUid=$puid&imageUids=$iuidA,$iuidB&valueName=default")
+        @test st == 200
+        @test JSON3.read(body).versions == ["v1", "v2", "v3"]
+
+        # valueName omitted ⇒ backend uses active (which is `default` here) — same answer.
+        st, body = _get("/api/versions?projectUid=$puid&imageUids=$iuidA,$iuidB")
+        @test st == 200
+        @test JSON3.read(body).versions == ["v1", "v2", "v3"]
+
+        # Just image B — only v1, v2 surface.
+        st, body = _get("/api/versions?projectUid=$puid&imageUids=$iuidB&valueName=default")
+        @test st == 200
+        @test JSON3.read(body).versions == ["v1", "v2"]
+
+        # Just image C (legacy bare scalar) — implicit v1.
+        st, body = _get("/api/versions?projectUid=$puid&imageUids=$iuidC&valueName=default")
+        @test st == 200
+        @test JSON3.read(body).versions == ["v1"]
+
+        # A value_name that doesn't exist on any image — empty list (not 404).
+        st, body = _get("/api/versions?projectUid=$puid&imageUids=$iuidA&valueName=nope")
+        @test st == 200
+        @test JSON3.read(body).versions == []
+
+        # An unknown image uid is skipped, not fatal — the endpoint fields whatever it can. A chain
+        # can carry a run-set uid that was renamed since; refusing the whole request would blank the
+        # picker for the sibling images that are still there.
+        st, body = _get("/api/versions?projectUid=$puid&imageUids=NOPE,$iuidA&valueName=default")
+        @test st == 200
+        @test JSON3.read(body).versions == ["v1", "v2", "v3"]
+
+        # Guards: missing projectUid / imageUids → 400; unknown project → 404.
+        @test _get("/api/versions?imageUids=$iuidA")[1] == 400
+        @test _get("/api/versions?projectUid=$puid")[1] == 400
+        @test _get("/api/versions?projectUid=NOPE&imageUids=$iuidA")[1] == 404
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
     end
 end
 
