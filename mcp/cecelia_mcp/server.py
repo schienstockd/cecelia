@@ -1046,6 +1046,15 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     A missing field on a v2 tile means the corresponding layer was off — fall back to your
     visual read, don't infer zero.
 
+    A v2 landscape may also carry `sourceRun` at the landscape (not tile) level — a per-field
+    bag naming the run/vn/version that produced each augmented field:
+      • `sourceRun.segCount = {valueName, labelsVersion}` — the label_props vn + resolved vN
+      • `sourceRun.pops     = {valueName, popType, gatingMtime}` — gating file's on-disk mtime
+      • `sourceRun.tracks   = {valueName, labelsVersion}`
+      • `sourceRun.channels = {valueName, imageVersion, level}` — pyramid level actually read
+    Use these to answer "which run produced this number", or to compare two capture envelopes
+    and see whether the underlying gating map / re-tracked h5ad moved between shares.
+
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install
     — the storage is per-project, not per-user).

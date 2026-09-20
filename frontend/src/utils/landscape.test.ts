@@ -223,6 +223,35 @@ describe('augmentLandscape', () => {
     expect(merged.tiles.find(t => t.id === 'A1')?.tracks).toBeUndefined()
   })
 
+  it('attaches sourceRun when the backend sent one (Phase 4)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const augment: import('./landscape').AugmentTile[] = [
+      { tileId: 'A1', segCount: 3, tracks: { count: 2 } },
+    ]
+    const sourceRun = {
+      segCount: { valueName: 'default', labelsVersion: 'v2' },
+      tracks:   { valueName: 'default', labelsVersion: 'v2' },
+    }
+    const merged = augmentLandscape(base, augment, sourceRun)
+    expect(merged.sourceRun).toEqual(sourceRun)
+    expect(merged.schemaVersion).toBe(2)
+  })
+
+  it('omits sourceRun when the bag is empty (sparsity)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(base, [{ tileId: 'A1', segCount: 3 }], {})
+    expect(merged.sourceRun).toBeUndefined()
+  })
+
+  it('omits sourceRun when the caller passes undefined (backward compat)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(base, [{ tileId: 'A1', segCount: 3 }])
+    expect(merged.sourceRun).toBeUndefined()
+  })
+
   it('merges pops independently of channels + segCount (Phase 2b)', () => {
     const img = makeImageData(32, 32, () => [128, 128, 128])
     const base = computeLandscape(img, { cols: 4, rows: 4 })

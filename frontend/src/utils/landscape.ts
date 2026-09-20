@@ -107,6 +107,11 @@ export interface LandscapeResult {
   // consuming a landscape from a capture MUST branch on this rather than probe field presence,
   // since a v2 landscape can legitimately omit `channels` on some tiles (sparsity by visibility).
   schemaVersion: 1 | 2
+  // Phase 4: per-field provenance bag (Decision 4). Keys mirror the augmentable fields
+  // (`channels` / `segCount` / `pops` / `tracks`); each value names the run/vn/version the
+  // field came from. Absent when a v1 landscape reader encounters this; sparse per-field
+  // when v2 (only fields that were actually computed have a `sourceRun` entry).
+  sourceRun?: Record<string, Record<string, string | number>>
 }
 
 /** Per-tile augmentation payload returned by `POST /api/viewer/landscape/compute`. Same tile-id
@@ -128,6 +133,7 @@ export interface AugmentTile {
  *  time isn't in the augmentation, therefore not on the tile). */
 export function augmentLandscape(
   base: LandscapeResult, augment: AugmentTile[],
+  sourceRun?: Record<string, Record<string, string | number>>,
 ): LandscapeResult {
   const byId = new Map<string, AugmentTile>()
   for (const a of augment) byId.set(a.tileId, a)
@@ -146,7 +152,12 @@ export function augmentLandscape(
     if (hasTracks) next.tracks = a.tracks
     return next
   })
-  return { ...base, tiles, schemaVersion: 2 }
+  const out: LandscapeResult = { ...base, tiles, schemaVersion: 2 }
+  // Only attach `sourceRun` when the backend actually sent a non-empty bag — a v2 landscape
+  // with no sourceRun is legitimate (a channels-only compute where the vn wasn't resolvable,
+  // for example). Never emit `sourceRun: {}` — same sparsity rule the tile fields follow.
+  if (sourceRun && Object.keys(sourceRun).length > 0) out.sourceRun = sourceRun
+  return out
 }
 
 /** Read `ImageData` from a WebGPU (or 2D) canvas. WebGPU's presentation buffer is consumed by the
