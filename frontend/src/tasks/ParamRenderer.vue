@@ -24,6 +24,7 @@ import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popG
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import { fetchVersions, versionChipOptions, VERSION_LATEST_CHIP } from '../utils/versions'
 import ParamFigure from '../components/ParamFigure.vue'
 import { paramVisColumns, uniformWarning } from './paramVis'
 import { paramFigure } from './paramFigures'
@@ -149,6 +150,45 @@ watch(() => props.context?.images, (images) => {
   emit('update:modelValue', preferredValueName(
     availableValueNames.value, props.param.field, images[0].activeValueName))
 }, { immediate: true })
+
+// ── P6 — Inner-version chip strip (docs/todo/VN_VERSIONING_PLAN.md → P6) ─────────
+// The `valueNameSelection` widget offers a value_name; this chip strip offers the *inner* version
+// (`v1`/`v2`/…) that value_name resolves to on disk. Union across the selected images (same as the
+// chain-designer picker P3 uses, backed by `GET /api/versions`). Empty when a value_name has fewer
+// than two versions — the strip hides. Selecting a `vN` writes `params.version = "vN"`; picking
+// `_latest` writes `null` (the chain reader + task reader treat both the same as "follow _latest").
+// The write goes to a WELL-KNOWN key (`version`) — the same one the P3 chain node uses — so a
+// module-page task launch and a chain-node run drive the same task reader through one convention.
+const availableVersions = ref<string[]>([])
+async function reloadVersions() {
+  if (props.param.type !== 'valueNameSelection') { availableVersions.value = []; return }
+  const projectUid = props.context?.projectUid
+  const imageUids = (props.context?.images ?? []).map(i => i.uid).filter(Boolean)
+  const valueName = typeof val.value === 'string' ? val.value : ''
+  if (!projectUid || imageUids.length === 0 || !valueName) { availableVersions.value = []; return }
+  try {
+    const r = await fetchVersions({ projectUid, imageUids, valueName })
+    availableVersions.value = r.versions
+  } catch { availableVersions.value = [] }   // no versions endpoint → strip hides silently
+}
+// Re-fetch when the value_name selection, the image set, or the project changes. `val` covers the
+// value_name; `images.map(uid)` (rather than `images` itself) so a viewer-order flip that keeps the
+// same uid set doesn't refire; `projectUid` for the rare project swap.
+watch(() => [val.value, (props.context?.images ?? []).map(i => i.uid).join(','),
+             props.context?.projectUid],
+      () => { reloadVersions() }, { immediate: true })
+const versionChips = computed(() => versionChipOptions(availableVersions.value))
+// Read current pin off the sibling `version` key (well-known, matches P3). A missing/absent value
+// ⇒ `_latest` chip highlighted; a `vN` string ⇒ that chip. The chip's INTERNAL value uses the
+// sentinel `_latest` (ChipSelect options are typed `string`), and we translate at the boundary:
+// `_latest` chip → `null` in `params.version`. Backend + chain reader treat null == missing.
+const currentVersionPin = computed<string>(() => {
+  const v = props.context?.values?.version
+  return typeof v === 'string' && v ? v : VERSION_LATEST_CHIP
+})
+function setVersionPin(v: string) {
+  emit('commit', 'version', v === VERSION_LATEST_CHIP ? null : v)
+}
 
 // channelSelection: intersection of channel names across selected images
 const availableChannels = computed(() => {
@@ -765,15 +805,27 @@ const pct = computed(() => {
     </select>
 
     <!-- valueNameSelection: dropdown of available filepath keys from selected images -->
-    <select v-else-if="param.type === 'valueNameSelection'"
-      class="select-input"
-      :value="val as string"
-      @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.bottom="shownTip"
-    >
-      <option v-for="name in availableValueNames" :key="name" :value="name">{{ name }}</option>
-      <option v-if="availableValueNames.length === 0" value="" disabled>— no versions available —</option>
-    </select>
+    <template v-else-if="param.type === 'valueNameSelection'">
+      <select
+        class="select-input"
+        :value="val as string"
+        @change="val = ($event.target as HTMLSelectElement).value"
+        v-tooltip.bottom="shownTip"
+      >
+        <option v-for="name in availableValueNames" :key="name" :value="name">{{ name }}</option>
+        <option v-if="availableValueNames.length === 0" value="" disabled>— no versions available —</option>
+      </select>
+      <!-- P6 version chip strip (docs/todo/VN_VERSIONING_PLAN.md → P6). Hidden when the value_name
+           resolves to fewer than two versions on disk; when shown, `_latest` is the default and
+           writes `null` to `params.version` (backend + chain reader treat null == missing == follow
+           _latest). Same well-known key P3 chain nodes use, so one convention drives both. -->
+      <div v-if="versionChips.length > 0" class="version-chip-row"
+           v-tooltip.bottom="'Pin input to a specific vN — _latest follows the pointer'">
+        <ChipSelect :options="versionChips as ChipOption[]"
+                    :model-value="currentVersionPin"
+                    @update:model-value="v => setVersionPin(v as string)" />
+      </div>
+    </template>
 
     <!-- popSelection (multi / across segmentations): chip list of value_name-prefixed populations -->
     <div v-else-if="param.type === 'popSelection' && popAcross" class="channel-select-wrap"
@@ -1178,6 +1230,10 @@ const pct = computed(() => {
 
 /* channel selection */
 .channel-select-wrap { width: 100%; }
+/* P6 — the version chip strip sits directly under the valueNameSelection <select>; the small top
+   margin keeps it visually attached but distinct. Auto width so a strip with three chips doesn't
+   claim a whole column. */
+.version-chip-row { margin-top: 0.25rem; }
 .channel-empty { font-style: italic; padding: 0.2rem 0; }
 /* Generic param advisory note. Colour comes from the validated severity palette and is never the
    sole cue — a shape-distinct icon rides along (see lib/severity.ts). */
