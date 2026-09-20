@@ -23,8 +23,12 @@ import { computed } from 'vue'
 import { gridCells, clampDensity, GRID_DENSITY_DEFAULT } from '../utils/gridOverlay'
 
 const props = defineProps<{
-  cols?: number   // grid density (clamped 4..16 in the util). Falls back to the plan default.
+  cols?: number   // grid density (clamped 4..32 in the util). Falls back to the plan default.
   rows?: number   // if omitted, square grid (rows = cols)
+  // Hide the cell labels while keeping the lines — used when the LandscapeOverlay is showing its
+  // own tile-category text and the two would collide over each cell centre. Lines still delimit
+  // the tiles so a user looking at both overlays sees the SAME cell boundaries either way.
+  hideLabels?: boolean
 }>()
 
 const nCols = computed(() => clampDensity(props.cols ?? GRID_DENSITY_DEFAULT))
@@ -51,10 +55,12 @@ const cellH = computed(() => vbH / nRows.value)
       <line v-for="i in nRows - 1" :key="`h${i}`" :x1="0" :y1="i * cellH" :x2="vbW" :y2="i * cellH"
             class="cc-grid-line" vector-effect="non-scaling-stroke" />
     </svg>
-    <span v-for="c in cells" :key="c.label" class="cc-grid-label"
-          :style="{ top: `${(c.row + 0.5) * cellH}%`, left: `${(c.col + 0.5) * cellW}%` }">
-      {{ c.label }}
-    </span>
+    <template v-if="!hideLabels">
+      <span v-for="c in cells" :key="c.label" class="cc-grid-label"
+            :style="{ top: `${(c.row + 0.5) * cellH}%`, left: `${(c.col + 0.5) * cellW}%` }">
+        {{ c.label }}
+      </span>
+    </template>
   </div>
 </template>
 

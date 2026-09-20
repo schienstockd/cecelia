@@ -10,10 +10,13 @@
 // the top-left cell. Locked by Decision 13 of the plan (`A1..H8` for 8×8).
 
 // Plan Decision 13: default 8×8, "user-configurable density". The bounds live here so the slider
-// and the tests read the same numbers. Upper 16 keeps single-letter columns (A..P), which stays
-// speakable without an AA..AZ escape hatch that no user will actually read out.
+// and the tests read the same numbers. Upper 32 gives fine landscape resolution (1024 tiles) —
+// still speakable (columns run A..AF via `columnLetters`, rows 1..32 — the tile-id regex on the
+// backend accepts up to two-letter cols + two-digit rows). Going higher than 32 tips into "read
+// out a coordinate no one bothers to speak," and the landscape's whole point is a coarse prior,
+// not a per-pixel map.
 export const GRID_DENSITY_MIN = 4
-export const GRID_DENSITY_MAX = 16
+export const GRID_DENSITY_MAX = 32
 export const GRID_DENSITY_DEFAULT = 8
 
 export const clampDensity = (n: number) =>
