@@ -59,6 +59,8 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(writes, [
             ("POST", "/api/blackboard/create"),
             ("POST", "/api/blackboard/revise"),
+            ("POST", "/api/blackboard/search"),
+            ("POST", "/api/blackboard/status"),
             ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),
             ("POST", "/api/lablog/append"),
