@@ -277,3 +277,65 @@ describe('augmentLandscape', () => {
     expect(merged.tiles.find(t => t.id === 'D4')?.pops).toBeUndefined()
   })
 })
+
+describe('envelope size ratchet (LANDSCAPE_COMPLEMENTARY_PLAN Phase 5, Decision 7)', () => {
+  // Purpose: catch envelope-shape drift. If a future field lands and pushes the max-density
+  // v2 envelope past the current measured ceiling, this test fires and the author must
+  // either shrink the field or revisit Decision 7's soft budget.
+  //
+  // MEASURED baseline (2026-09-20, Phase 4 as-shipped): a 32×32 grid with every tile
+  // carrying all four channels + segCount + 4 pops + tracks + sourceRun serialises to
+  // ~640 KB. Decision 7's original estimate of ~400 KB "full-featured" undercounted the
+  // pops contribution — even 4 pops per tile at 32×32 alone is ~250 KB. If Dominik
+  // reads this and wants to reset the budget lower, either the schema shrinks (shorter
+  // pop paths / names) or the density cap for the augmented layer moves down from 32.
+  //
+  // Ratchet at 700 KB — comfortably above the measured 640 KB, room for one small future
+  // field (~50 KB) before it fires. Not the plan's original 500 KB soft budget — that
+  // needs revisiting alongside this test if it's the number to hold to.
+  it('a 32×32 v2 envelope with all fields on stays under the measured ceiling', () => {
+    // A busy image seeds `computeLandscape` with realistic category / stats (empty
+    // images collapse to `dark` for every tile — smaller legend than in the wild).
+    const img = makeImageData(256, 256, (x, y) => [
+      (x * 2) % 256, (y * 3) % 256, ((x + y) * 5) % 256,
+    ])
+    const base = computeLandscape(img, { cols: 32, rows: 32 })
+    expect(base.tiles.length).toBe(1024)
+    // Every tile gets every field — synthetic worst case, not a realistic snapshot
+    // (a real capture has pops on only some tiles). Still the right shape to ratchet
+    // against: schema growth becomes visible in this number even if a real capture is
+    // half the size.
+    const augment: import('./landscape').AugmentTile[] = base.tiles.map(t => ({
+      tileId: t.id,
+      channels: {
+        'Channel1': { mean: 0.5432, snr: 12.345 },
+        'Channel2': { mean: 0.1234, snr: 3.456 },
+        'Channel3': { mean: 0.8765, snr: 45.678 },
+        'Channel4': { mean: 0.2468, snr: 8.912 },
+      },
+      segCount: 42,
+      pops: [
+        { path: '/live/tnaive',    name: 'T naive',   count: 5 },
+        { path: '/live/tmem',      name: 'T mem',     count: 3 },
+        { path: '/live/treg',      name: 'T reg',     count: 2 },
+        { path: '/live/dendritic', name: 'Dendritic', count: 4 },
+      ],
+      tracks: { count: 7, meanDuration: 42.5, meanSpeed: 1.234 },
+    }))
+    const sourceRun = {
+      segCount: { valueName: 'default', labelsVersion: 'v2' },
+      pops:     { valueName: 'default', popType: 'flow', gatingMtime: '1698765432.123' },
+      tracks:   { valueName: 'default', labelsVersion: 'v2' },
+      channels: { valueName: 'default', imageVersion: 'v1', level: 0 },
+    }
+    const merged = augmentLandscape(base, augment, sourceRun)
+    const bytes = new TextEncoder().encode(JSON.stringify(merged)).length
+    const KB = 1024
+    // Ceiling: 700 KB. See docstring — measured ~640 KB today; +60 KB slack for one small
+    // future field. If this fires, either shrink the schema or revisit the budget.
+    expect(bytes).toBeLessThan(700 * KB)
+    // Floor: a merged 32×32 v2 with all fields on must be substantially bigger than a
+    // bare v1 (~100 KB) — else the augment did nothing.
+    expect(bytes).toBeGreaterThan(400 * KB)
+  })
+})
