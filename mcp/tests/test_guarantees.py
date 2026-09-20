@@ -86,7 +86,7 @@ GUARANTEES: dict[str, tuple[str, str, str, str]] = {
     # It must fix and retry rather than reporting a chain as impossible.
     "a malformed chain is refused before it is written": (
         "mcp/cecelia_mcp/server.py", "unknown fn, dangling edge, cycle",
-        "api/test/runtests.jl", "api_chains_create",
+        "api/test/suite/project_ops.jl", "api_chains_create",
     ),
     # It must take the attribute name from get_image_attributes rather than guessing one.
     "an unknown compare_by attribute is refused": (
@@ -96,23 +96,23 @@ GUARANTEES: dict[str, tuple[str, str, str, str]] = {
     # It must call set_labarchives_context first, or append under `claude` — not forge ELN provenance.
     "an ELN-tagged lab-log line needs a linked notebook": (
         "mcp/cecelia_mcp/server.py", "REJECTS it (409) on a project with no notebook linked",
-        "api/test/runtests.jl", "\"author\"=>\"LabArchives\"",
+        "api/test/suite/project_ops.jl", "\"author\"=>\"LabArchives\"",
     ),
     # It must make a NEW version rather than a "-v2" copy — licensed by the snapshot.
     "revise snapshots before overwriting": (
         "mcp/cecelia_mcp/guidance.py", "snapshots first",
-        "api/test/runtests.jl", "SNAPSHOTS the current notebook",
+        "api/test/suite/notebooks_rw.jl", "SNAPSHOTS the current notebook",
     ),
     # It must never write the tag itself (it would be forging provenance).
     "lab-log entries are tagged server-side": (
         "mcp/cecelia_mcp/guidance.py", "tagged [Claude] server-side",
-        "api/test/runtests.jl", "[Claude]",
+        "api/test/suite/project_ops.jl", "[Claude]",
     ),
     # It must report "not on this machine" for a uid that misses, not soften it into the nearest
     # name match — the two are different answers and only one of them is about the object asked for.
     "a uid is resolved exactly, never approximately": (
         "mcp/cecelia_mcp/server.py", "a UID matches EXACTLY (case-sensitive)",
-        "api/test/runtests.jl", "A uid must not be matched case-insensitively",
+        "api/test/suite/project_ops.jl", "A uid must not be matched case-insensitively",
     ),
     # The whole designs-but-never-starts split, which it is told not to apologise for.
     "nothing here can start work": (
