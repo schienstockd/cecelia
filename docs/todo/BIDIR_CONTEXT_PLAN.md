@@ -491,8 +491,9 @@ Independently mergeable in this order. Each ships a working, tested slice.
 4. **Point-out data anchors + gating-plot linkage.** WS `viewer:mark` frame;
    `POST /api/viewer/marks/{tracks,cells}`; `mark_tracks` + `mark_cells` MCP tools; frontend
    `viewerMarks` bag + ephemeral overlay; **gating-module plot components subscribe to
-   `trackHighlight` + `pickHighlight`** (Decision 19). ~600 lines. May split as PR #4b if
-   subscription work grows.
+   `trackHighlight` + `pickHighlight`** (Decision 19). ~600 lines. **Split into #4a (WS + MCP +
+   viewer overlay, shipped) and #4b (plot subscriptions, open) 2026-09-20 — see *Module-page
+   canvas captures → PR #4b interaction* below.**
 5. **Point-out UI anchors + freeform marks.** `mark_ui` + `mark_freeform` MCP tools; bare-style
    `GuideBubble` variant; freeform overlay reuses PR #3's `DrawSurface.vue`. Shares WS
    `viewer:mark` transport with PR #4. ~400 lines.
@@ -508,6 +509,103 @@ Independently mergeable in this order. Each ships a working, tested slice.
 
 Dependencies: PR #4 and #5 share the WS `viewer:mark` transport (defined in #4, reused in #5).
 PR #6 depends on PR #2. Nothing else cross-depends.
+
+## Module-page canvas captures (added 2026-09-20)
+
+Extension of PR #3 to a **module-page canvas** (SummaryCanvas) as a third capture surface
+alongside the pop-out viewer. Source: [`docs/archive/opus-audit-multipanel-capture.md`](../archive/opus-audit-multipanel-capture.md).
+Shipped as PR #1085 (Kiwi Share entrypoints), #1091 (capture flow + envelope), #1094 (reshow +
+zoom-to-source). No dedicated `*_PLAN.md` at build time — the audit landed and shipped as one
+sequence, recorded here after the fact so a fresh session finds the design.
+
+**What a module-page capture IS.** The user selects N floating plot panels on a canvas
+(behaviourAnalysis's SummaryCanvas today; other module pages follow the same substrate). The
+selected panels' individual PNGs are tiled into ONE composite over a white ground; DrawSurface
+mounts on top for annotation; Save POSTs one capture whose `frames[0].png` is that composite.
+Discussion follows the same loop as viewer captures — Kiwi's Recent-captures + refocus.
+
+**Locked decisions (extending Part 2's).**
+
+- **D28 Two-phase Share.** SELECT panels → ANNOTATE composite → POST on Save, not a one-shot
+  POST from the selection button. Rationale: the annotation loop is exactly the pattern the user
+  already knows from the pop-out viewer; skipping it hides the primary point of the feature
+  (drawing on plots to talk about them).
+- **D29 Snap-to-panel selection.** Drag-rect selects a panel when the rect covers ≥ 50 % of the
+  panel's OWN area (`SELECTION_THRESHOLD` in `utils/panelSelectionHit.ts`), not fraction-of-rect.
+  A rect that clips a plot at 60 % gives Claude half a legend — worse than useless — so the
+  gesture snaps to whole panels. Single-click toggles a panel; ESC cancels; Enter confirms.
+- **D30 One shared frozen-frame + DrawSurface surface.** `components/FrameAnnotator.vue` —
+  frozen `<img>` + DrawSurface armed on top + composite-marks-into-PNG on Save. Both the viewer
+  re-annotate (via CaptureViewSurface) and the canvas Share flow mount it; no duplicate paths.
+- **D31 CaptureViewSurface is surface-agnostic.** New props `surface`, `extraPostFields`,
+  `showZoomToSource`; defaults preserve viewer-only behaviour. SummaryCanvas mounts it with
+  `surface="plot"` + `extraPostFields={panels}` so a re-annotate on a plot capture keeps the
+  panels structure.
+- **D32 Kiwi is the ONE Share entrypoint.** Two icon buttons in a Share row: viewer / canvas.
+  ViewerPanel's own Share section deleted (mirror of the pairing-chip / chat-handoff migrations
+  in [`KIWI_PLAN.md`](KIWI_PLAN.md)). Different disabled conditions per button; no stateful
+  toggle.
+- **D33 Envelope shape.** `surface: 'plot'` (existing) + `panels: [{ panelId, position,
+  plotRef {specId, ui}, dataSlice }]` (new, additive) + top-level `workspaceOrigin: {x, y}`.
+  Positions are composite-relative (bbox min subtracted); `workspaceOrigin` is that subtracted
+  offset, so restore lands panels at their original workspace pixels. Server (`_clean_panel` in
+  `api/src/captures_api.jl`) validates `panelId` + numeric position, passes `plotRef`/`dataSlice`
+  through untouched — schema fights would slow every module page's evolution.
+- **D34 Zoom-to-source restores from the envelope, no fresh fetches.** `utils/restorePanels.ts`
+  writes directly into `useCanvasPanelsStore` from the envelope's `panels[]` + `workspaceOrigin`.
+  Populations (`dataSlice.series`) are **not** re-hydrated into `PanelState.sel` — the series
+  shape varies per popType and mis-hydration is worse than an empty picker. User re-picks.
+- **D35 Palette gains `black`; defaults are freehand + magenta.** White-composite plots need a
+  dark ink; `black` is CVD-safe (pure luminance, no hue). `magenta` reads on both dark viewer
+  frames and white plot composites, so one default fits both surfaces.
+  `DEFAULT_ANNOTATION_COLOR` stays `white` — legacy-render fallback for pre-palette captures is
+  a different job from the UI's initial pick.
+- **D36 Multi-entrypoint refocus.** Both Kiwi's captures list and Blackboard's attachment
+  clicks route plot captures through `useCaptureReshowStore` +
+  `moduleRouteFor(module)` → `router.push(path)`. Consumer (SummaryCanvas) reads
+  `consumeFor(module)` on mount. Unknown module → silent no-op.
+
+**Substrate + code paths that shipped (files, one per responsibility).**
+
+| Responsibility | File |
+|---|---|
+| Share entrypoint dispatcher | `frontend/src/stores/shareTarget.ts` |
+| Per-panel PNG exporter registry | `frontend/src/stores/canvasPanelExports.ts` |
+| Selection state machine (pure) | `frontend/src/composables/useCanvasShareSelection.ts` |
+| Hit-testing (pure) | `frontend/src/utils/panelSelectionHit.ts` |
+| Selection UI | `frontend/src/components/canvas/CanvasSelectionOverlay.vue` |
+| Panel-grid compositor | `frontend/src/utils/overlayCompose.ts` → `composePanelGrid` |
+| Shared frozen-frame + DrawSurface | `frontend/src/components/FrameAnnotator.vue` |
+| Reshow bag (Kiwi/Blackboard → module page) | `frontend/src/stores/captureReshow.ts` |
+| Module tag → router path | `frontend/src/utils/moduleRoute.ts` |
+| Envelope → canvas store restore | `frontend/src/utils/restorePanels.ts` |
+| Host + reshow mount | `frontend/src/components/canvas/SummaryCanvas.vue` |
+| Server envelope passthrough | `api/src/captures_api.jl` (`_clean_panel`, panels + workspaceOrigin) |
+
+**PR #4b interaction (still open).** Point-out (Claude marks) subscription is the READ path
+counterpart of this feature's WRITE path — same panel substrate, different direction. The
+multipanel work touched `SummaryPanel` (registered `usePanelExport`) but NOT `InteractivePanel`
+or the cluster panels. PR #4b needs to teach those panels — and the gating-page panels the
+original Decision 19 called out — to subscribe to `trackHighlight` / `pickHighlight` from
+`stores/viewer.ts`. That is per-plot-family work, not a spot touch; the shipped multipanel work
+is the ANCHOR to build against (same components, same canvas store), not a substitute. Landing
+order: multipanel is in, #4b builds on top.
+
+**Reservations (known, not blocking).**
+
+- **Populations not restored on zoom-to-source.** `dataSlice.series` in the envelope but
+  restore leaves `PanelState.sel = []`; user re-picks. Series shape varies per popType, and
+  hydrating correctly is its own slice.
+- **Per-plot-family exporter coverage.** Only `SummaryPanel` currently registers with
+  `usePanelExport`. A canvas share that selects an `InteractivePanel` (UMAP, gating strategy)
+  or a cluster panel gets an empty-tile placeholder in the composite. Extending is a small edit
+  per family; deferred until the first surface asks for it.
+- **CaptureViewSurface z-index over plot canvas.** Left at `20` (the viewer default). If
+  reshow surfaces peek behind panels on a plot canvas, bump per FrameAnnotator's precedent
+  (`z-index: 40`).
+- **Only `behaviourAnalysis` wired for Share end-to-end.** Envelope + selection UI + reshow
+  work for any SummaryCanvas host; the module-route table has entries for phenotype /
+  clustTracks / clustPops / analysis, so opting those in is a per-page mount check away.
 
 ## Verdict (from the design run)
 
@@ -579,8 +677,9 @@ Not blocking the design — resolve during their PRs.
 - **Landscape correlation check.** 2–3 frames from `zolIMa` / `jFWePN` — does the k-means
   tile labelling match a domain-expert eyeball at tile resolution? Not a segmentation metric;
   just "does the heatmap agree." Dominik's time, not code time (Decision 15).
-- **Gating-plot subscription line-count in PR #4.** May exceed the per-PR budget; PR #4b split
-  possible.
+- **Gating-plot subscription line-count in PR #4.** Resolved 2026-09-20 — split as #4b.
+  Substrate for #4b is the module-page panel infrastructure the multipanel work landed on;
+  design record moved to *Module-page canvas captures → PR #4b interaction*.
 
 ## References
 
