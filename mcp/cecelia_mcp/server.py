@@ -777,6 +777,29 @@ def set_blackboard_status(project_uid: str, entry_id: str, status: str) -> dict:
 
 
 @mcp.tool()
+def search_blackboard(project_uid: str, query: str,
+                      status: str | None = None, limit: int | None = None) -> dict:
+    """Search this project's BLACKBOARD entries. Case-insensitive substring over titles AND bodies;
+    title matches are returned before body matches, newest-first within each. Returns
+    `{results: [{entryId, title, snippet, status, updatedAt, matchType}]}` capped at `limit`
+    (default 10, max 50). `matchType` is `"title"` or `"body"`; `snippet` is ±40 chars around the
+    first hit.
+
+    `status` optional (`"open"|"resolved"|"parked"`) — filter to entries in that state; omit for
+    all. Use this to check "has this come up before in this project" BEFORE: proposing a phenotype
+    label that sounds familiar; suggesting a processing step for an unfamiliar image; writing a
+    new blackboard entry that might restate an existing one. Not reflexively on every session —
+    reach for it when there's a specific thing to check. If the search returns nothing, the topic
+    is genuinely new; if it returns a hit, `read_blackboard_entry` for the full context before
+    proposing on top of it.
+
+    Substring, not semantic: a query typed slightly differently from what an entry says won't
+    match. If nothing comes back, try a shorter or differently-worded query before concluding the
+    topic is new."""
+    return _client.search_blackboard(project_uid, query, status, limit)
+
+
+@mcp.tool()
 def create_notebook(project_uid: str, name: str, cells: list[str], description: str = "") -> dict:
     """Create a Pluto NOTEBOOK from Julia cell sources — to answer a "give me the data / plot this"
     request with a runnable, editable artifact the user then owns. Read get_repl_api FIRST so the code

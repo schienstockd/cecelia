@@ -5628,6 +5628,7 @@ end
         "/api/movies/delete", "/api/movies/meta",
         "/api/notebooks/build-sysimage",
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/status",
+        "/api/blackboard/search",
         "/api/blackboard/restore", "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/notebooks/create", "/api/notebooks/delete",
         "/api/notebooks/describe", "/api/notebooks/duplicate",
@@ -9707,6 +9708,100 @@ end
         # Two entries: the auto-created profile + the legacy — both surface a status.
         @test length(rows_ll) == 2
         @test all(haskey(r, :status) for r in rows_ll)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+# ── Blackboard search (PROJECT_MEMORY_PLAN P2) ─────────────────────────────────────────────────
+# Decision 4: case-insensitive substring over title + body, title matches beat body matches, snippet
+# ±40 chars, limit ≤ 50 (default 10), optional status filter. Not semantic — a v1 that's cheap at
+# the sizes this store reaches.
+@testset "API: blackboard substring search (MEMORY P2)" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTBBP2"; mkpath(joinpath(tmp, uid))
+        w(path, b) = _post(path, b)
+
+        # Seed entries: profile (auto), plus three normal entries with mixed title/body content and
+        # status. Ordering matters — bb-ids are timestamp-sortable; add them in known order so the
+        # DESC sort is predictable.
+        api_blackboard_list(HTTP.Request("GET", "/api/blackboard?projectUid=$uid"))   # auto-creates profile
+        # Set profile status + title so it can show up in a targeted query.
+        w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>"profile",
+            "content"=>"Subject: MERTK zolIMa; goal: track live CD169+ macrophages"))
+
+        _, b1 = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Segmentation for CD169 macrophages",
+            "content"=>"Diameter 30 worked; smaller cells missed."))
+        eid1 = String(JSON3.read(b1).entryId)
+        sleep(0.01)
+        _, b2 = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Notes on drift correction",
+            "content"=>"CD169 channel is bright enough to anchor multiLag on this cohort."))
+        eid2 = String(JSON3.read(b2).entryId)
+        sleep(0.01)
+        _, b3 = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Old parked idea",
+            "content"=>"Try SUPPORT denoise on the noisy set. TBD.",
+            "status"=>"parked"))
+        eid3 = String(JSON3.read(b3).entryId)
+
+        # ── Guards ──────────────────────────────────────────────────────────
+        @test w(api_blackboard_search, Dict("projectUid"=>uid))[1] == 400          # query missing
+        @test w(api_blackboard_search, Dict("query"=>"x"))[1] == 400                # projectUid missing
+        @test w(api_blackboard_search, Dict("projectUid"=>"NOPE", "query"=>"x"))[1] == 404
+        @test w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"x",
+            "status"=>"bogus"))[1] == 400
+
+        # ── Title vs body ordering ──────────────────────────────────────────
+        # "CD169" appears in eid1's TITLE and in eid2's BODY. Title match must come first.
+        st, body = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"CD169"))
+        @test st == 200
+        results = JSON3.read(body).results
+        @test length(results) >= 2
+        @test String(results[1].entryId) == eid1
+        @test String(results[1].matchType) == "title"
+        # Second should be a body match — eid2's body has CD169; profile's body has it too.
+        matches_after = String(results[2].matchType)
+        @test matches_after == "body"
+        # Every returned row carries a snippet + status.
+        @test all(haskey(r, :snippet) && !isempty(String(r.snippet)) for r in results)
+        @test all(haskey(r, :status) for r in results)
+
+        # ── Case-insensitive ────────────────────────────────────────────────
+        _, body_ci = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"cd169"))
+        @test !isempty(JSON3.read(body_ci).results)
+
+        # ── Status filter ───────────────────────────────────────────────────
+        # "SUPPORT" appears only in eid3 (parked). Filter parked → returns it; filter open → empty.
+        _, b_parked = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"SUPPORT",
+            "status"=>"parked"))
+        @test length(JSON3.read(b_parked).results) == 1
+        _, b_open = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"SUPPORT",
+            "status"=>"open"))
+        @test isempty(JSON3.read(b_open).results)
+
+        # ── Snippet shape ───────────────────────────────────────────────────
+        # A body hit's snippet contains the needle, with "…" markers when the body is truncated.
+        _, b_snip = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"multiLag"))
+        snip = String(JSON3.read(b_snip).results[1].snippet)
+        @test occursin("multiLag", snip)
+
+        # ── Empty result ────────────────────────────────────────────────────
+        _, b_none = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"asdfqwerty"))
+        @test isempty(JSON3.read(b_none).results)
+
+        # ── Limit clamp ─────────────────────────────────────────────────────
+        # A limit above the cap is silently clamped rather than 400 (a query with limit=1000 is a
+        # caller sanity slip, not a security issue).
+        _, b_lim = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"CD169", "limit"=>1000))
+        @test length(JSON3.read(b_lim).results) <= 50
+        _, b_lim2 = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"CD169", "limit"=>1))
+        @test length(JSON3.read(b_lim2).results) == 1
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

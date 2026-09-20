@@ -46,6 +46,33 @@ _valid_bb_status(s::AbstractString)::Bool = String(s) in _BB_STATUS_VALS
 _status_from_meta(meta)::String =
     (s = String(get(meta, "status", "open")); _valid_bb_status(s) ? s : "open")
 
+# Blackboard search (PROJECT_MEMORY_PLAN Decision 4). Substring, case-insensitive, per project.
+# Cheap at the sizes this store reaches — a title match beats a body match; snippet is ±40 chars
+# around the first hit. `limit` bounded so a runaway caller can't blow the response.
+const _BB_SEARCH_LIMIT_DEFAULT = 10
+const _BB_SEARCH_LIMIT_MAX     = 50
+const _BB_SEARCH_SNIPPET_HALF  = 40
+
+"""
+    _bb_search_snippet(text, pos, needle_len)
+
+Return a substring of `text` centred on the byte position `pos` (1-indexed as returned by
+`findfirst`), extending `_BB_SEARCH_SNIPPET_HALF` chars on each side and adding "…" markers when
+truncated. Kept as a helper so the title-match and body-match branches share one snippet shape.
+"""
+function _bb_search_snippet(text::AbstractString, pos::Int, needle_len::Int)::String
+    n = ncodeunits(text)
+    lo = max(1, pos - _BB_SEARCH_SNIPPET_HALF)
+    hi = min(n, pos + needle_len - 1 + _BB_SEARCH_SNIPPET_HALF)
+    # Nudge lo/hi to valid character boundaries so a substring slice never lands mid-codepoint.
+    while lo > 1 && !isvalid(text, lo); lo -= 1; end
+    while hi < n && !isvalid(text, hi + 1); hi += 1; end
+    core = text[lo:hi]
+    lead  = lo > 1 ? "…" : ""
+    trail = hi < n ? "…" : ""
+    string(lead, core, trail)
+end
+
 # Titles are a short label shown in the entries table — cap so a verbose caller can't bloat the
 # row. Same rule as notebooks' `_NB_DESC_MAX`.
 const _BB_TITLE_MAX = 200
@@ -306,6 +333,101 @@ function api_blackboard_entry_get(req::HTTP.Request)
         "attachments" => attachments_out,
         "status"      => _status_from_meta(meta),  # describes the LIVE entry; not versioned per snapshot
     )))
+end
+
+"""
+    POST /api/blackboard/search
+
+Body: `{ projectUid, query, status?, limit? }` where `status ∈ ("open","resolved","parked")` and
+`limit` ≤ `_BB_SEARCH_LIMIT_MAX` (default `_BB_SEARCH_LIMIT_DEFAULT`).
+Reply: `{ results: [{ entryId, title, snippet, status, updatedAt, matchType }, …] }`, capped at
+`limit`. `matchType ∈ ("title", "body")` — a title match orders before a body match; within each
+group, newer entries come first (id encodes a sortable timestamp; `profile` sorts before any
+`bb-…`, which is fine — an entry that matches the query is what the caller wants regardless of id).
+
+Case-insensitive substring over title + entry body. Not semantic search — a v1 that's cheap at
+the sizes this store reaches (Blackboard bodies are capped at 100 KiB per entry, and there are on
+the order of tens per project). PROJECT_MEMORY_PLAN Decision 4. If substring stops surfacing what
+sessions actually need, semantic is the FUTURE.md follow-up; the endpoint shape stays.
+
+`snippet` is ±_BB_SEARCH_SNIPPET_HALF chars around the first match in whichever field matched;
+for a title-only match the snippet is the (possibly truncated) title itself. Unreadable meta.json
+skipped, same convention as list.
+"""
+function api_blackboard_search(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :projectUid)
+    q   = _wstr(body, :query)
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isempty(q)   && return 400, JSON3.write((; error = "query required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    status_filter = String(get(body, :status, ""))
+    isempty(status_filter) || _valid_bb_status(status_filter) ||
+        return 400, JSON3.write((; error = "status must be one of $(_BB_STATUS_VALS)"))
+
+    limit_raw = get(body, :limit, _BB_SEARCH_LIMIT_DEFAULT)
+    limit = try
+        clamp(Int(limit_raw), 1, _BB_SEARCH_LIMIT_MAX)
+    catch
+        _BB_SEARCH_LIMIT_DEFAULT
+    end
+
+    dir = _blackboard_dir_for_project(uid)
+    isdir(dir) || return 200, JSON3.write((; results = Any[]))
+    needle = lowercase(q)
+    # Two-bucket collection: title matches beat body matches so a caller reading top-of-list gets
+    # the intent-shaped hits first. Newest-first within each bucket comes from the reverse-sorted
+    # ids we read the dir with — `profile` sorts to the top per the DESC id ordering, which is
+    # fine: a search hit is what the caller asked for; id-precedence is only a tiebreaker.
+    ids = sort!(String[e for e in readdir(dir) if _valid_bb_entry_id(e)], rev = true)
+    title_hits = Any[]; body_hits = Any[]
+    for id in ids
+        meta = _read_bb_meta(uid, id)
+        meta === nothing && continue
+        entry_status = _status_from_meta(meta)
+        isempty(status_filter) || entry_status == status_filter || continue
+        title = String(get(meta, "title", ""))
+        title_lc = lowercase(title)
+        title_pos = findfirst(needle, title_lc)
+        if title_pos !== nothing
+            push!(title_hits, Dict{String,Any}(
+                "entryId"   => id,
+                "title"     => title,
+                "snippet"   => _bb_search_snippet(title, first(title_pos), length(needle)),
+                "status"    => entry_status,
+                "updatedAt" => String(get(meta, "updatedAt", "")),
+                "matchType" => "title",
+            ))
+            length(title_hits) + length(body_hits) >= limit && break
+            continue
+        end
+        # Body scan — read entry.md and look for the needle. Skip missing/unreadable body files
+        # (a directory without an entry.md is an in-flight state; not fatal).
+        live = joinpath(_bb_entry_dir(uid, id), "entry.md")
+        isfile(live) || continue
+        body_txt = try
+            read(live, String)
+        catch
+            continue
+        end
+        body_lc = lowercase(body_txt)
+        body_pos = findfirst(needle, body_lc)
+        body_pos === nothing && continue
+        push!(body_hits, Dict{String,Any}(
+            "entryId"   => id,
+            "title"     => title,
+            "snippet"   => _bb_search_snippet(body_txt, first(body_pos), length(needle)),
+            "status"    => entry_status,
+            "updatedAt" => String(get(meta, "updatedAt", "")),
+            "matchType" => "body",
+        ))
+        length(title_hits) + length(body_hits) >= limit && break
+    end
+    out = vcat(title_hits, body_hits)
+    length(out) > limit && (out = out[1:limit])
+    200, JSON3.write((; results = out))
 end
 
 """

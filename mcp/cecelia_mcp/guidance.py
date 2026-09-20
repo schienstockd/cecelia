@@ -192,6 +192,15 @@ done thread → `"resolved"`, park an idea for later → `"parked"`, or revive o
 back up → `"open"`. Don't blanket-close entries as housekeeping; a status change is a state \
 transition on a topic, not a cleanup pass. The profile entry itself normally stays `open`.
 
+Reach for `search_blackboard(project_uid, query, status?, limit?)` when you're about to propose \
+something and want to check "has this come up before in this project". Substring, case-insensitive, \
+over titles AND bodies; title matches beat body matches; returns snippets so you can decide which \
+hit is worth reading in full. Call it BEFORE: proposing a phenotype label that sounds familiar; \
+suggesting a processing step for an unfamiliar image; writing a new blackboard entry that might \
+restate an existing one. Not on every session — only when there's a specific thing to check. A \
+zero-result search means the topic is genuinely new; a hit means read the full entry before \
+proposing on top of it.
+
 ON PUSH PAIRING. Every tool that names a `project_uid` auto-pairs this session with that project \
 on its first call, so a fresh session's first check registers itself for push delivery without \
 the user typing anything — silent, no confirmation, cached in the MCP process. Reach for \
