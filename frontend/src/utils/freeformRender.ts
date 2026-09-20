@@ -149,10 +149,12 @@ export function isKnownKind(kind: string): kind is OverlayKind {
 export interface Paintable {
   kind: OverlayKind
   label?: string
+  color?: string           // palette name; renderer resolves to hex via `resolveMarkColor`. Absent
+                           // for older captures / point-out marks that don't carry a colour.
   shape: Rect | Circle | Arrow | { pts: Array<[number, number]> }
   anchor: { x: number; y: number }
 }
-export function paintableFor(overlay: ReadonlyArray<{ kind: string; geom: unknown; label?: string }>,
+export function paintableFor(overlay: ReadonlyArray<{ kind: string; geom: unknown; label?: string; color?: string }>,
                              boxW: number, boxH: number, mode: 'norm' | 'px'): Paintable[] {
   const out: Paintable[] = []
   for (const m of overlay) {
@@ -169,7 +171,7 @@ export function paintableFor(overlay: ReadonlyArray<{ kind: string; geom: unknow
     if (!shape) continue
     const anchor = markAnchor(kind, m.geom, boxW, boxH, mode)
     if (!anchor) continue
-    out.push({ kind, label: m.label, shape, anchor })
+    out.push({ kind, label: m.label, color: m.color, shape, anchor })
   }
   return out
 }

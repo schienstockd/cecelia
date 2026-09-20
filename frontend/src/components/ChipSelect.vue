@@ -32,6 +32,9 @@ export interface ChipOption {
   disabled?: boolean
   badge?: string | number
   accent?: string          // CSS colour: overrides --cc-accent for this option's active state
+  swatch?: string          // CSS colour: renders a small always-visible colour dot inside the chip
+                           // (colour-picker chips, palette selectors). Distinct from `accent`
+                           // (active-only) and `icon` (glyph). See `DrawSurface.vue` colour strip.
 }
 
 const props = withDefaults(defineProps<{
@@ -155,6 +158,7 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
       @dragover.prevent
       @drop.prevent="onDrop(r.opt)"
     >
+      <span v-if="r.opt.swatch" class="chip-swatch" :style="{ background: r.opt.swatch }" />
       <i v-if="r.opt.icon" :class="r.opt.icon" />
       <span v-if="r.opt.label !== ''" class="chip-lbl">{{ r.opt.label ?? r.opt.value }}</span>
       <span v-if="r.opt.badge !== undefined && r.opt.badge !== ''" class="chip-badge">{{ r.opt.badge }}</span>
@@ -186,6 +190,13 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
   font-size: var(--cc-fs-2xs); font-variant-numeric: tabular-nums; line-height: 1;
   padding: 0.05rem 0.28rem; border-radius: var(--cc-radius-pill);
   background: color-mix(in srgb, currentColor 22%, transparent);
+}
+/* Optional colour dot — palette pickers (see DrawSurface annotation swatches). Ring around it so a
+   white swatch still reads on the chip's own light surface. */
+.chip-swatch {
+  display: inline-block; width: 0.75rem; height: 0.75rem;
+  border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
 }
 
 /* ── pill dialect: wrapping capsules ── */
