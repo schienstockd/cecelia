@@ -91,6 +91,11 @@ function onDrawSave(payload: { overlay: OverlayMark[] }) {
 .fa-root {
   position: absolute; inset: 0;
   background: #000;                /* letterbox around any non-matching aspect */
+  /* Above CanvasPanel's `.panel` (z-index 10) and CanvasSelectionOverlay (z-index 30) so the
+     frozen composite and DrawSurface both paint on top of the live panels — an earlier version
+     let the panels show through the letterbox around the composite, which read as "why is my
+     annotation drawing behind the plots". */
+  z-index: 40;
 }
 .fa-frame {
   position: absolute; inset: 0;

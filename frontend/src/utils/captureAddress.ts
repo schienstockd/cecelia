@@ -52,11 +52,13 @@ export function buildCaptureAddress(input: CaptureAddress): CaptureAddress {
 // PR #5 (freeform point-out) so the schema doesn't churn when they land.
 export type OverlayKind = 'rect' | 'poly' | 'stroke' | 'circle' | 'arrow'
 
-// Palette-name slot on a mark. The 4 CVD-safe / microscopy-neutral choices are locked in
+// Palette-name slot on a mark. The 5 CVD-safe / microscopy-neutral choices are locked in
 // `utils/overlayCompose.ts::ANNOTATION_PALETTE` and safelisted by the server so a stray value
 // gets dropped rather than stored as arbitrary CSS. Absent ⇒ `white` (also the pre-palette
-// default), matching every capture written before this field existed.
-export type OverlayColor = 'magenta' | 'cyan' | 'yellow' | 'white'
+// default), matching every capture written before this field existed. `black` was added when
+// the canvas Share flow started producing white-background plot composites — the earlier four
+// options all disappeared or read poorly on white.
+export type OverlayColor = 'magenta' | 'cyan' | 'yellow' | 'white' | 'black'
 
 export interface OverlayMark {
   kind: OverlayKind

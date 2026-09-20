@@ -1367,7 +1367,9 @@ end
         overlay = [Dict("kind"=>"rect", "geom"=>Dict("x"=>0.1, "y"=>0.1, "w"=>0.2, "h"=>0.2), "color"=>"magenta"),
                    Dict("kind"=>"bogus", "geom"=>Dict()),               # unknown kind — dropped
                    Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.0,0.0],[1.0,1.0]]),
-                        "label"=>"trail", "color"=>"chartreuse")]        # unknown colour — dropped from mark
+                        "label"=>"trail", "color"=>"chartreuse"),        # unknown colour — dropped from mark
+                   Dict("kind"=>"rect", "geom"=>Dict("x"=>0.5, "y"=>0.5, "w"=>0.1, "h"=>0.1),
+                        "color"=>"black")]                                # black — safelisted for white-composite plots
         st, body = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
                           "frames"=>[Dict("png"=>frame_data_url)], "overlay"=>overlay))
         @test st == 200
@@ -1394,14 +1396,17 @@ end
         @test st3 == 200
         got = JSON3.read(body3)
         @test String(got.capture.captureId) == cap_id
-        @test length(got.capture.overlay) == 2                # bogus kind stripped
+        @test length(got.capture.overlay) == 3                # bogus kind stripped; black rect added
         @test startswith(String(got.frame), "data:image/png;base64,")
         # Colour safelist round-trip. Magenta survived on the rect; chartreuse was dropped from the
         # stroke's payload but the stroke itself survived (frontend resolver falls back to `white`).
+        # Black safelisted for canvas-Share white-composite plots.
         @test String(got.capture.overlay[1].kind) == "rect"
         @test String(got.capture.overlay[1].color) == "magenta"
         @test String(got.capture.overlay[2].kind) == "stroke"
         @test !haskey(got.capture.overlay[2], :color)
+        @test String(got.capture.overlay[3].kind) == "rect"
+        @test String(got.capture.overlay[3].color) == "black"
 
         # guards on the read side
         @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture"))[1] == 400

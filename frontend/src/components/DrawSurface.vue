@@ -58,12 +58,18 @@ const TOOL_OPTIONS: ChipOption[] = [
   { value: 'poly',   label: '', icon: 'pi pi-share-alt', tip: 'Polygon (click vertices, Enter or click first vertex to close)' },
   { value: 'stroke', label: '', icon: 'pi pi-pencil',    tip: 'Freehand' },
 ]
-const tool = ref<Tool>('rect')
+// Default to freehand: it's the most natural first gesture ("scribble around this"), and the
+// user can always click a different chip. Rect / poly were the earlier default because they read
+// as "gate-like" — that mattered less than starting with the tool the user reaches for.
+const tool = ref<Tool>('stroke')
 
-// CVD-safe / microscopy-neutral palette (see utils/overlayCompose.ts). Four chips, coloured
+// CVD-safe / microscopy-neutral palette (see utils/overlayCompose.ts). Five chips, coloured
 // swatches — the value IS the palette name; the label carries the swatch via inline style so
-// the picker looks like paint chips, not a text menu. Default `white` keeps parity with the
-// pre-palette look (all marks were rendered in white with a dark halo).
+// the picker looks like paint chips, not a text menu. Default `magenta`: it reads unambiguously
+// on both dark microscopy (viewer share) and white plot composites (canvas share), so one
+// default fits both surfaces. `DEFAULT_ANNOTATION_COLOR` stays `white` for legacy captures that
+// have no `color` field — the ROUND-TRIP fallback and the UI's INITIAL PICK are two different
+// jobs and can drift.
 const COLOR_OPTIONS: ChipOption[] = ANNOTATION_COLOR_ORDER.map(name => ({
   value: name,
   label: '',
@@ -71,7 +77,7 @@ const COLOR_OPTIONS: ChipOption[] = ANNOTATION_COLOR_ORDER.map(name => ({
   swatch: ANNOTATION_PALETTE[name],
   accent: ANNOTATION_PALETTE[name],
 }))
-const color = ref<OverlayColor>('white')
+const color = ref<OverlayColor>('magenta')
 
 // Committed marks + one live draft. Kept as three parallel refs — a discriminated union would need
 // a class per kind and the state machines are already the source of truth.
@@ -331,8 +337,8 @@ onBeforeUnmount(() => {
 watch(() => props.visible, async (v) => {
   if (!v) return
   marks.value = []; label.value = ''; clearDraft()
-  tool.value = 'rect'
-  color.value = 'white'
+  tool.value = 'stroke'
+  color.value = 'magenta'
   await Promise.resolve()   // let the DOM mount before measuring
   measureBox()
 }, { immediate: true })

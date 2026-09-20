@@ -43,7 +43,7 @@ const _CAPTURE_OVERLAY_KINDS = Set(["rect", "poly", "stroke", "circle", "arrow"]
 # a tampered payload can't smuggle arbitrary CSS through; unknown names are DROPPED (the frontend
 # resolver then falls back to `white`), not stored — a value that would render is a value the
 # canvas already treats as legitimate.
-const _CAPTURE_OVERLAY_COLORS = Set(["magenta", "cyan", "yellow", "white"])
+const _CAPTURE_OVERLAY_COLORS = Set(["magenta", "cyan", "yellow", "white", "black"])
 
 # The PNG can be a base64 data URL (`data:image/png;base64,...`) or bare base64 bytes. We accept
 # both and store the raw bytes on disk so downstream readers don't repeat the prefix strip. Cap
