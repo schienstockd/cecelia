@@ -49,6 +49,10 @@ const props = defineProps<{
   // the same frame — the user is still discussing the SAME pixels, only with more strokes on top.
   address: CaptureAddress
   addressLine?: string      // short human line (imageUid · valueName · t · z)
+  // Opaque `ViewerViewState` from the ORIGINAL capture — inherited on re-annotate so the refined
+  // capture carries the same camera / channels / t / z the user was looking at. Lets a later
+  // Refocus take the full-restore branch (Zoom-to-source) instead of the seek-only fallback.
+  viewStateSnapshot?: unknown | null
 }>()
 const emit = defineEmits<{
   (e: 'close'): void
@@ -106,6 +110,9 @@ async function onReannotateSave(payload: { overlay: OverlayMark[] }) {
         frames: [{ png: composited }],
         overlay: mergedOverlay,
         previousCaptureId: props.captureId,
+        // Inherit the ORIGINAL viewStateSnapshot verbatim so a later Refocus on the refined
+        // capture restores the exact camera / channels the original share was framed on.
+        ...(props.viewStateSnapshot ? { viewStateSnapshot: props.viewStateSnapshot } : {}),
       }),
     })
     if (!res.ok) {

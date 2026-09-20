@@ -164,10 +164,11 @@ Numbered so code and other docs can cite them (`Decision 5`).
     rest. No age / count / scheduled / configurable policy. Mermaid + text entries are ~1–5 KB
     per version; measure before automating. Mirror `NotebookTable.vue`'s Restore + Prune inline
     UX pattern exactly.
-23. **Blackboard lab-log companion write: conditional.** Claude-authored revisions (via MCP
-    `revise_blackboard_entry` with `note` set) auto-write to lab-log tagged `[Claude]`. Human-authored
-    revisions (via the Vue Blackboard page's Edit button) do NOT auto-write. Keeps the log a
-    chronology of what happened, not a duplicate of every internal-state change.
+23. **Blackboard lab-log companion write — DROPPED (2026-09-20).** Originally: Claude-authored
+    revisions auto-write a `[Claude]` line to the lab log; human edits stay silent. Not shipped —
+    the Blackboard entry already carries the same prose, so a lab-log echo is redundant. The
+    Blackboard is the record for a Blackboard change; the lab log stays the record for what
+    happened to the *analysis*.
 24. **Blackboard visibility gated on `observerSetupReason(available, lastFailedAuth) === null &&
     state === 'current'`** — same helper the lab-log install / login band and Settings → MCP
     connections use. Reuse, don't build a second detector.
@@ -392,8 +393,19 @@ list, `ConfirmDeleteButton` for delete).
 **Versioning + pruning.** Reimplement notebook shape locally (Decision 21). Fix the "restore loses
 un-snapshotted edits" papercut in Blackboard.
 
-**Lab-log companion write.** Conditional per Decision 23 (Claude-authored → auto-write;
-human-authored → silent).
+**Lab-log companion write.** Dropped — see Decision 23. Redundant with the entry text itself.
+
+**Ship 2026-09-20 — reannotate inherits `viewStateSnapshot`.** `CaptureViewSurface` gained a
+`viewStateSnapshot` prop and forwards it on the re-annotate POST (alongside `previousCaptureId`)
+so a refined capture carries the same camera / channels / t / z the original share was framed on.
+A later Refocus on the refined capture then takes the full-restore branch, not the seek-only
+fallback. Two files (`ViewerWindow.vue` populates + binds the prop, `CaptureViewSurface.vue`
+plumbs it into the fetch body).
+
+**BIDIR Part 4 status: shipped.** All Blackboard PRs (#1066 backend + MCP; #1070 Vue page;
+#1072 versioned attachments + no-op skip; #1073 restore annotation overlay; #1074 canonical
+primitives + composited thumbnails; #1078 Refocus collapsed into Zoom-to-source; #1079 draggable
+list divider; reannotate-viewstate inherit) landed 2026-09-20.
 
 ## Cross-piece linkage
 

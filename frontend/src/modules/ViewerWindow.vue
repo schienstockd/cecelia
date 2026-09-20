@@ -4478,6 +4478,10 @@ interface CaptureView {
   // capture stays anchored to the same frame.
   address: CaptureAddress
   addressLine: string
+  // Camera / channels / t / z snapshot from the ORIGINAL capture — same reasoning as `address`:
+  // a re-annotate is more strokes on the same frame, so the refined capture inherits it verbatim
+  // and a later Refocus takes the full-restore branch rather than the seek-only fallback.
+  viewStateSnapshot: unknown | null
 }
 const captureView = ref<CaptureView | null>(null)
 function closeCaptureView() { captureView.value = null }
@@ -4504,7 +4508,8 @@ watch([shownT, zPlane], ([t2, z2]) => {
 function onReannotate(payload: {
   captureId: string; frameDataUrl: string; overlay: OverlayMark[]
 }) {
-  // Preserve the same address on a refined capture (server also links via `previousCaptureId`).
+  // Preserve the same address + viewStateSnapshot on a refined capture (server also links via
+  // `previousCaptureId`). The snapshot rides through the spread from the existing captureView.
   if (!captureView.value) return
   captureView.value = {
     ...captureView.value,
@@ -4568,6 +4573,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
     captureView.value = {
       captureId, frameDataUrl: png, overlay: payload.overlay,
       address, addressLine: drawAddressLine.value,
+      viewStateSnapshot,
     }
     if (pushOutcome === 'sent') {
       // Push landed — skip the clipboard. Toast tells the user delivery happened; they can
@@ -4719,6 +4725,7 @@ onUnmounted(() => {
                           :overlay="captureView.overlay"
                           :address="captureView.address"
                           :address-line="captureView.addressLine"
+                          :view-state-snapshot="captureView.viewStateSnapshot"
                           @close="closeCaptureView" @reannotate="onReannotate" />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
            cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
