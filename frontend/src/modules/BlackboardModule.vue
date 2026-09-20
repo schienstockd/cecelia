@@ -6,17 +6,21 @@
 //
 // Backend: api/src/blackboard_api.jl. Plan: docs/todo/BIDIR_CONTEXT_PLAN.md → Part 4.
 //
-// Two-pane layout: entry list left, one entry right (viewer OR editor). "New" opens the editor with
-// an empty draft; Save creates + selects. Attachment thumbnails at the bottom of the entry pane
-// reuse `fetchCaptureEnvelope` from kiwiCaptures.ts and, on click, publish a
-// `publishViewerSeek` — a pop-out viewer for that image jumps to the capture's t / z. Silent no-op
-// if no pop-out is listening (fire-and-forget, same rule as Kiwi PR B's Refocus).
+// Layout mirrors the pipeline surfaces (ChainModule / TasksModule): a full-height flex column
+// with a toolbar on top and content below. The list uses the canonical `SelectionTable`
+// (single-select), matching NotebookTable — no bespoke <ul> primitive lives here. Delete uses
+// the canonical `ConfirmDeleteButton`. The right pane is the entry viewer / editor.
+//
+// Attachment thumbnails composite the drawn marks INTO the PNG before rendering (via
+// `overlayCompose.ts::composeImageWithOverlay`) — same reason share compositing exists: a raw
+// frame + a colourless mark overlay reads as "no annotations" to the eye, which is exactly the
+// bug this fixes on the attachment strip.
 
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useBlackboardStore } from '../stores/blackboard'
-import ModulePage from '../components/ModulePage.vue'
-import ConfirmButton from '../components/ConfirmButton.vue'
+import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
+import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import {
   listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
@@ -25,6 +29,8 @@ import {
 import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
 import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
 import { publishViewerSeek } from '../utils/viewerSeekChannel'
+import { composeImageWithOverlay } from '../utils/overlayCompose'
+import { loadImg } from '../plots/export'
 
 const projectMeta = useProjectMetaStore()
 const bbStore = useBlackboardStore()
@@ -32,21 +38,32 @@ const bbStore = useBlackboardStore()
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const hasProject = computed(() => projectMeta.hasProject)
 
-// List state.
+// ── List state ───────────────────────────────────────────────────────────────
 const entries = ref<BlackboardEntrySummary[]>([])
 const listLoading = ref(false)
 
-// Selected entry state. `selected` is the LIVE entry; `viewingVersion` != null when the user has
-// clicked a history version to preview it (the pane shows that snapshot's content, but selected's
-// LIVE-state fields still drive the header/actions).
+// SelectionTable columns. One row per entry — the table sorts by any of these, so `updated` sorts
+// by the raw ISO string (lexicographic works because the id-encoded timestamp is fixed-width).
+// `attachmentsCount` renders as a small paperclip chip via the cell slot.
+const LIST_COLUMNS: SelectionColumn[] = [
+  { key: 'title',     label: 'Title',       sortable: true, width: 260 },
+  { key: 'updatedAt', label: 'Updated',     sortable: true, width: 80  },
+  { key: 'current',   label: 'Ver',         sortable: true, width: 44  },
+  { key: 'attachmentsCount', label: '',     sortable: false, width: 36 },
+]
+
+// ── Selected entry state ─────────────────────────────────────────────────────
+// `selected` is the LIVE entry; `viewingVersion` != null when the user has clicked a history
+// version to preview it (the pane shows that snapshot's content; live-state fields still drive
+// the header/actions).
 const selectedId = ref('')
 const selected = ref<BlackboardEntry | null>(null)
 const viewingVersion = ref<number | null>(null)
-const viewingContent = ref('')   // content of the version being previewed (falls back to selected.content)
+const viewingContent = ref('')
 const entryLoading = ref(false)
 
-// Editor state. `mode` is 'view' | 'edit-existing' | 'edit-new'. Draft fields live outside the
-// selected entry so a Cancel discards them without touching the fetched state.
+// Editor state — draft fields live outside `selected` so a Cancel discards them without touching
+// the fetched state.
 type Mode = 'view' | 'edit-existing' | 'edit-new'
 const mode = ref<Mode>('view')
 const draftTitle = ref('')
@@ -54,9 +71,12 @@ const draftContent = ref('')
 const savingDraft = ref(false)
 
 // Attachment envelopes for the selected entry — fetched lazily per attachment so the thumbnails
-// stream in. Keyed by captureId. A missing entry ⇒ no thumbnail; the click still works if the
-// address is known.
-const captureCache = ref<Record<string, CaptureEnvelope | null>>({})
+// stream in. `thumb` is a data URL of the composited FRAME + MARKS (see `resolveThumbForCache`).
+interface AttachmentSlot {
+  env: CaptureEnvelope | null
+  thumb: string     // composited data URL, '' if the frame isn't available yet
+}
+const captureCache = ref<Record<string, AttachmentSlot>>({})
 
 // Rendered markdown HTML for the entry pane (viewer OR history preview). `v-html` target.
 const paneContent = computed(() => {
@@ -74,6 +94,26 @@ async function loadList() {
   } finally { listLoading.value = false }
 }
 
+/** Compose the mark overlay onto the raw frame — the same trick share uses, so an attachment
+ *  chip reads as "this is what Claude drew on" rather than a bare frame the annotations are
+ *  invisible on. Falls back to the raw frame when there are no marks / compose fails. */
+async function resolveThumbForCache(env: CaptureEnvelope): Promise<string> {
+  if (!env.frame) return ''
+  if (!env.overlay || env.overlay.length === 0) return env.frame
+  const img = await loadImg(env.frame)
+  if (!img) return env.frame
+  return composeImageWithOverlay(img, env.overlay) ?? env.frame
+}
+
+async function loadAttachment(cid: string) {
+  if (captureCache.value[cid]) return                 // already in flight or done
+  captureCache.value = { ...captureCache.value, [cid]: { env: null, thumb: '' } }
+  const env = await fetchCaptureEnvelope(projectUid.value, cid)
+  if (!env) return
+  const thumb = await resolveThumbForCache(env)
+  captureCache.value = { ...captureCache.value, [cid]: { env, thumb } }
+}
+
 async function loadEntry(id: string, version?: number) {
   if (!projectUid.value || !id) { selected.value = null; return }
   entryLoading.value = true
@@ -87,28 +127,24 @@ async function loadEntry(id: string, version?: number) {
       if (snap) {
         viewingVersion.value = version
         viewingContent.value = snap.content
+        // Attachments-per-version: preview the RECORDED set (post-#1072 backend). We only render
+        // the strip when there's an entry; keeping `selected.attachments` for LIVE + the recorded
+        // list here is the split the API already draws.
+        selected.value = { ...selected.value!, attachments: snap.attachments }
       }
     }
   } finally { entryLoading.value = false }
-  // Prime the attachment cache for the LIVE entry — always the LIVE attachment list, because a
-  // historical snapshot's attachments aren't stored (meta.json's attachments are the CURRENT set).
   if (selected.value) {
-    for (const cid of selected.value.attachments) {
-      if (captureCache.value[cid] === undefined) {
-        captureCache.value[cid] = null       // pending
-        fetchCaptureEnvelope(projectUid.value, cid).then(env => {
-          captureCache.value = { ...captureCache.value, [cid]: env }
-        })
-      }
-    }
+    for (const cid of selected.value.attachments) void loadAttachment(cid)
   }
 }
 
 function selectEntry(id: string) {
+  if (!id) return
   if (selectedId.value === id && mode.value === 'view' && viewingVersion.value === null) return
   selectedId.value = id
   mode.value = 'view'
-  loadEntry(id)
+  void loadEntry(id)
 }
 
 function beginEditExisting() {
@@ -149,14 +185,11 @@ async function saveDraft() {
         mode.value = 'view'
       }
     } else if (mode.value === 'edit-existing' && selected.value) {
-      // If the title changed too, we'd need a rename endpoint — none exists yet, so preserve the
-      // stored title and only save content in this pass. (Title edits land when the backend grows a
-      // rename route — noted in the plan as future.)
+      // Content-only save today (backend has no rename route). If nothing changed the server
+      // returns `unchanged:true` and no snapshot is spent (#1072).
       const v = await reviseBlackboardEntry(projectUid.value, selected.value.entryId, draftContent.value)
-      if (v > 0) {
-        await loadEntry(selected.value.entryId)
-        mode.value = 'view'
-      }
+      if (v > 0) await loadEntry(selected.value.entryId)
+      mode.value = 'view'
     }
   } finally { savingDraft.value = false }
 }
@@ -177,19 +210,21 @@ async function onDelete() {
   }
 }
 
-/** Fire-and-forget: publish a viewer-seek for this capture. A pop-out viewer for the same imageUid
- *  will jump to the capture's t / z; nothing listening ⇒ silent no-op (that's the fallback shape
- *  Kiwi PR B already established). */
+/** Fire-and-forget: publish a viewer-seek for this capture. The marks travel too — the pop-out
+ *  viewer restores them as a read-only overlay while it's on the capture's t / z (#1073). */
 function focusCapture(cid: string) {
-  const env = captureCache.value[cid]
-  const a = env?.address
-  if (!env || !a?.imageUid) return
+  const slot = captureCache.value[cid]
+  const a = slot?.env?.address
+  if (!slot?.env || !a?.imageUid) return
   const t = Array.isArray(a.t) ? a.t[0] : a.t
+  const overlay = slot.env.overlay ?? []
   publishViewerSeek({
     projectUid: projectUid.value,
     imageUid: a.imageUid,
+    captureId: cid,
     ...(typeof t === 'number' ? { t } : {}),
     ...(typeof a.z === 'number' ? { z: a.z } : {}),
+    ...(overlay.length > 0 ? { marks: overlay } : {}),
   })
 }
 
@@ -217,7 +252,7 @@ async function renderMermaidInPane() {
     const mermaid = await mermaidLoader
     mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' })
     for (let i = 0; i < nodes.length; i++) {
-      if (seq !== mermaidRenderSeq) return   // superseded by a newer render
+      if (seq !== mermaidRenderSeq) return
       const code = nodes[i].textContent ?? ''
       const id = `bb-mermaid-${Date.now()}-${i}`
       try {
@@ -226,24 +261,20 @@ async function renderMermaidInPane() {
         holder.className = 'bb-mermaid'
         holder.innerHTML = svg
         nodes[i].parentElement?.replaceWith(holder)
-      } catch {
-        // Leave the raw code block in place — a broken diagram shouldn't erase the source.
-      }
+      } catch { /* keep the raw code visible */ }
     }
-  } catch {
-    // Import failed (offline, blocked); leave the raw code block visible.
-  }
+  } catch { /* mermaid import blocked; leave the raw code */ }
 }
 watch(paneHtml, async () => { await nextTick(); await renderMermaidInPane() })
 
-// Silent reload on WS `blackboard:changed` for THIS project. Matches the captures-store pattern.
+// WS `blackboard:changed` — silent list + entry reload for THIS project.
 watch(() => bbStore.tick, async () => {
   if (bbStore.lastProjectUid && bbStore.lastProjectUid !== projectUid.value) return
   await loadList()
   if (selectedId.value) await loadEntry(selectedId.value)
 })
 
-// Reload the list when the user switches projects — this page is per-project.
+// Project switch — per-project page.
 watch(projectUid, async () => {
   selectedId.value = ''
   selected.value = null
@@ -254,235 +285,223 @@ watch(projectUid, async () => {
 
 onMounted(async () => {
   await loadList()
-  // Auto-select the newest entry on first open — a page that opens to a blank right pane every time
-  // is one extra click for the common "read yesterday's note" motion.
   if (entries.value.length > 0 && !selectedId.value) selectEntry(entries.value[0].entryId)
 })
 onUnmounted(() => { mermaidRenderSeq++ })
 </script>
 
 <template>
-  <ModulePage layout="fill" class="bb-page">
+  <div class="bb-module">
     <div v-if="!hasProject" class="bb-empty cc-empty-inline">
       <i class="pi pi-lock" /> Open or create a project first.
     </div>
 
-    <div v-else class="bb-split">
-      <!-- Entry list -->
-      <aside class="bb-list">
-        <div class="bb-list-head">
-          <span class="bb-list-title">Entries</span>
-          <button class="cc-btn cc-btn-primary cc-btn-dense" @click="beginNew"
-                  v-tooltip.top="'Start a new blackboard entry'">
-            <i class="pi pi-plus" /> New
-          </button>
-        </div>
-        <div v-if="listLoading" class="bb-list-empty cc-muted cc-fs-xs">Loading…</div>
-        <div v-else-if="entries.length === 0" class="bb-list-empty cc-muted cc-fs-xs">
-          No entries yet. Claude can create them via MCP, or start one here.
-        </div>
-        <ul v-else class="bb-list-items">
-          <li v-for="e in entries" :key="e.entryId"
-              class="bb-list-item"
-              :class="{ 'is-selected': e.entryId === selectedId }">
-            <button class="bb-list-btn cc-btn cc-btn-bare" @click="selectEntry(e.entryId)">
-              <span class="bb-list-item-title">{{ e.title || '(untitled)' }}</span>
-              <span class="bb-list-item-meta cc-fs-2xs cc-muted">
-                <span>{{ formatWhen(e.updatedAt) }}</span>
-                <span v-if="e.attachmentsCount > 0">
-                  · <i class="pi pi-paperclip" /> {{ e.attachmentsCount }}
-                </span>
-                <span v-if="e.current > 0">· v{{ e.current }}</span>
-              </span>
-            </button>
-          </li>
-        </ul>
-      </aside>
+    <template v-else>
+      <!-- Toolbar — mirrors ChainModule's top bar shape. -->
+      <div class="bb-bar cc-row cc-row-loose">
+        <button class="cc-btn cc-btn-primary cc-btn-dense" @click="beginNew"
+                v-tooltip.bottom="'Start a new blackboard entry'">
+          <i class="pi pi-plus" /> New entry
+        </button>
+        <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="loadList"
+                :disabled="listLoading"
+                v-tooltip.bottom="'Reload the list from disk'">
+          <i class="pi" :class="listLoading ? 'pi-spin pi-spinner' : 'pi-refresh'" /> Refresh
+        </button>
+        <span class="bb-bar-spacer" />
+      </div>
 
-      <!-- Entry pane -->
-      <section class="bb-pane">
-        <!-- Editor (new OR revise) -->
-        <template v-if="mode === 'edit-new' || mode === 'edit-existing'">
-          <div class="bb-pane-head cc-row cc-row-loose">
-            <input v-if="mode === 'edit-new'" v-model="draftTitle"
-                   class="bb-title-input" placeholder="Entry title"
-                   maxlength="200" type="text"
-                   v-tooltip.top="'Short label shown in the entry list (up to 200 chars)'" />
-            <span v-else class="bb-pane-title">{{ selected?.title }}</span>
-            <div class="bb-pane-actions">
+      <!-- Split: list left, entry right. Border-only divider, no floating panels. -->
+      <div class="bb-split">
+        <aside class="bb-list">
+          <SelectionTable class="bb-list-table"
+                          selection-mode="single"
+                          id-key="entryId"
+                          :columns="LIST_COLUMNS"
+                          :rows="entries"
+                          :model-value="selectedId"
+                          sort-storage-key="cc.blackboard.sort"
+                          :row-tooltip="e => e.entryId"
+                          @update:model-value="v => selectEntry(String(v ?? ''))">
+            <template #cell-title="{ row: e }">
+              <span class="bb-list-title">{{ e.title || '(untitled)' }}</span>
+            </template>
+            <template #cell-updatedAt="{ row: e }">
+              <span class="cc-muted cc-fs-2xs">{{ formatWhen(e.updatedAt) }}</span>
+            </template>
+            <template #cell-current="{ row: e }">
+              <span class="cc-muted cc-fs-2xs">{{ e.current > 0 ? `v${e.current}` : '—' }}</span>
+            </template>
+            <template #cell-attachmentsCount="{ row: e }">
+              <span v-if="e.attachmentsCount > 0" class="cc-fs-2xs cc-muted"
+                    v-tooltip.top="`${e.attachmentsCount} attachment${e.attachmentsCount === 1 ? '' : 's'}`">
+                <i class="pi pi-paperclip" /> {{ e.attachmentsCount }}
+              </span>
+            </template>
+            <template #empty>
+              <span class="cc-muted">
+                No entries yet. Claude can create them via MCP, or click <strong>New entry</strong>.
+              </span>
+            </template>
+          </SelectionTable>
+        </aside>
+
+        <section class="bb-pane">
+          <!-- Editor -->
+          <template v-if="mode === 'edit-new' || mode === 'edit-existing'">
+            <div class="bb-pane-head cc-row cc-row-loose">
+              <input v-if="mode === 'edit-new'" v-model="draftTitle"
+                     class="bb-title-input" placeholder="Entry title"
+                     maxlength="200" type="text"
+                     v-tooltip.bottom="'Short label shown in the entry list (up to 200 chars)'" />
+              <span v-else class="bb-pane-title">{{ selected?.title }}</span>
+              <span class="bb-bar-spacer" />
               <button class="cc-btn cc-btn-ghost cc-btn-dense" :disabled="savingDraft" @click="cancelEdit">
                 Cancel
               </button>
               <button class="cc-btn cc-btn-primary cc-btn-dense"
                       :disabled="savingDraft || !draftTitle.trim()"
                       @click="saveDraft"
-                      v-tooltip.top="mode === 'edit-existing' ? 'Save; previous version is snapshotted automatically' : 'Create this entry'">
+                      v-tooltip.bottom="mode === 'edit-existing' ? 'Save; previous version is snapshotted automatically' : 'Create this entry'">
                 <i class="pi" :class="savingDraft ? 'pi-spin pi-spinner' : 'pi-save'" />
                 {{ mode === 'edit-existing' ? 'Save revision' : 'Create entry' }}
               </button>
             </div>
-          </div>
-          <textarea v-model="draftContent"
-                    class="bb-editor"
-                    :placeholder="'Markdown. Mermaid diagrams via ```mermaid fences.'"
-                    spellcheck="false"
-                    v-tooltip.top="'Markdown body — a snapshot of the previous version is taken automatically on save'"></textarea>
-          <p class="bb-hint cc-muted cc-fs-2xs">
-            Trusted-source markdown (this project only). {{ (draftContent?.length ?? 0).toLocaleString() }} chars.
-          </p>
-        </template>
+            <textarea v-model="draftContent"
+                      class="bb-editor"
+                      :placeholder="'Markdown. Mermaid diagrams via ```mermaid fences.'"
+                      spellcheck="false"
+                      v-tooltip.bottom="'Markdown body — a snapshot of the previous version is taken automatically on save'"></textarea>
+            <p class="bb-hint cc-muted cc-fs-2xs">
+              Trusted-source markdown (this project only). {{ (draftContent?.length ?? 0).toLocaleString() }} chars.
+            </p>
+          </template>
 
-        <!-- Viewer -->
-        <template v-else-if="selected">
-          <div class="bb-pane-head">
-            <span class="bb-pane-title">{{ selected.title }}</span>
-            <span class="bb-pane-sub cc-fs-2xs cc-muted">
-              updated {{ formatWhen(selected.updatedAt) }}
-              <template v-if="selected.current > 0"> · v{{ selected.current }}</template>
-            </span>
-            <div class="bb-pane-actions">
+          <!-- Viewer -->
+          <template v-else-if="selected">
+            <div class="bb-pane-head cc-row cc-row-loose">
+              <span class="bb-pane-title">{{ selected.title }}</span>
+              <span class="bb-pane-sub cc-fs-2xs cc-muted">
+                updated {{ formatWhen(selected.updatedAt) }}
+                <template v-if="selected.current > 0"> · v{{ selected.current }}</template>
+              </span>
+              <span class="bb-bar-spacer" />
               <select v-if="selected.versions.length > 0"
-                      class="bb-versions cc-input-xs"
+                      class="cc-input-xs bb-versions"
                       :value="viewingVersion ?? ''"
                       @change="(ev) => {
                         const v = (ev.target as HTMLSelectElement).value
                         if (v === '') loadEntry(selected!.entryId)
                         else loadEntry(selected!.entryId, Number(v))
                       }"
-                      v-tooltip.top="'Preview an earlier version'">
+                      v-tooltip.bottom="'Preview an earlier version'">
                 <option value="">Current</option>
                 <option v-for="v in [...selected.versions].reverse()" :key="v" :value="v">v{{ v }}</option>
               </select>
               <button v-if="viewingVersion !== null"
                       class="cc-btn cc-btn-ghost cc-btn-dense"
                       @click="restoreVersion(viewingVersion!)"
-                      v-tooltip.top="'Restore this version as current; the current live content is snapshotted first'">
+                      v-tooltip.bottom="'Restore this version as current; the current live content is snapshotted first'">
                 <i class="pi pi-history" /> Restore v{{ viewingVersion }}
               </button>
               <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="beginEditExisting"
-                      v-tooltip.top="'Edit; a snapshot is taken automatically before saving'">
+                      v-tooltip.bottom="'Edit; a snapshot is taken automatically before saving'">
                 <i class="pi pi-pencil" /> Edit
               </button>
-              <ConfirmButton @confirm="onDelete" v-slot="{ armed, arm, confirm, cancel }">
-                <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-dense bb-del"
-                        @click="arm" v-tooltip.top="'Delete this entry (all versions)'">
-                  <i class="pi pi-trash" /> Delete
+              <ConfirmDeleteButton title="Delete this entry (all versions)"
+                                    armed-title="Click again to permanently delete"
+                                    @confirm="onDelete" />
+            </div>
+
+            <div v-if="entryLoading" class="cc-muted cc-fs-xs bb-pane-loading">Loading…</div>
+            <div v-else ref="paneRef" class="bb-body" v-html="paneHtml" />
+
+            <div v-if="selected.attachments.length > 0" class="bb-attach">
+              <div class="bb-attach-label cc-muted cc-fs-2xs">Attachments</div>
+              <div class="bb-attach-strip">
+                <button v-for="cid in selected.attachments" :key="cid"
+                        class="bb-attach-thumb"
+                        @click="focusCapture(cid)"
+                        v-tooltip.top="`${cid} — click to focus the pop-out viewer + restore the annotation overlay`">
+                  <img v-if="captureCache[cid]?.thumb" :src="captureCache[cid].thumb" :alt="cid" />
+                  <span v-else class="bb-attach-fallback"><i class="pi pi-image" /></span>
                 </button>
-                <template v-else>
-                  <button class="cc-btn cc-btn-danger cc-btn-dense" @click="confirm">
-                    <i class="pi pi-check" /> Delete for real
-                  </button>
-                  <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="cancel">
-                    <i class="pi pi-times" /> Cancel
-                  </button>
-                </template>
-              </ConfirmButton>
+              </div>
             </div>
-          </div>
-
-          <div v-if="entryLoading" class="cc-muted cc-fs-xs">Loading…</div>
-          <div v-else ref="paneRef" class="bb-body" v-html="paneHtml" />
-
-          <div v-if="selected.attachments.length > 0" class="bb-attach">
-            <div class="bb-attach-label cc-muted cc-fs-2xs">Attachments</div>
-            <div class="bb-attach-strip">
-              <button v-for="cid in selected.attachments" :key="cid"
-                      class="bb-attach-thumb cc-btn cc-btn-bare"
-                      @click="focusCapture(cid)"
-                      v-tooltip.top="`${cid} — click to focus in the pop-out viewer if one is open`">
-                <img v-if="captureCache[cid]?.frame" :src="captureCache[cid]!.frame" :alt="cid" />
-                <span v-else class="bb-attach-fallback"><i class="pi pi-image" /></span>
-              </button>
-            </div>
-          </div>
-        </template>
-
-        <!-- Empty right pane -->
-        <div v-else class="bb-pane-empty cc-muted">
-          <template v-if="entries.length === 0">
-            No entries in this project yet.
           </template>
-          <template v-else>
-            Pick an entry from the list, or click <strong>New</strong> to start one.
-          </template>
-        </div>
-      </section>
-    </div>
-  </ModulePage>
+
+          <div v-else class="bb-pane-empty cc-muted">
+            <template v-if="entries.length === 0">
+              No entries in this project yet.
+            </template>
+            <template v-else>
+              Pick an entry from the list, or click <strong>New entry</strong> to start one.
+            </template>
+          </div>
+        </section>
+      </div>
+    </template>
+  </div>
 </template>
 
 <style scoped>
-.bb-page { max-width: 100%; }
-.bb-empty { padding: 2rem 0; }
+/* Root — matches ChainModule shape: a full-height flex column, so the split fills the page and
+   the SelectionTable + entry pane each scroll on their own. */
+.bb-module {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--cc-bg);
+}
+.bb-empty { padding: 2rem 1.25rem; }
+
+.bb-bar {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface-1);
+  flex-shrink: 0;
+}
+.bb-bar-spacer { flex: 1 1 auto; }
 
 .bb-split {
-  display: grid;
-  grid-template-columns: 18rem 1fr;
-  gap: 1rem;
-  height: 100%;
+  flex: 1 1 auto;
+  display: flex;
   min-height: 0;
 }
 
 /* ── entry list ─────────────────────────────────────────────────────────────── */
 .bb-list {
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-md);
-  background: var(--cc-surface-1);
+  width: 22rem;
+  border-right: 1px solid var(--cc-border);
   display: flex; flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
-.bb-list-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid var(--cc-border);
-}
-.bb-list-title { font-weight: 600; font-size: var(--cc-fs-md); }
-.bb-list-empty { padding: 0.75rem 0.6rem; }
-.bb-list-items {
-  list-style: none; margin: 0; padding: 0;
-  overflow-y: auto; min-height: 0;
-}
-.bb-list-item + .bb-list-item { border-top: 1px solid var(--cc-border); }
-.bb-list-item.is-selected { background: var(--cc-surface-2); }
-.bb-list-btn {
-  display: flex; flex-direction: column; gap: 0.15rem;
-  width: 100%; padding: 0.45rem 0.6rem; text-align: left;
-}
-.bb-list-btn:hover { background: var(--cc-surface-2); }
-.bb-list-item-title {
-  font-size: var(--cc-fs-sm); color: var(--cc-text);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.bb-list-item-meta { display: flex; align-items: center; gap: 0.25rem; }
+.bb-list-table { flex: 1 1 auto; min-height: 0; }
+.bb-list-title { color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── entry pane ─────────────────────────────────────────────────────────────── */
 .bb-pane {
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-md);
-  background: var(--cc-surface-1);
+  flex: 1 1 auto;
   padding: 0.75rem 1rem;
   display: flex; flex-direction: column;
   min-height: 0;
   overflow: hidden;
 }
-/* + .cc-row-loose — only the head's own chrome (border/padding). */
+/* + .cc-row-loose — only the head's chrome (border / padding) is this class's. */
 .bb-pane-head {
   padding-bottom: 0.5rem; margin-bottom: 0.5rem;
   border-bottom: 1px solid var(--cc-border);
 }
-.bb-pane-title { font-weight: 600; font-size: var(--cc-fs-lg); flex: 0 1 auto; }
-.bb-pane-sub { flex: 1 1 auto; }
-.bb-pane-actions { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+.bb-pane-title { font-weight: 600; font-size: var(--cc-fs-lg); }
+.bb-pane-sub { flex: 0 0 auto; }
 .bb-pane-empty { padding: 1.5rem 0; text-align: center; }
+.bb-pane-loading { padding: 1rem 0; }
 
-.bb-versions { padding: 0.15rem 0.3rem; min-width: 5.5rem; }
-.bb-del :deep(.pi) { color: var(--cc-sev-fail); }
+.bb-versions { min-width: 5.5rem; }
 
-.bb-title-input {
-  flex: 1 1 100%;
-  font-size: var(--cc-fs-lg);
-  padding: 0.3rem 0.4rem;
-}
+.bb-title-input { flex: 1 1 100%; }
 .bb-editor {
   flex: 1 1 auto;
   min-height: 20rem;
@@ -498,7 +517,6 @@ onUnmounted(() => { mermaidRenderSeq++ })
   flex: 1 1 auto;
   overflow-y: auto;
   color: var(--cc-text);
-  font-size: var(--cc-fs-md);
   line-height: 1.55;
   padding-right: 0.5rem;
 }
@@ -514,7 +532,6 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-body :deep(a) { color: var(--cc-accent); }
 .bb-body :deep(code) {
   font-family: var(--cc-mono);
-  font-size: 0.9em;
   background: var(--cc-surface-2);
   padding: 0 4px;
   border-radius: var(--cc-radius-xs);
@@ -550,12 +567,15 @@ onUnmounted(() => { mermaidRenderSeq++ })
 }
 .bb-attach-label { margin-bottom: 0.3rem; }
 .bb-attach-strip { display: flex; gap: 0.4rem; overflow-x: auto; }
+/* Bare bordered picture button — canonical square thumbnail (same shape Kiwi's row uses). */
 .bb-attach-thumb {
   width: 4rem; height: 4rem; padding: 0;
   background: #000;
+  border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
   overflow: hidden;
   flex-shrink: 0;
+  cursor: pointer;
 }
 .bb-attach-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .bb-attach-fallback {
@@ -563,5 +583,5 @@ onUnmounted(() => { mermaidRenderSeq++ })
   display: flex; align-items: center; justify-content: center;
   color: var(--cc-text-dim);
 }
-.bb-attach-thumb:hover { outline: 1px solid var(--cc-kiwi); }
+.bb-attach-thumb:hover { border-color: var(--cc-kiwi); }
 </style>
