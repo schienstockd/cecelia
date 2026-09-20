@@ -731,8 +731,13 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
     Flow: read the current entry with `read_blackboard_entry` first, propose the change to the
     user, THEN call this with the FULL new `content_md` (not a diff). `attach_capture_ids` is
     optional — OMIT to keep the entry's existing attachment set; pass an explicit list (possibly
-    empty) to REPLACE it. `note` is a short changelog line for a future history view; safe to
-    include but not user-visible today.
+    empty) to REPLACE it. Attachments are versioned per-snapshot: a later read at `version=N`
+    returns the attachment set that was live when v<N> was captured. `note` is a short changelog
+    line for a future history view; safe to include but not user-visible today.
+
+    No-op skip: if both `content_md` AND the resolved attachment list are byte-for-byte the same
+    as the current live state, the server returns `unchanged:true` and does NOT create a
+    snapshot — resending the same payload doesn't clutter the history.
 
     404 if the entry doesn't exist. Use `create_blackboard_entry` for a brand-new entry."""
     return _client.revise_blackboard_entry(project_uid, entry_id, content_md,

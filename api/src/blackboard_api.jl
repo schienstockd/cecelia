@@ -96,7 +96,7 @@ _next_bb_snapshot_version(uid, id) =
     (vs = _bb_snapshot_versions(uid, id); isempty(vs) ? 1 : maximum(vs) + 1)
 
 # One meta.json write, called from every mutation so the field order + defaults stay in one place.
-function _write_bb_meta!(uid::AbstractString, id::AbstractString; title, createdAt, updatedAt, current, attachments)
+function _write_bb_meta!(uid::AbstractString, id::AbstractString; title, createdAt, updatedAt, current, attachments, snapshots = Any[])
     dir = _bb_entry_dir(uid, id)
     write_json_atomic(joinpath(dir, "meta.json"), Dict{String,Any}(
         "entryId"     => id,
@@ -105,6 +105,12 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString; title, created
         "updatedAt"   => updatedAt,
         "current"     => current,          # snapshot version the LIVE entry.md reflects (0 = never snapshotted)
         "attachments" => attachments,
+        # Per-version attachment record. Every element = `{version, attachments, updatedAt}` for the
+        # state that was CURRENT at the moment the snapshot fired. Attachments aren't stored in the
+        # snapshot .md (they aren't part of the markdown), so `read_at_version` looks here to answer
+        # "what was attached when v<N> was live". Old meta.json files without this key ⇒ empty list;
+        # `read_at_version` falls back to current attachments (best it can do for a legacy entry).
+        "snapshots"   => snapshots,
     ))
 end
 function _read_bb_meta(uid::AbstractString, id::AbstractString)::Union{Dict{String,Any},Nothing}
@@ -128,6 +134,35 @@ function _snapshot_current!(uid::AbstractString, id::AbstractString)::Int
     snapdir = joinpath(dir, ".snapshots"); mkpath(snapdir)
     cp(live, joinpath(snapdir, "entry@v$(v).md"); force = false)
     v
+end
+
+# Append a per-version attachment record to a snapshots list. Kept as a helper so revise/restore
+# read one consistent shape rather than each hand-building the dict. The list may not exist yet
+# (first snapshot on an entry created before this field existed) — treat missing / wrong-typed
+# as empty and grow from there.
+function _append_snapshot_record(snapshots_in, version::Int, attachments, updatedAt::AbstractString)
+    snapshots = (snapshots_in isa AbstractVector) ? Any[copy(x) for x in snapshots_in] : Any[]
+    push!(snapshots, Dict{String,Any}(
+        "version"     => version,
+        "attachments" => attachments,
+        "updatedAt"   => String(updatedAt),
+    ))
+    snapshots
+end
+
+# Return the attachments recorded for `version` (from meta["snapshots"]). Nothing recorded ⇒
+# `nothing` so the caller can decide the fallback (typically: use current attachments).
+function _attachments_for_version(meta::AbstractDict, version::Int)
+    snapshots = get(meta, "snapshots", Any[])
+    snapshots isa AbstractVector || return nothing
+    for s in snapshots
+        s isa AbstractDict || continue
+        (Int(get(s, "version", -1)) == version) || continue
+        atts = get(s, "attachments", nothing)
+        atts isa AbstractVector || return nothing
+        return atts
+    end
+    nothing
 end
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
@@ -186,11 +221,19 @@ function api_blackboard_entry_get(req::HTTP.Request)
     dir = _bb_entry_dir(uid, id)
     versions = _bb_snapshot_versions(uid, id)
     content = ""
+    # Attachments in the response describe the STATE requested — the live set for a live read, the
+    # snapshot's own set for a `?version=` read (from meta["snapshots"]). Pre-A' entries have no
+    # snapshot record ⇒ fall back to current attachments (best we can do; the alternative is
+    # returning [] which reads as "attachments were removed", which is wrong).
+    attachments_live = get(meta, "attachments", Any[])
+    attachments_out = attachments_live
     v_asked = tryparse(Int, get(query, "version", ""))
     if v_asked !== nothing
         v_asked in versions ||
             return 404, JSON3.write((; error = "Snapshot version not found: $v_asked"))
         content = read(joinpath(dir, ".snapshots", "entry@v$(v_asked).md"), String)
+        recorded = _attachments_for_version(meta, v_asked)
+        recorded === nothing || (attachments_out = recorded)
     else
         live = joinpath(dir, "entry.md")
         content = isfile(live) ? read(live, String) : ""
@@ -202,7 +245,7 @@ function api_blackboard_entry_get(req::HTTP.Request)
         "current"     => Int(get(meta, "current", 0)),
         "updatedAt"   => String(get(meta, "updatedAt", "")),
         "versions"    => sort(versions),
-        "attachments" => get(meta, "attachments", Any[]),
+        "attachments" => attachments_out,
     )))
 end
 
@@ -250,12 +293,19 @@ end
     POST /api/blackboard/revise
 
 Body: `{ projectUid, entryId, content, note?: string, attachments?: [captureId, ...] }`
-Reply: `{ ok:true, version }`
+Reply: `{ ok:true, version }` — or `{ ok:true, version:<current>, unchanged:true }` on a no-op.
 
 Snapshots the CURRENT entry.md as v<N> (so nothing is lost), then overwrites with `content`. The
 optional `attachments` REPLACES the previous list (a revision is a self-contained write) — omit to
-keep the existing set. `note` is currently accepted for future changelog rendering but not stored
-until a Vue-side changelog view exists to display it (avoids writing a field nobody reads).
+keep the existing set. Attachments are versioned per-snapshot via `meta.snapshots[]` — a later
+`read_at_version` returns the attachment set that was live when v<N> was captured.
+
+**No-op skip.** If both `content` AND the resolved `attachments` list are byte-for-byte identical
+to the current live state, no snapshot is taken and the response carries `unchanged:true`. This
+keeps a duplicate v<N> from appearing in the history when a caller resends the same payload.
+
+`note` is currently accepted for future changelog rendering but not stored until a Vue-side
+changelog view exists to display it (avoids writing a field nobody reads).
 """
 function api_blackboard_revise(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -272,19 +322,35 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
     _valid_bb_content(content) ||
         return 400, JSON3.write((; error = "content exceeds $_BB_CONTENT_MAX_BYTES bytes"))
 
-    v = _snapshot_current!(uid, id)
     dir = _bb_entry_dir(uid, id)
-    write_atomic(joinpath(dir, "entry.md")) do io
+    live = joinpath(dir, "entry.md")
+    old_content = isfile(live) ? read(live, String) : ""
+    old_atts = get(meta, "attachments", Any[])
+    old_atts isa AbstractVector || (old_atts = Any[])
+    atts = haskey(body, :attachments) ?
+           _clean_attachments(uid, get(body, :attachments, nothing)) :
+           old_atts
+    # No-op skip: a revise with the same content AND the same attachments as the current live
+    # state is a redundant call — don't spend a snapshot on it. The response still resolves
+    # (`ok:true`) with the caller's expected shape so both a UI form and Claude get the same
+    # signal ("nothing needed changing"). Kept to normalized list equality: `_clean_attachments`
+    # already dedups + orders by first occurrence in the input, and `old_atts` came off disk in
+    # write order, so a compare-by-value works.
+    if content == old_content && Vector{Any}(atts) == Vector{Any}(old_atts)
+        return 200, JSON3.write((; ok = true, version = Int(get(meta, "current", 0)), unchanged = true))
+    end
+
+    v = _snapshot_current!(uid, id)
+    write_atomic(live) do io
         write(io, content)
     end
     ts  = string(Dates.now())
-    atts = haskey(body, :attachments) ?
-           _clean_attachments(uid, get(body, :attachments, nothing)) :
-           get(meta, "attachments", Any[])
+    snapshots = _append_snapshot_record(
+        get(meta, "snapshots", Any[]), v, old_atts, String(get(meta, "updatedAt", ts)))
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
-        updatedAt = ts, current = v, attachments = atts)
+        updatedAt = ts, current = v, attachments = atts, snapshots = snapshots)
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -304,8 +370,10 @@ Body: `{ projectUid, entryId, version }`
 Reply: `{ ok:true, version }` (the version the LIVE entry now reflects, i.e. `version`)
 
 Snapshots CURRENT live content first (so the user's un-snapshotted edits are still restorable)
-then copies snapshot `version` over `entry.md` and bumps `current` to `version`. User-driven,
-not on the MCP surface — a Claude session must ask the user to restore.
+then copies snapshot `version` over `entry.md` and bumps `current` to `version`. Attachments are
+restored to the set recorded for `version` (from `meta.snapshots[]`), so both halves of the
+entry's state — the markdown AND the attached captures — travel together across a restore.
+User-driven, not on the MCP surface — a Claude session must ask the user to restore.
 """
 function api_blackboard_restore(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -329,16 +397,26 @@ function api_blackboard_restore(body_bytes::Vector{UInt8})
 
     # Snapshot the un-snapshotted live edits BEFORE restoring, so the user can undo the restore.
     # This is the "restore loses un-snapshotted edits" fix (Decision 21 in the plan).
-    _snapshot_current!(uid, id)
+    old_atts_live = get(meta, "attachments", Any[])
+    old_atts_live isa AbstractVector || (old_atts_live = Any[])
+    v_new = _snapshot_current!(uid, id)
     dir = _bb_entry_dir(uid, id)
     cp(joinpath(dir, ".snapshots", "entry@v$(v_asked).md"),
        joinpath(dir, "entry.md"); force = true)
     ts = string(Dates.now())
+    # Restore should also restore the attachment set that was recorded for v_asked (that's the
+    # WHOLE state of that version — not just the markdown). Falls back to the current attachments
+    # only for legacy entries with no per-version record; a modern entry always has one because
+    # revise/restore both call _append_snapshot_record.
+    restored_atts = _attachments_for_version(meta, v_asked)
+    restored_atts === nothing && (restored_atts = old_atts_live)
+    snapshots = _append_snapshot_record(
+        get(meta, "snapshots", Any[]), v_new, old_atts_live, String(get(meta, "updatedAt", ts)))
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v_asked,
-        attachments = get(meta, "attachments", Any[]))
+        attachments = restored_atts, snapshots = snapshots)
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
     entry["current"]   = v_asked
@@ -383,6 +461,26 @@ function api_blackboard_prune(body_bytes::Vector{UInt8})
         p = joinpath(snapdir, "entry@v$(v).md")
         try; rm(p; force = true); pruned += 1; catch e
             @warn "blackboard/prune: rm failed" path = p exception = e
+        end
+    end
+    # Drop the meta snapshot records for the pruned versions too — a dangling record with no .md
+    # file behind it would show up as attachments-for-a-version that can't actually be read.
+    if pruned > 0
+        meta = _read_bb_meta(uid, id)
+        if meta !== nothing
+            snapshots_prev = get(meta, "snapshots", Any[])
+            if snapshots_prev isa AbstractVector
+                pruned_set = Set(prune_ids)
+                snapshots = Any[s for s in snapshots_prev
+                                if !(s isa AbstractDict) || !(Int(get(s, "version", -1)) in pruned_set)]
+                _write_bb_meta!(uid, id;
+                    title = String(get(meta, "title", "")),
+                    createdAt = String(get(meta, "createdAt", "")),
+                    updatedAt = String(get(meta, "updatedAt", "")),
+                    current = Int(get(meta, "current", 0)),
+                    attachments = get(meta, "attachments", Any[]),
+                    snapshots = snapshots)
+            end
         end
     end
     pruned > 0 && broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))

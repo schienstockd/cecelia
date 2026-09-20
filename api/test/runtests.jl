@@ -9285,8 +9285,10 @@ end
         uid = "TESTBB"; mkpath(joinpath(tmp, uid))
         # A captured frame lives on disk so an attachment reference resolves against something real.
         # `_clean_attachments` reads the captures dir directly; we just need the folder shape.
-        cap_id = "cap-20260101T000000-aaaaaa"
+        cap_id  = "cap-20260101T000000-aaaaaa"
+        cap_id2 = "cap-20260101T000001-bbbbbb"      # a second, for versioned-attachments tests
         mkpath(joinpath(tmp, uid, "captures", cap_id))
+        mkpath(joinpath(tmp, uid, "captures", cap_id2))
         w(path, b) = _post(path, b)
 
         # ── Guards on create ─────────────────────────────────────────────────
@@ -9336,29 +9338,54 @@ end
         @test String(e.attachments[1]) == cap_id
 
         # ── Revise → v1 snapshot of prior content, live now = new content ──
+        # Second revise flips attachments only (from [cap_id] to [cap_id2]) — this verifies both
+        # halves of the state (markdown AND attachments) are versioned, so a later read at v2 must
+        # see the OLD attachments (cap_id), not the current (cap_id2).
         st_r1, body_r1 = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
             "content"=>"# Working notes (v2)\n\nNow with a Mermaid diagram."))
         @test st_r1 == 200
         @test JSON3.read(body_r1).version == 1
-        # Snapshot v1 is the OLD content; live is the new.
+        # Snapshot v1 is the OLD content; live is the new. Attachments unchanged so v1's recorded
+        # atts equal the live atts (still [cap_id]).
         st_v1, body_v1 = api_blackboard_entry_get(HTTP.Request("GET",
             "/api/blackboard/entry?projectUid=$uid&entryId=$eid&version=1"))
         @test st_v1 == 200
         @test occursin("Working notes\n", String(JSON3.read(body_v1).entry.content))
+        @test String(JSON3.read(body_v1).entry.attachments[1]) == cap_id
         st_live, body_live = api_blackboard_entry_get(HTTP.Request("GET",
             "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
         @test occursin("(v2)", String(JSON3.read(body_live).entry.content))
         @test JSON3.read(body_live).entry.current == 1
 
-        # Second revise → v2 (of pre-revise content), current = 2.
-        w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
-            "content"=>"# Working notes (v3)"))
+        # Second revise: same content is fine, DIFFERENT attachments. Must NOT be a no-op — the
+        # attachment change is a real diff — and v2's recorded attachments must be the OLD set
+        # ([cap_id]), not the new one.
+        st_r2, body_r2 = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
+            "content"=>"# Working notes (v3)", "attachments"=>[cap_id2]))
+        @test st_r2 == 200
+        @test JSON3.read(body_r2).version == 2
         st_l2, body_l2 = api_blackboard_entry_get(HTTP.Request("GET",
             "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
         @test JSON3.read(body_l2).entry.current == 2
         @test sort(collect(JSON3.read(body_l2).entry.versions)) == [1, 2]
+        @test String(JSON3.read(body_l2).entry.attachments[1]) == cap_id2  # current = new
+        st_v2, body_v2 = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid&version=2"))
+        @test String(JSON3.read(body_v2).entry.attachments[1]) == cap_id   # v2 record = OLD
+
+        # ── No-op revise: same content, same attachments ⇒ unchanged:true, no new snapshot ─
+        st_no, body_no = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
+            "content"=>"# Working notes (v3)", "attachments"=>[cap_id2]))
+        @test st_no == 200
+        @test JSON3.read(body_no).unchanged == true
+        @test JSON3.read(body_no).version == 2
+        st_l_noop, body_l_noop = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        # Version list did NOT grow — a repeat-with-same-payload doesn't spend a snapshot.
+        @test sort(collect(JSON3.read(body_l_noop).entry.versions)) == [1, 2]
 
         # ── Restore v1 → snapshots current first (as v3), then restores v1 ──
+        # Restore brings back BOTH the markdown AND the attachment set recorded for v1 (cap_id).
         st_re, body_re = w(api_blackboard_restore, Dict("projectUid"=>uid, "entryId"=>eid,
             "version"=>"1"))
         @test st_re == 200
@@ -9366,10 +9393,15 @@ end
         st_after, body_after = api_blackboard_entry_get(HTTP.Request("GET",
             "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
         e_after = JSON3.read(body_after).entry
-        @test occursin("Working notes\n", String(e_after.content))    # matches v1
+        @test occursin("Working notes\n", String(e_after.content))    # matches v1's content
         @test e_after.current == 1
+        @test String(e_after.attachments[1]) == cap_id                 # matches v1's atts
         # The un-snapshotted-before-restore content is now v3 — critical: we can undo the restore.
         @test sort(collect(e_after.versions)) == [1, 2, 3]
+        # And v3 records the STATE THAT WAS LIVE right before this restore fired — cap_id2.
+        st_v3, body_v3 = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid&version=3"))
+        @test String(JSON3.read(body_v3).entry.attachments[1]) == cap_id2
 
         # Restore unknown version ⇒ 404
         @test w(api_blackboard_restore, Dict("projectUid"=>uid, "entryId"=>eid,
