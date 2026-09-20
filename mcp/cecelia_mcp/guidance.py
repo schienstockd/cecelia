@@ -154,6 +154,18 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   Save), so the user sees exactly where you're pointing. Use when there's no id — a region the \
   segmentation missed, or circling something on a shared frame. If the user hasn't shared a \
   frame yet, ASK them to (Share button in the viewer panel) rather than making up a captureId.
+- `mark_tile(image_uid, cell_id, label?, ttl_s?)` — highlight ONE grid tile (`"B3"`) when there is \
+  no segmented object to name and no capture in hand. Pairs with `get_landscape(...)`: read the \
+  landscape's category per tile, then point at the tile that matters. Coarser than mark_cells / \
+  mark_tracks — use when a REGION is the answer, not an object.
+
+ON THE LANDSCAPE HEATMAP. `get_landscape(image_uid, value_name, t?, z?)` returns the user's \
+current LANDSCAPE OVERLAY — a cheap categorical map over the viewer's grid tiles \
+(`dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`). Read it BEFORE reading raw \
+pixels from a capture — it's a rough semantic prior at tile resolution, not a segmentation. Use \
+it to say "row 2 is dominated by bright-textured tiles" or to pick a tile for `mark_tile`. If \
+the landscape hasn't been computed (`{landscape: null}`), the overlay is off in the viewer — \
+say so and ask the user to toggle it if you need the map; don't invent tiles.
 
 Nothing gets saved by pointing; if the finding is worth keeping, propose a board or a notebook.
 

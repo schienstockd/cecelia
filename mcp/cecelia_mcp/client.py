@@ -109,6 +109,8 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/cells"),    # outline a set of label ids (cells) on the mask
         ("POST", "/api/viewer/marks/ui"),       # point at a UI anchor (a data-guide id or a nav path)
         ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a stored capture (cap-…) — 0..1 frame-relative coords
+        ("POST", "/api/viewer/marks/tile"),     # highlight ONE landscape/grid tile (e.g. "B3") — no overlay geometry, the grid is the shape
+        ("GET",  "/api/viewer/landscape"),      # read the last-published landscape heatmap for (image, t, z); browser publishes, MCP reads
         # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
         # + auth token to the project so PR #2's Julia writer can push a capture-arrived
         # notification directly. Auto-called by middleware on any tool with a project_uid so a
@@ -471,6 +473,24 @@ class CeceliaClient:
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/freeform", body=body)
+
+    def mark_tile(self, project_uid: str, image_uid: str, cell_id: str,
+                  label: str = "", ttl_s: int | None = None):
+        # Landscape/grid TILE mark — spreadsheet-style cell id (`B3`) into the same coordinate
+        # system GridOverlay + LandscapeOverlay paint. No overlay geometry; the grid is the shape.
+        body: dict = {"projectUid": project_uid, "imageUid": image_uid, "cellId": cell_id}
+        if label: body["label"] = label
+        if ttl_s is not None: body["ttl_s"] = ttl_s
+        return self._request("POST", "/api/viewer/marks/tile", body=body)
+
+    def get_landscape(self, project_uid: str, image_uid: str, value_name: str,
+                      t: int = -1, z: int = -1):
+        # Read the landscape heatmap the frontend last published for this (image, t, z). GET.
+        # `t` / `z` default to -1 which the backend treats as "unspecified" (2D image or a
+        # collapsed slice); a match against a published landscape uses the exact same key.
+        qs = {"projectUid": project_uid, "imageUid": image_uid,
+              "valueName": value_name, "t": str(t), "z": str(z)}
+        return self._request("GET", "/api/viewer/landscape", params=qs)
 
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(
