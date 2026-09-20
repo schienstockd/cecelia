@@ -4557,6 +4557,13 @@ watch(() => settings.viewerLandscape, on => {
 })
 watch(() => settings.viewerGridDensity, () => { if (settings.viewerLandscape) recomputeLandscape() })
 watch([shownT, zPlane], () => { if (settings.viewerLandscape) recomputeLandscape() })
+// Recompute on pan / zoom too — the landscape is in VIEWPORT coords (same rule as GridOverlay:
+// "B3 is a quarter of what's currently visible"), so a camera move changes what the tiles cover.
+// Without this the tile fills sit over the OLD viewport region while the underlying image scrolls
+// past — the "funky" symptom Dominik flagged 2026-09-20. Debounced by the shared sink so a scroll
+// gesture emits one recompute at the release cadence rather than per-wheel-tick.
+watch(() => [cam.value.panX, cam.value.panY, cam.value.dist, cam.value.yaw, cam.value.pitch],
+      () => { if (settings.viewerLandscape) recomputeLandscape() })
 function onReannotate(payload: {
   captureId: string; frameDataUrl: string; overlay: OverlayMark[]
 }) {
