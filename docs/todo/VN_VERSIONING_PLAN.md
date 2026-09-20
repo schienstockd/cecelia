@@ -264,12 +264,56 @@ pinning is a data-only change.
 UI decision + memo: [[project-vn-versioning-p3-pinning]] — per-plan toggle, default
 resolve-at-run, surface pinned versions when frozen.
 
-**Not shipped:** gating pin semantics (still `latest`-follows). Under Q2 (Bucket B stays flat),
-gating stores are single-file per (image, vn), and every gate reads the current `_latest` value
-of the underlying label store's cell IDs. If a task minted a new label vN via the toggle, the
-gate silently applies against the new cells' IDs. Chain-level pinning covers chain runs; a
-standalone gate re-open against a re-segmented image is where the risk sits. Fold into a P3
-follow-up once frontend UI lands or when a concrete break surfaces.
+### P3b — Gating pin: authored-labels breadcrumb + drift banner
+
+**Problem.** Under Q2 (Bucket B stays flat) `gating/{vn}.json` is single-file per (image, vn); every
+gate reads the current `_latest` of the underlying `labelProps/{vn}.h5ad`. If a task minted a new
+labels vN via the `keep_previous_version` toggle (or an autonomous run forced it on), the gate
+silently applies against the new cells' IDs. Chain-level P3 pinning covers *chain* runs — a standalone
+gate re-open against a re-segmented image is what this section handles.
+
+**Shape — passive breadcrumb + drift banner** (mirrors P3's "default resolve-at-run, surface pinned
+versions when frozen").
+
+- On every save, stamp `authored_labels_version: "vN"` into `gating/{vn}.json` — the labels vN that
+  was current for this map's value_name at save time. Automatic; no user interaction at author time.
+- On load, the gating module surfaces the breadcrumb + the current `_latest`. When they differ, a
+  small drift banner appears with two actions: **Use pinned vN** (evaluate against
+  `authored_labels_version` for this session; `pi-lock` badge in the pop-manager header) and
+  **Re-eval on _latest** (evaluate against `_latest`; the next save re-stamps the breadcrumb
+  forward).
+- Default read stays `_latest`. The pin only kicks in if the user picks "Use pinned vN".
+- Backward-compat: a pre-breadcrumb file has no `authored_labels_version` → no banner, `_latest`
+  semantics unchanged.
+- Autonomous safety: a Claude running a task with `keep_previous_version` on bumps labels vN; the
+  breadcrumb is now stale, the human sees the banner next open — the guardrail is that they *see*
+  the drift, not that the tool prevents it.
+
+**Touchpoints.**
+
+- `app/src/gating/popmanager/population.jl` — `PopulationMap` grows two optional fields:
+  `authored_labels_version::Union{String,Nothing}` (persisted breadcrumb) and
+  `pinned_labels_version::Union{String,Nothing}` (session-only, not persisted).
+- `app/src/gating/popmanager/persistence.jl` — `to_tree` emits `authored_labels_version` when set;
+  `from_tree` reads it. New `save_pop_map!(m, img)` overload stamps
+  `resolve_version(img, :label_props, m.value_name)` before writing.
+- `api/src/gating_api.jl` — `_live_map(img, vn, pop_type; labels_version=nothing)` and every
+  `label_props(img; value_name=vn)` call in the file thread the optional `version` kwarg. Every
+  gating GET/POST accepts an optional `labelsVersion` query/body param. `api_gating_popmap` returns
+  `authoredLabelsVersion` + `currentLatestLabelsVersion` so the frontend can decide banner rendering.
+- Frontend — gating module renders the drift banner from state; the two buttons set/clear a
+  session ref that stamps `labelsVersion=vN` on every subsequent gating request. `pi-lock` badge
+  in the pop-manager header when the session pin is on (same badge convention as the ChainTaskNode
+  version pin).
+- Tests — persistence round-trip with the field; legacy file without the field still loads; the
+  membership endpoint respects `labelsVersion`; a save after a labels bump moves the breadcrumb
+  forward; the drift-detection helper returns the right verdict for (matching, differing, legacy)
+  cases.
+
+**Not this section.** No auto-freeze on re-segmentation writes (would hide the surprise from the
+human who benefits from seeing it). No per-labels-version gating files (Q2 stays intact —
+`gating/{vn}.json` remains single-file per (image, vn), the pin is a *read-time* choice, not a new
+storage axis).
 
 ### P4 — One-shot migration for existing projects
 

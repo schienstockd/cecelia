@@ -578,3 +578,68 @@ end
     @test pop_at(load_pop_map(td, "B"), "/cd4").gate isa PolygonGate
 end
 
+# ── P3b — authored_labels_version breadcrumb round-trip ──────────────────────
+# Full plan: docs/todo/VN_VERSIONING_PLAN.md → P3b. The breadcrumb is the *drift-detection input*
+# for the gating module's banner — the field itself is inert; the module compares it against the
+# image's current `_latest` labels version and renders the banner when they differ. Round-trip on
+# disk + legacy-file (absent-field) load are the invariants this testset guards.
+@testset "P3b breadcrumb: authored_labels_version round-trips + absent on legacy files" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
+
+    # A freshly-built map has no breadcrumb — a caller that never stamps it (a hand-built map in a
+    # test, or the task_dir save form with no image to resolve against) writes a sidecar with no
+    # `authored_labels_version` key.
+    td = mktempdir(); save_pop_map!(m, td)
+    raw = JSON3.read(read(gating_path(td, "B"), String), Dict{String,Any})
+    @test !haskey(raw, "authored_labels_version")
+    @test load_pop_map(td, "B").authored_labels_version === nothing
+
+    # Explicit stamp + round-trip
+    m.authored_labels_version = "v3"
+    save_pop_map!(m, td)
+    raw = JSON3.read(read(gating_path(td, "B"), String), Dict{String,Any})
+    @test raw["authored_labels_version"] == "v3"
+    @test load_pop_map(td, "B").authored_labels_version == "v3"
+
+    # Legacy file (predates the breadcrumb): no key on disk ⇒ nothing after load, and every downstream
+    # drift check sees `authored === nothing` and skips the banner. Confirms the schema stays additive.
+    write(gating_path(td, "B"), """{"value_name":"B","pop_type":"flow","spatial_unit":"px","populations":[]}""")
+    @test load_pop_map(td, "B").authored_labels_version === nothing
+end
+
+# ── P3b — save_pop_map!(m, img) stamps the current _latest labels version ────
+# Guardrail: an autonomous run that bumps labels vN must leave a breadcrumb-current gating file
+# UNTOUCHED (the write path is separate). But if a user *edits* gates after the bump, the next save
+# advances the breadcrumb — the drift banner disappears on that image because the gate now belongs
+# to the new vN by author's decision. This tests the *forward-advance on save* mechanic in isolation.
+@testset "P3b breadcrumb: save_pop_map!(m, img) stamps from image's current _latest labels vN" begin
+    td = mktempdir()
+    img = CciaImage(uid="X", dir=td)
+    # legacy bare scalar ⇒ implicit v1
+    img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
+    save_pop_map!(m, img)
+    @test m.authored_labels_version == "v1"                     # legacy → implicit v1
+
+    # Simulate a labels bump — the writer path is separate (P2 infra), we just emulate the on-disk
+    # state a `keep_previous_version` reprocess would leave: label_props for "B" is now a versioned
+    # entry with _latest=v2. The stamped-v1 file on disk stays untouched.
+    img.label_props["B"] = Dict{String,Any}("v1" => "B.h5ad", "v2" => "B_v2.h5ad", "_latest" => "v2")
+    raw = JSON3.read(read(gating_path(td, "B"), String), Dict{String,Any})
+    @test raw["authored_labels_version"] == "v1"                # file untouched → banner would fire
+
+    # A subsequent gate edit + save advances the breadcrumb — the user has now authored against v2.
+    add_pop!(m, "cd8"; parent="/cd4", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0), colour="#0f0")
+    save_pop_map!(m, img)
+    @test m.authored_labels_version == "v2"
+    raw = JSON3.read(read(gating_path(td, "B"), String), Dict{String,Any})
+    @test raw["authored_labels_version"] == "v2"
+
+    # A value_name with no label_props yet ⇒ save leaves the breadcrumb alone (nothing to resolve).
+    m2 = PopulationMap(pop_type="flow", value_name="NEW")
+    save_pop_map!(m2, img)
+    @test m2.authored_labels_version === nothing
+end
+

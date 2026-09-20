@@ -68,6 +68,13 @@ function _resolve_vn(img::CciaImage, requested::AbstractString)::String
     (!isempty(requested) && haskey(img.label_props, requested)) ? String(requested) : _active_vn(img)
 end
 
+# P3b: read the optional `labelsVersion` query/body param. Empty ⇒ `nothing` (follow `_latest`); a
+# concrete `vN` string pins reads to that labels version for this request. The gating module sends
+# it on every request after the user picks "Use pinned vN" on the drift banner; not sent (or set to
+# "") after they pick "Re-eval on _latest" or on a fresh session with no drift.
+_labels_version_pin(q::AbstractDict)::Union{String,Nothing} =
+    (v = String(get(q, "labelsVersion", "")); isempty(v) ? nothing : v)
+
 # true when the image actually has a labelProps table (i.e. it has been segmented/measured). An
 # image that hasn't been segmented yet has none — `versioned_keys` is empty — so gating/membership
 # endpoints that read the cell table must degrade gracefully rather than let `label_props` throw a
@@ -108,8 +115,10 @@ function _matching_channel_version(versions::AbstractDict, n_channels::Int)::Str
 end
 
 # fetch label + cols for a value_name (the recompute/pop_df column provider).
-# Uses the label_props chain idiom (docs/DATAMODEL.md) — read left-to-right.
-_fetch(img, vn) = cols -> (label_props(img; value_name = vn) |> lp -> select_cols(lp, cols) |> as_df)
+# Uses the label_props chain idiom (docs/DATAMODEL.md) — read left-to-right. `version` threads the
+# P3b session pin (`labelsVersion` query param, `nothing` = `_latest`) into the reader so gate
+# membership + plot data both evaluate against the pinned labels vN.
+_fetch(img, vn; version=nothing) = cols -> (label_props(img; value_name = vn, version = version) |> lp -> select_cols(lp, cols) |> as_df)
 
 # track-table motility (var) columns — gateable per-track axes that need no per-cell aggregation.
 _track_motility_cols(img, vn) = (p = img_track_props_path(img, vn);
@@ -136,12 +145,18 @@ _track_fetch(img, vn) = cols -> track_props(img; value_name = vn,
 # load + recompute a map (membership ready). For `flow`/`live` the data source is the cell table
 # and the transient pick-selection pop is injected so it is queryable like any population; for
 # `track` the source is the per-track table and the pick selection (cell labels, not track_ids)
-# does not apply, so it is not injected.
-function _live_map(img, vn, pop_type)
+# does not apply, so it is not injected. `labels_version` is the P3b session pin — when set, both
+# gate membership and (via the same map) subsequent plot reads evaluate at that labels vN; the map
+# also carries the pin so a downstream `_plot_cols_stored` doesn't have to re-thread the query
+# param. `nothing` = follow `_latest`.
+function _live_map(img, vn, pop_type; labels_version::Union{String,Nothing}=nothing)
     m = load_pop_map(img; value_name = vn, pop_type = pop_type)
+    m.pinned_labels_version = labels_version
     is_track = _track_grained(pop_type)
     is_track || _inject_pick_pop!(m, img)
-    recompute!(m, is_track ? _track_fetch(img, vn) : _fetch(img, vn))
+    # `_track_fetch` reads the per-track `.h5ad`, which is Bucket B keyed by (image, vn) — no
+    # labels-version axis for the track table itself; the pin still governs any cell-side reads.
+    recompute!(m, is_track ? _track_fetch(img, vn) : _fetch(img, vn; version = labels_version))
     m
 end
 
@@ -173,6 +188,10 @@ end
 # image. Deliberately the SAME three conditions `recompute!` scales on (docs/todo/SPATIAL_GATE_UNITS_
 # PLAN.md decision 3), so the dots, the ticks and the gate outlines cannot end up in different units.
 # `centroid_t` is not spatial (`is_spatial_axis`) and stays a frame index.
+#
+# The labels vN pin does NOT enter here: `spatial_unit` + `physical_sizes` describe the *gate
+# geometry*, which is authored in the map's coordinate frame regardless of which labels version the
+# data comes from. A pin only changes which cells' XY get scaled, not the scale factor itself.
 function _axis_scale(img, vn, pop_type, col)::Float64
     is_spatial_axis(String(col)) || return 1.0
     m = load_pop_map(img; value_name = vn, pop_type = pop_type)
@@ -190,7 +209,8 @@ _axis_unit(img, vn, pop_type, col)::String =
 # read the raw x/y vectors, then put SPATIAL axes into the gates' unit. One wrapper over the stored-value
 # read so every consumer — the point cloud, the whole-dataset extents that drive the ticks, density —
 # gets the same unit from one place; the plotdata handler reads both through this.
-_plot_xy_raw(img, vn, pop_type, x, y, pop) = _xy_pair(_plot_cols_raw(img, vn, pop_type, [x, y], pop))
+_plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version=nothing) =
+    _xy_pair(_plot_cols_raw(img, vn, pop_type, [x, y], pop; labels_version = labels_version))
 
 # x/y are all-or-nothing: ONE of them missing means there is nothing to plot, and returning a full
 # vector beside an empty one would index past the end of the short one (a 500) in every consumer.
@@ -200,8 +220,8 @@ _xy_pair(v) = (isempty(v[1]) || isempty(v[2])) ? (Float64[], Float64[]) : (v[1],
 # property painted onto the 2D plot, FlowJo's colour-by-parameter). ONE read for all of them, because
 # `z[i]` has to be the SAME CELL as `(x[i], y[i])`: a second, separate read for z would align only by
 # luck (any difference in the population filter or row order silently mis-colours every dot).
-function _plot_cols_raw(img, vn, pop_type, cols, pop)
-    vs = _plot_cols_stored(img, vn, pop_type, cols, pop)
+function _plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing)
+    vs = _plot_cols_stored(img, vn, pop_type, cols, pop; labels_version = labels_version)
     [(s = _axis_scale(img, vn, pop_type, c); s == 1.0 ? v : v .* s) for (c, v) in zip(cols, vs)]
 end
 
@@ -213,7 +233,10 @@ end
 # pixels; `_plot_cols_raw` is the wrapper that converts spatial axes. Returns one vector per REQUESTED
 # column (duplicates allowed — the same measure on two axes reads once); a column this table doesn't
 # have comes back EMPTY, so the CALLER decides what missing means (see `_xy_pair` and `_plot_xyz`).
-function _plot_cols_stored(img, vn, pop_type, cols, pop)
+#
+# `labels_version` is the P3b session pin: `nothing` = follow `_latest`, a concrete `vN` reads
+# both the cell scatter and any pop-membership recompute at that labels version.
+function _plot_cols_stored(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing)
     cols = String.(cols)
     empty = [Float64[] for _ in cols]
     want = unique(cols)                                  # `select_cols` takes each column once
@@ -223,7 +246,7 @@ function _plot_cols_stored(img, vn, pop_type, cols, pop)
                          cell_measures = track_cell_measures(want, _track_free_cols(img, vn)))
         any(c -> c in names(tp), want) || return empty
         if !is_root(pop)
-            m = _live_map(img, vn, pop_type)
+            m = _live_map(img, vn, pop_type; labels_version = labels_version)
             has_pop(m, pop) || return empty
             keep = Set(cells_in_pop(m, pop))                 # gated track_ids
             tp = tp[[t in keep for t in tp.label], :]
@@ -232,9 +255,9 @@ function _plot_cols_stored(img, vn, pop_type, cols, pop)
     end
     # cell scatter — chain idiom: select the columns, push the population's label filter into
     # the reader (filter_rows), then materialise once.
-    lp = label_props(img; value_name = vn) |> select_cols(want)
+    lp = label_props(img; value_name = vn, version = labels_version) |> select_cols(want)
     if !is_root(pop)
-        m = _live_map(img, vn, pop_type)
+        m = _live_map(img, vn, pop_type; labels_version = labels_version)
         # the pop may have vanished since the client last rendered (e.g. a plot/highlight still
         # pointing at a pick selection that has since been cleared) — return empty data rather
         # than letting cells_in_pop throw a 500 ("pop_membership: not found: /Pick selection").
@@ -250,14 +273,14 @@ function _plot_cols_stored(img, vn, pop_type, cols, pop)
 end
 
 # transformed Float32 vectors for plotdata/density/plotmeta
-function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
-    xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop)
+function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing)
+    xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = labels_version)
     Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv))
 end
 
 # x/y PLUS the colour-by measure, from the one aligned read (see `_plot_cols_raw`)
-function _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, zt)
-    v = _plot_cols_raw(img, vn, pop_type, [x, y, z], pop)
+function _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, zt; labels_version=nothing)
+    v = _plot_cols_raw(img, vn, pop_type, [x, y, z], pop; labels_version = labels_version)
     xv, yv = _xy_pair(v)
     # an unreadable colour measure (not a column of THIS table) is "no value for any cell" — NaN, which
     # the client paints in the dim ink — not a short vector, and never a reason to drop the dots.
@@ -647,6 +670,12 @@ function api_gating_channels(req::HTTP.Request)
 end
 
 # ── GET /api/gating/popmap ────────────────────────────────────────────────────
+# Returns the tree PLUS P3b breadcrumb fields:
+#   • `authoredLabelsVersion`     — the labels vN this map was last saved against (`nothing` on
+#     legacy pre-breadcrumb files and on maps whose value_name has no label_props yet).
+#   • `currentLatestLabelsVersion` — the image's current `_latest` labels version for this
+#     value_name (`nothing` when no label_props entry exists yet).
+# The frontend renders the drift banner when both are non-null AND they differ.
 function api_gating_popmap(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
@@ -656,9 +685,12 @@ function api_gating_popmap(req::HTTP.Request)
     m = load_pop_map(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
     proj, image_uid = get(q, "projectUid", ""), get(q, "imageUid", "")
+    current_latest = haskey(img.label_props, vn) ? resolve_version(img, :label_props, vn) : nothing
     200, JSON3.write((; tree = to_tree(m),
                         canUndo = _can_undo(proj, image_uid, vn, pt),
-                        canRedo = _can_redo(proj, image_uid, vn, pt)))
+                        canRedo = _can_redo(proj, image_uid, vn, pt),
+                        authoredLabelsVersion = m.authored_labels_version,
+                        currentLatestLabelsVersion = current_latest))
 end
 
 # ── GET /api/gating/stats?...&pop=/cd4 ────────────────────────────────────────
@@ -667,7 +699,7 @@ function api_gating_stats(req::HTTP.Request)
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", "")); pop = get(q, "pop", ROOT)
-    m = _live_map(img, vn, get(q, "popType", "flow"))
+    m = _live_map(img, vn, get(q, "popType", "flow"); labels_version = _labels_version_pin(q))
     (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
     s = pop_stats(m, pop)
     200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
@@ -681,7 +713,7 @@ function api_gating_membership(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     pops = split(get(q, "pops", ""), ","; keepempty = false)
     isempty(pops) && return _gerr(400, "pops required")
-    m = _live_map(img, vn, get(q, "popType", "flow"))
+    m = _live_map(img, vn, get(q, "popType", "flow"); labels_version = _labels_version_pin(q))
     for p in pops
         (is_root(p) || has_pop(m, p)) || return _gerr(404, "Population not found: $p")
     end
@@ -794,7 +826,8 @@ function api_gating_plotmeta(req::HTTP.Request)
     # raw extents over the WHOLE dataset (root): used both for ticks (labels read in data units, and
     # selecting a population doesn't rescale the axis) AND to decide auto-linearisation — so the
     # transform choice is stable across populations, not re-decided per subset. Track-aware via _raw.
-    rv = _plot_cols_raw(img, vn, pop_type, isempty(z) ? [x, y] : [x, y, z], ROOT)
+    pin = _labels_version_pin(q)
+    rv = _plot_cols_raw(img, vn, pop_type, isempty(z) ? [x, y] : [x, y, z], ROOT; labels_version = pin)
     rxv, ryv = _xy_pair(rv)
     rxext = _finite_extrema(rxv); ryext = _finite_extrema(ryv)
     # A non-linear transform that would collapse a bounded/small-range measure (morphology like
@@ -827,7 +860,7 @@ function api_gating_plotmeta(req::HTTP.Request)
             zticks = _axis_ticks(zt, invert_transform(zt, e[1]), invert_transform(zt, e[2]); n = 3)
         end
     end
-    xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
+    xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)
     n = length(xv)
     density_threshold = parse(Int, get(q, "densityThreshold", "200000"))
     mode = n > density_threshold ? "density" : "scatter"
@@ -897,8 +930,9 @@ function api_gating_plotdata(req::HTTP.Request)
     # read in the SAME pass as x/y so each z belongs to its own dot (`_plot_cols_raw`). The client
     # switches stride on whether it asked for z, so old callers are untouched.
     z = get(q, "z", "")
+    pin = _labels_version_pin(q)
     if isempty(z)
-        xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
+        xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)
         n = length(xv)
         buf = Vector{Float32}(undef, 2n)
         @inbounds for i in 1:n
@@ -906,7 +940,7 @@ function api_gating_plotdata(req::HTTP.Request)
         end
         return 200, collect(reinterpret(UInt8, buf))
     end
-    xv, yv, zv = _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, _axis_transform(q, "z"))
+    xv, yv, zv = _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, _axis_transform(q, "z"); labels_version = pin)
     n = length(xv)
     buf = Vector{Float32}(undef, 3n)
     @inbounds for i in 1:n
@@ -1016,7 +1050,8 @@ function api_gating_density(req::HTTP.Request)
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     bins = parse(Int, get(q, "bins", "256"))
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
-    xv, yv = _plot_xy(img, vn, get(q, "popType", "flow"), x, y, get(q, "pop", ROOT), xt, yt)
+    xv, yv = _plot_xy(img, vn, get(q, "popType", "flow"), x, y, get(q, "pop", ROOT), xt, yt;
+                       labels_version = _labels_version_pin(q))
     d = density_2d(xv, yv; bins = bins)
     200, collect(reinterpret(UInt8, Float32.(vec(d.counts))))
 end

@@ -56,6 +56,11 @@ function to_tree(m::PopulationMap; include_transient::Bool=true)::Dict{String,An
     # keeps its sidecar visually clean, matching the pre-P2 file shape byte-for-byte.
     isempty(m.retired_uids) ||
         (out["retired_uids"] = sort!(collect(m.retired_uids)))
+    # P3b breadcrumb (docs/todo/VN_VERSIONING_PLAN.md → P3b). Only emitted when set — a legacy
+    # sidecar's shape is byte-for-byte preserved through a load/save round-trip that predates the
+    # first labels-versioned write.
+    m.authored_labels_version === nothing ||
+        (out["authored_labels_version"] = m.authored_labels_version)
     out
 end
 
@@ -92,7 +97,12 @@ function from_tree(tree::AbstractDict)::PopulationMap
     # No stamp ⇒ "px": every gating file written before spatial gates moved to µm holds pixel
     # coordinates, and must keep evaluating as pixels (SPATIAL_GATE_UNITS_PLAN.md decision 4).
     m = PopulationMap(; pop_type=String(g("pop_type", "flow")), value_name=String(g("value_name", "default")),
-                      spatial_unit=String(g("spatial_unit", SPATIAL_UNIT_PX)))
+                      spatial_unit=String(g("spatial_unit", SPATIAL_UNIT_PX)),
+                      # P3b: absent on any file predating the breadcrumb (legacy default) — stays
+                      # `nothing`, drift detection skips, `_latest` semantics unchanged.
+                      authored_labels_version = let v = g("authored_labels_version", nothing)
+                          v === nothing ? nothing : String(v)
+                      end)
     # Retired-UID set (MULTI_POP_TRACKING_ORPHANS_PLAN P2): absent on a legacy sidecar → empty set,
     # unchanged behaviour for a project that has never had a pop deleted. Present entries seed the
     # collision guard in `_fresh_pop_uid` — the freshly-picked UID for a newly added pop is
@@ -163,6 +173,16 @@ function load_pop_map(task_dir::AbstractString, value_name::AbstractString;
     m
 end
 
-# CciaImage convenience (task_dir = img._dir)
-save_pop_map!(m::PopulationMap, img::CciaImage) = save_pop_map!(m, img._dir)
+# CciaImage convenience (task_dir = img._dir). Also stamps the P3b `authored_labels_version`
+# breadcrumb from the image's current `_latest` labels version at save time — the task_dir form
+# has no image to resolve against and leaves the field alone (tests exercise both paths).
+function save_pop_map!(m::PopulationMap, img::CciaImage)
+    # Only stamp when a label_props entry actually exists for this value_name — a first-save on an
+    # image that never ran segmentation has no version to point at (the breadcrumb stays `nothing`
+    # and the drift banner never fires because there is no drift to detect).
+    if haskey(img.label_props, m.value_name)
+        m.authored_labels_version = resolve_version(img, :label_props, m.value_name)
+    end
+    save_pop_map!(m, img._dir)
+end
 

@@ -87,6 +87,17 @@ mutable struct PopulationMap
     # would bake one image's pixel size into a gate and break copying it to another image (decision 2).
     # `nothing` = unknown (the task_dir form, or a hand-built map in a test) ⇒ no scaling.
     physical_sizes::Union{Vector{Float64},Nothing}
+    # Labels vN that was current for this map's value_name at the last save (P3b breadcrumb, `docs/todo/
+    # VN_VERSIONING_PLAN.md`). Stamped by `save_pop_map!(m, img)` from `resolve_version(img, :label_props,
+    # m.value_name)`; persisted; `nothing` on legacy files and on the task_dir save form (no image →
+    # nothing to resolve). Used by the API to detect drift against the image's current `_latest` and
+    # surface the drift banner in the gating module.
+    authored_labels_version::Union{String,Nothing}
+    # SESSION-only pin: when set, every `label_props(img; value_name, version)` read for this map's
+    # eval reads at this version instead of `_latest`. Set from the gating API's optional
+    # `labelsVersion` query/body param (the "Use pinned vN" banner action). NOT persisted — a new
+    # session opens with drift detected and the user re-picks.
+    pinned_labels_version::Union{String,Nothing}
     # recompute cache (populated by gating_engine.recompute!)
     _labels::Union{Vector,Nothing}
     _membership::Union{Dict{String,BitVector},Nothing}
@@ -99,12 +110,16 @@ const SPATIAL_UNIT_UM = "um"
 PopulationMap(; pop_type::Union{PopType,AbstractString}=POP_FLOW,
               value_name::AbstractString="default",
               spatial_unit::AbstractString=SPATIAL_UNIT_PX,
-              physical_sizes::Union{AbstractVector{<:Real},Nothing}=nothing) =
+              physical_sizes::Union{AbstractVector{<:Real},Nothing}=nothing,
+              authored_labels_version::Union{AbstractString,Nothing}=nothing,
+              pinned_labels_version::Union{AbstractString,Nothing}=nothing) =
     PopulationMap(_coerce_pop_type(pop_type), String(value_name),
                   Dict{String,Population}(), String[],
                   Dict{String,String}(), Set{String}(), false,
                   String(spatial_unit),
                   physical_sizes === nothing ? nothing : Vector{Float64}(physical_sizes),
+                  authored_labels_version === nothing ? nothing : String(authored_labels_version),
+                  pinned_labels_version === nothing ? nothing : String(pinned_labels_version),
                   nothing, nothing)
 
 Base.length(m::PopulationMap) = length(m.order)
