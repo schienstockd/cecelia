@@ -1468,6 +1468,7 @@ end
                                                                   "params"=>Dict("module"=>"behaviourAnalysis",
                                                                                   "panelCount"=>2))),
                                 "panels"=>panels_in,
+                                "workspaceOrigin"=>Dict("x"=>240, "y"=>360),
                                 "frames"=>[Dict("png"=>frame_data_url)]))
         @test st_mp == 200
         cap_mp = String(JSON3.read(body_mp).captureId)
@@ -1482,6 +1483,10 @@ end
         @test String(got_mp.panels[1].plotRef.specId) == "track_measures"
         @test String(got_mp.panels[1].plotRef.ui.measure) == "live.track.speed"
         @test String(got_mp.panels[2].plotRef.ui.measure) == "live.track.displacement"
+        # workspaceOrigin round-trips numerically so a downstream "zoom to source" restores
+        # panels at their exact original workspace pixels.
+        @test got_mp.workspaceOrigin.x == 240
+        @test got_mp.workspaceOrigin.y == 360
         # panelCount surfaces on the list row, not just in the envelope.
         st_lmp, body_lmp = api_viewer_captures_list(HTTP.Request("GET",
             "/api/viewer/captures?projectUid=$uid&limit=10"))
@@ -1499,6 +1504,7 @@ end
         st_spr, body_spr = api_viewer_capture_get(HTTP.Request("GET",
             "/api/viewer/capture?projectUid=$uid&captureId=$cap_sp"))
         @test !haskey(JSON3.read(body_spr).capture, :panels)
+        @test !haskey(JSON3.read(body_spr).capture, :workspaceOrigin)
         # And the list row DOESN'T sprout panelCount for a single-plot capture.
         st_lsp, body_lsp = api_viewer_captures_list(HTTP.Request("GET",
             "/api/viewer/captures?projectUid=$uid&limit=10"))

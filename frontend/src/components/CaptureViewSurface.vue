@@ -28,6 +28,7 @@ import {
 import type { OverlayMark, CaptureAddress } from '../utils/captureAddress'
 import { ANNOTATION_PALETTE, DEFAULT_ANNOTATION_COLOR } from '../utils/overlayCompose'
 import type { OverlayColor } from '../utils/captureAddress'
+import type { CaptureSurface } from '../utils/kiwiCaptures'
 import FrameAnnotator from './FrameAnnotator.vue'
 
 // User-mark stroke — resolve the palette name to a hex, defaulting to white for older captures
@@ -38,7 +39,7 @@ function userStroke(p: Paintable): string {
   return (c && ANNOTATION_PALETTE[c]) || ANNOTATION_PALETTE[DEFAULT_ANNOTATION_COLOR]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   projectUid: string
   captureId: string
   frameDataUrl: string
@@ -55,7 +56,24 @@ const props = defineProps<{
   // Free-text notes the user typed on DrawSurface at share time — shown on this surface as a chip
   // at the bottom so the user sees the context Claude received. Preserved on re-annotate.
   notes?: string
-}>()
+  // The surface tag threaded into the re-annotate POST. Defaults to viewer_frame (the historical
+  // case — this component started life mounted only over the pop-out viewer). SummaryCanvas
+  // passes `'plot'` so a re-annotated multi-panel capture stays a plot capture.
+  surface?: CaptureSurface
+  // Extra fields merged into the re-annotate POST body. For a plot capture, callers pass
+  // `{ panels }` so the refined capture inherits the same panel structure the original had —
+  // Claude still reads "top-left is speed for pops B/T" on the refinement.
+  extraPostFields?: Record<string, unknown>
+  // Show a "Zoom to source" button in the chip that emits `zoom-to-source`. For plot captures
+  // this restores the panel layout from `panels[]` so the user can keep exploring the underlying
+  // plots. Off by default — viewer captures have their own zoom-to-source in Kiwi.
+  showZoomToSource?: boolean
+}>(), {
+  addressLine: '',
+  extraPostFields: () => ({}),
+  surface: 'viewer_frame',
+  showZoomToSource: false,
+})
 const emit = defineEmits<{
   (e: 'close'): void
   // Re-annotate save: a NEW capture was written that refines this one; parent updates the
@@ -64,6 +82,9 @@ const emit = defineEmits<{
   (e: 'reannotate', payload: {
     captureId: string; frameDataUrl: string; overlay: OverlayMark[]; notes: string
   }): void
+  // Zoom-to-source (plot captures): the caller restores the panels underneath. Fired from the
+  // chip button when `showZoomToSource=true`.
+  (e: 'zoom-to-source'): void
 }>()
 
 const viewer = useViewerStore()
@@ -113,7 +134,7 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: props.projectUid,
-        surface: 'viewer_frame',
+        surface: props.surface,
         // Address is inherited — the user is still discussing the same frame.
         address: props.address,
         frames: [{ png: composited }],
@@ -123,6 +144,9 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
         // capture restores the exact camera / channels the original share was framed on.
         ...(props.viewStateSnapshot ? { viewStateSnapshot: props.viewStateSnapshot } : {}),
         ...(mergedNotes ? { notes: mergedNotes } : {}),
+        // Surface-specific inherited fields — plot captures pass `{ panels }` here so the
+        // refined capture carries the same per-panel structure the original had.
+        ...(props.extraPostFields ?? {}),
       }),
     })
     if (!res.ok) {
@@ -248,12 +272,22 @@ function dismissAllClaudeMarks() {
               v-tooltip.bottom="'Draw more marks on this frame and share the refined capture with Claude'">
         <i class="pi pi-pencil" />
       </button>
+      <!-- Plot captures: reopen the panels underneath so the user can keep exploring the source
+           layout. Not shown for viewer captures — those have their own Zoom-to-source path in Kiwi
+           driven off `viewStateSnapshot`. -->
+      <button v-if="showZoomToSource" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+              @click="emit('zoom-to-source')"
+              v-tooltip.bottom="'Restore the panel layout underneath this capture'">
+        <i class="pi pi-search" />
+      </button>
       <button v-if="claudePaintables.length" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
               @click="dismissAllClaudeMarks" v-tooltip.bottom="'Clear pointer marks'">
         <i class="pi pi-eraser" />
       </button>
       <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-              @click="emit('close')" v-tooltip.bottom="'Return to live viewer'">
+              @click="emit('close')"
+              v-tooltip.bottom="surface === 'viewer_frame' || surface === 'viewer_slab'
+                ? 'Return to live viewer' : 'Close the shared frame'">
         <i class="pi pi-times" />
       </button>
     </div>

@@ -154,6 +154,15 @@ export interface CaptureEnvelope {
                                     // time when the overlay was on; null otherwise
   notes: string                     // BIDIR follow-up 2026-09-20: free-text context the user
                                     // typed on DrawSurface; empty string when nothing was typed
+  // Multi-panel plot capture: per-panel structure a downstream "zoom to source" reader uses to
+  // rebuild the panel layout the composite was tiled from. Absent for single-plot / viewer / UI
+  // captures. Passed through as an opaque array — the module page that authored the panels is
+  // the one place that knows their exact shape.
+  panels: unknown[] | null
+  // Workspace-frame origin of the union bbox that produced the composite (composite-relative
+  // positions in `panels[].position` are workspace positions MINUS this). Absent for legacy
+  // captures — restore then lands panels at composite-relative coords.
+  workspaceOrigin: { x: number; y: number } | null
   frame: string                     // data URL, or '' if the PNG is missing
 }
 export async function fetchCaptureEnvelope(
@@ -182,6 +191,14 @@ export async function fetchCaptureEnvelope(
     const landscape = (env.landscape && typeof env.landscape === 'object')
       ? env.landscape : null
     const notes = typeof env.notes === 'string' ? env.notes : ''
+    // Multi-panel `panels[]` — per-panel structure for canvas Share. Opaque here; the consuming
+    // module page's own restore code interprets it.
+    const panels = Array.isArray(env.panels) ? env.panels as unknown[] : null
+    // Workspace origin — the offset that turns composite-relative positions back into workspace
+    // coords. Absent on captures written before this field existed.
+    const woRaw = env.workspaceOrigin as { x?: unknown; y?: unknown } | null | undefined
+    const workspaceOrigin = (woRaw && typeof woRaw.x === 'number' && typeof woRaw.y === 'number')
+      ? { x: woRaw.x, y: woRaw.y } : null
     return {
       captureId,
       surface,
@@ -190,6 +207,8 @@ export async function fetchCaptureEnvelope(
       viewStateSnapshot,
       landscape,
       notes,
+      panels,
+      workspaceOrigin,
       frame: typeof json.frame === 'string' ? json.frame : '',
     }
   } catch { return null }

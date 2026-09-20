@@ -40,6 +40,9 @@ import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureEnvelope, t
 import { openViewerWindow } from '../../utils/viewerWindow'
 import { useViewerStore } from '../../stores/viewer'
 import { useShareTargetStore, type BeginShareResult } from '../../stores/shareTarget'
+import { useCaptureReshowStore } from '../../stores/captureReshow'
+import { moduleRouteFor } from '../../utils/moduleRoute'
+import { useRouter } from 'vue-router'
 import InlineNote from '../InlineNote.vue'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -158,12 +161,32 @@ async function loadThumb(id: string) {
 //
 // Modern captures (post-2026-09-20) carry `viewStateSnapshot` and restore the exact view. Older
 // captures without it fall into the `focus` path — nudge t / z, leave camera / channels alone.
+const reshowStore = useCaptureReshowStore()
+const router = useRouter()
+
 function refocusRow(row: CaptureRow) {
+  const env = envelopes.value[row.captureId]
+  // Plot captures (canvas Share) route to a module PAGE, not the pop-out viewer. The reshow
+  // store holds the envelope; the destination page reads it via `consumeFor(module)` on mount
+  // and mounts CaptureViewSurface over its own canvas. Same UX as viewer refocus, different
+  // destination.
+  if (row.surface === 'plot' && env) {
+    const modParam = (row.address?.plotSpec?.params as { module?: string } | undefined)?.module
+    const path = modParam ? moduleRouteFor(modParam) : null
+    if (modParam && path) {
+      reshowStore.setPending({ module: modParam, envelope: env })
+      // hash-router; the leading `#` is added by the router. Router.push handles same-page
+      // navigation as a no-op re-fire, which the destination page picks up via its mount watch.
+      void router.push(path)
+      return
+    }
+    // No route we know about — fall through and try the viewer path. If the capture has no
+    // imageUid either, `refocusRow` degrades to a no-op below.
+  }
   const a = row.address; if (!a || !a.imageUid) return
   // A t-range (slab capture) refocuses to the first frame — the range end is still visible via
   // the pop-out's own scrubber.
   const t = Array.isArray(a.t) ? a.t[0] : a.t
-  const env = envelopes.value[row.captureId]
   const marks = env?.overlay ?? []
   const overlay = marks.length > 0
     ? { captureId: row.captureId, marks: marks as unknown[] }
@@ -338,10 +361,12 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                   <i class="pi kiwi-cap-icon"
                      :class="capCopied(c.captureId) ? 'pi-check' : 'pi-copy'" />
                 </button>
-                <button v-if="c.address && c.address.imageUid"
+                <button v-if="(c.address && c.address.imageUid) || c.surface === 'plot'"
                         class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro kiwi-cap-focus"
                         @click="refocusRow(c)"
-                        v-tooltip.right="'Refocus the pop-out viewer to this capture’s frame'">
+                        v-tooltip.right="c.surface === 'plot'
+                          ? 'Reshow this capture on its module page'
+                          : 'Refocus the pop-out viewer to this capture’s frame'">
                   <i class="pi pi-search" />
                 </button>
                 <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro kiwi-cap-del"
