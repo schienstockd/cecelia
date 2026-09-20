@@ -34,6 +34,7 @@ import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
+import { usePanelExport } from '../../stores/canvasPanelExports'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null
@@ -694,6 +695,14 @@ async function exportSvg(): Promise<string | null> {
 // `isBusy` is read by the board EXPORT before it captures: capturing a panel mid-fetch put a blank
 // or half-drawn plot into the finished PDF, silently. See utils/awaitIdle.ts.
 defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () => loading.value })
+
+// Register this panel as PNG-exportable so the canvas Share compositor can request its plot
+// bitmap by panelId. Reuses the same `exportImage` the PDF export uses (plot-only, light theme).
+// Only registers when a persistKey is present — a bare/inline panel without one has no id the
+// selection overlay can address.
+if (props.persistKey) {
+  usePanelExport(() => props.persistKey ?? '', () => exportImage())
+}
 </script>
 
 <template>

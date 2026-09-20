@@ -384,27 +384,6 @@ async function saveScreenshot() {
   } finally { screenshotBusy.value = false }
 }
 
-// ── Share with Claude (BIDIR share-in, PR #3 of docs/todo/BIDIR_CONTEXT_PLAN.md) ───────────────
-// The button trips the popped-out viewer into draw mode via `__cceceliaViewerBeginDraw()`; the
-// user then draws directly on the viewer canvas (no modal, no frozen frame) and Save/Cancel from
-// the floating toolbar in the pop-out. The POST lives in ViewerWindow.vue where the WebGPU pixels
-// + live viewer state (t / z / extent) are.
-type ShareNote = { severity: 'warn' | 'fail'; short: string; detail: string }
-const shareNote = ref<ShareNote | null>(null)
-
-function openShare() {
-  shareNote.value = null
-  const vw = getOpenPopoutWindow('/viewer-window')
-  if (!vw) { shareNote.value = { severity: 'warn', short: 'Viewer not open',
-    detail: 'Open the pop-out viewer first (click the ↗ on an image).' }; return }
-  const begin = (vw as unknown as { __cceceliaViewerBeginDraw?: () => void })?.__cceceliaViewerBeginDraw
-  if (typeof begin !== 'function') { shareNote.value = { severity: 'fail', short: 'Viewer not ready',
-    detail: 'The viewer popup did not expose its draw hook.' }; return }
-  begin()
-  // Focus the pop-out so the user sees the drawing toolbar without alt-tab.
-  try { vw.focus() } catch { /* nicety */ }
-}
-
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
 // populations/colour-by are shown) to an .mp4 under the project's movies/ folder.
 //
@@ -1021,21 +1000,6 @@ onUnmounted(() => {
            sit in a popover: this panel is narrow, and they are set once and then left alone, while the
            version chips are the thing you change per movie. ONE row — an image with a single version
            (the common case) shows just the two buttons. -->
-      <!-- Share with Claude — freezes what's on screen, opens the drawing overlay, posts to the
-           project's captures/ dir (BIDIR_CONTEXT_PLAN Part 2). The MCP tool `get_recent_captures`
-           lists shared frames newest-first; `get_capture` returns the frame + overlay. -->
-      <div class="viewer-section">
-        <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Share with Claude</div>
-        <div class="cc-row cc-row-tight">
-          <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" @click="openShare"
-                  v-tooltip.bottom="'Draw on the viewer and share it with Claude (BIDIR share-in)'">
-            <i class="pi pi-send" />
-          </button>
-        </div>
-        <InlineNote v-if="shareNote" :severity="shareNote.severity"
-                    :short="shareNote.short" :detail="shareNote.detail" />
-      </div>
-
       <div class="viewer-section" data-guide="viewer.movieSection">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
