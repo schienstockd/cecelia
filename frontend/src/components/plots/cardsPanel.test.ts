@@ -1,11 +1,15 @@
 import { describe, it, expectTypeOf } from 'vitest'
-import type { Card, CardsRequest, CardsResponse, PoolMember } from './cellCards'
+import type { Card, CardFamily, CardsRequest, CardsResponse, PoolMember } from './cardsPanel'
+import { cellFamily, CARD_FAMILIES } from './cardFamilies'
 
 // Types-only tests: no runtime, no import from the Julia side. Their job is to fail typecheck if
 // the payload shape drifts on one side — a card without `medoid.uid` or a `pool` that isn't
 // [{uid, value_name}] is a contract regression per CELL_CARDS_PLAN Decision 0 (pool-first).
+//
+// Also pins the `CardFamily` shape (BEHAVIOUR_CARDS_PLAN Decision 2) so a new family added by
+// registry can't accidentally lose a required field.
 
-describe('cellCards payload contract', () => {
+describe('cards payload contract', () => {
   const pool: PoolMember[] = [
     { uid: 'aaa111', value_name: 'B' },
     { uid: 'aaa111', value_name: 'T' },
@@ -51,5 +55,21 @@ describe('cellCards payload contract', () => {
     expectTypeOf(request.root_uid).toBeString()
     expectTypeOf(request.value_name).toBeString()
     expectTypeOf(request.pops).toMatchTypeOf<Array<{ path: string; cluster_ids: number[] }>>()
+  })
+})
+
+describe('CardFamily registry contract', () => {
+  it('cellFamily satisfies CardFamily and carries every required field', () => {
+    expectTypeOf(cellFamily).toMatchTypeOf<CardFamily>()
+  })
+
+  it('registry keys are family ids', () => {
+    expectTypeOf(CARD_FAMILIES).toMatchTypeOf<Record<string, CardFamily>>()
+  })
+
+  it('cellFamily is registered under id "cell"', () => {
+    // Runtime assertion — drifting the id here would silently break the analysis-board wiring
+    // (CanvasManager keys panels by view id).
+    expectTypeOf(cellFamily.id).toEqualTypeOf<'cell' | 'motif' | 'hmm_state'>()
   })
 })

@@ -21,7 +21,6 @@
 #   { pool: [{uid, value_name}], cards: [ Card ] }   — matches CardsResponse.
 
 using JSON3
-using PNGFiles
 
 _cell_cards_dir(img_dir::String) = joinpath(img_dir, "analysis", "cell_cards")
 _cell_cards_sidecar(img_dir::String, value_name::String, suffix::String) =
@@ -80,154 +79,29 @@ function _write_cell_cards_sidecar(sidecar_path::String, payload, pops, pool_mti
     write_json_atomic(sidecar_path, doc)
 end
 
-# Render one card's filmstrip. Returns Vector{Dict{"t","assetId"}} — the payload shape the frontend
-# expects. Empty when the medoid's image has no OME-Zarr on disk (fixture path) — the card still
-# lands, just with no images.
-function _render_card_frames(med_img::CciaImage, medoid, frames_ts::Vector{Int}, pop_path::String,
-                             value_name::String, project_uid::String, pop_colour::String;
-                             max_px::Int=320, pad_px::Int=8,
-                             crop_side::Union{Nothing,Int}=nothing,
-                             # Time-axis source: the ACTIVE image on the analysis board, whose saved
-                             # sidecar carries the correct TimeIncrement — a medoid on a different
-                             # image version may resolve to a filepath whose OME-XML lacks the T
-                             # axis and would otherwise degrade the label to "t=N".
-                             interval_s::Union{Nothing,Float64}=nothing)::Vector{Dict{String,Any}}
-    # OME-Zarr resolution is IMAGE-versioned (default/denoised/driftCorrected/…), not segmentation-
-    # versioned. `value_name` here is the segmentation vn (e.g. `flowTom`) — a different taxonomy;
-    # `img_filepath` is the canonical accessor.
-    zp = img_filepath(med_img)
-    (zp === nothing || !isdir(zp)) && return Dict{String,Any}[]
-
-    arr, caxes = open_level0(zp)
-    d = axis_dims(caxes, ndims(arr))
-    native_h = haskey(d, "y") ? size(arr, d["y"]) : 0
-    native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
-    (native_h == 0 || native_w == 0) && return Dict{String,Any}[]
-
-    # Crop selection. `crop_side` (when supplied) makes ONE physical pixel size share across every
-    # card in the response, centred on each card's own medoid — the card sheet is only useful if
-    # populations are visually comparable side-by-side. Without `crop_side` the
-    # crop is just bbox + pad (interactive path — same physical scale within a single card).
-    bbox = track_bbox(med_img, value_name, medoid.track_id; pad_px=pad_px)
-    if crop_side !== nothing
-        # Centre on the medoid's bbox centre, expand symmetrically to `crop_side`, then clamp to the
-        # store's native grid. A crop bigger than the image collapses to the image itself.
-        side = min(crop_side, native_h, native_w)
-        cx = (bbox.x[1] + bbox.x[2]) ÷ 2
-        cy = (bbox.y[1] + bbox.y[2]) ÷ 2
-        xlo = clamp(cx - side ÷ 2, 0, native_w - side)
-        ylo = clamp(cy - side ÷ 2, 0, native_h - side)
-        crop = (x = xlo:(xlo + side - 1), y = ylo:(ylo + side - 1))
-    else
-        xlo = max(0, bbox.x[1]); xhi = min(native_w - 1, bbox.x[2])
-        ylo = max(0, bbox.y[1]); yhi = min(native_h - 1, bbox.y[2])
-        crop = (x = xlo:xhi, y = ylo:yhi)
-    end
-    tf = pixel_transform(native_h, native_w; crop=crop, max_px=max_px)
-
-    # Medoid track's own history — read `pop_df` for the pop, filter to `track_id == medoid.track_id`
-    # so the overlay carries ONE track's trace, not every track in the pop (shared
-    # `build_overlays_for` has no per-track filter; hand-rolling is smaller than plumbing one). Each
-    # cell contributes ONE (t, x_native, y_native) — the projection into the crop happens frame-side.
+# Read the medoid track's own history from `pop_df` — one (t, x, y) per cell along the track, in
+# native pixels. Returns an empty vector when the pop_df call fails or the required columns are
+# absent. The shared `render_medoid_filmstrip` handles the per-frame "dot + tail" build.
+function _cell_trace_history(med_img::CciaImage, value_name::String, pop_path::String,
+                              track_id::Int)::Vector{Tuple{Int,Float64,Float64}}
     hist_df = try
         pop_df(med_img, "trackclust", [pop_path]; value_name=value_name, granularity=:cell,
                centroids=:pixel, include_x=false, include_obs=true)
     catch; nothing end
     hist = Tuple{Int,Float64,Float64}[]
-    if hist_df !== nothing && Symbol("track_id") in propertynames(hist_df) &&
-       Symbol("centroid_t") in propertynames(hist_df) &&
-       Symbol("centroid_x") in propertynames(hist_df) &&
-       Symbol("centroid_y") in propertynames(hist_df)
-        want = Int(medoid.track_id)
-        for row in eachrow(hist_df)
-            tid = row.track_id; ismissing(tid) && continue
-            Int(round(Float64(tid))) == want || continue
-            tt = row.centroid_t; xx = row.centroid_x; yy = row.centroid_y
-            (tt isa Real && xx isa Real && yy isa Real) || continue
-            push!(hist, (Int(round(Float64(tt))), Float64(xx), Float64(yy)))
-        end
-        sort!(hist; by = first)
+    hist_df === nothing && return hist
+    (Symbol("track_id") in propertynames(hist_df) &&
+     Symbol("centroid_t") in propertynames(hist_df) &&
+     Symbol("centroid_x") in propertynames(hist_df) &&
+     Symbol("centroid_y") in propertynames(hist_df)) || return hist
+    for row in eachrow(hist_df)
+        tid = row.track_id; ismissing(tid) && continue
+        Int(round(Float64(tid))) == track_id || continue
+        tt = row.centroid_t; xx = row.centroid_x; yy = row.centroid_y
+        (tt isa Real && xx isa Real && yy isa Real) || continue
+        push!(hist, (Int(round(Float64(tt))), Float64(xx), Float64(yy)))
     end
-    # colour for the trace + endpoint dot: the pop's own swatch.
-    col_rgb = hex_to_rgb(pop_colour)
-
-    # Build the per-frame overlay from the filtered history: dot at t == frames_ts[i], tail from t0
-    # to the current t (fade handled by render_view_frame's alpha ramp — we pass full alpha 1.0 and
-    # let the segment consumer's default fade apply if any; matching the movie renderer's default).
-    project = (x, y) -> _apply(tf, x, y)
-    build_points_and_segments = function(t::Int)
-        pts_x = Int[]; pts_y = Int[]; pts_c = RGB{N0f8}[]
-        segs_x0 = Int[]; segs_y0 = Int[]; segs_x1 = Int[]; segs_y1 = Int[]
-        segs_c = RGB{N0f8}[]; segs_a = Float64[]
-        # dot: cell at frame t (if the medoid was tracked at exactly this t)
-        for (tt, x, y) in hist
-            tt == t || continue
-            xy = project(x, y); xy === nothing && continue
-            push!(pts_x, xy[1]); push!(pts_y, xy[2]); push!(pts_c, col_rgb)
-        end
-        # tail: every consecutive pair whose ARRIVAL t is ≤ t (past segments only)
-        for i in 1:(length(hist) - 1)
-            t0, x0, y0 = hist[i]; t1, x1, y1 = hist[i + 1]
-            t1 <= t || continue
-            xy0 = project(x0, y0); xy1 = project(x1, y1)
-            (xy0 === nothing || xy1 === nothing) && continue
-            push!(segs_x0, xy0[1]); push!(segs_y0, xy0[2])
-            push!(segs_x1, xy1[1]); push!(segs_y1, xy1[2])
-            push!(segs_c, col_rgb); push!(segs_a, 1.0)
-        end
-        pts = isempty(pts_x) ? nothing : (; x = pts_x, y = pts_y, colour = pts_c)
-        segs = isempty(segs_x0) ? nothing :
-               (; x0 = segs_x0, y0 = segs_y0, x1 = segs_x1, y1 = segs_y1,
-                  colour = segs_c, alpha = segs_a)
-        (pts, segs)
-    end
-
-    # Specs: the SAVED VIEWER STATE for this image version (channels, LUT, contrast) — same JSON
-    # the movie renderer and thumbnail route read via `_props_path`. Previously this was pointed at
-    # the label-props H5AD, which `layer_display_specs` (a JSON reader) silently caught + returned
-    # nothing for; cards then fell back to per-frame percentile and rendered in default colours that
-    # did NOT match the viewer. Cold-start (no viewer opened yet)
-    # falls back to sampled-contrast defaults, same as the movie rail.
-    props = _props_path(med_img._dir, zp)
-    nc = haskey(d, "c") ? size(arr, d["c"]) : 1
-    specs = try resolved_display_specs(props, nc); catch; nothing end
-    specs === nothing && (specs = try resolved_display_specs(_sampled_specs(zp, nc)); catch; nothing end)
-    channels = collect(0:(nc - 1))
-
-    # Snap each requested frame to the nearest tracked timepoint so the dot (medoid at t) always
-    # LANDS on the rendered image. Without this, a mid-frame chosen from the
-    # bbox midpoint could fall in a gap between centroid_t entries — the image would render but no
-    # dot would draw, and the still would visually disagree with the last-frame ended trace.
-    tracked_ts = Int[t for (t, _, _) in hist]
-    snap_t = t -> isempty(tracked_ts) ? Int(t) :
-                  tracked_ts[argmin(abs.(tracked_ts .- Int(t)))]
-    snapped_ts = Int[snap_t(t) for t in frames_ts]
-    # Preserve order but drop duplicates that collapse after snapping (a short track's t0 / mid /
-    # t1 can snap to the same tracked t).
-    seen = Set{Int}(); frames_uniq = Int[]
-    for t in snapped_ts; t in seen && continue; push!(seen, t); push!(frames_uniq, t); end
-
-    out = Dict{String,Any}[]
-    for t in frames_uniq
-        pts, segs = build_points_and_segments(Int(t))
-        frame = try
-            render_view_frame(arr, caxes, Int(t);
-                              channels=channels, specs=specs, crop=crop, max_px=max_px,
-                              points=pts, segments=segs)
-        catch; nothing end
-        frame === nothing && continue
-        tmp = tempname() * ".png"
-        try
-            PNGFiles.save(tmp, frame)
-            aid = _save_board_asset_file(project_uid, tmp)
-            entry = Dict{String,Any}("t" => Int(t), "asset_id" => aid)
-            interval_s === nothing || (entry["t_s"] = Float64(t) * interval_s)
-            push!(out, entry)
-        finally
-            isfile(tmp) && rm(tmp; force=true)
-        end
-    end
-    out
+    hist
 end
 
 function api_cell_cards(body_bytes::Vector{UInt8})
@@ -337,9 +211,13 @@ function api_cell_cards(body_bytes::Vector{UInt8})
         med_img = c.medoid.uid == img.uid ? img : get!(med_imgs, c.medoid.uid) do
             init_object(pu, c.medoid.uid)
         end
-        filmstrip = _render_card_frames(med_img, c.medoid, c.frames_ts, c.path, c.medoid.value_name,
-                                        pu, c.colour; max_px=max_px, pad_px=pad_px,
-                                        crop_side=uniform_side, interval_s=interval_s)
+        trace_history = _cell_trace_history(med_img, c.medoid.value_name, c.path, Int(c.medoid.track_id))
+        filmstrip = render_medoid_filmstrip(med_img, c.medoid.value_name, c.medoid.track_id,
+                                            c.frames_ts, pu;
+                                            trace_history=trace_history,
+                                            trace_colour=hex_to_rgb(c.colour),
+                                            max_px=max_px, pad_px=pad_px,
+                                            crop_side=uniform_side, interval_s=interval_s)
         push!(cards_json, Dict{String,Any}(
             "path"      => c.path,
             "name"      => c.name,

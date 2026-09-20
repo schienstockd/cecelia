@@ -44,6 +44,7 @@ include("crop_api.jl")       # routes only; builds on both
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
 include("movie_render.jl")   # the offline renderer's timelapse sweep — builds on image_render.jl + read_slab
 include("movie_rail.jl")     # movie rail (record button + batch) routed through the offline renderer, off napari
+include("behaviour_cards.jl") # shared filmstrip renderer for cell/motif/hmm cards (docs/todo/BEHAVIOUR_CARDS_PLAN.md Decision 5)
 include("cell_cards_api.jl") # /api/cell_cards — snapshot cards on the offline renderer (docs/todo/CELL_CARDS_PLAN.md)
 include("app_api.jl")
 include("storage_api.jl")

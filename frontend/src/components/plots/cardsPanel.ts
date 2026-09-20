@@ -1,12 +1,14 @@
 /**
- * Cell-card payload contract — mirror of `api/src/cell_cards_api.jl`.
+ * Cards panel payload contract — shared shape for `cellCards` / `motifCards` / `hmmCards`
+ * (`docs/todo/BEHAVIOUR_CARDS_PLAN.md`). Mirror of `api/src/behaviour_cards.jl` +
+ * `api/src/cell_cards_api.jl` (and, later, `motif_cards.jl` + `hmm_state_cards.jl`).
  *
- * A cell card is one trackclust pop rendered as a filmstrip of the pop's MEDOID track over its
- * frame range, with a stats footer. Cards are pool-shaped from day one (`CELL_CARDS_PLAN` Decision
- * 0): the run's pool = `partOf` (multi-image, from `{props}.clustfeatures.json`) × co-clustered
- * value_names (multi-segmentation, `co_clustered_value_names`). A pool of 1 is still a pool. The
- * medoid resolves to a single `(uid, value_name, track_id)` triple; the card's image comes from
- * that image, its trace from that value_name's `pop_df`.
+ * A card is one entity (trackclust pop / motif class / HMM state) rendered as a filmstrip of that
+ * entity's MEDOID over its frame range, with a stats footer. Cards are pool-shaped from day one
+ * (`CELL_CARDS_PLAN` Decision 0): the run's pool = `partOf` (multi-image) × co-clustered
+ * value_names (multi-segmentation). A pool of 1 is still a pool. The medoid resolves to a single
+ * `(uid, value_name, track_id)` triple; the card's image comes from that image, its trace from
+ * that value_name's `pop_df`.
  *
  * This file is TYPES ONLY — no runtime, no imports. The Julia side owns the encoding; the frontend
  * owns the rendering; both sides must move together when a field changes.
@@ -86,4 +88,51 @@ export interface CardsRequest {
   pops: Array<{ path: string; cluster_ids: number[] }>
   /** Same viewer state `ImageStripView` captures — channels, LUT, per-image resolution. */
   view_state: unknown
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CardFamily — the family configuration `CardsPanelBase.vue` reads
+// (`BEHAVIOUR_CARDS_PLAN.md` Decision 2).
+//
+// Every family is one entry in `cardFamilies.ts`. Adding a fourth family (region cards,
+// spatial-neighbourhood cards, …) later = one entry there, not a new panel component.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Shown-pop shape the panel is called with — one entry per ticked row on the rail. */
+export interface ShownPop {
+  path: string
+  name: string
+  colour: string
+  clusterIds: number[]
+}
+
+/** Everything the family's `buildRequestBody` gets to see when composing the POST body. */
+export interface CardFamilyContext {
+  projectUid: string
+  rootUid: string
+  suffix: string
+  shownPops: ShownPop[]
+  maxPx: number
+  padPx: number
+}
+
+/** One card family's configuration. The base panel knows *nothing* family-specific. */
+export interface CardFamily {
+  /** Registry key — matches the view id in `interactiveViews.ts` / `clusterPanels.ts`. */
+  id: 'cell' | 'motif' | 'hmm_state'
+  /** Panel title (`CanvasPanel`'s title prop). */
+  title: string
+  /** POST endpoint. Response shape is `CardsResponse` — same for every family. */
+  endpoint: string
+  /** Compose the POST body from the context. */
+  buildRequestBody: (ctx: CardFamilyContext) => object
+  /** Empty-state copy — surfaced when the panel can't render yet. */
+  emptyNoRoot: string       // no image selected
+  emptyNoSuffix: string     // suffix absent
+  emptyNoShownPops: string  // rail has nothing ticked
+  /**
+   * Optional: transform a stat name for display in the compact footer row (the ~6-row
+   * mini-boxplot table on each card). Defaults to identity. cellCards strips `live.track.`.
+   */
+  footerStatLabel?: (name: string) => string
 }
