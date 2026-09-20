@@ -10,6 +10,7 @@ import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
 import TrackPathsView from '../plots/TrackPathsView.vue'
 import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
 import TrackSchemeView from '../plots/TrackSchemeView.vue'
+import MotifCardsView from '../plots/MotifCardsView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -121,6 +122,15 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // the same frames? Track page only, because it MUTATES and the board is read-only
   // (docs/ANALYSIS.md); it is registered rather than hand-mounted so it gets the InteractivePanel
   // chrome (title bar, drag, resize, collapse, persist) that a hand-mount silently skips.
+  // Motif cards — one card per motif class discovered in the image's cells h5ad. Server picks the
+  // first segmentation with `motif.class` when `valueName` is omitted, so the panel is drop-in from
+  // the board picker. `rail: 'none'` (motif classes are h5ad obs values, not populations —
+  // BEHAVIOUR_CARDS_PLAN Decision 6 re-scoped 2026-09-20). `boardGroup: 'clustering'` so it lands
+  // in the same picker section as cellCards.
+  motifCards: {
+    label: 'Motif cards', component: MotifCardsView, analysisBoard: true,
+    boardGroup: 'clustering', rail: 'none',
+  },
   trackScheme: {
     label: 'Track timeline', component: TrackSchemeView, trackPage: true,
     // `'pops'` like its two siblings, and NOT `pluginPage`: this one mutates. A track population is

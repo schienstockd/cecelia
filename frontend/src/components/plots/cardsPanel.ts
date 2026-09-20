@@ -128,8 +128,16 @@ export interface CardFamily {
   buildRequestBody: (ctx: CardFamilyContext) => object
   /** Empty-state copy — surfaced when the panel can't render yet. */
   emptyNoRoot: string       // no image selected
-  emptyNoSuffix: string     // suffix absent
-  emptyNoShownPops: string  // rail has nothing ticked
+  emptyNoSuffix?: string    // suffix absent — only meaningful for families that need one (cellCards)
+  emptyNoShownPops?: string // rail has nothing ticked — only meaningful when `requireShownPops`
+  /**
+   * When true (default), the panel gates the fetch on non-empty `shownPops` — cellCards requires
+   * the user to tick pops on the rail before it can render. When false (motif/HMM cards), the
+   * server discovers what to render from the h5ad itself, so no rail selection is needed.
+   */
+  requireShownPops?: boolean
+  /** When true (default), the panel gates the fetch on a non-empty `suffix` (clustering runs). */
+  requireSuffix?: boolean
   /**
    * Optional: transform a stat name for display in the compact footer row (the ~6-row
    * mini-boxplot table on each card). Defaults to identity. cellCards strips `live.track.`.

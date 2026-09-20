@@ -1,6 +1,6 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import type { Card, CardFamily, CardsRequest, CardsResponse, PoolMember } from './cardsPanel'
-import { cellFamily, CARD_FAMILIES } from './cardFamilies'
+import { cellFamily, motifFamily, CARD_FAMILIES } from './cardFamilies'
 
 // Types-only tests: no runtime, no import from the Julia side. Their job is to fail typecheck if
 // the payload shape drifts on one side — a card without `medoid.uid` or a `pool` that isn't
@@ -71,5 +71,13 @@ describe('CardFamily registry contract', () => {
     // Runtime assertion — drifting the id here would silently break the analysis-board wiring
     // (CanvasManager keys panels by view id).
     expectTypeOf(cellFamily.id).toEqualTypeOf<'cell' | 'motif' | 'hmm_state'>()
+  })
+
+  it('motifFamily satisfies CardFamily and opts out of the shownPops/suffix gates', () => {
+    expectTypeOf(motifFamily).toMatchTypeOf<CardFamily>()
+    // Motif cards discover their content server-side, so both gates must be off — otherwise the
+    // panel would sit on the empty state forever waiting for a rail selection that isn't there.
+    if (motifFamily.requireShownPops !== false) throw new Error('motifFamily.requireShownPops must be false')
+    if (motifFamily.requireSuffix !== false)    throw new Error('motifFamily.requireSuffix must be false')
   })
 })

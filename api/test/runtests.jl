@@ -5534,6 +5534,7 @@ end
         "/api/board-assets/delete", "/api/board-assets/save",
         "/api/boards/add",   # create-only board authoring (MCP write 6/6); NOT /api/projects/boards
         "/api/cell_cards",   # docs/todo/CELL_CARDS_PLAN.md — snapshot cards on the offline renderer
+        "/api/motif_cards",  # docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 2 — motif-class snapshot cards
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
         "/api/correction-plan/mount",
@@ -5650,7 +5651,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 133
+    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 134
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
