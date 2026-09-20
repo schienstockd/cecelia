@@ -182,6 +182,8 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-wrench', means: 'A tool you reach for — the correction cockpit, or a module you dropped in' },
       { icon: 'pi-hammer', means: 'A surface still being built — expect more verbs in a follow-up release' },
       { icon: 'pi-book', means: 'The lab log and notebooks' },
+      { icon: 'pi-align-left', means: 'The blackboard — shared Markdown notes for an analysis' },
+      { icon: 'pi-paperclip', means: 'An attachment — a capture stapled to a blackboard entry' },
       { icon: 'pi-list-check', means: 'Tasks' },
       { icon: 'pi-clone', means: 'The analysis board, or cascade the plots' },
       { icon: 'pi-table', means: 'A heatmap of values' },

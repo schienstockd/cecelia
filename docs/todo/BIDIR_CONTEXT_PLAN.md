@@ -363,6 +363,17 @@ CURRENT before restoring, fixing the "un-snapshotted edits vanish" papercut call
 Decision 21. Vue page ships in a follow-up PR (Markdown + Mermaid rendering is untestable via
 unit tests and wants a browser eyeball).
 
+**Ship 2026-09-20 — Vue page** (`modules/BlackboardModule.vue`). Route `/blackboard`, nav entry in
+the Analysis group (Analysis board → Blackboard → Notebooks — the two writing surfaces sit next to
+their canvas). NOT gated on the observer/MCP connection (a bad-connection day still renders every
+diagram). Two-pane: entry list left, one entry right (viewer OR editor). Mermaid is
+dynamic-imported only when the current entry contains a ```mermaid fence — zero cost on entries
+without diagrams. Attachments show as thumbnails via `fetchCaptureEnvelope`; click publishes a
+`publishViewerSeek` so a pop-out viewer jumps to the capture (silent no-op if none is open, same
+fire-and-forget shape Kiwi PR B's Refocus established). Utils: `utils/blackboardApi.ts` (typed
+fetchers), `utils/blackboardMd.ts` (`renderBlackboardMarkdown` + `mermaidBlocks`, tested). Store:
+`stores/blackboard.ts` (WS `blackboard:changed` → tick → silent list reload).
+
 **Versioning + pruning.** Reimplement notebook shape locally (Decision 21). Fix the "restore loses
 un-snapshotted edits" papercut in Blackboard.
 
