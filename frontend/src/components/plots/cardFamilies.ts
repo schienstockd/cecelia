@@ -33,7 +33,30 @@ export const cellFamily: CardFamily = {
   footerStatLabel: name => name.replace(/^live\.track\./, ''),
 }
 
+// Motif cards — one card per motif class discovered server-side in the image's cells h5ad. No rail
+// picker today (BEHAVIOUR_CARDS_PLAN Decision 6 re-scoped 2026-09-20: motif classes are h5ad obs
+// values, not populations). Endpoint auto-picks the first segmentation with `motif.class` when
+// `valueName` is omitted — the wrapper doesn't need to know which segmentation to ask for.
+// Footer stats: motif.speed / motif.angle medians + `motif.distance`. Label transform strips the
+// `live.cell.` prefix so a compact footer row reads "speed" / "angle".
+export const motifFamily: CardFamily = {
+  id: 'motif',
+  title: 'Motif cards',
+  endpoint: '/api/motif_cards',
+  requireSuffix: false,
+  requireShownPops: false,
+  buildRequestBody: ctx => ({
+    projectUid: ctx.projectUid,
+    rootUid: ctx.rootUid,
+    maxPx: ctx.maxPx,
+    padPx: ctx.padPx,
+  }),
+  emptyNoRoot: 'Select an image.',
+  footerStatLabel: name => name.replace(/^live\.cell\./, ''),
+}
+
 /** Every registered family, keyed by id. `CARD_FAMILIES.cell === cellFamily`. */
 export const CARD_FAMILIES: Record<string, CardFamily> = {
   cell: cellFamily,
+  motif: motifFamily,
 }

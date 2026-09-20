@@ -99,23 +99,24 @@ describe('imageGridSvg', () => {
 // export, because the omission looks like nothing — there is no broken pixel, just a missing dropdown.
 // So it is asserted rather than remembered.
 //
-// Two globs: `*View.vue` (the historical shape) plus `CardsPanelBase.vue` (the extracted spine that
-// BEHAVIOUR_CARDS_PLAN's `cellCards` / `motifCards` / `hmmCards` all delegate to — carries the
-// base64 rasteriser the wrapper views inherit via `defineExpose`).
+// Two globs: `*View.vue` (the historical shape) plus `CardsPanelInner.vue` (the extracted content
+// spine that BEHAVIOUR_CARDS_PLAN's `cellCards` / `motifCards` / `hmmCards` all delegate to —
+// carries the base64 rasteriser the wrapper views inherit via `defineExpose`).
 const VIEWS = {
   ...(import.meta.glob('/src/components/plots/*View.vue', {
     query: '?raw', import: 'default', eager: true,
   }) as Record<string, string>),
-  ...(import.meta.glob('/src/components/plots/CardsPanelBase.vue', {
+  ...(import.meta.glob('/src/components/plots/CardsPanelInner.vue', {
     query: '?raw', import: 'default', eager: true,
   }) as Record<string, string>),
 }
 
-// Board-only views, which InteractivePanel never draws an Export select for (`!docked`). `filmstrip`,
-// `cell cards` and the shared `CardsPanelBase` are `analysisBoard: true` (or the base that serves
-// them), and both implement `exportImage` directly for the board's PDF — a dropdown there would
-// render nowhere. Give either a page flag and this list is what fails.
-const EXPORTLESS_BY_DESIGN = ['ImageStripView.vue', 'CardsPanelBase.vue']
+// Board-only views, which InteractivePanel never draws an Export select for (`!docked`). `filmstrip`
+// and the shared `CardsPanelInner` (the base64 rasteriser served through both `cellCards` and
+// `motifCards`) are `analysisBoard: true`, and both implement `exportImage` directly for the
+// board's PDF — a dropdown there would render nowhere. Give either a page flag and this list is
+// what fails.
+const EXPORTLESS_BY_DESIGN = ['ImageStripView.vue', 'CardsPanelInner.vue']
 
 describe('every base64 tile grid offers an export', () => {
   it('…and the ones that do not are board-only, on purpose', () => {

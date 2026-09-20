@@ -1,6 +1,7 @@
 # Behaviour cards — shared spine for cellCards / motifCards / hmmCards
 
-Status: **planning** (branch `docs/behaviour-cards-plan`). Draft — Dominik to react.
+Status: **Phase 1 shipped (2026-09-20, #1076)** · **Phase 2 in progress** (`feat/motif-cards`) —
+`motifCards` end-to-end. Phase 3 (`hmmCards`) not started.
 
 ## Goal
 
@@ -86,13 +87,14 @@ Numbered so code/other docs can cite them.
    range, render N frames via `render_view_frame` with the right overlay closure". Both new
    endpoints call it verbatim; `cell_cards.jl` refactored to call it too (removes duplicated
    render loop).
-6. **Rail:** unchanged for `cellCards` (`clusterPops`). For `motifCards` and `hmmCards`, ride
-   `livePops` (the same rail as ordinary population panels) since neither has a durable
-   pop-tree entry — the card selection = whichever motif classes / hmm states currently sit in
-   the panel's picker. Falls out cleanly once the `motifs` pop_type lands
-   (`MOTIF_DISCOVERY_PLAN.md` P2 slice 2); until then, the picker is populated by discovering
-   distinct `motif.class` / `live.cell.hmm.state.*` values in the h5ad — the same trick
-   `population_summary` uses.
+6. **Rail:** unchanged for `cellCards` (`clusterPops`). `motifCards` and `hmmCards` ride
+   `rail: 'none'` — motif classes / HMM state values are h5ad obs values, not populations; there
+   is no rail to hang a picker off. The server enumerates classes / states from the h5ad and
+   returns one card per class. Once `motifs` pop_type lands (`MOTIF_DISCOVERY_PLAN.md` P2
+   slice 2), motif classes become populations on the shared `pops` rail like any other, and the
+   panel can pick up a rail selection — but that's a migration, not a blocker for Phase 2.
+   *Revised 2026-09-20: the initial draft said `livePops` — a rail that doesn't exist. The
+   population rail is just `pops`; a separate one per pop_type isn't a Cecelia concept.*
 7. **Three endpoints, not one:** `POST /api/cell_cards` (existing), `POST /api/motif_cards`,
    `POST /api/hmm_state_cards`. Rationale: the request shape differs (pool = value_name-set for
    cellCards; single (uid, vn) for motif/hmm cards initially), the medoid algorithm is different
@@ -160,16 +162,32 @@ cards from `/Population 1..3` — byte-identical to today. Extraction was clean 
 
 ### Phase 2 — `motifCards`
 
-- Add `overlay_author` mode `"motif_class"` (Julia + palette).
-- `motif_cards.jl` endpoint: reads medoid indices from `{props}.motiffeatures.json`, resolves
-  each class's medoid to `(uid, vn, track_id, tspan)`, calls `render_medoid_filmstrip`.
-- Register `motifCards` in `interactiveViews.ts` + `cardFamilies.ts` (Decision 2).
-- Frontend: `MotifCardsView.vue` = ~30 lines of `CardsPanelBase` wrapper + family config.
-- Tests: `test-api` on `4kS67f/EaMaVq` asserts one card per motif class present in `motif.class`;
-  medoid resolves to the instance the runner recorded.
+- **Medoid resolution runs at query time from h5ad obs (`motif.class` / `motif.distance` /
+  `motif.instance_id`)** — no `{props}.motiffeatures.json` sidecar dependency for medoids. The
+  runner writes those obs columns today; medoid = the instance with the lowest mean
+  `motif.distance`. Zero DTW re-computation; no re-run needed to see cards.
+- **No new `overlay_author` mode.** Trace is coloured via `render_medoid_filmstrip`'s
+  `trace_colour` arg — one `RGB{N0f8}` per card, resolved via `colour_by_palette(pop_map,
+  "motif.class", …)` so the palette matches whatever the frequency plot uses.
+- **`api/src/motif_cards_api.jl`** — `POST /api/motif_cards`. Body: `{ projectUid, rootUid,
+  valueName?, maxPx?, padPx? }`. When `valueName` is omitted, server picks the first
+  segmentation whose h5ad has `motif.class` (walks `versioned_keys(img.label_props)`). Response
+  = `CardsResponse` (same shape as `/api/cell_cards`). Sidecar cache under
+  `analysis/motif_cards/{value_name}.json`, keyed on cells-h5ad mtime + discovered class set.
+- **Register `motifCards` in `interactiveViews.ts`** (not `CLUSTER_PANELS` — motif cards aren't
+  cluster panels), `boardGroup: 'clustering'` so it lands in the same picker section as
+  cellCards, `rail: 'none'` per Decision 6.
+- **`MotifCardsView.vue`** = ~20-line wrapper around `CardsPanelInner` (a content-only spine
+  extracted from `CardsPanelBase` so views that mount through `InteractivePanel` — which draws
+  its own CanvasPanel — don't double-wrap).
+- **`motifFamily` in `cardFamilies.ts`** — endpoint, request-body builder, empty-state copy,
+  `requireShownPops: false`, `requireSuffix: false`, footer label transform.
+- Tests: `test-api` end-to-end assert deferred (no committed fixture with motif columns yet);
+  frontend types pin `motifFamily` shape via `cardsPanel.test.ts`.
 
-**Checkpoint:** on `/analysis` with `4kS67f`, the tab shows N cards (N = classes in the run),
-each rendering the medoid instance's 8-frame filmstrip with the motif-class colour trace.
+**Checkpoint:** on `/analysis` with `4kS67f` / EaMaVq, dropping a Motif cards slot shows N cards
+(N = classes in the run), each rendering the medoid instance's 8-frame filmstrip with the
+motif-class colour trace.
 
 ### Phase 3 — `hmmCards`
 
