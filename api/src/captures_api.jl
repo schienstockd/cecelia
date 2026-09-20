@@ -124,6 +124,14 @@ function _build_capture_envelope(body::AbstractDict, id::String, ts::String,
         "overlay"          => _clean_overlay(get(body, :overlay, nothing)),
         "viewStateSnapshot" => get(body, :viewStateSnapshot, nothing),
         "viewerPropsRef"    => get(body, :viewerPropsRef, nothing),
+        # Landscape at share-time (BIDIR PR #6, Decision 14): a cheap tile-level semantic map the
+        # frontend computes over the shown frame's pixels. Attached ONLY when the user has the
+        # overlay toggled on; snapshotting it here means `get_capture(id)` returns pixels + marks +
+        # view state + landscape in ONE call, and the map stays with the capture past the 1-hour
+        # in-memory TTL of `landscape_api.jl`'s live-view bag. Passed through verbatim — the
+        # frontend is the authoritative computer; a schema drift is a bug better caught in one
+        # place (`utils/landscape.ts` tests) than in a per-field guard here.
+        "landscape"         => get(body, :landscape, nothing),
     )
     # Re-annotation lineage (Kiwi PR B): a capture created by drawing MORE marks on top of a
     # frozen frame carries the previous capture's id so the two can be linked in the Kiwi list
@@ -141,7 +149,7 @@ end
 """
     POST /api/viewer/capture
 
-Body: `{ projectUid, surface?, address, frames:[{png:<dataURL|base64>}], overlay?, viewStateSnapshot?, viewerPropsRef? }`
+Body: `{ projectUid, surface?, address, frames:[{png:<dataURL|base64>}], overlay?, viewStateSnapshot?, viewerPropsRef?, landscape? }`
 Reply: `{ ok:true, captureId, path }`
 
 Writes `<proj>/captures/<captureId>/{meta.json, frame.png}` atomically (via `write_json_atomic` +

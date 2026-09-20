@@ -4586,11 +4586,18 @@ async function onDrawSave(payload: { overlay: OverlayMark[] }) {
       ndisplay: mode.value === 'plane' ? 2 : 3,
       canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
     }) : null
+    // Snapshot the CURRENT landscape into the capture envelope, so `get_capture(id)` returns
+    // pixels + marks + view state + landscape in one call. Whole point of the landscape: hand
+    // Claude a semantic prior over the same tiles it's looking at. The live in-memory landscape
+    // bag is ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
+    // Only attached when the user has the overlay on — sharing without the landscape stays lean.
+    const landscapeSnapshot = (settings.viewerLandscape && landscape.value) ? landscape.value : null
     const res = await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,
                              frames: [{ png }], overlay: payload.overlay,
-                             ...(viewStateSnapshot ? { viewStateSnapshot } : {}) }),
+                             ...(viewStateSnapshot ? { viewStateSnapshot } : {}),
+                             ...(landscapeSnapshot ? { landscape: landscapeSnapshot } : {}) }),
     })
     // Response body is a one-shot stream — read once. On !ok extract .error if present; on ok
     // extract .captureId so the viewer can carry it into CaptureViewSurface.
@@ -4734,7 +4741,7 @@ onUnmounted(() => {
            legible over the fills. BIDIR PR #6 (Decision 14 reframe). Density is shared with the
            grid so the "cell B3" both overlays name is the same tile. -->
       <LandscapeOverlay v-if="settings.viewerLandscape && landscape && meta && shownT >= 0"
-                        :landscape="landscape" />
+                        :landscape="landscape" :show-labels="settings.viewerLandscapeLabels" />
       <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity" />
       <!-- Restored annotations from a blackboard attachment (BIDIR Part 4). Read-only; the source of
            truth is the capture on disk, and edits happen on the blackboard side, not here. Chip below
@@ -5267,6 +5274,11 @@ onUnmounted(() => {
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="'Cheap semantic heatmap over the same grid — categorical, not a segmentation'">Landscape</span>
             <CcToggle v-model="settings.viewerLandscape" aria-label="Show the landscape heatmap" />
+            <template v-if="settings.viewerLandscape">
+              <span class="cc-muted cc-fs-3xs vw-landscape-sub-lbl"
+                    v-tooltip.bottom="'Print each tile category on the fill — eyeball whether the labelling reads right'">Labels</span>
+              <CcToggle v-model="settings.viewerLandscapeLabels" aria-label="Show landscape tile labels" />
+            </template>
           </div>
           <div v-if="settings.viewerLandscape && landscape" class="cc-row cc-row-tight vw-landscape-legend"
                v-tooltip.bottom="'Tile category legend — cell count in parentheses'">
@@ -5820,6 +5832,7 @@ onUnmounted(() => {
 .vw-px { min-width: 3.5rem; }
 .vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
 .vw-landscape-legend { flex-wrap: wrap; }
+.vw-landscape-sub-lbl { margin-left: 0.4rem; }
 .vw-lg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: var(--cc-radius-xs); border: 1px solid rgba(0,0,0,0.15); }
 /* A population row: swatch, name that can shrink, count, toggle. The name is the only flexible part —
    letting the count or the toggle shrink is what made the channel rows overlap. */
