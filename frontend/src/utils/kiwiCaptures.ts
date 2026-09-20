@@ -124,6 +124,40 @@ export async function clearAllCaptures(
   }
 }
 
+/** Full capture envelope + PNG data URL, as returned by `GET /api/viewer/capture`. Used by the
+ *  Blackboard page (attachment thumbnails + focus-in-viewer) — it needs the address to publish a
+ *  viewer seek, not just the pixels. Failure ⇒ null so the caller can silently degrade. */
+export interface CaptureEnvelope {
+  captureId: string
+  surface: CaptureSurface
+  address: CaptureAddress | null
+  frame: string        // data URL, or '' if the PNG is missing
+}
+export async function fetchCaptureEnvelope(
+  projectUid: string, captureId: string, apiBase = ''
+): Promise<CaptureEnvelope | null> {
+  if (!projectUid || !captureId) return null
+  try {
+    const url = `${apiBase}/api/viewer/capture?projectUid=${encodeURIComponent(projectUid)}`
+              + `&captureId=${encodeURIComponent(captureId)}`
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const json = await res.json() as { capture?: unknown, frame?: string }
+    const env = (json.capture && typeof json.capture === 'object')
+      ? json.capture as Record<string, unknown> : null
+    if (!env) return null
+    const surface = (env.surface as CaptureSurface) ?? 'viewer_frame'
+    const address = env.address && typeof env.address === 'object'
+      ? (env.address as CaptureAddress) : null
+    return {
+      captureId,
+      surface,
+      address,
+      frame: typeof json.frame === 'string' ? json.frame : '',
+    }
+  } catch { return null }
+}
+
 /** Fetch a capture's frame as a data URL. Used by Kiwi row thumbnails (PR B) — the endpoint
  *  returns the FULL PNG (not a downscaled thumb), which is fine at the row cap of 10; a browser
  *  will decode + downscale for the 48-px slot. Any failure ⇒ empty string so the row still

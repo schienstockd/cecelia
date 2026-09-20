@@ -8,6 +8,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
 import { usePushStore } from './push'
+import { useBlackboardStore } from './blackboard'
 import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
@@ -210,6 +211,13 @@ export const useWsStore = defineStore('ws', () => {
       // `captures:changed` (post-PR #3) rides the same store because Kiwi is the only consumer
       // and adding a second store for one event would be premature.
       usePushStore().notify(String(data.type), data as Record<string, unknown>)
+    }
+
+    // BIDIR Part 4 (Blackboard) — content-changed pings from create/revise/restore/prune/delete.
+    // Separate store from `push` because the shapes don't overlap and the consumer set is different
+    // (`/blackboard` module page only). Same thin-dispatcher pattern.
+    if (type === 'blackboard:changed') {
+      useBlackboardStore().notify(String(data.projectUid ?? ''))
     }
 
     // Bidirectional point-out (BIDIR_CONTEXT_PLAN Part 3, PR #4). Claude's mark_tracks / mark_cells
