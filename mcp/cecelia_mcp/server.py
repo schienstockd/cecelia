@@ -980,6 +980,13 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     payload-relative (0..1 in the frame's own coord space) — the caller (frontend) authored
     them, and their exact rendering is not this tool's concern. `label` on a mark is what the
     user typed for it, if anything.
+
+    Multi-panel plot captures (surface `"plot"` from the module-page canvas Share) also carry a
+    `panels: [{panelId, position:{x,y,w,h}, plotRef, dataSlice}]` field on the envelope. `position`
+    is in the composite PNG's own CSS-px frame (top-left origin), so a mark in the overlay can be
+    matched to the panel it sits over. `plotRef` names the plot spec + its ui state (measure,
+    chart type…) at capture time; `dataSlice` names the images / segmentations / series involved.
+    Use these to answer "which panel is which" rather than guessing from the image alone.
     """
     envelope = _client.get_capture(project_uid, capture_id)
     frame_url = envelope.get("frame") or ""
