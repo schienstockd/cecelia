@@ -37,13 +37,17 @@ import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
 import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../FrameAnnotator.vue'
+import CaptureViewSurface from '../CaptureViewSurface.vue'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useCanvasPanelExportsStore } from '../../stores/canvasPanelExports'
 import { useCanvasShareSelection } from '../../composables/useCanvasShareSelection'
 import { useCanvasShareHost } from '../../stores/shareTarget'
+import { useCaptureReshowStore } from '../../stores/captureReshow'
 import type { PanelHit } from '../../utils/panelSelectionHit'
 import { composePanelGrid, type PanelTile } from '../../utils/overlayCompose'
-import type { OverlayMark } from '../../utils/captureAddress'
+import type { OverlayMark, CaptureAddress } from '../../utils/captureAddress'
+import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
+import { restorePanelsFromCapture, type CapturedPanel } from '../../utils/restorePanels'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
@@ -334,6 +338,75 @@ async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: st
     pendingShare.value = null
   }
 }
+
+// ── Reshow (Kiwi / Blackboard clicked refocus on a plot capture) ──────────────
+// The reshow store carries the envelope in. We mount CaptureViewSurface — the same surface the
+// viewer's re-annotate uses — over the plot canvas so the user sees the frozen composite + their
+// original marks + any Claude freeform paint targeted at this captureId, all in one place. On
+// zoom-to-source we rebuild `panels[]` into the canvas persistence store; on close we drop back
+// to the live layout.
+const reshowStore = useCaptureReshowStore()
+const reshown = ref<CaptureEnvelope | null>(null)
+// Consume the bag on mount and whenever the module changes (a navigation IN to this module page
+// triggers `module` change on remount; a live module-switch would too if the parent supported it).
+watch(() => props.module, () => {
+  const env = reshowStore.consumeFor(String(props.module ?? ''))
+  if (env) reshown.value = env
+}, { immediate: true })
+// Address bag CaptureViewSurface expects.
+const reshownAddress = computed<CaptureAddress>(() => {
+  const a = reshown.value?.address as CaptureAddress | null | undefined
+  return a ?? { projectUid: projectUid.value }
+})
+const reshownAddressLine = computed(() => {
+  const panelsN = (reshown.value?.panels?.length) ?? 0
+  const mod = props.module ?? 'universal'
+  return panelsN > 0 ? `${mod} · ${panelsN} panels` : `${mod} · plot canvas`
+})
+function onReshowClose() { reshown.value = null }
+function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; overlay: OverlayMark[] }) {
+  // The refined capture replaces the reshow — the user is now looking at the newer version.
+  if (!reshown.value) return
+  reshown.value = { ...reshown.value,
+    captureId: payload.captureId, frame: payload.frameDataUrl, overlay: payload.overlay }
+}
+function onReshowZoomToSource() {
+  // Restore the panels underneath. Uses the envelope's `panels[]` — pure translation, no fresh
+  // fetches. Drops the reshow surface after so the user is looking at the live restored layout.
+  const env = reshown.value
+  if (!env) return
+  const captured = Array.isArray(env.panels) ? env.panels as unknown[] : []
+  const cps: CapturedPanel[] = []
+  for (const raw of captured) {
+    if (!raw || typeof raw !== 'object') continue
+    const p = raw as Record<string, unknown>
+    const pos = p.position as { x?: number; y?: number; w?: number; h?: number } | undefined
+    if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number'
+             || typeof pos.w !== 'number' || typeof pos.h !== 'number') continue
+    cps.push({
+      panelId: String(p.panelId ?? ''),
+      position: { x: pos.x, y: pos.y, w: pos.w, h: pos.h },
+      plotRef: p.plotRef as CapturedPanel['plotRef'],
+      dataSlice: p.dataSlice as CapturedPanel['dataSlice'],
+    })
+  }
+  restorePanelsFromCapture<PanelState>(geomStore, ckey.value, cps, (cp) => {
+    // Rebuild a `PanelState` from the captured `plotRef.ui`. `sel` and `vis` were stripped at
+    // capture time (the envelope carries them as `dataSlice.series` and canvas-level state
+    // respectively). For a first slice we restore what the envelope has and let the user re-pick
+    // populations from the SeriesPicker; a future addition can hydrate `sel` from `dataSlice`.
+    const specId = String(cp.plotRef?.specId ?? '')
+    const ui = (cp.plotRef?.ui as Partial<PanelState>) ?? {}
+    return {
+      ...ui,
+      specId,
+      sel: [],
+      vis: defaultVis(),
+    } as PanelState
+  })
+  reshown.value = null
+}
+
 // Close all must drop the readouts too — they are keyed by panel id, and a stale entry would be
 // re-adopted by the next panel that reuses a freed id (`activeReadout` reads this map by id).
 function removeAllPanels() { removeAll(); readouts.value = {} }
@@ -504,6 +577,23 @@ watch(segPops, () => {
                         :address-line="`${module ?? 'universal'} · ${pendingShare.panels.length} panels`"
                         :busy="shareBusy"
                         @save="onAnnotateSave" @cancel="onAnnotateCancel" />
+        <!-- Reshow mode: same CaptureViewSurface the viewer uses. Mounts over the plot canvas,
+             shows the frozen composite + user marks + any Claude freeform paint targeted at this
+             captureId. Pencil = re-annotate (chained capture, panels[] inherited via
+             extraPostFields). Zoom-to-source = restore the panel layout underneath. -->
+        <CaptureViewSurface v-if="reshown"
+                            :project-uid="projectUid"
+                            :capture-id="reshown.captureId"
+                            :frame-data-url="reshown.frame"
+                            :overlay="reshown.overlay"
+                            :address="reshownAddress"
+                            :address-line="reshownAddressLine"
+                            surface="plot"
+                            :extra-post-fields="reshown.panels ? { panels: reshown.panels } : {}"
+                            :show-zoom-to-source="!!(reshown.panels && reshown.panels.length)"
+                            @close="onReshowClose"
+                            @reannotate="onReshowReannotate"
+                            @zoom-to-source="onReshowZoomToSource" />
         </div>
         </div>
         <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"

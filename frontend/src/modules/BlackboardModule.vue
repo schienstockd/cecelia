@@ -30,6 +30,9 @@ import {
 import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
 import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
 import { openViewerWindow } from '../utils/viewerWindow'
+import { useCaptureReshowStore } from '../stores/captureReshow'
+import { moduleRouteFor } from '../utils/moduleRoute'
+import { useRouter } from 'vue-router'
 import { useViewerStore } from '../stores/viewer'
 import { composeImageWithOverlay } from '../utils/overlayCompose'
 import { loadImg } from '../plots/export'
@@ -37,6 +40,8 @@ import { loadImg } from '../plots/export'
 const projectMeta = useProjectMetaStore()
 const bbStore = useBlackboardStore()
 const viewer = useViewerStore()
+const reshowStore = useCaptureReshowStore()
+const router = useRouter()
 
 // List-pane width: draggable + persisted, same composable Tasks + Chain use so the "grab the
 // divider and pull" gesture reads the same across the app. Handle on the list's RIGHT edge.
@@ -219,16 +224,33 @@ async function onDelete() {
   }
 }
 
-/** Open the capture's source image in the browser viewer (opens if not open; focuses if already
- *  open; no-op if already showing THIS image) + restore the exact view the user saw when they
- *  shared + paint the marks as a read-only overlay. Same mechanism the analysis-board's Zoom-to-
- *  source uses: write `pendingViewState` first (persists via localStorage so a fresh popup mount
- *  reads the seed), then `openViewerWindow(...)`. Modern captures carry `viewStateSnapshot` and
- *  restore camera / channels / t / z verbatim; legacy captures fall into the seek-only path. */
+/** Open the capture in its source surface. Two paths, one entry:
+ *   • plot captures (canvas Share) → set the reshow bag + navigate to the module page. The page
+ *     mounts CaptureViewSurface over its own canvas.
+ *   • viewer captures → seed pendingViewState + open the pop-out viewer, same mechanism
+ *     Kiwi and the analysis-board's Zoom-to-source use. Modern captures restore camera/channels/
+ *     t/z verbatim; legacy ones fall into the seek-only path.
+ *  Same behaviour Kiwi's `refocusRow` gives — this is the Blackboard entry to it. */
 function focusCapture(cid: string) {
   const slot = captureCache.value[cid]
-  const a = slot?.env?.address
-  if (!slot?.env || !a?.imageUid) return
+  if (!slot?.env) return
+
+  // Plot captures — route to the module page.
+  if (slot.env.surface === 'plot') {
+    const modParam = (slot.env.address?.plotSpec?.params as { module?: string } | undefined)?.module
+    const path = modParam ? moduleRouteFor(modParam) : null
+    if (modParam && path) {
+      reshowStore.setPending({ module: modParam, envelope: slot.env })
+      void router.push(path)
+      return
+    }
+    // Unknown module — silently degrade rather than opening the wrong surface.
+    return
+  }
+
+  // Viewer captures — the pre-existing seek-and-open path.
+  const a = slot.env.address
+  if (!a?.imageUid) return
   const t = Array.isArray(a.t) ? a.t[0] : a.t
   const marks = slot.env.overlay ?? []
   const overlay = marks.length > 0
