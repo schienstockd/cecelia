@@ -17,6 +17,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
+import { letterboxFrame, type Frame, type FrameCell, type FrameRect } from '../../plots/frame'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useDataRefresh } from '../../composables/useDataRefresh'
@@ -579,7 +580,46 @@ async function exportImage(): Promise<string | null> {
   try { return await rasterPlotToImageURL(plotEl.value, ground.value, hiRes) }
   finally { forceLight.value = false }
 }
-defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
+// Frame accessor for the (soon) point-out consumer. Single facet: the whole `plotBoxEl` box
+// letterboxed by the data extents' aspect — same math `mapPx` uses to letterbox the dots. Faceted:
+// each facet cell exposes its own inner rect (below the title strip) letterboxed the same way,
+// so a point-out at `(family, plotId, cell: '<label>')` addresses one facet.
+const naturalAspect = () => {
+  const { xMin, xMax, yMin, yMax } = extents.value
+  const xr = xMax > xMin ? xMax - xMin : 1
+  const yr = yMax > yMin ? yMax - yMin : 1
+  return xr / yr
+}
+const singleFrame: Frame = letterboxFrame(
+  () => plotBoxEl.value?.getBoundingClientRect() ?? null,
+  naturalAspect,
+)
+function facetInnerRect(fi: number, nf: number): FrameRect | null {
+  const el = plotBoxEl.value; if (!el) return null
+  const r = el.getBoundingClientRect()
+  if (r.width <= 0 || r.height <= 0) return null
+  const c = facetCell(fi, nf, r.width, r.height)
+  return { left: r.left + c.px, top: r.top + c.py, width: c.pw, height: c.ph }
+}
+const umapFrame: Frame = {
+  toNorm(x, y) {
+    return (facetBy.value === 'none' || facets.value.length <= 1) ? singleFrame.toNorm(x, y) : null
+  },
+  fromNorm(u, v) {
+    return (facetBy.value === 'none' || facets.value.length <= 1) ? singleFrame.fromNorm(u, v) : null
+  },
+  subFrames(): FrameCell[] {
+    const nf = facets.value.length
+    if (facetBy.value === 'none' || nf <= 1) return []
+    return facets.value.map((f, fi) => ({
+      key: f.label || `facet=${fi}`,
+      label: f.label || undefined,
+      frame: letterboxFrame(() => facetInnerRect(fi, nf), naturalAspect),
+    }))
+  },
+}
+defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage,
+               getFrame: (): Frame => umapFrame })
 </script>
 
 <template>

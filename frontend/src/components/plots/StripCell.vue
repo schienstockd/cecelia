@@ -10,8 +10,10 @@
   overlays and legend, click target) is what's shared.
 -->
 <script setup lang="ts">
+import { ref, useTemplateRef } from 'vue'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
+import { letterboxFrame, type Frame } from '../../plots/frame'
 
 interface ExtentUm { x?: number; y?: number; unit?: string | null }
 interface LegendSection { title: string; items: { label: string; colour: string }[] }
@@ -35,12 +37,32 @@ const props = defineProps<{
   timestampFontPx?: number
 }>()
 const emit = defineEmits<{ (e: 'click'): void }>()
+
+// Track the img's natural aspect once it loads — `object-fit: contain` centres a letterboxed sub-rect
+// inside `<img>`'s box, so the Frame anchors on the CELL rect but computes the actual drawn area
+// using this aspect. `<img @load>` fires on src swap too (parent may swap frames as data reloads),
+// so no manual re-attach is needed.
+const imgEl = useTemplateRef<HTMLImageElement>('imgEl')
+const naturalAspect = ref(0)
+function onImgLoad() {
+  const el = imgEl.value
+  if (el && el.naturalHeight > 0) naturalAspect.value = el.naturalWidth / el.naturalHeight
+}
+// Frame anchored on the cell root; letterboxed by the img's natural aspect. Null when the cell
+// has no `src` (nothing to point at). Exposed to a parent grid (ImageStripView / CellCardsView)
+// that iterates its cell refs to build its own `subFrames()`.
+const rootEl = useTemplateRef<HTMLElement>('rootEl')
+const frame: Frame = letterboxFrame(
+  () => (props.src ? rootEl.value?.getBoundingClientRect() ?? null : null),
+  () => naturalAspect.value,
+)
+defineExpose({ getFrame: (): Frame => frame })
 </script>
 
 <template>
-  <div class="strip-cell" :style="ringColour ? { boxShadow: `inset 0 0 0 2px ${ringColour}` } : {}"
+  <div ref="rootEl" class="strip-cell" :style="ringColour ? { boxShadow: `inset 0 0 0 2px ${ringColour}` } : {}"
        @click="emit('click')">
-    <img v-if="src" :src="src" :alt="alt || ''" class="sc-img" />
+    <img v-if="src" ref="imgEl" :src="src" :alt="alt || ''" class="sc-img" @load="onImgLoad" />
     <div v-else class="cc-empty cc-empty-overlay"><slot name="empty" /></div>
     <StillOverlay v-if="src && (showScaleBar || showTimestamp)"
                   :extent-um="extentUm" :time-label="timeLabel || ''"

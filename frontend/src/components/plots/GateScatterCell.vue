@@ -22,6 +22,7 @@ import PlotLayers, { type PopLayer } from './PlotLayers.vue'
 import type { RenderMode } from './RenderModeToggle.vue'
 import GateOverlay from './GateOverlay.vue'
 import { svgDoc, svgLine, svgText } from '../../plots/export'
+import { rectFrame, type Frame } from '../../plots/frame'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
@@ -259,8 +260,15 @@ function exportSvg(bg = '#ffffff', light = true): string {
 // gating-strategy MONTAGE grid) can still re-render each cell's canvases at export scale. `getHost`
 // lets the montage place each tile's UNIFIED export image at the tile's grid rect. `exportSvg` gives the
 // host a full vector SVG (single-plot export); the montage stitches per-tile `exportSvgBody`.
+//
+// `getFrame` returns a normalised (0..1) coord frame anchored on the AXIS rect (`.panel-plot`), NOT
+// the padded host — a point-out at (0.5, 0.5) belongs in the scatter, not on an axis label. The
+// gating pairs matrix / gating-strategy montage exposes each tile's frame through this same accessor
+// via its own `subFrames()`.
+const plotFrame: Frame = rectFrame(() => panelPlotEl.value?.getBoundingClientRect() ?? null)
 defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
-               exportSvgBody: (light = true) => withLight(light, plotBody, '') })
+               exportSvgBody: (light = true) => withLight(light, plotBody, ''),
+               getFrame: (): Frame => plotFrame })
 
 </script>
 

@@ -12,6 +12,7 @@ import CellCardDetailPanel from './CellCardDetailPanel.vue'
 import { cellFamily } from './cardFamilies'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { Card, ShownPop } from './cardsPanel'
+import type { Frame } from '../../plots/frame'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -31,7 +32,12 @@ const baseRef = useTemplateRef<InstanceType<typeof CardsPanelBase>>('baseRef')
 async function exportImage(): Promise<string | null> {
   return baseRef.value?.exportImage() ?? null
 }
-defineExpose({ exportImage })
+// Point-out Frame — proxied through the base to the inner's per-card subFrames.
+const proxyFrame: Frame = {
+  toNorm: () => null, fromNorm: () => null,
+  subFrames() { return baseRef.value?.getFrame?.().subFrames?.() ?? [] },
+}
+defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
 </script>
 
 <template>

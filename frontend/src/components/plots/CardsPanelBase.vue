@@ -15,6 +15,7 @@ import CanvasPanel from '../canvas/CanvasPanel.vue'
 import CardsPanelInner from './CardsPanelInner.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { Card, CardFamily, ShownPop } from './cardsPanel'
+import type { Frame } from '../../plots/frame'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -31,7 +32,13 @@ const innerRef = useTemplateRef<InstanceType<typeof CardsPanelInner>>('innerRef'
 async function exportImage(): Promise<string | null> {
   return innerRef.value?.exportImage() ?? null
 }
-defineExpose({ exportImage })
+// Forward the inner's Frame for (soon) point-out. Empty subFrames when the inner isn't mounted
+// yet so a caller can distinguish "not ready" (empty) from "no cards" (also empty — same shape).
+const proxyFrame: Frame = {
+  toNorm: () => null, fromNorm: () => null,
+  subFrames() { return innerRef.value?.getFrame?.().subFrames?.() ?? [] },
+}
+defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
 </script>
 
 <template>
