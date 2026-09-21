@@ -216,7 +216,14 @@ end
         e = JSON3.read(body_e).entry
         @test String(e.entryId) == "profile"
         @test String(e.status)  == "open"
-        @test String(e.content) == ""                    # empty on auto-create
+        # Decision 9 — seeded body carries the five suggested headings. The MCP briefing's
+        # newProject check keys on Subject + Goal being non-placeholder; kept in step with the
+        # Python side (see mcp/tests/test_server.py::ProfileAuthoredGateTest).
+        content = String(e.content)
+        @test occursin("## Subject", content)
+        @test occursin("## Goal", content)
+        @test occursin("## Modality", content)
+        @test occursin("_(", content)                    # placeholder markers present
 
         # ── Create a normal entry: status defaults to "open" ─────────────────
         st_c, body_c = w(api_blackboard_create, Dict("projectUid"=>uid,

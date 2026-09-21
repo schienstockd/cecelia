@@ -167,9 +167,13 @@ class GuidanceTest(unittest.TestCase):
              "current": 1, "updatedAt": "2026-09-18", "attachmentsCount": 0,
              "status": "resolved"},
         ]}
+        # Profile shape matches what _ensure_profile_entry! seeds — D9 gate looks for a filled
+        # Subject AND Goal section (heading + non-placeholder body). This one is filled.
         c.read_blackboard_entry = lambda uid, eid, version=None: {"entry": {
             "entryId": eid, "title": "Project profile",
-            "content": "Subject: MERTK\nGoal: track CD169+",
+            "content": ("# Project profile\n\n"
+                        "## Subject\nMERTK KO/WT cohort, live intravital LN\n\n"
+                        "## Goal\ntrack live CD169+ macrophages\n"),
             "current": 0, "updatedAt": "2026-09-20",
             "versions": [], "attachments": [], "status": "open",
         }}
@@ -191,6 +195,8 @@ class GuidanceTest(unittest.TestCase):
         # Profile body carried in full (short here; real cap is 100 KiB).
         self.assertIsInstance(out["profile"], dict)
         self.assertIn("MERTK", out["profile"]["content"])
+        # Decision 9 — Subject AND Goal filled ⇒ newProject:false.
+        self.assertFalse(out["newProject"])
         # Open entries: only status=open surface, and the profile itself is stripped out (it has
         # its own top-level field).
         titles = [e["title"] for e in out["openBlackboardEntries"]]
@@ -202,6 +208,51 @@ class GuidanceTest(unittest.TestCase):
         for c_row in out["recentCaptures"]:
             self.assertIn("captureId", c_row)
             self.assertIn("surface", c_row)
+
+
+class ProfileAuthoredGateTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Decision 9 — the section-content heuristic that flips `newProject`.
+
+    Kept as a unit test on `_profile_is_authored` (not just on the briefing shape) because the
+    placeholder markers live in TWO places: the Julia seed body (`_BB_PROFILE_PLACEHOLDER_BODY`
+    in api/src/blackboard_api.jl) and this Python check. A drift between them makes newProject
+    always fire, which turns the greet-first flow into a nag.
+    """
+    # The exact placeholder body the Julia writer seeds — copied here so a rename on the Julia
+    # side breaks this test, not a real session.
+    PLACEHOLDER = (
+        "# Project profile\n\n"
+        "## Subject\n"
+        "_(a short description of what this data is — whose project, what tissue, what preparation)_\n\n"
+        "## Goal\n"
+        "_(what you're trying to answer with this project — the science question)_\n\n"
+        "## Modality\n"
+        "_(e.g. resonant intravital, spinning-disk fixed, light-sheet organoid)_\n"
+    )
+
+    def test_placeholder_body_is_not_authored(self):
+        self.assertFalse(server._profile_is_authored({"content": self.PLACEHOLDER}))
+
+    def test_missing_profile_is_not_authored(self):
+        self.assertFalse(server._profile_is_authored(None))
+        self.assertFalse(server._profile_is_authored({"content": ""}))
+
+    def test_only_subject_filled_is_not_authored(self):
+        body = ("## Subject\nMERTK cohort\n\n"
+                "## Goal\n_(what you're trying to answer with this project)_\n")
+        self.assertFalse(server._profile_is_authored({"content": body}))
+
+    def test_both_filled_is_authored(self):
+        body = ("## Subject\nMERTK cohort\n\n"
+                "## Goal\nTrack CD169+ macrophages\n")
+        self.assertTrue(server._profile_is_authored({"content": body}))
+
+    def test_optional_section_filled_alone_is_not_authored(self):
+        # Modality filled but Subject/Goal still placeholders ⇒ still newProject.
+        body = ("## Subject\n_(a short description)_\n\n"
+                "## Goal\n_(what you're trying to answer)_\n\n"
+                "## Modality\nresonant intravital\n")
+        self.assertFalse(server._profile_is_authored({"content": body}))
 
 
 if __name__ == "__main__":

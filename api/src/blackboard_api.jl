@@ -218,6 +218,29 @@ end
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
+# Placeholder body written on first ensure — five suggested headings from PROJECT_MEMORY_PLAN
+# Decision 9 (subject + goal required; modality/cohort/channels suggested). The italic parenthetical
+# lines are the "placeholder" marker the briefing's newProject check strips before deciding whether
+# a section has been filled in — see `_profile_missing_required` in `mcp/cecelia_mcp/server.py`.
+# Keep the placeholder markers on their own line and in the `_(…)_` form so that check stays cheap.
+const _BB_PROFILE_PLACEHOLDER_BODY = """# Project profile
+
+## Subject
+_(a short description of what this data is — whose project, what tissue, what preparation)_
+
+## Goal
+_(what you're trying to answer with this project — the science question)_
+
+## Modality
+_(e.g. resonant intravital, spinning-disk fixed, light-sheet organoid)_
+
+## Cohort / groups
+_(experimental groups + how they're identified in image names or attributes)_
+
+## Key channels
+_(what each channel labels — e.g. c1 = CD169, c2 = MerTK)_
+"""
+
 """
     _ensure_profile_entry!(uid)
 
@@ -226,15 +249,17 @@ the top of `api_blackboard_list` so a project that never asks for its blackboard
 empty entry it never wanted; a session that opens the Blackboard page (or a Claude session that
 lists entries) always finds a profile to write into.
 
-Empty entry.md, title "Project profile", status "open". Same on-disk shape as a normal entry — one
-place in Julia has to know the reserved id, and this is it. PROJECT_MEMORY_PLAN Decision 2.
+Body seeded with `_BB_PROFILE_PLACEHOLDER_BODY` — the five suggested headings from
+PROJECT_MEMORY_PLAN Decision 9. Filling in Subject and Goal is what flips `newProject` off in the
+session briefing. Same on-disk shape as a normal entry — one place in Julia has to know the
+reserved id, and this is it. PROJECT_MEMORY_PLAN Decision 2.
 """
 function _ensure_profile_entry!(uid::AbstractString)
     dir = _bb_entry_dir(uid, _BB_PROFILE_ID)
     isfile(joinpath(dir, "meta.json")) && return
     mkpath(dir)
     write_atomic(joinpath(dir, "entry.md")) do io
-        write(io, "")
+        write(io, _BB_PROFILE_PLACEHOLDER_BODY)
     end
     ts = string(Dates.now())
     _write_bb_meta!(uid, _BB_PROFILE_ID;
