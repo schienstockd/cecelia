@@ -876,8 +876,9 @@ def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: 
     → tag `"bad"` with what failed and why. Editing an existing tag is fine — call again with the
     new verdict and note.
 
-    404 if the entry doesn't exist; 400 if the note is empty or the verdict is anything other than
-    good/bad; note is capped at 2 KiB (server rejects longer). PROJECT_MEMORY_PLAN Decision 11.
+    404 if the entry doesn't exist. 400 on: an empty note; a verdict other than good/bad; a note
+    over 2 KiB — keep the explanation to a couple of sentences, not a whole write-up (the
+    Blackboard entry body is where the long form goes). PROJECT_MEMORY_PLAN Decision 11.
     Additive; never deletes."""
     return _client.set_blackboard_outcome(project_uid, entry_id, verdict, note)
 
