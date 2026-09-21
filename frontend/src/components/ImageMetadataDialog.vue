@@ -1,16 +1,21 @@
 <!--
-  ImageMetadataDialog — read-only "everything we know about this image" view, opened from the info
-  icon on each ImageTable row. Its headline is the original source file location (oriPath): the raw
-  file this image was converted from, which is otherwise not visible anywhere in the UI. Built on
+  ImageMetadataDialog — "everything we know about this image" view, opened from the info icon on
+  each ImageTable row. Its headline is the original source file location (oriPath): the raw file
+  this image was converted from, which is otherwise not visible anywhere in the UI. Built on
   BaseModal like every other dialog. Editing physical size / timing / channels lives elsewhere
-  (PhysicalSizeDialog, Metadata page) — this one only shows.
+  (PhysicalSizeDialog, Metadata page). One mutation lives here: renaming a segmentation's
+  value_name — the operation is scoped to the label set the user is looking at (POST
+  /api/images/labels/rename → app/src/storage.jl:rename_value_name!).
 -->
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, nextTick, onMounted } from 'vue'
+import { useToast } from 'primevue/usetoast'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
+import { useProjectStore } from '../stores/project'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useLogStore } from '../stores/log'
 import { formatBytes } from '../utils/storage'
 import { storeFormatFacts, storeFormatTitle, storeLevelRows,
          type StoreEncoding } from '../utils/storeFormat'
@@ -23,6 +28,9 @@ defineEmits<{ (e: 'close'): void }>()
 
 const img = computed(() => props.image)
 const projectMeta = useProjectMetaStore()
+const project = useProjectStore()
+const log = useLogStore()
+const toast = useToast()
 
 // "12 × 512 × 512" style formatting is overkill here — we show each dimension as its own row so a
 // missing one reads as "—" rather than a silently-absent factor.
@@ -112,6 +120,61 @@ const togglePyramid = (vn: string) => {
   expandedLevels.value = s
 }
 const levelsFor = (vn: string) => storeLevelRows(stores.value.versions[vn])
+
+// Rename a label set's value_name. Inline: one row at a time swaps its `labels · {vn}` heading for a
+// text input + save/cancel. The backend guards enforce uniqueness, reserved suffixes and the
+// running-task / cross-image clustering blocks — the frontend only validates the shape (non-empty, no
+// path separators, not already on this image) so the user gets an immediate answer for typos and the
+// server stays authoritative. Local ref, not persisted — the modal reopens fresh from an info click.
+const editingVn = ref<string | null>(null)
+const editingValue = ref('')
+const editingBusy = ref(false)
+const editInputRef = ref<HTMLInputElement | null>(null)
+
+function startEditVn(vn: string) {
+  editingVn.value = vn
+  editingValue.value = vn
+  nextTick(() => editInputRef.value?.select())
+}
+function cancelEditVn() {
+  editingVn.value = null
+  editingValue.value = ''
+}
+function editVnError(): string | null {
+  const to = editingValue.value.trim()
+  if (!to) return 'Enter a name'
+  if (to === editingVn.value) return null   // no-op — the save is disabled
+  if (/[/\\]/.test(to) || to.startsWith('.')) return 'No slashes or leading dot'
+  if (to.endsWith('__tracks') || to.endsWith('__branch')) return 'Reserved suffix'
+  const existing = Object.keys(img.value.labels ?? {})
+  if (existing.includes(to)) return 'Name already used on this image'
+  return null
+}
+async function saveEditVn() {
+  const from = editingVn.value
+  const to = editingValue.value.trim()
+  const projectUid = projectMeta.current?.uid
+  if (!from || !projectUid || from === to || editVnError()) return
+  editingBusy.value = true
+  try {
+    const res = await fetch('/api/images/labels/rename', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, imageUid: img.value.uid, from, to }),
+    })
+    const body = await res.json().catch(() => ({})) as { error?: string, image?: unknown }
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    if (body.image) project.updateImageMeta(img.value.uid, body.image as Partial<CciaImage>)
+    toast.add({ severity: 'success', summary: 'Renamed', life: 2500,
+                detail: `Label set '${from}' → '${to}'` })
+    cancelEditVn()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    log.error(`Rename failed: ${msg}`, { source: 'imageMetadata' })
+    toast.add({ severity: 'error', summary: 'Rename failed', life: 4000, detail: msg })
+  } finally {
+    editingBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -253,11 +316,42 @@ const levelsFor = (vn: string) => storeLevelRows(stores.value.versions[vn])
             </template>
           </li>
           <!-- A label set's size is the sum of its files (base + nuc). No codec facts: it is written
-               with the fixed `labels` compressor, which nothing here asks the user to choose. -->
+               with the fixed `labels` compressor, which nothing here asks the user to choose.
+               The pencil affordance opens an inline rename: someone who named a segmentation "T cells"
+               where a downstream chain expects "default" can fix it here without a re-run. -->
           <li v-for="[vn, fns] in labels" :key="'l-' + vn" class="md-store cc-card">
             <div class="md-store-head">
-              <span class="md-store-vn">labels · {{ vn }}</span>
-              <span class="md-size cc-readout cc-fs-xs">{{ size(stores.labels[vn]) }}</span>
+              <template v-if="editingVn === vn">
+                <span class="cc-muted cc-fs-xs">labels ·</span>
+                <input ref="editInputRef" v-model="editingValue"
+                       class="md-vn-input cc-input-xs"
+                       :disabled="editingBusy"
+                       v-tooltip.top="editVnError() ?? 'New name'"
+                       @keydown.enter.prevent="saveEditVn"
+                       @keydown.escape.prevent="cancelEditVn" />
+                <button class="cc-btn cc-btn-bare cc-btn-icon"
+                        :disabled="editingBusy || !!editVnError() || editingValue.trim() === vn"
+                        @click="saveEditVn"
+                        v-tooltip.top="editVnError() ?? 'Rename'">
+                  <i class="pi pi-check" />
+                </button>
+                <button class="cc-btn cc-btn-bare cc-btn-icon"
+                        :disabled="editingBusy"
+                        @click="cancelEditVn"
+                        v-tooltip.top="'Cancel'">
+                  <i class="pi pi-times" />
+                </button>
+              </template>
+              <template v-else>
+                <span class="md-store-vn">labels · {{ vn }}</span>
+                <button class="cc-btn cc-btn-bare cc-btn-icon md-vn-edit"
+                        :disabled="editingVn !== null"
+                        @click="startEditVn(vn)"
+                        v-tooltip.top="'Rename this label set'">
+                  <i class="pi pi-pencil" />
+                </button>
+                <span class="md-size cc-readout cc-fs-xs">{{ size(stores.labels[vn]) }}</span>
+              </template>
             </div>
             <code class="md-code">{{ fns.join(', ') }}</code>
           </li>
@@ -365,4 +459,14 @@ const levelsFor = (vn: string) => storeLevelRows(stores.value.versions[vn])
 .md-flow-arrow { font-size: var(--cc-fs-2xs); }
 .md-flow-vn { color: var(--cc-text); font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
 .md-flow-active { font-weight: 600; }
+
+/* Inline rename input on a labels row — layout only. Size + border + colour come from the input
+   base + `cc-input-xs` (see style.css → Density steps for form controls); a scoped re-statement is
+   what findRestatedInputBase in cssScenarios.test.ts refuses. Font-weight matches the surrounding
+   `md-store-vn` (600) so the row height doesn't jump between view and edit modes. */
+.md-vn-input { flex: 1; min-width: 0; font-weight: 600; }
+/* The pencil is dim until the row is hovered — the rename is a rare op, and a bright icon on every
+   label row would fight the size readout for attention. */
+.md-vn-edit { opacity: 0.5; }
+.md-store:hover .md-vn-edit:not(:disabled) { opacity: 1; }
 </style>

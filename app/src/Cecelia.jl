@@ -47,6 +47,7 @@ export plan_versioned_target, versioned_filepath_write!
 export LATEST_ACTIVE_KEY, LATEST_DEFAULT_VAL
 export json_native
 export project_storage_summary, reclaim_inactive!, remove_image_version!, reclaimable_versions, image_storage
+export rename_value_name!
 export inner_versions_of, prune_inner_versions!
 export reset_image_analysis!, analysis_bytes_of, ANALYSIS_KEEP
 

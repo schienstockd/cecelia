@@ -915,3 +915,126 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── rename_value_name! — sweeps every artifact keyed by the vn ────────────────
+# Recovery scenario: someone segmented a value_name they didn't mean to (calling a T-cell segmentation
+# "T cells" while a downstream chain expects "default"). Renaming must move every artifact keyed by
+# the old vn — the label store, its `_nuc` sibling, labelProps + its `__tracks`/`__branch` companions,
+# clustfeatures sidecars, `gating/{vn}.json` (whose internal `value_name` field also has to swing),
+# branchLabels, and every ccid.json registration that indexes it. `_active` follows if it pointed at
+# the renamed vn, and the run-log's `valueName` entries are rewritten so history reads consistently.
+@testset "rename_value_name! rewrites every artifact + ccid keyed by the vn" begin
+    proj = create_project!(name="vnrn-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="a")
+
+    # seed one image store so the model is happy
+    zdir = joinpath(img_zero_dir(img), "import.ome.zarr"); mkpath(zdir)
+    write(joinpath(zdir, "chunk"), rand(UInt8, 1024))
+    img.filepath = Dict("default"=>"import.ome.zarr", "_active"=>"default")
+    img.meta   = Dict{String,Any}("SizeC"=>1, "SizeT"=>1, "SizeZ"=>1)
+    img.status = IMAGE_DONE
+
+    # seed a rich analysis surface under value_name "T cells" — every sidecar family the primitive
+    # walks. Filenames follow the {vn}.{ext} + {vn}_nuc.{ext} convention img_*_path enforces.
+    src_vn = "T cells"
+    # labels — base + nuc zarr
+    lbase = joinpath(img._dir, "labels", "$(src_vn).zarr"); mkpath(lbase)
+    write(joinpath(lbase, "chunk"), rand(UInt8, 256))
+    lnuc  = joinpath(img._dir, "labels", "$(src_vn)_nuc.zarr"); mkpath(lnuc)
+    write(joinpath(lnuc, "chunk"), rand(UInt8, 256))
+    img.labels = Dict("$(src_vn)"=>["$(src_vn).zarr", "$(src_vn)_nuc.zarr"])
+    # branchLabels
+    bdir = joinpath(img._dir, "branchLabels", "$(src_vn).zarr"); mkpath(bdir)
+    write(joinpath(bdir, "chunk"), rand(UInt8, 128))
+    img.branch_labels = Dict("$(src_vn)"=>["$(src_vn).zarr"])
+    # labelProps: main + tracks + branch + clustfeatures
+    mkpath(joinpath(img._dir, "labelProps"))
+    write(joinpath(img._dir, "labelProps", "$(src_vn).h5ad"),                     rand(UInt8, 32))
+    write(joinpath(img._dir, "labelProps", "$(src_vn)__tracks.h5ad"),             rand(UInt8, 32))
+    write(joinpath(img._dir, "labelProps", "$(src_vn)__branch.h5ad"),             rand(UInt8, 32))
+    write(joinpath(img._dir, "labelProps", "$(src_vn).clustfeatures.json"),       "{}")
+    write(joinpath(img._dir, "labelProps", "$(src_vn)__tracks.clustfeatures.json"), "{}")
+    img.label_props = Dict("$(src_vn)"=>"$(src_vn).h5ad", "_active"=>"$(src_vn)")
+    # gating sidecars — real save_pop_map!, so we can verify the internal value_name swings too
+    mkpath(joinpath(img._dir, "gating"))
+    for pt in ("flow", "track", "clust", "trackclust", "region", "branch")
+        m = Cecelia.PopulationMap(; pop_type=pt, value_name=src_vn)
+        Cecelia.save_pop_map!(m, img._dir)
+    end
+    # meta funParamsByName: per-fun bank keyed by vn (see FUN_PARAMS_BY_NAME_META_KEY)
+    img.meta[Cecelia.FUN_PARAMS_BY_NAME_META_KEY] = Dict{String,Any}(
+        "segment.cellpose" => Dict{String,Any}("$(src_vn)" => Dict{String,Any}("cellDiameter"=>17.5)),
+        "tracking.bayesian_tracking" => Dict{String,Any}("$(src_vn)" => Dict{String,Any}("maxSearchRadius"=>25.0)),
+    )
+    save!(img)
+    # runlog: pretend the segmentation ran, so the vn appears in the history
+    Cecelia.append_run_log!(img, "segment.cellpose", src_vn, "done",
+                            Dict{String,Any}("cellDiameter"=>17.5))
+
+    dst_vn = "default"
+
+    # guards — every refusal is at the primitive level, not the route
+    @test_throws Exception rename_value_name!(img, "nope", dst_vn)                   # from doesn't exist
+    @test_throws Exception rename_value_name!(img, src_vn, "")                       # empty to
+    @test_throws Exception rename_value_name!(img, src_vn, src_vn)                   # from == to
+    @test_throws Exception rename_value_name!(img, src_vn, "foo/bar")                # path separator
+    @test_throws Exception rename_value_name!(img, src_vn, ".hidden")                # leading dot
+    @test_throws Exception rename_value_name!(img, src_vn, "x__tracks")              # reserved suffix
+    # collision: seed a second vn and refuse to rename onto it
+    img.labels["stub"] = ["stub.zarr"]; save!(img)
+    @test_throws Exception rename_value_name!(img, src_vn, "stub")
+    delete!(img.labels, "stub"); save!(img)
+
+    # do the rename
+    r = init_object(proj.uid, img.uid)
+    result = rename_value_name!(r, src_vn, dst_vn)
+    @test result["renamed"] == true
+
+    # every file moved
+    @test !ispath(joinpath(img._dir, "labels", "$(src_vn).zarr"))
+    @test !ispath(joinpath(img._dir, "labels", "$(src_vn)_nuc.zarr"))
+    @test  isdir(joinpath(img._dir, "labels", "$(dst_vn).zarr"))
+    @test  isdir(joinpath(img._dir, "labels", "$(dst_vn)_nuc.zarr"))
+    @test  isdir(joinpath(img._dir, "branchLabels", "$(dst_vn).zarr"))
+    @test  isfile(joinpath(img._dir, "labelProps", "$(dst_vn).h5ad"))
+    @test  isfile(joinpath(img._dir, "labelProps", "$(dst_vn)__tracks.h5ad"))
+    @test  isfile(joinpath(img._dir, "labelProps", "$(dst_vn)__branch.h5ad"))
+    @test  isfile(joinpath(img._dir, "labelProps", "$(dst_vn).clustfeatures.json"))
+    @test  isfile(joinpath(img._dir, "labelProps", "$(dst_vn)__tracks.clustfeatures.json"))
+    @test !isfile(joinpath(img._dir, "labelProps", "$(src_vn).h5ad"))
+    # gating sidecars: every suffix moved, and their internal value_name matches the new name
+    for pt in ("flow", "track", "clust", "trackclust", "region", "branch")
+        @test !isfile(Cecelia.gating_path(img._dir, src_vn; pop_type=pt))
+        p = Cecelia.gating_path(img._dir, dst_vn; pop_type=pt)
+        @test isfile(p)
+        m = Cecelia.load_pop_map(img._dir, dst_vn; pop_type=pt)
+        @test m.value_name == dst_vn
+    end
+
+    # ccid.json — keys swung on labels/label_props/branch_labels, filenames rewritten, _active swung,
+    # funParamsByName rekeyed
+    ri = init_object(proj.uid, img.uid)
+    @test haskey(ri.labels, dst_vn)         && !haskey(ri.labels, src_vn)
+    @test haskey(ri.label_props, dst_vn)    && !haskey(ri.label_props, src_vn)
+    @test haskey(ri.branch_labels, dst_vn)  && !haskey(ri.branch_labels, src_vn)
+    @test ri.label_props["_active"] == dst_vn
+    @test sort(ri.labels[dst_vn]) == sort(["$(dst_vn).zarr", "$(dst_vn)_nuc.zarr"])
+    @test ri.branch_labels[dst_vn] == ["$(dst_vn).zarr"]
+    @test ri.label_props[dst_vn]  == "$(dst_vn).h5ad"
+    fpbn = get(ri.meta, Cecelia.FUN_PARAMS_BY_NAME_META_KEY, Dict{String,Any}())
+    @test haskey(fpbn, "segment.cellpose") &&
+          haskey(fpbn["segment.cellpose"], dst_vn) && !haskey(fpbn["segment.cellpose"], src_vn)
+    @test haskey(fpbn, "tracking.bayesian_tracking") &&
+          haskey(fpbn["tracking.bayesian_tracking"], dst_vn)
+
+    # runlog entries rewritten — history reads consistently after a rename
+    entries = Cecelia.read_run_log(ri)
+    @test any(e -> String(get(e, :valueName, get(e, "valueName", ""))) == dst_vn, entries)
+    @test !any(e -> String(get(e, :valueName, get(e, "valueName", ""))) == src_vn, entries)
+
+    # idempotency: renaming the same from again now fails cleanly (no partial state to reason about)
+    @test_throws Exception rename_value_name!(ri, src_vn, dst_vn)
+
+    rm(proj.root; recursive=true)
+end
+

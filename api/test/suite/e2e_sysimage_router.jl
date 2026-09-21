@@ -343,7 +343,8 @@ end
         "/api/images/analysis/reset", "/api/images/attr/set",
         "/api/images/channelnames",
         "/api/images/delete", "/api/images/inclusion/set",
-        "/api/images/labels/delete", "/api/images/meta/resync",
+        "/api/images/labels/delete", "/api/images/labels/rename",
+        "/api/images/meta/resync",
         "/api/images/meta/set", "/api/images/move",
         "/api/images/register", "/api/images/value-name-check",
         "/api/images/version/remove",
@@ -450,7 +451,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 138
+    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 139
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

@@ -152,6 +152,42 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, image = _image_payload(img)))
 end
 
+# Rename one image's segmentation value_name across every artifact keyed by it. See
+# `rename_value_name!` in app/src/storage.jl for the on-disk + ccid.json contract; this route is a
+# thin body-parse + call + fresh-image-payload wrapper, symmetric with `api_images_delete_labels`.
+function api_images_rename_labels(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    image_uid   = _wstr(body, :imageUid)
+    from        = _wstr(body, :from)
+    to          = _wstr(body, :to)
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
+    isempty(from)        && return 400, JSON3.write((; error="from required"))
+    isempty(to)          && return 400, JSON3.write((; error="to required"))
+
+    proj_dir = joinpath(projects_dir(), project_uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
+    img = init_object(project_uid, image_uid)
+    img isa CciaImage || return 404, JSON3.write((; error="Image not found"))
+
+    try
+        rename_value_name!(img, from, to)
+    catch e
+        msg = sprint(showerror, e)
+        # collision + "vn already exists" errors are 409s; everything else is a 400
+        code = occursin("already exists", msg) ? 409 : 400
+        return code, JSON3.write((; error=msg))
+    end
+
+    # re-init so the response carries the fresh in-memory state (label_props/labels keys, _active)
+    fresh = init_object(project_uid, image_uid)
+    fresh isa CciaImage || return 200, JSON3.write((; ok=true))
+    @info "Renamed label set" from to image=image_uid project=project_uid
+    200, JSON3.write((; ok=true, image=_image_payload(fresh)))
+end
+
 function api_images_channelnames(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
