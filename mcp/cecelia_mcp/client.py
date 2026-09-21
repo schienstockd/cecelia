@@ -83,6 +83,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
         ("GET", "/api/blackboard"),        # bidir Part 4 — list a project's blackboard entries (title + version + updatedAt)
         ("GET", "/api/blackboard/entry"),  # bidir Part 4 — read one entry's Markdown (optionally at a snapshot version)
+        # /api/blackboard/search is POST (see below) — a substring query with an optional status filter
         # NB: /api/viewer/capture (POST) is NOT allow-listed. Captures are AUTHORED by the frontend
         # Share button; Claude only READS them. Keeping the write off the observer's surface prevents
         # a fabricated "the user shared this" from ever landing in the project's captures dir.
@@ -92,6 +93,8 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/notebooks/revise"),  # write 4/7 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/create"),  # bidir Part 4 — new Markdown entry (title + content_md + optional attach_capture_ids)
         ("POST", "/api/blackboard/revise"),  # bidir Part 4 — SNAPSHOTS current content, then overwrites (real versioning, no "-v2" copies)
+        ("POST", "/api/blackboard/status"),  # PROJECT_MEMORY_PLAN D3 — flip entry status open|resolved|parked (no snapshot; metadata-only)
+        ("POST", "/api/blackboard/search"),  # PROJECT_MEMORY_PLAN D4 — case-insensitive substring over title+body; title matches beat body matches
         # NB: /api/blackboard/{restore,prune,delete} are NOT allow-listed — those are user-driven
         # via Kiwi / the /blackboard page, matching the notebooks discipline (Claude never restores
         # a version FOR the user, and never deletes their notes).
@@ -571,6 +574,24 @@ class CeceliaClient:
         if note:
             body["note"] = note
         return self._request("POST", "/api/blackboard/revise", body=body)
+
+    def set_blackboard_status(self, project_uid: str, entry_id: str, status: str):
+        # PROJECT_MEMORY_PLAN Decision 3. Additive metadata update; does NOT snapshot. Server rejects
+        # a status value outside {open,resolved,parked} with 400 — keep the enum in sync on both sides.
+        return self._request("POST", "/api/blackboard/status", body={
+            "projectUid": project_uid, "entryId": entry_id, "status": status,
+        })
+
+    def search_blackboard(self, project_uid: str, query: str,
+                          status: str | None = None, limit: int | None = None):
+        # PROJECT_MEMORY_PLAN Decision 4. Case-insensitive substring over title + body. `status`
+        # optional (server rejects invalid); `limit` clamped server-side to [1, 50].
+        body: dict = {"projectUid": project_uid, "query": query}
+        if status:
+            body["status"] = status
+        if limit is not None:
+            body["limit"] = int(limit)
+        return self._request("POST", "/api/blackboard/search", body=body)
 
     def revise_notebook(self, project_uid: str, file: str, cells: list[str], description: str = ""):
         # New version of an EXISTING notebook: the server snapshots the current one (restorable via the

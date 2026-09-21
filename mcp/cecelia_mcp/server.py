@@ -531,6 +531,68 @@ def get_chains(project_uid: str) -> dict:
     return _client.get_chains(project_uid)
 
 
+_BRIEFING_OPEN_ENTRIES_MAX = 8    # Decision 5 — briefing carries up to this many open blackboard entries
+_BRIEFING_RECENT_CAPTURES = 5     # Decision 5 — briefing carries up to this many recent captures
+
+
+def _memory_briefing_slice(project_uid: str) -> dict:
+    """Compose the PROJECT_MEMORY_PLAN Decision 5 briefing slice: profile body + open Blackboard
+    entries + last N captures. Split out so `get_session_briefing` stays legible, and so each
+    upstream call's failure degrades independently rather than blanking the whole memory slice.
+    Every field's default is empty/None — a fresh project with no memory yet gets an honest shape,
+    not a placeholder.
+    """
+    profile = None
+    open_entries: list[dict] = []
+    try:
+        entries = _client.list_blackboard_entries(project_uid).get("entries", [])
+    except Exception:
+        entries = []
+    for entry in entries:
+        entry_id = entry.get("entryId")
+        if entry_id == "profile":
+            # Fetch the full body — the profile is the "what is this project" record; a truncated
+            # snippet would defeat the point. It's capped at 100 KiB per Blackboard invariants.
+            try:
+                full = _client.read_blackboard_entry(project_uid, "profile")
+                body = full.get("entry", {})
+                profile = {
+                    "content":   body.get("content", ""),
+                    "updatedAt": body.get("updatedAt", ""),
+                    "status":    body.get("status", "open"),
+                }
+            except Exception:
+                profile = None
+            continue
+        if entry.get("status", "open") != "open":
+            continue
+        open_entries.append({
+            "entryId":          entry_id,
+            "title":            entry.get("title", ""),
+            "updatedAt":        entry.get("updatedAt", ""),
+            "attachmentsCount": entry.get("attachmentsCount", 0),
+        })
+        if len(open_entries) >= _BRIEFING_OPEN_ENTRIES_MAX:
+            break
+
+    try:
+        captures = _client.get_recent_captures(
+            project_uid, _BRIEFING_RECENT_CAPTURES).get("items", [])[:_BRIEFING_RECENT_CAPTURES]
+    except Exception:
+        captures = []
+    recent_captures = [{
+        "captureId": c.get("captureId"),
+        "createdAt": c.get("createdAt"),
+        "surface":   c.get("surface"),
+    } for c in captures]
+
+    return {
+        "profile":               profile,
+        "openBlackboardEntries": open_entries,
+        "recentCaptures":        recent_captures,
+    }
+
+
 @mcp.tool()
 def get_session_briefing(project_uid: str) -> dict:
     """Startup context for THIS session — call this FIRST when a chat begins, so you're oriented without
@@ -545,20 +607,43 @@ def get_session_briefing(project_uid: str) -> dict:
         `fun` is the task whose QC banked the finding: check it before believing a number. A probe or
         example module banking a hardcoded threshold looks exactly like a real pipeline finding
         otherwise ("4 images measured 0 cells" once came from a test probe, not segmentation).
-      - `recentLabLog`: entries from the last 7 days, newest-first — `[{date, author, summary}]`
+      - `profile`: the project's Blackboard profile entry (Decision 2) —
+        `{content, updatedAt, status}` — full markdown body, capped at 100 KiB. `null` if the
+        project has no blackboard yet (it will after the first list_blackboard_entries call, so this
+        is usually a fresh-project state). READ IT — this is what the profile exists for; don't
+        skip past it. If empty, offer to fill it in.
+      - `openBlackboardEntries`: up to 8 entries with status="open", newest-first —
+        `[{entryId, title, updatedAt, attachmentsCount}]`. What's currently on the table across
+        sessions. Reach for `read_blackboard_entry` on any that look relevant to what the user is
+        about to ask.
+      - `recentCaptures`: up to 5 shared frames, newest-first — `[{captureId, createdAt, surface}]`.
+        Same shape as `get_recent_captures` minus the address (call `get_capture(captureId)` for
+        the address + pixels when a specific one matters).
 
       - `guidance`: HOW TO WORK WITH THIS PROJECT — the disciplines that span tools (what to check
         before proposing any figure or cross-image comparison, and the rules for the few things you can
         write). Read it before you propose anything; it is written to be followed, not summarised.
 
-    Use it to open with what matters ("3 of 12 images flagged; 2 have too few tracks") and to pick up
-    where the last session left off (the lab log). Then ask the user which direction to take. Read-only."""
+    Deliberately DROPPED from the default response (PROJECT_MEMORY_PLAN Decision 5): the 7-day
+    lab-log slice. The lab-log is a chronological record whose value is post-hoc; the durable
+    "what's on the table" signal now comes from open Blackboard entries. `read_lab_log(project_uid)`
+    is still available for the chronological view when a specific question needs it.
+
+    Use this to open with what matters ("3 of 12 images flagged; 2 have too few tracks; profile
+    says CD169 macrophages under MERTK KO — is that still the focus today?") and to pick up where
+    the last session left off (open Blackboard entries + profile). Then ask the user which
+    direction to take. Read-only."""
     # The guidance rides along with the briefing rather than sitting in the server instructions: it is
     # ~600 words that only matter once a session actually opens a project, and the observer is
     # registered user-scope, so in the instructions it would be in context for every unrelated `claude`
     # session on the machine. Server-side, not pasted by the user — that is the whole point (see
     # guidance.py). Merged into the response so one call orients AND briefs.
-    return {**_client.get_session_briefing(project_uid), "guidance": BRIEFING_GUIDANCE}
+    base = _client.get_session_briefing(project_uid)
+    # PROJECT_MEMORY_PLAN Decision 5 — recentLabLog drops out of the default; the durable memory
+    # comes from the profile + open Blackboard entries. read_lab_log still serves the chronological
+    # view on demand.
+    base.pop("recentLabLog", None)
+    return {**base, **_memory_briefing_slice(project_uid), "guidance": BRIEFING_GUIDANCE}
 
 
 @mcp.tool()
@@ -682,8 +767,17 @@ def set_labarchives_context(project_uid: str, source: dict, sections: list,
 def list_blackboard_entries(project_uid: str) -> dict:
     """List this project's BLACKBOARD entries — shared thinking the user and you have iterated on
     across sessions, one entry per topic (Markdown + attached captureIds). Returns newest-first
-    `{entries: [{entryId, title, current, updatedAt, attachmentsCount}]}`. Use before writing a new
-    entry so you extend the topic the user already opened instead of creating a parallel one.
+    `{entries: [{entryId, title, current, updatedAt, attachmentsCount, status}]}`. Use before
+    writing a new entry so you extend the topic the user already opened instead of creating a
+    parallel one.
+
+    `status` is one of `open` (still on the table), `resolved` (topic settled, entry kept as record),
+    `parked` (deliberately set aside). The reserved entry `entryId="profile"` is auto-created and
+    sorts to the top — it's the project's durable "what is this project" record (subject, cohort,
+    goal, key channels). Read it FIRST when you open a project so you don't rediscover context
+    the profile already carries. Update it via `revise_blackboard_entry` as your understanding
+    deepens; retire a done thread via `set_blackboard_status(..., "resolved")`.
+
     Distinct from CHAINS (executable pipelines) and NOTEBOOKS (analysis code) — a blackboard entry
     is prose + diagrams; nothing here starts work."""
     return _client.list_blackboard_entries(project_uid)
@@ -692,10 +786,13 @@ def list_blackboard_entries(project_uid: str) -> dict:
 @mcp.tool()
 def read_blackboard_entry(project_uid: str, entry_id: str, version: int | None = None) -> dict:
     """Read a BLACKBOARD entry's current Markdown (or a snapshotted `version`). Returns
-    `{entry: {entryId, title, content, current, updatedAt, versions, attachments}}`. `content` is
-    the Markdown; `versions` is the list of snapshot ids you can pass to `version=` to read an
-    older revision. Reach for this before `revise_blackboard_entry` so you propose the change on
-    top of what actually exists, not a memory of it."""
+    `{entry: {entryId, title, content, current, updatedAt, versions, attachments, status}}`.
+    `content` is the Markdown; `versions` is the list of snapshot ids you can pass to `version=`
+    to read an older revision. `status` (open|resolved|parked) describes the LIVE entry — it's
+    entry-level metadata, not versioned per snapshot, so a `version=` read returns the CURRENT
+    status either way. Reach for this before `revise_blackboard_entry` so you propose the change
+    on top of what actually exists, not a memory of it. `entry_id="profile"` reads the project's
+    profile entry (auto-created, one per project)."""
     return _client.read_blackboard_entry(project_uid, entry_id, version)
 
 
@@ -742,6 +839,49 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
     404 if the entry doesn't exist. Use `create_blackboard_entry` for a brand-new entry."""
     return _client.revise_blackboard_entry(project_uid, entry_id, content_md,
                                             attach_capture_ids, note)
+
+
+@mcp.tool()
+def set_blackboard_status(project_uid: str, entry_id: str, status: str) -> dict:
+    """Flip a BLACKBOARD entry's status without touching its content. `status` is one of `open`
+    (still on the table), `resolved` (topic settled — the entry stays as a record but drops out of
+    the "what's open" briefing), `parked` (deliberately set aside — same drop-out, different
+    semantics). Returns `{ok:true, status}` — or `{ok:true, status, unchanged:true}` if the entry
+    was already in that state.
+
+    Does NOT create a snapshot — status is entry-level metadata, not a content revision. Use
+    `revise_blackboard_entry` for content changes; use this to close a done thread, park an idea,
+    or reopen one you had retired. Reach for it when: the topic of an entry has been resolved in
+    this session (a decision was locked, a bug was fixed, a finding was acted on) → `"resolved"`;
+    when the topic is deliberately set aside for later without deleting the entry → `"parked"`; to
+    revive a parked/resolved entry that has come back up → `"open"`. Don't blanket-close entries
+    as noise — a real transition, not housekeeping.
+
+    404 if the entry doesn't exist. Never deletes; delete stays user-driven."""
+    return _client.set_blackboard_status(project_uid, entry_id, status)
+
+
+@mcp.tool()
+def search_blackboard(project_uid: str, query: str,
+                      status: str | None = None, limit: int | None = None) -> dict:
+    """Search this project's BLACKBOARD entries. Case-insensitive substring over titles AND bodies;
+    title matches are returned before body matches, newest-first within each. Returns
+    `{results: [{entryId, title, snippet, status, updatedAt, matchType}]}` capped at `limit`
+    (default 10, max 50). `matchType` is `"title"` or `"body"`; `snippet` is ±40 chars around the
+    first hit.
+
+    `status` optional (`"open"|"resolved"|"parked"`) — filter to entries in that state; omit for
+    all. Use this to check "has this come up before in this project" BEFORE: proposing a phenotype
+    label that sounds familiar; suggesting a processing step for an unfamiliar image; writing a
+    new blackboard entry that might restate an existing one. Not reflexively on every session —
+    reach for it when there's a specific thing to check. If the search returns nothing, the topic
+    is genuinely new; if it returns a hit, `read_blackboard_entry` for the full context before
+    proposing on top of it.
+
+    Substring, not semantic: a query typed slightly differently from what an entry says won't
+    match. If nothing comes back, try a shorter or differently-worded query before concluding the
+    topic is new."""
+    return _client.search_blackboard(project_uid, query, status, limit)
 
 
 @mcp.tool()
@@ -1045,15 +1185,6 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     region", `pops` for "which cell type sits here", `tracks` for "is there motion here".
     A missing field on a v2 tile means the corresponding layer was off — fall back to your
     visual read, don't infer zero.
-
-    A v2 landscape may also carry `sourceRun` at the landscape (not tile) level — a per-field
-    bag naming the run/vn/version that produced each augmented field:
-      • `sourceRun.segCount = {valueName, labelsVersion}` — the label_props vn + resolved vN
-      • `sourceRun.pops     = {valueName, popType, gatingMtime}` — gating file's on-disk mtime
-      • `sourceRun.tracks   = {valueName, labelsVersion}`
-      • `sourceRun.channels = {valueName, imageVersion, level}` — pyramid level actually read
-    Use these to answer "which run produced this number", or to compare two capture envelopes
-    and see whether the underlying gating map / re-tracked h5ad moved between shares.
 
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install
