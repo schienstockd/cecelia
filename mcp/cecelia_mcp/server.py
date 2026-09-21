@@ -1271,6 +1271,40 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
 
 
 @mcp.tool()
+def mark_plot(project_uid: str, family: str, plot_id: str,
+              u: float, v: float,
+              cell: str = "", label: str = "", ttl_s: int = 300) -> dict:
+    """Point at a spot on a PLOT panel — your "look at THIS peak / cell / feature" pointer.
+
+    Use this after `get_recent_captures` returns a plot capture, or after the user has shared a
+    plot canvas and you want to point at a specific spot within one panel (a peak on a histogram,
+    a cluster on a UMAP, a bright cell on a strip / cell-card image, a heatmap cell).
+
+    `family` is the plot family:
+      `gate-scatter` — flow-cytometry gating scatter tile.
+      `umap`         — UMAP / cluster embedding (letterbox 1:1 inside the panel box).
+      `heatmap`      — cluster heatmap (Observable Plot; the pointer lands on the axis rect).
+      `image-strip`  — image-strip cell (address a cell with `cell="cell=<index>"`).
+      `cell-cards` / `motif-cards` — a card in a `CardsPanel` grid (`cell="<popPath>"`).
+      `pairs-matrix` / `gating-strategy` — a tile in a gating montage (`cell="<pane-key>"`).
+      `hmm-states` / `hmm-transitions` — HMM behaviour plot's axis rect.
+    `plot_id` is the panel's `persistKey` from a capture envelope (or the frontend's live one).
+
+    `u`, `v` are 0..1 in the family's own frame — the frame is the drawn plot area, not the
+    outer panel (so `(0.5, 0.5)` lands on the scatter's midpoint, not the axis-label gutter).
+    Cross-family: `frontend/src/plots/frame.ts` normalises so a mark projects onto the actual
+    plot area regardless of the family's rendering idiom.
+
+    `cell` optionally addresses a sub-frame for multi-cell families — one image cell, one facet,
+    one pairs-matrix tile, one card. Omit for single-cell plots.
+
+    EPHEMERAL: 5-min default TTL. Returns `{ok: true, markerId}`. No follow-up needed — the
+    frontend paints on receipt.
+    """
+    return _client.mark_plot(project_uid, family, plot_id, u, v, cell, label, ttl_s)
+
+
+@mcp.tool()
 def mark_tile(project_uid: str, image_uid: str, cell_id: str,
               label: str = "", ttl_s: int = 300) -> dict:
     """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when

@@ -273,6 +273,24 @@ export const useWsStore = defineStore('ws', () => {
             imageUid: imageUid || undefined, valueName: valueName || undefined,
           })
         }
+      } else if (data.kind === 'plot') {
+        // BIDIR PR #4b. Plot point-out — Claude's "look at THIS spot on that panel". Consumers
+        // (per plot family) filter by `(family, plotId, cell?)` and render a marker at their
+        // `getFrame().fromNorm(u, v)`.
+        const markerId = String(data.markerId ?? '')
+        const family   = String(data.family   ?? '')
+        const plotId   = String(data.plotId   ?? '')
+        const u = Number(data.u)
+        const v = Number(data.v)
+        const cell = String(data.cell ?? '')
+        const ttl = Number(data.ttlSeconds ?? 300)
+        if (markerId && family && plotId && Number.isFinite(u) && Number.isFinite(v)) {
+          viewer.pushPlotMark({
+            markerId, family, plotId, u, v,
+            ...(cell ? { cell } : {}),
+            label, ttlSeconds: ttl,
+          })
+        }
       }
     }
 

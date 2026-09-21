@@ -405,6 +405,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/marks/ui"       => (req, body_bytes) -> (api_viewer_marks_ui(body_bytes)),
     "/api/viewer/marks/freeform" => (req, body_bytes) -> (api_viewer_marks_freeform(body_bytes)),
     "/api/viewer/marks/tile"     => (req, body_bytes) -> (api_viewer_marks_tile(body_bytes)),
+    "/api/viewer/marks/plot"     => (req, body_bytes) -> (api_viewer_marks_plot(body_bytes)),
     # bidir landscape — browser publishes (POST), MCP reads (GET, above). Never Claude-authored.
     "/api/viewer/landscape"      => (req, body_bytes) -> (api_viewer_landscape_publish(body_bytes)),
     "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),

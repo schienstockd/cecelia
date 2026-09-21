@@ -13,7 +13,7 @@
   (each layer re-renders hi-res), so both hosts export identically.
 -->
 <script setup lang="ts">
-import { useTemplateRef, toRef } from 'vue'
+import { useTemplateRef, toRef, computed } from 'vue'
 import { dataToPx, yFrac } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
 import PlotSpinner from './PlotSpinner.vue'
@@ -23,6 +23,7 @@ import type { RenderMode } from './RenderModeToggle.vue'
 import GateOverlay from './GateOverlay.vue'
 import { svgDoc, svgLine, svgText } from '../../plots/export'
 import { rectFrame, type Frame } from '../../plots/frame'
+import { useViewerStore } from '../../stores/viewer'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
@@ -61,10 +62,15 @@ const props = withDefaults(defineProps<{
                                                  // clutter/clip); also reclaims their padding
   fontSize?: number                              // base axis font size (px) — the vis slider; scales the
                                                  // tick labels + axis names (--gate-font). Default 11.
+  // BIDIR PR #4b point-out plotId — the stable id (panel `persistKey`) Claude addresses this cell by
+  // via `point_at_plot(family='gate-scatter', plot_id=<this>, u, v)`. Absent → no marker rendered.
+  // Passed here rather than pushed down from the panel so this component owns both the frame AND
+  // the marker paint; the two match by construction.
+  plotId?: string
 }>(), {
   gates: () => [], popLayers: () => [], renderMode: 'points', showPops: false,
   mode: 'off', gateLineWidth: 1.5, gateLabels: false, viewTick: 0, loading: false, compact: false, readonly: false,
-  hideAxisLabels: false, fontSize: 11,
+  hideAxisLabels: false, fontSize: 11, plotId: '',
 })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
@@ -270,6 +276,17 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
                exportSvgBody: (light = true) => withLight(light, plotBody, ''),
                getFrame: (): Frame => plotFrame })
 
+// BIDIR PR #4b point-out marks addressed at this cell (`family='gate-scatter'`, `plotId=persistKey`).
+// Rendered as a translucent amber ring inside `.panel-plot`; the ring's position is (u, v) × the
+// panel's client CSS px, so it tracks resize / zoom-container transforms without extra maths.
+// Single-cell family — no sub-frame addressing here.
+const viewer = useViewerStore()
+const plotPointOuts = computed(() => {
+  const pid = props.plotId
+  if (!pid) return []
+  return viewer.plotMarks.filter(m => m.family === 'gate-scatter' && m.plotId === pid && !m.cell)
+})
+
 </script>
 
 <template>
@@ -298,6 +315,15 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
       <span v-if="!hideAxisLabels" class="axis-y">{{ yLabel }}</span>
       <PlotSpinner v-if="showSpinner && !compact" label="Loading…" />
       <div v-else-if="loading && compact" class="panel-loading cc-muted cc-fs-xs">…</div>
+      <!-- Claude's plot point-out marks addressed at this cell — a translucent amber ring at
+           (u, v) × the panel-plot size. Same colour family as the freeform marks on CVS
+           (`--cc-warn`) so the "Claude pointer" idiom reads uniformly. `pointer-events: none`
+           so the marker never eats a gate-draw click. -->
+      <span v-for="m in plotPointOuts" :key="m.markerId" class="pt-out"
+            :style="{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }"
+            v-tooltip.top="m.label || 'Claude'">
+        <span class="pt-out-dot" />
+      </span>
       <slot />
     </div>
   </div>
@@ -361,4 +387,22 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
 .axis-y { position: absolute; left: -66px; top: 50%; transform: translateY(-50%) rotate(180deg);
   writing-mode: vertical-rl; white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
 .panel-loading { position: absolute; top: 4px; right: 6px; }
+/* BIDIR PR #4b — Claude's plot point-out marker. Amber (--cc-warn) matches CVS freeform marks so
+   "Claude pointer" reads uniformly. Ring + centre dot at (u, v) inside `.panel-plot`; pointer-events
+   off so gate drawing is unaffected. Z above the canvases (dots ~1, gates ~5) but below chrome (10+). */
+.pt-out {
+  position: absolute; z-index: 6; pointer-events: none;
+  width: 20px; height: 20px; margin-left: -10px; margin-top: -10px;
+  border-radius: 50%; border: 2px solid var(--cc-warn);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+  background: rgba(245, 158, 11, 0.15);
+  display: flex; align-items: center; justify-content: center;
+  animation: pt-out-pulse 1.4s ease-out infinite;
+}
+.pt-out-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cc-warn); }
+@keyframes pt-out-pulse {
+  0%   { transform: scale(1);   opacity: 1; }
+  70%  { transform: scale(1.4); opacity: 0.4; }
+  100% { transform: scale(1);   opacity: 1; }
+}
 </style>
