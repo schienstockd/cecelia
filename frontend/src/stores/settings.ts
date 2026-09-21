@@ -344,6 +344,26 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('cc.viewerTrackVisibility', JSON.stringify(_trackVisStore.value))
   }
 
+  // Per-image × vn set of pop paths whose RIBBONS the user has hidden in the viewer. Track-layer
+  // eligibility is data-driven (any pop with `hasTracks: true` renders — MULTI_POP_TRACKING_PLAN
+  // Decision 2), so a project with several historically-tracked pops enters the viewer with every
+  // pop's ribbons drawn at once. The row-eye lets the user hide one; persistence is what makes the
+  // hide stick — the pop-manager pings that fire `loadOverlays` on every gate write used to reset a
+  // transient set, so hides evaporated within a second ("i've set the toggles correctly. there must
+  // be a wiring that is off"). Stored as an array in JSON; consumed as a Set. Reconciled on load —
+  // paths absent from the current payload are dropped, so a renamed/removed pop doesn't linger.
+  const _trackPopHiddenStore = ref<Record<string, Record<string, string[]>>>(
+    JSON.parse(localStorage.getItem('cc.viewerTrackPopHidden') ?? '{}')
+  )
+  function getTrackPopHidden(imageUid: string, vn: string): Set<string> {
+    return new Set(_trackPopHiddenStore.value[imageUid]?.[vn] ?? [])
+  }
+  function setTrackPopHidden(imageUid: string, vn: string, hidden: Set<string>) {
+    const perImage = { ..._trackPopHiddenStore.value[imageUid] ?? {}, [vn]: [...hidden] }
+    _trackPopHiddenStore.value = { ..._trackPopHiddenStore.value, [imageUid]: perImage }
+    localStorage.setItem('cc.viewerTrackPopHidden', JSON.stringify(_trackPopHiddenStore.value))
+  }
+
   // per-image branch-overlay visibility (skeleton labels from segment.branching). Default ON —
   // if a user has branch labels registered, they almost always want to see them (running the
   // task is the opt-in; hiding the layer is the exception, not the rule — mirrors cell labels).
@@ -657,7 +677,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

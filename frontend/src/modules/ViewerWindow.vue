@@ -782,7 +782,12 @@ const hiddenPops = ref<Set<string>>(new Set())
  * Track-layer visibility hides a pop's RIBBONS separately from its POINTS. A user showing points for
  * `/qc/CD169-/cells` and hiding its tracks is a valid state — collapsing this into `hiddenPops` would
  * silently link the two, which the plan (MULTI_POP_TRACKING_PLAN.md Decision 5) rejects.
- * Path-keyed, initialised empty on every overlays reload so a fresh payload's rows all start on.
+ *
+ * PERSISTED per (imageUid × vn) via `settings.getTrackPopHidden` — the pop-manager ping fires
+ * `loadOverlays` on every gate write, so a transient-per-fetch set clobbered the hide within a second.
+ * On refetch we RECONCILE (keep hides for pops still in the payload, drop stale), not reset. Unlike
+ * `hiddenPops` (points) this set has NO server-side counterpart — `hasTracks` is data-eligibility, not
+ * user intent — so a persisted user-intent overlay is safe from server clobbering.
  */
 const hiddenTrackPops = ref<Set<string>>(new Set())
 /**
@@ -1688,10 +1693,16 @@ async function loadOverlays() {
     const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : false
     if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
-    // Same reset for track-layer visibility: a refetch resyncs from the server's `pop.show` for
-    // POINTS, and the ribbon toggle is a transient row-eye that starts CLEAR each payload (a stale
-    // hide from an older payload would silently drop a ribbon the user thought they were seeing).
-    hiddenTrackPops.value = new Set()
+    // Track-layer hides are user intent, not server state — reconcile against the fresh payload
+    // (drop entries for pops no longer present) instead of resetting. See `hiddenTrackPops` docstring
+    // for why persistence is the right shape here.
+    const gcVn = gatingCurrent.value.valueName || ''
+    const persisted = imageUid ? settings.getTrackPopHidden(imageUid, gcVn) : new Set<string>()
+    const live = new Set((p.pops ?? []).map(x => x.path))
+    hiddenTrackPops.value = new Set([...persisted].filter(path => live.has(path)))
+    if (imageUid && persisted.size !== hiddenTrackPops.value.size) {
+      settings.setTrackPopHidden(imageUid, gcVn, hiddenTrackPops.value)
+    }
     overlays.value = p
     rebuildOverlays()
   } catch (e) {
@@ -1712,6 +1723,7 @@ function toggleTrackPop(path: string) {
   const next = new Set(hiddenTrackPops.value)
   next.has(path) ? next.delete(path) : next.add(path)
   hiddenTrackPops.value = next
+  if (imageUid) settings.setTrackPopHidden(imageUid, gatingCurrent.value.valueName || '', next)
   rebuildOverlays()
 }
 
