@@ -636,9 +636,15 @@ function api_viewer_overlays(req::HTTP.Request)
     try
         lp   = label_props(img; value_name = vn)
         obs  = col_names(lp; data_type = :obs)
-        # Ask for centroids, the track id and the colour column in ONE read. `select_cols` pushes the
-        # selection into the file, so an unwanted 300-column feature matrix is never materialised.
-        extra = String[c for c in (("track_id" in obs) ? ["track_id"] : String[])]
+        # Ask for centroids, the track id, its authoring source, and the colour column in ONE read.
+        # `select_cols` pushes the selection into the file, so an unwanted 300-column feature matrix is
+        # never materialised. `track_source` (MULTI_POP_TRACKING_ORPHANS_PLAN.md → P1) is what lets the
+        # client draw a per-pop ribbon that includes only the cells THIS pop authored, not the cells
+        # that happen to share labels with a sibling pop's tracking run — see the payload's
+        # `cells.trackSource` field and the frontend `filterPayloadByTrackSource` helper.
+        extra = String[]
+        ("track_id"     in obs) && push!(extra, "track_id")
+        ("track_source" in obs) && push!(extra, "track_source")
         (!isempty(cby) && cby in obs) && push!(extra, String(cby))
         view_centroid_cols(lp; order = [:x, :y, :z])
         isempty(extra) || select_cols(lp, extra)
@@ -670,6 +676,15 @@ function api_viewer_overlays(req::HTTP.Request)
         end
         idx = findall(keep)
         col(name) = has(name) ? Float64[Float64(df[i, name]) for i in idx] : Float64[]
+        # "" rather than null for "no track source": one sentinel the client tests, and it stays a
+        # String[] so JSON3 serialises it without missings. Both "no track_id column" AND "column
+        # present but this cell wasn't authored (missing/NaN/empty)" collapse to "" — the reader rule
+        # is the same in both cases (see `filterPayloadByTrackSource`: an empty source is treated as
+        # legacy/everyone's, matching Julia's `_pop_has_authored_tracks`).
+        ts_val(i) = begin
+            v = df[i, :track_source]
+            (ismissing(v) || v === nothing) ? "" : String(v)
+        end
         cells = (; label = Int[Int(df[i, :label]) for i in idx],
                    t     = col("centroid_t"),
                    x     = col("centroid_x"), y = col("centroid_y"), z = col("centroid_z"),
@@ -677,7 +692,8 @@ function api_viewer_overlays(req::HTTP.Request)
                    # an integer, so it survives JSON without a float's rounding question.
                    track = has("track_id") ?
                            Int[(!fin(df[i, :track_id]) || Float64(df[i, :track_id]) <= 0) ?
-                               -1 : Int(df[i, :track_id]) for i in idx] : Int[])
+                               -1 : Int(df[i, :track_id]) for i in idx] : Int[],
+                   trackSource = has("track_source") ? String[ts_val(i) for i in idx] : String[])
 
         # Populations, from the cached resolver. An image with no gating map answers an empty list
         # rather than an error — an unsegmented or ungated image is a normal state, not a failure.
@@ -687,7 +703,10 @@ function api_viewer_overlays(req::HTTP.Request)
             # WebGPU viewer treats a pop as ribbon-drawable when `isTrack || hasTracks` — see
             # MULTI_POP_TRACKING_PLAN.md Decision 2 + P3. Defaulting to `false` on legacy servers is
             # safe: the viewer falls back to today's isTrack-only behaviour.
-            [(; path = p.path, name = p.name, colour = p.colour, show = p.show,
+            # `uid` carried so the client can pair each pop with its authored `cells.trackSource`
+            # rows (MULTI_POP_TRACKING_ORPHANS_PLAN.md → attribution). Older backends omit it → the
+            # frontend falls back to the labels-only filter that shipped in P0.
+            [(; path = p.path, name = p.name, colour = p.colour, uid = p.uid, show = p.show,
                 isTrack = p.is_track, hasTracks = get(p, :has_tracks, false),
                 labels = p.labels)
              for p in resolve_pops(img, pt; value_name = vn)]

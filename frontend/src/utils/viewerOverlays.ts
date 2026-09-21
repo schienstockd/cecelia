@@ -64,6 +64,10 @@ export interface OverlayPop {
    *  Set true for e.g. a flow gate over cells that a per-pop tracking run has since populated. See
    *  docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2. Absent on payloads from older servers → false. */
   hasTracks?: boolean
+  /** Pop UID — pairs with `cells.trackSource` for per-pop ribbon filtering
+   *  (see `filterPayloadByTrackSource`). Absent on payloads from older servers → the caller falls
+   *  back to labels-only filtering. */
+  uid?: string
   labels: number[]
 }
 
@@ -79,6 +83,10 @@ export interface OverlayPayload {
     y?: number[]
     z?: number[]
     track?: number[]
+    /** Authoring `track_source` per row — a pop UID (see MULTI_POP_TRACKING_ORPHANS_PLAN.md → P1),
+     *  the sentinel `"whole_seg"` for whole-segmentation tracking, or `""` for legacy/unmarked.
+     *  Empty on payloads from older servers → `filterPayloadByTrackSource` becomes a no-op. */
+    trackSource?: string[]
   }
   pops: OverlayPop[]
   colourColumns: string[]
@@ -303,14 +311,65 @@ export function filterPayloadByLabels(payload: OverlayPayload, labels: ReadonlyS
     ...payload,
     nCells: keep.length,
     cells: {
-      label: pick(payload.cells.label),
-      t:     pick(payload.cells.t),
-      x:     pick(payload.cells.x),
-      y:     pick(payload.cells.y),
-      z:     pick(payload.cells.z),
-      track: pick(payload.cells.track),
+      label:       pick(payload.cells.label),
+      t:           pick(payload.cells.t),
+      x:           pick(payload.cells.x),
+      y:           pick(payload.cells.y),
+      z:           pick(payload.cells.z),
+      track:       pick(payload.cells.track),
+      trackSource: pick(payload.cells.trackSource),
     },
     // values are per-row (like cells.*), so they must be picked too when present.
+    values: payload.values ? keep.map(i => payload.values![i]) : payload.values,
+  }
+}
+
+/** The sentinel Julia writes for whole-segmentation tracking — pairs with `WHOLE_SEG_TRACK_SOURCE`
+ *  in `app/src/gating/popmanager/types.jl`. Kept as a string constant so the two sides stay in sync
+ *  in review even though the value never leaves each side's own reader. */
+export const WHOLE_SEG_TRACK_SOURCE = 'whole_seg'
+
+/**
+ * Restrict a payload to rows whose `track_source` is authored by `popUid` — mirrors the Julia
+ * attribution rule in `_pop_has_authored_tracks` (`app/src/gating/popmanager/allow_list.jl`):
+ *
+ *   - `""` (unmarked / legacy / no `track_source` column on disk) → keep (everyone's row)
+ *   - `WHOLE_SEG_TRACK_SOURCE` → keep (prime-everything whole-seg tracking)
+ *   - `popUid` → keep (this pop authored it)
+ *   - anything else → drop (a sibling pop authored it)
+ *
+ * The bug this fixes: a cell in `/qc/test`'s gate whose `track_id` was authored by an earlier
+ * `/qc/CD169-` tracking run has both `label ∈ /qc/test.labels` AND `track_source == /qc/CD169-`.
+ * `filterPayloadByLabels` alone lets the CD169- track ribbon draw under /qc/test's colour. This
+ * helper is the missing second half — the caller composes both so ribbons only show cells that
+ * are BOTH in the pop AND authored by (or unattributed under) this pop.
+ *
+ * A payload with no `cells.trackSource` (legacy backend, pre-orphan-guard ship) — return unchanged
+ * so old servers keep behaving as they did. Empty `popUid` — same fallback, since there's nothing
+ * to match against; the caller should skip this filter rather than call with an empty uid.
+ */
+export function filterPayloadByTrackSource(payload: OverlayPayload, popUid: string): OverlayPayload {
+  const sources = payload.cells.trackSource
+  if (!sources || !sources.length || !popUid) return payload
+  const keep: number[] = []
+  for (let i = 0; i < sources.length; i++) {
+    const s = sources[i]
+    if (s === '' || s === WHOLE_SEG_TRACK_SOURCE || s === popUid) keep.push(i)
+  }
+  const pick = <T>(arr: T[] | undefined): T[] | undefined =>
+    arr ? keep.map(i => arr[i]) : undefined
+  return {
+    ...payload,
+    nCells: keep.length,
+    cells: {
+      label:       pick(payload.cells.label),
+      t:           pick(payload.cells.t),
+      x:           pick(payload.cells.x),
+      y:           pick(payload.cells.y),
+      z:           pick(payload.cells.z),
+      track:       pick(payload.cells.track),
+      trackSource: pick(payload.cells.trackSource),
+    },
     values: payload.values ? keep.map(i => payload.values![i]) : payload.values,
   }
 }

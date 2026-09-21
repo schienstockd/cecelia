@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
-  filterPayloadByLabels, filterPayloadByTracks,
+  filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
+  WHOLE_SEG_TRACK_SOURCE,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -196,6 +197,44 @@ describe('filterPayloadByLabels', () => {
     expect(p.pops).toBe(src.pops)
     expect(p.colourColumns).toBe(src.colourColumns)
     expect(p.hasT).toBe(src.hasT)
+  })
+})
+
+describe('filterPayloadByTrackSource', () => {
+  // Repro of the fXgbTl bug: /qc/test's gate includes cells that were tracked under an earlier
+  // /qc/CD169- run. filterPayloadByLabels alone drew the CD169- ribbon under /qc/test's colour;
+  // composing with filterPayloadByTrackSource drops the sibling's rows.
+  const withSources = () => payload({
+    cells: {
+      ...payload().cells,
+      trackSource: ['test-uid', 'cd169-uid', '', WHOLE_SEG_TRACK_SOURCE],
+    },
+  })
+
+  it('keeps rows the pop authored, unmarked rows and whole-seg rows; drops sibling-authored rows', () => {
+    const p = filterPayloadByTrackSource(withSources(), 'test-uid')
+    // labels 10 (test-uid), 12 (unmarked), 13 (whole_seg) survive; 11 (cd169-uid) is dropped
+    expect(p.nCells).toBe(3)
+    expect(p.cells.label).toEqual([10, 12, 13])
+    expect(p.cells.trackSource).toEqual(['test-uid', '', WHOLE_SEG_TRACK_SOURCE])
+  })
+
+  it('no trackSource column → identity (legacy backend, keep behaving like the labels-only path)', () => {
+    const src = payload()
+    expect(filterPayloadByTrackSource(src, 'test-uid')).toBe(src)
+  })
+
+  it('empty popUid → identity — the caller should skip this filter rather than pass empty', () => {
+    const src = withSources()
+    expect(filterPayloadByTrackSource(src, '')).toBe(src)
+  })
+
+  it('composes with filterPayloadByLabels — cell in pop AND authored by pop', () => {
+    // /qc/test's gate contains labels 10 and 11; only 10 was actually authored under test-uid.
+    const gateOnly = filterPayloadByLabels(withSources(), new Set([10, 11]))
+    const authored = filterPayloadByTrackSource(gateOnly, 'test-uid')
+    expect(authored.nCells).toBe(1)
+    expect(authored.cells.label).toEqual([10])
   })
 })
 
