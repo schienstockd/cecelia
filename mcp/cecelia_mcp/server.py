@@ -534,6 +534,43 @@ def get_chains(project_uid: str) -> dict:
 _BRIEFING_OPEN_ENTRIES_MAX = 8    # Decision 5 — briefing carries up to this many open blackboard entries
 _BRIEFING_RECENT_CAPTURES = 5     # Decision 5 — briefing carries up to this many recent captures
 
+# Decision 9 — the two profile sections that must be filled before the briefing treats the project
+# as authored. Matches the heading text seeded by _BB_PROFILE_PLACEHOLDER_BODY in
+# api/src/blackboard_api.jl; keep the two in step or the newProject check will always fire.
+_PROFILE_REQUIRED_SECTIONS = ("Subject", "Goal")
+
+
+def _profile_section_has_content(body: str, heading: str) -> bool:
+    """True if the `## <heading>` section in `body` has at least one line that isn't blank and isn't
+    the seeded placeholder marker (`_(…)_` italic parenthetical). Section runs from the heading to
+    the next `## ` heading or EOF. Cheap string scan — the placeholder body is <1 KiB, real profiles
+    cap at 100 KiB."""
+    import re
+    m = re.search(rf'^##\s+{re.escape(heading)}\s*$', body, re.MULTILINE)
+    if not m:
+        return False
+    start = m.end()
+    nxt = re.search(r'^##\s+', body[start:], re.MULTILINE)
+    section = body[start:start + nxt.start()] if nxt else body[start:]
+    for line in section.split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        # Seeded placeholder line: `_(…)_`. Stripped, it counts as unfilled.
+        if s.startswith("_(") and s.endswith(")_"):
+            continue
+        return True
+    return False
+
+
+def _profile_is_authored(profile: dict | None) -> bool:
+    """Decision 9 gate: profile counts as authored iff Subject AND Goal have real content beyond the
+    seeded placeholder. Missing profile ⇒ not authored (fresh project state)."""
+    if not profile:
+        return False
+    body = profile.get("content", "") or ""
+    return all(_profile_section_has_content(body, h) for h in _PROFILE_REQUIRED_SECTIONS)
+
 
 def _memory_briefing_slice(project_uid: str) -> dict:
     """Compose the PROJECT_MEMORY_PLAN Decision 5 briefing slice: profile body + open Blackboard
@@ -587,6 +624,10 @@ def _memory_briefing_slice(project_uid: str) -> dict:
     } for c in captures]
 
     return {
+        # PROJECT_MEMORY_PLAN Decision 9 — newProject is TRUE when the profile hasn't been filled
+        # in past its seeded placeholder (Subject + Goal are what the briefing enforces). Guidance
+        # tells Claude to greet + ask before proposing anything in that state.
+        "newProject":            not _profile_is_authored(profile),
         "profile":               profile,
         "openBlackboardEntries": open_entries,
         "recentCaptures":        recent_captures,
@@ -611,7 +652,11 @@ def get_session_briefing(project_uid: str) -> dict:
         `{content, updatedAt, status}` — full markdown body, capped at 100 KiB. `null` if the
         project has no blackboard yet (it will after the first list_blackboard_entries call, so this
         is usually a fresh-project state). READ IT — this is what the profile exists for; don't
-        skip past it. If empty, offer to fill it in.
+        skip past it.
+      - `newProject` (bool): TRUE when the profile hasn't been filled in past its seeded
+        placeholder (Decision 9 — Subject and Goal are the two required sections). When TRUE, don't
+        propose anything until you've greeted the user and asked them to describe subject + goal;
+        a briefing with no signal to lean on is worse than one that admits it needs signal.
       - `openBlackboardEntries`: up to 8 entries with status="open", newest-first —
         `[{entryId, title, updatedAt, attachmentsCount}]`. What's currently on the table across
         sessions. Reach for `read_blackboard_entry` on any that look relevant to what the user is

@@ -207,6 +207,45 @@ Full design + phased plan: [`docs/todo/QC_PLAN.md`](todo/QC_PLAN.md).
 
 ---
 
+## Project memory — Blackboard as the narrative store across sessions
+
+Each project carries durable narrative memory Claude Code can lean on across sessions — a
+profile of what the project *is* (subject, cohort, goal, key channels) plus the threads
+currently on the table plus recently shared frames. The memory lives inside the project
+directory so it travels with `.ccbundle` export; there is no per-workstation "memory" state
+outside `<proj>/`.
+
+**Store.** The [Blackboard](../docs/todo/BIDIR_CONTEXT_PLAN.md) — markdown entries at
+`<proj>/blackboard/<bb-id>/{entry.md, meta.json, .snapshots/entry@v<N>.md}`, registered in
+`<proj>/settings/blackboard.json`. Two additions layered on the base:
+
+- A reserved entry with id `profile` — auto-created on first list, seeded with five suggested
+  headings (`## Subject`, `## Goal`, `## Modality`, `## Cohort / groups`, `## Key channels`);
+  Subject + Goal are what the briefing enforces before treating the project as authored.
+- `meta.status: open | resolved | parked` on every entry (missing backfills as `open`). Status
+  transitions travel through a dedicated `POST /api/blackboard/status` endpoint — additive,
+  no snapshot fired — separate from content revisions.
+
+**Retrieval.**
+- `GET /api/blackboard` + `GET /api/blackboard/entry` — list + read, both MCP-visible.
+- `POST /api/blackboard/search` — case-insensitive substring over titles + bodies, title
+  hits ranked ahead of body hits, ±40-char snippet, optional status filter, limit ≤ 50.
+
+**Session open.** `get_session_briefing` (MCP) returns the profile body in full, up to 8
+open Blackboard entries (title + updated-at), and the last 5 captures. `newProject: true`
+when the profile has no signal past its seeded placeholder — guidance instructs Claude to
+greet + ask the user to fill Subject + Goal before proposing anything. The 7-day lab-log
+slice is *not* in the default briefing — `read_lab_log` still serves the chronological
+view when a specific question needs it.
+
+**Portability.** Every byte lives under `<proj>/`; `.ccbundle` already carries
+`blackboard/**`, `captures/**`, `settings/blackboard.json`, `lab-log.md`. No per-workstation
+memory path exists.
+
+Full design + phase log: [`docs/todo/PROJECT_MEMORY_PLAN.md`](todo/PROJECT_MEMORY_PLAN.md).
+
+---
+
 ## Valid box — which part of a store is data
 
 A task may write a canvas larger than its data. Drift correction expands the canvas to hold the
