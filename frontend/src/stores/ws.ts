@@ -241,14 +241,17 @@ export const useWsStore = defineStore('ws', () => {
         const trackIds = Array.isArray(data.trackIds)
           ? (data.trackIds as unknown[]).map(v => Number(v)).filter(n => Number.isFinite(n)) : []
         if (imageUid && valueName && trackIds.length) {
-          viewer.setTrackHighlight({ imageUid, valueName, trackIds, label })
+          // origin='claude' distinguishes this mark from a user's Show / cockpit selection so plot
+          // consumers (Decision 19) can paint a distinct visual + "C" glyph. Same bag, different
+          // provenance — the last writer still wins.
+          viewer.setTrackHighlight({ imageUid, valueName, trackIds, label, origin: 'claude' })
         }
       } else if (data.kind === 'cell') {
         const labels = Array.isArray(data.labels)
           ? (data.labels as unknown[]).map(v => Number(v)).filter(n => Number.isFinite(n)) : []
         const focusId = Number(data.focusId ?? 0)
         if (imageUid && valueName && labels.length) {
-          viewer.setPickHighlight({ imageUid, valueName, labels, focusId, label })
+          viewer.setPickHighlight({ imageUid, valueName, labels, focusId, label, origin: 'claude' })
         }
       } else if (data.kind === 'ui') {
         // BIDIR PR #5. Ephemeral UI-anchor pointer; PointerBubble resolves the anchor and paints.

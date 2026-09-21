@@ -134,6 +134,12 @@ export interface TrackHighlight {
    *  visible label overlay is a follow-up; today the field just rides along in the bag so a
    *  future consumer (correction cockpit, plot balloon) can name what the highlight is FOR. */
   label?: string
+  /** Who authored this highlight. Absent (or 'user') = a panel's Show / cockpit selection; 'claude' =
+   *  Claude's `mark_tracks` (BIDIR PR #4b). Plot consumers subscribed to this bag (Decision 19) render
+   *  a distinct Claude visual + "C" glyph when origin='claude', so user selection and Claude marks
+   *  are never confused. The bag itself remains "last writer wins" — a Claude mark can be overwritten
+   *  by a user Show and vice-versa, matching the ephemeral shared-selection contract. */
+  origin?: 'user' | 'claude'
 }
 
 /**
@@ -178,6 +184,8 @@ export interface PickHighlight {
   updateId: number
   /** Optional caption — same role as TrackHighlight.label. Set by Claude's `mark_cells` (BIDIR PR #4). */
   label?: string
+  /** Origin of this highlight — see `TrackHighlight.origin`. */
+  origin?: 'user' | 'claude'
 }
 
 /** BIDIR PR #5 UI-anchor pointer — "click here". Ephemeral (5-min default TTL); rendered by
