@@ -111,6 +111,8 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-megaphone', means: 'Call for Datasets — what we can build with your data' },
       { icon: 'pi-comments', means: 'Chat to Claude' },
       { icon: 'pi-comment', means: 'A note on an image' },
+      { icon: 'pi-thumbs-up', means: 'A Blackboard thread that turned out right' },
+      { icon: 'pi-thumbs-down', means: 'A Blackboard thread that turned out wrong' },
     ],
   },
   {

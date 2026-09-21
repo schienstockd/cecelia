@@ -21,12 +21,19 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useBlackboardStore } from '../stores/blackboard'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
+import ChipSelect from '../components/ChipSelect.vue'
 import { usePanelResize } from '../composables/usePanelResize'
 import {
   listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
+  setBlackboardStatus, setBlackboardOutcome,
   formatWhen, type BlackboardEntrySummary, type BlackboardEntry,
+  type BlackboardStatus, type BlackboardVerdict,
 } from '../utils/blackboardApi'
+import {
+  filterEntries, PROFILE_ENTRY_ID,
+  type StatusChoice, type OutcomeChoice,
+} from '../utils/blackboardFilters'
 import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
 import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
 import { openViewerWindow } from '../utils/viewerWindow'
@@ -58,13 +65,51 @@ const listLoading = ref(false)
 
 // SelectionTable columns. One row per entry — the table sorts by any of these, so `updated` sorts
 // by the raw ISO string (lexicographic works because the id-encoded timestamp is fixed-width).
-// `attachmentsCount` renders as a small paperclip chip via the cell slot.
+// The `status` / `outcome` / `attachmentsCount` cells use the slot API for compact chips.
+// PROJECT_MEMORY_PLAN Decisions 3 (status) + 11 (outcome) travel here as columns.
 const LIST_COLUMNS: SelectionColumn[] = [
-  { key: 'title',     label: 'Title',       sortable: true, width: 260 },
-  { key: 'updatedAt', label: 'Updated',     sortable: true, width: 80  },
-  { key: 'current',   label: 'Ver',         sortable: true, width: 44  },
-  { key: 'attachmentsCount', label: '',     sortable: false, width: 36 },
+  { key: 'title',     label: 'Title',       sortable: true, width: 240 },
+  { key: 'status',    label: '',            sortable: false, width: 24 },
+  { key: 'outcome',   label: '',            sortable: false, width: 24 },
+  { key: 'updatedAt', label: 'Updated',     sortable: true, width: 72  },
+  { key: 'current',   label: 'Ver',         sortable: true, width: 38  },
+  { key: 'attachmentsCount', label: '',     sortable: false, width: 32 },
 ]
+
+// ── Filter chips — Decision 6 (from the P4 plan): status + outcome are filterable columns on the
+// list. Both persist across mounts via localStorage; the profile entry is always visible regardless
+// (see `filterEntries` in `utils/blackboardFilters.ts`).
+const STATUS_FILTER_OPTS = [
+  { value: 'all',      label: 'All' },
+  { value: 'open',     label: 'Open' },
+  { value: 'resolved', label: 'Resolved' },
+  { value: 'parked',   label: 'Parked' },
+]
+const OUTCOME_FILTER_OPTS = [
+  { value: 'all',      label: 'All' },
+  { value: 'untagged', label: 'Untagged' },
+  { value: 'good',     label: 'Good', icon: 'pi pi-thumbs-up' },
+  { value: 'bad',      label: 'Bad',  icon: 'pi pi-thumbs-down' },
+]
+const STATUS_FILTER_KEY  = 'cc.blackboard.statusFilter'
+const OUTCOME_FILTER_KEY = 'cc.blackboard.outcomeFilter'
+function loadPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key)
+    return v && (allowed as readonly string[]).includes(v) ? v as T : fallback
+  } catch { return fallback }
+}
+const statusFilter  = ref<StatusChoice>(loadPref<StatusChoice>(
+  STATUS_FILTER_KEY, ['all', 'open', 'resolved', 'parked'], 'all'))
+const outcomeFilter = ref<OutcomeChoice>(loadPref<OutcomeChoice>(
+  OUTCOME_FILTER_KEY, ['all', 'untagged', 'good', 'bad'], 'all'))
+watch(statusFilter,  v => { try { localStorage.setItem(STATUS_FILTER_KEY,  v) } catch { /* private mode */ } })
+watch(outcomeFilter, v => { try { localStorage.setItem(OUTCOME_FILTER_KEY, v) } catch { /* private mode */ } })
+
+// Filtered rows that actually feed the SelectionTable. `filterEntries` keeps the profile row
+// visible regardless of the filters (Decision 2 — it's the pinned "what is this project" record).
+const filteredEntries = computed(() => filterEntries(entries.value, statusFilter.value, outcomeFilter.value))
+const filteredOutCount = computed(() => entries.value.length - filteredEntries.value.length)
 
 // ── Selected entry state ─────────────────────────────────────────────────────
 // `selected` is the LIVE entry; `viewingVersion` != null when the user has clicked a history
@@ -84,6 +129,63 @@ const draftTitle = ref('')
 const draftContent = ref('')
 const savingDraft = ref(false)
 
+// ── Outcome tag control (Decision 11) ────────────────────────────────────────
+// Tap → type note → confirm. D5's "one tap" softens because D2 makes the note required — we open
+// the inline note input on first tap of good/bad, and only fire the endpoint once the note is
+// non-empty. Editing an existing tag pre-fills the note.
+const outcomeEditing = ref(false)
+const outcomeDraftVerdict = ref<BlackboardVerdict | null>(null)
+const outcomeDraftNote = ref('')
+const savingOutcome = ref(false)
+const OUTCOME_NOTE_MAX = 2 * 1024   // matches server-side cap in api/src/blackboard_api.jl
+
+function beginOutcomeEdit() {
+  if (!selected.value) return
+  const o = selected.value.outcome
+  outcomeDraftVerdict.value = o?.verdict ?? null
+  outcomeDraftNote.value    = o?.note ?? ''
+  outcomeEditing.value = true
+}
+function cancelOutcomeEdit() {
+  outcomeEditing.value = false
+  outcomeDraftVerdict.value = null
+  outcomeDraftNote.value = ''
+}
+async function saveOutcome() {
+  if (savingOutcome.value || !selected.value || !projectUid.value) return
+  const verdict = outcomeDraftVerdict.value
+  const note = outcomeDraftNote.value.trim()
+  if (!verdict || !note) return
+  savingOutcome.value = true
+  try {
+    const applied = await setBlackboardOutcome(projectUid.value, selected.value.entryId, verdict, note)
+    if (applied) {
+      // Reload the entry so `selected.outcome` reflects the new tag; the WS broadcast reloads
+      // the list on the other side of the same round-trip (see the `bbStore.tick` watcher).
+      await loadEntry(selected.value.entryId)
+      cancelOutcomeEdit()
+    }
+  } finally { savingOutcome.value = false }
+}
+
+// Status flip — no snapshot fired, so this can be a direct chip-click without an intermediate.
+const savingStatus = ref(false)
+async function onStatusChange(next: BlackboardStatus) {
+  if (savingStatus.value || !selected.value || !projectUid.value) return
+  if (next === selected.value.status) return
+  savingStatus.value = true
+  try {
+    const applied = await setBlackboardStatus(projectUid.value, selected.value.entryId, next)
+    if (applied) await loadEntry(selected.value.entryId)
+  } finally { savingStatus.value = false }
+}
+
+const STATUS_HEAD_OPTS = [
+  { value: 'open',     label: 'Open' },
+  { value: 'resolved', label: 'Resolved' },
+  { value: 'parked',   label: 'Parked' },
+]
+
 // Attachment envelopes for the selected entry — fetched lazily per attachment so the thumbnails
 // stream in. `thumb` is a data URL of the composited FRAME + MARKS (see `resolveThumbForCache`).
 interface AttachmentSlot {
@@ -97,8 +199,30 @@ const paneContent = computed(() => {
   if (mode.value !== 'view' || !selected.value) return ''
   return viewingVersion.value !== null ? viewingContent.value : selected.value.content
 })
-const paneHtml = computed(() => renderBlackboardMarkdown(paneContent.value))
+// Title map for `[[bb-…]]` cross-refs — drives the wiki-link resolver so a bare id in the markdown
+// renders as a clickable title. Rebuilt from the CURRENT entries list; if a linked entry has been
+// deleted, the resolver falls back to "<id> (deleted?)" so the reference is still visible.
+const titleById = computed(() => {
+  const m = new Map<string, string>()
+  for (const e of entries.value) m.set(e.entryId, e.title || e.entryId)
+  return m
+})
+const paneHtml = computed(() => renderBlackboardMarkdown(paneContent.value, titleById.value))
 const hasMermaid = computed(() => mermaidBlocks(paneContent.value).length > 0)
+
+// Click intercept for the wiki links the resolver produces — `<a href="#bb:<id>">…`. Bubbles from
+// `v-html` content, so we listen on the pane wrapper. Falls through to the browser for any other
+// href (including plain fragment links inside the entry body).
+function onPaneClick(ev: MouseEvent) {
+  const a = (ev.target as HTMLElement | null)?.closest?.('a') as HTMLAnchorElement | null
+  if (!a) return
+  const href = a.getAttribute('href') ?? ''
+  if (!href.startsWith('#bb:')) return
+  ev.preventDefault()
+  const id = href.slice('#bb:'.length)
+  if (id && entries.value.some(e => e.entryId === id)) selectEntry(id)
+  // Unknown id — the resolver already tagged the label "(deleted?)"; do nothing on click.
+}
 
 async function loadList() {
   if (!projectUid.value) { entries.value = []; return }
@@ -158,6 +282,7 @@ function selectEntry(id: string) {
   if (selectedId.value === id && mode.value === 'view' && viewingVersion.value === null) return
   selectedId.value = id
   mode.value = 'view'
+  cancelOutcomeEdit()
   void loadEntry(id)
 }
 
@@ -358,6 +483,17 @@ onUnmounted(() => { mermaidRenderSeq++ })
           <i class="pi" :class="listLoading ? 'pi-spin pi-spinner' : 'pi-refresh'" /> Refresh
         </button>
         <span class="bb-bar-spacer" />
+        <!-- Filter chips (status + outcome). Profile row is always shown regardless. -->
+        <ChipSelect variant="segmented"
+                    aria-label="Filter by status"
+                    :options="STATUS_FILTER_OPTS"
+                    :model-value="statusFilter"
+                    @update:modelValue="v => statusFilter = v as StatusChoice" />
+        <ChipSelect variant="segmented"
+                    aria-label="Filter by outcome"
+                    :options="OUTCOME_FILTER_OPTS"
+                    :model-value="outcomeFilter"
+                    @update:modelValue="v => outcomeFilter = v as OutcomeChoice" />
       </div>
 
       <!-- Split: list left, entry right. Border-only divider, no floating panels. -->
@@ -372,13 +508,27 @@ onUnmounted(() => { mermaidRenderSeq++ })
                           selection-mode="single"
                           id-key="entryId"
                           :columns="LIST_COLUMNS"
-                          :rows="entries"
+                          :rows="filteredEntries"
                           :model-value="selectedId"
                           sort-storage-key="cc.blackboard.sort"
-                          :row-tooltip="e => e.entryId"
                           @update:model-value="v => selectEntry(String(v ?? ''))">
             <template #cell-title="{ row: e }">
-              <span class="bb-list-title">{{ e.title || '(untitled)' }}</span>
+              <span class="bb-list-title" :class="{ 'bb-list-title-profile': e.entryId === PROFILE_ENTRY_ID }">
+                <i v-if="e.entryId === PROFILE_ENTRY_ID" class="pi pi-thumbtack bb-list-pin"
+                   v-tooltip.top="'Project profile — always at the top; describes what this project is'" />
+                {{ e.title || '(untitled)' }}
+              </span>
+            </template>
+            <template #cell-status="{ row: e }">
+              <span class="bb-chip bb-chip-status" :class="`bb-chip-status-${e.status}`"
+                    v-tooltip.top="`Status: ${e.status}`">{{ e.status[0].toUpperCase() }}</span>
+            </template>
+            <template #cell-outcome="{ row: e }">
+              <span v-if="e.outcome" class="bb-chip bb-chip-outcome"
+                    :class="`bb-chip-outcome-${e.outcome.verdict}`"
+                    v-tooltip.top="`${e.outcome.verdict}: ${e.outcome.note}`">
+                <i class="pi" :class="e.outcome.verdict === 'good' ? 'pi-thumbs-up' : 'pi-thumbs-down'" />
+              </span>
             </template>
             <template #cell-updatedAt="{ row: e }">
               <span class="cc-muted cc-fs-2xs">{{ formatWhen(e.updatedAt) }}</span>
@@ -394,7 +544,12 @@ onUnmounted(() => { mermaidRenderSeq++ })
             </template>
             <template #empty>
               <span class="cc-muted">
-                No entries yet. Claude can create them via MCP, or click <strong>New entry</strong>.
+                <template v-if="filteredOutCount > 0">
+                  {{ filteredOutCount }} entr{{ filteredOutCount === 1 ? 'y' : 'ies' }} hidden by filters.
+                </template>
+                <template v-else>
+                  No entries yet. Claude can create them via MCP, or click <strong>New entry</strong>.
+                </template>
               </span>
             </template>
           </SelectionTable>
@@ -435,12 +590,21 @@ onUnmounted(() => { mermaidRenderSeq++ })
           <!-- Viewer -->
           <template v-else-if="selected">
             <div class="bb-pane-head cc-row cc-row-loose">
+              <i v-if="selected.entryId === PROFILE_ENTRY_ID" class="pi pi-thumbtack bb-pane-pin"
+                 v-tooltip.top="'Project profile'" />
               <span class="bb-pane-title">{{ selected.title }}</span>
               <span class="bb-pane-sub cc-fs-2xs cc-muted">
                 updated {{ formatWhen(selected.updatedAt) }}
                 <template v-if="selected.current > 0"> · v{{ selected.current }}</template>
               </span>
               <span class="bb-bar-spacer" />
+              <!-- Status flip — a chip select applied inline; no snapshot fired. -->
+              <ChipSelect variant="segmented"
+                          aria-label="Entry status"
+                          :options="STATUS_HEAD_OPTS"
+                          :model-value="selected.status"
+                          :disabled="savingStatus"
+                          @update:modelValue="v => onStatusChange(v as BlackboardStatus)" />
               <select v-if="selected.versions.length > 0"
                       class="cc-input-xs bb-versions"
                       :value="viewingVersion ?? ''"
@@ -465,11 +629,64 @@ onUnmounted(() => { mermaidRenderSeq++ })
               </button>
               <ConfirmDeleteButton title="Delete this entry (all versions)"
                                     armed-title="Click again to permanently delete"
-                                    @confirm="onDelete" />
+                                    @confirm="onDelete"
+                                    v-if="selected.entryId !== PROFILE_ENTRY_ID" />
+            </div>
+
+            <!-- Outcome row — good/bad tag with required note. Idle state shows the current tag or
+                 a compact "Tag" button; editing state shows note input + Good/Bad buttons (each
+                 disabled until the note is non-empty). Decision 11. -->
+            <div class="bb-outcome cc-row cc-row-loose">
+              <template v-if="!outcomeEditing">
+                <template v-if="selected.outcome">
+                  <span class="bb-chip bb-chip-outcome" :class="`bb-chip-outcome-${selected.outcome.verdict}`">
+                    <i class="pi" :class="selected.outcome.verdict === 'good' ? 'pi-thumbs-up' : 'pi-thumbs-down'" />
+                    {{ selected.outcome.verdict }}
+                  </span>
+                  <span class="bb-outcome-note cc-fs-xs" v-tooltip.top="selected.outcome.note">
+                    {{ selected.outcome.note }}
+                  </span>
+                  <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="beginOutcomeEdit"
+                          v-tooltip.bottom="'Change the outcome or edit the note'">
+                    <i class="pi pi-pencil" /> Edit tag
+                  </button>
+                </template>
+                <template v-else>
+                  <span class="cc-muted cc-fs-xs">Outcome not tagged.</span>
+                  <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="beginOutcomeEdit"
+                          v-tooltip.bottom="'Tag this thread good/bad with a short note'">
+                    <i class="pi pi-tag" /> Tag outcome
+                  </button>
+                </template>
+              </template>
+              <template v-else>
+                <input v-model="outcomeDraftNote"
+                       class="bb-outcome-input"
+                       :maxlength="OUTCOME_NOTE_MAX"
+                       type="text"
+                       placeholder="Why — required (a sentence or two)"
+                       v-tooltip.bottom="'Note is required; keep it to what a future session needs to know'" />
+                <button class="cc-btn cc-btn-dense bb-outcome-good"
+                        :class="{ 'bb-outcome-active': outcomeDraftVerdict === 'good' }"
+                        :disabled="savingOutcome || !outcomeDraftNote.trim()"
+                        @click="outcomeDraftVerdict = 'good'; saveOutcome()"
+                        v-tooltip.bottom="'Held up on real data'">
+                  <i class="pi pi-thumbs-up" /> Good
+                </button>
+                <button class="cc-btn cc-btn-dense bb-outcome-bad"
+                        :class="{ 'bb-outcome-active': outcomeDraftVerdict === 'bad' }"
+                        :disabled="savingOutcome || !outcomeDraftNote.trim()"
+                        @click="outcomeDraftVerdict = 'bad'; saveOutcome()"
+                        v-tooltip.bottom="'Turned out wrong'">
+                  <i class="pi pi-thumbs-down" /> Bad
+                </button>
+                <button class="cc-btn cc-btn-ghost cc-btn-dense" :disabled="savingOutcome"
+                        @click="cancelOutcomeEdit">Cancel</button>
+              </template>
             </div>
 
             <div v-if="entryLoading" class="cc-muted cc-fs-xs bb-pane-loading">Loading…</div>
-            <div v-else ref="paneRef" class="bb-body" v-html="paneHtml" />
+            <div v-else ref="paneRef" class="bb-body" v-html="paneHtml" @click="onPaneClick" />
 
             <div v-if="selected.attachments.length > 0" class="bb-attach">
               <div class="bb-attach-label cc-muted cc-fs-2xs">Attachments</div>
@@ -542,6 +759,33 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-list-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .bb-list-table { width: 100%; }
 .bb-list-title { color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-list-title-profile { font-weight: 600; }
+.bb-list-pin { color: var(--cc-accent); margin-right: 4px; font-size: 0.75em; }
+
+/* ── status + outcome chips (list cells + entry-pane outcome row) ────────────── */
+/* A compact one-letter status pill; colour-coded so the list is scannable without reading. */
+.bb-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 4px;
+  font-size: var(--cc-fs-2xs);
+  line-height: 1;
+  border-radius: var(--cc-radius-xs);
+  padding: 2px 6px;
+  border: 1px solid var(--cc-border);
+  background: var(--cc-surface-2);
+  color: var(--cc-text);
+}
+.bb-chip-status { width: 18px; height: 18px; padding: 0; font-weight: 600; }
+.bb-chip-status-open     { background: var(--cc-surface-2); color: var(--cc-text); }
+.bb-chip-status-resolved { background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); border-color: rgba(16, 185, 129, 0.4); }
+.bb-chip-status-parked   { background: rgba(148, 163, 184, 0.15); color: var(--cc-text-dim); border-color: rgba(148, 163, 184, 0.4); }
+/* Outcome verdict colours — Okabe-Ito blue (good) / vermilion (bad). Red↔green is textbook
+   deuteran/protan hostile (see `frontend/src/utils/overlayCompose.ts` for the same reasoning
+   on the annotation palette); this pair reads distinct under every common CVD type AND is
+   already Cecelia's canonical CVD-safe qualitative palette (`plots/palettes.json:okabe-ito`).
+   Colour is not the sole cue — thumbs-up / thumbs-down icons carry the semantic redundantly. */
+.bb-chip-outcome-good { background: rgba(86, 180, 233, 0.18); color: rgb(147, 197, 233); border-color: rgba(86, 180, 233, 0.5); }
+.bb-chip-outcome-bad  { background: rgba(213, 94, 0, 0.18);   color: rgb(240, 148, 68);   border-color: rgba(213, 94, 0, 0.5); }
 /* The divider: a grab strip on the pane's right edge, over the border it sits on. Same shape
    TasksModule uses — 5px wide, `col-resize` cursor, transient accent on hover. */
 .bb-divider {
@@ -566,9 +810,33 @@ onUnmounted(() => { mermaidRenderSeq++ })
   border-bottom: 1px solid var(--cc-border);
 }
 .bb-pane-title { font-weight: 600; font-size: var(--cc-fs-lg); }
+.bb-pane-pin { color: var(--cc-accent); margin-right: 4px; }
 .bb-pane-sub { flex: 0 0 auto; }
 .bb-pane-empty { padding: 1.5rem 0; text-align: center; }
 .bb-pane-loading { padding: 1rem 0; }
+
+/* Outcome row sits under the head bar, above the body — one line, always visible. */
+.bb-outcome {
+  padding: 0.35rem 0 0.5rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px dashed var(--cc-border);
+  flex-shrink: 0;
+}
+.bb-outcome-note {
+  color: var(--cc-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.bb-outcome-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-family: var(--cc-mono);
+}
+.bb-outcome-good.bb-outcome-active { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.6); }
+.bb-outcome-bad.bb-outcome-active  { background: rgba(239, 68, 68, 0.2);  border-color: rgba(239, 68, 68, 0.6); }
 
 .bb-versions { min-width: 5.5rem; }
 

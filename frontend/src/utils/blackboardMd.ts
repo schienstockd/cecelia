@@ -12,13 +12,37 @@ import { marked } from 'marked'
 
 marked.setOptions({ gfm: true, breaks: false })
 
+/** `[[bb-<ts>-<hex>]]` and `[[profile]]` — internal wiki-style links to other Blackboard entries.
+ *  Claude writes these naturally when cross-referencing (e.g. "see [[bb-…]] for the pipeline");
+ *  we swap them for real Markdown links to a `#bb:<id>` fragment so the SFC can intercept a click
+ *  and select the target entry. Absent from the title map (linked entry deleted) → still linked
+ *  by id so the reader knows the reference existed. Kept as its own pass over the raw markdown so
+ *  the resolution runs BEFORE marked sees `[…]` — no need to fight escape rules mid-render. */
+const _BB_WIKI_RE = /\[\[(profile|bb-[0-9]{8}T[0-9]{6}-[0-9a-f]{6})\]\]/g
+
+export function resolveBlackboardWikiLinks(md: string, titleById: Map<string, string>): string {
+  return md.replace(_BB_WIKI_RE, (_full, id: string) => {
+    const title = titleById.get(id)
+    const label = title && title.length > 0 ? title : `${id} (deleted?)`
+    // Markdown-escape the closing `]` in the label — a title containing `]` would end the link
+    // early. Nothing else needs escaping since marked will process this like any other `[text](url)`.
+    const safeLabel = label.replace(/[[\]]/g, '\\$&')
+    return `[${safeLabel}](#bb:${id})`
+  })
+}
+
 /** Render a blackboard entry's markdown to HTML for `v-html`. Mermaid fences are left as
  *  `<pre><code class="language-mermaid">…</code></pre>` — the SFC finds them via `mermaidBlocks`
- *  and replaces them with rendered SVG after a dynamic mermaid import. */
-export function renderBlackboardMarkdown(md: string | undefined | null): string {
+ *  and replaces them with rendered SVG after a dynamic mermaid import. `titleById` is optional
+ *  and used ONLY to resolve `[[bb-…]]` cross-references; omit it and those render as raw text. */
+export function renderBlackboardMarkdown(
+  md: string | undefined | null,
+  titleById?: Map<string, string>,
+): string {
   if (!md) return ''
-  try { return marked.parse(md, { async: false }) as string }
-  catch { return md }
+  const resolved = titleById ? resolveBlackboardWikiLinks(md, titleById) : md
+  try { return marked.parse(resolved, { async: false }) as string }
+  catch { return resolved }
 }
 
 /** Return the source text of every ```mermaid fence in a markdown string, in document order. Used to
