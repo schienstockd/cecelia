@@ -322,9 +322,11 @@ async function saveEditVn() {
           <li v-for="[vn, fns] in labels" :key="'l-' + vn" class="md-store cc-card">
             <div class="md-store-head">
               <template v-if="editingVn === vn">
-                <span class="md-store-vn cc-muted cc-fs-xs">labels ·</span>
-                <input ref="editInputRef" v-model="editingValue" class="md-vn-input"
+                <span class="cc-muted cc-fs-xs">labels ·</span>
+                <input ref="editInputRef" v-model="editingValue"
+                       class="md-vn-input cc-input-xs"
                        :disabled="editingBusy"
+                       v-tooltip.top="editVnError() ?? 'New name'"
                        @keydown.enter.prevent="saveEditVn"
                        @keydown.escape.prevent="cancelEditVn" />
                 <button class="cc-btn cc-btn-bare cc-btn-icon"
@@ -458,15 +460,11 @@ async function saveEditVn() {
 .md-flow-vn { color: var(--cc-text); font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
 .md-flow-active { font-weight: 600; }
 
-/* Inline rename input on a labels row: sized to match the surrounding `md-store-vn` (600 weight,
-   small text) so the row height doesn't jump between view and edit modes. */
-.md-vn-input {
-  flex: 1; min-width: 0;
-  font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text);
-  background: var(--cc-surface-2); border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem;
-}
-.md-vn-input:focus { outline: 1px solid var(--cc-accent); }
+/* Inline rename input on a labels row — layout only. Size + border + colour come from the input
+   base + `cc-input-xs` (see style.css → Density steps for form controls); a scoped re-statement is
+   what findRestatedInputBase in cssScenarios.test.ts refuses. Font-weight matches the surrounding
+   `md-store-vn` (600) so the row height doesn't jump between view and edit modes. */
+.md-vn-input { flex: 1; min-width: 0; font-weight: 600; }
 /* The pencil is dim until the row is hovered — the rename is a rare op, and a bright icon on every
    label row would fight the size readout for attention. */
 .md-vn-edit { opacity: 0.5; }
