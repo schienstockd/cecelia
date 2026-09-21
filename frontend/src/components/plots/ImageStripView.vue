@@ -55,6 +55,9 @@ interface Cell { assetId?: string; src?: string; snapshot?: Record<string, unkno
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; showLegend?: boolean; showScaleBar?: boolean; showTimestamp?: boolean; legendFontPx?: number; scaleBarFontPx?: number; timestampFontPx?: number }
+  // BIDIR PR #4b — panel's persistKey forwarded by InteractivePanel. Each StripCell filters
+  // Claude's plot-marks by (family='image-strip', plotId=<this>, cell='cell=<index>').
+  plotId?: string
 }>()
 
 // seed defaults into the persisted state bag (the slot starts as {})
@@ -458,6 +461,7 @@ defineExpose({ exportImage, getFrame: (): Frame => stripFrame })
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
       <StripCell v-for="(c, i) in cells" :key="i" :ref="el => setCellFrameRef(i, el)"
                  class="is-cell" :style="{ clipPath: clipFor(i) }"
+                 family="image-strip" :plot-id="plotId" :cell-key="`cell=${i}`"
                  :src="(c.assetId || c.src) ? cellSrc(c) : undefined"
                  alt="viewer screenshot"
                  :extent-um="c.extentUm" :time-label="frameTime(c)"

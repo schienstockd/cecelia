@@ -244,7 +244,9 @@ function exportAs(kind: string) {
                  :render-mode="renderMode" :gate-labels="props.gateLabels" :gate-line-width="props.gateLineWidth"
                  :highlight="highlightPops" :colour-by="colourBy" :dot-size="props.dotSize"
                  :cols="channels.length || 1" :axis-from-zero="props.axisFromZero"
-                 :reload-key="reloadKey" @coerced="coerced = $event">
+                 :reload-key="reloadKey"
+                 point-out-family="pairs-matrix" :plot-id="props.persistKey"
+                 @coerced="coerced = $event">
       <template #empty>Select channels above to compare them against each other.</template>
     </GateMontage>
   </CanvasPanel>

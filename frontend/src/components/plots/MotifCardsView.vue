@@ -18,6 +18,9 @@ import type { Frame } from '../../plots/frame'
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   state: { maxPx?: number; padPx?: number }
+  // BIDIR PR #4b — panel's persistKey forwarded by InteractivePanel; forwarded to CardsPanelInner
+  // so per-card StripCells filter `(family='motif-cards', plotId=<this>, cell=<motif.path>)`.
+  plotId?: string
 }>()
 
 // The board's PDF export path calls `exportImage()` on the mounted view via InteractivePanel;
@@ -39,5 +42,6 @@ defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
 <template>
   <CardsPanelInner ref="innerRef" :family="motifFamily"
                    :project-uid="projectUid" :image-uids="imageUids"
-                   :state="state" />
+                   :state="state"
+                   point-out-family="motif-cards" :plot-id="plotId" />
 </template>

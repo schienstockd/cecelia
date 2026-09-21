@@ -56,10 +56,15 @@ const props = withDefaults(defineProps<{
   reloadKey?: string | number
   fontSize?: number                              // axis font size (px) forwarded to each tile (vis slider)
   dotSize?: number                               // dot radius (px) forwarded to each tile (see plots/density DOT_R)
+  // BIDIR PR #4b — point-out family + panel plotId, forwarded to each `GateScatterCell` tile so it
+  // filters Claude's marks by `(family, plotId, cell=<pane key>)`. Family is per-caller:
+  // `pairs-matrix` (in-page pairs) or `gating-strategy` (analysis board).
+  pointOutFamily?: string
+  plotId?: string
 }>(), {
   renderMode: 'points', gateLabels: true, gateLineWidth: 1.5,
   highlight: () => [], colourBy: null, cols: null, axisFromZero: true, reloadKey: 0, fontSize: 11,
-  dotSize: DOT_R,
+  dotSize: DOT_R, pointOutFamily: '', plotId: '',
 })
 // true when ≥1 tile's preferred transform was auto-linearised (host shows an amber hint on its control)
 const emit = defineEmits<{ coerced: [boolean] }>()
@@ -398,7 +403,8 @@ const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value
                            :base-values="panelData[d.key].values" :value-extent="valueRamp?.extent ?? null"
                            :value-ticks="valueRamp?.ticks" :value-label="legendLabel"
                            :value-legend="single"
-                           :flip-y="isImageYAxis(d.yChan)" />
+                           :flip-y="isImageYAxis(d.yChan)"
+                           :family="pointOutFamily" :plot-id="plotId" :cell-key="d.key" />
           <div v-else class="gm-loading">…</div>
         </div>
       </template>

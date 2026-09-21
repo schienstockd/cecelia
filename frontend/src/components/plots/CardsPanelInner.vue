@@ -26,6 +26,11 @@ const props = defineProps<{
   shownPops?: ShownPop[]
   state: { maxPx?: number; padPx?: number }
   family: CardFamily
+  // BIDIR PR #4b — the parent's point-out family (`cell-cards` or `motif-cards`) + the panel's
+  // persistKey. Each StripCell filters by (family, plotId, cell=<card.path>). Absent → no
+  // point-outs render (a caller that doesn't opt in stays untouched).
+  pointOutFamily?: string
+  plotId?: string
 }>()
 const emit = defineEmits<{ cardSelect: [Card] }>()
 
@@ -197,6 +202,7 @@ defineExpose({ exportImage, getFrame: (): Frame => cardsFrame })
         <div class="ccv-frame" :style="{ borderColor: c.colour }">
           <StripCell class="ccv-cell" :ref="el => setCellFrameRef(c.path, el)"
                      :src="displaySrc(c)" :alt="c.name"
+                     :family="pointOutFamily" :plot-id="plotId" :cell-key="c.path"
                      @click="emit('cardSelect', c)" />
         </div>
         <div class="ccv-foot">

@@ -24,6 +24,8 @@ import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../pl
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import { rectFrame, type Frame } from '../../plots/frame'
+import { useViewerStore } from '../../stores/viewer'
+import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -180,6 +182,33 @@ const hmmFrame: Frame = rectFrame(() => {
   return clientAxisRectOf(n, n.scale('x'), n.scale('y'))
 })
 defineExpose({ exportImage, getCsv, getFrame: (): Frame => hmmFrame })
+
+// BIDIR PR #4b point-out consumer. Same axis-rect-relative math as ClusterHeatmapPanel; the host
+// div ResizeObserver already re-renders `node` on resize, so the axis rect stays fresh — we tick
+// a separate counter to trigger Vue's re-render of the marker positions.
+const viewer = useViewerStore()
+const hmmMarks = computed(() => {
+  const pid = props.persistKey
+  if (!pid) return []
+  return viewer.plotMarks.filter(m => m.family === 'hmm-states' && m.plotId === pid && !m.cell)
+})
+// Reactivity trigger for the marker positions on a panel resize — see ClusterHeatmapPanel for the
+// same shape. `usePlotResize` on `bodyEl` with a tick-bumper "render" (no DOM write into the
+// observed element) can't self-loop.
+const bodyEl = useTemplateRef<HTMLElement>('bodyEl')
+const resizeTick = ref(0)
+usePlotResize(bodyEl, () => { resizeTick.value += 1 })
+function markStyle(m: { u: number; v: number }): Record<string, string> | null {
+  void resizeTick.value                                // reactive dep on resize
+  const n = node as (Element & { scale?: (nm: string) => { range?: readonly number[] } | null }) | null
+  if (!n || typeof n.scale !== 'function') return null
+  const axis = clientAxisRectOf(n, n.scale('x'), n.scale('y'))
+  const bodyRect = bodyEl.value?.getBoundingClientRect()
+  if (!axis || !bodyRect || axis.width <= 0 || axis.height <= 0) return null
+  const left = (axis.left - bodyRect.left) + m.u * axis.width
+  const top  = (axis.top  - bodyRect.top)  + m.v * axis.height
+  return { left: `${left}px`, top: `${top}px` }
+}
 </script>
 
 <template>
@@ -203,18 +232,21 @@ defineExpose({ exportImage, getCsv, getFrame: (): Frame => hmmFrame })
         <option value="svg">Image (SVG)</option>
       </select>
     </template>
-    <div class="hmm-body">
+    <div ref="bodyEl" class="hmm-body">
       <div v-show="rows.length" ref="host" class="hmm-host" :style="{ background: hostBg }" />
       <div v-if="!rows.length" class="hmm-empty cc-empty cc-empty-overlay">
         <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-bar']" />
         <p>{{ loading ? 'Loading…' : (err || 'No HMM states to show.') }}</p>
       </div>
+      <template v-for="m in hmmMarks" :key="m.markerId">
+        <PlotPointOutMark v-if="markStyle(m)" :mark="m" :style="markStyle(m)!" />
+      </template>
     </div>
   </CanvasPanel>
 </template>
 
 <style scoped>
-.hmm-body { display: flex; flex: 1; min-height: 0; padding: 6px; }
+.hmm-body { position: relative; display: flex; flex: 1; min-height: 0; padding: 6px; }
 .hmm-host { position: relative; flex: 1; min-height: 0; background: white; border-radius: var(--cc-radius-xs); overflow: hidden; }
 .hmm-host :deep(svg) { display: block; }
 /* legend/title overlays: positioning is global (style.css) so this panel and PlotChart cannot drift —

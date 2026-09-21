@@ -21,6 +21,9 @@ import { downloadDataUrl, downloadBlob } from '../../plots/export'
 import type { PlotDataResponse } from '../../plots/types'
 import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { buildClusterHeatmapBody } from '../../utils/clusterHeatmapBody'
+import { useViewerStore } from '../../stores/viewer'
+import { usePlotResize } from '../../composables/usePlotResize'
+import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -138,6 +141,34 @@ function getCsv(): string | null { return heatmap.value ? plotDataToCsv(heatmap.
 // NOT the panel body. A 0..1 against the body would land on the axis-label / legend gutter.
 const heatmapFrame: Frame = rectFrame(() => plotRef.value?.axisRect?.() ?? null)
 defineExpose({ exportImage, getCsv, exportSvg, getFrame: (): Frame => heatmapFrame })
+
+// BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='heatmap'`,
+// `plotId=persistKey`). Position calc reads `axisRect()` in client space, subtracts the body's
+// own client-space origin → local px inside `.hm-body`. Reactive on resize via a tick counter
+// bumped by a ResizeObserver on the body; PlotChart re-renders on resize too, so `axisRect()`
+// stays fresh.
+const viewer = useViewerStore()
+const bodyEl = useTemplateRef<HTMLElement>('bodyEl')
+const heatmapMarks = computed(() => {
+  const pid = props.persistKey
+  if (!pid) return []
+  return viewer.plotMarks.filter(m => m.family === 'heatmap' && m.plotId === pid && !m.cell)
+})
+// Reactivity trigger for the marker positions on a panel resize. `usePlotResize` handles the raf
+// coalescing + lifecycle; the "render" here is a tick bump — no DOM write into `bodyEl` (the plot
+// itself is rendered by PlotChart, which has its own resize plumbing), so there's no self-loop.
+const resizeTick = ref(0)
+usePlotResize(bodyEl, () => { resizeTick.value += 1 })
+function markStyle(m: { u: number; v: number }): Record<string, string> | null {
+  // `resizeTick` read intentional — makes this a reactive dependency so a resize re-renders.
+  void resizeTick.value
+  const axis = plotRef.value?.axisRect?.()
+  const bodyRect = bodyEl.value?.getBoundingClientRect()
+  if (!axis || !bodyRect || axis.width <= 0 || axis.height <= 0) return null
+  const left = (axis.left - bodyRect.left) + m.u * axis.width
+  const top  = (axis.top  - bodyRect.top)  + m.v * axis.height
+  return { left: `${left}px`, top: `${top}px` }
+}
 </script>
 
 <template>
@@ -176,12 +207,15 @@ defineExpose({ exportImage, getCsv, exportSvg, getFrame: (): Frame => heatmapFra
         <option value="svg">Image (SVG)</option>
       </select>
     </template>
-    <div class="hm-body">
+    <div ref="bodyEl" class="hm-body">
       <PlotChart v-if="heatmap" ref="plotRef" :data="heatmap" :opts="opts" />
       <div v-else class="hm-empty cc-empty cc-empty-overlay">
         <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-table']" />
         <p>{{ loading ? 'Loading…' : (err || 'Pick features to build the cluster heatmap.') }}</p>
       </div>
+      <template v-for="m in heatmapMarks" :key="m.markerId">
+        <PlotPointOutMark v-if="markStyle(m)" :mark="m" :style="markStyle(m)!" />
+      </template>
     </div>
   </CanvasPanel>
 </template>
@@ -199,7 +233,7 @@ defineExpose({ exportImage, getCsv, exportSvg, getFrame: (): Frame => heatmapFra
 /* .hm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .hm-export { max-width: 7rem; }
-.hm-body { display: flex; flex: 1; min-height: 0; padding: 6px; }
+.hm-body { position: relative; display: flex; flex: 1; min-height: 0; padding: 6px; }
 /* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + the two HMM panels) */
 .hm-empty { padding: 1rem; }
 .hm-empty .pi { font-size: 1.4rem; opacity: 0.6; }

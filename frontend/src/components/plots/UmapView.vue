@@ -18,6 +18,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import { letterboxFrame, type Frame, type FrameCell, type FrameRect } from '../../plots/frame'
+import { useViewerStore } from '../../stores/viewer'
+import PlotPointOutMark from './PlotPointOutMark.vue'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useDataRefresh } from '../../composables/useDataRefresh'
@@ -44,6 +46,9 @@ const props = defineProps<{
            colourBy?: 'cluster' | 'population' | 'attribute'
            colourPops?: string[]; colourAttr?: string
            facetBy?: 'none' | 'attribute' | 'population'; facetAttr?: string }
+  // BIDIR PR #4b — the panel's `persistKey`, forwarded from InteractivePanel so this view can
+  // filter Claude's point-out marks by `(family='umap', plotId=<this>)`. Absent → no marker.
+  plotId?: string
 }>()
 const log = useLogStore()
 const project = useProjectStore()
@@ -620,6 +625,52 @@ const umapFrame: Frame = {
 }
 defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage,
                getFrame: (): Frame => umapFrame })
+
+// BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='umap'`,
+// `plotId=persistKey`); a mark's `cell` field selects a facet on faceted layouts. Positions
+// computed in plotBoxEl-local px — the same letterbox math `singleFrame` / `facetInnerRect` use,
+// via `boxW`/`boxH` (kept in sync by the ResizeObserver in `redraw()`) so a resize repositions
+// the marker without extra wiring.
+const viewer = useViewerStore()
+const umapMarks = computed(() => {
+  const pid = props.plotId
+  if (!pid) return []
+  return viewer.plotMarks.filter(m => m.family === 'umap' && m.plotId === pid)
+})
+function letterboxLocal(u: number, v: number,
+                        rect: { x: number; y: number; w: number; h: number }, asp: number,
+): { left: number; top: number } | null {
+  if (rect.w <= 0 || rect.h <= 0 || !(asp > 0)) return null
+  const cAsp = rect.w / rect.h
+  const w = asp > cAsp ? rect.w : rect.h * asp
+  const h = asp > cAsp ? rect.w / asp : rect.h
+  return { left: rect.x + (rect.w - w) / 2 + u * w,
+           top:  rect.y + (rect.h - h) / 2 + v * h }
+}
+function markStyle(m: { u: number; v: number; cell?: string }): Record<string, string> | null {
+  if (boxW.value <= 0 || boxH.value <= 0) return null
+  const asp = naturalAspect()
+  if (!(asp > 0)) return null
+  const facs = facets.value
+  const nf = facs.length
+  const faceted = facetBy.value !== 'none' && nf > 1
+  if (faceted) {
+    // `cell` must name a facet — either its label (getFrame's subFrames key when non-empty) or
+    // `facet=<idx>` (the fallback key). A cell-less mark on a faceted plot has no meaningful
+    // target here (no "whole panel" surface); drop it.
+    const cell = m.cell || ''; if (!cell) return null
+    const idx = facs.findIndex((f, i) => (f.label || `facet=${i}`) === cell)
+    if (idx < 0) return null
+    const c = facetCell(idx, nf, boxW.value, boxH.value)
+    const pos = letterboxLocal(m.u, m.v, { x: c.px, y: c.py, w: c.pw, h: c.ph }, asp)
+    return pos ? { left: `${pos.left}px`, top: `${pos.top}px` } : null
+  }
+  // Single facet: cell should be absent. Mark carrying a cell address on a non-faceted plot is a
+  // consumer mismatch — drop rather than render at the wrong spot.
+  if (m.cell) return null
+  const pos = letterboxLocal(m.u, m.v, { x: 0, y: 0, w: boxW.value, h: boxH.value }, asp)
+  return pos ? { left: `${pos.left}px`, top: `${pos.top}px` } : null
+}
 </script>
 
 <template>
@@ -699,6 +750,12 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage,
             <!-- per-facet titles (small multiples) -->
             <span v-for="(t, ti) in facetTitles" :key="'f'+ti" class="uv-facet-title"
                   :style="{ left: t.x + 'px', top: t.y + 'px', fontSize: labelFont + 'px', color: legendInk }">{{ t.label }}</span>
+            <!-- Claude's plot point-out marks. Position computed in plotBoxEl-local px (accounts
+                 for the letterbox + facet cell). A mark whose position doesn't resolve (no facet
+                 match, aspect not yet known) is skipped rather than rendered at the top-left. -->
+            <template v-for="m in umapMarks" :key="m.markerId">
+              <PlotPointOutMark v-if="markStyle(m)" :mark="m" :style="markStyle(m)!" />
+            </template>
           </template>
           <div v-else class="uv-empty cc-empty cc-empty-overlay">
             <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />

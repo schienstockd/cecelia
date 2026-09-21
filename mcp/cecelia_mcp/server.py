@@ -1479,13 +1479,14 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
     a cluster on a UMAP, a bright cell on a strip / cell-card image, a heatmap cell).
 
     `family` is the plot family:
-      `gate-scatter` — flow-cytometry gating scatter tile.
-      `umap`         — UMAP / cluster embedding (letterbox 1:1 inside the panel box).
-      `heatmap`      — cluster heatmap (Observable Plot; the pointer lands on the axis rect).
-      `image-strip`  — image-strip cell (address a cell with `cell="cell=<index>"`).
-      `cell-cards` / `motif-cards` — a card in a `CardsPanel` grid (`cell="<popPath>"`).
+      `gate-scatter` — flow-cytometry gating scatter tile (single-cell).
       `pairs-matrix` / `gating-strategy` — a tile in a gating montage (`cell="<pane-key>"`).
+      `umap`         — UMAP / cluster embedding. Faceted: address a facet with `cell="<facet-label>"`.
+      `heatmap`      — cluster heatmap (Observable Plot; the pointer lands on the axis rect).
       `hmm-states` / `hmm-transitions` — HMM behaviour plot's axis rect.
+      `summary`      — summary panel (histogram, boxplot, violin, …) via PlotChart's axis rect.
+      `image-strip`  — image-strip cell (address one with `cell="cell=<index>"`).
+      `cell-cards` / `motif-cards` — a card in a `CardsPanel` grid (`cell="<card.path>"`).
     `plot_id` is the panel's `persistKey` from a capture envelope (or the frontend's live one).
 
     `u`, `v` are 0..1 in the family's own frame — the frame is the drawn plot area, not the

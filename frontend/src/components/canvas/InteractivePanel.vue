@@ -42,7 +42,11 @@ defineExpose({ exportImage, exportSvg })
   <CanvasPanel :index="index" :active="active" :arrange="arrange" :persist-key="persistKey" :docked="docked"
                :title="entry?.label ?? view" :square="entry?.square ?? false"
                @activate="emit('activate', $event)" @remove="emit('remove')">
-    <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state" />
+    <!-- `plot-id` forwards the panel's persistKey to the interactive view so the view can filter
+         Claude's point-out marks (`stores/viewer.ts::plotMarks`) by (family, plotId). Views that
+         don't opt in ignore it; the ones that do (UmapView, cluster panels) declare it a prop. -->
+    <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state"
+               :plot-id="persistKey" />
     <div v-else class="ip-missing cc-muted cc-fs-md">Unknown interactive plot “{{ view }}”.</div>
     <template v-if="duplicable || exportFormats.length" #footer>
       <button v-if="duplicable" class="ip-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="emit('duplicate')"
