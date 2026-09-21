@@ -16,6 +16,8 @@ import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../pl
 import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import type { PlotDataResponse } from '../../plots/types'
+import { clientAxisRectOf } from '../../plots/plotAxisRect'
+import type { FrameRect } from '../../plots/frame'
 
 const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
 // settings the RENDERER had to substitute (today: rotating x tick labels that wouldn't fit). Reported
@@ -126,7 +128,16 @@ async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | 
   applyPlotTheme(off, false)
   return svgToImageURL(svgOf(off as unknown as Element), type)
 }
-defineExpose({ toImageURL })
+// The rendered plot's AXIS RECT in client space — Observable Plot attaches `scale(name)` to the
+// returned node; `range` on `scale('x')/'y'` is the axis edge in SVG px. Returned as a `FrameRect`
+// (nullable) so a cluster panel's `getFrame()` can wrap it in `rectFrame` for point-out. Reads live
+// (no cache) — a resize / re-render swaps `node`, so any snapshot would go stale on the next paint.
+function axisRect(): FrameRect | null {
+  const n = node as (Element & { scale?: (name: string) => { range?: readonly number[] } | null }) | null
+  if (!n || typeof n.scale !== 'function') return null
+  return clientAxisRectOf(n, n.scale('x'), n.scale('y'))
+}
+defineExpose({ toImageURL, axisRect })
 
 // Coalesce to at most ONE render per animation frame (docs/UI.md → "Continuous controls"). Both
 // triggers are burst sources: a styling slider (point size, font size, x angle) fires per pixel of
