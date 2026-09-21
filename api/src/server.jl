@@ -345,6 +345,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/lablog/dismiss" => (req, body_bytes) -> (api_lablog_dismiss(body_bytes)),
     "/api/images/meta/resync" => (req, body_bytes) -> (api_images_meta_resync(body_bytes)),
     "/api/images/labels/delete" => (req, body_bytes) -> (api_images_delete_labels(body_bytes)),
+    "/api/images/labels/rename" => (req, body_bytes) -> (api_images_rename_labels(body_bytes)),
     "/api/chains/save" => (req, body_bytes) -> (api_chains_save(body_bytes)),
     "/api/chains/create" => (req, body_bytes) -> (api_chains_create(body_bytes)),
     # create-only: adds ONE board, never edits one. NOT /api/projects/boards, which overwrites the
