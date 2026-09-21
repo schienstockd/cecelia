@@ -1186,6 +1186,29 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     A missing field on a v2 tile means the corresponding layer was off — fall back to your
     visual read, don't infer zero.
 
+    A v2 landscape may also carry `sourceRun` at the landscape (not tile) level — a per-field
+    bag naming the run/vn/version that produced each augmented field:
+      • `sourceRun.segCount = {valueName, labelsVersion}` — the label_props vn + resolved vN
+      • `sourceRun.pops     = {valueName, popType, gatingMtime}` — gating file's on-disk mtime
+      • `sourceRun.tracks   = {valueName, labelsVersion}`
+      • `sourceRun.channels = {valueName, imageVersion, level}` — pyramid level actually read
+    Use these to answer "which run produced this number", or to compare two capture envelopes
+    and see whether the underlying gating map / re-tracked h5ad moved between shares.
+
+    A v2 landscape also carries `viewport` describing how the compute reduced Z, so a tile's
+    counts and channel stats read consistently with the viewer that produced them:
+      • `viewport.renderMode = 'plane'` — viewer was showing a single Z slice; centroids were
+         filtered to `zLo ≤ round(centroid_z) ≤ zHi` (typically ±1 around the shown plane) and
+         channels are the single-plane means. So `segCount: 8` means "8 objects in this tile,
+         on or immediately adjacent to the visible slice", NOT "8 through the whole stack".
+      • `viewport.renderMode = 'volume'` — viewer was showing a MIP; centroids were filtered to
+         the slab bounds the viewer's Z slider had set (`zLo..zHi`), and channels are the
+         per-pixel MIP across that slab. `segCount: 8` means "8 objects in this XY tile,
+         summed across the MIP'd Z range".
+    For a 2D image, renderMode is always 'plane' and the filter is a no-op. When comparing
+    tile counts across two captures, check `viewport` first — same tile ID at same t under
+    different renderMode / zLo / zHi legitimately produces different numbers.
+
     `capture_id` is what get_recent_captures returns as `captureId`. 404 if it doesn't exist (a
     hallucinated id, a project the user has since deleted, or a capture from a different install
     — the storage is per-project, not per-user).

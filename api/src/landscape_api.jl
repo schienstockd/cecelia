@@ -220,7 +220,9 @@ end
 # centroid is silently dropped rather than 500'ing the whole compute — a stale
 # label_props can carry a NaN centroid from a failed measure run.
 function _tile_seg_counts(img::CciaImage, vn::AbstractString, t::Int,
-                          ncols::Int, nrows::Int, sizeX::Int, sizeY::Int)::Union{Vector{Int},Nothing}
+                          ncols::Int, nrows::Int, sizeX::Int, sizeY::Int;
+                          z_lo::Union{Int,Nothing} = nothing,
+                          z_hi::Union{Int,Nothing} = nothing)::Union{Vector{Int},Nothing}
     (sizeX > 0 && sizeY > 0) || return nothing
     df = try
         label_props(img; value_name = vn) |> view_centroid_cols |> as_df
@@ -232,7 +234,9 @@ function _tile_seg_counts(img::CciaImage, vn::AbstractString, t::Int,
     xs = df[!, :centroid_x]
     ys = df[!, :centroid_y]
     ts = ("centroid_t" in nm) ? df[!, :centroid_t] : nothing
-    _bin_centroids_to_tiles(xs, ys, ts, t, ncols, nrows, sizeX, sizeY)
+    zs = ("centroid_z" in nm) ? df[!, :centroid_z] : nothing
+    _bin_centroids_to_tiles(xs, ys, ts, t, ncols, nrows, sizeX, sizeY;
+                            zs = zs, z_lo = z_lo, z_hi = z_hi)
 end
 
 # Per-tile per-visible-pop counts (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2b — `pops`).
@@ -249,7 +253,9 @@ end
 # `nothing` return means "can't compute pops for this (image, vn, popType)" — either the
 # resolver failed or centroids are missing. Frontend degrades: no `pops` key on any tile.
 function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::AbstractString,
-                          t::Int, ncols::Int, nrows::Int, sizeX::Int, sizeY::Int)::Union{Vector{Vector{NamedTuple}},Nothing}
+                          t::Int, ncols::Int, nrows::Int, sizeX::Int, sizeY::Int;
+                          z_lo::Union{Int,Nothing} = nothing,
+                          z_hi::Union{Int,Nothing} = nothing)::Union{Vector{Vector{NamedTuple}},Nothing}
     (sizeX > 0 && sizeY > 0) || return nothing
     # Centroids: one label_props read, keyed by :label so we can bin per label id.
     df = try
@@ -260,9 +266,10 @@ function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::Abst
     nm = names(df)
     (("centroid_x" in nm) && ("centroid_y" in nm) && ("label" in nm)) || return nothing
     has_t = "centroid_t" in nm
-    # Build label → tile_index, filtered to this t. A label absent from the map (wrong t,
-    # NaN centroid) is silently skipped when a pop asks about it — same discipline as
-    # `_bin_centroids_to_tiles`, just with a lookup instead of an accumulator.
+    has_z = "centroid_z" in nm && z_lo !== nothing && z_hi !== nothing
+    # Build label → tile_index, filtered to this t (and to the Z slab when the viewer sent one
+    # — see `_bin_centroids_to_tiles`, same round-then-in-range rule). A label absent from the
+    # map (wrong t, wrong z, NaN centroid) is silently skipped when a pop asks about it.
     label_to_tile = Dict{Int,Int}()
     @inbounds for i in 1:size(df, 1)
         lab = df[i, :label]
@@ -273,6 +280,12 @@ function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::Abst
             tv = df[i, :centroid_t]
             (tv isa Real && isfinite(Float64(tv))) || continue
             Int(round(Float64(tv))) == t || continue
+        end
+        if has_z
+            zv = df[i, :centroid_z]
+            (zv isa Real && isfinite(Float64(zv))) || continue
+            zr = Int(round(Float64(zv)))
+            (z_lo <= zr <= z_hi) || continue
         end
         c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
         r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
@@ -319,16 +332,25 @@ end
 
 # Pure helper — no I/O, no DataFrame dependency, hermetically testable. `xs`/`ys` are
 # centroid coordinates in level-0 pixel units; `ts` is the temporal column when the image
-# is a timecourse (else `nothing` — every centroid counts against the queried `t`).
+# is a timecourse (else `nothing` — every centroid counts against the queried `t`); `zs`
+# is the vertical centroid column when the image is 3D (else `nothing` — no z filter).
+# When `zs` AND both `z_lo`/`z_hi` are supplied, a centroid contributes only if
+# `z_lo ≤ round(centroid_z) ≤ z_hi` — the "which Z slab does the viewer show" filter
+# (plane mode sends z±1, volume mode sends the slab-slider range).
 # Returns the flat row-major count vector; NaN centroids and off-frame timepoints drop.
 function _bin_centroids_to_tiles(xs::AbstractVector, ys::AbstractVector,
                                  ts::Union{AbstractVector,Nothing}, t::Int,
                                  ncols::Int, nrows::Int,
-                                 sizeX::Int, sizeY::Int)::Vector{Int}
+                                 sizeX::Int, sizeY::Int;
+                                 zs::Union{AbstractVector,Nothing} = nothing,
+                                 z_lo::Union{Int,Nothing} = nothing,
+                                 z_hi::Union{Int,Nothing} = nothing)::Vector{Int}
     n = length(xs)
     length(ys) == n || throw(ArgumentError("_bin_centroids_to_tiles: xs / ys length mismatch"))
     (ts === nothing || length(ts) == n) ||
         throw(ArgumentError("_bin_centroids_to_tiles: ts length mismatch"))
+    (zs === nothing || length(zs) == n) ||
+        throw(ArgumentError("_bin_centroids_to_tiles: zs length mismatch"))
     counts = zeros(Int, ncols * nrows)
     @inbounds for i in 1:n
         px = xs[i]; py = ys[i]
@@ -337,6 +359,12 @@ function _bin_centroids_to_tiles(xs::AbstractVector, ys::AbstractVector,
             tv = ts[i]
             (tv isa Real && isfinite(Float64(tv))) || continue
             Int(round(Float64(tv))) == t || continue
+        end
+        if zs !== nothing && z_lo !== nothing && z_hi !== nothing
+            zv = zs[i]
+            (zv isa Real && isfinite(Float64(zv))) || continue
+            zr = Int(round(Float64(zv)))
+            (z_lo <= zr <= z_hi) || continue
         end
         c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
         r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
@@ -360,7 +388,9 @@ end
 # `nothing` return (outer): the segmentation is unmeasured / untracked / label_props missing —
 # the compute handler drops the tracks pass entirely, no `tracks` key on any tile.
 function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
-                             ncols::Int, nrows::Int, sizeX::Int, sizeY::Int)::Union{Vector{Union{Nothing,NamedTuple}},Nothing}
+                             ncols::Int, nrows::Int, sizeX::Int, sizeY::Int;
+                             z_lo::Union{Int,Nothing} = nothing,
+                             z_hi::Union{Int,Nothing} = nothing)::Union{Vector{Union{Nothing,NamedTuple}},Nothing}
     (sizeX > 0 && sizeY > 0) || return nothing
     # Ask for the columns we need. `select_cols` @warns for absent columns and drops them —
     # `live.cell.speed` is optional so a segmentation without it is not an error. `track_id`
@@ -375,9 +405,13 @@ function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
     nm = names(df)
     (("centroid_x" in nm) && ("centroid_y" in nm) && ("track_id" in nm)) || return nothing
     has_t = "centroid_t" in nm
+    has_z = "centroid_z" in nm && z_lo !== nothing && z_hi !== nothing
     has_speed = "live.cell.speed" in nm
-    # First pass: per-track lifetime (num_cells across ALL t) so a per-tile mean of durations
-    # reflects the whole track, not just visible frames.
+    # First pass: per-track lifetime (num_cells across ALL t AND all z) so a per-tile mean of
+    # durations reflects the whole track, not just visible frames or slices. Applying the Z
+    # filter here would count a track's duration as ONLY the frames its centroid is inside the
+    # viewer slab — that misrepresents track lifetime for a summary that means "how long has
+    # this cell been alive." The Z filter belongs on the second pass (tile membership) only.
     duration_by_track = Dict{Int,Int}()
     @inbounds for i in 1:size(df, 1)
         tid = df[i, :track_id]
@@ -385,8 +419,9 @@ function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
         k = Int(round(Float64(tid)))
         duration_by_track[k] = get(duration_by_track, k, 0) + 1
     end
-    # Second pass: bin cells at the shown t into tiles, tracking track_ids + accumulating
-    # per-cell speeds for the instantaneous meanSpeed aggregate.
+    # Second pass: bin cells at the shown t (and inside the viewer's Z slab when the frontend
+    # sent one — see `_bin_centroids_to_tiles` for the round-then-in-range rule) into tiles,
+    # tracking track_ids + accumulating per-cell speeds for the instantaneous meanSpeed.
     n_tiles = ncols * nrows
     tile_track_ids = [Set{Int}() for _ in 1:n_tiles]
     tile_speed_sum = zeros(Float64, n_tiles)
@@ -400,6 +435,12 @@ function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
             tv = df[i, :centroid_t]
             (tv isa Real && isfinite(Float64(tv))) || continue
             Int(round(Float64(tv))) == t || continue
+        end
+        if has_z
+            zv = df[i, :centroid_z]
+            (zv isa Real && isfinite(Float64(zv))) || continue
+            zr = Int(round(Float64(zv)))
+            (z_lo <= zr <= z_hi) || continue
         end
         c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
         r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
@@ -533,6 +574,24 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     isempty(image_uid) && return 400, JSON3.write((; error = "imageUid required"))
     t_raw = _clean_int(get(body, :t, nothing), -1)
     z_raw = _clean_int(get(body, :z, nothing), -1)
+    # Phase 6 (Z-awareness): the frontend snapshots the viewer's `mode` + Z scope so the compute
+    # matches what the user is looking at. `renderMode` is either 'plane' (single-slice viewer)
+    # or 'volume' (MIP through a slab). `zLo`/`zHi` are the inclusive Z bounds for that mode —
+    # plane sends z±1 (matches the gating page's pick-rect z-scope pattern), volume sends the
+    # slab-slider range. When both bounds are absent or `nZ == 1`, the filter is a no-op and
+    # behaviour matches the pre-Phase-6 whole-stack collapse.
+    render_mode_raw = get(body, :renderMode, "plane")
+    render_mode = render_mode_raw isa AbstractString && String(render_mode_raw) == "volume" ?
+                  "volume" : "plane"
+    z_lo_raw = _clean_int(get(body, :zLo, nothing), -1)
+    z_hi_raw = _clean_int(get(body, :zHi, nothing), -1)
+    z_lo = z_lo_raw < 0 ? nothing : z_lo_raw
+    z_hi = z_hi_raw < 0 ? nothing : z_hi_raw
+    # Guard: `zLo > zHi` came off the wire backwards — swap rather than reject so the frontend's
+    # min/max order isn't a load-bearing invariant.
+    if z_lo !== nothing && z_hi !== nothing && z_lo > z_hi
+        z_lo, z_hi = z_hi, z_lo
+    end
     ncols = clamp(_clean_int(get(body, :cols, nothing), 8), 2, 64)
     nrows = clamp(_clean_int(get(body, :rows, nothing), ncols), 2, 64)
     channels_raw = get(body, :channels, nothing)
@@ -594,15 +653,33 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
             (0 <= i < nc_total) || continue
             push!(channels, (i, String(name)))
         end
+        # Channels read shape depends on renderMode:
+        #   plane  → single plane at `z` (matches what the viewer draws)
+        #   volume → slab [zLo, zHi] followed by per-pixel MIP (matches the viewer's MIP);
+        #            falls back to single plane when the frontend didn't send zLo/zHi
+        #            (2D image, or an older client), so this is safe to add without a
+        #            client-version handshake.
+        z_read = if render_mode == "volume" && z_lo !== nothing && z_hi !== nothing
+            z_lo:z_hi
+        else
+            z
+        end
         for (ci, cname) in channels
-            vol, nx, ny, _nz, _nc = try
-                read_slab(arr, caxes, t, ci; z = z)
+            vol, nx, ny, nz_read, _nc = try
+                read_slab(arr, caxes, t, ci; z = z_read)
             catch
                 continue
             end
             (nx == 0 || ny == 0) && continue
-            # `vol` is (x, y, [z], [c]) — with scalar z and scalar c, it's a 2D (x, y) plane.
-            plane = ndims(vol) == 2 ? vol : reshape(vol, nx, ny)
+            # `vol` is (x, y, [z]) with scalar c dropped. Scalar z drops the z dim → 2D (x, y);
+            # range z keeps it → 3D (x, y, nz) where we MIP over z to a plane.
+            plane = if ndims(vol) == 2
+                vol
+            elseif ndims(vol) == 3 && nz_read > 0
+                dropdims(maximum(vol, dims = 3); dims = 3)
+            else
+                reshape(vol, nx, ny)
+            end
             stats = _tile_channel_stats(plane, ncols, nrows)
             for r in 0:(nrows - 1), c in 0:(ncols - 1)
                 (mean, snr) = stats[r * ncols + c + 1]
@@ -635,7 +712,8 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     # the sparsity rule handles it.
     if !isempty(labels_vn) && img_obj !== nothing
         seg_counts = try
-            _tile_seg_counts(img_obj, labels_vn, t, ncols, nrows, sizeX, sizeY)
+            _tile_seg_counts(img_obj, labels_vn, t, ncols, nrows, sizeX, sizeY;
+                             z_lo = z_lo, z_hi = z_hi)
         catch
             nothing
         end
@@ -653,7 +731,8 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     # the way down: an off pop is absent, a zero-count tile is absent, no false zeros).
     if pops_on && img_obj !== nothing
         pop_tiles = try
-            _tile_pop_counts(img_obj, pop_vn, pop_type, t, ncols, nrows, sizeX, sizeY)
+            _tile_pop_counts(img_obj, pop_vn, pop_type, t, ncols, nrows, sizeX, sizeY;
+                             z_lo = z_lo, z_hi = z_hi)
         catch
             nothing
         end
@@ -676,7 +755,8 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     # `tracks` key — sparsity discipline all the way down.
     if !isempty(tracks_vn) && img_obj !== nothing
         track_tiles = try
-            _tile_track_summary(img_obj, tracks_vn, t, ncols, nrows, sizeX, sizeY)
+            _tile_track_summary(img_obj, tracks_vn, t, ncols, nrows, sizeX, sizeY;
+                                z_lo = z_lo, z_hi = z_hi)
         catch
             nothing
         end
@@ -728,12 +808,31 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         (ch isa AbstractDict && isempty(ch)) && delete!(t_dict, "channels")
     end
 
-    # Only include `sourceRun` in the response when at least one field was actually
-    # computed — matches the sparse-by-visibility discipline the tiles carry.
-    if isempty(source_run)
-        200, JSON3.write((; tiles = tiles))
+    # Phase 6 viewport bag — records the Z reduction the compute used, so a reader (Kiwi, MCP,
+    # a Claude session comparing two captures) can distinguish `segCount: 8` on a plane-mode
+    # z=5±1 slab from `segCount: 8` on a volume-mode MIP through all 30 slices. Emitted
+    # unconditionally whenever we computed anything at all, since the render mode determines
+    # what a `segCount` / `pops.count` / channel mean/snr NUMBER means.
+    include_viewport = !isempty(source_run) || channels_emitted
+    viewport = if include_viewport
+        vp = Dict{String,Any}("renderMode" => render_mode)
+        z_lo === nothing || (vp["zLo"] = z_lo)
+        z_hi === nothing || (vp["zHi"] = z_hi)
+        vp
     else
+        nothing
+    end
+
+    # Only include `sourceRun` / `viewport` in the response when at least one field was actually
+    # computed — matches the sparse-by-visibility discipline the tiles carry.
+    if isempty(source_run) && viewport === nothing
+        200, JSON3.write((; tiles = tiles))
+    elseif isempty(source_run)
+        200, JSON3.write((; tiles = tiles, viewport = viewport))
+    elseif viewport === nothing
         200, JSON3.write((; tiles = tiles, sourceRun = source_run))
+    else
+        200, JSON3.write((; tiles = tiles, sourceRun = source_run, viewport = viewport))
     end
 end
 

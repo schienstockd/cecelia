@@ -4654,12 +4654,30 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
                          (!!popVn && !!popType) || !!trackVn
       if (anyAugment && projectUid) {
+        // Z-awareness (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 6, Decision 5 successor): match
+        // the viewer's mode + Z scope so tile counts / channel MIP mean what the user is
+        // looking at.
+        //   plane  → z ± 1 tolerance (a centroid at z=8.6 belongs to slice 9; ± 1 catches
+        //            neighbouring-plane cells the same way the gating page's pick-rect scope
+        //            defaults to). Channels still read the single plane at `z`.
+        //   volume → the slab-slider `zRange` bounds — channels MIP over the slab and counts
+        //            filter to it, so both match what the volume view actually paints.
+        // A 2D image has `meta.nZ == 1` and `mode.value === 'plane'` at all times, so
+        // zLo == zHi == 0 and the backend's z-filter is a no-op — zero behaviour change.
+        const nZ = Math.max(1, meta.value?.nZ ?? 1)
+        const maxZ = nZ - 1
+        const rm: 'plane' | 'volume' = mode.value === 'volume' ? 'volume' : 'plane'
+        const [zLo, zHi] = rm === 'volume'
+          ? [Math.max(0, Math.min(maxZ, zRange.value[0])),
+             Math.max(0, Math.min(maxZ, zRange.value[1]))]
+          : [Math.max(0, zPlane.value - 1), Math.min(maxZ, zPlane.value + 1)]
         try {
           const cRes = await fetch('/api/viewer/landscape/compute', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               projectUid, imageUid, valueName: valueName.value,
               t: shownT.value, z: zPlane.value,
+              renderMode: rm, zLo, zHi,
               cols: landscape.value.grid.cols, rows: landscape.value.grid.rows,
               channels: visibleChannels,
               ...(labelsVn ? { labelsValueName: labelsVn } : {}),
@@ -4671,9 +4689,11 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
             const cJson = await cRes.json() as {
               tiles?: AugmentTile[],
               sourceRun?: Record<string, Record<string, string | number>>,
+              viewport?: { renderMode: string; zLo?: number; zHi?: number },
             }
             if (Array.isArray(cJson.tiles)) {
-              landscapeSnapshot = augmentLandscape(landscape.value, cJson.tiles, cJson.sourceRun)
+              landscapeSnapshot = augmentLandscape(landscape.value, cJson.tiles,
+                                                   cJson.sourceRun, cJson.viewport)
             }
           }
         } catch { /* soft fail — fall through to category-only */ }

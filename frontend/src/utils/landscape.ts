@@ -98,6 +98,17 @@ export interface LandscapeLegendEntry {
   nTiles: number
 }
 
+/** Phase 6 viewport bag — records the Z reduction the compute used, so a reader (Kiwi, MCP,
+ *  a Claude session comparing two envelopes) can distinguish a plane-mode z±1 count from a
+ *  volume-mode MIP through the whole stack. Emitted whenever the backend computed anything at
+ *  all, since the render mode determines what a `segCount` / `pops.count` / channel `{mean,snr}`
+ *  NUMBER means. `zLo`/`zHi` are the inclusive slab bounds the compute applied. */
+export interface LandscapeViewport {
+  renderMode: 'plane' | 'volume'
+  zLo?: number
+  zHi?: number
+}
+
 export interface LandscapeResult {
   grid: { cols: number; rows: number }
   tiles: LandscapeTile[]
@@ -112,6 +123,9 @@ export interface LandscapeResult {
   // field came from. Absent when a v1 landscape reader encounters this; sparse per-field
   // when v2 (only fields that were actually computed have a `sourceRun` entry).
   sourceRun?: Record<string, Record<string, string | number>>
+  // Phase 6: how the compute reduced Z — see `LandscapeViewport`. Absent on v1 and on v2
+  // envelopes from a compute that computed nothing.
+  viewport?: LandscapeViewport
 }
 
 /** Per-tile augmentation payload returned by `POST /api/viewer/landscape/compute`. Same tile-id
@@ -134,6 +148,7 @@ export interface AugmentTile {
 export function augmentLandscape(
   base: LandscapeResult, augment: AugmentTile[],
   sourceRun?: Record<string, Record<string, string | number>>,
+  viewport?: { renderMode?: string; zLo?: number; zHi?: number },
 ): LandscapeResult {
   const byId = new Map<string, AugmentTile>()
   for (const a of augment) byId.set(a.tileId, a)
@@ -157,6 +172,15 @@ export function augmentLandscape(
   // with no sourceRun is legitimate (a channels-only compute where the vn wasn't resolvable,
   // for example). Never emit `sourceRun: {}` — same sparsity rule the tile fields follow.
   if (sourceRun && Object.keys(sourceRun).length > 0) out.sourceRun = sourceRun
+  // Phase 6 viewport: only attach when the backend named a valid renderMode. Same sparsity
+  // rule — never emit `viewport: {}`. A reader who wants to interpret tile counts / channel
+  // stats reads this first: plane means "z ± 1 tolerance", volume means "MIP through the slab".
+  if (viewport && (viewport.renderMode === 'plane' || viewport.renderMode === 'volume')) {
+    const vp: LandscapeViewport = { renderMode: viewport.renderMode }
+    if (typeof viewport.zLo === 'number' && Number.isFinite(viewport.zLo)) vp.zLo = viewport.zLo
+    if (typeof viewport.zHi === 'number' && Number.isFinite(viewport.zHi)) vp.zHi = viewport.zHi
+    out.viewport = vp
+  }
   return out
 }
 

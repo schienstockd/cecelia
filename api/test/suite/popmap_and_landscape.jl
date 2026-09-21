@@ -1,9 +1,11 @@
 # VN P3b popmap + BIDIR landscape testsets — extracted from api/test/runtests.jl.
 #
-# Four testsets:
+# Five testsets:
 #  - `API: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b)` — VN_VERSIONING_PLAN
 #    P3b guardrail feeding the drift banner (authoredLabelsVersion, currentLabelsVersion, pin).
 #  - `API: _bin_centroids_to_tiles (BIDIR landscape Phase 2a)` — tile assignment helper.
+#  - `API: _bin_centroids_to_tiles Z filter (BIDIR landscape Phase 6)` — Z-awareness filter
+#    that honours the viewer's plane/volume mode (plane sends z±1, volume sends the slab).
 #  - `API: _pop_counts_from_label_map (BIDIR landscape Phase 2b)` — per-tile pop counts.
 #  - `API: _track_summary_from_binned (BIDIR landscape Phase 3)` — per-tile track summary
 #    from label_props (count, meanSpeed, meanDuration; NaN-safe).
@@ -98,6 +100,44 @@ end
     # Length mismatch throws — a caller-side bug we want loud, not silent
     @test_throws ArgumentError _bin_centroids_to_tiles(Float64[1.0], Float64[1.0, 2.0],
                                                        nothing, 0, 2, 2, 100, 100)
+end
+
+@testset "API: _bin_centroids_to_tiles Z filter (BIDIR landscape Phase 6)" begin
+    # Phase 6 — the viewer's plane/volume mode now decides which centroids count. In plane
+    # mode the frontend sends z±1 (matches the gating page's pick-rect z-scope); in volume mode
+    # it sends the slab-slider range. Backend filters `z_lo ≤ round(centroid_z) ≤ z_hi`.
+    # 2×2 grid over 100×100 — everything lands in tile 1.
+    xs = Float64[10.0, 10.0, 10.0, 10.0, 10.0]
+    ys = Float64[10.0, 10.0, 10.0, 10.0, 10.0]
+    zs = Float64[3.0,  4.6,  5.0,  5.4,  10.0]     # rounds to 3, 5, 5, 5, 10
+    # No Z filter (zs = nothing OR bounds absent): all 5 rows count. Two ways to spell it —
+    # both should behave identically so a caller can pass zs eagerly + bounds lazily.
+    @test _bin_centroids_to_tiles(xs, ys, nothing, 0, 2, 2, 100, 100)[1] == 5
+    @test _bin_centroids_to_tiles(xs, ys, nothing, 0, 2, 2, 100, 100; zs = zs)[1] == 5
+    # Plane mode: z_lo=4, z_hi=6 (viewer at slice 5, ±1). Rows z=4.6/5.0/5.4 count; z=3 and
+    # z=10 drop. Three cells in tile 1.
+    counts_plane = _bin_centroids_to_tiles(xs, ys, nothing, 0, 2, 2, 100, 100;
+                                            zs = zs, z_lo = 4, z_hi = 6)
+    @test counts_plane[1] == 3
+    # Volume mode with a wider slab covers everything except z=10 (out of [0,7]).
+    counts_vol = _bin_centroids_to_tiles(xs, ys, nothing, 0, 2, 2, 100, 100;
+                                          zs = zs, z_lo = 0, z_hi = 7)
+    @test counts_vol[1] == 4
+    # Slab that skips the visible plane entirely → zero cells in tile 1.
+    counts_none = _bin_centroids_to_tiles(xs, ys, nothing, 0, 2, 2, 100, 100;
+                                           zs = zs, z_lo = 20, z_hi = 30)
+    @test sum(counts_none) == 0
+    # NaN centroid_z drops (same rule as x/y/t) — the row is skipped rather than counted as z=0.
+    zs_nan = Float64[3.0, NaN, 5.0]
+    xs_nan = Float64[10.0, 10.0, 10.0]; ys_nan = Float64[10.0, 10.0, 10.0]
+    counts_nan = _bin_centroids_to_tiles(xs_nan, ys_nan, nothing, 0, 2, 2, 100, 100;
+                                          zs = zs_nan, z_lo = 0, z_hi = 5)
+    @test counts_nan[1] == 2
+
+    # Length mismatch throws — same discipline as ts
+    @test_throws ArgumentError _bin_centroids_to_tiles(Float64[1.0, 2.0], Float64[1.0, 2.0],
+                                                       nothing, 0, 2, 2, 100, 100;
+                                                       zs = Float64[1.0])
 end
 
 @testset "API: _pop_counts_from_label_map (BIDIR landscape Phase 2b)" begin
