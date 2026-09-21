@@ -338,14 +338,21 @@ end
 """
     GET /api/viewer/capture?projectUid=…&captureId=…
 
-Reply: `{ capture: <envelope>, frame: "<data URL>", capturePath: "<abs path>" }`. The frame
+Reply: `{ capture: <envelope>, frame: "<data URL>", capturePath?: "<abs path>" }`. The frame
 is inlined as a data URL because the MCP client returns it as a single-shot image content
-block; a separate binary fetch would double the round-trip for no gain. `capturePath` is the
-absolute filesystem path to this capture's `meta.json` — the MCP tool exposes it so a
-LOCAL Claude session can read the full fat envelope via `Read(capturePath)` when the slim
-tool response isn't enough (a pathologically dense landscape). Absent for cloud-VM deployments
-would be nice, but detecting "the client shares this filesystem" isn't reliable here, so the
-path is always sent and a reader who can't reach it just falls back to the slim payload.
+block; a separate binary fetch would double the round-trip for no gain.
+
+`capturePath` (optional) is the absolute filesystem path to this capture's `meta.json` — the
+MCP tool exposes it so a LOCAL Claude session can `Read(capturePath)` for the full fat
+envelope when the slim tool response isn't enough (a pathologically dense landscape).
+
+Only emitted when the server is bound to LOOPBACK (`_host_is_loopback()`). That's the same
+network gate the debug REPL keys off (`repl_api.jl`): a loopback-bound server can't be
+reached by anything but the local host, so a filesystem path we hand a caller on that server
+is one the caller's process can actually open. A `0.0.0.0`-bound server (deliberately
+network-exposed, e.g. behind an SSH tunnel or on a cloud VM) omits the field — a remote
+caller can't reach the path anyway, and offering one they might Read is a foot-gun. Not a
+security boundary (nothing sensitive on the path itself) — a truthfulness check.
 """
 function api_viewer_capture_get(req::HTTP.Request)
     query = HTTP.queryparams(HTTP.URI(req.target))
@@ -369,7 +376,12 @@ function api_viewer_capture_get(req::HTTP.Request)
     else
         ""
     end
-    200, JSON3.write((; capture = envelope, frame = frame, capturePath = meta_path))
+    # See docstring: only advertise the on-disk path when the server is loopback-bound (the
+    # caller's process can then actually open it). Public bind ⇒ omit.
+    if _host_is_loopback()
+        return 200, JSON3.write((; capture = envelope, frame = frame, capturePath = meta_path))
+    end
+    200, JSON3.write((; capture = envelope, frame = frame))
 end
 
 """
