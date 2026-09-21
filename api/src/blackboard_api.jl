@@ -46,6 +46,38 @@ _valid_bb_status(s::AbstractString)::Bool = String(s) in _BB_STATUS_VALS
 _status_from_meta(meta)::String =
     (s = String(get(meta, "status", "open")); _valid_bb_status(s) ? s : "open")
 
+# Entry outcome — Decision 11 in `docs/todo/PROJECT_MEMORY_PLAN.md`. Additive metadata that answers
+# "did this thread turn out to be right or wrong" for future Claude sessions. `good` = the finding
+# / suggestion held up; `bad` = it didn't (with the required note explaining WHY it was wrong, since
+# a verdict without a reason is useless in a future briefing). Missing ⇒ untagged (no signal); the
+# distinction between "untagged" and "neutral" is intentional (see Decision 11 D4 — no neutral state).
+# Notes are capped so a paste can't blow the meta.json; 2 KiB is enough for a couple of sentences
+# with references, not a whole essay.
+const _BB_OUTCOME_VERDICTS = ("good", "bad")
+const _BB_OUTCOME_NOTE_MAX_BYTES = 2 * 1024
+_valid_bb_outcome_verdict(v::AbstractString)::Bool = String(v) in _BB_OUTCOME_VERDICTS
+
+"""
+    _outcome_from_meta(meta) -> Union{Dict{String,Any},Nothing}
+
+Return the outcome dict recorded on `meta` (`{verdict, note, taggedAt}`), or `nothing` when the
+entry is untagged or the on-disk shape is malformed. Kept absent-on-untagged so a briefing / list
+row can distinguish "no signal" from "explicitly neutral" (Decision 11 D4).
+"""
+function _outcome_from_meta(meta)::Union{Dict{String,Any},Nothing}
+    o = get(meta, "outcome", nothing)
+    o isa AbstractDict || return nothing
+    v = String(get(o, "verdict", ""))
+    _valid_bb_outcome_verdict(v) || return nothing
+    note = String(get(o, "note", ""))
+    isempty(note) && return nothing
+    Dict{String,Any}(
+        "verdict"  => v,
+        "note"     => note,
+        "taggedAt" => String(get(o, "taggedAt", "")),
+    )
+end
+
 # Blackboard search (PROJECT_MEMORY_PLAN Decision 4). Substring, case-insensitive, per project.
 # Cheap at the sizes this store reaches — a title match beats a body match; snippet is ±40 chars
 # around the first hit. `limit` bounded so a runaway caller can't blow the response.
@@ -141,11 +173,15 @@ _next_bb_snapshot_version(uid, id) =
     (vs = _bb_snapshot_versions(uid, id); isempty(vs) ? 1 : maximum(vs) + 1)
 
 # One meta.json write, called from every mutation so the field order + defaults stay in one place.
+# `outcome`: pass a `Dict{String,Any}("verdict"=>…, "note"=>…, "taggedAt"=>…)` to record a Decision-11
+# outcome; pass `nothing` to omit the field entirely (untagged state). Every mutation site reads the
+# prior outcome from meta and passes it back so a revise/status flip preserves the tag.
 function _write_bb_meta!(uid::AbstractString, id::AbstractString;
     title, createdAt, updatedAt, current, attachments,
-    snapshots = Any[], status::AbstractString = "open")
+    snapshots = Any[], status::AbstractString = "open",
+    outcome::Union{Nothing,AbstractDict} = nothing)
     dir = _bb_entry_dir(uid, id)
-    write_json_atomic(joinpath(dir, "meta.json"), Dict{String,Any}(
+    meta = Dict{String,Any}(
         "entryId"     => id,
         "title"       => title,
         "createdAt"   => createdAt,
@@ -162,7 +198,18 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
         # is a state transition on the WHOLE entry, not a content revision, so it doesn't fire a
         # snapshot (see api_blackboard_status). PROJECT_MEMORY_PLAN Decision 3.
         "status"      => _valid_bb_status(status) ? String(status) : "open",
-    ))
+    )
+    # Outcome — Decision 11. Absent-on-untagged: writing a null `outcome` would produce a shape a
+    # reader has to distinguish from "untagged", which defeats the point of Decision 4 (absent =
+    # no signal). Set only when the caller passes a real dict validated at the handler layer.
+    if outcome !== nothing
+        meta["outcome"] = Dict{String,Any}(
+            "verdict"  => String(get(outcome, "verdict", "")),
+            "note"     => String(get(outcome, "note", "")),
+            "taggedAt" => String(get(outcome, "taggedAt", "")),
+        )
+    end
+    write_json_atomic(joinpath(dir, "meta.json"), meta)
 end
 function _read_bb_meta(uid::AbstractString, id::AbstractString)::Union{Dict{String,Any},Nothing}
     p = joinpath(_bb_entry_dir(uid, id), "meta.json")
@@ -297,14 +344,20 @@ function api_blackboard_list(req::HTTP.Request)
         meta = _read_bb_meta(uid, id)
         meta === nothing && continue
         atts = get(meta, "attachments", Any[])
-        push!(entries, Dict{String,Any}(
+        row = Dict{String,Any}(
             "entryId"          => id,
             "title"            => String(get(meta, "title", "")),
             "current"          => Int(get(meta, "current", 0)),
             "updatedAt"        => String(get(meta, "updatedAt", "")),
             "attachmentsCount" => atts isa AbstractVector ? length(atts) : 0,
             "status"           => _status_from_meta(meta),
-        ))
+        )
+        # Only carry `outcome` on rows that are actually tagged — absent means "no signal" (Decision
+        # 11 D4). Rows for the entry-list UI can then render nothing, "good", or "bad" without a
+        # tri-state check against a placeholder.
+        o = _outcome_from_meta(meta)
+        o !== nothing && (row["outcome"] = o)
+        push!(entries, row)
     end
     200, JSON3.write((; entries = entries))
 end
@@ -348,7 +401,7 @@ function api_blackboard_entry_get(req::HTTP.Request)
         live = joinpath(dir, "entry.md")
         content = isfile(live) ? read(live, String) : ""
     end
-    200, JSON3.write((; entry = Dict{String,Any}(
+    entry_out = Dict{String,Any}(
         "entryId"     => id,
         "title"       => String(get(meta, "title", "")),
         "content"     => content,
@@ -357,7 +410,11 @@ function api_blackboard_entry_get(req::HTTP.Request)
         "versions"    => sort(versions),
         "attachments" => attachments_out,
         "status"      => _status_from_meta(meta),  # describes the LIVE entry; not versioned per snapshot
-    )))
+    )
+    # Outcome describes the LIVE entry too (like status — not per-snapshot); absent when untagged.
+    o = _outcome_from_meta(meta)
+    o !== nothing && (entry_out["outcome"] = o)
+    200, JSON3.write((; entry = entry_out))
 end
 
 """
@@ -415,16 +472,19 @@ function api_blackboard_search(body_bytes::Vector{UInt8})
         isempty(status_filter) || entry_status == status_filter || continue
         title = String(get(meta, "title", ""))
         title_lc = lowercase(title)
+        entry_outcome = _outcome_from_meta(meta)
         title_pos = findfirst(needle, title_lc)
         if title_pos !== nothing
-            push!(title_hits, Dict{String,Any}(
+            row = Dict{String,Any}(
                 "entryId"   => id,
                 "title"     => title,
                 "snippet"   => _bb_search_snippet(title, first(title_pos), length(needle)),
                 "status"    => entry_status,
                 "updatedAt" => String(get(meta, "updatedAt", "")),
                 "matchType" => "title",
-            ))
+            )
+            entry_outcome !== nothing && (row["outcome"] = entry_outcome)
+            push!(title_hits, row)
             length(title_hits) + length(body_hits) >= limit && break
             continue
         end
@@ -440,14 +500,16 @@ function api_blackboard_search(body_bytes::Vector{UInt8})
         body_lc = lowercase(body_txt)
         body_pos = findfirst(needle, body_lc)
         body_pos === nothing && continue
-        push!(body_hits, Dict{String,Any}(
+        row = Dict{String,Any}(
             "entryId"   => id,
             "title"     => title,
             "snippet"   => _bb_search_snippet(body_txt, first(body_pos), length(needle)),
             "status"    => entry_status,
             "updatedAt" => String(get(meta, "updatedAt", "")),
             "matchType" => "body",
-        ))
+        )
+        entry_outcome !== nothing && (row["outcome"] = entry_outcome)
+        push!(body_hits, row)
         length(title_hits) + length(body_hits) >= limit && break
     end
     out = vcat(title_hits, body_hits)
@@ -498,7 +560,8 @@ function api_blackboard_status(body_bytes::Vector{UInt8})
         current = Int(get(meta, "current", 0)),
         attachments = get(meta, "attachments", Any[]),
         snapshots = get(meta, "snapshots", Any[]),
-        status = status)
+        status = status,
+        outcome = _outcome_from_meta(meta))
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -508,6 +571,78 @@ function api_blackboard_status(body_bytes::Vector{UInt8})
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
     200, JSON3.write((; ok = true, status = status))
+end
+
+"""
+    POST /api/blackboard/outcome
+
+Body: `{ projectUid, entryId, verdict: "good"|"bad", note: string }`
+Reply: `{ ok:true, outcome: {verdict, note, taggedAt}, unchanged?: true }`
+
+Tag a Blackboard entry as good (the finding / decision held up) or bad (it didn't). The note is
+required — a verdict without an explanation is useless to a future Claude session, which is the
+whole point of Decision 11 D2. Same discipline as `/status`: additive, no snapshot fired, preserves
+the tagged entry's content + version history. A no-op (same verdict AND same note) is idempotent.
+Broadcasts `blackboard:changed` on a real update so a Kiwi / Blackboard list refresh picks it up.
+PROJECT_MEMORY_PLAN Decision 11.
+
+Additive-write from Claude's side: allow-listed in the MCP client so a session can retire what
+turned out wrong (or confirm what worked) for future sessions to lean on.
+"""
+function api_blackboard_outcome(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid     = _wstr(body, :projectUid)
+    id      = _wstr(body, :entryId)
+    verdict = _wstr(body, :verdict)
+    note    = String(get(body, :note, ""))
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isempty(id)  && return 400, JSON3.write((; error = "entryId required"))
+    _valid_bb_entry_id(id) || return 400, JSON3.write((; error = "Invalid entryId"))
+    _valid_bb_outcome_verdict(verdict) ||
+        return 400, JSON3.write((; error = "verdict must be one of $(_BB_OUTCOME_VERDICTS)"))
+    # Decision 11 D2 — note required. A verdict without a note is refused rather than silently
+    # stored; the note is the part a future session actually reads.
+    stripped_note = strip(note)
+    isempty(stripped_note) && return 400, JSON3.write((; error = "note required (must be non-empty)"))
+    length(codeunits(stripped_note)) > _BB_OUTCOME_NOTE_MAX_BYTES &&
+        return 400, JSON3.write((; error = "note exceeds $_BB_OUTCOME_NOTE_MAX_BYTES bytes"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    meta = _read_bb_meta(uid, id)
+    meta === nothing && return 404, JSON3.write((; error = "Entry not found"))
+
+    note_str = String(stripped_note)
+    prev = _outcome_from_meta(meta)
+    if prev !== nothing && prev["verdict"] == verdict && prev["note"] == note_str
+        return 200, JSON3.write((; ok = true, outcome = prev, unchanged = true))
+    end
+
+    ts = string(Dates.now())
+    new_outcome = Dict{String,Any}(
+        "verdict"  => verdict,
+        "note"     => note_str,
+        "taggedAt" => ts,
+    )
+    _write_bb_meta!(uid, id;
+        title = String(get(meta, "title", "")),
+        createdAt = String(get(meta, "createdAt", ts)),
+        updatedAt = ts,                                      # outcome change bumps updatedAt (a state transition on the whole entry)
+        current = Int(get(meta, "current", 0)),
+        attachments = get(meta, "attachments", Any[]),
+        snapshots = get(meta, "snapshots", Any[]),
+        status = _status_from_meta(meta),
+        outcome = new_outcome)
+
+    reg = _read_bb_registry(uid)
+    entry = get!(reg, id, Dict{String,Any}())
+    # Registry mirrors just the verdict (for cheap filter without loading meta); the note lives in
+    # meta. Keeps the registry row small and doesn't duplicate the 2 KiB note per project-wide list.
+    entry["outcome"]   = verdict
+    entry["updatedAt"] = ts
+    _write_bb_registry!(uid, reg)
+
+    broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
+    200, JSON3.write((; ok = true, outcome = new_outcome))
 end
 
 """
@@ -619,11 +754,16 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
     # Preserve the entry's status across a content revision — a revise is a content-diff, not a
     # state transition; the two travel separately. Missing on legacy entries backfills to "open".
     prev_status = _status_from_meta(meta)
+    # Preserve the outcome tag across a revise too — a content edit doesn't retract a good/bad
+    # verdict any more than it retracts the status. If the user changes their mind about the
+    # outcome, they hit the outcome endpoint separately (Decision 11).
+    prev_outcome = _outcome_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v, attachments = atts,
-        snapshots = snapshots, status = prev_status)
+        snapshots = snapshots, status = prev_status,
+        outcome = prev_outcome)
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -686,12 +826,14 @@ function api_blackboard_restore(body_bytes::Vector{UInt8})
     restored_atts === nothing && (restored_atts = old_atts_live)
     snapshots = _append_snapshot_record(
         get(meta, "snapshots", Any[]), v_new, old_atts_live, String(get(meta, "updatedAt", ts)))
-    prev_status = _status_from_meta(meta)
+    prev_status  = _status_from_meta(meta)
+    prev_outcome = _outcome_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v_asked,
-        attachments = restored_atts, snapshots = snapshots, status = prev_status)
+        attachments = restored_atts, snapshots = snapshots,
+        status = prev_status, outcome = prev_outcome)
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
     entry["current"]   = v_asked
@@ -756,7 +898,8 @@ function api_blackboard_prune(body_bytes::Vector{UInt8})
                     current = Int(get(meta, "current", 0)),
                     attachments = get(meta, "attachments", Any[]),
                     snapshots = snapshots,
-                    status = _status_from_meta(meta))
+                    status = _status_from_meta(meta),
+                    outcome = _outcome_from_meta(meta))
             end
         end
     end

@@ -94,6 +94,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/blackboard/create"),  # bidir Part 4 — new Markdown entry (title + content_md + optional attach_capture_ids)
         ("POST", "/api/blackboard/revise"),  # bidir Part 4 — SNAPSHOTS current content, then overwrites (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/status"),  # PROJECT_MEMORY_PLAN D3 — flip entry status open|resolved|parked (no snapshot; metadata-only)
+        ("POST", "/api/blackboard/outcome"), # PROJECT_MEMORY_PLAN D11 — tag entry good|bad + required note (no snapshot; metadata-only)
         ("POST", "/api/blackboard/search"),  # PROJECT_MEMORY_PLAN D4 — case-insensitive substring over title+body; title matches beat body matches
         # NB: /api/blackboard/{restore,prune,delete} are NOT allow-listed — those are user-driven
         # via Kiwi / the /blackboard page, matching the notebooks discipline (Claude never restores
@@ -580,6 +581,16 @@ class CeceliaClient:
         # a status value outside {open,resolved,parked} with 400 — keep the enum in sync on both sides.
         return self._request("POST", "/api/blackboard/status", body={
             "projectUid": project_uid, "entryId": entry_id, "status": status,
+        })
+
+    def set_blackboard_outcome(self, project_uid: str, entry_id: str, verdict: str, note: str):
+        # PROJECT_MEMORY_PLAN Decision 11. Additive metadata update; does NOT snapshot. Verdict is
+        # good | bad (server 400s on anything else); note is REQUIRED and must be non-empty (the
+        # note is what future sessions actually read — a verdict without one is meaningless). No-op
+        # (same verdict + same note) is idempotent and returns unchanged:true.
+        return self._request("POST", "/api/blackboard/outcome", body={
+            "projectUid": project_uid, "entryId": entry_id,
+            "verdict": verdict, "note": note,
         })
 
     def search_blackboard(self, project_uid: str, query: str,
