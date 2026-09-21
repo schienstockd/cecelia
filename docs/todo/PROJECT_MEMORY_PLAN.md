@@ -1,12 +1,16 @@
 # Project memory — plan
 
-**Status:** planning (2026-09-20). Design lives on `docs/project-memory-plan`. Written to be picked
-up cold; sits on the shipped Blackboard, captures and lab-log surfaces from
+**Status:** Phases 1–3 SHIPPED 2026-09-20/21 (PR #1103, single commit `87706bad` after rebase onto
+the split-suite refactor storm). Phase 4 (outcome tagging) in planning as of 2026-09-21. Design
+lives on `docs/project-memory-plan-p4` (was `docs/project-memory-plan` up to P3). Written to be
+picked up cold; sits on the shipped Blackboard, captures and lab-log surfaces from
 [`BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md) (parts 2 + 4 + 5 + 6 + 7 — all landed) rather than
 defining new storage. Companion reading: [`docs/archive/project-memory-index-prompt.md`](../archive/project-memory-index-prompt.md)
 (the ask, written before Blackboard shipped — its "narrative vs artifact" split still holds; its
-storage assumptions were overtaken by shipping) and [`docs/archive/claude-imaging-pitch.md`](../archive/claude-imaging-pitch.md)
-(what this connects to at the field level).
+storage assumptions were overtaken by shipping); [`docs/archive/claude-imaging-pitch.md`](../archive/claude-imaging-pitch.md)
+(what this connects to at the field level); [`docs/archive/blackboard-outcome-tagging-prompt.md`](../archive/blackboard-outcome-tagging-prompt.md)
+(the P4 + P5 ask; P4 folds in here as Phase 4, P5 is deferred to *Future work* pending the P5.0
+metadata audit).
 
 ## Goal
 
@@ -73,10 +77,14 @@ Numbered so code and other docs can cite them (`Decision 5`).
    is a "kind"); mitigated by pinning it to the top of the module's list.
 
 3. **Add `status` field to blackboard entry `meta.json`.** Enum `open | resolved | parked`.
-   Default `open`. Missing (pre-migration) backfilled as `open` on read. Status transitions are
-   additive — set via an optional `status` param on `revise_blackboard_entry`, recorded in the
-   entry's snapshot history like any other revision. This is the "what's currently on the table"
-   signal the briefing keys on.
+   Default `open`. Missing (pre-migration) backfilled as `open` on read. This is the "what's
+   currently on the table" signal the briefing keys on.
+
+   **Refinement at ship time:** transitions land through a dedicated `POST /api/blackboard/status`
+   endpoint + `set_blackboard_status` MCP tool rather than an optional param on
+   `revise_blackboard_entry`. Rationale: flipping open→resolved is a *state* transition on the
+   whole entry, not a content revision; keeping it out of `revise` means it doesn't consume a
+   snapshot and doesn't need to load or diff the entry body.
 
 4. **Search is plain substring in v1.** `search_blackboard(query, status?)` scans entry titles +
    bodies server-side, returns id + title + snippet + status, newest-match first. Blackboard
@@ -92,6 +100,10 @@ Numbered so code and other docs can cite them (`Decision 5`).
    about" surface; the lab-log is a chronological record whose value is post-hoc. The briefing
    should key on the former.
 
+   **Empty-briefing case (Decision 9).** On a brand-new project — no profile, no open entries, no
+   captures — the payload carries `newProject: true` and guidance instructs Claude to greet + ask
+   the user to describe subject/goal before proposing anything. See Decision 9.
+
 6. **Config-artifact recall is deferred.** Reapplying a stored gate / diameter / viewer preset
    by intent is a real want but a different problem shape (needs tags on writes, retrieval
    returns something directly reusable, storage is per-image not per-project). Not built in this
@@ -106,60 +118,136 @@ Numbered so code and other docs can cite them (`Decision 5`).
 8. **The `KIWI_PLAN.md` status row in [`docs/todo/README.md`](README.md) is left alone by this
    plan.** Noted only as a housekeeping item found during the audit.
 
+9. **Profile schema-lite: `subject` and `goal` required, everything else free.** The empty-profile
+   entry ships with all five suggested headings (subject, modality, cohort/groups, key channels,
+   current goal), but only `subject` and `goal` are enforced by the briefing: with either missing,
+   the payload carries `newProject: true` and Claude greets + asks the user to fill them before
+   proposing anything. Rationale: without knowing WHAT the project is and WHAT you're trying to
+   do, the briefing has nothing useful to lean on. Modality etc. are useful but come later; a
+   strict schema is easy to add, hard to remove.
+
+10. **`parked` and `resolved` are documentary only in v1.** Both drop from the briefing's
+    `openBlackboardEntries`; the chip is for the human reader; the memory slice treats them
+    identically. Different guidance for the two states is a v2 concern once we see how the field
+    gets used. Keeps the code path narrow.
+
+11. **Phase 4 — outcome tagging (D1–D6 from the archived prompt, D6 corrected).**
+    - **D1 binary, not scored.** `outcome.verdict: good | bad`. No numeric rating.
+    - **D2 note is required.** A verdict without a note is rejected (400). Reason: the note is
+      what a future Claude session actually reads; a number nobody explains is noise.
+    - **D3 entry-level.** `outcome` attaches to the whole Blackboard entry, same shape as `status`.
+      Per-suggestion granularity is a v2 problem.
+    - **D4 no neutral state.** `good | bad` only; absent = "no signal", not "neutral".
+    - **D5 tap-fast in the UI.** Inline verdict control + inline note input; not a full form page.
+      "One tap" softens to *tap → type note → confirm* (D5↔D2 tension acknowledged: the note is
+      the required part, so friction lives there).
+    - **D6 filter chips in the entry list, both status and outcome.** The archived prompt's D6
+      assumed `status` was already filterable — it isn't. This phase adds both filter chips
+      together, not just outcome. `outcome` filter options: `all | untagged | good | bad`.
+
+12. **Retrieval bias on outcome (Phase 4.3).** `search_blackboard` gains an outcome-aware
+    tiebreak: on equal match strength, `bad` beats `good` beats untagged (a `bad` verdict is a
+    known trap; leading with it is the whole point of the tag). Session briefing surfaces
+    `outcome` on the open-entries slice and promotes a `bad`-tagged entry above an untagged one
+    when both are open. Semantic topic matching is deferred (Decision 4 is still substring).
+
 ## Phases
 
 Each phase is independently shippable and reviewable. Phases 2 and 3 may ship in one PR at the
 maintainer's discretion; keep P1 separate.
 
-### Phase 1 — Status field + reserved `profile` entry
+### Phase 1 — Status field + reserved `profile` entry — SHIPPED 2026-09-20 (PR #1103)
 
 **Goal.** Every blackboard entry carries a status; the project profile exists as a well-known
 Blackboard entry from the moment the project opens.
 
-- `api/src/blackboard_api.jl` — extend `meta.json` schema with `status`. Backfill missing as
-  `open` on read. Extend `create_blackboard_entry` / `revise_blackboard_entry` to accept optional
-  `status`. New helper: on project open, ensure `blackboard/profile/` exists (empty entry,
-  reserved title `Project profile`, pinned).
-- `frontend/src/stores/blackboard.ts` — plumb the `status` field through the store; add a
-  `setStatus(bbId, status)` action that calls `revise_blackboard_entry`.
-- `frontend/src/modules/BlackboardModule.vue` — status chip per row (open/resolved/parked);
-  filter chip in the list view; pin the `profile` row to the top with a distinct affordance.
-- `mcp/cecelia_mcp/server.py` — `list_blackboard_entries` returns `status`; `create/revise` accept
-  it. Docstrings updated so a fresh model knows when to set which value.
-- `mcp/cecelia_mcp/guidance.py` — guidance rule: when a Blackboard entry's topic has been
-  resolved in this session (a decision was locked, a bug was fixed, a finding was acted on),
-  transition it to `resolved`; when it's set aside deliberately, `parked`. Do not blanket-close
-  entries as noise.
-- Tests: `mcp/tests/test_server.py::GuidanceTest` pins the tool arguments; Julia round-trip test
-  on `meta.json` including status; frontend store test on the new action.
+Backend + MCP landed in `87706bad`:
+- `api/src/blackboard_api.jl` — `meta.status` (open/resolved/parked; backfilled as `open`);
+  reserved `profile` entry auto-created on first `list`; `_ensure_profile_entry!` idempotent.
+- `POST /api/blackboard/status` (Decision 3 refinement — separate endpoint, no snapshot).
+- MCP `set_blackboard_status`, `list_blackboard_entries` surfaces status.
+- Tests: `api/test/suite/bidir_blackboard.jl` — status + reserved-profile testset (MEMORY P1);
+  BIDIR Part 4 CRUD updated to filter the auto-created profile row.
+- Guidance rule in `guidance.py` — transition to `resolved` when a topic settles, `parked` when
+  set aside; do not blanket-close entries as noise.
 
-### Phase 2 — Blackboard search
+**DEFERRED (frontend UI pass; see Phase 4 — bundled).**
+- `frontend/src/stores/blackboard.ts` — plumb `status` through the store; `setStatus(bbId, status)`.
+- `frontend/src/modules/BlackboardModule.vue` — status chip per row; status filter chip; pin the
+  `profile` row to the top with a distinct affordance.
+
+### Phase 2 — Blackboard search — SHIPPED 2026-09-20 (PR #1103)
 
 **Goal.** One MCP tool that answers "has this come up before in this project."
 
 - `api/src/blackboard_api.jl` — `POST /api/blackboard/search` (body: `{query, status?, limit?}`).
-  Server-side case-insensitive substring over `title` + entry body. Returns id + title + snippet
-  (±40 chars around the hit) + status + updatedAt, newest-match first, capped `limit ≤ 50`,
+  Case-insensitive substring over `title` + entry body. Returns id + title + snippet (±40 chars
+  around the hit) + status + matchType + updatedAt, title-hits first, capped `limit ≤ 50`,
   default 10.
-- `mcp/cecelia_mcp/server.py` — `search_blackboard(query, status_filter=None, limit=10)`.
-  Read-only, allow-listed. Explicit docstring on *when* to call it.
-- `mcp/cecelia_mcp/guidance.py` — call this before: proposing a phenotype label that sounds
-  familiar; suggesting a processing step for an unfamiliar image; writing a new finding that
-  might restate an existing one. Not reflexively on every session.
-- Tests: round-trip search over a fixture project; empty-result and long-query cases;
-  guidance test pins the tool.
+- MCP `search_blackboard(query, status_filter=None, limit=10)`, read-only + allow-listed.
+- Guidance: call before proposing a phenotype label that sounds familiar / suggesting a step
+  for an unfamiliar image / writing a finding that might restate an existing one. Not reflexive.
+- Tests: `api/test/suite/bidir_blackboard.jl` — search testset (MEMORY P2), covers title-vs-body
+  ordering, case-insensitivity, status filter, snippet shape, limit clamp.
 
-### Phase 3 — Session-briefing rewrite
+### Phase 3 — Session-briefing rewrite — SHIPPED 2026-09-21 (PR #1103)
 
 **Goal.** Session start returns durable project context, not a chronological slice.
 
-- `mcp/cecelia_mcp/server.py` — `get_session_briefing` returns the shape locked in Decision 5.
-  `recentLabLog` drops from the default payload; `profile`, `openBlackboardEntries`,
-  `recentCaptures` take its place. Fixture-backed regression test asserts the shape.
-- `mcp/cecelia_mcp/guidance.py` — top-of-session guidance: read the profile in full, scan the
-  open entries, only reach for `read_lab_log` when a chronological question comes up.
-- Docs: `docs/ARCHITECTURE.md` gains a *Project memory* subsection pointing at Blackboard as
-  the store and this plan as the *why*.
+- `mcp/cecelia_mcp/server.py::_memory_briefing_slice` composes Decision 5 shape in Python
+  (avoids coupling Julia `session_briefing` to blackboard code). Each upstream call wrapped in
+  try/except so a failed upstream degrades gracefully.
+- `get_session_briefing` returns `profile` (full body), `openBlackboardEntries` (title + snippet
+  + updatedAt, status=open, profile excluded), `recentCaptures` (last 5, slim shape).
+  `recentLabLog` dropped from the default payload; `read_lab_log` still there on demand.
+- Guidance rewritten: read profile first, scan open entries, reach for `read_lab_log` only for
+  chronological questions.
+- Test: `mcp/tests/test_server.py::test_the_briefing_ships_the_guidance` asserts the merged
+  shape (patched client — no live server).
+
+**DEFERRED.**
+- **Eyeball on a real session** (session-flow-visible change; can't be automated).
+- **`newProject: true` empty-briefing case (Decision 9)** — server currently returns three empty
+  arrays; the greet-and-ask flow needs adding to the memory slice + guidance. Small follow-up.
+- **`docs/ARCHITECTURE.md` gains a *Project memory* subsection** — doc-only cleanup, tail work.
+
+### Phase 4 — Outcome tagging + deferred P1 frontend UI — PLANNING (2026-09-21)
+
+**Goal.** Every Blackboard entry can be tagged `good`/`bad` with a required note. Bundles the
+deferred P1 frontend chips so BlackboardModule.vue takes ONE UI pass, not two.
+
+**Phase 4.1 — schema + API (backend).** Mirror the P1 status shape:
+- `api/src/blackboard_api.jl` — `outcome: {verdict: "good"|"bad", note: str, tagged_at: iso}` on
+  `meta.json`; validator (verdict requires non-empty note; verdict absent + note present → 400);
+  additive, no snapshot fired on tag change.
+- `POST /api/blackboard/outcome` handler (same discipline as `/status` — new state on the whole
+  entry, doesn't consume a snapshot). Register in `api/src/server.jl`; bump POST_ROUTES to 138
+  in `api/test/suite/e2e_sysimage_router.jl`.
+- MCP `set_blackboard_outcome(project_uid, entry_id, verdict, note)` — client + server tool +
+  test_client.py allowlist entry.
+- Testset in `api/test/suite/bidir_blackboard.jl` (Phase 4 section — same sector as P1/P2).
+- Guidance: when to tag good vs bad; note is required and is what future sessions read.
+
+**Phase 4.2 — Frontend UI pass (BlackboardModule.vue + store).** One visit to the file for
+both P1 chips (deferred) AND P4 outcome control:
+- `frontend/src/stores/blackboard.ts` — plumb `status` + `outcome`; `setStatus(id, status)`,
+  `setOutcome(id, verdict, note)` actions.
+- Status chip per row (P1 deferred — open/resolved/parked).
+- Profile-pin at top with distinct affordance (P1 deferred).
+- Outcome tag control: inline good/bad + note-required inline input; re-tagging allowed.
+- Both filter chips (P4.D6): status (all/open/resolved/parked), outcome (all/untagged/good/bad).
+- Extract testable logic into `frontend/src/utils/*.ts`; test.
+- Rendering half needs Dominik's eyeball per `feedback_reservation_is_not_management`.
+
+**Phase 4.3 — Retrieval bias.**
+- `api/src/blackboard_api.jl::api_blackboard_search` — outcome tiebreak on equal match strength:
+  `bad` > `good` > untagged. Expose `outcome` in result rows.
+- `mcp/cecelia_mcp/server.py::_memory_briefing_slice` — surface `outcome` on open-entries slice;
+  promote `bad`-tagged entries above untagged when both open. Extend the P3 test.
+- Guidance: on session open, if a `bad`-tagged entry surfaces, lead with it.
+
+**Phase 4 non-goals.** No numeric rating, no per-suggestion granularity, no third `inconclusive`
+state, no auto-scoring by Claude. These come back only if a real case demands them.
 
 ### Migration
 
@@ -177,9 +265,9 @@ Reference for future readers — nothing new, only additions to existing shapes:
 
 | Artifact | Path (relative to `<proj>/`) | This plan's change |
 |---|---|---|
-| Blackboard entry | `blackboard/<bb-id>/{entry.md, meta.json, .snapshots/entry@v<N>.md}` | `+ meta.status: open\|resolved\|parked` |
-| Blackboard registry | `settings/blackboard.json` | (no change) |
-| Reserved profile entry | `blackboard/profile/…` (Decision 2) | new well-known id, otherwise a regular Blackboard entry |
+| Blackboard entry | `blackboard/<bb-id>/{entry.md, meta.json, .snapshots/entry@v<N>.md}` | P1: `+ meta.status: open\|resolved\|parked`. P4: `+ meta.outcome: {verdict: good\|bad, note, tagged_at}` (absent = untagged). |
+| Blackboard registry | `settings/blackboard.json` | P1: mirrors `status` per entry. P4: mirrors `outcome.verdict` per entry (for cheap filter without loading meta). |
+| Reserved profile entry | `blackboard/profile/…` (Decision 2) | new well-known id, otherwise a regular Blackboard entry. `subject` + `goal` enforced by briefing (Decision 9). |
 | Captures | `captures/<cap-id>/{meta.json, frame.png}` | (no change; referenced in briefing) |
 | Lab-log | `lab-log.md` | (no change; still readable via `read_lab_log`, drops from briefing default) |
 
@@ -187,12 +275,20 @@ Reference for future readers — nothing new, only additions to existing shapes:
 
 Surfaced here so a follow-up isn't invented from scratch. Each is its own plan when it's time.
 
+- **P5 — guardrail extraction from `bad`-tagged entries.** Mine recurring failure modes across
+  entries tagged `bad` (Phase 4) to derive imaging-context-scoped guardrails ("when
+  fingerprint ≈ X, avoid Y because Z"). Gated on the **P5.0 metadata audit** — an inventory of
+  what per-acquisition metadata already exists in OME-XML / ccid.json / user notes, run *only*
+  when P5 is actually scheduled (the audit rots otherwise). Not a tail phase here; when it
+  gates open, gets its own plan doc citing the archived prompt. Full sketch:
+  [`docs/archive/blackboard-outcome-tagging-prompt.md`](../archive/blackboard-outcome-tagging-prompt.md)
+  (§P5).
 - **Config-artifact recall by intent** (Decision 6). "Reapply the diameter/gate/LUT from that
   case." Different problem shape from narrative search. Would need: tags on the writers that
   produce these artifacts (`gating/{vn}.json`, `runlog.json`, viewer presets — if Decision 7 is
   built), plus a retrieval that returns a directly-reusable reference (id + path) rather than a
-  description. Revisit after v1 lands and we know whether the "suggest processing steps" ask is
-  actually served by Blackboard search or genuinely needs artifact retrieval.
+  description. Revisit after Phase 4 lands and we know whether the "suggest processing steps" ask
+  is actually served by Blackboard search+outcome or genuinely needs artifact retrieval.
 - **Named viewer presets** (Decision 7). Independent `settings/viewer_presets.json` + MCP
   list/apply. Real prerequisite gap for config-artifact recall.
 - **Semantic search** (Decision 4). Replace substring with embedding-backed search over
@@ -202,13 +298,5 @@ Surfaced here so a follow-up isn't invented from scratch. Each is its own plan w
 
 ## Open questions
 
-- **Profile schema-lite header — mandatory fields?** Decision 2 names subject, modality,
-  cohort/groups, key channels, current goal. Should any of these be required for the entry to
-  count as "filled in," and does the UI nudge on empty fields? Deferred to Phase 1 review — a
-  strict schema is easy to add later, hard to remove.
-- **Briefing when the project is fresh.** A brand-new project has an empty profile, no open
-  entries, no captures. The briefing should say so plainly rather than return three empty
-  arrays.
-- **Retirement of an entry.** Is `parked` distinct from `resolved` in a way the briefing acts
-  on, or is the split only for the human reader? Default: both drop out of the briefing's
-  `openBlackboardEntries` list; the difference is documentary.
+*(P1–P3 open questions locked as Decisions 9, 10, and the D5 empty-briefing paragraph on
+2026-09-21; Phase 4 has no open questions at this stage.)*
