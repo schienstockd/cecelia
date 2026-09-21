@@ -81,6 +81,7 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
   buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
+  filterPayloadByTrackSource,
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
@@ -1584,9 +1585,16 @@ function rebuildOverlays() {
       if (!pop.show || !pop.labels?.length) continue
       if (!(pop.isTrack || pop.hasTracks)) continue
       if (hiddenTrackPops.value.has(pop.path)) continue
+      // Compose label + track_source filters: keep cells in this pop's gate AND authored by
+      // (or unattributed under) this pop. Without the second filter, a cell that's in /qc/test's
+      // gate but whose track_id came from an earlier /qc/CD169- run drew the CD169- ribbon under
+      // /qc/test's colour — the "tracks don't match the pop" bug. See
+      // docs/todo/MULTI_POP_TRACKING_ORPHANS_PLAN.md + `filterPayloadByTrackSource`. Legacy
+      // servers (no pop.uid or no cells.trackSource) fall back to labels-only.
       const byLabels = filterPayloadByLabels(popMgrPayload, new Set(pop.labels))
-      if (!byLabels.nCells) continue
-      const p = narrowByHighlight(popMgrVn, byLabels, { allowFallback: false })
+      const filtered = pop.uid ? filterPayloadByTrackSource(byLabels, pop.uid) : byLabels
+      if (!filtered.nCells) continue
+      const p = narrowByHighlight(popMgrVn, filtered, { allowFallback: false })
       if (!p) continue
       const key = `${popMgrVn}::${pop.path}`
       sources.push({ vn: key, payload: p, colour: overrides[key] ?? pop.colour,
@@ -1598,6 +1606,9 @@ function rebuildOverlays() {
     if (tcPayload) {
       for (const pop of tcPayload.pops ?? []) {
         if (!pop.show || !pop.labels?.length) continue
+        // Trackclust pops are FILTERS on a `clusters.{suffix}` column — the tracks they cover are
+        // by construction the tracks of the segmentation's tracked cells (see popmanager/pop_df.jl).
+        // No per-pop attribution to filter by; labels-only is correct here.
         const byLabels = filterPayloadByLabels(tcPayload, new Set(pop.labels))
         if (!byLabels.nCells) continue
         const p = narrowByHighlight(popMgrVn, byLabels, { allowFallback: false })

@@ -301,7 +301,11 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
         labs = Int.(cells_in_pop(m, path))
         isempty(labs) && continue
         has_tracks = _pop_has_authored_tracks(p.uid, labs, label_to_source)
-        push!(out, (path = p.path, name = p.name, colour = p.colour,
+        # `uid` carried through so the client can filter cells whose `track_source` matches ONLY
+        # this pop's authoring — needed by the viewer's per-pop ribbon to stop cells authored by
+        # a sibling pop from bleeding into this pop's tracks. See viewer_api.jl overlays payload +
+        # frontend `filterPayloadByTrackSource`. Additive field; existing callers ignore it.
+        push!(out, (path = p.path, name = p.name, colour = p.colour, uid = p.uid,
                     show = p.show, is_track = p.is_track, has_tracks = has_tracks,
                     labels = labs))
     end
