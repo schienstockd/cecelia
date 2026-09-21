@@ -28,6 +28,7 @@ import { splitXYZ } from '../../plots/valueColour'
 import { DOT_R } from '../../plots/density'
 import ColourBarLegend from './ColourBarLegend.vue'
 import type { RenderMode } from './RenderModeToggle.vue'
+import type { Frame, FrameCell } from '../../plots/frame'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
 
@@ -239,6 +240,7 @@ type CellExport = {
   getHost(): HTMLElement | null
   exportSvg(bg?: string, light?: boolean): string
   exportSvgBody(light?: boolean): string
+  getFrame(): Frame
 }
 const cellRefs = new Map<string, CellExport>()
 function setCellRef(key: string, el: unknown) { if (el) cellRefs.set(key, el as CellExport); else cellRefs.delete(key) }
@@ -332,7 +334,23 @@ function exportCsv(): string {
   }
   return rowsToCsv(rows)
 }
-defineExpose({ exportImage, exportSvg, exportCsv })
+// Frame accessor: the OUTER host has no meaningful "drawn area" (it's a grid + legend), so
+// `getFrame()` returns a degenerate frame whose `subFrames()` iterates each scatter tile's own
+// `getFrame()` — a point-out at `(family, plotId, cell: '<key>')` addresses one tile. The
+// legend and non-scatter cells (ggpairs diagonal, correlation) aren't addressable this way; a
+// consumer that needs their rects can query `hostRef.value` directly.
+const montageFrame: Frame = {
+  toNorm: () => null, fromNorm: () => null,
+  subFrames(): FrameCell[] {
+    const out: FrameCell[] = []
+    for (const [key, cell] of cellRefs) {
+      const f = cell.getFrame?.()
+      if (f) out.push({ key, frame: f })
+    }
+    return out
+  },
+}
+defineExpose({ exportImage, exportSvg, exportCsv, getFrame: (): Frame => montageFrame })
 
 const titleFor = (parentPath: string) => (parentPath === 'root' ? 'all events (root)' : parentPath)
 // upper-triangle correlation cell (ggpairs): show r, scaling the text with |r| so strong pairs stand out

@@ -29,6 +29,7 @@ import { getOpenPopoutWindow } from '../../lib/popout'
 import StripCell from './StripCell.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import CcToggle from '../CcToggle.vue'
+import type { Frame, FrameCell } from '../../plots/frame'
 
 const settings = useSettingsStore()
 const project = useProjectStore()
@@ -367,7 +368,28 @@ async function exportImage(): Promise<string | null> {
   try { return await elementToImageURL(stripRef.value, 'png', '#ffffff') }
   finally { capturingStrip.value = false; exportSrcs.value = {} }
 }
-defineExpose({ exportImage })
+
+// Per-cell frame accessors — collected on StripCell mount for the (soon) point-out consumer. Each
+// cell key is its stable index (`cell=N`); the strip itself has no meaningful frame of its own
+// (varies wildly by orientation + clip path), so `getFrame()` delegates to `subFrames()`.
+type CellFrameSource = { getFrame(): Frame }
+const cellFrameRefs = new Map<number, CellFrameSource>()
+function setCellFrameRef(i: number, el: unknown) {
+  if (el && typeof (el as CellFrameSource).getFrame === 'function') {
+    cellFrameRefs.set(i, el as CellFrameSource)
+  } else {
+    cellFrameRefs.delete(i)
+  }
+}
+const stripFrame: Frame = {
+  toNorm: () => null, fromNorm: () => null,
+  subFrames(): FrameCell[] {
+    const out: FrameCell[] = []
+    for (const [i, cell] of cellFrameRefs) out.push({ key: `cell=${i}`, frame: cell.getFrame() })
+    return out
+  },
+}
+defineExpose({ exportImage, getFrame: (): Frame => stripFrame })
 </script>
 
 <template>
@@ -434,7 +456,7 @@ defineExpose({ exportImage })
     </div>
 
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
-      <StripCell v-for="(c, i) in cells" :key="i"
+      <StripCell v-for="(c, i) in cells" :key="i" :ref="el => setCellFrameRef(i, el)"
                  class="is-cell" :style="{ clipPath: clipFor(i) }"
                  :src="(c.assetId || c.src) ? cellSrc(c) : undefined"
                  alt="viewer screenshot"

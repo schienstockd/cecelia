@@ -15,12 +15,20 @@
       through on the way out, so Claude's marks read the same coming back in.
     • This SFC — the PNG cover, the Claude overlay group, and the "Return to live" close.
 
-  Coord frame: the SVG viewBox tracks its own client CSS px; Claude's overlay is in 0..1
-  frame-relative coords (captureAddress::normalisePoint). Multiply by box → paint. Same
-  approach as DrawSurface / FreeformOverlay.
+  Coord frame: overlay marks are 0..1 in the FRAME's natural pixel space (see BIDIR_CONTEXT_PLAN).
+  The SVG viewBox is `0 0 naturalW naturalH` with `preserveAspectRatio="xMidYMid meet"` so it
+  letterboxes on top of the `<img class="cvs-frame">` exactly the way `object-fit: contain`
+  letterboxes the image. Marks paint at natural pixel coords (0..1 × natural × meet-scale),
+  which lands on the same displayed pixel as the underlying image. Same principle as DrawSurface
+  reversed: authored on the natural frame, played back on the natural frame.
+
+  Fixes the pre-fix mismatch: `preserveAspectRatio="none"` + `viewBox="0 0 boxW boxH"` stretched
+  marks to fill the container; on any aspect ≠ the image aspect (a portrait frame in a landscape
+  wrap) mark (0.5, 0.5) landed in the container centre — a letterbox stripe, not the image
+  centre.
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useViewerStore } from '../stores/viewer'
 import {
   paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow,
@@ -28,6 +36,7 @@ import {
 import type { OverlayMark, CaptureAddress } from '../utils/captureAddress'
 import type { CaptureSurface } from '../utils/kiwiCaptures'
 import FrameAnnotator from './FrameAnnotator.vue'
+import { letterboxFrame, type Frame } from '../plots/frame'
 
 const props = withDefaults(defineProps<{
   projectUid: string
@@ -80,15 +89,27 @@ const emit = defineEmits<{
 const viewer = useViewerStore()
 
 const wrap = ref<HTMLElement | null>(null)
-const boxW = ref(0)
-const boxH = ref(0)
-function measureBox() {
-  const r = wrap.value?.getBoundingClientRect()
-  if (!r) return
-  boxW.value = r.width; boxH.value = r.height
+// Natural pixel size of the composed PNG — the frame overlay marks live in. `<img @load>` fires
+// on the first paint AND on any src swap (re-annotate rebinds `frameDataUrl`), so refresh here
+// keeps the SVG viewBox aligned with whatever frame is currently displayed.
+const naturalW = ref(0)
+const naturalH = ref(0)
+function onFrameLoad(e: Event) {
+  const img = e.target as HTMLImageElement
+  naturalW.value = img.naturalWidth
+  naturalH.value = img.naturalHeight
 }
-onMounted(() => { window.addEventListener('resize', measureBox); measureBox() })
-onBeforeUnmount(() => window.removeEventListener('resize', measureBox))
+
+// Frame accessor for the (soon) point-out consumer. `letterboxFrame` computes the drawn
+// sub-rect inside `wrap` using the natural aspect — the same rect `object-fit: contain` lays
+// the `<img>` into, so a normalised mark projects onto the actual image pixel. The aspect is
+// a getter so a src swap on re-annotate updates the frame lazily (fires @load again). Exposed
+// via `defineExpose` at the bottom.
+const frame: Frame = letterboxFrame(
+  () => wrap.value?.getBoundingClientRect() ?? null,
+  () => (naturalH.value > 0 ? naturalW.value / naturalH.value : 0),
+)
+defineExpose({ getFrame: (): Frame => frame })
 
 // ── Re-annotate (Kiwi PR B) ────────────────────────────────────────────────────────────────────
 // The frozen frame is what the user is discussing WITH Claude; sometimes that discussion needs
@@ -161,13 +182,17 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
 
 // Claude's freeform marks whose `target` is THIS captureId. Filter here (rather than in the
 // store) so a mark for a different capture waits in the bag rather than painting on the wrong
-// frame — mid-conversation Claude may reference a capture from earlier.
+// frame — mid-conversation Claude may reference a capture from earlier. Painted in NATURAL
+// pixel coords: the SVG viewBox is `0 0 naturalW naturalH` with `preserveAspectRatio meet`, so
+// (0..1 × natural) lands on the same displayed pixel `object-fit: contain` puts the underlying
+// image at. Gated on natural size so pre-load frames render nothing rather than a stretched
+// stripe (previously guarded on boxW/H).
 const claudePaintables = computed(() => {
-  if (boxW.value <= 0 || boxH.value <= 0) return []
+  if (naturalW.value <= 0 || naturalH.value <= 0) return []
   const out: ReturnType<typeof paintableFor> = []
   for (const m of viewer.freeformMarks) {
     if (m.target !== props.captureId) continue
-    out.push(...paintableFor(m.overlay, boxW.value, boxH.value, 'norm'))
+    out.push(...paintableFor(m.overlay, naturalW.value, naturalH.value, 'norm'))
   }
   return out
 })
@@ -196,18 +221,19 @@ function dismissAllClaudeMarks() {
          own aspect on any wrap size. `crossorigin=anonymous` isn't needed (data URL, same origin
          by definition) but the ref is — re-annotate composites over THIS <img> so a fresh Image
          load isn't needed on Save. -->
-    <img :src="frameDataUrl" class="cvs-frame" alt="Shared frame" @load="measureBox" />
+    <img :src="frameDataUrl" class="cvs-frame" alt="Shared frame" @load="onFrameLoad" />
 
-    <!-- SVG in the wrap's OWN CSS-px frame. Only Claude's freeform marks paint here. The user's
-         own overlay is ALREADY baked into `frameDataUrl` at compose time (see
-         `composeImageWithOverlay` / `composeFrameWithOverlay`) — painting the vector overlay on
+    <!-- SVG in the FRAME's natural pixel space. viewBox = the composited PNG's own pixels;
+         `preserveAspectRatio="xMidYMid meet"` letterboxes on the same rect `object-fit: contain`
+         puts the underlying `<img>` at. Only Claude's freeform marks paint here — the user's own
+         overlay is ALREADY baked into `frameDataUrl` at compose time (see
+         `composeImageWithOverlay` / `composeFrameWithOverlay`); painting the vector overlay on
          top gave a visible double because the baked strokes rasterise at the original compose
-         pixel size while the SVG strokes rasterise at the display box, and any mismatch (window
-         resize, re-annotate compositing on top of an already-composited frame) offsets the two
-         copies. Vector overlay stays in the envelope for downstream structural readers; it just
-         doesn't get painted twice here. -->
-    <svg v-if="boxW > 0 && boxH > 0" class="cvs-svg"
-         :viewBox="`0 0 ${boxW} ${boxH}`" preserveAspectRatio="none">
+         pixel size while the SVG strokes rasterise at the display box, and any mismatch offsets
+         the two copies. Vector overlay stays in the envelope for downstream structural readers;
+         it just doesn't get painted twice here. -->
+    <svg v-if="naturalW > 0 && naturalH > 0" class="cvs-svg"
+         :viewBox="`0 0 ${naturalW} ${naturalH}`" preserveAspectRatio="xMidYMid meet">
       <g class="cvs-claude">
         <template v-for="(p, i) in claudePaintables" :key="`c${i}`">
           <rect v-if="p.kind === 'rect'"

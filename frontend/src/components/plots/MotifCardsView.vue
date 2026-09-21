@@ -13,6 +13,7 @@
 import { useTemplateRef } from 'vue'
 import CardsPanelInner from './CardsPanelInner.vue'
 import { motifFamily } from './cardFamilies'
+import type { Frame } from '../../plots/frame'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -25,7 +26,14 @@ const innerRef = useTemplateRef<InstanceType<typeof CardsPanelInner>>('innerRef'
 async function exportImage(): Promise<string | null> {
   return innerRef.value?.exportImage() ?? null
 }
-defineExpose({ exportImage })
+// Point-out Frame — proxied through to the inner's per-card subFrames. Same shape as
+// CellCardsView / CardsPanelBase so the consumer sees a uniform (family, plotId, cell=<path>)
+// address regardless of which wrapper mounted the inner.
+const proxyFrame: Frame = {
+  toNorm: () => null, fromNorm: () => null,
+  subFrames() { return innerRef.value?.getFrame?.().subFrames?.() ?? [] },
+}
+defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
 </script>
 
 <template>

@@ -18,6 +18,7 @@ import PlotSpinner from './PlotSpinner.vue'
 import StatBox from './StatBox.vue'
 import { elementToImageURL } from '../../plots/export'
 import type { Card, CardsResponse, CardFamily, ShownPop } from './cardsPanel'
+import type { Frame, FrameCell } from '../../plots/frame'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]
@@ -160,7 +161,27 @@ async function exportImage(): Promise<string | null> {
   finally { capturing.value = false; exportSrcs.value = {} }
 }
 
-defineExpose({ exportImage })
+// Per-card frame accessors for the (soon) point-out consumer. Keyed by the card's `path` (its
+// stable identifier — populations/motifs/hmm states are all path-addressed), so a point-out at
+// `(family, plotId, cell: '<path>')` addresses one card.
+type CellFrameSource = { getFrame(): Frame }
+const cellFrameRefs = new Map<string, CellFrameSource>()
+function setCellFrameRef(key: string, el: unknown) {
+  if (el && typeof (el as CellFrameSource).getFrame === 'function') {
+    cellFrameRefs.set(key, el as CellFrameSource)
+  } else {
+    cellFrameRefs.delete(key)
+  }
+}
+const cardsFrame: Frame = {
+  toNorm: () => null, fromNorm: () => null,
+  subFrames(): FrameCell[] {
+    const out: FrameCell[] = []
+    for (const [key, cell] of cellFrameRefs) out.push({ key, frame: cell.getFrame() })
+    return out
+  },
+}
+defineExpose({ exportImage, getFrame: (): Frame => cardsFrame })
 </script>
 
 <template>
@@ -174,7 +195,7 @@ defineExpose({ exportImage })
     <div v-else class="ccv-grid" :style="gridStyle">
       <div v-for="c in cards" :key="c.path" class="cc-card ccv-card">
         <div class="ccv-frame" :style="{ borderColor: c.colour }">
-          <StripCell class="ccv-cell"
+          <StripCell class="ccv-cell" :ref="el => setCellFrameRef(c.path, el)"
                      :src="displaySrc(c)" :alt="c.name"
                      @click="emit('cardSelect', c)" />
         </div>

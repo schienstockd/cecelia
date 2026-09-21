@@ -17,6 +17,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
+import type { Frame } from '../../plots/frame'
 import type { GateSpec, TransformSpec, PopNode, PopTree } from '../../stores/gating'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { orientGate } from '../../plots/gateGeometry'
@@ -211,11 +212,19 @@ useDataRefresh(() => [imageUid.value], () => { loadChannels().then(loadTree) })
 const montageRef = useTemplateRef<{
   exportImage(bg?: string, light?: boolean): Promise<string | null>
   exportSvg(bg?: string, light?: boolean): string
+  getFrame(): Frame
 }>('montageRef')
 async function exportImage(): Promise<string | null> { return (await montageRef.value?.exportImage('#ffffff', true)) ?? null }
 // full vector <svg> for the board→SVG export — the montage stitches its read-only tiles
 function exportSvg(): string | null { return montageRef.value?.exportSvg('#ffffff', true) || null }
-defineExpose({ exportImage, exportSvg })
+// Point-out Frame — proxied through to the montage's per-tile subFrames. `interactiveViews.ts`
+// registers this view as what the InteractivePanel host template-refs, so a consumer walking the
+// view registry sees the frame here rather than having to reach past to the inner GateMontage.
+const proxyFrame: Frame = {
+  toNorm: () => null, fromNorm: () => null,
+  subFrames() { return montageRef.value?.getFrame?.().subFrames?.() ?? [] },
+}
+defineExpose({ exportImage, exportSvg, getFrame: (): Frame => proxyFrame })
 </script>
 
 <template>
