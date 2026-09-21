@@ -265,7 +265,7 @@ Reference for future readers — nothing new, only additions to existing shapes:
 
 | Artifact | Path (relative to `<proj>/`) | This plan's change |
 |---|---|---|
-| Blackboard entry | `blackboard/<bb-id>/{entry.md, meta.json, .snapshots/entry@v<N>.md}` | P1: `+ meta.status: open\|resolved\|parked`. P4: `+ meta.outcome: {verdict: good\|bad, note, tagged_at}` (absent = untagged). |
+| Blackboard entry | `blackboard/<bb-id>/{entry.md, meta.json, .snapshots/entry@v<N>.md}` | P1: `+ meta.status: open\|resolved\|parked`. P4: `+ meta.outcome: {verdict: good\|bad, note, tagged_at}` (absent = untagged). P5.1: `+ meta.fingerprint: {v, channel_count, stain_classes[], pipeline_stage}` (absent on entries created without image context or before P5.1). |
 | Blackboard registry | `settings/blackboard.json` | P1: mirrors `status` per entry. P4: mirrors `outcome.verdict` per entry (for cheap filter without loading meta). |
 | Reserved profile entry | `blackboard/profile/…` (Decision 2) | new well-known id, otherwise a regular Blackboard entry. `subject` + `goal` enforced by briefing (Decision 9). |
 | Captures | `captures/<cap-id>/{meta.json, frame.png}` | (no change; referenced in briefing) |
@@ -275,12 +275,34 @@ Reference for future readers — nothing new, only additions to existing shapes:
 
 Surfaced here so a follow-up isn't invented from scratch. Each is its own plan when it's time.
 
-- **P5 — guardrail extraction from `bad`-tagged entries.** Mine recurring failure modes across
-  entries tagged `bad` (Phase 4) to derive imaging-context-scoped guardrails ("when
-  fingerprint ≈ X, avoid Y because Z"). Gated on the **P5.0 metadata audit** — an inventory of
-  what per-acquisition metadata already exists in OME-XML / ccid.json / user notes, run *only*
-  when P5 is actually scheduled (the audit rots otherwise). Not a tail phase here; when it
-  gates open, gets its own plan doc citing the archived prompt. Full sketch:
+- **P5.1 — entry fingerprint (writer) — SHIPPED 2026-09-21.** Each new Blackboard entry snapshots
+  a small structured `fingerprint` into `meta.json` at create time: `{v: 1, channel_count,
+  stain_classes[], pipeline_stage}`. Set-once — no PATCH endpoint (an entry's context is what it
+  was created on; a later image edit doesn't retroactively change the entry). Preserved across
+  every mutation (status flip, outcome tag, revise, restore, prune) by the same read-and-pass-back
+  pattern outcome uses. MCP `create_blackboard_entry` gains an optional `image_uid` arg; the
+  server-side `_infer_fingerprint` reads `sizeC` + `activeValueName` + classified `channelNames`
+  (see [`docs/inventory/stain_classes.md`](../inventory/stain_classes.md)). Absent when no image
+  context is passed or the image is unresolvable — a fingerprint is best-effort, not a gate.
+    - **P5.0 audit — DONE 2026-09-21 against zolIMa (MERTK).** Sweep against the archived D3
+      candidate list:
+      - AVAILABLE today: `channel_count` (from `sizeC`), `pipeline_stage` (from `activeValueName`).
+      - NEEDS EXTRACTION (small classifier lift, no reader change): `stain_classes` (channel-name
+        regex — Ailsa's `mem-`/`nuc-`/`CD169-…` convention). Landed as v1.
+      - DEFERRED to v2: `modality`, `tissue_context` — need a profile-prose parse. Additive; a
+        v1-schema reader ignores an unknown field so a v2 writer can land without a migration.
+      - **DROPPED** from D3: `objective_na_band`. OME `Objective.LensNA` isn't preserved on
+        import (`extraMeta` comes back empty on `Dml3RG`); costs a reader change; unlikely to
+        discriminate the failure modes actually hit. Revisit only if the case for it appears.
+    - **P5.0 outcome logged** in `docs/inventory/stain_classes.md` (the classifier is the human
+      contract) and in this section. The audit doesn't need re-running unless the class list
+      changes shape.
+- **P5.2 — guardrail extraction from `bad`-tagged entries (retrieval side).** Mine recurring
+  failure modes across entries tagged `bad` and grouped by fingerprint proximity to derive
+  imaging-context-scoped guardrails ("when fingerprint ≈ X, avoid Y because Z"). Gated on a
+  `bad`-tagged corpus that actually crosses the D5 recurrence threshold (N ≥ 3) — 1 entry today
+  on zolIMa; needs weeks of P4 usage. Retrieval schema will dispatch on `fingerprint.v`, so a
+  v1-only corpus is fine to mine when the time comes. Full sketch:
   [`docs/archive/blackboard-outcome-tagging-prompt.md`](../archive/blackboard-outcome-tagging-prompt.md)
   (§P5).
 - **Config-artifact recall by intent** (Decision 6). "Reapply the diameter/gate/LUT from that

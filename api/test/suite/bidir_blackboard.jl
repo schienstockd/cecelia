@@ -1,10 +1,11 @@
 # Blackboard testsets — BIDIR Part 4 storage discipline (docs/todo/BIDIR_CONTEXT_PLAN.md) plus the
-# PROJECT_MEMORY_PLAN P1/P2/P4 additions that ride on the same store:
+# PROJECT_MEMORY_PLAN P1/P2/P4/P5.1 additions that ride on the same store:
 #   • CRUD + versioning + attachments (BIDIR Part 4)
 #   • status field + reserved `profile` entry           (PROJECT_MEMORY_PLAN P1 — Decisions 2, 3)
 #   • substring search over titles + bodies             (PROJECT_MEMORY_PLAN P2 — Decision 4)
 #   • outcome tag (good/bad + required note)            (PROJECT_MEMORY_PLAN P4 — Decision 11)
 #   • outcome tiebreak on search ordering               (PROJECT_MEMORY_PLAN P4 — Decision 12)
+#   • entry fingerprint (set-once, preserved)           (PROJECT_MEMORY_PLAN P5.1)
 #
 # All five sit here so a future blackboard change touches ONE suite file, not five. Extracted so
 # runtests.jl contains only include lines + section-header comments — same shape as app/test/suite/*.jl.
@@ -626,6 +627,130 @@ end
         # eid_new is a title hit for "cohort"; both eid_mid and eid_old would only match body if at
         # all. First result must be a title match regardless of outcome.
         @test String(rows[1].matchType) == "title"
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+# ── Entry fingerprint (PROJECT_MEMORY_PLAN Phase 5.1) ─────────────────────────────────────────
+# The fingerprint is a small structured key set once at create, preserved across every mutation
+# (status flip, outcome tag, revise, restore, prune) and exposed on the list + entry read. Absent
+# on entries created without one (the same shape a pre-P5.1 legacy entry has).
+@testset "API: blackboard entry fingerprint (MEMORY P5.1)" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTBBP51"; mkpath(joinpath(tmp, uid))
+        w(path, b) = _post(path, b)
+
+        fp = Dict{String,Any}(
+            "v"              => 1,
+            "channel_count"  => 4,
+            "stain_classes"  => ["macrophage_or_marker", "membrane", "nucleus"],
+            "pipeline_stage" => "denoised",
+        )
+
+        # ── Guards ──────────────────────────────────────────────────────────
+        # Fingerprint present but missing v ⇒ 400.
+        @test w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t", "content"=>"c",
+            "fingerprint"=>Dict("channel_count"=>4)))[1] == 400
+        # Non-int v ⇒ 400.
+        @test w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t", "content"=>"c",
+            "fingerprint"=>Dict("v"=>"one")))[1] == 400
+        # Over the byte cap ⇒ 400 (fingerprint is a key, not a payload).
+        big = Dict{String,Any}("v"=>1, "junk"=>repeat("x", 2 * 1024 + 1))
+        @test w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t", "content"=>"c",
+            "fingerprint"=>big))[1] == 400
+
+        # ── Happy path: create WITH fingerprint ─────────────────────────────
+        st_c, body_c = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Segmentation attempt on the bright cohort",
+            "content"=>"diameter 30 with default flow",
+            "fingerprint"=>fp))
+        @test st_c == 200
+        eid = String(JSON3.read(body_c).entryId)
+
+        # entry_get surfaces the fingerprint.
+        st_e, body_e = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test st_e == 200
+        e_fp = JSON3.read(body_e).entry.fingerprint
+        @test Int(e_fp.v) == 1
+        @test Int(e_fp.channel_count) == 4
+        @test String(e_fp.pipeline_stage) == "denoised"
+        @test Set(String(c) for c in e_fp.stain_classes) ==
+              Set(["macrophage_or_marker", "membrane", "nucleus"])
+
+        # list surfaces the fingerprint per row too (retrieval reads the whole project cheaply).
+        st_l, body_l = api_blackboard_list(HTTP.Request("GET", "/api/blackboard?projectUid=$uid"))
+        rows = JSON3.read(body_l).entries
+        row = only([r for r in rows if String(r.entryId) == eid])
+        @test Int(row.fingerprint.v) == 1
+        # Profile row has no fingerprint (created without one).
+        prof = only([r for r in rows if String(r.entryId) == "profile"])
+        @test !haskey(prof, :fingerprint)
+
+        # An entry created WITHOUT a fingerprint reads back without one (absent-on-missing).
+        _, body_no = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"unrelated idea", "content"=>"no image context"))
+        eid_no = String(JSON3.read(body_no).entryId)
+        st_en, body_en = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid_no"))
+        @test !haskey(JSON3.read(body_en).entry, :fingerprint)
+
+        # ── Preservation across every mutation ──────────────────────────────
+        # revise (content diff)
+        st_r, _ = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
+            "content"=>"revised body — same context"))
+        @test st_r == 200
+        st_ar, body_ar = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test Int(JSON3.read(body_ar).entry.fingerprint.channel_count) == 4
+
+        # status flip
+        st_s, _ = w(api_blackboard_status, Dict("projectUid"=>uid, "entryId"=>eid,
+            "status"=>"resolved"))
+        @test st_s == 200
+        st_as, body_as = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test Int(JSON3.read(body_as).entry.fingerprint.channel_count) == 4
+
+        # outcome tag
+        st_o, _ = w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad", "note"=>"the diameter was picked from the wrong scan mode"))
+        @test st_o == 200
+        st_ao, body_ao = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        entry_ao = JSON3.read(body_ao).entry
+        @test Int(entry_ao.fingerprint.channel_count) == 4
+        @test String(entry_ao.outcome.verdict) == "bad"   # still there too
+
+        # restore
+        st_rev2, _ = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
+            "content"=>"a second edit so a v2 exists to restore"))
+        @test st_rev2 == 200
+        st_rest, _ = w(api_blackboard_restore, Dict("projectUid"=>uid, "entryId"=>eid,
+            "version"=>"1"))
+        @test st_rest == 200
+        st_arest, body_arest = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test Int(JSON3.read(body_arest).entry.fingerprint.channel_count) == 4
+
+        # ── Backfill: an entry with no fingerprint key on disk reads as untagged ─
+        uid2 = "TESTBBP51LEG"; mkpath(joinpath(tmp, uid2, "blackboard"))
+        legacy_id = "bb-20250101T000000-cafefe"
+        legacy_dir = joinpath(tmp, uid2, "blackboard", legacy_id); mkpath(legacy_dir)
+        write(joinpath(legacy_dir, "entry.md"), "legacy body")
+        write(joinpath(legacy_dir, "meta.json"), JSON3.write(Dict{String,Any}(
+            "entryId" => legacy_id, "title" => "legacy", "createdAt" => "2025-01-01",
+            "updatedAt" => "2025-01-01", "current" => 0, "attachments" => Any[],
+            "snapshots" => Any[])))   # NO fingerprint key
+        st_leg, body_leg = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid2&entryId=$legacy_id"))
+        @test st_leg == 200
+        @test !haskey(JSON3.read(body_leg).entry, :fingerprint)
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

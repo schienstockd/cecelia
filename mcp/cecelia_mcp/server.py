@@ -573,6 +573,90 @@ def _profile_is_authored(profile: dict | None) -> bool:
     return all(_profile_section_has_content(body, h) for h in _PROFILE_REQUIRED_SECTIONS)
 
 
+# PROJECT_MEMORY_PLAN Phase 5.1 fingerprint schema version. Written into every fingerprint at
+# create time so a future retrieval pass can dispatch on the schema (`v`) instead of guessing.
+# Keep in step with `_BB_FINGERPRINT_VERSION` in `api/src/blackboard_api.jl`.
+_BB_FINGERPRINT_VERSION = 1
+
+# Channel-name → stain-class map. Ordered: first match wins. See `docs/inventory/stain_classes.md`
+# for the full table + rationale (why it's a lab convention, why "unknown" is a signal not a bug).
+# When updating this list, update the doc in the same change — the inventory is the human record,
+# this is the machine copy.
+_STAIN_CLASS_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"^mem[-_]",           "membrane"),
+    (r"^nuc[-_]",           "nucleus"),
+    (r"^cyto[-_]",          "cytoplasm"),
+    (r"^cd\d+[-_a-z]*",     "macrophage_or_marker"),   # CD169-Kat, CD8, CD4… — coarse "immune marker" bucket
+    (r"(^|[-_])dapi",       "nucleus"),
+    (r"(^|[-_])hoechst",    "nucleus"),
+    (r"(^|[-_])tomato\b",   "membrane"),
+    (r"(^|[-_])gfp\b",      "reporter"),
+    (r"(^|[-_])rfp\b",      "reporter"),
+    (r"(^|[-_])yfp\b",      "reporter"),
+    (r"(^|[-_])shg\b",      "structural"),             # second-harmonic — collagen / fibre
+    (r"(^|[-_])autofl",     "autofluorescence"),
+)
+
+
+def _classify_stain(name: str) -> str:
+    """Map a channel name to a coarse stain-class label. Unknown ⇒ "unknown" — that's a signal
+    ("this project's naming convention isn't in the map"), not a bug. The class list is deliberately
+    coarse (membrane / nucleus / macrophage_or_marker / …); fingerprint retrieval matches on classes,
+    not raw names, so a project using `plasma-TOM` and a project using `mem-TOM` both hit "membrane"
+    without needing a per-lab dictionary.
+    """
+    import re
+    if not name:
+        return "unknown"
+    s = name.strip().lower()
+    for pattern, klass in _STAIN_CLASS_PATTERNS:
+        if re.search(pattern, s):
+            return klass
+    return "unknown"
+
+
+def _infer_fingerprint(project_uid: str, image_uid: str | None) -> dict | None:
+    """Snapshot an image's context into a Blackboard-entry fingerprint (PROJECT_MEMORY_PLAN P5.1).
+    `None` when `image_uid` is missing / unresolvable — the entry is still created, just without a
+    fingerprint (retrieval later treats a missing fingerprint the same as a legacy pre-P5.1 entry).
+
+    Fields today (v1):
+      - `v`               — schema version, always `_BB_FINGERPRINT_VERSION`
+      - `channel_count`   — from `sizeC`
+      - `stain_classes`   — sorted, de-duplicated list from `_classify_stain(channelNames[i])`
+      - `pipeline_stage`  — from `activeValueName` (the frame the user is on: `default`,
+                            `driftCorrected`, `denoised`, `flowTom`, …)
+
+    Deliberately image-derived only for v1 — `modality` and `tissue_context` would need a project
+    profile parse and can come in v2 without a migration (the writer just adds the fields; a v1
+    reader ignores what it doesn't know about). `objective_na_band` was in the archived D3 draft
+    but is not in v1: OME `Objective.LensNA` isn't preserved on import (extraMeta comes back empty),
+    and a reader change to fix that is out of scope for the initial schema.
+    """
+    if not image_uid:
+        return None
+    try:
+        info = _client.get_image_meta(project_uid, image_uid).get("image", {})
+    except Exception:
+        return None
+    if not info:
+        return None
+    channels = info.get("channelNames") or []
+    classes = sorted({_classify_stain(c) for c in channels if isinstance(c, str)})
+    fp: dict = {"v": _BB_FINGERPRINT_VERSION}
+    size_c = info.get("sizeC")
+    if isinstance(size_c, int) and size_c > 0:
+        fp["channel_count"] = size_c
+    if classes:
+        fp["stain_classes"] = classes
+    stage = info.get("activeValueName")
+    if isinstance(stage, str) and stage:
+        fp["pipeline_stage"] = stage
+    # Fingerprint with nothing but the version is still returned — records the intent ("this entry
+    # was created with an image in mind") even if that image lacks the fields we look at.
+    return fp
+
+
 def _outcome_rank(outcome) -> int:
     """PROJECT_MEMORY_PLAN Decision 12 tiebreak: `bad` < `good` < untagged.
     A `bad` verdict is a known trap a future session must see BEFORE proposing on the same topic —
@@ -874,7 +958,8 @@ def read_blackboard_entry(project_uid: str, entry_id: str, version: int | None =
 
 @mcp.tool()
 def create_blackboard_entry(project_uid: str, title: str, content_md: str,
-                            attach_capture_ids: list[str] | None = None) -> dict:
+                            attach_capture_ids: list[str] | None = None,
+                            image_uid: str | None = None) -> dict:
     """Create a new BLACKBOARD entry — a shared idea worth keeping across sessions. Distinct from a
     CHAIN (executable, needs the user to Run) and a NOTEBOOK (analysis code the user opens and
     edits). This is prose + Mermaid diagrams (triple-backtick `mermaid` fences render on the
@@ -884,12 +969,18 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
     `content_md` — Markdown body, ≤ 100 KiB. Attach captured frames by id when the visual is
     load-bearing: `attach_capture_ids=[capX, capY]` — an unknown id is silently dropped (validated
     against the captures on disk at write time), so a stale reference doesn't fail the write.
+    `image_uid` — optional; when the entry is ABOUT a specific image, pass its uid so a small
+    context fingerprint (channel count, stain classes, pipeline stage) is snapshotted into the
+    entry's meta. Set once at create; if the image is unknown or unresolvable, the entry is still
+    created — the fingerprint is best-effort, not a gate.
 
     Create when the user asks to "record" / "keep" / "add to the board" a concept the two of you
     have been developing. Don't create speculatively — an unused entry sits in the list forever.
     Follow-up edits go through `revise_blackboard_entry`, which snapshots the pre-edit content so
     nothing is lost. Say "it's on the Blackboard" when you're done, no more."""
-    return _client.create_blackboard_entry(project_uid, title, content_md, attach_capture_ids)
+    fingerprint = _infer_fingerprint(project_uid, image_uid)
+    return _client.create_blackboard_entry(project_uid, title, content_md,
+                                            attach_capture_ids, fingerprint)
 
 
 @mcp.tool()

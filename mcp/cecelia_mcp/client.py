@@ -558,10 +558,17 @@ class CeceliaClient:
         return self._request("GET", "/api/blackboard/entry", params=params)
 
     def create_blackboard_entry(self, project_uid: str, title: str, content_md: str,
-                                attach_capture_ids: list[str] | None = None):
+                                attach_capture_ids: list[str] | None = None,
+                                fingerprint: dict | None = None):
+        # `fingerprint` is a PROJECT_MEMORY_PLAN P5.1 dict inferred by the MCP layer (image context
+        # snapshot); the server validates it has an integer `v` field and byte-caps it. Passed only
+        # when present so an unrelated caller that doesn't infer one lands on the same wire shape as
+        # before P5.1.
         body = {"projectUid": project_uid, "title": title, "content": content_md}
         if attach_capture_ids:
             body["attachments"] = attach_capture_ids
+        if fingerprint:
+            body["fingerprint"] = fingerprint
         return self._request("POST", "/api/blackboard/create", body=body)
 
     def revise_blackboard_entry(self, project_uid: str, entry_id: str, content_md: str,
