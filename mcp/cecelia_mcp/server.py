@@ -31,6 +31,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 from cecelia_mcp.client import CeceliaClient
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
+from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
 from cecelia_mcp.monitor import SessionMonitor
 from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 
@@ -1223,6 +1224,22 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     matched to the panel it sits over. `plotRef` names the plot spec + its ui state (measure,
     chart type…) at capture time; `dataSlice` names the images / segmentations / series involved.
     Use these to answer "which panel is which" rather than guessing from the image alone.
+
+    LANDSCAPE COMPRESSION FOR MCP DELIVERY. A v2 landscape's tile bag is compressed before it
+    leaves this tool, so the whole envelope fits under Claude Code's tool-result token cap. The
+    stored envelope on disk keeps the fat form (Kiwi + frontend read that); the shape you see:
+      • `landscape.channelNames: [str, …]` — union of channel names across tiles, first-seen order.
+      • `landscape.popMap: {"<key>": {path, name}}` — union of visible-pop (path, name) tuples.
+      • Per-tile `channels: [mean, snr, mean, snr, …]` positional to `channelNames`
+        (channel `i`'s stats live at indices `2i, 2i+1`).
+      • Per-tile `pops: [[popKey, count], …]` — `popKey` is the string index into `popMap`.
+      • Dropped from every tile: `row`, `col` (derivable from `id` via the cellLabel A1/B2 grid),
+        `stats` (frontend-computed leftovers superseded by `channels` + `category` for augmented
+        tiles).
+      • Everything else (`id`, `category`, `segCount`, `tracks`) is verbatim.
+    If a landscape is still too big to fit — a 64×64 grid with dense pops on a heavy image —
+    use `get_capture_landscape_tiles(project_uid, capture_id, tile_ids=[...])` or `bbox=[x1,y1,x2,y2]`
+    to fetch just the tiles under a marked region, still in the same slim shape.
     """
     envelope = _client.get_capture(project_uid, capture_id)
     frame_url = envelope.get("frame") or ""
@@ -1233,8 +1250,51 @@ def get_capture(project_uid: str, capture_id: str) -> list:
             blocks.append(Image(data=base64.b64decode(frame_b64), format="png"))
         except Exception:  # noqa: BLE001 — a corrupt frame must not sink the envelope; keep going
             pass
-    blocks.append(envelope.get("capture", {}))
+    # Compress the capture envelope's landscape tile bag before returning — a 32×32
+    # augmented v2 landscape serialises to ~640 KB, well past Claude Code's tool-result
+    # token cap, and the peer session saw the tail sliced. The slim transform keeps every
+    # field a reader actually needs (see landscape_slim.slim_landscape_for_mcp for the
+    # shape). Fat form still lives on disk and in Kiwi.
+    capture = envelope.get("capture", {})
+    blocks.append(slim_landscape_for_mcp(capture) if isinstance(capture, dict) else capture)
     return blocks
+
+
+@mcp.tool()
+def get_capture_landscape_tiles(project_uid: str, capture_id: str,
+                                tile_ids: list[str] | None = None,
+                                bbox: list[float] | None = None) -> dict:
+    """Fetch a SUBSET of a capture's landscape tiles — drill-down when `get_capture` is truncated.
+
+    A dense landscape (32×32 with many populations, or 64×64 anywhere) can still overflow
+    Claude Code's tool-result token cap even after the compression `get_capture` applies. This
+    tool returns just the tiles you name, in the same slim shape `get_capture` returns for the
+    landscape section — see that tool's LANDSCAPE COMPRESSION FOR MCP DELIVERY note.
+
+    Pick one:
+      • `tile_ids=["A1", "B2", ...]` — spreadsheet-style ids from a previous
+        `get_capture`. Use when you already know which tiles matter.
+      • `bbox=[x1, y1, x2, y2]` — frame-relative coords in 0..1 (same coord system the overlay
+        marks use). Use when you have a mark from `mark_freeform` or a `stroke` in the
+        capture's overlay and want the tiles UNDER that mark. The tool clamps to the grid and
+        includes any tile the rectangle intersects.
+    Both absent ⇒ returns the entire landscape (equivalent to `get_capture`'s landscape section).
+    Both present ⇒ `tile_ids` wins (explicit list beats bbox).
+
+    Returns a dict `{captureId, landscape: {grid, legend, channelNames?, popMap?, tiles: [...]}}`
+    — just the landscape section, filtered. The other envelope fields (address, viewStateSnapshot,
+    overlay, sourceRun, viewport) are NOT re-shipped here — call `get_capture` once for those,
+    then use this tool for per-region tile detail. `viewport` still governs what the counts mean;
+    the reduction rules on `get_capture`'s note apply to these tiles too.
+
+    404 when the capture doesn't exist. Empty `tiles: []` when the filter matches nothing.
+    """
+    envelope = _client.get_capture(project_uid, capture_id)
+    capture = envelope.get("capture") if isinstance(envelope, dict) else None
+    if not isinstance(capture, dict):
+        return {"captureId": capture_id, "landscape": {"tiles": []}}
+    slim = filter_landscape_tiles(capture, tile_ids=tile_ids, bbox=bbox)
+    return {"captureId": capture_id, "landscape": slim.get("landscape") or {"tiles": []}}
 
 
 @mcp.tool()
