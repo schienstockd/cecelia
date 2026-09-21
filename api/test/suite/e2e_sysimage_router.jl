@@ -357,6 +357,7 @@ end
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
+        "/api/blackboard/outcome",  # PROJECT_MEMORY_PLAN P4 — outcome tag (good/bad with required note)
         "/api/blackboard/search",   # PROJECT_MEMORY_PLAN P2 — substring search over titles+bodies
         "/api/notebooks/create", "/api/notebooks/delete",
         "/api/notebooks/describe", "/api/notebooks/duplicate",
@@ -449,7 +450,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 137
+    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 138
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

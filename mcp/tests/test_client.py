@@ -58,6 +58,7 @@ class ClientTest(unittest.TestCase):
         writes = sorted((m, p) for (m, p) in ALLOWED_ROUTES if m != "GET")
         self.assertEqual(writes, [
             ("POST", "/api/blackboard/create"),
+            ("POST", "/api/blackboard/outcome"),
             ("POST", "/api/blackboard/revise"),
             ("POST", "/api/blackboard/search"),
             ("POST", "/api/blackboard/status"),

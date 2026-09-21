@@ -192,6 +192,17 @@ done thread → `"resolved"`, park an idea for later → `"parked"`, or revive o
 back up → `"open"`. Don't blanket-close entries as housekeeping; a status change is a state \
 transition on a topic, not a cleanup pass. The profile entry itself normally stays `open`.
 
+An entry can also carry an OUTCOME — a `good`/`bad` tag with a required note recording whether \
+the thread turned out right or wrong. Use `set_blackboard_outcome(project_uid, entry_id, verdict, \
+note)` when a suggestion described in an entry proved WRONG on real data (verdict `"bad"`, note \
+explains what failed and why — e.g. "wrong segmentation params — used galvo defaults on a \
+resonant-scanning image") or was CONFIRMED correct (verdict `"good"`, note explains what backed \
+it up). The note is what a future session actually reads — a verdict without one is refused (400). \
+Untagged is the default and means "no signal", not "neutral". Tag when the evidence lands, not \
+preemptively; re-tagging is fine when new evidence changes the verdict. When a `bad`-tagged entry \
+surfaces on a topic the user is asking about, LEAD WITH IT — the whole point of the tag is to \
+stop the same mistake being suggested again.
+
 Reach for `search_blackboard(project_uid, query, status?, limit?)` when you're about to propose \
 something and want to check "has this come up before in this project". Substring, case-insensitive, \
 over titles AND bodies; title matches beat body matches; returns snippets so you can decide which \

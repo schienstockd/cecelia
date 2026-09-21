@@ -1,10 +1,11 @@
 # Blackboard testsets — BIDIR Part 4 storage discipline (docs/todo/BIDIR_CONTEXT_PLAN.md) plus the
-# PROJECT_MEMORY_PLAN P1/P2 additions that ride on the same store:
+# PROJECT_MEMORY_PLAN P1/P2/P4 additions that ride on the same store:
 #   • CRUD + versioning + attachments (BIDIR Part 4)
 #   • status field + reserved `profile` entry           (PROJECT_MEMORY_PLAN P1 — Decisions 2, 3)
 #   • substring search over titles + bodies             (PROJECT_MEMORY_PLAN P2 — Decision 4)
+#   • outcome tag (good/bad + required note)            (PROJECT_MEMORY_PLAN P4 — Decision 11)
 #
-# All three sit here so a future blackboard change touches ONE suite file, not three. Extracted so
+# All four sit here so a future blackboard change touches ONE suite file, not four. Extracted so
 # runtests.jl contains only include lines + section-header comments — same shape as app/test/suite/*.jl.
 
 @testset "API: blackboard CRUD + versioning + attachments (BIDIR Part 4)" begin
@@ -429,6 +430,133 @@ end
         @test length(JSON3.read(b_lim).results) <= 50
         _, b_lim2 = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"CD169", "limit"=>1))
         @test length(JSON3.read(b_lim2).results) == 1
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+# ── Outcome tagging (PROJECT_MEMORY_PLAN P4 — Decision 11) ─────────────────────────────────────
+# Additive good/bad + required note on every entry, exposed via POST /api/blackboard/outcome. Same
+# discipline as /status: no snapshot fired, preserves content + version history. Absent-when-untagged
+# on the wire (Decision 11 D4 — untagged means "no signal", not "neutral").
+@testset "API: blackboard outcome tagging (MEMORY P4)" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTBBP4"; mkpath(joinpath(tmp, uid))
+        w(path, b) = _post(path, b)
+
+        # Seed one entry to tag.
+        _, body_c = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Segmentation attempt on the bright cohort",
+            "content"=>"tried diameter 30 with default flow"))
+        eid = String(JSON3.read(body_c).entryId)
+
+        # ── Guards ──────────────────────────────────────────────────────────
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid))[1] == 400            # entryId missing
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid,
+            "entryId"=>eid))[1] == 400                                                # verdict missing
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"maybe", "note"=>"…"))[1] == 400                               # bad verdict
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad", "note"=>""))[1] == 400                                  # empty note
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad", "note"=>"   "))[1] == 400                               # whitespace-only note
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad", "note"=>repeat("x", 2 * 1024 + 1)))[1] == 400           # note too big
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>"../../etc/passwd",
+            "verdict"=>"bad", "note"=>"x"))[1] == 400                                 # traversal
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid,
+            "entryId"=>"bb-20260101T000000-ffffff", "verdict"=>"bad",
+            "note"=>"x"))[1] == 404                                                   # missing entry
+
+        # ── Happy path: tag bad ─────────────────────────────────────────────
+        st_o, body_o = w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad",
+            "note"=>"wrong scan mode — cellpose diameter picked for galvo on a resonant image"))
+        @test st_o == 200
+        rsp = JSON3.read(body_o)
+        @test String(rsp.outcome.verdict) == "bad"
+        @test occursin("resonant", String(rsp.outcome.note))
+        @test !isempty(String(rsp.outcome.taggedAt))
+
+        # entry_get surfaces the outcome; list surfaces it too (only on tagged rows).
+        st_e, body_e = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test st_e == 200
+        e = JSON3.read(body_e).entry
+        @test String(e.outcome.verdict) == "bad"
+
+        st_l, body_l = api_blackboard_list(HTTP.Request("GET", "/api/blackboard?projectUid=$uid"))
+        rows_all = JSON3.read(body_l).entries
+        tagged = only([r for r in rows_all if String(r.entryId) == eid])
+        @test String(tagged.outcome.verdict) == "bad"
+        # Untagged rows (profile) do NOT carry an outcome key — absent = no signal (D4).
+        prof = only([r for r in rows_all if String(r.entryId) == "profile"])
+        @test !haskey(prof, :outcome)
+
+        # Registry mirrors the verdict (small, for cheap filter without loading meta).
+        reg = JSON3.read(read(joinpath(tmp, uid, "settings", "blackboard.json"), String),
+                         Dict{String,Any})
+        @test String(reg[eid]["outcome"]) == "bad"
+
+        # ── Idempotence: same verdict + same note ⇒ unchanged:true, no rewrite ───
+        st_no, body_no = w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad",
+            "note"=>"wrong scan mode — cellpose diameter picked for galvo on a resonant image"))
+        @test st_no == 200
+        @test JSON3.read(body_no).unchanged == true
+
+        # ── Change of mind: re-tag as good with a new note ──────────────────
+        st_g, body_g = w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"good",
+            "note"=>"actually held up after re-checking with the imaging setup"))
+        @test st_g == 200
+        @test String(JSON3.read(body_g).outcome.verdict) == "good"
+
+        # ── No snapshot fired: versions still empty after outcome flips ─────
+        st_v, body_v = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test isempty(JSON3.read(body_v).entry.versions)
+
+        # ── Outcome persists across a content revise ────────────────────────
+        st_r, _ = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid,
+            "content"=>"updated: still valid on the bright cohort"))
+        @test st_r == 200
+        st_a, body_a = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test String(JSON3.read(body_a).entry.outcome.verdict) == "good"   # revise doesn't drop outcome
+
+        # ── Outcome persists across a status flip too ───────────────────────
+        st_s, _ = w(api_blackboard_status, Dict("projectUid"=>uid, "entryId"=>eid,
+            "status"=>"resolved"))
+        @test st_s == 200
+        st_a2, body_a2 = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))
+        @test String(JSON3.read(body_a2).entry.outcome.verdict) == "good"
+
+        # ── Outcome surfaces in search results too (tagged only) ────────────
+        _, body_srch = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"Segmentation"))
+        results = JSON3.read(body_srch).results
+        hit = only([r for r in results if String(r.entryId) == eid])
+        @test String(hit.outcome.verdict) == "good"
+
+        # ── Backfill: an entry with no outcome key on disk reads as untagged ─
+        uid2 = "TESTBBP4LEG"; mkpath(joinpath(tmp, uid2, "blackboard"))
+        legacy_id = "bb-20250101T000000-cafefe"
+        legacy_dir = joinpath(tmp, uid2, "blackboard", legacy_id); mkpath(legacy_dir)
+        write(joinpath(legacy_dir, "entry.md"), "legacy body")
+        write(joinpath(legacy_dir, "meta.json"), JSON3.write(Dict{String,Any}(
+            "entryId" => legacy_id, "title" => "legacy", "createdAt" => "2025-01-01",
+            "updatedAt" => "2025-01-01", "current" => 0, "attachments" => Any[],
+            "snapshots" => Any[])))   # NO outcome key
+        st_leg, body_leg = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid2&entryId=$legacy_id"))
+        @test st_leg == 200
+        e_leg = JSON3.read(body_leg).entry
+        @test !haskey(e_leg, :outcome)
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

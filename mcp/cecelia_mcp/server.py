@@ -862,6 +862,27 @@ def set_blackboard_status(project_uid: str, entry_id: str, status: str) -> dict:
 
 
 @mcp.tool()
+def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: str) -> dict:
+    """Tag a BLACKBOARD entry with a good-or-bad OUTCOME so future sessions know whether to trust the
+    thread it captured. `verdict` is `"good"` (the finding / suggestion held up on real data) or
+    `"bad"` (it didn't). `note` is REQUIRED — a verdict without an explanation is useless in a
+    future briefing; write the WHY plainly (e.g. "wrong segmentation params — used galvo defaults
+    on a resonant-scanning image"). Returns `{ok:true, outcome:{verdict, note, taggedAt}}` — or
+    `{..., unchanged:true}` if verdict + note are byte-identical to what's already stored.
+
+    Does NOT create a snapshot — outcome is entry-level metadata (like status), separate from
+    content revisions. Use this when: a suggestion you or the user acted on turned out right → tag
+    `"good"` with what confirmed it; a suggestion the entry describes was wrong or misled the work
+    → tag `"bad"` with what failed and why. Editing an existing tag is fine — call again with the
+    new verdict and note.
+
+    404 if the entry doesn't exist; 400 if the note is empty or the verdict is anything other than
+    good/bad; note is capped at 2 KiB (server rejects longer). PROJECT_MEMORY_PLAN Decision 11.
+    Additive; never deletes."""
+    return _client.set_blackboard_outcome(project_uid, entry_id, verdict, note)
+
+
+@mcp.tool()
 def search_blackboard(project_uid: str, query: str,
                       status: str | None = None, limit: int | None = None) -> dict:
     """Search this project's BLACKBOARD entries. Case-insensitive substring over titles AND bodies;
