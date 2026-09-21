@@ -23,7 +23,7 @@
 //   rarely occur as fluorophore emissions, so they don't disappear into a GFP / mCherry overlay.
 //   Napari's default paint tool uses a very similar palette for the same reason.
 
-import type { OverlayColor, OverlayMark } from './captureAddress'
+import type { OverlayColor, OverlayMark, OverlayStrokeWidth } from './captureAddress'
 import { loadImg } from '../plots/export'
 
 /** The five palette values, keyed by the name that goes on `OverlayMark.color`. `black` earns
@@ -56,6 +56,31 @@ export function resolveMarkColor(mark: OverlayMark): string {
  *  the new one reads as an addition, not a re-ordering. */
 export const ANNOTATION_COLOR_ORDER: readonly OverlayColor[] = ['magenta', 'cyan', 'yellow', 'white', 'black']
 
+/** Preset → multiplier applied to the auto width in `paintOverlayOnCanvas`. `medium` is 1x so a
+ *  mark drawn today reads identically to one drawn before this field existed (the default before
+ *  presets was the auto width). `thin` / `thick` are 0.5x / 2x — enough to be distinct without
+ *  fighting the small-composite floor (see `MARK_LINE_WIDTH`, which never dips below 2 px). */
+export const STROKE_WIDTH_SCALES: Record<OverlayStrokeWidth, number> = {
+  thin:   0.5,
+  medium: 1,
+  thick:  2,
+}
+/** Default preset for legacy marks with no `strokeWidth` field — matches the previous fixed
+ *  behaviour so a re-annotate flow that reads an older capture renders unchanged. */
+export const DEFAULT_STROKE_WIDTH: OverlayStrokeWidth = 'medium'
+/** Stable render order for the DrawSurface size chips. Same convention as the colour order:
+ *  smallest → largest, no clever re-sort. */
+export const ANNOTATION_STROKE_WIDTH_ORDER: readonly OverlayStrokeWidth[] = ['thin', 'medium', 'thick']
+
+/** Resolve a mark's stroke width preset to the composite-pixel width. Unknown / absent values
+ *  fall through to `medium`, matching `resolveMarkColor`'s legacy fallback so old captures render
+ *  the same way they did before this field existed. */
+export function resolveMarkWidth(mark: OverlayMark, frameW: number): number {
+  const w = mark.strokeWidth
+  const scale = (w && STROKE_WIDTH_SCALES[w]) ?? STROKE_WIDTH_SCALES[DEFAULT_STROKE_WIDTH]
+  return Math.max(1, MARK_LINE_WIDTH(frameW) * scale)
+}
+
 // ── Compositing ─────────────────────────────────────────────────────────────────────────────────
 // The frame canvas is the WebGPU viewer surface at its rendered pixel size; marks are stored in
 // [0,1] frame-relative coords (see `captureAddress.ts` normaliser). Composite = "draw marks scaled
@@ -70,21 +95,63 @@ const MARK_FONT_PX    = (w: number) => Math.max(12, Math.round(w / 80))
 const MARK_LABEL_HALO = 'rgba(0, 0, 0, 0.75)'
 const MARK_LABEL_LIFT = 6      // pixels above the mark's anchor for the label baseline
 
+/** Centroid of a mark in FRAME-relative [0,1] coords — the rotation origin. `rect` uses the
+ *  AA-rect centre; `poly` / `stroke` use the AA-bounding-box centre (matches PowerPoint's
+ *  selection frame + rotation origin, and keeps parity with rect so all kinds rotate the same
+ *  way). Empty vertex sets fall back to the frame centre so a degenerate mark doesn't divide by
+ *  zero at composite time. */
+export function markCentroid01(m: OverlayMark): [number, number] {
+  if (m.kind === 'rect') {
+    const g = m.geom as { x: number; y: number; w: number; h: number }
+    return [g.x + g.w / 2, g.y + g.h / 2]
+  }
+  const g = m.geom as { pts?: [number, number][] }
+  const pts = g.pts ?? []
+  if (pts.length === 0) return [0.5, 0.5]
+  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
+  for (const [x, y] of pts) {
+    if (x < xMin) xMin = x; if (x > xMax) xMax = x
+    if (y < yMin) yMin = y; if (y > yMax) yMax = y
+  }
+  return [(xMin + xMax) / 2, (yMin + yMax) / 2]
+}
+
+/** Resolve a mark's rotation to degrees clockwise around its centroid; absent / non-finite ⇒ 0
+ *  (no rotation). Every mark kind honours the field — rect, poly and stroke are all rotated
+ *  around the centroid returned by `markCentroid01` at render / composite time. */
+export function resolveMarkRotate(m: OverlayMark): number {
+  const r = m.rotate
+  return typeof r === 'number' && isFinite(r) ? r : 0
+}
+
 /** Paint every mark onto `ctx` in the [0,w]×[0,h] pixel box. Pure DOM canvas — no Vue, no globals. */
 export function paintOverlayOnCanvas(
   ctx: CanvasRenderingContext2D,
   marks: OverlayMark[],
   w: number, h: number,
 ): void {
-  const lw = MARK_LINE_WIDTH(w)
   const font = `${MARK_FONT_PX(w)}px ui-monospace, monospace`
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
   for (const m of marks) {
     const stroke = resolveMarkColor(m)
+    const lw = resolveMarkWidth(m, w)
     ctx.strokeStyle = stroke
     ctx.lineWidth = lw
     const g = m.geom as Record<string, number> & { pts?: [number, number][] }
+    // Rotate the coord frame around the mark's centroid in composite-px space, so the AA
+    // geometry below reads as rotated pixels in the output PNG. `ctx.save` / `restore` scopes
+    // the transform to this mark; state (lineWidth, strokeStyle) survives that scope so the
+    // per-mark setup above still applies.
+    const rot = resolveMarkRotate(m)
+    const [cx01, cy01] = markCentroid01(m)
+    const cxp = cx01 * w, cyp = cy01 * h
+    if (rot !== 0) {
+      ctx.save()
+      ctx.translate(cxp, cyp)
+      ctx.rotate((rot * Math.PI) / 180)
+      ctx.translate(-cxp, -cyp)
+    }
     let anchor: [number, number] = [0, 0]
     if (m.kind === 'rect') {
       const x = g.x * w, y = g.y * h, rw = g.w * w, rh = g.h * h
@@ -92,7 +159,7 @@ export function paintOverlayOnCanvas(
       anchor = [x, y]
     } else if (m.kind === 'poly' || m.kind === 'stroke') {
       const pts = g.pts ?? []
-      if (pts.length < 2) continue
+      if (pts.length < 2) { if (rot !== 0) ctx.restore(); continue }
       ctx.beginPath()
       ctx.moveTo(pts[0][0] * w, pts[0][1] * h)
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * w, pts[i][1] * h)
@@ -113,6 +180,7 @@ export function paintOverlayOnCanvas(
       ctx.lineWidth = lw     // restore for the next mark
       ctx.strokeStyle = stroke
     }
+    if (rot !== 0) ctx.restore()
   }
 }
 

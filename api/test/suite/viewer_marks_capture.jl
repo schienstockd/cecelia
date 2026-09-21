@@ -152,12 +152,17 @@ end
         # Overlay mixes: palette-safe colour (magenta), NO colour (older-shape), UNKNOWN kind (dropped),
         # UNKNOWN colour (dropped from the mark's payload, mark itself preserved). Round-trip below
         # asserts what actually landed on disk.
-        overlay = [Dict("kind"=>"rect", "geom"=>Dict("x"=>0.1, "y"=>0.1, "w"=>0.2, "h"=>0.2), "color"=>"magenta"),
+        overlay = [Dict("kind"=>"rect", "geom"=>Dict("x"=>0.1, "y"=>0.1, "w"=>0.2, "h"=>0.2),
+                        "color"=>"magenta", "strokeWidth"=>"thick",
+                        "rotate"=>45.0),                                   # safelisted rotation — survives
                    Dict("kind"=>"bogus", "geom"=>Dict()),               # unknown kind — dropped
                    Dict("kind"=>"stroke", "geom"=>Dict("pts"=>[[0.0,0.0],[1.0,1.0]]),
-                        "label"=>"trail", "color"=>"chartreuse"),        # unknown colour — dropped from mark
+                        "label"=>"trail", "color"=>"chartreuse",
+                        "strokeWidth"=>"chunky",
+                        "rotate"=>9999.0),                                 # unknown preset + out-of-range rotate — both dropped
                    Dict("kind"=>"rect", "geom"=>Dict("x"=>0.5, "y"=>0.5, "w"=>0.1, "h"=>0.1),
-                        "color"=>"black")]                                # black — safelisted for white-composite plots
+                        "color"=>"black",
+                        "rotate"=>0.0)]                                    # zero rotation kept off the wire
         st, body = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
                           "frames"=>[Dict("png"=>frame_data_url)], "overlay"=>overlay))
         @test st == 200
@@ -217,10 +222,15 @@ end
         # Black safelisted for canvas-Share white-composite plots.
         @test String(got.capture.overlay[1].kind) == "rect"
         @test String(got.capture.overlay[1].color) == "magenta"
+        @test String(got.capture.overlay[1].strokeWidth) == "thick"       # safelisted preset survives
+        @test Float64(got.capture.overlay[1].rotate) ≈ 45.0               # in-range rotation round-trips
         @test String(got.capture.overlay[2].kind) == "stroke"
         @test !haskey(got.capture.overlay[2], :color)
+        @test !haskey(got.capture.overlay[2], :strokeWidth)               # unknown preset dropped, mark preserved
+        @test !haskey(got.capture.overlay[2], :rotate)                    # out-of-range rotate dropped, mark preserved
         @test String(got.capture.overlay[3].kind) == "rect"
         @test String(got.capture.overlay[3].color) == "black"
+        @test !haskey(got.capture.overlay[3], :rotate)                    # zero rotation kept off the wire
 
         # guards on the read side
         @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture"))[1] == 400
