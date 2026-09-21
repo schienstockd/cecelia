@@ -29,9 +29,12 @@ import {
 } from '../utils/drawGeometry'
 import {
   rectToOverlayGeom, pointsToOverlayGeom,
-  type OverlayMark, type OverlayColor,
+  type OverlayMark, type OverlayColor, type OverlayStrokeWidth,
 } from '../utils/captureAddress'
-import { ANNOTATION_PALETTE, ANNOTATION_COLOR_ORDER, resolveMarkColor } from '../utils/overlayCompose'
+import {
+  ANNOTATION_PALETTE, ANNOTATION_COLOR_ORDER, resolveMarkColor,
+  ANNOTATION_STROKE_WIDTH_ORDER, DEFAULT_STROKE_WIDTH,
+} from '../utils/overlayCompose'
 
 const props = defineProps<{
   visible: boolean
@@ -82,6 +85,27 @@ const COLOR_OPTIONS: ChipOption[] = ANNOTATION_COLOR_ORDER.map(name => ({
 }))
 const color = ref<OverlayColor>('magenta')
 
+// Stroke thickness chips — three presets (thin / medium / thick), mapped through
+// `STROKE_WIDTH_SCALES` at composite time so a preset scales with the frame width. Compact S/M/L
+// labels keep the toolbar tight next to the 5-swatch colour strip; tooltips carry the full name.
+const STROKE_WIDTH_LABEL: Record<OverlayStrokeWidth, string> = { thin: 'Thin', medium: 'Medium', thick: 'Thick' }
+const STROKE_WIDTH_SHORT: Record<OverlayStrokeWidth, string> = { thin: 'S',    medium: 'M',      thick: 'L'     }
+const SIZE_OPTIONS: ChipOption[] = ANNOTATION_STROKE_WIDTH_ORDER.map(name => ({
+  value: name,
+  label: STROKE_WIDTH_SHORT[name],
+  tip: `Stroke thickness: ${STROKE_WIDTH_LABEL[name]}`,
+}))
+const size = ref<OverlayStrokeWidth>('medium')
+
+// SVG preview stroke-width (in CSS px) for each preset. Not the composite width — the SVG
+// canvas is always the DrawSurface's own client box, and the composite scales by the frame's
+// pixel width at export time. Kept in sync with `STROKE_WIDTH_SCALES` proportionally so the
+// on-screen mark reads as the same relative weight the composite will render.
+const SVG_STROKE_PX: Record<OverlayStrokeWidth, number> = { thin: 1, medium: 2, thick: 4 }
+const strokeWidthFor = (m: OverlayMark): number =>
+  SVG_STROKE_PX[m.strokeWidth ?? DEFAULT_STROKE_WIDTH]
+const draftStrokeWidth = computed(() => SVG_STROKE_PX[size.value])
+
 // Committed marks + one live draft. Kept as three parallel refs — a discriminated union would need
 // a class per kind and the state machines are already the source of truth.
 const marks = ref<OverlayMark[]>([])
@@ -129,9 +153,58 @@ function clearDraft() { rectDraft.value = null; polyDraft.value = null; strokeDr
 // ── Hit test + edit drag (matches gating; see GateOverlay.vue :: hitTest / applyDrag) ───────────
 type Handle =
   | { idx: number; kind: 'body' }
-  | { idx: number; kind: 'rect-corner'; corner: 0 | 1 | 2 | 3 }   // 0=NW 1=NE 2=SE 3=SW
+  | { idx: number; kind: 'rect-corner'; corner: 0 | 1 | 2 | 3 }    // 0=NW 1=NE 2=SE 3=SW
+  | { idx: number; kind: 'bbox-corner'; corner: 0 | 1 | 2 | 3 }    // poly / stroke bbox — scales all vertices around the opposite corner
+  | { idx: number; kind: 'poly-vertex'; vertex: number }           // draggable polygon vertex (finer than bbox-corner; hits first)
+  | { idx: number; kind: 'rotate' }                                // rotate handle (any kind)
 const CORNER_HIT_PX  = 8   // half-size of a corner hit-box (matches the on-screen handle)
+const VERTEX_HIT_PX  = 8   // radius around a polygon vertex handle — mirrors CORNER_HIT_PX
 const STROKE_NEAR_PX = 8   // click-tolerance around a stroke path — a 1-px line is unhittable
+const ROTATE_HANDLE_OFFSET_PX = 22   // rotate handle sits this far above the AA top edge
+const ROTATE_HIT_PX  = 10  // hit radius around the rotate handle centre
+
+// Rotation helpers. Rotation is stored in degrees, clockwise, around the mark's centroid; the
+// SVG surface wraps the shape + its handles in a `<g transform="rotate(deg cx cy)">` so both the
+// visual AND the click targets share the same transform. `unrotateAround` maps a SCREEN point
+// back into the mark's LOCAL (axis-aligned) frame so hit-test and drag math can stay AA.
+const DEG2RAD = Math.PI / 180
+function unrotateAround(p: Point, cx: number, cy: number, deg: number): Point {
+  if (!deg) return p
+  const rad = -deg * DEG2RAD, dx = p[0] - cx, dy = p[1] - cy
+  const c = Math.cos(rad), s = Math.sin(rad)
+  return [cx + dx * c - dy * s, cy + dx * s + dy * c]
+}
+function unrotateVec(v: Point, deg: number): Point {
+  if (!deg) return v
+  const rad = -deg * DEG2RAD, c = Math.cos(rad), s = Math.sin(rad)
+  return [v[0] * c - v[1] * s, v[0] * s + v[1] * c]
+}
+function rectCentroidPx(i: number): Point | null {
+  const r = rectFromMark(i); if (!r) return null
+  return [r.x + r.w / 2, r.y + r.h / 2]
+}
+/** AA bounding box of a poly / stroke in DOM px. `null` for degenerate shapes (empty vertex
+ *  list) so the caller can skip rendering handles rather than crash on Infinity math. */
+function polyBboxPx(i: number): { x: number; y: number; w: number; h: number } | null {
+  const pts = pointsFromMark(i); if (!pts || pts.length === 0) return null
+  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
+  for (const [x, y] of pts) {
+    if (x < xMin) xMin = x; if (x > xMax) xMax = x
+    if (y < yMin) yMin = y; if (y > yMax) yMax = y
+  }
+  return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin }
+}
+/** Centroid of a mark in DOM px (rect centre, or poly/stroke bbox centre). Used as the rotation
+ *  origin so all kinds rotate the same way (matches `markCentroid01`'s composite-side rule). */
+function markCentroidPx(i: number): Point | null {
+  const m = marks.value[i]; if (!m) return null
+  if (m.kind === 'rect') return rectCentroidPx(i)
+  const b = polyBboxPx(i); if (!b) return null
+  return [b.x + b.w / 2, b.y + b.h / 2]
+}
+function markRotate(m: OverlayMark): number {
+  return typeof m.rotate === 'number' && isFinite(m.rotate) ? m.rotate : 0
+}
 
 function rectFromMark(i: number): { x: number; y: number; w: number; h: number } | null {
   const m = marks.value[i]; if (m.kind !== 'rect') return null
@@ -171,26 +244,74 @@ function distToPolyline2(p: Point, pts: Point[]): number {
   }
   return best
 }
-// Newest-first so a shape drawn on top of another is picked. Rect corners hit before body so a
-// click on the corner resizes rather than moves.
+// Newest-first so a shape drawn on top of another is picked. Corner / vertex handles hit before
+// bodies so a click on a handle resizes or reshapes rather than moves. Poly vertex handles are
+// only offered on the SELECTED poly — otherwise every poly would have to render its full vertex
+// set in edit mode and the surface would quickly turn into a dot field. Rect corners stay
+// always-on because a rect only has four handles regardless.
 function hitTest(p: Point): Handle | null {
   for (let i = marks.value.length - 1; i >= 0; i--) {
     const m = marks.value[i]
+    const rot = markRotate(m)
+    const cent = markCentroidPx(i)
+    // Every hit-test check below runs in the mark's LOCAL (un-rotated) frame — unrotate the
+    // pointer once, up front, so a rotated shape's handles + body are all checked in AA coords.
+    const pL = cent ? unrotateAround(p, cent[0], cent[1], rot) : p
     if (m.kind === 'rect') {
       const r = rectFromMark(i)!
+      if (i === selectedIdx.value) {
+        const rhx = r.x + r.w / 2, rhy = r.y - ROTATE_HANDLE_OFFSET_PX
+        const dx = pL[0] - rhx, dy = pL[1] - rhy
+        if (dx * dx + dy * dy <= ROTATE_HIT_PX * ROTATE_HIT_PX)
+          return { idx: i, kind: 'rotate' }
+      }
       const corners: [number, number][] = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]
       for (let c = 0; c < 4; c++) {
-        if (Math.abs(p[0] - corners[c][0]) <= CORNER_HIT_PX &&
-            Math.abs(p[1] - corners[c][1]) <= CORNER_HIT_PX)
+        if (Math.abs(pL[0] - corners[c][0]) <= CORNER_HIT_PX &&
+            Math.abs(pL[1] - corners[c][1]) <= CORNER_HIT_PX)
           return { idx: i, kind: 'rect-corner', corner: c as 0 | 1 | 2 | 3 }
       }
-      if (pointInRect(p, r)) return { idx: i, kind: 'body' }
-    } else if (m.kind === 'poly') {
-      const pts = pointsFromMark(i); if (pts && pointInPoly(p, pts)) return { idx: i, kind: 'body' }
-    } else if (m.kind === 'stroke') {
+      if (pointInRect(pL, r)) return { idx: i, kind: 'body' }
+    } else if (m.kind === 'poly' || m.kind === 'stroke') {
       const pts = pointsFromMark(i); if (!pts) continue
-      if (distToPolyline2(p, pts) <= STROKE_NEAR_PX * STROKE_NEAR_PX)
-        return { idx: i, kind: 'body' }
+      // A rotated poly/stroke stores AA vertices in local coords, so once `pL` is un-rotated
+      // both the vertex list AND the bbox live in the same AA frame — no per-vertex rotate
+      // math needed downstream, either.
+      const ptsL = pts
+      if (i === selectedIdx.value) {
+        const bb = polyBboxPx(i)
+        if (bb) {
+          const rhx = bb.x + bb.w / 2, rhy = bb.y - ROTATE_HANDLE_OFFSET_PX
+          const dx = pL[0] - rhx, dy = pL[1] - rhy
+          if (dx * dx + dy * dy <= ROTATE_HIT_PX * ROTATE_HIT_PX)
+            return { idx: i, kind: 'rotate' }
+        }
+        // Poly-vertex takes precedence over bbox-corner: a stray click on a bbox corner is
+        // harmless (starts a resize), but stealing a vertex-precision drag would be worse. So
+        // vertex handles first.
+        if (m.kind === 'poly') {
+          for (let v = 0; v < ptsL.length; v++) {
+            const dx = pL[0] - ptsL[v][0], dy = pL[1] - ptsL[v][1]
+            if (dx * dx + dy * dy <= VERTEX_HIT_PX * VERTEX_HIT_PX)
+              return { idx: i, kind: 'poly-vertex', vertex: v }
+          }
+        }
+        if (bb) {
+          const bc: [number, number][] = [[bb.x, bb.y], [bb.x + bb.w, bb.y],
+                                          [bb.x + bb.w, bb.y + bb.h], [bb.x, bb.y + bb.h]]
+          for (let c = 0; c < 4; c++) {
+            if (Math.abs(pL[0] - bc[c][0]) <= CORNER_HIT_PX &&
+                Math.abs(pL[1] - bc[c][1]) <= CORNER_HIT_PX)
+              return { idx: i, kind: 'bbox-corner', corner: c as 0 | 1 | 2 | 3 }
+          }
+        }
+      }
+      if (m.kind === 'poly') {
+        if (pointInPoly(pL, ptsL)) return { idx: i, kind: 'body' }
+      } else {
+        if (distToPolyline2(pL, ptsL) <= STROKE_NEAR_PX * STROKE_NEAR_PX)
+          return { idx: i, kind: 'body' }
+      }
     }
   }
   return null
@@ -201,45 +322,160 @@ const editHover = ref<Handle | null>(null)
 let editDragging: Handle | null = null
 let editStart: Point = [0, 0]
 let editOrigMark: OverlayMark | null = null
+// The mark the toolbar chips are currently retargeting. A short click on a mark body in edit mode
+// promotes it to selected — the chips then mutate that mark instead of just seeding new marks
+// (PowerPoint-style: click a shape, then set colour / thickness). Cleared on empty-space click,
+// on Escape, and when a new draw begins. `null` ⇒ chips control DEFAULTS for the next new mark.
+const selectedIdx = ref<number | null>(null)
+// Distance the pointer has moved since the current edit-drag began. Kept as a plain scalar (not a
+// ref) because it isn't rendered — it only decides "was this a real drag or a click?" on release,
+// so we don't want reactive churn every pointermove.
+let editDragDistPx = 0
 const shiftHeld = ref(false)
 const editModeActive = computed(() => tool.value === '' || shiftHeld.value)
+const selectedMark = computed(() =>
+  selectedIdx.value !== null ? marks.value[selectedIdx.value] ?? null : null)
 function onKeyDownGlobal(ev: KeyboardEvent) { if (ev.key === 'Shift') shiftHeld.value = true }
 function onKeyUpGlobal(ev: KeyboardEvent)   { if (ev.key === 'Shift') shiftHeld.value = false }
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+// Minimum scaled bbox extent (frame-relative) — prevents a resize drag from collapsing the
+// shape to a zero-area line the user can't grab again. Small enough to stay unobtrusive at any
+// reasonable frame size.
+const MIN_BBOX_EXTENT_01 = 0.01
 function applyEdit(cur: Point) {
   if (!editDragging || !editOrigMark || boxW.value === 0) return
-  const dx = cur[0] - editStart[0], dy = cur[1] - editStart[1]
+  const dxS = cur[0] - editStart[0], dyS = cur[1] - editStart[1]     // SCREEN delta
   const w = boxW.value, h = boxH.value
   const m = { ...editOrigMark }
+  const rot = markRotate(editOrigMark)
+  // Screen delta → local delta once, up front. Every non-rotate branch reads (dxL, dyL) so a
+  // rotated shape's math stays AA in the mark's own frame.
+  const [dxL, dyL] = unrotateVec([dxS, dyS], rot)
+
+  // ── Rotate handle — applies to any kind, around the mark's centroid ──────────────────────
+  if (editDragging.kind === 'rotate') {
+    const cent = editOrigCentroidPx()
+    if (!cent) return
+    const startAng = Math.atan2(editStart[1] - cent[1], editStart[0] - cent[0]) / DEG2RAD
+    const curAng   = Math.atan2(cur[1]        - cent[1], cur[0]        - cent[0]) / DEG2RAD
+    let next = (editOrigMark.rotate ?? 0) + (curAng - startAng)
+    // Normalise into (-180, 180] so a full-circle drag doesn't accumulate past ±360; the server
+    // safelist accepts up to ±360 anyway but a tighter live value keeps the toolbar readable if
+    // we ever surface a degree readout.
+    while (next > 180)  next -= 360
+    while (next <= -180) next += 360
+    m.rotate = next
+    marks.value = marks.value.map((mm, j) => j === editDragging!.idx ? m : mm)
+    return
+  }
+
   if (m.kind === 'rect') {
     const g = editOrigMark.geom as { x: number; y: number; w: number; h: number }
     if (editDragging.kind === 'body') {
-      m.geom = { x: clamp01(g.x + dx / w), y: clamp01(g.y + dy / h), w: g.w, h: g.h }
-    } else {
-      // Corner resize: the OPPOSITE corner stays put; a drag past the anchor flips the sign cleanly.
+      // Body drag is a pure translation and commutes with the rotation-around-centroid, so a
+      // screen delta = a geometry delta. See the comment above: rotating around a translated
+      // centroid returns the same shape, translated.
+      m.geom = { x: clamp01(g.x + dxS / w), y: clamp01(g.y + dyS / h), w: g.w, h: g.h }
+    } else if (editDragging.kind === 'rect-corner') {
+      // Corner resize under rotation: (dxL, dyL) is already in the mark's LOCAL frame, so the
+      // standard AA corner math (opposite corner stays anchored in local coords) still holds.
+      // Screen-space appearance drifts a little because the centroid moves during the resize
+      // and the rotation origin follows it, but the effect is small enough not to feel wrong.
+      const corner = editDragging.corner
       const px = { x: g.x * w, y: g.y * h, X: (g.x + g.w) * w, Y: (g.y + g.h) * h }
-      const anchor = editDragging.corner === 0 ? [px.X, px.Y]
-                   : editDragging.corner === 1 ? [px.x, px.Y]
-                   : editDragging.corner === 2 ? [px.x, px.y]
-                   :                              [px.X, px.y]
-      const moving = editDragging.corner === 0 ? [px.x + dx, px.y + dy]
-                   : editDragging.corner === 1 ? [px.X + dx, px.y + dy]
-                   : editDragging.corner === 2 ? [px.X + dx, px.Y + dy]
-                   :                              [px.x + dx, px.Y + dy]
+      const anchor = corner === 0 ? [px.X, px.Y]
+                   : corner === 1 ? [px.x, px.Y]
+                   : corner === 2 ? [px.x, px.y]
+                   :                [px.X, px.y]
+      const moving = corner === 0 ? [px.x + dxL, px.y + dyL]
+                   : corner === 1 ? [px.X + dxL, px.y + dyL]
+                   : corner === 2 ? [px.X + dxL, px.Y + dyL]
+                   :                [px.x + dxL, px.Y + dyL]
       const x0 = Math.min(anchor[0], moving[0]), y0 = Math.min(anchor[1], moving[1])
       const x1 = Math.max(anchor[0], moving[0]), y1 = Math.max(anchor[1], moving[1])
       m.geom = { x: clamp01(x0 / w), y: clamp01(y0 / h),
                  w: clamp01((x1 - x0) / w), h: clamp01((y1 - y0) / h) }
     }
+    // No bbox-corner branch — hitTest only emits it for poly / stroke.
   } else if (m.kind === 'poly' || m.kind === 'stroke') {
     const g = editOrigMark.geom as { pts: [number, number][] }
-    m.geom = { pts: g.pts.map(([x, y]) => [clamp01(x + dx / w), clamp01(y + dy / h)] as [number, number]) }
+    if (editDragging.kind === 'poly-vertex' && m.kind === 'poly') {
+      const vi = editDragging.vertex
+      m.geom = { pts: g.pts.map(([x, y], i) => i === vi
+        ? [clamp01(x + dxL / w), clamp01(y + dyL / h)] as [number, number]
+        : [x, y] as [number, number]) }
+    } else if (editDragging.kind === 'bbox-corner') {
+      // Scale every vertex around the OPPOSITE bbox corner. Compute the original bbox from the
+      // orig mark (not the live one — a mid-drag re-computation would compound the scale on
+      // every pointermove and rocket the shape off-screen). All coords are frame-relative
+      // [0,1]; local delta (dxL, dyL) is in DOM px so divide by (w, h) first.
+      const bbox01 = polyBboxFromPts01(g.pts)
+      if (!bbox01) return
+      const corner = editDragging.corner
+      const dx01 = dxL / w, dy01 = dyL / h
+      // Anchor corner (fixed) in [0,1]. Same NW/NE/SE/SW indexing as rect corners.
+      const bx = bbox01.x, by = bbox01.y, bX = bbox01.x + bbox01.w, bY = bbox01.y + bbox01.h
+      const anchor = corner === 0 ? [bX, bY]
+                   : corner === 1 ? [bx, bY]
+                   : corner === 2 ? [bx, by]
+                   :                [bX, by]
+      // Moving corner's TARGET position — the drag delta on the corner being grabbed.
+      const moving = corner === 0 ? [bx + dx01, by + dy01]
+                   : corner === 1 ? [bX + dx01, by + dy01]
+                   : corner === 2 ? [bX + dx01, bY + dy01]
+                   :                [bx + dx01, bY + dy01]
+      // Guard against zero-extent starting bbox (a horizontal-line freehand has bbox.h = 0)
+      // and against a drag that flips the sign — we clamp the new extent to keep the shape
+      // grabbable without introducing an unexpected mirror.
+      const oldW = Math.max(bbox01.w, 1e-6)
+      const oldH = Math.max(bbox01.h, 1e-6)
+      const newW = Math.max(Math.abs(moving[0] - anchor[0]), MIN_BBOX_EXTENT_01)
+      const newH = Math.max(Math.abs(moving[1] - anchor[1]), MIN_BBOX_EXTENT_01)
+      const sx = newW / oldW, sy = newH / oldH
+      // Choose whether anchor is upper-left, upper-right, etc, for the NEW bbox so scaled points
+      // slot in on the right side of the anchor.
+      const flipX = (moving[0] < anchor[0]) ? -1 : 1
+      const flipY = (moving[1] < anchor[1]) ? -1 : 1
+      m.geom = { pts: g.pts.map(([x, y]) => [
+        clamp01(anchor[0] + flipX * (x - anchor[0]) * sx),
+        clamp01(anchor[1] + flipY * (y - anchor[1]) * sy),
+      ] as [number, number]) }
+    } else {
+      // Body drag — translate every vertex by the LOCAL delta so a rotated shape still moves in
+      // the direction the user dragged (rotation origin travels with the vertex mean).
+      m.geom = { pts: g.pts.map(([x, y]) => [clamp01(x + dxL / w), clamp01(y + dyL / h)] as [number, number]) }
+    }
   }
   marks.value = marks.value.map((mm, j) => j === editDragging!.idx ? m : mm)
+}
+
+// Centroid of the ORIGINAL mark being dragged (DOM px). Kept as its own tiny helper so the
+// rotate branch above doesn't repeat the kind switch.
+function editOrigCentroidPx(): Point | null {
+  if (!editOrigMark) return null
+  if (editOrigMark.kind === 'rect') {
+    const g = editOrigMark.geom as { x: number; y: number; w: number; h: number }
+    return [(g.x + g.w / 2) * boxW.value, (g.y + g.h / 2) * boxH.value]
+  }
+  const g = editOrigMark.geom as { pts?: [number, number][] }
+  const b = polyBboxFromPts01(g.pts ?? [])
+  return b ? [(b.x + b.w / 2) * boxW.value, (b.y + b.h / 2) * boxH.value] : null
+}
+function polyBboxFromPts01(pts: [number, number][]): { x: number; y: number; w: number; h: number } | null {
+  if (!pts || pts.length === 0) return null
+  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
+  for (const [x, y] of pts) {
+    if (x < xMin) xMin = x; if (x > xMax) xMax = x
+    if (y < yMin) yMin = y; if (y > yMax) yMax = y
+  }
+  return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin }
 }
 function cursorForHandle(h: Handle | null): string {
   if (!h) return editModeActive.value ? 'default' : 'crosshair'
   if (h.kind === 'body') return 'move'
+  if (h.kind === 'poly-vertex') return 'grab'
+  if (h.kind === 'rotate') return 'grab'
+  // rect-corner + bbox-corner both use the same diagonal-resize cursors, indexed by corner slot.
   return (h.corner === 0 || h.corner === 2) ? 'nwse-resize' : 'nesw-resize'
 }
 const svgCursor = computed(() => cursorForHandle(editDragging ?? editHover.value))
@@ -252,12 +488,18 @@ function onPointerDown(ev: PointerEvent) {
     const h = hitTest(p)
     if (h) {
       editDragging = h; editStart = p; editOrigMark = { ...marks.value[h.idx] }
+      editDragDistPx = 0
       svgRoot.value?.setPointerCapture?.(ev.pointerId)
       return
     }
-    if (tool.value === '') return   // edit mode + missed = nothing to do
+    // Empty-space click in edit mode = deselect. Cheap and lets the user get back to the "chips
+    // control DEFAULTS for the next mark" state without picking a tool first.
+    if (tool.value === '') { selectedIdx.value = null; return }
   }
   const t = tool.value
+  // Starting a new draft ⇒ the selection is no longer the chip target; clear it so a chip click
+  // during the draw doesn't retroactively mutate the previously-selected mark.
+  if (t !== '') selectedIdx.value = null
   if (t === 'rect')   rectDraft.value = beginRect(p)
   if (t === 'stroke') strokeDraft.value = beginStroke(p)
   if (t === 'poly') {
@@ -269,7 +511,12 @@ function onPointerDown(ev: PointerEvent) {
 }
 function onPointerMove(ev: PointerEvent) {
   const p = toSvgPoint(ev)
-  if (editDragging) { applyEdit(p); return }
+  if (editDragging) {
+    const dx = p[0] - editStart[0], dy = p[1] - editStart[1]
+    const d = Math.sqrt(dx * dx + dy * dy)
+    if (d > editDragDistPx) editDragDistPx = d
+    applyEdit(p); return
+  }
   if (editModeActive.value && !draftKind.value) editHover.value = hitTest(p)
   if (rectDraft.value)   rectDraft.value = updateRect(rectDraft.value, p)
   if (strokeDraft.value) strokeDraft.value = extendStroke(strokeDraft.value, p)
@@ -278,6 +525,13 @@ function onPointerMove(ev: PointerEvent) {
 function onPointerUp(ev: PointerEvent) {
   const p = toSvgPoint(ev)
   if (editDragging) {
+    // Click-not-drag on a body promotes the mark to selected. A handle click (rect corner, poly
+    // vertex) never selects — its whole job was to reshape, so a zero-distance release there is
+    // just a mis-click. Threshold matches the click-vs-drag primitive so a real drag doesn't
+    // masquerade as a select.
+    if (editDragging.kind === 'body' && editDragDistPx < 3) {
+      selectedIdx.value = editDragging.idx === selectedIdx.value ? null : editDragging.idx
+    }
     editDragging = null; editOrigMark = null
     svgRoot.value?.releasePointerCapture?.(ev.pointerId)
     return
@@ -286,14 +540,14 @@ function onPointerUp(ev: PointerEvent) {
     const r = finishRect(rectDraft.value, p)
     if (r) marks.value.push({ kind: 'rect',
       geom: rectToOverlayGeom(r, boxW.value, boxH.value),
-      color: color.value })
+      color: color.value, strokeWidth: size.value })
     rectDraft.value = null
   }
   if (strokeDraft.value) {
     const pts = finishStroke(strokeDraft.value)
     if (pts.length >= 2) marks.value.push({ kind: 'stroke',
       geom: pointsToOverlayGeom(pts, boxW.value, boxH.value),
-      color: color.value })
+      color: color.value, strokeWidth: size.value })
     strokeDraft.value = null
   }
   svgRoot.value?.releasePointerCapture?.(ev.pointerId)
@@ -303,20 +557,56 @@ function commitPoly() {
   const pts = finishPoly(polyDraft.value!)
   if (pts) marks.value.push({ kind: 'poly',
     geom: pointsToOverlayGeom(pts, boxW.value, boxH.value),
-    color: color.value })
+    color: color.value, strokeWidth: size.value })
   polyDraft.value = null
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────────────────────
-function undo() { if (marks.value.length) marks.value = marks.value.slice(0, -1); clearDraft() }
-function clearAll() { marks.value = []; notes.value = ''; clearDraft() }
+function undo() { if (marks.value.length) marks.value = marks.value.slice(0, -1); clearDraft(); selectedIdx.value = null }
+function clearAll() { marks.value = []; notes.value = ''; clearDraft(); selectedIdx.value = null }
 function save() { emit('save', { overlay: marks.value, notes: notes.value.trim() }); clearAll() }
 function cancel() { emit('cancel'); clearAll() }
-function removeMark(i: number) { marks.value = marks.value.filter((_, j) => j !== i) }
+function removeMark(i: number) {
+  marks.value = marks.value.filter((_, j) => j !== i)
+  // Selection index is positional — dropping index i shifts everything above it down by one; a
+  // stale higher index would then point at the wrong mark. Clear on remove-selected, decrement on
+  // remove-above-selected, leave alone otherwise.
+  if (selectedIdx.value === i) selectedIdx.value = null
+  else if (selectedIdx.value !== null && selectedIdx.value > i) selectedIdx.value = selectedIdx.value - 1
+}
+
+// Chip retargeting. If a mark is selected, mutate it AND update the ref so the next new mark keeps
+// this choice (matches PowerPoint: change a shape's colour, then the next new one is the same
+// colour). If nothing is selected, the ref is a pure default for the next new mark.
+function setColor(next: OverlayColor) {
+  color.value = next
+  const i = selectedIdx.value
+  if (i !== null && marks.value[i])
+    marks.value = marks.value.map((m, j) => j === i ? { ...m, color: next } : m)
+}
+function setSize(next: OverlayStrokeWidth) {
+  size.value = next
+  const i = selectedIdx.value
+  if (i !== null && marks.value[i])
+    marks.value = marks.value.map((m, j) => j === i ? { ...m, strokeWidth: next } : m)
+}
+
 function onKey(ev: KeyboardEvent) {
   if (!props.visible) return
-  if (ev.key === 'Enter'  && polyDraft.value) { commitPoly(); ev.preventDefault() }
-  if (ev.key === 'Escape') { draftKind.value ? clearDraft() : cancel(); ev.preventDefault() }
+  // Text-input focus wins keyboard events — Backspace / Delete inside the notes textarea must edit
+  // text, not delete the selected mark.
+  const tgt = ev.target as HTMLElement | null
+  const inField = !!tgt && (tgt.tagName === 'TEXTAREA' || tgt.tagName === 'INPUT' || tgt.isContentEditable)
+  if (ev.key === 'Enter'  && polyDraft.value) { commitPoly(); ev.preventDefault(); return }
+  if ((ev.key === 'Delete' || ev.key === 'Backspace') && !inField && selectedIdx.value !== null) {
+    removeMark(selectedIdx.value); ev.preventDefault(); return
+  }
+  if (ev.key === 'Escape') {
+    if (draftKind.value) clearDraft()
+    else if (selectedIdx.value !== null) selectedIdx.value = null
+    else cancel()
+    ev.preventDefault()
+  }
 }
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────────────────────────
@@ -344,9 +634,21 @@ watch(() => props.visible, async (v) => {
   marks.value = []; notes.value = ''; clearDraft()
   tool.value = 'stroke'
   color.value = 'magenta'
+  size.value = 'medium'
+  selectedIdx.value = null
   await Promise.resolve()   // let the DOM mount before measuring
   measureBox()
 }, { immediate: true })
+
+// Chip strips visually reflect the selected mark, so clicking a shape shows its own colour /
+// thickness on the ribbon (PowerPoint again — the ribbon retargets to the selection). When
+// nothing is selected the chips return to whatever the user last set for new marks.
+watch(selectedIdx, (i) => {
+  if (i === null) return
+  const m = marks.value[i]; if (!m) return
+  if (m.color)       color.value = m.color
+  if (m.strokeWidth) size.value  = m.strokeWidth
+})
 
 // ── Render helpers ─────────────────────────────────────────────────────────────────────────────
 const draftRect = computed(() => {
@@ -369,20 +671,62 @@ const committedShapes = computed(() => marks.value.map((m, i) => {
   const g = m.geom as Record<string, number> & { pts?: [number, number][] }
   const w = boxW.value, h = boxH.value
   const stroke = resolveMarkColor(m)
+  const strokeW = strokeWidthFor(m)
+  const selected = selectedIdx.value === i
+  const rot = markRotate(m)
   if (m.kind === 'rect') {
     const x = g.x * w, y = g.y * h, width = g.w * w, height = g.h * h
-    return { key: i, idx: i, kind: 'rect', label: m.label, stroke, x, y, width, height,
-             labelX: x, labelY: y - 6, deleteX: x + width, deleteY: y }
+    // The whole mark group (rect + corner handles + rotate handle + ✕) is wrapped in one SVG
+    // rotate transform, so all clicks and paints share the same coord frame. The rotate handle
+    // itself lives in the mark's LOCAL frame at top-centre offset — rotating the group also
+    // rotates the handle position, which is what the user expects (it always sticks out from
+    // the top of the shape, in the shape's frame).
+    const cx = x + width / 2, cy = y + height / 2
+    const transform = rot ? `rotate(${rot} ${cx} ${cy})` : null
+    return { key: i, idx: i, kind: 'rect', label: m.label, stroke, strokeW, selected, transform,
+             x, y, width, height, bbox: null as { x: number; y: number; w: number; h: number } | null,
+             rotateX: cx, rotateY: y - ROTATE_HANDLE_OFFSET_PX, rotateAnchorY: y,
+             labelX: x, labelY: y - 6, deleteX: x + width, deleteY: y,
+             pts: null as [number, number][] | null }
   }
   if (m.kind === 'poly' || m.kind === 'stroke') {
     const pts = (g.pts ?? []).map(p => [p[0] * w, p[1] * h] as [number, number])
     const cmd = pts.map((p, j) => (j === 0 ? 'M' : 'L') + p[0] + ',' + p[1]).join(' ')
+    // Selection frame = AA bbox of the vertex list (in DOM px). Same primitive as the rect's
+    // own {x,y,w,h}, so the four corner handles + rotate arm read as the same affordance across
+    // shape kinds. Rotation wraps everything (shape + bbox + handles + ✕) — a rotated
+    // freehand's selection frame appears at the shape's angle.
+    let bbox: { x: number; y: number; w: number; h: number } | null = null
+    if (pts.length > 0) {
+      let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
+      for (const [x, y] of pts) {
+        if (x < xMin) xMin = x; if (x > xMax) xMax = x
+        if (y < yMin) yMin = y; if (y > yMax) yMax = y
+      }
+      bbox = { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin }
+    }
+    const cx = bbox ? bbox.x + bbox.w / 2 : 0
+    const cy = bbox ? bbox.y + bbox.h / 2 : 0
+    const transform = rot && bbox ? `rotate(${rot} ${cx} ${cy})` : null
+    // Rotate/delete anchors sit on the bbox (matches rect: rotate handle above top-centre,
+    // ✕ at the top-right corner). Fall through to first-vertex when the bbox is missing.
     const x0 = pts[0]?.[0] ?? 0, y0 = pts[0]?.[1] ?? 0
-    return { key: i, idx: i, kind: m.kind, label: m.label, stroke,
+    const rotateX = bbox ? cx : x0
+    const rotateAnchorY = bbox ? bbox.y : y0
+    const rotateY = rotateAnchorY - ROTATE_HANDLE_OFFSET_PX
+    const deleteX = bbox ? bbox.x + bbox.w : x0
+    const deleteY = bbox ? bbox.y : y0
+    const labelX = bbox ? bbox.x : x0
+    const labelY = bbox ? bbox.y - 6 : y0 - 6
+    return { key: i, idx: i, kind: m.kind, label: m.label, stroke, strokeW, selected, transform,
              d: m.kind === 'poly' ? cmd + ' Z' : cmd,
-             labelX: x0, labelY: y0 - 6, deleteX: x0, deleteY: y0 }
+             bbox,
+             rotateX, rotateY, rotateAnchorY,
+             labelX, labelY, deleteX, deleteY,
+             pts }
   }
-  return { key: i, idx: i, kind: 'unknown', stroke } as never
+  return { key: i, idx: i, kind: 'unknown', stroke, strokeW: 2, selected, transform: null,
+           bbox: null, pts: null } as never
 }))
 // Live draft strokes use the current colour so the WIP shape reads with the same identity as the
 // committed mark it becomes. Not tied to `resolveMarkColor` — the draft has no mark yet.
@@ -406,40 +750,69 @@ const firstVertexMarker = computed(() => {
          preserveAspectRatio="none" :style="{ cursor: svgCursor }"
          @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
          @dblclick="onDblClick">
+      <!-- One per-mark group so the mark's shape, corner handles, rotate handle and ✕ share the
+           same SVG rotate transform. Layout is: shape / label / corner handles / rotate handle /
+           ✕. Poly vertex handles stay in their own loop below since poly doesn't rotate. -->
       <g class="ds-committed">
         <template v-for="s in committedShapes" :key="s.key">
-          <rect v-if="s.kind === 'rect'" :x="s.x" :y="s.y" :width="s.width" :height="s.height"
-                :style="{ stroke: s.stroke }" />
-          <path v-else-if="s.kind === 'poly' || s.kind === 'stroke'" :d="s.d"
-                :style="{ stroke: s.stroke }" />
-          <text v-if="s.label" :x="s.labelX" :y="s.labelY" :style="{ fill: s.stroke }">{{ s.label }}</text>
-          <g class="ds-delete" @pointerdown.stop @click.stop="removeMark(s.idx)"
-             v-tooltip.top="'Delete this mark'">
-            <circle :cx="s.deleteX" :cy="s.deleteY" :r="7" />
-            <text :x="s.deleteX" :y="s.deleteY + 2" text-anchor="middle"
-                  dominant-baseline="middle" font-size="10">×</text>
+          <g :transform="s.transform ?? undefined">
+            <rect v-if="s.kind === 'rect'" :x="s.x" :y="s.y" :width="s.width" :height="s.height"
+                  :class="{ 'ds-selected': s.selected }"
+                  :style="{ stroke: s.stroke, strokeWidth: s.strokeW }" />
+            <path v-else-if="s.kind === 'poly' || s.kind === 'stroke'" :d="s.d"
+                  :class="{ 'ds-selected': s.selected }"
+                  :style="{ stroke: s.stroke, strokeWidth: s.strokeW }" />
+            <text v-if="s.label" :x="s.labelX" :y="s.labelY" :style="{ fill: s.stroke }">{{ s.label }}</text>
+            <template v-if="editModeActive && s.kind === 'rect'">
+              <rect v-for="(c, ci) in [[s.x, s.y], [s.x + s.width, s.y],
+                                        [s.x + s.width, s.y + s.height], [s.x, s.y + s.height]]"
+                    :key="'c' + ci" class="ds-corner"
+                    :x="c[0] - 6" :y="c[1] - 6" :width="12" :height="12" />
+            </template>
+            <!-- Poly / stroke selection frame — dashed bbox outline + 4 corner handles.
+                 Selected only, so an unselected freehand scribble doesn't show a rectangle. -->
+            <template v-if="s.selected && (s.kind === 'poly' || s.kind === 'stroke') && s.bbox">
+              <rect class="ds-bbox-frame" :x="s.bbox.x" :y="s.bbox.y"
+                    :width="s.bbox.w" :height="s.bbox.h" />
+              <rect v-for="(c, ci) in [[s.bbox.x, s.bbox.y], [s.bbox.x + s.bbox.w, s.bbox.y],
+                                        [s.bbox.x + s.bbox.w, s.bbox.y + s.bbox.h], [s.bbox.x, s.bbox.y + s.bbox.h]]"
+                    :key="'bc' + ci" class="ds-corner"
+                    :x="c[0] - 6" :y="c[1] - 6" :width="12" :height="12" />
+            </template>
+            <!-- Rotate handle — small circle above the top-centre of the AA rect (or bbox for
+                 poly / stroke), connected to the shape by a short line. Selected only. -->
+            <template v-if="s.selected && (s.kind === 'rect' || ((s.kind === 'poly' || s.kind === 'stroke') && s.bbox))">
+              <line class="ds-rotate-arm"
+                    :x1="s.rotateX" :y1="s.rotateAnchorY" :x2="s.rotateX" :y2="s.rotateY" />
+              <circle class="ds-rotate-handle" :cx="s.rotateX" :cy="s.rotateY" :r="6"
+                      v-tooltip.top="'Rotate — drag around the shape'" />
+            </template>
+            <!-- Poly vertex handles — inside the per-mark rotated group so they sit on the
+                 rotated vertices, not the un-rotated AA positions. Selected poly only (strokes
+                 have too many RDP-simplified vertices to be worth handles). -->
+            <template v-if="s.selected && s.kind === 'poly' && s.pts">
+              <circle v-for="(pt, vi) in s.pts" :key="'v' + vi" class="ds-vertex"
+                      :cx="pt[0]" :cy="pt[1]" :r="5" />
+            </template>
+            <g class="ds-delete" @pointerdown.stop @click.stop="removeMark(s.idx)"
+               v-tooltip.top="'Delete this mark (Del)'">
+              <circle :cx="s.deleteX" :cy="s.deleteY" :r="7" />
+              <text :x="s.deleteX" :y="s.deleteY + 2" text-anchor="middle"
+                    dominant-baseline="middle" font-size="10">×</text>
+            </g>
           </g>
         </template>
       </g>
       <rect v-if="draftKind === 'rect' && draftRect" class="ds-draft"
-            :style="{ stroke: draftStroke }"
+            :style="{ stroke: draftStroke, strokeWidth: draftStrokeWidth }"
             :x="draftRect.x" :y="draftRect.y" :width="draftRect.w" :height="draftRect.h" />
       <path v-if="draftKind === 'poly' && draftPolyPath" class="ds-draft"
-            :style="{ stroke: draftStroke }" :d="draftPolyPath" />
+            :style="{ stroke: draftStroke, strokeWidth: draftStrokeWidth }" :d="draftPolyPath" />
       <path v-if="draftKind === 'stroke' && draftStrokePath" class="ds-draft"
-            :style="{ stroke: draftStroke }" :d="draftStrokePath" />
+            :style="{ stroke: draftStroke, strokeWidth: draftStrokeWidth }" :d="draftStrokePath" />
       <circle v-if="firstVertexMarker" class="ds-poly-first"
               :class="{ armed: firstVertexMarker.armed }" :style="{ stroke: draftStroke }"
               :cx="firstVertexMarker.x" :cy="firstVertexMarker.y" :r="firstVertexMarker.radius" />
-      <g v-if="editModeActive" class="ds-corners">
-        <template v-for="s in committedShapes" :key="'c' + s.key">
-          <template v-if="s.kind === 'rect'">
-            <rect v-for="(c, ci) in [[s.x, s.y], [s.x + s.width, s.y],
-                                      [s.x + s.width, s.y + s.height], [s.x, s.y + s.height]]"
-                  :key="ci" :x="c[0] - 6" :y="c[1] - 6" :width="12" :height="12" />
-          </template>
-        </template>
-      </g>
     </svg>
 
     <!-- Floating toolbar (after the SVG so it paints on top of any marks; opaque background so a
@@ -451,7 +824,11 @@ const firstVertexMarker = computed(() => {
       <ChipSelect variant="segmented" :options="COLOR_OPTIONS" :model-value="color"
                   aria-label="Mark colour"
                   @update:modelValue="(v: string | string[]) =>
-                    color = (Array.isArray(v) ? v[0] : v) as OverlayColor" />
+                    setColor((Array.isArray(v) ? v[0] : v) as OverlayColor)" />
+      <ChipSelect variant="segmented" :options="SIZE_OPTIONS" :model-value="size"
+                  aria-label="Stroke thickness"
+                  @update:modelValue="(v: string | string[]) =>
+                    setSize((Array.isArray(v) ? v[0] : v) as OverlayStrokeWidth)" />
       <textarea class="cc-input ds-notes-input" v-model="notes" rows="1" maxlength="800"
                 placeholder="Notes for Claude (optional)"
                 v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'"></textarea>
@@ -474,7 +851,14 @@ const firstVertexMarker = computed(() => {
       </button>
     </div>
     <span v-if="editModeActive && !draftKind" class="ds-mode cc-fs-2xs">
-      <i class="pi pi-arrows-alt" /> Edit — click a mark to move, drag a corner to resize
+      <i class="pi pi-arrows-alt" />
+      <template v-if="selectedMark">
+        Selected — colour / thickness apply to this mark. Drag the shape to move, a corner to
+        resize, the top handle to rotate. Del removes.
+      </template>
+      <template v-else>
+        Edit — click a mark to select, drag to move, drag a corner or vertex to reshape
+      </template>
     </span>
   </div>
 </template>
@@ -511,10 +895,19 @@ const firstVertexMarker = computed(() => {
   position: absolute; inset: 0; width: 100%; height: 100%;
   touch-action: none; pointer-events: auto;
 }
-/* Committed marks: white stroke with a dark halo — visible on both dark and bright pixels. */
+/* Committed marks: white stroke with a dark halo — visible on both dark and bright pixels.
+   `stroke-width` is a fallback for marks that arrived without a preset; live drawing overrides
+   it inline. `vector-effect: non-scaling-stroke` keeps the on-screen width in CSS px regardless
+   of the SVG's viewBox scale, so the same preset reads the same across zooms. */
 .ds-committed rect, .ds-committed path {
   fill: none; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke;
   paint-order: stroke;
+}
+/* Selection halo — a second stroke painted underneath via `filter: drop-shadow`. Simple, cheap,
+   works on any shape kind (rect / poly / stroke) without a second path element. Colour uses
+   `--cc-accent` so it reads on both dark and bright underlays. */
+.ds-committed rect.ds-selected, .ds-committed path.ds-selected {
+  filter: drop-shadow(0 0 3px var(--cc-accent)) drop-shadow(0 0 3px var(--cc-accent));
 }
 .ds-committed text {
   fill: #fff; stroke: rgba(0, 0, 0, 0.7); stroke-width: 3; paint-order: stroke;
@@ -526,8 +919,32 @@ const firstVertexMarker = computed(() => {
 .ds-poly-first { fill: none; stroke: var(--cc-accent); stroke-width: 2;
                  stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .ds-poly-first.armed { fill: var(--cc-accent); fill-opacity: 0.25; stroke-dasharray: none; }
-.ds-corners rect {
+.ds-corner {
   fill: #fff; stroke: rgba(0, 0, 0, 0.75); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+}
+/* Poly vertex handles — same visual language as rect corners (white fill, dark ring) so a user
+   who has drawn a rect reads them as the same affordance. */
+.ds-vertex {
+  fill: #fff; stroke: rgba(0, 0, 0, 0.75); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+  cursor: grab;
+}
+/* Poly / stroke selection frame — dashed accent outline showing the AA bounding box that the
+   corner handles resize. Non-interactive on its own (clicks go to the handles or the body). */
+.ds-bbox-frame {
+  fill: none; stroke: var(--cc-accent); stroke-width: 1;
+  stroke-dasharray: 4 3; vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+/* Rotate handle — small ring above the shape, connected by a hairline arm. Uses --cc-accent so
+   it reads as a "control", not part of the mark. `cursor: grab` telegraphs the drag; on
+   pointerdown the browser flips to `grabbing` on its own. */
+.ds-rotate-handle {
+  fill: var(--cc-surface-1); stroke: var(--cc-accent); stroke-width: 2;
+  vector-effect: non-scaling-stroke; cursor: grab;
+}
+.ds-rotate-arm {
+  stroke: var(--cc-accent); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 .ds-delete { cursor: pointer; }
 .ds-delete circle { fill: rgba(0, 0, 0, 0.7); stroke: #fff; stroke-width: 1.5;

@@ -60,11 +60,26 @@ export type OverlayKind = 'rect' | 'poly' | 'stroke' | 'circle' | 'arrow'
 // options all disappeared or read poorly on white.
 export type OverlayColor = 'magenta' | 'cyan' | 'yellow' | 'white' | 'black'
 
+// Stroke-thickness slot on a mark. Named presets rather than raw pixels so a single value scales
+// consistently across capture resolutions — the composite in `overlayCompose.ts` multiplies each
+// preset against the auto width (`MARK_LINE_WIDTH(frameWidth)`), so a `thick` mark reads the same
+// weight on a 512-px thumbnail and a 2048-px full frame. Server-safelisted alongside the palette;
+// unknown / absent values fall back to `medium` at render time.
+export type OverlayStrokeWidth = 'thin' | 'medium' | 'thick'
+
 export interface OverlayMark {
   kind: OverlayKind
   geom: Record<string, unknown>
   label?: string
   color?: OverlayColor
+  strokeWidth?: OverlayStrokeWidth
+  /** Rotation in degrees, clockwise, around the mark's centroid (the mark's geometry stays
+   *  axis-aligned in its own local frame; the visual rotation is applied at render / composite
+   *  time by both the SVG surface and the PNG compositor). Absent / 0 ⇒ un-rotated, matching
+   *  every mark drawn before this field existed. Server-safelisted to [-360, 360] so a tampered
+   *  payload can't smuggle absurd values through. Freehand strokes do not offer rotation — there
+   *  is no natural centroid for a scribble — so the field is ignored for `stroke`. */
+  rotate?: number
 }
 
 // Scale a pixel point into the [0,1] frame-relative space. `w`/`h` are the CAPTURED FRAME's pixel

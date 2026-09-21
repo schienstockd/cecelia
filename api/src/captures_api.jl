@@ -44,6 +44,11 @@ const _CAPTURE_OVERLAY_KINDS = Set(["rect", "poly", "stroke", "circle", "arrow"]
 # resolver then falls back to `white`), not stored — a value that would render is a value the
 # canvas already treats as legitimate.
 const _CAPTURE_OVERLAY_COLORS = Set(["magenta", "cyan", "yellow", "white", "black"])
+# Stroke thickness preset. Named strings (not raw pixels) so a single value renders consistently
+# across capture resolutions — the frontend composite (`overlayCompose.ts::STROKE_WIDTH_SCALES`)
+# multiplies each preset against the auto width. Absent ⇒ `medium` at render time (matches every
+# capture written before this field existed). Same safelist discipline as `_CAPTURE_OVERLAY_COLORS`.
+const _CAPTURE_OVERLAY_STROKE_WIDTHS = Set(["thin", "medium", "thick"])
 
 # The PNG can be a base64 data URL (`data:image/png;base64,...`) or bare base64 bytes. We accept
 # both and store the raw bytes on disk so downstream readers don't repeat the prefix strip. Cap
@@ -109,6 +114,25 @@ function _clean_overlay_mark(m)::Union{Dict{String,Any},Nothing}
     if color_v isa AbstractString
         c = String(color_v)
         c in _CAPTURE_OVERLAY_COLORS && (out["color"] = c)
+    end
+    # Stroke thickness — same safelist discipline as `color`. Unknown / absent ⇒ dropped, and the
+    # frontend renderer falls back to `medium` (the previous fixed behaviour) so the mark still
+    # composes rather than crashes the read path.
+    sw_v = get(m, :strokeWidth, get(m, "strokeWidth", nothing))
+    if sw_v isa AbstractString
+        sw = String(sw_v)
+        sw in _CAPTURE_OVERLAY_STROKE_WIDTHS && (out["strokeWidth"] = sw)
+    end
+    # Rotation in degrees, clockwise, around the mark's centroid. Bounded to [-360, 360] so a
+    # tampered payload can't stuff a value that overflows a downstream renderer; absent / non-
+    # numeric ⇒ dropped, which the frontend treats as 0 (un-rotated). Zero is kept off the wire
+    # to keep older captures' envelopes byte-identical after a re-save round-trip.
+    rot_v = get(m, :rotate, get(m, "rotate", nothing))
+    if rot_v isa Real
+        rot = Float64(rot_v)
+        if isfinite(rot) && -360.0 <= rot <= 360.0 && rot != 0.0
+            out["rotate"] = rot
+        end
     end
     out
 end
