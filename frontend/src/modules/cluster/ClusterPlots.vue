@@ -16,15 +16,15 @@
 -->
 <script setup lang="ts">
 import { toggleSelected } from '../../utils/selection'
-import { ref, computed, watch, provide } from 'vue'
+import { ref, computed, watch } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
-import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import { useProjectStore } from '../../stores/project'
 import { useGatingStore } from '../../stores/gating'
-import { useCanvasPanels, type CanvasItem } from '../../composables/useCanvasPanels'
-import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
+import type { CanvasItem } from '../../composables/useCanvasPanels'
+import { useFloatingCanvas } from '../../composables/useFloatingCanvas'
+import FloatingCanvasHost from '../../components/canvas/FloatingCanvasHost.vue'
 import { useViewState } from '../../composables/useViewState'
 import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
@@ -49,19 +49,24 @@ const g = useGatingStore()
 const projectUid = computed(() => meta.current?.uid ?? '')
 const setUid = computed(() => project.activeSetUid)
 
-const canvasRef = ref<HTMLElement | null>(null)   // the visible viewport (zoom + fit measure it)
-const zoomRef = ref<HTMLElement | null>(null)     // the scaled workspace (panels' offsetParent)
 // Clustering is SET-scope (plots pool across the set's images), so persist per-set — rebinds when the
 // active set changes. (Gating/summary key per-image; cluster per-set is the "where it makes sense".)
 const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
+// Workspace shell + zoomable panels + zoom provided to plot components inside. See
+// useFloatingCanvas — the wiring that used to be four hand-rolled statements here (and identically
+// in SummaryCanvas + GatingPlots).
 // NB: no `features: []` default — leave it undefined so the heatmap panel self-seeds its features
 // from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
-const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
-  useCanvasPanels<ClusterPanelState>(zoomRef, () => ({ kind: 'umap', labels: true, hl: [] }), ckey,
-    // tileBox: the grid is sized to the VIEWPORT, not to the workspace it grew (utils/tileGrid.ts)
-    { tileBox: () => workspaceBase.value })
-const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
+const {
+  bindCanvas, bindZoom, workspaceStyle,
+  panels, activeId, activePanel, shared,
+  add, remove, removeAll, arrangeGrid, arrangeCascade,
+  zoom, fitWidth, fitHeight, setZoom, resetZoom,
+} = useFloatingCanvas<ClusterPanelState>(
+  ckey,
+  () => ({ kind: 'umap', labels: true, hl: [] }),
+)
 
 // migrate persisted panel kinds to the CLUSTER_PANELS registry keys (legacy hyphenated → camelCase),
 // so old canvases keep working now that the page renders panels generically from the registry.
@@ -77,17 +82,6 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
   vis: defaultVis() as VisProps, showManager: true,
   // Tile Columns knob (0 = Auto) — persisted per canvas; see CanvasArrangeButtons
   tileCols: 0 })
-
-// visual zoom (shared control): scale the free-floating cluster workspace; drag is zoom-corrected via
-// the injected zoom (CanvasPanel → useFloatingPanel). Fit fits the actual plot bounding box; the
-// workspace GROWS when zoomed out (useCanvasWorkspace); the population manager stays full-size (outside).
-const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
-  () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
-provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
-  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
-  // a getter, so it may name `contentBounds` from the line above
-  () => contentBounds.value)
 
 // run list + per-run features/cluster metadata + valid-image resolution + the gating-store drive +
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
@@ -248,19 +242,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
         </button>
       </div>
 
-      <div class="cp-canvas">
-        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
-             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
-             box, so it stays put instead of scrolling away with them. -->
-        <div ref="canvasRef" class="cp-scroll">
-        <PopulationManager v-if="showManager && validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
-                           :line-width="1" :gate-labels="false" :axis-from-zero="false"
-                           :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
-                           :vis="activeVis"
-                           @update:selected="selectedPop = $event" @update:scope="scope = $event"
-                           @update:vis="setVis" @toggle-highlight="toggleHighlight" />
-        <!-- scaled workspace: the plots zoom together; the population manager stays full-size (above) -->
-        <div ref="zoomRef" class="cp-zoom" :style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- interactive (UMAP, …) → generic InteractivePanel -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
@@ -276,9 +258,18 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
                             v-bind="clusterPanelProps(p)" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
         </template>
-        </div>
-        </div>
-      </div>
+        <!-- Absolute-positioned CanvasSidePanel needs a positioned ancestor, so the manager goes
+             in the host's `overlay` slot (inside `.floating-canvas`, outside the zoom transform)
+             — same pattern as GatingPlots' rail and SummaryCanvas's share toast. -->
+        <template #overlay>
+          <PopulationManager v-if="showManager && validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
+                             :line-width="1" :gate-labels="false" :axis-from-zero="false"
+                             :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
+                             :vis="activeVis"
+                             @update:selected="selectedPop = $event" @update:scope="scope = $event"
+                             @update:vis="setVis" @toggle-highlight="toggleHighlight" />
+        </template>
+      </FloatingCanvasHost>
     </template>
   </div>
 </template>
@@ -297,13 +288,4 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
   border: 1px solid #b45309; border-radius: var(--cc-radius-xs); background: #78350f44; color: #fcd34d; cursor: pointer; white-space: nowrap; }
 .cp-fix:hover { background: #78350f88; }
 .cp-add { padding: 4px 8px; }
-.cp-canvas { position: relative; flex: 1; min-height: 70vh; }
-/* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
-/* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.
-   min 100% so it always at least fills the viewport (like the old inset:0) even before the JS size
-   lands — else a 0 measurement collapses it and drag pins panels to the top-left. */
-/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
-   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
-.cp-scroll { position: absolute; inset: 0; overflow: auto; }
-.cp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

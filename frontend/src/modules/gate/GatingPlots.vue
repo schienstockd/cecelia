@@ -17,7 +17,7 @@
 import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
-import { ref, computed, watch, provide, onMounted, onUnmounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import CellSelectionTools from '../../components/CellSelectionTools.vue'
 import { useGatingStore } from '../../stores/gating'
@@ -25,10 +25,9 @@ import { useWsStore } from '../../stores/ws'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { openViewerWindow } from '../../utils/viewerWindow'
-import { useCanvasPanels } from '../../composables/useCanvasPanels'
-import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
+import { useFloatingCanvas } from '../../composables/useFloatingCanvas'
+import FloatingCanvasHost from '../../components/canvas/FloatingCanvasHost.vue'
 import { useViewState } from '../../composables/useViewState'
-import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { isInteractiveView, pageViews, migrateViewKey, railFor, popTypesFor, singlePopFor }
@@ -75,8 +74,6 @@ interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: 
   // colour-by (single plot): the third measure painted as the dot colour, and its ramp scale.
   // Unset like xt/yt so the panel's per-measure transform default fires (see the comment on ckey).
   z?: string; zt?: GateKind }
-const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
-const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
 // (g.valueName) changes.
@@ -100,29 +97,25 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // only runs while ui.xt is undefined — pre-seeding a concrete transform here would pin logicle and
 // silently defeat it. Channels (x/y) start empty; the panel picks index-based defaults once columns
 // load (see ensureChannels).
-const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
-  useCanvasPanels<PlotState>(zoomRef, () =>
-    ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true, dotSize: DOT_R,
-       x: '', y: '', renderMode: 'points', channels: [] }), ckey,
-    // every plot panel here is `:square` (GatePlotPanel / GatePairsPanel), so Tile hands out square
-    // cells; `tileBox` keeps the grid sized to the VIEWPORT even once the workspace has grown taller
-    // than it — see utils/tileGrid.ts
-    { squareCells: true, tileBox: () => workspaceBase.value })
+// Workspace shell + zoomable panels + zoom provided to plot components inside. See
+// useFloatingCanvas — the wiring that used to be four hand-rolled statements here (and identically
+// in SummaryCanvas + ClusterPlots). `squareCells: true` because every plot here is `:square`
+// (GatePlotPanel / GatePairsPanel), so Tile hands out square cells.
+const {
+  bindCanvas, bindZoom, workspaceStyle,
+  panels, activeId, activePanel, shared,
+  add, remove, removeAll, arrangeGrid, arrangeCascade,
+  zoom, fitWidth, fitHeight, setZoom, resetZoom,
+} = useFloatingCanvas<PlotState>(
+  ckey,
+  () => ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true, dotSize: DOT_R,
+           x: '', y: '', renderMode: 'points', channels: [] }),
+  { squareCells: true },
+)
 // show/hide the floating population manager — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
 // Tile Columns knob (0 = Auto). Persisted per canvas so the last pick survives navigation.
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
-
-// visual zoom (shared control): scale the free-floating plot workspace to see everything at once. Fit
-// fits the actual plot bounding box; drag is zoom-corrected via the injected zoom. The workspace GROWS
-// when zoomed out (useCanvasWorkspace); the population manager sits OUTSIDE the zoom layer (full-size).
-const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
-  () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
-provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
-  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
-  // a getter, so it may name `contentBounds` from the line above
-  () => contentBounds.value)
 // add a read-only channel-pairs matrix panel (same canvas, same shared options as a single plot)
 function addPairs() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'pairs' }
 // A canvas persisted before a view was renamed still holds the old key; without this its panel falls
@@ -541,13 +534,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           Re-eval on _latest
         </button>
       </div>
-      <div class="gp-canvas">
-        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
-             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
-             box, so it stays put instead of scrolling away with them. -->
-        <div ref="canvasRef" class="gp-scroll">
-        <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
-        <div ref="zoomRef" class="gp-zoom" :style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- registry views (track paths, the correction worklist) → generic InteractivePanel, the
                same host the cluster and optical-flow canvases use -->
@@ -568,25 +555,27 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
-        </div>
-        </div>
-        <!-- THE RAIL, following the ACTIVE panel (railFor, never a key list here). A track view slices by
-             population, so it gets the SERIES PICKER — populations grouped by segmentation, each row
-             carrying its family; a gating plot is a tree being edited, so it gets the tree. The gating
-             tree could not serve both: it has no popType to give, so every series it built was filtered
-             out again (see ctxForView). No `vis`: the track panels read none of the styling block, and
-             five controls wired to nothing is what the rail plan calls dead chrome. -->
-        <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
-                      :groups="segPops" :selected="activePopSel" :scope="scope"
-                      :single="activeSinglePop"
-                      @toggle="togglePop" @update:scope="scope = $event" />
-        <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
-                           :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
-                           :dot-size="activeDotSize"
-                           @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
-                           @update:line-width="setLineWidth" @update:dot-size="setDotSize" @update:gate-labels="setLabels"
-                           @update:axis-from-zero="setFromZero" @show-defining-plot="showDefiningPlot" />
-      </div>
+        <!-- THE RAIL, following the ACTIVE panel (railFor, never a key list here). Absolute-positioned
+             CanvasSidePanel needs a positioned ancestor, so the picker/manager go in the host's
+             `overlay` slot (inside `.floating-canvas`, outside the zoom transform) — same as the
+             SummaryCanvas Share toast. A track view slices by population, so it gets the SERIES
+             PICKER — populations grouped by segmentation, each row carrying its family; a gating
+             plot is a tree being edited, so it gets the tree. The gating tree could not serve both:
+             it has no popType to give, so every series it built was filtered out again (see
+             ctxForView). No `vis`: the track panels read none of the styling block. -->
+        <template #overlay>
+          <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
+                        :groups="segPops" :selected="activePopSel" :scope="scope"
+                        :single="activeSinglePop"
+                        @toggle="togglePop" @update:scope="scope = $event" />
+          <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
+                             :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
+                             :dot-size="activeDotSize"
+                             @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
+                             @update:line-width="setLineWidth" @update:dot-size="setDotSize" @update:gate-labels="setLabels"
+                             @update:axis-from-zero="setFromZero" @show-defining-plot="showDefiningPlot" />
+        </template>
+      </FloatingCanvasHost>
     </template>
     <GatingCopyDialog v-if="showCopy" :set-uid="setUid" :source-uid="props.imageUid!"
                       :value-name="g.valueName" :pop-type="props.popType" @close="showCopy = false" />
@@ -614,14 +603,4 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; padding: 3px 4px; }
-/* free-floating plot workspace: panels + manager are absolutely positioned within */
-.gp-canvas { position: relative; flex: 1; min-height: 70vh; }
-/* the scaled workspace fills the canvas (offsetParent for the floating plot panels); transform inline */
-/* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.
-   min 100% so it always at least fills the viewport (like the old inset:0) even before the JS size
-   lands — else a 0 measurement collapses it and drag pins panels to the top-left. */
-/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
-   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
-.gp-scroll { position: absolute; inset: 0; overflow: auto; }
-.gp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

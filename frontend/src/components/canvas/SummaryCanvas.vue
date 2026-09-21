@@ -15,14 +15,13 @@
 -->
 <script setup lang="ts">
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
-import { computed, ref, watch, provide, useTemplateRef } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CanvasArrangeButtons from './CanvasArrangeButtons.vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
-import { useCanvasPanels } from '../../composables/useCanvasPanels'
-import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
+import { useFloatingCanvas } from '../../composables/useFloatingCanvas'
+import FloatingCanvasHost from './FloatingCanvasHost.vue'
 import { useSummaryData } from '../../composables/useSummaryData'
-import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
@@ -98,29 +97,25 @@ interface PanelState {
   groupBy?: string; smooth?: number; interval?: boolean
   matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'
 }
-const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
-const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
-const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
-  useCanvasPanels<PanelState>(zoomRef, () => ({ specId: specs.value[0]?.id ?? '', sel: [], vis: defaultVis() }),
-    // tileBox: the grid is sized to the VIEWPORT, not to the workspace it grew (utils/tileGrid.ts)
-    ckey, { tileBox: () => workspaceBase.value })
+// Workspace shell + zoomable panels + zoom provided to plot components inside. See
+// useFloatingCanvas — the wiring that used to be four hand-rolled statements here (and identically
+// in GatingPlots + ClusterPlots). The workspace GROWS when zoomed out so the whole page stays
+// usable; plot renders/exports stay at 100% (Vega, PNG, PDF, and the frame-annotator composite all
+// sample from the logical canvas via CANVAS_ZOOM_KEY-injected 1/zoom).
+const {
+  bindCanvas, bindZoom, workspaceStyle,
+  panels, activeId, activePanel, shared,
+  add, remove, removeAll, arrangeGrid, arrangeCascade,
+  zoom, fitWidth, fitHeight, setZoom, resetZoom,
+} = useFloatingCanvas<PanelState>(
+  ckey,
+  () => ({ specId: specs.value[0]?.id ?? '', sel: [], vis: defaultVis() }),
+)
 // show/hide the floating population picker — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
 // Tile Columns knob (0 = Auto). Persisted per canvas so the last pick survives navigation. See
 // CanvasArrangeButtons — the escape hatch for a narrow/unmeasured workspace falling back to 1 col.
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
-
-// ── visual zoom (shared control) — scale the free-floating workspace to see everything at once. Fit
-// fits the actual plot bounding box; drag is zoom-corrected via the injected zoom (CanvasPanel →
-// useFloatingPanel). The workspace GROWS when zoomed out (useCanvasWorkspace) so the whole page stays
-// usable; the population picker sits OUTSIDE the zoom layer so the control panel stays full-size.
-const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
-  () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
-provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
-  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
-  // a getter, so it may name `contentBounds` from the line above
-  () => contentBounds.value)
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
   specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
@@ -629,13 +624,7 @@ watch(segPops, () => {
         <span v-if="!specs.length && !declaredViews.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
         <span v-else-if="specs.length" class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
-      <div class="sc-canvas">
-        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
-             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
-             box, so it stays put instead of scrolling away with them. -->
-        <div ref="canvasRef" class="sc-scroll">
-        <!-- scaled workspace: the panels zoom together; the population picker stays full-size (below) -->
-        <div ref="zoomRef" class="sc-zoom" :style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <InteractivePanel v-if="p.state.kind" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"
@@ -655,8 +644,8 @@ watch(segPops, () => {
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
                         @readout="readouts[p.id] = $event" />
         </template>
-        <!-- Share mode: dim veil + drag/click selection + toolbar. Mounted inside .sc-zoom so its
-             SVG coords are in the same workspace-CSS-px frame the panels' geoms are in. -->
+        <!-- Share mode: dim veil + drag/click selection + toolbar. Inside the zoom workspace so
+             its SVG coords are in the same workspace-CSS-px frame the panels' geoms are in. -->
         <CanvasSelectionOverlay v-if="shareSel.active.value"
                                 :panels="sharePanelHits"
                                 :selection="shareSel"
@@ -691,26 +680,29 @@ watch(segPops, () => {
                             @close="onReshowClose"
                             @reannotate="onReshowReannotate"
                             @zoom-to-source="onReshowZoomToSource" />
-        </div>
-        </div>
         <!-- Post-Save toast: FrameAnnotator dismisses on Save, taking the "paste to Claude" hint
              with it, so surface the outcome inside the plot canvas for a few seconds — same role
-             ViewerWindow's `.vw-share-chip` plays for viewer captures. Anchored to `.sc-canvas`
-             (position:relative) rather than `.sc-zoom` so the CSS transform on the workspace can't
-             scale the chip along with the panels. -->
-        <div v-if="shareToast" class="sc-share-chip"
-             :class="{ 'sc-share-chip-error': shareToast.kind === 'fail' }">
-          <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
-                      'sc-share-chip-icon']" />
-          <span>{{ shareToast.message }}</span>
-          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro sc-share-chip-dismiss"
-                  @click="dismissShareToast" v-tooltip.top="'Dismiss'"
-                  aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
-        </div>
-        <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
-                      :readout="activeReadout" :selection-unused="activeIsPrecomputed"
-                      @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
-      </div>
+             ViewerWindow's `.vw-share-chip` plays for viewer captures. In the host's `overlay`
+             slot (inside `.floating-canvas`, outside the zoom transform) so the workspace CSS
+             transform can't scale the chip along with the panels. -->
+        <template #overlay>
+          <div v-if="shareToast" class="sc-share-chip"
+               :class="{ 'sc-share-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
+                        'sc-share-chip-icon']" />
+            <span>{{ shareToast.message }}</span>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro sc-share-chip-dismiss"
+                    @click="dismissShareToast" v-tooltip.top="'Dismiss'"
+                    aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
+          </div>
+          <!-- Floating population picker: `position: absolute` on the undocked CanvasSidePanel
+               anchors it to the nearest positioned ancestor, so it stays in the overlay slot
+               (inside `.floating-canvas`) alongside the share chip — not below the host. -->
+          <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
+                        :readout="activeReadout" :selection-unused="activeIsPrecomputed"
+                        @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
+        </template>
+      </FloatingCanvasHost>
     </template>
   </div>
 </template>
@@ -729,16 +721,6 @@ watch(segPops, () => {
 .sc-attr { min-width: 5.5rem; max-width: 8rem; }   /* short attribute names — no need for 9rem */
 .sc-x { opacity: 0.6; }
 .sc-hint { opacity: 0.7; margin-left: auto; }
-.sc-canvas { position: relative; flex: 1; min-height: 70vh; }
-/* the scaled workspace (offsetParent for the floating panels); size + transform set inline by
-   useCanvasWorkspace — grows to viewport/zoom when zoomed out so the whole page stays usable */
-/* min 100% so the workspace always at least fills the viewport (like the old inset:0) even before the
-   JS size lands — else a 0 measurement collapses it and the panels' offsetParent is ~0-wide, pinning
-   drag to the top-left. useCanvasWorkspace only EXTENDS it (width/height) when zoomed out. */
-/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
-   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
-.sc-scroll { position: absolute; inset: 0; overflow: auto; }
-.sc-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 /* Post-Save share toast — same visual family as ViewerWindow's `.vw-status-chip` so the outcome
    looks the same on both surfaces. Sits above CaptureViewSurface (z:40) at z:50 so a user reads
    the "prompt on your clipboard" line whether or not the frozen frame is up. `pointer-events:auto`
