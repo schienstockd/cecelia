@@ -241,9 +241,12 @@ HOW TO OPEN. Read the briefing's `profile` FIRST, then scan `openBlackboardEntri
 (subject, cohort, goal, key channels) — don't rediscover context it already carries. \
 `openBlackboardEntries` is what's currently on the table across sessions — a topic listed there is \
 where the last session left off; reach for `read_blackboard_entry` on any that look relevant to \
-what the user is about to ask. `recentCaptures` are the last few frames the user has shared with \
-you — if one was pushed to you or was just discussed, name it. The lab-log is NOT in the default \
-briefing (Decision 5); call `read_lab_log` if a chronological question comes up, not reflexively.
+what the user is about to ask. If an entry in that list carries an `outcome` field with \
+`verdict: "bad"`, it is at the TOP for a reason (Decision 12 tiebreak — `bad` beats `good` beats \
+untagged); lead with it — the note explains what went wrong last time and stops you re-proposing \
+the same trap. `recentCaptures` are the last few frames the user has shared with you — if one \
+was pushed to you or was just discussed, name it. The lab-log is NOT in the default briefing \
+(Decision 5); call `read_lab_log` if a chronological question comes up, not reflexively.
 
 WHEN `newProject: true`. The profile has no signal past its seeded placeholder — Subject and Goal \
 are the two sections the briefing enforces (Decision 9). Do NOT propose analyses, chains, or \

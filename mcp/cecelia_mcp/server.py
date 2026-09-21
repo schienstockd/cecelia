@@ -573,6 +573,23 @@ def _profile_is_authored(profile: dict | None) -> bool:
     return all(_profile_section_has_content(body, h) for h in _PROFILE_REQUIRED_SECTIONS)
 
 
+def _outcome_rank(outcome) -> int:
+    """PROJECT_MEMORY_PLAN Decision 12 tiebreak: `bad` < `good` < untagged.
+    A `bad` verdict is a known trap a future session must see BEFORE proposing on the same topic —
+    it sorts first so the top of any bucket (briefing open-entries, search results) leads with it.
+    Untagged means "no signal" (Decision 11 D4) and sits below any explicit verdict.
+    Accepts the wire dict (`{verdict, note, taggedAt}`), a bare verdict string, or `None`/missing.
+    Mirrors `_bb_outcome_rank` in `api/src/blackboard_api.jl`; keep the two in step.
+    """
+    if isinstance(outcome, dict):
+        verdict = outcome.get("verdict", "")
+    elif isinstance(outcome, str):
+        verdict = outcome
+    else:
+        verdict = ""
+    return {"bad": 0, "good": 1}.get(verdict, 2)
+
+
 def _memory_briefing_slice(project_uid: str) -> dict:
     """Compose the PROJECT_MEMORY_PLAN Decision 5 briefing slice: profile body + open Blackboard
     entries + last N captures. Split out so `get_session_briefing` stays legible, and so each
@@ -604,14 +621,25 @@ def _memory_briefing_slice(project_uid: str) -> dict:
             continue
         if entry.get("status", "open") != "open":
             continue
-        open_entries.append({
+        row = {
             "entryId":          entry_id,
             "title":            entry.get("title", ""),
             "updatedAt":        entry.get("updatedAt", ""),
             "attachmentsCount": entry.get("attachmentsCount", 0),
-        })
-        if len(open_entries) >= _BRIEFING_OPEN_ENTRIES_MAX:
-            break
+        }
+        # Decision 12 — surface `outcome` on the open-entries slice so Claude can lead with a
+        # `bad`-tagged thread instead of proposing on top of something known-wrong. Absent on
+        # untagged rows (matches the list API's absent-when-untagged shape).
+        outcome = entry.get("outcome")
+        if outcome:
+            row["outcome"] = outcome
+        open_entries.append(row)
+    # Decision 12 tiebreak — sort open entries by outcome rank (bad < good < untagged) with the
+    # incoming list order as the stable secondary key (already newest-first from the list API).
+    # Applied BEFORE the cap so a `bad`-tagged entry at position 9 of the list still lands in
+    # the top-8 briefing slice instead of getting truncated off.
+    open_entries.sort(key=lambda r: _outcome_rank(r.get("outcome")))
+    open_entries = open_entries[:_BRIEFING_OPEN_ENTRIES_MAX]
 
     try:
         captures = _client.get_recent_captures(
@@ -658,10 +686,12 @@ def get_session_briefing(project_uid: str) -> dict:
         placeholder (Decision 9 — Subject and Goal are the two required sections). When TRUE, don't
         propose anything until you've greeted the user and asked them to describe subject + goal;
         a briefing with no signal to lean on is worse than one that admits it needs signal.
-      - `openBlackboardEntries`: up to 8 entries with status="open", newest-first —
-        `[{entryId, title, updatedAt, attachmentsCount}]`. What's currently on the table across
-        sessions. Reach for `read_blackboard_entry` on any that look relevant to what the user is
-        about to ask.
+      - `openBlackboardEntries`: up to 8 entries with status="open" — `[{entryId, title,
+        updatedAt, attachmentsCount, outcome?}]`. What's currently on the table across sessions.
+        Ordered by outcome tiebreak (Decision 12): `bad`-tagged first, then `good`, then
+        untagged; newer-first within each group. Reach for `read_blackboard_entry` on any that
+        look relevant to what the user is about to ask; if a row carries `outcome.verdict:
+        "bad"`, its `outcome.note` is what a prior session learned went wrong — lead with it.
       - `recentCaptures`: up to 5 shared frames, newest-first — `[{captureId, createdAt, surface}]`.
         Same shape as `get_recent_captures` minus the address (call `get_capture(captureId)` for
         the address + pixels when a specific one matters).

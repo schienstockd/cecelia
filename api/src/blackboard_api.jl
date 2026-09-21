@@ -85,6 +85,17 @@ const _BB_SEARCH_LIMIT_DEFAULT = 10
 const _BB_SEARCH_LIMIT_MAX     = 50
 const _BB_SEARCH_SNIPPET_HALF  = 40
 
+# Outcome tiebreak (PROJECT_MEMORY_PLAN Decision 12). Applied within a search bucket (title/body)
+# and inside the briefing's open-entries slice: bad beats good beats untagged on equal match
+# strength. Rationale: a `bad` verdict is a known trap a future session must SEE before proposing
+# on the same topic; leading with it is the whole point of the tag. Untagged means "no signal", so
+# it sits below any explicit verdict. Numeric so `sort` / `sortperm` can key on it directly.
+_bb_outcome_rank(verdict::AbstractString)::Int =
+    verdict == "bad"  ? 0 :
+    verdict == "good" ? 1 : 2
+_bb_outcome_rank(::Nothing)::Int = 2
+_bb_outcome_rank(o::AbstractDict)::Int = _bb_outcome_rank(String(get(o, "verdict", "")))
+
 """
     _bb_search_snippet(text, pos, needle_len)
 
@@ -463,6 +474,9 @@ function api_blackboard_search(body_bytes::Vector{UInt8})
     # the intent-shaped hits first. Newest-first within each bucket comes from the reverse-sorted
     # ids we read the dir with — `profile` sorts to the top per the DESC id ordering, which is
     # fine: a search hit is what the caller asked for; id-precedence is only a tiebreaker.
+    # Decision 12: within each bucket, `bad` > `good` > untagged (outcome tiebreak). We scan ALL
+    # matching entries first — no early stop — so a `bad`-tagged hit at a lower ID still surfaces
+    # ahead of an untagged one at a higher ID. Full scan is cheap at this store's sizes.
     ids = sort!(String[e for e in readdir(dir) if _valid_bb_entry_id(e)], rev = true)
     title_hits = Any[]; body_hits = Any[]
     for id in ids
@@ -485,7 +499,6 @@ function api_blackboard_search(body_bytes::Vector{UInt8})
             )
             entry_outcome !== nothing && (row["outcome"] = entry_outcome)
             push!(title_hits, row)
-            length(title_hits) + length(body_hits) >= limit && break
             continue
         end
         # Body scan — read entry.md and look for the needle. Skip missing/unreadable body files
@@ -510,8 +523,12 @@ function api_blackboard_search(body_bytes::Vector{UInt8})
         )
         entry_outcome !== nothing && (row["outcome"] = entry_outcome)
         push!(body_hits, row)
-        length(title_hits) + length(body_hits) >= limit && break
     end
+    # Sort each bucket by outcome rank (bad<good<untagged), stable so newer-id-first survives from
+    # the reverse-sorted ids we scanned in. `sort` in Julia is stable by default. Then vcat (titles
+    # still beat bodies as the primary key) and cap.
+    sort!(title_hits, by = r -> _bb_outcome_rank(get(r, "outcome", nothing)))
+    sort!(body_hits,  by = r -> _bb_outcome_rank(get(r, "outcome", nothing)))
     out = vcat(title_hits, body_hits)
     length(out) > limit && (out = out[1:limit])
     200, JSON3.write((; results = out))

@@ -282,14 +282,27 @@ class GuidanceTest(unittest.TestCase):
                                               "recentLabLog": [{"date": "2026-09-19",
                                                                 "author": "User",
                                                                 "summary": "old"}]}
+        # Three open entries + one resolved. Two of the open ones are untagged and one is
+        # `bad`-tagged; Decision 12 requires the `bad` one to lead the briefing slice even though
+        # it's the OLDEST by id — otherwise a future session proposes on top of a known-wrong
+        # thread. `Thread C (untagged, oldest)` comes last of the open ones per DESC id.
         c.list_blackboard_entries = lambda uid: {"entries": [
             {"entryId": "profile", "title": "Project profile", "current": 0,
              "updatedAt": "2026-09-20", "attachmentsCount": 0, "status": "open"},
-            {"entryId": "bb-20260919T000000-abcdef", "title": "Thread A",
+            {"entryId": "bb-20260919T000000-abcdef", "title": "Thread A (newest, untagged)",
              "current": 1, "updatedAt": "2026-09-19", "attachmentsCount": 0,
              "status": "open"},
-            {"entryId": "bb-20260918T000000-fedcba", "title": "Thread B (resolved)",
+            {"entryId": "bb-20260918T120000-1a2b3c", "title": "Thread B (bad-tagged, middle age)",
              "current": 1, "updatedAt": "2026-09-18", "attachmentsCount": 0,
+             "status": "open",
+             "outcome": {"verdict": "bad",
+                         "note": "wrong scan mode — cellpose diameter picked for galvo",
+                         "taggedAt": "2026-09-18T12:00:00"}},
+            {"entryId": "bb-20260918T000000-4d5e6f", "title": "Thread C (untagged, oldest open)",
+             "current": 1, "updatedAt": "2026-09-18", "attachmentsCount": 0,
+             "status": "open"},
+            {"entryId": "bb-20260917T000000-fedcba", "title": "Thread R (resolved)",
+             "current": 1, "updatedAt": "2026-09-17", "attachmentsCount": 0,
              "status": "resolved"},
         ]}
         # Profile shape matches what _ensure_profile_entry! seeds — D9 gate looks for a filled
@@ -325,9 +338,17 @@ class GuidanceTest(unittest.TestCase):
         # Open entries: only status=open surface, and the profile itself is stripped out (it has
         # its own top-level field).
         titles = [e["title"] for e in out["openBlackboardEntries"]]
-        self.assertIn("Thread A", titles)
-        self.assertNotIn("Thread B (resolved)", titles)
+        self.assertNotIn("Thread R (resolved)", titles)
         self.assertNotIn("Project profile", titles)
+        # Decision 12 tiebreak — the `bad`-tagged entry must lead, even though newer untagged
+        # entries exist. Untagged entries fall to the back in stable order.
+        self.assertEqual(titles[0], "Thread B (bad-tagged, middle age)")
+        self.assertIn("Thread A (newest, untagged)", titles)
+        self.assertIn("Thread C (untagged, oldest open)", titles)
+        # The `bad` row still carries its outcome dict downstream (Claude reads the note).
+        bad_row = out["openBlackboardEntries"][0]
+        self.assertEqual(bad_row["outcome"]["verdict"], "bad")
+        self.assertIn("galvo", bad_row["outcome"]["note"])
         # Recent captures relayed with the slim shape.
         self.assertEqual(2, len(out["recentCaptures"]))
         for c_row in out["recentCaptures"]:
@@ -378,6 +399,37 @@ class ProfileAuthoredGateTest(unittest.TestCase):
                 "## Goal\n_(what you're trying to answer)_\n\n"
                 "## Modality\nresonant intravital\n")
         self.assertFalse(server._profile_is_authored({"content": body}))
+
+
+class OutcomeRankTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Decision 12 — the rank function that keys the tiebreak in the briefing
+    slice and mirrors `_bb_outcome_rank` in `api/src/blackboard_api.jl`. Kept as its own testset
+    so a drift between the Python and Julia rank keys shows up here instead of as a mysterious
+    ordering flip in a real briefing."""
+    def test_bad_wins(self):
+        self.assertEqual(server._outcome_rank({"verdict": "bad", "note": "…"}), 0)
+    def test_good_middle(self):
+        self.assertEqual(server._outcome_rank({"verdict": "good", "note": "…"}), 1)
+    def test_untagged_last(self):
+        self.assertEqual(server._outcome_rank(None), 2)
+        self.assertEqual(server._outcome_rank({}), 2)
+    def test_string_verdict_accepted(self):
+        # Some paths (registry mirror, list-endpoint absent-when-untagged) may hand the rank
+        # a bare "good"/"bad" string rather than the full dict; both must resolve.
+        self.assertEqual(server._outcome_rank("bad"), 0)
+        self.assertEqual(server._outcome_rank("good"), 1)
+        self.assertEqual(server._outcome_rank(""), 2)
+    def test_stable_sort_between_ranks(self):
+        rows = [
+            {"id": "a", "outcome": None},
+            {"id": "b", "outcome": {"verdict": "bad"}},
+            {"id": "c", "outcome": None},
+            {"id": "d", "outcome": {"verdict": "good"}},
+            {"id": "e", "outcome": {"verdict": "bad"}},
+        ]
+        rows.sort(key=lambda r: server._outcome_rank(r.get("outcome")))
+        # bad rows first (in original order: b, e), then good (d), then untagged (a, c).
+        self.assertEqual([r["id"] for r in rows], ["b", "e", "d", "a", "c"])
 
 
 if __name__ == "__main__":
