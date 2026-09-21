@@ -32,6 +32,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
             "mark_tile", "get_landscape",   # bidir landscape overlay (PR #6, Decision 14 reframe)
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
+            "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)
             "get_object_ids",   # bidir follow-up: real cell/track ids for mark_cells / mark_tracks
             "register_push_target",   # bidir Part 5: explicit re-pair (auto-pair via middleware)
             "list_blackboard_entries", "read_blackboard_entry",   # bidir Part 4 (Blackboard) — reads
@@ -64,6 +65,129 @@ class ServerToolRegistrationTest(unittest.TestCase):
         self.assertEqual({"captureId": "cap-20260918T140000-abcdef",
                           "surface": "viewer_frame",
                           "address": {"projectUid": "NRUBxU", "imageUid": "IMG1"}}, out[1])
+
+    def test_get_capture_slims_landscape_tiles(self):
+        # A capture with a fat v2 landscape must come back with the slim tile shape: prelude
+        # (channelNames + popMap), per-tile positional channels + [popKey, count] pop pairs,
+        # dropped row/col/stats. The stored envelope stays fat — this transform happens on the
+        # tool response only. See mcp/cecelia_mcp/landscape_slim.py for the shape spec.
+        original = server._client.get_capture
+        fat_landscape = {
+            "grid": {"cols": 2, "rows": 2}, "legend": [], "schemaVersion": 2,
+            "tiles": [
+                {"id": "A1", "row": 0, "col": 0, "category": "dark",
+                 "stats": {"intensity": 0, "peak": 0, "variance": 0, "edges": 0},
+                 "channels": {"GFP": {"mean": 0.5, "snr": 12.0},
+                              "TOM": {"mean": 0.1, "snr": 3.0}},
+                 "segCount": 3,
+                 "pops": [{"path": "/live/tnaive", "name": "T naive", "count": 2}]},
+                {"id": "B1", "row": 0, "col": 1, "category": "mixed",
+                 "stats": {"intensity": 0.5, "peak": 0.9, "variance": 0.2, "edges": 0.1},
+                 "channels": {"GFP": {"mean": 0.4, "snr": 8.0}}},
+            ],
+        }
+        server._client.get_capture = lambda uid, cid: {
+            "capture": {"captureId": cid, "landscape": fat_landscape},
+            "frame": "",
+        }
+        try:
+            out = server.get_capture("NRUBxU", "cap-20260921T092735-bd47d6")
+        finally:
+            server._client.get_capture = original
+        env = out[-1]           # the envelope block sits after the (absent) Image block
+        ls = env["landscape"]
+        self.assertEqual(["GFP", "TOM"], ls["channelNames"])
+        self.assertEqual({"0": {"path": "/live/tnaive", "name": "T naive"}}, ls["popMap"])
+        t0 = ls["tiles"][0]
+        self.assertEqual("A1", t0["id"])
+        self.assertNotIn("row", t0)                     # dropped: derivable from id
+        self.assertNotIn("col", t0)
+        self.assertNotIn("stats", t0)                   # dropped: superseded by channels
+        self.assertEqual([0.5, 12.0, 0.1, 3.0], t0["channels"])  # positional [m, s, m, s]
+        self.assertEqual(3, t0["segCount"])
+        self.assertEqual([["0", 2]], t0["pops"])
+        # Tile 2 has only GFP — the prelude has both, but the tile's array only carries GFP's
+        # two numbers, positional to the tile's own channel-name order.
+        t1 = ls["tiles"][1]
+        self.assertEqual([0.4, 8.0], t1["channels"])
+        self.assertNotIn("pops", t1)                    # sparsity carries through
+
+    def test_get_capture_attaches_capture_path_when_api_sent_one(self):
+        # Local dev path — Cecelia + Claude Code on the same box. The API includes
+        # `capturePath` alongside `capture`/`frame`, and the tool threads it into the envelope
+        # block so a reader can `Read(capturePath)` for the fat form when needed.
+        original = server._client.get_capture
+        fake_path = "/home/dominik/cecelia-feijoa/projects/NRUBxU/captures/cap-x/meta.json"
+        server._client.get_capture = lambda uid, cid: {
+            "capture": {"captureId": cid, "surface": "viewer_frame"},
+            "frame": "",
+            "capturePath": fake_path,
+        }
+        try:
+            out = server.get_capture("NRUBxU", "cap-x")
+        finally:
+            server._client.get_capture = original
+        env = out[-1]
+        self.assertEqual(fake_path, env["capturePath"])
+
+    def test_get_capture_omits_capture_path_when_api_did_not_send_one(self):
+        # Cloud-VM path — the API is on a remote host with no shared filesystem, so the
+        # `capturePath` field is absent from the API response. The tool must NOT invent one;
+        # the reader should fall through to the slim landscape it already got.
+        original = server._client.get_capture
+        server._client.get_capture = lambda uid, cid: {
+            "capture": {"captureId": cid, "surface": "viewer_frame"},
+            "frame": "",
+        }
+        try:
+            out = server.get_capture("NRUBxU", "cap-x")
+        finally:
+            server._client.get_capture = original
+        env = out[-1]
+        self.assertNotIn("capturePath", env)
+
+    def test_get_capture_landscape_tiles_filters_by_id(self):
+        # The drill-down tool returns a filtered subset in the same slim shape.
+        original = server._client.get_capture
+        server._client.get_capture = lambda uid, cid: {
+            "capture": {"captureId": cid, "landscape": {
+                "grid": {"cols": 2, "rows": 2}, "legend": [], "schemaVersion": 2,
+                "tiles": [
+                    {"id": "A1", "row": 0, "col": 0, "category": "dark", "segCount": 3},
+                    {"id": "B1", "row": 0, "col": 1, "category": "mixed", "segCount": 5},
+                ],
+            }}, "frame": "",
+        }
+        try:
+            out = server.get_capture_landscape_tiles(
+                "NRUBxU", "cap-20260921T092735-bd47d6", tile_ids=["B1"])
+        finally:
+            server._client.get_capture = original
+        self.assertEqual(1, len(out["landscape"]["tiles"]))
+        self.assertEqual("B1", out["landscape"]["tiles"][0]["id"])
+
+    def test_get_capture_landscape_tiles_filters_by_bbox(self):
+        # bbox is frame-relative 0..1 coords; the tool converts to grid col/row and includes any
+        # intersecting tile. Left half of a 2×2 grid → col 0 only → A1 + A2.
+        original = server._client.get_capture
+        server._client.get_capture = lambda uid, cid: {
+            "capture": {"captureId": cid, "landscape": {
+                "grid": {"cols": 2, "rows": 2}, "legend": [], "schemaVersion": 2,
+                "tiles": [
+                    {"id": "A1", "row": 0, "col": 0, "category": "dark"},
+                    {"id": "B1", "row": 0, "col": 1, "category": "mixed"},
+                    {"id": "A2", "row": 1, "col": 0, "category": "dark"},
+                    {"id": "B2", "row": 1, "col": 1, "category": "mixed"},
+                ],
+            }}, "frame": "",
+        }
+        try:
+            out = server.get_capture_landscape_tiles(
+                "NRUBxU", "cap-20260921T092735-bd47d6", bbox=[0.0, 0.0, 0.45, 1.0])
+        finally:
+            server._client.get_capture = original
+        ids = sorted(t["id"] for t in out["landscape"]["tiles"])
+        self.assertEqual(["A1", "A2"], ids)
 
     def test_no_tool_can_start_work(self):
         # Claude designs, the user runs. No tool may launch a chain or submit a task — enforced by the

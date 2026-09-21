@@ -338,9 +338,14 @@ end
 """
     GET /api/viewer/capture?projectUid=…&captureId=…
 
-Reply: `{ capture: <envelope>, frame: "<data URL>" }`. The frame is inlined as a data URL because
-the MCP client returns it as a single-shot image content block; a separate binary fetch would
-double the round-trip for no gain.
+Reply: `{ capture: <envelope>, frame: "<data URL>", capturePath: "<abs path>" }`. The frame
+is inlined as a data URL because the MCP client returns it as a single-shot image content
+block; a separate binary fetch would double the round-trip for no gain. `capturePath` is the
+absolute filesystem path to this capture's `meta.json` — the MCP tool exposes it so a
+LOCAL Claude session can read the full fat envelope via `Read(capturePath)` when the slim
+tool response isn't enough (a pathologically dense landscape). Absent for cloud-VM deployments
+would be nice, but detecting "the client shares this filesystem" isn't reliable here, so the
+path is always sent and a reader who can't reach it just falls back to the slim payload.
 """
 function api_viewer_capture_get(req::HTTP.Request)
     query = HTTP.queryparams(HTTP.URI(req.target))
@@ -364,7 +369,7 @@ function api_viewer_capture_get(req::HTTP.Request)
     else
         ""
     end
-    200, JSON3.write((; capture = envelope, frame = frame))
+    200, JSON3.write((; capture = envelope, frame = frame, capturePath = meta_path))
 end
 
 """
