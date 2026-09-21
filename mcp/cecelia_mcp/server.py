@@ -1286,16 +1286,19 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     use `get_capture_landscape_tiles(project_uid, capture_id, tile_ids=[...])` or `bbox=[x1,y1,x2,y2]`
     to fetch just the tiles under a marked region, still in the same slim shape.
 
-    ESCAPE HATCH — `capturePath`. When Cecelia runs on the same machine as your Claude Code
-    session (the local dev setup), the envelope block also carries `capturePath`: the absolute
-    filesystem path to the FAT `meta.json` on disk. Reach for `Read(capturePath)` when you
-    genuinely need what the slim transform dropped (the raw per-tile `stats`, or the fat
-    dict-of-dict channels shape) — for example when reasoning about the frontend's category
-    clustering itself. Silently absent on cloud-VM deployments (there's no shared filesystem
-    with your session), so a caller who tries `Read(capturePath)` gracefully falls back to the
-    slim payload the tool already returned. Don't use `capturePath` as the DEFAULT path — the
-    slim form is cheaper and sufficient for every reader task except the frontend-audit case
-    just named.
+    ESCAPE HATCH — `capturePath`. When Cecelia is loopback-bound (the local dev default), the
+    envelope block also carries `capturePath`: the absolute filesystem path to the FAT
+    `meta.json` on disk. Reach for `Read(capturePath)` when you genuinely need what the slim
+    transform dropped (the raw per-tile `stats`, or the fat dict-of-dict channels shape) —
+    for example when reasoning about the frontend's category clustering itself.
+
+    The field is ABSENT (not just unreachable) when Cecelia is network-exposed
+    (`CECELIA_HOST=0.0.0.0`, cloud-VM, remote workstation) — a remote caller can't reach the
+    path anyway, so shipping one would be a foot-gun. When it's absent you already have
+    everything you're going to get from `get_capture`; if the slim form isn't enough, use
+    `get_capture_landscape_tiles` for on-demand tile subsets. Don't use `capturePath` as the
+    DEFAULT path — the slim form is cheaper and sufficient for every reader task except the
+    frontend-audit case just named.
     """
     envelope = _client.get_capture(project_uid, capture_id)
     frame_url = envelope.get("frame") or ""
