@@ -4,8 +4,9 @@
 #   • status field + reserved `profile` entry           (PROJECT_MEMORY_PLAN P1 — Decisions 2, 3)
 #   • substring search over titles + bodies             (PROJECT_MEMORY_PLAN P2 — Decision 4)
 #   • outcome tag (good/bad + required note)            (PROJECT_MEMORY_PLAN P4 — Decision 11)
+#   • outcome tiebreak on search ordering               (PROJECT_MEMORY_PLAN P4 — Decision 12)
 #
-# All four sit here so a future blackboard change touches ONE suite file, not four. Extracted so
+# All five sit here so a future blackboard change touches ONE suite file, not five. Extracted so
 # runtests.jl contains only include lines + section-header comments — same shape as app/test/suite/*.jl.
 
 @testset "API: blackboard CRUD + versioning + attachments (BIDIR Part 4)" begin
@@ -564,6 +565,67 @@ end
         @test st_leg == 200
         e_leg = JSON3.read(body_leg).entry
         @test !haskey(e_leg, :outcome)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+# ── Outcome tiebreak on search ordering (PROJECT_MEMORY_PLAN P4 — Decision 12) ─────────────────
+# Within each search bucket (title/body), `bad` beats `good` beats untagged on equal match
+# strength. Applied AFTER full-scan collection (not by early-stopping), so a `bad`-tagged hit
+# later in the ID-DESC scan still surfaces above earlier untagged hits within the same bucket.
+@testset "API: blackboard search outcome tiebreak (MEMORY P4 Decision 12)" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTBBP4RB"; mkpath(joinpath(tmp, uid))
+        w(path, b) = _post(path, b)
+
+        # Three entries all matching the SAME title needle. Newest first by id (bb-…) is:
+        #   eid_new (untagged) > eid_mid (bad) > eid_old (good).
+        # Pre-tiebreak order (by id DESC): new, mid, old → all title-bucket.
+        # Post-tiebreak: bad (mid) > good (old) > untagged (new).
+        _, b_new = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Segmentation strategy for the bright cohort",
+            "content"=>"newest, untagged"))
+        eid_new = String(JSON3.read(b_new).entryId)
+        sleep(0.01)
+        _, b_mid = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Segmentation strategy — first attempt",
+            "content"=>"middle, will be bad"))
+        eid_mid = String(JSON3.read(b_mid).entryId)
+        sleep(0.01)
+        _, b_old = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"Segmentation strategy — reference",
+            "content"=>"oldest, will be good"))
+        eid_old = String(JSON3.read(b_old).entryId)
+        # Yes the ID ordering above is oldest→newest by TIMESTAMP. In DESC sort by id, eid_old is
+        # actually the LAST (its timestamp is highest since it was created last). Correct: eid_old
+        # > eid_mid > eid_new in DESC. So pre-tiebreak: old, mid, new. Post-tiebreak (Decision 12):
+        # bad (mid) > good (old) > untagged (new).
+
+        # Tag the two.
+        w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid_mid,
+            "verdict"=>"bad",  "note"=>"tried galvo-tuned diameter on resonant data — wrong"))
+        w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid_old,
+            "verdict"=>"good", "note"=>"held up on the bright cohort"))
+
+        _, body = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"Segmentation strategy"))
+        results = JSON3.read(body).results
+        ids_in_order = [String(r.entryId) for r in results]
+        # bad (eid_mid) first, then good (eid_old), then untagged (eid_new) — all in title bucket.
+        @test ids_in_order == [eid_mid, eid_old, eid_new]
+
+        # And the tiebreak does NOT cross bucket boundaries: an untagged TITLE hit still beats a
+        # bad-tagged BODY hit. "cohort" appears in eid_new's title (untagged) and in eid_mid's body
+        # (bad); title bucket wins the primary key.
+        _, b_bx = w(api_blackboard_search, Dict("projectUid"=>uid, "query"=>"cohort"))
+        rows = JSON3.read(b_bx).results
+        # eid_new is a title hit for "cohort"; both eid_mid and eid_old would only match body if at
+        # all. First result must be a title match regardless of outcome.
+        @test String(rows[1].matchType) == "title"
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
