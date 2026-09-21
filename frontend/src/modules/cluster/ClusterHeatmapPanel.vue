@@ -19,6 +19,7 @@ import CcToggle from '../../components/CcToggle.vue'
 import { defaultVis, plotDataToCsv, type BuildOpts, type VisProps } from '../../plots/plot'
 import { downloadDataUrl, downloadBlob } from '../../plots/export'
 import type { PlotDataResponse } from '../../plots/types'
+import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { buildClusterHeatmapBody } from '../../utils/clusterHeatmapBody'
 
 const props = defineProps<{
@@ -36,7 +37,10 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
-const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
+const plotRef = useTemplateRef<{
+  toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null>
+  axisRect(): FrameRect | null
+}>('plotRef')
 
 // export the shown heatmap: CSV (the aggregated cells) or PNG/SVG (the rendered chart) — like SummaryPanel
 function exportAs(kind: string) {
@@ -130,7 +134,10 @@ async function exportSvg(): Promise<string | null> {
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
 function getCsv(): string | null { return heatmap.value ? plotDataToCsv(heatmap.value) : null }
-defineExpose({ exportImage, getCsv, exportSvg })
+// Point-out Frame — the padded axis rect from PlotChart (Observable Plot's `scale('x')/'y'` range),
+// NOT the panel body. A 0..1 against the body would land on the axis-label / legend gutter.
+const heatmapFrame: Frame = rectFrame(() => plotRef.value?.axisRect?.() ?? null)
+defineExpose({ exportImage, getCsv, exportSvg, getFrame: (): Frame => heatmapFrame })
 </script>
 
 <template>

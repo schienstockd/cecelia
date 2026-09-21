@@ -22,6 +22,8 @@ import { DEFAULT_VIS, paletteRange, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
+import { clientAxisRectOf } from '../../plots/plotAxisRect'
+import { rectFrame, type Frame } from '../../plots/frame'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -169,7 +171,15 @@ async function exportImage(): Promise<string | null> {
   return url
 }
 function getCsv(): string | null { return rows.value.length ? rowsToCsv(rows.value) : null }
-defineExpose({ exportImage, getCsv })
+// Point-out Frame — the padded axis rect from Observable Plot's `scale('x')/'y'` range on the
+// rendered node, NOT the panel body. Same reason ClusterHeatmapPanel does this: a 0..1 against the
+// panel body would land in the axis-label / legend gutter.
+const hmmFrame: Frame = rectFrame(() => {
+  const n = node as (Element & { scale?: (name: string) => { range?: readonly number[] } | null }) | null
+  if (!n || typeof n.scale !== 'function') return null
+  return clientAxisRectOf(n, n.scale('x'), n.scale('y'))
+})
+defineExpose({ exportImage, getCsv, getFrame: (): Frame => hmmFrame })
 </script>
 
 <template>

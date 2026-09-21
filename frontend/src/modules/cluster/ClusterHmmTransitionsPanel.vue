@@ -22,6 +22,8 @@ import { DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import { applyPlotTheme, plotTheme, titleOverlay } from '../../plots/overlays'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
+import { clientAxisRectOf } from '../../plots/plotAxisRect'
+import { rectFrame, type Frame } from '../../plots/frame'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -176,7 +178,16 @@ async function exportImage(): Promise<string | null> {
   return url
 }
 function getCsv(): string | null { return rows.value.length ? rowsToCsv(rows.value) : null }
-defineExpose({ exportImage, getCsv })
+// Point-out Frame — same axis-rect extraction as ClusterHmmStatesPanel / ClusterHeatmapPanel.
+// This panel is a faceted dot grid, but the outer scale('x')/'y') still expose the OUTER plot
+// area (facets subdivide it internally). Per-facet subFrames would be a follow-up if a consumer
+// needs per-facet addressing.
+const hmmFrame: Frame = rectFrame(() => {
+  const n = node as (Element & { scale?: (name: string) => { range?: readonly number[] } | null }) | null
+  if (!n || typeof n.scale !== 'function') return null
+  return clientAxisRectOf(n, n.scale('x'), n.scale('y'))
+})
+defineExpose({ exportImage, getCsv, getFrame: (): Frame => hmmFrame })
 </script>
 
 <template>
