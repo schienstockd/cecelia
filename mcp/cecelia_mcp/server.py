@@ -1240,6 +1240,17 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     If a landscape is still too big to fit — a 64×64 grid with dense pops on a heavy image —
     use `get_capture_landscape_tiles(project_uid, capture_id, tile_ids=[...])` or `bbox=[x1,y1,x2,y2]`
     to fetch just the tiles under a marked region, still in the same slim shape.
+
+    ESCAPE HATCH — `capturePath`. When Cecelia runs on the same machine as your Claude Code
+    session (the local dev setup), the envelope block also carries `capturePath`: the absolute
+    filesystem path to the FAT `meta.json` on disk. Reach for `Read(capturePath)` when you
+    genuinely need what the slim transform dropped (the raw per-tile `stats`, or the fat
+    dict-of-dict channels shape) — for example when reasoning about the frontend's category
+    clustering itself. Silently absent on cloud-VM deployments (there's no shared filesystem
+    with your session), so a caller who tries `Read(capturePath)` gracefully falls back to the
+    slim payload the tool already returned. Don't use `capturePath` as the DEFAULT path — the
+    slim form is cheaper and sufficient for every reader task except the frontend-audit case
+    just named.
     """
     envelope = _client.get_capture(project_uid, capture_id)
     frame_url = envelope.get("frame") or ""
@@ -1256,7 +1267,18 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     # field a reader actually needs (see landscape_slim.slim_landscape_for_mcp for the
     # shape). Fat form still lives on disk and in Kiwi.
     capture = envelope.get("capture", {})
-    blocks.append(slim_landscape_for_mcp(capture) if isinstance(capture, dict) else capture)
+    slim = slim_landscape_for_mcp(capture) if isinstance(capture, dict) else capture
+    # Escape hatch: attach the absolute path to the FAT meta.json when Cecelia sent one, so a
+    # LOCAL Claude session (Cecelia + Claude Code on the same machine) can `Read(capturePath)`
+    # to recover what the slim transform dropped. Absent on cloud-VM deployments — a reader
+    # who tries `Read` on a path from a remote host gets a not-found error and falls back to
+    # the slim payload already returned. See the tool docstring's ESCAPE HATCH note.
+    if isinstance(slim, dict):
+        path = envelope.get("capturePath")
+        if isinstance(path, str) and path:
+            slim = dict(slim)
+            slim["capturePath"] = path
+    blocks.append(slim)
     return blocks
 
 
