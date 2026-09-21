@@ -222,6 +222,18 @@ restate an existing one. Not on every session — only when there's a specific t
 zero-result search means the topic is genuinely new; a hit means read the full entry before \
 proposing on top of it.
 
+ON GUARDRAILS. The briefing's `guardrails` field is derived, not authored — a small structured \
+digest of what has recurrently gone wrong on this project. Each entry passes an optional \
+`image_uid` at create time; the Blackboard writer snapshots a coarse fingerprint of that image's \
+context (modality, tissue, pipeline stage, stain classes, channel count) into the entry's \
+metadata. When ≥ 3 `bad`-tagged entries share a fingerprint bucket, that bucket surfaces here \
+as `{bucket, fingerprint, count, entries: [{entryId, title, note, taggedAt}]}`. Each row's `note` \
+is the reason the past attempt didn't hold up — READ THE NOTES before proposing on that kind of \
+task. Empty when nothing has recurred (a fresh or well-behaved project reads clean); non-empty \
+means the same shape of failure has been recorded 3+ times, so the next proposal on that shape \
+should either name why this time is different or take a different approach. Intra-project only — \
+a `bad`-tagged fingerprint on a different project doesn't fire here.
+
 ON PUSH PAIRING. Every tool that names a `project_uid` auto-pairs this session with that project \
 on its first call, so a fresh session's first check registers itself for push delivery without \
 the user typing anything — silent, no confirmation, cached in the MCP process. Reach for \
@@ -243,17 +255,21 @@ numbers for whatever actually ran (get_task_history first, then get_cohort_qc fo
 leave `value_name` unset so you get every label set the fun banked. Do not call a run an outlier on \
 a hunch.
 
-HOW TO OPEN. Read the briefing's `profile` FIRST, then scan `openBlackboardEntries`, then use \
-`flagged` to note what needs attention. The profile is the durable "what is this project" record \
-(subject, cohort, goal, key channels) — don't rediscover context it already carries. \
-`openBlackboardEntries` is what's currently on the table across sessions — a topic listed there is \
-where the last session left off; reach for `read_blackboard_entry` on any that look relevant to \
-what the user is about to ask. If an entry in that list carries an `outcome` field with \
-`verdict: "bad"`, it is at the TOP for a reason (Decision 12 tiebreak — `bad` beats `good` beats \
-untagged); lead with it — the note explains what went wrong last time and stops you re-proposing \
-the same trap. `recentCaptures` are the last few frames the user has shared with you — if one \
-was pushed to you or was just discussed, name it. The lab-log is NOT in the default briefing \
-(Decision 5); call `read_lab_log` if a chronological question comes up, not reflexively.
+HOW TO OPEN. Read the briefing's `profile` FIRST, then `guardrails` (if any), then scan \
+`openBlackboardEntries`, then use `flagged` to note what needs attention. The profile is the \
+durable "what is this project" record (subject, cohort, goal, key channels) — don't rediscover \
+context it already carries. `guardrails` is a small derived digest: recurring `bad`-tagged \
+failure clusters in this project (≥ 3 entries sharing a fingerprint bucket). Read the notes \
+BEFORE you propose on that kind of task — the whole point is to stop the same trap being \
+suggested a fourth time. Empty means nothing has recurred yet; non-empty means slow down and \
+read. `openBlackboardEntries` is what's currently on the table across sessions — a topic listed \
+there is where the last session left off; reach for `read_blackboard_entry` on any that look \
+relevant to what the user is about to ask. If an entry in that list carries an `outcome` field \
+with `verdict: "bad"`, it is at the TOP for a reason (Decision 12 tiebreak — `bad` beats `good` \
+beats untagged); lead with it — the note explains what went wrong last time and stops you \
+re-proposing the same trap. `recentCaptures` are the last few frames the user has shared with \
+you — if one was pushed to you or was just discussed, name it. The lab-log is NOT in the default \
+briefing (Decision 5); call `read_lab_log` if a chronological question comes up, not reflexively.
 
 WHEN `newProject: true`. The profile has no signal past its seeded placeholder — Subject and Goal \
 are the two sections the briefing enforces (Decision 9). Do NOT propose analyses, chains, or \

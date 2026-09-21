@@ -438,7 +438,7 @@ class StainClassifierTest(unittest.TestCase):
     """PROJECT_MEMORY_PLAN Phase 5.1 — channel-name → stain-class classifier used by the entry
     fingerprint. Pinned so a class rename or a new pattern surfaces here rather than as a silent
     change in what gets banked into `meta.fingerprint.stain_classes`. The full contract lives in
-    `docs/inventory/stain_classes.md`; update both in the same change."""
+    `docs/inventory/fingerprint_extractors.md`; update both in the same change."""
 
     def test_membrane_prefix(self):
         self.assertEqual(server._classify_stain("mem-TOM"), "membrane")
@@ -471,48 +471,332 @@ class StainClassifierTest(unittest.TestCase):
         self.assertEqual(server._classify_stain(None), "unknown")
 
 
-class InferFingerprintTest(unittest.TestCase):
-    """PROJECT_MEMORY_PLAN Phase 5.1 — `_infer_fingerprint` snapshots the active image's context
-    into the schema banked with a new Blackboard entry. Guards checked here: unresolvable image
-    ⇒ None (best-effort, entry still creates), stain classes de-duped + sorted, version stamped."""
+class ModalityClassifierTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Phase 5.2 — filename → modality classifier used by v2 fingerprints.
+    Pinned so a new lab's convention (or a regex regression) surfaces here rather than as a
+    silent shift in what gets banked. The human contract is
+    `docs/inventory/fingerprint_extractors.md`."""
 
-    def _patch_client(self, image_meta):
-        # `_infer_fingerprint` reads through `_client.get_image_meta`; the tests patch that call so
-        # they don't need a live backend. Keeps the classifier + shape assertions pure logic.
-        return unittest.mock.patch.object(
+    def test_resonant_convention_hits_2p(self):
+        # Ailsa's `-res_` convention — the specific marker P5.0 audit chose.
+        self.assertEqual(server._classify_modality(
+            {"oriPath": "/data/M2b-MERTK_KAT-SWHL-GFP-Tom-res_0001.tif"}), "2p")
+
+    def test_direct_two_photon_callouts(self):
+        for path in ("cell_2p.ome.tif", "sample_two-photon.tif", "MULTIPHOTON_stack.tif"):
+            self.assertEqual(server._classify_modality({"oriPath": path}), "2p",
+                             msg=f"expected 2p for {path}")
+
+    def test_confocal(self):
+        self.assertEqual(server._classify_modality({"oriPath": "confocal_stack.tif"}), "confocal")
+        self.assertEqual(server._classify_modality({"oriPath": "cell_conf_01.tif"}), "confocal")
+
+    def test_spinning_disk_and_lightsheet(self):
+        self.assertEqual(server._classify_modality({"oriPath": "s-CSU-001.tif"}), "spinning_disk")
+        self.assertEqual(server._classify_modality({"oriPath": "spinning-disk_007.tif"}),
+                         "spinning_disk")
+        self.assertEqual(server._classify_modality({"oriPath": "lightsheet_e11.tif"}), "lightsheet")
+        self.assertEqual(server._classify_modality({"oriPath": "spim-sample.tif"}), "lightsheet")
+
+    def test_widefield(self):
+        self.assertEqual(server._classify_modality({"oriPath": "sample_widefield.tif"}), "widefield")
+
+    def test_unknown_when_nothing_matches(self):
+        # A filename with no modality tokens returns "unknown" — retrieval treats this as
+        # "no signal on this dimension" and the fingerprint OMITS the modality field.
+        self.assertEqual(server._classify_modality({"oriPath": "sample_001.tif"}), "unknown")
+
+    def test_fallback_to_name(self):
+        # oriPath missing → fall back to the display name. This is what happens on a legacy
+        # image without an oriPath recorded (never blocks the fingerprint).
+        self.assertEqual(server._classify_modality({"oriPath": None, "name": "M2b-res_0001"}),
+                         "2p")
+
+
+class TissueContextTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Phase 5.2 — profile-prose → tissue-context parse. Reads the profile's
+    Subject section only; the seeded placeholder counts as no content (matches
+    `_profile_section_has_content` discipline)."""
+
+    def _profile(self, subject: str) -> str:
+        return f"# Project profile\n\n## Subject\n{subject}\n\n## Goal\nsomething\n"
+
+    def test_germinal_centre_both_spellings(self):
+        self.assertEqual(server._infer_tissue_context(
+            self._profile("intravital 2P of germinal centres in MERTK mice")), "germinal_centre")
+        self.assertEqual(server._infer_tissue_context(
+            self._profile("germinal center reaction, GC macrophages")), "germinal_centre")
+
+    def test_common_tissues(self):
+        for subject, expected in [
+            ("Ailsa's spleen flowcyto sort", "spleen"),
+            ("bone marrow explants",         "bone_marrow"),
+            ("kidney intravital",            "kidney"),
+            ("lung alveolar imaging",        "lung"),
+            ("brain cortex slice",           "brain"),
+            ("gut intestinal Peyer's patch", "gut"),
+            ("skin dermis whole mount",      "skin"),
+            ("lymph node draining",          "lymph_node"),
+        ]:
+            self.assertEqual(server._infer_tissue_context(self._profile(subject)), expected,
+                             msg=f"subject={subject!r}")
+
+    def test_unauthored_profile_is_none(self):
+        # Seeded placeholder text counts as no content — return None so the fingerprint field is
+        # left absent (a fresh project isn't wrongly stamped as "unknown tissue").
+        placeholder = ("# Project profile\n\n## Subject\n"
+                       "_(a short description of what this data is)_\n\n## Goal\n"
+                       "_(what you're trying to answer)_\n")
+        self.assertIsNone(server._infer_tissue_context(placeholder))
+        self.assertIsNone(server._infer_tissue_context(""))
+        self.assertIsNone(server._infer_tissue_context(None))
+
+    def test_authored_but_off_vocab_is_unknown(self):
+        # A subject that IS filled in but doesn't mention a vocabulary tissue lands as "unknown"
+        # — signal, not error. Distinguished from an unauthored profile which returns None.
+        self.assertEqual(server._infer_tissue_context(
+            self._profile("Ailsa's very-specific niche experiment")), "unknown")
+
+
+class InferFingerprintTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Phase 5.1/5.2 — `_infer_fingerprint` snapshots the active image's
+    context into the schema banked with a new Blackboard entry. Guards checked here: unresolvable
+    image ⇒ None (best-effort, entry still creates), stain classes de-duped + sorted, modality +
+    tissue absent when they resolve to "unknown", version stamped."""
+
+    def _patch(self, image_meta, profile_content: str | None = ""):
+        # `_infer_fingerprint` reads through `_client.get_image_meta` AND (v2)
+        # `_client.read_blackboard_entry` for the profile parse. Both are stubbed here so the
+        # tests stay pure-logic.
+        image_patch = unittest.mock.patch.object(
             server._client, "get_image_meta",
             return_value={"image": image_meta})
+        if profile_content is None:
+            profile_patch = unittest.mock.patch.object(
+                server._client, "read_blackboard_entry",
+                side_effect=RuntimeError("no profile"))
+        else:
+            profile_patch = unittest.mock.patch.object(
+                server._client, "read_blackboard_entry",
+                return_value={"entry": {"content": profile_content}})
+        return image_patch, profile_patch
 
     def test_no_image_uid_is_none(self):
         self.assertIsNone(server._infer_fingerprint("proj", None))
         self.assertIsNone(server._infer_fingerprint("proj", ""))
 
-    def test_full_snapshot(self):
-        with self._patch_client({
+    def test_full_snapshot_v2(self):
+        image_patch, profile_patch = self._patch({
             "sizeC":           4,
             "activeValueName": "denoised",
             "channelNames":    ["mem-TOM", "nuc-GFP", "CD169-Kat", "unknown-probe"],
-        }):
+            "oriPath":         "/data/M2b-MERTK_KAT-SWHL-GFP-Tom-res_0001.tif",
+        }, profile_content=(
+            "# Project profile\n\n## Subject\n"
+            "intravital 2P of germinal centres in MERTK mice\n\n## Goal\nx\n"))
+        with image_patch, profile_patch:
             fp = server._infer_fingerprint("proj", "img1")
-        self.assertIsNotNone(fp)
         self.assertEqual(fp["v"], server._BB_FINGERPRINT_VERSION)
         self.assertEqual(fp["channel_count"], 4)
         self.assertEqual(fp["pipeline_stage"], "denoised")
-        # De-duped + sorted — a fingerprint is a KEY, so order matters for a stable string form.
         self.assertEqual(fp["stain_classes"],
                          ["macrophage_or_marker", "membrane", "nucleus", "unknown"])
+        # v2 fields — inferred from oriPath + profile Subject
+        self.assertEqual(fp["modality"], "2p")
+        self.assertEqual(fp["tissue_context"], "germinal_centre")
 
-    def test_missing_fields_pass_through(self):
-        # Image with no channel names / no sizeC / no active value returns a fingerprint carrying
-        # just the version — the writer still records the intent without inventing values.
-        with self._patch_client({"sizeC": None, "activeValueName": "", "channelNames": []}):
+    def test_modality_and_tissue_absent_when_unknown(self):
+        # A filename with no modality tokens AND a profile with no vocab tissue → both v2 fields
+        # OMITTED from the fingerprint (retrieval reads absence as "no signal on this dimension",
+        # NOT as a bucket key "unknown|unknown|…").
+        image_patch, profile_patch = self._patch({
+            "sizeC": 2, "activeValueName": "default",
+            "channelNames": ["c1", "c2"],
+            "oriPath": "/data/sample_001.tif",
+        }, profile_content="# Project profile\n\n## Subject\n_(a placeholder)_\n")
+        with image_patch, profile_patch:
+            fp = server._infer_fingerprint("proj", "img1")
+        self.assertNotIn("modality", fp)
+        self.assertNotIn("tissue_context", fp)
+
+    def test_missing_image_fields_pass_through(self):
+        image_patch, profile_patch = self._patch({
+            "sizeC": None, "activeValueName": "", "channelNames": [], "oriPath": "",
+        }, profile_content="")
+        with image_patch, profile_patch:
             fp = server._infer_fingerprint("proj", "img1")
         self.assertEqual(fp, {"v": server._BB_FINGERPRINT_VERSION})
+
+    def test_profile_read_failure_does_not_break_fingerprint(self):
+        # Profile fetch throws → tissue absent, other fields still populated. Best-effort: the
+        # entry still creates with the image-derived context.
+        image_patch, profile_patch = self._patch({
+            "sizeC": 4, "activeValueName": "denoised",
+            "channelNames": ["mem-TOM"],
+            "oriPath": "res_stack.tif",
+        }, profile_content=None)
+        with image_patch, profile_patch:
+            fp = server._infer_fingerprint("proj", "img1")
+        self.assertEqual(fp["modality"], "2p")
+        self.assertNotIn("tissue_context", fp)
 
     def test_backend_failure_is_none(self):
         with unittest.mock.patch.object(server._client, "get_image_meta",
                                          side_effect=RuntimeError("backend down")):
             self.assertIsNone(server._infer_fingerprint("proj", "img1"))
+
+
+class FingerprintBucketKeyTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Phase 5.2 — canonical bucket key. Two fingerprints share a bucket iff
+    every dimension we key on matches. Missing fields on either side become "*", so a v1 entry
+    (no modality) buckets with a v2 entry whose modality resolved to "unknown"."""
+
+    def test_same_fingerprint_same_key(self):
+        fp = {"v": 2, "channel_count": 4, "stain_classes": ["membrane", "nucleus"],
+              "pipeline_stage": "denoised", "modality": "2p", "tissue_context": "germinal_centre"}
+        self.assertEqual(server._fingerprint_bucket_key(fp),
+                         server._fingerprint_bucket_key(dict(fp)))
+
+    def test_stain_class_order_matters_for_the_key(self):
+        # The stain_classes field is stored SORTED by _infer_fingerprint, so a bucket-key mismatch
+        # from a reversed list means a bug on the writer side. Pinned so a future ordering change
+        # surfaces here.
+        fp_sorted   = {"v": 2, "stain_classes": ["membrane", "nucleus"]}
+        fp_reversed = {"v": 2, "stain_classes": ["nucleus", "membrane"]}
+        self.assertNotEqual(server._fingerprint_bucket_key(fp_sorted),
+                            server._fingerprint_bucket_key(fp_reversed))
+
+    def test_v1_and_v2_unknown_fall_into_same_bucket(self):
+        # A v1 entry has no `modality` field; a v2 entry that resolved to "unknown" ALSO has no
+        # modality field (dropped by _infer_fingerprint). Both should bucket together — the
+        # retrieval-side benefit of "unknown = absent".
+        v1 = {"v": 1, "channel_count": 4, "stain_classes": ["membrane"],
+              "pipeline_stage": "denoised"}
+        v2 = {"v": 2, "channel_count": 4, "stain_classes": ["membrane"],
+              "pipeline_stage": "denoised"}
+        self.assertEqual(server._fingerprint_bucket_key(v1),
+                         server._fingerprint_bucket_key(v2))
+
+    def test_different_pipeline_stage_different_bucket(self):
+        # The core invariant: same context but different pipeline stage = different failure mode.
+        fp_a = {"v": 2, "pipeline_stage": "denoised"}
+        fp_b = {"v": 2, "pipeline_stage": "flowTom"}
+        self.assertNotEqual(server._fingerprint_bucket_key(fp_a),
+                            server._fingerprint_bucket_key(fp_b))
+
+
+class MineGuardrailsTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Phase 5.2 — group bad-tagged entries by fingerprint bucket; only
+    clusters at ≥ N=3 members surface. Below-threshold buckets stay silent so the briefing
+    doesn't cry wolf on a small corpus."""
+
+    def _entry(self, entry_id: str, verdict: str | None, fp: dict | None,
+               note: str = "why", tagged_at: str = "2026-09-21T10:00:00") -> dict:
+        e = {"entryId": entry_id, "title": entry_id}
+        if verdict is not None:
+            e["outcome"] = {"verdict": verdict, "note": note, "taggedAt": tagged_at}
+        if fp is not None:
+            e["fingerprint"] = fp
+        return e
+
+    def test_empty_corpus_no_guardrails(self):
+        self.assertEqual(server._mine_guardrails([]), [])
+
+    def test_below_threshold_is_silent(self):
+        fp = {"v": 2, "channel_count": 4, "pipeline_stage": "flowTom"}
+        entries = [
+            self._entry("bb-1", "bad", fp),
+            self._entry("bb-2", "bad", fp),
+        ]
+        # 2 < 3 → silent. The plan's D5 says "one is coincidence, two is a hint, three is a
+        # pattern"; below-threshold clusters stay off the briefing.
+        self.assertEqual(server._mine_guardrails(entries), [])
+
+    def test_at_threshold_surfaces(self):
+        fp = {"v": 2, "channel_count": 4, "pipeline_stage": "flowTom",
+              "stain_classes": ["membrane", "nucleus"], "modality": "2p"}
+        entries = [
+            self._entry("bb-1", "bad", fp, note="cellpose diameter too big"),
+            self._entry("bb-2", "bad", fp, note="cellpose diameter too small"),
+            self._entry("bb-3", "bad", fp, note="split failed on merged objects"),
+        ]
+        out = server._mine_guardrails(entries)
+        self.assertEqual(len(out), 1)
+        cluster = out[0]
+        self.assertEqual(cluster["count"], 3)
+        self.assertEqual(cluster["fingerprint"], fp)
+        self.assertEqual({e["entryId"] for e in cluster["entries"]}, {"bb-1", "bb-2", "bb-3"})
+
+    def test_good_and_untagged_dont_count(self):
+        # Guardrails are the failure surface. `good`-tagged and untagged entries share the same
+        # bucket key but must NOT contribute to the threshold — otherwise a well-behaved topic
+        # would fire a spurious guardrail.
+        fp = {"v": 2, "pipeline_stage": "flowTom"}
+        entries = [
+            self._entry("bb-1", "bad",  fp),
+            self._entry("bb-2", "good", fp),
+            self._entry("bb-3", None,   fp),
+        ]
+        self.assertEqual(server._mine_guardrails(entries), [])
+
+    def test_entries_without_fingerprint_ignored(self):
+        # Legacy pre-P5.1 (or entries created without image_uid) have no fingerprint. Skip them —
+        # nothing to bucket against; a note that isn't keyable can't be a guardrail.
+        entries = [
+            self._entry("bb-1", "bad", None),
+            self._entry("bb-2", "bad", None),
+            self._entry("bb-3", "bad", None),
+        ]
+        self.assertEqual(server._mine_guardrails(entries), [])
+
+    def test_different_buckets_reported_separately(self):
+        fp_a = {"v": 2, "pipeline_stage": "flowTom", "channel_count": 4}
+        fp_b = {"v": 2, "pipeline_stage": "denoised", "channel_count": 4}
+        entries = [
+            self._entry(f"bb-a{i}", "bad", fp_a) for i in range(3)
+        ] + [
+            self._entry(f"bb-b{i}", "bad", fp_b) for i in range(3)
+        ]
+        out = server._mine_guardrails(entries)
+        self.assertEqual(len(out), 2)
+        # Both clusters at threshold; each carries its own fingerprint representative.
+        stages = {c["fingerprint"]["pipeline_stage"] for c in out}
+        self.assertEqual(stages, {"flowTom", "denoised"})
+
+    def test_newest_first_within_cluster(self):
+        fp = {"v": 2, "pipeline_stage": "flowTom"}
+        entries = [
+            self._entry("bb-old", "bad", fp, tagged_at="2026-09-01T10:00:00"),
+            self._entry("bb-mid", "bad", fp, tagged_at="2026-09-10T10:00:00"),
+            self._entry("bb-new", "bad", fp, tagged_at="2026-09-20T10:00:00"),
+        ]
+        out = server._mine_guardrails(entries)
+        self.assertEqual([e["entryId"] for e in out[0]["entries"]],
+                         ["bb-new", "bb-mid", "bb-old"])
+
+
+class BriefingSliceGuardrailsTest(unittest.TestCase):
+    """The `_memory_briefing_slice` surfaces `guardrails` in addition to the P4 fields. Wired here
+    so a future refactor of the slice doesn't drop the field silently."""
+
+    def test_briefing_carries_guardrails_key(self):
+        fp = {"v": 2, "pipeline_stage": "flowTom", "channel_count": 4}
+        list_return = {"entries": [
+            {"entryId": f"bb-{i}", "title": f"t{i}", "current": 0, "updatedAt": "x",
+             "attachmentsCount": 0, "status": "open",
+             "outcome":     {"verdict": "bad", "note": "n", "taggedAt": f"2026-09-2{i}"},
+             "fingerprint": fp} for i in range(3)
+        ]}
+        with unittest.mock.patch.object(server._client, "list_blackboard_entries",
+                                         return_value=list_return), \
+             unittest.mock.patch.object(server._client, "read_blackboard_entry",
+                                         return_value={"entry": {"content": ""}}), \
+             unittest.mock.patch.object(server._client, "get_recent_captures",
+                                         return_value={"items": []}):
+            slc = server._memory_briefing_slice("proj")
+        self.assertIn("guardrails", slc)
+        self.assertEqual(len(slc["guardrails"]), 1)
+        self.assertEqual(slc["guardrails"][0]["count"], 3)
 
 
 if __name__ == "__main__":

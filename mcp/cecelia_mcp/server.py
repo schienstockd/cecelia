@@ -576,12 +576,14 @@ def _profile_is_authored(profile: dict | None) -> bool:
 # PROJECT_MEMORY_PLAN Phase 5.1 fingerprint schema version. Written into every fingerprint at
 # create time so a future retrieval pass can dispatch on the schema (`v`) instead of guessing.
 # Keep in step with `_BB_FINGERPRINT_VERSION` in `api/src/blackboard_api.jl`.
-_BB_FINGERPRINT_VERSION = 1
+#   v1 (2026-09-21): channel_count + stain_classes + pipeline_stage — image-derived only
+#   v2 (2026-09-21): + modality (filename regex) + tissue_context (profile-prose parse)
+# v1 entries stay valid — retrieval treats missing fields as "no signal on that dimension" rather
+# than requiring backfill.
+_BB_FINGERPRINT_VERSION = 2
 
-# Channel-name → stain-class map. Ordered: first match wins. See `docs/inventory/stain_classes.md`
-# for the full table + rationale (why it's a lab convention, why "unknown" is a signal not a bug).
-# When updating this list, update the doc in the same change — the inventory is the human record,
-# this is the machine copy.
+# Channel-name / filename / profile vocabulary tables. Full rationale + when to bump the schema
+# lives in `docs/inventory/fingerprint_extractors.md`; keep this file and that doc in step.
 _STAIN_CLASS_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^mem[-_]",           "membrane"),
     (r"^nuc[-_]",           "nucleus"),
@@ -595,6 +597,35 @@ _STAIN_CLASS_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"(^|[-_])yfp\b",      "reporter"),
     (r"(^|[-_])shg\b",      "structural"),             # second-harmonic — collagen / fibre
     (r"(^|[-_])autofl",     "autofluorescence"),
+)
+
+# Filename → modality vocabulary. Applied to the basename of `oriPath` (or the display `name` if
+# oriPath is absent). First match wins. `resonant` is Ailsa's `-res_` convention — see the
+# inventory doc for scope + why we don't split resonant vs galvo 2P.
+_MODALITY_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"(^|[-_])res(?:[-_.]|$)",                        "2p"),
+    (r"2p|two[-_]?photon|multiphoton",                 "2p"),
+    (r"confocal|(^|[-_])conf(?:[-_.]|$)",              "confocal"),
+    (r"spinning[-_]?disk|(^|[-_])(sdc|csu)(?:[-_.]|$)","spinning_disk"),
+    (r"light[-_]?sheet|(^|[-_])(lsfm|spim)(?:[-_.]|$)","lightsheet"),
+    (r"widefield|(^|[-_])wf(?:[-_.]|$)",               "widefield"),
+)
+
+# Profile-prose → tissue-context vocabulary. Case-insensitive substring search over the profile
+# entry's Subject SECTION only (grepping the whole body catches copy-pasted references from
+# unrelated entries and fires the wrong bucket).
+_TISSUE_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"germinal cent(?:re|er)|\bgc\b",              "germinal_centre"),
+    (r"lymph node|\bln\b",                          "lymph_node"),
+    (r"spleen|splenic",                             "spleen"),
+    (r"liver|hepatic",                              "liver"),
+    (r"kidney|renal",                               "kidney"),
+    (r"gut|intestin|small bowel|colon",             "gut"),
+    (r"skin|dermal|epiderm",                        "skin"),
+    (r"lung|pulmonary|alveol",                      "lung"),
+    (r"bone marrow|\bbm\b",                         "bone_marrow"),
+    (r"brain|cortex|cerebell",                      "brain"),
+    (r"thymus|thymic",                              "thymus"),
 )
 
 
@@ -615,23 +646,98 @@ def _classify_stain(name: str) -> str:
     return "unknown"
 
 
+def _classify_modality(image_info: dict) -> str:
+    """Map an image's filename (basename of `oriPath`, then `name` fallback) to a coarse
+    acquisition-modality label. Same discipline as `_classify_stain`: first match wins,
+    "unknown" means "convention not in the map yet", not an error. OME `Instrument` isn't
+    preserved on import (extraMeta empty), so filename is the only signal we have."""
+    import os
+    import re
+    ori = image_info.get("oriPath") or image_info.get("name") or ""
+    if not isinstance(ori, str) or not ori:
+        return "unknown"
+    base = os.path.basename(ori).lower()
+    for pattern, modality in _MODALITY_PATTERNS:
+        if re.search(pattern, base):
+            return modality
+    return "unknown"
+
+
+# Profile Subject section is where "what this data is — tissue + preparation" lives; see
+# `_BB_PROFILE_PLACEHOLDER_BODY` in `api/src/blackboard_api.jl`.
+_PROFILE_SUBJECT_HEADING = "Subject"
+
+
+def _profile_subject_text(profile_content: str) -> str:
+    """Slice a profile body down to the Subject section (heading text only). Returns "" if the
+    section is missing or contains only the seeded placeholder — matches the discipline used by
+    `_profile_section_has_content` (both live off the same profile shape)."""
+    import re
+    if not profile_content:
+        return ""
+    lines = profile_content.split("\n")
+    out: list[str] = []
+    in_section = False
+    heading_re = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+    for line in lines:
+        m = heading_re.match(line)
+        if m:
+            in_section = m.group(1).strip().lower() == _PROFILE_SUBJECT_HEADING.lower()
+            continue
+        if in_section:
+            s = line.strip()
+            if not s or (s.startswith("_(") and s.endswith(")_")):
+                # seeded placeholder line — treated as no content, same as _profile_section_has_content
+                continue
+            out.append(s)
+    return " ".join(out)
+
+
+def _infer_tissue_context(profile_content: str | None) -> str | None:
+    """Scan the profile's Subject section for a coarse tissue-context label. Returns the first
+    match or None (no match / no profile / seeded placeholder only). None → the fingerprint field
+    is left ABSENT (not stamped as "unknown") because a profile that hasn't been authored yet is
+    a different signal from "authored, tissue not in vocab"."""
+    import re
+    if not profile_content:
+        return None
+    subject = _profile_subject_text(profile_content).lower()
+    if not subject:
+        return None
+    for pattern, tissue in _TISSUE_PATTERNS:
+        if re.search(pattern, subject):
+            return tissue
+    return "unknown"
+
+
+def _load_profile_content(project_uid: str) -> str | None:
+    """Read the project's profile entry body. Returns None on any read failure — the caller
+    treats that as "no profile parse available" and leaves the field absent from the fingerprint.
+    Kept as a helper so `_infer_fingerprint` doesn't grow a nested try/except."""
+    try:
+        entry = _client.read_blackboard_entry(project_uid, "profile").get("entry", {})
+    except Exception:
+        return None
+    return entry.get("content", "") or ""
+
+
 def _infer_fingerprint(project_uid: str, image_uid: str | None) -> dict | None:
-    """Snapshot an image's context into a Blackboard-entry fingerprint (PROJECT_MEMORY_PLAN P5.1).
-    `None` when `image_uid` is missing / unresolvable — the entry is still created, just without a
-    fingerprint (retrieval later treats a missing fingerprint the same as a legacy pre-P5.1 entry).
+    """Snapshot the entry's context into a Blackboard-entry fingerprint (PROJECT_MEMORY_PLAN P5.1
+    + P5.2). Returns None ONLY when `image_uid` is missing / unresolvable — the entry is still
+    created, just without a fingerprint.
 
-    Fields today (v1):
+    Fields (v2 — 2026-09-21):
       - `v`               — schema version, always `_BB_FINGERPRINT_VERSION`
-      - `channel_count`   — from `sizeC`
-      - `stain_classes`   — sorted, de-duplicated list from `_classify_stain(channelNames[i])`
-      - `pipeline_stage`  — from `activeValueName` (the frame the user is on: `default`,
-                            `driftCorrected`, `denoised`, `flowTom`, …)
+      - `channel_count`   — from `sizeC`                              [v1]
+      - `stain_classes`   — sorted, de-duped `_classify_stain(names)` [v1]
+      - `pipeline_stage`  — from `activeValueName`                    [v1]
+      - `modality`        — `_classify_modality(image_info)`          [v2, absent if "unknown"]
+      - `tissue_context`  — `_infer_tissue_context(profile.subject)`  [v2, absent if missing]
 
-    Deliberately image-derived only for v1 — `modality` and `tissue_context` would need a project
-    profile parse and can come in v2 without a migration (the writer just adds the fields; a v1
-    reader ignores what it doesn't know about). `objective_na_band` was in the archived D3 draft
-    but is not in v1: OME `Objective.LensNA` isn't preserved on import (extraMeta comes back empty),
-    and a reader change to fix that is out of scope for the initial schema.
+    v1 entries on disk stay valid — retrieval treats an absent v2 field as "no signal on that
+    dimension" rather than requiring a backfill. Modality / tissue are OMITTED when they resolve
+    to "unknown"/None; a fingerprint with just `v` records the intent ("this entry was created
+    with an image in mind") even when every dimension is silent.
     """
     if not image_uid:
         return None
@@ -652,9 +758,95 @@ def _infer_fingerprint(project_uid: str, image_uid: str | None) -> dict | None:
     stage = info.get("activeValueName")
     if isinstance(stage, str) and stage:
         fp["pipeline_stage"] = stage
-    # Fingerprint with nothing but the version is still returned — records the intent ("this entry
-    # was created with an image in mind") even if that image lacks the fields we look at.
+    # v2 additions: modality from filename, tissue from profile prose. Both absent-when-unknown so
+    # a bucket keyed on `(modality=None, tissue=None)` doesn't collect every under-annotated entry
+    # in the project into a single false cluster.
+    modality = _classify_modality(info)
+    if modality and modality != "unknown":
+        fp["modality"] = modality
+    tissue = _infer_tissue_context(_load_profile_content(project_uid))
+    if tissue and tissue != "unknown":
+        fp["tissue_context"] = tissue
     return fp
+
+
+# PROJECT_MEMORY_PLAN Decision 5 — a bucket needs at least this many `bad`-tagged entries before
+# it surfaces as a guardrail. Below threshold means "one-off failure, no pattern yet"; above
+# threshold means "we've hit this shape ≥N times and it should influence the next proposal."
+# Kept at N=3 (the archived brainstorm's D5) — one is coincidence, two is a hint, three is a
+# pattern. Below-threshold buckets stay silent so the briefing doesn't cry wolf on a small corpus.
+_GUARDRAIL_MIN_ENTRIES = 3
+
+# Cap on the guardrail entries returned per bucket. If a bucket has hundreds of members, the
+# briefing shouldn't dump every note — Claude only needs enough context to know the shape of the
+# failure. The most-recent-first ordering keeps the surfaced entries the freshest.
+_GUARDRAIL_ENTRIES_PER_BUCKET_MAX = 6
+
+
+def _fingerprint_bucket_key(fp: dict) -> str:
+    """Canonical string key for grouping fingerprints. A bucket is defined by the exact combination
+    of (modality, tissue_context, pipeline_stage, stain_classes, channel_count); a field absent
+    from the fingerprint becomes "*" so a v1 entry (no modality) can still bucket with a v2 entry
+    whose modality resolved to "unknown" (also dropped from the stored fp).
+
+    Deliberately exact match, not fuzzy: a two-attempt "hit this before" surface is cheap to
+    read and easy for the user to eyeball. A fuzzy similarity function is a follow-up if exact
+    matching fragments the corpus too much in practice.
+    """
+    parts = [
+        str(fp.get("modality", "*")),
+        str(fp.get("tissue_context", "*")),
+        str(fp.get("pipeline_stage", "*")),
+        ",".join(fp.get("stain_classes", []) or []) or "*",
+        str(fp.get("channel_count", "*")),
+    ]
+    return "|".join(parts)
+
+
+def _mine_guardrails(entries: list[dict],
+                     min_entries: int = _GUARDRAIL_MIN_ENTRIES) -> list[dict]:
+    """Group entries with BOTH a `bad` outcome AND a fingerprint by canonical bucket key; return
+    clusters that clear the recurrence threshold. Each cluster:
+        `{bucket, fingerprint, count, entries: [{entryId, title, note, taggedAt}]}`
+    where `fingerprint` is the first fingerprint that landed in the bucket (representative — all
+    fingerprints in a bucket share the same bucket key by construction).
+
+    Intra-project only — the caller feeds one project's entries at a time (PROJECT_MEMORY_PLAN
+    D8 defers cross-project federation to `IMMUNEMAP_IMPORT_PLAN`). Entries without a fingerprint
+    (legacy pre-P5.1, or created without an `image_uid`) are ignored — nothing to bucket against.
+    """
+    from collections import defaultdict
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    representative: dict[str, dict] = {}
+    for e in entries:
+        outcome = e.get("outcome")
+        if not (isinstance(outcome, dict) and outcome.get("verdict") == "bad"):
+            continue
+        fp = e.get("fingerprint")
+        if not isinstance(fp, dict):
+            continue
+        key = _fingerprint_bucket_key(fp)
+        buckets[key].append({
+            "entryId":  e.get("entryId", ""),
+            "title":    e.get("title", ""),
+            "note":     outcome.get("note", ""),
+            "taggedAt": outcome.get("taggedAt", ""),
+        })
+        representative.setdefault(key, fp)
+    out: list[dict] = []
+    for key, members in sorted(buckets.items()):
+        if len(members) < min_entries:
+            continue
+        # Newest first inside a bucket — a fresh recurrence is more informative than a stale one,
+        # and the cap keeps the briefing readable.
+        members.sort(key=lambda m: m.get("taggedAt", ""), reverse=True)
+        out.append({
+            "bucket":      key,
+            "fingerprint": representative[key],
+            "count":       len(members),
+            "entries":     members[:_GUARDRAIL_ENTRIES_PER_BUCKET_MAX],
+        })
+    return out
 
 
 def _outcome_rank(outcome) -> int:
@@ -736,6 +928,11 @@ def _memory_briefing_slice(project_uid: str) -> dict:
         "surface":   c.get("surface"),
     } for c in captures]
 
+    # PROJECT_MEMORY_PLAN P5.2 — guardrails. Mine the FULL entries list (not just open ones), since
+    # a `bad`-tagged entry that's since been resolved/parked is still a known trap. Empty when no
+    # bucket clears the recurrence threshold — a fresh project reads clean.
+    guardrails = _mine_guardrails(entries)
+
     return {
         # PROJECT_MEMORY_PLAN Decision 9 — newProject is TRUE when the profile hasn't been filled
         # in past its seeded placeholder (Subject + Goal are what the briefing enforces). Guidance
@@ -744,6 +941,7 @@ def _memory_briefing_slice(project_uid: str) -> dict:
         "profile":               profile,
         "openBlackboardEntries": open_entries,
         "recentCaptures":        recent_captures,
+        "guardrails":            guardrails,
     }
 
 
