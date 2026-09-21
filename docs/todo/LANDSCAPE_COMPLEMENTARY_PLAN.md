@@ -1,9 +1,10 @@
 # Landscape complementary stats — plan
 
-**Status:** feature-complete pending HMM/motifs (deferred). Phases 1–4 shipped
-2026-09-20 (`#1089`, `#1096`, `#1099`, `#1100`, plus Phase 4 building on
-`feat/bidir-landscape-sourcerun`); Phase 5 envelope ratchet building on
-`feat/bidir-landscape-size-ratchet`. Drafted from
+**Status:** feature-complete. Phases 1–5 shipped 2026-09-20/21
+(`#1089`, `#1096`, `#1099`, `#1100`, `#1105`, `#1112`). HMM/motifs
+(Decision 5) explicitly dropped 2026-09-21 — clustered tracks are
+populations, so behaviour information rides the existing `pops` bag
+from Phase 2b when a cluster-derived pop is ticked visible. Drafted from
 [`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md).
 Written to be picked up cold by another session.
 
@@ -64,14 +65,10 @@ tile = {
   pops: [{ popId, name, count }],        // only if population/gating layer on
   tracks: {                              // only if tracks/props layer on
     count, meanDuration, meanSpeed,
-    hmmStates: [{ state, count }],       // only when the track's HMM run exists
-    motifs: [{ motifId, count }],        // only when a motif discovery run exists
   },
   sourceRun: {                           // per FIELD (see Decision 4), not per tile
     pops: <analysisRunId>,
     tracks: <analysisRunId>,
-    hmm: <analysisRunId>,
-    motifs: <analysisRunId>,
   },
 }
 ```
@@ -102,16 +99,20 @@ Numbered so code and other docs can cite them (`Decision 5`).
    "server knows this is available, add it anyway."
 4. **`sourceRun` is per FIELD, not per tile.** Different fields come from
    different runs (`pops` from the current gating run, `tracks` from the
-   tracking run, `hmm` / `motifs` from their own runs — see the sibling
-   `[[project_behaviour_cards_plan]]` for the HMM/motif surface). One
-   `sourceRun` bag at the tile / landscape level with per-field keys is
-   simpler than sprinkling `sourceRun` into each nested object, and reads
-   cleanly against "which run produced this number."
-5. **HMM / motif fields are conditional on the run existing**, not just on
-   the tracks+props layer being on. A tile carries `tracks.hmmStates` only if
-   an HMM run has been executed for this image / vn AND the layer is on. Same
-   for `motifs`. Avoids `hmmStates: []` sprinkled across every tracked image
-   that never went through HMM.
+   tracking run). One `sourceRun` bag at the tile / landscape level with
+   per-field keys is simpler than sprinkling `sourceRun` into each nested
+   object, and reads cleanly against "which run produced this number."
+5. **No dedicated HMM / motif tile fields (dropped 2026-09-21).**
+   Originally Phase 6 was to add `tracks.hmmStates` and `tracks.motifs`
+   conditional on the run existing. Superseded: a track cluster IS a
+   population in Cecelia (per `[[project_gating_popmanager]]` and
+   `[[project_clustering_design]]` — `clust.hmm.*` etc.), so ticking a
+   cluster-derived pop as visible already carries behaviour information
+   through the existing `pops` field from Phase 2b. Preserves Decision 3
+   (sparsity by visibility) without needing a "which HMM run is
+   authoritative" resolver that doesn't exist yet. If a downstream reader
+   ever needs "was this pop derived from clustering," it can grep the pop
+   path (`clust.*`) or the pop type — no new envelope schema.
 6. **Category stays even after the augmented fields land.** Occasional
    grounding value — a tile marked `dark` is a canvas-margin cue Claude reads
    without needing per-channel numbers. Cost is trivial; removing it after
@@ -198,8 +199,10 @@ Each phase independently mergeable.
    `tracks = {count, meanDuration, meanSpeed}` per tile (sparse — empty tiles
    have no `tracks` key). `meanSpeed` is INSTANTANEOUS per-cell speed averaged
    in the tile at t (absent when segmentation has no speed obs); `meanDuration`
-   is per-track full-lifetime frame count. `hmmStates` / `motifs` deferred
-   (Decision 5 — conditional on the run existing).
+   is per-track full-lifetime frame count. Behaviour information not
+   given a dedicated field — clustered-track pops (`clust.hmm.*` etc.)
+   already ride via the `pops` bag when ticked visible (Decision 5,
+   dropped 2026-09-21).
 
 6. **Phase 4 — `sourceRun` provenance (this pass, 2026-09-20).** Response body
    grows optional top-level `sourceRun` — sparse per-field bag naming what
@@ -236,9 +239,9 @@ structured-sidecar surface appears, revisit whether a shared convention pays
 back the abstraction cost (rule-of-three, [`docs/MAINTAINABILITY.md`](../MAINTAINABILITY.md)).
 
 **Behaviour cards** (`project_behaviour_cards_plan` memory): HMM states +
-motifs are surfaced there. If cards ship a "which HMM run is authoritative"
-resolver, Phase 3's `sourceRun.hmm` should read from it rather than a second
-resolver.
+motifs surface on cards. Not mirrored onto landscape tiles — clustered-track
+pops from cards' upstream clustering are populations, so they already ride
+the `pops` field when ticked visible (Decision 5, 2026-09-21).
 
 **BIDIR PR #7 (Blackboard)**: shipped. If a Blackboard entry attaches a
 capture (`attach_capture_ids`) and the capture carries a `schemaVersion: 2`
