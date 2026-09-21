@@ -47,6 +47,7 @@ import { composePanelGrid, type PanelTile } from '../../utils/overlayCompose'
 import type { OverlayMark, CaptureAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import { restorePanelsFromCapture, type CapturedPanel } from '../../utils/restorePanels'
+import { reresolvePops } from '../../plots/reresolvePops'
 import { announceShareOutcome, shareFailMessage, type ShareOutcome } from '../../utils/shareOutcome'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
@@ -306,12 +307,27 @@ async function onShareConfirm(payload: { panelIds: number[] }) {
     // zoom-to-source restores the panel exactly as it was — populations picked, log axes on, bin
     // width set. `dataSlice.series` is a parallel Claude-facing view of sel (tkey → SeriesTarget);
     // keeping sel on plotRef.ui too is duplication of a small array, cheap next to the composite PNG.
+    // uid map from CURRENT segPops, keyed by tkey. Empty uid populations (`/labels`, `/_tracked`,
+    // synthetic root) contribute nothing here — those pops have no gating-map identity and restore
+    // via path fallback in `reresolvePops`.
+    const uidByTkey = new Map<string, string>()
+    for (const g of segPops.value) {
+      for (const p of g.populations) {
+        if (p.uid) uidByTkey.set(tkey(p.popType, g.valueName, p.path), p.uid)
+      }
+    }
     const panels = selected.map(p => {
       const panel = panelsSnapshot.value.find(pp => pp.id === p.id)
       const st = panel?.state as (PanelState | undefined)
       const specId = st?.kind ? String(st.kind) : (st?.specId ?? '')
       const plotRef: Record<string, unknown> = { specId }
-      if (st) plotRef.ui = { ...st }
+      if (st) {
+        // `selUids` is a parallel array to `sel`: uid of each picked pop, empty when this pop has
+        // no gating-map identity (or was picked before pop uids reached the wire). Consumed on
+        // zoom-to-source by `reresolvePops` to survive a pop rename / reparent since capture time.
+        const selUids = (st.sel ?? []).map(t => uidByTkey.get(t) ?? '')
+        plotRef.ui = { ...st, selUids }
+      }
       return {
         panelId: String(p.id),
         position: { x: p.geom.x - x0, y: p.geom.y - y0, w: p.geom.w, h: p.geom.h },
@@ -483,12 +499,19 @@ function onReshowZoomToSource() {
     // configuration (sel + vis included). A zoom-to-source lands the panels with populations
     // already picked and vis (log axes, bin widths, …) preserved. Fallbacks cover legacy
     // captures written before `sel`/`vis` were preserved.
+    //
+    // `reresolvePops` rebinds captured `sel` tkeys against the CURRENT segPops. Two-pass: pop uids
+    // first (survives a rename / reparent since capture time), path fallback second (needed when
+    // uid isn't in the current image or the capture predates uid capture). See
+    // `plots/reresolvePops.ts` for the full matching policy.
     const specId = String(cp.plotRef?.specId ?? '')
-    const ui = (cp.plotRef?.ui as Partial<PanelState>) ?? {}
+    const ui = (cp.plotRef?.ui as Partial<PanelState> & { selUids?: unknown }) ?? {}
+    const capSel = Array.isArray(ui.sel) ? ui.sel : []
+    const capUids = Array.isArray(ui.selUids) ? (ui.selUids as unknown[]).map(u => String(u ?? '')) : []
     return {
       ...ui,
       specId,
-      sel: Array.isArray(ui.sel) ? ui.sel : [],
+      sel: reresolvePops(capSel, capUids, segPops.value),
       vis: ui.vis ? { ...defaultVis(), ...ui.vis } : defaultVis(),
     } as PanelState
   }, env.workspaceOrigin)

@@ -26,8 +26,12 @@
     add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#ef4444")
     add_pop!(fm, "sub"; parent="/qc", gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#abc")
     flat = flatten_pop_tree(to_tree(fm))
-    @test [p for (p, _, _) in flat] == ["/qc", "/qc/sub"]
-    @test flat[1][3] == "#ef4444"
+    @test [p for (p, _, _, _) in flat] == ["/qc", "/qc/sub"]
+    @test flat[1][3] == "#ef4444"                                    # colour
+    # uid is the 4th field — stable per-pop identity minted by the gating map, threaded through
+    # for the summary-canvas capture/restore path to survive pop renames
+    @test !isempty(flat[1][4]) && !isempty(flat[2][4])
+    @test flat[1][4] != flat[2][4]                                   # distinct uids per pop
 
     # a track-gated map (pop_type "track") with one pop
     tm = PopulationMap(pop_type="track", value_name="C")

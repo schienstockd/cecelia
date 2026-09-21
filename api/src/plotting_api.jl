@@ -182,6 +182,7 @@ function api_plot_populations(req::HTTP.Request)
     result = [Dict("valueName" => g.value_name,
                    "populations" => [Dict("path" => p.path, "name" => p.name,
                                           "colour" => p.colour, "popType" => string(p.pop_type),
+                                          "uid" => p.uid,
                                           "granularity" => is_track_pop(p.pop_type, p.path) ? "track" : "cell",
                                           "category" => pop_category(p.pop_type, p.path))
                                      for p in g.populations])

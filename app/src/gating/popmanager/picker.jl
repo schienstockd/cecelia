@@ -8,17 +8,23 @@
 #    thin wrapper; this is Revise-tracked + headless-testable per docs/ARCHITECTURE.md) ────────────
 
 """
-    flatten_pop_tree(tree) -> Vector{Tuple{String,String,String}}
+    flatten_pop_tree(tree) -> Vector{Tuple{String,String,String,String}}
 
-Flatten a `to_tree` population tree into `(path, name, colour)` in tree (pre-order) order. Accepts
-String or Symbol keys (JSON3 round-trips yield Symbols).
+Flatten a `to_tree` population tree into `(path, name, colour, uid)` in tree (pre-order) order.
+Accepts String or Symbol keys (JSON3 round-trips yield Symbols). `uid` is the stable per-pop
+identifier the population manager mints (see `population.jl` `_fresh_pop_uid`) — carried through
+here so the summary-canvas picker can offer a rename-stable identity to the point-out / capture
+restore path. Absent uid (e.g. derived-pop trees pre-uid, or malformed sidecars) falls through
+as an empty string; callers fall back to `(path, popType)` matching.
 """
-function flatten_pop_tree(tree)::Vector{Tuple{String,String,String}}
-    out = Tuple{String,String,String}[]
+function flatten_pop_tree(tree)::Vector{Tuple{String,String,String,String}}
+    out = Tuple{String,String,String,String}[]
     walk(nodes, parent) = for n in nodes
         name = string(get(n, "name", get(n, :name, "")))
         path = parent == "" ? "/" * name : parent * "/" * name
-        push!(out, (path, name, string(get(n, "colour", get(n, :colour, "#7c93b8")))))
+        push!(out, (path, name,
+                    string(get(n, "colour", get(n, :colour, "#7c93b8"))),
+                    string(get(n, "uid", get(n, :uid, "")))))
         walk(get(n, "children", get(n, :children, [])), path)
     end
     walk(get(tree, "populations", get(tree, :populations, [])), "")
@@ -55,30 +61,33 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
     # the user overlays whole segmentations (B, T, …) side by side. The path is the fixed "/labels" tag
     # the `labels` pop_df branch stamps (matched by `_series_groups` at plot time); it must start with
     # "/" like any pop path so the manager-form id (`value_name + path`) round-trips through the
-    # frontend's `tkey`/`parseTkey` and colour map.
+    # frontend's `tkey`/`parseTkey` and colour map. Uid is empty — a `labels` pop has no gating-map
+    # identity; a capture that references one restores by (value_name, path) alone.
     if all(==("labels"), pop_types)
         vn_order = String[]
         for img in imgs, vn in value_names_for(img)
             v = String(vn); v in vn_order || push!(vn_order, v)
         end
         return [(value_name = v,
-                 populations = [(path = "/labels", name = v, colour = "#7c93b8", pop_type = "labels")])
+                 populations = [(path = "/labels", name = v, colour = "#7c93b8", pop_type = "labels", uid = "")])
                 for v in vn_order]
     end
     vn_order = String[]
     order = Dict{String,Vector{Tuple{String,String}}}()                       # vn → ordered (pt, path)
-    meta  = Dict{String,Dict{Tuple{String,String},Tuple{String,String,String}}}()  # vn → key → (name,colour,pt)
+    # vn → key → (name, colour, pt, uid). `uid` is empty for derived pops (they aren't in the gating
+    # map) and for legacy trees whose sidecar predates pop uids.
+    meta  = Dict{String,Dict{Tuple{String,String},NTuple{4,String}}}()
     for img in imgs
         for vn in value_names_for(img)
             v = String(vn)
             haskey(order, v) || (push!(vn_order, v); order[v] = Tuple{String,String}[];
-                                  meta[v] = Dict{Tuple{String,String},Tuple{String,String,String}}())
+                                  meta[v] = Dict{Tuple{String,String},NTuple{4,String}}())
             for pt in pop_types
                 m = try; load_map(img, v, pt); catch; nothing; end
                 m === nothing && continue
-                for (path, name, colour) in flatten_pop_tree(to_tree(m))
+                for (path, name, colour, uid) in flatten_pop_tree(to_tree(m))
                     key = (pt, path); haskey(meta[v], key) && continue
-                    push!(order[v], key); meta[v][key] = (name, colour, pt)
+                    push!(order[v], key); meta[v][key] = (name, colour, pt, uid)
                 end
             end
         end
@@ -94,7 +103,7 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
         for pt in pop_types, dpath in derived_pop_paths(pt)              # root-level derived, at the top
             derived_ok(v, pt, "", dpath) || continue                     # e.g. hide root /_tracked when gated
             key = (pt, dpath)
-            haskey(meta[v], key) || (meta[v][key] = (pop_name(dpath), "#7c93b8", pt))
+            haskey(meta[v], key) || (meta[v][key] = (pop_name(dpath), "#7c93b8", pt, ""))
             key in rebuilt || push!(rebuilt, key)
         end
         for (pt, path) in order[v]                                       # each stored pop, then its derived children
@@ -107,13 +116,14 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
                 # …so a derived child (e.g. /qc/_tracked) shows in its parent's colour rather than a
                 # generic grey. The parent's colour IS editable (gating page) but the derived child's
                 # isn't (read-only on the behaviour page), so propagating keeps them visually paired.
-                meta[v][key] = (pop_name(dpath), parent_colour, pt); push!(rebuilt, key)
+                meta[v][key] = (pop_name(dpath), parent_colour, pt, ""); push!(rebuilt, key)
             end
         end
         order[v] = rebuilt
     end
     [(value_name = v,
-      populations = [(path = p, name = meta[v][(pt, p)][1], colour = meta[v][(pt, p)][2], pop_type = pt)
+      populations = [(path = p, name = meta[v][(pt, p)][1], colour = meta[v][(pt, p)][2],
+                      pop_type = pt, uid = meta[v][(pt, p)][4])
                      for (pt, p) in order[v]])
      for v in vn_order]
 end
