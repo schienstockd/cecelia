@@ -240,6 +240,10 @@ end
         one = ask("&valueName=A")
         @test [g.valueName for g in one] == ["A"]                            # present → that one
         @test [p.path for p in one[1].populations] == ["/qc"]                # …with its populations
+        # each population carries its gating-map `uid` — stable per-pop identity minted by
+        # `_fresh_pop_uid`, threaded here so the summary-canvas capture/restore path can survive
+        # renames (SummaryCanvas.onReshowZoomToSource → reresolvePops matches by uid first).
+        @test hasproperty(one[1].populations[1], :uid) && !isempty(one[1].populations[1].uid)
         # a name this image does not have is an empty answer, not a 400: a segmentation can be absent
         # from some images of a set, and "no populations" is the honest reply for those
         @test isempty(ask("&valueName=nope"))

@@ -84,8 +84,11 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
     [(value_name = g.value_name,
       populations = begin
           kept = NamedTuple[]
+          # The synthetic "all cells" root ("/") has no gating-map identity — uid is empty; a
+          # capture that references it restores by (value_name, "/") alone.
           want_all_cells && push!(kept, (path = "/", name = "all", colour = "#7c93b8",
-                                         pop_type = "live", granularity = "cell", category = "gated"))
+                                         pop_type = "live", uid = "",
+                                         granularity = "cell", category = "gated"))
           for p in g.populations
               # branch is a THIRD granularity distinct from cell/track (BRANCHING_PLAN Decision 2);
               # detect it explicitly before falling back to the cell/track binary.
@@ -94,7 +97,8 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
               cat  = pop_category(p.pop_type, p.path)
               _accept_permits(acc, gran, cat) || continue
               push!(kept, (path = p.path, name = p.name, colour = p.colour,
-                           pop_type = string(p.pop_type), granularity = gran, category = cat))
+                           pop_type = string(p.pop_type), uid = p.uid,
+                           granularity = gran, category = cat))
           end
           kept
       end)
