@@ -292,8 +292,17 @@ what's missing after this is DATA, not code.
 - Intra-project only for v1 (D8 defers cross-project federation to `IMMUNEMAP_IMPORT_PLAN.md`).
 
 **Phase 5 non-goals (won't do unless a real case demands them).**
-- Fuzzy similarity (Jaccard on stain_classes, ±1 on channel_count). Exact bucket match keeps the
-  UX simple and the misfire cost low; add fuzziness only if exact fragmentation is measured.
+- **Fuzzy bucket matching (P5.2b).** Overlap-scored / transitive-clustered bucket comparison
+  instead of exact key equality — the follow-up brainstorm in
+  [`docs/archive/p5-2b-fuzzy-bucket-matching-prompt.md`](../archive/p5-2b-fuzzy-bucket-matching-prompt.md).
+  The fragmentation risk it names is real (`stain_classes=["mem","nuc"]` doesn't cluster with
+  `["mem","nuc","reporter"]`), but building the fix before there's a corpus to measure it against
+  is speculative — the archived brief itself lands on "measure fragmentation first" as its first
+  step, and no bad-tagged entries exist yet to measure. Reconsider only if usage produces clusters
+  that visibly *should* have merged but didn't. Two options if it comes back up: (a) tighten the
+  extractor so the bucket key IS coarser (cheaper, keeps exact match + transparent buckets — the
+  properties the v1 chose deliberately); (b) implement overlap scoring per the archived spec. Do
+  (a) first if it fits the observed fragmentation.
 - Retroactive backfill of fingerprints on pre-P5.1 entries. The point of the version field is that
   a v0 entry stays valid; forced migration would be worse than absence.
 - Auto-derived proposals ("here's the correction to apply"). Guardrails RECORD what didn't work,
