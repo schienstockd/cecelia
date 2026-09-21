@@ -46,6 +46,7 @@ defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
                   :project-uid="projectUid" :set-uid="setUid" :image-uids="imageUids"
                   :pop-type="popType" :suffix="suffix" :shown-pops="shownPops"
                   :state="state" :docked="docked"
+                  point-out-family="cell-cards"
                   @activate="emit('activate', $event)" @remove="emit('remove')"
                   @duplicate="emit('duplicate')" @card-select="detailCard = $event">
     <template #detail="{ statScales }">

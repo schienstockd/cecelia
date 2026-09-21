@@ -10,10 +10,13 @@
   overlays and legend, click target) is what's shared.
 -->
 <script setup lang="ts">
-import { ref, useTemplateRef } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
 import { letterboxFrame, type Frame } from '../../plots/frame'
+import { useViewerStore } from '../../stores/viewer'
+import { usePlotResize } from '../../composables/usePlotResize'
+import PlotPointOutMark from './PlotPointOutMark.vue'
 
 interface ExtentUm { x?: number; y?: number; unit?: string | null }
 interface LegendSection { title: string; items: { label: string; colour: string }[] }
@@ -35,6 +38,13 @@ const props = defineProps<{
   legendFontPx?: number
   scaleBarFontPx?: number
   timestampFontPx?: number
+  // BIDIR PR #4b — the parent's plot family + panel plotId + this cell's key. When set, the cell
+  // renders Claude's plot point-out marks whose `(family, plotId, cell)` match. Parents pass:
+  //   ImageStripView    → family='image-strip',  cellKey='cell=<index>'
+  //   CardsPanelInner   → family='cell-cards' | 'motif-cards' (per family passed in), cellKey='<card.path>'
+  family?: string
+  plotId?: string
+  cellKey?: string
 }>()
 const emit = defineEmits<{ (e: 'click'): void }>()
 
@@ -57,6 +67,35 @@ const frame: Frame = letterboxFrame(
   () => naturalAspect.value,
 )
 defineExpose({ getFrame: (): Frame => frame })
+
+// BIDIR PR #4b point-out consumer. Marks addressed at THIS cell (family/plotId/cellKey all match).
+// Position calc: letterbox the cell rect by the img's natural aspect (same math as the Frame), give
+// coordinates as % of the cell root. Reactive on resize via a tick + ResizeObserver on the root.
+const viewer = useViewerStore()
+const cellMarks = computed(() => {
+  const fam = props.family, pid = props.plotId, cell = props.cellKey ?? ''
+  if (!fam || !pid || !props.src) return []
+  return viewer.plotMarks.filter(m =>
+    m.family === fam && m.plotId === pid && (m.cell || '') === cell)
+})
+// Reactivity trigger for the marker positions on cell resize. `usePlotResize` on `rootEl` with a
+// tick-bumper "render" — no DOM write into the observed element, so no self-loop.
+const resizeTick = ref(0)
+usePlotResize(rootEl, () => { resizeTick.value += 1 })
+function markStyle(m: { u: number; v: number }): Record<string, string> | null {
+  void resizeTick.value
+  const el = rootEl.value
+  if (!el) return null
+  const w = el.clientWidth, h = el.clientHeight
+  const asp = naturalAspect.value
+  if (w <= 0 || h <= 0 || !(asp > 0)) return null
+  const cAsp = w / h
+  const dw = asp > cAsp ? w : h * asp
+  const dh = asp > cAsp ? w / asp : h
+  const left = (w - dw) / 2 + m.u * dw
+  const top  = (h - dh) / 2 + m.v * dh
+  return { left: `${left}px`, top: `${top}px` }
+}
 </script>
 
 <template>
@@ -73,6 +112,9 @@ defineExpose({ getFrame: (): Frame => frame })
                 :sections="legendSections" :swatch="Math.max(6, Math.round((legendFontPx ?? 12) * 0.85))"
                 vertical class="sc-legend"
                 :style="legendFontPx ? { fontSize: legendFontPx + 'px' } : undefined" />
+    <template v-for="m in cellMarks" :key="m.markerId">
+      <PlotPointOutMark v-if="markStyle(m)" :mark="m" :style="markStyle(m)!" />
+    </template>
     <div class="sc-actions"><slot name="actions" /></div>
   </div>
 </template>

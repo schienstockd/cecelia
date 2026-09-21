@@ -38,6 +38,9 @@ const props = defineProps<{
     renderMode?: RenderMode; showHierarchy?: boolean
     // colour-by: the third measure painted as the dot colour ('' = density) + its ramp scale
     z?: string; zt?: 'linear' | 'log' | 'asinh' | 'logicle' }
+  // BIDIR PR #4b — panel's persistKey forwarded by InteractivePanel. Passed into GateMontage so
+  // each tile can filter marks by `(family='gating-strategy', plotId=<this>, cell=<pane key>)`.
+  plotId?: string
 }>()
 
 // ── selectors (persisted in the panel state) ─────────────────────────────────────────────────────
@@ -275,7 +278,8 @@ defineExpose({ exportImage, exportSvg, getFrame: (): Frame => proxyFrame })
     <GateMontage ref="montageRef" :project-uid="projectUid" :image-uid="imageUid" :value-name="valueName"
                  :pop-type="popType" :defs="panelDefs" :col-label="colLabel" :render-mode="renderMode"
                  :colour-by="colourBy" :gate-labels="true" :font-size="vis?.fontSize ?? 11"
-                 :dot-size="dotRadiusFor(vis?.pointSize)">
+                 :dot-size="dotRadiusFor(vis?.pointSize)"
+                 point-out-family="gating-strategy" :plot-id="plotId">
       <template #empty>
         No gate to show for “{{ rootPop }}”.
         {{ showHierarchy ? 'No gated populations beneath it — draw gates on the Gate page first.'

@@ -25,6 +25,8 @@ const props = defineProps<{
   state: { maxPx?: number; padPx?: number }
   docked?: boolean
   family: CardFamily
+  // BIDIR PR #4b — forwarded to CardsPanelInner so its StripCells render point-out marks.
+  pointOutFamily?: string
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; cardSelect: [Card] }>()
 
@@ -48,6 +50,7 @@ defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
     <CardsPanelInner ref="innerRef" :family="family"
                      :project-uid="projectUid" :image-uids="imageUids"
                      :suffix="suffix" :shown-pops="shownPops" :state="state"
+                     :point-out-family="pointOutFamily" :plot-id="persistKey"
                      @card-select="emit('cardSelect', $event)">
       <template #detail="{ cards, statScales }">
         <slot name="detail" :cards="cards" :stat-scales="statScales" />

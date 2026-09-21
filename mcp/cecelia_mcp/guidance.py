@@ -163,8 +163,9 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   mark_tracks — use when a REGION is the answer, not an object.
 - `mark_plot(family, plot_id, u, v, cell?, label?, ttl_s?)` — point at a spot on a PLOT panel (a \
   peak on a histogram, a cluster on a UMAP, a bright cell on a strip, a heatmap cell). `family` is \
-  the plot family (`gate-scatter` / `umap` / `heatmap` / `image-strip` / `cell-cards` / \
-  `pairs-matrix` / `hmm-states` / `hmm-transitions`); `plot_id` addresses one panel (its \
+  the plot family (`gate-scatter` / `pairs-matrix` / `gating-strategy` / `umap` / `heatmap` / \
+  `hmm-states` / `hmm-transitions` / `summary` / `image-strip` / `cell-cards` / `motif-cards`); \
+  `plot_id` addresses one panel (its \
   `persistKey` from the capture envelope). `u` / `v` are 0..1 in that family's own frame — the \
   drawn plot area, not the surrounding axis / legend gutter. `cell` addresses a sub-frame for \
   multi-cell families (image-strip cell index, facet label, pairs-matrix tile, a card path).

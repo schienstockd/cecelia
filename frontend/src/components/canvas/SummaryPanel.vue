@@ -35,6 +35,10 @@ import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 import { usePanelExport } from '../../stores/canvasPanelExports'
+import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
+import { useViewerStore } from '../../stores/viewer'
+import { usePlotResize } from '../../composables/usePlotResize'
+import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null
@@ -59,7 +63,10 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]]
                            readout: [PlotReadout] }>()
-const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
+const plotRef = useTemplateRef<{
+  toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null>
+  axisRect(): FrameRect | null
+}>('plotRef')
 const projectStore = useProjectStore()   // image metadata (the per-image frame interval for the time axis)
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
@@ -694,7 +701,12 @@ async function exportSvg(): Promise<string | null> {
 }
 // `isBusy` is read by the board EXPORT before it captures: capturing a panel mid-fetch put a blank
 // or half-drawn plot into the finished PDF, silently. See utils/awaitIdle.ts.
-defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () => loading.value })
+// Point-out Frame — the padded axis rect from PlotChart. A 0..1 against the panel body would land
+// on the axis-label / legend gutter; SummaryPanel is Observable Plot rendered edge-to-edge inside
+// `.sp-body`, so we honour `scale('x')/'y')` the same way ClusterHeatmapPanel does.
+const summaryFrame: Frame = rectFrame(() => plotRef.value?.axisRect?.() ?? null)
+defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg,
+               isBusy: () => loading.value, getFrame: (): Frame => summaryFrame })
 
 // Register this panel as PNG-exportable so the canvas Share compositor can request its plot
 // bitmap by panelId. Reuses the same `exportImage` the PDF export uses (plot-only, light theme).
@@ -702,6 +714,30 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
 // selection overlay can address.
 if (props.persistKey) {
   usePanelExport(() => props.persistKey ?? '', () => exportImage())
+}
+
+// BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='summary'`,
+// `plotId=persistKey`). Position calc reads `axisRect()` in client space, subtracts the body's
+// own client-space origin → local px inside `.sp-body`. Reactive on resize via a tick counter.
+const viewer = useViewerStore()
+const summaryBodyEl = useTemplateRef<HTMLElement>('summaryBodyEl')
+const summaryMarks = computed(() => {
+  const pid = props.persistKey
+  if (!pid) return []
+  return viewer.plotMarks.filter(m => m.family === 'summary' && m.plotId === pid && !m.cell)
+})
+// Reactivity trigger for the marker positions on a panel resize — same shape as ClusterHeatmapPanel.
+// `usePlotResize` on `summaryBodyEl` with a tick-bumper "render" cannot self-loop.
+const summaryResizeTick = ref(0)
+usePlotResize(summaryBodyEl, () => { summaryResizeTick.value += 1 })
+function summaryMarkStyle(m: { u: number; v: number }): Record<string, string> | null {
+  void summaryResizeTick.value
+  const axis = plotRef.value?.axisRect?.()
+  const bodyRect = summaryBodyEl.value?.getBoundingClientRect()
+  if (!axis || !bodyRect || axis.width <= 0 || axis.height <= 0) return null
+  const left = (axis.left - bodyRect.left) + m.u * axis.width
+  const top  = (axis.top  - bodyRect.top)  + m.v * axis.height
+  return { left: `${left}px`, top: `${top}px` }
 }
 </script>
 
@@ -878,13 +914,16 @@ if (props.persistKey) {
       </select>
     </template>
 
-    <div class="sp-body">
+    <div ref="summaryBodyEl" class="sp-body">
       <div v-if="!series.length && !isInteraction" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
       <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
                  @auto-override="autoOverrides = $event" />
       <PlotSpinner v-if="showSpinner" label="Loading…" />
+      <template v-for="m in summaryMarks" :key="m.markerId">
+        <PlotPointOutMark v-if="summaryMarkStyle(m)" :mark="m" :style="summaryMarkStyle(m)!" />
+      </template>
     </div>
   </CanvasPanel>
 </template>
