@@ -277,7 +277,8 @@ include(joinpath(@__DIR__, "suite", "bidir_push_writer.jl"))
 include(joinpath(@__DIR__, "suite", "bidir_blackboard.jl"))
 
 # ── VN P3b popmap + BIDIR landscape testsets ──────────────────
-# Four testsets: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b — drift banner),
-# _bin_centroids_to_tiles (BIDIR landscape P2a), _pop_counts_from_label_map (BIDIR landscape
-# P2b), _track_summary_from_binned (BIDIR landscape P3 — per-tile track summary).
+# Five testsets: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b — drift banner),
+# _bin_centroids_to_tiles (BIDIR landscape P2a) + its Z filter (P6 — viewer plane/volume),
+# _pop_counts_from_label_map (BIDIR landscape P2b), _track_summary_from_binned (BIDIR
+# landscape P3 — per-tile track summary).
 include(joinpath(@__DIR__, "suite", "popmap_and_landscape.jl"))

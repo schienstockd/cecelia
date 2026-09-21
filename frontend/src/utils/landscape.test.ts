@@ -252,6 +252,51 @@ describe('augmentLandscape', () => {
     expect(merged.sourceRun).toBeUndefined()
   })
 
+  it('attaches viewport when the backend sent one (Phase 6)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(
+      base, [{ tileId: 'A1', segCount: 3 }], undefined,
+      { renderMode: 'plane', zLo: 8, zHi: 10 },
+    )
+    expect(merged.viewport).toEqual({ renderMode: 'plane', zLo: 8, zHi: 10 })
+    expect(merged.schemaVersion).toBe(2)
+  })
+
+  it('attaches viewport in volume mode', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(
+      base, [{ tileId: 'A1', segCount: 3 }], undefined,
+      { renderMode: 'volume', zLo: 0, zHi: 29 },
+    )
+    expect(merged.viewport?.renderMode).toBe('volume')
+    expect(merged.viewport?.zLo).toBe(0)
+    expect(merged.viewport?.zHi).toBe(29)
+  })
+
+  it('omits viewport for an unknown renderMode (defensive)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(
+      base, [{ tileId: 'A1', segCount: 3 }], undefined,
+      { renderMode: 'garbage-mode' as unknown as 'plane', zLo: 0, zHi: 5 },
+    )
+    expect(merged.viewport).toBeUndefined()
+  })
+
+  it('drops NaN zLo/zHi from the viewport (defensive)', () => {
+    const img = makeImageData(32, 32, () => [128, 128, 128])
+    const base = computeLandscape(img, { cols: 4, rows: 4 })
+    const merged = augmentLandscape(
+      base, [{ tileId: 'A1', segCount: 3 }], undefined,
+      { renderMode: 'plane', zLo: NaN, zHi: 5 },
+    )
+    expect(merged.viewport?.renderMode).toBe('plane')
+    expect(merged.viewport?.zLo).toBeUndefined()
+    expect(merged.viewport?.zHi).toBe(5)
+  })
+
   it('merges pops independently of channels + segCount (Phase 2b)', () => {
     const img = makeImageData(32, 32, () => [128, 128, 128])
     const base = computeLandscape(img, { cols: 4, rows: 4 })
@@ -328,7 +373,10 @@ describe('envelope size ratchet (LANDSCAPE_COMPLEMENTARY_PLAN Phase 5, Decision 
       tracks:   { valueName: 'default', labelsVersion: 'v2' },
       channels: { valueName: 'default', imageVersion: 'v1', level: 0 },
     }
-    const merged = augmentLandscape(base, augment, sourceRun)
+    // Phase 6 viewport — adds ~50 bytes to the envelope; negligible against the ~640 KB
+    // dominated by pops but included so the ratchet reflects the shipped shape.
+    const viewport = { renderMode: 'volume' as const, zLo: 0, zHi: 29 }
+    const merged = augmentLandscape(base, augment, sourceRun, viewport)
     const bytes = new TextEncoder().encode(JSON.stringify(merged)).length
     const KB = 1024
     // Ceiling: 700 KB. See docstring — measured ~640 KB today; +60 KB slack for one small

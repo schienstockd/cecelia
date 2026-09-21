@@ -1,10 +1,12 @@
 # Landscape complementary stats — plan
 
-**Status:** feature-complete. Phases 1–5 shipped 2026-09-20/21
-(`#1089`, `#1096`, `#1099`, `#1100`, `#1105`, `#1112`). HMM/motifs
-(Decision 5) explicitly dropped 2026-09-21 — clustered tracks are
-populations, so behaviour information rides the existing `pops` bag
-from Phase 2b when a cluster-derived pop is ticked visible. Drafted from
+**Status:** feature-complete. Phases 1–6 shipped 2026-09-20/21
+(`#1089`, `#1096`, `#1099`, `#1100`, `#1105`, `#1112`, `#1144`, Phase 6
+Z-awareness on `feat/bidir-landscape-z-aware`). HMM/motifs
+(former Decision 5) explicitly dropped 2026-09-21 — clustered tracks
+are populations, so behaviour information rides the existing `pops`
+bag from Phase 2b when a cluster-derived pop is ticked visible.
+Drafted from
 [`docs/archive/opus-audit-landscape-complementary-stats.md`](../archive/opus-audit-landscape-complementary-stats.md).
 Written to be picked up cold by another session.
 
@@ -226,6 +228,33 @@ Each phase independently mergeable.
    Amends Decision 7 with measured numbers — original 500 KB estimate was
    optimistic; pops (~250 KB at max density) dominate the payload.
    ~60 lines in `frontend/src/utils/landscape.test.ts`.
+
+8. **Phase 6 — Z-awareness: honour the viewer's plane/volume mode
+   (this pass, 2026-09-21).** Pre-Phase-6, centroid-based fields collapsed
+   across ALL Z (a tile at z=5 slice-view reported cells from every z), and
+   channels always read a single plane even when the viewer was showing a
+   MIP. Both silent mismatches. Fix mirrors the gating page's
+   `pick-rect` z-scope pattern: the frontend snapshots `mode.value`
+   (`'plane' | 'volume'`) + inclusive `zLo`/`zHi` on the compute POST —
+   plane sends `zPlane ± 1` (matches the pick-rect ±1 default), volume
+   sends the slab-slider `zRange`. Backend:
+     • channels — plane mode reads the single plane at `z` (unchanged);
+       volume mode reads slab `[zLo, zHi]` + per-pixel MIP across Z.
+     • segCount / pops / tracks — extend the label_props read to include
+       `centroid_z` (already provided by `view_centroid_cols`), filter
+       rows by `zLo ≤ round(centroid_z) ≤ zHi` in both modes. 2D images
+       have no `centroid_z` column so the filter is a no-op — zero
+       behaviour change for still images. Track `duration_by_track`
+       (per-track lifetime frame count) intentionally does NOT apply
+       the Z filter — "how long has this cell been alive" is a whole-
+       track property, not a per-slice one.
+   Response body grows optional `viewport: {renderMode, zLo, zHi}`
+   (top-level, sibling to `sourceRun`) so a reader can tell whether a
+   `segCount: 8` came from a plane-mode slab-of-3 vs a volume-mode MIP.
+   MCP `get_capture` docstring updated. Tests: new
+   `_bin_centroids_to_tiles Z filter` testset covering no-op / plane /
+   volume / no-overlap / NaN-drop / length-mismatch. Ratchet still under
+   700 KB (viewport is 3 scalars). ~200 lines total.
 
 ## Cross-piece linkage
 
