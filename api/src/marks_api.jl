@@ -386,6 +386,83 @@ function api_viewer_marks_tile(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, markerId = m.id))
 end
 
+# ── Plot point-out (BIDIR_CONTEXT_PLAN.md PR #4b) ────────────────────────────
+# Claude's "look at THIS spot" pointer on a plot canvas, delivered via the same `viewer:mark`
+# WS frame as UI / freeform / tile. Coords are 0..1 in the target plot family's own frame
+# (see `frontend/src/plots/frame.ts` — `rectFrame` / `letterboxFrame` normalise per family so
+# a mark projects onto the actual plot area, not the surrounding gutter).
+#
+# `family` names the plot family (`gate-scatter`, `umap`, `heatmap`, `image-strip`, `cell-cards`,
+# `pairs-matrix`, `hmm-states`, `hmm-transitions`). `plotId` addresses ONE panel — a stable id
+# the frontend hands out per canvas (the panel `persistKey`). `cell` (optional) addresses a
+# sub-frame for multi-cell families (`cell=B3`, `cell=facet-Speed`, `cell=/root/CD4`); absent
+# on single-cell plots.
+
+const _PLOT_FAMILY_MAX = 40
+const _PLOT_ID_MAX     = 200
+const _CELL_KEY_MAX    = 200
+
+_clean_plot_family(v) = begin
+    s = strip(String(v === nothing ? "" : v))
+    isempty(s) && return ""
+    length(s) > _PLOT_FAMILY_MAX ? String(first(s, _PLOT_FAMILY_MAX)) : String(s)
+end
+_clean_plot_id(v) = begin
+    s = strip(String(v === nothing ? "" : v))
+    isempty(s) && return ""
+    length(s) > _PLOT_ID_MAX ? String(first(s, _PLOT_ID_MAX)) : String(s)
+end
+_clean_cell_key(v) = begin
+    isnothing(v) && return ""
+    s = strip(String(v))
+    isempty(s) && return ""
+    length(s) > _CELL_KEY_MAX ? String(first(s, _CELL_KEY_MAX)) : String(s)
+end
+_clean_uv(v) = begin
+    v isa Number || return nothing
+    f = try; Float64(v); catch; return nothing; end
+    isfinite(f) || return nothing
+    # Reject values well outside 0..1 rather than clamping — a caller shipping (0.5, 1500)
+    # meant a different frame or a different unit, and quietly rendering at the edge would hide
+    # that. A small overshoot (leader line beyond the axis) is fine; a page-off value is not.
+    (f < -1 || f > 2) && return nothing
+    f
+end
+
+"""
+    POST /api/viewer/marks/plot
+
+Body: `{ projectUid, family, plotId, u, v, cell?, label?, ttl_s? }`
+Reply: `{ ok:true, markerId }`
+
+Publishes a `viewer:mark` frame with `kind: "plot"`. The frontend routes it to a `plotMarks` bag;
+per-family consumers filter by `(family, plotId, cell?)` and render a marker at
+`getFrame().fromNorm(u, v)` (see `frontend/src/plots/frame.ts`).
+"""
+function api_viewer_marks_plot(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
+    family = _clean_plot_family(get(body, :family, nothing))
+    isempty(family) && return 400, JSON3.write((; error = "family required — e.g. 'gate-scatter', 'umap'"))
+    plot_id = _clean_plot_id(get(body, :plotId, get(body, :plot_id, nothing)))
+    isempty(plot_id) && return 400, JSON3.write((; error = "plotId required — the target panel's persistKey"))
+    u = _clean_uv(get(body, :u, nothing))
+    v = _clean_uv(get(body, :v, nothing))
+    (u === nothing || v === nothing) && return 400, JSON3.write((; error = "u and v required (finite numbers in ~0..1)"))
+    cell = _clean_cell_key(get(body, :cell, nothing))
+    label = _clean_label(get(body, :label, nothing))
+    ttl   = _clean_ttl(get(body, :ttl_s, get(body, :ttlSeconds, _MARK_TTL_DEFAULT)))
+    payload = Dict{String,Any}("family" => family, "plotId" => plot_id, "u" => u, "v" => v)
+    isempty(cell) || (payload["cell"] = cell)
+    m = UiFreeformMark(_new_mark_id(), "plot", project_uid, label, _now_epoch(), ttl, payload)
+    _store_mark!(m)
+    broadcast_ws(_mark_ws_payload(m))
+    200, JSON3.write((; ok = true, markerId = m.id))
+end
+
 # Test-only reset. Not registered as a route — tests import the module and call it directly to
 # get a hermetic state between assertions. Deliberately private (no `export`).
 function _reset_marks!()

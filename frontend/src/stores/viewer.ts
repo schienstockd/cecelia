@@ -204,6 +204,23 @@ export interface FreeformMark {
   expiresAt: number
 }
 
+/** BIDIR PR #4b plot point-out — "look at THIS spot on that panel". Ephemeral.
+ *  `family` names the plot family (`gate-scatter`, `umap`, `heatmap`, `image-strip`, `cell-cards`,
+ *  `pairs-matrix`, `hmm-states`, `hmm-transitions`). `plotId` addresses ONE panel — the panel's
+ *  stable `persistKey`. `u`/`v` are 0..1 in that family's own frame (see `plots/frame.ts` —
+ *  `rectFrame` / `letterboxFrame` normalise per family). `cell` (optional) addresses a sub-frame
+ *  for multi-cell families (facet label, strip cell index, pairs-matrix (row,col), a card path). */
+export interface PlotMark {
+  markerId: string
+  family: string
+  plotId: string
+  u: number
+  v: number
+  cell?: string
+  label: string
+  expiresAt: number
+}
+
 function _readJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
   try {
@@ -241,6 +258,9 @@ export const useViewerStore = defineStore('viewer', () => {
   // BIDIR PR #5 — ephemeral pointer bags. Session-only (see UiMark / FreeformMark docs above).
   const uiMarks       = ref<UiMark[]>([])
   const freeformMarks = ref<FreeformMark[]>([])
+  // BIDIR PR #4b — ephemeral plot point-outs (see PlotMark). Session-only. Consumers filter by
+  // `(family, plotId, cell?)` and render a marker at their `getFrame().fromNorm(u, v)`.
+  const plotMarks     = ref<PlotMark[]>([])
   /** Monotonic tick bumped whenever the SERVER's `/Pick selection` pop membership changes — the
    *  correction cockpit watches this to know when to re-fetch membership. Same-window signal (a
    *  storage event does NOT fire in the writer's own window); the cross-window channel is
@@ -396,6 +416,25 @@ export const useViewerStore = defineStore('viewer', () => {
     freeformMarks.value = freeformMarks.value.filter(x => x.markerId !== markerId)
   }
 
+  /** BIDIR PR #4b. Append a plot point-out. Session-only bag with a TTL prune. A same
+   *  `(family, plotId, cell)` supersedes (like `pushUiMark`) — Claude retargeting the same panel
+   *  is normal; stacking would leave a stale mark on top of the new one. */
+  function pushPlotMark(m: Omit<PlotMark, 'expiresAt'> & { ttlSeconds: number }) {
+    const expiresAt = Date.now() + m.ttlSeconds * 1000
+    const entry: PlotMark = { markerId: m.markerId, family: m.family, plotId: m.plotId,
+                              u: m.u, v: m.v, ...(m.cell ? { cell: m.cell } : {}),
+                              label: m.label, expiresAt }
+    const same = (x: PlotMark) =>
+      x.family === entry.family && x.plotId === entry.plotId && (x.cell ?? '') === (entry.cell ?? '')
+    plotMarks.value = [...plotMarks.value.filter(x => !same(x)), entry]
+    window.setTimeout(() => {
+      plotMarks.value = plotMarks.value.filter(x => x.markerId !== entry.markerId)
+    }, m.ttlSeconds * 1000)
+  }
+  function dismissPlotMark(markerId: string) {
+    plotMarks.value = plotMarks.value.filter(x => x.markerId !== markerId)
+  }
+
   /** Correction cockpit calls this whenever pick membership or Review focus changes. `null` (or an
    *  empty labels + zero focus) clears the pick outline. Stamped like `setTrackHighlight` so a
    *  repeat write with the same labels still wakes the popup viewer. */
@@ -434,11 +473,12 @@ export const useViewerStore = defineStore('viewer', () => {
 
   return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
            trackHighlight, labelsDimMismatch, pickHighlight, pickSelectionTick,
-           uiMarks, freeformMarks,
+           uiMarks, freeformMarks, plotMarks,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
            consumePendingViewState, setPreviewLabels, setPreviewImages, setTrackHighlight,
            setLabelsDimMismatch, setPickHighlight, bumpPickSelectionTick,
-           pushUiMark, dismissUiMark, pushFreeformMark, dismissFreeformMark }
+           pushUiMark, dismissUiMark, pushFreeformMark, dismissFreeformMark,
+           pushPlotMark, dismissPlotMark }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))

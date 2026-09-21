@@ -72,6 +72,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/push/target"),
             ("POST", "/api/viewer/marks/cells"),
             ("POST", "/api/viewer/marks/freeform"),
+            ("POST", "/api/viewer/marks/plot"),
             ("POST", "/api/viewer/marks/tile"),
             ("POST", "/api/viewer/marks/tracks"),
             ("POST", "/api/viewer/marks/ui"),
@@ -301,6 +302,28 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(body["target"], "cap-20260918T175413-a1b2c3")
         self.assertEqual(len(body["overlay"]), 1)
         self.assertNotIn("imageUid", body)
+
+    def test_mark_plot_posts_family_plot_id_and_coords(self):
+        # BIDIR PR #4b — plot point-out. family + plotId + u/v; optional cell + label + ttl_s.
+        with _patch_urlopen({"ok": True, "markerId": "mark-p1"}) as u:
+            self.c.mark_plot("p", "gate-scatter", "gate:flow:IMG1:default:3", 0.72, 0.35,
+                             label="outlier", ttl_s=90)
+        req = u.call_args[0][0]
+        self.assertTrue(req.full_url.endswith("/api/viewer/marks/plot"))
+        body = json.loads(req.data.decode())
+        self.assertEqual(body["family"], "gate-scatter")
+        self.assertEqual(body["plotId"], "gate:flow:IMG1:default:3")
+        self.assertEqual(body["u"], 0.72)
+        self.assertEqual(body["v"], 0.35)
+        self.assertNotIn("cell", body)                                  # omitted when empty
+        self.assertEqual(body["label"], "outlier")
+        self.assertEqual(body["ttl_s"], 90)
+
+    def test_mark_plot_carries_cell_for_multi_cell_families(self):
+        with _patch_urlopen({"ok": True, "markerId": "mark-p2"}) as u:
+            self.c.mark_plot("p", "image-strip", "strip-abc", 0.5, 0.5, cell="cell=3")
+        body = json.loads(u.call_args[0][0].data.decode())
+        self.assertEqual(body["cell"], "cell=3")
 
     def test_bidir_capture_read_routes_allow_listed_but_write_is_not(self):
         # BIDIR share-in: Claude may READ the captures the user shares, but the write route (POST

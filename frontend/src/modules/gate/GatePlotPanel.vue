@@ -505,6 +505,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => {
                      :dot-size="props.dotSize"
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"
+                     :plot-id="props.persistKey"
                      @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
       <!-- untracked segmentation on a track plot: nothing to show, point the user at tracking -->
       <div v-if="notTracked" class="gate-empty cc-empty-inline cc-card">

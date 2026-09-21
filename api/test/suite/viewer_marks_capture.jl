@@ -121,6 +121,35 @@
         @test String(ff.target) == "cap-20260918T175413-a1b2c3"
         @test length(ff.overlay) == 1
         @test String(ff.overlay[1].kind) == "circle"
+
+        # Plot point-out (PR #4b): family + plotId required, u/v finite in ~0..1, optional cell,
+        # WS frame carries payload verbatim so per-family consumers filter by (family, plotId, cell).
+        _reset_marks!(); drain()
+        p(b) = _post(api_viewer_marks_plot, b)
+        @test p(Dict("projectUid"=>uid))[1] == 400                                       # family required
+        @test p(Dict("projectUid"=>uid, "family"=>"gate-scatter"))[1] == 400             # plotId required
+        @test p(Dict("projectUid"=>uid, "family"=>"gate-scatter", "plotId"=>"pk"))[1] == 400   # u/v required
+        @test p(Dict("projectUid"=>uid, "family"=>"gate-scatter", "plotId"=>"pk",
+                     "u"=>0.5, "v"=>"nope"))[1] == 400                                   # v must be numeric
+        @test p(Dict("projectUid"=>uid, "family"=>"gate-scatter", "plotId"=>"pk",
+                     "u"=>0.5, "v"=>1500))[1] == 400                                     # page-off value rejected
+        stp, bodyp = p(Dict("projectUid"=>uid, "family"=>"gate-scatter", "plotId"=>"gate:flow:IMG1:default:3",
+                            "u"=>0.72, "v"=>0.35, "cell"=>"", "label"=>"outlier", "ttl_s"=>90))
+        @test stp == 200
+        fp = drain()[1]
+        @test String(fp.type) == "viewer:mark" && String(fp.kind) == "plot"
+        @test String(fp.family) == "gate-scatter"
+        @test String(fp.plotId) == "gate:flow:IMG1:default:3"
+        @test Float64(fp.u) == 0.72 && Float64(fp.v) == 0.35
+        @test !haskey(fp, :cell)                                                         # omitted when empty
+        @test String(fp.label) == "outlier"
+        @test Int(fp.ttlSeconds) == 90
+        # Multi-cell address: `cell` is carried through for subframe-addressing families.
+        stp2, _ = p(Dict("projectUid"=>uid, "family"=>"image-strip", "plotId"=>"strip-abc",
+                         "u"=>0.5, "v"=>0.5, "cell"=>"cell=3"))
+        @test stp2 == 200
+        fp2 = drain()[1]
+        @test String(fp2.cell) == "cell=3"
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
         _reset_marks!()

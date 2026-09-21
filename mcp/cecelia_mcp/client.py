@@ -114,6 +114,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/ui"),       # point at a UI anchor (a data-guide id or a nav path)
         ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a stored capture (cap-…) — 0..1 frame-relative coords
         ("POST", "/api/viewer/marks/tile"),     # highlight ONE landscape/grid tile (e.g. "B3") — no overlay geometry, the grid is the shape
+        ("POST", "/api/viewer/marks/plot"),     # bidir PR #4b: point at a spot on a PLOT panel (family + plotId + 0..1 (u,v) + optional sub-cell)
         ("GET",  "/api/viewer/landscape"),      # read the last-published landscape heatmap for (image, t, z); browser publishes, MCP reads
         # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
         # + auth token to the project so PR #2's Julia writer can push a capture-arrived
@@ -486,6 +487,23 @@ class CeceliaClient:
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/tile", body=body)
+
+    def mark_plot(self, project_uid: str, family: str, plot_id: str,
+                  u: float, v: float,
+                  cell: str = "", label: str = "", ttl_s: int | None = None):
+        # PLOT point-out (BIDIR PR #4b). `family` names the plot family
+        # (`gate-scatter` / `umap` / `heatmap` / `image-strip` / `cell-cards` / …); `plot_id`
+        # addresses one panel (its persistKey). `u`/`v` are 0..1 in that family's own frame
+        # (`frontend/src/plots/frame.ts` — `rectFrame` / `letterboxFrame` handle the per-family
+        # letterbox math so the mark lands on the plot area, not the surrounding gutter). `cell`
+        # optionally addresses a sub-frame for multi-cell families (image-strip cell index,
+        # facet label, pairs-matrix (row,col)).
+        body: dict = {"projectUid": project_uid, "family": family, "plotId": plot_id,
+                      "u": float(u), "v": float(v)}
+        if cell: body["cell"] = cell
+        if label: body["label"] = label
+        if ttl_s is not None: body["ttl_s"] = ttl_s
+        return self._request("POST", "/api/viewer/marks/plot", body=body)
 
     def get_landscape(self, project_uid: str, image_uid: str, value_name: str,
                       t: int = -1, z: int = -1):
