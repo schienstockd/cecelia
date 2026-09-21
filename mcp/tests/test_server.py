@@ -7,6 +7,7 @@ mcp/fastmcp in the env, so it runs under `pixi run test-mcp`.
 """
 import asyncio
 import unittest
+import unittest.mock
 
 from cecelia_mcp import guidance, server
 
@@ -430,6 +431,87 @@ class OutcomeRankTest(unittest.TestCase):
         rows.sort(key=lambda r: server._outcome_rank(r.get("outcome")))
         # bad rows first (in original order: b, e), then good (d), then untagged (a, c).
         self.assertEqual([r["id"] for r in rows], ["b", "e", "d", "a", "c"])
+
+
+class StainClassifierTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Phase 5.1 — channel-name → stain-class classifier used by the entry
+    fingerprint. Pinned so a class rename or a new pattern surfaces here rather than as a silent
+    change in what gets banked into `meta.fingerprint.stain_classes`. The full contract lives in
+    `docs/inventory/stain_classes.md`; update both in the same change."""
+
+    def test_membrane_prefix(self):
+        self.assertEqual(server._classify_stain("mem-TOM"), "membrane")
+        self.assertEqual(server._classify_stain("mem_gfp"), "membrane")
+
+    def test_nucleus_prefix_and_dyes(self):
+        self.assertEqual(server._classify_stain("nuc-GFP"), "nucleus")
+        self.assertEqual(server._classify_stain("DAPI"), "nucleus")
+        self.assertEqual(server._classify_stain("Hoechst-33342"), "nucleus")
+
+    def test_cd_marker(self):
+        # Ailsa's CD169-Kat lands as macrophage_or_marker (coarse immune-marker bucket).
+        self.assertEqual(server._classify_stain("CD169-Kat"), "macrophage_or_marker")
+        self.assertEqual(server._classify_stain("CD8"), "macrophage_or_marker")
+
+    def test_reporter_bare(self):
+        # Bare reporter, no organelle prefix, lands as "reporter" — not membrane / nucleus.
+        self.assertEqual(server._classify_stain("GFP"), "reporter")
+        self.assertEqual(server._classify_stain("RFP"), "reporter")
+
+    def test_structural_and_autofl(self):
+        self.assertEqual(server._classify_stain("SHG"), "structural")
+        self.assertEqual(server._classify_stain("autofluorescence"), "autofluorescence")
+
+    def test_unknown_is_signal_not_bug(self):
+        # A channel name the map hasn't seen resolves to "unknown". That's a valid fingerprint
+        # value — the retrieval side reads it as "no signal on this dimension", not as an error.
+        self.assertEqual(server._classify_stain("random-probe-42"), "unknown")
+        self.assertEqual(server._classify_stain(""), "unknown")
+        self.assertEqual(server._classify_stain(None), "unknown")
+
+
+class InferFingerprintTest(unittest.TestCase):
+    """PROJECT_MEMORY_PLAN Phase 5.1 — `_infer_fingerprint` snapshots the active image's context
+    into the schema banked with a new Blackboard entry. Guards checked here: unresolvable image
+    ⇒ None (best-effort, entry still creates), stain classes de-duped + sorted, version stamped."""
+
+    def _patch_client(self, image_meta):
+        # `_infer_fingerprint` reads through `_client.get_image_meta`; the tests patch that call so
+        # they don't need a live backend. Keeps the classifier + shape assertions pure logic.
+        return unittest.mock.patch.object(
+            server._client, "get_image_meta",
+            return_value={"image": image_meta})
+
+    def test_no_image_uid_is_none(self):
+        self.assertIsNone(server._infer_fingerprint("proj", None))
+        self.assertIsNone(server._infer_fingerprint("proj", ""))
+
+    def test_full_snapshot(self):
+        with self._patch_client({
+            "sizeC":           4,
+            "activeValueName": "denoised",
+            "channelNames":    ["mem-TOM", "nuc-GFP", "CD169-Kat", "unknown-probe"],
+        }):
+            fp = server._infer_fingerprint("proj", "img1")
+        self.assertIsNotNone(fp)
+        self.assertEqual(fp["v"], server._BB_FINGERPRINT_VERSION)
+        self.assertEqual(fp["channel_count"], 4)
+        self.assertEqual(fp["pipeline_stage"], "denoised")
+        # De-duped + sorted — a fingerprint is a KEY, so order matters for a stable string form.
+        self.assertEqual(fp["stain_classes"],
+                         ["macrophage_or_marker", "membrane", "nucleus", "unknown"])
+
+    def test_missing_fields_pass_through(self):
+        # Image with no channel names / no sizeC / no active value returns a fingerprint carrying
+        # just the version — the writer still records the intent without inventing values.
+        with self._patch_client({"sizeC": None, "activeValueName": "", "channelNames": []}):
+            fp = server._infer_fingerprint("proj", "img1")
+        self.assertEqual(fp, {"v": server._BB_FINGERPRINT_VERSION})
+
+    def test_backend_failure_is_none(self):
+        with unittest.mock.patch.object(server._client, "get_image_meta",
+                                         side_effect=RuntimeError("backend down")):
+            self.assertIsNone(server._infer_fingerprint("proj", "img1"))
 
 
 if __name__ == "__main__":

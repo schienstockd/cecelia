@@ -78,6 +78,38 @@ function _outcome_from_meta(meta)::Union{Dict{String,Any},Nothing}
     )
 end
 
+# Entry fingerprint — PROJECT_MEMORY_PLAN Phase 5.1. Small, structured, set-once at create time so
+# a future retrieval pass (P5.2) can score a new entry's context against the failure fingerprints
+# banked on `bad`-tagged entries in the corpus. INTERNAL key, not a public interface — the version
+# field lets the schema move forward without a migration: retrieval reads `v` and dispatches, an
+# older-v entry with an unrecognised field is treated as "no signal for that dimension" rather than
+# rejected. Absent on entries created before P5.1 (any legacy entry) — treated the same as v-mismatch.
+# Kept ≤ 2 KiB so the whole meta.json stays a cheap read; a fingerprint that runs long is a bug
+# (fingerprints are keys, not payloads — pointers back to the entry carry the detail).
+const _BB_FINGERPRINT_VERSION      = 1
+const _BB_FINGERPRINT_MAX_BYTES    = 2 * 1024
+_valid_bb_fingerprint(fp) = (fp isa AbstractDict) &&
+    (haskey(fp, "v") || haskey(fp, :v)) &&
+    (try Int(get(fp, "v", get(fp, :v, 0))) > 0 catch; false end)
+
+"""
+    _fingerprint_from_meta(meta) -> Union{Dict{String,Any},Nothing}
+
+Return the fingerprint recorded on `meta`, or `nothing` when the entry has none / the on-disk shape
+is malformed. Kept absent-on-missing (same discipline as `outcome`) so a reader can distinguish "no
+fingerprint at all" from "fingerprint present but no signal on this dimension". The stored dict is
+shallow-copied under `String` keys so a downstream consumer can add fields without mutating meta.
+"""
+function _fingerprint_from_meta(meta)::Union{Dict{String,Any},Nothing}
+    fp = get(meta, "fingerprint", nothing)
+    _valid_bb_fingerprint(fp) || return nothing
+    out = Dict{String,Any}()
+    for (k, v) in fp
+        out[String(k)] = v
+    end
+    out
+end
+
 # Blackboard search (PROJECT_MEMORY_PLAN Decision 4). Substring, case-insensitive, per project.
 # Cheap at the sizes this store reaches — a title match beats a body match; snippet is ±40 chars
 # around the first hit. `limit` bounded so a runaway caller can't blow the response.
@@ -187,10 +219,14 @@ _next_bb_snapshot_version(uid, id) =
 # `outcome`: pass a `Dict{String,Any}("verdict"=>…, "note"=>…, "taggedAt"=>…)` to record a Decision-11
 # outcome; pass `nothing` to omit the field entirely (untagged state). Every mutation site reads the
 # prior outcome from meta and passes it back so a revise/status flip preserves the tag.
+# `fingerprint`: pass a `{"v"=>N, ...}` dict to record a P5.1 fingerprint; `nothing` to omit. Set
+# once at create; every mutation site reads the prior fingerprint from meta and passes it back so
+# no downstream write can accidentally drop it.
 function _write_bb_meta!(uid::AbstractString, id::AbstractString;
     title, createdAt, updatedAt, current, attachments,
     snapshots = Any[], status::AbstractString = "open",
-    outcome::Union{Nothing,AbstractDict} = nothing)
+    outcome::Union{Nothing,AbstractDict} = nothing,
+    fingerprint::Union{Nothing,AbstractDict} = nothing)
     dir = _bb_entry_dir(uid, id)
     meta = Dict{String,Any}(
         "entryId"     => id,
@@ -219,6 +255,18 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
             "note"     => String(get(outcome, "note", "")),
             "taggedAt" => String(get(outcome, "taggedAt", "")),
         )
+    end
+    # Fingerprint — P5.1. Same absent-on-missing discipline as outcome. The dict is shallow-copied
+    # under String keys so the on-disk shape stays stable regardless of whether the caller passed
+    # Symbol- or String-keyed data. `v` is coerced to Int; other fields pass through as-is (the
+    # schema is defined by the caller — see MCP `_infer_fingerprint`).
+    if _valid_bb_fingerprint(fingerprint)
+        fp_out = Dict{String,Any}()
+        for (k, v) in fingerprint
+            fp_out[String(k)] = v
+        end
+        fp_out["v"] = Int(get(fp_out, "v", _BB_FINGERPRINT_VERSION))
+        meta["fingerprint"] = fp_out
     end
     write_json_atomic(joinpath(dir, "meta.json"), meta)
 end
@@ -368,6 +416,11 @@ function api_blackboard_list(req::HTTP.Request)
         # tri-state check against a placeholder.
         o = _outcome_from_meta(meta)
         o !== nothing && (row["outcome"] = o)
+        # Fingerprint on the list row too — P5.1. Absent on legacy entries (created before v1) and
+        # on entries whose caller didn't infer one. Costs a few bytes per row but lets a retrieval
+        # pass score the whole project without a per-entry fetch.
+        fp = _fingerprint_from_meta(meta)
+        fp !== nothing && (row["fingerprint"] = fp)
         push!(entries, row)
     end
     200, JSON3.write((; entries = entries))
@@ -425,6 +478,10 @@ function api_blackboard_entry_get(req::HTTP.Request)
     # Outcome describes the LIVE entry too (like status — not per-snapshot); absent when untagged.
     o = _outcome_from_meta(meta)
     o !== nothing && (entry_out["outcome"] = o)
+    # Fingerprint describes the entry's ORIGINAL context (set at create), not the live state — but
+    # it's a property of the entry as a whole, so the read exposes it alongside status/outcome.
+    fp = _fingerprint_from_meta(meta)
+    fp !== nothing && (entry_out["fingerprint"] = fp)
     200, JSON3.write((; entry = entry_out))
 end
 
@@ -578,7 +635,8 @@ function api_blackboard_status(body_bytes::Vector{UInt8})
         attachments = get(meta, "attachments", Any[]),
         snapshots = get(meta, "snapshots", Any[]),
         status = status,
-        outcome = _outcome_from_meta(meta))
+        outcome = _outcome_from_meta(meta),
+        fingerprint = _fingerprint_from_meta(meta))
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -648,7 +706,8 @@ function api_blackboard_outcome(body_bytes::Vector{UInt8})
         attachments = get(meta, "attachments", Any[]),
         snapshots = get(meta, "snapshots", Any[]),
         status = _status_from_meta(meta),
-        outcome = new_outcome)
+        outcome = new_outcome,
+        fingerprint = _fingerprint_from_meta(meta))
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -693,6 +752,20 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     status = String(get(body, :status, "open"))
     _valid_bb_status(status) ||
         return 400, JSON3.write((; error = "status must be one of $(_BB_STATUS_VALS)"))
+    # Optional fingerprint on create — PROJECT_MEMORY_PLAN P5.1. Set once at create; no PATCH
+    # endpoint (the schema is a snapshot of the entry's context at the moment it was opened; a
+    # future edit to the image doesn't retroactively change what the entry was about). Must carry
+    # a positive int `v` — an unrecognised or absent version reads as "no fingerprint" downstream.
+    # Byte-capped so a runaway caller can't blow meta.json.
+    fp_in = get(body, :fingerprint, nothing)
+    fingerprint = nothing
+    if fp_in !== nothing
+        _valid_bb_fingerprint(fp_in) ||
+            return 400, JSON3.write((; error = "fingerprint must be an object with an integer 'v' >= 1"))
+        length(codeunits(JSON3.write(fp_in))) > _BB_FINGERPRINT_MAX_BYTES &&
+            return 400, JSON3.write((; error = "fingerprint exceeds $_BB_FINGERPRINT_MAX_BYTES bytes"))
+        fingerprint = fp_in
+    end
 
     dir = _bb_entry_dir(uid, id); mkpath(dir)
     write_atomic(joinpath(dir, "entry.md")) do io
@@ -700,7 +773,7 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     end
     _write_bb_meta!(uid, id;
         title = title, createdAt = ts, updatedAt = ts, current = 0,
-        attachments = attachments, status = status)
+        attachments = attachments, status = status, fingerprint = fingerprint)
 
     reg = _read_bb_registry(uid)
     reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)
@@ -775,12 +848,13 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
     # verdict any more than it retracts the status. If the user changes their mind about the
     # outcome, they hit the outcome endpoint separately (Decision 11).
     prev_outcome = _outcome_from_meta(meta)
+    prev_fingerprint = _fingerprint_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v, attachments = atts,
         snapshots = snapshots, status = prev_status,
-        outcome = prev_outcome)
+        outcome = prev_outcome, fingerprint = prev_fingerprint)
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -845,12 +919,14 @@ function api_blackboard_restore(body_bytes::Vector{UInt8})
         get(meta, "snapshots", Any[]), v_new, old_atts_live, String(get(meta, "updatedAt", ts)))
     prev_status  = _status_from_meta(meta)
     prev_outcome = _outcome_from_meta(meta)
+    prev_fingerprint = _fingerprint_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v_asked,
         attachments = restored_atts, snapshots = snapshots,
-        status = prev_status, outcome = prev_outcome)
+        status = prev_status, outcome = prev_outcome,
+        fingerprint = prev_fingerprint)
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
     entry["current"]   = v_asked
@@ -916,7 +992,8 @@ function api_blackboard_prune(body_bytes::Vector{UInt8})
                     attachments = get(meta, "attachments", Any[]),
                     snapshots = snapshots,
                     status = _status_from_meta(meta),
-                    outcome = _outcome_from_meta(meta))
+                    outcome = _outcome_from_meta(meta),
+                    fingerprint = _fingerprint_from_meta(meta))
             end
         end
     end
