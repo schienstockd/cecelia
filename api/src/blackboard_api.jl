@@ -78,15 +78,17 @@ function _outcome_from_meta(meta)::Union{Dict{String,Any},Nothing}
     )
 end
 
-# Entry fingerprint — PROJECT_MEMORY_PLAN Phase 5.1. Small, structured, set-once at create time so
-# a future retrieval pass (P5.2) can score a new entry's context against the failure fingerprints
-# banked on `bad`-tagged entries in the corpus. INTERNAL key, not a public interface — the version
-# field lets the schema move forward without a migration: retrieval reads `v` and dispatches, an
-# older-v entry with an unrecognised field is treated as "no signal for that dimension" rather than
-# rejected. Absent on entries created before P5.1 (any legacy entry) — treated the same as v-mismatch.
-# Kept ≤ 2 KiB so the whole meta.json stays a cheap read; a fingerprint that runs long is a bug
+# Entry fingerprint — PROJECT_MEMORY_PLAN Phase 5.1/5.2. Small, structured, set-once at create so
+# a retrieval pass can score a new entry's context against the failure fingerprints banked on
+# `bad`-tagged entries in the corpus. INTERNAL key, not a public interface — the version field
+# lets the schema move forward without a migration: retrieval reads `v` and dispatches, an older-v
+# entry with an unrecognised field is treated as "no signal for that dimension" rather than
+# rejected.
+#   v1 (2026-09-21): channel_count + stain_classes + pipeline_stage
+#   v2 (2026-09-21): + modality + tissue_context (MCP-side extractors — see docs/inventory/fingerprint_extractors.md)
+# Kept ≤ 2 KiB so meta.json stays a cheap read; a fingerprint that runs long is a bug
 # (fingerprints are keys, not payloads — pointers back to the entry carry the detail).
-const _BB_FINGERPRINT_VERSION      = 1
+const _BB_FINGERPRINT_VERSION      = 2
 const _BB_FINGERPRINT_MAX_BYTES    = 2 * 1024
 _valid_bb_fingerprint(fp) = (fp isa AbstractDict) &&
     (haskey(fp, "v") || haskey(fp, :v)) &&

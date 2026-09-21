@@ -18,7 +18,7 @@ self-contained.
 | `api/src/` — HTTP/WS handlers | [`docs/inventory/JULIA_API.md`](docs/inventory/JULIA_API.md) | 8 KB |
 | `python/cecelia/` — utils, writers, task runners | [`docs/inventory/PYTHON.md`](docs/inventory/PYTHON.md) | 8 KB |
 | `mcp/` — the read-only observer server | [`docs/inventory/MCP.md`](docs/inventory/MCP.md) | 9 KB |
-| Channel-name → stain-class map (Blackboard fingerprint) | [`docs/inventory/stain_classes.md`](docs/inventory/stain_classes.md) | 2 KB |
+| Blackboard fingerprint extractors — stain / modality / tissue | [`docs/inventory/fingerprint_extractors.md`](docs/inventory/fingerprint_extractors.md) | 6 KB |
 
 **FRONTEND.md and JULIA_APP.md are still big — slice them.** `grep -n -i '<thing>' docs/inventory/FRONTEND.md`
 finds the entry directly; the file is a flat bullet list, so one grep hit is the whole answer and you

@@ -249,6 +249,56 @@ both P1 chips (deferred) AND P4 outcome control:
 **Phase 4 non-goals.** No numeric rating, no per-suggestion granularity, no third `inconclusive`
 state, no auto-scoring by Claude. These come back only if a real case demands them.
 
+### Phase 5 — Fingerprint + guardrail retrieval — SHIPPED 2026-09-21
+
+**Goal.** Every Blackboard entry banks a small structured `fingerprint` at create time; recurring
+`bad`-tagged fingerprints (≥ N=3 per bucket) surface in the session briefing as guardrails so the
+next session doesn't re-propose the same trap. Writer + retrieval + briefing surface all live —
+what's missing after this is DATA, not code.
+
+**Phase 5.0 — Metadata audit — DONE 2026-09-21 against zolIMa (MERTK).**
+- AVAILABLE today: `channel_count` (from `sizeC`), `pipeline_stage` (from `activeValueName`).
+- NEEDS EXTRACTION (small classifier, no reader change): `stain_classes` (channel-name regex —
+  Ailsa's `mem-`/`nuc-`/`CD169-…` convention).
+- LANDED IN v2: `modality` (filename regex — Ailsa's `-res_` → 2p), `tissue_context` (profile
+  Subject-section parse over a small vocabulary).
+- **DROPPED** from D3: `objective_na_band`. OME `Objective.LensNA` isn't preserved on import
+  (`extraMeta` empty on `Dml3RG`); costs a reader change; unlikely to discriminate the failure
+  modes actually hit. Revisit only if the case for it appears.
+
+**Phase 5.1 — Fingerprint writer + schema v1 — SHIPPED (PR #1160).**
+- `api/src/blackboard_api.jl`: `_write_bb_meta!` accepts optional `fingerprint`; `api_blackboard_create`
+  validates + writes; every mutation site (status, outcome, revise, restore, prune) preserves it.
+- MCP `create_blackboard_entry(image_uid=)` calls `_infer_fingerprint(project_uid, image_uid)`;
+  server-side `_classify_stain` classifier; docs at [`docs/inventory/fingerprint_extractors.md`](../inventory/fingerprint_extractors.md).
+- Set once at create; absent-on-missing (a legacy pre-P5.1 entry or a create with no `image_uid`
+  reads as "no signal", not an error). Schema `v:1` so P5.1v2 can add fields without a migration.
+
+**Phase 5.1v2 — Fingerprint schema v2 — SHIPPED (this PR).**
+- `_infer_fingerprint` grows `_classify_modality(image_info)` (filename regex on `oriPath`) and
+  `_infer_tissue_context(profile_subject_text)` (Subject-section vocab search). Both absent when
+  they resolve to "unknown" — dropping empty dimensions keeps a bucket keyed on
+  `(modality=*, tissue=*, …)` from collecting every under-annotated entry into a false cluster.
+- `_BB_FINGERPRINT_VERSION` bumped to 2 in Julia + Python. v1 entries stay valid; retrieval
+  dispatches on `v` and treats absent v2 fields as "no signal on that dimension".
+
+**Phase 5.2 — Retrieval + briefing surface — SHIPPED (this PR).**
+- MCP `_fingerprint_bucket_key(fp)` canonicalises a fingerprint to a bucket string; `_mine_guardrails(entries)`
+  groups `bad`-tagged entries by bucket and returns clusters with ≥ N=3 members.
+- `_memory_briefing_slice` gains a `guardrails: [{bucket, fingerprint, count, entries: […]}]`
+  field; empty when no bucket clears threshold.
+- `BRIEFING_GUIDANCE` gains a "ON GUARDRAILS" paragraph telling Claude to read the notes before
+  proposing on that kind of task, and adds `guardrails` to the "HOW TO OPEN" reading order.
+- Intra-project only for v1 (D8 defers cross-project federation to `IMMUNEMAP_IMPORT_PLAN.md`).
+
+**Phase 5 non-goals (won't do unless a real case demands them).**
+- Fuzzy similarity (Jaccard on stain_classes, ±1 on channel_count). Exact bucket match keeps the
+  UX simple and the misfire cost low; add fuzziness only if exact fragmentation is measured.
+- Retroactive backfill of fingerprints on pre-P5.1 entries. The point of the version field is that
+  a v0 entry stays valid; forced migration would be worse than absence.
+- Auto-derived proposals ("here's the correction to apply"). Guardrails RECORD what didn't work,
+  they don't generate what would. Composition is Claude's, from the surfaced notes.
+
 ### Migration
 
 - Existing blackboard entries pre-Phase 1 have no `status` on disk. Read path assigns `open` on
@@ -265,7 +315,7 @@ Reference for future readers — nothing new, only additions to existing shapes:
 
 | Artifact | Path (relative to `<proj>/`) | This plan's change |
 |---|---|---|
-| Blackboard entry | `blackboard/<bb-id>/{entry.md, meta.json, .snapshots/entry@v<N>.md}` | P1: `+ meta.status: open\|resolved\|parked`. P4: `+ meta.outcome: {verdict: good\|bad, note, tagged_at}` (absent = untagged). P5.1: `+ meta.fingerprint: {v, channel_count, stain_classes[], pipeline_stage}` (absent on entries created without image context or before P5.1). |
+| Blackboard entry | `blackboard/<bb-id>/{entry.md, meta.json, .snapshots/entry@v<N>.md}` | P1: `+ meta.status: open\|resolved\|parked`. P4: `+ meta.outcome: {verdict: good\|bad, note, tagged_at}` (absent = untagged). P5.1 (v1): `+ meta.fingerprint: {v:1, channel_count, stain_classes[], pipeline_stage}`. P5.2 (v2): fingerprint grows optional `modality` + `tissue_context` (absent when unknown). |
 | Blackboard registry | `settings/blackboard.json` | P1: mirrors `status` per entry. P4: mirrors `outcome.verdict` per entry (for cheap filter without loading meta). |
 | Reserved profile entry | `blackboard/profile/…` (Decision 2) | new well-known id, otherwise a regular Blackboard entry. `subject` + `goal` enforced by briefing (Decision 9). |
 | Captures | `captures/<cap-id>/{meta.json, frame.png}` | (no change; referenced in briefing) |
@@ -275,36 +325,10 @@ Reference for future readers — nothing new, only additions to existing shapes:
 
 Surfaced here so a follow-up isn't invented from scratch. Each is its own plan when it's time.
 
-- **P5.1 — entry fingerprint (writer) — SHIPPED 2026-09-21.** Each new Blackboard entry snapshots
-  a small structured `fingerprint` into `meta.json` at create time: `{v: 1, channel_count,
-  stain_classes[], pipeline_stage}`. Set-once — no PATCH endpoint (an entry's context is what it
-  was created on; a later image edit doesn't retroactively change the entry). Preserved across
-  every mutation (status flip, outcome tag, revise, restore, prune) by the same read-and-pass-back
-  pattern outcome uses. MCP `create_blackboard_entry` gains an optional `image_uid` arg; the
-  server-side `_infer_fingerprint` reads `sizeC` + `activeValueName` + classified `channelNames`
-  (see [`docs/inventory/stain_classes.md`](../inventory/stain_classes.md)). Absent when no image
-  context is passed or the image is unresolvable — a fingerprint is best-effort, not a gate.
-    - **P5.0 audit — DONE 2026-09-21 against zolIMa (MERTK).** Sweep against the archived D3
-      candidate list:
-      - AVAILABLE today: `channel_count` (from `sizeC`), `pipeline_stage` (from `activeValueName`).
-      - NEEDS EXTRACTION (small classifier lift, no reader change): `stain_classes` (channel-name
-        regex — Ailsa's `mem-`/`nuc-`/`CD169-…` convention). Landed as v1.
-      - DEFERRED to v2: `modality`, `tissue_context` — need a profile-prose parse. Additive; a
-        v1-schema reader ignores an unknown field so a v2 writer can land without a migration.
-      - **DROPPED** from D3: `objective_na_band`. OME `Objective.LensNA` isn't preserved on
-        import (`extraMeta` comes back empty on `Dml3RG`); costs a reader change; unlikely to
-        discriminate the failure modes actually hit. Revisit only if the case for it appears.
-    - **P5.0 outcome logged** in `docs/inventory/stain_classes.md` (the classifier is the human
-      contract) and in this section. The audit doesn't need re-running unless the class list
-      changes shape.
-- **P5.2 — guardrail extraction from `bad`-tagged entries (retrieval side).** Mine recurring
-  failure modes across entries tagged `bad` and grouped by fingerprint proximity to derive
-  imaging-context-scoped guardrails ("when fingerprint ≈ X, avoid Y because Z"). Gated on a
-  `bad`-tagged corpus that actually crosses the D5 recurrence threshold (N ≥ 3) — 1 entry today
-  on zolIMa; needs weeks of P4 usage. Retrieval schema will dispatch on `fingerprint.v`, so a
-  v1-only corpus is fine to mine when the time comes. Full sketch:
-  [`docs/archive/blackboard-outcome-tagging-prompt.md`](../archive/blackboard-outcome-tagging-prompt.md)
-  (§P5).
+- **P5.x — Blackboard-side memory: SHIPPED. See Phase 5 above.** No follow-up build under
+  Future work; the writer + retrieval + briefing surface are all live. What sits here as future
+  is `P5.3` — cross-project federation — explicitly out for v1 (see
+  [`IMMUNEMAP_IMPORT_PLAN.md`](IMMUNEMAP_IMPORT_PLAN.md)).
 - **Config-artifact recall by intent** (Decision 6). "Reapply the diameter/gate/LUT from that
   case." Different problem shape from narrative search. Would need: tags on the writers that
   produce these artifacts (`gating/{vn}.json`, `runlog.json`, viewer presets — if Decision 7 is
