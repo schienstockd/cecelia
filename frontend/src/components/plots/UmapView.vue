@@ -30,6 +30,8 @@ import { tkey, parseTkey } from '../../plots/series'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
 import SquarePlot from './SquarePlot.vue'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -641,6 +643,20 @@ const umapFrame: Frame = {
 }
 defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage,
                getFrame: (): Frame => umapFrame })
+
+// BIDIR PR #8 — plot registry adopter. Registers under the same plotId (the panel's persistKey
+// forwarded by InteractivePanel), overriding the outer InteractivePanel's raw view-key family
+// with the descriptive `'umap'` label. Suffix in the title so two UMAP runs in the same page
+// disambiguate.
+const _route = useRoute()
+useVisualPanel(
+  () => props.plotId ?? '',
+  () => ({
+    family: 'umap',
+    title: props.suffix ? `UMAP (${props.suffix})` : 'UMAP',
+    route: _route.path,
+  }),
+)
 
 // BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='umap'`,
 // `plotId=persistKey`); a mark's `cell` field selects a facet on faceted layouts. Positions

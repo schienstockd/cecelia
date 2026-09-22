@@ -20,6 +20,8 @@ import { elementToImageURL } from '../../plots/export'
 import { useViewerStore } from '../../stores/viewer'
 import type { Card, CardsResponse, CardFamily, ShownPop } from './cardsPanel'
 import type { Frame, FrameCell } from '../../plots/frame'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]
@@ -251,6 +253,19 @@ const cardsFrame: Frame = {
   },
 }
 defineExpose({ exportImage, getFrame: (): Frame => cardsFrame })
+
+// BIDIR PR #8 — plot registry adopter. Uses the family's id + title so `list_plots` returns a
+// row for a `cell` / `motif` / `hmm_state` card panel the user can name back (e.g. "the motif
+// cards"). Family string kept generic (`'cards'`) since the specific card kind is in the title.
+const _route = useRoute()
+useVisualPanel(
+  () => props.plotId ?? '',
+  () => ({
+    family: 'cards',
+    title: props.family?.title ?? 'Cards',
+    route: _route.path,
+  }),
+)
 </script>
 
 <template>

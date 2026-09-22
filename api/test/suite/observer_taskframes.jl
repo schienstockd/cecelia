@@ -161,6 +161,7 @@ end
             WS_MAINT_CANCEL => "maintenance:cancel",
             WS_PROJ_EXPORT  => "project:export",
             WS_PROJ_IMPORT  => "project:import",
+            WS_VIEWER_HELLO => "viewer:hello",
         )
         for (kind, wire) in expected
             @test parse_ws_msg_type(wire) === kind

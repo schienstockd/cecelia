@@ -30,6 +30,8 @@ import type { VisProps } from '../../plots/plot'
 import GateMontage from './GateMontage.vue'
 import RenderModeToggle, { type RenderMode } from './RenderModeToggle.vue'
 import CcToggle from '../CcToggle.vue'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -228,6 +230,19 @@ const proxyFrame: Frame = {
   subFrames() { return montageRef.value?.getFrame?.().subFrames?.() ?? [] },
 }
 defineExpose({ exportImage, exportSvg, getFrame: (): Frame => proxyFrame })
+
+// BIDIR PR #8 — plot registry adopter, overrides the outer InteractivePanel's raw view-key
+// registration with the descriptive `'gating-strategy'` family. Title reflects the active image
+// + valueName so two boards side-by-side disambiguate.
+const _route = useRoute()
+useVisualPanel(
+  () => props.plotId ?? '',
+  () => ({
+    family: 'gating-strategy',
+    title: `Gating strategy${imageUid.value ? ` — ${imageUid.value}` : ''}${valueName.value ? `/${valueName.value}` : ''}`,
+    route: _route.path,
+  }),
+)
 </script>
 
 <template>

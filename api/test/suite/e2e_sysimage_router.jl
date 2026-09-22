@@ -277,6 +277,7 @@ end
         "/api/viewer/captures",   # bidir share-in list; POST /api/viewer/capture at the same singular path
         "/api/viewer/capture",    # bidir share-in read one; POST at same path writes (below)
         "/api/labels/ids",        # bidir follow-up: enumerate cell/track ids for mark_cells / mark_tracks
+        "/api/viewer/plots",      # bidir PR #8 — live plot registry (list_plots MCP); POSTs at register/deregister below
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -371,6 +372,8 @@ end
         "/api/viewer/marks/ui", "/api/viewer/marks/freeform",    # bidir point-out UI + freeform (PR #5)
         "/api/viewer/marks/tile",    # bidir landscape tile mark (PR #6, Decision 14 reframe)
         "/api/viewer/marks/plot",    # bidir plot point-out (PR #4b)
+        "/api/viewer/plots/register",   # bidir PR #8 — live plot registry write
+        "/api/viewer/plots/deregister", # bidir PR #8 — live plot registry drop
         "/api/viewer/landscape",     # bidir landscape publish (POST); GET at same path is the read handler
         "/api/viewer/landscape/compute",   # bidir landscape complementary compute — per-channel per-tile stats
         "/api/viewer/capture",   # bidir share-in write (POST); GET at same path is the read handler
@@ -453,7 +456,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 101 && length(POST_ROUTES) == 141
+    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 143
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

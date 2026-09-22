@@ -23,6 +23,15 @@ const handlers = new Map<string, MessageHandler[]>()
 
 const TERMINAL_STATUS = new Set(['done', 'failed', 'cancelled'])
 
+// Stable identifier for THIS browser tab / process (BIDIR PR #8 — list_plots registry). Sent on
+// every WS reconnect via `viewer:hello`, then threaded into every /api/viewer/plots/{register,
+// deregister} POST so the server can drop THIS tab's registry entries when the socket disconnects
+// without affecting a second tab that registered the same persistKey. Lives in `utils/clientId.ts`
+// so a Vitest importer can pull it without dragging this file's DOM-reading transitive deps —
+// re-exported here for legacy import sites.
+import { wsClientId as _CLIENT_ID } from '../utils/clientId'
+export { wsClientId } from '../utils/clientId'
+
 export const useWsStore = defineStore('ws', () => {
   const status = ref<WsStatus>('disconnected')
   const lastPong = ref<string | null>(null)
@@ -87,6 +96,10 @@ export const useWsStore = defineStore('ws', () => {
       useLogStore().backfill()
       startOutcomePoll()
       void adoptInFlight()
+      // BIDIR PR #8 — announce this tab's clientId so the backend can key WS-disconnect cleanup
+      // of the plot registry (and any other future per-tab bag) to THIS socket. Sent before the
+      // ping so the id is set the moment any subsequent register POST lands.
+      send({ type: 'viewer:hello', clientId: _CLIENT_ID })
       ping()
     }
 
