@@ -63,11 +63,12 @@ Analysis board. Also: a launcher fix so installs with TLS on by default can actu
 
 - **`observer` — `get_spatial_stats` split** into `get_region_clusters` + `get_contact_stats`.
   Callers that queried the combined tool need to pick the new one.
-- **`get_capture` — `capturePath` escape hatch dropped.** The loopback-gated absolute-path field
-  that let a local Claude session `Read` the fat `meta.json` is gone; slim +
-  `get_capture_landscape_tiles` cover every reader task, and a fat-form path re-introduced the
-  truncation risk slim exists to avoid. The field was added mid-cycle and is not on any released
-  tag — no on-disk migration needed. If a workflow relied on it, use
+- **`get_capture` — hybrid `capturePath` escape hatch added and dropped in the same cycle.** The
+  loopback-gated absolute-path field that briefly let a local Claude session `Read` the fat
+  `meta.json` alongside the slim response is gone. It shipped mid-cycle to bypass the slim
+  transform when a landscape got dense, but slim + `get_capture_landscape_tiles` cover every
+  reader task, and a fat-form path re-introduced the exact truncation risk slim was written to
+  avoid. Not on any released tag — no on-disk migration needed. If a workflow relied on it, use
   `get_capture_landscape_tiles(project_uid, capture_id, tile_ids=[...])` or `bbox=[x1,y1,x2,y2]`
   for the subset you actually need.
 - **Test suite split.** `app/test/runtests.jl` is now pure includes + preamble; individual testsets
@@ -83,7 +84,6 @@ Analysis board. Also: a launcher fix so installs with TLS on by default can actu
   tracks reloaded.
 - **Viewer — per-pop ribbon filters by `track_source`, not just labels.**
 - **Bidir — DrawSurface freeform/polygon resize, drag-to-edge, delete overlap** all fixed.
-- **Bidir — capturePath gated on loopback bind**, not always-send.
 - **`ImageMetadataDialog` — rename input ref inside `v-for` is an array** (previously grabbed the
   wrong element).
 - **MCP — `set_blackboard_outcome`** error prose reworded to pass the guarantee ratchet.
