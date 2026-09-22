@@ -117,32 +117,15 @@ class ServerToolRegistrationTest(unittest.TestCase):
         self.assertEqual([0.4, 8.0], t1["channels"])
         self.assertNotIn("pops", t1)                    # sparsity carries through
 
-    def test_get_capture_attaches_capture_path_when_api_sent_one(self):
-        # Local dev path — Cecelia + Claude Code on the same box. The API includes
-        # `capturePath` alongside `capture`/`frame`, and the tool threads it into the envelope
-        # block so a reader can `Read(capturePath)` for the fat form when needed.
-        original = server._client.get_capture
-        fake_path = "/home/dominik/cecelia-feijoa/projects/NRUBxU/captures/cap-x/meta.json"
-        server._client.get_capture = lambda uid, cid: {
-            "capture": {"captureId": cid, "surface": "viewer_frame"},
-            "frame": "",
-            "capturePath": fake_path,
-        }
-        try:
-            out = server.get_capture("NRUBxU", "cap-x")
-        finally:
-            server._client.get_capture = original
-        env = out[-1]
-        self.assertEqual(fake_path, env["capturePath"])
-
-    def test_get_capture_omits_capture_path_when_api_did_not_send_one(self):
-        # Cloud-VM path — the API is on a remote host with no shared filesystem, so the
-        # `capturePath` field is absent from the API response. The tool must NOT invent one;
-        # the reader should fall through to the slim landscape it already got.
+    def test_get_capture_never_exposes_capture_path(self):
+        # The file-based escape hatch was dropped: slim + `get_capture_landscape_tiles` cover
+        # every reader task, and a fat form re-introduces the truncation risk slim exists to
+        # avoid. If the API ever ships `capturePath` again, the tool must not forward it.
         original = server._client.get_capture
         server._client.get_capture = lambda uid, cid: {
             "capture": {"captureId": cid, "surface": "viewer_frame"},
             "frame": "",
+            "capturePath": "/should/not/leak.json",
         }
         try:
             out = server.get_capture("NRUBxU", "cap-x")

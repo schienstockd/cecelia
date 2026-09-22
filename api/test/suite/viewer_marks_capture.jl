@@ -220,32 +220,7 @@ end
         @test String(got.capture.captureId) == cap_id
         @test length(got.capture.overlay) == 3                # bogus kind stripped; black rect added
         @test startswith(String(got.frame), "data:image/png;base64,")
-        # capturePath is the absolute meta.json path — the MCP layer threads it into the tool
-        # response so a local Claude session can `Read(capturePath)` for the fat form when the
-        # slim landscape isn't enough. Only emitted on a loopback-bound server (same gate the
-        # debug REPL uses). Ends with the expected suffix and points at a real file.
-        @test haskey(got, :capturePath)
-        @test endswith(String(got.capturePath), joinpath(cap_id, "meta.json"))
-        @test isfile(String(got.capturePath))
-
-        # Same call under a network-exposed bind (`0.0.0.0`) omits capturePath — a remote
-        # caller can't reach the local path and offering one they might `Read` is a foot-gun.
-        # Flip `_BOUND_HOST` in a try/finally so no state leaks to other testsets. server.jl
-        # is `include`d at top level so `_BOUND_HOST` lives in Main, not a `Cecelia.` module.
-        prev_host = _BOUND_HOST[]
-        try
-            _BOUND_HOST[] = "0.0.0.0"
-            st_p, body_p = api_viewer_capture_get(HTTP.Request("GET",
-                "/api/viewer/capture?projectUid=$uid&captureId=$cap_id"))
-            @test st_p == 200
-            got_p = JSON3.read(body_p)
-            @test !haskey(got_p, :capturePath)
-            # Frame + envelope still round-trip — omitting capturePath is the ONLY difference.
-            @test startswith(String(got_p.frame), "data:image/png;base64,")
-            @test String(got_p.capture.captureId) == cap_id
-        finally
-            _BOUND_HOST[] = prev_host
-        end
+        @test !haskey(got, :capturePath)
         # Colour safelist round-trip. Magenta survived on the rect; chartreuse was dropped from the
         # stroke's payload but the stroke itself survived (frontend resolver falls back to `white`).
         # Black safelisted for canvas-Share white-composite plots.
