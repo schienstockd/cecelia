@@ -277,13 +277,13 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                  accent="var(--cc-kiwi)"
                  :default-x="260" :default-y="100" :default-w="320" :default-h="520"
                  @close="$emit('close')">
-    <!-- Header `?` — the "what can the assistant do here?" how-to. Sits in the header's action slot
-         so it's always reachable, not gated behind opening a project. -->
+    <!-- Header `?` — the "what does Kiwi do here?" how-to. Sits in the header's action slot so it's
+         always reachable, not gated behind opening a project. -->
     <template #header-actions>
       <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon kiwi-help"
               data-guide="kiwi.assistantHelp"
               @click="showAssistantOverview = true"
-              v-tooltip.bottom="'What can the assistant do here? Ask vs Chat, what it sees / suggests / creates'">
+              v-tooltip.bottom="'What Kiwi does here — captures, chains, blackboard, and what the assistant will and will not do'">
         <i class="pi pi-question-circle" />
       </button>
     </template>

@@ -22,6 +22,13 @@ describe('claudeOverview content model', () => {
     expect(byKey.creates.items.join(' ')).toMatch(/notebook/i)   // notebooks are the headline "create"
     expect(byKey.creates.items.join(' ')).toMatch(/chain/i)      // …and chains, since it can author one
     expect(byKey.creates.items.join(' ')).toMatch(/board/i)      // …and boards (add_analysis_board)
+    // Documentation-helper framing (docs/archive/kiwi-purpose-and-framing.md): the RECORD is the
+    // product, so Sees must name the capture surface, Creates must include the durable-note
+    // pathway (blackboard entries), and Can't must say replies are provisional. If any of these
+    // drifts back out, the dialog undersells what Kiwi actually is.
+    expect(byKey.sees.items.join(' ')).toMatch(/mark|capture/i)
+    expect(byKey.creates.items.join(' ')).toMatch(/blackboard/i)
+    expect(byKey.cant.items.join(' ')).toMatch(/provisional|not.*verified/i)
     for (const g of CLAUDE_CAPABILITIES) expect(g.items.length).toBeGreaterThan(0)
   })
 
