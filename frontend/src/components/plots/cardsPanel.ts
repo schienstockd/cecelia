@@ -88,6 +88,12 @@ export interface CardsResponse {
    * whatever the server picked when the request omitted `valueName`.
    */
   valueName?: string
+  /**
+   * hmmCards-only: eligible HMM state columns on the resolved `valueName`, plus the one the server
+   * actually rendered. Same echo-back discipline as `availableValueNames` / `valueName`.
+   */
+  availableHmmCols?: string[]
+  hmmCol?: string
 }
 
 /** `POST /api/cell_cards` request. `root_uid` is the image the analysis board was opened from. */
@@ -132,12 +138,21 @@ export interface CardFamilyContext {
    * `CardsResponse.valueName`; the panel's picker then converges on that.
    */
   valueName?: string
+  /**
+   * hmmCards-only: the picked HMM state column (`live.cell.hmm.state.<measure>`). Same server-
+   * discovery + echo dance as `valueName`.
+   */
+  hmmCol?: string
 }
 
 /** One card family's configuration. The base panel knows *nothing* family-specific. */
 export interface CardFamily {
   /** Registry key — matches the view id in `interactiveViews.ts` / `clusterPanels.ts`. */
   id: 'cell' | 'motif' | 'hmm_state'
+  /*
+    Adding a new family: one entry in `cardFamilies.ts` + a ~20-line wrapper view (see
+    MotifCardsView / HmmStateCardsView for the shape).
+  */
   /** Panel title (`CanvasPanel`'s title prop). */
   title: string
   /** POST endpoint. Response shape is `CardsResponse` — same for every family. */

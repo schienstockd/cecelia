@@ -1,7 +1,8 @@
 # Behaviour cards — shared spine for cellCards / motifCards / hmmCards
 
-Status: **Phase 1 shipped (2026-09-20, #1076)** · **Phase 2 in progress** (`feat/motif-cards`) —
-`motifCards` end-to-end. Phase 3 (`hmmCards`) not started.
+Status: **Phase 1 shipped (2026-09-20, #1076)** · **Phase 2 shipped (2026-09-21, #1084)** ·
+**Phase 3 in progress** (`feat/hmm-cards`, PR #1173) — `hmmStateCards` end-to-end + motif-cards
+fixes (runner span-broadcast bug, segmentation picker, instance-bbox crop).
 
 ## Goal
 

@@ -11,6 +11,7 @@ import TrackPathsView from '../plots/TrackPathsView.vue'
 import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
 import TrackSchemeView from '../plots/TrackSchemeView.vue'
 import MotifCardsView from '../plots/MotifCardsView.vue'
+import HmmStateCardsView from '../plots/HmmStateCardsView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -130,6 +131,15 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `boardGroup: 'clustering'` so it lands in the same picker section as cellCards.
   motifCards: {
     label: 'Motif cards', component: MotifCardsView, analysisBoard: true,
+    boardGroup: 'clustering', rail: 'none',
+  },
+  // HMM state cards — one card per HMM state value on a chosen `live.cell.hmm.state.<measure>`
+  // column. Server enumerates eligible segmentations + hmm cols; panel exposes both pickers.
+  // Medoid = the state-run whose owning track spends the most fraction of its life in this state
+  // (Fig 4c, BEHAVIOUR_CARDS_PLAN Decision 3). `rail: 'none'` — HMM state values live in h5ad obs,
+  // not on the pop rail.
+  hmmStateCards: {
+    label: 'HMM state cards', component: HmmStateCardsView, analysisBoard: true,
     boardGroup: 'clustering', rail: 'none',
   },
   trackScheme: {

@@ -25,7 +25,7 @@ const props = defineProps<{
   projectUid: string; imageUids: string[]
   suffix?: string
   shownPops?: ShownPop[]
-  state: { maxPx?: number; padPx?: number; valueName?: string }
+  state: { maxPx?: number; padPx?: number; valueName?: string; hmmCol?: string }
   family: CardFamily
   // BIDIR PR #4b — the parent's point-out family (`cell-cards` or `motif-cards`) + the panel's
   // persistKey. Each StripCell filters by (family, plotId, cell=<card.path>). Absent → no
@@ -38,14 +38,20 @@ const props = defineProps<{
    * echoes back via `CardsResponse.valueName`.
    */
   valueName?: string
+  /** hmmCards-only: the picked HMM state column, forwarded into `family.buildRequestBody`. */
+  hmmCol?: string
 }>()
 const emit = defineEmits<{
   cardSelect: [Card]
   /**
    * Fires once per successful response with the fetch's discoverable metadata. The wrapping view
-   * (e.g. MotifCardsView) uses this to populate its segmentation picker without re-fetching.
+   * (e.g. MotifCardsView / HmmStateCardsView) uses this to populate its pickers without
+   * re-fetching. Extra fields land here as new families need them (`hmmCol` for hmmCards).
    */
-  meta: [{ availableValueNames?: string[]; valueName?: string }]
+  meta: [{
+    availableValueNames?: string[]; valueName?: string
+    availableHmmCols?: string[];    hmmCol?: string
+  }]
 }>()
 
 // max output resolution + track bbox pad, both in native pixels. The bigger max_px is, the crisper
@@ -113,30 +119,43 @@ async function fetchCards() {
       maxPx: maxPx.value,
       padPx: padPx.value,
       valueName: props.valueName,
+      hmmCol:    props.hmmCol,
     })
     const res = await fetch(props.family.endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      // 404 with an `availableValueNames` payload is how the server tells the picker "the vn you
-      // asked for is stale, here are the eligible ones" — surface those to the wrapper too.
-      const errData = (await res.json().catch(() => ({}))) as { error?: string; availableValueNames?: string[] }
+      // 404 with an `availableValueNames` / `availableHmmCols` payload is how the server tells
+      // the picker "the vn/col you asked for is stale, here are the eligible ones" — surface both
+      // to the wrapper (whichever it owns).
+      const errData = (await res.json().catch(() => ({}))) as {
+        error?: string
+        availableValueNames?: string[]; valueName?: string
+        availableHmmCols?: string[];    hmmCol?: string
+      }
       err.value = errData.error ?? 'Cards fetch failed'
-      if (errData.availableValueNames) emit('meta', { availableValueNames: errData.availableValueNames })
+      if (errData.availableValueNames || errData.availableHmmCols)
+        emit('meta', {
+          availableValueNames: errData.availableValueNames, valueName: errData.valueName,
+          availableHmmCols:    errData.availableHmmCols,    hmmCol:    errData.hmmCol,
+        })
       return
     }
     const data = (await res.json()) as CardsResponse
     pool.value  = data.pool ?? []
     cards.value = data.cards ?? []
     statScales.value = data.statScales ?? {}
-    if (data.availableValueNames || data.valueName)
-      emit('meta', { availableValueNames: data.availableValueNames, valueName: data.valueName })
+    if (data.availableValueNames || data.valueName || data.availableHmmCols || data.hmmCol)
+      emit('meta', {
+        availableValueNames: data.availableValueNames, valueName: data.valueName,
+        availableHmmCols:    data.availableHmmCols,    hmmCol:    data.hmmCol,
+      })
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { loading.value = false }
 }
 
-watch([rootUid, () => props.suffix, () => props.valueName,
+watch([rootUid, () => props.suffix, () => props.valueName, () => props.hmmCol,
        () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds]))],
       fetchCards, { immediate: true })
 

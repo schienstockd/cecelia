@@ -57,8 +57,33 @@ export const motifFamily: CardFamily = {
   footerStatLabel: name => name.replace(/^live\.cell\./, ''),
 }
 
+// HMM state cards — one card per HMM state value on a chosen `live.cell.hmm.state.<measure>`
+// column of a chosen segmentation. Same server-discovery pattern as motif cards but with two
+// pickers (segmentation + hmm column). Medoid = the state-run whose owning track spends the
+// largest fraction of its life in this state (Fig 4c, BEHAVIOUR_CARDS_PLAN Decision 3).
+export const hmmStateFamily: CardFamily = {
+  id: 'hmm_state',
+  title: 'HMM state cards',
+  endpoint: '/api/hmm_state_cards',
+  requireSuffix: false,
+  requireShownPops: false,
+  buildRequestBody: ctx => ({
+    projectUid: ctx.projectUid,
+    rootUid: ctx.rootUid,
+    ...(ctx.valueName ? { valueName: ctx.valueName } : {}),
+    ...(ctx.hmmCol   ? { hmmCol:    ctx.hmmCol   } : {}),
+    maxPx: ctx.maxPx,
+    padPx: ctx.padPx,
+  }),
+  emptyNoRoot: 'Select an image.',
+  // Strip the well-known prefix so a compact footer row reads "speed" / "angle" — mirroring the
+  // motif family's transform.
+  footerStatLabel: name => name.replace(/^live\.cell\./, ''),
+}
+
 /** Every registered family, keyed by id. `CARD_FAMILIES.cell === cellFamily`. */
 export const CARD_FAMILIES: Record<string, CardFamily> = {
   cell: cellFamily,
   motif: motifFamily,
+  hmm_state: hmmStateFamily,
 }
