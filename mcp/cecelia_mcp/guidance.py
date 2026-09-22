@@ -72,7 +72,8 @@ runner or notebooks). How the data was \
 produced: get_analysis_lineage (the pipeline behind an image, and `rollup.divergences` for the odd \
 image out), get_chains. The analysis itself: get_populations (what a population MEANS — its gate \
 geometry or filter rule), get_measure_summary (phenotype + motility per population), \
-get_behaviour_summary (HMM states), get_cluster_summary, get_spatial_stats. Cross-set QC: \
+get_behaviour_summary (HMM states), get_cluster_summary, get_region_clusters (spatial niches), \
+get_contact_stats (pairwise co-localisation). Cross-set QC: \
 get_cohort_qc. Per image: get_image_info (channels, dimensions), get_image_notes (the user's own \
 words), get_qc_metrics. The lab log: read_lab_log. The experiment as the lab notebook records it: \
 get_labarchives_context. The board's plot types: get_available_plots. The boards the user already \

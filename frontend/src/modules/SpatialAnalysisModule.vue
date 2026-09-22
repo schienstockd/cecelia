@@ -15,7 +15,7 @@
 
   A SEPARATE page from Region clustering (Decision 12). Spatial readouts land as obs columns /
   populations (composition `spatial.comp.*`, `*.cell.is.aggregate`, `regions.*`) and are exposed via MCP
-  (get_spatial_stats). The #plots canvas is the generic SummaryCanvas (registry-driven, docs/PLOTS.md).
+  (get_region_clusters + get_contact_stats). The #plots canvas is the generic SummaryCanvas (registry-driven, docs/PLOTS.md).
   Population selectors accept any cell poptype (flow / live / clust / region), so cross-poptype spatial
   questions work here (docs/todo/SPATIAL_REGIONS_PLAN.md).
 -->

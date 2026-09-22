@@ -256,8 +256,9 @@ transition analysis. `centroid_t` is excluded from the distance space either way
 
 ### Decision 9 — every readout is MCP-accessible as a flat table
 
-New `GET /api/analysis/spatial` (backed by `app/src/ai/spatial.jl`) + MCP tool `get_spatial_stats`
-(mirror `get_cluster_summary`: route → `client.py` `ALLOWED_ROUTES` + method → `@mcp.tool()`). Output
+New `GET /api/analysis/spatial` (backed by `app/src/ai/spatial.jl`) + two MCP tools splitting the
+route's two slices — `get_region_clusters` (niches) + `get_contact_stats` (pairwise co-localisation);
+mirror `get_cluster_summary` (route → `client.py` `ALLOWED_ROUTES` + method → `@mcp.tool()`). Output
 format is **flat, interpretable rows** — `population_pair → mean_distance → z_score → p_value`,
 `population × region → frequency`, `population_pair → pearson_r` — never raw matrices. This is a
 from-the-start design constraint on every analysis function's stored output, not a retrofit.
@@ -545,7 +546,7 @@ module page (all poptypes as inputs). Summary/interactive/cluster-panel plots vi
 positional scatter, co-localization heatmap.
 
 **Phase 6 — Cross-poptype query + MCP.** `region_membership`/`region_enrichment` (Julia, flat tables).
-`/api/analysis/spatial` + `ai/spatial.jl` + MCP `get_spatial_stats`. (Optional: raster-window parity mode,
+`/api/analysis/spatial` + `ai/spatial.jl` + MCP `get_region_clusters` / `get_contact_stats`. (Optional: raster-window parity mode,
 Decision 2.)
 
 **Phase 7 — Viewer region visualization.** Region-colored points (reuse `show_populations`/`resolve_pops`,
