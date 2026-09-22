@@ -406,6 +406,17 @@ const viewerHighlightSummary = computed(() => {
   return `Viewer: ${hl.trackIds.length} highlighted`
 })
 
+// BIDIR PR #4b (Decision 19) — subscribe to `trackHighlight` and paint a distinct lane visual when
+// Claude's `mark_tracks` populated the bag. The set is track ids (as strings, matching lane keys)
+// scoped to this panel's (imageUid, valueName). User-origin marks fall through — this panel already
+// draws a local `selected` visual which normally mirrors user-origin bag entries.
+const claudeHighlightTracks = computed<Set<string>>(() => {
+  const hl = viewerStore.trackHighlight
+  if (!hl || hl.origin !== 'claude') return new Set()
+  if (hl.imageUid !== imageUid.value || hl.valueName !== valueName.value) return new Set()
+  return new Set(hl.trackIds.map(String))
+})
+
 // ── editing (Phase 2) ─────────────────────────────────────────────────────────
 //
 // The ops and the queue are the SAME ones the worklist used (`lib/trackCorrection.ts`): nothing
@@ -715,13 +726,37 @@ function render() {
     }
   }
 
+  // ── Claude's mark_tracks backdrop (BIDIR PR #4b, Decision 19) ──
+  // Painted BEFORE the runs so bars sit on top — a lane background band + magenta baseline. Palette
+  // per Decision 8 amendment (`magenta | cyan | yellow | white`); magenta is CVD-safe and distinct
+  // from the amber selection outline (user origin) and green queued outline (edit pending).
+  const claude = claudeHighlightTracks.value
+  if (claude.size) {
+    for (let i = 0; i < lanes.length; i++) {
+      if (!claude.has(lanes[i].track)) continue
+      const y = laneY(g, i)
+      parts.push(`<rect x="${g.x0}" y="${y - 2}" width="${g.x1 - g.x0}" height="${g.barH + 4}" ` +
+                 `fill="#e836b4" fill-opacity="0.12"/>`)
+    }
+  }
+
   // ── lane labels + the runs ──
   lanes.forEach((lane, i) => {
     const y = laneY(g, i)
     const on = selected.value.has(lane.track)
+    const byClaude = claude.has(lane.track)
     parts.push(`<text x="${GUTTER - 6}" y="${y + g.barH - 1}" text-anchor="end" font-size="10" ` +
                `fill="${on ? fg : muted}" font-weight="${on ? 600 : 400}">${esc(lane.track)}` +
                `<title>${esc(laneSummary(lane))}</title></text>`)
+    // "C" glyph in the left edge of the gutter when Claude has pointed at this track. Placed at
+    // x=6 (well clear of the right-anchored lane label at GUTTER-6=46, which extends leftward for
+    // multi-digit ids). Small radius so a narrow lane row (`barH ≈ 8`) still contains it.
+    if (byClaude) {
+      parts.push(`<circle cx="6" cy="${y + g.barH / 2}" r="4" fill="#e836b4"/>` +
+                 `<text x="6" y="${y + g.barH / 2 + 3}" text-anchor="middle" ` +
+                 `font-size="7" font-weight="700" fill="#ffffff">C<title>Claude pointed at this track` +
+                 `</title></text>`)
+    }
     // the lane's own baseline: shows the extent a track SPANS, so a hole reads as a hole rather than
     // as the end of the track
     const bx = frameToX(g, lane.t0)
@@ -803,7 +838,8 @@ const esc = svgEsc
 // loops and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { if (host.value) host.value.innerHTML = '' })
-watch([win, markers, links, overlaps, selected, splitAt, pendingTracks, detLane, untrackedVisible, detSel],
+watch([win, markers, links, overlaps, selected, splitAt, pendingTracks, detLane, untrackedVisible, detSel,
+       claudeHighlightTracks],
       () => nextTick(() => plotBox.redraw()))
 // If a reload lost the frame the user had picked (a `points.add` was applied and that frame's
 // only untracked cell became tracked, or a `pops` change shrank the scope), clear the selection.

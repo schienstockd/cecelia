@@ -17,6 +17,7 @@ import StripCell from './StripCell.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import StatBox from './StatBox.vue'
 import { elementToImageURL } from '../../plots/export'
+import { useViewerStore } from '../../stores/viewer'
 import type { Card, CardsResponse, CardFamily, ShownPop } from './cardsPanel'
 import type { Frame, FrameCell } from '../../plots/frame'
 
@@ -45,6 +46,27 @@ const pool  = ref<CardsResponse['pool']>([])
 const statScales = ref<CardsResponse['statScales']>({})
 const loading = ref(false)
 const err = ref('')
+
+// BIDIR PR #4b (Decision 19). Card whose medoid track matches Claude's `mark_tracks` on the medoid's
+// (imageUid, valueName) gets a distinct outer ring + "C" badge — visually separate from the card's
+// own per-cluster colour ring (which stays as the cluster identity). User-origin marks fall through:
+// the card's per-cluster border already communicates "which cluster", and a card doesn't correspond
+// to one specific user selection.
+const viewerStore = useViewerStore()
+const claudeCardPaths = computed<Set<string>>(() => {
+  const hl = viewerStore.trackHighlight
+  if (!hl || hl.origin !== 'claude' || !hl.trackIds.length) return new Set()
+  const ids = new Set(hl.trackIds)
+  const paths = new Set<string>()
+  for (const c of cards.value) {
+    const m = c.medoid
+    if (!m) continue
+    if (m.uid === hl.imageUid && m.value_name === hl.valueName && m.track_id != null && ids.has(m.track_id)) {
+      paths.add(c.path)
+    }
+  }
+  return paths
+})
 
 function scaleFor(stat: { name: string; min: number; max: number }): [number, number] {
   const s = statScales.value[stat.name]
@@ -198,12 +220,15 @@ defineExpose({ exportImage, getFrame: (): Frame => cardsFrame })
     <p v-else-if="!cards.length && !loading" class="cc-muted">No cards yet.</p>
 
     <div v-else class="ccv-grid" :style="gridStyle">
-      <div v-for="c in cards" :key="c.path" class="cc-card ccv-card">
+      <div v-for="c in cards" :key="c.path" class="cc-card ccv-card"
+           :class="{ 'ccv-card--claude': claudeCardPaths.has(c.path) }">
         <div class="ccv-frame" :style="{ borderColor: c.colour }">
           <StripCell class="ccv-cell" :ref="el => setCellFrameRef(c.path, el)"
                      :src="displaySrc(c)" :alt="c.name"
                      :family="pointOutFamily" :plot-id="plotId" :cell-key="c.path"
                      @click="emit('cardSelect', c)" />
+          <span v-if="claudeCardPaths.has(c.path)" class="ccv-claude-badge"
+                v-tooltip.top="'Claude pointed at this card'">C</span>
         </div>
         <div class="ccv-foot">
           <div class="ccv-head">
@@ -236,7 +261,17 @@ defineExpose({ exportImage, getFrame: (): Frame => cardsFrame })
 .ccv-grid { display: grid; gap: 0.5rem; flex: 1; min-height: 0; }
 .ccv-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .ccv-frame { flex: 1; min-height: 0; display: flex; border: 2px solid transparent;
-  border-radius: var(--cc-radius-sm); overflow: hidden; }
+  border-radius: var(--cc-radius-sm); overflow: hidden; position: relative; }
+/* BIDIR PR #4b (Decision 19) — Claude-marked card. Outer magenta ring (via box-shadow so the
+   per-cluster borderColor stays intact as the identity signal) + "C" badge top-left corner.
+   Palette from Decision 8 amendment (magenta / cyan / yellow / white); magenta reads distinct
+   from the amber/blue cluster colours the cards use. */
+.ccv-card--claude .ccv-frame { box-shadow: 0 0 0 2px #e836b4; }
+.ccv-claude-badge { position: absolute; top: 4px; left: 4px; z-index: 9;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
+  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1;
+  pointer-events: auto; }
 .ccv-cell { flex: 1; min-height: 0; cursor: pointer; }
 .ccv-frame :deep(.strip-cell) { min-height: 0; }
 .ccv-foot { flex: none; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px;

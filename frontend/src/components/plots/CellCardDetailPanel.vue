@@ -8,7 +8,7 @@
   canvas panel — comparison stays in the grid, individual arrangement happens on demand here.
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import FloatingPanel from '../FloatingPanel.vue'
 import StripCell from './StripCell.vue'
 import StatBox from './StatBox.vue'
@@ -65,6 +65,18 @@ function frameSrc(assetId: string): string {
   return `/api/board-assets?projectUid=${encodeURIComponent(props.projectUid)}&assetId=${encodeURIComponent(assetId)}`
 }
 
+// BIDIR PR #4b (Decision 19). This detail floater is opened deliberately by the user; the
+// underlying grid card already shows the Claude ring. Re-surface the affordance here so the user
+// re-orients ("yes, this IS the one Claude meant") without cross-checking the grid behind the
+// floater. Same magenta accent + "C" glyph as the grid card ring.
+const claudePointing = computed<boolean>(() => {
+  const hl = viewerStore.trackHighlight
+  const m = props.card.medoid
+  if (!hl || hl.origin !== 'claude' || !hl.trackIds.length || !m || m.track_id == null) return false
+  if (m.uid !== hl.imageUid || m.value_name !== hl.valueName) return false
+  return hl.trackIds.includes(m.track_id)
+})
+
 function scaleFor(stat: { name: string; min: number; max: number }): [number, number] {
   const s = props.statScales?.[stat.name]
   return s && s.length === 2 ? [s[0], s[1]] : [stat.min, stat.max]
@@ -90,6 +102,8 @@ function timeLabel(t: number, t_s?: number): string {
     <div class="ccd">
       <div class="ccd-head">
         <span class="ccd-name" :style="{ color: card.colour }">{{ card.name }}</span>
+        <span v-if="claudePointing" class="ccd-claude-badge"
+              v-tooltip.top="'Claude pointed at this card'">C</span>
         <span class="cc-muted cc-fs-xs ccd-meta">
           n={{ card.n }} · medoid track {{ card.medoid.track_id }}
           <span v-if="card.medoid.uid && card.medoid.value_name">
@@ -135,6 +149,10 @@ function timeLabel(t: number, t_s?: number): string {
 .ccd-name { font-weight: 700; font-size: var(--cc-fs-md); }
 .ccd-meta { flex: 1; min-width: 0; }
 .ccd-viewer-btn { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+/* BIDIR PR #4b — matches the corner "C" badge on the grid card (`CardsPanelInner`). */
+.ccd-claude-badge { display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
+  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; flex: none; }
 .ccd-strip { display: flex; gap: 4px; overflow-x: auto; min-height: 140px; }
 .ccd-frame { flex: 1 1 0; min-width: 140px; min-height: 140px; display: flex; flex-direction: column;
   overflow: hidden; border: 2px solid transparent; border-radius: var(--cc-radius-xs); position: relative; }

@@ -50,6 +50,7 @@ import { debouncedLatest } from '../../utils/debouncedLatest'
 import { followSelection, selectionMissed, EMPTY_TRACK_SELECTION,
          type CanvasTrackSelection } from '../../lib/trackSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
+import { useViewerStore } from '../../stores/viewer'
 import { distinctColors, facetMode, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
@@ -273,6 +274,19 @@ const note = computed(() => {
   return `${n} selected track${n === 1 ? '' : 's'} of ${data.value?.total ?? 0}`
 })
 
+// BIDIR PR #4b (Decision 19). Set of track ids that Claude's `mark_tracks` has published on this
+// panel's (imageUid, valueName). `GroupedPathPoint.id` carries the raw server-side track id (a
+// string), so match against String(trackId). The panel may pool across images via `poolGroups`, but
+// track_id namespaces are per-vn — a false positive requires an id collision across images sharing
+// the same vn, which is why the (imageUid, valueName) guard on the bag is enough.
+const viewerStore = useViewerStore()
+const claudeTrackIds = computed<Set<string>>(() => {
+  const hl = viewerStore.trackHighlight
+  if (!hl || hl.origin !== 'claude' || !hl.trackIds.length) return new Set()
+  if (hl.imageUid !== imageUid.value || hl.valueName !== effectiveValueName.value) return new Set()
+  return new Set(hl.trackIds.map(String))
+})
+
 async function render() {
   if (!host.value) return
   if (!Plot) Plot = await import('@observablehq/plot')
@@ -343,6 +357,28 @@ async function render() {
                            dx: 4, dy: 4, fill: fg, fontSize: 10 }))
   }
 
+  // BIDIR PR #4b (Decision 19) — Claude-marked tracks overlay. ONE wider magenta mark ON TOP of the
+  // base marks so the highlighted track reads at a glance regardless of the base stroke encoding.
+  // Palette per Decision 8 amendment. `Plot.line` for paths/star (per-timepoint polyline), `Plot.link`
+  // for rose (one arrow per track). Same facet channels so a per-facet render lands the highlight
+  // in the correct cell.
+  const claude = claudeTrackIds.value
+  if (claude.size) {
+    if (mode.value === 'rose') {
+      const hlV = vectors.filter(v => claude.has(v.id))
+      if (hlV.length) {
+        marks.push(Plot.link(hlV, { x1: 0, y1: 0, x2: 'x', y2: 'y', stroke: '#e836b4',
+                                    strokeWidth: 2.6, markerEnd: 'arrow', ...fch }))
+      }
+    } else {
+      const hlPts = pts.filter(p => claude.has(p.id))
+      if (hlPts.length) {
+        marks.push(Plot.line(hlPts, { x: 'x', y: 'y', z: 'track', stroke: '#e836b4',
+                                      strokeWidth: 2.6, strokeOpacity: 0.9, ...fch }))
+      }
+    }
+  }
+
   node = Plot.plot({
     width: box.width, height: box.height,
     marginLeft: ML, marginBottom: MB, marginTop: MT, marginRight: MR,
@@ -370,7 +406,7 @@ const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
 // `showEnds` is a REDRAW, not a refetch — the endpoints are derived from points the panel already
 // holds, so the toggle must be in this list and not in the load watchers above.
-watch([mode, rows, plan, showEnds], () => nextTick(() => plotBox.redraw()))
+watch([mode, rows, plan, showEnds, claudeTrackIds], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the other views) ──
 const exportFormats = ['png', 'svg', 'csv']

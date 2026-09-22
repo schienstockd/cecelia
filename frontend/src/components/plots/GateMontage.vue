@@ -24,7 +24,7 @@ import {
   type PanelDef, type PanelChild, type MontageId, type Ext, type Tick, type SrvGate, type ColourBy,
   idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate,
 } from '../../plots/montage'
-import { splitXYZ } from '../../plots/valueColour'
+import { splitXYL, splitXYZL } from '../../plots/valueColour'
 import { DOT_R } from '../../plots/density'
 import ColourBarLegend from './ColourBarLegend.vue'
 import type { RenderMode } from './RenderModeToggle.vue'
@@ -86,6 +86,9 @@ interface PanelData {
   gates: { path: string; colour: string; gate: GateSpec; label: string }[]
   popLayers: PopLayer[]
   values: Float32Array | null            // colour-by value per point (null = colouring by density)
+  // BIDIR PR #4b Slice B — per-point label id aligned to `points`, from the `withLabels=1` wire.
+  // Feeds each tile's pickHighlight/trackHighlight overlay (Decision 19).
+  labels: Float32Array
 }
 const panelData = ref<Record<string, PanelData>>({})
 // The colour ramp for the WHOLE grid: range + raw-value labels, as plotmeta served them. It depends on
@@ -119,7 +122,7 @@ async function loadPanels() {
     // actually used, which the point fetch has to repeat or the values won't match the legend
     ramp: { extent: [number, number]; ticks: Tick[] } | null; effZ: ColourBy | null }
   const metaCache = new Map<string, Promise<MetaData>>()
-  const ptsCache = new Map<string, Promise<{ points: Float32Array; values: Float32Array | null }>>()
+  const ptsCache = new Map<string, Promise<{ points: Float32Array; values: Float32Array | null; labels: Float32Array }>>()
   const statCache = new Map<string, Promise<number | undefined>>()
 
   // meta uses the whole-dataset axis (x0=1) + autoLinear (server may swap a collapsing transform → linear
@@ -142,15 +145,18 @@ async function loadPanels() {
     return metaCache.get(o.groupKey)!
   }
   // points fetched with the EFFECTIVE transforms so the cloud matches the extent + projected gates.
+  // BIDIR PR #4b Slice B — `withLabels=1` extends each record with a per-point label id (aligned
+  // 1:1 with `points`); GateScatterCell reads it for the pickHighlight/trackHighlight overlay.
   const ptsFor = (o: ReturnType<typeof canonicalOrient>, pop: string, effA: TransformSpec, effB: TransformSpec,
                   effZ: ColourBy | null) => {
     const key = `${pop}|${o.groupKey}`
     if (!ptsCache.has(key)) ptsCache.set(key, (async () => {
       const buf = new Float32Array(await (await fetch(
-        `/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, effA, effB, props.axisFromZero, false, effZ)}`)).arrayBuffer())
-      // colour-by → TRIPLES: split into the pairs the tiles draw plus the parallel values (the server
-      // read all three columns in one pass, so index i is the same cell in both)
-      return effZ ? splitXYZ(buf) : { points: buf, values: null }
+        `/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, effA, effB, props.axisFromZero, false, effZ)}&withLabels=1`)).arrayBuffer())
+      // colour-by → QUADS [x,y,z,label]; else TRIPLES [x,y,label]. Same aligned-by-position invariant
+      // splitXYZ established. `labels` feeds the highlight overlay in each tile.
+      return effZ ? splitXYZL(buf) : (() => { const { points, labels } = splitXYL(buf)
+                                              return { points, values: null, labels } })()
     })())
     return ptsCache.get(key)!
   }
@@ -172,7 +178,7 @@ async function loadPanels() {
     const entries = await Promise.all(defs.map(async d => {
       const o = canonicalOrient(d)
       const m = await metaFor(o, d.parentPath)          // effective transforms decided here…
-      const { points: ptsRaw, values } = await ptsFor(o, d.parentPath, m.effA, m.effB, m.effZ)   // …then points, with them
+      const { points: ptsRaw, values, labels } = await ptsFor(o, d.parentPath, m.effA, m.effB, m.effZ)   // …then points, with them
       if (m.coerced) anyCoerced = true
       if (m.ramp) ramp = m.ramp                        // identical across tiles (whole-dataset range)
       corrMap[o.groupKey] = pearson(ptsRaw)   // r is orientation-invariant → compute on the canonical cloud
@@ -202,6 +208,7 @@ async function loadPanels() {
         yTicks: o.swap ? m.xTicks : m.yTicks,
         gates, popLayers,
         values,                                        // per-point, orientation-invariant → no transpose
+        labels,                                        // per-point, orientation-invariant (id, not coord)
       }
       return [d.key, data] as const
     }))
@@ -392,7 +399,9 @@ const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value
         <div v-else class="gm-cell">
           <div v-if="cols == null" class="gm-title" v-tooltip.top="`derived from ${titleFor(d.parentPath)}`">{{ titleFor(d.parentPath) }}</div>
           <GateScatterCell v-if="panelData[d.key]" class="gm-plot" :ref="el => setCellRef(d.key, el)"
-                           :points="panelData[d.key].points" :extents="panelData[d.key].extents"
+                           :points="panelData[d.key].points" :labels="panelData[d.key].labels"
+                           :image-uid="imageUid" :value-name="valueName" :pop-type="popType"
+                           :extents="panelData[d.key].extents"
                            :view-extents="panelData[d.key].extents"
                            :x-ticks="panelData[d.key].xTicks" :y-ticks="panelData[d.key].yTicks"
                            :gates="panelData[d.key].gates" :x-label="colLabel(d.xChan)" :y-label="colLabel(d.yChan)"

@@ -917,6 +917,13 @@ function api_gating_plotmeta(req::HTTP.Request)
 end
 
 # ── GET /api/gating/plotdata → binary Float32 [x0,y0,x1,y1,...] (transformed) ──
+#
+# BIDIR PR #4b Slice B — opt-in `withLabels=1` appends the point's label column (cell label_id for
+# `flow`/`live`, track_id for `track`) to every record so a per-point subscription to
+# trackHighlight/pickHighlight (Decision 19) can find the highlighted labels without a second
+# round-trip. Layout with labels: pairs → [x, y, label] (3 f32); triples → [x, y, z, label] (4 f32).
+# Old callers get the untouched 2/3-float layout. Small ints stay exact in Float32; the frontend
+# knows the grain from the popType it sent.
 function api_gating_plotdata(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
@@ -931,20 +938,29 @@ function api_gating_plotdata(req::HTTP.Request)
     # switches stride on whether it asked for z, so old callers are untouched.
     z = get(q, "z", "")
     pin = _labels_version_pin(q)
+    with_labels = get(q, "withLabels", "") == "1"
+    # Companion label read — same pop-filter chain via `_plot_cols_stored`, so labels align 1:1 with
+    # the x/y vectors (no independent read that could drift by row order).
+    labs = with_labels ? first(_plot_cols_stored(img, vn, pop_type, ["label"], pop; labels_version = pin)) :
+                         Float64[]
     if isempty(z)
         xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)
         n = length(xv)
-        buf = Vector{Float32}(undef, 2n)
+        stride = with_labels ? 3 : 2
+        buf = Vector{Float32}(undef, stride*n)
         @inbounds for i in 1:n
-            buf[2i-1] = xv[i]; buf[2i] = yv[i]
+            buf[stride*(i-1) + 1] = xv[i]; buf[stride*(i-1) + 2] = yv[i]
+            with_labels && (buf[stride*(i-1) + 3] = Float32(labs[i]))
         end
         return 200, collect(reinterpret(UInt8, buf))
     end
     xv, yv, zv = _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, _axis_transform(q, "z"); labels_version = pin)
     n = length(xv)
-    buf = Vector{Float32}(undef, 3n)
+    stride = with_labels ? 4 : 3
+    buf = Vector{Float32}(undef, stride*n)
     @inbounds for i in 1:n
-        buf[3i-2] = xv[i]; buf[3i-1] = yv[i]; buf[3i] = zv[i]
+        buf[stride*(i-1) + 1] = xv[i]; buf[stride*(i-1) + 2] = yv[i]; buf[stride*(i-1) + 3] = zv[i]
+        with_labels && (buf[stride*(i-1) + 4] = Float32(labs[i]))
     end
     200, collect(reinterpret(UInt8, buf))
 end
@@ -957,6 +973,12 @@ end
 # `clusters.{suffix}` code per point (frontend colours by code). `clust` reads the cell table;
 # `trackclust` reads the per-track table (one point per track). Optionally subset to a population's
 # membership (`pop`). Cluster codes are small ints → exact in Float32; an unclustered row → -1.
+#
+# BIDIR PR #4b Slice B — opt-in `withLabels=1` extends each record to 5 floats
+# [x, y, code, popIdx, label] so a per-point subscription to trackHighlight/pickHighlight (Decision
+# 19) can find the labels its bag names without a second round-trip. `label` is `cdf.label` (the
+# same column pop-membership resolution reads): for `trackclust` = track_id, for `clust` = cell
+# label_id. Old callers get the 4-float layout untouched. Small ints stay exact in Float32.
 function api_plots_umap(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
@@ -1000,7 +1022,9 @@ function api_plots_umap(req::HTTP.Request)
         end
     end
 
-    out = Float32[]   # [x, y, code, popIdx] quads, concatenated across the co-clustered segmentations
+    with_labels = get(q, "withLabels", "") == "1"
+    stride = with_labels ? 5 : 4
+    out = Float32[]   # [x, y, code, popIdx (, label)] tuples, concatenated across the co-clustered segmentations
     for vn in vns
         path = track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
         isfile(path) || continue
@@ -1028,12 +1052,16 @@ function api_plots_umap(req::HTTP.Request)
             (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
         end
         idx = findall(keep)
-        base = length(out); resize!(out, base + 4 * length(idx))
+        base = length(out); resize!(out, base + stride * length(idx))
         @inbounds for (j, i) in enumerate(idx)
-            out[base + 4j - 3] = Float32(xy[i, 1]); out[base + 4j - 2] = Float32(xy[i, 2])
+            out[base + stride*(j-1) + 1] = Float32(xy[i, 1])
+            out[base + stride*(j-1) + 2] = Float32(xy[i, 2])
             c = codes[i]
-            out[base + 4j - 1] = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
-            out[base + 4j]     = Float32(popidx[i])
+            out[base + stride*(j-1) + 3] = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
+            out[base + stride*(j-1) + 4] = Float32(popidx[i])
+            if with_labels
+                out[base + stride*(j-1) + 5] = Float32(cdf.label[i])
+            end
         end
     end
     isempty(out) && return _gerr(404, "No $umap_key — run clustering with UMAP enabled")
