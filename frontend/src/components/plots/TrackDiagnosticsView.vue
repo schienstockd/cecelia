@@ -44,6 +44,7 @@ import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { usePlotResize } from '../../composables/usePlotResize'
+import { useViewerStore } from '../../stores/viewer'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import { facetMode, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { PopTypeOption } from '../../plots/popTypes'
@@ -152,6 +153,17 @@ watch([() => props.projectUid, imageUid], async () => { await loadValueNames(); 
 // one watcher over the whole cohort query — see TrackPathsView for why it is the params and not a
 // per-prop list
 watch([() => cohortKey(cohort.value), valueName], load)
+
+// BIDIR PR #4b Decision 19 residual — TrackDiag renders per-group aggregated curves (`z: 'g'`);
+// individual tracks have no distinct glyph to ring. Chip announces "Claude marked N tracks"
+// scoped to this panel's image + valueName. Same shape as the SummaryPanel chip.
+const viewerStore = useViewerStore()
+const claudeChip = computed<{ count: number } | null>(() => {
+  const hl = viewerStore.trackHighlight
+  if (!hl || hl.origin !== 'claude' || !hl.trackIds.length) return null
+  if (hl.imageUid !== imageUid.value || hl.valueName !== valueName.value) return null
+  return { count: hl.trackIds.length }
+})
 
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
@@ -328,6 +340,13 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
     <span v-if="capNote || dropped" class="tdv-note cc-muted cc-fs-2xs">
       {{ [capNote, dropped ? `${dropped} more group${dropped === 1 ? '' : 's'} not shown` : ''].filter(Boolean).join(' · ') }}
     </span>
+    <!-- BIDIR PR #4b Decision 19 residual — aggregate-plot chip. Curves are per-group, not
+         per-track; the chip is the visual grounding for a Claude highlight scoped to this
+         image + valueName. Same shape as SummaryPanel's chip. -->
+    <span v-if="claudeChip" class="tdv-claude-chip"
+          v-tooltip.top="`Claude highlighted ${claudeChip.count} track${claudeChip.count === 1 ? '' : 's'}`">
+      <span class="tdv-claude-badge">C</span>{{ claudeChip.count }}
+    </span>
   </div>
 </template>
 
@@ -343,4 +362,15 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
    re-trigger the resize observer — see usePlotResize */
 .tdv-host { flex: 1; min-height: 0; overflow: hidden; }
 .tdv-note { position: absolute; right: 6px; bottom: 4px; }
+/* BIDIR PR #4b Decision 19 residual — matches `.sp-claude-chip` in SummaryPanel. Top-right so it
+   doesn't collide with the diagnostic-mode ChipSelect (top-left) or the cap note (bottom-right). */
+.tdv-claude-chip { position: absolute; top: 6px; right: 6px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 3px;
+  background: rgba(232, 54, 180, 0.15); border: 1px solid #e836b4;
+  border-radius: var(--cc-radius-xs);
+  color: var(--cc-text); font-size: var(--cc-fs-2xs); font-weight: 600; line-height: 1;
+  pointer-events: auto; }
+.tdv-claude-chip .tdv-claude-badge { display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; background: #e836b4;
+  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
 </style>
