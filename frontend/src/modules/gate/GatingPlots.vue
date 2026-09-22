@@ -46,6 +46,13 @@ import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import GatingCopyDialog from './GatingCopyDialog.vue'
 import type { FlatPop } from '../../stores/gating'
+import CanvasSelectionOverlay from '../../components/canvas/CanvasSelectionOverlay.vue'
+import FrameAnnotator from '../../components/FrameAnnotator.vue'
+import CaptureViewSurface from '../../components/CaptureViewSurface.vue'
+import { useCaptureReshowStore } from '../../stores/captureReshow'
+import type { CaptureAddress } from '../../utils/captureAddress'
+import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
+import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 
 const props = withDefaults(defineProps<{
   imageUid: string | null
@@ -450,6 +457,75 @@ watch([ckey, () => g.valueNames.length], () => {
   }
 }, { immediate: true })
 onUnmounted(() => ws.off('gating:popmap', onBroadcast))
+
+// ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
+// Same shape as SummaryCanvas + ClusterPlots. Composable owns the flow; this host provides the
+// gating-panel envelope (kind + parent + x/y + channels + full ui state) + reshow. The address's
+// `module` field lets Kiwi refocus route back to the right gating page (flow vs track).
+const panelsSnapshot = panels
+const reshown = ref<CaptureEnvelope | null>(null)
+const reshowStore = useCaptureReshowStore()
+const moduleTag = computed(() => `gate:${props.popType}`)
+watch(() => reshowStore.pending, () => {
+  const env = reshowStore.consumeFor(moduleTag.value)
+  if (env) reshown.value = env
+}, { immediate: true })
+const share = useCanvasShare({
+  projectUid: () => projectUid.value,
+  canvasKey: () => ckey.value,
+  panels: () => panels.value,
+  label: () => `gate · ${props.popType} · plot canvas`,
+  buildPlotSpec: ({ panelCount }) => ({ specId: 'gate-multi-panel',
+    params: { popType: props.popType, valueName: pageVn.value, panelCount } }),
+  buildEnvelope: ({ selected, workspaceOrigin }) => {
+    // Gating panels carry (kind, parent, x/y channels, transforms, hl, styling). Ship the full
+    // ui state on plotRef.ui so a zoom-to-source can rehydrate. `dataSlice` names the image + vn
+    // + popType the panel was gating on.
+    const { x: x0, y: y0 } = workspaceOrigin
+    return selected.map((e: SharePanelExported) => {
+      const panel = panelsSnapshot.value.find(pp => pp.id === e.id)
+      const st = panel?.state
+      const specId = st?.kind ? String(st.kind) : ''
+      const plotRef: Record<string, unknown> = { specId }
+      if (st) plotRef.ui = { ...st }
+      return {
+        panelId: String(e.id),
+        position: { x: e.geom.x - x0, y: e.geom.y - y0, w: e.geom.w, h: e.geom.h },
+        plotRef,
+        dataSlice: {
+          imageUid: props.imageUid ?? null,
+          valueName: pageVn.value,
+          popType: props.popType,
+        },
+      }
+    })
+  },
+  onSaveSuccess: (env) => { reshown.value = env },
+})
+const { shareSel, sharePanelHits, pendingShare, shareBusy, shareToast,
+        onShareCancel, onShareConfirm, onAnnotateCancel, onAnnotateSave, dismissShareToast } = share
+watch(() => shareSel.active.value, on => { if (on) reshown.value = null })
+
+// Reshow surface — Kiwi refocus / Blackboard click mounts CaptureViewSurface over the canvas.
+// Zoom-to-source is deferred: gating panels are tied to the current (image, vn) so restoring a
+// capture from a different image would need routing + segmentation switch; the frame + marks
+// still show, and the user can click into the image from Kiwi's Recent-captures list to switch.
+const reshownAddress = computed<CaptureAddress>(() => {
+  const a = reshown.value?.address as CaptureAddress | null | undefined
+  return a ?? { projectUid: projectUid.value }
+})
+const reshownAddressLine = computed(() => {
+  const panelsN = (reshown.value?.panels?.length) ?? 0
+  return panelsN > 0 ? `gate · ${props.popType} · ${panelsN} panels`
+                     : `gate · ${props.popType} · plot canvas`
+})
+function onReshowClose() { reshown.value = null }
+function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; overlay: unknown; notes: string }) {
+  if (!reshown.value) return
+  reshown.value = { ...reshown.value,
+    captureId: payload.captureId, frame: payload.frameDataUrl,
+    overlay: payload.overlay as CaptureEnvelope['overlay'], notes: payload.notes }
+}
 </script>
 
 <template>
@@ -555,6 +631,33 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
+        <!-- Share Phase 1 — panel selection overlay. Same shape as SummaryCanvas + ClusterPlots. -->
+        <CanvasSelectionOverlay v-if="shareSel.active.value"
+                                :panels="sharePanelHits"
+                                :selection="shareSel"
+                                :address-line="`gate · ${popType} · plot canvas`"
+                                @cancel="onShareCancel" @share="onShareConfirm" />
+        <!-- Share Phase 2 — annotate + Save. -->
+        <FrameAnnotator v-if="pendingShare && !reshown"
+                        :frame-data-url="pendingShare.composite"
+                        :address-line="`gate · ${popType} · ${pendingShare.panels.length} panels`"
+                        :busy="shareBusy"
+                        @save="onAnnotateSave" @cancel="onAnnotateCancel" />
+        <!-- Reshow — zoom-to-source disabled (see the onReshow* comment in the script; gating is
+             (image, vn)-scoped and restore across images would need routing). -->
+        <CaptureViewSurface v-if="reshown && !pendingShare"
+                            :project-uid="projectUid"
+                            :capture-id="reshown.captureId"
+                            :frame-data-url="reshown.frame"
+                            :overlay="reshown.overlay"
+                            :notes="reshown.notes"
+                            :address="reshownAddress"
+                            :address-line="reshownAddressLine"
+                            surface="plot"
+                            :extra-post-fields="reshown.panels ? { panels: reshown.panels } : {}"
+                            :show-zoom-to-source="false"
+                            @close="onReshowClose"
+                            @reannotate="onReshowReannotate" />
         <!-- THE RAIL, following the ACTIVE panel (railFor, never a key list here). Absolute-positioned
              CanvasSidePanel needs a positioned ancestor, so the picker/manager go in the host's
              `overlay` slot (inside `.floating-canvas`, outside the zoom transform) — same as the
@@ -564,6 +667,15 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
              it has no popType to give, so every series it built was filtered out again (see
              ctxForView). No `vis`: the track panels read none of the styling block. -->
         <template #overlay>
+          <div v-if="shareToast" class="gp-share-chip"
+               :class="{ 'gp-share-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
+                        'gp-share-chip-icon']" />
+            <span>{{ shareToast.message }}</span>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro gp-share-chip-dismiss"
+                    @click="dismissShareToast" v-tooltip.top="'Dismiss'"
+                    aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
+          </div>
           <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
                         :groups="segPops" :selected="activePopSel" :scope="scope"
                         :single="activeSinglePop"
@@ -603,4 +715,18 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; padding: 3px 4px; }
+
+/* Share-outcome chip — mirrors `.sc-share-chip` in SummaryCanvas so all three canvases (summary,
+   cluster, gate) present the same chip on the same push branch. Bottom-left, above CVS. */
+.gp-share-chip {
+  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
+  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
+  background: rgba(0, 0, 0, 0.78); color: #fff;
+  font-size: var(--cc-fs-xs); pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+}
+.gp-share-chip-error { color: var(--cc-sev-fail); }
+.gp-share-chip-icon { font-size: 1em; }
+.gp-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
+.gp-share-chip-dismiss:hover { opacity: 1; }
 </style>
