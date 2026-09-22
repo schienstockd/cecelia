@@ -162,6 +162,10 @@ const VERTEX_HIT_PX  = 8   // radius around a polygon vertex handle — mirrors 
 const STROKE_NEAR_PX = 8   // click-tolerance around a stroke path — a 1-px line is unhittable
 const ROTATE_HANDLE_OFFSET_PX = 22   // rotate handle sits this far above the AA top edge
 const ROTATE_HIT_PX  = 10  // hit radius around the rotate handle centre
+// ✕ sits diagonally OUTSIDE the top-right corner handle — same offset for both rect and
+// poly/stroke bbox. Chosen so the ✕ (radius 7) and the corner handle (half-size 6) do not overlap
+// and a resize drag on the corner is unambiguous.
+const DELETE_OFFSET_PX = 10
 
 // Rotation helpers. Rotation is stored in degrees, clockwise, around the mark's centroid; the
 // SVG surface wraps the shape + its handles in a `<g transform="rotate(deg cx cy)">` so both the
@@ -413,37 +417,61 @@ function applyEdit(cur: Point) {
       if (!bbox01) return
       const corner = editDragging.corner
       const dx01 = dxL / w, dy01 = dyL / h
-      // Anchor corner (fixed) in [0,1]. Same NW/NE/SE/SW indexing as rect corners.
+      // Anchor corner (fixed) + original moving corner (before drag), both in [0,1]. Same
+      // NW/NE/SE/SW indexing as rect corners.
       const bx = bbox01.x, by = bbox01.y, bX = bbox01.x + bbox01.w, bY = bbox01.y + bbox01.h
       const anchor = corner === 0 ? [bX, bY]
                    : corner === 1 ? [bx, bY]
                    : corner === 2 ? [bx, by]
                    :                [bX, by]
+      const orig   = corner === 0 ? [bx, by]
+                   : corner === 1 ? [bX, by]
+                   : corner === 2 ? [bX, bY]
+                   :                [bx, bY]
       // Moving corner's TARGET position — the drag delta on the corner being grabbed.
-      const moving = corner === 0 ? [bx + dx01, by + dy01]
-                   : corner === 1 ? [bX + dx01, by + dy01]
-                   : corner === 2 ? [bX + dx01, bY + dy01]
-                   :                [bx + dx01, bY + dy01]
-      // Guard against zero-extent starting bbox (a horizontal-line freehand has bbox.h = 0)
-      // and against a drag that flips the sign — we clamp the new extent to keep the shape
-      // grabbable without introducing an unexpected mirror.
-      const oldW = Math.max(bbox01.w, 1e-6)
-      const oldH = Math.max(bbox01.h, 1e-6)
-      const newW = Math.max(Math.abs(moving[0] - anchor[0]), MIN_BBOX_EXTENT_01)
-      const newH = Math.max(Math.abs(moving[1] - anchor[1]), MIN_BBOX_EXTENT_01)
-      const sx = newW / oldW, sy = newH / oldH
-      // Choose whether anchor is upper-left, upper-right, etc, for the NEW bbox so scaled points
-      // slot in on the right side of the anchor.
-      const flipX = (moving[0] < anchor[0]) ? -1 : 1
-      const flipY = (moving[1] < anchor[1]) ? -1 : 1
+      const moving = [orig[0] + dx01, orig[1] + dy01]
+      // SIGNED scale relative to the anchor. `(v - anchor)` already carries the sign; a signed
+      // ratio (newExtent / origExtent) yields a negative sx when the drag has crossed past the
+      // anchor and the shape should mirror. The previous flipX/flipY multiplier on top of
+      // `(x - anchor)` double-signed the offset and flipped every vertex to the opposite side of
+      // the anchor on any drag, regardless of direction.
+      const origExtentX = orig[0] - anchor[0]  // signed original half-diagonal
+      const origExtentY = orig[1] - anchor[1]
+      const rawExtentX  = moving[0] - anchor[0]
+      const rawExtentY  = moving[1] - anchor[1]
+      // Clamp the magnitude so a corner dropped on top of the anchor doesn't collapse to a
+      // zero-area shape the user can't grab again. Preserve the drag direction's sign.
+      const signX = Math.sign(rawExtentX) || Math.sign(origExtentX) || 1
+      const signY = Math.sign(rawExtentY) || Math.sign(origExtentY) || 1
+      const newExtentX = signX * Math.max(Math.abs(rawExtentX), MIN_BBOX_EXTENT_01)
+      const newExtentY = signY * Math.max(Math.abs(rawExtentY), MIN_BBOX_EXTENT_01)
+      // Guard degenerate starting extent (horizontal-line freehand has bbox.h = 0 ⇒
+      // origExtentY = 0). Fall back to identity on that axis so the drag still moves the other.
+      const sx = Math.abs(origExtentX) < 1e-6 ? 1 : newExtentX / origExtentX
+      const sy = Math.abs(origExtentY) < 1e-6 ? 1 : newExtentY / origExtentY
       m.geom = { pts: g.pts.map(([x, y]) => [
-        clamp01(anchor[0] + flipX * (x - anchor[0]) * sx),
-        clamp01(anchor[1] + flipY * (y - anchor[1]) * sy),
+        clamp01(anchor[0] + (x - anchor[0]) * sx),
+        clamp01(anchor[1] + (y - anchor[1]) * sy),
       ] as [number, number]) }
     } else {
       // Body drag — translate every vertex by the LOCAL delta so a rotated shape still moves in
-      // the direction the user dragged (rotation origin travels with the vertex mean).
-      m.geom = { pts: g.pts.map(([x, y]) => [clamp01(x + dxL / w), clamp01(y + dyL / h)] as [number, number]) }
+      // the direction the user dragged (rotation origin travels with the vertex mean). Clamp the
+      // DELTA (not each vertex individually) so the shape stays intact at the frame edge — a
+      // per-vertex clamp lets the leading edge pin to 1.0 while the trailing edge keeps moving,
+      // collapsing the shape onto the wall. Because `editOrigMark` retains the untouched
+      // vertices, that collapse also snaps back on drag-return, giving the "resize wasn't
+      // baked in" feel.
+      const bbox01 = polyBboxFromPts01(g.pts)
+      if (!bbox01) return
+      const rawDx01 = dxL / w, rawDy01 = dyL / h
+      // Only clamp the axis that actually fits inside the frame; a shape wider than the surface
+      // (bbox.w > 1) shouldn't have the drag inverted, so let it pass through freely.
+      const clampedDx = bbox01.w >= 1 ? rawDx01
+        : Math.max(-bbox01.x, Math.min(1 - (bbox01.x + bbox01.w), rawDx01))
+      const clampedDy = bbox01.h >= 1 ? rawDy01
+        : Math.max(-bbox01.y, Math.min(1 - (bbox01.y + bbox01.h), rawDy01))
+      m.geom = { pts: g.pts.map(([x, y]) =>
+        [x + clampedDx, y + clampedDy] as [number, number]) }
     }
   }
   marks.value = marks.value.map((mm, j) => j === editDragging!.idx ? m : mm)
@@ -686,7 +714,10 @@ const committedShapes = computed(() => marks.value.map((m, i) => {
     return { key: i, idx: i, kind: 'rect', label: m.label, stroke, strokeW, selected, transform,
              x, y, width, height, bbox: null as { x: number; y: number; w: number; h: number } | null,
              rotateX: cx, rotateY: y - ROTATE_HANDLE_OFFSET_PX, rotateAnchorY: y,
-             labelX: x, labelY: y - 6, deleteX: x + width, deleteY: y,
+             labelX: x, labelY: y - 6,
+             // ✕ sits outside the top-right corner handle so a click resizes vs deletes without
+             // ambiguity — same offset used by the poly / stroke bbox branch below.
+             deleteX: x + width + DELETE_OFFSET_PX, deleteY: y - DELETE_OFFSET_PX,
              pts: null as [number, number][] | null }
   }
   if (m.kind === 'poly' || m.kind === 'stroke') {
@@ -714,8 +745,8 @@ const committedShapes = computed(() => marks.value.map((m, i) => {
     const rotateX = bbox ? cx : x0
     const rotateAnchorY = bbox ? bbox.y : y0
     const rotateY = rotateAnchorY - ROTATE_HANDLE_OFFSET_PX
-    const deleteX = bbox ? bbox.x + bbox.w : x0
-    const deleteY = bbox ? bbox.y : y0
+    const deleteX = (bbox ? bbox.x + bbox.w : x0) + DELETE_OFFSET_PX
+    const deleteY = (bbox ? bbox.y : y0) - DELETE_OFFSET_PX
     const labelX = bbox ? bbox.x : x0
     const labelY = bbox ? bbox.y - 6 : y0 - 6
     return { key: i, idx: i, kind: m.kind, label: m.label, stroke, strokeW, selected, transform,
