@@ -15,6 +15,77 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.6] — 2026-09-22
+
+Four-day heartbeat after v0.2.5. Two threads: the Claude/Blackboard arc reaches its capstone (entry
+fingerprints + outcome-biased guardrail retrieval, and plot point-out rolls out across ten families
+so a Claude pick lights up the corresponding mark) and the behaviour-cards families land on the
+Analysis board. Also: a launcher fix so installs with TLS on by default can actually start the app.
+
+### Added
+
+- **Launcher — HTTPS-default installs can now start the app.** The launcher hardcoded `http://` for
+  the health probe and browser open, so with TLS on by default (`config/tls.jl`) the poll never
+  succeeded, the 180 s window elapsed, and SIGTERM killed the server before the user reached the app
+  (*"Cecelia server did not become ready in time"*). `app.py` now probes HTTPS first (unverified
+  context — self-signed loopback cert), falls back to HTTP, and pins the winning URL for the browser
+  open and shutdown POST.
+- **Blackboard — outcome tagging, guardrails, and fingerprints (MEMORY P1–P5).** Notebook entries
+  now carry good/bad outcome tags with a required note that bias future retrieval
+  (bad > good > untagged) so past incidents surface before we repeat them; a content fingerprint
+  (schema v1) plus a guardrail-retrieval path let the observer detect repeat sessions and pin the
+  relevant prior context. The blackboard UI gains status + outcome chips, filters, profile pin, and
+  wiki-link resolution (marked inline extension). Session briefing carries memory context
+  (newProject flag + profile placeholder body).
+- **Behaviour cards — cell / motif / hmmState families shipped on the Analysis board.** One
+  card per behaviour, medoid rendering per family (hmm-cards Phase 3: one card per HMM state,
+  medoid = state-run). Convention lives in `docs/ANALYSIS.md` → *Behaviour cards*.
+- **Bidirectional plot point-out — 10 families adopt.** Store + MCP surface for `point_at_ui` on
+  plot marks, then rolled out across ten plot families; TrackScheme, TrackPaths, card families,
+  UMAP and gating-scatter subscribe to pick/trackHighlight so a Claude pick lights up the plot
+  mark (Slices A + B). Aggregate-plot highlight chip closes Decision 19.
+- **`list_plots` MCP registry.** Claude can now enumerate the plots on a board with per-family
+  axis meta, prerequisite for cross-plot reasoning (BIDIR PR #8).
+- **DrawSurface — thickness, selection, rotate, uniform bbox frame.** The annotation primitive
+  gains editing affordances and a consistent bounding box; the pure `drawGeometry.ts` state
+  primitive keeps geometry logic UI-free.
+- **Plot Frame contract.** Axis-rect Frame adopted across plot families (fixes CVS letterbox)
+  including cluster panels (heatmap + HMM); MotifCardsView + GatingStrategyView proxy Frame through.
+- **`rename_value_name!` + `/api/images/labels/rename`.** Rename a value_name with matching input
+  control and tooltip in `ImageMetadataDialog`.
+- **Landscape Z-awareness.** Bidir landscape Phase 6 honors the viewer's 2D/3D mode.
+- **Hybrid capturePath.** Local sessions can `Read` the fat meta.json directly; the MCP landscape
+  tile bag is compressed on the `get_capture` response for the remote path.
+- **`useCanvasShare` composable.** Share flow extracted and adopted by LayoutCanvas
+  (Analysis board), ClusterPlots and GatingPlots.
+
+### Changed
+
+- **`observer` — `get_spatial_stats` split** into `get_region_clusters` + `get_contact_stats`.
+  Callers that queried the combined tool need to pick the new one.
+- **Test suite split.** `app/test/runtests.jl` is now pure includes + preamble; individual testsets
+  moved into `app/test/suite/*.jl` files (blackboard CRUD, push writer + Kiwi, movie registry,
+  overlay author, viewer picks/guards, storage/versions, and ~15 more). Faster to navigate and
+  cheaper to run a single area.
+
+### Fixed
+
+- **Viewer — pops-on-zoom re-resolves against current `segPops`.** Zoom-driven pop re-fetch now
+  resolves by uid + path so it does not stick to a stale reference.
+- **Viewer — per-pop track-eye hides persist across refetches.** Previously flipped back on when
+  tracks reloaded.
+- **Viewer — per-pop ribbon filters by `track_source`, not just labels.**
+- **Bidir — DrawSurface freeform/polygon resize, drag-to-edge, delete overlap** all fixed.
+- **Bidir — capturePath gated on loopback bind**, not always-send.
+- **`ImageMetadataDialog` — rename input ref inside `v-for` is an array** (previously grabbed the
+  wrong element).
+- **MCP — `set_blackboard_outcome`** error prose reworded to pass the guarantee ratchet.
+- **Motif** — span-broadcast per-track + cards picker + instance crop; notebook requires pops
+  selection, drops fictional `/live` default; ribbon helper is UID-free per the shipped-example
+  convention.
+- **Task console test** — tolerate ±1 s in `dur_since` asserts (timing flake).
+- **Lablog / Kiwi** — move `?` to Kiwi header, match blackboard vote icons.
+
 ## [0.2.5] — 2026-09-18
 
 Follow-up patch after v0.2.4 focused on the legacy-migrate flow, plus the WebGPU multi-atlas
@@ -971,7 +1042,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/schienstockd/cecelia/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/schienstockd/cecelia/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/schienstockd/cecelia/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/schienstockd/cecelia/compare/v0.2.2...v0.2.3
