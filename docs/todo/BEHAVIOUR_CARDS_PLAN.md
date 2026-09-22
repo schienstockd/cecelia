@@ -205,20 +205,21 @@ representative state-run — visually mirrors Fig 4c of the Nature Comms 2025 pa
 
 ## Open questions
 
-1. **Rail for motif/hmm cards** — Decision 6 provisions `livePops` until the pop_type lands.
-   Alternative: introduce a family-agnostic `behaviourPops` rail that surfaces
-   `{cluster, motif, hmm-state}` picker rows uniformly. Cleaner UX-wise but adds a rail
-   contract; ship on `livePops` first.
-2. **HMM cards' fraction denominator** — fraction of cells in state / total cells in track,
-   OR fraction of state-runs / total state-runs in track? Provisional: cell count (matches how
-   HMM state frequency is plotted). Confirm on real data.
-3. **Motif cards' overlay when a cell belongs to overlapping instances** — right now
-   `motif.class` on that cell is "highest-confidence wins" (Decision 9 in the motif plan). The
-   overlay reads that same column, so overlap resolution is by construction. Confirm this is
-   the desired behaviour — could alternatively paint each cell with a per-instance colour bar.
-4. **Layout preset naming** — do we want three separate "Card Table" template presets
-   (cell / motif / hmm), or one "Cards" preset that picks family by the rail's current
-   selection? Provisional: three, mirrors the three view registrations.
+1. **~~Rail for motif/hmm cards~~** — CLOSED. Decision 6 (revised 2026-09-20) shipped both
+   families with `rail: 'none'`; `livePops` was speculative. When `motifs` pop_type lands, the
+   panel can pick up a rail selection then; today the server discovers content from the h5ad.
+2. **~~HMM cards' fraction denominator~~** — CLOSED (2026-09-22). Shipped with **cell count**:
+   `fraction of cells in state / total cells in track`. Validated on 4kS67f/EaMaVq T:
+   cell-fraction picks 88-97%-dwell tracks (clean exemplars of the state); run-count fraction
+   picks tracks at ~50% mere-transition. All three states pick different medoids under the two
+   denominators — cells is the right definition for "a card that best exemplifies this state".
+3. **~~Motif cards' overlay when a cell belongs to overlapping instances~~** — CLOSED. The
+   runner writes `motif.class` per-cell as "highest-confidence wins" (Decision 9); the card
+   overlay reads that same column, so overlap resolution is by construction. Validated on
+   4kS67f/EaMaVq post-runner-fix (2026-09-22).
+4. **~~Layout preset naming~~** — CLOSED. Three presets, mirroring the three view registrations
+   (`cellCards`, `motifCards`, `hmmStateCards`). A single "Cards" preset would need a
+   family picker inside the panel, which is exactly what Decision 2 (family = a config) avoids.
 
 ## References
 
