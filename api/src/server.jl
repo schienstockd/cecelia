@@ -53,6 +53,7 @@ include("storage_api.jl")
 include("setup_api.jl")
 include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
+include("viewer_nav_api.jl") # viewer navigation — Claude → browser (RUBBER_DUCK_FIT_PLAN P2)
 include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
 include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDIR_CONTEXT_PLAN PR #6, Decision 14)
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
@@ -448,6 +449,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/marks/freeform" => (req, body_bytes) -> (api_viewer_marks_freeform(body_bytes)),
     "/api/viewer/marks/tile"     => (req, body_bytes) -> (api_viewer_marks_tile(body_bytes)),
     "/api/viewer/marks/plot"     => (req, body_bytes) -> (api_viewer_marks_plot(body_bytes)),
+    "/api/viewer/seek"           => (req, body_bytes) -> (api_viewer_seek(body_bytes)),
     # bidir PR #8 — plot registry writes. Frontend authors via `stores/plotRegistry.ts` on panel
     # mount/unmount; not on the MCP surface (Claude only READS the registry via `list_plots`).
     "/api/viewer/plots/register"   => (req, body_bytes) -> (api_viewer_plots_register(body_bytes)),

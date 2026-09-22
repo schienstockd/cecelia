@@ -1558,6 +1558,34 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
 
 
 @mcp.tool()
+def seek_viewer(project_uid: str, image_uid: str,
+                t: int | None = None, z: int | None = None) -> dict:
+    """Move the user's VIEWER to a specific frame — your "look at t=40" imperative when you want
+    to prompt them to check something at a coordinate you already know, without needing a
+    capture or a segmentation id to point at.
+
+    Distinct from `mark_*`: those are ephemeral overlay pointers on the CURRENT view; this
+    changes what the viewer is showing. Not "look at this cell", but "seek to this frame".
+
+    At least ONE of `t` (timepoint index) or `z` (z-plane index) must be set. Leave the other
+    unset to preserve the current value — e.g. `seek_viewer(t=40)` on a 3D+t movie keeps the
+    user's z-plane. Camera pan/zoom and per-channel visibility are preserved (same channel as
+    a Kiwi Refocus click on a legacy capture).
+
+    Best-effort: if no browser window is open on this project, the command reaches nobody and
+    returns `{ok: true}` anyway (fire-and-forget). If you can't tell whether the seek landed,
+    ask the user in prose ("could you jump to t=40 and check the middle-right region?") rather
+    than assuming.
+
+    Use this AFTER a data tool tells you the frame worth looking at — a QC outlier from
+    `get_cohort_qc`, an anomalous frame from `get_capture_landscape_tiles`, a per-track event
+    from `get_behaviour_summary`. Do NOT call this on a hunch; the user's attention is the
+    scarcest resource in the whole loop.
+    """
+    return _client.seek_viewer(project_uid, image_uid, t, z)
+
+
+@mcp.tool()
 def mark_tile(project_uid: str, image_uid: str, cell_id: str,
               label: str = "", ttl_s: int = 300) -> dict:
     """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when

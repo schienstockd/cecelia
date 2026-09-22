@@ -310,6 +310,30 @@ export const useWsStore = defineStore('ws', () => {
       }
     }
 
+    // Viewer navigation — Claude's `seek_viewer` MCP tool (RUBBER_DUCK_FIT_PLAN P2). Fires when
+    // Claude wants the user to look at a specific (t, z) but hasn't got a capture to point at.
+    // Delivered by `api/src/viewer_nav_api.jl::api_viewer_seek`. Routes into the same
+    // `pendingViewState.focus` bag Kiwi Refocus writes to — no new frontend state, the popup's
+    // watcher on pendingViewState applies the seek exactly like a legacy-capture Refocus click.
+    if (type === 'viewer:seek') {
+      const viewer     = useViewerStore()
+      const projectUid = String(data.projectUid ?? '')
+      const imageUid   = String(data.imageUid   ?? '')
+      const openProj   = useProjectMetaStore().current?.uid ?? ''
+      // Same cross-project guard as viewer:mark — don't move the camera on a stray broadcast
+      // aimed at a project we're not on.
+      if (projectUid && openProj && projectUid !== openProj) return
+      const focusRaw = (data.focus ?? {}) as Record<string, unknown>
+      const t = Number(focusRaw.t)
+      const z = Number(focusRaw.z)
+      const focus: { t?: number; z?: number } = {}
+      if (Number.isFinite(t)) focus.t = t
+      if (Number.isFinite(z)) focus.z = z
+      if (imageUid && (focus.t !== undefined || focus.z !== undefined)) {
+        viewer.setPendingViewState({ focus, imageUid })
+      }
+    }
+
     // Software-update apply is one long POST (download → extract → on dev, `npm install` + `npm run
     // build`, minutes on a fresh box). Without a live signal the "Updating…" button reads as a hang.
     // Backend broadcasts a step string per stage; mirror it into `appCtl.updateMsg` so the Settings

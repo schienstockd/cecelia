@@ -116,6 +116,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a stored capture (cap-…) — 0..1 frame-relative coords
         ("POST", "/api/viewer/marks/tile"),     # highlight ONE landscape/grid tile (e.g. "B3") — no overlay geometry, the grid is the shape
         ("POST", "/api/viewer/marks/plot"),     # bidir PR #4b: point at a spot on a PLOT panel (family + plotId + 0..1 (u,v) + optional sub-cell)
+        ("POST", "/api/viewer/seek"),           # RUBBER_DUCK_FIT_PLAN P2: imperative "look at frame (t, z)" — no mark, no capture; reuses pendingViewState.focus
         ("GET",  "/api/viewer/landscape"),      # read the last-published landscape heatmap for (image, t, z); browser publishes, MCP reads
         # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
         # + auth token to the project so PR #2's Julia writer can push a capture-arrived
@@ -505,6 +506,17 @@ class CeceliaClient:
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/plot", body=body)
+
+    def seek_viewer(self, project_uid: str, image_uid: str,
+                    t: int | None = None, z: int | None = None):
+        # RUBBER_DUCK_FIT_PLAN P2 — "look at frame (t, z)" imperative. Not a mark: no TTL, no
+        # ring, no capture. The Julia handler broadcasts a `viewer:seek` WS frame that the
+        # browser applies via the same `pendingViewState.focus` bag Kiwi Refocus uses. At least
+        # one of `t` / `z` must be set — a seek with neither is a no-op the caller shouldn't send.
+        body: dict = {"projectUid": project_uid, "imageUid": image_uid}
+        if t is not None: body["t"] = int(t)
+        if z is not None: body["z"] = int(z)
+        return self._request("POST", "/api/viewer/seek", body=body)
 
     def list_plots(self, project_uid: str) -> list[dict]:
         # BIDIR PR #8 — read the live plot registry for a project. Populated by the frontend's
