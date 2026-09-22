@@ -25,6 +25,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "get_project_info", "list_images", "find_object", "get_task_history",
             "get_module_params", "get_available_plots", "get_analysis_lineage", "get_populations",
             "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
+            "get_region_clusters", "get_contact_stats",   # split of former get_spatial_stats
             "get_chains", "get_cohort_qc", "get_repl_api", "get_session_briefing",
             "get_recent_logs", "read_lab_log", "append_lab_log", "create_notebook",
             "set_notebook_description", "revise_notebook", "list_notebooks", "get_notebook",
@@ -191,6 +192,35 @@ class ServerToolRegistrationTest(unittest.TestCase):
             server._client.get_capture = original
         ids = sorted(t["id"] for t in out["landscape"]["tiles"])
         self.assertEqual(["A1", "A2"], ids)
+
+    def test_spatial_split_returns_only_its_own_slice(self):
+        # get_region_clusters and get_contact_stats share the /api/analysis/spatial route; each must
+        # strip the OTHER key from every per-image entry, so an LLM asking about niches doesn't get
+        # the pair matrix and vice versa. Envelope + headers pass through.
+        original = server._client.get_spatial_stats
+        server._client.get_spatial_stats = lambda p, i, s: {
+            "projectUid": p,
+            "images": [
+                {"imageUid": "IMG1", "regionRuns": [{"valueName": "base", "suffix": "r1"}],
+                 "contactStats": [{"suffix": "n1", "pairs": []}]},
+                {"imageUid": "IMG2", "regionRuns": [], "contactStats": []},
+            ],
+        }
+        try:
+            regions = server.get_region_clusters("NRUBxU")
+            contacts = server.get_contact_stats("NRUBxU")
+        finally:
+            server._client.get_spatial_stats = original
+        self.assertEqual("NRUBxU", regions["projectUid"])
+        for im in regions["images"]:
+            self.assertIn("regionRuns", im)
+            self.assertNotIn("contactStats", im)
+        for im in contacts["images"]:
+            self.assertIn("contactStats", im)
+            self.assertNotIn("regionRuns", im)
+        # header field (imageUid) preserved
+        self.assertEqual("IMG1", regions["images"][0]["imageUid"])
+        self.assertEqual("IMG1", contacts["images"][0]["imageUid"])
 
     def test_no_tool_can_start_work(self):
         # Claude designs, the user runs. No tool may launch a chain or submit a task — enforced by the

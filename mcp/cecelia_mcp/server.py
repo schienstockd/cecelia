@@ -488,31 +488,58 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
     return _client.get_cluster_summary(project_uid, image_uid or None, set_uid or None)
 
 
-@mcp.tool()
-def get_spatial_stats(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
-    """SPATIAL summary per image — spatial region clustering + pairwise cell-type contact statistics.
-    Scope with `image_uid` / `set_uid`; omit both for the whole project.
+def _spatial_drop(other: str, project_uid: str, image_uid: str, set_uid: str) -> dict:
+    # Two orthogonal analyses share one backend route; each MCP tool returns its own slice, so an
+    # LLM asking about niches doesn't get the pair matrix and vice versa. Envelope + headers kept.
+    envelope = _client.get_spatial_stats(project_uid, image_uid or None, set_uid or None)
+    imgs = envelope.get("images") or []
+    return {
+        **{k: v for k, v in envelope.items() if k != "images"},
+        "images": [{k: v for k, v in im.items() if k != other} for im in imgs],
+    }
 
-    Per image:
-      - `regionRuns`: list, one per (segmentation × region run) —
-        `{valueName, suffix, nRegions, n, largestFrac, sizes: [{value, n, fraction}]}`. Spatial regions
-        are neighbourhood-composition niches (what cell types surround each cell); a cell has BOTH a
-        cluster label and a region label. `suffix` is the run id.
-      - `contactStats`: list, one per neighbourStats run —
-        `{suffix, graphSuffix, basis: [populations], nCells, nEdges, coverage, nPermutations,
-        pairs: [{popA, popB, observed, expected, logOdds, zScore, pValue, significant,
-        association: associated|avoided}]}`. `logOdds` is the CODEX observed-vs-expected contact
-        log-odds ratio — the EFFECT SIZE: > 0 = the two cell types selectively ASSOCIATE
-        (co-localise), < 0 = they AVOID each other. `zScore`/`pValue` are the SIGNIFICANCE, from
-        `nPermutations` random relabellings of the same neighbour graph: they answer "is this more
-        than a random arrangement of these cell types would give?". Both are null when the test was
-        skipped (nPermutations = 0), in which case logOdds is descriptive only. `pValue` cannot go
-        below 1/(nPermutations+1), so p at that floor means "no permutation matched it", not p=0.
-        `coverage` is the fraction of the graph's cells that were in `basis` — a low value means the
-        statistics cover a small slice of the graph. Use this to answer "which cell types co-localise
-        or avoid each other, and is it real?".
-    Summary-level, reads current on-disk state (region columns + spatialStats sidecars)."""
-    return _client.get_spatial_stats(project_uid, image_uid or None, set_uid or None)
+
+@mcp.tool()
+def get_region_clusters(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """SPATIAL REGION clustering per image — neighbourhood-composition niches. Scope with `image_uid` /
+    `set_uid`; omit both for the whole project.
+
+    A region label is "what cell types surround each cell" — orthogonal to the phenotype cluster
+    (get_cluster_summary), and a cell carries both. Per image, `regionRuns` is a list, one per
+    (segmentation × region run):
+      `{valueName, suffix, nRegions, n, largestFrac, sizes: [{value, n, fraction}]}`.
+      - `suffix` is the run id.
+      - `largestFrac` near 1.0 (one niche swallowing most points) or a very low `nRegions` vs peers
+        means a near-uninformative / collapsed region clustering for that image — worth flagging.
+    Use this to answer "what spatial niches exist in this tissue"; pair with get_contact_stats for
+    "who co-localises with whom". Summary-level, reads current on-disk state (region columns in the
+    per-image label props)."""
+    return _spatial_drop("contactStats", project_uid, image_uid, set_uid)
+
+
+@mcp.tool()
+def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """PAIRWISE cell-type CONTACT statistics per image — which populations selectively co-localise or
+    avoid each other. Scope with `image_uid` / `set_uid`; omit both for the whole project.
+
+    Per image, `contactStats` is a list, one per neighbourStats run:
+      `{suffix, graphSuffix, basis: [populations], nCells, nEdges, coverage, nPermutations,
+      pairs: [{popA, popB, observed, expected, logOdds, zScore, pValue, significant,
+      association: associated|avoided}]}`.
+      - `logOdds` is the CODEX observed-vs-expected contact log-odds ratio — the EFFECT SIZE: > 0 =
+        the two cell types selectively ASSOCIATE (co-localise), < 0 = they AVOID each other.
+      - `zScore` / `pValue` are the SIGNIFICANCE, from `nPermutations` random relabellings of the
+        same neighbour graph: they answer "is this more than a random arrangement of these cell
+        types would give?". Both are null when the test was skipped (nPermutations = 0), in which
+        case logOdds is descriptive only.
+      - `pValue` cannot go below 1/(nPermutations+1), so p at that floor means "no permutation
+        matched it", not p=0.
+      - `coverage` is the fraction of the graph's cells that were in `basis` — a low value means
+        the statistics cover a small slice of the graph.
+    Use this to answer "which cell types co-localise or avoid each other, and is it real?"; pair with
+    get_region_clusters for the niches those cells sit in. Summary-level, reads current on-disk
+    state (spatialStats sidecars)."""
+    return _spatial_drop("regionRuns", project_uid, image_uid, set_uid)
 
 
 @mcp.tool()
