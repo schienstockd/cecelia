@@ -54,8 +54,8 @@ Analysis board. Also: a launcher fix so installs with TLS on by default can actu
 - **`rename_value_name!` + `/api/images/labels/rename`.** Rename a value_name with matching input
   control and tooltip in `ImageMetadataDialog`.
 - **Landscape Z-awareness.** Bidir landscape Phase 6 honors the viewer's 2D/3D mode.
-- **Hybrid capturePath.** Local sessions can `Read` the fat meta.json directly; the MCP landscape
-  tile bag is compressed on the `get_capture` response for the remote path.
+- **Slim landscape on `get_capture`.** The landscape tile bag is compressed on the `get_capture`
+  MCP response; `get_capture_landscape_tiles` covers on-demand tile subsets under a marked region.
 - **`useCanvasShare` composable.** Share flow extracted and adopted by LayoutCanvas
   (Analysis board), ClusterPlots and GatingPlots.
 
@@ -63,6 +63,13 @@ Analysis board. Also: a launcher fix so installs with TLS on by default can actu
 
 - **`observer` — `get_spatial_stats` split** into `get_region_clusters` + `get_contact_stats`.
   Callers that queried the combined tool need to pick the new one.
+- **`get_capture` — `capturePath` escape hatch dropped.** The loopback-gated absolute-path field
+  that let a local Claude session `Read` the fat `meta.json` is gone; slim +
+  `get_capture_landscape_tiles` cover every reader task, and a fat-form path re-introduced the
+  truncation risk slim exists to avoid. The field was added mid-cycle and is not on any released
+  tag — no on-disk migration needed. If a workflow relied on it, use
+  `get_capture_landscape_tiles(project_uid, capture_id, tile_ids=[...])` or `bbox=[x1,y1,x2,y2]`
+  for the subset you actually need.
 - **Test suite split.** `app/test/runtests.jl` is now pure includes + preamble; individual testsets
   moved into `app/test/suite/*.jl` files (blackboard CRUD, push writer + Kiwi, movie registry,
   overlay author, viewer picks/guards, storage/versions, and ~15 more). Faster to navigate and
