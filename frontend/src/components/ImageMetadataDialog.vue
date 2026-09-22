@@ -129,12 +129,14 @@ const levelsFor = (vn: string) => storeLevelRows(stores.value.versions[vn])
 const editingVn = ref<string | null>(null)
 const editingValue = ref('')
 const editingBusy = ref(false)
-const editInputRef = ref<HTMLInputElement | null>(null)
+// Template ref inside a `v-for` — Vue populates it as an array of the currently-mounted
+// elements (only one row renders the input at a time, guarded by `editingVn === vn`).
+const editInputRef = ref<HTMLInputElement[]>([])
 
 function startEditVn(vn: string) {
   editingVn.value = vn
   editingValue.value = vn
-  nextTick(() => editInputRef.value?.select())
+  nextTick(() => editInputRef.value[0]?.select())
 }
 function cancelEditVn() {
   editingVn.value = null
