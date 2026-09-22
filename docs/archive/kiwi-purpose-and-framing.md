@@ -95,3 +95,41 @@ framing. This doc supersedes that framing: the mechanics don't change,
 but anything still to be built (esp. UI copy, conclusion display, any
 Kiwi-authored summary text) should read as documentation-first, not
 conversation-first.
+
+## Reframe: structured rubber duck (2026-09-22)
+
+Later Sonnet chat surfaced a sharper positioning: **Kiwi is a
+structured rubber duck.** "Documentation helper" describes the artifact
+(what Kiwi leaves behind). "Structured rubber duck" describes the
+user's activity (articulate, get a provocation back). The two are
+compatible: the blackboard, outcome tags and guardrail retrieval are
+what makes the rubber ducking *survive* to writeup time — that is what
+"structured" is doing.
+
+Every shipped mechanic reads cleanly through the rubber-duck lens:
+
+- **Marks** — "I articulated what I saw."
+- **Chains** — "the shape of my thinking over time."
+- **Blackboard entries with outcome tags** — "the ones I want to
+  remember, tagged with how they turned out."
+- **Claude's replies** — "the noise back that helps me hear myself"
+  (a real duck can't; a Claude can, imperfectly).
+
+Why it's the better positioning:
+
+- Names the *user's* activity, not the tool's category — same move as
+  Copilot's "pair programmer." Positions Kiwi against what an
+  immunologist actually does at the screen, not against a class of
+  software.
+- Sidesteps the "was Kiwi right about the biology" bar. A rubber duck
+  cannot be wrong; a structured one holds notes and lets you ask
+  someone else later.
+- Matches what LLMs are actually good at — being a provocation to your
+  own thinking — without pretending they're domain oracles.
+
+"Rubber duck" is a technical term from another discipline (software
+engineering, `rubberduckdebugging.com`); dragging it into immunology is
+fine — flow cytometry did the same with "gate," "compensation" and
+"backgating." Fair game for the modal lede + FAQ; keep the modal title
+plain-language ("What Kiwi does here") so a first-time reader can still
+enter without knowing the term.
