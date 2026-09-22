@@ -273,6 +273,10 @@ let sumX = new Map<number, number>(), sumY = new Map<number, number>()   // per-
 // IMAGE index into props.imageUids (colour-by-attribute joins this → the image's attr client-side).
 const popIdxRef = ref<Float32Array | null>(null)
 const pointImg = ref<Uint16Array | null>(null)   // reactive so facets/attr colouring recompute on load
+// BIDIR PR #4b Slice B — per-point label id (cell label_id for `clust`; track_id for `trackclust`),
+// read from the `withLabels=1` wire. Enables per-point subscription to pickHighlight (Decision 19)
+// without a second round-trip.
+const labelsRef = ref<Float32Array | null>(null)
 
 // ── colour-by pickers (populations + image attributes), reusing the shared endpoints/helpers ────────
 // colour + facet controls live in ONE options popover (the bar gets crowded, esp. docked on the board)
@@ -406,33 +410,44 @@ async function load() {
   if (!props.projectUid || !props.imageUids.length) { points.value = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
   loading.value = true
   try {
-    // wire = flat Float32 [x, y, clusterCode, popIdx] per point (16 B). We fetch per image (so we can
-    // tag each point with its image → colour/facet by attribute) and concatenate. colourPops (only in
-    // population mode) asks the server to resolve per-point membership → popIdx.
+    // wire = flat Float32 [x, y, clusterCode, popIdx, label] per point (20 B via `withLabels=1`). We
+    // fetch per image (so we can tag each point with its image → colour/facet by attribute) and
+    // concatenate. colourPops (only in population mode) asks the server to resolve per-point
+    // membership → popIdx. `label` = cell label_id (`clust`) or track_id (`trackclust`), read
+    // alongside x/y so a per-point subscription to pickHighlight/trackHighlight (BIDIR PR #4b
+    // Decision 19) can find the highlighted points without a second round-trip.
     const cp = usePopIdx.value ? colourPops.value.map(popToken).filter(Boolean) : []
-    const quads: number[] = []
+    const stride = 5
+    const rec: number[] = []
     const imgOf: number[] = []
+    const vnOf: string[] = []
     for (let ui = 0; ui < props.imageUids.length; ui++) {
-      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType, suffix: props.suffix })
+      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType, suffix: props.suffix, withLabels: '1' })
       if (cp.length) q.set('colourPops', cp.join(','))
       const res = await fetch(`/api/plots/umap?${q}`)
       if (!res.ok) continue
       const f = new Float32Array(await res.arrayBuffer())
-      for (let i = 0; i < f.length; i++) quads.push(f[i])
-      for (let i = 0; i < f.length / 4; i++) imgOf.push(ui)
+      for (let i = 0; i < f.length; i++) rec.push(f[i])
+      // per-point image index, and the image uid the highlight bag scopes with.
+      const iuid = props.imageUids[ui]
+      for (let i = 0; i < f.length / stride; i++) { imgOf.push(ui); vnOf.push(iuid) }
     }
-    const n = Math.floor(quads.length / 4)
+    const n = Math.floor(rec.length / stride)
     if (n === 0) {
       points.value = null; categories.value = null; legend.value = []; centroids.value = []
       err.value = `No UMAP at suffix “${props.suffix}”. Run clustering with “Calculate UMAP” enabled.`
       return
     }
     const pts = new Float32Array(n * 2), codes = new Float32Array(n), popIdx = new Float32Array(n)
+    const labs = new Float32Array(n)
     const img = new Uint16Array(n)
     let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity
     for (let i = 0; i < n; i++) {
-      const x = quads[4 * i], y = quads[4 * i + 1]
-      pts[2 * i] = x; pts[2 * i + 1] = y; codes[i] = quads[4 * i + 2]; popIdx[i] = quads[4 * i + 3]; img[i] = imgOf[i]
+      const x = rec[stride * i], y = rec[stride * i + 1]
+      pts[2 * i] = x; pts[2 * i + 1] = y
+      codes[i] = rec[stride * i + 2]; popIdx[i] = rec[stride * i + 3]
+      labs[i] = rec[stride * i + 4]
+      img[i] = imgOf[i]
       if (x < xMin) xMin = x; if (x > xMax) xMax = x
       if (y < yMin) yMin = y; if (y > yMax) yMax = y
     }
@@ -442,6 +457,7 @@ async function load() {
     codesRef.value = codes
     popIdxRef.value = popIdx
     pointImg.value = img
+    labelsRef.value = labs
     countsMap = new Map<number, number>()
     for (let i = 0; i < n; i++) countsMap.set(codes[i], (countsMap.get(codes[i]) ?? 0) + 1)
     distinctCodes = [...countsMap.keys()].sort((a, b) => a - b)
@@ -671,6 +687,54 @@ function markStyle(m: { u: number; v: number; cell?: string }): Record<string, s
   const pos = letterboxLocal(m.u, m.v, { x: 0, y: 0, w: boxW.value, h: boxH.value }, asp)
   return pos ? { left: `${pos.left}px`, top: `${pos.top}px` } : null
 }
+
+// BIDIR PR #4b Slice B (Decision 19) — pickHighlight (clust/region) or trackHighlight (trackclust)
+// subscribers. For each highlighted (imageUid, label) in the bag, project the matching data point
+// through the same `mapPx` / `mapRect` used for the dot canvas and render a magenta "C" ring on
+// top. Same origin='claude' + magenta palette convention as Slice A (TrackScheme / TrackPaths /
+// cards). Non-strict on valueName: the pooled-vn UMAP wire doesn't carry per-point vn, so a match
+// on (imageUid, label) may false-positive across vns that share label id namespaces — rare in
+// practice (usually one vn per popType per image), noted in the reservations.
+const isTrackGrained = computed(() => props.popType === 'trackclust')
+const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
+  const pts = points.value, labs = labelsRef.value, imgArr = pointImg.value
+  if (!pts || !labs || !imgArr) return []
+  const bag = isTrackGrained.value ? viewer.trackHighlight : viewer.pickHighlight
+  if (!bag || bag.origin !== 'claude') return []
+  const ids: number[] = isTrackGrained.value
+    ? (bag as { trackIds: number[] }).trackIds
+    : (bag as { labels: number[] }).labels
+  if (!ids?.length) return []
+  const idSet = new Set(ids)
+  const wantImgIdx = props.imageUids.indexOf(bag.imageUid)
+  if (wantImgIdx < 0) return []
+  const facs = facets.value
+  const nf = facs.length
+  const faceted = facetBy.value !== 'none' && nf > 1
+  // facet-of-point lookup: iterate facets once, mark point→facet.
+  const facetOf = new Int16Array(pts.length / 2).fill(-1)
+  if (faceted) for (let fi = 0; fi < facs.length; fi++) for (const i of facs[fi].idx) facetOf[i] = fi
+  const out: { px: number; py: number; label: number }[] = []
+  const n = pts.length / 2
+  const w = boxW.value, h = boxH.value
+  if (w <= 0 || h <= 0) return []
+  for (let i = 0; i < n; i++) {
+    if (imgArr[i] !== wantImgIdx) continue
+    const l = labs[i]
+    if (!idSet.has(l)) continue
+    const x = pts[2 * i], y = pts[2 * i + 1]
+    if (faceted) {
+      const fi = facetOf[i]; if (fi < 0) continue
+      const c = facetCell(fi, nf, w, h)
+      const [px, py] = mapRect(x, y, { px: c.px, py: c.py, pw: c.pw, ph: c.ph })
+      out.push({ px, py, label: l })
+    } else {
+      const [px, py] = mapPx(x, y, w, h)
+      out.push({ px, py, label: l })
+    }
+  }
+  return out
+})
 </script>
 
 <template>
@@ -756,6 +820,12 @@ function markStyle(m: { u: number; v: number; cell?: string }): Record<string, s
             <template v-for="m in umapMarks" :key="m.markerId">
               <PlotPointOutMark v-if="markStyle(m)" :mark="m" :style="markStyle(m)!" />
             </template>
+            <!-- BIDIR PR #4b Slice B — pickHighlight/trackHighlight (origin=claude) hits, drawn on
+                 top of the dot canvas at the same projection the dots use. Ring + "C" glyph shape
+                 shared with the cards/track family (Slice A). -->
+            <span v-for="(h, hi) in claudeHits" :key="'ch'+hi" class="uv-claude-hit"
+                  v-tooltip.top="`Claude: ${isTrackGrained ? 'track' : 'cell'} ${h.label}`"
+                  :style="{ left: h.px + 'px', top: h.py + 'px' }">C</span>
           </template>
           <div v-else class="uv-empty cc-empty cc-empty-overlay">
             <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
@@ -801,6 +871,14 @@ function markStyle(m: { u: number; v: number; cell?: string }): Record<string, s
 /* .uv-square (SquarePlot) provides the centred 1:1 box; .uv-plot fills it and carries the ground/frame */
 .uv-plot { position: absolute; inset: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
 .uv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* BIDIR PR #4b Slice B — pickHighlight/trackHighlight (origin=claude) point ring + "C" glyph. Same
+   magenta accent as the cards/track family. Anchor centered on the projected point (`translate`);
+   large enough to sit above the dot (`dotR` is typically ~2 px). */
+.uv-claude-hit { position: absolute; transform: translate(-50%, -50%); pointer-events: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
+  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; z-index: 3;
+  border: 1.5px solid #ffffff; box-shadow: 0 0 0 1px #e836b4; }
 .uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-weight: 700;
   color: #111; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.55); border-radius: var(--cc-radius-xs); padding: 0 4px; line-height: 1.4; z-index: 2; }
 /* small-multiples facet title: centred at the top of each cell (positioned in CSS px from facetTitles) */

@@ -33,7 +33,7 @@ import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
-import { splitXYZ } from '../../plots/valueColour'
+import { splitXYL, splitXYZL } from '../../plots/valueColour'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -95,6 +95,10 @@ const DRAW_MODES: ChipOption[] = [
 const showPops = computed(() => (props.highlight?.length ?? 0) > 0)
 
 const points = ref<Float32Array | null>(null)
+// BIDIR PR #4b Slice B — per-point labels aligned to `points` (cell label_id for flow/live, track_id
+// for track), from the `withLabels=1` wire. Feeds GateScatterCell's pickHighlight/trackHighlight
+// overlay (Decision 19).
+const pointLabels = ref<Float32Array | null>(null)
 const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })            // fixed (full data range)
 const viewExtents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })        // = extents (camera fixed)
 const viewTick = ref(0)
@@ -172,6 +176,13 @@ async function fetchBuf(q: string): Promise<Float32Array> {
   const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
   return new Float32Array(buf)
 }
+// BIDIR PR #4b Slice B — same fetch but with `withLabels=1`; response records carry the point's
+// label at the end (pair→triple or triple→quad). Only used for the BASE cloud fetch — pop-overlay
+// fetches stay label-less (the overlays don't subscribe to highlights, and adding labels there
+// would double the wire cost for no benefit).
+async function fetchBufWithLabels(q: string): Promise<Float32Array> {
+  return fetchBuf(`${q}&withLabels=1`)
+}
 
 // axes/extents/ticks + effective transforms + projected gate outlines — only when X/Y/transform/parent
 // change (NOT on membership change). Sends the PREFERRED transform; adopts what the server used.
@@ -231,18 +242,24 @@ async function fetchPoints() {
   // has no points, so don't ask for them (the server's own comment says the client skips the empty
   // data reads; only the message half was wired up). CLEAR them: leaving the previous image's cloud
   // under the "Not tracked yet" message would read as data.
-  if (notTracked.value) { points.value = new Float32Array(0); baseValues.value = null; return }
+  if (notTracked.value) { points.value = new Float32Array(0); baseValues.value = null; pointLabels.value = null; return }
   const key = metaQ.value                    // snapshot the view; drop a stale response
   const colour = colourOn.value              // snapshot too: the response's stride depends on it
-  const buf = await fetchBuf(plotQ(parent.value, effXt.value, effYt.value, effZt.value))
+  const buf = await fetchBufWithLabels(plotQ(parent.value, effXt.value, effYt.value, effZt.value))
   // same last-writer guard as fetchMeta: if the image/segmentation/axis/parent changed while this
   // was in flight, an out-of-order resolve must NOT clobber the current cloud (the intermittent
   // "blank until I toggle a control" gap on image switch).
   if (key !== metaQ.value) return
-  // colour-by → the body is [x,y,z] TRIPLES, split into the pairs the renderer draws plus the parallel
-  // value array (same index = same dot; the server read all three columns in one pass to guarantee it)
-  if (colour) { const { points: pts, values } = splitXYZ(buf); points.value = pts; baseValues.value = values }
-  else { points.value = buf; baseValues.value = null }
+  // colour-by → the body is [x,y,z,label] QUADS; else [x,y,label] TRIPLES. Same aligned-by-position
+  // invariant `splitXYZ` established. `pointLabels` feeds the pickHighlight/trackHighlight overlay
+  // (BIDIR PR #4b Slice B).
+  if (colour) {
+    const { points: pts, values, labels } = splitXYZL(buf)
+    points.value = pts; baseValues.value = values; pointLabels.value = labels
+  } else {
+    const { points: pts, labels } = splitXYL(buf)
+    points.value = pts; baseValues.value = null; pointLabels.value = labels
+  }
 }
 
 // full reload: axes + points + layers (axes / parent / image / value-name change)
@@ -494,7 +511,9 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => {
         <option value="svg">Image (SVG)</option>
       </select>
     </template>
-    <GateScatterCell ref="cell" :points="points" :extents="extents" :view-extents="viewExtents"
+    <GateScatterCell ref="cell" :points="points" :labels="pointLabels"
+                     :image-uid="g.imageUid ?? ''" :value-name="g.valueName ?? ''" :pop-type="g.popType ?? ''"
+                     :extents="extents" :view-extents="viewExtents"
                      :flip-y="isImageYAxis(yChan)"
                      :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
                      :x-label="axisLabelWithUnit(g.colLabel(xChan), xUnit)"

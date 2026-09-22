@@ -21,6 +21,29 @@ export function splitXYZ(buf: Float32Array): { points: Float32Array; values: Flo
   return { points, values }
 }
 
+// BIDIR PR #4b Slice B — `plotdata?withLabels=1` extends each record with one label (cell label_id
+// or track_id) at the end. Frontend split helpers, one per base stride:
+// - pair + label:  [x, y, label]              → 3 f32 records
+// - triple + label:[x, y, z, label]           → 4 f32 records
+// Same aligned-by-position invariant as splitXYZ.
+export function splitXYL(buf: Float32Array): { points: Float32Array; labels: Float32Array } {
+  const n = Math.floor(buf.length / 3)
+  const points = new Float32Array(2 * n), labels = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    points[2 * i] = buf[3 * i]; points[2 * i + 1] = buf[3 * i + 1]; labels[i] = buf[3 * i + 2]
+  }
+  return { points, labels }
+}
+export function splitXYZL(buf: Float32Array): { points: Float32Array; values: Float32Array; labels: Float32Array } {
+  const n = Math.floor(buf.length / 4)
+  const points = new Float32Array(2 * n), values = new Float32Array(n), labels = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    points[2 * i] = buf[4 * i]; points[2 * i + 1] = buf[4 * i + 1]
+    values[i] = buf[4 * i + 2]; labels[i] = buf[4 * i + 3]
+  }
+  return { points, values, labels }
+}
+
 // value → 0..1 over the served [lo, hi], clamped at both ends. A non-finite value stays NaN (the
 // measure is missing for that cell): the caller paints those in the dim ink rather than at the low
 // end of the ramp, which would read as a real low measurement. A zero-width extent (every cell the

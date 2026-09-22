@@ -75,10 +75,18 @@ const props = withDefaults(defineProps<{
   // sub-frame keyed by the pane's `key`). Absent = single-cell address (a match requires the
   // mark to carry no `cell`).
   cellKey?: string
+  // BIDIR PR #4b Slice B — per-point label (cell label_id for `flow`/`live`, track_id for `track`)
+  // aligned 1:1 with `points`, from the backend `withLabels=1` wire. Enables per-point subscription
+  // to pickHighlight (Decision 19). Absent → subscription is inert (no highlight painted).
+  labels?: Float32Array | null
+  imageUid?: string        // bag scope — highlight only fires when the bag matches this image
+  valueName?: string       // bag scope — highlight only fires when the bag matches this vn
+  popType?: string         // determines which bag: `track` → trackHighlight; else → pickHighlight
 }>(), {
   gates: () => [], popLayers: () => [], renderMode: 'points', showPops: false,
   mode: 'off', gateLineWidth: 1.5, gateLabels: false, viewTick: 0, loading: false, compact: false, readonly: false,
   hideAxisLabels: false, fontSize: 11, plotId: '', family: 'gate-scatter', cellKey: '',
+  labels: null, imageUid: '', valueName: '', popType: '',
 })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
@@ -297,6 +305,39 @@ const plotPointOuts = computed(() => {
     m.family === props.family && m.plotId === pid && (m.cell || '') === props.cellKey)
 })
 
+// BIDIR PR #4b Slice B (Decision 19) — per-point subscription to pickHighlight / trackHighlight
+// (origin=claude). Match highlighted labels against `props.labels` (aligned 1:1 with `points`),
+// project matched points through the same `viewExtents` fraction that the tick math uses so the
+// ring lands on the SAME pixel the dot occupies. Same magenta "C" glyph as Slice A. Non-strict
+// on valueName in the pop-scope of the current image (bag guard is imageUid + optional vn).
+const isTrackScope = computed(() => props.popType === 'track')
+const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() => {
+  const pts = props.points, labs = props.labels
+  if (!pts || !labs || !props.imageUid) return []
+  const bag = isTrackScope.value ? viewer.trackHighlight : viewer.pickHighlight
+  if (!bag || bag.origin !== 'claude') return []
+  if (bag.imageUid !== props.imageUid) return []
+  if (props.valueName && bag.valueName && bag.valueName !== props.valueName) return []
+  const ids: number[] = isTrackScope.value
+    ? (bag as { trackIds: number[] }).trackIds
+    : (bag as { labels: number[] }).labels
+  if (!ids?.length) return []
+  const idSet = new Set(ids)
+  const e = props.viewExtents
+  const xr = Math.max(1e-9, e.xMax - e.xMin)
+  const out: { xf: number; yf: number; label: number }[] = []
+  const n = pts.length / 2
+  for (let i = 0; i < n; i++) {
+    const l = labs[i]
+    if (!idSet.has(l)) continue
+    const x = pts[2 * i], y = pts[2 * i + 1]
+    const xf = (x - e.xMin) / xr
+    const yf = yFrac(e, y, props.flipY)
+    out.push({ xf, yf, label: l })
+  }
+  return out
+})
+
 </script>
 
 <template>
@@ -329,6 +370,11 @@ const plotPointOuts = computed(() => {
            the container itself (rectFrame). Shared marker styling in `PlotPointOutMark`. -->
       <PlotPointOutMark v-for="m in plotPointOuts" :key="m.markerId" :mark="m"
                         :style="{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }" />
+      <!-- BIDIR PR #4b Slice B — pickHighlight/trackHighlight (origin=claude) hits, positioned by
+           the SAME viewExtents fraction as the tick math so the ring lands on the actual dot pixel. -->
+      <span v-for="(h, hi) in claudeGateHits" :key="'gh'+hi" class="gsc-claude-hit"
+            v-tooltip.top="`Claude: ${isTrackScope ? 'track' : 'cell'} ${h.label}`"
+            :style="{ left: `${h.xf * 100}%`, top: `${h.yf * 100}%` }">C</span>
       <slot />
     </div>
   </div>
@@ -348,6 +394,14 @@ const plotPointOuts = computed(() => {
 .plot-capture.compact .axis-x { bottom: -15px; font-size: calc(var(--gate-font, 11px) - 1px); }
 .plot-capture.compact .axis-y { left: -24px; font-size: calc(var(--gate-font, 11px) - 1px); }
 .plot-capture.compact .xtick-lbl, .plot-capture.compact .ytick-lbl { display: none; }
+/* BIDIR PR #4b Slice B — pickHighlight/trackHighlight (origin=claude) point ring + "C" glyph. Same
+   magenta accent as UMAP + Slice A. `transform: translate(-50%, -50%)` centres the badge on the
+   projected point (`(xf, yf) * 100%` positions the top-left corner otherwise). */
+.gsc-claude-hit { position: absolute; transform: translate(-50%, -50%); pointer-events: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
+  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; z-index: 6;
+  border: 1.5px solid #ffffff; box-shadow: 0 0 0 1px #e836b4; }
 /* compact tiles can be smaller than the full-size 150px plot floor — lift it so the plot shrinks to the
    (square) tile instead of overflowing and being clipped by the cell (the pairs matrix packs small tiles). */
 .plot-capture.compact .panel-plot { min-height: 0; }
