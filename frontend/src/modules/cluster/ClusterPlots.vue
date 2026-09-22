@@ -32,6 +32,13 @@ import { isInteractiveView, pageViews } from '../../components/canvas/interactiv
 import { CLUSTER_PANELS, isClusterPanel } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import CanvasSelectionOverlay from '../../components/canvas/CanvasSelectionOverlay.vue'
+import FrameAnnotator from '../../components/FrameAnnotator.vue'
+import CaptureViewSurface from '../../components/CaptureViewSurface.vue'
+import { useCaptureReshowStore } from '../../stores/captureReshow'
+import type { CaptureAddress } from '../../utils/captureAddress'
+import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
+import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (views read their own keys: umap→labels, heatmap→features).
@@ -187,6 +194,79 @@ const selectedPop = ref('')
 // reactive per-set key rebinds to a fresh entry; the component doesn't remount). Restored canvases
 // come back non-empty, so they're left as-is; persisted per set, so no stacking on remount.
 watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('heatmap') } }, { immediate: true })
+
+// ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
+// Same shape as SummaryCanvas — the composable owns the Phase 1→2 machinery + POST + toast; this
+// host provides the cluster-panel envelope shape (kind + full state on plotRef.ui) + reshow.
+// The `module` tag on the address is `clusterPage:{popType}` so a Kiwi refocus routes back to the
+// right page (cluster cells vs cluster tracks).
+const panelsSnapshot = panels
+const reshown = ref<CaptureEnvelope | null>(null)
+const reshowStore = useCaptureReshowStore()
+const moduleTag = computed(() => `clusterPage:${props.popType}`)
+watch(() => reshowStore.pending, () => {
+  const env = reshowStore.consumeFor(moduleTag.value)
+  if (env) reshown.value = env
+}, { immediate: true })
+const share = useCanvasShare({
+  projectUid: () => projectUid.value,
+  canvasKey: () => ckey.value,
+  panels: () => panels.value,
+  label: () => `cluster · ${props.popType === 'trackclust' ? 'tracks' : props.popType} · plot canvas`,
+  buildPlotSpec: ({ panelCount }) => ({ specId: 'cluster-multi-panel',
+    params: { popType: props.popType, suffix: suffix.value, panelCount } }),
+  buildEnvelope: ({ selected, workspaceOrigin }) => {
+    // Cluster panels carry their full state (kind + panel-specific bag: features / hl / vis / measure)
+    // — mirror SummaryCanvas's plotRef.ui shape so a zoom-to-source can rehydrate the panel exactly.
+    const { x: x0, y: y0 } = workspaceOrigin
+    return selected.map((e: SharePanelExported) => {
+      const panel = panelsSnapshot.value.find(pp => pp.id === e.id)
+      const st = panel?.state
+      const specId = st?.kind ? String(st.kind) : ''
+      const plotRef: Record<string, unknown> = { specId }
+      if (st) plotRef.ui = { ...st }
+      return {
+        panelId: String(e.id),
+        position: { x: e.geom.x - x0, y: e.geom.y - y0, w: e.geom.w, h: e.geom.h },
+        plotRef,
+        dataSlice: {
+          imageUids: validUids.value,
+          setUid: setUid.value ?? null,
+          popType: props.popType,
+          suffix: suffix.value,
+          shownPops: st ? shownPopsFor(panelHL(st)) : [],
+        },
+      }
+    })
+  },
+  onSaveSuccess: (env) => { reshown.value = env },
+})
+const { shareSel, sharePanelHits, pendingShare, shareBusy, shareToast,
+        onShareCancel, onShareConfirm, onAnnotateCancel, onAnnotateSave, dismissShareToast } = share
+watch(() => shareSel.active.value, on => { if (on) reshown.value = null })
+
+// Reshow surface bindings — Kiwi refocus / Blackboard click mounts CaptureViewSurface over the
+// canvas. Cluster-page zoom-to-source is a follow-up: the panel state shape is on the wire
+// (`plotRef.ui`) but the cluster canvas has no `restorePanelsFromCapture` equivalent yet
+// (SummaryCanvas has `reresolvePops` for its per-pop rebinding; the cluster page's `hl` array
+// carries paths that don't need the uid two-pass). For now the reshow surface shows the frozen
+// composite + marks; zoom-to-source is disabled.
+const reshownAddress = computed<CaptureAddress>(() => {
+  const a = reshown.value?.address as CaptureAddress | null | undefined
+  return a ?? { projectUid: projectUid.value }
+})
+const reshownAddressLine = computed(() => {
+  const panelsN = (reshown.value?.panels?.length) ?? 0
+  return panelsN > 0 ? `cluster · ${props.popType} · ${panelsN} panels`
+                     : `cluster · ${props.popType} · plot canvas`
+})
+function onReshowClose() { reshown.value = null }
+function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; overlay: unknown; notes: string }) {
+  if (!reshown.value) return
+  reshown.value = { ...reshown.value,
+    captureId: payload.captureId, frame: payload.frameDataUrl,
+    overlay: payload.overlay as CaptureEnvelope['overlay'], notes: payload.notes }
+}
 </script>
 
 <template>
@@ -258,10 +338,47 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
                             v-bind="clusterPanelProps(p)" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
         </template>
+        <!-- Share mode: dim veil + drag/click selection + toolbar. Same shape as SummaryCanvas. -->
+        <CanvasSelectionOverlay v-if="shareSel.active.value"
+                                :panels="sharePanelHits"
+                                :selection="shareSel"
+                                :address-line="`cluster · ${popType === 'trackclust' ? 'tracks' : popType} · plot canvas`"
+                                @cancel="onShareCancel" @share="onShareConfirm" />
+        <!-- Annotate (Phase 2): frozen composite + DrawSurface. Save fires the POST. -->
+        <FrameAnnotator v-if="pendingShare && !reshown"
+                        :frame-data-url="pendingShare.composite"
+                        :address-line="`cluster · ${popType === 'trackclust' ? 'tracks' : popType} · ${pendingShare.panels.length} panels`"
+                        :busy="shareBusy"
+                        @save="onAnnotateSave" @cancel="onAnnotateCancel" />
+        <!-- Reshow (Kiwi refocus / Blackboard click). Zoom-to-source disabled — cluster canvas has
+             no restore path yet (SummaryCanvas has `reresolvePops`; the cluster page's `hl` array
+             carries paths without the uid two-pass); the frame + marks still show. -->
+        <CaptureViewSurface v-if="reshown && !pendingShare"
+                            :project-uid="projectUid"
+                            :capture-id="reshown.captureId"
+                            :frame-data-url="reshown.frame"
+                            :overlay="reshown.overlay"
+                            :notes="reshown.notes"
+                            :address="reshownAddress"
+                            :address-line="reshownAddressLine"
+                            surface="plot"
+                            :extra-post-fields="reshown.panels ? { panels: reshown.panels } : {}"
+                            :show-zoom-to-source="false"
+                            @close="onReshowClose"
+                            @reannotate="onReshowReannotate" />
         <!-- Absolute-positioned CanvasSidePanel needs a positioned ancestor, so the manager goes
              in the host's `overlay` slot (inside `.floating-canvas`, outside the zoom transform)
              — same pattern as GatingPlots' rail and SummaryCanvas's share toast. -->
         <template #overlay>
+          <div v-if="shareToast" class="cp-share-chip"
+               :class="{ 'cp-share-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
+                        'cp-share-chip-icon']" />
+            <span>{{ shareToast.message }}</span>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cp-share-chip-dismiss"
+                    @click="dismissShareToast" v-tooltip.top="'Dismiss'"
+                    aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
+          </div>
           <PopulationManager v-if="showManager && validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
@@ -288,4 +405,18 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
   border: 1px solid #b45309; border-radius: var(--cc-radius-xs); background: #78350f44; color: #fcd34d; cursor: pointer; white-space: nowrap; }
 .cp-fix:hover { background: #78350f88; }
 .cp-add { padding: 4px 8px; }
+
+/* Share-outcome chip — mirrors `.sc-share-chip` in SummaryCanvas so the two surfaces present the
+   same look on the same push branch. Bottom-left, above CaptureViewSurface. */
+.cp-share-chip {
+  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
+  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
+  background: rgba(0, 0, 0, 0.78); color: #fff;
+  font-size: var(--cc-fs-xs); pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+}
+.cp-share-chip-error { color: var(--cc-sev-fail); }
+.cp-share-chip-icon { font-size: 1em; }
+.cp-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
+.cp-share-chip-dismiss:hover { opacity: 1; }
 </style>

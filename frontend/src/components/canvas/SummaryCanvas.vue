@@ -38,17 +38,12 @@ import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../FrameAnnotator.vue'
 import CaptureViewSurface from '../CaptureViewSurface.vue'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
-import { useCanvasPanelExportsStore } from '../../stores/canvasPanelExports'
-import { useCanvasShareSelection } from '../../composables/useCanvasShareSelection'
-import { useCanvasShareHost } from '../../stores/shareTarget'
 import { useCaptureReshowStore } from '../../stores/captureReshow'
-import type { PanelHit } from '../../utils/panelSelectionHit'
-import { composePanelGrid, type PanelTile } from '../../utils/overlayCompose'
 import type { OverlayMark, CaptureAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import { restorePanelsFromCapture, type CapturedPanel } from '../../utils/restorePanels'
 import { reresolvePops } from '../../plots/reresolvePops'
-import { announceShareOutcome, shareFailMessage, type ShareOutcome } from '../../utils/shareOutcome'
+import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
@@ -209,236 +204,78 @@ const activeIsPrecomputed = computed(() => {
 function removePanel(id: number) { remove(id); delete readouts.value[id] }
 
 // ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
-// Register as the canvas share host so Kiwi's canvas button enables while this canvas is mounted.
-// `beginShare` flips the selection overlay on; the overlay reads panel geoms from the store, the
-// share selection lives in a shared composable so `beginShare` and the overlay see the same set.
-// Composite + POST live in a follow-up commit — for now @share emits the selected panelIds.
+// The two-phase Share flow (selection → annotate → POST) is extracted to `useCanvasShare` so
+// every canvas host uses the same machinery. Per-canvas concerns stay here:
+// - `buildEnvelope` — how each selected panel is described on the wire (SummaryCanvas puts the
+//   FULL panel state on `plotRef.ui` + a `dataSlice` for Claude's read; other canvases carry
+//   their own state).
+// - `buildPlotSpec` — the address's plotSpec (`multi-panel` with the module tag).
+// - `onSaveSuccess` — seed the reshown ref so CaptureViewSurface stays up over the canvas.
+// Reshow itself stays inline (below) — zoom-to-source restore is SummaryCanvas-specific
+// (`restorePanelsFromCapture` with the reresolvePops policy).
 const geomStore = useCanvasPanelsStore()
-const shareSel = useCanvasShareSelection()
-useCanvasShareHost({
-  beginShare: () => {
-    // A fresh Share must land on a clean state. If the user still has a shared/re-shown frame up
-    // (a previous canvas Share, or a Kiwi Refocus), it sits at z:40 alongside FrameAnnotator and
-    // the later-mounted surface eats clicks — which is why the annotator's Cancel and Save looked
-    // dead. Drop both here so the selection overlay is the only surface visible.
-    reshown.value = null
-    pendingShare.value = null
-    shareSel.begin()
-  },
-  // Short human label for Kiwi's tooltip; `module` is the canvas's own filter, so "behaviour ·
-  // plot canvas" for /behaviour, "universal · plot canvas" for the analysis board's wildcard.
-  get label() { return `${props.module ?? 'universal'} · plot canvas` },
-})
-// PanelHit list the overlay hit-tests against. Only PANELS WITH A KNOWN GEOMETRY count — an
-// undocked panel with no persisted geom would appear at (0,0) which would silently swallow every
-// click. This is fine for share: the first render writes geometry immediately (CanvasPanel does it
-// on mount), so a panel that visibly exists is a panel with a geom.
-const sharePanelHits = computed<PanelHit[]>(() => {
-  const out: PanelHit[] = []
-  for (const p of panels.value) {
-    const g = geomStore.getGeom(`${ckey.value}:${p.id}`)
-    if (g && g.w > 0 && g.h > 0) out.push({ id: p.id, geom: g })
-  }
-  return out
-})
-function onShareCancel() { shareSel.end() }
-// Aliased read so the share serialiser doesn't shadow the reactive `panels` ref later in the block
-// (a `const panels = …` inside `onShareConfirm` is what carries the on-wire array).
+// Alias so the buildEnvelope serialiser can read the current panels without shadowing the
+// `panels` local it builds (mirrors the pre-extraction `panelsSnapshot` trick).
 const panelsSnapshot = panels
-
-// Two-phase Share flow (mirrors what the viewer does — see ViewerWindow → CaptureViewSurface):
-//   Phase 1: SELECT — CanvasSelectionOverlay picks which panels.
-//   Phase 2: ANNOTATE — FrameAnnotator (the shared surface CaptureViewSurface's re-annotate
-//            path also uses) frozes the composited multi-panel PNG and mounts DrawSurface on
-//            top so the user can draw / label before Save. Save is what POSTs — earlier draft
-//            POSTed immediately on Selection confirm, skipping the annotation loop the user
-//            already knows from the viewer.
-// The composite + `panels[]` envelope shape land unchanged from earlier; only the trigger
-// point (annotator's Save, not selection's Share button) moved.
-const exportStore = useCanvasPanelExportsStore()
-const shareBusy = ref(false)
-// Held between Phase 1 and Phase 2. `composite` is the frozen PNG data URL FrameAnnotator draws
-// on; `panels` is the structured envelope for the POST. Cleared on cancel or a completed POST.
-interface PendingShare { composite: string; panels: Array<Record<string, unknown>>;
-                         workspaceOrigin: { x: number; y: number } }
-const pendingShare = ref<PendingShare | null>(null)
-
-// Post-Save toast — same role as ViewerWindow.showShareToast: FrameAnnotator dismisses on Save,
-// taking the "paste to Claude" hint with it, so surface the outcome inside the plot canvas for a
-// few seconds. Content built by `announceShareOutcome` so viewer + plot say the same thing on the
-// same push branch. Auto-dismisses after ~7s to match the viewer's timing.
-const shareToast = ref<ShareOutcome | null>(null)
-let shareToastTimer: number | null = null
-function showShareToast(kind: 'ok' | 'fail', message: string, ms = 7000) {
-  shareToast.value = { kind, message }
-  if (shareToastTimer) clearTimeout(shareToastTimer)
-  shareToastTimer = window.setTimeout(() => { shareToast.value = null; shareToastTimer = null }, ms)
-}
-function dismissShareToast() {
-  shareToast.value = null
-  if (shareToastTimer) { clearTimeout(shareToastTimer); shareToastTimer = null }
-}
-
-async function onShareConfirm(payload: { panelIds: number[] }) {
-  if (!projectUid.value || shareBusy.value) return
-  shareBusy.value = true
-  try {
-    // Gather tiles for the selected panels: PNG (via each panel's registered exporter) + its
-    // workspace-relative geom. A panel that failed to register or failed to export still gets an
-    // empty box in the composite rather than dropping the whole share.
-    const selected = sharePanelHits.value.filter(p => payload.panelIds.includes(p.id))
-    const tiles: PanelTile[] = await Promise.all(selected.map(async p => {
-      const exporter = exportStore.get(`${ckey.value}:${p.id}`)
-      const png = exporter ? await exporter() : null
-      return { pngDataUrl: png, geom: p.geom }
-    }))
-    const composite = await composePanelGrid(tiles)
-    if (!composite) { shareBusy.value = false; shareSel.end(); return }
-    // Composite-relative origin: subtract the union bbox origin so each panel's `position` in the
-    // envelope matches where it sits in the shared PNG (not the on-screen workspace).
-    let x0 = Infinity, y0 = Infinity
-    for (const p of selected) {
-      if (p.geom.x < x0) x0 = p.geom.x
-      if (p.geom.y < y0) y0 = p.geom.y
-    }
-    if (!Number.isFinite(x0)) { x0 = 0; y0 = 0 }
+const share = useCanvasShare({
+  projectUid: () => projectUid.value,
+  canvasKey: () => ckey.value,
+  panels: () => panels.value,
+  label: () => `${props.module ?? 'universal'} · plot canvas`,
+  buildPlotSpec: ({ panelCount }) => ({ specId: 'multi-panel',
+    params: { module: props.module ?? 'universal', panelCount } }),
+  buildEnvelope: ({ selected, workspaceOrigin }) => {
     // panels[] — per-panel structure Claude reads to say "the top-left panel is speed for pops B/T."
     // plotRef.ui carries the FULL panel state (measure, groupBy, chartType, sel, vis, …) so a later
-    // zoom-to-source restores the panel exactly as it was — populations picked, log axes on, bin
-    // width set. `dataSlice.series` is a parallel Claude-facing view of sel (tkey → SeriesTarget);
-    // keeping sel on plotRef.ui too is duplication of a small array, cheap next to the composite PNG.
+    // zoom-to-source restores the panel exactly as it was. `dataSlice.series` is a parallel
+    // Claude-facing view of sel (tkey → SeriesTarget); keeping sel on plotRef.ui too is
+    // duplication of a small array, cheap next to the composite PNG.
     // uid map from CURRENT segPops, keyed by tkey. Empty uid populations (`/labels`, `/_tracked`,
     // synthetic root) contribute nothing here — those pops have no gating-map identity and restore
     // via path fallback in `reresolvePops`.
     const uidByTkey = new Map<string, string>()
     for (const g of segPops.value) {
-      for (const p of g.populations) {
-        if (p.uid) uidByTkey.set(tkey(p.popType, g.valueName, p.path), p.uid)
+      for (const pop of g.populations) {
+        if (pop.uid) uidByTkey.set(tkey(pop.popType, g.valueName, pop.path), pop.uid)
       }
     }
-    const panels = selected.map(p => {
-      const panel = panelsSnapshot.value.find(pp => pp.id === p.id)
+    const { x: x0, y: y0 } = workspaceOrigin
+    return selected.map((e: SharePanelExported) => {
+      const panel = panelsSnapshot.value.find(pp => pp.id === e.id)
       const st = panel?.state as (PanelState | undefined)
       const specId = st?.kind ? String(st.kind) : (st?.specId ?? '')
       const plotRef: Record<string, unknown> = { specId }
       if (st) {
         // `selUids` is a parallel array to `sel`: uid of each picked pop, empty when this pop has
-        // no gating-map identity (or was picked before pop uids reached the wire). Consumed on
-        // zoom-to-source by `reresolvePops` to survive a pop rename / reparent since capture time.
+        // no gating-map identity. Consumed on zoom-to-source by `reresolvePops` to survive a pop
+        // rename / reparent since capture time.
         const selUids = (st.sel ?? []).map(t => uidByTkey.get(t) ?? '')
         plotRef.ui = { ...st, selUids }
       }
       return {
-        panelId: String(p.id),
-        position: { x: p.geom.x - x0, y: p.geom.y - y0, w: p.geom.w, h: p.geom.h },
+        panelId: String(e.id),
+        position: { x: e.geom.x - x0, y: e.geom.y - y0, w: e.geom.w, h: e.geom.h },
         plotRef,
         dataSlice: {
           imageUids: panelImageUids.value,
           setUid: panelSetUid.value ?? null,
           scope: panelScope.value,
-          series: st ? panelSeries(p.id, st) : [],
+          series: st ? panelSeries(e.id, st) : [],
         },
       }
     })
-    // Phase 1 done — flip to Phase 2 (annotator). The selection overlay unmounts once shareSel
-    // exits share mode; FrameAnnotator takes over the canvas box. `workspaceOrigin` carries the
-    // union bbox min-corner in workspace CSS px so a later "zoom to source" restores the panels
-    // to their exact original workspace positions rather than a clustered top-left copy.
-    pendingShare.value = { composite, panels, workspaceOrigin: { x: x0, y: y0 } }
-    shareSel.end()
-  } finally {
-    shareBusy.value = false
-  }
-}
+  },
+  onSaveSuccess: (env) => { reshown.value = env },
+})
+// Composable-owned state exposed to the template (keeps template renames minimal).
+const { shareSel, sharePanelHits, pendingShare, shareBusy, shareToast,
+        onShareCancel, onShareConfirm, onAnnotateCancel, onAnnotateSave, dismissShareToast } = share
 
-function onAnnotateCancel() { pendingShare.value = null }
-
-async function onAnnotateSave(payload: { overlay: OverlayMark[]; composedPng: string; notes: string }) {
-  const pending = pendingShare.value
-  if (!pending || !projectUid.value || shareBusy.value) return
-  shareBusy.value = true
-  // FrameAnnotator hands us a composed PNG (marks baked in). Empty ⇒ no marks drawn / compose
-  // failed; ship the bare composite so the POST still succeeds either way.
-  const png = payload.composedPng || pending.composite
-  const address = {
-    projectUid: projectUid.value,
-    plotSpec: { specId: 'multi-panel', params: { module: props.module ?? 'universal',
-      panelCount: pending.panels.length } },
-  }
-  try {
-    const res = await fetch('/api/viewer/capture', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: projectUid.value, surface: 'plot',
-        address, panels: pending.panels,
-        // Origin of the union bbox in the WORKSPACE frame (what we subtracted when we built
-        // composite-relative positions). Restore adds this back to each panel's position so a
-        // "zoom to source" lands the panels at the SAME workspace pixels the user shared from,
-        // not clustered top-left.
-        workspaceOrigin: pending.workspaceOrigin,
-        frames: [{ png }],
-        overlay: payload.overlay,
-        // Session-wide notes — travel with the capture the same way they do on viewer shares
-        // (BIDIR follow-up 2026-09-20). Omitted when empty to keep the envelope lean.
-        ...(payload.notes ? { notes: payload.notes } : {}),
-      }),
-    })
-    // Backend broadcasts `captures:changed`; Kiwi's Recent-captures list refreshes on its own.
-    // Match viewer's shape: throw on !ok so the catch below surfaces the error; on success seed
-    // `reshown` so CaptureViewSurface stays up over the canvas — same UX the viewer has after
-    // Save: the frozen frame persists so the user can keep talking to Claude about the same
-    // pixels (re-annotate / zoom-to-source / dismiss are all on the chip).
-    let respJson: Record<string, unknown> | null = null
-    try { respJson = await res.json() as Record<string, unknown> } catch { /* legacy */ }
-    if (!res.ok) {
-      throw new Error(respJson?.error ? String(respJson.error) : `HTTP ${res.status}`)
-    }
-    const captureId = String(respJson?.captureId ?? '')
-    if (!captureId) throw new Error('capture POST returned no captureId')
-    // Same `push` field the viewer branch reads (BIDIR PR #2): `'sent'` ⇒ Julia landed the notice on
-    // the paired Claude session's inbox socket; anything else ⇒ clipboard fallback. Before this the
-    // plot Save was silent on both branches — a paired push landed unannounced, and an unpaired
-    // Save signalled nothing to Claude at all. The shared helper builds the same message set the
-    // viewer uses so the two surfaces stay in lockstep.
-    const pushOutcome = String(respJson?.push ?? 'not_paired')
-    reshown.value = {
-      captureId,
-      surface: 'plot',
-      address,
-      overlay: payload.overlay,
-      viewStateSnapshot: null,
-      landscape: null,
-      notes: payload.notes ?? '',
-      panels: pending.panels,
-      workspaceOrigin: pending.workspaceOrigin,
-      frame: png,
-    }
-    // Transition the UI NOW — annotator down, CVS up — before we announce the outcome. The
-    // outcome path awaits `copyText` (Clipboard API), and a stalled clipboard call would
-    // otherwise leave the annotator visible with the POST already landed. Clearing here rather
-    // than in `finally` decouples the visible transition from any async that follows.
-    pendingShare.value = null
-    shareBusy.value = false
-    // Fire-and-forget announcement — a hung clipboard (or a slow user-gesture context) does not
-    // block the UI. Errors get logged; a fail toast surfaces the reason. `void` marks the
-    // deliberate un-awaited promise for the ESLint rule.
-    void announceShareOutcome(pushOutcome, payload.notes)
-      .then(outcome => { showShareToast(outcome.kind, outcome.message) })
-      .catch(e => {
-        // eslint-disable-next-line no-console
-        console.warn('[share-in] plot capture outcome-announce failed', e)
-        showShareToast('fail', shareFailMessage(e))
-      })
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[share-in] plot capture POST failed', e)
-    showShareToast('fail', shareFailMessage(e))
-    // On the failure path the UI must also drop — the try above did not reach the transition
-    // block. Mirrors the pre-fix `finally` semantics.
-    pendingShare.value = null
-    shareBusy.value = false
-  }
-}
+// `beginShare` on the composable clears its own pendingShare; also clear reshown here so a
+// live-shared / re-shown frame doesn't sit on top of the selection overlay eating clicks.
+// The composable's Kiwi registration wraps this: we watch shareSel.active for the leading edge
+// and clear reshown at that instant. Cheap and keeps beginShare's contract single-purpose.
+watch(() => shareSel.active.value, on => { if (on) reshown.value = null })
 
 // ── Reshow (Kiwi / Blackboard clicked refocus on a plot capture) ──────────────
 // The reshow store carries the envelope in. We mount CaptureViewSurface — the same surface the
