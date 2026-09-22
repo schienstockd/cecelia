@@ -7,7 +7,10 @@
 // FRAMING: Kiwi is a **documentation helper**, not a discussion helper. Its job is a faithful
 // record of what was observed and what was tried — dead ends included — not to be right about the
 // interpretation. Replies from Claude are provisional; the record is the product. See
-// `docs/archive/kiwi-purpose-and-framing.md` for the full framing.
+// `docs/archive/kiwi-purpose-and-framing.md` for the full framing — its ARCHIVED banner also
+// covers the deliberate 2026-09 drift toward *curating and warning* (bad-tagged repeat-failure
+// digest at ≥3 hits, `bad`>`good`>untagged ranking); the "Suggests" line about recurring
+// failures below is how that surfaces to the user.
 
 export interface EntryPoint {
   name: string
@@ -86,6 +89,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
       'Prior captures on this cell, track or plot',
       'Images that may need a parameter tweak — and which knob',
       'A plot or board for a pattern it spotted',
+      'A heads-up when the same bad-tagged failure has recurred',
     ],
   },
   {

@@ -7,6 +7,16 @@
 > `frontend/src/components/ClaudeOverviewDialog.vue` point back here so the framing behind the copy
 > stays discoverable. Do not act on this file as a spec — the durable design lives in the modal
 > itself.
+>
+> **Outcome (2026-09-23, audit of v0.2.6).** Shipped Kiwi now *curates and warns* in addition
+> to reflecting: `PROJECT_MEMORY_PLAN` P5.2 guardrails inject a bad-tagged-failure digest into
+> every session briefing when the same fingerprint bucket has recurred ≥3 times
+> (`mcp/cecelia_mcp/server.py::_mine_guardrails`), and `bad`>`good`>untagged ranking biases
+> both the briefing's open-entries slice and blackboard search (`_outcome_rank` /
+> `_bb_outcome_rank`). This is a deliberate drift from the passive-duck framing above — it
+> solves the "nobody sees the failure they already logged" problem that motivates the whole
+> record. Kept as shipped. Plan and rationale:
+> [`docs/todo/RUBBER_DUCK_FIT_PLAN.md`](../todo/RUBBER_DUCK_FIT_PLAN.md) → Decision 1.
 
 ## The one-liner
 
