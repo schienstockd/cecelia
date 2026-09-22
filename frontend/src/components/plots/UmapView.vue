@@ -655,6 +655,14 @@ useVisualPanel(
     family: 'umap',
     title: props.suffix ? `UMAP (${props.suffix})` : 'UMAP',
     route: _route.path,
+    // BIDIR PR #8 extension — axis meta for a UMAP: dimensions are canonical (UMAP1 × UMAP2), plus
+    // the colouring mode + point count so a caller with several UMAP panels can pick the right one.
+    content: {
+      xLabel: 'UMAP1',
+      yLabel: 'UMAP2',
+      colourBy: colourBy.value,
+      nPoints: total.value,
+    },
   }),
 )
 

@@ -741,6 +741,13 @@ useVisualPanel(
       measure: measure.value || undefined,
       popType: popType.value,
       statsEnabled: !!vis.value?.statsEnabled,
+      // Axis meta (BIDIR PR #8 extension) — the display name for the measure axis and the
+      // population axis label. `xLabel` is omitted on heatmaps: those axes are features/category,
+      // not populations. `yScale` reports the log-scale toggle state (vis.logScale) — a numeric
+      // axis knob on this panel.
+      ...(measure.value ? { yLabel: measureLabel(measure.value) } : {}),
+      ...(chartType.value !== 'heatmap' ? { xLabel: 'populations' } : {}),
+      yScale: vis.value?.logScale ? 'log' : 'linear',
     },
   }),
 )
