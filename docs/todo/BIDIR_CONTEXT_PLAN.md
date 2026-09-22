@@ -161,6 +161,18 @@ Numbered so code and other docs can cite them (`Decision 5`).
     to `trackHighlight` + `pickHighlight` bags. A track / cell marked in the viewer highlights on
     every open board plot showing it. Visual distinction between user selection and Claude mark
     is mandatory (color + small "C" glyph); the two must never look identical.
+    **Shipped 2026-09-22 as PR #1167 (Slice A) + PR #1168 (Slice B).** Origin field
+    `origin?: 'user' | 'claude'` on both bags; WS `viewer:mark` sets `'claude'`. Slice A
+    consumers (natively per-item-glyph): TrackSchemeView, TrackPathsView, CardsPanelInner (→
+    cellCards / motifCards), CellCardDetailPanel. Slice B (needed backend `withLabels=1` payload
+    extension to carry label_id / track_id per point): UmapView, GateScatterCell (→ GatePlotPanel,
+    GateMontage → pairs matrix, gating strategy). Magenta accent (Decision 8 palette) + "C"
+    glyph; positioned via each family's own projection so the ring lands on the actual pixel.
+    **Deferred residual — aggregate-render plots:** TrackDiagnosticsView (per-group curves via
+    `z: 'g'`) and SummaryPanel per-point chart types (strip / beeswarm / points on aggregated
+    `/api/plot_data`). Both need a raw refetch overlay pattern (fetch per-track rows only when
+    a matching highlight arrives, overlay as distinct-styled dots) — different mechanism from
+    Slices A/B and worth its own PR.
 20. **Blackboard storage: dir-per-entry** at `<proj>/blackboard/<entryId>/`, containing
     `entry.md` (Markdown + Mermaid fences), `meta.json`, `.snapshots/<entryId>@v<N>.md`,
     `attachments/<captureId>.json` (link records, not copied captures). Per-project registry at
@@ -194,6 +206,16 @@ Numbered so code and other docs can cite them (`Decision 5`).
     perception). Addressing scheme is *expressible* in a future MHS state-dictionary reference
     without designing to MHS today. Do not couple to MHS data shapes; do not assume acquisition
     metadata will arrive via MHS.
+28. **Live plot registry — MCP-only discovery (draft, PR #8).** Populated by
+    `usePlotRegistry(persistKey, meta)` on panel mount/unmount, exposed as
+    `list_plots(project_uid)` MCP tool. Session-only, no persistence; same-persistKey supersedes;
+    deregister on WS disconnect. Cloud-VM safe — resolves "which plot is on screen" without
+    Claude reading Vue source (aligns with Decision "MCP-only at both ends"). `persistKey`
+    remains identity; title + route + optional `bboxScreen` disambiguate duplicate families on
+    the same route. Parallel to `stores/canvasPanelExports.ts` (`usePanelExport` shape), not a
+    fresh invention. Follows PR #4b (which keys point-outs on `plot_id`); precedes any workflow
+    where Claude calls `mark_plot` without a human handing over an id. Prompt for a fresh
+    session at `~/Downloads/prompts/list-plots-mcp.md`; in-flight in a sibling worktree.
 
 ## Audit summary — what Part 1 found
 
@@ -491,9 +513,9 @@ Independently mergeable in this order. Each ships a working, tested slice.
 4. **Point-out data anchors + gating-plot linkage.** WS `viewer:mark` frame;
    `POST /api/viewer/marks/{tracks,cells}`; `mark_tracks` + `mark_cells` MCP tools; frontend
    `viewerMarks` bag + ephemeral overlay; **gating-module plot components subscribe to
-   `trackHighlight` + `pickHighlight`** (Decision 19). ~600 lines. **Split into #4a (WS + MCP +
-   viewer overlay, shipped) and #4b (plot subscriptions, open) 2026-09-20 — see *Module-page
-   canvas captures → PR #4b interaction* below.**
+   `trackHighlight` + `pickHighlight`** (Decision 19). ~600 lines. **Split 2026-09-20 into:
+   #4a (WS + MCP + viewer overlay, shipped); #4b (plot subscriptions, shipped 2026-09-22 as
+   PR #1167 Slice A + PR #1168 Slice B — see Decision 19 for the family split and residuals).**
 5. **Point-out UI anchors + freeform marks.** `mark_ui` + `mark_freeform` MCP tools; bare-style
    `GuideBubble` variant; freeform overlay reuses PR #3's `DrawSurface.vue`. Shares WS
    `viewer:mark` transport with PR #4. ~400 lines.
@@ -506,9 +528,18 @@ Independently mergeable in this order. Each ships a working, tested slice.
    (well down from the earlier ~600, because SAM/Cellpose/eval-of-three-models are gone).
 7. **Blackboard.** `<proj>/blackboard/` storage + local versioning helpers; CRUD MCP tools;
    `/blackboard` Vue page gated on Decision 24; mermaid lazy-load. ~700 lines.
+8. **Live plot registry + `list_plots` MCP** (Decision 28, added 2026-09-22). New composable
+   `usePlotRegistry(persistKey, meta)` wired from every panel host (InteractivePanel,
+   SummaryPanel, cluster panels, gate + card panels); in-memory server bag keyed by
+   `(projectUid, plotId)` with WS-disconnect cleanup; `POST /register`, `POST /deregister`,
+   `GET /?projectUid=` routes; `list_plots(project_uid)` MCP tool. Enables hands-free
+   `mark_plot` — resolves natural-language descriptions to a `plot_id` without a human handing
+   it over. Follows PR #4b (which keys on `plot_id`). ~400 lines. In-flight in a sibling
+   worktree.
 
 Dependencies: PR #4 and #5 share the WS `viewer:mark` transport (defined in #4, reused in #5).
-PR #6 depends on PR #2. Nothing else cross-depends.
+PR #6 depends on PR #2. PR #8 depends on PR #4b (`persistKey` → `plot-id` forwarding, shipped).
+Nothing else cross-depends.
 
 ## Module-page canvas captures (added 2026-09-20)
 
