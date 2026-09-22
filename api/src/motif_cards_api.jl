@@ -119,10 +119,12 @@ end
 #   • stats            = 5-number summary of numeric motif features + motif.distance, over ALL cells
 #                        of this class (not just the medoid — the footer summarises the CLASS)
 function _motif_class_card(df, class_indices::Vector{Int}, class_name::String, colour::String)
-    :motif_instance_id in propertynames(df) ||
+    # DataFrame column names are the RAW h5ad obs names — `as_df` does not rename dots to
+    # underscores, so it is `Symbol("motif.instance_id")`, not `:motif_instance_id`.
+    Symbol("motif.instance_id") in propertynames(df) ||
         error("motif_cards: df missing motif.instance_id")
-    inst_ids_col = df.motif_instance_id
-    dists_col    = df.motif_distance
+    inst_ids_col = df[!, "motif.instance_id"]
+    dists_col    = df[!, "motif.distance"]
     tracks_col   = df.track_id
     ts_col       = df.centroid_t
     xs_col       = df.centroid_x
@@ -186,7 +188,7 @@ function _motif_class_card(df, class_indices::Vector{Int}, class_name::String, c
         push!(stats, (name = col, min = s.min, q25 = s.q25, median = s.median,
                       q75 = s.q75, max = s.max))
     end
-    let vs = _col_f64_at(df, :motif_distance, class_indices)
+    let vs = _col_f64_at(df, Symbol("motif.distance"), class_indices)
         if !isempty(vs)
             s = _five_num_from_vec(vs)
             push!(stats, (name = "motif.distance", min = s.min, q25 = s.q25, median = s.median,
@@ -217,32 +219,36 @@ function api_motif_cards(body_bytes::Vector{UInt8})
     img, gerr = _gating_image(pu, root_uid)
     gerr === nothing || return gerr[1], gerr[2]["body"]
 
-    # Auto-pick the first segmentation with `motif.class` when the caller omits `valueName`. Keeps
-    # MVP simple — user drops the panel on the board and cards appear; later a per-panel valueName
-    # picker can override this. Scan is bounded by the image's registered label_props keys (usually
-    # 2–4 entries).
-    if isempty(vn)
-        candidates = try
-            String[String(k) for k in versioned_keys(img.label_props)]
-        catch; String[] end
-        picked = ""
-        for cand in candidates
-            p = try img_label_props_path(img, cand); catch; ""; end
-            (isempty(p) || !isfile(p)) && continue
-            has_motif = try
-                lp = label_props(p; value_name = cand)
-                "motif.class" in col_names(lp; data_type = :obs)
-            catch; false end
-            if has_motif; picked = cand; break; end
-        end
-        isempty(picked) &&
-            return 404, JSON3.write((; error = "no segmentation with motif.class on $(root_uid) — run motif discovery first"))
-        vn = picked
+    # Enumerate every segmentation whose h5ad carries `motif.class`. The full list goes back in the
+    # response (`availableValueNames`) so the panel's picker can offer it; the picker's chosen name
+    # comes back in the next request via `valueName`. Scan is bounded by the image's registered
+    # label_props keys (usually 2–4 entries).
+    candidates = try
+        String[String(k) for k in versioned_keys(img.label_props)]
+    catch; String[] end
+    available_vns = String[]
+    for cand in candidates
+        p = try img_label_props_path(img, cand); catch; ""; end
+        (isempty(p) || !isfile(p)) && continue
+        has_motif = try
+            lp = label_props(p; value_name = cand)
+            "motif.class" in col_names(lp; data_type = :obs)
+        catch; false end
+        has_motif && push!(available_vns, cand)
     end
+    isempty(available_vns) &&
+        return 404, JSON3.write((; error = "no segmentation with motif.class on $(root_uid) — run motif discovery first"))
+    # An explicit `valueName` must be one of the eligible vns; a stale persisted pick otherwise
+    # would silently render the wrong (or empty) segmentation.
+    if !isempty(vn) && !(vn in available_vns)
+        return 404, JSON3.write((; error = "no motif.class column on $(vn) — run motif discovery first",
+                                    availableValueNames = available_vns))
+    end
+    isempty(vn) && (vn = available_vns[1])
 
-    # Read ALL live/tracked cells with the columns motif cards need. `pop_df` normalises dotted obs
-    # names to underscored DataFrame column names (see `label_props.jl`) — `motif.class` becomes
-    # `motif_class` here.
+    # Read ALL live/tracked cells with the columns motif cards need. `as_df` returns obs columns
+    # under their RAW h5ad names — dots are NOT rewritten to underscores — so the column is
+    # `df[!, "motif.class"]`, not `df.motif_class`. Same for `motif.distance` / `motif.instance_id`.
     df = try
         pop_df(img, "live", ["/_tracked"]; value_name = vn, granularity = :cell,
                centroids = :pixel, include_obs = true)
@@ -250,13 +256,13 @@ function api_motif_cards(body_bytes::Vector{UInt8})
         return 500, JSON3.write((; error = "pop_df failed: $(sprint(showerror, e))"))
     end
 
-    :motif_class in propertynames(df) ||
+    Symbol("motif.class") in propertynames(df) ||
         return 404, JSON3.write((; error = "no motif.class column on $(vn) — run motif discovery first"))
-    :motif_distance    in propertynames(df) || return 404, JSON3.write((; error = "no motif.distance column on $(vn)"))
-    :motif_instance_id in propertynames(df) || return 404, JSON3.write((; error = "no motif.instance_id column on $(vn)"))
+    Symbol("motif.distance")    in propertynames(df) || return 404, JSON3.write((; error = "no motif.distance column on $(vn)"))
+    Symbol("motif.instance_id") in propertynames(df) || return 404, JSON3.write((; error = "no motif.instance_id column on $(vn)"))
 
     # Group class-cell rows by class name — one pass over motif.class, index-based (no subset).
-    class_col = df.motif_class
+    class_col = df[!, "motif.class"]
     class_indices_by_name = Dict{String,Vector{Int}}()
     for ri in eachindex(class_col)
         v = class_col[ri]; ismissing(v) && continue
@@ -265,7 +271,8 @@ function api_motif_cards(body_bytes::Vector{UInt8})
     end
     class_names = sort!(collect(keys(class_indices_by_name)))
     isempty(class_names) &&
-        return 404, JSON3.write((; error = "no motif classes assigned in $(vn) — motif discovery ran but assigned nothing"))
+        return 404, JSON3.write((; error = "no motif classes assigned in $(vn) — motif discovery ran but assigned nothing",
+                                    availableValueNames = available_vns))
 
     # Cache check on the cells h5ad's mtime + the discovered class set.
     sidecar = _motif_cards_sidecar(img._dir, String(vn))
@@ -273,9 +280,11 @@ function api_motif_cards(body_bytes::Vector{UInt8})
     cached = _motif_cards_cache_fresh(sidecar, mtime_now, class_names)
     if cached !== nothing
         return 200, JSON3.write(Dict{String,Any}(
-            "pool"       => get(cached, "pool", Any[]),
-            "cards"      => get(cached, "cards", Any[]),
-            "statScales" => get(cached, "statScales", Dict{String,Any}())))
+            "pool"                => get(cached, "pool", Any[]),
+            "cards"               => get(cached, "cards", Any[]),
+            "statScales"          => get(cached, "statScales", Dict{String,Any}()),
+            "availableValueNames" => available_vns,
+            "valueName"           => String(vn)))
     end
 
     # Colours: the canonical categorical-colour helper. `load_pop_map` (live pop map for this vn) may
@@ -308,16 +317,32 @@ function api_motif_cards(body_bytes::Vector{UInt8})
     isempty(cards_meta) &&
         return 404, JSON3.write((; error = "no renderable motif classes on $(vn) — every class has zero cells"))
 
-    # Uniform crop = max bbox extent across every medoid track + 2×pad_px, clamped by the renderer.
-    uniform_side = 0
-    for c in cards_meta
-        bx = try
-            bb = track_bbox(img, String(vn), c.medoid.track_id; pad_px = 0)
-            max(bb.x[2] - bb.x[1] + 1, bb.y[2] - bb.y[1] + 1)
-        catch; 0 end
-        uniform_side = max(uniform_side, bx)
+    # Per-card INSTANCE bbox from the medoid's own trace_history — a motif card visualises the
+    # 8-frame subtrack, NOT the track's lifetime, so cropping to the whole track's extent zooms
+    # every card out to the biggest-meander track and short motifs read as a few pixels in a mostly-
+    # empty frame. Uniform crop = max instance-bbox side + 2×pad_px (comparable across cards); each
+    # card's own instance bbox is passed to the renderer via `bbox_override` so the crop is centred
+    # on the instance, not the track.
+    _instance_bbox(tr) = begin
+        isempty(tr) && return nothing
+        xs = Int[Int(round(row[2])) for row in tr]
+        ys = Int[Int(round(row[3])) for row in tr]
+        (x = (minimum(xs), maximum(xs)), y = (minimum(ys), maximum(ys)))
     end
-    uniform_side = uniform_side > 0 ? uniform_side + 2 * pad_px : nothing
+    instance_bboxes = Any[_instance_bbox(c.trace_history) for c in cards_meta]
+    uniform_side = 0
+    for bb in instance_bboxes
+        bb === nothing && continue
+        uniform_side = max(uniform_side, bb.x[2] - bb.x[1] + 1, bb.y[2] - bb.y[1] + 1)
+    end
+    # Floor the crop so it uses a reasonable fraction of `max_px` — a tight bbox (say 15×9 px + 48 px
+    # pad = 63 px) renders at 63×63 native (`render_view_frame` step = cld(63, 512) = 1, no
+    # downscale), and CSS upscaling to the tile size makes the trace read as 2 pixels of noise. The
+    # floor `max_px ÷ 3` gives every card at least ~170 px per side at max_px=512, so a 29-px
+    # subtrack path renders as ~90 rendered px inside the tile instead of a smudge. Larger instances
+    # still dominate the crop (uniform stays the max).
+    uniform_side = uniform_side > 0 ?
+        max(uniform_side + 2 * pad_px, max_px ÷ 3) : nothing
 
     # TimeIncrement seconds for the active image (same discipline as cellCards — a medoid on a
     # different vn version could have a filepath whose OME-XML lacks the T axis).
@@ -326,12 +351,14 @@ function api_motif_cards(body_bytes::Vector{UInt8})
     catch; nothing end
 
     cards_json = Any[]
-    for c in cards_meta
+    for (ci, c) in enumerate(cards_meta)
         filmstrip = render_medoid_filmstrip(img, String(vn), c.medoid.track_id, c.frames_ts, pu;
                                             trace_history = c.trace_history,
                                             trace_colour  = hex_to_rgb(c.colour),
                                             max_px = max_px, pad_px = pad_px,
-                                            crop_side = uniform_side, interval_s = interval_s)
+                                            crop_side = uniform_side,
+                                            bbox_override = instance_bboxes[ci],
+                                            interval_s = interval_s)
         push!(cards_json, Dict{String,Any}(
             # `path` on the frontend Card is the identity key — for motif cards it is the class name
             # (there is no pop tree path today).
@@ -362,7 +389,9 @@ function api_motif_cards(body_bytes::Vector{UInt8})
     _write_motif_cards_sidecar(sidecar, pool, cards_json, stat_scales, class_names, mtime_now)
 
     200, JSON3.write(Dict{String,Any}(
-        "pool"       => [Dict("uid" => pm.uid, "value_name" => pm.value_name) for pm in pool],
-        "cards"      => cards_json,
-        "statScales" => stat_scales))
+        "pool"                => [Dict("uid" => pm.uid, "value_name" => pm.value_name) for pm in pool],
+        "cards"               => cards_json,
+        "statScales"          => stat_scales,
+        "availableValueNames" => available_vns,
+        "valueName"           => String(vn)))
 end

@@ -122,11 +122,12 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // the same frames? Track page only, because it MUTATES and the board is read-only
   // (docs/ANALYSIS.md); it is registered rather than hand-mounted so it gets the InteractivePanel
   // chrome (title bar, drag, resize, collapse, persist) that a hand-mount silently skips.
-  // Motif cards — one card per motif class discovered in the image's cells h5ad. Server picks the
-  // first segmentation with `motif.class` when `valueName` is omitted, so the panel is drop-in from
-  // the board picker. `rail: 'none'` (motif classes are h5ad obs values, not populations —
-  // BEHAVIOUR_CARDS_PLAN Decision 6 re-scoped 2026-09-20). `boardGroup: 'clustering'` so it lands
-  // in the same picker section as cellCards.
+  // Motif cards — one card per motif class discovered in the image's cells h5ad. Server enumerates
+  // every segmentation whose h5ad carries `motif.class` and returns the list as
+  // `availableValueNames`; the panel exposes a segmentation picker (persisted as
+  // `state.valueName`, priority via the shared `resolveValueName`). `rail: 'none'` (motif classes
+  // are h5ad obs values, not populations — BEHAVIOUR_CARDS_PLAN Decision 6 re-scoped 2026-09-20).
+  // `boardGroup: 'clustering'` so it lands in the same picker section as cellCards.
   motifCards: {
     label: 'Motif cards', component: MotifCardsView, analysisBoard: true,
     boardGroup: 'clustering', rail: 'none',

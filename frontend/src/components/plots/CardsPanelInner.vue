@@ -25,15 +25,28 @@ const props = defineProps<{
   projectUid: string; imageUids: string[]
   suffix?: string
   shownPops?: ShownPop[]
-  state: { maxPx?: number; padPx?: number }
+  state: { maxPx?: number; padPx?: number; valueName?: string }
   family: CardFamily
   // BIDIR PR #4b — the parent's point-out family (`cell-cards` or `motif-cards`) + the panel's
   // persistKey. Each StripCell filters by (family, plotId, cell=<card.path>). Absent → no
   // point-outs render (a caller that doesn't opt in stays untouched).
   pointOutFamily?: string
   plotId?: string
+  /**
+   * Optional per-panel value_name pick — forwarded into the family's request body so families with
+   * a picker (motifCards / hmmCards) can retarget. Empty on first mount; the server auto-picks and
+   * echoes back via `CardsResponse.valueName`.
+   */
+  valueName?: string
 }>()
-const emit = defineEmits<{ cardSelect: [Card] }>()
+const emit = defineEmits<{
+  cardSelect: [Card]
+  /**
+   * Fires once per successful response with the fetch's discoverable metadata. The wrapping view
+   * (e.g. MotifCardsView) uses this to populate its segmentation picker without re-fetching.
+   */
+  meta: [{ availableValueNames?: string[]; valueName?: string }]
+}>()
 
 // max output resolution + track bbox pad, both in native pixels. The bigger max_px is, the crisper
 // the PNG stays when CSS stretches it into a card cell; the backend's own min-crop floor (~3× bbox,
@@ -99,21 +112,31 @@ async function fetchCards() {
       shownPops,
       maxPx: maxPx.value,
       padPx: padPx.value,
+      valueName: props.valueName,
     })
     const res = await fetch(props.family.endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (!res.ok) { err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Cards fetch failed'; return }
+    if (!res.ok) {
+      // 404 with an `availableValueNames` payload is how the server tells the picker "the vn you
+      // asked for is stale, here are the eligible ones" — surface those to the wrapper too.
+      const errData = (await res.json().catch(() => ({}))) as { error?: string; availableValueNames?: string[] }
+      err.value = errData.error ?? 'Cards fetch failed'
+      if (errData.availableValueNames) emit('meta', { availableValueNames: errData.availableValueNames })
+      return
+    }
     const data = (await res.json()) as CardsResponse
     pool.value  = data.pool ?? []
     cards.value = data.cards ?? []
     statScales.value = data.statScales ?? {}
+    if (data.availableValueNames || data.valueName)
+      emit('meta', { availableValueNames: data.availableValueNames, valueName: data.valueName })
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { loading.value = false }
 }
 
-watch([rootUid, () => props.suffix,
+watch([rootUid, () => props.suffix, () => props.valueName,
        () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds]))],
       fetchCards, { immediate: true })
 

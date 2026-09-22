@@ -35,8 +35,9 @@ export const cellFamily: CardFamily = {
 
 // Motif cards — one card per motif class discovered server-side in the image's cells h5ad. No rail
 // picker today (BEHAVIOUR_CARDS_PLAN Decision 6 re-scoped 2026-09-20: motif classes are h5ad obs
-// values, not populations). Endpoint auto-picks the first segmentation with `motif.class` when
-// `valueName` is omitted — the wrapper doesn't need to know which segmentation to ask for.
+// values, not populations). The panel exposes a segmentation picker whose options come back in
+// `CardsResponse.availableValueNames`; the picked name is forwarded here as `ctx.valueName`, so a
+// user with multiple motif-having segmentations (B, T on a co-imaged spleen) can switch.
 // Footer stats: motif.speed / motif.angle medians + `motif.distance`. Label transform strips the
 // `live.cell.` prefix so a compact footer row reads "speed" / "angle".
 export const motifFamily: CardFamily = {
@@ -48,6 +49,7 @@ export const motifFamily: CardFamily = {
   buildRequestBody: ctx => ({
     projectUid: ctx.projectUid,
     rootUid: ctx.rootUid,
+    ...(ctx.valueName ? { valueName: ctx.valueName } : {}),
     maxPx: ctx.maxPx,
     padPx: ctx.padPx,
   }),

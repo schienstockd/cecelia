@@ -76,6 +76,18 @@ export interface CardsResponse {
    * Absent for measures that appear on no card. Same ends the boxes use (raw min/max, no Tukey clip).
    */
   statScales: Record<string, [number, number]>
+  /**
+   * Present on families whose value_name is server-discovered (motifCards / hmmCards): every
+   * segmentation on the image whose h5ad carries the family's marker column (`motif.class` /
+   * `live.cell.hmm.state.*`). Feeds the panel's segmentation picker. Absent for cellCards (its
+   * value_names come from the clustering-run sidecar, not from an obs-column scan).
+   */
+  availableValueNames?: string[]
+  /**
+   * The value_name the server actually rendered. Echoed back so the picker's state can converge on
+   * whatever the server picked when the request omitted `valueName`.
+   */
+  valueName?: string
 }
 
 /** `POST /api/cell_cards` request. `root_uid` is the image the analysis board was opened from. */
@@ -114,6 +126,12 @@ export interface CardFamilyContext {
   shownPops: ShownPop[]
   maxPx: number
   padPx: number
+  /**
+   * The panel's picked segmentation for families that expose a picker (motifCards / hmmCards).
+   * Empty string on first mount — the server auto-picks and echoes its choice back in
+   * `CardsResponse.valueName`; the panel's picker then converges on that.
+   */
+  valueName?: string
 }
 
 /** One card family's configuration. The base panel knows *nothing* family-specific. */

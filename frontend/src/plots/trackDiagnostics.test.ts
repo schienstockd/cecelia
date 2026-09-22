@@ -3,7 +3,6 @@ import {
   availableModes, resolveMode, curvePoints, msdFitLine, modeHint, referenceLine,
   axisLabels, diagnosticsSummary, cohortSummary, cohortFindings, pairCapNote,
   diagnosticsCsvRows, diagCurveRows, diagCloudRows, diagFitRows, DIAG_LABEL,
-  resolveTrackValueName,
   type DiagnosticsResponse, type DiagGroup, type DiagMode,
 } from './trackDiagnostics'
 
@@ -293,34 +292,6 @@ describe('diagnosticsCsvRows', () => {
   })
 })
 
-describe('resolveTrackValueName', () => {
-  // the real shape of the reference image: two untracked label sets and one tracked one
-  const all = ['coastalSm15', 'default', 'memTom', 'three']
-  const tracked = ['memTom']
-
-  it('picks a TRACKED segmentation, not "default" and not the active one', () => {
-    // this is the bug it exists for: defaulting to 'default' showed "nothing to review" on an image
-    // with 31 candidates in memTom
-    expect(resolveTrackValueName(undefined, tracked, all)).toBe('memTom')
-    expect(resolveTrackValueName('default', tracked, all)).toBe('memTom')
-  })
-
-  it('keeps a persisted choice that is still tracked', () => {
-    expect(resolveTrackValueName('memTom', ['base', 'memTom'], all)).toBe('memTom')
-  })
-
-  it('prefers the ACTIVE segmentation over an arbitrary first when both are tracked', () => {
-    // the reference image really has two tracked sets, `importTest` and `memTom` — "the first" is a
-    // coin toss, the active one is what the rest of the app is pointed at
-    expect(resolveTrackValueName(undefined, ['importTest', 'memTom'], all, 'memTom')).toBe('memTom')
-    // …but an active set that is NOT tracked is no help
-    expect(resolveTrackValueName(undefined, ['importTest', 'memTom'], all, 'three')).toBe('importTest')
-  })
-
-  it('falls back to a real segmentation when NOTHING is tracked', () => {
-    // so the view says "not tracked" about a named segmentation rather than about an empty string
-    expect(resolveTrackValueName('default', [], all)).toBe('default')
-    expect(resolveTrackValueName(undefined, [], all)).toBe('coastalSm15')
-    expect(resolveTrackValueName(undefined, [], [])).toBe('')
-  })
-})
+// resolveTrackValueName is now a re-export of `utils/valueName.ts:resolveValueName`; the tests for
+// its priority live in `utils/valueName.test.ts` and cover the same shape (both when eligibility
+// filters and when it collapses to the FlowMetrics-style all-eligible case).
