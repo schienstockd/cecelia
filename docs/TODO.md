@@ -43,6 +43,26 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### `list_plots` content bag doesn't carry axis metadata
+
+Follow-up to BIDIR PR #8 (PR #1172). The registry's `content` bag is category-level today —
+`{measure, chartType, popType, statsEnabled}` on `SummaryPanel`, empty on the other nine hosts.
+Claude can name what *kind* of plot it is but not what the axes are actually rendering, so for
+scatter / heatmap / UMAP / hmm-transition it has to infer axis labels, ranges, scales and
+transforms from a shared frame (`get_capture`) — the exact fallback `list_plots` was built to
+avoid. For a boxplot the gap is invisible (axes are implicit: x=populations, y=measure); for
+everything else it's a blank.
+
+Cheap to close per-family: extend `content` with `{xLabel, yLabel, xRange, yRange, xScale,
+yScale}` (and per-family extras like `colourBy` on UMAP, `clusterAxis` on cluster panels). The
+values are already in each panel's render state — 3-5 lines per host. Guidance in `mcp/cecelia_mcp/guidance.py`
+already tells Claude to correlate `content` with the numeric data tools (`get_behaviour_summary`
+etc.); once the axes are populated, that path handles ranking/significance without a frame.
+
+Design ready in `useVisualPanel(persistKey, meta)` — meta already accepts a `content` bag; no
+schema change on the Julia side (`_pr_clean_content` accepts any JSON-primitive dict), no MCP
+change (return shape passes `content` through).
+
 ### `segment.measureLabels` picks the wrong intensity image on any drift-corrected project
 
 Reproduces on any image whose labels were computed against a *derived* value (denoised, drift-
