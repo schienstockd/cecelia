@@ -98,7 +98,9 @@
     recon([stamped("s1"; started = iso(began))])
     @test C.TASKS["s1"].exact
     @test C.TASKS["s1"].since == began
-    @test C.dur_since(C.TASKS["s1"]) == "20m 00s"           # not "≥0s"
+    # ±1s tolerance: `began` and `dur_since` each call `Dates.now()`, and a second boundary crossed
+    # between them (macOS CI, ~5% of runs) rounds elapsed from 1200.999s to 1201s → "20m 01s".
+    @test C.dur_since(C.TASKS["s1"]) in ("20m 00s", "20m 01s")   # not "≥0s"
 
     # …re-asserted every poll without drifting or resetting
     recon([stamped("s1"; started = iso(began))])
@@ -115,7 +117,7 @@
     reset_console!()
     enq = Dates.now(UTC) - Dates.Second(90)
     recon([stamped("s3"; status="queued", queued = iso(enq))])
-    @test C.TASKS["s3"].exact && C.dur_since(C.TASKS["s3"]) == "1m 30s"
+    @test C.TASKS["s3"].exact && C.dur_since(C.TASKS["s3"]) in ("1m 30s", "1m 31s")  # ±1s (see above)
 
     # a garbage or empty timestamp must not take the reader down — it just means "not known"
     reset_console!()
