@@ -67,7 +67,10 @@ export const useWsStore = defineStore('ws', () => {
     const log = useLogStore()
     log.info('Connecting to Julia backend…', { source: 'ws' })
 
-    socket = new WebSocket(`ws://${location.host}/ws`)
+    // Match the page's scheme: under TLS (`[tls].enabled` / CECELIA_TLS=1) a `ws://` socket is either
+    // mixed-content-blocked or a plaintext handshake against the TLS listener — the badge flaps while REST works.
+    const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws'
+    socket = new WebSocket(`${wsScheme}://${location.host}/ws`)
 
     // Force-retry if the handshake hasn't completed within 5 s (e.g. Julia still starting).
     if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer)
