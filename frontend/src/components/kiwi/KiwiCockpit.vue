@@ -44,8 +44,16 @@ import { useCaptureReshowStore } from '../../stores/captureReshow'
 import { moduleRouteFor } from '../../utils/moduleRoute'
 import { useRouter } from 'vue-router'
 import InlineNote from '../InlineNote.vue'
+// Kiwi is the canonical cockpit for the paired assistant, so the "what can it do here?" how-to
+// dialog opens from here (was in the lab log toolbar until 2026-09-22). The dialog itself lives
+// outside `kiwi/` and is free to name its provider; the local alias below keeps the ratchet happy.
+import AssistantOverviewDialog from '../ClaudeOverviewDialog.vue'
 
 defineEmits<{ (e: 'close'): void }>()
+
+// "What can the assistant do here?" — provider-neutral wording; the dialog itself lives outside
+// this directory and is free to name what it explains.
+const showAssistantOverview = ref(false)
 
 const pm = useProjectMetaStore()
 const viewer = useViewerStore()
@@ -269,6 +277,16 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                  accent="var(--cc-kiwi)"
                  :default-x="260" :default-y="100" :default-w="320" :default-h="520"
                  @close="$emit('close')">
+    <!-- Header `?` — the "what can the assistant do here?" how-to. Sits in the header's action slot
+         so it's always reachable, not gated behind opening a project. -->
+    <template #header-actions>
+      <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon kiwi-help"
+              data-guide="kiwi.assistantHelp"
+              @click="showAssistantOverview = true"
+              v-tooltip.bottom="'What can the assistant do here? Ask vs Chat, what it sees / suggests / creates'">
+        <i class="pi pi-question-circle" />
+      </button>
+    </template>
     <div class="kiwi-body">
       <div v-if="!projectUid" class="kiwi-empty cc-muted cc-fs-sm">
         Open a project to pair with your assistant.
@@ -461,6 +479,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
         </CollapsibleSection>
       </template>
     </div>
+    <AssistantOverviewDialog v-if="showAssistantOverview" @close="showAssistantOverview = false" />
   </FloatingPanel>
 </template>
 
@@ -473,6 +492,8 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
              transition: color 0.15s ease; color: var(--cc-text-dim); }
 .kiwi-chip-paired { color: var(--cc-kiwi); }
 .kiwi-chip-sent   { color: var(--cc-sev-ok, var(--cc-kiwi)); font-weight: 600; }
+.kiwi-help { color: var(--cc-text-dim); }
+.kiwi-help:hover { color: var(--cc-accent); }
 
 /* Recent captures list — each row = copy-button (grid inside) + delete-button */
 .kiwi-cap-list { list-style: none; margin: 0; padding: 0;

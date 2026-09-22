@@ -147,6 +147,9 @@ function endGesture() {
     <div class="fp-header" @pointerdown="onHeaderDown" @dblclick="toggleMaximise">
       <i v-if="icon" :class="['pi', icon, 'fp-icon']" :style="accent ? { color: accent } : undefined" />
       <span class="fp-title">{{ title }}</span>
+      <!-- Panel-specific header actions (e.g. an overview `?`) sit before the window glyphs so the
+           collapse/maximise/close cluster stays in the same spot across every panel. -->
+      <slot name="header-actions" />
       <!-- collapse rolls the panel up to its header; it is NOT minimise, so it takes the chevron and
            leaves the window glyphs to the real window control beside it -->
       <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon" @click="st.collapsed = !st.collapsed"
