@@ -59,6 +59,11 @@ export interface UseCanvasShareOpts {
    *  `sharePanelHits` — an undocked panel with no persisted geom would render at (0,0) and eat
    *  every click, so it's filtered here (same policy the pre-extraction SummaryCanvas used). */
   panels: () => SharePanel[]
+  /** Optional geom-source override — a host whose panels don't write to `useCanvasPanelsStore`
+   *  (LayoutCanvas grid slots: `CanvasPanel[docked]` skips `setGeom`) supplies its own hit list
+   *  computed from DOM rects. When present, the default store lookup is skipped entirely — the
+   *  host takes full responsibility for filtering out empty / zero-size hits. */
+  panelHits?: () => PanelHit[]
   /** Short human label for Kiwi's tooltip AND for the selection overlay's `addressLine`. Same
    *  string on both surfaces so the user reads a consistent name. */
   label: () => string
@@ -131,11 +136,15 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
     get label() { return opts.label() },
   })
 
-  // PanelHit list the overlay hit-tests against. Only PANELS WITH A KNOWN GEOMETRY count — an
-  // undocked panel with no persisted geom would appear at (0,0) which would silently swallow every
-  // click. First render writes geometry immediately (CanvasPanel does it on mount), so a panel
-  // that visibly exists is a panel with a geom.
+  // PanelHit list the overlay hit-tests against. Two branches:
+  //   1. Host provided a `panelHits` override (LayoutCanvas grid slots — geoms computed from DOM
+  //      rects since `CanvasPanel[docked]` skips `setGeom`). Take it verbatim.
+  //   2. Default — read from `useCanvasPanelsStore`; only PANELS WITH A KNOWN GEOMETRY count. An
+  //      undocked panel with no persisted geom would appear at (0,0) which would silently swallow
+  //      every click. First render writes geometry immediately (CanvasPanel does it on mount), so
+  //      a panel that visibly exists is a panel with a geom.
   const sharePanelHits = computed<PanelHit[]>(() => {
+    if (opts.panelHits) return opts.panelHits()
     const key = opts.canvasKey()
     const out: PanelHit[] = []
     for (const p of opts.panels()) {

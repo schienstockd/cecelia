@@ -46,6 +46,14 @@ import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail } from '../../modules/cluster/clusterPanels'
 import CcToggle from '../CcToggle.vue'
+import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
+import FrameAnnotator from '../FrameAnnotator.vue'
+import CaptureViewSurface from '../CaptureViewSurface.vue'
+import { useCaptureReshowStore } from '../../stores/captureReshow'
+import type { CaptureAddress } from '../../utils/captureAddress'
+import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
+import type { PanelHit } from '../../utils/panelSelectionHit'
+import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
 
@@ -507,6 +515,101 @@ async function collectCsvs(): Promise<{ name: string; csv: string | null }[]> {
   return out
 }
 defineExpose({ capturePage, collectCsvs })
+
+// ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
+// LayoutCanvas is a GRID canvas — docked CanvasPanels skip `setGeom`, so the composable's default
+// store-based `sharePanelHits` finds nothing. Instead, compute PanelHits from grid slot DOM rects
+// on entry to share mode: each filled slot's `getBoundingClientRect()` minus the grid element's
+// origin gives workspace-CSS-px coords the selection overlay can hit-test in the same frame the
+// grid renders in.
+// Reshow surface stays inline (same shape as ClusterPlots / GatingPlots); zoom-to-source is
+// disabled — Analysis-board restore across projects would need SummaryCanvas-style
+// `reresolvePops` + a cross-tab layout restore path.
+const slotEls = new Map<number, HTMLElement>()
+function setSlotEl(i: number, el: unknown) {
+  if (el instanceof HTMLElement) slotEls.set(i, el)
+  else slotEls.delete(i)
+}
+// A tick bumped on entering share mode + on window resize forces `sharePanelHits` to recompute
+// against fresh DOM rects. Grid geometry doesn't change during a share session in practice, so a
+// single snapshot per entry is enough — mid-share resize would just leave a stale hit region.
+const slotHitsTick = ref(0)
+function bumpSlotHits() { slotHitsTick.value += 1 }
+const layoutHits = computed<PanelHit[]>(() => {
+  void slotHitsTick.value
+  const grid = gridRef.value; if (!grid) return []
+  const gRect = grid.getBoundingClientRect()
+  const out: PanelHit[] = []
+  for (let i = 0; i < entry.value.contents.length; i++) {
+    if (!entry.value.contents[i]) continue          // empty slot — nothing to share
+    const el = slotEls.get(i); if (!el) continue
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0 || r.height <= 0) continue
+    out.push({ id: i, geom: { x: r.left - gRect.left, y: r.top - gRect.top, w: r.width, h: r.height } })
+  }
+  return out
+})
+const reshown = ref<CaptureEnvelope | null>(null)
+const reshowStore = useCaptureReshowStore()
+const moduleTag = computed(() => `analysis:${projectUid.value}`)
+watch(() => reshowStore.pending, () => {
+  const env = reshowStore.consumeFor(moduleTag.value)
+  if (env) reshown.value = env
+}, { immediate: true })
+const share = useCanvasShare({
+  projectUid: () => projectUid.value,
+  canvasKey: () => props.canvasKey,
+  panels: () => entry.value.contents.map((_, i) => ({ id: i })).filter((_, i) => !!entry.value.contents[i]),
+  panelHits: () => layoutHits.value,
+  label: () => `analysis · ${entry.value.contents.filter(Boolean).length}/${entry.value.contents.length} slots`,
+  buildPlotSpec: ({ panelCount }) => ({ specId: 'analysis-board',
+    params: { canvasKey: props.canvasKey, panelCount } }),
+  buildEnvelope: ({ selected, workspaceOrigin }) => {
+    // Envelope shape mirrors SummaryCanvas as closely as possible so a future zoom-to-source can
+    // adopt the reresolvePops policy. plotRef.specId = the slot's ref (spec.id / view key /
+    // cluster kind); plotRef.ui = the slot's state bag. dataSlice carries board imageUids +
+    // setUid so a re-open picks the same context.
+    const { x: x0, y: y0 } = workspaceOrigin
+    return selected.map((e: SharePanelExported) => {
+      const c = entry.value.contents[e.id]
+      const plotRef: Record<string, unknown> = c
+        ? { specId: String(c.ref ?? ''), kind: String(c.kind ?? ''), ui: { ...c.state } }
+        : { specId: '' }
+      return {
+        panelId: String(e.id),
+        position: { x: e.geom.x - x0, y: e.geom.y - y0, w: e.geom.w, h: e.geom.h },
+        plotRef,
+        dataSlice: {
+          imageUids: props.imageUids,
+          setUid: setUid.value ?? null,
+          module: props.module ?? null,
+        },
+      }
+    })
+  },
+  onSaveSuccess: (env) => { reshown.value = env },
+})
+const { shareSel, sharePanelHits, pendingShare, shareBusy, shareToast,
+        onShareCancel, onShareConfirm, onAnnotateCancel, onAnnotateSave, dismissShareToast } = share
+watch(() => shareSel.active.value, on => {
+  if (on) { reshown.value = null; bumpSlotHits() }
+})
+// Reshow surface bindings (zoom-to-source deferred; frame + marks still show).
+const reshownAddress = computed<CaptureAddress>(() => {
+  const a = reshown.value?.address as CaptureAddress | null | undefined
+  return a ?? { projectUid: projectUid.value }
+})
+const reshownAddressLine = computed(() => {
+  const panelsN = (reshown.value?.panels?.length) ?? 0
+  return panelsN > 0 ? `analysis · ${panelsN} panels` : `analysis · board`
+})
+function onReshowClose() { reshown.value = null }
+function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; overlay: unknown; notes: string }) {
+  if (!reshown.value) return
+  reshown.value = { ...reshown.value,
+    captureId: payload.captureId, frame: payload.frameDataUrl,
+    overlay: payload.overlay as CaptureEnvelope['overlay'], notes: payload.notes }
+}
 </script>
 
 <template>
@@ -617,6 +720,7 @@ defineExpose({ capturePage, collectCsvs })
                its native dragstart bubbles here, so the grip lives IN the header (aligned with the
                other buttons) instead of a fragile absolute overlay that collided with the pin. -->
           <div v-for="(area, i) in entry.slotAreas" :key="i" class="lc-slot"
+               :ref="el => setSlotEl(i, el)"
                :class="{ active: i === entry.activeIndex, filled: !!entry.contents[i] }"
                :style="{ gridArea: area }"
                @dragstart="dragFrom.i = i" @dragend="dragFrom.i = -1"
@@ -674,6 +778,47 @@ defineExpose({ capturePage, collectCsvs })
               <span class="lc-add-hint cc-muted cc-fs-xs">empty slot</span>
             </div>
             </div>
+          </div>
+          <!-- Share Phase 1 — selection overlay. Mounted INSIDE .lc-grid so its hit-test coords
+               are in the same frame `layoutHits` computed against. -->
+          <CanvasSelectionOverlay v-if="shareSel.active.value"
+                                  :panels="sharePanelHits"
+                                  :selection="shareSel"
+                                  address-line="analysis · board"
+                                  @cancel="onShareCancel" @share="onShareConfirm" />
+          <!-- Share Phase 2 — annotate + Save. -->
+          <FrameAnnotator v-if="pendingShare && !reshown"
+                          :frame-data-url="pendingShare.composite"
+                          :address-line="`analysis · ${pendingShare.panels.length} panels`"
+                          :busy="shareBusy"
+                          @save="onAnnotateSave" @cancel="onAnnotateCancel" />
+          <!-- Reshow (Kiwi refocus / Blackboard click). Zoom-to-source disabled — grid layout
+               restore needs its own path; the frame + marks still show. -->
+          <CaptureViewSurface v-if="reshown && !pendingShare"
+                              :project-uid="projectUid"
+                              :capture-id="reshown.captureId"
+                              :frame-data-url="reshown.frame"
+                              :overlay="reshown.overlay"
+                              :notes="reshown.notes"
+                              :address="reshownAddress"
+                              :address-line="reshownAddressLine"
+                              surface="plot"
+                              :extra-post-fields="reshown.panels ? { panels: reshown.panels } : {}"
+                              :show-zoom-to-source="false"
+                              @close="onReshowClose"
+                              @reannotate="onReshowReannotate" />
+          <!-- Post-Save toast — inside .lc-grid (which is `position: relative`) so absolute
+               positioning anchors on the grid, above the CaptureViewSurface. Mirrors the shape in
+               SummaryCanvas / ClusterPlots / GatingPlots so all four canvases signal the same
+               outcome on the same push branch. -->
+          <div v-if="shareToast" class="lc-share-chip"
+               :class="{ 'lc-share-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
+                        'lc-share-chip-icon']" />
+            <span>{{ shareToast.message }}</span>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro lc-share-chip-dismiss"
+                    @click="dismissShareToast" v-tooltip.top="'Dismiss'"
+                    aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
           </div>
         </div>
         </div>
@@ -740,7 +885,20 @@ defineExpose({ capturePage, collectCsvs })
    via margin auto for an A4 board, full-width for a Free board (styled inline via zoomWrapStyle). */
 .lc-canvas-wrap { flex: 1; min-width: 0; overflow: auto; }
 .lc-zoom { display: block; }
-.lc-grid { flex: 1; display: grid; gap: 8px; padding: 4px; overflow: hidden; }
+.lc-grid { flex: 1; display: grid; gap: 8px; padding: 4px; overflow: hidden; position: relative; }
+/* Share-outcome chip — mirrors `.sc-share-chip` in SummaryCanvas so all four canvases (summary,
+   cluster, gate, analysis-board) present the same chip on the same push branch. */
+.lc-share-chip {
+  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
+  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
+  background: rgba(0, 0, 0, 0.78); color: #fff;
+  font-size: var(--cc-fs-xs); pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+}
+.lc-share-chip-error { color: var(--cc-sev-fail); }
+.lc-share-chip-icon { font-size: 1em; }
+.lc-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
+.lc-share-chip-dismiss:hover { opacity: 1; }
 .lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: var(--cc-radius-md); overflow: hidden;
   display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--cc-bg); }
 /* per-slot title (figure caption): a plain-looking, centred, editable line above the plot */
