@@ -4,6 +4,10 @@
 OPEN items resolved 2026-09-19 (see *Open items — resolved* below); implementation of PR #1 is
 unblocked.
 
+**Partly superseded (2026-09-23)** by [`KIWI_ASSISTANT_PLAN.md`](KIWI_ASSISTANT_PLAN.md): Kiwi becomes
+the assistant surface (Decision 1 below no longer holds) and gains a prompt input (Decision 5's
+"OUT permanently" no longer holds). The cockpit shape and v1 rows are unaffected.
+
 ## Goal
 
 A dedicated always-visible surface for AI-assistant-adjacent controls, so "using Claude (or
