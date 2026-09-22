@@ -77,6 +77,7 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
                                   trace_colour::RGB{N0f8},
                                   max_px::Int=320, pad_px::Int=8,
                                   crop_side::Union{Nothing,Int}=nothing,
+                                  bbox_override::Union{Nothing,NamedTuple}=nothing,
                                   interval_s::Union{Nothing,Float64}=nothing)::Vector{Dict{String,Any}}
     # OME-Zarr resolution is IMAGE-versioned (default/denoised/driftCorrected/…), not segmentation-
     # versioned. `value_name` here is the segmentation vn (e.g. `flowTom`) — a different taxonomy;
@@ -94,7 +95,14 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
     # card in the response, centred on each card's own medoid — the card sheet is only useful if
     # populations are visually comparable side-by-side. Without `crop_side` the crop is just
     # bbox + pad (interactive path — same physical scale within a single card).
-    bbox = track_bbox(med_img, value_name, track_id; pad_px=pad_px)
+    # `bbox_override` lets the caller pass a bbox that isn't the full track's extent — motifCards
+    # needs this because a card visualises an INSTANCE (an 8-frame subtrack), not the track's
+    # lifetime. Without the override, uniform sizing would zoom every card out to fit the largest
+    # track's meander, so a short-lived motif ends up as a few pixels of trace inside a mostly-empty
+    # frame. `bbox_override` shape mirrors `track_bbox`'s: `(x = (lo, hi), y = (lo, hi))` in native
+    # pixels.
+    bbox = bbox_override !== nothing ? bbox_override :
+           track_bbox(med_img, value_name, track_id; pad_px=pad_px)
     if crop_side !== nothing
         side = min(crop_side, native_h, native_w)
         cx = (bbox.x[1] + bbox.x[2]) ÷ 2

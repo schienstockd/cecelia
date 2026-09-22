@@ -37,6 +37,7 @@ import { DEFAULT_FLOW_REGION_PX, FLOW_REGION_OPTIONS } from '../../utils/flowReg
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
 import { gridColumns, imageGridPng, imageGridSvgFrom } from '../../plots/imageGrid'
 import { downloadDataUrl, downloadText } from '../../plots/export'
+import { resolveValueName } from '../../utils/valueName'
 
 interface FlowState extends FlowPlaneState {
   scales?: string[]                     // temporal scales — this sheet's own choice
@@ -72,11 +73,14 @@ const valueName = computed({
   get: () => state.value.valueName ?? '',
   set: v => (state.value.valueName = v),
 })
+// No eligibility filter here — every image filepath version is a candidate — so `eligible === all`,
+// and the shared helper collapses to `wanted → active → first`, the same rule the old inline
+// watcher implemented. Same helper the track panels use for their tracked-only case (see
+// docs/todo/BEHAVIOUR_CARDS_PLAN.md consolidation note).
 watch(versionOptions, opts => {
   if (!opts.length) return
-  if (state.value.valueName && opts.includes(state.value.valueName)) return
-  state.value.valueName = image.value?.activeValueName && opts.includes(image.value.activeValueName)
-    ? image.value.activeValueName : opts[0]
+  const picked = resolveValueName(state.value.valueName, opts, opts, image.value?.activeValueName)
+  if (picked !== state.value.valueName) state.value.valueName = picked
 }, { immediate: true })
 
 const t = computed({ get: () => state.value.t ?? 0, set: v => (state.value.t = v) })

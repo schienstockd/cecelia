@@ -72,10 +72,13 @@ def _to_int(arr, missing=-1):
 def _per_track_mp(track_rows, window, log):
     """Run mstump on ONE track's [speed, angle, hmm_state] stream (row-order == time-order).
 
-    Returns (mp, positions_start_row) where mp is a 1-D array (best matrix profile per position,
+    Returns (mp, track_row_ids) where mp is a 1-D array (best matrix profile per position,
     across all channels -- the last row of stumpy.mstump's mp matrix which is the "all-dim" MP),
-    and positions_start_row are the ORIGINAL pooled-frame row indices that each MP position maps
-    back to (position i starts at row track_rows[i]).
+    and track_row_ids are ALL of THIS track's ordered pooled-frame row indices, in the same
+    time-order the MP was computed on. A position i's window then spans pooled rows
+    `track_row_ids[i : i + window]` -- NOT `[i, i+1, ...]` in pooled order, which would only be
+    correct if the pooled frame happened to be per-track contiguous (it isn't; `pop_df` orders
+    however).
     """
     import stumpy
     n = len(track_rows)
@@ -92,16 +95,22 @@ def _per_track_mp(track_rows, window, log):
         return None, None
     # mp shape (d, n-m+1). "All-dim" profile = last row (uses all channels).
     all_dim_mp = np.asarray(mp[-1], dtype=np.float64)
-    pos_row_index = track_rows.index.to_numpy()[: all_dim_mp.size]
-    return all_dim_mp, pos_row_index
+    return all_dim_mp, track_rows.index.to_numpy()
 
 
-def _extract_window(pooled, start_row, window):
-    """(window, 3) time-series slice [speed, angle, hmm]. NaN-containing → None."""
-    speed = pooled["speed"].to_numpy()[start_row: start_row + window]
-    angle = pooled["angle"].to_numpy()[start_row: start_row + window]
-    hmm = pooled["hmm"].to_numpy()[start_row: start_row + window]
-    if speed.size < window or np.any(np.isnan(speed)) or np.any(np.isnan(angle)) or np.any(np.isnan(hmm)):
+def _extract_window(pooled, row_ids, window):
+    """(window, 3) time-series slice [speed, angle, hmm] at pooled rows `row_ids`. NaN → None.
+
+    `row_ids` is a length-`window` iterable of pooled row ids (a track's ordered cells over the
+    window's frames) -- NOT a `start_row + k` slice, because `pooled` is not per-track contiguous.
+    """
+    if len(row_ids) < window:
+        return None
+    idx = list(row_ids)
+    speed = pooled["speed"].to_numpy()[idx]
+    angle = pooled["angle"].to_numpy()[idx]
+    hmm = pooled["hmm"].to_numpy()[idx]
+    if np.any(np.isnan(speed)) or np.any(np.isnan(angle)) or np.any(np.isnan(hmm)):
         return None
     return np.stack([speed, angle, hmm], axis=1).astype(np.float64)   # (W, 3)
 
@@ -223,17 +232,23 @@ def run(params):
             f"{valid.groupby(['uID','vn','track_id']).ngroups} track(s)")
     log.progress(2, 6)
 
-    all_positions = []   # list of (mp_value, pooled_row_index, uID, vn, track_id)
+    all_positions = []   # list of (mp_value, window_pooled_row_ids, uID, vn, track_id)
     n_track = 0
     for _key, g in valid.groupby(["uID", "vn", "track_id"], sort=False):
         n_track += 1
-        mp, pos_rows = _per_track_mp(g, window, log.log)
+        mp, track_row_ids = _per_track_mp(g, window, log.log)
         if mp is None:
             continue
         for i, d in enumerate(mp):
             if np.isnan(d) or np.isinf(d):
                 continue
-            all_positions.append((float(d), int(pos_rows[i]),
+            # A position i's window is THIS TRACK's i..i+window cells, so it maps to the pooled
+            # rows `track_row_ids[i : i + window]`. Carry that whole slice -- span-broadcast at
+            # write time must NOT walk `start_row + k` in pooled order.
+            win_rows = track_row_ids[i : i + window]
+            if win_rows.size < window:
+                continue
+            all_positions.append((float(d), win_rows.astype(np.int64).tolist(),
                                   g["uID"].iat[0], g["vn"].iat[0], int(g["track_id"].iat[0])))
     log.log(f">> {len(all_positions)} candidate positions from {n_track} track(s)")
     log.progress(3, 6)
@@ -247,15 +262,16 @@ def run(params):
     log.log(f">> keeping top {len(survivors)} positions (MP min={survivors[0][0]:.4f}, "
             f"max={survivors[-1][0]:.4f})")
 
-    # Build list of (W, 3) windows; drop any that contain NaN.
+    # Build list of (W, 3) windows; drop any that contain NaN. Window rows are the per-track
+    # ordered pooled row ids (`win_rows`), NOT `start_row + k` in pooled order.
     windows = []
     kept_meta = []
-    for mp_val, start_row, uid, vn, tid in survivors:
-        w = _extract_window(pooled, start_row, window)
+    for mp_val, win_rows, uid, vn, tid in survivors:
+        w = _extract_window(pooled, win_rows, window)
         if w is None:
             continue
         windows.append(w)
-        kept_meta.append((mp_val, start_row, uid, vn, tid))
+        kept_meta.append((mp_val, win_rows, uid, vn, tid))
     if len(windows) < 2:
         log.log("[ERROR] motif_discovery: no usable windows after NaN filter"); return
     log.progress(4, 6)
@@ -272,20 +288,22 @@ def run(params):
     log.progress(5, 6)
 
     # Span-broadcast each instance's (class, distance, id) over its window; overlap = keep the
-    # instance with the LOWEST distance (highest confidence -- Decision 9).
+    # instance with the LOWEST distance (highest confidence -- Decision 9). Window rows are the
+    # per-track ordered pooled row ids -- not `start_row + k`, which walks pooled order and would
+    # spread one instance's labels across UNRELATED tracks at the same pool position.
     n = pooled.shape[0]
     best_dist = np.full(n, np.inf, dtype=np.float32)
     class_by_cell = [None] * n
     dist_by_cell = [None] * n
     instance_by_cell = [None] * n
-    for inst_id, (feat_row, (mp_val, start_row, _uid, _vn, _tid)) in enumerate(zip(range(len(kept_meta)), kept_meta)):
+    for inst_id, (feat_row, (mp_val, win_rows, _uid, _vn, _tid)) in enumerate(zip(range(len(kept_meta)), kept_meta)):
         cls = int(codes[feat_row])
         cls_name = class_id_to_name[cls]
         d = float(dists[feat_row])
-        for k in range(window):
-            row = start_row + k
-            if row >= n:
-                break
+        for row in win_rows:
+            row = int(row)
+            if row < 0 or row >= n:
+                continue
             if d < best_dist[row]:
                 best_dist[row] = d
                 class_by_cell[row] = cls_name

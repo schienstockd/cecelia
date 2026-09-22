@@ -35,8 +35,9 @@ export const cellFamily: CardFamily = {
 
 // Motif cards — one card per motif class discovered server-side in the image's cells h5ad. No rail
 // picker today (BEHAVIOUR_CARDS_PLAN Decision 6 re-scoped 2026-09-20: motif classes are h5ad obs
-// values, not populations). Endpoint auto-picks the first segmentation with `motif.class` when
-// `valueName` is omitted — the wrapper doesn't need to know which segmentation to ask for.
+// values, not populations). The panel exposes a segmentation picker whose options come back in
+// `CardsResponse.availableValueNames`; the picked name is forwarded here as `ctx.valueName`, so a
+// user with multiple motif-having segmentations (B, T on a co-imaged spleen) can switch.
 // Footer stats: motif.speed / motif.angle medians + `motif.distance`. Label transform strips the
 // `live.cell.` prefix so a compact footer row reads "speed" / "angle".
 export const motifFamily: CardFamily = {
@@ -48,6 +49,7 @@ export const motifFamily: CardFamily = {
   buildRequestBody: ctx => ({
     projectUid: ctx.projectUid,
     rootUid: ctx.rootUid,
+    ...(ctx.valueName ? { valueName: ctx.valueName } : {}),
     maxPx: ctx.maxPx,
     padPx: ctx.padPx,
   }),
@@ -55,8 +57,33 @@ export const motifFamily: CardFamily = {
   footerStatLabel: name => name.replace(/^live\.cell\./, ''),
 }
 
+// HMM state cards — one card per HMM state value on a chosen `live.cell.hmm.state.<measure>`
+// column of a chosen segmentation. Same server-discovery pattern as motif cards but with two
+// pickers (segmentation + hmm column). Medoid = the state-run whose owning track spends the
+// largest fraction of its life in this state (Fig 4c, BEHAVIOUR_CARDS_PLAN Decision 3).
+export const hmmStateFamily: CardFamily = {
+  id: 'hmm_state',
+  title: 'HMM state cards',
+  endpoint: '/api/hmm_state_cards',
+  requireSuffix: false,
+  requireShownPops: false,
+  buildRequestBody: ctx => ({
+    projectUid: ctx.projectUid,
+    rootUid: ctx.rootUid,
+    ...(ctx.valueName ? { valueName: ctx.valueName } : {}),
+    ...(ctx.hmmCol   ? { hmmCol:    ctx.hmmCol   } : {}),
+    maxPx: ctx.maxPx,
+    padPx: ctx.padPx,
+  }),
+  emptyNoRoot: 'Select an image.',
+  // Strip the well-known prefix so a compact footer row reads "speed" / "angle" — mirroring the
+  // motif family's transform.
+  footerStatLabel: name => name.replace(/^live\.cell\./, ''),
+}
+
 /** Every registered family, keyed by id. `CARD_FAMILIES.cell === cellFamily`. */
 export const CARD_FAMILIES: Record<string, CardFamily> = {
   cell: cellFamily,
   motif: motifFamily,
+  hmm_state: hmmStateFamily,
 }

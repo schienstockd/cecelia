@@ -283,22 +283,10 @@ export function diagnosticsCsvRows(mode: DiagMode, d: DiagnosticsResponse | null
  *
  * Order of preference: a persisted choice that is still tracked (so navigating away and back does not
  * re-point the panel), then the active segmentation if it is tracked, then the first tracked one.
+ *
+ * Track shim over the general helper (`src/utils/valueName.ts`) — the picker this feeds is labelled
+ * "tracks", not "segmentation" (the list only ever contains TRACKED label sets), which is why the
+ * parameter name reads `tracked` here. The rule is otherwise identical. Motif cards / other panels
+ * with a different eligibility filter use `resolveValueName` directly.
  */
-// The picker this feeds is labelled "tracks", not "segmentation" — the list only ever contains
-// TRACKED label sets, so on a track plot a segmentation name is the storage detail and the tracks are
-// the thing being chosen: "the selection of a segmentation is a bit weird for these plots, because
-// what you should be selecting are tracks not segmentation."
-export function resolveTrackValueName(
-  wanted: string | undefined, tracked: readonly string[], all: readonly string[] = [],
-  active?: string,
-): string {
-  if (wanted && tracked.includes(wanted)) return wanted
-  // the ACTIVE segmentation when it is tracked — on an image with two tracked sets ("importTest" and
-  // "memTom" on the reference image) "the first one" is an arbitrary pick, and the one the rest of the
-  // app is pointed at is the answer the user expects
-  if (active && tracked.includes(active)) return active
-  if (tracked.length) return tracked[0]
-  // nothing is tracked: keep the request (or fall back) so the view can say "not tracked" about a
-  // real segmentation rather than about nothing
-  return wanted && all.includes(wanted) ? wanted : (all[0] ?? '')
-}
+export { resolveValueName as resolveTrackValueName } from '../utils/valueName'
