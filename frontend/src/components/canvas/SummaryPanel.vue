@@ -739,6 +739,26 @@ function summaryMarkStyle(m: { u: number; v: number }): Record<string, string> |
   const top  = (axis.top  - bodyRect.top)  + m.v * axis.height
   return { left: `${left}px`, top: `${top}px` }
 }
+
+// BIDIR PR #4b residual (Decision 19) — SummaryPanel renders aggregated data (boxplot / violin /
+// bar / heatmap / matrix …), so individual tracks/cells don't have their own visible glyph to
+// ring. Chip in the top-right corner announces "Claude marked N tracks/cells" when the bag is
+// origin=claude AND the highlighted image is included in this panel's scope. `granularity`
+// selects the bag: track-grained plots subscribe to trackHighlight, cell-grained to pickHighlight.
+// Strip / beeswarm chart type (the one per-point-glyph case) is a follow-up: raw refetch overlay
+// on top of the chip.
+const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(() => {
+  const isTrack = granularity.value === 'track'
+  const bag = isTrack ? viewer.trackHighlight : viewer.pickHighlight
+  if (!bag || bag.origin !== 'claude') return null
+  const ids: number[] = isTrack
+    ? (bag as { trackIds: number[] }).trackIds
+    : (bag as { labels: number[] }).labels
+  if (!ids?.length) return null
+  const uids = crossImage.value ? (props.imageUids ?? []) : (props.imageUid ? [props.imageUid] : [])
+  if (!uids.includes(bag.imageUid)) return null
+  return { count: ids.length, kind: isTrack ? 'tracks' : 'cells' }
+})
 </script>
 
 <template>
@@ -924,6 +944,13 @@ function summaryMarkStyle(m: { u: number; v: number }): Record<string, string> |
       <template v-for="m in summaryMarks" :key="m.markerId">
         <PlotPointOutMark v-if="summaryMarkStyle(m)" :mark="m" :style="summaryMarkStyle(m)!" />
       </template>
+      <!-- BIDIR PR #4b Decision 19 residual — aggregate-plot chip. Individual glyphs aren't
+           rendered; the chip signals "Claude marked N tracks/cells scoped to an image this plot
+           includes" so the visual grounding is preserved even without per-point rings. -->
+      <span v-if="claudeChip" class="sp-claude-chip"
+            v-tooltip.top="`Claude highlighted ${claudeChip.count} ${claudeChip.kind}`">
+        <span class="sp-claude-badge">C</span>{{ claudeChip.count }}
+      </span>
     </div>
   </CanvasPanel>
 </template>
@@ -941,6 +968,19 @@ function summaryMarkStyle(m: { u: number; v: number }): Record<string, string> |
 /* compact icon buttons (options / duplicate) */
 /* .sp-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .sp-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
+
+/* BIDIR PR #4b Decision 19 residual — corner chip for Claude highlight on aggregate plots. Same
+   magenta accent as the per-glyph consumers (TrackScheme, cards, UMAP, gate scatter). Anchored
+   top-right so it doesn't overlap the plot's own axis labels (which live at the left/bottom). */
+.sp-claude-chip { position: absolute; top: 6px; right: 6px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 3px;
+  background: rgba(232, 54, 180, 0.15); border: 1px solid #e836b4;
+  border-radius: var(--cc-radius-xs);
+  color: var(--cc-text); font-size: var(--cc-fs-2xs); font-weight: 600; line-height: 1;
+  pointer-events: auto; }
+.sp-claude-chip .sp-claude-badge { display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; background: #e836b4;
+  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
 
 /* "show series" measure-picker popover (opens upward from the footer button) */
 .sp-explode-wrap { position: relative; display: inline-flex; }
