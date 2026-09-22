@@ -371,22 +371,34 @@ Every new entity references the entities it's related to, using stable ids not p
 
 Independently mergeable in this order. Each ships a working, tested slice.
 
-1. **Shared drawing primitive.** `DrawSurface.vue` + `drawGeometry.ts` extracted from
-   `ImagePickerModal.vue` + `GateOverlay.vue`. Adds freehand stroke. Standalone, tested. No new
-   consumer yet — proves the extraction works. ~150 lines new + ~200 lines moved.
+1. **Annotation drawing state primitive (pure).** `utils/drawGeometry.ts` — the state machines
+   for rect drag, polygon click-add + close-by-proximity, and freehand stroke (with a
+   Ramer-Douglas-Peucker simplify pass), plus the click-vs-drag / polygon-degeneracy primitives
+   moved out of `plots/gateGeometry.ts` (re-exported there for `GateOverlay`'s existing imports).
+   Coord-agnostic — the caller decides what a pixel means. Tested (`utils/drawGeometry.test.ts`).
+   **No Vue component this PR** — inventing a `DrawSurface.vue` ahead of a real host would fix
+   its rendering choices (SVG vs canvas, stroke style, save/cancel semantics) against no
+   requirement. Component lands with PR #3, where capture annotation is the first host. **`GateOverlay.vue`
+   untouched** — flow-cytometry gating is a different engine (canvas-2D in data-coords,
+   8-variant edit-handle system, own downstream to `gating/{value_name}.json`); the ACTUAL code
+   overlap with the annotation pathway is ~5 lines of rect drag and the click-vs-drag helpers,
+   which this PR centralises in one place. Claude-driven gate authoring is a valid future
+   capability but goes through the gating engine, not this primitive. ~150 lines new + ~25 moved.
 2. **Grid overlay as standalone viewer feature.** `utils/gridOverlay.ts` + `components/GridOverlay.vue` +
    viewer-panel toggle. User-facing regardless of any Claude session. ~200 lines.
 3. **Share-in.** Extends `__cceceliaViewerCapture()` payload; `POST /api/viewer/capture` + list /
-   read routes; `get_capture` + `get_recent_captures` MCP tools; guidance addition; annotate
-   overlay uses PR #1. ~500 lines.
+   read routes; `get_capture` + `get_recent_captures` MCP tools; guidance addition. **Adds
+   `DrawSurface.vue`** — the Vue component that renders the annotation overlay for capturing
+   drawn marks. Uses PR #1's `drawGeometry.ts` as its state layer. ~500 lines (was going to be
+   ~350 lines of share-in + ~150 lines of DrawSurface, previously counted under PR #1).
 4. **Point-out data anchors + gating-plot linkage.** WS `viewer:mark` frame;
    `POST /api/viewer/marks/{tracks,cells}`; `mark_tracks` + `mark_cells` MCP tools; frontend
    `viewerMarks` bag + ephemeral overlay; **gating-module plot components subscribe to
    `trackHighlight` + `pickHighlight`** (Decision 19). ~600 lines. May split as PR #4b if
    subscription work grows.
 5. **Point-out UI anchors + freeform marks.** `mark_ui` + `mark_freeform` MCP tools; bare-style
-   `GuideBubble` variant; freeform overlay uses PR #1. Shares WS `viewer:mark` transport with
-   PR #4. ~400 lines.
+   `GuideBubble` variant; freeform overlay reuses PR #3's `DrawSurface.vue`. Shares WS
+   `viewer:mark` transport with PR #4. ~400 lines.
 6. **Landscape pass + region-source eval.** `get_landscape` + `mark_landscape` MCP tools; on-request
    pass with region-source options; internal eval on `zolIMa` / `jFWePN` (Decision 15) before locking
    Decision 14. Depends on PR #2. ~600 lines + eval work.
