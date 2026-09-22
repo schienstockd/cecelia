@@ -35,6 +35,8 @@ import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 import { usePanelExport } from '../../stores/canvasPanelExports'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import { usePlotResize } from '../../composables/usePlotResize'
@@ -715,6 +717,33 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg,
 if (props.persistKey) {
   usePanelExport(() => props.persistKey ?? '', () => exportImage())
 }
+
+// BIDIR PR #8 — register the panel so Claude's `list_plots` can discover it. Family stays
+// `'summary'` (the same string mark_plot's frontend consumer already filters on at :727); title
+// is `spec.label`, the same one CanvasPanel already renders in the panel header. Route pulled
+// from vue-router so a panel on `/gating` reads differently from one on `/analysis`, even though
+// both use SummaryPanel. Left as a SECOND registration next to the existing `usePanelExport`
+// call above — the export path already works; folding both into `useVisualPanel` would touch a
+// working plot for no user-visible gain (see BIDIR PR #8 spec, decision 3).
+const _route = useRoute()
+useVisualPanel(
+  () => props.persistKey ?? '',
+  () => ({
+    family: 'summary',
+    title: props.spec?.label ?? 'Summary',
+    route: _route.path,
+    // BIDIR PR #8 addendum — panel-specific discriminators so Claude can pick the right one when
+    // several summary panels share the same title (e.g. four "Track measures" boxes differing only
+    // by measure). Sourced from the same computed refs the header controls read, so the content
+    // bag always matches what the panel is showing right now.
+    content: {
+      chartType: chartType.value,
+      measure: measure.value || undefined,
+      popType: popType.value,
+      statsEnabled: !!vis.value?.statsEnabled,
+    },
+  }),
+)
 
 // BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='summary'`,
 // `plotId=persistKey`). Position calc reads `axisRect()` in client space, subtracts the body's

@@ -158,6 +158,7 @@ end
     WS_MAINT_CANCEL
     WS_PROJ_EXPORT
     WS_PROJ_IMPORT
+    WS_VIEWER_HELLO
     WS_UNKNOWN
 end
 
@@ -174,6 +175,7 @@ const _WS_MSG_TYPE_STR = Dict{WsMsgType,String}(
     WS_MAINT_CANCEL => "maintenance:cancel",
     WS_PROJ_EXPORT  => "project:export",
     WS_PROJ_IMPORT  => "project:import",
+    WS_VIEWER_HELLO => "viewer:hello",
     WS_UNKNOWN      => "unknown",
 )
 const _WS_MSG_TYPE_PARSE = Dict{String,WsMsgType}(
@@ -194,6 +196,11 @@ function handle_message(ws, raw::AbstractString)
 
     if kind === WS_PING
         HTTP.WebSockets.send(ws, JSON3.write((; type="pong")))
+    elseif kind === WS_VIEWER_HELLO
+        # BIDIR PR #8 — stamp this socket's client id so per-tab bags (plot registry) can key
+        # cleanup by clientId when the socket disconnects. Empty id → ignore (defensive).
+        cid = _wstr(data, :clientId)
+        isempty(cid) || set_ws_client_id!(ws, cid)
     elseif kind === WS_TASK_RUN || kind === WS_TASK_RESTART
         handle_task_run(ws, data)
     elseif kind === WS_TASK_CANCEL

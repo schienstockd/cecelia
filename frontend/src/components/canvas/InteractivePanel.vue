@@ -8,9 +8,11 @@
 -->
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
+import { useRoute } from 'vue-router'
 import CanvasPanel from './CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import { INTERACTIVE_VIEWS } from './interactiveViews'
+import { useVisualPanel } from '../../composables/useVisualPanel'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -36,6 +38,22 @@ async function exportImage(): Promise<string | null> { return (await viewRef.val
 // without it (none currently, but future raster-only views) return null → board falls back to raster.
 async function exportSvg(): Promise<string | null> { return (await viewRef.value?.exportSvg?.()) ?? null }
 defineExpose({ exportImage, exportSvg })
+
+// BIDIR PR #8 — register the panel so Claude's `list_plots` can discover it. `family` prefers the
+// view key (`umap`, `gatingStrategy`, `filmstrip` …) since it's what INTERACTIVE_VIEWS keys on and
+// what Claude reads back from the label; `title` is the human label from the same registry so
+// "the UMAP" resolves the same panel the user names. The exporter is NOT wired here — a Share
+// export already goes through the view's own `usePanelExport` where the view opts in; adding a
+// second registration by the same key would just overwrite.
+const _route = useRoute()
+useVisualPanel(
+  () => props.persistKey ?? '',
+  () => ({
+    family: props.view,
+    title: entry.value?.label ?? props.view,
+    route: _route.path,
+  }),
+)
 </script>
 
 <template>

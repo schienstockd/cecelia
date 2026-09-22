@@ -24,6 +24,8 @@ import { buildClusterHeatmapBody } from '../../utils/clusterHeatmapBody'
 import { useViewerStore } from '../../stores/viewer'
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -141,6 +143,17 @@ function getCsv(): string | null { return heatmap.value ? plotDataToCsv(heatmap.
 // NOT the panel body. A 0..1 against the body would land on the axis-label / legend gutter.
 const heatmapFrame: Frame = rectFrame(() => plotRef.value?.axisRect?.() ?? null)
 defineExpose({ exportImage, getCsv, exportSvg, getFrame: (): Frame => heatmapFrame })
+
+// BIDIR PR #8 — plot registry adopter. Suffix in the title so two heatmap runs disambiguate.
+const _route = useRoute()
+useVisualPanel(
+  () => props.persistKey ?? '',
+  () => ({
+    family: 'cluster-heatmap',
+    title: props.suffix ? `Heatmap (${props.suffix})` : 'Heatmap',
+    route: _route.path,
+  }),
+)
 
 // BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='heatmap'`,
 // `plotId=persistKey`). Position calc reads `axisRect()` in client space, subtracts the body's

@@ -1496,6 +1496,33 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
 
 
 @mcp.tool()
+def list_plots(project_uid: str) -> list[dict]:
+    """Every plot panel currently MOUNTED in the user's browser for this project — call this
+    BEFORE `mark_plot` when the user says "the UMAP" / "that heatmap" and you don't already have
+    a `plot_id` in hand from a capture envelope.
+
+    Each entry: `{plotId, family, title, route, clientId, projectUid, ts, content, cellKeys?,
+    bboxScreen?}`. `plotId` is what `mark_plot` wants; `family` + `title` + `route` disambiguate
+    when the user has more than one panel of the same family. `content` is a small bag of
+    panel-specific discriminators — summary panels expose `measure`, `chartType`, `popType`,
+    `statsEnabled`. Use it to pick the right panel when several share a family, e.g. four
+    "Track measures" panels distinguished by `content.measure` (speed / displacement / duration
+    / trackLength). Always present, possibly `{}`. A `clientId` groups panels by browser tab —
+    a second tab open on the same project will list its own panels alongside.
+
+    For NUMERIC questions about a plot (which is most significant, ranking, cell counts), call
+    the matching data tool — `get_behaviour_summary`, `get_measure_summary`, `get_cluster_summary`,
+    `get_spatial_stats` — and correlate its output back to each `plot_id` via `content`, rather
+    than reading numbers out of a shared frame.
+
+    Empty list if the user has no browser open on this project, or has no plot panels on screen
+    (the analysis / cluster / gate pages are where they live — module pages without a plot bag
+    return nothing). Session-only, no persistence; a browser reload re-populates on mount.
+    """
+    return _client.list_plots(project_uid)
+
+
+@mcp.tool()
 def mark_plot(project_uid: str, family: str, plot_id: str,
               u: float, v: float,
               cell: str = "", label: str = "", ttl_s: int = 300) -> dict:

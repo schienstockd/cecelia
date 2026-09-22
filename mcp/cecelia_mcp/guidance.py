@@ -162,6 +162,13 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   no segmented object to name and no capture in hand. Pairs with `get_landscape(...)`: read the \
   landscape's category per tile, then point at the tile that matters. Coarser than mark_cells / \
   mark_tracks — use when a REGION is the answer, not an object.
+- `list_plots(project_uid)` — enumerate plot panels currently on the user's screen; call BEFORE \
+  `mark_plot` to resolve "the UMAP" / "that heatmap" to a live `plot_id` instead of guessing. \
+  Each entry carries a `content` bag of panel-specific discriminators (e.g. `content.measure` on \
+  summary panels) — use it to pick the right one when several share a family. For NUMERIC \
+  questions about a plot (significance, ranking, values), correlate `content` with the matching \
+  data tool (`get_behaviour_summary` / `get_measure_summary` / `get_cluster_summary` / \
+  `get_spatial_stats`); do NOT rely on shared-frame pixels for statistics.
 - `mark_plot(family, plot_id, u, v, cell?, label?, ttl_s?)` — point at a spot on a PLOT panel (a \
   peak on a histogram, a cluster on a UMAP, a bright cell on a strip, a heatmap cell). `family` is \
   the plot family (`gate-scatter` / `pairs-matrix` / `gating-strategy` / `umap` / `heatmap` / \

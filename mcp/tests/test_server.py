@@ -34,6 +34,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
             "mark_tile", "get_landscape",   # bidir landscape overlay (PR #6, Decision 14 reframe)
             "mark_plot",                    # bidir plot point-out (PR #4b)
+            "list_plots",                   # bidir PR #8 — live plot registry discovery
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)
             "get_object_ids",   # bidir follow-up: real cell/track ids for mark_cells / mark_tracks

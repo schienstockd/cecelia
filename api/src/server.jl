@@ -58,6 +58,7 @@ include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDI
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
 include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
+include("plots_registry_api.jl") # bidirectional context — live plot registry for list_plots MCP (BIDIR PR #8)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -73,6 +74,43 @@ include("labels_api.jl")     # bidirectional context — cell/track id enumerati
 const _WS_OUT_CAP      = 4096
 const _ws_clients      = Dict{Any,Channel{String}}()   # ws => its private outbound queue
 const _ws_clients_lock = ReentrantLock()
+
+# ── WS client identity + disconnect hooks (BIDIR PR #8) ───────────────────────
+# The frontend sends `{type:"viewer:hello", clientId}` on every WS connect (see stores/ws.ts's
+# `wsClientId`). We stamp that id against the ws object so per-tab bags (today: the plot registry
+# in `plots_registry_api.jl`; tomorrow: any registry that wants "the tab I registered under went
+# away") can key their cleanup by clientId. The disconnect hook is the reusable primitive — one
+# push_ + one snapshot-and-fire in `handle_ws`'s finally block, and every future consumer
+# subscribes without touching this file again.
+const _ws_client_ids       = Dict{Any,String}()
+const _ws_disconnect_hooks = Function[]
+
+set_ws_client_id!(ws, id::AbstractString) = lock(_ws_clients_lock) do
+    _ws_client_ids[ws] = String(id)
+end
+
+ws_client_id(ws)::Union{String,Nothing} = lock(_ws_clients_lock) do
+    get(_ws_client_ids, ws, nothing)
+end
+
+"""
+    register_ws_disconnect_hook!(cb::Function)
+
+Register a callback invoked when a WS client disconnects. Signature:
+`hook(ws, client_id::Union{String,Nothing})`. Hooks run OUTSIDE `_ws_clients_lock` so a hook may
+take its own lock safely. Exceptions inside a hook are logged and swallowed — one broken hook must
+not stop the others or leave the finally block half-done.
+"""
+function register_ws_disconnect_hook!(cb::Function)
+    push!(_ws_disconnect_hooks, cb)
+    cb
+end
+
+# Register the plot-registry cleanup hook here (not from `plots_registry_api.jl`) because the
+# registry module is included ABOVE this block, before `register_ws_disconnect_hook!` exists. The
+# hook function itself lives in that module; only the wiring lives here — same pattern as
+# `subscribe_chain_frames!(broadcast_ws)` a few lines further down.
+register_ws_disconnect_hook!(_plots_registry_ws_disconnect_hook)
 
 # One sender per client: drains that client's queue in order and writes frames. Exits when the queue
 # is closed (on disconnect) or a send fails; either way the client is removed.
@@ -263,6 +301,8 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
+    # bidir PR #8 — live plot registry read (MCP `list_plots`); browser populates via the two POSTs.
+    "/api/viewer/plots" => (req, body_bytes) -> (api_viewer_plots_list(req)),
     "/api/viewer/captures" => (req, body_bytes) -> (api_viewer_captures_list(req)),
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
     "/api/viewer/landscape" => (req, body_bytes) -> (api_viewer_landscape_get(req)),
@@ -408,6 +448,10 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/marks/freeform" => (req, body_bytes) -> (api_viewer_marks_freeform(body_bytes)),
     "/api/viewer/marks/tile"     => (req, body_bytes) -> (api_viewer_marks_tile(body_bytes)),
     "/api/viewer/marks/plot"     => (req, body_bytes) -> (api_viewer_marks_plot(body_bytes)),
+    # bidir PR #8 — plot registry writes. Frontend authors via `stores/plotRegistry.ts` on panel
+    # mount/unmount; not on the MCP surface (Claude only READS the registry via `list_plots`).
+    "/api/viewer/plots/register"   => (req, body_bytes) -> (api_viewer_plots_register(body_bytes)),
+    "/api/viewer/plots/deregister" => (req, body_bytes) -> (api_viewer_plots_deregister(body_bytes)),
     # bidir landscape — browser publishes (POST), MCP reads (GET, above). Never Claude-authored.
     "/api/viewer/landscape"      => (req, body_bytes) -> (api_viewer_landscape_publish(body_bytes)),
     "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),
@@ -461,7 +505,23 @@ function handle_ws(ws)
     catch e
         e isa HTTP.WebSockets.WebSocketError || @warn "WS error" exception = e
     finally
-        lock(_ws_clients_lock) do; delete!(_ws_clients, ws); end
+        # Snapshot the client id BEFORE dropping the dict entries — hooks receive `(ws, cid)` and
+        # need the id that WAS on this socket. Hooks fire outside the lock so a hook may take its
+        # own lock safely (the plot registry does).
+        cid = lock(_ws_clients_lock) do
+            get(_ws_client_ids, ws, nothing)
+        end
+        for hook in _ws_disconnect_hooks
+            try
+                hook(ws, cid)
+            catch e
+                @warn "WS disconnect hook failed" exception = e
+            end
+        end
+        lock(_ws_clients_lock) do
+            delete!(_ws_clients, ws)
+            delete!(_ws_client_ids, ws)
+        end
         close(q)   # signal this client's sender task to exit
     end
 end

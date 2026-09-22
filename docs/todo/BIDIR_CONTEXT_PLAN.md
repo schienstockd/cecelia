@@ -206,16 +206,16 @@ Numbered so code and other docs can cite them (`Decision 5`).
     perception). Addressing scheme is *expressible* in a future MHS state-dictionary reference
     without designing to MHS today. Do not couple to MHS data shapes; do not assume acquisition
     metadata will arrive via MHS.
-28. **Live plot registry — MCP-only discovery (draft, PR #8).** Populated by
-    `usePlotRegistry(persistKey, meta)` on panel mount/unmount, exposed as
-    `list_plots(project_uid)` MCP tool. Session-only, no persistence; same-persistKey supersedes;
-    deregister on WS disconnect. Cloud-VM safe — resolves "which plot is on screen" without
-    Claude reading Vue source (aligns with Decision "MCP-only at both ends"). `persistKey`
-    remains identity; title + route + optional `bboxScreen` disambiguate duplicate families on
-    the same route. Parallel to `stores/canvasPanelExports.ts` (`usePanelExport` shape), not a
-    fresh invention. Follows PR #4b (which keys point-outs on `plot_id`); precedes any workflow
-    where Claude calls `mark_plot` without a human handing over an id. Prompt for a fresh
-    session at `~/Downloads/prompts/list-plots-mcp.md`; in-flight in a sibling worktree.
+28. **Live plot registry, MCP-only.** Populated by `useVisualPanel(persistKey, meta)` on panel
+    mount/unmount, exposed as `list_plots(project_uid)`. Session-only, no persistence; same-persistKey
+    supersedes (last-writer-wins); deregister on WS disconnect via `register_ws_disconnect_hook!`.
+    Cloud-VM safe (MCP is the only discovery path). persistKey is identity; title + route
+    disambiguate. `viewer:hello {clientId}` WS handshake is the clientId primitive; the registry is
+    the first consumer of `register_ws_disconnect_hook!` — a reusable server-side hook. Entries
+    carry an optional `content` bag of panel-specific discriminators (SummaryPanel: `measure` /
+    `chartType` / `popType` / `statsEnabled`) so multiple same-family panels are distinguishable
+    without a shared frame; guidance points Claude at the numeric data tools
+    (`get_behaviour_summary` etc.) for stats questions rather than shared-frame pixel reads.
 
 ## Audit summary — what Part 1 found
 
@@ -528,14 +528,12 @@ Independently mergeable in this order. Each ships a working, tested slice.
    (well down from the earlier ~600, because SAM/Cellpose/eval-of-three-models are gone).
 7. **Blackboard.** `<proj>/blackboard/` storage + local versioning helpers; CRUD MCP tools;
    `/blackboard` Vue page gated on Decision 24; mermaid lazy-load. ~700 lines.
-8. **Live plot registry + `list_plots` MCP** (Decision 28, added 2026-09-22). New composable
-   `usePlotRegistry(persistKey, meta)` wired from every panel host (InteractivePanel,
-   SummaryPanel, cluster panels, gate + card panels); in-memory server bag keyed by
-   `(projectUid, plotId)` with WS-disconnect cleanup; `POST /register`, `POST /deregister`,
-   `GET /?projectUid=` routes; `list_plots(project_uid)` MCP tool. Enables hands-free
-   `mark_plot` — resolves natural-language descriptions to a `plot_id` without a human handing
-   it over. Follows PR #4b (which keys on `plot_id`). ~400 lines. In-flight in a sibling
-   worktree.
+8. **Live plot registry + `list_plots` MCP.** `stores/plotRegistry.ts` + `composables/useVisualPanel.ts`
+   for the frontend; `api/src/plots_registry_api.jl` for the Julia registry; `viewer:hello` WS
+   handshake + `register_ws_disconnect_hook!` primitive in `api/src/server.jl`; `list_plots` MCP tool.
+   10 host panels adopt `useVisualPanel`. Follows PR #4b (10 plot families already forward
+   `plot-id=persistKey` from #1165); precedes any Claude-driven workflow where marking a plot
+   requires human hand-over of the id. ~800 lines.
 
 Dependencies: PR #4 and #5 share the WS `viewer:mark` transport (defined in #4, reused in #5).
 PR #6 depends on PR #2. PR #8 depends on PR #4b (`persistKey` → `plot-id` forwarding, shipped).
@@ -613,14 +611,16 @@ Discussion follows the same loop as viewer captures — Kiwi's Recent-captures +
 | Host + reshow mount | `frontend/src/components/canvas/SummaryCanvas.vue` |
 | Server envelope passthrough | `api/src/captures_api.jl` (`_clean_panel`, panels + workspaceOrigin) |
 
-**PR #4b interaction (still open).** Point-out (Claude marks) subscription is the READ path
-counterpart of this feature's WRITE path — same panel substrate, different direction. The
-multipanel work touched `SummaryPanel` (registered `usePanelExport`) but NOT `InteractivePanel`
-or the cluster panels. PR #4b needs to teach those panels — and the gating-page panels the
-original Decision 19 called out — to subscribe to `trackHighlight` / `pickHighlight` from
-`stores/viewer.ts`. That is per-plot-family work, not a spot touch; the shipped multipanel work
-is the ANCHOR to build against (same components, same canvas store), not a substitute. Landing
-order: multipanel is in, #4b builds on top.
+**PR #4b interaction (shipped as PR #1165, 2026-09-22 — 10 families adopt).** Point-out (Claude
+marks) subscription is the READ path counterpart of this feature's WRITE path — same panel
+substrate, different direction. The multipanel work touched `SummaryPanel` (registered
+`usePanelExport`) but NOT `InteractivePanel` or the cluster panels; PR #1165 closed that gap by
+having 10 plot families forward `plot-id=persistKey` and subscribe to `trackHighlight` /
+`pickHighlight` from `stores/viewer.ts` per the original Decision 19. That is per-plot-family
+work, not a spot touch; the shipped multipanel work was the ANCHOR to build against (same
+components, same canvas store). PR #8 (this doc) picks up from there — the same 10 families now
+also register with the live plot registry so `list_plots` can hand Claude the `plot_id` a human
+was previously typing back.
 
 **Reservations (known, not blocking).**
 

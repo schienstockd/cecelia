@@ -26,6 +26,8 @@ import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import { rectFrame, type Frame } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -190,6 +192,17 @@ const hmmFrame: Frame = rectFrame(() => {
   return clientAxisRectOf(n, n.scale('x'), n.scale('y'))
 })
 defineExpose({ exportImage, getCsv, getFrame: (): Frame => hmmFrame })
+
+// BIDIR PR #8 — plot registry adopter.
+const _route = useRoute()
+useVisualPanel(
+  () => props.persistKey ?? '',
+  () => ({
+    family: 'cluster-hmm-transitions',
+    title: props.suffix ? `HMM transitions (${props.suffix})` : 'HMM transitions',
+    route: _route.path,
+  }),
+)
 
 // BIDIR PR #4b point-out consumer. Same shape as ClusterHmmStatesPanel. This panel is faceted
 // but the outer scale('x')/('y') expose the WHOLE plot area; per-facet subFrames is a follow-up.

@@ -282,3 +282,10 @@ include(joinpath(@__DIR__, "suite", "bidir_blackboard.jl"))
 # _pop_counts_from_label_map (BIDIR landscape P2b), _track_summary_from_binned (BIDIR
 # landscape P3 — per-tile track summary).
 include(joinpath(@__DIR__, "suite", "popmap_and_landscape.jl"))
+
+# ── BIDIR plot registry testset (PR #8) ───────────────────────────────────────
+# One testset covering `api/src/plots_registry_api.jl`: register/deregister/list, last-writer-wins
+# on same-plotId different-clientId, WS-disconnect hook drops only this clientId's entries. Fires
+# the hook directly (rather than through a live socket) — the enum round-trip of `viewer:hello`
+# is covered by observer_taskframes.jl.
+include(joinpath(@__DIR__, "suite", "plots_registry.jl"))

@@ -26,6 +26,8 @@ import { downloadDataUrl, downloadText } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
@@ -161,6 +163,18 @@ function exportAs(kind: string) {
   else if (kind === 'svg') { const svg = montageRef.value?.exportSvg('#ffffff', true); if (svg) downloadText(`${stem}.svg`, svg, 'image/svg+xml') }
   else if (kind === 'csv') { const csv = montageRef.value?.exportCsv(); if (csv) downloadText(`${stem}.csv`, csv, 'text/csv') }
 }
+
+// BIDIR PR #8 — plot registry adopter. Title reflects the current parent + channel count so a
+// user asking about "the CD4 pairs" resolves to THIS panel and not a sibling one.
+const _route = useRoute()
+useVisualPanel(
+  () => props.persistKey ?? '',
+  () => ({
+    family: 'gate-pairs',
+    title: `Pairs ${channels.value.length}×${channels.value.length}${props.parent ? ` — ${props.parent}` : ''}`,
+    route: _route.path,
+  }),
+)
 </script>
 
 <template>

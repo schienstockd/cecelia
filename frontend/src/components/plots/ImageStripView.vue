@@ -30,6 +30,8 @@ import StripCell from './StripCell.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import CcToggle from '../CcToggle.vue'
 import type { Frame, FrameCell } from '../../plots/frame'
+import { useVisualPanel } from '../../composables/useVisualPanel'
+import { useRoute } from 'vue-router'
 
 const settings = useSettingsStore()
 const project = useProjectStore()
@@ -393,6 +395,19 @@ const stripFrame: Frame = {
   },
 }
 defineExpose({ exportImage, getFrame: (): Frame => stripFrame })
+
+// BIDIR PR #8 — plot registry adopter, overrides the outer InteractivePanel's registration with
+// the descriptive `'image-strip'` family. Cell count in the title so a user asking about "the
+// 3-cell strip" resolves to a specific instance.
+const _route = useRoute()
+useVisualPanel(
+  () => props.plotId ?? '',
+  () => ({
+    family: 'image-strip',
+    title: `Image strip (${(props.state.cells ?? []).length} cells)`,
+    route: _route.path,
+  }),
+)
 </script>
 
 <template>

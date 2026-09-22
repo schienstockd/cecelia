@@ -81,6 +81,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
         ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
         ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
+        ("GET", "/api/viewer/plots"),      # bidir PR #8 — live plot registry; discover mounted panels so mark_plot's plot_id isn't guessed
         ("GET", "/api/blackboard"),        # bidir Part 4 — list a project's blackboard entries (title + version + updatedAt)
         ("GET", "/api/blackboard/entry"),  # bidir Part 4 — read one entry's Markdown (optionally at a snapshot version)
         # /api/blackboard/search is POST (see below) — a substring query with an optional status filter
@@ -504,6 +505,14 @@ class CeceliaClient:
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/plot", body=body)
+
+    def list_plots(self, project_uid: str) -> list[dict]:
+        # BIDIR PR #8 — read the live plot registry for a project. Populated by the frontend's
+        # `useVisualPanel` (stores/plotRegistry.ts) on panel mount / unmount, keyed by persistKey.
+        # Returns the `items` array directly rather than the `{items: [...]}` envelope — Claude
+        # only ever wants the list; a wrapper reads as noise on the tool response.
+        data = self._request("GET", "/api/viewer/plots", {"projectUid": project_uid})
+        return list(data.get("items", []))
 
     def get_landscape(self, project_uid: str, image_uid: str, value_name: str,
                       t: int = -1, z: int = -1):
