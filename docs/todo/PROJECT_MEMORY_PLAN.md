@@ -307,6 +307,30 @@ what's missing after this is DATA, not code.
   a v0 entry stays valid; forced migration would be worse than absence.
 - Auto-derived proposals ("here's the correction to apply"). Guardrails RECORD what didn't work,
   they don't generate what would. Composition is Claude's, from the surfaced notes.
+- **Positive analog to guardrails ("wins" mining).** No mirror surface that clusters `good`-tagged
+  entries by fingerprint and surfaces "≥ N recorded wins on this shape, propose more of that". The
+  asymmetry is deliberate:
+  - **"Do this again" doesn't transfer the way "don't do this again" does.** A `bad` on a
+    fingerprint is a trap — the failure recurs because the fingerprint captures the *conditions*
+    that produce it. A `good` on the same fingerprint means one specific set of choices worked on
+    one image; on the next image the same recipe may or may not fit (signal quality, cohort,
+    staining batch). Surfacing it as recurrence-plus-count tips into the auto-derived-proposal
+    territory the bullet above rejects.
+  - **Asymmetric cost.** Re-proposing a known trap wastes a round and often ruins data;
+    failing to re-propose a known win costs one round of fresh thinking. The two errors aren't
+    the same size, so the surfaces shouldn't be.
+  - **Briefing bytes are scarce.** A symmetric "wins" slot competes with `profile`, `guardrails`,
+    `openBlackboardEntries` and `recentCaptures` for attention on the trap that matters more.
+  - `good` already gets a *retrieval-bias* lift via Decision 12 (`bad > good > untagged` in
+    `_outcome_rank`), so a `good`-tagged entry sorts above untagged in search results and the
+    open-entries slice. Its `outcome.note` is passed through when the entry is read. That is the
+    designed positive surface — informative, not steering.
+  - If `good` votes feel under-used in practice, the next moves are (a) raise `good`'s retrieval
+    weight so a good-tagged entry can enter the open-entries slice even when it isn't in the
+    newest N (capped at 1–2), or (b) surface `outcome.note` on hover in BlackboardModule. Both
+    stay informative; neither is a mining-symmetric surface. Reconsider mining only if usage
+    produces a case a fresh session demonstrably would have re-done well if a wins cluster had
+    been shown.
 
 ### Migration
 
