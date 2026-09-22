@@ -283,7 +283,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
       <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon kiwi-help"
               data-guide="kiwi.assistantHelp"
               @click="showAssistantOverview = true"
-              v-tooltip.bottom="'What Kiwi does here — captures, chains, blackboard, and what the assistant will and will not do'">
+              v-tooltip.bottom="'What Kiwi does here — Ask vs Chat, captures, chains, blackboard, limits'">
         <i class="pi pi-question-circle" />
       </button>
     </template>
