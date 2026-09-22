@@ -242,6 +242,38 @@ Cluster plots (UMAP + `CLUSTER_PANELS`) share **one clustering run per board**: 
 **read-only** `PopulationManager` (highlight/tick to colour, no add/delete/rename/recolour/reassign)
 that follows the active cluster slot with per-family global/local scope.
 
+### Behaviour cards — one family per registry entry
+Three snapshot-card families on the analysis board, sharing a spine:
+
+- **`cellCards`** — `CLUSTER_PANELS`, `rail: 'clusterPops'`. One card per track-cluster pop the
+  user ticks; medoid = the track closest to the cluster centroid.
+- **`motifCards`** — `INTERACTIVE_VIEWS`, `boardGroup: 'clustering'`, `rail: 'none'`. One card per
+  discovered motif class on the picked segmentation; medoid = the motif instance (8-frame subtrack
+  of one track) with the lowest mean `motif.distance`. See [`docs/DATAMODEL.md`](DATAMODEL.md) →
+  *Motif discovery output* for the h5ad contract.
+- **`hmmStateCards`** — `INTERACTIVE_VIEWS`, `boardGroup: 'clustering'`, `rail: 'none'`. One card
+  per HMM state value on the picked `live.cell.hmm.state.<measure>` column; medoid = the state-run
+  whose owning track spends the largest fraction of its cells in this state (Fig 4c pattern), ties
+  broken by longer run. Cell-fraction is the right denominator (a track spending 88-97% of its
+  cells in one state is a clean exemplar; a run-count fraction would pick mere-transition tracks).
+
+Adding a fourth family = one entry in `frontend/src/components/plots/cardFamilies.ts` plus a
+~20-line wrapper view. The shared half lives in `components/plots/CardsPanelInner.vue` (fetch →
+grid → statScales → PDF export) + `api/src/behaviour_cards.jl` (`render_medoid_filmstrip`) —
+neither knows anything family-specific. Every card renders as a filmstrip of frames with a coloured
+trace overlay + stat footer, backed by the board-assets sidecar.
+
+Motif/HMM cards discover their content server-side and expose per-panel pickers (segmentation +,
+for HMM, measure column) in the canonical auto-hide `cc-panel-controls` toolbar. Picker priority
+goes through the shared `frontend/src/utils/valueName.ts` `resolveValueName` helper (also used by
+TrackDiagnostics / TrackScheme / FlowMetrics — one rule for `wanted → active → first-eligible`).
+Crop is centred on the medoid's INSTANCE bbox (not the track's lifetime) with a `max_px ÷ 3`
+floor, so a short-lived motif or state-run reads as more than a smudge inside a mostly-empty frame.
+
+Sidecar cache per family: `analysis/{cell,motif,hmm_state}_cards/…json`, keyed on the source
+h5ad's mtime + the discovered class/state set. Full plan (now archived / DONE):
+[`docs/todo/BEHAVIOUR_CARDS_PLAN.md`](todo/BEHAVIOUR_CARDS_PLAN.md).
+
 ### Gating strategy (read-only)
 `GatingStrategyView` renders the defining gate for a population (single plot) or the full hierarchy
 montage (⚙ toggle) from `popmap` + gate stats — the read-only counterpart of the gating page's

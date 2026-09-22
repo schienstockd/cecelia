@@ -1,8 +1,9 @@
 # Behaviour cards — shared spine for cellCards / motifCards / hmmCards
 
-Status: **Phase 1 shipped (2026-09-20, #1076)** · **Phase 2 shipped (2026-09-21, #1084)** ·
-**Phase 3 in progress** (`feat/hmm-cards`, PR #1173) — `hmmStateCards` end-to-end + motif-cards
-fixes (runner span-broadcast bug, segmentation picker, instance-bbox crop).
+Status: **DONE (2026-09-22)** · Phase 1 shipped 2026-09-20 (#1076) · Phase 2 shipped 2026-09-21
+(#1084) · Phase 3 + motif-cards fixes + Q1–Q4 closed shipped 2026-09-22 (#1173). All three
+families live on the analysis board: `cellCards` (`CLUSTER_PANELS`), `motifCards` /
+`hmmStateCards` (`INTERACTIVE_VIEWS`, `boardGroup: 'clustering'`, `rail: 'none'`).
 
 ## Goal
 
