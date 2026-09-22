@@ -1,8 +1,9 @@
 <!--
-  "What can Claude do here?" — a brief, visual how-to for the two Claude entry points (Ask / Chat)
-  and what the assistant can see / suggest / create / can't do. Opened on demand from the lab-log
-  toolbar's info button; static reference, no live data. Content lives in lib/claudeOverview.ts
-  (testable, one place to edit). Built on the shared BaseModal shell (docs/UI.md → "Modals & dialogs").
+  "What Kiwi does here" — a brief, visual how-to for the two Claude entry points (Ask / Chat) and
+  what the assistant can see / suggest / create / can't do. Opened on demand from the Kiwi header's
+  `?` button; static reference, no live data. Content lives in lib/claudeOverview.ts (testable, one
+  place to edit) — including the documentation-helper framing (Kiwi is a record, not a verdict; see
+  docs/archive/kiwi-purpose-and-framing.md). Built on the shared BaseModal shell (docs/UI.md → "Modals & dialogs").
 -->
 <script setup lang="ts">
 import BaseModal from './BaseModal.vue'
@@ -23,7 +24,7 @@ const capabilities = computed(() => claudeCapabilities(settings.hiddenMcpAccount
 </script>
 
 <template>
-  <BaseModal title="What Claude can do here" icon="pi-sparkles" width="620px" @close="$emit('close')">
+  <BaseModal title="What Kiwi does here" icon="pi-sparkles" width="620px" @close="$emit('close')">
     <!-- two entry points, side by side: the how-to -->
     <div class="co-entries">
       <div v-for="e in CLAUDE_ENTRY_POINTS" :key="e.name" class="co-entry cc-card cc-card-2">

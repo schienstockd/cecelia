@@ -1,8 +1,13 @@
-// Content model for the "What can Claude do here?" overview (ClaudeOverviewDialog). Kept as data
-// (not inline template) so it's testable and edited in one place. The dialog renders these as two
+// Content model for the "What Kiwi does here" overview (ClaudeOverviewDialog). Kept as data (not
+// inline template) so it's testable and edited in one place. The dialog renders these as two
 // entry-point cards + a four-cell capability grid + a few example prompts — a clean, brief how-to,
-// not a wall of text. Mirrors the observer's real capabilities (docs/ai-assist/OBSERVER.md); keep it
-// honest — if a tool lands or a limit changes, update here.
+// not a wall of text. Mirrors the observer's real capabilities (docs/ai-assist/OBSERVER.md); keep
+// it honest — if a tool lands or a limit changes, update here.
+//
+// FRAMING: Kiwi is a **documentation helper**, not a discussion helper. Its job is a faithful
+// record of what was observed and what was tried — dead ends included — not to be right about the
+// interpretation. Replies from Claude are provisional; the record is the product. See
+// `docs/archive/kiwi-purpose-and-framing.md` for the full framing.
 
 export interface EntryPoint {
   name: string
@@ -39,25 +44,26 @@ export function claudeCapabilities(hiddenConnectors: string[] = []): {
 }
 
 // The two ways in — both live in the lab-log toolbar next to this dialog's trigger.
+// Framing: these describe the RECORD Kiwi leaves behind, not the answer it gives.
 export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
   {
     name: 'Ask Claude',
     icon: 'pi-sparkles',
-    what: 'A one-shot QC pass over what just ran — it flags anything off, in the lab log.',
+    what: 'Reads your marks + activity, drops a provisional lab-log note.',
     steps: [
+      'Mark what looks off',
       'Click Ask Claude',
-      'It reads recent activity + cohort QC',
-      'Findings land as [Claude] lab-log entries',
+      'Finding lands as a [Claude] lab-log entry — provisional',
     ],
   },
   {
     name: 'Chat to Claude',
     icon: 'pi-comments',
-    what: 'A full back-and-forth session about this project in Claude Code (or any MCP assistant).',
+    what: 'A back-and-forth in Claude Code — captures + notes accrue as you go.',
     steps: [
       'Run claude in a terminal',
-      'Ask it to check your project in Cecelia',
-      'It gets oriented, then asks what you want to do',
+      'Ask it to check your project',
+      'Trail lands as captures, chains, blackboard',
     ],
   },
 ]
@@ -66,40 +72,39 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
   {
     key: 'sees', title: 'Sees', icon: 'pi-eye', tone: 'neutral',
     items: [
-      'Analysis lineage — what ran, in what order',
-      'Populations, gates & measures (speed, intensity, morphology)',
-      'HMM states, clusters, QC flags & cohort outliers',
-      'Task + parameter history and the lab log',
+      'Your marks — frame, plot, landscape tile',
+      'Chained captures (dead ends included)',
+      'Blackboard entries + good/bad tags',
+      'Analysis lineage, populations, gates, measures, HMM, QC',
+      'Task history + lab log',
       { text: 'Your LabArchives experiment summary, once linked', needs: 'LabArchives' },
     ],
   },
   {
     key: 'suggests', title: 'Suggests', icon: 'pi-lightbulb', tone: 'neutral',
     items: [
-      'Which images may need a parameter tweak — and which knob',
-      'How to visualise a pattern it spotted',
-      'A plot to add to the analysis board',
+      'Prior captures on this cell, track or plot',
+      'Images that may need a parameter tweak — and which knob',
+      'A plot or board for a pattern it spotted',
     ],
   },
   {
     key: 'creates', title: 'Creates', icon: 'pi-file', tone: 'good',
     items: [
-      'Analysis boards — a page of plots, added beside your own',
-      'Chains — a wired pipeline you review, then run',
-      'Pluto notebooks — runnable analysis you then own & edit',
+      'Captures — chained one-line notes on your marks',
+      'Blackboard entries — good/bad + required why',
+      'Analysis boards, chains, Pluto notebooks — you review, then run',
       'CSV exports for Prism / R',
-      'Lab-log notes (only when you ask)',
       { text: 'An experiment summary pulled from your LabArchives notebook', needs: 'LabArchives' },
     ],
   },
   {
     key: 'cant', title: "Can't", icon: 'pi-ban', tone: 'muted',
     items: [
-      'Change your data (h5ad, gates, project config)',
+      'Change your data (h5ad, gates, config)',
       'Run anything — not a task, not a chain it built',
-      'Overwrite, rename or delete your chains, notebooks & boards',
-      'Open raw image pixels',
-      'Draw the biological conclusion — that stays yours',
+      'Overwrite, rename or delete your chains, notebooks, boards or blackboard entries',
+      'Verify the biology — replies are provisional, not domain-checked',
     ],
   },
 ]
@@ -129,11 +134,12 @@ export const CLAUDE_TERMINAL = {
   failedPrefix: 'Setup failed. Start Claude Code with this instead:',
 } as const
 
-// Copyable one-liners that show the range — from QC to a notebook.
-// Keep them short and uniform so they read as a clean row of chips.
+// Copyable one-liners — documentation prompts first (the shape Kiwi's built for), then a couple of
+// generative ones (board / notebook / chain). Short and uniform so they read as a clean row of chips.
 export const CLAUDE_EXAMPLES: string[] = [
-  'Why is this image off?',
-  'Add a board of behaviour plots',
-  'Build a cell-speed notebook',
-  'Design a segment + track chain',
+  'Circle this — note what looks off',
+  'Trace prior captures on this cell',
+  'Add a behaviour board',
+  'Cell-speed notebook',
+  'Segment + track chain',
 ]
