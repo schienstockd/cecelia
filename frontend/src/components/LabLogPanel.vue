@@ -12,7 +12,6 @@ import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
-import ClaudeOverviewDialog from './ClaudeOverviewDialog.vue'
 import CcToggle from './CcToggle.vue'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, resolveImageRefs,
@@ -31,7 +30,6 @@ const correcting = ref(false)      // next submit is a [User — correction] blo
 const loading = ref(false)
 const busy = ref(false)            // an append is in flight
 const capturing = ref(false)       // an activity-capture is in flight
-const showClaudeOverview = ref(false)   // the "What can Claude do here?" how-to dialog
 const captureNote = ref('')        // transient result of the last manual capture
 const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -277,13 +275,9 @@ async function dismissEntry(entry: LabLogEntry) {
 
       <span class="ll-tb-sep" aria-hidden="true" />
 
-      <!-- Claude: the AI assistant (in-app one-shot + external chat handoff) -->
+      <!-- Claude: the AI assistant (in-app one-shot + external chat handoff). The "What can Claude
+           do here?" ? button moved to Kiwi — one place for assistant controls. -->
       <div class="ll-tb-group">
-        <button class="ll-help cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" data-guide="lablog.claudeHelp"
-                @click="showClaudeOverview = true"
-                v-tooltip.top="'What can Claude do here? Ask vs Chat, what it sees / suggests / creates'">
-          <i class="pi pi-question-circle" />
-        </button>
         <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
                 @click="askClaude"
                 v-tooltip.top="observerAvailable
@@ -402,12 +396,12 @@ async function dismissEntry(entry: LabLogEntry) {
             <span class="ll-date cc-muted cc-fs-xs">{{ e.date }}</span>
             <span class="ll-actions">
               <template v-if="isRatable(e.author)">
-                <button class="ll-thumb" v-tooltip.top="'Good decision — add a note'"
-                        @click="rateDecision(e, 'up')">👍</button>
-                <button class="ll-thumb" v-tooltip.top="'Bad decision — add a note'"
-                        @click="rateDecision(e, 'down')">👎</button>
-                <button class="ll-link" v-tooltip.top="'Comment (saved as a note)'"
-                        @click="startComment(e)">💬</button>
+                <button class="ll-thumb cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Good decision — add a note'"
+                        @click="rateDecision(e, 'up')"><i class="pi pi-thumbs-up" /></button>
+                <button class="ll-thumb cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Bad decision — add a note'"
+                        @click="rateDecision(e, 'down')"><i class="pi pi-thumbs-down" /></button>
+                <button class="ll-thumb cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Comment (saved as a note)'"
+                        @click="startComment(e)"><i class="pi pi-comment" /></button>
               </template>
               <button v-else class="ll-link" v-tooltip.top="'Add a correction (never edits the original)'"
                       @click="startCorrection(e)">correct</button>
@@ -424,7 +418,6 @@ async function dismissEntry(entry: LabLogEntry) {
       </template>
     </div>
 
-    <ClaudeOverviewDialog v-if="showClaudeOverview" @close="showClaudeOverview = false" />
   </div>
 </template>
 
@@ -464,8 +457,6 @@ async function dismissEntry(entry: LabLogEntry) {
 }
 .ll-capture:hover:not(:disabled) { border-color: #8b949e; }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
-/* .ll-help → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
-.ll-help:hover { color: var(--cc-accent); }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; }
 .ll-model {
   font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer;
@@ -561,14 +552,13 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
 .ll-author { font-weight: 700; font-size: var(--cc-fs-sm); }
 
-/* per-entry actions: hidden until hover (thumbs prefill a note — they carry no persisted state) */
+/* per-entry actions: hidden until hover (thumbs prefill a note — they carry no persisted state).
+   Icons match the blackboard's outcome tag (pi-thumbs-up / pi-thumbs-down); pi-comment fills the
+   third slot in the same icon family so all three read as one control set. */
 .ll-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 0.15rem; visibility: hidden; }
 .ll-entry:hover .ll-actions { visibility: visible; }
-.ll-thumb {
-  border: none; background: none; cursor: pointer; font-size: var(--cc-fs-md); line-height: 1;
-  padding: 0 0.1rem; opacity: 0.8; filter: grayscale(0.5);
-}
-.ll-thumb:hover { opacity: 1; filter: none; }
+.ll-thumb { color: var(--cc-text-dim); }
+.ll-thumb:hover { color: var(--cc-text); }
 .ll-lines { margin: 0; padding-left: 1rem; }
 .ll-lines li { margin: 0.05rem 0; line-height: 1.35; color: var(--cc-text); }
 

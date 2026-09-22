@@ -4,6 +4,9 @@
 // Duplicating that here would be a second copy to keep in step, so this guide points at it and stops
 // to see what it can do").
 //
+// The `?` moved from the lab-log toolbar to Kiwi on 2026-09-22 — Kiwi is the canonical cockpit for
+// assistant controls, so the how-to lives beside pairing / chat handoff / observer state.
+//
 // Claude is on-demand only and may not be installed at all, so nothing here promises it works — the
 // `?` dialog is also where the setup state is reported.
 
@@ -31,7 +34,7 @@ export const labLogGuide: GuideDef = {
       clickAnchor: true,
     },
     {
-      anchor: 'lablog.claudeHelp',
+      anchor: 'kiwi.assistantHelp',
       placement: 'bottom-start',
       title: 'Claude, if you have it',
       text: 'This ? explains what Claude can see, suggest and create here — and whether it is set up.',
@@ -41,10 +44,10 @@ export const labLogGuide: GuideDef = {
       ],
       clickAnchor: true,
       reveal: {
-        // The panel is `v-if`'d in App.vue, so the toolbar does not exist until it is open.
-        needed: c => !c.anchorExists('lablog.claudeHelp'),
-        anchor: 'sidebar.labLogCta',
-        text: 'Open the lab log first — the ? lives in its toolbar.',
+        // Kiwi is `v-if`'d in App.vue, so its rows do not exist until the panel is open.
+        needed: c => !c.anchorExists('kiwi.assistantHelp'),
+        anchor: 'sidebar.kiwiCta',
+        text: 'Open Kiwi first — the ? lives at the top of it.',
         placement: 'right',
       },
     },
