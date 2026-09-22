@@ -76,6 +76,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/viewer/marks/tile"),
             ("POST", "/api/viewer/marks/tracks"),
             ("POST", "/api/viewer/marks/ui"),
+            ("POST", "/api/viewer/navigate"),
             ("POST", "/api/viewer/seek"),
         ])
 

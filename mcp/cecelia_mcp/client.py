@@ -117,6 +117,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/tile"),     # highlight ONE landscape/grid tile (e.g. "B3") — no overlay geometry, the grid is the shape
         ("POST", "/api/viewer/marks/plot"),     # bidir PR #4b: point at a spot on a PLOT panel (family + plotId + 0..1 (u,v) + optional sub-cell)
         ("POST", "/api/viewer/seek"),           # RUBBER_DUCK_FIT_PLAN P2: imperative "look at frame (t, z)" — no mark, no capture; reuses pendingViewState.focus
+        ("POST", "/api/viewer/navigate"),       # RUBBER_DUCK_FIT_PLAN P2B: navigate main window to a route (+ optional board tab); MCP resolves ambiguity before calling
         ("GET",  "/api/viewer/landscape"),      # read the last-published landscape heatmap for (image, t, z); browser publishes, MCP reads
         # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
         # + auth token to the project so PR #2's Julia writer can push a capture-arrived
@@ -506,6 +507,14 @@ class CeceliaClient:
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/plot", body=body)
+
+    def navigate_viewer(self, project_uid: str, path: str, board_name: str = ""):
+        # RUBBER_DUCK_FIT_PLAN P2B — dispatch a Vue Router push into the main window. Ambiguity
+        # (no matching board / multiple matches) is resolved BEFORE the HTTP call in the MCP tool
+        # that wraps this — this endpoint only takes one target path + optional tab.
+        body: dict = {"projectUid": project_uid, "path": path}
+        if board_name: body["boardName"] = board_name
+        return self._request("POST", "/api/viewer/navigate", body=body)
 
     def seek_viewer(self, project_uid: str, image_uid: str,
                     t: int | None = None, z: int | None = None):

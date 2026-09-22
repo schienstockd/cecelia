@@ -54,3 +54,40 @@ function api_viewer_seek(body_bytes::Vector{UInt8})
     ))
     200, JSON3.write((; ok = true))
 end
+
+"""
+    POST /api/viewer/navigate
+
+Body: `{ projectUid, path, boardName? }` — `path` a Vue Router path (`/analysis`, `/gate`, …).
+Reply: `{ ok: true }` on accepted broadcast; `400` on missing required fields.
+
+Publishes a `viewer:navigate` WS frame the frontend's `stores/ws.ts` handler consumes to call
+`router.push(path)` in the main window. When `boardName` is set and `path == "/analysis"`, the
+handler also selects the matching tab. Ambiguity ("multiple boards named X"?) or no-match cases
+are the MCP tool's problem to resolve BEFORE calling this — the endpoint only takes ONE target.
+
+Fire-and-forget: no browser paired ⇒ WS reaches nobody ⇒ still returns 200 (the caller has no
+way to check either way; guidance tells Claude to ask in prose if it can't tell whether the nav
+landed).
+"""
+function api_viewer_navigate(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), project_uid)) || return 400, JSON3.write((; error = "project not found"))
+    path = _wstr(body, :path)
+    isempty(path) && return 400, JSON3.write((; error = "path required"))
+    # Only accept absolute paths — a bare "analysis" or a `../` would resolve unpredictably against
+    # whatever route the user happens to be on, which is worse than doing nothing.
+    startswith(path, "/") || return 400, JSON3.write((; error = "path must start with /"))
+    board_name = _wstr(body, :boardName)
+    frame = Dict{String,Any}(
+        "type"       => "viewer:navigate",
+        "projectUid" => project_uid,
+        "path"       => path,
+    )
+    isempty(board_name) || (frame["boardName"] = board_name)
+    broadcast_ws(frame)
+    200, JSON3.write((; ok = true))
+end

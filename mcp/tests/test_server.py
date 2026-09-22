@@ -35,7 +35,8 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "mark_tile", "get_landscape",   # bidir landscape overlay (PR #6, Decision 14 reframe)
             "mark_plot",                    # bidir plot point-out (PR #4b)
             "list_plots",                   # bidir PR #8 — live plot registry discovery
-            "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2 — imperative jump to (t, z) without a mark/capture
+            "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
+            "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)
             "get_object_ids",   # bidir follow-up: real cell/track ids for mark_cells / mark_tracks
@@ -206,6 +207,60 @@ class ServerToolRegistrationTest(unittest.TestCase):
         # header field (imageUid) preserved
         self.assertEqual("IMG1", regions["images"][0]["imageUid"])
         self.assertEqual("IMG1", contacts["images"][0]["imageUid"])
+
+    def test_open_analysis_board_plot_resolves_zero_one_and_many(self):
+        # RUBBER_DUCK_FIT_PLAN P2B — the resolver is where the "ask when ambiguous" discipline
+        # lives, and it has to fire BEFORE dispatching a navigate. 0 matches, 1 match, >1 matches
+        # each return a distinct shape so Claude's guidance branches deterministically.
+        boards = {"boards": [
+            {"name": "Speed by treatment", "plots": [
+                {"ref": "track_measures", "measure": "live.track.speed", "pops": ["B/qc/_tracked"]},
+                {"ref": "hmm_state_freq"},
+            ]},
+            {"name": "Speed detail", "plots": [
+                {"ref": "track_measures", "measure": "live.track.speed", "pops": ["T/qc/_tracked"]},
+            ]},
+            {"name": "Contacts", "plots": [
+                {"ref": "contact_matrix"},
+            ]},
+        ]}
+        orig_boards = server._client.get_analysis_boards
+        nav_calls: list = []
+        orig_nav = server._client.navigate_viewer
+        server._client.get_analysis_boards = lambda uid: boards
+        server._client.navigate_viewer = lambda uid, path, board_name="": (
+            nav_calls.append((uid, path, board_name)) or {"ok": True}
+        )
+        try:
+            # 0 matches — no navigate dispatched.
+            r0 = server.open_analysis_board_plot("P", "does_not_exist")
+            self.assertEqual({"ok": False, "reason": "no_matching_board"}, r0)
+            self.assertEqual([], nav_calls)
+
+            # >1 matches on the same spec id — ambiguous, no navigate.
+            r_many = server.open_analysis_board_plot("P", "track_measures")
+            self.assertFalse(r_many["ok"])
+            self.assertEqual(2, len(r_many["ambiguous"]))
+            self.assertEqual(
+                {"Speed by treatment", "Speed detail"},
+                {b["name"] for b in r_many["ambiguous"]},
+            )
+            self.assertEqual([], nav_calls)
+
+            # Filtering by pop disambiguates to exactly one — navigate fires.
+            r1 = server.open_analysis_board_plot("P", "track_measures", pop="B/qc/_tracked")
+            self.assertEqual({"ok": True, "board": "Speed by treatment"}, r1)
+            self.assertEqual(1, len(nav_calls))
+            self.assertEqual(("P", "/analysis", "Speed by treatment"), nav_calls[0])
+
+            # A single-hit spec id also navigates.
+            nav_calls.clear()
+            r1b = server.open_analysis_board_plot("P", "contact_matrix")
+            self.assertEqual({"ok": True, "board": "Contacts"}, r1b)
+            self.assertEqual([("P", "/analysis", "Contacts")], nav_calls)
+        finally:
+            server._client.get_analysis_boards = orig_boards
+            server._client.navigate_viewer = orig_nav
 
     def test_no_tool_can_start_work(self):
         # Claude designs, the user runs. No tool may launch a chain or submit a task — enforced by the

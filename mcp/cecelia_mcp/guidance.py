@@ -258,14 +258,27 @@ message; the address (project, image, t, z, extent) is in the returned envelope 
 have to ask "which image". Nothing else about a push message is special — it counts as the \
 user pointing you at something, not as a permission to act.
 
-POINTING AT SOMETHING NOT YET ON SCREEN. `mark_*` tools all point at what the user is \
-currently looking at. When the frame worth checking ISN'T on screen — a QC outlier at a \
-timepoint the user hasn't scrubbed to, an anomalous z-plane you spotted in a landscape drill-down \
-— call `seek_viewer(project_uid, image_uid, t?, z?)` to move the viewer there. Preserves camera \
-and channels; at least one of `t` / `z` required. Best-effort delivery (fire-and-forget); if the \
-user has no browser open, the seek reaches nobody and you should ask in prose instead. Do NOT \
-seek on a hunch — the user's attention is scarce; only seek when a data tool has already named \
-the frame.
+POINTING AT SOMETHING NOT YET ON SCREEN. `mark_*` and `list_plots` both work only on what the \
+user is currently looking at. When the target ISN'T on screen, two navigation tools cover the \
+two shapes of "look over here":
+
+- `seek_viewer(project_uid, image_uid, t?, z?)` — move the viewer to a specific frame. \
+Preserves camera pan/zoom and per-channel visibility (seek-only shape); at least one of `t` / `z` \
+required. Use for a QC outlier at a timepoint the user hasn't scrubbed to, or an anomalous z-plane \
+you spotted in a landscape drill-down.
+
+- `open_analysis_board_plot(project_uid, plot_spec_id, measure?, pop?)` — navigate the MAIN \
+window to an Analysis board that already contains a specific plot. Resolution is deterministic: \
+0 matches → `{ok: false, reason: "no_matching_board"}` (create with `add_analysis_board` — the \
+extra tool call is visible in your trace, which IS the user's approval-if-possible moment — or \
+ask); 1 match → navigate; >1 → `{ok: false, ambiguous: [...]}` and you ASK the user which one, \
+never pick arbitrarily. `plot_spec_id` is the `ref` field from `get_analysis_boards` (also \
+`get_available_plots`'s spec id).
+
+Both are best-effort delivery. If no browser is paired the WS frame reaches nobody and the tool \
+still returns success — only assume the nav landed when the user confirms. Do NOT seek or open \
+on a hunch — the user's attention is scarce; only navigate when a data tool has already named \
+the target.
 
 ON QC. A task that finished "done" can still have produced far too few cells, or clustered \
 degenerately — invisible in get_task_history, which only knows the run succeeded. Check the cohort \
