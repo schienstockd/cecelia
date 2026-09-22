@@ -173,6 +173,19 @@ useVisualPanel(
     family: 'gate-pairs',
     title: `Pairs ${channels.value.length}×${channels.value.length}${props.parent ? ` — ${props.parent}` : ''}`,
     route: _route.path,
+    // BIDIR PR #8 extension — this is a full N×N grid; every ticked channel plots against every
+    // other. There is no "current pair" (nothing like `activePair` in the panel state), so
+    // xChannel/yChannel are deliberately omitted. What IS meaningful: the shared axis transform
+    // (applied to every tile's X and Y both) + the channel list that defines the grid + the parent
+    // population being plotted. `colourBy` reports the third-measure z-channel when set.
+    content: {
+      channels: channels.value,
+      nChannels: channels.value.length,
+      xTransform: transform.value,
+      yTransform: transform.value,
+      parent: props.parent,
+      ...(zChan.value ? { colourBy: zChan.value } : {}),
+    },
   }),
 )
 </script>

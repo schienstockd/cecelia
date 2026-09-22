@@ -152,6 +152,15 @@ useVisualPanel(
     family: 'cluster-heatmap',
     title: props.suffix ? `Heatmap (${props.suffix})` : 'Heatmap',
     route: _route.path,
+    // BIDIR PR #8 extension — axis meta. Rows (Y) are always features; columns (X) are populations
+    // when shownPops carries picks, else raw cluster ids. `nCols` counts the actual columns the
+    // response resolved (falls back to 0 while the fetch is in flight).
+    content: {
+      xLabel: (props.shownPops?.length ?? 0) > 0 ? 'populations' : 'clusters',
+      yLabel: 'features',
+      nFeatures: features.value.length,
+      nCols: (heatmap.value as (PlotDataResponse & { xLabels?: string[] }) | null)?.xLabels?.length ?? 0,
+    },
   }),
 )
 

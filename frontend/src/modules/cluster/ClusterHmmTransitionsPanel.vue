@@ -64,6 +64,14 @@ const hostBg = computed(() => (effDark.value ? '#1f2226' : 'white'))
 // reactive so the empty-state / host v-show re-evaluate when data arrives (a bare array does not).
 const rows = ref<{ group: string; from: string; to: string; freq: number }[]>([])
 
+// distinct HMM states across the rendered rows' from ∪ to values — for the plot registry `content`
+// bag (BIDIR PR #8). 0 until `rows` populates.
+const nStates = computed(() => {
+  const s = new Set<string>()
+  for (const r of rows.value) { s.add(r.from); s.add(r.to) }
+  return s.size
+})
+
 async function load() {
   err.value = ''
   rows.value = []
@@ -201,6 +209,14 @@ useVisualPanel(
     family: 'cluster-hmm-transitions',
     title: props.suffix ? `HMM transitions (${props.suffix})` : 'HMM transitions',
     route: _route.path,
+    // BIDIR PR #8 extension — axis labels match the Plot.plot() call in render() (x = 'to state',
+    // y = 'from state'). `nStates` = the distinct states across the from ∪ to values (populated
+    // once rows land; 0 until then).
+    content: {
+      xLabel: 'to state',
+      yLabel: 'from state',
+      nStates: nStates.value,
+    },
   }),
 )
 
