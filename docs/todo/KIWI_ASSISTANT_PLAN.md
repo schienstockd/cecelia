@@ -1,6 +1,6 @@
 # Kiwi assistant (structured duck) — plan
 
-**Status:** in progress — Phases 0–1 shipped (#1196); Phase 2 built on `feat/kiwi-ref-resolver`. Decisions 1–3
+**Status:** in progress — Phases 0–1 shipped (#1196); Phase 2 built (#1198); Phase 3's loop built on `feat/kiwi-headless-turn`, its exit gate not yet run. Decisions 1–3
 are the user's; Decisions 4–8 were proposed by Claude in the same conversation and accepted without
 objection; Decisions 9–10 came out of the literature search the same day (*Prior art* below) and
 Decision 11 out of Phase 0; all three are proposals. Read the *Open decisions* before building: several of them change a phase's shape.
@@ -298,6 +298,38 @@ Each independently shippable.
    against the refs). Phase 0's n=1 was inconclusive, and the schema is what every claim is generated
    under — leaving it "TBD" would ship the whole UI on an untested assumption. (Raised in review,
    2026-09-23.)
+   **Loop BUILT on `feat/kiwi-headless-turn` (2026-09-23); exit gate NOT yet run.**
+   `api/src/kiwi_turn.jl` → `run_kiwi_turn(project_uid, prompt; refs, agent, reasoning)`: reply schema
+   (`kiwi_reply_schema`, embedding the shared `KiwiRef` definitions), Kiwi's own system prompt, a v1
+   context pack (attached refs + resolved labels — the fuller Decision 11 pack is still open), a
+   read-only tool allow-list (`KIWI_READ_TOOLS`), streamed turns so tool results are visible
+   (`stream = true` → `_parse_claude_stream`), and validate → one re-ask on the same session.
+   "Seen this turn" is textual: a ref's identifying values must all appear in this turn's tool results
+   or the pack (whole-number match for ids), or the ref must have been attached. Tested with a scripted
+   fake engine (clean reply, re-ask fixes it, re-ask fails, attached ref, abstain, engine failure).
+   Eval harness: `scripts/kiwi_eval.jl` + the fixed prompt set `scripts/kiwi_eval_prompts.json`
+   (5 prompts incl. a judge trap and a reassurance trap; writes automatic proxies + a blinded
+   hand-scoring sheet).
+   **First live turns (Sonnet, zolIMa):** orientation of obWDNS — 9 claims, 12 tool calls, 37 s, every
+   ref real and seen, no re-ask; judge trap — no verdict, two observations and a checkable question,
+   19 s. **What they show the gate must measure:** refs are real but COARSE (claims about populations or
+   task runs cite only the image — 0 of 12 refs more specific than `image`), and claims still bundle
+   several facts despite the prompt. Presence is enforced; specificity and one-fact-per-claim are not.
+   **First gate attempt (2026-09-23) — stopped, not a result.** A 50-turn run spent the seat window at
+   turn 29 (uneven per prompt × variant, 2–4 each). What the 29 turns did show: the "coarse refs"
+   reading above was prompt mix, not a fault — on the two population prompts 87 of 88 claims cite the
+   population; image refs come from the three image prompts, where they are right. So `specificRefFrac`
+   only compares within a prompt, and the reasoning variant's higher value (0.49 vs 0.33) was it drawing
+   more population-prompt turns. Bundling IS the fault. **Now enforced in the validator, feeding the
+   same one re-ask:** `kiwi_claim_bundling` (over 160 chars, `;`/dash joins, a second sentence, a
+   3+-item list) and `kiwi_claim_underspecified` (a population path / "track N" / "cell N" in the text
+   needs its own ref). Replayed over the 29 recorded turns: 63 of 146 claims bundled (44 on length),
+   4 underspecified, 0 misfires after excluding file paths — 22 of 29 turns would have re-asked, so a
+   re-ask is the common case and its cost is the next number to measure. **Order from here:** a
+   5-turn sanity run (one per prompt, bare) → does the re-ask repair bundling, at what spend → then the
+   reasoning-vs-bare comparison sized to the window (e.g. 3 prompts × 2 × 3 = 18 turns, split across
+   windows) → hand scoring. The harness prints running output tokens and stops at the first
+   session-limit error.
 4. **Cockpit UI.** Prompt input with chips, claims feed, click-to-point via existing mark routes.
 5. **"Add to Kiwi" affordances** across plots, viewer, task pages, captures, Blackboard.
 

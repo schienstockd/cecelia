@@ -327,6 +327,27 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
         """{"is_error":false,"subtype":"error_max_structured_output_retries","result":""}""")
     @test !g.ok && occursin("schema", g.error)
     @test Cecelia._parse_claude_result("""{"is_error":false,"result":"x"}""").structured === nothing
+
+    # streamed turns (Kiwi): tool results are collected in order, the CLI's own StructuredOutput
+    # acknowledgement is not, and the final result event is parsed as usual
+    stream = join([
+        """{"type":"system","subtype":"init"}""",
+        """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__cecelia-observer__list_images","input":{}}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","content":[{"type":"text","text":"{\\"uid\\":\\"KDIeEm\\"}"}]}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","content":"plain text result"}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","content":"Structured output provided successfully"}]}}""",
+        """not json at all""",
+        """{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"s9","usage":{"input_tokens":5,"output_tokens":7},"structured_output":{"abstain":true,"claims":[]}}""",
+    ], "\n")
+    sr = Cecelia._parse_claude_stream(stream)
+    @test sr.ok && sr.session_id == "s9" && sr.input_tokens == 5
+    @test sr.tool_results == ["{\"uid\":\"KDIeEm\"}", "plain text result"]
+    @test sr.structured !== nothing && sr.structured[:abstain] == true
+    nr = Cecelia._parse_claude_stream("""{"type":"user","message":{"content":[]}}""")
+    @test !nr.ok && occursin("no result event", nr.error)
+    # the stream flag reaches the argv (and --verbose, which stream-json requires)
+    sv = Cecelia._build_claude_cmd(c, "q", "/tmp/m.json"; stream = true).exec
+    @test sv[findfirst(==("--output-format"), sv) + 1] == "stream-json" && "--verbose" in sv
 end
 
 @testset "the in-app observer prompt is a role, not a second tool manual" begin
