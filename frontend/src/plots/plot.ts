@@ -1270,17 +1270,29 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   const f = fxCh(o), a = axM(o)
   const ptFill = o.colorData ? 'series' : 'currentColor'
-  // Subscribe-side dim (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
-  // active AND this dot carries an id, non-selected dots dim to the plan's 0.15 opacity;
-  // selected ones stay at the user's `pointOpacity`. If the dot has no id (server didn't emit
-  // pointIds), it stays at `pointOpacity` regardless — a dim on a not-brushable dot would look
-  // like a broken renderer.
-  const dimOpacity = 0.15
+  // Subscribe-side highlight (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
+  // active AND this dot carries an id: selected dots pop with a full-opacity fill AND a bold
+  // outline (thick stroke, full stroke opacity); non-selected dots hard-dim to ~0.08 fill and
+  // drop their stroke entirely. Idle → base opacity + thin stroke throughout. A pure opacity
+  // delta was too subtle at swarm density — the ring is what actually pops.
+  // If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
+  // not-brushable dot would look like a broken renderer.
+  const dimOpacity = 0.08
   const ptFillOpacity = activeIds
     ? (d: { pointId: number | null }) =>
-        d.pointId != null && activeIds.has(d.pointId) ? o.pointOpacity
+        d.pointId != null && activeIds.has(d.pointId) ? 1
         : d.pointId != null ? dimOpacity : o.pointOpacity
     : o.pointOpacity
+  const ptStrokeWidth = activeIds
+    ? (d: { pointId: number | null }) =>
+        d.pointId != null && activeIds.has(d.pointId) ? 1.8
+        : d.pointId != null ? 0 : 0.5
+    : 0.5
+  const ptStrokeOpacity = activeIds
+    ? (d: { pointId: number | null }) =>
+        d.pointId != null && activeIds.has(d.pointId) ? 1
+        : d.pointId != null ? 0 : 0.55
+    : 0.55
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
@@ -1296,8 +1308,11 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       RulePos(stat, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'median', stroke: 'currentColor', strokeWidth: 1.6, ...f }), // median
       ...(pts.length ? [Plot.dot(pts, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: ptFill,
                                         // themed outline so a whitish series colour still reads on the
-                                        // white PDF / light ground (currentColor = dark there)
-                                        stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
+                                        // white PDF / light ground (currentColor = dark there). Stroke
+                                        // width/opacity are per-point functions when a selection is active
+                                        // so the selected dots get a bold ring — see ptStroke* above.
+                                        stroke: 'currentColor',
+                                        strokeWidth: ptStrokeWidth, strokeOpacity: ptStrokeOpacity,
                                         fillOpacity: ptFillOpacity,
                                         // A stable CSS class the PlotChart click delegate finds — `.cc-brush-dot`
                                         // — so we don't have to walk every `circle` in the SVG.
