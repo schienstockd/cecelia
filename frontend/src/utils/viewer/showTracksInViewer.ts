@@ -3,7 +3,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
 import { useLogStore } from '../../stores/log'
 import { useProjectMetaStore } from '../../stores/projectMeta'
-import { useLinkedSelectionStore } from '../../stores/linkedSelection'
+import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSelection'
 import { openViewerWindow } from '../viewerWindow'
 import { buildFocusViewState } from './focusOnCell'
 
@@ -72,7 +72,8 @@ export async function showTracksInViewer(
   // linkedSelection('tracks') producer for free — cell cards, correction cockpit, and any
   // future "Show" surface — without touching the callers. `source` names the calling surface
   // so a page-level clear from a different surface leaves this alone.
-  useLinkedSelectionStore().set({ scope: 'tracks', ids: [...trackIds], source, sourcePlotId: source })
+  useLinkedSelectionStore().set({ scope: 'tracks', ids: [...trackIds], source, sourcePlotId: source,
+                                  perSource: { [linkedSourceKey(imageUid, valueName)]: [...trackIds] } })
 
   // 3. Enable this segmentation's ribbons (the highlight NARROWS; the source has to exist).
   // Only poke `cc.viewerOverlaysTick` when we ACTUALLY flipped visibility — an unconditional

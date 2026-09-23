@@ -46,8 +46,11 @@ export interface LinkedSelectionBag {
   perSource?: Record<string, number[]>
 }
 
-/** Compound key format for `perSource`. Exported so producers/consumers build the same key. */
-export const linkedSourceKey = (uid: string, vn: string): string => `${uid}\u0000${vn}`
+/** Compound key format for `perSource`. Exported so producers/consumers build the same key.
+ *  `|` separator is picked because it doesn't legally appear in a uID or value_name (both are
+ *  identifier-shaped) — cleaner than a null-char for logs and safer than `:` (which could sit in
+ *  a namespaced value_name). */
+export const linkedSourceKey = (uid: string, vn: string): string => `${uid}|${vn}`
 
 export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
   /** The current bag, or `null` when nothing is selected. Deliberately `null` (not an empty
@@ -61,6 +64,16 @@ export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
    *  so a producer can drop a brush that happened to select nothing without a special branch. */
   function set(next: LinkedSelectionBag) {
     if (!next.ids.length) { bag.value = null; return }
+    // TEMPORARY diagnostic — every bag write is one line, so we can see which producer wrote
+    // (source), whether it carried perSource, and what the keys look like. Remove after the
+    // brush highlight is verified end-to-end.
+    // eslint-disable-next-line no-console
+    console.log('[cc-brush store.set]', {
+      source: next.source, scope: next.scope, ids: next.ids.length,
+      perSource: next.perSource
+        ? Object.entries(next.perSource).map(([k, v]) => ({ key: k, n: v.length }))
+        : 'MISSING (will fall back to flat id match)',
+    })
     // Defensive-copy the ids so a later mutation on the caller's array can't retroactively
     // change what subscribers see — same idiom as `TrackHighlight` setters.
     bag.value = {

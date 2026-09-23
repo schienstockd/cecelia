@@ -295,7 +295,7 @@ export interface BuildOpts extends VisProps {
   //     came from (Show button, MCP mark_*).
   //   • `Map<sourceKey, Set<number>>` — per-(uid, vn) match, used when the producer swept
   //     per-source groups (a brush on a pooled boxplot). Renderer keys on
-  //     `${pointUid}\u0000${pointVn} + pointId` so track_id=5 in segmentation B doesn't also
+  //     `${pointUid}|${pointVn} + pointId` so track_id=5 in segmentation B doesn't also
   //     light up track_id=5 in segmentation T (they're per-(image, segmentation) numeric spaces).
   // `null` / absent → idle state, no dimming (base opacity throughout). Sourced from the shared
   // `linkedSelection` store scope-matched against the response's `pointIdKind`.
@@ -1304,7 +1304,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     let hit: boolean
     let key = ''
     if (isPerSource) {
-      key = `${d.pointUid}\u0000${d.pointVn}`
+      key = `${d.pointUid}|${d.pointVn}`
       hit = (activeIds as Map<string, Set<number>>).get(key)?.has(d.pointId) ?? false
     } else {
       hit = (activeIds as Set<number>).has(d.pointId)

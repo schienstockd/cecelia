@@ -987,7 +987,13 @@ function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: str
   const nextIds = additive && cur && cur.scope === scope
     ? Array.from(new Set([...cur.ids, p.id]))
     : [p.id]
-  linkedBrushStore.set({ scope, ids: nextIds, source: linkedBrushSourceId.value, sourcePlotId: linkedBrushSourceId.value })
+  // Also carry perSource — a click knows exactly one (uid, vn) — so subscribers with per-dot
+  // source tags scope the highlight correctly. Without this the bag falls back to a flat id
+  // Set and every dot with the same numeric id lights up across sources.
+  const key = linkedSourceKey(p.imageUid ?? '', p.valueName ?? '')
+  linkedBrushStore.set({ scope, ids: nextIds, source: linkedBrushSourceId.value,
+                         sourcePlotId: linkedBrushSourceId.value,
+                         perSource: { [key]: nextIds } })
   const uid = p.imageUid || props.imageUid || null
   const vn = p.valueName
   if (!uid || !vn) return

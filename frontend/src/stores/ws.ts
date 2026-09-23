@@ -8,7 +8,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
 import { usePushStore } from './push'
-import { useLinkedSelectionStore } from './linkedSelection'
+import { useLinkedSelectionStore, linkedSourceKey } from './linkedSelection'
 import { useBlackboardStore } from './blackboard'
 import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
@@ -266,7 +266,8 @@ export const useWsStore = defineStore('ws', () => {
           // Also mirror into the shared linkedSelection bag (LINKED_BRUSHING_PLAN.md Follow-up 1
           // precursor). Any future subscriber that reads linkedSelection ('tracks') scope sees
           // Claude's mark alongside user brushes — same code path, no per-writer branch.
-          useLinkedSelectionStore().set({ scope: 'tracks', ids: trackIds, source: 'claude:mark_tracks', sourcePlotId: 'claude:mark_tracks' })
+          useLinkedSelectionStore().set({ scope: 'tracks', ids: trackIds, source: 'claude:mark_tracks', sourcePlotId: 'claude:mark_tracks',
+                                          perSource: { [linkedSourceKey(imageUid, valueName)]: trackIds } })
         }
       } else if (data.kind === 'cell') {
         const labels = Array.isArray(data.labels)
@@ -274,7 +275,8 @@ export const useWsStore = defineStore('ws', () => {
         const focusId = Number(data.focusId ?? 0)
         if (imageUid && valueName && labels.length) {
           viewer.setPickHighlight({ imageUid, valueName, labels, focusId, label, origin: 'claude' })
-          useLinkedSelectionStore().set({ scope: 'cells', ids: labels, source: 'claude:mark_cells', sourcePlotId: 'claude:mark_cells' })
+          useLinkedSelectionStore().set({ scope: 'cells', ids: labels, source: 'claude:mark_cells', sourcePlotId: 'claude:mark_cells',
+                                          perSource: { [linkedSourceKey(imageUid, valueName)]: labels } })
         }
       } else if (data.kind === 'ui') {
         // BIDIR PR #5. Ephemeral UI-anchor pointer; PointerBubble resolves the anchor and paints.
