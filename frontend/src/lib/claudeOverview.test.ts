@@ -29,6 +29,10 @@ describe('claudeOverview content model', () => {
     expect(byKey.sees.items.join(' ')).toMatch(/mark|capture/i)
     expect(byKey.creates.items.join(' ')).toMatch(/blackboard/i)
     expect(byKey.cant.items.join(' ')).toMatch(/provisional|not.*verified/i)
+    // RUBBER_DUCK_FIT_PLAN Decision 1 — the shipped guardrail digest is a proactive warning,
+    // not a passive reflection. Users should be told the tool will speak up on recurring
+    // bad-tagged failures. Drift out of Suggests and the modal misrepresents what Kiwi does.
+    expect(byKey.suggests.items.join(' ')).toMatch(/recurred|repeat|recurring/i)
     for (const g of CLAUDE_CAPABILITIES) expect(g.items.length).toBeGreaterThan(0)
   })
 

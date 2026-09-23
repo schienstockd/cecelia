@@ -18,7 +18,12 @@ import { popoutRouteOfWindow } from './lib/popout'
 // pull the plot stack — should not load until visited). See docs/UI.md → "Route-level code splitting".
 const pinia = createPinia()
 
-const router = createRouter({
+// Exported so non-component code (WS handlers in `stores/ws.ts` — RUBBER_DUCK_FIT_PLAN P2B's
+// viewer:navigate frame) can call `router.push()` without needing a Vue setup context. Callers
+// MUST use a dynamic `import('../main')` — this module runs `createWebHashHistory()` at load
+// time and throws in a non-browser env (vitest), so a static import poisons every test that
+// transitively touches ws.ts.
+export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     // A real page, NOT a redirect. `/` used to redirect to /manage-images, which a view profile can

@@ -1558,6 +1558,86 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
 
 
 @mcp.tool()
+def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
+                             measure: str = "", pop: str = "") -> dict:
+    """Open an Analysis board that contains a specific plot — your "pull up the UMAP" pointer
+    when the board isn't on the user's screen yet. Navigates the MAIN window to `/analysis`
+    and selects the matching tab; the pop-out viewer is untouched.
+
+    `plot_spec_id` is the `ref` field from `get_analysis_boards` (equivalently, the plot-spec
+    id from `get_available_plots`, e.g. `"track_measures"`). Optional filters — `measure`
+    (matches the plot's `measure` field, e.g. `"live.track.speed"`) and `pop` (a
+    `valueName/pop` string, e.g. `"B/qc/_tracked"`) — narrow the match when the user has
+    multiple boards carrying the same plot spec.
+
+    Resolution is deterministic and happens BEFORE any browser call:
+      - 0 matches → `{ok: false, reason: "no_matching_board"}`. Either call
+        `add_analysis_board` to create one (the tool call is visible in your trace — the user's
+        approval-if-possible moment), or ask the user which existing board they meant. Do NOT
+        auto-add without saying what you're adding.
+      - 1 match → dispatch the navigate. Returns `{ok: true, board: "<name>"}`.
+      - >1 matches → `{ok: false, ambiguous: [{name, plots: [...]}, ...]}`. Ask the user which
+        one; do NOT pick arbitrarily.
+
+    Fire-and-forget on the browser side: if no window is open on this project, the WS frame
+    reaches nobody and the tool still returns `{ok: true, board: "..."}` because the
+    server can't tell. Only assume the nav landed when the user confirms.
+
+    Distinct from `list_plots`, which reports what's ALREADY on screen. This is for pointing at
+    something the user hasn't opened.
+    """
+    boards = _client.get_analysis_boards(project_uid).get("boards", [])
+    matches: list[dict] = []
+    for b in boards:
+        for slot in b.get("plots", []):
+            if slot.get("ref") != plot_spec_id:
+                continue
+            if measure and slot.get("measure") != measure:
+                continue
+            if pop and pop not in (slot.get("pops") or []):
+                continue
+            matches.append(b)
+            break
+    if not matches:
+        return {"ok": False, "reason": "no_matching_board"}
+    if len(matches) > 1:
+        return {"ok": False, "ambiguous": [
+            {"name": m.get("name", ""), "plots": m.get("plots", [])} for m in matches
+        ]}
+    board_name = matches[0].get("name", "")
+    _client.navigate_viewer(project_uid, "/analysis", board_name=board_name)
+    return {"ok": True, "board": board_name}
+
+
+@mcp.tool()
+def seek_viewer(project_uid: str, image_uid: str,
+                t: int | None = None, z: int | None = None) -> dict:
+    """Move the user's VIEWER to a specific frame — your "look at t=40" imperative when you want
+    to prompt them to check something at a coordinate you already know, without needing a
+    capture or a segmentation id to point at.
+
+    Distinct from `mark_*`: those are ephemeral overlay pointers on the CURRENT view; this
+    changes what the viewer is showing. Not "look at this cell", but "seek to this frame".
+
+    At least ONE of `t` (timepoint index) or `z` (z-plane index) must be set. Leave the other
+    unset to preserve the current value — e.g. `seek_viewer(t=40)` on a 3D+t movie keeps the
+    user's z-plane. Camera pan/zoom and per-channel visibility are preserved (same channel as
+    a Kiwi Refocus click on a legacy capture).
+
+    Best-effort: if no browser window is open on this project, the command reaches nobody and
+    returns `{ok: true}` anyway (fire-and-forget). If you can't tell whether the seek landed,
+    ask the user in prose ("could you jump to t=40 and check the middle-right region?") rather
+    than assuming.
+
+    Use this AFTER a data tool tells you the frame worth looking at — a QC outlier from
+    `get_cohort_qc`, an anomalous frame from `get_capture_landscape_tiles`, a per-track event
+    from `get_behaviour_summary`. Do NOT call this on a hunch; the user's attention is the
+    scarcest resource in the whole loop.
+    """
+    return _client.seek_viewer(project_uid, image_uid, t, z)
+
+
+@mcp.tool()
 def mark_tile(project_uid: str, image_uid: str, cell_id: str,
               label: str = "", ttl_s: int = 300) -> dict:
     """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when

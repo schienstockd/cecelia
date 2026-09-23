@@ -76,6 +76,8 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/viewer/marks/tile"),
             ("POST", "/api/viewer/marks/tracks"),
             ("POST", "/api/viewer/marks/ui"),
+            ("POST", "/api/viewer/navigate"),
+            ("POST", "/api/viewer/seek"),
         ])
 
     def test_every_route_the_client_calls_is_on_the_allow_list(self):

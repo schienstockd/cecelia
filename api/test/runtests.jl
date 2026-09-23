@@ -104,6 +104,7 @@ include(joinpath(@__DIR__, "suite", "notebooks_rw.jl"))
 # list / read round-trip), and labels/ids (cells + tracks enumeration + stride sampling).
 # Extracted so runtests.jl contains only include lines + section-header comments.
 include(joinpath(@__DIR__, "suite", "viewer_marks_capture.jl"))
+include(joinpath(@__DIR__, "suite", "viewer_nav.jl"))
 
 # ── Notebooks sysimage status testset ─────────────────────────
 # /api/notebooks/status response contract + _classify_sysimage staleness classifier

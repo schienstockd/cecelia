@@ -17,6 +17,56 @@ _blackboard_dir_for_project(uid::AbstractString) = joinpath(projects_dir(), uid,
 _bb_entry_dir(uid::AbstractString, id::AbstractString) = joinpath(_blackboard_dir_for_project(uid), id)
 _bb_registry_path(uid::AbstractString) = joinpath(_settings_dir_for_project(uid), "blackboard.json")
 
+# ── Outcome telemetry — RUBBER_DUCK_FIT_PLAN P4 ──────────────────────────────
+# One counter file per project — `<proj>/settings/blackboard_outcome_telemetry.json` with
+# `{attempted, succeeded_with_note, dropped_no_note}`. Purpose: measure whether Decision 11's
+# required-note rule is costing real friction (users abandoning at the note prompt) or whether
+# the design call was fine. Never sent anywhere, never surfaced in UI — readable by-hand for a
+# one-month check. If the ratio `dropped_no_note / attempted` is small, Decision 11 stays; if
+# it's material, revisit.
+#
+# `attempted` fires AFTER schema validation (valid verdict, valid entryId, existing project) —
+# malformed requests don't reflect friction, they reflect a broken client.
+# `dropped_no_note` fires on the empty-note 400.
+# `succeeded_with_note` fires on the 200 path (both fresh write and idempotent no-op).
+# Everything else is silently `attempted - dropped_no_note - succeeded_with_note` (structural
+# 400s, note-too-long, unknown entry) — small, uninteresting for friction analysis.
+_bb_outcome_telemetry_path(uid::AbstractString) = joinpath(_settings_dir_for_project(uid), "blackboard_outcome_telemetry.json")
+
+const _BB_OUTCOME_TELEMETRY_LOCK = ReentrantLock()
+const _BB_OUTCOME_TELEMETRY_KEYS = ("attempted", "succeeded_with_note", "dropped_no_note")
+
+function _read_bb_outcome_telemetry(uid::AbstractString)::Dict{String,Int}
+    p = _bb_outcome_telemetry_path(uid)
+    base = Dict{String,Int}(k => 0 for k in _BB_OUTCOME_TELEMETRY_KEYS)
+    isfile(p) || return base
+    try
+        raw = JSON3.read(read(p, String), Dict{String,Any})
+        for k in _BB_OUTCOME_TELEMETRY_KEYS
+            haskey(raw, k) && (base[k] = Int(raw[k]))
+        end
+    catch
+        # Corrupt file — treat as empty rather than blocking the outcome-tag write. A telemetry
+        # counter that stops the user from tagging their own entry is worse than a lost count.
+    end
+    base
+end
+
+function _bump_bb_outcome_telemetry!(uid::AbstractString, key::AbstractString)
+    key in _BB_OUTCOME_TELEMETRY_KEYS || return
+    try
+        lock(_BB_OUTCOME_TELEMETRY_LOCK) do
+            counts = _read_bb_outcome_telemetry(uid)
+            counts[String(key)] += 1
+            mkpath(_settings_dir_for_project(uid))
+            write_json_atomic(_bb_outcome_telemetry_path(uid), counts)
+        end
+    catch
+        # Same reason as read: an IO failure on the telemetry counter must never take down the
+        # request that fired it. This is passive measurement, not a durable write.
+    end
+end
+
 # Same id shape as captures: `bb-<yyyymmddThhmmss>-<6 hex>`. Sortable by name → sortable by time.
 # The prefix + regex keeps a `..` payload from ever escaping the project dir when a client sends a
 # malformed entryId (rejected before joinpath).
@@ -678,19 +728,28 @@ function api_blackboard_outcome(body_bytes::Vector{UInt8})
     _valid_bb_entry_id(id) || return 400, JSON3.write((; error = "Invalid entryId"))
     _valid_bb_outcome_verdict(verdict) ||
         return 400, JSON3.write((; error = "verdict must be one of $(_BB_OUTCOME_VERDICTS)"))
+    # RUBBER_DUCK_FIT_PLAN P4 — count the attempt AFTER schema validation but BEFORE the
+    # note-required gate, so `dropped_no_note / attempted` measures friction on well-formed calls.
+    # `isdir` check on projects_dir moves up because attempted needs a real project id (a stray
+    # uid isn't a friction signal, it's a broken client).
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    _bump_bb_outcome_telemetry!(uid, "attempted")
     # Decision 11 D2 — note required. A verdict without a note is refused rather than silently
     # stored; the note is the part a future session actually reads.
     stripped_note = strip(note)
-    isempty(stripped_note) && return 400, JSON3.write((; error = "note required (must be non-empty)"))
+    if isempty(stripped_note)
+        _bump_bb_outcome_telemetry!(uid, "dropped_no_note")
+        return 400, JSON3.write((; error = "note required (must be non-empty)"))
+    end
     length(codeunits(stripped_note)) > _BB_OUTCOME_NOTE_MAX_BYTES &&
         return 400, JSON3.write((; error = "note exceeds $_BB_OUTCOME_NOTE_MAX_BYTES bytes"))
-    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     meta = _read_bb_meta(uid, id)
     meta === nothing && return 404, JSON3.write((; error = "Entry not found"))
 
     note_str = String(stripped_note)
     prev = _outcome_from_meta(meta)
     if prev !== nothing && prev["verdict"] == verdict && prev["note"] == note_str
+        _bump_bb_outcome_telemetry!(uid, "succeeded_with_note")
         return 200, JSON3.write((; ok = true, outcome = prev, unchanged = true))
     end
 
@@ -720,6 +779,7 @@ function api_blackboard_outcome(body_bytes::Vector{UInt8})
     _write_bb_registry!(uid, reg)
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
+    _bump_bb_outcome_telemetry!(uid, "succeeded_with_note")
     200, JSON3.write((; ok = true, outcome = new_outcome))
 end
 

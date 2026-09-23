@@ -372,6 +372,8 @@ end
         "/api/viewer/marks/ui", "/api/viewer/marks/freeform",    # bidir point-out UI + freeform (PR #5)
         "/api/viewer/marks/tile",    # bidir landscape tile mark (PR #6, Decision 14 reframe)
         "/api/viewer/marks/plot",    # bidir plot point-out (PR #4b)
+        "/api/viewer/seek",          # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z)
+        "/api/viewer/navigate",      # RUBBER_DUCK_FIT_PLAN P2B — main-window router.push + optional tab select
         "/api/viewer/plots/register",   # bidir PR #8 — live plot registry write
         "/api/viewer/plots/deregister", # bidir PR #8 — live plot registry drop
         "/api/viewer/landscape",     # bidir landscape publish (POST); GET at same path is the read handler
@@ -456,7 +458,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 143
+    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 145
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

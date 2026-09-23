@@ -572,6 +572,70 @@ end
     end
 end
 
+# ── Outcome-note friction telemetry (RUBBER_DUCK_FIT_PLAN P4) ─────────────────────────────────
+# Pins the counter's shape and the three call sites: `attempted` on any well-formed request that
+# passes schema + project-exists; `dropped_no_note` on the empty-note 400; `succeeded_with_note`
+# on the 200 path (both fresh writes and the idempotent no-op). Written to
+# `<proj>/settings/blackboard_outcome_telemetry.json`. Never sent, never surfaced — read by hand.
+@testset "API: blackboard outcome telemetry counter (RUBBER_DUCK_FIT_PLAN P4)" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTBBP4TEL"; mkpath(joinpath(tmp, uid))
+        w(path, b) = _post(path, b)
+        _, body_c = w(api_blackboard_create, Dict("projectUid"=>uid,
+            "title"=>"tel", "content"=>"c"))
+        eid = String(JSON3.read(body_c).entryId)
+        tel_path = joinpath(tmp, uid, "settings", "blackboard_outcome_telemetry.json")
+
+        # No file yet — a fresh project reads as all zeros.
+        @test !isfile(tel_path)
+
+        # A structural 400 (missing verdict) fires BEFORE attempted — a broken client isn't
+        # friction. File still absent.
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid))[1] == 400
+        @test !isfile(tel_path)
+
+        # Empty note ⇒ attempted +1, dropped_no_note +1.
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad", "note"=>""))[1] == 400
+        counts = JSON3.read(read(tel_path, String), Dict{String,Any})
+        @test Int(counts["attempted"]) == 1
+        @test Int(counts["dropped_no_note"]) == 1
+        @test Int(counts["succeeded_with_note"]) == 0
+
+        # Whitespace-only note stripped to empty ⇒ same increment pair.
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"good", "note"=>"   \t\n"))[1] == 400
+        counts = JSON3.read(read(tel_path, String), Dict{String,Any})
+        @test Int(counts["attempted"]) == 2 && Int(counts["dropped_no_note"]) == 2
+
+        # A real tag ⇒ attempted +1, succeeded_with_note +1.
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad", "note"=>"real reason"))[1] == 200
+        counts = JSON3.read(read(tel_path, String), Dict{String,Any})
+        @test Int(counts["attempted"]) == 3
+        @test Int(counts["dropped_no_note"]) == 2
+        @test Int(counts["succeeded_with_note"]) == 1
+
+        # Idempotent re-tag (same verdict + same note) STILL counts as a success — the user
+        # committed to the tag; only the disk write was skipped.
+        @test w(api_blackboard_outcome, Dict("projectUid"=>uid, "entryId"=>eid,
+            "verdict"=>"bad", "note"=>"real reason"))[1] == 200
+        counts = JSON3.read(read(tel_path, String), Dict{String,Any})
+        @test Int(counts["succeeded_with_note"]) == 2
+
+        # Bad projectUid ⇒ 404 before the counter, no file written under NOPE.
+        @test w(api_blackboard_outcome, Dict("projectUid"=>"NOPE", "entryId"=>eid,
+            "verdict"=>"bad", "note"=>"x"))[1] == 404
+        @test !isfile(joinpath(tmp, "NOPE", "settings", "blackboard_outcome_telemetry.json"))
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 # ── Outcome tiebreak on search ordering (PROJECT_MEMORY_PLAN P4 — Decision 12) ─────────────────
 # Within each search bucket (title/body), `bad` beats `good` beats untagged on equal match
 # strength. Applied AFTER full-scan collection (not by early-stopping), so a `bad`-tagged hit

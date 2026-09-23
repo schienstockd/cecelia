@@ -13,6 +13,7 @@ import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
 import { useViewerStore } from './viewer'
+import { useAnalysisTabsStore } from './analysisTabs'
 import { parseRailTime } from '../utils/taskElapsed'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
 
@@ -311,6 +312,67 @@ export const useWsStore = defineStore('ws', () => {
           })
         }
       }
+    }
+
+    // Viewer navigation — Claude's `seek_viewer` MCP tool (RUBBER_DUCK_FIT_PLAN P2). Fires when
+    // Claude wants the user to look at a specific (t, z) but hasn't got a capture to point at.
+    // Delivered by `api/src/viewer_nav_api.jl::api_viewer_seek`. Routes into the same
+    // `pendingViewState.focus` bag Kiwi Refocus writes to — no new frontend state, the popup's
+    // watcher on pendingViewState applies the seek exactly like a legacy-capture Refocus click.
+    if (type === 'viewer:seek') {
+      const viewer     = useViewerStore()
+      const projectUid = String(data.projectUid ?? '')
+      const imageUid   = String(data.imageUid   ?? '')
+      const openProj   = useProjectMetaStore().current?.uid ?? ''
+      // Same cross-project guard as viewer:mark — don't move the camera on a stray broadcast
+      // aimed at a project we're not on.
+      if (projectUid && openProj && projectUid !== openProj) return
+      const focusRaw = (data.focus ?? {}) as Record<string, unknown>
+      const t = Number(focusRaw.t)
+      const z = Number(focusRaw.z)
+      const focus: { t?: number; z?: number } = {}
+      if (Number.isFinite(t)) focus.t = t
+      if (Number.isFinite(z)) focus.z = z
+      if (imageUid && (focus.t !== undefined || focus.z !== undefined)) {
+        viewer.setPendingViewState({ focus, imageUid })
+      }
+    }
+
+    // Viewer navigation — Claude's `open_analysis_board_plot` MCP tool (RUBBER_DUCK_FIT_PLAN P2B).
+    // Fires when Claude wants the user to look at a plot that isn't currently on screen. Path is
+    // a plain Vue Router route (`/analysis`, `/gate`, …); `boardName`, when set, selects the tab
+    // on the destination page (only meaningful for `/analysis`). Ambiguity and no-match cases are
+    // resolved MCP-side — the frame only arrives when there's exactly one target to navigate to.
+    if (type === 'viewer:navigate') {
+      const projectUid = String(data.projectUid ?? '')
+      const openProj   = useProjectMetaStore().current?.uid ?? ''
+      if (projectUid && openProj && projectUid !== openProj) return
+      const path      = String(data.path ?? '')
+      const boardName = String(data.boardName ?? '')
+      if (!path) return
+      // Dynamic import — `main.ts` calls `createWebHashHistory()` at module load, which throws
+      // in vitest's node env (`location is not defined`). A dynamic import keeps ws.ts safe to
+      // import in tests; the browser only pays the (already-loaded) main-chunk cost.
+      void import('../main').then(({ router }) => router.push(path).then(() => {
+        // Board selection has to wait for the destination to have called
+        // `analysisTabs.ensure()` (mount + first render). A cold `/analysis` is lazy-loaded
+        // (chunk fetch + module mount), so `nextTick` isn't enough on first navigation. Poll
+        // for up to ~1s with a short interval; a missing name after that is a silent no-op
+        // (the destination shows whatever was last active, which is honest — "Claude sent you
+        // here but the board name is gone").
+        if (path === '/analysis' && boardName) {
+          const tabs = useAnalysisTabsStore()
+          const groupKey = `analysis:${projectUid || openProj}`
+          let tries = 0
+          const tryPick = () => {
+            const g = tabs.entries[groupKey]
+            const tab = g?.tabs.find(t => t.name === boardName)
+            if (tab) { tabs.setActive(groupKey, tab.id); return }
+            if (++tries < 20) setTimeout(tryPick, 50)
+          }
+          tryPick()
+        }
+      }))
     }
 
     // Software-update apply is one long POST (download → extract → on dev, `npm install` + `npm run
