@@ -17,15 +17,35 @@
 
 # Observer tools a Kiwi turn may call — reads only. Deliberately excludes every write (lab log,
 # Blackboard, notebooks, chains), every point-out mark (Kiwi points through its reply's refs, rendered
-# by the app), and pairing. Adding one here is a decision: it widens what a turn can touch.
+# by the app), and pairing. Adding one here is a decision: it widens what a turn can touch. Every
+# observer tool is either here or in `KIWI_EXCLUDED_TOOLS` with its reason — test-enforced, because a
+# model that calls an unlisted tool gets a permission error, not the data (a 2026-09-23 eval turn
+# abstained after calling three reads missing from this list).
 const KIWI_READ_TOOLS = [
-    "get_project_info", "list_images", "get_image_info", "get_image_notes", "get_image_attributes",
-    "get_populations", "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
-    "get_region_clusters", "get_contact_stats", "get_analysis_lineage", "get_qc_metrics",
-    "get_cohort_qc", "get_task_log", "get_task_history", "get_module_params", "list_plots",
-    "get_landscape", "get_recent_captures", "get_capture", "get_object_ids",
-    "list_blackboard_entries", "read_blackboard_entry", "search_blackboard", "read_lab_log",
+    "get_project_info", "get_session_briefing", "find_object", "list_images", "get_image_info",
+    "get_image_notes", "get_image_attributes", "get_populations", "get_measure_summary",
+    "get_behaviour_summary", "get_cluster_summary", "get_region_clusters", "get_contact_stats",
+    "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "get_task_log", "get_task_history",
+    "get_module_params", "get_chains", "list_plots", "get_available_plots", "get_analysis_boards",
+    "get_landscape", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
+    "get_object_ids", "list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
+    "read_lab_log", "list_notebooks", "get_notebook",
 ]
+const KIWI_EXCLUDED_TOOLS = Dict(
+    "list_projects" => "other projects — a turn is scoped to one",
+    "get_labarchives_context" => "an external notebook, not app state", "set_labarchives_context" => "write",
+    "poll_observations" => "drains the observation queue into the lab log — a write",
+    "get_observer_stats" => "runtime, not project data", "get_recent_logs" => "runtime, not project data",
+    "get_repl_api" => "developer API reference, not project data",
+    "register_push_target" => "pairing", "set_observer_active" => "write",
+    "append_lab_log" => "write", "create_blackboard_entry" => "write", "revise_blackboard_entry" => "write",
+    "set_blackboard_status" => "write", "set_blackboard_outcome" => "write", "create_chain" => "write",
+    "create_notebook" => "write", "revise_notebook" => "write", "set_notebook_description" => "write",
+    "add_analysis_board" => "write", "open_analysis_board_plot" => "drives the user's UI",
+    "seek_viewer" => "drives the user's UI", "point_at_ui" => "point-out — Kiwi points through refs",
+    "mark_cells" => "point-out", "mark_tracks" => "point-out", "mark_plot" => "point-out",
+    "mark_tile" => "point-out", "mark_freeform" => "point-out",
+)
 _kiwi_allowed_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in KIWI_READ_TOOLS]
 
 const KIWI_CLAIM_KINDS = ("observation", "interpretation", "question")
@@ -180,7 +200,7 @@ end
 # "/qc 0.63, /Scanning 0.66") is one fact about a set, not a bundle: the 2026-09-23 sanity run's only
 # post-re-ask failures were three such enumerations flagged by a plain comma count.
 function _kiwi_clause_list(s::AbstractString)::Bool
-    parts = split(s, ',')
+    parts = split(last(split(s, r":\s")), ',')      # "6 are tracked: a, b, c" — the list is after the colon
     length(parts) >= 3 || return false
     any(p -> length(split(replace(strip(p), r"^(and|or)\s+" => ""))) >= 3, parts[2:end-1])
 end

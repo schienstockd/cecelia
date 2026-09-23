@@ -330,6 +330,17 @@ Each independently shippable.
    reasoning-vs-bare comparison sized to the window (e.g. 3 prompts × 2 × 3 = 18 turns, split across
    windows) → hand scoring. The harness prints running output tokens and stops at the first
    session-limit error.
+   **Sanity run (5 turns, bare):** every turn re-asked; the re-ask does split claims into single short
+   facts; ~5k output tokens a turn. **Comparison (2026-09-23, 18 valid turns = 3 prompts × 2 variants
+   × 3 reps, in two `--slice` halves, merged with `--from`; one invalid turn re-run — it had called
+   read tools missing from the allow-list, now completed and test-enforced):** automatic proxies favour
+   BARE — reasoning cost more (9.7k vs 6.8k output tokens, 91 vs 69 s a turn), re-asked as often
+   (8/9 each), ended valid less often (6/9 vs 8/9) and produced more claims (20 vs 14). Refs specific
+   on the population prompts in both (≥0.98). No reassure/recommend flags in either. **Not yet the
+   verdict** — the gate is the hand score: a blinded, stratified 60-claim sample (10 per prompt ×
+   variant) of the 303. **Cost finding for Phase 4:** nearly every turn re-asks, doubling wait and
+   spend (~7–10k output tokens a turn, 1–2 min) — the first attempt must pass more often before this
+   is a UI.
 4. **Cockpit UI.** Prompt input with chips, claims feed, click-to-point via existing mark routes.
 5. **"Add to Kiwi" affordances** across plots, viewer, task pages, captures, Blackboard.
 

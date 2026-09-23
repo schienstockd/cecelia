@@ -30,6 +30,12 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     # the tool allow-list is read-only: no write, mark or pairing tool
     @test !any(t -> occursin(r"append|create|revise|set_|mark_|point_at|register|delete", t), KIWI_READ_TOOLS)
     @test all(t -> startswith(t, "mcp__" * OBSERVER_MCP_NAME * "__"), _kiwi_allowed_tools())
+    # every observer tool is decided: allowed or excluded with a reason — a new tool fails here
+    server = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "server.py"), String)
+    tools = Set(m.captures[1] for m in eachmatch(r"@mcp\.tool\([^)]*\)\s*\ndef ([a-z_]+)\(", server))
+    @test length(tools) > 40
+    @test tools == union(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS))
+    @test isempty(intersect(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS)))
 
     seen = """{"uid":"KDIeEm","trackIds":[12, 40],"pops":["/gated/Directed"],"note":"label 123"}"""
     @test kiwi_ref_seen(Dict("kind" => "image", "imageUid" => "KDIeEm"), seen, [])
@@ -61,7 +67,8 @@ end
     for t in ("fXgbTl has per-track tables for 6 value names: coastalFg, coastalSm15, cpSAM2, default, flowTom, memTom.",
               "The four clustering run suffixes (movement, test, here, there) report identical Directed track counts.",
               "The lineage's segmentations, tracked, and clusterRuns lists are all empty for this image.",
-              "Median extent in /Directed is 0.58, the lowest of four (/qc 0.63, /Scanning 0.66, /Meandering 0.63).")
+              "Median extent in /Directed is 0.58, the lowest of four (/qc 0.63, /Scanning 0.66, /Meandering 0.63).",
+              "Of fXgbTl's segmentations, 6 are tracked: coastalFg, coastalSm15, cpSAM2, default, flowTom, memTom.")
         @test kiwi_claim_bundling(t) == ""
     end
     @test occursin("semicolon", kiwi_claim_bundling("17 tracks in A; 25 in B."))

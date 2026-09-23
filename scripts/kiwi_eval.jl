@@ -23,6 +23,9 @@
 #         --out /tmp/kiwi-eval --reps 5 [--variants bare,reasoning] [--prompts id,id] [--model sonnet]
 #         [--python <analysis-env python>]      # default: python_bin_path()
 #         [--slice k/n]                         # k-th of n parts of the same shuffled job list
+#
+#   … --out <dir> --from a/results.jsonl,b/results.jsonl   # NO engine calls: merge earlier runs' rows
+#                                                          # into one summary + one blinded sheet
 
 using Random, Statistics
 
@@ -33,7 +36,7 @@ function _args()
     while i <= length(ARGS)
         k = replace(ARGS[i], "--" => ""); a[k] = ARGS[i + 1]; i += 2
     end
-    haskey(a, "projects-dir") || error("--projects-dir is required (the real projects dir — set in memory only)")
+    haskey(a, "from") || haskey(a, "projects-dir") || error("--projects-dir is required (the real projects dir — set in memory only)")
     haskey(a, "out") || error("--out is required")
     a
 end
@@ -100,14 +103,21 @@ shuffle!(MersenneTwister(parse(Int, A["seed"])), jobs)
 let (k, n) = parse.(Int, split(A["slice"], '/'))
     global jobs = jobs[k:n:end]
 end
+const FROM = filter(!isempty, split(get(A, "from", ""), ","))
+isempty(FROM) || (jobs = empty(jobs))
 println("kiwi eval: $(length(jobs)) turns → $OUT  (model $(A["model"]), mcp $(MCP_CFG))")
 
 old = Cecelia.cecelia_conf()["dirs"]["projects"]
 rows = Dict{String,Any}[]
+for f in FROM, l in eachline(expanduser(f))
+    isempty(strip(l)) || push!(rows, JSON3.read(l, Dict{String,Any}))
+end
+isempty(FROM) || (write(joinpath(OUT, "results.jsonl"), join((JSON3.write(r) for r in rows), "\n") * "\n");
+                  println("merged $(length(rows)) turns from $(length(FROM)) file(s)"))
 spent = Ref(0); t_start = time()
 try
-    Cecelia.cecelia_conf()["dirs"]["projects"] = expanduser(A["projects-dir"])
-    open(joinpath(OUT, "results.jsonl"), "a") do io
+    isempty(FROM) && (Cecelia.cecelia_conf()["dirs"]["projects"] = expanduser(A["projects-dir"]))
+    isempty(jobs) || open(joinpath(OUT, "results.jsonl"), "a") do io
         for (n, (p, v, r)) in enumerate(jobs)
             refs = [Dict(String(k) => x for (k, x) in pairs(ref)) for ref in p["refs"]]
             out = try
@@ -145,7 +155,9 @@ cols = ["ok", "reasked", "claims", "specificRefFrac", "multiFactClaims", "reassu
 function table(io, groups)
     println(io, "| group | n | ", join(cols, " | "), " |"); println(io, "|", repeat("---|", length(cols) + 2))
     for (name, rs) in groups
-        vals = [fmt([r["metrics"][c] === missing ? missing : Float64(r["metrics"][c]) for r in rs]) for c in cols]
+        # `missing` in this run, JSON `null` → `nothing` in a --from merge
+        num(x) = x === missing || x === nothing ? missing : Float64(x)
+        vals = [fmt([num(get(r["metrics"], c, missing)) for r in rs]) for c in cols]
         println(io, "| $name | $(length(rs)) | ", join(vals, " | "), " |")
     end
 end
