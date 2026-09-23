@@ -1318,18 +1318,37 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const dimOpacity = 0.08
   const isPerSource = activeIds instanceof Map
   type PtRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
+  // TEMPORARY diag — one line naming the perSource keys, plus the first few match() calls per
+  // render, so we can compare the writer's key against the reader's `(uid, vn, pop)`. Remove
+  // once the (uid, vn, pop) fix is verified end-to-end.
+  if (activeIds) {
+    // eslint-disable-next-line no-console
+    console.log('[cc-brush render/plot] mode=', isPerSource ? 'perSource' : 'flat',
+                isPerSource ? Array.from((activeIds as Map<string, Set<number>>).entries()).map(
+                  ([k, v]) => ({ key: JSON.stringify(k), n: v.size, sample: [...v].slice(0, 5) }))
+                : { n: (activeIds as Set<number>).size, sample: [...activeIds as Set<number>].slice(0, 5) })
+  }
+  let __matchLogs = 0
   const matches = (d: PtRow): boolean => {
     if (d.pointId == null || !activeIds) return false
     if (isPerSource) {
       const map = activeIds as Map<string, Set<number>>
       const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
-      if (map.get(specKey)?.has(d.pointId)) return true
+      const specHit = map.get(specKey)?.has(d.pointId) ?? false
+      const vnKey = `${d.pointUid}|${d.pointVn}`
+      const vnHit = specHit ? false : (map.get(vnKey)?.has(d.pointId) ?? false)
+      const hit = specHit || vnHit
+      if (__matchLogs < 12) {
+        __matchLogs++
+        // eslint-disable-next-line no-console
+        console.log('[cc-brush match]', { pid: d.pointId, uid: d.pointUid, vn: d.pointVn, pop: d.pointPop,
+                                          specKey, vnKey, specHit, vnHit, hit })
+      }
       // Fallback: a writer that only knows (uid, vn) — Show button, MCP mark_* — targets every
       // dot in that (uid, vn) regardless of pop. That's the correct semantics for a "highlight
       // this track" write: the track's location within populations isn't what the writer meant
       // to narrow by, so we let it match across pops on the same (uid, vn).
-      const vnKey = `${d.pointUid}|${d.pointVn}`
-      return map.get(vnKey)?.has(d.pointId) ?? false
+      return hit
     }
     return (activeIds as Set<number>).has(d.pointId)
   }
