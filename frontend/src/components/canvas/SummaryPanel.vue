@@ -799,28 +799,29 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
   return { count: ids.length, kind: isTrack ? 'tracks' : 'cells' }
 })
 
-// ── Linked brushing (LINKED_BRUSHING_PLAN.md P3 — category-source MVP) ─────────
-// Categorical frequency-family charts (`frequency` / `stacked` / `stacked100`) render one glyph
-// per category — the natural producer for the shared linkedSelection store. A chip strip below
-// the plot lets the user click a category, which fires `/api/tracks/by_category` and drops the
-// resulting track_ids into the bag. Consumers (this panel's Claude chip today, plot subscribers
-// as they land in P4) then react. Toggle-off by clicking the same chip again.
+// ── Linked brushing (LINKED_BRUSHING_PLAN.md P3 — category-source, CELL SCOPE) ─────────
+// Categorical frequency-family charts (`frequency` / `stacked` / `stacked100`) aggregate per
+// (cell, timepoint). A chip strip below the plot lets the user click a category; the endpoint
+// resolves the matching per-cell LABEL ids (not track_ids — a track has cells in many states
+// over its lifetime, so "at least one cell in state X" is not a track identity). The label ids
+// drop into the shared linkedSelection store at `scope: 'cells'` and are mirrored into
+// `PickHighlight` so the viewer's per-label pick outline lights up. Toggle-off by re-clicking
+// the same chip (ChipSelect's `allow-empty` contract).
 //
-// MVP scope (Decision 3 of the plan):
-//  - Only categorical frequency-family charts. Numeric bin brushing = future producer variant.
-//  - Only track-scope selection. Cell scope (label ids) rides the same bag but there is no
-//    frequency chart for cell-level pops in the behaviour catalogue today.
+// MVP scope:
+//  - Only categorical frequency-family charts on cell-level pops.
 //  - One pop at a time: the FIRST series' (valueName, pop) is what the endpoint queries.
-//    Multi-series brushing is a follow-up — a click on a bar in a multi-series plot today
-//    silently picks series[0].
-//  - No dim on subscribing plots yet (P4). Visible feedback = a small "N tracks selected" chip
-//    on THIS panel's chip strip, so the wiring is demonstrable end-to-end.
+//  - Single-image target: label ids are per-image, so a cross-image plot picks ONE image
+//    (open viewer image if in scope, else the panel's own imageUid, else the first).
+//  - Does NOT collapse per-cell observations to tracks — that jump is the "murky line" the
+//    revised plan refuses to cross. Track-scope Option A stays parked, safe only where the plot
+//    glyph IS a track identity (e.g. dominant-state-per-track bar).
 const linkedBrushStore   = useLinkedSelectionStore()
-const linkedBrushSub     = useLinkedSelectionSubscriber('tracks')
+const linkedBrushSub     = useLinkedSelectionSubscriber('cells')
 // Source id — stable across chip clicks so this panel replaces its OWN selection rather than
 // stacking. Falls back to a synthetic id when the panel has no persistKey (inline / preview).
 const linkedBrushSourceId = computed(() => props.persistKey || `sp:${props.spec.id}:${props.index}`)
-const linkedBrushSource   = useLinkedSelectionSource(linkedBrushSourceId.value, 'tracks')
+const linkedBrushSource   = useLinkedSelectionSource(linkedBrushSourceId.value, 'cells')
 
 // Only offer the chip strip when the current chart is categorical-frequency AND we have a
 // non-empty category list from the response AND at least one series (so we know which pop to
@@ -845,22 +846,25 @@ const linkedBrushImageUids = computed<string[]>(() =>
 const linkedBrushActiveCategory = ref<string | null>(null)
 const linkedBrushBusy = ref(false)
 
-// Mirror the linkedSelection bag into the shipped TrackHighlight bag so the 10 subscribing
-// families (viewer overlays, TrackScheme, cell cards, UMAP, gate scatter, summary readouts) light
-// up with zero per-family wiring. LINKED_BRUSHING_PLAN.md Decision 1 keeps both bags live during
-// MVP; Follow-up 1 collapses them. TrackHighlight is per-(image, vn), so `mirrorTrackHighlight`
-// picks a target image at write time: prefer the currently-open viewer image if it's in scope,
-// else the panel's own imageUid, else the first cross-image uid.
-function mirrorTrackHighlight(ids: number[]) {
-  const s0 = ownSeries.value[0]
-  if (!s0) return
+// Target image for the query + mirror. `PickHighlight` is per-(image, vn), and label ids are
+// per-image, so this picks ONE image up-front: the currently-open viewer image if it's in the
+// panel's scope, else the panel's own imageUid, else the first of the cross-image set.
+function linkedBrushTargetImage(): string | null {
   const uids = linkedBrushImageUids.value
   const openUid = projectStore.openImageUid
-  const targetUid = (openUid && uids.includes(openUid)) ? openUid
-                  : (props.imageUid || uids[0] || null)
-  if (!targetUid) return
-  viewer.setTrackHighlight(ids.length
-    ? { imageUid: targetUid, valueName: s0.valueName, trackIds: [...ids], origin: 'user' }
+  if (openUid && uids.includes(openUid)) return openUid
+  return props.imageUid || uids[0] || null
+}
+
+// Mirror the linkedSelection bag into the shipped PickHighlight bag so the viewer's per-label
+// pick outline lights up (correction cockpit + cell-card halos are already subscribed). Empty
+// ids → clear the bag. `focusId: 0` = a bulk pick with no distinguished label.
+function mirrorPickHighlight(ids: number[]) {
+  const s0 = ownSeries.value[0]
+  const targetUid = linkedBrushTargetImage()
+  if (!s0 || !targetUid) return
+  viewer.setPickHighlight(ids.length
+    ? { imageUid: targetUid, valueName: s0.valueName, labels: [...ids], focusId: 0, origin: 'user' }
     : null)
 }
 
@@ -871,7 +875,7 @@ function onLinkedBrushCategoryChange(v: string | string[]) {
   const cat = Array.isArray(v) ? (v[0] ?? '') : v
   if (!cat) {
     linkedBrushSource.clear()
-    mirrorTrackHighlight([])
+    mirrorPickHighlight([])
     linkedBrushActiveCategory.value = null
     return
   }
@@ -879,18 +883,18 @@ function onLinkedBrushCategoryChange(v: string | string[]) {
 }
 
 async function onLinkedBrushCategory(cat: string) {
-  const uids = linkedBrushImageUids.value
-  if (!uids.length || !measure.value || linkedBrushBusy.value) return
+  const targetUid = linkedBrushTargetImage()
+  if (!targetUid || !measure.value || linkedBrushBusy.value) return
   const s0 = ownSeries.value[0]
   if (!s0) return
   linkedBrushBusy.value = true
   try {
-    const res = await fetch('/api/tracks/by_category', {
+    const res = await fetch('/api/labels/by_category', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         projectUid: props.projectUid,
-        imageUids: uids,
+        imageUid: targetUid,
         valueName: s0.valueName,
         pop: s0.pop,
         popType: s0.popType,
@@ -899,10 +903,10 @@ async function onLinkedBrushCategory(cat: string) {
       }),
     })
     if (!res.ok) { linkedBrushBusy.value = false; return }
-    const body = await res.json() as { trackIds: number[] }
-    const ids = body.trackIds ?? []
+    const body = await res.json() as { labelIds: number[] }
+    const ids = body.labelIds ?? []
     linkedBrushSource.set(ids)
-    mirrorTrackHighlight(ids)
+    mirrorPickHighlight(ids)
     linkedBrushActiveCategory.value = ids.length ? cat : null
   } catch {
     // Network failure or aborted request — silent for the prototype; a real UX would surface it.
@@ -924,8 +928,8 @@ watch(
   { deep: false },
 )
 
-// Count of tracks in the active bag (scope-gated to 'tracks'). Rendered as a `badge` on the
-// active chip only — same convention as ChipSelect's `ChipOption.badge`.
+// Count of cells (labels) in the active bag (scope-gated to 'cells'). Rendered as a `badge` on
+// the active chip only — same convention as ChipSelect's `ChipOption.badge`.
 const linkedBrushBadgeCount = computed(() => linkedBrushSub.activeIds.value.size)
 
 // ChipOption[] fed to the canonical <ChipSelect>. Badge is attached only to the active option so

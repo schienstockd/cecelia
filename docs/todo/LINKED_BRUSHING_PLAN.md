@@ -30,16 +30,26 @@ hold per-cell IDs for those glyphs. `PlotSeries.points: number[]` on strip/violi
 no ids*. `RawRow` (with `track_id`) exists but isn't a user-selectable chart type. This shapes
 the design.
 
-## The producer fork — locked to Option A for MVP
+## The producer fork — locked to Option A (cell-scope) for MVP
 
-Three shapes, one gets built now:
+Three shapes, one gets built now.
 
-- **A. Category-source (MVP).** Click a categorical glyph — an HMM-state bar, a histogram bin,
-  a heatmap cell — → tiny server round-trip resolves `(measure, category, filter)` → `track_ids` →
-  drops into the shared bag. Every subscribing family already reacts.
-  - Widest applicability (works on every categorical / binned chart type).
+**Design guardrail (added 2026-09-23, after the first HMM-state prototype):** the selection scope
+must match the plot's aggregation layer. **Do not collapse per-observation data into a coarser
+identity.** A frequency plot aggregates per (cell, timepoint); the selection stays at that layer
+(cell ids) — jumping to "track that contains any cell in this state" is the murky step this plan
+refuses to take. Track-scope brushing is only safe where the plot glyph IS a track identity
+(dominant-state-per-track bar, mean-speed-per-track bin, per-track tag).
+
+- **A. Category-source (MVP, CELL scope).** Click a categorical glyph → tiny server round-trip
+  resolves `(image, measure, category)` → per-cell `label` ids → drops into the shared bag with
+  `scope: 'cells'` → mirrors into `PickHighlight` so the viewer's per-label pick outline lights
+  up. No extrapolation across the time or track dimensions.
+  - Widest applicability where the underlying observation layer IS the cell.
   - No `PlotSeries` data-model change.
-  - One new server endpoint (`/api/tracks/by_category`).
+  - One new server endpoint (`/api/labels/by_category`).
+  - **Not suitable for per-track categoricals** — a future producer that clicks a "dominant
+    state per track" glyph writes track ids into the bag instead (`scope: 'tracks'`).
   - Weak on continuous distributions ("select this speed range" isn't naturally a category —
     that's Option C).
 
@@ -76,13 +86,15 @@ Numbered so code and other docs can cite them (`Decision 5`).
    for consumers. Consumers never touch the store; producers never touch subscribers. Test the
    store + composable in isolation (frontend suite is pure-logic only per `frontend/CLAUDE.md`).
 
-3. **MVP producer = Option A.** Category-source on the HMM-state frequency chart on the
-   behaviour page. Server-side resolution via a new endpoint.
+3. **MVP producer = Option A, CELL scope.** Category-source on the HMM-state frequency chart on
+   the behaviour page. The chart aggregates per (cell, timepoint), so the selection is per-cell.
 
-4. **New endpoint `POST /api/tracks/by_category`.** Body:
-   `{projectUid, imageUids[], valueName, pop, measure, category}`. Reply: `{trackIds: [int]}`.
-   Reuses existing `label_props` / `pop_df` readers per `app/CLAUDE.md`. Julia testset for the
-   round-trip.
+4. **New endpoint `POST /api/labels/by_category`.** Body:
+   `{projectUid, imageUid, valueName, pop, popType?, measure, category, limit?}`. Reply:
+   `{labelIds: [int], total, truncated}`. Reuses existing `label_props` / `pop_df` readers per
+   `app/CLAUDE.md`. **Single-image** by design — label ids are per-image, so a cross-image plot
+   picks ONE image (open viewer image if in scope, else first) before calling. Julia testset for
+   the wire-level guards; semantic tests where `pop_df` is unit-tested.
 
 5. **Visual convention: dim non-selected to opacity 0.15, selected at 1.0.** One convention across
    all subscribing families. Idle state (empty bag) = no dimming; opacity 1.0 across the board.
@@ -123,41 +135,34 @@ Independently mergeable, ordered by dependency.
 
 ### P2 — Backend endpoint (~1 PR, Julia)
 
-- `api/src/tracks_by_category_api.jl` (new) — `POST /api/tracks/by_category`. Body validation,
-  reuses `label_props` / `pop_df` for the resolution. Response `{trackIds: [int]}`.
-- Julia testset: valid category → non-empty ids; unknown category → empty; unknown pop → 404;
-  missing body fields → 400.
-- Registered in `api/src/server.jl` and `api/src/routes.jl` (or wherever routes live for this
-  shape — grep first).
+- `api/src/labels_by_category_api.jl` — `POST /api/labels/by_category`. Body validation,
+  reuses `pop_df` (with `granularity=:cell`) for the resolution. Response
+  `{labelIds: [int], total, truncated}`. Single-image body — label ids are per-image.
+- Julia testset: valid category → non-empty ids; unknown category → empty; unknown project →
+  404; missing body fields → 400.
+- Registered in `api/src/server.jl`.
 
-### P3 — Category brush on the HMM-state frequency chart (~1 PR, frontend)
+### P3 — Category brush on the HMM-state frequency chart (~1 PR, frontend) ✅
 
-- Add click-to-select on the HMM-state bar/frequency chart in `SummaryPanel.vue`. The exact hook
-  depends on which chart is rendering — Observable Plot's `pointerX` / bar-click event.
-- On click, call `/api/tracks/by_category` and write result into the linkedSelection store via
-  `useLinkedSelectionSource`.
-- Optional: shift-click to add to selection.
+- Chip strip below the plot (canonical `ChipSelect` variant="pill", `allow-empty` for
+  re-click-to-clear), one chip per category from the frequency response. Active-chip badge
+  shows the current selection count.
+- On chip click, call `/api/labels/by_category` for the target image and write the resulting
+  label ids into the linkedSelection store via `useLinkedSelectionSource(id, 'cells')`.
 
-### P4 — Consumer fan-out via TrackHighlight mirror (~1 PR, frontend) ✅
+### P4 — Consumer fan-out via PickHighlight mirror (~1 PR, frontend) ✅
 
-**Shipped shape differs from the original plan wording — updated to match reality.**
+**Cell-scope revision (2026-09-23):** the earlier design mirrored into `TrackHighlight`, which
+required collapsing "cells that visited state X" into "tracks that contain those cells" — the
+murky step the plan now refuses to take. Cell-scope keeps the collapse honest: the source
+SummaryPanel mirrors into the shipped `PickHighlight` bag (per-label), and the viewer's pick
+outline lights up those cells — no track extrapolation, no per-panel dim resolve.
 
-Rather than per-panel subscribe-and-dim (which requires a per-category resolve pass in every
-sibling SummaryPanel to know WHICH rows to dim — heavy, and it doesn't help the viewer at all),
-the source SummaryPanel **mirrors the write into the shipped `TrackHighlight` bag**. The 10
-already-subscribing families (viewer overlays, TrackScheme, cell cards, UMAP, gate scatter, four
-summary readouts) then react through the shipped fan-out — same code path Claude's `mark_tracks`
-uses.
-
-- `SummaryPanel.onLinkedBrushCategory` calls `viewer.setTrackHighlight({imageUid, valueName,
-  trackIds, origin: 'user'})` after `linkedBrushSource.set()`. Target image = the currently-open
-  viewer image if it's in scope, else the panel's own `imageUid`, else the first cross-image uid.
+- `SummaryPanel.onLinkedBrushCategory` calls `viewer.setPickHighlight({imageUid, valueName,
+  labels, focusId: 0, origin: 'user'})` after `linkedBrushSource.set()`.
 - Toggle-off and cross-panel takeover clear both bags together.
-- **Sibling SummaryPanel dim is deliberately NOT shipped in MVP** — the per-category resolve pass
-  needed to know WHICH bars/slices to dim on a sibling frequency chart is a full endpoint call
-  per panel per chip click. Parked until a user reports that the viewer/TrackScheme reaction is
-  insufficient. Original plan wording was aspirational; reality is that a user brushing an
-  HMM-state bar wants to see it on the pixels, not on a second bar chart of a related measure.
+- **Sibling SummaryPanel dim NOT shipped in MVP** — needs a per-category resolve pass per
+  sibling per click. Parked until a user reports that the viewer reaction is insufficient.
 
 ### P5 — Page-level Clear + Escape + navigation-clear (~1 PR, frontend) ✅
 

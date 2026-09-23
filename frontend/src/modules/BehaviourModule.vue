@@ -8,8 +8,9 @@
   Linked-brushing host (LINKED_BRUSHING_PLAN.md P4/P5): the page owns the "Clear selection"
   affordance and Escape shortcut for the shared `linkedSelection` bag; it also clears the bag on
   navigation away so a stale selection can't leak into another module page. Individual
-  SummaryPanels write the bag (P3 chip strip) and mirror to the shipped `TrackHighlight` so the
-  viewer / TrackScheme / cell cards react; the page-level clear here reverses both.
+  SummaryPanels write the bag (P3 chip strip, cell-scope) and mirror to the shipped
+  `PickHighlight` so the viewer's per-label pick outline lights up; the page-level clear here
+  reverses both.
 -->
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount } from 'vue'
@@ -25,14 +26,15 @@ const { defs: behaviourDefs, reload: reloadDefs } = useTaskDefs('behaviour')
 const linkedSel = useLinkedSelectionStore()
 const viewer = useViewerStore()
 
-// A single, page-scoped clear: drops the shared bag AND the mirrored TrackHighlight in one
+// A single, page-scoped clear: drops the shared bag AND the mirrored PickHighlight in one
 // action so the user's "get me back to no selection" gesture doesn't leave a stray highlight in
 // the viewer. Individual panels handle their own local pressed-chip visual via the store's
-// isEmpty watcher.
+// isEmpty watcher. (Cell-scope: revised MVP mirrors into PickHighlight, not TrackHighlight —
+// see LINKED_BRUSHING_PLAN.md.)
 function clearSelection() {
-  if (linkedSel.isEmpty && !viewer.trackHighlight) return
+  if (linkedSel.isEmpty && !viewer.pickHighlight) return
   linkedSel.clear()
-  viewer.setTrackHighlight(null)
+  viewer.setPickHighlight(null)
 }
 
 // Escape from anywhere on the page — global listener, added on mount, removed on unmount so a

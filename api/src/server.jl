@@ -59,7 +59,7 @@ include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDI
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
 include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
-include("tracks_by_category_api.jl")  # linked brushing category-source (LINKED_BRUSHING_PLAN.md P2)
+include("labels_by_category_api.jl")  # linked brushing category-source (cell-scope) (LINKED_BRUSHING_PLAN.md P2)
 include("plots_registry_api.jl") # bidirectional context — live plot registry for list_plots MCP (BIDIR PR #8)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
@@ -480,7 +480,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/gating/redo" => (req, body_bytes) -> (api_gating_redo(body_bytes)),
     "/api/images/value-name-check" => (req, body_bytes) -> (api_images_value_name_check(body_bytes)),
     "/api/plot_data" => (req, body_bytes) -> (api_plot_data(body_bytes)),
-    "/api/tracks/by_category" => (req, body_bytes) -> (api_tracks_by_category(body_bytes)),
+    "/api/labels/by_category" => (req, body_bytes) -> (api_labels_by_category(body_bytes)),
     "/api/repl" => (req, body_bytes) -> (api_repl(body_bytes)),
     "/api/repl/config" => (req, body_bytes) -> (api_repl_config(body_bytes)),
     "/api/update/apply" => (req, body_bytes) -> (api_update_apply(body_bytes)),

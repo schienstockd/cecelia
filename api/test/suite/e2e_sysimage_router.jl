@@ -386,7 +386,7 @@ end
         "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
-        "/api/tracks/by_category",   # linked brushing category-source (LINKED_BRUSHING_PLAN.md P2)
+        "/api/labels/by_category",   # linked brushing category-source cell-scope (LINKED_BRUSHING_PLAN.md P2)
         "/api/pools/set", "/api/tasks/threads/set", "/api/preview/run", "/api/runner/restart", "/api/runner/enabled",
         "/api/preview/start", "/api/preview/stop",
         "/api/projects/animations", "/api/projects/boards",
