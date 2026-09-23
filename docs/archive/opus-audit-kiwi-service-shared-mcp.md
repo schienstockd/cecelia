@@ -1,7 +1,11 @@
 > **ARCHIVED — audit prompt, not authoritative.** Brief for a direct-API Kiwi service sharing the
-> `cecelia-observer` MCP server with Claude Code (2026-09-23). Not run. Its premise reverses locked
-> decisions in `docs/todo/KIWI_PLAN.md` (panel not assistant; provider-agnostic; no prompt bar).
-> Do not act on this file as a spec.
+> `cecelia-observer` MCP server with Claude Code (2026-09-23). Not run as written. **Outcome:** the
+> design lives in [`docs/todo/KIWI_ASSISTANT_PLAN.md`](../todo/KIWI_ASSISTANT_PLAN.md). Premises that
+> turned out wrong: no direct API (no Console access — v1 engine is the `claude` CLI, so no shared key
+> or per-user logging); `hypothesis` + mandatory `action` replaced by an `observation` /
+> `interpretation` / `question` split because an action is a recommendation; "WebGPT / verified quotes
+> (Menick et al. 2022)" is two papers (WebGPT = Nakano 2021, GopherCite = Menick 2022). The plan's
+> *Prior art* section is the verified version of the list below. Do not act on this file as a spec.
 
 # Audit prompt: shared MCP server, two consumers — Kiwi direct-API service + Claude Code
 
