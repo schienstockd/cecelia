@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
-         turnMeta, searchRefs, viewerRefFor, TASK_PAGES, type KiwiTurn } from './kiwiTurn'
+         turnMeta, searchRefs, viewerRefFor, claimText, plainError, failureLine, attachmentRows, claimRows,
+         TASK_PAGES, type KiwiTurn } from './kiwiTurn'
 import { KIWI_REF_KINDS, type KiwiRef } from './kiwiRef'
 
 const img: KiwiRef = { kind: 'image', imageUid: 'KDIeEm' }
@@ -100,8 +101,10 @@ describe('turns', () => {
   it('meta line', () => {
     const reply = { ok: true, abstain: false, claims: [], errors: [], reasked: true, reasoning: '',
                     usage: { input: 0, output: 0 }, toolCalls: 1, seconds: 41.6 }
-    expect(turnMeta(T({ reply, reasoning: true }))).toBe('42 s · 1 look · re-asked · thought first')
-    expect(turnMeta(T({}))).toBe('')
+    expect(turnMeta(T({ reply, reasoning: true }))).toBe('42s · 1 look · re-asked · sonnet · thought first')
+    expect(turnMeta(T({ reply: { ...reply, seconds: 120.6, usage: { input: 18, output: 10468 } } })))
+      .toBe('2m 01s · 1 look · re-asked · sonnet · 10.5k tokens')
+    expect(turnMeta(T({ model: '' }))).toBe('')
   })
 })
 
@@ -134,5 +137,47 @@ describe('viewerRefFor', () => {
     expect(viewerRefFor({ ...base, tracks: { ...tracks, imageUid: 'J' } }).ref.kind).toBe('viewer')
     expect(viewerRefFor({ ...base, cells: { imageUid: 'I', valueName: 'B', labels: [7] } }).ref)
       .toEqual({ kind: 'cells', imageUid: 'I', valueName: 'B', labelIds: [7] })
+  })
+})
+
+describe('claim text + failures, as the user reads them', () => {
+  it('the flag says "I think" — a written-out one is not doubled', () => {
+    expect(claimText({ kind: 'interpretation', text: 'I think no single measure is best', refs: [] })).toBe('No single measure is best')
+    expect(claimText({ kind: 'observation', text: 'I think is fine here', refs: [] })).toBe('I think is fine here')
+  })
+  it('errors lose the raw ref JSON and count claims, not checks', () => {
+    const errs = ['claim 1: ref {"kind":"plot","plotId":"summary:b:X:4"} — that plot isn’t open any more',
+                  'claim 1 is more than one fact (longer than 160 characters) — split it, one fact per claim',
+                  'claim 19: ref {"kind":"image","imageUid":"Q"} was not in any tool result or attachment this turn']
+    expect(errs.map(plainError)).toEqual(['Claim 1: that plot isn’t open any more',
+                                          'Claim 1 is more than one fact (longer than 160 characters)',
+                                          'Claim 19: cites something Kiwi didn’t look at'])
+    expect(failureLine(errs)).toBe('2 claims didn’t check out')
+    expect(failureLine([])).toBe('')
+  })
+})
+
+describe('attachmentRows', () => {
+  const plot: KiwiRef = { kind: 'plot', plotId: 'summary:b:X:4' }
+  it('the resolver’s label + detail once it has answered, the ref’s own label until then', () => {
+    expect(attachmentRows([plot], {})[0]).toMatchObject({ kind: 'plot', label: 'plot', detail: '', tip: 'Not checked yet' })
+    const res = { ok: true, check: 'live', label: 'Track measures · straightness', error: '',
+                  detail: 'B/qc, T/qc · MERTK · 12 images' } as const
+    expect(attachmentRows([plot], { [refKey(plot)]: res })[0])
+      .toMatchObject({ label: 'Track measures · straightness', detail: 'B/qc, T/qc · MERTK · 12 images' })
+    const gone = { ok: false, check: 'live', label: '', error: 'that plot isn’t open any more' } as const
+    expect(attachmentRows([plot], { [refKey(plot)]: gone })[0]).toMatchObject({ label: 'plot', detail: 'that plot isn’t open any more' })
+  })
+})
+
+describe('claimRows', () => {
+  it('numbers claims like the errors do, trims the flag, marks a failed ref', () => {
+    const good = { ref: img, result: ok(), seen: true }
+    const bad = { ref: img, result: ok(), seen: false }
+    const reply = { ok: false, abstain: false, errors: [], reasked: false, reasoning: '', usage: { input: 0, output: 0 },
+                    toolCalls: 0, seconds: 0,
+                    claims: [{ kind: 'observation' as const, text: 'One image.', refs: [good] },
+                             { kind: 'interpretation' as const, text: 'I think it is fine', refs: [bad] }] }
+    expect(claimRows(reply).map(r => [r.n, r.text, r.failed])).toEqual([[1, 'One image.', false], [2, 'It is fine', true]])
   })
 })

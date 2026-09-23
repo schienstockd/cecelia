@@ -50,6 +50,11 @@ _kiwi_allowed_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in K
 
 const KIWI_CLAIM_KINDS = ("observation", "interpretation", "question")
 
+# At most this many claims per reply. A live turn on 4kS67f (2026-09-24) came back with 21 — one
+# median per image per population per measure — and the user read it as "way too many references".
+# In the schema (engines that enforce it never exceed it) and in validation (engines that don't).
+const KIWI_MAX_CLAIMS = 8
+
 """
     kiwi_reply_schema(; reasoning = false) -> String
 
@@ -69,7 +74,7 @@ function kiwi_reply_schema(; reasoning::Bool = false)::String
             "text" => Dict("type" => "string", "minLength" => 1),
             "refs" => Dict("type" => "array", "minItems" => 1, "items" => Dict("\$ref" => "#/definitions/kiwiRef"))))
     props = Dict{String,Any}("abstain" => Dict("type" => "boolean"),
-                             "claims"  => Dict("type" => "array", "items" => claim))
+                             "claims"  => Dict("type" => "array", "maxItems" => KIWI_MAX_CLAIMS, "items" => claim))
     req = ["abstain", "claims"]
     reasoning && (props["reasoning"] = Dict("type" => "string"); pushfirst!(req, "reasoning"))
     JSON3.write(Dict{String,Any}("type" => "object", "additionalProperties" => false,
@@ -84,14 +89,21 @@ scientist see what is in their project. You point at things; you do not judge th
 
 The project is `$(project_uid)`. Read it with the tools before you answer. You can only read.
 
-Reply ONLY through the structured output. Each claim is ONE fact — never two joined by "and", never a
-fact plus what it suggests. Each claim carries at least one ref to an app object, and every ref must be
-an object you saw THIS turn — in a tool result or in the attached context — with its exact ids copied
-from there. Never cite from memory or from earlier in the conversation. Never invent an id.
+Reply ONLY through the structured output: at most $(KIWI_MAX_CLAIMS) claims, fewer is better. The first
+claim answers the question as directly as the data allows. Each claim is ONE fact — never two joined by
+"and", never a fact plus what it suggests. Each claim carries at least one ref to an app object, and
+every ref must be an object you saw in this conversation — in a tool result or in the attached context —
+with its exact ids copied from there. Never cite from memory. Never invent an id.
+
+Say what stands out, not everything you read. Don't restate what an attached plot already shows the
+user; don't give one claim per image — summarise across the images (a range, a count, which ones
+differ). When a plot or set is attached, its scope (the images, the populations) is the scope of your
+answer: look at all of it, not a sample.
 
 Claim kinds:
 - observation: what is shown. Numbers, counts, names, differences — no reasons.
-- interpretation: what you think it means. Start with "I think". Use sparingly.
+- interpretation: what you think it means. The app labels it as yours — don't start it with "I think".
+  Use sparingly.
 - question: a checkable next look ("Is track 12 in the same population at t=40?"), never an instruction.
 
 Never recommend including, excluding or trusting data. Never reassure ("that's normal", "nothing to
@@ -108,12 +120,14 @@ pack (a text rendering of each object's content, which Open decision 5's support
 later work. An unresolvable attached ref is listed with its error rather than dropped, so the engine
 can say it couldn't find it.
 """
-function kiwi_context_pack(project_uid::AbstractString, refs)::String
+function kiwi_context_pack(project_uid::AbstractString, refs;
+                           results = [resolve_kiwi_ref(project_uid, r) for r in refs])::String
     isempty(refs) && return ""
     lines = String["Attached by the user (you may cite these as-is):"]
-    for r in refs
-        res = resolve_kiwi_ref(project_uid, r)
-        push!(lines, string("- ", JSON3.write(r), res["ok"] ? "  → $(res["label"])" : "  → NOT FOUND: $(res["error"])"))
+    for (r, res) in zip(refs, results)
+        what = res["ok"] ? string("  → ", res["label"], isempty(get(res, "detail", "")) ? "" : " ($(res["detail"]))") :
+                           "  → NOT FOUND: $(res["error"])"
+        push!(lines, string("- ", JSON3.write(r), what))
     end
     join(lines, "\n")
 end
@@ -251,13 +265,16 @@ names (`kiwi_claim_underspecified`). Returns the claims annotated per ref (`{ref
 the list of problems, each naming the claim — the text of the re-ask. An abstaining reply with no
 claims is valid (Decision 9); a non-abstaining reply with no claims is not.
 """
-function kiwi_validate_reply(project_uid::AbstractString, reply, seen_text::AbstractString, attached)
+function kiwi_validate_reply(project_uid::AbstractString, reply, seen_text::AbstractString, attached;
+                            known = Dict{String,Any}())
     errors = String[]
     claims = Dict{String,Any}[]
     reply isa AbstractDict || return (claims, ["the reply was not an object"])
     abstain = _kiwi_get(reply, "abstain", false) == true
     raw = _kiwi_get(reply, "claims", Any[])
     (!abstain && isempty(raw)) && push!(errors, "no claims and abstain is false — give claims or abstain")
+    length(raw) > KIWI_MAX_CLAIMS &&
+        push!(errors, "$(length(raw)) claims — give at most $KIWI_MAX_CLAIMS: keep what stands out, summarise the rest")
     for (i, c) in enumerate(raw)
         kind = string(_kiwi_get(c, "kind", ""))
         kind in KIWI_CLAIM_KINDS || push!(errors, "claim $i: kind \"$kind\" is not one of $(join(KIWI_CLAIM_KINDS, ", "))")
@@ -265,7 +282,10 @@ function kiwi_validate_reply(project_uid::AbstractString, reply, seen_text::Abst
         isempty(refs) && push!(errors, "claim $i has no refs")
         annotated = Dict{String,Any}[]
         for r in refs
-            res  = resolve_kiwi_ref(project_uid, r)
+            # an attached ref keeps the result it had when the user asked: a plot is "live" — it exists
+            # while its panel is mounted — and a turn takes minutes, so re-resolving it at the end
+            # failed a plot the user had open when they asked (4kS67f, 2026-09-24)
+            res  = get(() -> resolve_kiwi_ref(project_uid, r), known, _kiwi_canon(r))
             seen = res["ok"] && kiwi_ref_seen(r, seen_text, attached)
             push!(annotated, Dict{String,Any}("ref" => r, "result" => res, "seen" => seen))
             desc = JSON3.write(r)
@@ -275,7 +295,7 @@ function kiwi_validate_reply(project_uid::AbstractString, reply, seen_text::Abst
                 push!(errors, "claim $i: ref $desc was not in any tool result or attachment this turn")
             end
         end
-        text = string(_kiwi_get(c, "text", ""))
+        text = kiwi_claim_text(kind, string(_kiwi_get(c, "text", "")))
         why = kiwi_claim_bundling(text)
         isempty(why) || push!(errors, "claim $i is more than one fact ($why) — split it, one fact per claim")
         for u in kiwi_claim_underspecified(text, refs)
@@ -286,20 +306,29 @@ function kiwi_validate_reply(project_uid::AbstractString, reply, seen_text::Abst
     (claims, errors)
 end
 
+"""
+    kiwi_claim_text(kind, text) -> String
+
+The claim text as stored: an interpretation's leading "I think" is dropped, because the app renders the
+flag itself (a model told not to write it still sometimes does — "I think I think" in the feed).
+"""
+kiwi_claim_text(kind::AbstractString, text::AbstractString)::String =
+    kind == "interpretation" ? String(uppercasefirst(replace(strip(text), r"^I think(?: that)?,?\s+"i => ""))) : String(strip(text))
+
 _kiwi_reask_prompt(errors) = """
 Your reply failed validation:
 $(join(("- " * e for e in errors), "\n"))
 
 Reply again under the same schema. Split a claim that is more than one fact into separate short
 claims, each with its own refs. Point at the most specific object a claim names — the population or
-tracks, not only their image. Cite only objects you saw in a tool result or the attachments this turn,
+tracks, not only their image. Cite only objects you saw in a tool result or an attachment in this conversation,
 copying their exact ids — call a tool first if you need to see one. Drop any claim you cannot support
 that way. If nothing is left, abstain."""
 
 """
     run_kiwi_turn(project_uid, prompt; refs = [], agent = ClaudeAgent(), reasoning = false,
                   session_id = "", mcp_config_path = …, timeout_s = 300,
-                  on_progress = step -> …, on_process = proc -> …) -> Dict
+                  on_progress = step -> …, on_process = proc -> …, prior_refs = []) -> Dict
 
 One Kiwi turn (see the top of this file). Returns
 `{ok, abstain, claims, reasoning, errors, reasked, reaskErrors, sessionId, usage:{input,output}, toolCalls,
@@ -307,16 +336,22 @@ seconds}` where `ok` means every claim passed validation, possibly after the one
 what still failed and `reaskErrors` what the first attempt failed on (empty if no re-ask). Never
 throws for an engine failure — it's reported in `errors`. `on_progress(step)` hears each tool call
 as it happens plus "checking refs" / "re-asking: N problems"; `on_process(proc)` gets each spawned
-engine process (cancellation).
+engine process (cancellation). A follow-up passes the earlier turn's `session_id` and `prior_refs` —
+what that conversation attached or validly cited, which count as seen here.
 """
 function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
                        refs = Any[], agent::Cecelia.AgentBackend = ClaudeAgent(),
                        reasoning::Bool = false, session_id::AbstractString = "",
                        mcp_config_path::AbstractString = _write_observer_mcp_config(; headless = true),
                        timeout_s::Real = 300, on_progress::Function = _ -> nothing,
-                       on_process::Function = _ -> nothing)::Dict{String,Any}
+                       on_process::Function = _ -> nothing, prior_refs = Any[])::Dict{String,Any}
     t0 = time()
-    pack = kiwi_context_pack(project_uid, refs)
+    # resolved ONCE, when asked — validation reuses these (see `kiwi_validate_reply(; known)`)
+    results = [resolve_kiwi_ref(project_uid, r) for r in refs]
+    known = Dict{String,Any}(_kiwi_canon(r) => res for (r, res) in zip(refs, results) if res["ok"])
+    # a follow-up may cite what the earlier turns of this conversation attached or validly cited
+    attached = vcat(collect(Any, refs), collect(Any, prior_refs))
+    pack = kiwi_context_pack(project_uid, refs; results)
     full_prompt = isempty(pack) ? String(prompt) : string(prompt, "\n\n", pack)
     schema = kiwi_reply_schema(; reasoning)
     opts = (; system_prompt = kiwi_system_prompt(project_uid), replace_system_prompt = true,
@@ -339,7 +374,7 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
 
     step(x) = try on_progress(x) catch end
     step("checking refs")
-    claims, errors = kiwi_validate_reply(project_uid, res.structured, seen, refs)
+    claims, errors = kiwi_validate_reply(project_uid, res.structured, seen, attached; known)
     isempty(errors) && return out(true, claims, errors, false, res)
 
     # ONE re-ask on the same session, naming what failed. Refs seen in the first attempt stay seen.
@@ -348,6 +383,6 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     res2 = turn(_kiwi_reask_prompt(errors), res.session_id)
     res2.ok || return out(false, claims, vcat(errors, [res2.error]), true, res)
     seen2 = string(seen, "\n", join(res2.tool_results, "\n"))
-    claims2, errors2 = kiwi_validate_reply(project_uid, res2.structured, seen2, refs)
+    claims2, errors2 = kiwi_validate_reply(project_uid, res2.structured, seen2, attached; known)
     out(isempty(errors2), claims2, errors2, true, res2)
 end

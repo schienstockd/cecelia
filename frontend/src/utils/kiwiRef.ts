@@ -38,6 +38,10 @@ export interface KiwiRefResult {
   check: KiwiRefCheck
   label: string
   error: string
+  /** what the object holds, in a line — only some kinds say (a plot: its series, grouping, images) */
+  detail?: string
+  /** a plot's page — where to reopen it once its panel has closed */
+  route?: string
 }
 
 /** The refs a share-in capture points at: its image position (`viewer`) and, for a UI capture, its

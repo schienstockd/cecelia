@@ -156,7 +156,9 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 </script>
 
 <template>
-  <div ref="root" class="panel" :class="{ active, collapsed, docked,
+  <!-- `plot:<persistKey>` — the anchor a Kiwi plot ref points at (utils/guideAnchor, PointerBubble) -->
+  <div ref="root" class="panel" :data-guide="persistKey ? `plot:${persistKey}` : undefined"
+       :class="{ active, collapsed, docked,
                                           'controls-pinned': chromeMode === 'visible',
                                           'controls-hidden': chromeMode === 'hidden' }"
        :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }" @mousedown="emit('activate', index)">

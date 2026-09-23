@@ -13,6 +13,7 @@ import { useLabCaptureStore } from '../stores/labCapture'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CcToggle from './CcToggle.vue'
+import AgentModelSelect from './AgentModelSelect.vue'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, resolveImageRefs,
   visibleEntries as computeVisibleEntries,
@@ -49,7 +50,6 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 
 const observerAvailable = computed(() => observer.available)
 const observerBusy = computed(() => observer.busy)
-const observerModels = computed(() => observer.models)
 const observerSession = computed(() => observer.session)
 const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
 const activityOpen = ref(false)              // Claude activity <details> open state (opens after an Ask)
@@ -285,10 +285,7 @@ async function dismissEntry(entry: LabLogEntry) {
                   : 'Needs Claude Code'">
           <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
         </button>
-        <select v-if="observerAvailable" class="ll-model" v-model="settings.labLogObserverModel"
-                v-tooltip.top="'Model Ask Claude runs'">
-          <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
-        </select>
+        <AgentModelSelect v-if="observerAvailable" v-model="settings.labLogObserverModel" tip="Model Ask Claude runs" />
         <!-- Setup CTA: shown until the user's terminal has the observer MCP registered. Once set up
              (`terminalCtaMode === 'chat'`) this slot is empty; the chat-handoff button moved to Kiwi
              (docs/todo/KIWI_PLAN.md Decision 6), which sits beside the pairing state it depends on.
@@ -458,16 +455,6 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-capture:hover:not(:disabled) { border-color: #8b949e; }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; }
-.ll-model {
-  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer;
-  /* Longhand padding, NOT the shorthand: the global `select` rule sets padding-right: 1.6rem
-     to reserve room for the caret, and a `padding:` shorthand here would clobber it — leaving
-     the chevron painted on top of the model name. Same reasoning as background-color below. */
-  padding-top: 0.05rem; padding-bottom: 0.05rem; padding-left: 0.2rem;
-  /* background-COLOR, not the shorthand: the global `select` rule paints the custom caret via
-     background-image, and a shorthand here would reset it to none (leaving an arrowless select). */
-  background-color: var(--cc-surface-2); border-radius: var(--cc-radius-xs);
-}
 /* capture status: floats to the far right of the whole bar (direct toolbar child) */
 .ll-note { margin-left: auto; }
 /* token readout sits inline within the Claude group (no auto-margin — it's not a toolbar child) */

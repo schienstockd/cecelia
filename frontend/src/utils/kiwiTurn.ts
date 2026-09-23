@@ -14,6 +14,7 @@
 
 import type { KiwiRef, KiwiRefResult } from './kiwiRef'
 import { svcPost } from './serviceApi'
+import { formatTaskDuration } from './taskElapsed'
 
 export type KiwiClaimKind = 'observation' | 'interpretation' | 'question'
 
@@ -31,6 +32,8 @@ export interface KiwiReply {
   usage: { input: number; output: number }
   toolCalls: number
   seconds: number
+  /** the engine session — what a follow-up continues */
+  sessionId?: string
 }
 
 export type KiwiTurnStatus = 'running' | 'done' | 'failed' | 'cancelled'
@@ -49,6 +52,8 @@ export interface KiwiTurn {
   steps: string[]
   reply?: KiwiReply | null
   error?: string
+  /** the turn this one follows up (same engine session) */
+  followUp?: string
 }
 
 // ── Identity + labels ──────────────────────────────────────────────────────────────────────────────
@@ -198,24 +203,91 @@ export function stepLabel(step: string): string {
   return step.replace(/_/g, ' ')
 }
 
-/** One muted line under a finished turn: time, tool calls, and a re-ask if there was one. */
+/** `10468` → `10.5k`. */
+function kTokens(n: number): string {
+  return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`
+}
+
+/** One muted line under a finished turn: time, tool calls, a re-ask, the model and what it wrote.
+ *  Output tokens only — the CLI reports input net of its cache, so that number reads as ~0. */
 export function turnMeta(t: KiwiTurn): string {
   const r = t.reply
   const parts: string[] = []
   if (r) {
-    parts.push(`${Math.round(r.seconds)} s`)
+    parts.push(formatTaskDuration(r.seconds * 1000))
     parts.push(`${r.toolCalls} look${r.toolCalls === 1 ? '' : 's'}`)
     if (r.reasked) parts.push('re-asked')
   }
+  if (t.model) parts.push(t.model)
+  if (r?.usage?.output) parts.push(`${kTokens(r.usage.output)} tokens`)
   if (t.reasoning) parts.push('thought first')
   return parts.join(' · ')
+}
+
+/** A claim's text as shown. The flag says "I think"; a reply stored before the backend trimmed a
+ *  written-out one would otherwise read "I think I think". */
+export function claimText(c: KiwiClaim): string {
+  return c.kind === 'interpretation' ? c.text.replace(/^I think(?: that)?,?\s+/i, '').replace(/^./, m => m.toUpperCase()) : c.text
+}
+
+/** A validation error as the user reads it: the claim number and the reason, not the raw ref JSON
+ *  the re-ask prompt needed. */
+export function plainError(e: string): string {
+  return e.replace(/^claim (\d+)/, 'Claim $1')
+          .replace(/: ref \{.*?\} — /, ': ')
+          .replace(/: ref \{.*?\}(?= was )/, ':')
+          .replace(/ was not in any tool result or attachment this turn$/, ' cites something Kiwi didn’t look at')
+          .replace(/ — split it, one fact per claim$/, '')
+}
+
+/** The line under a reply that didn't fully pass: how many claims, not how many checks. */
+export function failureLine(errors: string[]): string {
+  const claims = new Set(errors.map(e => /^claim (\d+)/.exec(e)?.[1]).filter(Boolean))
+  if (!claims.size) return errors.length ? 'Some checks failed' : ''
+  return `${claims.size} claim${claims.size === 1 ? '' : 's'} didn’t check out`
+}
+
+// ── Claims as table rows ───────────────────────────────────────────────────────────────────────────
+
+export interface ClaimRow { id: string; n: number; kind: KiwiClaimKind; text: string; refs: KiwiClaimRef[]; failed: boolean }
+
+/** One row per claim, numbered as the validation errors number them (1-based), flagged when any of
+ *  its refs failed — so "Claim 3 cites something Kiwi didn't look at" is findable in the table. */
+export function claimRows(reply: KiwiReply): ClaimRow[] {
+  return reply.claims.map((c, i) => ({
+    id: String(i + 1), n: i + 1, kind: c.kind, text: claimText(c), refs: c.refs,
+    failed: c.refs.some(r => chipState(r.result, r.seen).tone === 'fail'),
+  }))
+}
+
+// ── Attachments (the rows above the prompt box) ────────────────────────────────────────────────────
+
+export interface AttachmentRow { id: string; ref: KiwiRef; kind: string; label: string; detail: string; tip: string }
+
+/** One row per attached ref: the resolver's label and detail once it has answered, the ref's own label
+ *  until then. The tip carries how far it was checked (Decision 10). */
+export function attachmentRows(refs: KiwiRef[], results: Record<string, KiwiRefResult | undefined>): AttachmentRow[] {
+  return refs.map(ref => {
+    const id = refKey(ref)
+    const res = results[id]
+    return { id, ref, kind: ref.kind,
+             label: res?.ok && res.label ? res.label : refLabel(ref),
+             detail: res?.ok ? (res.detail ?? '') : (res?.error ?? ''),
+             tip: chipState(res).tip }
+  })
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────────────────────────
 
 export function startKiwiTurn(body: { projectUid: string; prompt: string; refs: KiwiRef[];
-                                      reasoning: boolean; model?: string }): Promise<KiwiTurn> {
+                                      reasoning: boolean; model?: string; followUp?: string }): Promise<KiwiTurn> {
   return svcPost('/api/kiwi/turn', body, 15_000)
+}
+
+export async function resolveKiwiRefs(projectUid: string, refs: KiwiRef[]): Promise<KiwiRefResult[]> {
+  if (!refs.length) return []
+  const r = await svcPost('/api/kiwi/refs/resolve', { projectUid, refs }, 15_000) as { results?: KiwiRefResult[] }
+  return r.results ?? []
 }
 
 export function cancelKiwiTurn(turnId: string): Promise<unknown> {

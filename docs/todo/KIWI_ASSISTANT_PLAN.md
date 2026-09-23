@@ -375,7 +375,19 @@ Each independently shippable.
    **Known gaps:** a population chip lands on the image's gating page, not the population (the
    selected pop is per-panel state nothing outside can set); a tile chip does nothing (no frontend
    tile-mark handler exists — `mark_tile` broadcasts are dropped today too); a task chip whose page is
-   already open keeps its current function; a draft chip shows "not checked yet" until sent.
+   already open keeps its current function.
+   **First use (user, 2026-09-24, 4kS67f — "which is the best measure to see differences between B
+   and T", two summary plots attached):** 21 claims, most a median per image per population ("way too
+   many references"); an attached plot failed as "not open" because its panel deregistered during the
+   2-minute turn; "I think I think"; attachments showed only "plot"; no elapsed time, model or tokens;
+   no way to follow up; chips and the step log read as hand-rolled. Changed: at most
+   `KIWI_MAX_CLAIMS` (8) claims (schema + validation), a prompt that answers first, summarises across
+   images and takes an attached plot's scope as the answer's; attached refs keep their ask-time result
+   through validation; a plot publishes its series / grouping / set + images (`SummaryPanel` →
+   registry `content`) and resolves to a label + `detail` + `route`; attachments and claims are
+   `SelectionTable` rows; one ticking status line (`useNowTick`); the model picker shared with the lab
+   log (`AgentModelSelect`); follow-ups (`followUp` → the earlier turn's engine session, its cited
+   refs count as seen); a plot ref scrolls to its panel (`data-guide="plot:<id>"`) and points at it.
 5. **"Add to Kiwi" affordances — BUILT with Phase 4.** One button, `components/kiwi/AddToKiwiButton.vue`
    (`pi-at`), on: every live registered plot panel (`CanvasPanel`, when its `persistKey` is in the plot
    registry — the plotId the resolver knows), the pop-out viewer (the user's selected tracks or cells

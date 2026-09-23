@@ -21,6 +21,11 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     s = JSON3.read(kiwi_reply_schema())
     @test Set(String.(s.required)) == Set(["abstain", "claims"]) && !haskey(s.properties, :reasoning)
     @test s.properties.claims.items.properties.refs.minItems == 1
+    @test s.properties.claims.maxItems == KIWI_MAX_CLAIMS
+    # the app renders the "I think" flag; a model that writes it too is trimmed, not doubled
+    @test kiwi_claim_text("interpretation", "I think no single measure is best") == "No single measure is best"
+    @test kiwi_claim_text("interpretation", "i think that, B is slower") == "B is slower"
+    @test kiwi_claim_text("observation", " I think is a word ") == "I think is a word"
     @test String(s.properties.claims.items.properties.refs.items[Symbol("\$ref")]) == "#/definitions/kiwiRef"
     # the ref definitions are the shared schema's, embedded — every kind present
     @test Set(split(String(b[Symbol("\$ref")]), '/')[end] for b in s.definitions.kiwiRef.oneOf) == Set(KIWI_REF_KINDS)
@@ -164,6 +169,28 @@ end
         out = run_kiwi_turn("testpr", "tell me about this"; refs = [img_ref], agent = f, mcp_config_path = cfg)
         @test out["ok"] && occursin("Attached by the user", f.calls[1][1]) && occursin("KDIeEm", f.calls[1][1])
 
+        # 4b. an attached LIVE ref keeps its ask-time result: a plot open when asked, closed before the
+        #     reply was checked (4kS67f, 2026-09-24), is not a failed claim
+        pref = Dict("kind" => "plot", "plotId" => "kiwi-turn-plot")
+        lock(_PLOTS_LOCK) do
+            get!(_PLOTS_BY_PROJECT, "testpr", Dict{String,PlotEntry}())["kiwi-turn-plot"] =
+                PlotEntry("kiwi-turn-plot", "c1", "summary", "Track measures", "/analysis", String[], nothing,
+                          Dict{String,Any}("series" => ["B/qc"]), time(), "testpr")
+        end
+        on_plot = Dict("abstain" => false, "claims" => [Dict("kind" => "observation", "text" => "The plot has one series.", "refs" => [pref])])
+        closing = _KiwiFakeEngine([_kiwi_fake_reply(on_plot)], Tuple{String,String}[])
+        close_it(_) = lock(_PLOTS_LOCK) do; delete!(_PLOTS_BY_PROJECT, "testpr") end
+        out = run_kiwi_turn("testpr", "what does this show?"; refs = [pref], agent = closing, mcp_config_path = cfg,
+                            on_progress = s -> s == "checking refs" && close_it(s))
+        @test out["ok"] && out["claims"][1]["refs"][1]["result"]["label"] == "Track measures"
+        @test occursin("(B/qc)", closing.calls[1][1])                   # the pack carries what the plot shows
+
+        # 4c. too many claims is a re-ask
+        many = Dict("abstain" => false, "claims" => [Dict("kind" => "observation", "text" => "One image.", "refs" => [img_ref])
+                                                    for _ in 1:(KIWI_MAX_CLAIMS + 1)])
+        _, errs = kiwi_validate_reply("testpr", JSON3.read(JSON3.write(many)), join(tool_saw_image), [])
+        @test only(errs) |> e -> occursin("at most $KIWI_MAX_CLAIMS", e)
+
         # 5. an abstaining reply is ok
         f = _KiwiFakeEngine([_kiwi_fake_reply(Dict("abstain" => true, "claims" => []))], Tuple{String,String}[])
         out = run_kiwi_turn("testpr", "q"; agent = f, mcp_config_path = cfg)
@@ -206,6 +233,18 @@ end
         st, body = api_kiwi_turns(HTTP.Request("GET", "/api/kiwi/turns?projectUid=testpr"))
         turns = JSON3.read(body).turns
         @test st == 200 && length(turns) == 1 && turns[1].turnId == rec["turnId"] && turns[1].status == "done"
+
+        # a follow-up continues the earlier turn's session, and what it cited counts as seen
+        engines = _KiwiFakeEngine[]
+        _KIWI_AGENT[] = m -> (e = _KiwiFakeEngine([_kiwi_fake_reply(good; sid = "s2")], Tuple{String,String}[]);
+                              push!(engines, e); e)
+        st, fu = kiwi_start_turn("testpr", "and then?"; follow_up = rec["turnId"])
+        wait_idle("testpr")
+        @test st == 200 && fu["followUp"] == rec["turnId"] && length(fu["priorRefs"]) == 1
+        @test only(engines).calls[1][2] == "s1"                          # resumed, not fresh
+        @test fu["status"] == "done"                                     # cited KDIeEm with no tool call this turn
+        @test first(kiwi_start_turn("testpr", "q"; follow_up = "kt-nope")) == 400
+        _KIWI_AGENT[] = m -> (push!(built, m); _KiwiFakeEngine([_kiwi_fake_reply(good; seen = ["""{"uid":"KDIeEm"}"""])], Tuple{String,String}[]))
 
         # validation: unknown project, empty ask, unknown model coerced to the allow-list
         @test first(kiwi_start_turn("nope", "q")) == 404

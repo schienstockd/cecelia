@@ -789,6 +789,13 @@ useVisualPanel(
       ...(measure.value ? { yLabel: measureLabel(measure.value) } : {}),
       ...(chartType.value !== 'heatmap' ? { xLabel: 'populations' } : {}),
       yScale: vis.value?.logScale ? 'log' : 'linear',
+      // WHAT is plotted — the series and the images — so an assistant handed this plot (Kiwi's
+      // "Add to Kiwi") reads its scope here instead of guessing from the board. `imageUids` empty
+      // with a `setUid` means the whole set.
+      series: props.series.map(s => `${s.valueName}${s.pop}`),
+      ...(groupBy.value ? { groupBy: groupBy.value } : {}),
+      ...(props.setUid ? { setUid: props.setUid, imageUids: props.imageUids ?? [], statUnit: statUnit.value }
+                       : props.imageUid ? { imageUid: props.imageUid } : {}),
     },
   }),
 )

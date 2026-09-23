@@ -7,6 +7,7 @@
 // assistant's pointer (a Kiwi claim IS the assistant pointing, even though the user clicked it).
 // Must be called from `setup`.
 
+import { nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useViewerStore } from '../stores/viewer'
 import { useProjectStore } from '../stores/project'
@@ -16,10 +17,12 @@ import { usePlotRegistryStore } from '../stores/plotRegistry'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { pointTarget, refLabel } from '../utils/kiwiTurn'
-import type { KiwiRef } from '../utils/kiwiRef'
+import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
+import { resolveAnchor } from '../utils/guideAnchor'
 import { useCaptureFocus } from './useCaptureFocus'
 
 const MARK_TTL_S = 300
+const PLOT_POINT_TTL_S = 8      // "here it is" on a panel — a short bubble, not a standing mark
 
 export function useKiwiPoint() {
   const router = useRouter()
@@ -29,8 +32,9 @@ export function useKiwiPoint() {
   const plots = usePlotRegistryStore()
   const { focusCapture } = useCaptureFocus()
 
-  /** Point at `ref`. Resolves to a short reason when there was nothing to do, else ''. */
-  async function pointAt(ref: KiwiRef, label = ''): Promise<string> {
+  /** Point at `ref`. Resolves to a short reason when there was nothing to do, else ''. `result` is
+   *  the resolver's answer when the caller has one — a plot's page comes from it once the panel is gone. */
+  async function pointAt(ref: KiwiRef, label = '', result?: KiwiRefResult): Promise<string> {
     const puid = pm.current?.uid ?? ''
     if (!puid) return 'No project open'
     const tgt = pointTarget(ref)
@@ -74,11 +78,25 @@ export function useKiwiPoint() {
       }
       case 'plot': {
         const last = plots.getLast(tgt.plotId)
-        if (!last) return 'That plot isn’t open'
-        if (last.meta.route) await router.push(last.meta.route)
-        if (tgt.u != null && tgt.v != null) {
+        const route = last?.meta.route || result?.route || ''
+        if (!route) return 'That plot isn’t open'
+        await router.push(route)
+        // the page may have to mount the panel first (a board fetches its layout); give it a second,
+        // after which a missing anchor means the plot is gone from its page
+        const anchor = `plot:${tgt.plotId}`
+        let el: HTMLElement | null = null
+        for (let i = 0; i < 10 && !el; i++) {
+          await nextTick()
+          el = resolveAnchor(anchor)
+          if (!el) await new Promise(r => setTimeout(r, 100))
+        }
+        if (!el) return 'That plot isn’t on its page any more'
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        if (last && tgt.u != null && tgt.v != null) {
           viewer.pushPlotMark({ markerId: `kiwi-${Date.now()}`, family: last.meta.family, plotId: tgt.plotId,
                                 u: tgt.u, v: tgt.v, label: caption, ttlSeconds: MARK_TTL_S })
+        } else {
+          viewer.pushUiMark({ markerId: `kiwi-${Date.now()}`, anchor, label: caption, ttlSeconds: PLOT_POINT_TTL_S })
         }
         return ''
       }

@@ -105,7 +105,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-video', means: 'Record a movie' },
       { icon: 'pi-share-alt', means: 'Apply to the others — and cell tracks; polygon draw tool' },
       { icon: 'pi-power-off', means: 'Quit Cecelia' },
-      { icon: 'pi-reply', means: 'Correct what Claude wrote' },
+      { icon: 'pi-reply', means: 'Reply to what the assistant wrote — correct it, or follow it up' },
       { icon: 'pi-external-link', means: 'Opens outside the app' },
       { icon: 'pi-github', means: 'Opens the repository' },
       { icon: 'pi-megaphone', means: 'Call for Datasets — what we can build with your data' },

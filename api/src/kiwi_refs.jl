@@ -207,8 +207,39 @@ function _kiwi_resolve_plot(puid, ref)
     e = lock(_PLOTS_LOCK) do
         get(get(_PLOTS_BY_PROJECT, puid, Dict{String,PlotEntry}()), pid, nothing)
     end
-    e === nothing && return _kiwi_bad("live", "plot $pid is not open (a plot exists only while its panel is)")
-    _kiwi_ok("live", isempty(e.title) ? e.family : e.title)
+    e === nothing && return _kiwi_bad("live", "that plot isn’t open any more — reopen its page to check it")
+    c = e.content
+    what = string(something(get(c, "yLabel", nothing), get(c, "measure", nothing), ""))
+    label = join(filter(!isempty, [isempty(e.title) ? e.family : e.title, what]), " · ")
+    r = _kiwi_ok("live", label)
+    r["detail"] = _kiwi_plot_detail(puid, c)
+    r["route"] = e.route          # where it lives — so a click can reopen its page once it has closed
+    r
+end
+
+# What a plot shows, in a line: its series, its grouping and its images — from the `content` bag the
+# panel publishes (`SummaryPanel` → `series`, `groupBy`, `setUid`/`imageUids`, `statUnit`). A panel
+# that publishes less gets a shorter line; "" when it publishes none of these.
+function _kiwi_plot_detail(puid, c::AbstractDict)::String
+    parts = String[]
+    series = get(c, "series", Any[])
+    series isa AbstractVector && !isempty(series) && push!(parts, join(string.(series), ", "))
+    gb = string(something(get(c, "groupBy", nothing), ""))
+    isempty(gb) || push!(parts, "by $gb")
+    su = string(something(get(c, "setUid", nothing), ""))
+    if !isempty(su)
+        set = _valid_asset_id(su) ? (try init_object(puid, su) catch; nothing end) : nothing
+        uids = get(c, "imageUids", Any[])
+        n = uids isa AbstractVector && !isempty(uids) ? length(uids) : set isa CciaSet ? length(set.image_uids) : 0
+        name = set isa CciaSet ? set.name : su
+        push!(parts, n > 0 ? "$name · $n image$(n == 1 ? "" : "s")" : name)
+        get(c, "statUnit", "") == "image" && push!(parts, "one point per image")
+    else
+        iu = string(something(get(c, "imageUid", nothing), ""))
+        img = isempty(iu) ? nothing : _kiwi_image(puid, Dict("imageUid" => iu))
+        img isa CciaImage && push!(parts, img.name)
+    end
+    join(parts, " · ")
 end
 
 function _kiwi_resolve_tile(puid, ref)

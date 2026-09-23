@@ -3,7 +3,9 @@
 # docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4. The cockpit's prompt box posts here; the turn itself is
 # `run_kiwi_turn` (kiwi_turn.jl), run on a worker thread because it takes 30 s – 2 min:
 #
-#   POST /api/kiwi/turn          {projectUid, prompt, refs, reasoning?, model?} → {turnId}  (202-style)
+#   POST /api/kiwi/turn          {projectUid, prompt, refs, reasoning?, model?, followUp?} → {turnId}
+#                                followUp = an earlier turnId: continue ITS engine session (a follow-up
+#                                question), with what it attached or validly cited counting as seen
 #   WS   kiwi:step               {projectUid, turnId, step}      each tool call, "checking refs", "re-asking…"
 #   WS   kiwi:done               {projectUid, turnId, turn}      the finished turn record (below)
 #   POST /api/kiwi/turn/cancel   {turnId}                         kills the engine process
@@ -43,6 +45,27 @@ end
 
 _kiwi_now() = string(Dates.now())
 
+# The conversation a follow-up continues: the earlier turn's engine session, and every ref that
+# conversation has attached or validly cited (resolved + seen) — which a follow-up may cite without
+# re-reading, since the engine saw them earlier in the same session. `nothing` when `tid` isn't a kept
+# turn with a session (it failed before the engine answered, or it was cleared).
+function _kiwi_conversation(puid::AbstractString, tid::AbstractString)
+    turns = _kiwi_read_turns(puid)
+    i = findlast(t -> string(get(t, "turnId", "")) == tid, turns)
+    i === nothing && return nothing
+    t = JSON3.read(JSON3.write(turns[i]), Dict{String,Any})
+    reply = get(t, "reply", nothing)
+    sid = reply isa AbstractDict ? string(get(reply, "sessionId", "")) : ""
+    isempty(sid) && return nothing
+    refs = Any[get(t, "priorRefs", Any[])...]
+    append!(refs, [r["ref"] for r in get(t, "refs", Any[])])
+    for c in get(reply, "claims", Any[]), r in get(c, "refs", Any[])
+        get(r, "seen", false) == true && get(get(r, "result", Dict()), "ok", false) == true && push!(refs, r["ref"])
+    end
+    seen = Set{String}()
+    (; sessionId = sid, refs = [r for r in refs if !(_kiwi_canon(r) in seen) && (push!(seen, _kiwi_canon(r)); true)])
+end
+
 _kiwi_project_ok(puid) = !isempty(puid) && _valid_asset_id(puid) && isfile(joinpath(projects_dir(), puid, "project.json"))
 
 """
@@ -52,9 +75,12 @@ Validate and launch one turn in the background; the pieces of `api_kiwi_turn` th
 Returns the record immediately (status `running`); `kiwi:step` / `kiwi:done` carry the rest.
 """
 function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = Any[], reasoning::Bool = false,
-                         model::AbstractString = observer_default_model())
+                         model::AbstractString = observer_default_model(), follow_up::AbstractString = "")
     _kiwi_project_ok(puid) || return 404, Dict{String,Any}("error" => "no project $puid")
     isempty(strip(prompt)) && isempty(refs) && return 400, Dict{String,Any}("error" => "ask something or attach a ref")
+    conv = isempty(follow_up) ? nothing : _kiwi_conversation(puid, follow_up)
+    (!isempty(follow_up) && conv === nothing) &&
+        return 400, Dict{String,Any}("error" => "that reply can’t be followed up — ask it fresh")
     agent = _KIWI_AGENT[](observer_valid_model(model))
     Cecelia.agent_available(agent) || return 503, Dict{String,Any}("error" => "No $(Cecelia.agent_label(agent)) CLI found — install it to ask Kiwi")
     rec = Dict{String,Any}(
@@ -62,6 +88,10 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
         "refs" => [Dict{String,Any}("ref" => r, "result" => resolve_kiwi_ref(puid, r)) for r in refs],
         "reasoning" => reasoning, "model" => observer_valid_model(model), "engine" => Cecelia.agent_label(agent),
         "status" => "running", "startedAt" => _kiwi_now(), "steps" => String[])
+    if conv !== nothing
+        rec["followUp"] = String(follow_up)
+        rec["priorRefs"] = conv.refs
+    end
     started = lock(_KIWI_LOCK) do
         haskey(_KIWI_RUNNING, puid) && return false
         _KIWI_RUNNING[String(puid)] = rec
@@ -70,17 +100,18 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
     started || return 409, Dict{String,Any}("error" => "Kiwi is already working on this project")
     tid = rec["turnId"]
     start_job!(tid)
-    Threads.@spawn _kiwi_run_turn!(rec, agent, refs)
+    Threads.@spawn _kiwi_run_turn!(rec, agent, refs; session_id = conv === nothing ? "" : conv.sessionId)
     200, rec
 end
 
 # The worker: run, broadcast steps, record, broadcast done. Never throws — a crash is a failed turn.
-function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs)
+function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs; session_id::AbstractString = "")
     puid, tid = rec["projectUid"], rec["turnId"]
     step(s) = (push!(rec["steps"], s);
                broadcast_ws(Dict{String,Any}("type" => "kiwi:step", "projectUid" => puid, "turnId" => tid, "step" => s)))
     try
-        out = run_kiwi_turn(puid, rec["prompt"]; refs, agent, reasoning = rec["reasoning"],
+        out = run_kiwi_turn(puid, rec["prompt"]; refs, agent, reasoning = rec["reasoning"], session_id,
+                            prior_refs = get(rec, "priorRefs", Any[]),
                             on_progress = step, on_process = p -> track_job!(tid, p))
         rec["reply"] = out
         rec["status"] = job_cancelled(tid) ? "cancelled" : (out["ok"] ? "done" : "failed")
@@ -105,7 +136,8 @@ function api_kiwi_turn(body_bytes::Vector{UInt8})
     refs isa AbstractVector || return 400, JSON3.write((; error = "refs must be a list"))
     status, out = kiwi_start_turn(_wstr(body, :projectUid), _wstr(body, :prompt); refs = collect(refs),
                                   reasoning = get(body, :reasoning, false) == true,
-                                  model = _wstr(body, :model, observer_default_model()))
+                                  model = _wstr(body, :model, observer_default_model()),
+                                  follow_up = _wstr(body, :followUp, ""))
     status, JSON3.write(out)
 end
 

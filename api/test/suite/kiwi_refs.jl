@@ -105,14 +105,25 @@ end
 
         # plot + tile are LIVE: absent until the browser publishes, present after, gone when removed
         pref = Dict("kind" => "plot", "plotId" => "kiwi-test-plot")
-        @test res(pref)["check"] == "live" && no(pref, "not open")
+        @test res(pref)["check"] == "live" && no(pref, "isn’t open")
         lock(_PLOTS_LOCK) do
             get!(_PLOTS_BY_PROJECT, "testpr", Dict{String,PlotEntry}())["kiwi-test-plot"] =
                 PlotEntry("kiwi-test-plot", "c1", "summary", "Speed by pop", "/analysis", String[], nothing,
                           Dict{String,Any}(), time(), "testpr")
         end
         try
-            @test res(pref) == Dict("ok" => true, "check" => "live", "label" => "Speed by pop", "error" => "")
+            @test res(pref) == Dict("ok" => true, "check" => "live", "label" => "Speed by pop", "error" => "", "detail" => "", "route" => "/analysis")
+            # what the panel publishes becomes the label (measure) and the detail (series, grouping, images)
+            lock(_PLOTS_LOCK) do
+                _PLOTS_BY_PROJECT["testpr"]["kiwi-test-plot"] =
+                    PlotEntry("kiwi-test-plot", "c1", "summary", "Track measures", "/analysis", String[], nothing,
+                              Dict{String,Any}("measure" => "live.track.speed", "yLabel" => "speed",
+                                               "series" => ["B/qc", "T/qc"], "groupBy" => "hmm.state",
+                                               "imageUid" => "KDIeEm"), time(), "testpr")
+            end
+            r = res(pref)
+            @test r["label"] == "Track measures · speed"
+            @test startswith(r["detail"], "B/qc, T/qc · by hmm.state · ") && length(r["detail"]) > 30
         finally
             lock(_PLOTS_LOCK) do; delete!(_PLOTS_BY_PROJECT, "testpr") end
         end
