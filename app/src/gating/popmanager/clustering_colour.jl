@@ -242,8 +242,9 @@ function colour_by_palette(m::PopulationMap, column::AbstractString, values;
     out
 end
 
-function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::PopTypeArg="flow")
-    m = load_pop_map(img._dir, value_name; pop_type=pop_type)
+function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::PopTypeArg="flow",
+                      backfill_save::Bool=true)
+    m = load_pop_map(img._dir, value_name; pop_type=pop_type, backfill_save=backfill_save)
     # Stamp THIS image's µm/px so `recompute!` can put spatial gate axes and the cell data in the same
     # unit. Per image on purpose: the same µm gate copied to another image must be evaluated with that
     # image's own scale (SPATIAL_GATE_UNITS_PLAN.md decision 2). Only for a calibrated image — an

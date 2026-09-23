@@ -357,6 +357,7 @@ end
         "/api/lablog/dismiss",
         "/api/movies/delete", "/api/movies/meta",
         "/api/notebooks/build-sysimage",
+        "/api/kiwi/refs/resolve",
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
@@ -458,7 +459,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 145
+    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 146
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
