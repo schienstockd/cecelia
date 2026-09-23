@@ -138,16 +138,36 @@ Independently mergeable, ordered by dependency.
   `useLinkedSelectionSource`.
 - Optional: shift-click to add to selection.
 
-### P4 — Subscription + visual convention on sibling panels (~1 PR, frontend)
+### P4 — Consumer fan-out via TrackHighlight mirror (~1 PR, frontend) ✅
 
-- Every SummaryPanel on the behaviour page subscribes via `useLinkedSelectionSubscriber('tracks')`.
-- Non-selected series/rows dim to opacity 0.15; selected at 1.0. Additive with existing
-  highlight paint.
-- Page-level "Clear selection" chip in the module layout header row — visible only when
-  `!isEmpty`.
-- Escape key clears from anywhere on the page.
+**Shipped shape differs from the original plan wording — updated to match reality.**
 
-### P5 (parked) — Family sweep + MCP migration + producer variants
+Rather than per-panel subscribe-and-dim (which requires a per-category resolve pass in every
+sibling SummaryPanel to know WHICH rows to dim — heavy, and it doesn't help the viewer at all),
+the source SummaryPanel **mirrors the write into the shipped `TrackHighlight` bag**. The 10
+already-subscribing families (viewer overlays, TrackScheme, cell cards, UMAP, gate scatter, four
+summary readouts) then react through the shipped fan-out — same code path Claude's `mark_tracks`
+uses.
+
+- `SummaryPanel.onLinkedBrushCategory` calls `viewer.setTrackHighlight({imageUid, valueName,
+  trackIds, origin: 'user'})` after `linkedBrushSource.set()`. Target image = the currently-open
+  viewer image if it's in scope, else the panel's own `imageUid`, else the first cross-image uid.
+- Toggle-off and cross-panel takeover clear both bags together.
+- **Sibling SummaryPanel dim is deliberately NOT shipped in MVP** — the per-category resolve pass
+  needed to know WHICH bars/slices to dim on a sibling frequency chart is a full endpoint call
+  per panel per chip click. Parked until a user reports that the viewer/TrackScheme reaction is
+  insufficient. Original plan wording was aspirational; reality is that a user brushing an
+  HMM-state bar wants to see it on the pixels, not on a second bar chart of a related measure.
+
+### P5 — Page-level Clear + Escape + navigation-clear (~1 PR, frontend) ✅
+
+- `BehaviourModule.vue` renders a "Clear selection · N" button (top-right of the plots pane)
+  when `!isEmpty`. Uses the shipped `.cc-btn` family per `docs/ui/PRIMITIVES.md`.
+- Global `keydown` listener clears on Escape (ignored while typing in an input/textarea/
+  contenteditable so form dismiss semantics still work).
+- `onBeforeUnmount` clears both bags — Decision 8 (per-page selection).
+
+### P6 (parked) — Family sweep + MCP migration + producer variants
 
 Not in the MVP PR. Once the shape is validated:
 - Extend subscription to the remaining plot families (UMAP, gate scatter, cell cards, etc.).

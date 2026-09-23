@@ -844,10 +844,30 @@ const linkedBrushImageUids = computed<string[]>(() =>
 const linkedBrushActiveCategory = ref<string | null>(null)
 const linkedBrushBusy = ref(false)
 
+// Mirror the linkedSelection bag into the shipped TrackHighlight bag so the 10 subscribing
+// families (viewer overlays, TrackScheme, cell cards, UMAP, gate scatter, summary readouts) light
+// up with zero per-family wiring. LINKED_BRUSHING_PLAN.md Decision 1 keeps both bags live during
+// MVP; Follow-up 1 collapses them. TrackHighlight is per-(image, vn), so `mirrorTrackHighlight`
+// picks a target image at write time: prefer the currently-open viewer image if it's in scope,
+// else the panel's own imageUid, else the first cross-image uid.
+function mirrorTrackHighlight(ids: number[]) {
+  const s0 = ownSeries.value[0]
+  if (!s0) return
+  const uids = linkedBrushImageUids.value
+  const openUid = projectStore.openImageUid
+  const targetUid = (openUid && uids.includes(openUid)) ? openUid
+                  : (props.imageUid || uids[0] || null)
+  if (!targetUid) return
+  viewer.setTrackHighlight(ids.length
+    ? { imageUid: targetUid, valueName: s0.valueName, trackIds: [...ids], origin: 'user' }
+    : null)
+}
+
 async function onLinkedBrushCategory(cat: string) {
   // Toggle-off: same chip a second time clears the bag (and this panel's tracking of it).
   if (linkedBrushActiveCategory.value === cat) {
     linkedBrushSource.clear()
+    mirrorTrackHighlight([])
     linkedBrushActiveCategory.value = null
     return
   }
@@ -872,8 +892,10 @@ async function onLinkedBrushCategory(cat: string) {
     })
     if (!res.ok) { linkedBrushBusy.value = false; return }
     const body = await res.json() as { trackIds: number[] }
-    linkedBrushSource.set(body.trackIds ?? [])
-    linkedBrushActiveCategory.value = (body.trackIds ?? []).length ? cat : null
+    const ids = body.trackIds ?? []
+    linkedBrushSource.set(ids)
+    mirrorTrackHighlight(ids)
+    linkedBrushActiveCategory.value = ids.length ? cat : null
   } catch {
     // Network failure or aborted request — silent for the prototype; a real UX would surface it.
   } finally {
@@ -883,7 +905,16 @@ async function onLinkedBrushCategory(cat: string) {
 
 // If the bag is cleared elsewhere (Escape / follow-up "Clear selection" button), our local
 // active-category tracking must fall back to null so the pressed-chip visual clears too.
-watch(() => linkedBrushStore.isEmpty, (empty) => { if (empty) linkedBrushActiveCategory.value = null })
+// Local pressed-chip fallback: fire when the bag is empty (Escape / Clear) OR when a different
+// panel became the source (its click overwrote our selection). Reading `sourcePlotId` off the bag
+// keeps the O(1) reactivity cheap.
+watch(
+  () => ({ empty: linkedBrushStore.isEmpty, src: linkedBrushStore.bag?.sourcePlotId ?? null }),
+  ({ empty, src }) => {
+    if (empty || (src && src !== linkedBrushSourceId.value)) linkedBrushActiveCategory.value = null
+  },
+  { deep: false },
+)
 
 // A small selection-badge next to the chips so the user can see the bag content came back
 // with something — the visible signal that end-to-end wiring is alive before P4 wires the dim
