@@ -733,6 +733,29 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(up.call_count, 1)
         self.assertEqual(up.call_args[0][0].method, "POST")
 
+    def test_auto_pair_skipped_for_app_spawned_turns(self):
+        # A headless `claude -p` spawned by Cecelia sets its OWN messaging env for its MCP children;
+        # the headless MCP config adds CECELIA_OBSERVER_NO_PAIR so the turn can't re-pair the
+        # project to a session that is about to exit (seen live, KIWI_ASSISTANT_PLAN Phase 0).
+        env = {"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s.sock",
+               "CLAUDE_CODE_MESSAGING_TOKEN":  "t",
+               "CECELIA_OBSERVER_NO_PAIR":     "1"}
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"images": []}) as up:
+            self.c.list_images("proj-abc")
+        self.assertEqual(up.call_count, 1)               # the tool call only — no pair POST
+        self.assertEqual(up.call_args[0][0].method, "GET")
+        self.assertEqual({}, self.c._paired)
+        # the explicit re-pair tool refuses too, rather than pairing the throwaway session
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"ok": True}) as up:
+            with self.assertRaises(ApiError):
+                self.c.register_push_target("proj-abc")
+            self.assertEqual(up.call_count, 0)
+        # "0" means not set — pairing works as normal
+        env["CECELIA_OBSERVER_NO_PAIR"] = "0"
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"images": []}) as up:
+            self.c.list_images("proj-abc")
+        self.assertEqual(up.call_count, 2)
+
     def test_register_push_target_errors_without_env(self):
         # Explicit re-pair when env vars are absent ⇒ ApiError with an actionable message so the
         # user knows the fix is to upgrade Claude Code (not to keep retrying).

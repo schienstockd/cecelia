@@ -193,6 +193,19 @@ class DisallowedRoute(RuntimeError):
     """A caller attempted a (method, path) not on ALLOWED_ROUTES."""
 
 
+# Set by Cecelia in the MCP config of the headless assistant turns it spawns itself (Ask Claude, Watch,
+# Kiwi — `observer_mcp_config(...; headless = true)`, app/src/ai/agent_runner.jl). A headless `claude -p`
+# hands its MCP children its OWN messaging socket + token, so without this every in-app turn would
+# re-pair the project to a session that exits seconds later — overwriting the user's real pairing and
+# sending pushes to a dead socket. Observed 2026-09-23 (KIWI_ASSISTANT_PLAN Phase 0). The user's own
+# terminal registration never carries it, so their sessions pair as before.
+NO_PAIR_ENV = "CECELIA_OBSERVER_NO_PAIR"
+
+
+def _pairing_disabled() -> bool:
+    return os.environ.get(NO_PAIR_ENV, "") not in ("", "0")
+
+
 class ApiError(RuntimeError):
     """The Cecelia API returned an error (or could not be reached)."""
 
@@ -220,6 +233,8 @@ class CeceliaClient:
         tool with a `project_uid`; no-op after the first hit per (project, socket, token). Silent
         on any failure — a broken pair must never break a read tool.
         """
+        if _pairing_disabled():
+            return
         socket_path = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET", "")
         token       = os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN", "")
         if not socket_path or not token or not project_uid:
@@ -556,6 +571,9 @@ class CeceliaClient:
         # POST even when the in-memory cache says nothing changed. Used by the
         # `register_push_target` MCP tool (`server.py`) so a user can nudge a stale record
         # without waiting for the natural next tool call to auto-refresh it.
+        if _pairing_disabled():
+            raise ApiError(0, "pairing is disabled for app-spawned assistant turns — pair from your "
+                              "own Claude Code session instead")
         socket_path = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET", "")
         token       = os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN", "")
         if not socket_path or not token:

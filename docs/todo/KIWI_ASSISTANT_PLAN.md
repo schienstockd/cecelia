@@ -1,9 +1,9 @@
 # Kiwi assistant (structured duck) — plan
 
-**Status:** parked (2026-09-23) · branch `docs/kiwi-assistant-plan`. Nothing built. Decisions 1–3
+**Status:** in progress — Phase 0 done 2026-09-23; Phase 1 built on `feat/kiwi-engine-contract`. Decisions 1–3
 are the user's; Decisions 4–8 were proposed by Claude in the same conversation and accepted without
-objection; Decisions 9–10 came out of the literature search the same day (*Prior art* below) and are
-proposals. Read the *Open decisions* before building: several of them change a phase's shape.
+objection; Decisions 9–10 came out of the literature search the same day (*Prior art* below) and
+Decision 11 out of Phase 0; all three are proposals. Read the *Open decisions* before building: several of them change a phase's shape.
 **Supersedes** `KIWI_PLAN.md` Decisions 1 and 5 and bends Decision 12 (see *What this changes in
 KIWI_PLAN*). Everything else in `KIWI_PLAN.md` (cockpit shape, pairing chip, captures list) stands.
 
@@ -91,6 +91,12 @@ A structured reply can.
     shown to *exist* (Decision 6) as when it has been checked to *support* its claim (Open decision 5).
     `interpretation` flags use first-person wording ("I think…") — it reduced over-reliance; impersonal
     hedging ("It's not clear…") had weaker, non-significant effects (Kim et al. 2024).
+11. **Pack the context; don't make the engine browse** (proposed, from Phase 0). Cecelia resolves the
+    attached chips into a compact text context pack and sends it with the prompt; the engine calls
+    tools only for what the pack lacks. Phase 0 showed the turn is 13–29 tool round-trips to rebuild
+    context Cecelia already has, and a 3 s spawn floor — so a warm process would save ~nothing, while
+    fewer round-trips save most of the minute *and* most of the tokens. The pack is the same text
+    serialisation Open decision 5's support checker needs, so it is built once and used twice.
 
 ## The reference type (`KiwiRef`)
 
@@ -108,6 +114,18 @@ does not invent new addressing.
 | `task` | `funName`, optional run / `valueName` | task registry | `point_at_ui` (nav path) |
 | `ui` | `anchor` (data-guide id or nav path) | `CaptureAddress.domAnchor` | `point_at_ui` |
 | `blackboard` | `entryId`, `version?` | Blackboard | (open entry) |
+| `project` | `projectUid` | `get_project_info` | (navigate) |
+| `set` | `setUid` | `list_images` | (navigate) |
+| `image` | `imageUid` | `list_images`, `get_image_info` | (open image) |
+| `population` | `imageUid`, `valueName`, `popPath` | `get_populations` | (open gating) |
+
+**Typed fields per kind, never a flat `id` string** (Phase 0, 2026-09-23). The smoke test used a flat
+`{kind, id}` ref and the model cited `tracks:VJy1Nx` — an *image* uid under the `tracks` kind, on
+images with no tracking — and `task:get_project_info`, a *tool name* offered as evidence. Both passed
+the CLI's schema check. With per-kind fields (`tracks` requires `imageUid` + `valueName` +
+`trackIds[]`), the first is a missing-field schema failure and the second can't be expressed. The
+`project` / `set` / `image` / `population` kinds were missing from the first draft; an orientation
+answer points mostly at those.
 
 - **One canonical definition** as a JSON Schema file both the TS and the Python/Julia sides read —
   the shared-asset pattern `VIEWER_PARITY_PLAN.md` uses for the palette. `CaptureAddress`
@@ -123,13 +141,19 @@ does not invent new addressing.
 Today `app/src/ai/agent_runner.jl` has `abstract type AgentBackend` but every function dispatches on
 the concrete `ClaudeAgent` — the abstraction is a name, not a contract. Phase 1 makes it one.
 
-**The contract** (what any engine adapter implements):
+**The contract** (what any engine adapter implements — built in Phase 1, names as in the code):
 
-- `engine_available(a)` → ready / reason not ready (drives the cockpit's setup CTA);
-- `engine_label(a)` → display name for the UI ("Claude"), so components never hard-code it and the
+- `agent_available(a)` → usable here? (drives the cockpit's setup CTA; the default assumes a CLI on
+  `PATH`, a non-CLI engine overrides it);
+- `agent_label(a)` → display name for the UI ("Claude"), so components never hard-code it and the
   `KIWI_PLAN.md` Decision 12 naming ratchet keeps meaning something;
-- `run_turn(a, prompt, context_refs, schema, tools, session)` → `{reply_json, usage, session_id, error}`;
-- capability flags: `native_schema`, `native_mcp`, `resumable`.
+- `agent_capabilities(a)` → `(; native_schema, native_mcp, resumable)`;
+- `_run_agent_once(a, prompt, mcp_config_path; system_prompt, session_id, json_schema, …)` → one spawn,
+  no retries, returns `AgentResult` (`structured` holds the schema-validated reply).
+
+On top sits `run_agent_turn`, engine-independent: availability gate, stale-session self-heal (only if
+`resumable`), and "asked for a schema, got none" = failure. Context refs (Decision 11's pack) go into
+the prompt, not the contract.
 
 **What is engine-independent (expected to transfer):** the `KiwiRef` type, the reply schema, the
 resolver, Decision 6's validate-and-re-ask loop, the UI. The guarantee that every claim carries a
@@ -180,13 +204,15 @@ the CLIs, not HTTP APIs).
    the user pick a mode? Needs a visible indicator either way.
 3. **Where threads and replies persist.** Ephemeral per session, a `<proj>/kiwi/` store, or folded into
    the lab log / Blackboard. Affects whether a past Kiwi claim can itself be a `KiwiRef`.
-4. **Turn latency on the CLI route.** Each turn spawns a process. Not measured — Phase 0 measures it
-   before the UI is designed around it.
+4. **Turn latency on the CLI route — measured (Phase 0), resolved.** ~1 min per cold turn, dominated
+   by tool round-trips, not process spawn. Phase 4's UI must show progress while the engine works
+   (tool calls as they happen), not a bare spinner. See Decision 11 for the speed lever.
 5. **Support, not just presence.** Decision 6 proves a ref is real, not that it backs the claim next
    to it — and the gap is large: in audited generative search engines only 74.5% of citations
    supported their sentence (Liu et al. 2023). Checking this does **not** need an LLM judge: small
-   fine-tuned checkers reach GPT-4-level accuracy on CPU — **HHEM-2.1-Open** (Apache-2.0; vendor-reported <600 MB,
-   ~1.5 s per 2k tokens on CPU) or **MiniCheck-Flan-T5-Large** (MIT, 770M; skip Bespoke-7B — GPU-sized, licence unclear).
+   fine-tuned checkers reach GPT-4-level accuracy on CPU — **HHEM-2.1-Open** (Apache-2.0;
+   vendor-reported <600 MB, ~1.5 s per 2k tokens on CPU) or **MiniCheck-Flan-T5-Large** (MIT, 770M;
+   skip Bespoke-7B — GPU-sized, licence unclear).
    Three-way label, not two: *supported* / *contradicted* / *not addressed* (VeriFact), and
    AttrScore's *extrapolatory* (related, but the claim goes beyond it) is exactly an `observation`
    that should have been an `interpretation`. **The real cost is not the checker but the text
@@ -194,29 +220,53 @@ the CLIs, not HTTP APIs).
    serialisation of its content (plot summary stats, a cell's measurement row, a track's features).
    Expect this to be harder for plots and images than for text — multimodal models attribute poorly
    to figures and tables (MCiteBench, 2025).
-8. **Schema during generation vs after.** Strict format constraints measurably degrade reasoning
-   (Tam et al. 2024). Options: a free-text `reasoning` field ordered before `claims` in the schema, or
-   a two-step turn (answer freely, then fill the schema). Measure in Phase 0 before choosing.
-9. **Check after, or attribute first?** Decisions 6–7 check refs after generation. The alternative is
-   *attribute-first*: pick the refs, then write each claim against its ref (Slobodkin et al. 2024) —
-   faithful by construction, and it cut human verification time. Heavier turn; revisit if Phase 3's
-   re-ask rate is high.
 6. **Blackboard bad-outcomes-first ordering** (`_outcome_rank`, `mcp/cecelia_mcp/server.py`) — does a
    resurfaced outcome count as an `observation` (the user's own past judgment) or does the ordering
    make it an `interpretation`? Gray in the duck note; pin it when the schema lands.
 7. **Direct API engine** — a second adapter once/if Console access exists. Would be the first real test
    of Decision 3.
+8. **Schema during generation vs after.** Strict format constraints measurably degrade reasoning
+   (Tam et al. 2024). Options: a free-text `reasoning` field ordered before `claims` in the schema, or
+   a two-step turn (answer freely, then fill the schema). Phase 0 ran one rep of each: inconclusive
+   (differences within run-to-run noise). Settle it on Phase 3's fixed prompt set, not ad hoc.
+9. **Check after, or attribute first?** Decisions 6–7 check refs after generation. The alternative is
+   *attribute-first*: pick the refs, then write each claim against its ref (Slobodkin et al. 2024) —
+   faithful by construction, and it cut human verification time. Phase 0 makes this more attractive
+   than it looked: Decision 11's context pack is most of the way there.
 
 ## Phases
 
 Each independently shippable.
 
-0. **Measure.** Time a CLI turn with `--json-schema` + `--mcp-config` + `--system-prompt` on a real
-   project (cold and `--resume`). Decides whether Phase 4's UI streams, spins, or needs a warm process.
-   Same run: reasoning-field-first vs bare schema (Open decision 8).
-1. **Engine contract.** Lift `AgentBackend` into the contract above; `ClaudeAgent` implements it; the
-   observer's existing Watch/lab-log turns move onto it unchanged. Tests: pure command builder + result
-   parser (already the pattern in `app/test/suite/observer.jl`).
+0. **Measure — DONE 2026-09-23.** Sonnet, project `zolIMa`, read-only observer tools only
+   (`--tools ""`, `--strict-mcp-config`, an explicit read allow-list; `CLAUDE_CODE_*` env stripped so
+   the observer couldn't auto-pair). One rep — the latency answer was clear, more reps would only spend
+   quota:
+
+   | turn | wall | tool round-trips | usage (API-price equivalent) |
+   |---|---|---|---|
+   | spawn floor (no tools, no schema) | 3 s | 0 | — |
+   | cold, bare schema | 68 s | 13 | $0.43 |
+   | cold, `reasoning` field first | 53 s | 15 | $0.44 |
+   | `--resume`, bare | 26 s | 5 | $0.52 |
+   | `--resume`, `reasoning` | 100 s | 29 | $0.78 |
+
+   Findings: time is tool round-trips, not spawn (→ Decision 11, Open decision 4); cache reads run
+   137k–548k tokens a turn and grow on resume — on a seat login that's quota, and real use will meet
+   rate limits; flat-`id` refs invite wrong-kind citations (→ typed fields in the `KiwiRef` table);
+   reasoning-vs-bare inconclusive at n=1 (Open decision 8). Harness: a throwaway script, not
+   committed — the flags above are the reproducible part.
+1. **Engine contract — BUILT on `feat/kiwi-engine-contract`.** `AgentBackend` is now the contract
+   above; `ClaudeAgent` implements it; `run_observer_turn` is a thin call into `run_agent_turn`, the
+   observer's turns unchanged. `_build_claude_cmd` gained the Kiwi isolation options Phase 0 used;
+   `_parse_claude_result` reads `structured_output` and treats `error_max_structured_output_retries` as
+   failure. Tests: a fake engine pins the driver (self-heal, missing-schema failure, unimplemented
+   engine fails loudly), plus the new builder flags and parser paths (`app/test/suite/observer.jl`).
+   **Also fixed here — a pairing bug Phase 0 exposed:** a headless `claude -p` hands its MCP children
+   its own messaging socket, so every in-app turn (Ask Claude, Watch, and the Phase 0 harness) re-paired
+   the project to a session about to exit, overwriting the user's pairing. App-spawned turns now load a
+   separate `observer-mcp-headless.json` with `CECELIA_OBSERVER_NO_PAIR`; the observer skips auto-pair
+   and refuses `register_push_target` under it. The terminal config still pairs.
 2. **`KiwiRef` + resolver.** Shared JSON Schema, TS type, Julia resolver + route. Tests: every kind
    round-trips; unknown ids fail resolution.
 3. **Headless Kiwi turn.** Reply schema, Kiwi system prompt, validate-and-re-ask loop, run from the

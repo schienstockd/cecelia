@@ -5,8 +5,29 @@
 # (napari.jl `_bridge_cmd` / `Base.Process`). The MCP server is model-agnostic, so the assistant is a
 # swappable adapter — `AgentBackend`, with `ClaudeAgent` the first implementation (Gemini/ChatGPT can
 # slot in later without touching the server or the prompt). See docs/todo/OBSERVER_INTEGRATION_PLAN.md.
+#
+# ── The engine contract (docs/todo/KIWI_ASSISTANT_PLAN.md → *The engine seam*) ─────────────────────
+#
+# Every backend implements these four; everything else in this file is Claude-specific plumbing.
+#
+#   agent_available(a)     → Bool       is the engine usable here (drives the UI gate). The default
+#                                       below assumes a CLI on PATH; a non-CLI engine overrides it
+#   agent_label(a)         → String     display name for the UI, so components never hard-code one
+#   agent_capabilities(a)  → NamedTuple (; native_schema, native_mcp, resumable)
+#   _run_agent_once(a, prompt, mcp_config_path; opts...) → AgentResult   one spawn, no retries
+#
+# `run_agent_turn` (below) is the engine-independent driver on top: availability gate, stale-session
+# self-heal (only if `resumable`), and the "asked for a schema, got none" failure. Designed to
+# transfer to a second engine but NOT proven to — only Claude implements it (plan, Decision 3).
 
 abstract type AgentBackend end
+
+agent_label(a::AgentBackend)::String = string(nameof(typeof(a)))
+agent_capabilities(::AgentBackend) = (; native_schema = false, native_mcp = false, resumable = false)
+_run_agent_once(a::AgentBackend, args...; kw...) =
+    error("$(typeof(a)) does not implement _run_agent_once — see the engine contract in agent_runner.jl")
+# Does this error mean the stored session is gone (drop it and retry fresh)? Engine-specific wording.
+_is_stale_session_error(::AgentBackend, ::AbstractString)::Bool = false
 
 # The CLI binary for the agent — default "claude", overridable via config.toml [ai] agent_bin.
 observer_agent_bin()::String = string(get(get(cecelia_conf(), "ai", Dict()), "agent_bin", "claude"))
@@ -31,8 +52,14 @@ end
 ClaudeAgent(; bin::AbstractString = observer_agent_bin(), model::AbstractString = observer_default_model()) =
     ClaudeAgent(String(bin), String(model))
 
+agent_label(::ClaudeAgent)::String = "Claude"
+# `--json-schema` validates + re-prompts inside the CLI; `--mcp-config`; `--resume <session_id>`.
+agent_capabilities(::ClaudeAgent) = (; native_schema = true, native_mcp = true, resumable = true)
+
 # One turn's outcome — backend-agnostic. The lab-log write itself is a side effect the agent performs
 # through the MCP append tool; this carries the usage/session data for the in-app readouts.
+#
+# `structured` is the schema-validated reply when the turn asked for one (`json_schema`), else `nothing`.
 struct AgentResult
     ok::Bool
     text::String
@@ -40,7 +67,9 @@ struct AgentResult
     output_tokens::Int
     session_id::String
     error::String
+    structured::Any
 end
+AgentResult(ok, text, intok, outok, sid, err) = AgentResult(ok, text, intok, outok, sid, err, nothing)
 
 # ── Finding and spawning the CLI (Windows) ────────────────────────────────────────────────────────
 #
@@ -116,6 +145,7 @@ _agent_spawn_cmd(cmd::Cmd)::Cmd =
 
 # Is the agent CLI available on PATH? Drives the UI availability gate (feature hidden if absent).
 agent_available(a::AgentBackend)::Bool = !isnothing(agent_bin_path(_agent_bin(a)))
+_agent_bin(::AgentBackend)::String = ""         # non-CLI engines: no binary to find
 _agent_bin(a::ClaudeAgent)::String = a.bin
 
 # The MCP server's name — one literal, used by the config, the `--allowedTools` filter, and the
@@ -134,24 +164,45 @@ function observer_mcp_spec(mcp_dir::AbstractString, python_bin::AbstractString,
 end
 
 # The `--mcp-config` file shape (`{mcpServers: {<name>: <spec>}}`) — what the spawned agent loads.
+#
+# `headless = true` for the turns the APP spawns (`claude -p`): it sets CECELIA_OBSERVER_NO_PAIR so the
+# observer never auto-pairs. A headless `claude -p` hands its MCP children its own messaging socket, so
+# without this each in-app turn re-paired the project to a session that exits seconds later — the
+# user's real pairing overwritten, pushes sent to a dead socket (seen live 2026-09-23, KIWI_ASSISTANT_PLAN
+# Phase 0). The terminal one-liner and `claude mcp add-json` registration stay pairing-enabled.
 function observer_mcp_config(mcp_dir::AbstractString, python_bin::AbstractString,
-                             api_url::AbstractString)::Dict{String,Any}
-    Dict{String,Any}("mcpServers" => Dict{String,Any}(
-        OBSERVER_MCP_NAME => observer_mcp_spec(mcp_dir, python_bin, api_url)))
+                             api_url::AbstractString; headless::Bool = false)::Dict{String,Any}
+    spec = observer_mcp_spec(mcp_dir, python_bin, api_url)
+    headless && (spec["env"]["CECELIA_OBSERVER_NO_PAIR"] = "1")
+    Dict{String,Any}("mcpServers" => Dict{String,Any}(OBSERVER_MCP_NAME => spec))
 end
 
 # Build the `claude -p` command. PURE given its inputs → unit-tested without spawning anything.
 # --allowedTools mcp__cecelia-observer lets the agent call the observer tools non-interactively; the
 # MCP allow-list (read routes + lablog/append only) remains the hard no-mutation guarantee.
+#
+# The defaults reproduce the observer's turn exactly. A Kiwi turn (KIWI_ASSISTANT_PLAN Decision 8) also
+# passes: `replace_system_prompt` (its own prompt, not appended to Claude Code's), `json_schema` (the
+# reply schema), `allowed_tools` (a read-only allow-list, not the whole server), `strict_mcp` (ignore
+# the user's other MCP servers) and `builtin_tools = ""` (no Bash/Read/Edit — observer tools only).
 function _build_claude_cmd(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
-                           session_id::AbstractString = "", system_prompt::AbstractString = "")::Cmd
+                           session_id::AbstractString = "", system_prompt::AbstractString = "",
+                           replace_system_prompt::Bool = false, json_schema::AbstractString = "",
+                           allowed_tools::Union{Nothing,Vector{String}} = nothing,
+                           strict_mcp::Bool = false,
+                           builtin_tools::Union{Nothing,AbstractString} = nothing)::Cmd
+    allowed = allowed_tools === nothing ? ["mcp__" * OBSERVER_MCP_NAME] : allowed_tools
     args = String[a.bin, "-p", String(prompt),
                   "--output-format", "json",
                   "--mcp-config", String(mcp_config_path),
-                  "--allowedTools", "mcp__" * OBSERVER_MCP_NAME]
-    isempty(system_prompt) || append!(args, ["--append-system-prompt", String(system_prompt)])
-    isempty(session_id)    || append!(args, ["--resume", String(session_id)])
-    isempty(a.model)       || append!(args, ["--model", a.model])
+                  "--allowedTools", join(allowed, ",")]
+    strict_mcp              && push!(args, "--strict-mcp-config")
+    builtin_tools === nothing || append!(args, ["--tools", String(builtin_tools)])
+    isempty(json_schema)    || append!(args, ["--json-schema", String(json_schema)])
+    isempty(system_prompt)  ||
+        append!(args, [replace_system_prompt ? "--system-prompt" : "--append-system-prompt", String(system_prompt)])
+    isempty(session_id)     || append!(args, ["--resume", String(session_id)])
+    isempty(a.model)        || append!(args, ["--model", a.model])
     Cmd(args)
 end
 
@@ -414,10 +465,13 @@ function _is_stale_session_error(msg::AbstractString)::Bool
     m = lowercase(String(msg))
     occursin("no conversation found", m) && occursin("session id", m)
 end
+_is_stale_session_error(::ClaudeAgent, msg::AbstractString)::Bool = _is_stale_session_error(msg)
 
 # Parse `claude --output-format json` output. PURE → unit-tested. Claude prints one JSON object with
 # `result` (final text), `session_id`, `is_error`, and `usage {input_tokens, output_tokens}`. Tolerant
 # of missing keys (the exact schema is an adapter detail — confirm against a live run, see the PLAN).
+# With `--json-schema` it also carries `structured_output`; when the CLI's own validate-and-re-prompt
+# loop gives up, `subtype` is `error_max_structured_output_retries` — an error even if `is_error` isn't.
 function _parse_claude_result(json_str::AbstractString)::AgentResult
     j = try
         JSON3.read(json_str)
@@ -428,19 +482,25 @@ function _parse_claude_result(json_str::AbstractString)::AgentResult
     usage = get(j, :usage, nothing)
     intok = usage isa AbstractDict ? Int(get(usage, :input_tokens, 0)) : 0
     outok = usage isa AbstractDict ? Int(get(usage, :output_tokens, 0)) : 0
-    is_err = get(j, :is_error, false) == true
+    subtype = string(get(j, :subtype, ""))
+    schema_gave_up = subtype == "error_max_structured_output_retries"
+    is_err = get(j, :is_error, false) == true || schema_gave_up
     text   = string(get(j, :result, ""))
-    AgentResult(!is_err, text, intok, outok, string(get(j, :session_id, "")),
-                is_err ? (isempty(text) ? "agent reported an error" : text) : "")
+    so     = get(j, :structured_output, nothing)
+    err    = !is_err ? "" :
+             schema_gave_up ? "the reply never matched the requested schema" :
+             isempty(text) ? "agent reported an error" : text
+    AgentResult(!is_err, text, intok, outok, string(get(j, :session_id, "")), err, so)
 end
 
 # Spawn the agent once and parse its result. Bounded by a timeout so a hung agent can't wedge the
 # request. LIVE path (needs the agent CLI) — not exercised in CI; the pure builders/parsers above are
-# the tested surface.
-function _run_observer_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
-                            system_prompt::AbstractString, session_id::AbstractString,
-                            timeout_s::Real, on_process::Function)::AgentResult
-    cmd = _agent_spawn_cmd(_build_claude_cmd(a, prompt, mcp_config_path; session_id, system_prompt))
+# the tested surface. `cmd_opts` are `_build_claude_cmd`'s Kiwi options, passed through untouched.
+function _run_agent_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
+                         system_prompt::AbstractString, session_id::AbstractString,
+                         timeout_s::Real, on_process::Function, cmd_opts...)::AgentResult
+    cmd = _agent_spawn_cmd(_build_claude_cmd(a, prompt, mcp_config_path;
+                                             session_id, system_prompt, cmd_opts...))
     out = Pipe()
     proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
     close(out.in)
@@ -464,19 +524,32 @@ function _run_observer_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_p
     _parse_claude_result(output)
 end
 
-# Run one observer turn: spawn the agent, let it read + append through the MCP, return usage/session.
-# Self-heals a stale session: if we passed `--resume <sid>` and the CLI reports the conversation is
+# Run one turn on any backend — the engine-independent driver of the contract above.
+# Self-heals a stale session: if we passed a session id and the engine reports the conversation is
 # gone, drop the dead id and retry ONCE fresh — otherwise a pruned session would fail every Watch
 # pass forever (see _is_stale_session_error). A fresh turn just loses the prior context, not the pass.
-function run_observer_turn(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
-                           system_prompt::AbstractString = "", session_id::AbstractString = "",
-                           timeout_s::Real = 180, on_process::Function = _ -> nothing)::AgentResult
-    agent_available(a) || return AgentResult(false, "", 0, 0, "", "assistant CLI not found: $(a.bin)")
-    res = _run_observer_once(a, prompt, mcp_config_path;
-                             system_prompt, session_id, timeout_s, on_process)
-    if !res.ok && !isempty(session_id) && _is_stale_session_error(res.error)
-        res = _run_observer_once(a, prompt, mcp_config_path;
-                                 system_prompt, session_id = "", timeout_s, on_process)
+# A turn that asked for a schema (`json_schema`) and came back without a structured reply is a
+# failure: the CLI can report `success` with no `structured_output` (KIWI_ASSISTANT_PLAN Decision 6).
+function run_agent_turn(a::AgentBackend, prompt::AbstractString, mcp_config_path::AbstractString;
+                        system_prompt::AbstractString = "", session_id::AbstractString = "",
+                        timeout_s::Real = 180, on_process::Function = _ -> nothing,
+                        json_schema::AbstractString = "", cmd_opts...)::AgentResult
+    agent_available(a) ||
+        return AgentResult(false, "", 0, 0, "", "assistant CLI not found: $(agent_label(a)) ($(_agent_bin(a)))")
+    once(sid) = _run_agent_once(a, prompt, mcp_config_path; system_prompt, session_id = sid,
+                                timeout_s, on_process, json_schema, cmd_opts...)
+    res = once(String(session_id))
+    if !res.ok && !isempty(session_id) && agent_capabilities(a).resumable &&
+       _is_stale_session_error(a, res.error)
+        res = once("")
+    end
+    if res.ok && !isempty(json_schema) && res.structured === nothing
+        res = AgentResult(false, res.text, res.input_tokens, res.output_tokens, res.session_id,
+                          "the reply had no structured output", nothing)
     end
     res
 end
+
+# The observer's turn (Ask Claude / Watch) — unchanged behaviour, now a thin call into the contract.
+run_observer_turn(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString; kw...) =
+    run_agent_turn(a, prompt, mcp_config_path; kw...)
