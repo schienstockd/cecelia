@@ -1576,12 +1576,26 @@ function rebuildOverlays() {
   }
 
   for (const [vn, payload] of trackPayloads.value.entries()) {
+    // If trackclust ribbons are also being drawn for THIS vn, suppress the plain per-vn ribbon —
+    // trackclust splits the same tracks by cluster pop, so drawing both stacks two ribbons per
+    // track ("they double up on the viewer"). Trackclust wins because it is the more specific
+    // authoring: the plain source is "all tracks of vn, one colour", trackclust is "the same
+    // tracks, coloured by which cluster pop they belong to". Only suppresses the per-vn source
+    // for vns the server returned trackclust pops on; a trackclust toggle on for a vn with no
+    // trackclust pops (empty payload → not cached) still shows the plain ribbon.
+    if (trackclustOn && trackclustPayloads.value.has(vn)) continue
     const p = narrowByHighlight(vn, payload, { allowFallback: true })
     if (p) sources.push({ vn, payload: p, colour: overrides[vn] })
   }
   const popMgrPayload = overlays.value
   const popMgrVn = gatingCurrent.value.valueName || popMgrPayload?.valueName || ''
-  if (gatedOn && popMgrPayload && popMgrVn) {
+  // Same suppression rule as the per-vn plain ribbons above: when trackclust is drawing on
+  // popMgrVn, the flow-pop cell-track ribbons draw the SAME tracks over the top in a lump
+  // colour. Trackclust wins on specificity — it colours by cluster membership rather than by
+  // authoring gate — so the cell-track ribbons stand down. Trackclust off, or trackclust on
+  // but no pops for popMgrVn (empty payload → not cached) → cell-track ribbons render as before.
+  const suppressGatedForTrackclust = trackclustOn && popMgrVn && trackclustPayloads.value.has(popMgrVn)
+  if (gatedOn && popMgrPayload && popMgrVn && !suppressGatedForTrackclust) {
     for (const pop of popMgrPayload.pops ?? []) {
       // A pop is ribbon-drawable when it was TYPED as a track pop (`isTrack`) OR when its cells
       // actually hold `track_id > 0` (`hasTracks`) — data OR type, either qualifies. Legacy servers
@@ -1607,8 +1621,11 @@ function rebuildOverlays() {
     }
   }
   if (trackclustOn) {
-    const tcPayload = popMgrVn ? trackclustPayloads.value.get(popMgrVn) : undefined
-    if (tcPayload) {
+    // Iterate every cached trackclust vn (see `loadTracks`) — was `trackclustPayloads.get(popMgrVn)`,
+    // which only ever drew ribbons for the pop manager's active vn. A user with B and T both tracked
+    // + trackclust pops on both saw ribbons for popMgrVn only; now each vn's pops render as their
+    // own sources with their own colours.
+    for (const [tcVn, tcPayload] of trackclustPayloads.value.entries()) {
       for (const pop of tcPayload.pops ?? []) {
         if (!pop.show || !pop.labels?.length) continue
         // Trackclust pops are FILTERS on a `clusters.{suffix}` column — the tracks they cover are
@@ -1616,9 +1633,9 @@ function rebuildOverlays() {
         // No per-pop attribution to filter by; labels-only is correct here.
         const byLabels = filterPayloadByLabels(tcPayload, new Set(pop.labels))
         if (!byLabels.nCells) continue
-        const p = narrowByHighlight(popMgrVn, byLabels, { allowFallback: false })
+        const p = narrowByHighlight(tcVn, byLabels, { allowFallback: false })
         if (!p) continue
-        const key = `${popMgrVn}::trackclust::${pop.path}`
+        const key = `${tcVn}::trackclust::${pop.path}`
         sources.push({ vn: key, payload: p, colour: overrides[key] ?? pop.colour,
                        popColour: pop.colour })
       }
@@ -1759,27 +1776,35 @@ async function loadTracks() {
     } catch { /* one vn's failure must not take the others down */ }
   }))
   trackPayloads.value = next
-  // Trackclust payload for the POP MANAGER's active vn — a SECOND fetch (different popType) only
-  // when the panel's Trackclust master toggle is on. The pop manager's vn is where those pops are
-  // authored, so a viewer with the pop manager on "A" and per-vn eyes elsewhere still lands the
-  // trackclust ribbons on A. Cached in a Map<vn, payload> so switching vns keeps prior fetches.
+  // Trackclust payloads — a SECOND fetch (different popType) per vn, only when the panel's
+  // Trackclust master toggle is on. Fetch for EVERY trackable segmentation the image knows about
+  // (not just the ticked-directions vns): the trackclust master says "show my track clusters",
+  // and a user turning OFF a plain directions eye shouldn't also silently hide that vn's
+  // trackclust ribbons. The server returns `pops: []` for a vn with no trackclust pops, and those
+  // entries are skipped below — so this widening costs at most one round trip per vn without
+  // trackclust pops (typically none, since a segmentation the user hasn't clustered has none).
+  // Refetch every call — `loadTracks` fires on `cc.viewerOverlaysTick`, which the pop manager
+  // pings on any gating edit; a cached-only path would draw stale ribbons after the user changes
+  // a trackclust pop. Payloads are small; the round trip is cheaper than deciding which
+  // mutations are safe to skip.
   const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
-  const popMgrVn = gatingCurrent.value.valueName
-  if (trackclustOn && popMgrVn) {
-    // Refetch every call — `loadTracks` fires on `cc.viewerOverlaysTick`, which the pop manager
-    // pings on ANY gating edit, so a cached-only path would draw stale ribbons after the user
-    // changes a trackclust pop. The payload is small; the round trip is cheaper than deciding
-    // which mutations are safe to skip.
-    try {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: popMgrVn, popType: 'trackclust' }),
-                              { cache: 'no-store' })
-      if (res.ok) {
-        const next = new Map(trackclustPayloads.value)
-        next.set(popMgrVn, await res.json())
-        trackclustPayloads.value = next
-      }
-    } catch { /* trackclust unavailable — leave cache untouched */ }
-  } else if (!trackclustOn && trackclustPayloads.value.size) {
+  if (trackclustOn) {
+    const tcVns = names   // every trackable vn, not just the ticked-eyes set
+    const tcNext = new Map<string, OverlayPayload>()
+    await Promise.all(tcVns.map(async vn => {
+      try {
+        const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust' }),
+                                { cache: 'no-store' })
+        if (res.ok) {
+          const payload = await res.json() as OverlayPayload
+          // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
+          // but would show up as a source count if it made it into the map.
+          if ((payload?.pops ?? []).length) tcNext.set(vn, payload)
+        }
+      } catch { /* one vn's failure must not take the others down */ }
+    }))
+    trackclustPayloads.value = tcNext
+  } else if (trackclustPayloads.value.size) {
     // toggle-off drops the cache so a re-toggle-on refetches (a stale payload after a gating edit
     // would draw the wrong ribbons; the cost of the refetch is one small request per vn).
     trackclustPayloads.value = new Map()
