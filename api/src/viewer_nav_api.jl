@@ -37,11 +37,15 @@ function api_viewer_seek(body_bytes::Vector{UInt8})
     image_uid = _wstr(body, :imageUid)
     isempty(image_uid) && return 400, JSON3.write((; error = "imageUid required"))
     # Both t and z are optional individually but at least one must be set — a seek with neither is
-    # a no-op the caller shouldn't have sent. Coerce anything else (strings, floats) to Int.
-    t_raw = get(body, :t, nothing)
-    z_raw = get(body, :z, nothing)
-    t = t_raw === nothing ? nothing : try; Int(t_raw); catch; nothing; end
-    z = z_raw === nothing ? nothing : try; Int(z_raw); catch; nothing; end
+    # a no-op the caller shouldn't have sent. Coerce numbers directly and strings via tryparse
+    # (JSON3 delivers `"12"` as a String, and bare `Int("12")` throws MethodError).
+    _coerce_int(v) = v === nothing ? nothing :
+        v isa Integer ? Int(v) :
+        v isa Number  ? (try Int(v) catch; nothing end) :
+        v isa AbstractString ? tryparse(Int, String(v)) :
+        nothing
+    t = _coerce_int(get(body, :t, nothing))
+    z = _coerce_int(get(body, :z, nothing))
     (t === nothing && z === nothing) && return 400, JSON3.write((; error = "at least one of t, z required"))
     focus = Dict{String,Any}()
     t === nothing || (focus["t"] = t)
