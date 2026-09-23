@@ -22,12 +22,13 @@
 #   julia --project=api scripts/kiwi_eval.jl --projects-dir ~/cecelia-feijoa/projects \
 #         --out /tmp/kiwi-eval --reps 5 [--variants bare,reasoning] [--prompts id,id] [--model sonnet]
 #         [--python <analysis-env python>]      # default: python_bin_path()
+#         [--slice k/n]                         # k-th of n parts of the same shuffled job list
 
 using Random, Statistics
 
 function _args()
     a = Dict{String,String}("reps" => "1", "variants" => "bare,reasoning", "model" => "sonnet",
-                            "prompts" => "", "python" => "", "seed" => "1")
+                            "prompts" => "", "python" => "", "seed" => "1", "slice" => "1/1")
     i = 1
     while i <= length(ARGS)
         k = replace(ARGS[i], "--" => ""); a[k] = ARGS[i + 1]; i += 2
@@ -94,6 +95,11 @@ end
 # ── run, interleaved so drift over the session doesn't land on one variant ─────────────────────────
 jobs = [(p, v, r) for r in 1:REPS for p in PROMPTS for v in VARIANTS]
 shuffle!(MersenneTwister(parse(Int, A["seed"])), jobs)
+# `--slice k/n`: run the k-th of n parts of the SAME shuffled job list (same --seed) — so a comparison
+# too big for one seat window runs across windows without repeating or dropping a turn
+let (k, n) = parse.(Int, split(A["slice"], '/'))
+    global jobs = jobs[k:n:end]
+end
 println("kiwi eval: $(length(jobs)) turns → $OUT  (model $(A["model"]), mcp $(MCP_CFG))")
 
 old = Cecelia.cecelia_conf()["dirs"]["projects"]

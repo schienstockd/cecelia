@@ -160,8 +160,8 @@ const KIWI_CLAIM_MAX_CHARS = 160
     kiwi_claim_bundling(text) -> String
 
 Why `text` reads as more than one fact, or "" if it doesn't: over `KIWI_CLAIM_MAX_CHARS`, a
-semicolon or em-dash join, a second sentence, or a list of three or more items (inline or in
-parentheses). Thousands separators ("1,449") don't count as list commas. PURE → tested.
+semicolon or em-dash join, a second sentence, or a list of three or more facts (inline or in
+parentheses — a list of names is one fact, see `_kiwi_clause_list`). Thousands separators ("1,449") don't count as list commas. PURE → tested.
 """
 function kiwi_claim_bundling(text::AbstractString)::String
     length(text) > KIWI_CLAIM_MAX_CHARS && return "longer than $KIWI_CLAIM_MAX_CHARS characters"
@@ -169,9 +169,20 @@ function kiwi_claim_bundling(text::AbstractString)::String
     occursin(';', t) && return "two facts joined by a semicolon"
     occursin(r"\s[—–]\s|\s--\s", t) && return "two facts joined by a dash"
     occursin(r"[.!?]\s+[A-Z]", t) && return "more than one sentence"
-    occursin(r"\([^)]*,[^)]*,[^)]*\)", t) && return "a list of three or more in parentheses"
-    occursin(r",[^,]+,[^,]+\b(and|or)\b|,[^,]+,\s*(and|or)\b|,[^,]+,[^,]+,", t) && return "a list of three or more items"
+    any(m -> _kiwi_clause_list(m.captures[1]), eachmatch(r"\(([^)]*)\)", t)) &&
+        return "a list of three or more facts in parentheses"
+    _kiwi_clause_list(replace(t, r"\([^)]*\)" => "")) && return "a list of three or more facts"
     ""
+end
+
+# Three or more comma-separated items where an inner item is a clause (3+ words: "2 pops on default")
+# — several facts. A list of names ("coastalFg, coastalSm15, cpSAM2", "(movement, test, here)",
+# "/qc 0.63, /Scanning 0.66") is one fact about a set, not a bundle: the 2026-09-23 sanity run's only
+# post-re-ask failures were three such enumerations flagged by a plain comma count.
+function _kiwi_clause_list(s::AbstractString)::Bool
+    parts = split(s, ',')
+    length(parts) >= 3 || return false
+    any(p -> length(split(replace(strip(p), r"^(and|or)\s+" => ""))) >= 3, parts[2:end-1])
 end
 
 # Objects a claim's TEXT names more precisely than an image: population paths ("/qc/CD169-", as the

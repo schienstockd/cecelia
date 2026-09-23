@@ -55,8 +55,15 @@ end
     end
     # bundled — real multi-fact claims from the same run each fail, with the reason named
     @test occursin("dash", kiwi_claim_bundling("nG1jSi's steps list has two entries — driftCorrect and denoise."))
-    @test occursin("parentheses", kiwi_claim_bundling("Median extent in /Directed is 0.58, the lowest of four (/qc 0.63, /Scanning 0.66, /Meandering 0.63)."))
-    @test occursin("list", kiwi_claim_bundling("It has pops on flowTom, on default, and on cpSAM2."))
+    @test occursin("parentheses", kiwi_claim_bundling("Pops exist (13 on flowTom, 2 gated on default, one on cpSAM2)."))
+    @test occursin("list", kiwi_claim_bundling("It has 13 pops on flowTom, 2 pops on default, and one pop on cpSAM2."))
+    # …but a list of NAMES is one fact — the sanity run's three post-re-ask failures, all misfires
+    for t in ("fXgbTl has per-track tables for 6 value names: coastalFg, coastalSm15, cpSAM2, default, flowTom, memTom.",
+              "The four clustering run suffixes (movement, test, here, there) report identical Directed track counts.",
+              "The lineage's segmentations, tracked, and clusterRuns lists are all empty for this image.",
+              "Median extent in /Directed is 0.58, the lowest of four (/qc 0.63, /Scanning 0.66, /Meandering 0.63).")
+        @test kiwi_claim_bundling(t) == ""
+    end
     @test occursin("semicolon", kiwi_claim_bundling("17 tracks in A; 25 in B."))
     @test occursin("sentence", kiwi_claim_bundling("A has 17 tracks. B has 25."))
     @test occursin("longer", kiwi_claim_bundling(repeat("x", KIWI_CLAIM_MAX_CHARS + 1)))
