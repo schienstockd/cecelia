@@ -1229,6 +1229,12 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
     const pids = (s.pointIds ?? []) as number[]
+    // TEMPORARY diagnostic — expose per-series id shape so we can see why pointId ends up null
+    // even when the response is tagged with pointIdKind.
+    // eslint-disable-next-line no-console
+    console.log('[cc-brush] series', keyOf(s), 'uID=', s.uID, 'vn=', s.value_name,
+                'vals=', vals.length, 'ids=', pids.length, 'firstId=', pids[0],
+                'hasPointIdsField=', 'pointIds' in s)
     const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
     vals.forEach((v, k) => pts.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
