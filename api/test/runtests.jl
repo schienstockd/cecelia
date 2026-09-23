@@ -291,3 +291,9 @@ include(joinpath(@__DIR__, "suite", "popmap_and_landscape.jl"))
 # the hook directly (rather than through a live socket) — the enum round-trip of `viewer:hello`
 # is covered by observer_taskframes.jl.
 include(joinpath(@__DIR__, "suite", "plots_registry.jl"))
+
+# ── Kiwi refs (KIWI_ASSISTANT_PLAN Phase 2) ──────────────────────
+# The KiwiRef shape check against the shared schema, and the per-kind resolver against the testpr
+# fixture — each kind pinned both ways (real object resolves, near-miss fails), plus the route.
+include(joinpath(@__DIR__, "suite", "kiwi_refs.jl"))
+include(joinpath(@__DIR__, "suite", "kiwi_turn.jl"))    # Phase 3: schema, seen-this-turn, validate + re-ask (scripted fake engine)

@@ -68,7 +68,7 @@ const recording         = ref(false)   // a one-click timelapse recording is in 
 // new pop type can't end up toggleable-but-never-restored. Only CELL-grained types are in that list:
 // show-populations plots by cell label, whereas track/trackclust are track-grained (membership is
 // track_ids) — their viz is ribbons (the Tracks-ribbon toggle below / per-segmentation
-// directions), and trackclust ribbons are still to come. Layers are namespaced by pop type in the
+// directions, plus the pi-sitemap trackclust ribbon toggle). Layers are namespaced by pop type in the
 // bridge, so flow + clust + region coexist. resolve_pops is generic over pop_type, so region (a filter
 // on regions.{suffix}) resolves + colours its centroids like any other cell pop.
 // Only the icon/label (presentation) lives here — icons MATCH the sidebar module nav (Gate =

@@ -163,13 +163,16 @@ Decision 0) has no `uid` on any node — `_add_node!` generates them and flips
 `m._uid_backfilled = true`. This function then runs a `save_pop_map!` before returning so the
 freshly-picked UIDs are stable across sessions (a next load would otherwise reroll them and any
 outside reference — a `track_source` obs value, a lab-log capture — would drift). Once the sidecar
-is UID-complete this branch never fires again."""
+is UID-complete this branch never fires again.
+
+`backfill_save = false` skips that write, for a caller that must stay read-only (the Kiwi ref resolver,
+`api/src/kiwi_refs.jl`, which only asks whether a path exists — the rerolled uids are never used)."""
 function load_pop_map(task_dir::AbstractString, value_name::AbstractString;
-                      pop_type::PopTypeArg="flow")::PopulationMap
+                      pop_type::PopTypeArg="flow", backfill_save::Bool=true)::PopulationMap
     path = gating_path(task_dir, value_name; pop_type=pop_type)
     isfile(path) || return PopulationMap(; pop_type=pop_type, value_name=value_name)
     m = from_tree(JSON3.read(read(path, String), Dict{String,Any}))
-    m._uid_backfilled && save_pop_map!(m, task_dir)
+    (backfill_save && m._uid_backfilled) && save_pop_map!(m, task_dir)
     m
 end
 

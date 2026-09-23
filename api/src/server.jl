@@ -61,6 +61,8 @@ include("push_writer.jl")    # bidirectional context — Part 5 push writer (BID
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
 include("labels_by_category_api.jl")  # linked brushing category-source (cell-scope) (LINKED_BRUSHING_PLAN.md P2)
 include("plots_registry_api.jl") # bidirectional context — live plot registry for list_plots MCP (BIDIR PR #8)
+include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI_ASSISTANT_PLAN Phase 2; needs the captures/blackboard/landscape/plots files above)
+include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3; REPL-only, no route yet)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -430,6 +432,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/restart" => (req, body_bytes) -> (api_notebooks_restart(body_bytes)),
     "/api/notebooks/build-sysimage" => (req, body_bytes) -> (api_notebooks_build_sysimage(body_bytes)),
     # bidir Blackboard writes — create + revise are MCP-facing; restore / prune / delete are user-only.
+    "/api/kiwi/refs/resolve" => (req, body_bytes) -> (api_kiwi_refs_resolve(body_bytes)),   # read-only POST (a list body)
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),

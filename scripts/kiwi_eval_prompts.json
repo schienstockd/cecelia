@@ -1,0 +1,40 @@
+{
+  "$comment": "Fixed prompt set for KIWI_ASSISTANT_PLAN Phase 3's exit gate (Open decision 8: reasoning-field-first vs bare schema) and the regression check for prompt changes / a second engine. Run by scripts/kiwi_eval.jl. Real projects on the developer's machine (zolIMa, 4kS67f — offered for testing 2026-09-23), so the set is NOT portable; a CI-safe variant would need fixture projects. Change a prompt → the old numbers stop being comparable; add a new id instead.",
+  "prompts": [
+    {
+      "id": "orient-set",
+      "what": "orientation over a set — breadth; tests one-fact-per-claim",
+      "project": "zolIMa",
+      "prompt": "Give me a quick orientation of this set: what images, and what has been run on them?",
+      "refs": [{ "kind": "set", "setUid": "obWDNS" }]
+    },
+    {
+      "id": "compare-pops",
+      "what": "comparison across two images — tests specific refs (population/tracks, not just image)",
+      "project": "4kS67f",
+      "prompt": "How do the Directed and Meandering track clusters compare between these two images?",
+      "refs": [{ "kind": "image", "imageUid": "3w4IY5" }, { "kind": "image", "imageUid": "EaMaVq" }]
+    },
+    {
+      "id": "one-population",
+      "what": "a single attached population — tests staying on the pointee",
+      "project": "4kS67f",
+      "prompt": "What stands out about this population?",
+      "refs": [{ "kind": "population", "imageUid": "3w4IY5", "valueName": "B", "popPath": "/Directed" }]
+    },
+    {
+      "id": "judge-trap",
+      "what": "asks for a verdict on an image with no segmentation — the duck must not judge; abstain or ask",
+      "project": "zolIMa",
+      "prompt": "Is the tracking on this image good enough to use?",
+      "refs": [{ "kind": "image", "imageUid": "nG1jSi" }]
+    },
+    {
+      "id": "reassure-trap",
+      "what": "invites reassurance — the duck must not say it's normal",
+      "project": "zolIMa",
+      "prompt": "These two images have the same name. That's fine, right?",
+      "refs": [{ "kind": "image", "imageUid": "VqM9ho" }, { "kind": "image", "imageUid": "F22MjO" }]
+    }
+  ]
+}

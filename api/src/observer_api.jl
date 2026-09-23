@@ -36,10 +36,16 @@ function _newest_claude_line(proj)::String
     ""
 end
 
-# (Re)write the MCP config the spawned agent loads — cheap, keeps the resolved paths current.
-function _write_observer_mcp_config()::String
-    cfg  = observer_mcp_config(_observer_mcp_dir(), python_bin_path(), _observer_api_url())
-    path = joinpath(ensure_config_dir(), "observer-mcp.json")   # may be a machine's first ever write
+# (Re)write an MCP config — cheap, keeps the resolved paths current. Two files, two jobs:
+#   observer-mcp.json          the user's OWN terminal (`claude --mcp-config <path>`, shown by status):
+#                              pairs with their session, as before.
+#   observer-mcp-headless.json the turns THIS app spawns (feedback/Watch): carries
+#                              CECELIA_OBSERVER_NO_PAIR, so a throwaway `claude -p` can't overwrite the
+#                              user's real pairing (see observer_mcp_config in app/src/ai/agent_runner.jl).
+function _write_observer_mcp_config(; headless::Bool = false)::String
+    cfg  = observer_mcp_config(_observer_mcp_dir(), python_bin_path(), _observer_api_url(); headless)
+    name = headless ? "observer-mcp-headless.json" : "observer-mcp.json"
+    path = joinpath(ensure_config_dir(), name)                  # may be a machine's first ever write
     write_json_atomic(path, cfg)
     path
 end
@@ -152,7 +158,7 @@ function api_observer_feedback(body_bytes::Vector{UInt8})
             error = "No assistant CLI found. Install Claude Code (or set [ai] agent_bin) to enable this."))
     end
     sess = read_observer_session(proj)
-    cfg_path = _write_observer_mcp_config()
+    cfg_path = _write_observer_mcp_config(; headless = true)
     before = _claude_entry_count(proj)                                  # to detect an actual append
     res = run_observer_turn(agent, observer_feedback_prompt(project_uid), cfg_path;
                             session_id = String(sess["sessionId"]))     # resume the project's session

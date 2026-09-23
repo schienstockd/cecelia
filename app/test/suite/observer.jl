@@ -75,6 +75,14 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
     # the wrapper is built FROM the spec — one source of truth for both the --mcp-config file and
     # `claude mcp add-json` (which takes the bare spec)
     @test srv == Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")
+    @test !haskey(srv["env"], "CECELIA_OBSERVER_NO_PAIR")          # the user's terminal still pairs
+    # app-spawned turns: the headless config switches auto-pairing off (else a throwaway `claude -p`
+    # re-pairs the project to a session that is about to exit — seen live, KIWI_ASSISTANT_PLAN Phase 0)
+    hcfg = Cecelia.observer_mcp_config("/repo/mcp", "/env/python", "http://127.0.0.1:8080"; headless = true)
+    @test hcfg["mcpServers"]["cecelia-observer"]["env"]["CECELIA_OBSERVER_NO_PAIR"] == "1"
+    # …without leaking into the spec `claude mcp add-json` registers for the user's own terminal
+    @test !haskey(Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")["env"],
+                  "CECELIA_OBSERVER_NO_PAIR")
 
     # one-click terminal setup: add-json is not idempotent, so registering is remove-then-add at
     # user scope, and both commands must name the SAME server as the config/--allowedTools filter
@@ -244,6 +252,102 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
                    "get_analysis_boards", "get_available_plots", "get_repl_api")
         @test !occursin(shared, flat)
     end
+end
+
+
+# ── Engine contract (KIWI_ASSISTANT_PLAN Phase 1) ─────────────────────────────────────────────
+# The driver `run_agent_turn` is engine-independent; a fake backend pins its behaviour without
+# spawning anything. The Kiwi command options are pinned on the real Claude builder.
+struct _FakeAgent <: Cecelia.AgentBackend
+    results::Vector{Cecelia.AgentResult}       # returned in order, one per spawn
+    seen::Vector{String}                       # session ids each spawn was given
+end
+Cecelia.agent_available(::_FakeAgent) = true
+Cecelia.agent_capabilities(::_FakeAgent) = (; native_schema = true, native_mcp = true, resumable = true)
+Cecelia._is_stale_session_error(::_FakeAgent, msg::AbstractString) = msg == "gone"
+function Cecelia._run_agent_once(a::_FakeAgent, prompt, cfg; session_id, kw...)
+    push!(a.seen, String(session_id))
+    popfirst!(a.results)
+end
+
+struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the fallbacks' target
+
+@testset "AI engine contract" begin
+    ok(; so = nothing) = Cecelia.AgentResult(true, "hi", 1, 2, "s2", "", so)
+    bad(err)           = Cecelia.AgentResult(false, "", 0, 0, "", err)
+
+    # Claude declares the contract
+    c = Cecelia.ClaudeAgent(bin = "claude", model = "")
+    @test Cecelia.agent_label(c) == "Claude"
+    @test Cecelia.agent_capabilities(c) == (; native_schema = true, native_mcp = true, resumable = true)
+    @test Cecelia._is_stale_session_error(c, "No conversation found with session ID: x")
+
+    # stale session → retried ONCE with no session id
+    f = _FakeAgent([bad("gone"), ok()], String[])
+    r = Cecelia.run_agent_turn(f, "q", "/tmp/m.json"; session_id = "old")
+    @test r.ok && f.seen == ["old", ""]
+    # any other failure is not retried
+    f = _FakeAgent([bad("boom")], String[])
+    @test !Cecelia.run_agent_turn(f, "q", "/tmp/m.json"; session_id = "old").ok && f.seen == ["old"]
+    # a schema was asked for but the reply has none → failure, even though the engine said success
+    f = _FakeAgent([ok()], String[])
+    r = Cecelia.run_agent_turn(f, "q", "/tmp/m.json"; json_schema = "{}")
+    @test !r.ok && occursin("no structured output", r.error)
+    f = _FakeAgent([ok(so = Dict("claims" => []))], String[])
+    @test Cecelia.run_agent_turn(f, "q", "/tmp/m.json"; json_schema = "{}").ok
+    # no schema asked → plain text replies are fine (the observer's turn)
+    @test Cecelia.run_agent_turn(_FakeAgent([ok()], String[]), "q", "/tmp/m.json").ok
+
+    # an engine that doesn't implement the spawn fails loudly, not silently
+    @test_throws ErrorException Cecelia._run_agent_once(_EmptyAgent(), "q", "/tmp/m.json")
+    @test Cecelia.agent_capabilities(_EmptyAgent()).native_schema == false
+
+    # Kiwi turn options on the Claude builder (the Phase 0 isolation flags)
+    argv = Cecelia._build_claude_cmd(c, "q", "/tmp/m.json"; system_prompt = "you are kiwi",
+        replace_system_prompt = true, json_schema = "{\"type\":\"object\"}",
+        allowed_tools = ["mcp__cecelia-observer__list_images", "mcp__cecelia-observer__list_plots"],
+        strict_mcp = true, builtin_tools = "").exec
+    @test "--system-prompt" in argv && !("--append-system-prompt" in argv)
+    @test argv[findfirst(==("--json-schema"), argv) + 1] == "{\"type\":\"object\"}"
+    @test argv[findfirst(==("--allowedTools"), argv) + 1] ==
+          "mcp__cecelia-observer__list_images,mcp__cecelia-observer__list_plots"
+    @test "--strict-mcp-config" in argv
+    @test argv[findfirst(==("--tools"), argv) + 1] == ""       # built-in tools off
+    # the observer's defaults are untouched by the new options
+    obs = Cecelia._build_claude_cmd(c, "q", "/tmp/m.json").exec
+    @test !any(in(obs), ["--strict-mcp-config", "--tools", "--json-schema", "--system-prompt"])
+    @test obs[findfirst(==("--allowedTools"), obs) + 1] == "mcp__cecelia-observer"
+
+    # structured output parsing
+    p = Cecelia._parse_claude_result(
+        """{"is_error":false,"subtype":"success","result":"","session_id":"s","structured_output":{"claims":[]}}""")
+    @test p.ok && p.structured !== nothing && haskey(p.structured, :claims)
+    # the CLI's own re-prompt loop gave up → error even though is_error is false
+    g = Cecelia._parse_claude_result(
+        """{"is_error":false,"subtype":"error_max_structured_output_retries","result":""}""")
+    @test !g.ok && occursin("schema", g.error)
+    @test Cecelia._parse_claude_result("""{"is_error":false,"result":"x"}""").structured === nothing
+
+    # streamed turns (Kiwi): tool results are collected in order, the CLI's own StructuredOutput
+    # acknowledgement is not, and the final result event is parsed as usual
+    stream = join([
+        """{"type":"system","subtype":"init"}""",
+        """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__cecelia-observer__list_images","input":{}}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","content":[{"type":"text","text":"{\\"uid\\":\\"KDIeEm\\"}"}]}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","content":"plain text result"}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","content":"Structured output provided successfully"}]}}""",
+        """not json at all""",
+        """{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"s9","usage":{"input_tokens":5,"output_tokens":7},"structured_output":{"abstain":true,"claims":[]}}""",
+    ], "\n")
+    sr = Cecelia._parse_claude_stream(stream)
+    @test sr.ok && sr.session_id == "s9" && sr.input_tokens == 5
+    @test sr.tool_results == ["{\"uid\":\"KDIeEm\"}", "plain text result"]
+    @test sr.structured !== nothing && sr.structured[:abstain] == true
+    nr = Cecelia._parse_claude_stream("""{"type":"user","message":{"content":[]}}""")
+    @test !nr.ok && occursin("no result event", nr.error)
+    # the stream flag reaches the argv (and --verbose, which stream-json requires)
+    sv = Cecelia._build_claude_cmd(c, "q", "/tmp/m.json"; stream = true).exec
+    @test sv[findfirst(==("--output-format"), sv) + 1] == "stream-json" && "--verbose" in sv
 end
 
 @testset "the in-app observer prompt is a role, not a second tool manual" begin

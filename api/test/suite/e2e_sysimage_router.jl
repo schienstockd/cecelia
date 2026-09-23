@@ -357,6 +357,7 @@ end
         "/api/lablog/dismiss",
         "/api/movies/delete", "/api/movies/meta",
         "/api/notebooks/build-sysimage",
+        "/api/kiwi/refs/resolve",
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
