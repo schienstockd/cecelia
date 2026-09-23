@@ -1,6 +1,8 @@
 > **ARCHIVED — framing note, not authoritative.** The "point, don't judge" line for Kiwi's replies
-> (2026-09-23). Nothing built from it yet; it conflicts with `docs/todo/KIWI_PLAN.md`'s locked
-> "Kiwi is the panel, not the assistant". Do not act on this file as a spec.
+> (2026-09-23). **Outcome:** adopted as the reply rule of
+> [`docs/todo/KIWI_ASSISTANT_PLAN.md`](../todo/KIWI_ASSISTANT_PLAN.md) (claim kinds, Decision 5),
+> which also supersedes `KIWI_PLAN.md`'s "Kiwi is the panel, not the assistant". The gray area below
+> is that plan's Open decision 6. Do not act on this file as a spec.
 
 # Kiwi's line: a duck can point, but not judge
 
