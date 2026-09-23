@@ -60,6 +60,9 @@ agent_capabilities(::ClaudeAgent) = (; native_schema = true, native_mcp = true, 
 # through the MCP append tool; this carries the usage/session data for the in-app readouts.
 #
 # `structured` is the schema-validated reply when the turn asked for one (`json_schema`), else `nothing`.
+# `tool_results` is the text of every tool result the engine received this turn, in order — only filled
+# on a streamed turn (`stream = true`); Kiwi uses it to check a cited ref was actually SEEN this turn
+# (KIWI_ASSISTANT_PLAN Decision 7).
 struct AgentResult
     ok::Bool
     text::String
@@ -68,8 +71,10 @@ struct AgentResult
     session_id::String
     error::String
     structured::Any
+    tool_results::Vector{String}
 end
-AgentResult(ok, text, intok, outok, sid, err) = AgentResult(ok, text, intok, outok, sid, err, nothing)
+AgentResult(ok, text, intok, outok, sid, err) = AgentResult(ok, text, intok, outok, sid, err, nothing, String[])
+AgentResult(ok, text, intok, outok, sid, err, so) = AgentResult(ok, text, intok, outok, sid, err, so, String[])
 
 # ── Finding and spawning the CLI (Windows) ────────────────────────────────────────────────────────
 #
@@ -190,12 +195,15 @@ function _build_claude_cmd(a::ClaudeAgent, prompt::AbstractString, mcp_config_pa
                            replace_system_prompt::Bool = false, json_schema::AbstractString = "",
                            allowed_tools::Union{Nothing,Vector{String}} = nothing,
                            strict_mcp::Bool = false,
-                           builtin_tools::Union{Nothing,AbstractString} = nothing)::Cmd
+                           builtin_tools::Union{Nothing,AbstractString} = nothing,
+                           stream::Bool = false)::Cmd
     allowed = allowed_tools === nothing ? ["mcp__" * OBSERVER_MCP_NAME] : allowed_tools
+    # `stream`: one JSON event per line, tool results included (`--verbose` is required for it)
     args = String[a.bin, "-p", String(prompt),
-                  "--output-format", "json",
+                  "--output-format", stream ? "stream-json" : "json",
                   "--mcp-config", String(mcp_config_path),
                   "--allowedTools", join(allowed, ",")]
+    stream                  && push!(args, "--verbose")
     strict_mcp              && push!(args, "--strict-mcp-config")
     builtin_tools === nothing || append!(args, ["--tools", String(builtin_tools)])
     isempty(json_schema)    || append!(args, ["--json-schema", String(json_schema)])
@@ -493,6 +501,37 @@ function _parse_claude_result(json_str::AbstractString)::AgentResult
     AgentResult(!is_err, text, intok, outok, string(get(j, :session_id, "")), err, so)
 end
 
+# Parse `claude --output-format stream-json --verbose` output. PURE → unit-tested. One JSON event per
+# line; the final `{"type":"result",…}` event carries the same fields `_parse_claude_result` reads, and
+# every `user` event's `tool_result` blocks are the tool outputs the engine saw, collected in order.
+# The CLI's own `StructuredOutput` acknowledgement is dropped — it's not data the engine looked at.
+function _parse_claude_stream(output::AbstractString)::AgentResult
+    seen = String[]
+    final = ""
+    for line in eachline(IOBuffer(String(output)))
+        ev = try JSON3.read(line) catch; continue end
+        ev isa AbstractDict || continue
+        t = string(get(ev, :type, ""))
+        if t == "result"
+            final = line
+        elseif t == "user"
+            msg = get(ev, :message, nothing)
+            content = msg isa AbstractDict ? get(msg, :content, nothing) : nothing
+            content isa AbstractVector || continue
+            for c in content
+                (c isa AbstractDict && get(c, :type, "") == "tool_result") || continue
+                body = get(c, :content, "")
+                txt = body isa AbstractString ? String(body) :
+                      join((string(get(b, :text, "")) for b in body if b isa AbstractDict), "\n")
+                startswith(txt, "Structured output provided") || push!(seen, txt)
+            end
+        end
+    end
+    isempty(final) && return AgentResult(false, "", 0, 0, "", "no result event in the agent's stream", nothing, seen)
+    r = _parse_claude_result(final)
+    AgentResult(r.ok, r.text, r.input_tokens, r.output_tokens, r.session_id, r.error, r.structured, seen)
+end
+
 # Spawn the agent once and parse its result. Bounded by a timeout so a hung agent can't wedge the
 # request. LIVE path (needs the agent CLI) — not exercised in CI; the pure builders/parsers above are
 # the tested surface. `cmd_opts` are `_build_claude_cmd`'s Kiwi options, passed through untouched.
@@ -521,7 +560,7 @@ function _run_agent_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path
                        "agent exited $(proc.exitcode)"
         return AgentResult(false, "", 0, 0, "", isempty(strip(output)) ? why : output)
     end
-    _parse_claude_result(output)
+    get(cmd_opts, :stream, false) ? _parse_claude_stream(output) : _parse_claude_result(output)
 end
 
 # Run one turn on any backend — the engine-independent driver of the contract above.
@@ -545,7 +584,7 @@ function run_agent_turn(a::AgentBackend, prompt::AbstractString, mcp_config_path
     end
     if res.ok && !isempty(json_schema) && res.structured === nothing
         res = AgentResult(false, res.text, res.input_tokens, res.output_tokens, res.session_id,
-                          "the reply had no structured output", nothing)
+                          "the reply had no structured output", nothing, res.tool_results)
     end
     res
 end

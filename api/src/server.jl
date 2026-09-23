@@ -61,6 +61,7 @@ include("push_writer.jl")    # bidirectional context — Part 5 push writer (BID
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
 include("plots_registry_api.jl") # bidirectional context — live plot registry for list_plots MCP (BIDIR PR #8)
 include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI_ASSISTANT_PLAN Phase 2; needs the captures/blackboard/landscape/plots files above)
+include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3; REPL-only, no route yet)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
