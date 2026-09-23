@@ -41,7 +41,7 @@ import { useRoute } from 'vue-router'
 import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import { useLinkedSelectionSource, useLinkedSelectionSubscriber } from '../../composables/useLinkedSelection'
-import { useLinkedSelectionStore } from '../../stores/linkedSelection'
+import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 
@@ -609,19 +609,20 @@ const pointBrushScope = computed<'tracks' | 'cells' | null>(() => {
   const kind = (result.value as { pointIdKind?: 'track' | 'cell' } | null)?.pointIdKind
   return kind === 'track' ? 'tracks' : kind === 'cell' ? 'cells' : null
 })
-// Two shapes flow to the renderer depending on what the producer knew about image provenance:
-//   • `Map<uid, Set<number>>` when the producer set `perImage` (a brush that swept per-image
-//     groups). Renderer matches on `(imageUid, pointId)` so track_id=5 in image B doesn't also
-//     light up track_id=5 in image T.
+// Two shapes flow to the renderer depending on what the producer knew about source provenance:
+//   • `Map<sourceKey, Set<number>>` when the producer set `perSource` (a brush that swept
+//     per-(uid, vn) groups). Renderer matches on `linkedSourceKey(uid, vn) + id` so track_id=5
+//     in segmentation B doesn't also light up track_id=5 in segmentation T (single-image plots
+//     with two segmentations collide the same way two images do).
 //   • `Set<number>` when the producer only knew ids (Show button, MCP mark_*, legacy). Renderer
-//     falls back to a flat id match — same behaviour as before this store carried perImage.
+//     falls back to a flat id match — same behaviour as before this store carried perSource.
 const pointBrushActive = computed<Set<number> | Map<string, Set<number>> | undefined>(() => {
   const scope = pointBrushScope.value
   if (!scope) return undefined
   const b = linkedBrushStore.bag
   if (!b || b.scope !== scope || !b.ids.length) return undefined
-  if (b.perImage && Object.keys(b.perImage).length) {
-    return new Map(Object.entries(b.perImage).map(([uid, ids]) => [uid, new Set(ids)]))
+  if (b.perSource && Object.keys(b.perSource).length) {
+    return new Map(Object.entries(b.perSource).map(([k, ids]) => [k, new Set(ids)]))
   }
   return new Set(b.ids)
 })
@@ -1008,14 +1009,15 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; byImage: Record<string, {
   if (!entries.length) return
   const allIds = Array.from(new Set(entries.flatMap(([, g]) => g.ids)))
   if (!allIds.length) return
-  // `perImage` carries the (uid → ids) shape so subscribing plots that have per-dot image tags
-  // only highlight the RIGHT image's dots — track_id / label are per-image numeric spaces and a
-  // flat ids list matches id=5 on every image that has one. Consumers without image awareness
-  // (viewer mirror, Show button) still see the flat `ids`.
-  const perImage: Record<string, number[]> = {}
-  for (const [uid, g] of entries) perImage[uid] = Array.from(new Set(g.ids))
+  // `perSource` carries the ((uid, vn) → ids) shape so subscribing plots that have per-dot source
+  // tags only highlight the RIGHT segmentation's dots. track_id / label are per-(image, seg)
+  // numeric spaces — a single image with two segmentations (B and T) collides just like two
+  // images do. Keyed by `linkedSourceKey(uid, vn)` so both sides construct it the same way.
+  // Consumers without source awareness (viewer mirror, Show button) still see the flat `ids`.
+  const perSource: Record<string, number[]> = {}
+  for (const [uid, g] of entries) perSource[linkedSourceKey(uid, g.valueName)] = Array.from(new Set(g.ids))
   linkedBrushStore.set({ scope, ids: allIds, source: linkedBrushSourceId.value,
-                         sourcePlotId: linkedBrushSourceId.value, perImage })
+                         sourcePlotId: linkedBrushSourceId.value, perSource })
   // Pick the mirror image: preference is (a) currently-open viewer image if it's a hit group,
   // (b) the panel's own imageUid if it's a hit group, (c) whichever group has the most hits.
   const openUid = projectStore.openImageUid

@@ -291,11 +291,12 @@ export interface BuildOpts extends VisProps {
   // an unknown interval must not be silently rendered as 1 s/frame.
   timeScale?: Record<string, number>
   // Linked brushing subscribe-side (LINKED_BRUSHING_PLAN.md Option B, read side). Two shapes:
-  //   • `Set<number>` — flat id match, used when the producer didn't know which image each id
+  //   • `Set<number>` — flat id match, used when the producer didn't know which source each id
   //     came from (Show button, MCP mark_*).
-  //   • `Map<uid, Set<number>>` — per-image match, used when the producer swept per-image groups
-  //     (a brush on a pooled boxplot). Renderer keys on `(pointUid, pointId)` so track_id=5 in
-  //     image B doesn't also light up track_id=5 in image T (they're per-image numeric spaces).
+  //   • `Map<sourceKey, Set<number>>` — per-(uid, vn) match, used when the producer swept
+  //     per-source groups (a brush on a pooled boxplot). Renderer keys on
+  //     `${pointUid}\u0000${pointVn} + pointId` so track_id=5 in segmentation B doesn't also
+  //     light up track_id=5 in segmentation T (they're per-(image, segmentation) numeric spaces).
   // `null` / absent → idle state, no dimming (base opacity throughout). Sourced from the shared
   // `linkedSelection` store scope-matched against the response's `pointIdKind`.
   brushActiveIds?: Set<number> | Map<string, Set<number>> | null
@@ -1279,30 +1280,31 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   // drop their stroke entirely. Idle → base opacity + thin stroke throughout. A pure opacity
   // delta was too subtle at swarm density — the ring is what actually pops.
   //
-  // MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-image
-  // — the dot's `pointUid` selects that image's id set, and only ids from THAT image match.
-  // The per-image path fixes the ambiguity that track_id=5 exists in every tracked image, so
-  // a lasso on image B was lighting up image T's dots too.
+  // MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-source
+  // — the dot's `(pointUid, pointVn)` selects that source's id set, and only ids from THAT
+  // source match. Fixes the ambiguity that track_id=5 exists in every (image, segmentation)
+  // numeric space, so a lasso on segmentation B was lighting up segmentation T's dots too.
   // If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
   // not-brushable dot would look like a broken renderer.
   const dimOpacity = 0.08
-  const isPerImage = activeIds instanceof Map
-  const matches = (d: { pointId: number | null; pointUid: string }): boolean => {
+  const isPerSource = activeIds instanceof Map
+  type PtRow = { pointId: number | null; pointUid: string; pointVn: string }
+  const matches = (d: PtRow): boolean => {
     if (d.pointId == null || !activeIds) return false
-    if (isPerImage) return (activeIds as Map<string, Set<number>>).get(d.pointUid)?.has(d.pointId) ?? false
+    if (isPerSource) {
+      const key = `${d.pointUid}\u0000${d.pointVn}`
+      return (activeIds as Map<string, Set<number>>).get(key)?.has(d.pointId) ?? false
+    }
     return (activeIds as Set<number>).has(d.pointId)
   }
   const ptFillOpacity = activeIds
-    ? (d: { pointId: number | null; pointUid: string }) =>
-        matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
+    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
     : o.pointOpacity
   const ptStrokeWidth = activeIds
-    ? (d: { pointId: number | null; pointUid: string }) =>
-        matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
+    ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
     : 0.5
   const ptStrokeOpacity = activeIds
-    ? (d: { pointId: number | null; pointUid: string }) =>
-        matches(d) ? 1 : d.pointId != null ? 0 : 0.55
+    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
     : 0.55
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis

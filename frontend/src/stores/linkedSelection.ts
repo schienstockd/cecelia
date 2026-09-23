@@ -34,14 +34,20 @@ export interface LinkedSelectionBag {
    *  "I'm the source" affordance distinct from the "I'm a subscriber" dim. Absent when the
    *  writer isn't a plot (e.g. the "Show" button on TrackSchemeView, or Claude via `mark_*`). */
   sourcePlotId?: string
-  /** Optional per-image ids. Track_ids and cell labels are per-image numeric spaces, so a flat
-   *  `ids` array is ambiguous the moment a plot pools points from two images (track_id=5 exists
-   *  in every tracked image). When a producer knows which image each id came from, it fills this
-   *  map; subscribing plots that have per-dot image tags then match on `(imageUid, id)` and only
-   *  highlight the right image's dots. Absent when the producer is per-image by construction
-   *  (Show button, MCP mark_*) — subscribers fall back to the flat `ids`. */
-  perImage?: Record<string, number[]>
+  /** Optional per-source ids. Track_ids and cell labels are per-(image, segmentation) numeric
+   *  spaces — track_id=5 exists in every tracked segmentation, and a single image with two
+   *  segmentations (B and T) can have colliding ids as well as two images can. When a producer
+   *  knows which (imageUid, valueName) each id came from, it fills this map; subscribing plots
+   *  that have per-dot source tags then match on `(uid, vn, id)` and only highlight the right
+   *  source's dots. Key format is `${uid}\u0000${vn}` (null-separator compound) so both sides
+   *  construct it the same way without collisions on real names. Absent when the producer is
+   *  per-source by construction (Show button, MCP mark_*) — subscribers fall back to the flat
+   *  `ids`. */
+  perSource?: Record<string, number[]>
 }
+
+/** Compound key format for `perSource`. Exported so producers/consumers build the same key. */
+export const linkedSourceKey = (uid: string, vn: string): string => `${uid}\u0000${vn}`
 
 export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
   /** The current bag, or `null` when nothing is selected. Deliberately `null` (not an empty
@@ -62,9 +68,9 @@ export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
       ids: [...next.ids],
       source: next.source,
       ...(next.sourcePlotId ? { sourcePlotId: next.sourcePlotId } : {}),
-      // Defensive-copy the per-image structure too — same reason as ids: caller may mutate.
-      ...(next.perImage ? { perImage: Object.fromEntries(
-        Object.entries(next.perImage).map(([k, v]) => [k, [...v]])
+      // Defensive-copy the per-source structure too — same reason as ids: caller may mutate.
+      ...(next.perSource ? { perSource: Object.fromEntries(
+        Object.entries(next.perSource).map(([k, v]) => [k, [...v]])
       ) } : {}),
     }
   }
