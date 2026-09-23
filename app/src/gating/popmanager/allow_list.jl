@@ -228,6 +228,66 @@ function _pop_has_authored_tracks(pop_uid::AbstractString,
 end
 
 """
+    _resolve_track_family_pops(img, pt, value_name) -> Vector{NamedTuple}
+
+Track-family (`track`/`trackclust`) branch of `resolve_pops`. Membership comes from
+`pop_df(granularity=:cell)` — which internally uses `_pop_df_track_gating` against `track_props` —
+so `clusters.{suffix}` and motility columns resolve correctly, and the returned `labels` are cell
+labels (same semantics as flow/clust pops, so `filterPayloadByLabels` / label→tile stay reusable).
+"""
+function _resolve_track_family_pops(img::CciaImage, pt::AbstractString,
+                                    value_name::AbstractString)::Vector{NamedTuple}
+    m = try
+        load_pop_map(img; value_name = value_name, pop_type = pt)
+    catch e
+        @warn "resolve_pops (track-family): load_pop_map failed" value_name pop_type=pt exception=e
+        return NamedTuple[]
+    end
+    meta = Dict{String,NamedTuple}()
+    paths = String[]
+    for path in pop_paths(m)
+        p = pop_at(m, path)
+        p.transient && continue
+        meta[String(path)] = (colour = p.colour, name = p.name, uid = p.uid,
+                              show = p.show, is_track = p.is_track)
+        push!(paths, String(path))
+    end
+    isempty(paths) && return NamedTuple[]
+    # `expand_cluster_pops=false` — we're already scoping to ONE `value_name`, so the run-wide
+    # expansion that fans a bare cluster-pop ref out across every co-clustered segmentation would
+    # pull in the other vn's cells and taint this vn's overlay.
+    df = try
+        pop_df(img, pt, paths; value_name = value_name, granularity = :cell,
+               expand_cluster_pops = false)
+    catch e
+        @warn "resolve_pops (track-family): pop_df failed" value_name pop_type=pt exception=e
+        return NamedTuple[]
+    end
+    (size(df, 1) > 0 && "label" in names(df) && "pop" in names(df)) || return NamedTuple[]
+    labels_per_pop = Dict{String,Vector{Int}}()
+    @inbounds for i in 1:size(df, 1)
+        lab = df[i, :label]
+        (lab isa Real && isfinite(Float64(lab))) || continue
+        popname = String(df[i, :pop])
+        push!(get!(labels_per_pop, popname, Int[]), Int(round(Float64(lab))))
+    end
+    out = NamedTuple[]
+    for path in paths
+        m_ = meta[path]
+        labs = get(labels_per_pop, path, Int[])
+        isempty(labs) && continue
+        # Members of a track-family pop are tracked cells by construction (`_pop_df_track_gating`
+        # only touches rows with `track_id > 0`), so `has_tracks=true` is definitional here. Kept
+        # in the payload so the frontend's ribbon-eligibility check (`isTrack || hasTracks`) reads
+        # trackclust pops the same way it reads flow-pop-with-tracked-cells.
+        push!(out, (path = path, name = m_.name, colour = m_.colour, uid = m_.uid,
+                    show = m_.show, is_track = m_.is_track, has_tracks = true,
+                    labels = labs))
+    end
+    out
+end
+
+"""
     resolve_pops(img, pop_type; value_name) -> Vector{NamedTuple}
 
 Resolve a segmentation's stored populations to display-ready, membership-resolved entries: one per
@@ -247,6 +307,19 @@ through the Tracks overlay (`show_tracks`), not this points path.
 function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
                       value_name::AbstractString)::Vector{NamedTuple}
     pt = string(pop_type)
+    # Track-family pops (`track`/`trackclust`) have their gates on `track_props` (label==track_id,
+    # `clusters.{suffix}`, motility metrics) — a `label_props` fetch can't evaluate them and every
+    # pop degrades to empty members ("clusters.movement absent from the fetched data" per
+    # gating_engine._filter_mask). Route through the canonical `pop_df(granularity=:cell)` path
+    # `overlay_author.jl:489` already uses for exactly this case, then hand back the SAME
+    # cell-label semantics every existing caller of resolve_pops expects (viewer overlays'
+    # `filterPayloadByLabels`, landscape_api's label→tile map). Deliberately BEFORE the outer
+    # cache read: the cache key hashes `img_label_props_path`'s mtime, which is insensitive to
+    # updates in the `{vn}__tracks.h5ad` file we actually resolve against; `pop_df`'s own
+    # mtime-keyed cache sits underneath the helper and handles that correctly.
+    if pt in ("track", "trackclust")
+        return _resolve_track_family_pops(img, pt, String(value_name))
+    end
     ckey = string("poplayers:", value_name, ":", pt, "@",
                   _pop_df_mtime(gating_path(img._dir, value_name; pop_type = pt)),
                   "/", _pop_df_mtime(img_label_props_path(img, value_name)))
