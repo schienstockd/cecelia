@@ -34,6 +34,13 @@ export interface LinkedSelectionBag {
    *  "I'm the source" affordance distinct from the "I'm a subscriber" dim. Absent when the
    *  writer isn't a plot (e.g. the "Show" button on TrackSchemeView, or Claude via `mark_*`). */
   sourcePlotId?: string
+  /** Optional per-image ids. Track_ids and cell labels are per-image numeric spaces, so a flat
+   *  `ids` array is ambiguous the moment a plot pools points from two images (track_id=5 exists
+   *  in every tracked image). When a producer knows which image each id came from, it fills this
+   *  map; subscribing plots that have per-dot image tags then match on `(imageUid, id)` and only
+   *  highlight the right image's dots. Absent when the producer is per-image by construction
+   *  (Show button, MCP mark_*) — subscribers fall back to the flat `ids`. */
+  perImage?: Record<string, number[]>
 }
 
 export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
@@ -55,6 +62,10 @@ export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
       ids: [...next.ids],
       source: next.source,
       ...(next.sourcePlotId ? { sourcePlotId: next.sourcePlotId } : {}),
+      // Defensive-copy the per-image structure too — same reason as ids: caller may mutate.
+      ...(next.perImage ? { perImage: Object.fromEntries(
+        Object.entries(next.perImage).map(([k, v]) => [k, [...v]])
+      ) } : {}),
     }
   }
 
