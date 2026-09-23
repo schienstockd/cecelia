@@ -57,7 +57,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/PLOTS.md`](docs/PLOTS.md) | **Adding ANY plot** — registry + `SummaryCanvas`, never a bespoke panel/route. Chart types, encoding model, renderer spec. **52 KB — slice it** |
 | [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | The Analysis board (`/analysis`): tabs, plates, persistence keys, plot-family registries, PDF/CSV export |
 | [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) | Notebooks Playground (`/notebooks`): Pluto engine, `CeceliaNb`, registry + snapshots, `/api/notebooks/*` |
-| [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers** |
+| [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers**. **40 KB — slice it** |
 | [`docs/INSTALL.md`](docs/INSTALL.md) | Installation, Unix + Windows — the *how*. Needs review before production deployment |
 | [`docs/SHIPPING.md`](docs/SHIPPING.md) | Distribution architecture — the *why*: Pixi/constructor + browser stack, update model, Python env + version pins |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Release *policy*: when to tag, rc-vs-release-vs-milestone, pre-1.0 versioning, cutting checklist |
