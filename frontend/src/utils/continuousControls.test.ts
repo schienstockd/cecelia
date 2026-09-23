@@ -265,6 +265,8 @@ const RO_EXEMPT: Record<string, string> = {
   // `publishViewStateSink.schedule(undefined)`: no DOM write to the observed element, so no
   // self-resize loop is possible.
   'modules/ViewerWindow.vue': 'schedules a debouncedLatest publish; callback writes no DOM',
+  'components/SelectionTable.vue':
+    'fit="fill" measures its parent to widen one column to the spare width — through rafCoalesce, NOT in the callback (pinned below)',
 }
 
 describe('no plot re-renders into the element it observes', () => {
@@ -300,6 +302,8 @@ describe('no plot re-renders into the element it observes', () => {
     // not the self-resize the other two are — but a box that grows (async content, a collapsible
     // section) fires the observer per step, and a re-place is a paint, so it takes the same route.
     'components/TeleportPopover.vue': 'reposition',
+    // widens a column INSIDE the box it observes, to exactly that box's width
+    'components/SelectionTable.vue': 'parentPx',
   }
   it.each(Object.entries(RO_SCHEDULED))(
     '%s schedules its write instead of writing in the callback', (path, inlineFn) => {

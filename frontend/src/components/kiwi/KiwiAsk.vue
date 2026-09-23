@@ -22,7 +22,6 @@ import { useTaskDefsStore } from '../../stores/taskDefs'
 import { useObserverStore } from '../../stores/observer'
 import { useNowTick } from '../../composables/useNowTick'
 import { useKiwiPoint } from '../../composables/useKiwiPoint'
-import { useToast } from 'primevue/usetoast'
 import { TASK_STATUS } from '../../lib/taskStatus'
 import { parseRailTime, taskElapsed } from '../../utils/taskElapsed'
 import { searchRefs, stepLabel, turnMeta, plainError, failureLine, attachmentRows, claimRows,
@@ -47,11 +46,7 @@ const ATTACH_COLUMNS: SelectionColumn[] = [
 ]
 const attachments = computed(() => attachmentRows(kiwi.refs, kiwi.draftResults))
 const { pointAt } = useKiwiPoint()
-const toast = useToast()
-async function openRow(r: AttachmentRow) {
-  const why = await pointAt(r.ref, r.label, kiwi.draftResults[r.id])
-  if (why) toast.add({ severity: 'info', summary: why, life: 3000 })
-}
+const openRow = (r: AttachmentRow) => void pointAt(r.ref, r.label, kiwi.draftResults[r.id])
 
 // ── claims: one row each — what kind, what it says, what it points at ──
 const CLAIM_COLUMNS: SelectionColumn[] = [
@@ -61,11 +56,9 @@ const CLAIM_COLUMNS: SelectionColumn[] = [
 ]
 const KIND_TIP = { observation: 'What is shown', interpretation: 'Kiwi’s reading, not a fact',
                    question: 'A next look you can check' } as const
-async function openClaim(r: ClaimRow) {
+function openClaim(r: ClaimRow) {
   const first = r.refs[0]
-  if (!first) return
-  const why = await pointAt(first.ref, '', first.result)
-  if (why) toast.add({ severity: 'info', summary: why, life: 3000 })
+  if (first) void pointAt(first.ref, '', first.result)
 }
 
 // ── the running turn: one status line, ticking ──
@@ -201,7 +194,7 @@ function pick(c: RefCandidate) {
                         :row-tooltip="r => KIND_TIP[r.kind]" @row-click="openClaim">
           <template #cell-n="{ row: r }"><span :class="r.failed ? 'cc-muted-error' : 'cc-muted'">{{ r.n }}</span></template>
           <template #cell-text="{ row: r }">
-            <span class="cc-fs-xs" :class="`kiwi-claim-${r.kind}`">
+            <span class="kiwi-claim-text cc-fs-xs" :class="`kiwi-claim-${r.kind}`">
               <span v-if="r.kind === 'interpretation'" class="kiwi-flag cc-fs-2xs">I think</span>
               <i v-else-if="r.kind === 'question'" class="pi pi-question kiwi-qicon" />
               {{ r.text }}
@@ -258,6 +251,8 @@ function pick(c: RefCandidate) {
 .kiwi-q { font-weight: 600; }
 .kiwi-refs { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; min-width: 0; }
 .kiwi-claim-interpretation { font-style: italic; }
+/* table cells don't wrap (SelectionTable); a claim is a sentence and must */
+.kiwi-claim-text { display: block; white-space: normal; overflow-wrap: anywhere; }
 /* the "I think" flag reads as Kiwi's voice, not as a warning — severity colours mean QC, never tone */
 .kiwi-flag { color: var(--cc-kiwi); font-style: italic; font-weight: 600; margin-right: 0.25rem; }
 .kiwi-qicon { color: var(--cc-kiwi); margin-right: 0.2rem; }

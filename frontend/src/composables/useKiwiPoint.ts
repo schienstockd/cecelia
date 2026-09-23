@@ -32,7 +32,9 @@ export function useKiwiPoint() {
   const plots = usePlotRegistryStore()
   const { focusCapture } = useCaptureFocus()
 
-  /** Point at `ref`. Resolves to a short reason when there was nothing to do, else ''. `result` is
+  /** Point at `ref`. Resolves to a short reason when there was nothing to do, else ''. No toast for that
+   *  (user, 2026-09-24: "that's an error message") — a ref that can't be shown already says why on
+   *  hover (`chipState`), so a click that finds nothing just does nothing. `result` is
    *  the resolver's answer when the caller has one — a plot's page comes from it once the panel is gone. */
   async function pointAt(ref: KiwiRef, label = '', result?: KiwiRefResult): Promise<string> {
     const puid = pm.current?.uid ?? ''

@@ -30,10 +30,12 @@
 // Rows are selected by CLICKING ANYWHERE on the row; the radio/checkbox is a visual + a11y affordance,
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
-import { computed, ref, watch, getCurrentInstance, useSlots } from 'vue'
+import { computed, ref, watch, getCurrentInstance, useSlots, onMounted, onBeforeUnmount } from 'vue'
 import { sortRows, cycleSort, sortIconFor, parseSortState,
          type SortState, type SortValue } from '../utils/sortRows'
 import { useColumnResize } from '../composables/useColumnResize'
+import { fillColumnKey, fillExtraPx, lengthPx } from '../utils/columnFill'
+import { rafCoalesce } from '../utils/rafCoalesce'
 import { allSelected as allChosen, someSelected as someChosen,
          toggleAllSelection, toggleOneSelection } from '../utils/tableSelection'
 
@@ -104,7 +106,8 @@ const props = withDefaults(defineProps<{
    * and sizes to its content already):
    *
    *  - `fill`    (default) the table is the container's width; the declared column widths are starting
-   *              points and the leftover is shared out. Right for a table that fits.
+   *              points and any spare width goes to the LAST resizable column (`utils/columnFill.ts`) —
+   *              a `fixed` column keeps its width. Right for a table that fits.
    *  - `content` the table is AT LEAST as wide as its columns declare, and a wrapper with
    *              `overflow-x: auto` scrolls it. Right for a table with more columns than panel — and
    *              REQUIRED for one with `sticky` columns. It still fills a container wider than that,
@@ -383,15 +386,45 @@ const declaredWidth = computed(() => {
 const tableStyle = computed(() =>
   sized.value && props.fit === 'content' ? { minWidth: declaredWidth.value } : undefined)
 
+// `fit="fill"`: spare width goes to ONE column, the last resizable one (`utils/columnFill.ts`) —
+// left to the browser it is shared over every column, so a `fixed` one grew with the panel. The
+// PARENT is measured, not the table: the table is at least as wide as its columns, so it could
+// never report the panel shrinking back. The width is applied a frame later (`rafCoalesce`), never in
+// the observer callback: the column it widens sits inside the observed box.
+const tableEl = ref<HTMLTableElement | null>(null)
+const parentPx = ref(0)
+const measureParent = rafCoalesce((w: number) => { parentPx.value = w })
+let fillRo: ResizeObserver | null = null
+onMounted(() => {
+  const parent = tableEl.value?.parentElement
+  if (!parent || typeof ResizeObserver === 'undefined' || props.fit !== 'fill' || !sized.value) return
+  fillRo = new ResizeObserver(([e]) => measureParent.schedule(e.contentRect.width))
+  fillRo.observe(parent)
+})
+onBeforeUnmount(() => { fillRo?.disconnect(); fillRo = null; measureParent.cancel() })
+const fillKey = computed(() => sized.value && props.fit === 'fill' ? fillColumnKey(props.columns) : null)
+const colPx = (c: SelectionColumn) => c.fixed ? (c.width ?? props.defaultColumnWidth) : lengthPx(widthOf(c.key))
+const fillExtra = computed(() => {
+  if (!fillKey.value || !parentPx.value) return 0
+  const declared: (number | null)[] = props.columns.map(colPx)
+  if (props.selectionMode !== 'none') declared.push(pickColPx.value)
+  if (slots.actions) declared.push(lengthPx(props.actionsWidth))
+  return fillExtraPx(parentPx.value, declared)
+})
+function colStyle(c: SelectionColumn) {
+  if (c.fixed) return c.width ? { width: `${c.width}px` } : undefined
+  if (c.key === fillKey.value && fillExtra.value > 0) return { width: `${(colPx(c) ?? 0) + fillExtra.value}px` }
+  return { width: widthOf(c.key) }
+}
+
 </script>
 
 <template>
-  <table class="sel-table" :class="{ sized, compact: density === 'compact' }" :style="tableStyle">
+  <table ref="tableEl" class="sel-table" :class="{ sized, compact: density === 'compact' }" :style="tableStyle">
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
     <colgroup v-if="sized">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
-      <col v-for="c in columns" :key="c.key"
-           :style="c.fixed ? (c.width ? { width: `${c.width}px` } : undefined) : { width: widthOf(c.key) }">
+      <col v-for="c in columns" :key="c.key" :style="colStyle(c)">
       <col v-if="$slots.actions" :style="{ width: actionsWidth }">
     </colgroup>
     <thead v-if="!headerless">

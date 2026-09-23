@@ -8,30 +8,27 @@ import { computed } from 'vue'
 import type { KiwiRef, KiwiRefResult } from '../../utils/kiwiRef'
 import { chipState, refLabel } from '../../utils/kiwiTurn'
 import { useKiwiPoint } from '../../composables/useKiwiPoint'
-import { useToast } from 'primevue/usetoast'
 
-const props = defineProps<{
+// `seen` defaults to undefined, NOT false: Vue casts an absent boolean prop to false, and false means
+// "cited without being looked at" — every attached ref on a past turn rendered as a failure
+const props = withDefaults(defineProps<{
   kiwiRef: KiwiRef
   result?: KiwiRefResult
   seen?: boolean
-}>()
+}>(), { seen: undefined })
 
 const state = computed(() => chipState(props.result, props.seen))
 const label = computed(() => (props.result?.ok && props.result.label) ? props.result.label : refLabel(props.kiwiRef))
 const tone = computed(() => ({ ok: '', soft: 'cc-muted', fail: 'cc-muted-error' })[state.value.tone])
 
 const { pointAt } = useKiwiPoint()
-const toast = useToast()
-async function click() {
-  const why = await pointAt(props.kiwiRef, label.value, props.result)
-  if (why) toast.add({ severity: 'info', summary: why, life: 3000 })
-}
+const click = () => void pointAt(props.kiwiRef, label.value, props.result)
 </script>
 
 <template>
   <button class="kiwi-ref cc-btn cc-btn-ghost cc-fs-2xs" :class="tone" @click="click"
           v-tooltip.bottom="state.tip">
-    <span class="cc-muted">{{ kiwiRef.kind }}</span>
+    <span class="cc-muted cc-fs-2xs">{{ kiwiRef.kind }}</span>
     <span class="kiwi-ref-label">{{ label }}</span>
   </button>
 </template>
