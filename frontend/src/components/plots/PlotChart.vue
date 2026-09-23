@@ -217,15 +217,20 @@ async function render(pass = 0) {
     // read from `getBoundingClientRect()` — one call per dot, once per drag.
     const emitHits = (hit: (cx: number, cy: number) => boolean) => {
       const groups: Record<string, { valueName: string; ids: number[] }> = {}
-      const circles = svg.querySelectorAll('.cc-brush-dot circle') as unknown as ArrayLike<SVGCircleElement & {
+      // Also match `g.cc-brush-dot` explicitly and fall back to any brushable-marked circle so
+      // structural surprises (Plot wrapping the group deeper, class landing on a facet parent)
+      // don't silently reduce hits to zero.
+      const circles = svg.querySelectorAll('g.cc-brush-dot circle, .cc-brush-dot > circle') as unknown as ArrayLike<SVGCircleElement & {
         __data__?: { pointId?: number | null; pointUid?: string; pointVn?: string }
       }>
+      let hitCount = 0
       for (let i = 0; i < circles.length; i++) {
         const c = circles[i]
         const r = c.getBoundingClientRect()
         const cx = r.left + r.width / 2
         const cy = r.top + r.height / 2
         if (!hit(cx, cy)) continue
+        hitCount++
         const d = c.__data__; const id = d?.pointId
         if (id == null) continue
         const uid = d?.pointUid ?? ''
@@ -241,6 +246,9 @@ async function render(pass = 0) {
         const uid = key.split('\u0000')[0]
         byImage[uid] = { valueName: g.valueName, ids: Array.from(new Set(g.ids)) }
       }
+      // TEMPORARY diagnostic: help debug "brush drew but nothing selected". Remove once fixed.
+      // eslint-disable-next-line no-console
+      console.log('[cc-brush] circles=', circles.length, 'hits=', hitCount, 'byImage=', byImage)
       if (Object.keys(byImage).length) emit('point-brush', { kind, byImage })
     }
 
