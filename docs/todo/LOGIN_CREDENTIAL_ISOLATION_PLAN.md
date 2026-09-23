@@ -1,9 +1,11 @@
 # Cecelia login + per-user Claude credential isolation — plan
 
-**Status:** planning (2026-09-23) · branch `audit/login-credential-isolation`. Derived from
-[`docs/archive/opus-audit-cecelia-login-credential-isolation.md`](../archive/opus-audit-cecelia-login-credential-isolation.md).
+**Status:** planning (2026-09-23; extended 2026-09-24 with Decisions 7–11 + phase P5) · branch
+`audit/single-instance-identity-gaps`. Derived from
+[`docs/archive/opus-audit-cecelia-login-credential-isolation.md`](../archive/opus-audit-cecelia-login-credential-isolation.md)
+and [`docs/archive/opus-audit-single-instance-identity-gaps.md`](../archive/opus-audit-single-instance-identity-gaps.md).
 Audit findings below have been empirically verified on this box against the currently-installed
-`claude` CLI (2.1.280). Awaiting user go/no-go on **Decision 3** (attribution).
+`claude` CLI (2.1.280). Ready to build.
 
 ## Goal
 
@@ -65,12 +67,9 @@ CLI: `claude 2.1.280 (Claude Code)`, binary at `/home/dominik/.local/bin/claude`
    the one line that has to change to make isolation work end-to-end). `claude_config_path()`
    already resolves through `CLAUDE_CONFIG_DIR`, so the MCP-registration read side falls into
    line automatically.
-3. **Attribution (per-user token/tool-call logging) is a SEPARATE decision — deferred to the
-   user.** The audit prompt bundles this with isolation, but the two have different threat models
-   and different reversibility. Isolation is a bug fix (Decision 2 doesn't work without it);
-   attribution is a new capability that reverses Decision 2's "no per-user attribution system"
-   commitment. Not adopting it in this plan; do not add token-logging plumbing until the user
-   confirms. If yes, the same profile name is the natural key — no second identity system needed.
+3. **Attribution: SUPERSEDED by Decision 8** (user, 2026-09-24 — "yes"). Originally deferred; now
+   accepted with the scope constraint in D8. The same profile name is the key. Kept here for the
+   citation trail from earlier PRs.
 4. **Do not encrypt the per-profile Claude config dirs.** Copied from the audit prompt and agreed:
    the population that can read those files on the shared OS login is the same population that
    can launch Kiwi and trigger decryption, so encryption keyed to a Cecelia login gives no
@@ -87,24 +86,50 @@ CLI: `claude 2.1.280 (Claude Code)`, binary at `/home/dominik/.local/bin/claude`
    at spawn time catches what's set tomorrow by a stray `.bashrc` edit — the failure is silent, so
    a one-shot audit is not enough. Scrubbing goes in the same `addenv` call that sets
    `CLAUDE_CONFIG_DIR`.
-
-## Open questions for the user
-
-- **Q1 — attribution: yes or no?** (See Decision 3.) If yes, what's logged and where does it go
-  (Kiwi turn log entries, a separate audit file, both)? The prompt asks for `{cecelia_user, tokens,
-  tool_calls}` per call, but that shape needs sign-off before it's built.
-- **Q2 — profile picker UX.** First-use creation, returning-user selection, and where the "which
-  profile is active in this session" state lives. Options: browser-tab-scoped (localStorage on
-  frontend, per-request header to backend), machine-scoped (single `custom.toml` key, last-used
-  wins across tabs), or session-scoped (backend state, requires a real session concept the app
-  does not have yet). Recommend browser-tab-scoped — simplest, matches the "label not boundary"
-  framing, and doesn't require inventing a session system. Needs confirmation.
-- **Q3 — where the profile roster lives.** A `<config_dir()>/kiwi-profiles/` directory listing is
-  the natural source of truth (a profile exists iff its dir does). Optionally cached in
-  `custom.toml` for a faster picker load. Cheap and self-heals.
-- **Q4 — OS-level accounts vs shared login.** Out of scope here per Decision 4, but the plan
-  should not build in assumptions that later block it (e.g. don't put `kiwi-profiles/` in a
-  location that OS-level accounts would fight over). `<config_dir()>` per-user is fine.
+7. **Cecelia stays single-instance by design** (user, 2026-09-24). Today it is *accidentally*
+   single-instance — a second launch crashes on whichever fixed-port component binds first, with
+   whatever error that component happens to throw; remote SSH/VNC users see a stack trace with no
+   context. Detect an existing instance at Julia startup (lock file + PID + liveness check on the
+   API port) and fail with a clear "Cecelia is already running on this machine (PID N since T)"
+   before any other component binds. Real concurrent instances are explicitly not being solved —
+   port ranges, per-instance dev/projects dirs, per-instance log routing, and MCP endpoint
+   discovery are weeks of design for a case nobody actually runs today. If one person ever needs
+   two at once, that is a future problem for the one person, not everyone's design tax. This also
+   collapses the picker's shared-state race: one process ⇒ one active identity ⇒ no cross-tab
+   contention to design around.
+8. **Attribution logging: yes, but only the write side, and it piggybacks on Kiwi turn logs**
+   (user, 2026-09-24). Every Kiwi turn log entry gains `{profile, tokens_in, tokens_out,
+   tool_calls, turn_id}`; no new store, no new file, no new schema surface — one field extension
+   on an existing record. **Do not build downstream consumers speculatively** — guardrail-retrieval
+   keying on the profile, per-user token-spend surface, cross-profile comparison views, none of it,
+   until something concrete asks for it and can be costed. Reverses `KIWI_ASSISTANT_PLAN.md`
+   Decision 2's "no per-user attribution system" wording; that gets a one-line edit in the same PR
+   as the schema extension (D8's PR, not this planning PR).
+9. **Terminal escape hatch stays; Cecelia hands out identity-scoped terminals** (user,
+   2026-09-24). Kiwi cockpit adds an "Open terminal (profile: X)" button that spawns
+   `$SHELL -i` with `CLAUDE_CONFIG_DIR` pre-set and the same ambient-env scrub as D6. Composes
+   with the existing "Set up my terminal" wire in [`agent_runner.jl:217+`](../../app/src/ai/agent_runner.jl)
+   — same MCP-registration path, one more launcher on top. Someone who bypasses the button and
+   opens a raw terminal is opting out of isolation on purpose, and that is consistent with
+   Decision 5 (identity is a label, not a boundary). Documented in the picker's onboarding copy;
+   not trapped, not warned about every time — treating users as adults.
+10. **Pre-identity data → reserved profile `legacy`** (user, 2026-09-24). Name reserved, always
+    exists, cannot be selected as a login target (rejects at picker creation). First-run migration
+    (idempotent, one pass) flips every pre-identity capture / thread / outcome-tag / Blackboard
+    entry / lab-log entry to `profile = "legacy"`. `null` is not used — it propagates through
+    query code as a bug source. Backfill by guessing ownership is not attempted — no honest rule
+    exists. Users who recognise their own work in `legacy` can duplicate it into their profile;
+    the `legacy` original stays labelled honestly. Migration script is a one-shot at the version
+    bump that ships D8 — no ongoing "legacy" writes after that.
+11. **Identity lifecycle: immutable names, add-new-and-migrate** (user, 2026-09-24). Once created,
+    a profile name cannot be renamed. Removal marks the profile `retired` — grayed out in the
+    picker, cannot be selected as active, but all past attribution stays under the original name.
+    This is the `dataRef` pattern (`docs/DATAMODEL.md`): the log is history; a referent can be
+    retired but the pointer's meaning is preserved. Someone who regrets their profile name creates
+    a new one — the old one becomes another `legacy`-shaped bucket. Only real cost is the "I
+    picked a bad name once" case, which is cheap: one row in the picker's retired list. The
+    alternative — a rename map that rewrites past attribution — breaks "log is history" and is not
+    worth it for a lab tool.
 
 ## Phases
 
@@ -124,24 +149,66 @@ so the change is behaviourally a no-op for the current single-user setup — jus
 of the credential home. Test: `_build_claude_cmd` unit test asserts env shape.
 
 ### P3 — Profile roster + picker (frontend + backend)
-List `<config_dir()>/kiwi-profiles/*/` on the backend, expose via a new route; frontend adds a
-picker on `KiwiCockpit.vue`. First-use flow spawns `claude login` in a terminal handoff (the same
-pattern as the existing "Set up my terminal" button in `agent_runner.jl:217+`), scoped to the new
-profile dir. Selection persists per browser tab. **Do not** ship without P1's audit passing on the
-target machine.
+List `<config_dir()>/kiwi-profiles/*/` on the backend (a profile exists iff its dir does — cheap
+and self-healing), expose via a new route; frontend adds a picker on `KiwiCockpit.vue`. First-use
+flow spawns `claude login` in a terminal handoff (the same pattern as the existing "Set up my
+terminal" button in `agent_runner.jl:217+`), scoped to the new profile dir. Selection persists
+per browser tab. `legacy` (D10) and any `retired` (D11) profiles are shown but not selectable.
+**Do not** ship without P1's audit passing on the target machine, and not before P5 (single-
+instance lock removes the cross-tab race the picker would otherwise have to design around).
 
-### P4 — (conditional on Q1) attribution logging
-Only build if the user confirms Decision 3 should be reversed. Add `{profile, tokens, tool_calls,
-turn_id}` to Kiwi turn logs, keyed by the same profile picker. Amend `KIWI_ASSISTANT_PLAN.md`
-Decision 2 in the same PR.
+### P4 — Attribution logging (D8)
+Extend the Kiwi turn log record with `{profile, tokens_in, tokens_out, tool_calls, turn_id}` —
+one field addition on the existing record, no new store. Amend `KIWI_ASSISTANT_PLAN.md` Decision
+2 in the same PR (one line: "no per-user attribution system" → "attribution via the active
+profile; see LOGIN_CREDENTIAL_ISOLATION_PLAN D8"). Downstream consumers explicitly out of scope
+per D8 — do not add readers speculatively.
+
+### P5 — Single-instance lock (D7)
+Small addition to Julia startup (`app/src/Cecelia.jl` init path). Lock file at
+`<config_dir()>/cecelia.lock` holds `{pid, started_at, api_port}`; on startup, check for it, and
+if the recorded PID is alive AND bound to the recorded port, fail with a clear
+`Cecelia is already running on this machine (PID N since T)` before any HTTP/WS component tries
+to bind. Stale lock (dead PID or bound-to-something-else) is silently reclaimed. Removes the
+"arbitrary component's bind error is what the remote user sees" failure mode. Independently
+shippable; unblocks P3 by collapsing the cross-tab race. Test: unit test on the lock reclaim
+predicate; manual: two `pixi run dev` invocations on the same box produce the friendly error.
+
+### P6 — Identity-scoped terminal launcher (D9)
+"Open terminal (profile: X)" button in `KiwiCockpit.vue` that hits a new route which spawns
+`$SHELL -i` (or the platform equivalent — Windows PowerShell / cmd) as a detached child with
+`CLAUDE_CONFIG_DIR` set to the active profile's dir and the ambient-credential env vars scrubbed
+per D6. Same one-line documentation on the button itself so a user opening a raw terminal
+elsewhere knows they are opting out. Composes with the existing "Set up my terminal" MCP-
+registration wire — same code path, one more entry point.
+
+### P7 — Pre-identity migration (D10)
+One-shot idempotent script that runs at the version bump shipping P4. Reserves the profile name
+`legacy`, sets `profile = "legacy"` on every existing capture / thread / outcome-tag / Blackboard
+entry / lab-log entry / Kiwi turn log record whose profile field is missing. Records completion
+in `custom.toml` (`[ai].legacy_migration_completed = <version>`) so it never re-runs. Test: run
+twice on a fixture, assert idempotence and no double-tagging.
 
 ## Interaction with `KIWI_ASSISTANT_PLAN.md`
 
-Do NOT rewrite Decision 2 as part of this plan — the audit prompt claims that plan has an
-"attribution section" that assumes a `cecelia_user`; there is no such section. Instead:
+- The pointer near Decision 2 to this plan already landed in #1201 — no change needed here.
+- P4 rewrites the "no per-user attribution system" phrase in Decision 2 in the same PR as the
+  schema extension. This planning PR does not touch that phrase — the wording change ships with
+  the code that makes it true.
 
-- Add a one-line pointer near Decision 2 saying "credential isolation on a shared OS login is
-  designed in [`LOGIN_CREDENTIAL_ISOLATION_PLAN.md`](LOGIN_CREDENTIAL_ISOLATION_PLAN.md); required
-  before more than one seat uses this box."
-- P4 (attribution) *would* rewrite Decision 2, and does so in the same PR as it lands — not
-  before.
+## What this replaces from the archived prompts
+
+- `opus-audit-cecelia-login-credential-isolation.md` (2026-09-23) — the credential-isolation
+  audit. Its "attribution section assumed a `cecelia_user`" premise was wrong (no such section
+  existed); D8 is the honest yes on attribution.
+- `opus-audit-single-instance-identity-gaps.md` (2026-09-24) — the follow-up. Its five asks land
+  as D7 (single-instance), D8 (attribution re-surface — accepted), D9 (terminal escape hatch),
+  D10 (pre-identity data), D11 (lifecycle).
+
+## Not covered here (deliberately)
+
+- OS-level user separation (per D4) — out of scope; noted so a future reader does not derive it
+  from the multi-profile design and assume it was rejected.
+- Cross-machine identity portability — no; profiles are local to `<config_dir()>` on one box.
+- Real authentication on the Cecelia login (per D5) — no; it is a label.
+- Downstream attribution consumers (per D8) — no readers built speculatively.
