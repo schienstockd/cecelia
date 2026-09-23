@@ -92,6 +92,12 @@ export interface PlotSeries {
   // when the group's frame carries the identity column; empty when it doesn't (interaction is
   // then inert). Scope for the whole response is on `PlotDataResponse.pointIdKind`.
   pointIds?: number[]
+  // Parallel to `points`. Per-point image uID — only emitted for POOLED cross-image responses
+  // (`g.uid == ""` on the server-side group + `:uID` on the sub-frame). track_id/label are
+  // per-(image, vn) numeric spaces, so without this the frontend collapses every pooled dot to
+  // one panel-level `defaultImageUid` fallback and the brush picks up numeric collisions from
+  // every image. Absent when the series already carries a single uid (per-image plots).
+  pointUids?: string[]
 }
 
 // A series target = a population on a specific segmentation, plus the pop_type it's fetched under.

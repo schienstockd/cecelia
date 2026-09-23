@@ -1273,6 +1273,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
     const pids = (s.pointIds ?? []) as number[]
+    const puids = (s.pointUids ?? []) as string[]
     const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
     vals.forEach((v, k) => pts.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
@@ -1282,11 +1283,19 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       // undefined for every dot — the click/brush delegate reads the attrs instead. `null` when
       // the response didn't carry ids; empty string uID for a single-image plot.
       pointId: pids[k] ?? null,
-      // Fall back to the panel's default imageUid when the server didn't group by image (single-
-      // image panels — see `defaultImageUid` on BuildOpts). Without this the (uid, vn) key on
-      // the dot loses its image discriminator and every plot on the page collapses to matching
-      // by vn alone.
-      pointUid: s.uID || o.defaultImageUid || '',
+      // Precedence for the per-dot uid:
+      //   1. `puids[k]` — set by the server ONLY for POOLED cross-image responses (the sub
+      //      pools rows from many images under one series with `s.uID == ""`). Without this,
+      //      every dot would collapse to the same fallback below and a lasso would match every
+      //      other-image track that happens to share a numeric track_id.
+      //   2. `s.uID` — the per-series uid the server sends for per-image plots (each series
+      //      already IS one image).
+      //   3. `o.defaultImageUid` — the panel's own imageUid (single-image panels: the server
+      //      strips per-series uID because everything's from that one image).
+      //   4. `''` — cross-image pooled with no per-dot uid AND no panel uid: match falls back
+      //      to `(uid='', vn, pop)` — same across the pool, but that's the failure mode we've
+      //      accepted when the server can't distinguish.
+      pointUid: puids[k] ?? (s.uID || o.defaultImageUid || ''),
       pointVn: s.value_name,
       // pop discriminates two boxes that sit under the SAME value_name — the case (uid, vn)
       // alone can't resolve (a track with cells in both pops would appear twice, and lassoing
@@ -1318,37 +1327,18 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const dimOpacity = 0.08
   const isPerSource = activeIds instanceof Map
   type PtRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
-  // TEMPORARY diag — one line naming the perSource keys, plus the first few match() calls per
-  // render, so we can compare the writer's key against the reader's `(uid, vn, pop)`. Remove
-  // once the (uid, vn, pop) fix is verified end-to-end.
-  if (activeIds) {
-    // eslint-disable-next-line no-console
-    console.log('[cc-brush render/plot] mode=', isPerSource ? 'perSource' : 'flat',
-                isPerSource ? Array.from((activeIds as Map<string, Set<number>>).entries()).map(
-                  ([k, v]) => ({ key: JSON.stringify(k), n: v.size, sample: [...v].slice(0, 5) }))
-                : { n: (activeIds as Set<number>).size, sample: [...activeIds as Set<number>].slice(0, 5) })
-  }
-  let __matchLogs = 0
   const matches = (d: PtRow): boolean => {
     if (d.pointId == null || !activeIds) return false
     if (isPerSource) {
       const map = activeIds as Map<string, Set<number>>
       const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
-      const specHit = map.get(specKey)?.has(d.pointId) ?? false
-      const vnKey = `${d.pointUid}|${d.pointVn}`
-      const vnHit = specHit ? false : (map.get(vnKey)?.has(d.pointId) ?? false)
-      const hit = specHit || vnHit
-      if (__matchLogs < 12) {
-        __matchLogs++
-        // eslint-disable-next-line no-console
-        console.log('[cc-brush match]', { pid: d.pointId, uid: d.pointUid, vn: d.pointVn, pop: d.pointPop,
-                                          specKey, vnKey, specHit, vnHit, hit })
-      }
+      if (map.get(specKey)?.has(d.pointId)) return true
       // Fallback: a writer that only knows (uid, vn) — Show button, MCP mark_* — targets every
       // dot in that (uid, vn) regardless of pop. That's the correct semantics for a "highlight
       // this track" write: the track's location within populations isn't what the writer meant
       // to narrow by, so we let it match across pops on the same (uid, vn).
-      return hit
+      const vnKey = `${d.pointUid}|${d.pointVn}`
+      return map.get(vnKey)?.has(d.pointId) ?? false
     }
     return (activeIds as Set<number>).has(d.pointId)
   }

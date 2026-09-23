@@ -246,17 +246,6 @@ async function render(pass = 0) {
         imageUid: g.imageUid, valueName: g.valueName, pop: g.pop,
         ids: Array.from(new Set(g.ids)),
       }))
-      // TEMPORARY diag — one line per emit naming each source's (uid, vn, pop) + hit count.
-      // Also samples one hit CIRCLE's data-* attrs so we can see what the DOM actually has.
-      // Remove once the (uid, vn, pop) fix is verified end-to-end.
-      if (sources.length) {
-        const sample = svg.querySelector('g.cc-brush-dot circle, .cc-brush-dot > circle') as SVGCircleElement | null
-        // eslint-disable-next-line no-console
-        console.log('[cc-brush emit]',
-          { kind, sources: sources.map(s => ({ uid: s.imageUid, vn: s.valueName, pop: s.pop, n: s.ids.length, sample: s.ids.slice(0, 5) })),
-            sampleDom: sample ? { uid: sample.getAttribute('data-uid'), vn: sample.getAttribute('data-vn'),
-                                  pop: sample.getAttribute('data-pop'), pid: sample.getAttribute('data-pid') } : null })
-      }
       if (sources.length) emit('point-brush', { kind, sources })
     }
 

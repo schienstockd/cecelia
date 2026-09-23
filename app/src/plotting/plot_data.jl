@@ -221,6 +221,19 @@ function _downsample_pairs(vals::Vector{Float64}, ids::Vector{Int},
     (vals[keep], ids[keep])
 end
 
+# Triples variant: also keeps a per-row uID aligned with (val, id). Needed for cross-image
+# POOLED plots — track_id/label are per-(image, vn) numeric spaces, so `track_id=5` in image A
+# and image B are different tracks. Without a per-dot uID the frontend collapses every dot to
+# a single fake uid and the brush picks up numeric collisions across every image. See
+# LINKED_BRUSHING_PLAN.md follow-up "cross-image pooled plots need per-dot uids".
+function _downsample_triples(vals::Vector{Float64}, ids::Vector{Int}, uids::Vector{String},
+                             cap::Int)::Tuple{Vector{Float64}, Vector{Int}, Vector{String}}
+    n = length(vals)
+    (n <= cap || cap <= 0) && return (vals, ids, uids)
+    keep = round.(Int, range(1, n; length = cap))
+    (vals[keep], ids[keep], uids[keep])
+end
+
 # Drop rows where the measure or the id is missing/non-finite/non-positive — mirrors `_finite`
 # but preserves the (value, id) pairing so a later sort/downsample doesn't shear them apart.
 function _finite_pairs(vs::AbstractVector, ids::AbstractVector)::Tuple{Vector{Float64}, Vector{Int}}
@@ -233,6 +246,24 @@ function _finite_pairs(vs::AbstractVector, ids::AbstractVector)::Tuple{Vector{Fl
         push!(fv, Float64(v)); push!(fi, Int(i))
     end
     fv, fi
+end
+
+# Triples variant of `_finite_pairs` — same drop rules, plus a per-row uID kept in step. A
+# missing/empty uID is kept as `""` (the caller may fill from the panel's fallback, but the
+# missing-uID case is only expected for single-image responses where the whole series shares
+# one uid already).
+function _finite_triples(vs::AbstractVector, ids::AbstractVector,
+                         uids::AbstractVector)::Tuple{Vector{Float64}, Vector{Int}, Vector{String}}
+    fv = Float64[]; fi = Int[]; fu = String[]
+    n = min(length(vs), length(ids), length(uids))
+    for k in 1:n
+        v = vs[k]; i = ids[k]; u = uids[k]
+        (ismissing(v) || !(v isa Real) || !isfinite(v)) && continue
+        (ismissing(i) || i <= 0) && continue
+        push!(fv, Float64(v)); push!(fi, Int(i))
+        push!(fu, ismissing(u) ? "" : String(u))
+    end
+    fv, fi, fu
 end
 
 # Morphology/intensity `var` columns are quantitative by construction — an integer-valued one
@@ -644,19 +675,34 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # what it rendered before pointIds shipped.
         id_col = granularity == :track ? :track_id : :label
         any_ids = false
+        any_uids = false
         series = map(groups) do g
             vals = sort(_finite(g.sub[!, m]))
             has_id = raw_points && (id_col in propertynames(g.sub))
-            if has_id
+            # Emit per-dot uIDs when the sub carries them AND the group's own uid is empty (the
+            # pooled case: `by_image=false` collapses `g.uid` to `""` even though the rows come
+            # from many images). Track/label ids are per-(image, vn) numeric spaces, so without
+            # per-dot uid the frontend match collapses across every image on the plot — a lasso
+            # on image A picks up any track with the same numeric id in image B, C, … Emitting
+            # them for the per-image case too is wasteful (all rows share one uid) — skip.
+            emit_uids = has_id && isempty(g.uid) && (:uID in propertynames(g.sub))
+            if emit_uids
+                any_ids = true; any_uids = true
+                fv, fi, fu = _finite_triples(g.sub[!, m], g.sub[!, id_col], g.sub[!, :uID])
+                perm = sortperm(fv)
+                pts, pids, puids = _downsample_triples(fv[perm], fi[perm], fu[perm], max_points)
+            elseif has_id
                 any_ids = true
                 fv, fi = _finite_pairs(g.sub[!, m], g.sub[!, id_col])
                 perm = sortperm(fv)
                 pts, pids = _downsample_pairs(fv[perm], fi[perm], max_points)
+                puids = String[]
             else
                 pts = raw_points ? _downsample(vals, max_points) : Float64[]
                 pids = Int[]
+                puids = String[]
             end
-            if isempty(vals)
+            base_rec = if isempty(vals)
                 merge(base(g),
                       Dict("q1"=>NaN,"median"=>NaN,"q3"=>NaN,"lower"=>NaN,"upper"=>NaN,"mean"=>NaN,"n"=>0,"points"=>pts,"pointIds"=>pids))
             else
@@ -669,6 +715,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       Dict("q1"=>q1, "median"=>q2, "q3"=>q3, "lower"=>lower, "upper"=>upper,
                            "mean"=>mean(vals), "n"=>length(vals), "points"=>pts, "pointIds"=>pids))
             end
+            emit_uids ? merge(base_rec, Dict("pointUids" => puids)) : base_rec
         end
         result = withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
