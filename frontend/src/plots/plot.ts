@@ -300,6 +300,13 @@ export interface BuildOpts extends VisProps {
   // `null` / absent → idle state, no dimming (base opacity throughout). Sourced from the shared
   // `linkedSelection` store scope-matched against the response's `pointIdKind`.
   brushActiveIds?: Set<number> | Map<string, Set<number>> | null
+  // Fallback imageUid for per-dot source tagging. Server-side, a plot that doesn't group by
+  // image emits series with empty `uID` — every dot then carries pointUid="" and the per-source
+  // key collapses to `|vn` (loses the image discriminator). For a single-image panel the panel
+  // KNOWS the imageUid; passing it here lets the renderer stamp it on each dot so the (uid, vn)
+  // key round-trips correctly with the bag's `perSource` written by the brush/click. Absent for
+  // cross-image pooled plots — those need per-dot uids from the server, tracked separately.
+  defaultImageUid?: string | null
 }
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
@@ -1268,7 +1275,11 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       // undefined for every dot — the click/brush delegate reads the attrs instead. `null` when
       // the response didn't carry ids; empty string uID for a single-image plot.
       pointId: pids[k] ?? null,
-      pointUid: s.uID ?? '',
+      // Fall back to the panel's default imageUid when the server didn't group by image (single-
+      // image panels — see `defaultImageUid` on BuildOpts). Without this the (uid, vn) key on
+      // the dot loses its image discriminator and every plot on the page collapses to matching
+      // by vn alone.
+      pointUid: s.uID || o.defaultImageUid || '',
       pointVn: s.value_name,
     }))
   }

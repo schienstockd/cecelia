@@ -636,6 +636,12 @@ const buildOpts = computed<BuildOpts>(() => ({
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity, statsShowNs, statsUseStars
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
   brushActiveIds: pointBrushActive.value ?? null,
+  // For single-image panels the server strips per-series uID (by_image=false), so the plot's
+  // per-dot pointUid ends up "" and the (uid, vn) source key collapses to `|vn`. The panel
+  // knows its imageUid — hand it down so pts rows stamp the right uid and the brush's
+  // perSource key matches on the render side. Null for cross-image pooled panels (they need
+  // per-dot uids from the server, tracked separately).
+  defaultImageUid: props.imageUid ?? null,
 }))
 
 // ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
