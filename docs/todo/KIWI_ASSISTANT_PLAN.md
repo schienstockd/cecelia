@@ -1,6 +1,6 @@
 # Kiwi assistant (structured duck) — plan
 
-**Status:** in progress — Phase 0 done 2026-09-23; Phase 1 built on `feat/kiwi-engine-contract`. Decisions 1–3
+**Status:** in progress — Phases 0–1 shipped (#1196); Phase 2 built on `feat/kiwi-ref-resolver`. Decisions 1–3
 are the user's; Decisions 4–8 were proposed by Claude in the same conversation and accepted without
 objection; Decisions 9–10 came out of the literature search the same day (*Prior art* below) and
 Decision 11 out of Phase 0; all three are proposals. Read the *Open decisions* before building: several of them change a phase's shape.
@@ -105,11 +105,11 @@ does not invent new addressing.
 
 | kind | address fields | exists today as | point-out route |
 |---|---|---|---|
-| `plot` | `family`, `plotId`, optional `(u,v)` | `CaptureAddress.plotSpec`, `list_plots` | `mark_plot` |
-| `viewer` | `imageUid`, `valueName?`, `t`, `z?` | `CaptureAddress` | (navigate; no mark route) |
+| `plot` | `plotId`, optional `(u,v)` | the live plot registry (`list_plots`) | `mark_plot` |
+| `viewer` | `imageUid`, `t?`, `z?` | `CaptureAddress` | (navigate; no mark route) |
 | `cells` | `imageUid`, `valueName`, `labelIds[]` | — | `mark_cells` |
 | `tracks` | `imageUid`, `valueName`, `trackIds[]` | — | `mark_tracks` |
-| `tile` | `imageUid`, `cellId` | landscape grid | `mark_tile` |
+| `tile` | `imageUid`, `valueName`, `cellId`, `t?`, `z?` | landscape grid | `mark_tile` |
 | `capture` | `captureId` | `<proj>/captures/<id>` | `mark_freeform` |
 | `task` | `funName`, optional run / `valueName` | task registry | `point_at_ui` (nav path) |
 | `ui` | `anchor` (data-guide id or nav path) | `CaptureAddress.domAnchor` | `point_at_ui` |
@@ -127,12 +127,18 @@ the CLI's schema check. With per-kind fields (`tracks` requires `imageUid` + `va
 `project` / `set` / `image` / `population` kinds were missing from the first draft; an orientation
 answer points mostly at those.
 
-- **One canonical definition** as a JSON Schema file both the TS and the Python/Julia sides read —
-  the shared-asset pattern `VIEWER_PARITY_PLAN.md` uses for the palette. `CaptureAddress`
-  (`frontend/src/utils/captureAddress.ts`) becomes a producer of `viewer`/`plot`/`ui` refs, not a
-  parallel type.
-- **Resolver** (Julia, one function + one route): `KiwiRef → exists? + display label`. Used by
-  Decision 6's validation, by chip rendering, and by the click-to-jump handler.
+- **One canonical definition** — built (Phase 2): `frontend/src/lib/kiwiRef.schema.json`, read by
+  `frontend/src/utils/kiwiRef.ts` (union + parity test) and `api/src/kiwi_refs.jl` (shape check +
+  resolver) — the same shared-asset pattern as `frontend/src/plots/palettes.json`.
+  `refsFromCaptureAddress` turns a capture into `viewer` / `ui` refs. A capture's `plotSpec.specId`
+  names the plot *type*, not the live panel, so it is **not** a `plot` ref — that comes from the plot
+  registry's `plotId`. Two schema choices differ from the first draft: `plot` has no `family` (the
+  registry holds it) and `viewer` has no `valueName` (there it means the image *file* version, not a
+  segmentation — too easy to confuse).
+- **Resolver** — built (Phase 2): `POST /api/kiwi/refs/resolve` → `{ok, check, label, error}` per ref.
+  `check` is how far the answer goes — `exists` (on disk), `live` (an open plot panel or landscape:
+  true now, gone when it closes or the server restarts), `format` (UI anchors: only the browser knows
+  which exist), `shape` (malformed). Those are Decision 10's chip levels. Read-only by construction.
 - **Pointing = rendering a ref.** Clicking a claim's chip calls the existing mark route for its kind.
   No new point-out machinery.
 
@@ -228,7 +234,8 @@ the CLIs, not HTTP APIs).
 8. **Schema during generation vs after.** Strict format constraints measurably degrade reasoning
    (Tam et al. 2024). Options: a free-text `reasoning` field ordered before `claims` in the schema, or
    a two-step turn (answer freely, then fill the schema). Phase 0 ran one rep of each: inconclusive
-   (differences within run-to-run noise). Settle it on Phase 3's fixed prompt set, not ad hoc.
+   (differences within run-to-run noise). **Must** be settled on Phase 3's fixed prompt set — it is
+   Phase 3's exit gate, not a nice-to-have.
 9. **Check after, or attribute first?** Decisions 6–7 check refs after generation. The alternative is
    *attribute-first*: pick the refs, then write each claim against its ref (Slobodkin et al. 2024) —
    faithful by construction, and it cut human verification time. Phase 0 makes this more attractive
@@ -267,14 +274,30 @@ Each independently shippable.
    the project to a session about to exit, overwriting the user's pairing. App-spawned turns now load a
    separate `observer-mcp-headless.json` with `CECELIA_OBSERVER_NO_PAIR`; the observer skips auto-pair
    and refuses `register_push_target` under it. The terminal config still pairs.
-2. **`KiwiRef` + resolver.** Shared JSON Schema, TS type, Julia resolver + route. Tests: every kind
-   round-trips; unknown ids fail resolution.
+2. **`KiwiRef` + resolver — BUILT on `feat/kiwi-ref-resolver`.** Shared schema, TS union + parity test
+   (mutation-checked: a field added to the schema alone fails it), Julia shape check + per-kind
+   resolver + route. Every kind tested both ways against `testpr` (a real object resolves, a
+   near-miss fails), including Phase 0's wrong-kind citations. Not yet consumed — Phase 3 calls the
+   resolver on every reply, Phase 4 renders `check`.
+   **Live check, 2026-09-23** — sets XcPcu8 (4kS67f, 8 images) and obWDNS (zolIMa, 5 images), run
+   in-process against the real projects dir: 249 refs across project / set / image / viewer / cells /
+   tracks (both the per-track table and the `track_id`-column path) / population (flow, region, track,
+   trackclust) / Blackboard / capture; 169 resolved, 76 failed as intended, 0 unexpected; SHA of all
+   174 metadata files identical before and after (read-only confirmed). It changed two things: a
+   `viewer` ref on an image with **no pixels** (2 of obWDNS's 5 are unconverted) now fails instead
+   of passing as `format`, with extents read from the zarr (`image_geometry`) rather than ccid.json;
+   and a population label names its type, because one name often exists under several types.
 3. **Headless Kiwi turn.** Reply schema, Kiwi system prompt, validate-and-re-ask loop, run from the
    REPL against a real project. Tests: a fabricated ref is rejected; a real ref not seen this turn is
    rejected (Decision 7); re-ask fires once. Track **citation recall** (every claim has a ref) and
    **citation precision** (every ref supports its claim — by hand until Open decision 5 lands) on a
    small fixed set of prompts, per Liu et al. 2023; that set is the regression check for prompt
    changes and for a second engine.
+   **Exit gate — Phase 3 is not done, and Phase 4 does not start, until Open decision 8 is settled on
+   that prompt set** (reasoning-field-first vs bare schema, ≥5 reps each, claim quality scored by hand
+   against the refs). Phase 0's n=1 was inconclusive, and the schema is what every claim is generated
+   under — leaving it "TBD" would ship the whole UI on an untested assumption. (Raised in review,
+   2026-09-23.)
 4. **Cockpit UI.** Prompt input with chips, claims feed, click-to-point via existing mark routes.
 5. **"Add to Kiwi" affordances** across plots, viewer, task pages, captures, Blackboard.
 

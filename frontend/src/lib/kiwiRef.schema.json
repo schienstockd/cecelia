@@ -1,0 +1,98 @@
+{
+  "$comment": "KiwiRef — ONE typed pointer to an app object, used three ways: a chip the user puts in a Kiwi prompt, the evidence on a claim in Kiwi's reply, and the target Kiwi points at. docs/todo/KIWI_ASSISTANT_PLAN.md → The reference type. Read by frontend/src/utils/kiwiRef.ts (types + parity test) and api/src/kiwi_refs.jl (shape check + resolver); Phase 3 embeds it in the reply schema passed to the engine. Refs are project-relative — the projectUid travels with the request, not on each ref. Typed fields per kind, never a flat id: a flat {kind,id} let the model cite an image uid as a track (Phase 0).",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KiwiRef",
+  "oneOf": [
+    { "$ref": "#/definitions/project" },
+    { "$ref": "#/definitions/set" },
+    { "$ref": "#/definitions/image" },
+    { "$ref": "#/definitions/population" },
+    { "$ref": "#/definitions/cells" },
+    { "$ref": "#/definitions/tracks" },
+    { "$ref": "#/definitions/viewer" },
+    { "$ref": "#/definitions/plot" },
+    { "$ref": "#/definitions/tile" },
+    { "$ref": "#/definitions/capture" },
+    { "$ref": "#/definitions/task" },
+    { "$ref": "#/definitions/ui" },
+    { "$ref": "#/definitions/blackboard" }
+  ],
+  "definitions": {
+    "uid":   { "type": "string", "minLength": 1 },
+    "ids":   { "type": "array", "minItems": 1, "items": { "type": "integer" } },
+    "project": {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": { "kind": { "const": "project" } }
+    },
+    "set": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "setUid"],
+      "properties": { "kind": { "const": "set" }, "setUid": { "$ref": "#/definitions/uid" } }
+    },
+    "image": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "imageUid"],
+      "properties": { "kind": { "const": "image" }, "imageUid": { "$ref": "#/definitions/uid" } }
+    },
+    "population": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "imageUid", "valueName", "popPath"],
+      "properties": {
+        "kind": { "const": "population" }, "imageUid": { "$ref": "#/definitions/uid" },
+        "valueName": { "$ref": "#/definitions/uid" }, "popPath": { "type": "string", "minLength": 1 }
+      }
+    },
+    "cells": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "imageUid", "valueName", "labelIds"],
+      "properties": {
+        "kind": { "const": "cells" }, "imageUid": { "$ref": "#/definitions/uid" },
+        "valueName": { "$ref": "#/definitions/uid" }, "labelIds": { "$ref": "#/definitions/ids" }
+      }
+    },
+    "tracks": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "imageUid", "valueName", "trackIds"],
+      "properties": {
+        "kind": { "const": "tracks" }, "imageUid": { "$ref": "#/definitions/uid" },
+        "valueName": { "$ref": "#/definitions/uid" }, "trackIds": { "$ref": "#/definitions/ids" }
+      }
+    },
+    "viewer": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "imageUid"],
+      "properties": {
+        "kind": { "const": "viewer" }, "imageUid": { "$ref": "#/definitions/uid" },
+        "t": { "type": "integer", "minimum": 0 }, "z": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "plot": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "plotId"],
+      "properties": {
+        "kind": { "const": "plot" }, "plotId": { "$ref": "#/definitions/uid" },
+        "u": { "type": "number", "minimum": 0, "maximum": 1 }, "v": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "tile": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "imageUid", "valueName", "cellId"],
+      "properties": {
+        "kind": { "const": "tile" }, "imageUid": { "$ref": "#/definitions/uid" },
+        "valueName": { "$ref": "#/definitions/uid" }, "cellId": { "type": "string", "pattern": "^[A-Z]+[0-9]+$" },
+        "t": { "type": "integer", "minimum": 0 }, "z": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "capture": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "captureId"],
+      "properties": { "kind": { "const": "capture" }, "captureId": { "$ref": "#/definitions/uid" } }
+    },
+    "task": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "funName"],
+      "properties": { "kind": { "const": "task" }, "funName": { "$ref": "#/definitions/uid" } }
+    },
+    "ui": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "anchor"],
+      "properties": { "kind": { "const": "ui" }, "anchor": { "type": "string", "minLength": 1, "maxLength": 200 } }
+    },
+    "blackboard": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "entryId"],
+      "properties": {
+        "kind": { "const": "blackboard" }, "entryId": { "$ref": "#/definitions/uid" },
+        "version": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
