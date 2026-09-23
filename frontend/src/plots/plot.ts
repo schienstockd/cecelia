@@ -1289,13 +1289,33 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const dimOpacity = 0.08
   const isPerSource = activeIds instanceof Map
   type PtRow = { pointId: number | null; pointUid: string; pointVn: string }
+  // TEMPORARY diag: log what the renderer sees the first few times matches() runs after a
+  // selection is set. Remove once the per-source scoping is verified.
+  if (activeIds) {
+    // eslint-disable-next-line no-console
+    console.log('[cc-brush render] mode=', isPerSource ? 'perSource' : 'flat',
+                isPerSource ? Array.from((activeIds as Map<string, Set<number>>).entries()).map(
+                  ([k, v]) => ({ key: JSON.stringify(k), count: v.size, sample: [...v].slice(0, 5) }))
+                : { count: (activeIds as Set<number>).size, sample: [...activeIds as Set<number>].slice(0, 5) })
+  }
+  let __matchLogs = 0
   const matches = (d: PtRow): boolean => {
     if (d.pointId == null || !activeIds) return false
+    let hit: boolean
+    let key = ''
     if (isPerSource) {
-      const key = `${d.pointUid}\u0000${d.pointVn}`
-      return (activeIds as Map<string, Set<number>>).get(key)?.has(d.pointId) ?? false
+      key = `${d.pointUid}\u0000${d.pointVn}`
+      hit = (activeIds as Map<string, Set<number>>).get(key)?.has(d.pointId) ?? false
+    } else {
+      hit = (activeIds as Set<number>).has(d.pointId)
     }
-    return (activeIds as Set<number>).has(d.pointId)
+    if (__matchLogs < 8) {
+      __matchLogs++
+      // eslint-disable-next-line no-console
+      console.log('[cc-brush match]', { pid: d.pointId, uid: d.pointUid, vn: d.pointVn,
+                                        key: JSON.stringify(key), hit })
+    }
+    return hit
   }
   const ptFillOpacity = activeIds
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
