@@ -68,7 +68,8 @@ const badgeCount = computed(() => linkedSel.bag?.ids.length ?? 0)
     </template>
     <template #plots="{ selectedUids }">
       <div class="sp-plots-slot">
-        <button v-if="!linkedSel.isEmpty" type="button" class="cc-btn cc-btn-dense sp-clear-selection"
+        <button v-if="!linkedSel.isEmpty" type="button"
+                class="cc-btn cc-btn-dense cc-btn-on cc-btn-on-tint sp-clear-selection"
                 @click="clearSelection"
                 v-tooltip.left="'Clear track selection (Esc)'">
           Clear selection · {{ badgeCount }}
@@ -81,11 +82,10 @@ const badgeCount = computed(() => linkedSel.bag?.ids.length ?? 0)
 
 <style scoped>
 /* LINKED_BRUSHING_PLAN.md P5 — page-level Clear affordance. Only rendered when the bag is
-   non-empty (v-if in the template), so idle state adds no chrome. Wrapper is `position: relative`
-   so the Clear button anchors to the plots slot, not the viewport. */
+   non-empty (v-if in the template), so idle state adds no chrome. Colour + press state come from
+   .cc-btn-on + .cc-btn-on-tint; this rule is layout only (position + z-index so the button
+   floats above the plot canvas). Wrapper is `position: relative` so the button anchors to the
+   plots slot, not the viewport. */
 .sp-plots-slot { position: relative; }
-.sp-clear-selection { position: absolute; top: 8px; right: 8px; z-index: 30;
-  background: var(--cc-kiwi-tint); border-color: var(--cc-kiwi-strong);
-  color: var(--cc-kiwi-soft); }
-.sp-clear-selection:hover { background: var(--cc-kiwi-soft); color: var(--cc-text); }
+.sp-clear-selection { position: absolute; top: 8px; right: 8px; z-index: 30; }
 </style>

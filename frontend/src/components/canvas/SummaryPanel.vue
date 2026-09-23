@@ -32,6 +32,7 @@ import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granula
 import { discoverObsMeasures, obsMeasureLabel, distinctValueNames, mergeColumnSets } from '../../plots/obsMeasures'
 import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
+import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 import { usePanelExport } from '../../stores/canvasPanelExports'
@@ -863,14 +864,21 @@ function mirrorTrackHighlight(ids: number[]) {
     : null)
 }
 
-async function onLinkedBrushCategory(cat: string) {
-  // Toggle-off: same chip a second time clears the bag (and this panel's tracking of it).
-  if (linkedBrushActiveCategory.value === cat) {
+// ChipSelect's `allowEmpty` (single-select variant) emits '' when the user re-clicks the active
+// chip — same toggle-off semantics we want for "clear my selection". Any string ⇒ fetch; empty ⇒
+// clear.
+function onLinkedBrushCategoryChange(v: string | string[]) {
+  const cat = Array.isArray(v) ? (v[0] ?? '') : v
+  if (!cat) {
     linkedBrushSource.clear()
     mirrorTrackHighlight([])
     linkedBrushActiveCategory.value = null
     return
   }
+  void onLinkedBrushCategory(cat)
+}
+
+async function onLinkedBrushCategory(cat: string) {
   const uids = linkedBrushImageUids.value
   if (!uids.length || !measure.value || linkedBrushBusy.value) return
   const s0 = ownSeries.value[0]
@@ -916,10 +924,22 @@ watch(
   { deep: false },
 )
 
-// A small selection-badge next to the chips so the user can see the bag content came back
-// with something — the visible signal that end-to-end wiring is alive before P4 wires the dim
-// into subscribing plots.
+// Count of tracks in the active bag (scope-gated to 'tracks'). Rendered as a `badge` on the
+// active chip only — same convention as ChipSelect's `ChipOption.badge`.
 const linkedBrushBadgeCount = computed(() => linkedBrushSub.activeIds.value.size)
+
+// ChipOption[] fed to the canonical <ChipSelect>. Badge is attached only to the active option so
+// the user reads "N selected" against the chip that produced them, not against every neighbour.
+const linkedBrushChipOptions = computed<ChipOption[]>(() =>
+  linkedBrushCategories.value.map(cat => {
+    const active = linkedBrushActiveCategory.value === cat
+    return {
+      value: cat,
+      label: cat,
+      tip: `Select tracks with ${measure.value} = ${cat}`,
+      ...(active && linkedBrushBadgeCount.value > 0 ? { badge: linkedBrushBadgeCount.value } : {}),
+    }
+  }))
 </script>
 
 <template>
@@ -1114,22 +1134,17 @@ const linkedBrushBadgeCount = computed(() => linkedBrushSub.activeIds.value.size
       </span>
       <!-- Linked-brushing chip strip (LINKED_BRUSHING_PLAN.md P3). Categorical frequency-family
            charts render one chip per category — click writes the matching track_ids into the
-           shared linkedSelection store (visible on other subscribers as they land in P4). Same
-           chip a second time clears the bag. -->
-      <div v-if="linkedBrushCategories.length" class="sp-brush-strip">
-        <span class="sp-brush-label">Select:</span>
-        <button v-for="cat in linkedBrushCategories" :key="cat" type="button"
-                class="sp-brush-chip"
-                :class="{ 'sp-brush-chip--active': linkedBrushActiveCategory === cat }"
-                :disabled="linkedBrushBusy"
-                @click="onLinkedBrushCategory(cat)"
-                v-tooltip.top="`Select tracks with ${measure} = ${cat}`">
-          {{ cat }}
-        </button>
-        <span v-if="linkedBrushBadgeCount > 0" class="sp-brush-badge"
-              v-tooltip.top="`${linkedBrushBadgeCount} tracks selected`">
-          {{ linkedBrushBadgeCount }}
-        </span>
+           shared linkedSelection store; the source panel also mirrors into `TrackHighlight` so
+           the shipped 10-family fan-out reacts (viewer, TrackScheme, cell cards, …). Uses the
+           canonical `ChipSelect` (single, `allow-empty` for re-click-to-clear) so it agrees with
+           every other chip picker in the app. -->
+      <div v-if="linkedBrushChipOptions.length" class="sp-brush-strip cc-card cc-card-2 cc-row cc-row-tight">
+        <span class="cc-eyebrow cc-fs-2xs">Select</span>
+        <ChipSelect variant="pill" allow-empty :disabled="linkedBrushBusy"
+                    :options="linkedBrushChipOptions"
+                    :model-value="linkedBrushActiveCategory ?? ''"
+                    aria-label="Select tracks by category"
+                    @update:model-value="onLinkedBrushCategoryChange" />
       </div>
     </div>
   </CanvasPanel>
@@ -1163,29 +1178,12 @@ const linkedBrushBadgeCount = computed(() => linkedBrushSub.activeIds.value.size
   color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
 
 /* LINKED_BRUSHING_PLAN.md P3 — chip strip for category-source brushing on categorical
-   frequency-family charts. Anchored bottom-left inside .sp-body so it doesn't collide with the
-   Claude chip at top-right or the plot's own legend/axis labels. Active chip uses the same
-   `--cc-kiwi-tint` surface KiwiCockpit's "engaged" controls use, so the linked-brushing bag
-   reads as part of the same cross-cutting flow the Kiwi surfaces do — even though the
-   mechanism is user-driven, not Claude-driven. */
+   frequency-family charts. Surface + row chrome come from the composed .cc-card + .cc-row
+   utilities; this rule is layout only (position + gap tightening + width cap so a long category
+   list wraps instead of pushing off the plot). Anchored bottom-left inside .sp-body so it
+   doesn't collide with the Claude chip at top-right or the plot's axis labels. */
 .sp-brush-strip { position: absolute; left: 6px; bottom: 6px; z-index: 5;
-  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-xs);
-  font-size: var(--cc-fs-2xs); pointer-events: auto; max-width: calc(100% - 60px);
-  flex-wrap: wrap; }
-.sp-brush-label { color: var(--cc-text-dim); font-weight: 600; }
-.sp-brush-chip { padding: 1px 6px; background: transparent;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
-  color: var(--cc-text); font-size: var(--cc-fs-2xs); line-height: 1.3; cursor: pointer; }
-.sp-brush-chip:hover:not(:disabled) { background: var(--cc-surface-2); }
-.sp-brush-chip:disabled { opacity: 0.5; cursor: default; }
-.sp-brush-chip--active { background: var(--cc-kiwi-tint); border-color: var(--cc-kiwi-strong);
-  color: var(--cc-kiwi-soft); }
-.sp-brush-badge { display: inline-flex; align-items: center; justify-content: center;
-  min-width: 14px; height: 14px; padding: 0 4px; border-radius: var(--cc-radius-pill);
-  background: var(--cc-kiwi); color: var(--cc-kiwi-soft);
-  font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
+  pointer-events: auto; max-width: calc(100% - 60px); padding: 2px 6px; }
 
 /* "show series" measure-picker popover (opens upward from the footer button) */
 .sp-explode-wrap { position: relative; display: inline-flex; }
