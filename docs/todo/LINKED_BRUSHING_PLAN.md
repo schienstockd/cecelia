@@ -53,11 +53,19 @@ refuses to take. Track-scope brushing is only safe where the plot glyph IS a tra
   - Weak on continuous distributions ("select this speed range" isn't naturally a category —
     that's Option C).
 
-- **B. Point-source (parked).** Extend `PlotSeries.points` to `{value, id}[]` — click / lasso a
-  dot on strip / violin / boxplot jitter → track_ids directly, no round-trip.
+- **B. Point-source (SHIPPED for boxplot 2026-09-23).** Adds a `pointIds` array parallel to
+  `PlotSeries.points` (parallel-array shape instead of `{value, id}[]` — smaller wire diff, and
+  the sort/downsample paths keep the pairing). Frontend: brushable dots carry
+  `.cc-brush-dot` class, PlotChart delegates the click, SummaryPanel writes the shared bag +
+  mirrors into PickHighlight/TrackHighlight for the SOURCE image (uID rides on the row so we
+  don't guess). Subscribe side: any per-point renderer whose response carries
+  `pointIdKind: 'track' | 'cell'` dims non-selected dots to 0.15 when a matching-scope
+  selection is active.
   - Zero backend round-trip after initial fetch.
-  - Small server change (add ids to `points` output on `chartType: "points"`).
-  - Narrow — only works on charts that render per-point glyphs.
+  - Scope inferred from data granularity: `granularity == :track` → track_id → 'tracks'
+    scope; `granularity == :cell` → label → 'cells' scope. No plot-side scope guessing.
+  - Only boxplot today — strip / violin / points scatter apply the same pattern, mechanical.
+  - Shift-click (additive) is a TODO — every click replaces today.
 
 - **C. Predicate-source (parked).** Brush a range on any chart → emits
   `{measure, min, max, categoryEq?}` → *other panels re-aggregate under that filter* (Plotly

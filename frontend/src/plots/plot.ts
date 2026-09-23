@@ -290,6 +290,12 @@ export interface BuildOpts extends VisProps {
   // axis in frames — set only when EVERY plotted image has a known interval (see utils/timeAxis.ts);
   // an unknown interval must not be silently rendered as 1 s/frame.
   timeScale?: Record<string, number>
+  // Linked brushing subscribe-side (LINKED_BRUSHING_PLAN.md Option B, read side). When set, the
+  // boxplot jitter (and any future per-point renderer) dims dots whose `pointId` is not in the
+  // set to 0.15 opacity; selected ones keep the user's `pointOpacity`. `null` / absent → idle
+  // state, no dimming (base opacity throughout). Sourced from the shared `linkedSelection`
+  // store scope-matched against the response's `pointIdKind`.
+  brushActiveIds?: Set<number> | null
 }
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
@@ -1217,15 +1223,36 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
              tip: `${k}\nmedian ${fmt(s.median)}\nq1 ${fmt(s.q1)}  q3 ${fmt(s.q3)}\nn ${s.n}` }
   })
   // raw points overlaid as a beeswarm/jitter around the series index (sit ON the box, not beside it)
+  const activeIds = o.brushActiveIds ?? null
   const pts: object[] = []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
+    const pids = (s.pointIds ?? []) as number[]
     const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
-    vals.forEach((v, k) => pts.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v }))
+    vals.forEach((v, k) => pts.push({
+      series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
+      // pointId + uID ride along so the SVG click delegate (PlotChart.vue) can read the identity
+      // AND the source image off `__data__` without a second lookup. `null` when the response
+      // didn't carry ids; empty string uID for a single-image plot (`s.uID` semantic).
+      pointId: pids[k] ?? null,
+      pointUid: s.uID ?? '',
+      pointVn: s.value_name,
+    }))
   }
   const f = fxCh(o), a = axM(o)
   const ptFill = o.colorData ? 'series' : 'currentColor'
+  // Subscribe-side dim (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
+  // active AND this dot carries an id, non-selected dots dim to the plan's 0.15 opacity;
+  // selected ones stay at the user's `pointOpacity`. If the dot has no id (server didn't emit
+  // pointIds), it stays at `pointOpacity` regardless — a dim on a not-brushable dot would look
+  // like a broken renderer.
+  const dimOpacity = 0.15
+  const ptFillOpacity = activeIds
+    ? (d: { pointId: number | null }) =>
+        d.pointId != null && activeIds.has(d.pointId) ? o.pointOpacity
+        : d.pointId != null ? dimOpacity : o.pointOpacity
+    : o.pointOpacity
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
@@ -1243,7 +1270,11 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                                         // themed outline so a whitish series colour still reads on the
                                         // white PDF / light ground (currentColor = dark there)
                                         stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
-                                        fillOpacity: o.pointOpacity, ...f })] : []),
+                                        fillOpacity: ptFillOpacity,
+                                        // A stable CSS class the PlotChart click delegate finds — `.cc-brush-dot`
+                                        // — so we don't have to walk every `circle` in the SVG. Data-* mirrors the
+                                        // channel so the delegate can read the id without touching __data__.
+                                        className: 'cc-brush-dot', ...f })] : []),
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
       ...statsMarks,
     ],

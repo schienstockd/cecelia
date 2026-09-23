@@ -209,6 +209,32 @@ function _downsample(vals::Vector{Float64}, cap::Int)::Vector{Float64}
     vals[round.(Int, range(1, n; length = cap))]
 end
 
+# Same stride, but keeps a parallel id vector aligned so a downsampled point still knows which
+# track/cell it came from. Used by point-source linked brushing (LINKED_BRUSHING_PLAN.md
+# Option B) on strip/violin/boxplot jitter — a click on the dot needs the identity, not the
+# value. Called AFTER the paired sort so the stride still samples across the distribution.
+function _downsample_pairs(vals::Vector{Float64}, ids::Vector{Int},
+                           cap::Int)::Tuple{Vector{Float64}, Vector{Int}}
+    n = length(vals)
+    (n <= cap || cap <= 0) && return (vals, ids)
+    keep = round.(Int, range(1, n; length = cap))
+    (vals[keep], ids[keep])
+end
+
+# Drop rows where the measure or the id is missing/non-finite/non-positive — mirrors `_finite`
+# but preserves the (value, id) pairing so a later sort/downsample doesn't shear them apart.
+function _finite_pairs(vs::AbstractVector, ids::AbstractVector)::Tuple{Vector{Float64}, Vector{Int}}
+    fv = Float64[]; fi = Int[]
+    n = min(length(vs), length(ids))
+    for k in 1:n
+        v = vs[k]; i = ids[k]
+        (ismissing(v) || !(v isa Real) || !isfinite(v)) && continue
+        (ismissing(i) || i <= 0) && continue
+        push!(fv, Float64(v)); push!(fi, Int(i))
+    end
+    fv, fi
+end
+
 # Morphology/intensity `var` columns are quantitative by construction — an integer-valued one
 # (`euler_number`, voxel-count `area`) is STILL numeric. The categorical heuristic (`_is_categorical_col`)
 # is only for `obs` columns (hmm.state, clusters, generation — written as anndata categoricals). So the
@@ -603,15 +629,36 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # furthest point within 1.5·IQR, + median and mean). This is the cross-image "compare track
         # speed across images X/Y/Z" chart (one box per image in per_image scope). Outliers omitted
         # to keep the payload tiny; `n` carries the sample size.
+        #
+        # POINT-SOURCE BRUSHING (LINKED_BRUSHING_PLAN.md Option B): when raw_points is on AND the
+        # group's frame carries a stable identity column (`track_id` for per-track granularity,
+        # `label` for per-cell), each downsampled jitter dot is emitted with its id in `points_ids`.
+        # Frontend uses that to write the shared linkedSelection bag on click and to dim non-
+        # selected dots. `points_id_kind` on the response tells the frontend which bag scope to
+        # use. When the id column is absent, `points_ids` is empty and interaction is inert.
         measure === nothing && error("plot_summary_data: boxplot needs a `measure`")
         m = String(measure); groups = sgroups(df)
+        # Box stats come from `_finite(vals)` (unchanged behaviour), independent of the id-paired
+        # path below — a row whose value is finite but whose id is missing must still count toward
+        # the box; it just doesn't emit a brushable dot. This keeps a stats-only view identical to
+        # what it rendered before pointIds shipped.
+        id_col = granularity == :track ? :track_id : :label
+        any_ids = false
         series = map(groups) do g
             vals = sort(_finite(g.sub[!, m]))
-            # optional downsampled raw points for the jitter overlay (docs/PLOTS.md §4)
-            pts = raw_points ? _downsample(vals, max_points) : Float64[]
+            has_id = raw_points && (id_col in propertynames(g.sub))
+            if has_id
+                any_ids = true
+                fv, fi = _finite_pairs(g.sub[!, m], g.sub[!, id_col])
+                perm = sortperm(fv)
+                pts, pids = _downsample_pairs(fv[perm], fi[perm], max_points)
+            else
+                pts = raw_points ? _downsample(vals, max_points) : Float64[]
+                pids = Int[]
+            end
             if isempty(vals)
                 merge(base(g),
-                      Dict("q1"=>NaN,"median"=>NaN,"q3"=>NaN,"lower"=>NaN,"upper"=>NaN,"mean"=>NaN,"n"=>0,"points"=>pts))
+                      Dict("q1"=>NaN,"median"=>NaN,"q3"=>NaN,"lower"=>NaN,"upper"=>NaN,"mean"=>NaN,"n"=>0,"points"=>pts,"pointIds"=>pids))
             else
                 q1 = quantile(vals, 0.25); q2 = quantile(vals, 0.5); q3 = quantile(vals, 0.75)
                 iqr = q3 - q1
@@ -620,11 +667,12 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                 upper = maximum(v for v in vals if v <= hi)
                 merge(base(g),
                       Dict("q1"=>q1, "median"=>q2, "q3"=>q3, "lower"=>lower, "upper"=>upper,
-                           "mean"=>mean(vals), "n"=>length(vals), "points"=>pts))
+                           "mean"=>mean(vals), "n"=>length(vals), "points"=>pts, "pointIds"=>pids))
             end
         end
         result = withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
+        any_ids && (result["pointIdKind"] = granularity == :track ? "track" : "cell")
         stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
         return result
     else

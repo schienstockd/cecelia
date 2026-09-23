@@ -23,7 +23,13 @@ const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
 // settings the RENDERER had to substitute (today: rotating x tick labels that wouldn't fit). Reported
 // up so the host can say so — a plot silently disagreeing with its own controls is the thing we avoid.
 // See plots/autoOverride.ts.
-const emit = defineEmits<{ 'auto-override': [AutoOverride[]] }>()
+// `point-click` — a jitter/scatter dot was clicked. Payload carries the point identity + the
+// source (image, valueName) so the host can mirror into PickHighlight / TrackHighlight for the
+// RIGHT image without guessing (LINKED_BRUSHING_PLAN.md Option B write side).
+const emit = defineEmits<{
+  'auto-override': [AutoOverride[]]
+  'point-click': [{ id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string }]
+}>()
 const host = useTemplateRef<HTMLElement>('host')
 // @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
 let Plot: any = null                                   // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -65,6 +71,35 @@ async function render(pass = 0) {
   // rather than staying white — see `applyPlotTheme`, which every Plot.plot() site now shares.
   applyPlotTheme(node as SVGElement, !!props.opts?.darkTheme)
   host.value.append(node)
+  // Delegated click on brushable dots (LINKED_BRUSHING_PLAN.md Option B write side). Every
+  // brushable dot carries class `cc-brush-dot` (set by the renderer) and Observable Plot binds
+  // the row object to `__data__`. `pointIdKind` on the response tells us which scope to write.
+  // Skipped when the response has no `pointIdKind` (no ids emitted) — the dots exist, but
+  // clicking them does nothing (no state to write; a listener that emits `null` would just
+  // wake up the host for no reason).
+  const kind = props.data?.pointIdKind
+  if (kind) {
+    node.addEventListener('click', (e) => {
+      const target = e.target as Element | null
+      const dot = target?.closest?.('.cc-brush-dot') as (Element & {
+        __data__?: { pointId?: number | null; pointUid?: string; pointVn?: string }
+      }) | null
+      if (!dot) return
+      const d = dot.__data__
+      const id = d?.pointId
+      if (id == null) return
+      emit('point-click', {
+        id, kind,
+        imageUid: d?.pointUid ?? '',
+        valueName: d?.pointVn ?? '',
+      })
+    })
+    // A visible affordance: brushable dots take a pointer cursor. Fills a gap where dots on the
+    // boxplot look inert until you hover them; a real "grab a point" gesture needs a cue.
+    const style = document.createElement('style')
+    style.textContent = '.cc-brush-dot { cursor: pointer; }'
+    node.prepend(style)
+  }
   // report any setting the builder substituted (`_autoRotatedX`) — but only when it actually CHANGED.
   // The host stores this and the board stores the host's readout, so an unconditional emit makes every
   // render a state write, which renders again. See sameOverrides in plots/autoOverride.ts.

@@ -73,6 +73,10 @@ const plotRef = useTemplateRef<{
   axisRect(): FrameRect | null
 }>('plotRef')
 const projectStore = useProjectStore()   // image metadata (the per-image frame interval for the time axis)
+// Linked-brushing store instance — declared early because `buildOpts` (a few hundred lines down)
+// references it to compute the subscribe-side dim. A later declaration would trip the temporal
+// dead zone when the buildOpts computed first runs at setup.
+const linkedBrushStore = useLinkedSelectionStore()
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
 // the columns actually present on the selected image+segmentation (loaded below), so we never offer a
@@ -597,6 +601,22 @@ const emptyNote = computed(() => {
 
 // the build options handed to PlotChart (which lazy-loads Plot and renders). Render-only inputs
 // (chart type, error metric, vis props) recompute here without a refetch.
+// Linked-brushing subscribe side (LINKED_BRUSHING_PLAN.md Option B, read). When the response
+// carries `pointIdKind` (a per-point identity — boxplot jitter today) AND a matching-scope
+// selection is active in the shared bag, hand the id set to the renderer so non-selected dots
+// dim. Idle bag → undefined → no dimming (base opacity throughout).
+const pointBrushScope = computed<'tracks' | 'cells' | null>(() => {
+  const kind = (result.value as { pointIdKind?: 'track' | 'cell' } | null)?.pointIdKind
+  return kind === 'track' ? 'tracks' : kind === 'cell' ? 'cells' : null
+})
+const pointBrushActive = computed<Set<number> | undefined>(() => {
+  const scope = pointBrushScope.value
+  if (!scope) return undefined
+  const b = linkedBrushStore.bag
+  if (!b || b.scope !== scope || !b.ids.length) return undefined
+  return new Set(b.ids)
+})
+
 const buildOpts = computed<BuildOpts>(() => ({
   chartType: chartType.value, byImage: byImage.value, normalize: normalize.value,
   errorMetric: errorMetric.value, colorOf: props.seriesColor,
@@ -605,6 +625,7 @@ const buildOpts = computed<BuildOpts>(() => ({
   timeScale: timeSeries.value ? (timeScale.value ?? undefined) : undefined,
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity, statsShowNs, statsUseStars
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
+  brushActiveIds: pointBrushActive.value ?? null,
 }))
 
 // ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
@@ -816,7 +837,7 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
 //  - Does NOT collapse per-cell observations to tracks — that jump is the "murky line" the
 //    revised plan refuses to cross. Track-scope Option A stays parked, safe only where the plot
 //    glyph IS a track identity (e.g. dominant-state-per-track bar).
-const linkedBrushStore   = useLinkedSelectionStore()
+// linkedBrushStore is declared at the top of the setup block (needed by buildOpts).
 const linkedBrushSub     = useLinkedSelectionSubscriber('cells')
 // Source id — stable across chip clicks so this panel replaces its OWN selection rather than
 // stacking. Falls back to a synthetic id when the panel has no persistKey (inline / preview).
@@ -944,6 +965,28 @@ const linkedBrushChipOptions = computed<ChipOption[]>(() =>
       ...(active && linkedBrushBadgeCount.value > 0 ? { badge: linkedBrushBadgeCount.value } : {}),
     }
   }))
+
+// Point-source click handler (LINKED_BRUSHING_PLAN.md Option B write side). PlotChart emits this
+// when the user clicks a brushable jitter dot; payload carries the point identity + its source
+// (image, valueName), so this mirrors into the SAME image the user pointed at rather than
+// guessing from the panel's scope. Shift-click adds to the selection; a bare click replaces.
+function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string }) {
+  const scope: 'tracks' | 'cells' = p.kind === 'track' ? 'tracks' : 'cells'
+  const cur = linkedBrushStore.bag
+  const additive = false   // TODO: hook shift/cmd once we thread the event through
+  const nextIds = additive && cur && cur.scope === scope
+    ? Array.from(new Set([...cur.ids, p.id]))
+    : [p.id]
+  linkedBrushStore.set({ scope, ids: nextIds, source: linkedBrushSourceId.value, sourcePlotId: linkedBrushSourceId.value })
+  const uid = p.imageUid || props.imageUid || null
+  const vn = p.valueName
+  if (!uid || !vn) return
+  if (scope === 'cells') {
+    viewer.setPickHighlight({ imageUid: uid, valueName: vn, labels: nextIds, focusId: 0, origin: 'user' })
+  } else {
+    viewer.setTrackHighlight({ imageUid: uid, valueName: vn, trackIds: nextIds, origin: 'user' })
+  }
+}
 </script>
 
 <template>
@@ -1124,7 +1167,8 @@ const linkedBrushChipOptions = computed<ChipOption[]>(() =>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
       <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
-                 @auto-override="autoOverrides = $event" />
+                 @auto-override="autoOverrides = $event"
+                 @point-click="onPlotPointClick" />
       <PlotSpinner v-if="showSpinner" label="Loading…" />
       <template v-for="m in summaryMarks" :key="m.markerId">
         <PlotPointOutMark v-if="summaryMarkStyle(m)" :mark="m" :style="summaryMarkStyle(m)!" />
