@@ -32,6 +32,7 @@ import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granula
 import { discoverObsMeasures, obsMeasureLabel, distinctValueNames, mergeColumnSets } from '../../plots/obsMeasures'
 import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
+import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 import { usePanelExport } from '../../stores/canvasPanelExports'
@@ -39,6 +40,8 @@ import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
+import { useLinkedSelectionSource, useLinkedSelectionSubscriber } from '../../composables/useLinkedSelection'
+import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 
@@ -70,6 +73,10 @@ const plotRef = useTemplateRef<{
   axisRect(): FrameRect | null
 }>('plotRef')
 const projectStore = useProjectStore()   // image metadata (the per-image frame interval for the time axis)
+// Linked-brushing store instance — declared early because `buildOpts` (a few hundred lines down)
+// references it to compute the subscribe-side dim. A later declaration would trip the temporal
+// dead zone when the buildOpts computed first runs at setup.
+const linkedBrushStore = useLinkedSelectionStore()
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
 // the columns actually present on the selected image+segmentation (loaded below), so we never offer a
@@ -594,6 +601,33 @@ const emptyNote = computed(() => {
 
 // the build options handed to PlotChart (which lazy-loads Plot and renders). Render-only inputs
 // (chart type, error metric, vis props) recompute here without a refetch.
+// Linked-brushing subscribe side (LINKED_BRUSHING_PLAN.md Option B, read). When the response
+// carries `pointIdKind` (a per-point identity — boxplot jitter today) AND a matching-scope
+// selection is active in the shared bag, hand the id set to the renderer so non-selected dots
+// dim. Idle bag → undefined → no dimming (base opacity throughout).
+const pointBrushScope = computed<'tracks' | 'cells' | null>(() => {
+  const kind = (result.value as { pointIdKind?: 'track' | 'cell' } | null)?.pointIdKind
+  return kind === 'track' ? 'tracks' : kind === 'cell' ? 'cells' : null
+})
+// Two shapes flow to the renderer depending on what the producer knew about source provenance:
+//   • `Map<sourceKey, Set<number>>` when the producer set `perSource` (a brush that swept
+//     per-(uid, vn, pop) groups). Renderer matches on `linkedSourceKey(uid, vn, pop) + id`
+//     with a fallback to `linkedSourceKey(uid, vn) + id` — so a plot brush (specific) and a
+//     Show / MCP writer (generic) both land on the right dots without either bleeding
+//     across sibling populations.
+//   • `Set<number>` when the producer only knew ids (legacy). Renderer falls back to a flat
+//     id match — same behaviour as before this store carried perSource.
+const pointBrushActive = computed<Set<number> | Map<string, Set<number>> | undefined>(() => {
+  const scope = pointBrushScope.value
+  if (!scope) return undefined
+  const b = linkedBrushStore.bag
+  if (!b || b.scope !== scope || !b.ids.length) return undefined
+  if (b.perSource && Object.keys(b.perSource).length) {
+    return new Map(Object.entries(b.perSource).map(([k, ids]) => [k, new Set(ids)]))
+  }
+  return new Set(b.ids)
+})
+
 const buildOpts = computed<BuildOpts>(() => ({
   chartType: chartType.value, byImage: byImage.value, normalize: normalize.value,
   errorMetric: errorMetric.value, colorOf: props.seriesColor,
@@ -602,6 +636,13 @@ const buildOpts = computed<BuildOpts>(() => ({
   timeScale: timeSeries.value ? (timeScale.value ?? undefined) : undefined,
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity, statsShowNs, statsUseStars
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
+  brushActiveIds: pointBrushActive.value ?? null,
+  // For single-image panels the server strips per-series uID (by_image=false), so the plot's
+  // per-dot pointUid ends up "" and the (uid, vn) source key collapses to `|vn`. The panel
+  // knows its imageUid — hand it down so pts rows stamp the right uid and the brush's
+  // perSource key matches on the render side. Null for cross-image pooled panels (they need
+  // per-dot uids from the server, tracked separately).
+  defaultImageUid: props.imageUid ?? null,
 }))
 
 // ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
@@ -795,6 +836,235 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
   if (!uids.includes(bag.imageUid)) return null
   return { count: ids.length, kind: isTrack ? 'tracks' : 'cells' }
 })
+
+// ── Linked brushing (LINKED_BRUSHING_PLAN.md P3 — category-source, CELL SCOPE) ─────────
+// Categorical frequency-family charts (`frequency` / `stacked` / `stacked100`) aggregate per
+// (cell, timepoint). A chip strip below the plot lets the user click a category; the endpoint
+// resolves the matching per-cell LABEL ids (not track_ids — a track has cells in many states
+// over its lifetime, so "at least one cell in state X" is not a track identity). The label ids
+// drop into the shared linkedSelection store at `scope: 'cells'` and are mirrored into
+// `PickHighlight` so the viewer's per-label pick outline lights up. Toggle-off by re-clicking
+// the same chip (ChipSelect's `allow-empty` contract).
+//
+// MVP scope:
+//  - Only categorical frequency-family charts on cell-level pops.
+//  - One pop at a time: the FIRST series' (valueName, pop) is what the endpoint queries.
+//  - Single-image target: label ids are per-image, so a cross-image plot picks ONE image
+//    (open viewer image if in scope, else the panel's own imageUid, else the first).
+//  - Does NOT collapse per-cell observations to tracks — that jump is the "murky line" the
+//    revised plan refuses to cross. Track-scope Option A stays parked, safe only where the plot
+//    glyph IS a track identity (e.g. dominant-state-per-track bar).
+// linkedBrushStore is declared at the top of the setup block (needed by buildOpts).
+const linkedBrushSub     = useLinkedSelectionSubscriber('cells')
+// Source id — stable across chip clicks so this panel replaces its OWN selection rather than
+// stacking. Falls back to a synthetic id when the panel has no persistKey (inline / preview).
+const linkedBrushSourceId = computed(() => props.persistKey || `sp:${props.spec.id}:${props.index}`)
+const linkedBrushSource   = useLinkedSelectionSource(linkedBrushSourceId.value, 'cells')
+
+// Only offer the chip strip when the current chart is categorical-frequency AND we have a
+// non-empty category list from the response AND at least one series (so we know which pop to
+// query). Keep it strict — misleading affordances on charts that can't produce a valid
+// selection are worse than none.
+const linkedBrushCategories = computed<string[]>(() => {
+  if (!['frequency', 'stacked', 'stacked100'].includes(chartType.value)) return []
+  const r = result.value
+  if (!r || r.measureType !== 'categorical') return []
+  const cats = (r as { categories?: string[] }).categories
+  if (!cats?.length) return []
+  if (!ownSeries.value.length) return []
+  if (!measure.value) return []
+  return cats
+})
+
+const linkedBrushImageUids = computed<string[]>(() =>
+  crossImage.value ? (props.imageUids ?? []) : (props.imageUid ? [props.imageUid] : []))
+
+// The active category on THIS panel — undefined when the bag was set by a different source, or
+// is empty. Used to render the pressed-state chip and to implement toggle-off.
+const linkedBrushActiveCategory = ref<string | null>(null)
+const linkedBrushBusy = ref(false)
+
+// Target image for the query + mirror. `PickHighlight` is per-(image, vn), and label ids are
+// per-image, so this picks ONE image up-front: the currently-open viewer image if it's in the
+// panel's scope, else the panel's own imageUid, else the first of the cross-image set.
+function linkedBrushTargetImage(): string | null {
+  const uids = linkedBrushImageUids.value
+  const openUid = projectStore.openImageUid
+  if (openUid && uids.includes(openUid)) return openUid
+  return props.imageUid || uids[0] || null
+}
+
+// Mirror the linkedSelection bag into the shipped PickHighlight bag so the viewer's per-label
+// pick outline lights up (correction cockpit + cell-card halos are already subscribed). Empty
+// ids → clear the bag. `focusId: 0` = a bulk pick with no distinguished label.
+function mirrorPickHighlight(ids: number[]) {
+  const s0 = ownSeries.value[0]
+  const targetUid = linkedBrushTargetImage()
+  if (!s0 || !targetUid) return
+  viewer.setPickHighlight(ids.length
+    ? { imageUid: targetUid, valueName: s0.valueName, labels: [...ids], focusId: 0, origin: 'user' }
+    : null)
+}
+
+// ChipSelect's `allowEmpty` (single-select variant) emits '' when the user re-clicks the active
+// chip — same toggle-off semantics we want for "clear my selection". Any string ⇒ fetch; empty ⇒
+// clear.
+function onLinkedBrushCategoryChange(v: string | string[]) {
+  const cat = Array.isArray(v) ? (v[0] ?? '') : v
+  if (!cat) {
+    linkedBrushSource.clear()
+    mirrorPickHighlight([])
+    linkedBrushActiveCategory.value = null
+    return
+  }
+  void onLinkedBrushCategory(cat)
+}
+
+async function onLinkedBrushCategory(cat: string) {
+  const targetUid = linkedBrushTargetImage()
+  if (!targetUid || !measure.value || linkedBrushBusy.value) return
+  const s0 = ownSeries.value[0]
+  if (!s0) return
+  linkedBrushBusy.value = true
+  try {
+    const res = await fetch('/api/labels/by_category', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectUid: props.projectUid,
+        imageUid: targetUid,
+        valueName: s0.valueName,
+        pop: s0.pop,
+        popType: s0.popType,
+        measure: measure.value,
+        category: cat,
+      }),
+    })
+    if (!res.ok) { linkedBrushBusy.value = false; return }
+    const body = await res.json() as { labelIds: number[] }
+    const ids = body.labelIds ?? []
+    linkedBrushSource.set(ids)
+    mirrorPickHighlight(ids)
+    linkedBrushActiveCategory.value = ids.length ? cat : null
+  } catch {
+    // Network failure or aborted request — silent for the prototype; a real UX would surface it.
+  } finally {
+    linkedBrushBusy.value = false
+  }
+}
+
+// If the bag is cleared elsewhere (Escape / follow-up "Clear selection" button), our local
+// active-category tracking must fall back to null so the pressed-chip visual clears too.
+// Local pressed-chip fallback: fire when the bag is empty (Escape / Clear) OR when a different
+// panel became the source (its click overwrote our selection). Reading `sourcePlotId` off the bag
+// keeps the O(1) reactivity cheap.
+watch(
+  () => ({ empty: linkedBrushStore.isEmpty, src: linkedBrushStore.bag?.sourcePlotId ?? null }),
+  ({ empty, src }) => {
+    if (empty || (src && src !== linkedBrushSourceId.value)) linkedBrushActiveCategory.value = null
+  },
+  { deep: false },
+)
+
+// Count of cells (labels) in the active bag (scope-gated to 'cells'). Rendered as a `badge` on
+// the active chip only — same convention as ChipSelect's `ChipOption.badge`.
+const linkedBrushBadgeCount = computed(() => linkedBrushSub.activeIds.value.size)
+
+// ChipOption[] fed to the canonical <ChipSelect>. Badge is attached only to the active option so
+// the user reads "N selected" against the chip that produced them, not against every neighbour.
+const linkedBrushChipOptions = computed<ChipOption[]>(() =>
+  linkedBrushCategories.value.map(cat => {
+    const active = linkedBrushActiveCategory.value === cat
+    return {
+      value: cat,
+      label: cat,
+      tip: `Select tracks with ${measure.value} = ${cat}`,
+      ...(active && linkedBrushBadgeCount.value > 0 ? { badge: linkedBrushBadgeCount.value } : {}),
+    }
+  }))
+
+// Point-source click handler (LINKED_BRUSHING_PLAN.md Option B write side). PlotChart emits this
+// when the user clicks a brushable jitter dot; payload carries the point identity + its source
+// (image, valueName, pop), so this mirrors into the SAME image the user pointed at rather than
+// guessing from the panel's scope. Shift-click adds to the selection; a bare click replaces.
+function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string; pop: string }) {
+  const scope: 'tracks' | 'cells' = p.kind === 'track' ? 'tracks' : 'cells'
+  const cur = linkedBrushStore.bag
+  const additive = false   // TODO: hook shift/cmd once we thread the event through
+  const nextIds = additive && cur && cur.scope === scope
+    ? Array.from(new Set([...cur.ids, p.id]))
+    : [p.id]
+  // Also carry perSource — a click knows exactly one (uid, vn, pop) — so subscribers with
+  // per-dot source tags scope the highlight correctly. Without this the bag falls back to a
+  // flat id Set and every dot with the same numeric id lights up across sources.
+  const key = linkedSourceKey(p.imageUid ?? '', p.valueName ?? '', p.pop ?? '')
+  linkedBrushStore.set({ scope, ids: nextIds, source: linkedBrushSourceId.value,
+                         sourcePlotId: linkedBrushSourceId.value,
+                         perSource: { [key]: nextIds } })
+  const uid = p.imageUid || props.imageUid || null
+  const vn = p.valueName
+  if (!uid || !vn) return
+  if (scope === 'cells') {
+    viewer.setPickHighlight({ imageUid: uid, valueName: vn, labels: nextIds, focusId: 0, origin: 'user' })
+  } else {
+    viewer.setTrackHighlight({ imageUid: uid, valueName: vn, trackIds: nextIds, origin: 'user' })
+  }
+}
+
+// Rectangle brush handler (LINKED_BRUSHING_PLAN.md Option B — bulk write). PlotChart emits this
+// after a shift+drag; `sources` is ONE entry per hit `(uid, vn, pop)` — the finest source key
+// the renderer discriminates on. The shared linkedSelection bag gets the UNION of ids
+// (scope-appropriate). The viewer mirror is per-image, so pick whichever image has the largest
+// hit group AND is either the currently-open viewer image or the panel's own imageUid — no
+// silent guess to an unrelated image.
+function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid: string; valueName: string; pop: string; ids: number[] }> }) {
+  const scope: 'tracks' | 'cells' = p.kind === 'track' ? 'tracks' : 'cells'
+  if (!p.sources.length) return
+  const allIds = Array.from(new Set(p.sources.flatMap(s => s.ids)))
+  if (!allIds.length) return
+  // `perSource` carries the ((uid, vn, pop) → ids) shape so subscribing plots that have
+  // per-dot source tags only highlight the RIGHT series' dots. track_id / label are
+  // per-(image, seg) numeric spaces, and two POPULATIONS under the same segmentation share
+  // that space too — so a lasso on pop B under vn `live.tracks` used to bleed onto pop T.
+  // Keyed by `linkedSourceKey(uid, vn, pop)` so both sides construct it the same way.
+  // Consumers without source awareness (viewer mirror, Show button) still see the flat `ids`.
+  const perSource: Record<string, number[]> = {}
+  for (const s of p.sources) {
+    const key = linkedSourceKey(s.imageUid, s.valueName, s.pop)
+    perSource[key] = Array.from(new Set(s.ids))
+  }
+  linkedBrushStore.set({ scope, ids: allIds, source: linkedBrushSourceId.value,
+                         sourcePlotId: linkedBrushSourceId.value, perSource })
+  // For the viewer mirror (per-image, per-vn — pop is not a viewer axis), collapse `sources`
+  // to a per-(uid, vn) shape and pick a target the same way as before.
+  const byUidVn = new Map<string, { imageUid: string; valueName: string; ids: number[] }>()
+  for (const s of p.sources) {
+    const k = `${s.imageUid}\u0000${s.valueName}`
+    const g = byUidVn.get(k) ?? { imageUid: s.imageUid, valueName: s.valueName, ids: [] }
+    g.ids.push(...s.ids)
+    byUidVn.set(k, g)
+  }
+  const byImage = new Map<string, { valueName: string; ids: number[] }>()
+  for (const g of byUidVn.values()) {
+    const cur = byImage.get(g.imageUid)
+    // If two vns share the same image, prefer the group with the most hits — the mirror is
+    // single-vn and picking the smaller one would drop the majority of the user's selection.
+    if (!cur || g.ids.length > cur.ids.length) {
+      byImage.set(g.imageUid, { valueName: g.valueName, ids: Array.from(new Set(g.ids)) })
+    }
+  }
+  const openUid = projectStore.openImageUid
+  const preferred = (openUid && byImage.has(openUid)) ? openUid
+                  : (props.imageUid && byImage.has(props.imageUid)) ? props.imageUid
+                  : [...byImage.entries()].sort((a, b) => b[1].ids.length - a[1].ids.length)[0][0]
+  const gMirror = byImage.get(preferred)
+  if (!preferred || !gMirror?.valueName || !gMirror.ids.length) return
+  if (scope === 'cells') {
+    viewer.setPickHighlight({ imageUid: preferred, valueName: gMirror.valueName, labels: gMirror.ids, focusId: 0, origin: 'user' })
+  } else {
+    viewer.setTrackHighlight({ imageUid: preferred, valueName: gMirror.valueName, trackIds: gMirror.ids, origin: 'user' })
+  }
+}
 </script>
 
 <template>
@@ -975,7 +1245,9 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
       <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
-                 @auto-override="autoOverrides = $event" />
+                 @auto-override="autoOverrides = $event"
+                 @point-click="onPlotPointClick"
+                 @point-brush="onPlotPointBrush" />
       <PlotSpinner v-if="showSpinner" label="Loading…" />
       <template v-for="m in summaryMarks" :key="m.markerId">
         <PlotPointOutMark v-if="summaryMarkStyle(m)" :mark="m" :style="summaryMarkStyle(m)!" />
@@ -987,6 +1259,20 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
             v-tooltip.top="`Claude highlighted ${claudeChip.count} ${claudeChip.kind}`">
         <span class="sp-claude-badge">C</span>{{ claudeChip.count }}
       </span>
+      <!-- Linked-brushing chip strip (LINKED_BRUSHING_PLAN.md P3). Categorical frequency-family
+           charts render one chip per category — click writes the matching track_ids into the
+           shared linkedSelection store; the source panel also mirrors into `TrackHighlight` so
+           the shipped 10-family fan-out reacts (viewer, TrackScheme, cell cards, …). Uses the
+           canonical `ChipSelect` (single, `allow-empty` for re-click-to-clear) so it agrees with
+           every other chip picker in the app. -->
+      <div v-if="linkedBrushChipOptions.length" class="sp-brush-strip cc-card cc-card-2 cc-row cc-row-tight">
+        <span class="cc-eyebrow cc-fs-2xs">Select</span>
+        <ChipSelect variant="pill" allow-empty :disabled="linkedBrushBusy"
+                    :options="linkedBrushChipOptions"
+                    :model-value="linkedBrushActiveCategory ?? ''"
+                    aria-label="Select tracks by category"
+                    @update:model-value="onLinkedBrushCategoryChange" />
+      </div>
     </div>
   </CanvasPanel>
 </template>
@@ -1017,6 +1303,14 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
 .sp-claude-chip .sp-claude-badge { display: inline-flex; align-items: center; justify-content: center;
   width: 14px; height: 14px; border-radius: 50%; background: #e836b4;
   color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
+
+/* LINKED_BRUSHING_PLAN.md P3 — chip strip for category-source brushing on categorical
+   frequency-family charts. Surface + row chrome come from the composed .cc-card + .cc-row
+   utilities; this rule is layout only (position + gap tightening + width cap so a long category
+   list wraps instead of pushing off the plot). Anchored bottom-left inside .sp-body so it
+   doesn't collide with the Claude chip at top-right or the plot's axis labels. */
+.sp-brush-strip { position: absolute; left: 6px; bottom: 6px; z-index: 5;
+  pointer-events: auto; max-width: calc(100% - 60px); padding: 2px 6px; }
 
 /* "show series" measure-picker popover (opens upward from the footer button) */
 .sp-explode-wrap { position: relative; display: inline-flex; }

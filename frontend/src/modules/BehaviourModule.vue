@@ -4,14 +4,57 @@
      these are SET-SCOPE (fitted jointly across all selected images);
    • inspect results in the summary-plot canvas below the table (HMM state frequencies, track speed,
      …). Per-module canvas: only `behaviourAnalysis` plot specs are offered.
+
+  Linked-brushing host (LINKED_BRUSHING_PLAN.md P4/P5): the page owns the "Clear selection"
+  affordance and Escape shortcut for the shared `linkedSelection` bag; it also clears the bag on
+  navigation away so a stale selection can't leak into another module page. Individual
+  SummaryPanels write the bag (P3 chip strip, cell-scope) and mirror to the shipped
+  `PickHighlight` so the viewer's per-label pick outline lights up; the page-level clear here
+  reverses both.
 -->
 <script setup lang="ts">
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import ModuleLayout from '../components/ModuleLayout.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
+import { useLinkedSelectionStore } from '../stores/linkedSelection'
+import { useViewerStore } from '../stores/viewer'
 
 const { defs: behaviourDefs, reload: reloadDefs } = useTaskDefs('behaviour')
+
+const linkedSel = useLinkedSelectionStore()
+const viewer = useViewerStore()
+
+// A single, page-scoped clear: drops the shared bag AND the mirrored PickHighlight in one
+// action so the user's "get me back to no selection" gesture doesn't leave a stray highlight in
+// the viewer. Individual panels handle their own local pressed-chip visual via the store's
+// isEmpty watcher. (Cell-scope: revised MVP mirrors into PickHighlight, not TrackHighlight —
+// see LINKED_BRUSHING_PLAN.md.)
+function clearSelection() {
+  if (linkedSel.isEmpty && !viewer.pickHighlight) return
+  linkedSel.clear()
+  viewer.setPickHighlight(null)
+}
+
+// Escape from anywhere on the page — global listener, added on mount, removed on unmount so a
+// dropped page doesn't intercept keystrokes for another module. Ignore Escape while the user is
+// typing in an input/textarea/contenteditable so a form's own dismiss semantics still work.
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  if (linkedSel.isEmpty) return
+  const t = e.target as HTMLElement | null
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  clearSelection()
+}
+onMounted(() => { window.addEventListener('keydown', onKeydown) })
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+  // Decision 8: selection is per-page; navigating away clears it. Same for the mirror.
+  clearSelection()
+})
+
+const badgeCount = computed(() => linkedSel.bag?.ids.length ?? 0)
 </script>
 
 <template>
@@ -26,7 +69,25 @@ const { defs: behaviourDefs, reload: reloadDefs } = useTaskDefs('behaviour')
       />
     </template>
     <template #plots="{ selectedUids }">
-      <SummaryCanvas :image-uids="selectedUids" module="behaviourAnalysis" />
+      <div class="sp-plots-slot">
+        <button v-if="!linkedSel.isEmpty" type="button"
+                class="cc-btn cc-btn-dense cc-btn-on cc-btn-on-tint sp-clear-selection"
+                @click="clearSelection"
+                v-tooltip.left="'Clear track selection (Esc)'">
+          Clear selection · {{ badgeCount }}
+        </button>
+        <SummaryCanvas :image-uids="selectedUids" module="behaviourAnalysis" />
+      </div>
     </template>
   </ModuleLayout>
 </template>
+
+<style scoped>
+/* LINKED_BRUSHING_PLAN.md P5 — page-level Clear affordance. Only rendered when the bag is
+   non-empty (v-if in the template), so idle state adds no chrome. Colour + press state come from
+   .cc-btn-on + .cc-btn-on-tint; this rule is layout only (position + z-index so the button
+   floats above the plot canvas). Wrapper is `position: relative` so the button anchors to the
+   plots slot, not the viewport. */
+.sp-plots-slot { position: relative; }
+.sp-clear-selection { position: absolute; top: 8px; right: 8px; z-index: 30; }
+</style>

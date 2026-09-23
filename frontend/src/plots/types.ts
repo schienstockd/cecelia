@@ -86,6 +86,18 @@ export interface PlotSeries {
   // it), ci95 the wider half-width for renderers/exports that want one symmetric number
   nPositive?: number
   points?: number[]    // downsampled raw values (boxplot overlay / strip / violin)
+  // Parallel to `points`. Per-point identity (track_id for per-track granularity, label for
+  // per-cell) — enables point-source linked brushing (LINKED_BRUSHING_PLAN.md Option B): click
+  // a dot → write the id into the shared bag. Emitted by the boxplot branch of plot_data.jl
+  // when the group's frame carries the identity column; empty when it doesn't (interaction is
+  // then inert). Scope for the whole response is on `PlotDataResponse.pointIdKind`.
+  pointIds?: number[]
+  // Parallel to `points`. Per-point image uID — only emitted for POOLED cross-image responses
+  // (`g.uid == ""` on the server-side group + `:uID` on the sub-frame). track_id/label are
+  // per-(image, vn) numeric spaces, so without this the frontend collapses every pooled dot to
+  // one panel-level `defaultImageUid` fallback and the brush picks up numeric collisions from
+  // every image. Absent when the series already carries a single uid (per-image plots).
+  pointUids?: string[]
 }
 
 // A series target = a population on a specific segmentation, plus the pop_type it's fetched under.
@@ -155,6 +167,10 @@ export interface PlotDataResponse {
   chartType: ChartType | 'points' | 'matrix' | 'raw'
   measure: string
   measureType?: 'numeric' | 'categorical'   // auto-detected; drives which charts the panel offers
+  // Scope for `PlotSeries.pointIds` — 'track' → linkedSelection scope 'tracks',
+  // 'cell' → 'cells'. Absent when the response carries no point ids (older payloads, or a
+  // chart type that doesn't emit raw points).
+  pointIdKind?: 'track' | 'cell'
   // the measure is 0/1 throughout — the panel then also offers the `percent` ("% positive") chart. A
   // data property, not a column-name list, so a new boolean measure needs no registration.
   measureBoolean?: boolean

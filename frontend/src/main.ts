@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import PrimeVue from 'primevue/config'
@@ -10,6 +10,8 @@ import './style.css'
 import App from './App.vue'
 import { useAppControlStore } from './stores/appControl'
 import { useLogStore } from './stores/log'
+import { useLinkedSelectionStore } from './stores/linkedSelection'
+import { useViewerStore } from './stores/viewer'
 import { installRoLoopTrace } from './utils/roLoopTrace'
 import { popoutRouteOfWindow } from './lib/popout'
 
@@ -154,6 +156,30 @@ window.addEventListener('unhandledrejection', e => {
 // classification. Installed BEFORE `app.mount`, since an observer built earlier keeps the native class.
 if (import.meta.env.DEV) {
   installRoLoopTrace((message, detail) => bootLog.warn(message, { source: 'frontend', detail }))
+}
+
+// Linked-brushing bag sync (LINKED_BRUSHING_PLAN.md, Follow-up 1 precursor). During MVP the
+// shared `linkedSelection` bag shadows the shipped `TrackHighlight` / `PickHighlight` bags — one
+// is written, the other is mirrored. A CLEAR from either side must clear the other, otherwise a
+// stale selection lingers on whichever bag was not touched. Bidirectional to catch both paths:
+// user hits × on the viewer's highlight indicator (clears TrackHighlight, we clear the linked
+// bag), or a page-level Clear/Escape clears the linked bag (we drop the viewer bags). The
+// mirror is scope-aware — clearing linkedSelection('cells') only drops PickHighlight, and vice
+// versa — so a track-scope selection isn't wiped by a cell-side clear.
+{
+  const linkedSel = useLinkedSelectionStore(pinia)
+  const viewer = useViewerStore(pinia)
+  watch(() => viewer.trackHighlight, v => {
+    if (v === null && linkedSel.bag?.scope === 'tracks') linkedSel.clear()
+  })
+  watch(() => viewer.pickHighlight, v => {
+    if (v === null && linkedSel.bag?.scope === 'cells') linkedSel.clear()
+  })
+  watch(() => linkedSel.bag, v => {
+    if (v !== null) return
+    if (viewer.trackHighlight) viewer.setTrackHighlight(null)
+    if (viewer.pickHighlight)  viewer.setPickHighlight(null)
+  })
 }
 
 app.mount('#app')

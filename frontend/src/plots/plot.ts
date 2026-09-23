@@ -290,6 +290,23 @@ export interface BuildOpts extends VisProps {
   // axis in frames — set only when EVERY plotted image has a known interval (see utils/timeAxis.ts);
   // an unknown interval must not be silently rendered as 1 s/frame.
   timeScale?: Record<string, number>
+  // Linked brushing subscribe-side (LINKED_BRUSHING_PLAN.md Option B, read side). Two shapes:
+  //   • `Set<number>` — flat id match, used when the producer didn't know which source each id
+  //     came from (Show button, MCP mark_*).
+  //   • `Map<sourceKey, Set<number>>` — per-(uid, vn) match, used when the producer swept
+  //     per-source groups (a brush on a pooled boxplot). Renderer keys on
+  //     `${pointUid}|${pointVn} + pointId` so track_id=5 in segmentation B doesn't also
+  //     light up track_id=5 in segmentation T (they're per-(image, segmentation) numeric spaces).
+  // `null` / absent → idle state, no dimming (base opacity throughout). Sourced from the shared
+  // `linkedSelection` store scope-matched against the response's `pointIdKind`.
+  brushActiveIds?: Set<number> | Map<string, Set<number>> | null
+  // Fallback imageUid for per-dot source tagging. Server-side, a plot that doesn't group by
+  // image emits series with empty `uID` — every dot then carries pointUid="" and the per-source
+  // key collapses to `|vn` (loses the image discriminator). For a single-image panel the panel
+  // KNOWS the imageUid; passing it here lets the renderer stamp it on each dot so the (uid, vn)
+  // key round-trips correctly with the bag's `perSource` written by the brush/click. Absent for
+  // cross-image pooled plots — those need per-dot uids from the server, tracked separately.
+  defaultImageUid?: string | null
 }
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
@@ -1204,6 +1221,38 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
 }
 
+// Compose a `render` mark hook that stamps identity (pointId / pointUid / pointVn / pointPop)
+// onto each rendered <circle> as data-* attributes. Reason: Observable Plot binds ROW INDEX (a
+// number) to `<circle>.__data__`, not the row object we passed in — so a click/brush delegate
+// that reads `d.pointId` off `__data__` gets `undefined` for every dot. The delegate reads the
+// attrs instead. `index` is the mark's per-facet indices into the SOURCE data array (`rows`),
+// so `rows[index[i]]` maps back to the i-th rendered circle's source row. Runs AFTER the
+// default render (call `next` first, then stamp) so we don't have to reimplement anything.
+//
+// `pointPop` gets its own attr because `(uid, vn)` alone doesn't discriminate two populations
+// under the same segmentation — a lasso on pop B would light every T dot that happens to share
+// a numeric track_id. The brush emit reads it back off the circle so the perSource key
+// includes pop; the renderer's `matches()` prefers the specific `(uid, vn, pop)` key and only
+// falls back to `(uid, vn)` for writers that don't know the pop (Show button, MCP mark_*).
+function stampBrushIds<T extends { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }>(rows: T[]) {
+  return (index: number[], scales: unknown, values: unknown, dimensions: unknown,
+          context: unknown, next: (...a: unknown[]) => SVGGElement | null) => {
+    const g = next(index, scales, values, dimensions, context)
+    if (!g) return g
+    const circles = g.querySelectorAll('circle')
+    for (let i = 0; i < circles.length && i < index.length; i++) {
+      const row = rows[index[i]]
+      if (!row) continue
+      const c = circles[i]
+      if (row.pointId != null) c.setAttribute('data-pid', String(row.pointId))
+      c.setAttribute('data-uid', row.pointUid ?? '')
+      c.setAttribute('data-vn',  row.pointVn  ?? '')
+      c.setAttribute('data-pop', row.pointPop ?? '')
+    }
+    return g
+  }
+}
+
 // ── numeric: boxplot (Tukey, precomputed) + jittered raw-point overlay ────────────
 function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                  keyOf: (s: PlotSeries) => string, color: object, logY: object) {
@@ -1217,15 +1266,91 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
              tip: `${k}\nmedian ${fmt(s.median)}\nq1 ${fmt(s.q1)}  q3 ${fmt(s.q3)}\nn ${s.n}` }
   })
   // raw points overlaid as a beeswarm/jitter around the series index (sit ON the box, not beside it)
-  const pts: object[] = []
+  const activeIds = o.brushActiveIds ?? null
+  const pts: Array<{ series: string; fkey: string; xj: number; value: number;
+                     pointId: number | null; pointUid: string; pointVn: string; pointPop: string }> = []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
+    const pids = (s.pointIds ?? []) as number[]
+    const puids = (s.pointUids ?? []) as string[]
     const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
-    vals.forEach((v, k) => pts.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v }))
+    vals.forEach((v, k) => pts.push({
+      series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
+      // pointId + uID ride along in the SOURCE row so the render hook can stamp them onto each
+      // <circle> as data-* attrs (see `stampBrushIds` below). Observable Plot binds ROW INDEX
+      // to `circle.__data__`, not the row object, so reading `d.pointId` off `__data__` returns
+      // undefined for every dot — the click/brush delegate reads the attrs instead. `null` when
+      // the response didn't carry ids; empty string uID for a single-image plot.
+      pointId: pids[k] ?? null,
+      // Precedence for the per-dot uid:
+      //   1. `puids[k]` — set by the server ONLY for POOLED cross-image responses (the sub
+      //      pools rows from many images under one series with `s.uID == ""`). Without this,
+      //      every dot would collapse to the same fallback below and a lasso would match every
+      //      other-image track that happens to share a numeric track_id.
+      //   2. `s.uID` — the per-series uid the server sends for per-image plots (each series
+      //      already IS one image).
+      //   3. `o.defaultImageUid` — the panel's own imageUid (single-image panels: the server
+      //      strips per-series uID because everything's from that one image).
+      //   4. `''` — cross-image pooled with no per-dot uid AND no panel uid: match falls back
+      //      to `(uid='', vn, pop)` — same across the pool, but that's the failure mode we've
+      //      accepted when the server can't distinguish.
+      pointUid: puids[k] ?? (s.uID || o.defaultImageUid || ''),
+      pointVn: s.value_name,
+      // pop discriminates two boxes that sit under the SAME value_name — the case (uid, vn)
+      // alone can't resolve (a track with cells in both pops would appear twice, and lassoing
+      // one would light both without this). `s.pop` is the raw pop path, same string the
+      // response carries; matches the writer's `p.pop` on the emit side.
+      pointPop: s.pop ?? '',
+    }))
   }
   const f = fxCh(o), a = axM(o)
   const ptFill = o.colorData ? 'series' : 'currentColor'
+  // Subscribe-side highlight (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
+  // active AND this dot carries an id: selected dots pop with a full-opacity fill AND a bold
+  // outline (thick stroke, full stroke opacity); non-selected dots hard-dim to ~0.08 fill and
+  // drop their stroke entirely. Idle → base opacity + thin stroke throughout. A pure opacity
+  // delta was too subtle at swarm density — the ring is what actually pops.
+  //
+  // MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-source
+  // — the dot's identity selects that source's id set, and only ids from THAT source match.
+  // Fixes two ambiguities in one:
+  //   • track_id=5 exists in every (image, segmentation) numeric space, so a lasso on
+  //     segmentation B was lighting up segmentation T's dots too. `(uid, vn)` fixes that.
+  //   • two POPULATIONS under the same (uid, vn) share the numeric space too — a track with
+  //     cells in both B and T appears once per box, and lassoing one lit both. The specific
+  //     `(uid, vn, pop)` key fixes that. The renderer tries the specific key FIRST and only
+  //     falls back to `(uid, vn)` for writers that don't know pop (Show button, MCP mark_*):
+  //     those genuinely want to highlight the track wherever it appears on that (uid, vn).
+  // If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
+  // not-brushable dot would look like a broken renderer.
+  const dimOpacity = 0.08
+  const isPerSource = activeIds instanceof Map
+  type PtRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
+  const matches = (d: PtRow): boolean => {
+    if (d.pointId == null || !activeIds) return false
+    if (isPerSource) {
+      const map = activeIds as Map<string, Set<number>>
+      const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
+      if (map.get(specKey)?.has(d.pointId)) return true
+      // Fallback: a writer that only knows (uid, vn) — Show button, MCP mark_* — targets every
+      // dot in that (uid, vn) regardless of pop. That's the correct semantics for a "highlight
+      // this track" write: the track's location within populations isn't what the writer meant
+      // to narrow by, so we let it match across pops on the same (uid, vn).
+      const vnKey = `${d.pointUid}|${d.pointVn}`
+      return map.get(vnKey)?.has(d.pointId) ?? false
+    }
+    return (activeIds as Set<number>).has(d.pointId)
+  }
+  const ptFillOpacity = activeIds
+    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
+    : o.pointOpacity
+  const ptStrokeWidth = activeIds
+    ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
+    : 0.5
+  const ptStrokeOpacity = activeIds
+    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
+    : 0.55
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
@@ -1241,9 +1366,24 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       RulePos(stat, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'median', stroke: 'currentColor', strokeWidth: 1.6, ...f }), // median
       ...(pts.length ? [Plot.dot(pts, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: ptFill,
                                         // themed outline so a whitish series colour still reads on the
-                                        // white PDF / light ground (currentColor = dark there)
-                                        stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
-                                        fillOpacity: o.pointOpacity, ...f })] : []),
+                                        // white PDF / light ground (currentColor = dark there). Stroke
+                                        // width/opacity are per-point functions when a selection is active
+                                        // so the selected dots get a bold ring — see ptStroke* above.
+                                        stroke: 'currentColor',
+                                        strokeWidth: ptStrokeWidth, strokeOpacity: ptStrokeOpacity,
+                                        fillOpacity: ptFillOpacity,
+                                        // A stable CSS class the PlotChart click delegate finds — `.cc-brush-dot`
+                                        // — so we don't have to walk every `circle` in the SVG.
+                                        className: 'cc-brush-dot',
+                                        // Stamp identity onto each rendered <circle> as data-* attrs. Plot
+                                        // binds ROW INDEX to `__data__`, so `d.pointId` off the circle is
+                                        // always undefined — the delegate reads the attrs instead. `index`
+                                        // is the mark's per-facet indices into the original `pts` array,
+                                        // so `pts[index[i]]` maps back to the source row for the i-th
+                                        // rendered circle. We compose ON TOP of the default render (call
+                                        // `next` first, then stamp).
+                                        render: stampBrushIds(pts),
+                                        ...f })] : []),
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
       ...statsMarks,
     ],

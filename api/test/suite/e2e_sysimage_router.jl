@@ -387,6 +387,7 @@ end
         "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
+        "/api/labels/by_category",   # linked brushing category-source cell-scope (LINKED_BRUSHING_PLAN.md P2)
         "/api/pools/set", "/api/tasks/threads/set", "/api/preview/run", "/api/runner/restart", "/api/runner/enabled",
         "/api/preview/start", "/api/preview/stop",
         "/api/projects/animations", "/api/projects/boards",
@@ -459,7 +460,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 146
+    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 147
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
