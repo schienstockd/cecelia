@@ -15,6 +15,21 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.7] — 2026-09-23
+
+Patch release: one fix for installs running over HTTPS (the default since v0.2.5, reachable since
+v0.2.6's launcher fix).
+
+### Fixed
+
+- **Connection badge flapping / no live task updates under HTTPS.** The frontend opened its WebSocket
+  as a hardcoded `ws://`, so on an `https://` page every handshake failed: the header badge cycled
+  Error → Disconnected → Connecting while REST (relative URLs) kept the rest of the app working. With
+  the socket down nothing pushed from the backend arrived — task progress, done/failed, the console
+  log stream, Blackboard updates — and the 3 s outcome poll never started, so a finished task could
+  look "running" until reload. The socket now follows the page scheme (`wss://` under HTTPS). Workaround
+  on v0.2.6: turn TLS off in Settings (or `CECELIA_TLS=0`) and restart. (#1189)
+
 ## [0.2.6] — 2026-09-22
 
 Four-day heartbeat after v0.2.5. Two threads: the Claude/Blackboard arc reaches its capstone (entry
@@ -1049,7 +1064,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/schienstockd/cecelia/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/schienstockd/cecelia/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/schienstockd/cecelia/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/schienstockd/cecelia/compare/v0.2.3...v0.2.4
