@@ -312,11 +312,18 @@ function onDraw(geom: Partial<GateSpec>) {
 }
 // reserved-prefix + same-list duplicate, live as the user types; a cross-pop-type collision (e.g. a
 // region already named this) is rejected by the server (pop_name_conflict) and surfaced as a toast.
-const nameError = computed(() => popNameError(newName.value, g.flat.map(p => p.name)))
+// Not checked while the add is in flight: the add response puts the new pop into `g.flat` before
+// `pending` clears, so the name would briefly "already exist" — against itself.
+const submitting = ref(false)
+const nameError = computed(() => submitting.value ? null : popNameError(newName.value, g.flat.map(p => p.name)))
 async function confirmGate() {
-  if (!pending.value || nameError.value) return
+  if (!pending.value || nameError.value || submitting.value) return
   const palette = ['#ef4444','#f59e0b','#10b981','#3b82f6','#a78bfa','#ec4899','#14b8a6','#eab308']
-  const ok = await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[g.flat.length % palette.length])
+  submitting.value = true
+  let ok
+  try {
+    ok = await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[g.flat.length % palette.length])
+  } finally { submitting.value = false }
   pending.value = null
   // await the outline so it's painted before we return; the childGateSig watcher fires too but
   // coalesces into this same request (see fetchGates). loadPopLayers pulls the new pop's colour layer.
@@ -532,12 +539,14 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => {
         <span>Not tracked yet — run tracking on this segmentation first.</span>
       </div>
       <div v-if="pending" class="panel-name" data-guide="gate.name">
-        <span>new {{ pending.kind }}</span>
-        <input v-model="newName" placeholder="name…" autofocus v-tooltip.top="'Name for the new gate'"
-               :class="{ 'name-invalid': !!nameError && !!newName.trim() }"
-               @keyup.enter="confirmGate" @keyup.esc="pending = null" />
-        <button class="cc-btn cc-btn-primary" :disabled="!!nameError" @click="confirmGate">Add</button>
-        <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>
+        <div class="panel-name-row">
+          <span class="panel-name-kind">new {{ pending.kind }}</span>
+          <input v-model="newName" placeholder="name…" autofocus v-tooltip.top="'Name for the new gate'"
+                 :class="{ 'name-invalid': !!nameError && !!newName.trim() }"
+                 @keyup.enter="confirmGate" @keyup.esc="pending = null" />
+          <button class="cc-btn cc-btn-primary" :disabled="!!nameError || submitting" @click="confirmGate">Add</button>
+          <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>
+        </div>
         <span v-if="nameError && newName.trim()" class="name-hint">{{ nameError }}</span>
       </div>
     </GateScatterCell>
@@ -570,11 +579,15 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => {
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 .gp-export { max-width: 7rem; }
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
-.panel-name { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 5px;
+.panel-name { position: absolute; top: 4px; left: 4px; display: flex; flex-direction: column; gap: 4px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 4px 6px; font-size: var(--cc-fs-xs); }
+.panel-name-row { display: flex; align-items: center; gap: 5px; }
+.panel-name-kind { white-space: nowrap; }
 .panel-name input { background: var(--cc-bg); border-radius: var(--cc-radius-xs); padding: 1px 5px; width: 90px; }
 .panel-name input.name-invalid { border-color: var(--cc-sev-fail); }
-.name-hint { color: var(--cc-sev-fail); font-size: var(--cc-fs-2xs); max-width: 150px; line-height: 1.2; }
+/* own row under the controls; width:0 + min-width:100% keeps the message from widening the box —
+   it wraps to the controls row's width instead */
+.name-hint { color: var(--cc-sev-fail); font-size: var(--cc-fs-2xs); line-height: 1.3; width: 0; min-width: 100%; }
 /* subtle draw-mode affordance (top-right of the plot); mirrors .panel-name but muted and non-interactive */
 /* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
 .gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
