@@ -408,6 +408,14 @@ Note that `rm -rf .pixi && pixi install` alone does **not** fix a mis-wired env 
 the shared uv cache, not in the env — which is exactly why this needed a structural answer rather than a
 documented ritual.
 
+### A worktree's `frontend/node_modules` must be its own — no symlinks
+
+Each worktree runs `npm install` inside `frontend/`. **Do not symlink `frontend/node_modules` to
+another worktree's** — a symlink hides `package.json` drift (a dep added on one branch is silently
+absent on another until `vite` fails a resolve at startup) and lets an install on the target check
+mutate the shared tree. If a worktree comes up with `node_modules` as a symlink, delete it and run
+`npm install` here.
+
 ## Diagnostics & debug console
 
 **Settings → Diagnostics** (always on) shows server threads, Julia version, memory, the bound
