@@ -40,6 +40,9 @@ A structured reply can.
    still work). Measured 2026-09-23: `claude -p … --output-format json --json-schema <schema>` returns
    a schema-valid `structured_output` under a seat login (Haiku, 3 turns). `--bare` is **not usable** —
    it reads only `ANTHROPIC_API_KEY`, never the OAuth login.
+   *Credential isolation on a shared OS login (needed for "each user's own login" to hold at more
+   than one seat) is designed in [`LOGIN_CREDENTIAL_ISOLATION_PLAN.md`](LOGIN_CREDENTIAL_ISOLATION_PLAN.md);
+   its P1 pre-rollout script must pass before enabling multi-profile.*
 3. **The engine sits behind a generic adapter** (user, 2026-09-23: "in theory plug in any other AI
    service"). Claude is the only implementation and no second engine exists to test against, so the
    contract is designed for transfer but **not proven to transfer** — see *The engine seam* for what
