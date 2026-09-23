@@ -26,9 +26,13 @@ const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
 // `point-click` — a jitter/scatter dot was clicked. Payload carries the point identity + the
 // source (image, valueName) so the host can mirror into PickHighlight / TrackHighlight for the
 // RIGHT image without guessing (LINKED_BRUSHING_PLAN.md Option B write side).
+// `point-brush` — user drag-selected a rectangle over brushable dots (shift+drag). Payload is
+// a per-(image, valueName) map of the ids in the rect. Same delivery model as point-click
+// (host writes the shared bag + mirrors) but a whole set at once.
 const emit = defineEmits<{
   'auto-override': [AutoOverride[]]
   'point-click': [{ id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string }]
+  'point-brush': [{ kind: 'track' | 'cell'; byImage: Record<string, { valueName: string; ids: number[] }> }]
 }>()
 const host = useTemplateRef<HTMLElement>('host')
 // @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
@@ -80,12 +84,16 @@ async function render(pass = 0) {
   const kind = props.data?.pointIdKind
   if (kind) {
     node.addEventListener('click', (e) => {
-      const target = e.target as Element | null
-      const dot = target?.closest?.('.cc-brush-dot') as (Element & {
+      // Observable Plot's `className` goes on the mark's `<g>` wrapper, not each `<circle>`. So
+      // find the group first and then use the click target itself for `__data__` — a click on
+      // the group's background (between dots) reads the group's aggregate data, which is NOT a
+      // row. Only a click on a real circle inside the group carries the row payload we need.
+      const target = e.target as (Element & {
         __data__?: { pointId?: number | null; pointUid?: string; pointVn?: string }
       }) | null
-      if (!dot) return
-      const d = dot.__data__
+      if (!target?.parentElement?.classList?.contains('cc-brush-dot')) return
+      if (target.tagName !== 'circle') return
+      const d = target.__data__
       const id = d?.pointId
       if (id == null) return
       emit('point-click', {
@@ -95,10 +103,101 @@ async function render(pass = 0) {
       })
     })
     // A visible affordance: brushable dots take a pointer cursor. Fills a gap where dots on the
-    // boxplot look inert until you hover them; a real "grab a point" gesture needs a cue.
+    // boxplot look inert until you hover them; a real "grab a point" gesture needs a cue. Also
+    // set the crosshair cursor during a brush drag (see below) and hide the brush rect stroke
+    // when idle.
     const style = document.createElement('style')
-    style.textContent = '.cc-brush-dot { cursor: pointer; }'
+    style.textContent = `
+      .cc-brush-dot { cursor: pointer; }
+      svg.cc-brushing, svg.cc-brushing * { cursor: crosshair !important; }
+      .cc-brush-rect { fill: color-mix(in srgb, currentColor 15%, transparent);
+                       stroke: currentColor; stroke-width: 1; stroke-dasharray: 3 3;
+                       pointer-events: none; }
+    `
     node.prepend(style)
+
+    // Rectangle brush (shift + drag). LINKED_BRUSHING_PLAN.md Option B — bulk write side. On
+    // shift+mousedown, start tracking; draw a live rect overlay; on mouseup, walk every
+    // `.cc-brush-dot circle` and collect those whose SVG center falls inside the rect. Grouped
+    // by (imageUid, valueName) because label ids are per-image and PickHighlight is one image;
+    // the host writes the largest group + updates the shared bag with the union. `svg` is
+    // captured from the module-scope `node` so the closures don't have to re-narrow it — a
+    // re-render nulls the module-scope binding, but these listeners were attached to THIS svg
+    // instance and are removed with it.
+    const svg = node as SVGSVGElement
+    let brushStart: { x: number; y: number } | null = null
+    let brushRect: SVGRectElement | null = null
+
+    svg.addEventListener('mousedown', (e) => {
+      if (!e.shiftKey) return
+      if ((e.target as Element).closest('.cc-brush-dot circle')) return  // click on dot handles itself
+      const pt = svg.createSVGPoint()
+      pt.x = e.clientX; pt.y = e.clientY
+      const ctm = svg.getScreenCTM()?.inverse()
+      if (!ctm) return
+      const p = pt.matrixTransform(ctm)
+      brushStart = { x: p.x, y: p.y }
+      brushRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      brushRect.setAttribute('class', 'cc-brush-rect')
+      brushRect.setAttribute('x', String(p.x)); brushRect.setAttribute('y', String(p.y))
+      brushRect.setAttribute('width', '0');    brushRect.setAttribute('height', '0')
+      svg.appendChild(brushRect)
+      svg.classList.add('cc-brushing')
+      e.preventDefault()
+    })
+
+    svg.addEventListener('mousemove', (e) => {
+      if (!brushStart || !brushRect) return
+      const pt = svg.createSVGPoint()
+      pt.x = e.clientX; pt.y = e.clientY
+      const ctm = svg.getScreenCTM()?.inverse()
+      if (!ctm) return
+      const p = pt.matrixTransform(ctm)
+      const x = Math.min(brushStart.x, p.x), y = Math.min(brushStart.y, p.y)
+      const w = Math.abs(p.x - brushStart.x), h = Math.abs(p.y - brushStart.y)
+      brushRect.setAttribute('x', String(x)); brushRect.setAttribute('y', String(y))
+      brushRect.setAttribute('width', String(w)); brushRect.setAttribute('height', String(h))
+    })
+
+    const finishBrush = (e: MouseEvent) => {
+      if (!brushStart || !brushRect) return
+      const pt = svg.createSVGPoint()
+      pt.x = e.clientX; pt.y = e.clientY
+      const ctm = svg.getScreenCTM()?.inverse()
+      const p = ctm ? pt.matrixTransform(ctm) : brushStart
+      const x0 = Math.min(brushStart.x, p.x), x1 = Math.max(brushStart.x, p.x)
+      const y0 = Math.min(brushStart.y, p.y), y1 = Math.max(brushStart.y, p.y)
+      brushRect.remove(); brushRect = null; brushStart = null
+      svg.classList.remove('cc-brushing')
+      // A degenerate rect (a click, not a drag) is dropped — the click handler already fires.
+      if ((x1 - x0) < 2 && (y1 - y0) < 2) return
+      const groups: Record<string, { valueName: string; ids: number[] }> = {}
+      const circles = svg.querySelectorAll('.cc-brush-dot circle') as unknown as ArrayLike<SVGCircleElement & {
+        __data__?: { pointId?: number | null; pointUid?: string; pointVn?: string }
+      }>
+      for (let i = 0; i < circles.length; i++) {
+        const c = circles[i]
+        const cx = Number(c.getAttribute('cx')); const cy = Number(c.getAttribute('cy'))
+        if (!(cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1)) continue
+        const d = c.__data__; const id = d?.pointId
+        if (id == null) continue
+        const uid = d?.pointUid ?? ''
+        const vn  = d?.pointVn  ?? ''
+        const key = `${uid}\u0000${vn}`
+        const g = groups[key] ?? (groups[key] = { valueName: vn, ids: [] })
+        g.ids.push(id)
+      }
+      // Dedupe per group before emitting — a swarm can render the same id twice at close-by
+      // positions after downsample, and duplicates would swell the bag pointlessly.
+      const byImage: Record<string, { valueName: string; ids: number[] }> = {}
+      for (const [key, g] of Object.entries(groups)) {
+        const uid = key.split('\u0000')[0]
+        byImage[uid] = { valueName: g.valueName, ids: Array.from(new Set(g.ids)) }
+      }
+      if (Object.keys(byImage).length) emit('point-brush', { kind, byImage })
+    }
+    svg.addEventListener('mouseup', finishBrush)
+    svg.addEventListener('mouseleave', finishBrush)
   }
   // report any setting the builder substituted (`_autoRotatedX`) — but only when it actually CHANGED.
   // The host stores this and the board stores the host's readout, so an unconditional emit makes every

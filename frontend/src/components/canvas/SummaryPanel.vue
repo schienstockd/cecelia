@@ -987,6 +987,33 @@ function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: str
     viewer.setTrackHighlight({ imageUid: uid, valueName: vn, trackIds: nextIds, origin: 'user' })
   }
 }
+
+// Rectangle brush handler (LINKED_BRUSHING_PLAN.md Option B — bulk write). PlotChart emits this
+// after a shift+drag; `byImage` groups the swept ids by source (image, valueName). The shared
+// linkedSelection bag gets the UNION across images (scope-appropriate). The viewer mirror is
+// per-image, so pick whichever image has the largest hit group AND is either the currently-
+// open viewer image or the panel's own imageUid — no silent guess to an unrelated image.
+function onPlotPointBrush(p: { kind: 'track' | 'cell'; byImage: Record<string, { valueName: string; ids: number[] }> }) {
+  const scope: 'tracks' | 'cells' = p.kind === 'track' ? 'tracks' : 'cells'
+  const entries = Object.entries(p.byImage)
+  if (!entries.length) return
+  const allIds = Array.from(new Set(entries.flatMap(([, g]) => g.ids)))
+  if (!allIds.length) return
+  linkedBrushStore.set({ scope, ids: allIds, source: linkedBrushSourceId.value, sourcePlotId: linkedBrushSourceId.value })
+  // Pick the mirror image: preference is (a) currently-open viewer image if it's a hit group,
+  // (b) the panel's own imageUid if it's a hit group, (c) whichever group has the most hits.
+  const openUid = projectStore.openImageUid
+  const preferred = (openUid && p.byImage[openUid]) ? openUid
+                  : (props.imageUid && p.byImage[props.imageUid]) ? props.imageUid
+                  : entries.sort((a, b) => b[1].ids.length - a[1].ids.length)[0][0]
+  const g = p.byImage[preferred]
+  if (!preferred || !g?.valueName || !g.ids.length) return
+  if (scope === 'cells') {
+    viewer.setPickHighlight({ imageUid: preferred, valueName: g.valueName, labels: g.ids, focusId: 0, origin: 'user' })
+  } else {
+    viewer.setTrackHighlight({ imageUid: preferred, valueName: g.valueName, trackIds: g.ids, origin: 'user' })
+  }
+}
 </script>
 
 <template>
@@ -1168,7 +1195,8 @@ function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: str
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
       <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
                  @auto-override="autoOverrides = $event"
-                 @point-click="onPlotPointClick" />
+                 @point-click="onPlotPointClick"
+                 @point-brush="onPlotPointBrush" />
       <PlotSpinner v-if="showSpinner" label="Loading…" />
       <template v-for="m in summaryMarks" :key="m.markerId">
         <PlotPointOutMark v-if="summaryMarkStyle(m)" :mark="m" :style="summaryMarkStyle(m)!" />

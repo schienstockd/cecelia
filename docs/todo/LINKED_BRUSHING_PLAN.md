@@ -66,6 +66,10 @@ refuses to take. Track-scope brushing is only safe where the plot glyph IS a tra
     scope; `granularity == :cell` → label → 'cells' scope. No plot-side scope guessing.
   - Only boxplot today — strip / violin / points scatter apply the same pattern, mechanical.
   - Shift-click (additive) is a TODO — every click replaces today.
+  - **Shift+drag = rectangle brush** (bulk selection). Draws a dashed SVG rect overlay; on
+    release, every `.cc-brush-dot circle` whose center falls in the rect is collected, grouped
+    by (imageUid, valueName), and dropped into the bag. Viewer mirror picks the preferred
+    image (open viewer image if in scope, else the panel's own, else the largest hit group).
 
 - **C. Predicate-source (parked).** Brush a range on any chart → emits
   `{measure, min, max, categoryEq?}` → *other panels re-aggregate under that filter* (Plotly
