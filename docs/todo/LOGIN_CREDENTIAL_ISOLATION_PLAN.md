@@ -1,7 +1,7 @@
 # Cecelia login + per-user Claude credential isolation — plan
 
-**Status:** planning (2026-09-23; extended 2026-09-24 with Decisions 7–11 + phase P5) · branch
-`audit/single-instance-identity-gaps`. Derived from
+**Status:** in progress (2026-09-24) — P1 shipped in #1201, P2 shipped on branch
+`feat/kiwi-profile-spawn-env`. Derived from
 [`docs/archive/opus-audit-cecelia-login-credential-isolation.md`](../archive/opus-audit-cecelia-login-credential-isolation.md)
 and [`docs/archive/opus-audit-single-instance-identity-gaps.md`](../archive/opus-audit-single-instance-identity-gaps.md).
 Audit findings below have been empirically verified on this box against the currently-installed
@@ -140,13 +140,21 @@ CLI: `claude 2.1.280 (Claude Code)`, binary at `/home/dominik/.local/bin/claude`
 `/etc/profile.d/*.sh`. Exit 1 on any hit, 0 on clean. Run it before enabling multi-profile in a
 lab install. Ships this phase; landable independently.
 
-### P2 — Spawn-side plumbing (backend, no UX)
-Change `_build_claude_cmd` in `app/src/ai/agent_runner.jl` (~line 214) to return a `Cmd` with an
-explicit env: `CLAUDE_CONFIG_DIR` set to the resolved profile dir, and the ambient credential vars
-from P1 explicitly unset (`ENV` inherited otherwise). Add a config key `[ai].profile` in
-`custom.toml` (single-profile default: `"default"`, resolving to `<config_dir()>/kiwi-profiles/default/`)
-so the change is behaviourally a no-op for the current single-user setup — just a directory rename
-of the credential home. Test: `_build_claude_cmd` unit test asserts env shape.
+### P2 — Spawn-side plumbing (backend, no UX) — SHIPPED
+Landed on branch `feat/kiwi-profile-spawn-env`. `kiwi_profile_name()` reads `custom.toml
+[ai].profile` (defaulting to `"default"`); `kiwi_profile_dir(name)` resolves it — `default` maps
+to `""` (i.e. keep the CLI's own `~/.claude*` paths, so a single-seat setup needs NO re-login),
+and any named profile maps to `<config_dir()>/kiwi-profiles/<name>/`. Every `claude` spawn site
+(`claude -p`, `claude mcp add-json`, `claude mcp remove`) is now wrapped in `_apply_claude_env` —
+which sets `CLAUDE_CONFIG_DIR` (or omits it for `default`) AND scrubs the ambient credential env
+vars via `addenv(cmd, "KEY" => nothing)` (Julia unsets on `nothing`). `claude_config_path` grew
+an optional `profile_dir` arg so the "is the terminal already set up?" UI check reflects the
+profile the app actually spawns under. Pinned by the `AI observer per-profile credential env (P2
+plumbing)` testset in `app/test/suite/observer.jl`. **Deviated from the original wording**: the
+plan text said the default profile would resolve to `<config_dir()>/kiwi-profiles/default/`; that
+would have orphaned the existing `~/.claude` login (a re-login the user did not sign up for), so
+`default` special-cases to `""`. Named profiles land under the plan's directory on first
+resolution — the picker (P3) is what triggers that.
 
 ### P3 — Profile roster + picker (frontend + backend)
 List `<config_dir()>/kiwi-profiles/*/` on the backend (a profile exists iff its dir does — cheap
