@@ -39,6 +39,8 @@ import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
+import { useLinkedSelectionSource, useLinkedSelectionSubscriber } from '../../composables/useLinkedSelection'
+import { useLinkedSelectionStore } from '../../stores/linkedSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 
@@ -795,6 +797,98 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
   if (!uids.includes(bag.imageUid)) return null
   return { count: ids.length, kind: isTrack ? 'tracks' : 'cells' }
 })
+
+// ── Linked brushing (LINKED_BRUSHING_PLAN.md P3 — category-source MVP) ─────────
+// Categorical frequency-family charts (`frequency` / `stacked` / `stacked100`) render one glyph
+// per category — the natural producer for the shared linkedSelection store. A chip strip below
+// the plot lets the user click a category, which fires `/api/tracks/by_category` and drops the
+// resulting track_ids into the bag. Consumers (this panel's Claude chip today, plot subscribers
+// as they land in P4) then react. Toggle-off by clicking the same chip again.
+//
+// MVP scope (Decision 3 of the plan):
+//  - Only categorical frequency-family charts. Numeric bin brushing = future producer variant.
+//  - Only track-scope selection. Cell scope (label ids) rides the same bag but there is no
+//    frequency chart for cell-level pops in the behaviour catalogue today.
+//  - One pop at a time: the FIRST series' (valueName, pop) is what the endpoint queries.
+//    Multi-series brushing is a follow-up — a click on a bar in a multi-series plot today
+//    silently picks series[0].
+//  - No dim on subscribing plots yet (P4). Visible feedback = a small "N tracks selected" chip
+//    on THIS panel's chip strip, so the wiring is demonstrable end-to-end.
+const linkedBrushStore   = useLinkedSelectionStore()
+const linkedBrushSub     = useLinkedSelectionSubscriber('tracks')
+// Source id — stable across chip clicks so this panel replaces its OWN selection rather than
+// stacking. Falls back to a synthetic id when the panel has no persistKey (inline / preview).
+const linkedBrushSourceId = computed(() => props.persistKey || `sp:${props.spec.id}:${props.index}`)
+const linkedBrushSource   = useLinkedSelectionSource(linkedBrushSourceId.value, 'tracks')
+
+// Only offer the chip strip when the current chart is categorical-frequency AND we have a
+// non-empty category list from the response AND at least one series (so we know which pop to
+// query). Keep it strict — misleading affordances on charts that can't produce a valid
+// selection are worse than none.
+const linkedBrushCategories = computed<string[]>(() => {
+  if (!['frequency', 'stacked', 'stacked100'].includes(chartType.value)) return []
+  const r = result.value
+  if (!r || r.measureType !== 'categorical') return []
+  const cats = (r as { categories?: string[] }).categories
+  if (!cats?.length) return []
+  if (!ownSeries.value.length) return []
+  if (!measure.value) return []
+  return cats
+})
+
+const linkedBrushImageUids = computed<string[]>(() =>
+  crossImage.value ? (props.imageUids ?? []) : (props.imageUid ? [props.imageUid] : []))
+
+// The active category on THIS panel — undefined when the bag was set by a different source, or
+// is empty. Used to render the pressed-state chip and to implement toggle-off.
+const linkedBrushActiveCategory = ref<string | null>(null)
+const linkedBrushBusy = ref(false)
+
+async function onLinkedBrushCategory(cat: string) {
+  // Toggle-off: same chip a second time clears the bag (and this panel's tracking of it).
+  if (linkedBrushActiveCategory.value === cat) {
+    linkedBrushSource.clear()
+    linkedBrushActiveCategory.value = null
+    return
+  }
+  const uids = linkedBrushImageUids.value
+  if (!uids.length || !measure.value || linkedBrushBusy.value) return
+  const s0 = ownSeries.value[0]
+  if (!s0) return
+  linkedBrushBusy.value = true
+  try {
+    const res = await fetch('/api/tracks/by_category', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectUid: props.projectUid,
+        imageUids: uids,
+        valueName: s0.valueName,
+        pop: s0.pop,
+        popType: s0.popType,
+        measure: measure.value,
+        category: cat,
+      }),
+    })
+    if (!res.ok) { linkedBrushBusy.value = false; return }
+    const body = await res.json() as { trackIds: number[] }
+    linkedBrushSource.set(body.trackIds ?? [])
+    linkedBrushActiveCategory.value = (body.trackIds ?? []).length ? cat : null
+  } catch {
+    // Network failure or aborted request — silent for the prototype; a real UX would surface it.
+  } finally {
+    linkedBrushBusy.value = false
+  }
+}
+
+// If the bag is cleared elsewhere (Escape / follow-up "Clear selection" button), our local
+// active-category tracking must fall back to null so the pressed-chip visual clears too.
+watch(() => linkedBrushStore.isEmpty, (empty) => { if (empty) linkedBrushActiveCategory.value = null })
+
+// A small selection-badge next to the chips so the user can see the bag content came back
+// with something — the visible signal that end-to-end wiring is alive before P4 wires the dim
+// into subscribing plots.
+const linkedBrushBadgeCount = computed(() => linkedBrushSub.activeIds.value.size)
 </script>
 
 <template>
@@ -987,6 +1081,25 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
             v-tooltip.top="`Claude highlighted ${claudeChip.count} ${claudeChip.kind}`">
         <span class="sp-claude-badge">C</span>{{ claudeChip.count }}
       </span>
+      <!-- Linked-brushing chip strip (LINKED_BRUSHING_PLAN.md P3). Categorical frequency-family
+           charts render one chip per category — click writes the matching track_ids into the
+           shared linkedSelection store (visible on other subscribers as they land in P4). Same
+           chip a second time clears the bag. -->
+      <div v-if="linkedBrushCategories.length" class="sp-brush-strip">
+        <span class="sp-brush-label">Select:</span>
+        <button v-for="cat in linkedBrushCategories" :key="cat" type="button"
+                class="sp-brush-chip"
+                :class="{ 'sp-brush-chip--active': linkedBrushActiveCategory === cat }"
+                :disabled="linkedBrushBusy"
+                @click="onLinkedBrushCategory(cat)"
+                v-tooltip.top="`Select tracks with ${measure} = ${cat}`">
+          {{ cat }}
+        </button>
+        <span v-if="linkedBrushBadgeCount > 0" class="sp-brush-badge"
+              v-tooltip.top="`${linkedBrushBadgeCount} tracks selected`">
+          {{ linkedBrushBadgeCount }}
+        </span>
+      </div>
     </div>
   </CanvasPanel>
 </template>
@@ -1017,6 +1130,31 @@ const claudeChip = computed<{ count: number; kind: 'tracks' | 'cells' } | null>(
 .sp-claude-chip .sp-claude-badge { display: inline-flex; align-items: center; justify-content: center;
   width: 14px; height: 14px; border-radius: 50%; background: #e836b4;
   color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
+
+/* LINKED_BRUSHING_PLAN.md P3 — chip strip for category-source brushing on categorical
+   frequency-family charts. Anchored bottom-left inside .sp-body so it doesn't collide with the
+   Claude chip at top-right or the plot's own legend/axis labels. Active chip uses the same
+   `--cc-kiwi-tint` surface KiwiCockpit's "engaged" controls use, so the linked-brushing bag
+   reads as part of the same cross-cutting flow the Kiwi surfaces do — even though the
+   mechanism is user-driven, not Claude-driven. */
+.sp-brush-strip { position: absolute; left: 6px; bottom: 6px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs);
+  font-size: var(--cc-fs-2xs); pointer-events: auto; max-width: calc(100% - 60px);
+  flex-wrap: wrap; }
+.sp-brush-label { color: var(--cc-text-dim); font-weight: 600; }
+.sp-brush-chip { padding: 1px 6px; background: transparent;
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
+  color: var(--cc-text); font-size: var(--cc-fs-2xs); line-height: 1.3; cursor: pointer; }
+.sp-brush-chip:hover:not(:disabled) { background: var(--cc-surface-2); }
+.sp-brush-chip:disabled { opacity: 0.5; cursor: default; }
+.sp-brush-chip--active { background: var(--cc-kiwi-tint); border-color: var(--cc-kiwi-strong);
+  color: var(--cc-kiwi-soft); }
+.sp-brush-badge { display: inline-flex; align-items: center; justify-content: center;
+  min-width: 14px; height: 14px; padding: 0 4px; border-radius: var(--cc-radius-pill);
+  background: var(--cc-kiwi); color: var(--cc-kiwi-soft);
+  font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
 
 /* "show series" measure-picker popover (opens upward from the footer button) */
 .sp-explode-wrap { position: relative; display: inline-flex; }
