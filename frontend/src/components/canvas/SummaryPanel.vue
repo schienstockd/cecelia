@@ -611,11 +611,12 @@ const pointBrushScope = computed<'tracks' | 'cells' | null>(() => {
 })
 // Two shapes flow to the renderer depending on what the producer knew about source provenance:
 //   • `Map<sourceKey, Set<number>>` when the producer set `perSource` (a brush that swept
-//     per-(uid, vn) groups). Renderer matches on `linkedSourceKey(uid, vn) + id` so track_id=5
-//     in segmentation B doesn't also light up track_id=5 in segmentation T (single-image plots
-//     with two segmentations collide the same way two images do).
-//   • `Set<number>` when the producer only knew ids (Show button, MCP mark_*, legacy). Renderer
-//     falls back to a flat id match — same behaviour as before this store carried perSource.
+//     per-(uid, vn, pop) groups). Renderer matches on `linkedSourceKey(uid, vn, pop) + id`
+//     with a fallback to `linkedSourceKey(uid, vn) + id` — so a plot brush (specific) and a
+//     Show / MCP writer (generic) both land on the right dots without either bleeding
+//     across sibling populations.
+//   • `Set<number>` when the producer only knew ids (legacy). Renderer falls back to a flat
+//     id match — same behaviour as before this store carried perSource.
 const pointBrushActive = computed<Set<number> | Map<string, Set<number>> | undefined>(() => {
   const scope = pointBrushScope.value
   if (!scope) return undefined
@@ -984,19 +985,19 @@ const linkedBrushChipOptions = computed<ChipOption[]>(() =>
 
 // Point-source click handler (LINKED_BRUSHING_PLAN.md Option B write side). PlotChart emits this
 // when the user clicks a brushable jitter dot; payload carries the point identity + its source
-// (image, valueName), so this mirrors into the SAME image the user pointed at rather than
+// (image, valueName, pop), so this mirrors into the SAME image the user pointed at rather than
 // guessing from the panel's scope. Shift-click adds to the selection; a bare click replaces.
-function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string }) {
+function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string; pop: string }) {
   const scope: 'tracks' | 'cells' = p.kind === 'track' ? 'tracks' : 'cells'
   const cur = linkedBrushStore.bag
   const additive = false   // TODO: hook shift/cmd once we thread the event through
   const nextIds = additive && cur && cur.scope === scope
     ? Array.from(new Set([...cur.ids, p.id]))
     : [p.id]
-  // Also carry perSource — a click knows exactly one (uid, vn) — so subscribers with per-dot
-  // source tags scope the highlight correctly. Without this the bag falls back to a flat id
-  // Set and every dot with the same numeric id lights up across sources.
-  const key = linkedSourceKey(p.imageUid ?? '', p.valueName ?? '')
+  // Also carry perSource — a click knows exactly one (uid, vn, pop) — so subscribers with
+  // per-dot source tags scope the highlight correctly. Without this the bag falls back to a
+  // flat id Set and every dot with the same numeric id lights up across sources.
+  const key = linkedSourceKey(p.imageUid ?? '', p.valueName ?? '', p.pop ?? '')
   linkedBrushStore.set({ scope, ids: nextIds, source: linkedBrushSourceId.value,
                          sourcePlotId: linkedBrushSourceId.value,
                          perSource: { [key]: nextIds } })
@@ -1011,37 +1012,57 @@ function onPlotPointClick(p: { id: number; kind: 'track' | 'cell'; imageUid: str
 }
 
 // Rectangle brush handler (LINKED_BRUSHING_PLAN.md Option B — bulk write). PlotChart emits this
-// after a shift+drag; `byImage` groups the swept ids by source (image, valueName). The shared
-// linkedSelection bag gets the UNION across images (scope-appropriate). The viewer mirror is
-// per-image, so pick whichever image has the largest hit group AND is either the currently-
-// open viewer image or the panel's own imageUid — no silent guess to an unrelated image.
-function onPlotPointBrush(p: { kind: 'track' | 'cell'; byImage: Record<string, { valueName: string; ids: number[] }> }) {
+// after a shift+drag; `sources` is ONE entry per hit `(uid, vn, pop)` — the finest source key
+// the renderer discriminates on. The shared linkedSelection bag gets the UNION of ids
+// (scope-appropriate). The viewer mirror is per-image, so pick whichever image has the largest
+// hit group AND is either the currently-open viewer image or the panel's own imageUid — no
+// silent guess to an unrelated image.
+function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid: string; valueName: string; pop: string; ids: number[] }> }) {
   const scope: 'tracks' | 'cells' = p.kind === 'track' ? 'tracks' : 'cells'
-  const entries = Object.entries(p.byImage)
-  if (!entries.length) return
-  const allIds = Array.from(new Set(entries.flatMap(([, g]) => g.ids)))
+  if (!p.sources.length) return
+  const allIds = Array.from(new Set(p.sources.flatMap(s => s.ids)))
   if (!allIds.length) return
-  // `perSource` carries the ((uid, vn) → ids) shape so subscribing plots that have per-dot source
-  // tags only highlight the RIGHT segmentation's dots. track_id / label are per-(image, seg)
-  // numeric spaces — a single image with two segmentations (B and T) collides just like two
-  // images do. Keyed by `linkedSourceKey(uid, vn)` so both sides construct it the same way.
+  // `perSource` carries the ((uid, vn, pop) → ids) shape so subscribing plots that have
+  // per-dot source tags only highlight the RIGHT series' dots. track_id / label are
+  // per-(image, seg) numeric spaces, and two POPULATIONS under the same segmentation share
+  // that space too — so a lasso on pop B under vn `live.tracks` used to bleed onto pop T.
+  // Keyed by `linkedSourceKey(uid, vn, pop)` so both sides construct it the same way.
   // Consumers without source awareness (viewer mirror, Show button) still see the flat `ids`.
   const perSource: Record<string, number[]> = {}
-  for (const [uid, g] of entries) perSource[linkedSourceKey(uid, g.valueName)] = Array.from(new Set(g.ids))
+  for (const s of p.sources) {
+    const key = linkedSourceKey(s.imageUid, s.valueName, s.pop)
+    perSource[key] = Array.from(new Set(s.ids))
+  }
   linkedBrushStore.set({ scope, ids: allIds, source: linkedBrushSourceId.value,
                          sourcePlotId: linkedBrushSourceId.value, perSource })
-  // Pick the mirror image: preference is (a) currently-open viewer image if it's a hit group,
-  // (b) the panel's own imageUid if it's a hit group, (c) whichever group has the most hits.
+  // For the viewer mirror (per-image, per-vn — pop is not a viewer axis), collapse `sources`
+  // to a per-(uid, vn) shape and pick a target the same way as before.
+  const byUidVn = new Map<string, { imageUid: string; valueName: string; ids: number[] }>()
+  for (const s of p.sources) {
+    const k = `${s.imageUid}\u0000${s.valueName}`
+    const g = byUidVn.get(k) ?? { imageUid: s.imageUid, valueName: s.valueName, ids: [] }
+    g.ids.push(...s.ids)
+    byUidVn.set(k, g)
+  }
+  const byImage = new Map<string, { valueName: string; ids: number[] }>()
+  for (const g of byUidVn.values()) {
+    const cur = byImage.get(g.imageUid)
+    // If two vns share the same image, prefer the group with the most hits — the mirror is
+    // single-vn and picking the smaller one would drop the majority of the user's selection.
+    if (!cur || g.ids.length > cur.ids.length) {
+      byImage.set(g.imageUid, { valueName: g.valueName, ids: Array.from(new Set(g.ids)) })
+    }
+  }
   const openUid = projectStore.openImageUid
-  const preferred = (openUid && p.byImage[openUid]) ? openUid
-                  : (props.imageUid && p.byImage[props.imageUid]) ? props.imageUid
-                  : entries.sort((a, b) => b[1].ids.length - a[1].ids.length)[0][0]
-  const g = p.byImage[preferred]
-  if (!preferred || !g?.valueName || !g.ids.length) return
+  const preferred = (openUid && byImage.has(openUid)) ? openUid
+                  : (props.imageUid && byImage.has(props.imageUid)) ? props.imageUid
+                  : [...byImage.entries()].sort((a, b) => b[1].ids.length - a[1].ids.length)[0][0]
+  const gMirror = byImage.get(preferred)
+  if (!preferred || !gMirror?.valueName || !gMirror.ids.length) return
   if (scope === 'cells') {
-    viewer.setPickHighlight({ imageUid: preferred, valueName: g.valueName, labels: g.ids, focusId: 0, origin: 'user' })
+    viewer.setPickHighlight({ imageUid: preferred, valueName: gMirror.valueName, labels: gMirror.ids, focusId: 0, origin: 'user' })
   } else {
-    viewer.setTrackHighlight({ imageUid: preferred, valueName: g.valueName, trackIds: g.ids, origin: 'user' })
+    viewer.setTrackHighlight({ imageUid: preferred, valueName: gMirror.valueName, trackIds: gMirror.ids, origin: 'user' })
   }
 }
 </script>

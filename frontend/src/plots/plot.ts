@@ -1221,14 +1221,20 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
 }
 
-// Compose a `render` mark hook that stamps identity (pointId / pointUid / pointVn) onto each
-// rendered <circle> as data-* attributes. Reason: Observable Plot binds ROW INDEX (a number) to
-// `<circle>.__data__`, not the row object we passed in — so a click/brush delegate that reads
-// `d.pointId` off `__data__` gets `undefined` for every dot. The delegate reads the attrs
-// instead. `index` is the mark's per-facet indices into the SOURCE data array (`rows`), so
-// `rows[index[i]]` maps back to the i-th rendered circle's source row. Runs AFTER the default
-// render (call `next` first, then stamp) so we don't have to reimplement anything.
-function stampBrushIds<T extends { pointId: number | null; pointUid: string; pointVn: string }>(rows: T[]) {
+// Compose a `render` mark hook that stamps identity (pointId / pointUid / pointVn / pointPop)
+// onto each rendered <circle> as data-* attributes. Reason: Observable Plot binds ROW INDEX (a
+// number) to `<circle>.__data__`, not the row object we passed in — so a click/brush delegate
+// that reads `d.pointId` off `__data__` gets `undefined` for every dot. The delegate reads the
+// attrs instead. `index` is the mark's per-facet indices into the SOURCE data array (`rows`),
+// so `rows[index[i]]` maps back to the i-th rendered circle's source row. Runs AFTER the
+// default render (call `next` first, then stamp) so we don't have to reimplement anything.
+//
+// `pointPop` gets its own attr because `(uid, vn)` alone doesn't discriminate two populations
+// under the same segmentation — a lasso on pop B would light every T dot that happens to share
+// a numeric track_id. The brush emit reads it back off the circle so the perSource key
+// includes pop; the renderer's `matches()` prefers the specific `(uid, vn, pop)` key and only
+// falls back to `(uid, vn)` for writers that don't know the pop (Show button, MCP mark_*).
+function stampBrushIds<T extends { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }>(rows: T[]) {
   return (index: number[], scales: unknown, values: unknown, dimensions: unknown,
           context: unknown, next: (...a: unknown[]) => SVGGElement | null) => {
     const g = next(index, scales, values, dimensions, context)
@@ -1241,6 +1247,7 @@ function stampBrushIds<T extends { pointId: number | null; pointUid: string; poi
       if (row.pointId != null) c.setAttribute('data-pid', String(row.pointId))
       c.setAttribute('data-uid', row.pointUid ?? '')
       c.setAttribute('data-vn',  row.pointVn  ?? '')
+      c.setAttribute('data-pop', row.pointPop ?? '')
     }
     return g
   }
@@ -1261,7 +1268,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   // raw points overlaid as a beeswarm/jitter around the series index (sit ON the box, not beside it)
   const activeIds = o.brushActiveIds ?? null
   const pts: Array<{ series: string; fkey: string; xj: number; value: number;
-                     pointId: number | null; pointUid: string; pointVn: string }> = []
+                     pointId: number | null; pointUid: string; pointVn: string; pointPop: string }> = []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
@@ -1281,6 +1288,11 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       // by vn alone.
       pointUid: s.uID || o.defaultImageUid || '',
       pointVn: s.value_name,
+      // pop discriminates two boxes that sit under the SAME value_name — the case (uid, vn)
+      // alone can't resolve (a track with cells in both pops would appear twice, and lassoing
+      // one would light both without this). `s.pop` is the raw pop path, same string the
+      // response carries; matches the writer's `p.pop` on the emit side.
+      pointPop: s.pop ?? '',
     }))
   }
   const f = fxCh(o), a = axM(o)
@@ -1292,41 +1304,34 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   // delta was too subtle at swarm density — the ring is what actually pops.
   //
   // MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-source
-  // — the dot's `(pointUid, pointVn)` selects that source's id set, and only ids from THAT
-  // source match. Fixes the ambiguity that track_id=5 exists in every (image, segmentation)
-  // numeric space, so a lasso on segmentation B was lighting up segmentation T's dots too.
+  // — the dot's identity selects that source's id set, and only ids from THAT source match.
+  // Fixes two ambiguities in one:
+  //   • track_id=5 exists in every (image, segmentation) numeric space, so a lasso on
+  //     segmentation B was lighting up segmentation T's dots too. `(uid, vn)` fixes that.
+  //   • two POPULATIONS under the same (uid, vn) share the numeric space too — a track with
+  //     cells in both B and T appears once per box, and lassoing one lit both. The specific
+  //     `(uid, vn, pop)` key fixes that. The renderer tries the specific key FIRST and only
+  //     falls back to `(uid, vn)` for writers that don't know pop (Show button, MCP mark_*):
+  //     those genuinely want to highlight the track wherever it appears on that (uid, vn).
   // If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
   // not-brushable dot would look like a broken renderer.
   const dimOpacity = 0.08
   const isPerSource = activeIds instanceof Map
-  type PtRow = { pointId: number | null; pointUid: string; pointVn: string }
-  // TEMPORARY diag: log what the renderer sees the first few times matches() runs after a
-  // selection is set. Remove once the per-source scoping is verified.
-  if (activeIds) {
-    // eslint-disable-next-line no-console
-    console.log('[cc-brush render] mode=', isPerSource ? 'perSource' : 'flat',
-                isPerSource ? Array.from((activeIds as Map<string, Set<number>>).entries()).map(
-                  ([k, v]) => ({ key: JSON.stringify(k), count: v.size, sample: [...v].slice(0, 5) }))
-                : { count: (activeIds as Set<number>).size, sample: [...activeIds as Set<number>].slice(0, 5) })
-  }
-  let __matchLogs = 0
+  type PtRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
   const matches = (d: PtRow): boolean => {
     if (d.pointId == null || !activeIds) return false
-    let hit: boolean
-    let key = ''
     if (isPerSource) {
-      key = `${d.pointUid}|${d.pointVn}`
-      hit = (activeIds as Map<string, Set<number>>).get(key)?.has(d.pointId) ?? false
-    } else {
-      hit = (activeIds as Set<number>).has(d.pointId)
+      const map = activeIds as Map<string, Set<number>>
+      const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
+      if (map.get(specKey)?.has(d.pointId)) return true
+      // Fallback: a writer that only knows (uid, vn) — Show button, MCP mark_* — targets every
+      // dot in that (uid, vn) regardless of pop. That's the correct semantics for a "highlight
+      // this track" write: the track's location within populations isn't what the writer meant
+      // to narrow by, so we let it match across pops on the same (uid, vn).
+      const vnKey = `${d.pointUid}|${d.pointVn}`
+      return map.get(vnKey)?.has(d.pointId) ?? false
     }
-    if (__matchLogs < 8) {
-      __matchLogs++
-      // eslint-disable-next-line no-console
-      console.log('[cc-brush match]', { pid: d.pointId, uid: d.pointUid, vn: d.pointVn,
-                                        key: JSON.stringify(key), hit })
-    }
-    return hit
+    return (activeIds as Set<number>).has(d.pointId)
   }
   const ptFillOpacity = activeIds
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity

@@ -27,13 +27,15 @@ const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
 // source (image, valueName) so the host can mirror into PickHighlight / TrackHighlight for the
 // RIGHT image without guessing (LINKED_BRUSHING_PLAN.md Option B write side).
 // `point-brush` — user drag-selected a region over brushable dots. Plain drag = freeform lasso
-// (polygon), shift+drag = axis-aligned rect. Payload is a per-(image, valueName) map of the ids
-// inside the region. Same delivery model as point-click (host writes the shared bag + mirrors)
-// but a whole set at once.
+// (polygon), shift+drag = axis-aligned rect. Payload is one entry per hit SERIES `(uid, vn,
+// pop)` — not per (uid, vn) — because two populations under the same segmentation collide on
+// the shorter key, and a lasso on one would silently drop into a bag that the renderer then
+// hit-tests against the other. Same delivery model as point-click (host writes the shared bag +
+// mirrors) but a whole set at once.
 const emit = defineEmits<{
   'auto-override': [AutoOverride[]]
-  'point-click': [{ id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string }]
-  'point-brush': [{ kind: 'track' | 'cell'; byImage: Record<string, { valueName: string; ids: number[] }> }]
+  'point-click': [{ id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string; pop: string }]
+  'point-brush': [{ kind: 'track' | 'cell'; sources: Array<{ imageUid: string; valueName: string; pop: string; ids: number[] }> }]
 }>()
 const host = useTemplateRef<HTMLElement>('host')
 // @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
@@ -98,6 +100,7 @@ async function render(pass = 0) {
         id: Number(pid), kind,
         imageUid: target.getAttribute('data-uid') ?? '',
         valueName: target.getAttribute('data-vn') ?? '',
+        pop: target.getAttribute('data-pop') ?? '',
       })
     })
     // A visible affordance: brushable dots take a pointer cursor. Fills a gap where dots on the
@@ -215,7 +218,11 @@ async function render(pass = 0) {
     // data-* attrs stamped by the mark's `render` hook (plot.ts → `stampBrushIds`), NOT from
     // `__data__` — Plot binds the row INDEX (a number) there, not the row object.
     const emitHits = (hit: (cx: number, cy: number) => boolean) => {
-      const groups: Record<string, { valueName: string; ids: number[] }> = {}
+      // Keyed by the FULL source tuple `(uid, vn, pop)` — collapsing to just `(uid, vn)` used
+      // to drop cross-vn hits on the same image (last one wins on a plain uid map), and
+      // collapsing to just `uid` was one bug further along the same line. `\u0000` separator
+      // is used only inside this map; the wire format is a plain array of tuples.
+      const groups: Record<string, { imageUid: string; valueName: string; pop: string; ids: number[] }> = {}
       const circles = svg.querySelectorAll('g.cc-brush-dot circle, .cc-brush-dot > circle')
       for (let i = 0; i < circles.length; i++) {
         const c = circles[i] as SVGCircleElement
@@ -228,18 +235,18 @@ async function render(pass = 0) {
         const id = Number(pid)
         const uid = c.getAttribute('data-uid') ?? ''
         const vn  = c.getAttribute('data-vn')  ?? ''
-        const key = `${uid}\u0000${vn}`
-        const g = groups[key] ?? (groups[key] = { valueName: vn, ids: [] })
+        const pop = c.getAttribute('data-pop') ?? ''
+        const key = `${uid}\u0000${vn}\u0000${pop}`
+        const g = groups[key] ?? (groups[key] = { imageUid: uid, valueName: vn, pop, ids: [] })
         g.ids.push(id)
       }
       // Dedupe per group before emitting — a swarm can render the same id twice at close-by
       // positions after downsample, and duplicates would swell the bag pointlessly.
-      const byImage: Record<string, { valueName: string; ids: number[] }> = {}
-      for (const [key, g] of Object.entries(groups)) {
-        const uid = key.split('\u0000')[0]
-        byImage[uid] = { valueName: g.valueName, ids: Array.from(new Set(g.ids)) }
-      }
-      if (Object.keys(byImage).length) emit('point-brush', { kind, byImage })
+      const sources = Object.values(groups).map(g => ({
+        imageUid: g.imageUid, valueName: g.valueName, pop: g.pop,
+        ids: Array.from(new Set(g.ids)),
+      }))
+      if (sources.length) emit('point-brush', { kind, sources })
     }
 
     const finishBrush = (e: MouseEvent) => {

@@ -36,21 +36,30 @@ export interface LinkedSelectionBag {
   sourcePlotId?: string
   /** Optional per-source ids. Track_ids and cell labels are per-(image, segmentation) numeric
    *  spaces — track_id=5 exists in every tracked segmentation, and a single image with two
-   *  segmentations (B and T) can have colliding ids as well as two images can. When a producer
-   *  knows which (imageUid, valueName) each id came from, it fills this map; subscribing plots
-   *  that have per-dot source tags then match on `(uid, vn, id)` and only highlight the right
-   *  source's dots. Key format is `${uid}\u0000${vn}` (null-separator compound) so both sides
-   *  construct it the same way without collisions on real names. Absent when the producer is
-   *  per-source by construction (Show button, MCP mark_*) — subscribers fall back to the flat
-   *  `ids`. */
+   *  segmentations (B and T) can have colliding ids as well as two images can. Two
+   *  POPULATIONS under the same segmentation share the numeric space too, so a lasso on pop B
+   *  used to bleed into pop T on the shorter `(uid, vn)` key. When a producer knows which
+   *  `(imageUid, valueName, pop)` each id came from it fills this map with the specific key;
+   *  the renderer prefers the specific key AND falls back to `(uid, vn)` for writers that
+   *  don't know the pop (Show button, MCP mark_*). Key format is
+   *  `linkedSourceKey(uid, vn, pop?)` so both sides construct it the same way. Absent when
+   *  the producer is per-source by construction — subscribers fall back to the flat `ids`. */
   perSource?: Record<string, number[]>
 }
 
 /** Compound key format for `perSource`. Exported so producers/consumers build the same key.
  *  `|` separator is picked because it doesn't legally appear in a uID or value_name (both are
  *  identifier-shaped) — cleaner than a null-char for logs and safer than `:` (which could sit in
- *  a namespaced value_name). */
-export const linkedSourceKey = (uid: string, vn: string): string => `${uid}|${vn}`
+ *  a namespaced value_name).
+ *
+ *  `pop` is optional. A brush on a specific series knows the exact `(uid, vn, pop)` and passes
+ *  all three; a per-(image, vn) writer that doesn't know pop (Show button, MCP mark_*) passes
+ *  only two. The renderer matches against BOTH the specific and the generic keys so a
+ *  pop-narrow selection and a vn-wide one both light up the right dots. This is what stops a
+ *  lasso on population B from bleeding into population T when B and T sit under the same
+ *  value_name and a track has cells in both. */
+export const linkedSourceKey = (uid: string, vn: string, pop: string = ''): string =>
+  pop ? `${uid}|${vn}|${pop}` : `${uid}|${vn}`
 
 export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
   /** The current bag, or `null` when nothing is selected. Deliberately `null` (not an empty
@@ -64,16 +73,6 @@ export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
    *  so a producer can drop a brush that happened to select nothing without a special branch. */
   function set(next: LinkedSelectionBag) {
     if (!next.ids.length) { bag.value = null; return }
-    // TEMPORARY diagnostic — every bag write is one line, so we can see which producer wrote
-    // (source), whether it carried perSource, and what the keys look like. Remove after the
-    // brush highlight is verified end-to-end.
-    // eslint-disable-next-line no-console
-    console.log('[cc-brush store.set]', {
-      source: next.source, scope: next.scope, ids: next.ids.length,
-      perSource: next.perSource
-        ? Object.entries(next.perSource).map(([k, v]) => ({ key: k, n: v.length }))
-        : 'MISSING (will fall back to flat id match)',
-    })
     // Defensive-copy the ids so a later mutation on the caller's array can't retroactively
     // change what subscribers see — same idiom as `TrackHighlight` setters.
     bag.value = {
