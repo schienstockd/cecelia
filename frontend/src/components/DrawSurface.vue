@@ -20,8 +20,9 @@
       so the same 0..1 coords land on the pixels.
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import TeleportPopover from './TeleportPopover.vue'
 import {
   beginPoly, beginRect, beginStroke, addVertex, extendStroke, updateCursor, updateRect,
   finishPoly, finishRect, finishStroke,
@@ -115,6 +116,25 @@ const marks = ref<OverlayMark[]>([])
 // label per shape, and what they actually want to send is a SINGLE context line about the whole
 // share ("look at the T-cell channel here, segmentation looks under-called").
 const notes = ref('')
+// Toolbar has a single-line input for the short case; the ⤢ button opens a popover with a real
+// textarea for longer notes. Both bind to `notes` — typing in either syncs. Kept as a popover
+// (not a full BaseModal) to stay close to the frame the user is annotating.
+const notesExpanded = ref(false)
+const notesExpandBtn = ref<HTMLElement | null>(null)
+const notesTextarea = ref<HTMLTextAreaElement | null>(null)
+// A single-line <input> silently swallows `\n` — a two-line note authored in the popover shows as
+// two words run together in the toolbar. When notes contain a newline, swap the input for a
+// read-only preview that separates lines with ` · ` and opens the popover on click.
+const notesHasNewlines = computed(() => /\n/.test(notes.value))
+const notesPreview = computed(() => notes.value.replace(/\s*\n+\s*/g, ' · '))
+watch(notesExpanded, async (open) => {
+  if (!open) return
+  await nextTick()
+  notesTextarea.value?.focus()
+  // Place caret at end so a user who typed something inline can keep going in the popover.
+  const el = notesTextarea.value
+  if (el) el.setSelectionRange(el.value.length, el.value.length)
+})
 const rectDraft   = ref<ReturnType<typeof beginRect>   | null>(null)
 const polyDraft   = ref<ReturnType<typeof beginPoly>   | null>(null)
 const strokeDraft = ref<ReturnType<typeof beginStroke> | null>(null)
@@ -591,7 +611,7 @@ function commitPoly() {
 
 // ── Actions ────────────────────────────────────────────────────────────────────────────────────
 function undo() { if (marks.value.length) marks.value = marks.value.slice(0, -1); clearDraft(); selectedIdx.value = null }
-function clearAll() { marks.value = []; notes.value = ''; clearDraft(); selectedIdx.value = null }
+function clearAll() { marks.value = []; notes.value = ''; clearDraft(); selectedIdx.value = null; notesExpanded.value = false }
 function save() { emit('save', { overlay: marks.value, notes: notes.value.trim() }); clearAll() }
 function cancel() { emit('cancel'); clearAll() }
 function removeMark(i: number) {
@@ -860,9 +880,27 @@ const firstVertexMarker = computed(() => {
                   aria-label="Stroke thickness"
                   @update:modelValue="(v: string | string[]) =>
                     setSize((Array.isArray(v) ? v[0] : v) as OverlayStrokeWidth)" />
-      <textarea class="cc-input ds-notes-input" v-model="notes" rows="1" maxlength="800"
-                placeholder="Notes for Claude (optional)"
-                v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'"></textarea>
+      <input v-if="notesHasNewlines" class="cc-input ds-notes-input ds-notes-preview" type="text"
+             readonly :value="notesPreview"
+             @click="notesExpanded = true"
+             v-tooltip.bottom="'Multi-line note — click to open the editor'" />
+      <input v-else class="cc-input ds-notes-input" type="text" v-model="notes" maxlength="800"
+             placeholder="Notes for Claude (optional)"
+             v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why. Click ⤢ for more room.'" />
+      <button ref="notesExpandBtn" class="cc-btn cc-btn-ghost cc-btn-icon"
+              :class="{ 'cc-btn-on cc-btn-on-tint': notesExpanded }"
+              @click="notesExpanded = !notesExpanded"
+              v-tooltip.bottom="'Expand notes for longer text'">
+        <i class="pi pi-window-maximize" />
+      </button>
+      <TeleportPopover v-model="notesExpanded" :anchor="notesExpandBtn" placement="bottom-end">
+        <div class="ds-notes-popover">
+          <textarea ref="notesTextarea" class="cc-input ds-notes-textarea" v-model="notes"
+                    rows="8" maxlength="800"
+                    placeholder="Notes for Claude (optional)"></textarea>
+          <div class="ds-notes-footer cc-fs-2xs">{{ notes.length }} / 800</div>
+        </div>
+      </TeleportPopover>
       <button v-if="draftKind === 'poly' && (polyDraft?.vertices.length ?? 0) >= 3"
               class="cc-btn cc-btn-ghost cc-btn-sm" @click="commitPoly"
               v-tooltip.bottom="'Close the polygon (or press Enter, or click near the first vertex)'">Finish</button>
@@ -910,10 +948,19 @@ const firstVertexMarker = computed(() => {
 }
 .ds-notes-input {
   flex: 1; min-width: 12rem; max-width: 30rem;
-  min-height: 1.6rem; max-height: 4.5rem;
-  resize: vertical;
   font-family: inherit;   /* textarea default is monospace on some UAs */
 }
+/* Read-only preview shown when the note has newlines — visibly non-editable + a pointer cursor so
+   the ⤢ affordance is obvious. */
+.ds-notes-preview { cursor: pointer; color: var(--cc-text-dim); }
+/* Popover content — a proper textarea for longer notes. Width is fixed; height is user-resizable
+   within the popover, so the toolbar row NEVER grows. */
+.ds-notes-popover { display: flex; flex-direction: column; gap: 0.35rem; width: 24rem; }
+.ds-notes-textarea {
+  resize: vertical; min-height: 6rem; max-height: 60vh;
+  font-family: inherit;
+}
+.ds-notes-footer { color: var(--cc-text-dim); text-align: right; }
 .ds-address { color: var(--cc-text-dim); font-family: var(--cc-mono); }
 .ds-mode {
   position: absolute; top: 3.4rem; left: 0.75rem;
