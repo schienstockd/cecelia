@@ -1210,6 +1210,31 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
 }
 
+// Compose a `render` mark hook that stamps identity (pointId / pointUid / pointVn) onto each
+// rendered <circle> as data-* attributes. Reason: Observable Plot binds ROW INDEX (a number) to
+// `<circle>.__data__`, not the row object we passed in — so a click/brush delegate that reads
+// `d.pointId` off `__data__` gets `undefined` for every dot. The delegate reads the attrs
+// instead. `index` is the mark's per-facet indices into the SOURCE data array (`rows`), so
+// `rows[index[i]]` maps back to the i-th rendered circle's source row. Runs AFTER the default
+// render (call `next` first, then stamp) so we don't have to reimplement anything.
+function stampBrushIds<T extends { pointId: number | null; pointUid: string; pointVn: string }>(rows: T[]) {
+  return (index: number[], scales: unknown, values: unknown, dimensions: unknown,
+          context: unknown, next: (...a: unknown[]) => SVGGElement | null) => {
+    const g = next(index, scales, values, dimensions, context)
+    if (!g) return g
+    const circles = g.querySelectorAll('circle')
+    for (let i = 0; i < circles.length && i < index.length; i++) {
+      const row = rows[index[i]]
+      if (!row) continue
+      const c = circles[i]
+      if (row.pointId != null) c.setAttribute('data-pid', String(row.pointId))
+      c.setAttribute('data-uid', row.pointUid ?? '')
+      c.setAttribute('data-vn',  row.pointVn  ?? '')
+    }
+    return g
+  }
+}
+
 // ── numeric: boxplot (Tukey, precomputed) + jittered raw-point overlay ────────────
 function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                  keyOf: (s: PlotSeries) => string, color: object, logY: object) {
@@ -1224,23 +1249,20 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   })
   // raw points overlaid as a beeswarm/jitter around the series index (sit ON the box, not beside it)
   const activeIds = o.brushActiveIds ?? null
-  const pts: object[] = []
+  const pts: Array<{ series: string; fkey: string; xj: number; value: number;
+                     pointId: number | null; pointUid: string; pointVn: string }> = []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
     const pids = (s.pointIds ?? []) as number[]
-    // TEMPORARY diagnostic — expose per-series id shape so we can see why pointId ends up null
-    // even when the response is tagged with pointIdKind.
-    // eslint-disable-next-line no-console
-    console.log('[cc-brush] series', keyOf(s), 'uID=', s.uID, 'vn=', s.value_name,
-                'vals=', vals.length, 'ids=', pids.length, 'firstId=', pids[0],
-                'hasPointIdsField=', 'pointIds' in s)
     const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
     vals.forEach((v, k) => pts.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
-      // pointId + uID ride along so the SVG click delegate (PlotChart.vue) can read the identity
-      // AND the source image off `__data__` without a second lookup. `null` when the response
-      // didn't carry ids; empty string uID for a single-image plot (`s.uID` semantic).
+      // pointId + uID ride along in the SOURCE row so the render hook can stamp them onto each
+      // <circle> as data-* attrs (see `stampBrushIds` below). Observable Plot binds ROW INDEX
+      // to `circle.__data__`, not the row object, so reading `d.pointId` off `__data__` returns
+      // undefined for every dot — the click/brush delegate reads the attrs instead. `null` when
+      // the response didn't carry ids; empty string uID for a single-image plot.
       pointId: pids[k] ?? null,
       pointUid: s.uID ?? '',
       pointVn: s.value_name,
@@ -1278,9 +1300,17 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                                         stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                                         fillOpacity: ptFillOpacity,
                                         // A stable CSS class the PlotChart click delegate finds — `.cc-brush-dot`
-                                        // — so we don't have to walk every `circle` in the SVG. Data-* mirrors the
-                                        // channel so the delegate can read the id without touching __data__.
-                                        className: 'cc-brush-dot', ...f })] : []),
+                                        // — so we don't have to walk every `circle` in the SVG.
+                                        className: 'cc-brush-dot',
+                                        // Stamp identity onto each rendered <circle> as data-* attrs. Plot
+                                        // binds ROW INDEX to `__data__`, so `d.pointId` off the circle is
+                                        // always undefined — the delegate reads the attrs instead. `index`
+                                        // is the mark's per-facet indices into the original `pts` array,
+                                        // so `pts[index[i]]` maps back to the source row for the i-th
+                                        // rendered circle. We compose ON TOP of the default render (call
+                                        // `next` first, then stamp).
+                                        render: stampBrushIds(pts),
+                                        ...f })] : []),
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
       ...statsMarks,
     ],

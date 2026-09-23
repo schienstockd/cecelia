@@ -85,22 +85,19 @@ async function render(pass = 0) {
   const kind = props.data?.pointIdKind
   if (kind) {
     node.addEventListener('click', (e) => {
-      // Observable Plot's `className` goes on the mark's `<g>` wrapper, not each `<circle>`. So
-      // find the group first and then use the click target itself for `__data__` — a click on
-      // the group's background (between dots) reads the group's aggregate data, which is NOT a
-      // row. Only a click on a real circle inside the group carries the row payload we need.
-      const target = e.target as (Element & {
-        __data__?: { pointId?: number | null; pointUid?: string; pointVn?: string }
-      }) | null
-      if (!target?.parentElement?.classList?.contains('cc-brush-dot')) return
-      if (target.tagName !== 'circle') return
-      const d = target.__data__
-      const id = d?.pointId
-      if (id == null) return
+      // Identity is on data-* attrs, not `__data__` — Plot binds the row INDEX (a number) to
+      // `__data__`, so reading `.pointId` off it always gives undefined. The stamping happens in
+      // the mark's `render` hook (plot.ts → `stampBrushIds`). A click on the group's background
+      // (between dots) has no data-pid, so the guard drops it.
+      const target = e.target as Element | null
+      if (!target || target.tagName !== 'circle') return
+      if (!target.parentElement?.classList?.contains('cc-brush-dot')) return
+      const pid = target.getAttribute('data-pid')
+      if (pid == null || pid === '') return
       emit('point-click', {
-        id, kind,
-        imageUid: d?.pointUid ?? '',
-        valueName: d?.pointVn ?? '',
+        id: Number(pid), kind,
+        imageUid: target.getAttribute('data-uid') ?? '',
+        valueName: target.getAttribute('data-vn') ?? '',
       })
     })
     // A visible affordance: brushable dots take a pointer cursor. Fills a gap where dots on the
@@ -214,27 +211,23 @@ async function render(pass = 0) {
     }
 
     // `hit` takes CLIENT coords (see COORDINATE SPACE note above). Each circle's client center is
-    // read from `getBoundingClientRect()` — one call per dot, once per drag.
+    // read from `getBoundingClientRect()` — one call per dot, once per drag. Identity comes from
+    // data-* attrs stamped by the mark's `render` hook (plot.ts → `stampBrushIds`), NOT from
+    // `__data__` — Plot binds the row INDEX (a number) there, not the row object.
     const emitHits = (hit: (cx: number, cy: number) => boolean) => {
       const groups: Record<string, { valueName: string; ids: number[] }> = {}
-      // Also match `g.cc-brush-dot` explicitly and fall back to any brushable-marked circle so
-      // structural surprises (Plot wrapping the group deeper, class landing on a facet parent)
-      // don't silently reduce hits to zero.
-      const circles = svg.querySelectorAll('g.cc-brush-dot circle, .cc-brush-dot > circle') as unknown as ArrayLike<SVGCircleElement & {
-        __data__?: { pointId?: number | null; pointUid?: string; pointVn?: string }
-      }>
-      let hitCount = 0
+      const circles = svg.querySelectorAll('g.cc-brush-dot circle, .cc-brush-dot > circle')
       for (let i = 0; i < circles.length; i++) {
-        const c = circles[i]
+        const c = circles[i] as SVGCircleElement
         const r = c.getBoundingClientRect()
         const cx = r.left + r.width / 2
         const cy = r.top + r.height / 2
         if (!hit(cx, cy)) continue
-        hitCount++
-        const d = c.__data__; const id = d?.pointId
-        if (id == null) continue
-        const uid = d?.pointUid ?? ''
-        const vn  = d?.pointVn  ?? ''
+        const pid = c.getAttribute('data-pid')
+        if (pid == null || pid === '') continue
+        const id = Number(pid)
+        const uid = c.getAttribute('data-uid') ?? ''
+        const vn  = c.getAttribute('data-vn')  ?? ''
         const key = `${uid}\u0000${vn}`
         const g = groups[key] ?? (groups[key] = { valueName: vn, ids: [] })
         g.ids.push(id)
@@ -246,9 +239,6 @@ async function render(pass = 0) {
         const uid = key.split('\u0000')[0]
         byImage[uid] = { valueName: g.valueName, ids: Array.from(new Set(g.ids)) }
       }
-      // TEMPORARY diagnostic: help debug "brush drew but nothing selected". Remove once fixed.
-      // eslint-disable-next-line no-console
-      console.log('[cc-brush] circles=', circles.length, 'hits=', hitCount, 'byImage=', byImage)
       if (Object.keys(byImage).length) emit('point-brush', { kind, byImage })
     }
 
