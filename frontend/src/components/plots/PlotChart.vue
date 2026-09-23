@@ -26,9 +26,10 @@ const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
 // `point-click` — a jitter/scatter dot was clicked. Payload carries the point identity + the
 // source (image, valueName) so the host can mirror into PickHighlight / TrackHighlight for the
 // RIGHT image without guessing (LINKED_BRUSHING_PLAN.md Option B write side).
-// `point-brush` — user drag-selected a rectangle over brushable dots (shift+drag). Payload is
-// a per-(image, valueName) map of the ids in the rect. Same delivery model as point-click
-// (host writes the shared bag + mirrors) but a whole set at once.
+// `point-brush` — user drag-selected a region over brushable dots. Plain drag = freeform lasso
+// (polygon), shift+drag = axis-aligned rect. Payload is a per-(image, valueName) map of the ids
+// inside the region. Same delivery model as point-click (host writes the shared bag + mirrors)
+// but a whole set at once.
 const emit = defineEmits<{
   'auto-override': [AutoOverride[]]
   'point-click': [{ id: number; kind: 'track' | 'cell'; imageUid: string; valueName: string }]
@@ -110,67 +111,95 @@ async function render(pass = 0) {
     style.textContent = `
       .cc-brush-dot { cursor: pointer; }
       svg.cc-brushing, svg.cc-brushing * { cursor: crosshair !important; }
-      .cc-brush-rect { fill: color-mix(in srgb, currentColor 15%, transparent);
-                       stroke: currentColor; stroke-width: 1; stroke-dasharray: 3 3;
-                       pointer-events: none; }
+      .cc-brush-rect,
+      .cc-brush-lasso { fill: color-mix(in srgb, currentColor 15%, transparent);
+                        stroke: currentColor; stroke-width: 1; stroke-dasharray: 3 3;
+                        pointer-events: none; }
     `
     node.prepend(style)
 
-    // Rectangle brush (shift + drag). LINKED_BRUSHING_PLAN.md Option B — bulk write side. On
-    // shift+mousedown, start tracking; draw a live rect overlay; on mouseup, walk every
-    // `.cc-brush-dot circle` and collect those whose SVG center falls inside the rect. Grouped
-    // by (imageUid, valueName) because label ids are per-image and PickHighlight is one image;
-    // the host writes the largest group + updates the shared bag with the union. `svg` is
-    // captured from the module-scope `node` so the closures don't have to re-narrow it — a
-    // re-render nulls the module-scope binding, but these listeners were attached to THIS svg
-    // instance and are removed with it.
+    // Freeform LASSO (plain drag) + axis-aligned RECT (shift+drag) — Option B bulk write side.
+    // Lasso is the default gesture because a freeform loop is what "select this cluster" looks
+    // like on a jitter cloud; the rect stays for axis-aligned pulls (e.g. "everything above y=X").
+    // Both share the finish path: walk every `.cc-brush-dot circle`, hit-test its SVG center,
+    // group by (imageUid, valueName). PickHighlight is per-image so the host picks a preferred
+    // mirror image and updates the shared bag with the union. `svg` is captured from module-scope
+    // `node` so the closures don't re-narrow — the listeners are attached to THIS svg instance
+    // and are removed when it is.
     const svg = node as SVGSVGElement
-    let brushStart: { x: number; y: number } | null = null
+    type Pt = { x: number; y: number }
+    let brushMode: 'rect' | 'lasso' | null = null
+    let brushStart: Pt | null = null
     let brushRect: SVGRectElement | null = null
+    let lassoPath: SVGPathElement | null = null
+    let lassoPts: Pt[] = []
 
-    svg.addEventListener('mousedown', (e) => {
-      if (!e.shiftKey) return
-      if ((e.target as Element).closest('.cc-brush-dot circle')) return  // click on dot handles itself
+    const svgPoint = (e: MouseEvent): Pt | null => {
       const pt = svg.createSVGPoint()
       pt.x = e.clientX; pt.y = e.clientY
       const ctm = svg.getScreenCTM()?.inverse()
-      if (!ctm) return
+      if (!ctm) return null
       const p = pt.matrixTransform(ctm)
-      brushStart = { x: p.x, y: p.y }
-      brushRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-      brushRect.setAttribute('class', 'cc-brush-rect')
-      brushRect.setAttribute('x', String(p.x)); brushRect.setAttribute('y', String(p.y))
-      brushRect.setAttribute('width', '0');    brushRect.setAttribute('height', '0')
-      svg.appendChild(brushRect)
+      return { x: p.x, y: p.y }
+    }
+
+    svg.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return
+      if ((e.target as Element).closest('.cc-brush-dot circle')) return  // click on dot handles itself
+      const p = svgPoint(e); if (!p) return
+      brushStart = p
+      brushMode = e.shiftKey ? 'rect' : 'lasso'
+      if (brushMode === 'rect') {
+        brushRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+        brushRect.setAttribute('class', 'cc-brush-rect')
+        brushRect.setAttribute('x', String(p.x)); brushRect.setAttribute('y', String(p.y))
+        brushRect.setAttribute('width', '0');    brushRect.setAttribute('height', '0')
+        svg.appendChild(brushRect)
+      } else {
+        lassoPts = [p]
+        lassoPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        lassoPath.setAttribute('class', 'cc-brush-lasso')
+        lassoPath.setAttribute('d', `M ${p.x} ${p.y}`)
+        svg.appendChild(lassoPath)
+      }
       svg.classList.add('cc-brushing')
       e.preventDefault()
     })
 
     svg.addEventListener('mousemove', (e) => {
-      if (!brushStart || !brushRect) return
-      const pt = svg.createSVGPoint()
-      pt.x = e.clientX; pt.y = e.clientY
-      const ctm = svg.getScreenCTM()?.inverse()
-      if (!ctm) return
-      const p = pt.matrixTransform(ctm)
-      const x = Math.min(brushStart.x, p.x), y = Math.min(brushStart.y, p.y)
-      const w = Math.abs(p.x - brushStart.x), h = Math.abs(p.y - brushStart.y)
-      brushRect.setAttribute('x', String(x)); brushRect.setAttribute('y', String(y))
-      brushRect.setAttribute('width', String(w)); brushRect.setAttribute('height', String(h))
+      if (!brushMode || !brushStart) return
+      const p = svgPoint(e); if (!p) return
+      if (brushMode === 'rect' && brushRect) {
+        const x = Math.min(brushStart.x, p.x), y = Math.min(brushStart.y, p.y)
+        const w = Math.abs(p.x - brushStart.x), h = Math.abs(p.y - brushStart.y)
+        brushRect.setAttribute('x', String(x)); brushRect.setAttribute('y', String(y))
+        brushRect.setAttribute('width', String(w)); brushRect.setAttribute('height', String(h))
+      } else if (brushMode === 'lasso' && lassoPath) {
+        // Skip points closer than ~2 svg-px to the last vertex — a raw mousemove stream at
+        // sub-pixel spacing produces thousands of vertices that make point-in-polygon slower and
+        // add nothing to the shape. Threshold squared to avoid a sqrt per event.
+        const last = lassoPts[lassoPts.length - 1]
+        if ((p.x - last.x) ** 2 + (p.y - last.y) ** 2 < 4) return
+        lassoPts.push(p)
+        lassoPath.setAttribute('d', `M ${lassoPts[0].x} ${lassoPts[0].y} ` +
+          lassoPts.slice(1).map(q => `L ${q.x} ${q.y}`).join(' ') + ' Z')
+      }
     })
 
-    const finishBrush = (e: MouseEvent) => {
-      if (!brushStart || !brushRect) return
-      const pt = svg.createSVGPoint()
-      pt.x = e.clientX; pt.y = e.clientY
-      const ctm = svg.getScreenCTM()?.inverse()
-      const p = ctm ? pt.matrixTransform(ctm) : brushStart
-      const x0 = Math.min(brushStart.x, p.x), x1 = Math.max(brushStart.x, p.x)
-      const y0 = Math.min(brushStart.y, p.y), y1 = Math.max(brushStart.y, p.y)
-      brushRect.remove(); brushRect = null; brushStart = null
-      svg.classList.remove('cc-brushing')
-      // A degenerate rect (a click, not a drag) is dropped — the click handler already fires.
-      if ((x1 - x0) < 2 && (y1 - y0) < 2) return
+    // Even-odd ray-cast: standard closed-polygon test. `poly` is the lasso vertex list; the
+    // implicit closing edge (last → first) is handled by the wrap-around index `j`.
+    const pointInPoly = (poly: Pt[], x: number, y: number): boolean => {
+      let inside = false
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y
+        const intersect = ((yi > y) !== (yj > y)) &&
+          (x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-12) + xi)
+        if (intersect) inside = !inside
+      }
+      return inside
+    }
+
+    const emitHits = (hit: (cx: number, cy: number) => boolean) => {
       const groups: Record<string, { valueName: string; ids: number[] }> = {}
       const circles = svg.querySelectorAll('.cc-brush-dot circle') as unknown as ArrayLike<SVGCircleElement & {
         __data__?: { pointId?: number | null; pointUid?: string; pointVn?: string }
@@ -178,7 +207,7 @@ async function render(pass = 0) {
       for (let i = 0; i < circles.length; i++) {
         const c = circles[i]
         const cx = Number(c.getAttribute('cx')); const cy = Number(c.getAttribute('cy'))
-        if (!(cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1)) continue
+        if (!hit(cx, cy)) continue
         const d = c.__data__; const id = d?.pointId
         if (id == null) continue
         const uid = d?.pointUid ?? ''
@@ -195,6 +224,29 @@ async function render(pass = 0) {
         byImage[uid] = { valueName: g.valueName, ids: Array.from(new Set(g.ids)) }
       }
       if (Object.keys(byImage).length) emit('point-brush', { kind, byImage })
+    }
+
+    const finishBrush = (e: MouseEvent) => {
+      if (!brushMode || !brushStart) return
+      const mode = brushMode
+      if (mode === 'rect' && brushRect) {
+        const p = svgPoint(e) ?? brushStart
+        const x0 = Math.min(brushStart.x, p.x), x1 = Math.max(brushStart.x, p.x)
+        const y0 = Math.min(brushStart.y, p.y), y1 = Math.max(brushStart.y, p.y)
+        brushRect.remove(); brushRect = null
+        // Reset mode BEFORE emitting so a downstream re-render can't re-enter mid-teardown.
+        brushMode = null; brushStart = null; svg.classList.remove('cc-brushing')
+        // A degenerate rect (a click, not a drag) is dropped — the click handler already fires.
+        if ((x1 - x0) < 2 && (y1 - y0) < 2) return
+        emitHits((cx, cy) => cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1)
+      } else if (mode === 'lasso' && lassoPath) {
+        const pts = lassoPts
+        lassoPath.remove(); lassoPath = null; lassoPts = []
+        brushMode = null; brushStart = null; svg.classList.remove('cc-brushing')
+        // Need at least a triangle for a meaningful polygon; anything less was a stray drag.
+        if (pts.length < 3) return
+        emitHits((cx, cy) => pointInPoly(pts, cx, cy))
+      }
     }
     svg.addEventListener('mouseup', finishBrush)
     svg.addEventListener('mouseleave', finishBrush)
