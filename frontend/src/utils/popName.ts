@@ -27,7 +27,7 @@ export function popNameError(
   const current = opts.currentName?.trim().toLowerCase()
   if (lower === current) return null // renaming to the same name (case aside) is a no-op, not a clash
   if (existingNames.some(e => e.trim().toLowerCase() === lower)) {
-    return `A population named “${n}” already exists here — choose another name.`
+    return `“${n}” already exists — choose another name.`
   }
   return null
 }
