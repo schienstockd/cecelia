@@ -62,7 +62,8 @@ include("labels_api.jl")     # bidirectional context — cell/track id enumerati
 include("labels_by_category_api.jl")  # linked brushing category-source (cell-scope) (LINKED_BRUSHING_PLAN.md P2)
 include("plots_registry_api.jl") # bidirectional context — live plot registry for list_plots MCP (BIDIR PR #8)
 include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI_ASSISTANT_PLAN Phase 2; needs the captures/blackboard/landscape/plots files above)
-include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3; REPL-only, no route yet)
+include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3)
+include("kiwi_api.jl")       # Kiwi — the cockpit's turn routes: background run, WS steps, kept replies (Phase 4)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -279,6 +280,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/chains/run" => (req, body_bytes) -> (api_chains_run(req)),
     "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent(req)),
     "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
+    "/api/kiwi/turns" => (req, body_bytes) -> (api_kiwi_turns(req)),
     "/api/preview/status" => (req, body_bytes) -> (api_preview_status(req)),
     "/api/optical-flow/models" => (req, body_bytes) -> (api_optical_flow_models(req)),
     "/api/denoise/models" => (req, body_bytes) -> (api_denoise_models(req)),
@@ -433,6 +435,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/build-sysimage" => (req, body_bytes) -> (api_notebooks_build_sysimage(body_bytes)),
     # bidir Blackboard writes — create + revise are MCP-facing; restore / prune / delete are user-only.
     "/api/kiwi/refs/resolve" => (req, body_bytes) -> (api_kiwi_refs_resolve(body_bytes)),   # read-only POST (a list body)
+    "/api/kiwi/turn" => (req, body_bytes) -> (api_kiwi_turn(body_bytes)),
+    "/api/kiwi/turn/cancel" => (req, body_bytes) -> (api_kiwi_turn_cancel(body_bytes)),
+    "/api/kiwi/turns/clear" => (req, body_bytes) -> (api_kiwi_turns_clear(body_bytes)),
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),

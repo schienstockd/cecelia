@@ -1,6 +1,6 @@
 # Kiwi assistant (structured duck) — plan
 
-**Status:** in progress — Phases 0–1 shipped (#1196); Phase 2 built (#1198); Phase 3's loop built on `feat/kiwi-headless-turn`, its exit gate not yet run. Decisions 1–3
+**Status:** in progress — Phases 0–1 shipped (#1196); Phase 2 shipped (#1198); Phase 3 built (#1199), exit gate settled by the user (bare default, Think-first switch — Open decision 8); Phases 4–5 built on `feat/kiwi-cockpit`, not yet tried in a browser. Decisions 1–3
 are the user's; Decisions 4–8 were proposed by Claude in the same conversation and accepted without
 objection; Decisions 9–10 came out of the literature search the same day (*Prior art* below) and
 Decision 11 out of Phase 0; all three are proposals. Read the *Open decisions* before building: several of them change a phase's shape.
@@ -192,7 +192,7 @@ Protocol (common interface over Claude Code / Codex / Gemini CLI; no schema outp
 `native_schema`) and `ben-vargas/ai-sdk-provider-claude-code` / `-codex-cli` (TS providers that wrap
 the CLIs, not HTTP APIs).
 
-## UI shape (proposal — confirm before Phase 4)
+## UI shape (built in Phase 4 — user, 2026-09-23: "implement the whole thing by plan")
 
 - **Prompt input with chips** in the Kiwi cockpit. Chips arrive two ways: an "Add to Kiwi" affordance
   on the things that have a `KiwiRef` (plot panels, viewer, task pages, capture rows, Blackboard
@@ -201,7 +201,7 @@ the CLIs, not HTTP APIs).
   `interpretation` flag), its text, and its ref chips. Free text between claims is connective tissue,
   not the payload.
 - Existing cockpit rows (pairing chip, recent captures, session identity) stay; the prompt + feed are a
-  new section.
+  new section — the FIRST one, since it is now the reason to open the panel.
 
 ## Open decisions
 
@@ -211,8 +211,12 @@ the CLIs, not HTTP APIs).
 2. **Two delivery paths for captures.** A paired terminal session gets captures via push; Kiwi's own
    engine gets them as refs in its turn context. If both are live, does a capture go to both, or does
    the user pick a mode? Needs a visible indicator either way.
-3. **Where threads and replies persist.** Ephemeral per session, a `<proj>/kiwi/` store, or folded into
-   the lab log / Blackboard. Affects whether a past Kiwi claim can itself be a `KiwiRef`.
+3. **Where threads and replies persist — decided (Phase 4, Claude, under the user's "go through
+   autonomously").** `<project>/kiwi/turns.json`, the last 50 turns: a turn costs minutes and seat
+   quota, so a reload must not lose it, and the eval harness can read the same records. No threads —
+   each turn is fresh (Decision 7 already forbids citing from an earlier turn). A past claim is NOT a
+   `KiwiRef` kind; it is a record, not an app object. Revisit if replies should reach the lab log or
+   the Blackboard — that is a user call.
 4. **Turn latency on the CLI route — measured (Phase 0), resolved.** ~1 min per cold turn, dominated
    by tool round-trips, not process spawn. Phase 4's UI must show progress while the engine works
    (tool calls as they happen), not a bare spinner. See Decision 11 for the speed lever.
@@ -239,6 +243,13 @@ the CLIs, not HTTP APIs).
    a two-step turn (answer freely, then fill the schema). Phase 0 ran one rep of each: inconclusive
    (differences within run-to-run noise). **Must** be settled on Phase 3's fixed prompt set — it is
    Phase 3's exit gate, not a nice-to-have.
+   **Settled (user, 2026-09-23): bare by default, reasoning behind a "Think first" switch**
+   (`settings.kiwiReasoning`, sent as `reasoning` on each turn). On the 18-turn comparison (Phase 3
+   below) reasoning cost more (9.7k vs 6.8k output tokens, 91 vs 69 s) and gained nothing the automatic
+   checks could see. The planned hand score was dropped: claims restating tool output were all
+   trivially "backed", so claim-level scoring could not tell the variants apart — and it showed the
+   real gap is usefulness (most claims were readouts; the valuable ones were checkable questions
+   about something odd), which a claim-support score does not measure.
 9. **Check after, or attribute first?** Decisions 6–7 check refs after generation. The alternative is
    *attribute-first*: pick the refs, then write each claim against its ref (Slobodkin et al. 2024) —
    faithful by construction, and it cut human verification time. Phase 0 makes this more attractive
@@ -344,8 +355,34 @@ Each independently shippable.
    variant) of the 303. **Cost finding for Phase 4:** nearly every turn re-asks, doubling wait and
    spend (~7–10k output tokens a turn, 1–2 min) — the first attempt must pass more often before this
    is a UI.
-4. **Cockpit UI.** Prompt input with chips, claims feed, click-to-point via existing mark routes.
-5. **"Add to Kiwi" affordances** across plots, viewer, task pages, captures, Blackboard.
+4. **Cockpit UI — BUILT on `feat/kiwi-cockpit` (2026-09-23), not yet tried in a browser.**
+   Backend `api/src/kiwi_api.jl`: `POST /api/kiwi/turn` starts `run_kiwi_turn` on a worker thread (one
+   per project — 409 otherwise; 503 without the CLI), WS `kiwi:step` streams each tool call as it
+   happens (the engine contract grew an optional `on_progress`; `_claude_stream_steps` reads the
+   stream-json line by line) plus "checking refs" / "re-asking: N problems", WS `kiwi:done` carries
+   the record; cancel kills the engine (`jobs.jl`); turns kept per Open decision 3. Frontend:
+   `components/kiwi/KiwiAsk.vue` as the cockpit's first section — attached chips, typed search (sets,
+   images, task functions — this project's, searched locally), the prompt, the Think-first switch,
+   live steps, the claims feed (interpretation flagged "I think", questions marked, abstention shown as
+   a reply, failed checks counted). `KiwiRefChip.vue` renders every ref: solid = exists, dashed =
+   live/format, red = doesn't resolve or not seen this turn — no state claims support (Decision 10).
+   Clicking points, via `composables/useKiwiPoint.ts` over the existing machinery: tracks/cells →
+   viewer highlight + pop-out, viewer/image → pop-out at t/z, population → the gating page on that
+   image, task → its page with that function selected, capture → the shared refocus path
+   (`composables/useCaptureFocus.ts`, extracted from its two copies), plot → its page + a plot mark at
+   (u,v), ui → a pointer bubble, Blackboard → `/blackboard?entry=`. Tested: API routes with a fake
+   engine (`api/test/suite/kiwi_turn.jl`), the pure half in `utils/kiwiTurn.test.ts`.
+   **Known gaps:** a population chip lands on the image's gating page, not the population (the
+   selected pop is per-panel state nothing outside can set); a tile chip does nothing (no frontend
+   tile-mark handler exists — `mark_tile` broadcasts are dropped today too); a task chip whose page is
+   already open keeps its current function; a draft chip shows "not checked yet" until sent.
+5. **"Add to Kiwi" affordances — BUILT with Phase 4.** One button, `components/kiwi/AddToKiwiButton.vue`
+   (`pi-at`), on: every live registered plot panel (`CanvasPanel`, when its `persistKey` is in the plot
+   registry — the plotId the resolver knows), the pop-out viewer (the user's selected tracks or cells
+   if any, else this view with t and — in 2D — z; `viewerRefFor`), `TaskRunner`'s function, Kiwi's
+   capture rows, the Blackboard pane (the previewed version if one is open). The image table and
+   population ⋯ menus add an "Add to Kiwi" item. The draft lives in localStorage so the pop-out's button
+   reaches the main window's cockpit, and opens it.
 
 ## What this changes in KIWI_PLAN
 

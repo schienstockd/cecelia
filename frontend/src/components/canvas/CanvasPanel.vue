@@ -7,13 +7,15 @@
   Drag/clamp/arrange come from useFloatingPanel so every floating panel behaves identically.
 -->
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, onUpdated, nextTick, useTemplateRef, watch, useSlots } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, onUpdated, nextTick, useTemplateRef, watch, useSlots } from 'vue'
 import { useFloatingPanel, type ArrangeCmd } from '../../composables/useFloatingPanel'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useInjectedZoom } from '../../composables/useCanvasZoom'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import { fitSquare } from '../../utils/tileGrid'
 import CcCycleButton, { type CycleOption } from '../CcCycleButton.vue'
+import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
+import { usePlotRegistryStore } from '../../stores/plotRegistry'
 
 const props = withDefaults(defineProps<{
   index: number
@@ -84,6 +86,11 @@ const hasControls = () => !!slots.actions || !!slots.footer || bodyControls.valu
 const root = useTemplateRef<HTMLElement>('root')
 const mainEl = useTemplateRef<HTMLElement>('mainEl')   // .panel-main — the plot region kept square by :square
 const store = useCanvasPanelsStore()
+// "Add to Kiwi" only on a panel that is a LIVE registered plot — its `persistKey` is then the plotId
+// `list_plots` and the Kiwi resolver know (stores/plotRegistry.ts). Unregistered panels get no button,
+// because a plot ref to them would fail to resolve.
+const plotRegistry = usePlotRegistryStore()
+const isLivePlot = computed(() => !!props.persistKey && !!plotRegistry.getLast(props.persistKey))
 const saved = props.persistKey ? store.getGeom(props.persistKey) : undefined
 // the host canvas may apply a visual zoom (transform:scale); inject it so drag deltas are zoom-correct
 const injectedZoom = useInjectedZoom()
@@ -168,6 +175,8 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
       <CcCycleButton v-if="autoHide && hasControls() && !collapsed"
                      class="panel-btn" v-model="chromeMode" :options="CHROME_OPTIONS"
                      @mousedown.stop />
+      <AddToKiwiButton v-if="isLivePlot && !collapsed" class="panel-btn" size="dense"
+                       :kiwi-ref="{ kind: 'plot', plotId: persistKey! }" />
       <button v-if="!docked" class="panel-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
               @mousedown.stop @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />

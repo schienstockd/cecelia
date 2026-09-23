@@ -16,6 +16,10 @@
 #   agent_capabilities(a)  → NamedTuple (; native_schema, native_mcp, resumable)
 #   _run_agent_once(a, prompt, mcp_config_path; opts...) → AgentResult   one spawn, no retries
 #
+# Optional: `on_progress(step::String)` — called, best-effort, with each tool the engine calls WHILE the
+# turn runs (Kiwi shows it instead of a bare spinner — plan, Open decision 4). An engine that can't
+# report steps just never calls it; a throwing callback never breaks the turn.
+#
 # `run_agent_turn` (below) is the engine-independent driver on top: availability gate, stale-session
 # self-heal (only if `resumable`), and the "asked for a schema, got none" failure. Designed to
 # transfer to a second engine but NOT proven to — only Claude implements it (plan, Decision 3).
@@ -617,12 +621,32 @@ function _parse_claude_stream(output::AbstractString)::AgentResult
     AgentResult(r.ok, r.text, r.input_tokens, r.output_tokens, r.session_id, r.error, r.structured, seen)
 end
 
+# The tools one stream-json line reports the engine calling — an `assistant` event's `tool_use` blocks,
+# named without the MCP prefix ("get_populations"). The CLI's own StructuredOutput call is the reply,
+# not a step. PURE → tested.
+function _claude_stream_steps(line::AbstractString)::Vector{String}
+    ev = try JSON3.read(line) catch; return String[] end
+    (ev isa AbstractDict && get(ev, :type, "") == "assistant") || return String[]
+    msg = get(ev, :message, nothing)
+    content = msg isa AbstractDict ? get(msg, :content, nothing) : nothing
+    content isa AbstractVector || return String[]
+    steps = String[]
+    for c in content
+        (c isa AbstractDict && get(c, :type, "") == "tool_use") || continue
+        name = string(get(c, :name, ""))
+        (isempty(name) || name == "StructuredOutput") && continue
+        push!(steps, replace(name, r"^mcp__.+?__" => ""))
+    end
+    steps
+end
+
 # Spawn the agent once and parse its result. Bounded by a timeout so a hung agent can't wedge the
 # request. LIVE path (needs the agent CLI) — not exercised in CI; the pure builders/parsers above are
 # the tested surface. `cmd_opts` are `_build_claude_cmd`'s Kiwi options, passed through untouched.
 function _run_agent_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
                          system_prompt::AbstractString, session_id::AbstractString,
-                         timeout_s::Real, on_process::Function, cmd_opts...)::AgentResult
+                         timeout_s::Real, on_process::Function,
+                         on_progress::Function = _ -> nothing, cmd_opts...)::AgentResult
     cmd = _apply_claude_env(_agent_spawn_cmd(_build_claude_cmd(a, prompt, mcp_config_path;
                                               session_id, system_prompt, cmd_opts...)))
     out = Pipe()
@@ -630,7 +654,18 @@ function _run_agent_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path
     close(out.in)
     on_process(proc)
     timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
-    output = read(out, String)
+    output = if get(cmd_opts, :stream, false)
+        buf = IOBuffer()                          # one event per line — report tool calls as they land
+        for line in eachline(out)
+            println(buf, line)
+            for step in _claude_stream_steps(line)
+                try on_progress(step) catch end
+            end
+        end
+        String(take!(buf))
+    else
+        read(out, String)
+    end
     wait(proc)
     close(timer)
     # `exitcode != 0` alone misses the case this function most needs to catch: the timeout above kills
@@ -657,11 +692,12 @@ end
 function run_agent_turn(a::AgentBackend, prompt::AbstractString, mcp_config_path::AbstractString;
                         system_prompt::AbstractString = "", session_id::AbstractString = "",
                         timeout_s::Real = 180, on_process::Function = _ -> nothing,
+                        on_progress::Function = _ -> nothing,
                         json_schema::AbstractString = "", cmd_opts...)::AgentResult
     agent_available(a) ||
         return AgentResult(false, "", 0, 0, "", "assistant CLI not found: $(agent_label(a)) ($(_agent_bin(a)))")
     once(sid) = _run_agent_once(a, prompt, mcp_config_path; system_prompt, session_id = sid,
-                                timeout_s, on_process, json_schema, cmd_opts...)
+                                timeout_s, on_process, on_progress, json_schema, cmd_opts...)
     res = once(String(session_id))
     if !res.ok && !isempty(session_id) && agent_capabilities(a).resumable &&
        _is_stale_session_error(a, res.error)

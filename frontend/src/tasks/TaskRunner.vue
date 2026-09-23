@@ -42,6 +42,7 @@ import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFunParamsModal.vue'
+import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
 
 const props = defineProps<{
   defs: TaskDef[]
@@ -685,6 +686,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       </select>
 
       <div v-if="taskDef" class="fn-meta">
+        <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
         <span class="env-badge"
           v-for="env in taskDef.env"
           :key="env"

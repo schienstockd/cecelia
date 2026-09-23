@@ -298,19 +298,23 @@ that way. If nothing is left, abstain."""
 
 """
     run_kiwi_turn(project_uid, prompt; refs = [], agent = ClaudeAgent(), reasoning = false,
-                  session_id = "", mcp_config_path = …, timeout_s = 300) -> Dict
+                  session_id = "", mcp_config_path = …, timeout_s = 300,
+                  on_progress = step -> …, on_process = proc -> …) -> Dict
 
 One Kiwi turn (see the top of this file). Returns
 `{ok, abstain, claims, reasoning, errors, reasked, reaskErrors, sessionId, usage:{input,output}, toolCalls,
 seconds}` where `ok` means every claim passed validation, possibly after the one re-ask; `errors` lists
 what still failed and `reaskErrors` what the first attempt failed on (empty if no re-ask). Never
-throws for an engine failure — it's reported in `errors`.
+throws for an engine failure — it's reported in `errors`. `on_progress(step)` hears each tool call
+as it happens plus "checking refs" / "re-asking: N problems"; `on_process(proc)` gets each spawned
+engine process (cancellation).
 """
 function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
                        refs = Any[], agent::Cecelia.AgentBackend = ClaudeAgent(),
                        reasoning::Bool = false, session_id::AbstractString = "",
                        mcp_config_path::AbstractString = _write_observer_mcp_config(; headless = true),
-                       timeout_s::Real = 300)::Dict{String,Any}
+                       timeout_s::Real = 300, on_progress::Function = _ -> nothing,
+                       on_process::Function = _ -> nothing)::Dict{String,Any}
     t0 = time()
     pack = kiwi_context_pack(project_uid, refs)
     full_prompt = isempty(pack) ? String(prompt) : string(prompt, "\n\n", pack)
@@ -319,7 +323,8 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
               json_schema = schema, allowed_tools = _kiwi_allowed_tools(), strict_mcp = true,
               builtin_tools = "", stream = true, timeout_s)
     usage = [0, 0]; tool_calls = 0; reask_errors = String[]
-    turn(p, sid) = (r = Cecelia.run_agent_turn(agent, p, mcp_config_path; session_id = sid, opts...);
+    turn(p, sid) = (r = Cecelia.run_agent_turn(agent, p, mcp_config_path; session_id = sid,
+                                               on_progress, on_process, opts...);
                     usage[1] += r.input_tokens; usage[2] += r.output_tokens; tool_calls += length(r.tool_results); r)
 
     res = turn(full_prompt, String(session_id))
@@ -332,11 +337,14 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
         "toolCalls" => tool_calls, "reaskErrors" => reask_errors, "seconds" => round(time() - t0; digits = 1))
     res.ok || return out(false, Dict{String,Any}[], [res.error], false, res)
 
+    step(x) = try on_progress(x) catch end
+    step("checking refs")
     claims, errors = kiwi_validate_reply(project_uid, res.structured, seen, refs)
     isempty(errors) && return out(true, claims, errors, false, res)
 
     # ONE re-ask on the same session, naming what failed. Refs seen in the first attempt stay seen.
     append!(reask_errors, errors)
+    step("re-asking: $(length(errors)) problem$(length(errors) == 1 ? "" : "s")")
     res2 = turn(_kiwi_reask_prompt(errors), res.session_id)
     res2.ok || return out(false, claims, vcat(errors, [res2.error]), true, res)
     seen2 = string(seen, "\n", join(res2.tool_results, "\n"))

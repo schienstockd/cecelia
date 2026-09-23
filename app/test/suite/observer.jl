@@ -405,6 +405,11 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     @test sr.ok && sr.session_id == "s9" && sr.input_tokens == 5
     @test sr.tool_results == ["{\"uid\":\"KDIeEm\"}", "plain text result"]
     @test sr.structured !== nothing && sr.structured[:abstain] == true
+    # live progress: each line's tool calls, MCP prefix stripped; the reply's StructuredOutput call and
+    # non-assistant / non-JSON lines are not steps
+    steps = reduce(vcat, Cecelia._claude_stream_steps.(split(stream, "\n")))
+    @test steps == ["list_images"]
+    @test Cecelia._claude_stream_steps("""{"type":"assistant","message":{"content":[{"type":"tool_use","name":"StructuredOutput"},{"type":"text","text":"x"},{"type":"tool_use","name":"mcp__cecelia-observer__get_populations"}]}}""") == ["get_populations"]
     nr = Cecelia._parse_claude_stream("""{"type":"user","message":{"content":[]}}""")
     @test !nr.ok && occursin("no result event", nr.error)
     # the stream flag reaches the argv (and --verbose, which stream-json requires)

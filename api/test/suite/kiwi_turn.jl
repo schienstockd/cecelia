@@ -178,3 +178,64 @@ end
     end
   end
 end
+
+@testset "Kiwi API — background turn, kept replies, one at a time (fake engine)" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old, old_agent = Cecelia.cecelia_conf()["dirs"]["projects"], _KIWI_AGENT[]
+    img_ref = Dict("kind" => "image", "imageUid" => "KDIeEm")
+    good = Dict("abstain" => false, "claims" => [Dict("kind" => "observation", "text" => "One image.", "refs" => [img_ref])])
+    # every turn gets a fresh one-reply script; the model name it was built with is recorded
+    built = String[]
+    wait_idle(puid) = (t0 = time(); while haskey(_KIWI_RUNNING, puid) && time() - t0 < 20; sleep(0.05); end)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        _KIWI_AGENT[] = m -> (push!(built, m); _KiwiFakeEngine([_kiwi_fake_reply(good; seen = ["""{"uid":"KDIeEm"}"""])], Tuple{String,String}[]))
+
+        st, rec = kiwi_start_turn("testpr", "what images?"; refs = [img_ref], model = "haiku")
+        @test st == 200 && rec["status"] == "running" && startswith(rec["turnId"], "kt-")
+        @test rec["refs"][1]["result"]["ok"]                     # attached refs resolved up front, for the chips
+        @test built == ["haiku"]
+        wait_idle("testpr")
+        @test !haskey(_KIWI_RUNNING, "testpr")
+        @test rec["status"] == "done" && rec["reply"]["ok"] && "checking refs" in rec["steps"]
+        # kept on disk and served back
+        st, body = api_kiwi_turns(HTTP.Request("GET", "/api/kiwi/turns?projectUid=testpr"))
+        turns = JSON3.read(body).turns
+        @test st == 200 && length(turns) == 1 && turns[1].turnId == rec["turnId"] && turns[1].status == "done"
+
+        # validation: unknown project, empty ask, unknown model coerced to the allow-list
+        @test first(kiwi_start_turn("nope", "q")) == 404
+        @test first(kiwi_start_turn("testpr", "  ")) == 400
+        st, rec2 = kiwi_start_turn("testpr", "q"; model = "gpt-9"); wait_idle("testpr")
+        @test st == 200 && built[end] in Cecelia.OBSERVER_MODELS
+
+        # one turn per project: a second start while one runs is refused
+        _KIWI_RUNNING["testpr"] = Dict{String,Any}("turnId" => "kt-busy")
+        @test first(kiwi_start_turn("testpr", "q")) == 409
+        @test first(api_kiwi_turn_cancel(Vector{UInt8}("""{"turnId":"kt-other"}"""))) == 404
+        @test first(api_kiwi_turn_cancel(Vector{UInt8}("""{"turnId":"kt-busy"}"""))) == 200
+        delete!(_KIWI_RUNNING, "testpr")
+
+        # an engine that isn't installed is refused before anything runs
+        _KIWI_AGENT[] = m -> Cecelia.ClaudeAgent(; bin = "/no/such/claude-cli")
+        st, out = kiwi_start_turn("testpr", "q")
+        @test st == 503 && occursin("Claude", out["error"])
+
+        # keep only the last KIWI_TURNS_KEEP, then clear
+        for i in 1:(KIWI_TURNS_KEEP + 2)
+            _kiwi_append_turn!("testpr", Dict{String,Any}("turnId" => "kt-$i"))
+        end
+        kept = _kiwi_read_turns("testpr")
+        @test length(kept) == KIWI_TURNS_KEEP && kept[end]["turnId"] == "kt-$(KIWI_TURNS_KEEP + 2)"
+        @test first(api_kiwi_turns_clear(Vector{UInt8}("""{"projectUid":"testpr"}"""))) == 200
+        @test isempty(_kiwi_read_turns("testpr"))
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        _KIWI_AGENT[] = old_agent
+    end
+  end
+end
