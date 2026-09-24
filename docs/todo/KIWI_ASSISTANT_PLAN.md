@@ -407,7 +407,13 @@ Each independently shippable.
    made — one `add_analysis_board` plot entry; resolved by a dry run of `expand_board` (check
    `proposal`); a click (`POST /api/kiwi/plot/open`) opens the board that already shows it, else adds one
    — the user's write, never the turn's. `board_summaries` now names a slot's DEFAULT measure (a speed
-   plot read as "not shown"). Not yet: a per-measure separation score for "which measure is
+   plot read as "not shown"). **Set stats (user: "why is it always missing the set stats"):** the engine's
+   session log showed the set-wide `get_measure_summary` WAS called — its 203 k-character result exceeded
+   the CLI's tool-result limit and never reached the model, so it fell back to 3 of 7 images. Now
+   `measure_summary(; kind, value_names)` narrows it (14 k for B+T motility over 8 images), the context
+   pack carries that table for an attached plot over a set, and it lists the project's boards; a
+   proposal already on a board says which. Prompt: exact project uid, units only when the data states
+   them. Not yet: a per-measure separation score for "which measure is
    best" questions — new capability, the user's call.
 5. **"Add to Kiwi" affordances — BUILT with Phase 4.** One button, `components/kiwi/AddToKiwiButton.vue`
    (`pi-at`), on: every live registered plot panel (`CanvasPanel`, when its `persistKey` is in the plot

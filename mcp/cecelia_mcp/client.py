@@ -376,8 +376,12 @@ class CeceliaClient:
         return self._analysis_summary("/api/analysis/populations", project_uid, image_uid, set_uid)
 
     def get_measure_summary(self, project_uid: str, image_uid: str | None = None,
-                            set_uid: str | None = None):
-        return self._analysis_summary("/api/analysis/measures", project_uid, image_uid, set_uid)
+                            set_uid: str | None = None, kind: str | None = None,
+                            value_names: list[str] | None = None):
+        # `kind` / `valueNames` narrow a set-wide call to what fits in one tool result
+        return self._request("GET", "/api/analysis/measures",
+                             {"projectUid": project_uid, "imageUid": image_uid, "setUid": set_uid,
+                              "kind": kind, "valueNames": ",".join(value_names) if value_names else None})
 
     def get_behaviour_summary(self, project_uid: str, image_uid: str | None = None,
                               set_uid: str | None = None):

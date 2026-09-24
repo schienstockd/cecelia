@@ -299,6 +299,8 @@ end
         st, again = kiwi_open_proposed_plot("testpr", pp)
         @test st == 200 && !again["created"] && again["board"] == out["board"]
         @test count(b -> startswith(b["name"], "Kiwi · "), board_summaries(load_project("testpr"))) == 1
+        # …and a proposal that is now on a board says where, so it isn't passed off as new
+        @test resolve_kiwi_ref("testpr", pp)["detail"] == "already on board “$(out["board"])”"
         # a different measure is a different plot; a bad one is refused before anything is written
         @test kiwi_open_proposed_plot("testpr", merge(pp, Dict("measure" => "live.track.speed")))[2]["created"]
         st, bad = kiwi_open_proposed_plot("testpr", merge(pp, Dict("measure" => "live.cell.nope")))
@@ -326,4 +328,29 @@ end
         _KIWI_AGENT[] = old_agent
     end
   end
+end
+
+@testset "Kiwi context pack — a set's track measures, compact (pure)" begin
+    m(name, med) = (; name, n = 20, median = med, q25 = med - 1, q75 = med + 1)
+    s(vn, pop, meds...) = (; population = pop, valueName = vn, kind = "motility", n = 20,
+                            measures = [m("num_cells", 8.0), (m("live.track.$k", v) for (k, v) in meds)...])
+    im(uid, name, inc, sums...) = (; uid, name, included = inc, summaries = [sums...])
+    out = (; projectUid = "P", images = [
+        im("LUkCpP", "M1a_005", true, s("B", "/qc", "speed" => 3.5), s("T", "/qc", "speed" => 7.0)),
+        im("k3Tx90", "M2b", true, s("B", "/qc", "speed" => 4.7)),
+        im("xxEXCL", "excluded", false, s("B", "/qc", "speed" => 99.0))])
+    t = kiwi_set_measures_text(out; set_uid = "XcPcu8", value_names = ["B", "T"])
+    @test startswith(t, "Track measures for B, T across set XcPcu8")
+    @test occursin("  M1a_005 (LUkCpP) | B/qc | n=20 | speed 3.5 [2.5–4.5]", t)
+    @test occursin("M2b (k3Tx90) | B/qc", t)
+    @test !occursin("num_cells", t) && !occursin("excluded", t)          # counts and excluded images out
+    # a plot over named images keeps only those
+    @test !occursin("M2b", kiwi_set_measures_text(out; set_uid = "XcPcu8", images = Set(["LUkCpP"])))
+    # huge → cut on whole lines, and says so
+    big = (; projectUid = "P", images = [im("u$i", "img$i", true, s("B", "/qc", ("m$j" => 1.0 for j in 1:30)...)) for i in 1:200])
+    tb = kiwi_set_measures_text(big; set_uid = "S")
+    @test length(tb) <= KIWI_SET_MEASURES_MAX_CHARS + 60 && occursin(r"… cut: \d+ more lines$", tb)
+    # no set on the plot → nothing, and a set already listed isn't listed twice
+    done = Set{String}()
+    @test _kiwi_set_measures("testpr", Dict{String,Any}("series" => ["B/qc"]), done) == ""
 end

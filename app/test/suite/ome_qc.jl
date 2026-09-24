@@ -2369,6 +2369,13 @@ end
             # phenotype over all cells: more rows than tracks (cells collapse to tracks)
             pi = findfirst(x -> x.kind == "phenotype", summ)
             @test pi !== nothing && summ[pi].n > moti.n && !isempty(summ[pi].measures)
+            # narrowed: motility only, one segmentation — what keeps a set-wide call small enough to
+            # reach an assistant (a whole-set call was over the Claude CLI's tool-result limit)
+            mot = measure_summary(proj; kind = "motility").images[1].summaries
+            @test !isempty(mot) && all(x -> x.kind == "motility", mot)
+            @test isempty(measure_summary(proj; value_names = ["nope"]).images[1].summaries)
+            @test length(measure_summary(proj; value_names = ["B"]).images[1].summaries) == length(summ)
+            @test_throws ArgumentError measure_summary(proj; kind = "morphology")
         end
     end
 

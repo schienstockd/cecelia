@@ -91,7 +91,9 @@ kiwi_system_prompt(project_uid::AbstractString) = """
 You are Kiwi, a structured rubber duck inside Cecelia, an image-analysis app for immunology. You help a
 scientist see what is in their project. You point at things; you do not judge them.
 
-The project is `$(project_uid)`. Read it with the tools before you answer. You can only read.
+The project is `$(project_uid)` — pass exactly that as `project_uid` in every tool call; set and image
+uids are not projects, and there is no other project to look at. Read it with the tools before you
+answer. You can only read.
 
 Reply ONLY through the structured output: at most $(KIWI_MAX_CLAIMS) claims, fewer is better. The first
 claim answers the question as directly as the data allows. Each claim is ONE fact — never two joined by
@@ -107,10 +109,13 @@ compare, not which measures: if the question reaches past the attached measures 
 best"), look the others up for the same populations and images and answer. An attached plot comes with
 the numbers it draws — use those for what it shows; they are what the user is looking at. A claim
 about what an attached plot shows cites that plot. A tool that takes a set_uid covers the whole set in
-one call — use that rather than one call per image.
+one call — use that rather than one call per image, narrowed to what you need (get_measure_summary:
+kind "motility" or "phenotype", value_names), or the result is too large to reach you.
 
 Write for the scientist: name images, populations and measures as the app shows them (an image's name,
 not its uid), and never mention your tools or how you looked something up — the refs carry that.
+Give a unit only when the data you were given states it; otherwise give the number and the measure
+name ("duration median 5.5"). Never guess a unit.
 
 If you could not look at something, or the user would need to do something for you to answer, say it
 once in `note` (one line) — never as a claim. Only what you truly could not do: never "wasn't on
@@ -149,6 +154,7 @@ function kiwi_context_pack(project_uid::AbstractString, refs;
                            results = [resolve_kiwi_ref(project_uid, r) for r in refs])::String
     isempty(refs) && return ""
     lines = String["Attached by the user (you may cite these as-is):"]
+    boards = _kiwi_boards_pack(project_uid)
     for (r, res) in zip(refs, results)
         what = res["ok"] ? string("  → ", res["label"], isempty(get(res, "detail", "")) ? "" : " ($(res["detail"]))") :
                            "  → NOT FOUND: $(res["error"])"
@@ -161,7 +167,92 @@ function kiwi_context_pack(project_uid::AbstractString, refs;
                                        join(("    " * l for l in split(s, '\n')), "\n"))
         end
     end
+    # …and for a plot over a SET, every track measure of its segmentations across that set, once per
+    # (set, segmentations). A set-wide tool call is what Kiwi reaches for here — and on 4kS67f it came
+    # back too large for the engine to receive, every time, so it compared 3 images of 7 by hand.
+    done = Set{String}()
+    for (r, res) in zip(refs, results)
+        (res["ok"] && string(_kiwi_get(r, "kind", "")) == "plot") || continue
+        e = kiwi_plot_entry(project_uid, string(_kiwi_get(r, "plotId", "")))
+        e === nothing && continue
+        block = _kiwi_set_measures(project_uid, e.content, done)
+        isempty(block) || push!(lines, block)
+    end
+    isempty(boards) || push!(lines, boards)
     join(lines, "\n")
+end
+
+# The project's Analysis boards, a line each: which plot type, measures and populations — so "that plot
+# doesn't exist yet" is checked against what does (a speed plot sat in slot 0 of the board Kiwi said
+# lacked one). Only with attachments: that's when proposals get made.
+function _kiwi_boards_pack(project_uid::AbstractString)::String
+    boards = try board_summaries(load_project(String(project_uid))) catch; return "" end
+    isempty(boards) && return ""
+    lines = String["The project's Analysis boards (a plot on one of these already exists):"]
+    for b in boards
+        slots = String[]
+        for s in get(b, "plots", Any[])
+            bits = filter(!isempty, String[string(get(s, "ref", "")), string(get(s, "measure", "")),
+                          join(get(s, "pops", String[]), "+"), isempty(string(get(s, "groupBy", ""))) ? "" : "by $(s["groupBy"])",
+                          string(get(s, "statUnit", ""))])
+            push!(slots, join(bits, " "))
+        end
+        push!(lines, "  “$(b["name"])”: " * (isempty(slots) ? "(empty)" : join(slots, "; ")))
+    end
+    join(lines, "\n")
+end
+
+const KIWI_SET_MEASURES_MAX_CHARS = 16_000
+
+# The attached plot's set, its segmentations and (if it names them) its images → one line per image and
+# population: every motility measure as median [q25–q75]. "" when the plot isn't over a set, or its
+# numbers were already listed for an earlier attachment. Never throws — a read failure is one line.
+function _kiwi_set_measures(project_uid::AbstractString, content::AbstractDict, done::Set{String})::String
+    su = string(something(get(content, "setUid", nothing), ""))
+    isempty(su) && return ""
+    series = get(content, "series", Any[])
+    vns = sort(unique(String[first(split(string(s), '/')) for s in (series isa AbstractVector ? series : Any[])]))
+    key = su * "|" * join(vns, ",")
+    key in done && return ""
+    push!(done, key)
+    uids = get(content, "imageUids", Any[])
+    want = Set(string.(uids isa AbstractVector ? uids : Any[]))
+    out = try
+        measure_summary(load_project(String(project_uid)); set_uid = su, kind = "motility", value_names = vns)
+    catch e
+        return "  (track measures for set $su could not be read: $(sprint(showerror, e)))"
+    end
+    kiwi_set_measures_text(out; set_uid = su, value_names = vns, images = want)
+end
+
+"""
+    kiwi_set_measures_text(summary; set_uid, value_names, images = Set()) -> String
+
+A `measure_summary` result as the pack's lines — one per image and population, every measure as
+median [q25–q75]; excluded images dropped, `images` (when non-empty) the only ones kept; cut on whole
+lines at `KIWI_SET_MEASURES_MAX_CHARS`. PURE → tested.
+"""
+function kiwi_set_measures_text(out; set_uid::AbstractString, value_names = String[], images = Set{String}())::String
+    su, vns, want = set_uid, value_names, images
+    lines = String["Track measures for $(isempty(vns) ? "every segmentation" : join(vns, ", ")) across set $su — " *
+                   "one line per image and population, each measure as median [q25–q75], from the data the plots draw:"]
+    for im in out.images
+        (isempty(want) || im.uid in want) || continue
+        im.included || continue
+        for s in im.summaries
+            ms = join(("$(replace(m.name, "live.track." => "")) $(m.median) [$(m.q25)–$(m.q75)]"
+                       for m in s.measures if m.name != "num_cells"), " · ")
+            push!(lines, "  $(im.name) ($(im.uid)) | $(s.valueName)$(s.population) | n=$(s.n) | $ms")
+        end
+    end
+    # cut on whole lines (the text is not ASCII — a byte index could split a character)
+    kept, total = String[], 0
+    for (i, l) in enumerate(lines)
+        total += length(l) + 1
+        total > KIWI_SET_MEASURES_MAX_CHARS && (push!(kept, "  … cut: $(length(lines) - i + 1) more lines"); break)
+        push!(kept, l)
+    end
+    join(kept, "\n")
 end
 
 # ── "Seen this turn" (Decision 7) ────────────────────────────────────────────────────────────────────

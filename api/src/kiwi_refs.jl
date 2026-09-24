@@ -259,10 +259,12 @@ end
 # publishes none. Read by the context pack, NOT put in the resolve result: that result is stored per
 # cited ref, and a claim table of eight refs would carry eight copies.
 function kiwi_plot_summary(puid::AbstractString, plot_id::AbstractString)::String
-    e = lock(_PLOTS_LOCK) do
-        get(get(_PLOTS_BY_PROJECT, String(puid), Dict{String,PlotEntry}()), String(plot_id), nothing)
-    end
+    e = kiwi_plot_entry(puid, plot_id)
     e === nothing ? "" : e.summary
+end
+
+kiwi_plot_entry(puid::AbstractString, plot_id::AbstractString) = lock(_PLOTS_LOCK) do
+    get(get(_PLOTS_BY_PROJECT, String(puid), Dict{String,PlotEntry}()), String(plot_id), nothing)
 end
 
 # A plot nobody has made — does the project have what it takes? `expand_board` is the validator
@@ -279,7 +281,12 @@ function _kiwi_resolve_proposedPlot(puid, ref)
         e isa BoardSpecError || return _kiwi_bad("proposal", sprint(showerror, e))
         return _kiwi_bad("proposal", replace(e.msg, r"^plots\[1\]:\s*" => ""))
     end
-    _kiwi_ok("proposal", kiwi_proposed_plot_label(ref))
+    r = _kiwi_ok("proposal", kiwi_proposed_plot_label(ref))
+    # already drawn somewhere? then it isn't new — say where (a click opens that board, `kiwi_slot_holds`)
+    for b in (try board_summaries(proj) catch; Any[] end), s in get(b, "plots", Any[])
+        kiwi_slot_holds(s, ref) && (r["detail"] = "already on board “$(b["name"])”"; break)
+    end
+    r
 end
 
 """
