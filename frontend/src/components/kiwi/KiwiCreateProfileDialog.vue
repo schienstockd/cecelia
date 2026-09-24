@@ -2,15 +2,25 @@
   New Kiwi profile — the create-flow dialog opened from KiwiCockpit's profile row (`+` button).
   LOGIN_CREDENTIAL_ISOLATION_PLAN P3 (frontend) + P6 (terminal one-liner).
 
-  Two-step flow in one modal so the user never loses the terminal command:
-    1. Name field (client-validated against the same rule as the backend). Submit → POST /create.
-    2. Backend returns the terminal one-liner + we auto-select the new profile server-side.
-       The dialog re-renders with the command as a copyable block + a one-line "now run
-       `claude login` inside it" instruction. Close ends the flow.
+  Three server calls chained in one modal so the profile is FULLY ready after Close:
+    1. POST /api/kiwi/profiles/create      — mkpath under kiwi-profiles/<name>/
+    2. POST /api/kiwi/profiles/select      — set [ai].profile = <name>
+    3. POST /api/observer/register         — write the observer MCP entry into the new profile's
+                                             .claude.json (which register_observer_mcp routes to
+                                             via _apply_claude_env). Without step 3, a raw
+                                             `claude` in the profile's shell would have no MCP
+                                             tools → wouldn't pair back to Cecelia. Registration
+                                             is best-effort: a create+select stays even if it
+                                             fails so the profile isn't lost, and the failure is
+                                             surfaced inline.
+
+  The one-liner Cecelia hands back launches `claude` directly (P6 update: not a shell around it).
+  First-time login: `claude` itself prompts `/login` on first run inside a fresh
+  CLAUDE_CONFIG_DIR.
 
   Kiwi ratchet (kiwiNamingRatchet.test.ts) bans the literal "Claude" in this directory. The
-  instruction text uses the lower-case CLI form `claude login`, which is the actual command and
-  not covered by the ratchet. Any capital-C mention would need a `// ratchet: cite-technical`.
+  instruction text uses the lower-case CLI form `claude`, which is the actual command and not
+  covered by the ratchet.
 
   Built on the shared BaseModal shell (docs/UI.md → "Modals & dialogs").
 -->
@@ -20,6 +30,7 @@ import BaseModal from '../BaseModal.vue'
 import { useCopyFlash } from '../../composables/useCopyFlash'
 import { createKiwiProfile, selectKiwiProfile,
          isValidKiwiProfileName } from '../../utils/kiwiProfileApi'
+import { observerApi } from '../../utils/serviceApi'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -29,7 +40,7 @@ const emit = defineEmits<{
 const name = ref('')
 const submitting = ref(false)
 const errorMsg = ref<string | null>(null)
-const created = ref<{ name: string; command: string } | null>(null)
+const created = ref<{ name: string; command: string; mcpReady: boolean } | null>(null)
 
 const nameInput = useTemplateRef<HTMLInputElement>('nameInput')
 onMounted(() => { void nextTick(() => nameInput.value?.focus()) })
@@ -56,7 +67,24 @@ async function onSubmit() {
     // manually. Surface the reason without discarding the terminal command.
     const s = await selectKiwiProfile(c.name)
     if (!s.ok) errorMsg.value = `Created, but couldn't select: ${s.error ?? 'unknown'}`
-    created.value = { name: c.name, command: c.terminalCommand }
+
+    // Register the observer MCP into the new profile's .claude.json. The backend routes this via
+    // _apply_claude_env, which reads the active profile — so this write lands under kiwi-profiles/
+    // <name>/, not ~/.claude.json. Without it, a raw `claude` in the profile's shell has no MCP
+    // tools and won't pair back to Cecelia. Best-effort: any failure is surfaced but does NOT
+    // roll back create/select.
+    let mcpReady = false
+    try {
+      const r = await observerApi.register()
+      mcpReady = !!(r && (r as { ok?: boolean }).ok !== false)
+      if (!mcpReady) {
+        const rmsg = (r as { message?: string; error?: string })
+        errorMsg.value = `Created, but MCP registration failed: ${rmsg?.error ?? rmsg?.message ?? 'unknown'}`
+      }
+    } catch (e) {
+      errorMsg.value = `Created, but MCP registration failed: ${e instanceof Error ? e.message : 'network error'}`
+    }
+    created.value = { name: c.name, command: c.terminalCommand, mcpReady }
     emit('created', c.name)
   } finally { submitting.value = false }
 }
@@ -91,11 +119,11 @@ function onDone() { emit('close') }
       <template v-else>
         <p class="kp-ok cc-fs-xs">
           <i class="pi pi-check-circle" /> Created <code>{{ created.name }}</code> — now the
-          active profile.
+          active profile{{ created.mcpReady ? ', MCP tools registered' : '' }}.
         </p>
         <p class="cc-fs-xs cc-muted kp-tip">
-          Run this in a terminal, then <code>claude login</code> inside it. Anything Kiwi spawns
-          from now on uses this profile's credentials.
+          Paste this in a terminal to launch <code>claude</code> in this profile — on first run
+          it prompts <code>/login</code>. Anything Kiwi spawns from now on uses these credentials.
         </p>
         <div class="kp-cmd">
           <code class="kp-cmd-text cc-fs-2xs">{{ created.command }}</code>

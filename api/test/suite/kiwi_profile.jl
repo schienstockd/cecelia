@@ -18,37 +18,49 @@
 end
 
 @testset "Kiwi profile — terminal one-liner (POSIX)" begin
-    # Default profile → no CLAUDE_CONFIG_DIR (falls back to ~/.claude*); scrub still applies.
-    cmd_default = Cecelia.kiwi_terminal_command(""; shell = "/bin/bash", is_windows = false)
+    # Default profile → no CLAUDE_CONFIG_DIR (falls back to ~/.claude*); scrub still applies; the
+    # trailing token is `claude` itself, not a shell (the one-liner launches Claude directly).
+    cmd_default = Cecelia.kiwi_terminal_command(""; claude_bin = "/usr/local/bin/claude",
+                                                    is_windows = false)
     @test occursin("-u ANTHROPIC_API_KEY",     cmd_default)
     @test occursin("-u ANTHROPIC_AUTH_TOKEN",  cmd_default)
     @test !occursin("CLAUDE_CONFIG_DIR",       cmd_default)
-    @test occursin("/bin/bash -i",             cmd_default)
+    @test endswith(cmd_default,                "/usr/local/bin/claude")
 
-    # Named profile → CLAUDE_CONFIG_DIR set to that dir + scrub + interactive shell.
-    cmd_named = Cecelia.kiwi_terminal_command("/tmp/kiwi/alice"; shell = "/bin/bash", is_windows = false)
+    # Named profile → CLAUDE_CONFIG_DIR set to that dir + scrub + direct `claude` launch.
+    cmd_named = Cecelia.kiwi_terminal_command("/tmp/kiwi/alice"; claude_bin = "/usr/local/bin/claude",
+                                                                  is_windows = false)
     @test occursin("CLAUDE_CONFIG_DIR=/tmp/kiwi/alice", cmd_named)
     @test occursin("-u ANTHROPIC_API_KEY",              cmd_named)
-    @test occursin("/bin/bash -i",                      cmd_named)
+    @test endswith(cmd_named,                           "/usr/local/bin/claude")
     for k in Cecelia._AMBIENT_CLAUDE_ENV
         @test occursin("-u $(k)", cmd_named)
     end
+
+    # CLI missing (agent_bin_path returned nothing) → bare `claude` at the tail so the missing-CLI
+    # error surfaces on paste rather than silently omitting the command.
+    cmd_missing = Cecelia.kiwi_terminal_command("/tmp/kiwi/alice"; claude_bin = nothing,
+                                                                   is_windows = false)
+    @test endswith(cmd_missing, " claude")
 end
 
 @testset "Kiwi profile — terminal one-liner (Windows)" begin
     # Default profile → PowerShell branch scrubs but does NOT set CLAUDE_CONFIG_DIR.
-    cmd_default = Cecelia.kiwi_terminal_command(""; shell = "cmd.exe", is_windows = true)
-    @test occursin("powershell -NoProfile",                        cmd_default)
-    @test occursin("Remove-Item Env:ANTHROPIC_API_KEY",            cmd_default)
-    @test occursin("Remove-Item Env:ANTHROPIC_AUTH_TOKEN",         cmd_default)
-    @test !occursin("CLAUDE_CONFIG_DIR",                           cmd_default)
-    @test occursin("& 'cmd.exe'",                                  cmd_default)
+    cmd_default = Cecelia.kiwi_terminal_command(""; claude_bin = "C:\\Program Files\\Claude\\claude.cmd",
+                                                    is_windows = true)
+    @test occursin("powershell -NoProfile",                             cmd_default)
+    @test occursin("Remove-Item Env:ANTHROPIC_API_KEY",                 cmd_default)
+    @test occursin("Remove-Item Env:ANTHROPIC_AUTH_TOKEN",              cmd_default)
+    @test !occursin("CLAUDE_CONFIG_DIR",                                cmd_default)
+    @test occursin("& 'C:\\Program Files\\Claude\\claude.cmd'",         cmd_default)
 
-    # Named profile → $env:CLAUDE_CONFIG_DIR = '<dir>' + scrub.
+    # Named profile → $env:CLAUDE_CONFIG_DIR = '<dir>' + scrub + direct `claude` launch.
     cmd_named = Cecelia.kiwi_terminal_command("C:\\Users\\alice\\.claude";
-                                              shell = "cmd.exe", is_windows = true)
+                                              claude_bin = "C:\\Program Files\\Claude\\claude.cmd",
+                                              is_windows = true)
     @test occursin("\$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\alice\\.claude'", cmd_named)
     @test occursin("Remove-Item Env:ANTHROPIC_API_KEY",                     cmd_named)
+    @test occursin("& 'C:\\Program Files\\Claude\\claude.cmd'",             cmd_named)
     for k in Cecelia._AMBIENT_CLAUDE_ENV
         @test occursin("Remove-Item Env:$(k)", cmd_named)
     end
