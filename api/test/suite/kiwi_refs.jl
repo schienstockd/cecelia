@@ -87,6 +87,17 @@ end
         gdir = joinpath(dir, "testpr", "1", "KDIeEm", "gating")
         @test readdir(gdir) == ["B__trackclust.json"]
 
+        # a population's cells — what a click on it outlines in the viewer
+        c = kiwi_population_cells("testpr", Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => p1))
+        @test !(c isa String) && c.total > 0 && c.popType == "trackclust" && issorted(c.labelIds) && all(>(0), c.labelIds)
+        small = kiwi_population_cells("testpr", Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => p1); limit = 1)
+        @test length(small.labelIds) == 1 && small.truncated == (c.total > 1)
+        @test occursin("no population", kiwi_population_cells("testpr", Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/nope")))
+        @test kiwi_population_cells("testpr", Dict("kind" => "image", "imageUid" => "KDIeEm")) == "not a population ref"
+        st, _ = api_kiwi_refs_cells(Vector{UInt8}("""{"projectUid":"testpr","ref":{"kind":"population","imageUid":"KDIeEm","valueName":"B","popPath":"/nope"}}"""))
+        @test st == 404
+        @test readdir(gdir) == ["B__trackclust.json"]                    # still read-only
+
         # viewer: an image with no pixels on disk has nothing to view — a failure, not a pass (testpr
         # ships no zarr; 2 of obWDNS's real images are unconverted the same way)
         @test no(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "t" => 0), "no image data to view")

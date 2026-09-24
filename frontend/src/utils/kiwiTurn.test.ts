@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
-         turnMeta, searchRefs, viewerRefFor, claimText, plainError, failureLine, attachmentRows, claimRows,
+         turnMeta, searchRefs, viewerRefFor, claimText, plainError, attachmentRows, claimRows,
          TASK_PAGES, type KiwiTurn } from './kiwiTurn'
 import { KIWI_REF_KINDS, type KiwiRef } from './kiwiRef'
 
@@ -51,6 +51,10 @@ describe('pointTarget', () => {
   })
   it('every task page is a route the app has', () => {
     for (const p of Object.values(TASK_PAGES)) expect(p.path).toMatch(/^\/[a-z-]+$/)
+  })
+  it('a population outlines its cells in the viewer, not a bare gating page', () => {
+    expect(pointTarget({ kind: 'population', imageUid: 'i', valueName: 'B', popPath: '/qc' }))
+      .toEqual({ action: 'population', imageUid: 'i', valueName: 'B', popPath: '/qc' })
   })
   it('a blackboard entry opens by query; a tile says why not', () => {
     expect(pointTarget({ kind: 'blackboard', entryId: 'e1' })).toEqual({ action: 'route', path: '/blackboard', query: { entry: 'e1' } })
@@ -145,15 +149,13 @@ describe('claim text + failures, as the user reads them', () => {
     expect(claimText({ kind: 'interpretation', text: 'I think no single measure is best', refs: [] })).toBe('No single measure is best')
     expect(claimText({ kind: 'observation', text: 'I think is fine here', refs: [] })).toBe('I think is fine here')
   })
-  it('errors lose the raw ref JSON and count claims, not checks', () => {
+  it('errors lose the raw ref JSON', () => {
     const errs = ['claim 1: ref {"kind":"plot","plotId":"summary:b:X:4"} — that plot isn’t open any more',
                   'claim 1 is more than one fact (longer than 160 characters) — split it, one fact per claim',
                   'claim 19: ref {"kind":"image","imageUid":"Q"} was not in any tool result or attachment this turn']
     expect(errs.map(plainError)).toEqual(['Claim 1: that plot isn’t open any more',
                                           'Claim 1 is more than one fact (longer than 160 characters)',
                                           'Claim 19: cites something Kiwi didn’t look at'])
-    expect(failureLine(errs)).toBe('2 claims didn’t check out')
-    expect(failureLine([])).toBe('')
   })
 })
 
@@ -179,5 +181,12 @@ describe('claimRows', () => {
                     claims: [{ kind: 'observation' as const, text: 'One image.', refs: [good] },
                              { kind: 'interpretation' as const, text: 'I think it is fine', refs: [bad] }] }
     expect(claimRows(reply).map(r => [r.n, r.text, r.failed])).toEqual([[1, 'One image.', false], [2, 'It is fine', true]])
+    // the failed claim's tip names its ref problem; a shape problem is never shown
+    const errs = ['claim 2: ref {"kind":"image","imageUid":"KDIeEm"} was not in any tool result or attachment this turn',
+                  'claim 2 is more than one fact (longer than 160 characters) — split it, one fact per claim',
+                  'claim 12: ref {"kind":"image","imageUid":"Q"} — gone']
+    const rows = claimRows({ ...reply, errors: errs, shapeErrors: [errs[1]] })
+    expect(rows[1].tip).toBe('Claim 2: cites something Kiwi didn’t look at')
+    expect(rows[0].tip).toBe('')
   })
 })

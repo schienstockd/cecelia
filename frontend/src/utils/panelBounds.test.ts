@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { panelBounds, clampPanel, maximisedRect, KEEP_VISIBLE_X, KEEP_VISIBLE_Y } from './panelBounds'
+import { panelBounds, clampPanel, maximisedRect, rectsOverlap, KEEP_VISIBLE_X, KEEP_VISIBLE_Y } from './panelBounds'
 
 const VW = 1200, VH = 800, HEADER = 40
 
@@ -67,5 +67,15 @@ describe('maximisedRect', () => {
 
   it('does not produce a negative height in a viewport shorter than the header', () => {
     expect(maximisedRect(VW, 20, HEADER).h).toBe(0)
+  })
+})
+
+describe('rectsOverlap', () => {
+  const box = (left: number, top: number, w: number, h: number) => ({ left, top, right: left + w, bottom: top + h })
+  it('overlapping boxes do; touching or apart do not', () => {
+    expect(rectsOverlap(box(0, 0, 100, 100), box(50, 50, 100, 100))).toBe(true)
+    expect(rectsOverlap(box(0, 0, 100, 100), box(100, 0, 50, 50))).toBe(false)
+    expect(rectsOverlap(box(0, 0, 100, 100), box(300, 300, 10, 10))).toBe(false)
+    expect(rectsOverlap(box(0, 0, 500, 500), box(10, 10, 10, 10))).toBe(true)   // one inside the other
   })
 })

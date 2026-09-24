@@ -32,6 +32,8 @@ export interface KiwiReply {
   usage: { input: number; output: number }
   toolCalls: number
   seconds: number
+  /** how Kiwi WROTE that its re-ask didn't fix (a bundled claim) — kept for the record, not shown */
+  shapeErrors?: string[]
   /** the engine session — what a follow-up continues */
   sessionId?: string
 }
@@ -129,7 +131,9 @@ export const TASK_PAGES: Record<string, { path: string; module: string }> = {
 export type PointTarget =
   | { action: 'viewer'; imageUid: string; t?: number; z?: number;
       tracks?: { valueName: string; ids: number[] }; cells?: { valueName: string; ids: number[] } }
-  | { action: 'gate'; imageUid: string; valueName: string }
+  // a population: its cells, outlined in the viewer (`POST /api/kiwi/refs/cells`) — it used to open the
+  // gating page, where nothing shows a given population (a root scatter on arbitrary axes)
+  | { action: 'population'; imageUid: string; valueName: string; popPath: string }
   | { action: 'set'; setUid: string }
   | { action: 'route'; path: string; query?: Record<string, string>; rememberFn?: { module: string; task: string } }
   | { action: 'capture'; captureId: string }
@@ -147,7 +151,7 @@ export function pointTarget(ref: KiwiRef): PointTarget {
                                 ...(ref.t != null ? { t: ref.t } : {}), ...(ref.z != null ? { z: ref.z } : {}) }
     case 'tracks':     return { action: 'viewer', imageUid: ref.imageUid, tracks: { valueName: ref.valueName, ids: ref.trackIds } }
     case 'cells':      return { action: 'viewer', imageUid: ref.imageUid, cells: { valueName: ref.valueName, ids: ref.labelIds } }
-    case 'population': return { action: 'gate', imageUid: ref.imageUid, valueName: ref.valueName }
+    case 'population': return { action: 'population', imageUid: ref.imageUid, valueName: ref.valueName, popPath: ref.popPath }
     case 'plot':       return { action: 'plot', plotId: ref.plotId,
                                 ...(ref.u != null ? { u: ref.u } : {}), ...(ref.v != null ? { v: ref.v } : {}) }
     case 'capture':    return { action: 'capture', captureId: ref.captureId }
@@ -240,24 +244,23 @@ export function plainError(e: string): string {
           .replace(/ — split it, one fact per claim$/, '')
 }
 
-/** The line under a reply that didn't fully pass: how many claims, not how many checks. */
-export function failureLine(errors: string[]): string {
-  const claims = new Set(errors.map(e => /^claim (\d+)/.exec(e)?.[1]).filter(Boolean))
-  if (!claims.size) return errors.length ? 'Some checks failed' : ''
-  return `${claims.size} claim${claims.size === 1 ? '' : 's'} didn’t check out`
-}
-
 // ── Claims as table rows ───────────────────────────────────────────────────────────────────────────
 
-export interface ClaimRow { id: string; n: number; kind: KiwiClaimKind; text: string; refs: KiwiClaimRef[]; failed: boolean }
+export interface ClaimRow { id: string; n: number; kind: KiwiClaimKind; text: string; refs: KiwiClaimRef[]
+                          failed: boolean; tip: string }
 
-/** One row per claim, numbered as the validation errors number them (1-based), flagged when any of
- *  its refs failed — so "Claim 3 cites something Kiwi didn't look at" is findable in the table. */
+/** One row per claim, numbered as the validation errors number them (1-based). `failed` when one of
+ *  its refs doesn't resolve or wasn't looked at; `tip` says which, in plain words. How Kiwi WROTE the
+ *  claim (`shapeErrors` — too long, two facts) is not shown: it says nothing about what it cites. */
 export function claimRows(reply: KiwiReply): ClaimRow[] {
-  return reply.claims.map((c, i) => ({
-    id: String(i + 1), n: i + 1, kind: c.kind, text: claimText(c), refs: c.refs,
-    failed: c.refs.some(r => chipState(r.result, r.seen).tone === 'fail'),
-  }))
+  const shape = new Set(reply.shapeErrors ?? [])
+  return reply.claims.map((c, i) => {
+    const n = i + 1
+    const failed = c.refs.some(r => chipState(r.result, r.seen).tone === 'fail')
+    const own = new RegExp(`^claim ${n}\\b`)
+    const tip = failed ? reply.errors.filter(e => !shape.has(e) && own.test(e)).map(plainError).join('\n') : ''
+    return { id: String(n), n, kind: c.kind, text: claimText(c), refs: c.refs, failed, tip }
+  })
 }
 
 // ── Attachments (the rows above the prompt box) ────────────────────────────────────────────────────
@@ -282,6 +285,12 @@ export function attachmentRows(refs: KiwiRef[], results: Record<string, KiwiRefR
 export function startKiwiTurn(body: { projectUid: string; prompt: string; refs: KiwiRef[];
                                       reasoning: boolean; model?: string; followUp?: string }): Promise<KiwiTurn> {
   return svcPost('/api/kiwi/turn', body, 15_000)
+}
+
+/** A population's cell ids, for the viewer outline. */
+export async function fetchPopulationCells(projectUid: string, ref: KiwiRef):
+    Promise<{ labelIds: number[]; total: number; truncated: boolean } | null> {
+  try { return await svcPost('/api/kiwi/refs/cells', { projectUid, ref }, 30_000) } catch { return null }
 }
 
 export async function resolveKiwiRefs(projectUid: string, refs: KiwiRef[]): Promise<KiwiRefResult[]> {

@@ -42,7 +42,8 @@
   See docs/UI.md for the full module page authoring guide.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { onRevealPlots, setSectionOpen } from '../utils/sectionOpen'
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
@@ -94,6 +95,16 @@ const props = withDefaults(defineProps<{
   plotsLabel:  'Plots',
   noSetHint:   'Select a set to get started.',
 })
+
+// The two persisted sections — named once, used by the template and by `revealPlots`: something
+// pointing at a plot on this page (Kiwi) asks for the plots to be the first thing in view, so the
+// image table folds away and the plots open (`utils/sectionOpen.ts`).
+const imagesOpenKey = computed(() => `cc-images-open:${props.module ?? 'default'}`)
+const plotsOpenKey  = computed(() => `cc-plots-open:${props.module ?? 'default'}`)
+onBeforeUnmount(onRevealPlots(() => {
+  setSectionOpen(imagesOpenKey.value, false)
+  setSectionOpen(plotsOpenKey.value, true)
+}))
 
 const emit = defineEmits<{
   selectionChange: [uids: string[]]
@@ -358,7 +369,7 @@ const visibleUids = computed<string[]>(() =>
         <!-- scrollable body: image table + below-table content -->
         <div class="panel-scroll">
           <CollapsibleSection label="Images" max-height="none"
-            :storage-key="`cc-images-open:${module ?? 'default'}`">
+            :storage-key="imagesOpenKey">
             <div v-if="!activeSet" class="no-set cc-empty">
               <i class="pi pi-folder-open" style="font-size:2rem; opacity:0.2" />
               <p>No set selected.</p>
@@ -381,7 +392,7 @@ const visibleUids = computed<string[]>(() =>
           <CollapsibleSection v-if="$slots.plots && activeSet"
             data-guide="layout.plotsSection"
             :label="plotsLabel" max-height="none"
-            :storage-key="`cc-plots-open:${module ?? 'default'}`">
+            :storage-key="plotsOpenKey">
             <slot name="plots"
               :set-uid="activeSet.uid"
               :selected-uids="selectedUids"

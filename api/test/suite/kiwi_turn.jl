@@ -159,6 +159,13 @@ end
         @test out["ok"] && out["reasked"] && occursin("more than one fact", only(out["reaskErrors"]))
         @test occursin("Split a claim", f.calls[2][1])
 
+        # 2c. a shape problem that survives the re-ask is kept apart and does NOT fail the turn: it is
+        #     how Kiwi wrote, not what it cited ("4 claims didn't check out — what does this tell me?")
+        f = _KiwiFakeEngine([_kiwi_fake_reply(bundled; seen = tool_saw_image),
+                             _kiwi_fake_reply(bundled; seen = tool_saw_image)], Tuple{String,String}[])
+        out = run_kiwi_turn("testpr", "what images?"; agent = f, mcp_config_path = cfg)
+        @test out["ok"] && isempty(out["errors"]) && occursin("more than one fact", only(out["shapeErrors"]))
+
         # 3. still wrong after the re-ask → not ok, errors kept, no third attempt
         f = _KiwiFakeEngine([_kiwi_fake_reply(bad), _kiwi_fake_reply(bad)], Tuple{String,String}[])
         out = run_kiwi_turn("testpr", "q"; agent = f, mcp_config_path = cfg)
@@ -184,6 +191,14 @@ end
                             on_progress = s -> s == "checking refs" && close_it(s))
         @test out["ok"] && out["claims"][1]["refs"][1]["result"]["label"] == "Track measures"
         @test occursin("(B/qc)", closing.calls[1][1])                   # the pack carries what the plot shows
+
+        # 4b'. a follow-up cites a plot attached EARLIER, now closed: its earlier result stands, and the
+        #      pack tells the engine it may
+        prior_ok = Dict(_kiwi_canon(pref) => Dict{String,Any}("ok" => true, "check" => "live", "label" => "Track measures", "error" => ""))
+        f = _KiwiFakeEngine([_kiwi_fake_reply(on_plot)], Tuple{String,String}[])
+        out = run_kiwi_turn("testpr", "can you reference the plots?"; agent = f, mcp_config_path = cfg,
+                            prior_refs = [pref], prior_results = prior_ok)
+        @test out["ok"] && occursin("Earlier in this conversation", f.calls[1][1]) && occursin("Track measures", f.calls[1][1])
 
         # 4c. too many claims is a re-ask
         many = Dict("abstain" => false, "claims" => [Dict("kind" => "observation", "text" => "One image.", "refs" => [img_ref])

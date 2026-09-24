@@ -24,7 +24,7 @@ import { useNowTick } from '../../composables/useNowTick'
 import { useKiwiPoint } from '../../composables/useKiwiPoint'
 import { TASK_STATUS } from '../../lib/taskStatus'
 import { parseRailTime, taskElapsed } from '../../utils/taskElapsed'
-import { searchRefs, stepLabel, turnMeta, plainError, failureLine, attachmentRows, claimRows,
+import { searchRefs, stepLabel, turnMeta, attachmentRows, claimRows,
          type AttachmentRow, type ClaimRow, type KiwiTurn, type RefCandidate } from '../../utils/kiwiTurn'
 
 const kiwi = useKiwiStore()
@@ -54,8 +54,6 @@ const CLAIM_COLUMNS: SelectionColumn[] = [
   { key: 'text', label: 'Claim', width: 200 },
   { key: 'refs', label: 'Points at', width: 120 },
 ]
-const KIND_TIP = { observation: 'What is shown', interpretation: 'Kiwi’s reading, not a fact',
-                   question: 'A next look you can check' } as const
 function openClaim(r: ClaimRow) {
   const first = r.refs[0]
   if (first) void pointAt(first.ref, '', first.result)
@@ -191,12 +189,17 @@ function pick(c: RefCandidate) {
         <SelectionTable v-if="t.reply.claims.length" selection-mode="none" density="compact"
                         column-width-key="cc.kiwi.claims.colw"
                         :columns="CLAIM_COLUMNS" :rows="claimRows(t.reply)" id-key="id"
-                        :row-tooltip="r => KIND_TIP[r.kind]" @row-click="openClaim">
-          <template #cell-n="{ row: r }"><span :class="r.failed ? 'cc-muted-error' : 'cc-muted'">{{ r.n }}</span></template>
+                        @row-click="openClaim">
+          <!-- a failed claim's number carries WHY: a ref that doesn't resolve or wasn't looked at -->
+          <template #cell-n="{ row: r }">
+            <span v-if="r.failed" class="cc-muted-error" v-tooltip.right="r.tip">{{ r.n }}</span>
+            <span v-else class="cc-muted">{{ r.n }}</span>
+          </template>
           <template #cell-text="{ row: r }">
-            <span class="kiwi-claim-text cc-fs-xs" :class="`kiwi-claim-${r.kind}`">
+            <!-- a question is an icon + a line: the app's InlineNote, with the legend's question glyph -->
+            <InlineNote v-if="r.kind === 'question'" class="cc-fs-xs" icon="pi-question" :short="r.text" />
+            <span v-else class="kiwi-claim-text cc-fs-xs" :class="`kiwi-claim-${r.kind}`">
               <span v-if="r.kind === 'interpretation'" class="kiwi-flag cc-fs-2xs">I think</span>
-              <i v-else-if="r.kind === 'question'" class="pi pi-question kiwi-qicon" />
               {{ r.text }}
             </span>
           </template>
@@ -206,8 +209,6 @@ function pick(c: RefCandidate) {
             </div>
           </template>
         </SelectionTable>
-        <InlineNote v-if="!t.reply.ok && t.reply.errors.length" class="cc-fs-2xs" severity="warn"
-                    :short="failureLine(t.reply.errors)" :detail="t.reply.errors.map(plainError).join('\n')" />
       </template>
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-3xs kiwi-grow">{{ turnMeta(t) }}</span>
@@ -255,6 +256,5 @@ function pick(c: RefCandidate) {
 .kiwi-claim-text { display: block; white-space: normal; overflow-wrap: anywhere; }
 /* the "I think" flag reads as Kiwi's voice, not as a warning — severity colours mean QC, never tone */
 .kiwi-flag { color: var(--cc-kiwi); font-style: italic; font-weight: 600; margin-right: 0.25rem; }
-.kiwi-qicon { color: var(--cc-kiwi); margin-right: 0.2rem; }
 .kiwi-feed-foot { display: flex; justify-content: flex-end; }
 </style>

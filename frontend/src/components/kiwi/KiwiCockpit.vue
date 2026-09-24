@@ -43,6 +43,9 @@ import { useShareTargetStore, type BeginShareResult } from '../../stores/shareTa
 import { useCaptureFocus } from '../../composables/useCaptureFocus'
 import InlineNote from '../InlineNote.vue'
 import KiwiAsk from './KiwiAsk.vue'
+import { useKiwiStore } from '../../stores/kiwi'
+import { resolveAnchor } from '../../utils/guideAnchor'
+import { rectsOverlap } from '../../utils/panelBounds'
 import AddToKiwiButton from './AddToKiwiButton.vue'
 // Kiwi is the canonical cockpit for the paired assistant, so the "what can it do here?" how-to
 // dialog opens from here (was in the lab log toolbar until 2026-09-22). The dialog itself lives
@@ -56,6 +59,17 @@ defineEmits<{ (e: 'close'): void }>()
 const showAssistantOverview = ref(false)
 
 const pm = useProjectMetaStore()
+
+// Step aside: Kiwi floats over the page, so a plot it points at is often UNDER it — the pointer bubble
+// showed on top of Kiwi, over nothing visible. When the target overlaps the panel, roll up to the header
+// (the chevron brings it back). Only then: a target elsewhere on screen leaves Kiwi as it was.
+const kiwiStore = useKiwiStore()
+const panel = ref<InstanceType<typeof FloatingPanel> | null>(null)
+watch(() => kiwiStore.pointed, p => {
+  const el = p ? resolveAnchor(p.anchor) : null
+  const mine = panel.value?.rect()
+  if (el && mine && rectsOverlap(el.getBoundingClientRect(), mine)) panel.value?.collapse()
+})
 const projectUid = computed(() => pm.current?.uid ?? '')
 const projectName = computed(() => pm.current?.name ?? undefined)
 
@@ -220,7 +234,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 </script>
 
 <template>
-  <FloatingPanel title="Kiwi" icon="pi-comments" storage-key="kiwi"
+  <FloatingPanel ref="panel" title="Kiwi" icon="pi-comments" storage-key="kiwi"
                  accent="var(--cc-kiwi)"
                  :default-x="260" :default-y="100" :default-w="380" :default-h="640"
                  @close="$emit('close')">

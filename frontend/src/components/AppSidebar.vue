@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore } from '../stores/viewProfiles'
-import { allNavGroups, type NavItem } from '../lib/navGroups'
+import { allNavGroups, navGroupFor, type NavItem } from '../lib/navGroups'
 import { applyProfile } from '../utils/viewProfiles'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { runningTaskCount } from '../utils/runningTasks'
@@ -62,6 +63,15 @@ watch(() => allGroups.value, gs => {
     openGroup.value = gs[0].heading
   }
 }, { immediate: true })
+
+// Follow navigation: arriving on a page — by a link elsewhere, a guide, Kiwi pointing at a plot — opens
+// its group, else the accordion keeps showing the old one and the menu reads as if nothing changed.
+// Only on a route CHANGE, so a group the user closes on the page they're on stays closed.
+const route = useRoute()
+watch(() => route.path, p => {
+  const g = navGroupFor(allGroups.value, p)
+  if (g && !isOpen(g)) openGroup.value = g
+})
 
 // …then curated by the active VIEW PROFILE: an ordered subset of the above, so a user doing narrow
 // work isn't navigating 20 items they never touch. No profile ⇒ the implicit "All" ⇒ untouched.

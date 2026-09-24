@@ -435,6 +435,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/build-sysimage" => (req, body_bytes) -> (api_notebooks_build_sysimage(body_bytes)),
     # bidir Blackboard writes — create + revise are MCP-facing; restore / prune / delete are user-only.
     "/api/kiwi/refs/resolve" => (req, body_bytes) -> (api_kiwi_refs_resolve(body_bytes)),   # read-only POST (a list body)
+    "/api/kiwi/refs/cells" => (req, body_bytes) -> (api_kiwi_refs_cells(body_bytes)),       # read-only POST: a population's label ids
     "/api/kiwi/turn" => (req, body_bytes) -> (api_kiwi_turn(body_bytes)),
     "/api/kiwi/turn/cancel" => (req, body_bytes) -> (api_kiwi_turn_cancel(body_bytes)),
     "/api/kiwi/turns/clear" => (req, body_bytes) -> (api_kiwi_turns_clear(body_bytes)),

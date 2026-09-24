@@ -12,11 +12,12 @@ import { useRouter } from 'vue-router'
 import { useViewerStore } from '../stores/viewer'
 import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
-import { useGatingStore } from '../stores/gating'
 import { usePlotRegistryStore } from '../stores/plotRegistry'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
-import { pointTarget, refLabel } from '../utils/kiwiTurn'
+import { pointTarget, refLabel, fetchPopulationCells } from '../utils/kiwiTurn'
+import { useKiwiStore } from '../stores/kiwi'
+import { revealPlots } from '../utils/sectionOpen'
 import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
 import { resolveAnchor } from '../utils/guideAnchor'
 import { useCaptureFocus } from './useCaptureFocus'
@@ -31,6 +32,7 @@ export function useKiwiPoint() {
   const pm = useProjectMetaStore()
   const plots = usePlotRegistryStore()
   const { focusCapture } = useCaptureFocus()
+  const kiwi = useKiwiStore()
 
   /** Point at `ref`. Resolves to a short reason when there was nothing to do, else ''. No toast for that
    *  (user, 2026-09-24: "that's an error message") — a ref that can't be shown already says why on
@@ -56,13 +58,14 @@ export function useKiwiPoint() {
         openViewerWindow({ projectUid: puid, imageUid: tgt.imageUid, ...(vn ? { valueName: vn } : {}) })
         return ''
       }
-      case 'gate': {
-        // the gating page's image comes from its table selection; the population itself is per-panel
-        // state nothing outside the panel can set, so this lands on the image, not the gate
-        const sid = project.setUidOfImage(tgt.imageUid)
-        if (sid) { project.activeSetUid = sid; project.setImageSelection('gate', sid, [tgt.imageUid]) }
-        void useGatingStore().selectImage(tgt.imageUid, tgt.valueName)
-        await router.push('/gate')
+      case 'population': {
+        // its cells, outlined in the viewer — the same PickHighlight a plot's brushing draws
+        const cells = await fetchPopulationCells(puid, ref)
+        if (!cells) return 'Couldn’t read that population'
+        if (!cells.labelIds.length) return 'That population has no cells'
+        viewer.setPickHighlight({ imageUid: tgt.imageUid, valueName: tgt.valueName, labels: cells.labelIds,
+                                  focusId: 0, label: caption, origin: 'claude' })
+        openViewerWindow({ projectUid: puid, imageUid: tgt.imageUid, valueName: tgt.valueName })
         return ''
       }
       case 'set':
@@ -83,6 +86,8 @@ export function useKiwiPoint() {
         const route = last?.meta.route || result?.route || ''
         if (!route) return 'That plot isn’t open'
         await router.push(route)
+        await nextTick()
+        revealPlots()          // the page folds its image table so the plot is the first thing in view
         // the page may have to mount the panel first (a board fetches its layout); give it a second,
         // after which a missing anchor means the plot is gone from its page
         const anchor = `plot:${tgt.plotId}`
@@ -93,7 +98,8 @@ export function useKiwiPoint() {
           if (!el) await new Promise(r => setTimeout(r, 100))
         }
         if (!el) return 'That plot isn’t on its page any more'
-        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        el.scrollIntoView({ block: 'nearest' })     // instant: Kiwi measures where it landed, next
+        kiwi.notePointed(anchor)
         if (last && tgt.u != null && tgt.v != null) {
           viewer.pushPlotMark({ markerId: `kiwi-${Date.now()}`, family: last.meta.family, plotId: tgt.plotId,
                                 u: tgt.u, v: tgt.v, label: caption, ttlSeconds: MARK_TTL_S })
@@ -105,6 +111,7 @@ export function useKiwiPoint() {
       case 'ui':
         if (tgt.anchor.startsWith('nav:')) await router.push(tgt.anchor.slice(4))
         viewer.pushUiMark({ markerId: `kiwi-${Date.now()}`, anchor: tgt.anchor, label: caption, ttlSeconds: MARK_TTL_S })
+        kiwi.notePointed(tgt.anchor)
         return ''
       case 'none':
         return tgt.why

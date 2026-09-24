@@ -72,6 +72,10 @@ export const useKiwiStore = defineStore('kiwi', () => {
   const running = ref<KiwiTurn | null>(null)
   const error = ref('')
   const busy = computed(() => running.value !== null)
+  /** the last thing Kiwi pointed at on this page — an anchor id — so the cockpit can step aside when it
+   *  sits on top of it (`KiwiCockpit`). A counter rides along so pointing twice at one thing re-fires. */
+  const pointed = ref<{ anchor: string; n: number } | null>(null)
+  function notePointed(anchor: string) { pointed.value = { anchor, n: (pointed.value?.n ?? 0) + 1 } }
   /** the turn the next question follows up ('' = a fresh question) */
   const followUp = ref('')
   const followUpTurn = computed(() => turns.value.find(t => t.turnId === followUp.value) ?? null)
@@ -130,7 +134,7 @@ export const useKiwiStore = defineStore('kiwi', () => {
   })
 
   return { projectUid, prompt, refs, draftResults, addRef, removeRef, clearDraft, turns, running, busy, error,
-           followUp, followUpTurn, load, ask, cancel, clearFeed }
+           followUp, followUpTurn, pointed, notePointed, load, ask, cancel, clearFeed }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useKiwiStore, import.meta.hot))

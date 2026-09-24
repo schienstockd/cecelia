@@ -57,13 +57,18 @@ function _kiwi_conversation(puid::AbstractString, tid::AbstractString)
     reply = get(t, "reply", nothing)
     sid = reply isa AbstractDict ? string(get(reply, "sessionId", "")) : ""
     isempty(sid) && return nothing
+    # each ref with the result it had then — a live one (a plot) may be gone by the follow-up
+    results = Dict{String,Any}(get(t, "priorResults", Dict{String,Any}()))
     refs = Any[get(t, "priorRefs", Any[])...]
-    append!(refs, [r["ref"] for r in get(t, "refs", Any[])])
+    note!(r, res) = (push!(refs, r); res isa AbstractDict && get(res, "ok", false) == true &&
+                     (results[_kiwi_canon(r)] = res))
+    for r in get(t, "refs", Any[]); note!(r["ref"], get(r, "result", nothing)); end
     for c in get(reply, "claims", Any[]), r in get(c, "refs", Any[])
-        get(r, "seen", false) == true && get(get(r, "result", Dict()), "ok", false) == true && push!(refs, r["ref"])
+        get(r, "seen", false) == true && get(get(r, "result", Dict()), "ok", false) == true && note!(r["ref"], r["result"])
     end
     seen = Set{String}()
-    (; sessionId = sid, refs = [r for r in refs if !(_kiwi_canon(r) in seen) && (push!(seen, _kiwi_canon(r)); true)])
+    (; sessionId = sid, results,
+       refs = [r for r in refs if !(_kiwi_canon(r) in seen) && (push!(seen, _kiwi_canon(r)); true)])
 end
 
 _kiwi_project_ok(puid) = !isempty(puid) && _valid_asset_id(puid) && isfile(joinpath(projects_dir(), puid, "project.json"))
@@ -91,6 +96,7 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
     if conv !== nothing
         rec["followUp"] = String(follow_up)
         rec["priorRefs"] = conv.refs
+        rec["priorResults"] = conv.results
     end
     started = lock(_KIWI_LOCK) do
         haskey(_KIWI_RUNNING, puid) && return false
@@ -112,6 +118,7 @@ function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs; session_id::Abstrac
     try
         out = run_kiwi_turn(puid, rec["prompt"]; refs, agent, reasoning = rec["reasoning"], session_id,
                             prior_refs = get(rec, "priorRefs", Any[]),
+                            prior_results = get(rec, "priorResults", Dict{String,Any}()),
                             on_progress = step, on_process = p -> track_job!(tid, p))
         rec["reply"] = out
         rec["status"] = job_cancelled(tid) ? "cancelled" : (out["ok"] ? "done" : "failed")

@@ -95,10 +95,13 @@ claim answers the question as directly as the data allows. Each claim is ONE fac
 every ref must be an object you saw in this conversation — in a tool result or in the attached context —
 with its exact ids copied from there. Never cite from memory. Never invent an id.
 
-Say what stands out, not everything you read. Don't restate what an attached plot already shows the
-user; don't give one claim per image — summarise across the images (a range, a count, which ones
-differ). When a plot or set is attached, its scope (the images, the populations) is the scope of your
-answer: look at all of it, not a sample.
+Say what stands out, not everything you read. Don't give one claim per image — summarise across the
+images (a range, a count, which ones differ). When a plot or set is attached, its scope (the images, the
+populations) is the scope of your answer: look at all of it, not a sample. A claim about what an
+attached plot shows cites that plot.
+
+Write for the scientist: name images, populations and measures as the app shows them (an image's name,
+not its uid), and never mention your tools or how you looked something up — the refs carry that.
 
 Claim kinds:
 - observation: what is shown. Numbers, counts, names, differences — no reasons.
@@ -266,15 +269,19 @@ the list of problems, each naming the claim — the text of the re-ask. An absta
 claims is valid (Decision 9); a non-abstaining reply with no claims is not.
 """
 function kiwi_validate_reply(project_uid::AbstractString, reply, seen_text::AbstractString, attached;
-                            known = Dict{String,Any}())
+                            known = Dict{String,Any}(), shape_out::Vector{String} = String[])
     errors = String[]
     claims = Dict{String,Any}[]
     reply isa AbstractDict || return (claims, ["the reply was not an object"])
     abstain = _kiwi_get(reply, "abstain", false) == true
     raw = _kiwi_get(reply, "claims", Any[])
     (!abstain && isempty(raw)) && push!(errors, "no claims and abstain is false — give claims or abstain")
+    # shape problems (too many claims, a bundled or under-cited claim) go in `errors` for the re-ask AND
+    # in `shape_out`: they are Kiwi's discipline, not a fault in what it cites, so the turn's result
+    # keeps them apart from the ref errors a user needs to see
+    shape(e) = (push!(errors, e); push!(shape_out, e))
     length(raw) > KIWI_MAX_CLAIMS &&
-        push!(errors, "$(length(raw)) claims — give at most $KIWI_MAX_CLAIMS: keep what stands out, summarise the rest")
+        shape("$(length(raw)) claims — give at most $KIWI_MAX_CLAIMS: keep what stands out, summarise the rest")
     for (i, c) in enumerate(raw)
         kind = string(_kiwi_get(c, "kind", ""))
         kind in KIWI_CLAIM_KINDS || push!(errors, "claim $i: kind \"$kind\" is not one of $(join(KIWI_CLAIM_KINDS, ", "))")
@@ -297,13 +304,26 @@ function kiwi_validate_reply(project_uid::AbstractString, reply, seen_text::Abst
         end
         text = kiwi_claim_text(kind, string(_kiwi_get(c, "text", "")))
         why = kiwi_claim_bundling(text)
-        isempty(why) || push!(errors, "claim $i is more than one fact ($why) — split it, one fact per claim")
+        isempty(why) || shape("claim $i is more than one fact ($why) — split it, one fact per claim")
         for u in kiwi_claim_underspecified(text, refs)
-            push!(errors, "claim $i names $u")
+            shape("claim $i names $u")
         end
         push!(claims, Dict{String,Any}("kind" => kind, "text" => text, "refs" => annotated))
     end
     (claims, errors)
+end
+
+# What a follow-up may cite without looking again: the earlier turns' attachments and cited refs, with
+# the label they resolved to then. "" when there is nothing earlier.
+function _kiwi_prior_pack(prior_refs, prior_results)::String
+    isempty(prior_refs) && return ""
+    lines = String["Earlier in this conversation (you may cite these as-is):"]
+    for r in prior_refs
+        res = get(prior_results, _kiwi_canon(r), nothing)
+        lbl = res isa AbstractDict && get(res, "ok", false) == true ? "  → $(res["label"])" : ""
+        push!(lines, string("- ", JSON3.write(r), lbl))
+    end
+    join(lines, "\n")
 end
 
 """
@@ -344,14 +364,22 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
                        reasoning::Bool = false, session_id::AbstractString = "",
                        mcp_config_path::AbstractString = _write_observer_mcp_config(; headless = true),
                        timeout_s::Real = 300, on_progress::Function = _ -> nothing,
-                       on_process::Function = _ -> nothing, prior_refs = Any[])::Dict{String,Any}
+                       on_process::Function = _ -> nothing, prior_refs = Any[],
+                       prior_results = Dict{String,Any}())::Dict{String,Any}
     t0 = time()
     # resolved ONCE, when asked — validation reuses these (see `kiwi_validate_reply(; known)`)
     results = [resolve_kiwi_ref(project_uid, r) for r in refs]
     known = Dict{String,Any}(_kiwi_canon(r) => res for (r, res) in zip(refs, results) if res["ok"])
-    # a follow-up may cite what the earlier turns of this conversation attached or validly cited
+    # a follow-up may cite what the earlier turns of this conversation attached or validly cited — with
+    # the result they had then (a plot open in the first turn may be closed by the follow-up; "can you
+    # reference the plots" got "list_plots shows nothing open", 4kS67f 2026-09-24)
+    for (k, v) in prior_results
+        haskey(known, k) || (known[k] = v)
+    end
     attached = vcat(collect(Any, refs), collect(Any, prior_refs))
     pack = kiwi_context_pack(project_uid, refs; results)
+    prior_pack = _kiwi_prior_pack(prior_refs, prior_results)
+    isempty(prior_pack) || (pack = isempty(pack) ? prior_pack : string(pack, "\n\n", prior_pack))
     full_prompt = isempty(pack) ? String(prompt) : string(prompt, "\n\n", pack)
     schema = kiwi_reply_schema(; reasoning)
     opts = (; system_prompt = kiwi_system_prompt(project_uid), replace_system_prompt = true,
@@ -364,8 +392,8 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
 
     res = turn(full_prompt, String(session_id))
     seen = string(pack, "\n", join(res.tool_results, "\n"))
-    out(ok, claims, errors, reasked, r) = Dict{String,Any}(
-        "ok" => ok, "abstain" => (r.structured isa AbstractDict && _kiwi_get(r.structured, "abstain", false) == true),
+    out(ok, claims, errors, reasked, r; shape = String[]) = Dict{String,Any}(
+        "ok" => ok, "shapeErrors" => shape, "abstain" => (r.structured isa AbstractDict && _kiwi_get(r.structured, "abstain", false) == true),
         "claims" => claims, "errors" => errors, "reasked" => reasked,
         "reasoning" => r.structured isa AbstractDict ? string(_kiwi_get(r.structured, "reasoning", "")) : "",
         "sessionId" => r.session_id, "usage" => Dict("input" => usage[1], "output" => usage[2]),
@@ -376,6 +404,10 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     step("checking refs")
     claims, errors = kiwi_validate_reply(project_uid, res.structured, seen, attached; known)
     isempty(errors) && return out(true, claims, errors, false, res)
+    # `ok` = every cited ref resolved and was seen; shape problems that survive the re-ask are kept
+    # (`shapeErrors`) but don't fail the turn — they describe how Kiwi wrote, not what it cited
+    final(claims, errs, shp, r) = (refs_bad = [e for e in errs if !(e in shp)];
+                                   out(isempty(refs_bad), claims, refs_bad, true, r; shape = shp))
 
     # ONE re-ask on the same session, naming what failed. Refs seen in the first attempt stay seen.
     append!(reask_errors, errors)
@@ -383,6 +415,7 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     res2 = turn(_kiwi_reask_prompt(errors), res.session_id)
     res2.ok || return out(false, claims, vcat(errors, [res2.error]), true, res)
     seen2 = string(seen, "\n", join(res2.tool_results, "\n"))
-    claims2, errors2 = kiwi_validate_reply(project_uid, res2.structured, seen2, attached; known)
-    out(isempty(errors2), claims2, errors2, true, res2)
+    shape2 = String[]
+    claims2, errors2 = kiwi_validate_reply(project_uid, res2.structured, seen2, attached; known, shape_out = shape2)
+    final(claims2, errors2, shape2, res2)
 end

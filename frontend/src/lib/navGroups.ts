@@ -103,6 +103,15 @@ export function allNavGroups(categories: CustomCategory[]): NavGroup[] {
   return custom ? [...NAV_GROUPS, custom] : NAV_GROUPS
 }
 
+/** The heading of the group holding `path` — a page or a sub-route of one (`/custom/x/y` under
+ *  `/custom/x`) — or null when no menu item leads there. */
+export function navGroupFor(groups: NavGroup[], path: string): string | null {
+  for (const g of groups) {
+    if (g.items.some(i => i.to === path || path.startsWith(i.to + '/'))) return g.heading
+  }
+  return null
+}
+
 /** A page's menu label, for messages that must name a page rather than show a raw path. */
 export function navLabelFor(groups: NavGroup[], path: string): string {
   for (const g of groups) {

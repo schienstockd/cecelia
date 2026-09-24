@@ -358,6 +358,7 @@ end
         "/api/movies/delete", "/api/movies/meta",
         "/api/notebooks/build-sysimage",
         "/api/kiwi/refs/resolve",
+        "/api/kiwi/refs/cells",
         "/api/kiwi/turn",
         "/api/kiwi/turn/cancel",
         "/api/kiwi/turns/clear",

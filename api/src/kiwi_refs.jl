@@ -119,23 +119,32 @@ function _kiwi_resolve_image(puid, ref)
     img isa String ? _kiwi_bad("exists", img) : _kiwi_ok("exists", img.name)
 end
 
+# Which pop type holds `path` on this segmentation, and its display name — `nothing` when none does.
+# The same shortcuts `resolve_pop_type` takes (a derived leaf like `_tracked`, the root), then a probe
+# of every type's map — `resolve_pop_type` itself returns "flow" for an unknown path, so it can't answer
+# "does this exist", and its probe may backfill-save; this one never writes.
+function _kiwi_pop_type(img, vn::AbstractString, path::AbstractString)
+    for seg in split(path, '/'; keepempty = false)
+        d = get(Cecelia._DERIVED_POPS, String(seg), nothing)
+        d === nothing || return (; popType = d.pop_type, name = path, fixed = true)
+    end
+    is_root(path) && return (; popType = "flow", name = "all cells", fixed = true)
+    for pt in Cecelia._POP_TYPE_PROBE_ORDER
+        m = try load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false) catch; continue end
+        has_pop(m, path) && return (; popType = pt, name = pop_at(m, path).name, fixed = false)
+    end
+    nothing
+end
+
 function _kiwi_resolve_population(puid, ref)
     img = _kiwi_image(puid, ref); img isa String && return _kiwi_bad("exists", img)
     vn, path = String(_kiwi_get(ref, "valueName")), String(_kiwi_get(ref, "popPath"))
-    # the same shortcuts `resolve_pop_type` takes: a derived leaf (`_tracked`) and the root always exist
-    for seg in split(path, '/'; keepempty = false)
-        haskey(Cecelia._DERIVED_POPS, String(seg)) && return _kiwi_ok("exists", "$(img.name) · $path")
-    end
-    is_root(path) && return _kiwi_ok("exists", "$(img.name) · all cells")
-    # otherwise probe every pop type's map — `resolve_pop_type` itself returns "flow" for an unknown
-    # path, so it can't answer "does this exist"
-    for pt in Cecelia._POP_TYPE_PROBE_ORDER
-        m = try load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false) catch; continue end
-        # the type in the label: one name often exists under several types (a gate and a cluster
-        # both called "Population 1" on 4kS67f, live check 2026-09-23) and a chip must say which
-        has_pop(m, path) && return _kiwi_ok("exists", "$(img.name) · $(pop_at(m, path).name) ($pt)")
-    end
-    _kiwi_bad("exists", "no population $path on $(img.name) ($vn)")
+    p = _kiwi_pop_type(img, vn, path)
+    p === nothing && return _kiwi_bad("exists", "no population $path on $(img.name) ($vn)")
+    p.fixed && return _kiwi_ok("exists", "$(img.name) · $(p.name)")     # root / derived: always exist
+    # the type in the label: one name often exists under several types (a gate and a cluster both
+    # called "Population 1" on 4kS67f, live check 2026-09-23) and a chip must say which
+    _kiwi_ok("exists", "$(img.name) · $(p.name) ($(p.popType))")
 end
 
 # Integer label/track ids from an `obs/_index`-style column (strings in the h5ad, ints in a ref).
@@ -323,6 +332,51 @@ function resolve_kiwi_ref(project_uid::AbstractString, ref)::Dict{String,Any}
     catch err
         _kiwi_bad("exists", "could not check this $kind ref: $(sprint(showerror, err))")
     end
+end
+
+# ── A population's cells — what pointing at one shows ─────────────────────────────────────────────────
+#
+#   POST /api/kiwi/refs/cells  {projectUid, ref: <population KiwiRef>, limit?}
+#     → {labelIds, total, truncated, popType}
+#
+# Clicking a population ref outlines its cells in the viewer (`PickHighlight`, the same outline the
+# plots' brushing draws). It used to open the image's gating page, where no plot shows a given
+# population — the user got a root scatter on arbitrary axes. Reads through `pop_df` (the sanctioned
+# cell-data entry), at cell granularity, ids only.
+const _KIWI_CELLS_LIMIT = 20000
+
+function kiwi_population_cells(puid::AbstractString, ref; limit::Integer = _KIWI_CELLS_LIMIT)
+    string(_kiwi_get(ref, "kind", "")) == "population" || return "not a population ref"
+    img = _kiwi_image(String(puid), ref); img isa String && return img
+    vn, path = String(_kiwi_get(ref, "valueName")), String(_kiwi_get(ref, "popPath"))
+    p = _kiwi_pop_type(img, vn, path)
+    p === nothing && return "no population $path on $(img.name) ($vn)"
+    df = try
+        pop_df(img, p.popType, [path]; value_name = vn, granularity = :cell, include_obs = false, include_x = false)
+    catch e
+        return "could not read $path: $(sprint(showerror, e))"
+    end
+    "label" in names(df) || return "no cell ids for $path"
+    ids = sort!(unique(Int[Int(l) for l in df.label if !ismissing(l) && l > 0]))
+    total = length(ids)
+    (; labelIds = total > limit ? ids[1:limit] : ids, total, truncated = total > limit, popType = p.popType)
+end
+
+function api_kiwi_refs_cells(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    puid = _wstr(body, :projectUid)
+    (isempty(puid) || !_valid_asset_id(puid)) && return 400, JSON3.write((; error = "projectUid required"))
+    isfile(joinpath(projects_dir(), puid, "project.json")) ||
+        return 404, JSON3.write((; error = "no project $puid"))
+    ref = get(body, :ref, nothing)
+    ref isa AbstractDict || return 400, JSON3.write((; error = "ref required"))
+    err = kiwi_ref_shape_error(ref)
+    isempty(err) || return 400, JSON3.write((; error = err))
+    lim = get(body, :limit, _KIWI_CELLS_LIMIT)
+    out = kiwi_population_cells(puid, ref; limit = lim isa Integer ? clamp(lim, 1, 200_000) : _KIWI_CELLS_LIMIT)
+    out isa String && return 404, JSON3.write((; error = out))
+    200, JSON3.write(out)
 end
 
 function api_kiwi_refs_resolve(body_bytes::Vector{UInt8})

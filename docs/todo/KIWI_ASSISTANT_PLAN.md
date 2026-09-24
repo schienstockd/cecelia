@@ -388,6 +388,14 @@ Each independently shippable.
    `SelectionTable` rows; one ticking status line (`useNowTick`); the model picker shared with the lab
    log (`AgentModelSelect`); follow-ups (`followUp` → the earlier turn's engine session, its cited
    refs count as seen); a plot ref scrolls to its panel (`data-guide="plot:<id>"`) and points at it.
+   **Second pass (same day):** a population ref outlines its cells in the viewer (`POST
+   /api/kiwi/refs/cells` → `PickHighlight`) instead of opening a bare gating plot; pointing at a plot
+   folds the page's image table (`utils/sectionOpen.ts`) and rolls Kiwi up when the plot sits under it;
+   the sidebar opens the group of the page you land on; a turn fails only on REF problems — shape
+   problems that survive the re-ask (`shapeErrors`) don't fail it and aren't shown ("4 claims didn't
+   check out — what does this tell me?"); a follow-up can cite a plot attached earlier even once its
+   panel is closed; the prompt asks for image names (not uids), no tool names, and the plot cited for
+   a claim about it.
 5. **"Add to Kiwi" affordances — BUILT with Phase 4.** One button, `components/kiwi/AddToKiwiButton.vue`
    (`pi-at`), on: every live registered plot panel (`CanvasPanel`, when its `persistKey` is in the plot
    registry — the plotId the resolver knows), the pop-out viewer (the user's selected tracks or cells

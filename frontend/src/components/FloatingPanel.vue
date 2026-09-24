@@ -50,6 +50,13 @@ function load(): PanelState {
            collapsed: false, maximised: false }
 }
 const st = reactive(load())
+const rootEl = ref<HTMLElement | null>(null)
+// For a host that must step aside: roll up to the header when something it points at sits underneath
+// it (Kiwi pointing at a plot). The user expands it again with the header chevron, as always.
+defineExpose({
+  collapse: () => { st.collapsed = true },
+  rect: (): DOMRect | null => rootEl.value?.getBoundingClientRect() ?? null,
+})
 watch(st, () => localStorage.setItem(LSKEY, JSON.stringify(st)), { deep: true })
 
 // The app header is `z-index: 100` and panels stack from 60, so anything under it is unclickable —
@@ -150,7 +157,7 @@ function endGesture() {
 <template>
   <!-- .capture: the resize grip stops propagation on pointerdown, so a bubble-phase handler here
        would miss a resize gesture. Capture runs on the way down, before any child handler. -->
-  <div class="fp" :class="{ 'fp-max': st.maximised }" @pointerdown.capture="raise"
+  <div ref="rootEl" class="fp" :class="{ 'fp-max': st.maximised }" @pointerdown.capture="raise"
        :style="{ left: (st.maximised ? maxRect.x : st.x) + 'px',
                  top: (st.maximised ? maxRect.y : st.y) + 'px',
                  width: (st.maximised ? maxRect.w : st.w) + 'px',
