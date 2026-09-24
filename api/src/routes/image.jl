@@ -621,8 +621,15 @@ api_analysis_populations(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> populations_summary(p; image_uid = i, set_uid = s))
 # GET /api/analysis/measures — per-population phenotype + motility summaries (gated pops, else the base
 # tracked/all-cells pop). Heavier (touches cell data via pop_df); prefer image/set scope. Slice C.
-api_analysis_measures(req::HTTP.Request) =
-    _observer_summary_route(req, (p, i, s) -> measure_summary(p; image_uid = i, set_uid = s))
+# `kind` (phenotype|motility) and `valueNames` (comma list) narrow the summary — a whole set unnarrowed
+# can be larger than an assistant can receive in one tool result.
+function api_analysis_measures(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    kind = get(q, "kind", "")
+    kind in ("", "phenotype", "motility") || return 400, JSON3.write((; error = "kind must be phenotype or motility"))
+    vns = String[strip(v) for v in split(get(q, "valueNames", ""), ','; keepempty = false)]
+    _observer_summary_route(req, (p, i, s) -> measure_summary(p; image_uid = i, set_uid = s, kind, value_names = vns))
+end
 # GET /api/analysis/behaviour — HMM state distribution + transition counts. GET /api/analysis/clusters —
 # per clustering run: n clusters, sizes, largest fraction, features. Both read obs via pop_df. Slice D.
 api_analysis_behaviour(req::HTTP.Request) =

@@ -298,7 +298,7 @@ end
         "/api/objects/find",
         "/api/optical-flow/models",
         "/api/denoise/models",
-        "/api/observer/status", "/api/plots/attrs",
+        "/api/kiwi/turns", "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
         "/api/plots/umap", "/api/pools", "/api/tasks/threads", "/api/runner/status",
         "/api/preview/status", "/api/projects",
@@ -358,6 +358,11 @@ end
         "/api/movies/delete", "/api/movies/meta",
         "/api/notebooks/build-sysimage",
         "/api/kiwi/refs/resolve",
+        "/api/kiwi/refs/cells",
+        "/api/kiwi/plot/open",
+        "/api/kiwi/turn",
+        "/api/kiwi/turn/cancel",
+        "/api/kiwi/turns/clear",
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
@@ -385,7 +390,6 @@ end
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
         "/api/optical-flow/rename",
         "/api/denoise/delete", "/api/denoise/rename",
-        "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
         "/api/labels/by_category",   # linked brushing category-source cell-scope (LINKED_BRUSHING_PLAN.md P2)
@@ -461,7 +465,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 102 && length(POST_ROUTES) == 148
+    @test length(GET_ROUTES) == 103 && length(POST_ROUTES) == 151
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

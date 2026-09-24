@@ -101,26 +101,6 @@ export const previewApi = {
 
 export const PREVIEW_RUN_TIMEOUT_MS = 90_000
 
-/** Per-project observer session: the assistant session id + cumulative token totals. */
-export interface ObserverPass {
-  at: string
-  trigger: string          // 'manual' | 'auto'
-  model: string
-  ok: boolean
-  appended: boolean        // did it write a [Claude] lab-log entry this pass?
-  inputTokens: number
-  outputTokens: number
-  note: string             // the assistant's own verdict/reasoning for the pass
-}
-
-export interface ObserverSession {
-  sessionId: string
-  inputTokens: number
-  outputTokens: number
-  turns: number
-  passes?: ObserverPass[]  // activity log, newest-first
-}
-
 /** Is the user's OWN terminal set up with the observer MCP? `state`: 'missing' (never registered),
  *  'stale' (registered but pointing at another interpreter/port — would fail silently), 'current'. */
 // 'shadowed' = registered correctly, but a per-folder (`local`-scope) entry overrides it in the dirs
@@ -133,23 +113,14 @@ export interface ObserverTerminal {
 
 /** In-app AI observer — needs an assistant CLI (e.g. Claude Code) on the machine. */
 export const observerApi = {
-  /** Availability (drives the disabled-with-why UI) + this project's session/usage when a uid is
-   *  given. Never throws → unavailable on error. */
-  status: async (projectUid?: string): Promise<{ available: boolean; models?: string[]; defaultModel?: string; prompt?: string; mcpConfigPath?: string; terminal?: ObserverTerminal; session?: ObserverSession }> => {
+  /** Availability (drives the disabled-with-why UI), the model allow-list, and whether the user's own
+   *  terminal is set up. Never throws → unavailable on error. */
+  status: async (): Promise<{ available: boolean; models?: string[]; defaultModel?: string; mcpConfigPath?: string; terminal?: ObserverTerminal }> => {
     try {
-      const q = projectUid ? `?projectUid=${encodeURIComponent(projectUid)}` : ''
-      const res = await fetch(`/api/observer/status${q}`)
+      const res = await fetch('/api/observer/status')
       return res.ok ? await res.json() : { available: false }
     } catch { return { available: false } }
   },
-  /** One-shot: the assistant reviews the project and may append a [Claude] lab-log note. `model` is a
-   *  CLI alias (haiku|sonnet|opus); `trigger` is 'manual' (button) or 'auto' (Watch). Returns
-   *  { ok, available, model, trigger, message, error, appended, appendedLine, inputTokens,
-   *    outputTokens, session }. */
-  feedback: (projectUid: string, model?: string, trigger: 'manual' | 'auto' = 'manual') =>
-    svcPost('/api/observer/feedback', { projectUid, model, trigger }),
-  /** Clear context: reset the project's session + token totals. Returns { ok, session }. */
-  clear: (projectUid: string) => svcPost('/api/observer/clear', { projectUid }),
   /** One-click terminal setup: register (or re-sync) the observer MCP in the user's own Claude Code
    *  config so plain `claude` has the tools. Idempotent. Returns { ok, available, name, message, error }. */
   register: () => svcPost('/api/observer/register', {}),

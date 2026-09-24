@@ -104,13 +104,19 @@ function _target_summary(img::CciaImage, vn::AbstractString, tgt, cache)
     (; population = label, valueName = vn, kind = kind, n = nrow(df), measures = ms)
 end
 
-# Per-image builder: measure summaries across the image's meaningful populations, capped.
-function _measures_image(img::CciaImage)
+# Per-image builder: measure summaries across the image's meaningful populations, capped. `kind`
+# ("phenotype" | "motility" | "" = both) and `value_names` (empty = all) narrow it BEFORE any cell data
+# is read — a set-wide call on 4kS67f (8 images, every channel) was 203 k characters, over the Claude
+# CLI's tool-result limit, so an assistant asking for the whole set got nothing and fell back to one
+# image at a time (Kiwi, 2026-09-24: "only looked at 3 images from 7").
+function _measures_image(img::CciaImage; kind::AbstractString = "", value_names = String[])
     gated = _gated_by_value_name(img)
     cache = Dict{Tuple{String,Symbol},Vector{String}}()
     out = Any[]; truncated = false
     for vn in sort(img_value_names(img))
+        isempty(value_names) || vn in value_names || continue
         for tgt in _vn_targets(img, vn, get(gated, vn, Population[]))
+            isempty(kind) || tgt[5] == kind || continue
             length(out) >= _MEASURE_TARGET_CAP && (truncated = true; break)
             s = _target_summary(img, vn, tgt, cache)
             s === nothing || push!(out, s)
@@ -121,13 +127,20 @@ function _measures_image(img::CciaImage)
 end
 
 """
-    measure_summary(proj; image_uid="", set_uid="") -> NamedTuple
+    measure_summary(proj; image_uid="", set_uid="", kind="", value_names=String[]) -> NamedTuple
 
 Per image, phenotype + motility summaries (median/quantiles/mean/n) over the meaningful populations —
 gated pops when present, else the base tracked/all-cells population. Scoped to one `image_uid`/`set_uid`
-or the whole project. Summary-level only; reuses `pop_df` with column pushdown. Heavier than the
-lineage/populations reads (it touches cell data), so prefer scoping to an image/set. Slice C of
-OBSERVER_DATA_ACCESS_PLAN.md.
+or the whole project; `kind` ("phenotype" / "motility") and `value_names` narrow it further, which is
+what keeps a set-wide call small enough to use. Summary-level only; reuses `pop_df` with column
+pushdown. Heavier than the lineage/populations reads (it touches cell data), so prefer scoping to an
+image/set. Slice C of OBSERVER_DATA_ACCESS_PLAN.md.
 """
-measure_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "") =
-    observer_image_summary(proj, _measures_image; image_uid = image_uid, set_uid = set_uid)
+function measure_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "",
+                         kind::AbstractString = "", value_names = String[])
+    kind in ("", "phenotype", "motility") ||
+        throw(ArgumentError("kind must be \"phenotype\", \"motility\" or empty, got \"$kind\""))
+    vns = String[string(v) for v in value_names]
+    observer_image_summary(proj, img -> _measures_image(img; kind, value_names = vns);
+                           image_uid = image_uid, set_uid = set_uid)
+end

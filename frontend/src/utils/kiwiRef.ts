@@ -22,6 +22,9 @@ export type KiwiRef =
   | { kind: 'task'; funName: string }
   | { kind: 'ui'; anchor: string }
   | { kind: 'blackboard'; entryId: string; version?: number }
+  // a plot nobody has made — Kiwi pointing at a look not yet taken; a click plots it
+  | { kind: 'proposedPlot'; plot: string; measure?: string; chart?: string; pops?: string[]
+      groupBy?: string; statUnit?: string; compareBy?: string }
 
 export type KiwiRefKind = KiwiRef['kind']
 
@@ -30,14 +33,19 @@ export const KIWI_REF_KINDS: string[] = schema.oneOf.map((b) => b.$ref.split('/'
 
 /** How far the resolver could check a ref (`POST /api/kiwi/refs/resolve`). The UI must not render
  *  these alike (plan Decision 10): `exists` = on disk; `live` = an open panel/landscape, true now and
- *  gone when it closes; `format` = shape only (UI anchors); `shape` = the ref itself is malformed. */
-export type KiwiRefCheck = 'exists' | 'live' | 'format' | 'shape'
+ *  gone when it closes; `format` = shape only (UI anchors); `shape` = the ref itself is malformed;
+ *  `proposal` = a plot not made yet, checked buildable against the project (a proposedPlot). */
+export type KiwiRefCheck = 'exists' | 'live' | 'format' | 'shape' | 'proposal'
 
 export interface KiwiRefResult {
   ok: boolean
   check: KiwiRefCheck
   label: string
   error: string
+  /** what the object holds, in a line — only some kinds say (a plot: its series, grouping, images) */
+  detail?: string
+  /** a plot's page — where to reopen it once its panel has closed */
+  route?: string
 }
 
 /** The refs a share-in capture points at: its image position (`viewer`) and, for a UI capture, its

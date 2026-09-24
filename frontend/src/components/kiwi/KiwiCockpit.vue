@@ -3,7 +3,9 @@
 // so the user doesn't scavenger-hunt across ViewerPanel (push chip), LabLogPanel (chat button)
 // and Settings → MCP (connection health) to find them.
 //
-// v1 rows:
+// Rows:
+//   - Ask — the structured duck: prompt box with attached ref chips + the claims feed (KiwiAsk.vue,
+//     docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4). First, because it's the reason to open the panel.
 //   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too)
 //   - Copy chat starter (moved from LabLogPanel)
 //   - Recent captures — click a row to copy its captureId
@@ -37,13 +39,14 @@ import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureEnvelope, type CaptureEnvelope,
          deleteCapture, clearAllCaptures,
          type CaptureRow } from '../../utils/kiwiCaptures'
-import { openViewerWindow } from '../../utils/viewerWindow'
-import { useViewerStore } from '../../stores/viewer'
 import { useShareTargetStore, type BeginShareResult } from '../../stores/shareTarget'
-import { useCaptureReshowStore } from '../../stores/captureReshow'
-import { moduleRouteFor } from '../../utils/moduleRoute'
-import { useRouter } from 'vue-router'
+import { useCaptureFocus } from '../../composables/useCaptureFocus'
 import InlineNote from '../InlineNote.vue'
+import KiwiAsk from './KiwiAsk.vue'
+import { useKiwiStore } from '../../stores/kiwi'
+import { resolveAnchor } from '../../utils/guideAnchor'
+import { rectsOverlap } from '../../utils/panelBounds'
+import AddToKiwiButton from './AddToKiwiButton.vue'
 // Kiwi is the canonical cockpit for the paired assistant, so the "what can it do here?" how-to
 // dialog opens from here (was in the lab log toolbar until 2026-09-22). The dialog itself lives
 // outside `kiwi/` and is free to name its provider; the local alias below keeps the ratchet happy.
@@ -56,7 +59,17 @@ defineEmits<{ (e: 'close'): void }>()
 const showAssistantOverview = ref(false)
 
 const pm = useProjectMetaStore()
-const viewer = useViewerStore()
+
+// Step aside: Kiwi floats over the page, so a plot it points at is often UNDER it — the pointer bubble
+// showed on top of Kiwi, over nothing visible. When the target overlaps the panel, roll up to the header
+// (the chevron brings it back). Only then: a target elsewhere on screen leaves Kiwi as it was.
+const kiwiStore = useKiwiStore()
+const panel = ref<InstanceType<typeof FloatingPanel> | null>(null)
+watch(() => kiwiStore.pointed, p => {
+  const el = p ? resolveAnchor(p.anchor) : null
+  const mine = panel.value?.rect()
+  if (el && mine && rectsOverlap(el.getBoundingClientRect(), mine)) panel.value?.collapse()
+})
 const projectUid = computed(() => pm.current?.uid ?? '')
 const projectName = computed(() => pm.current?.name ?? undefined)
 
@@ -160,63 +173,11 @@ async function loadThumb(id: string) {
   if (env) envelopes.value = { ...envelopes.value, [id]: env }
 }
 
-// ── Refocus in viewer (PR B trinity) ─────────────────────────────────────────
-// Reopen the capture's image in the pop-out viewer + restore its stored view (camera / channels /
-// t / z) + paint the marks as a read-only overlay. Same mechanism the analysis-board's Zoom-to-source
-// uses (`ImageStripView.zoomToSource`): write `pendingViewState` first (persists to localStorage so
-// a fresh popup mount reads the seed), then `openViewerWindow` — the popup applies via storage
-// event if it's already open, or seeds from localStorage on mount if the caller just opened it.
-//
-// Modern captures (post-2026-09-20) carry `viewStateSnapshot` and restore the exact view. Older
-// captures without it fall into the `focus` path — nudge t / z, leave camera / channels alone.
-const reshowStore = useCaptureReshowStore()
-const router = useRouter()
-
+// ── Refocus (PR B trinity) — the shared path in composables/useCaptureFocus.ts ────────────────
+const { focusCapture } = useCaptureFocus()
 function refocusRow(row: CaptureRow) {
   const env = envelopes.value[row.captureId]
-  // Plot captures (canvas Share) route to a module PAGE, not the pop-out viewer. The reshow
-  // store holds the envelope; the destination page reads it via `consumeFor(module)` on mount
-  // and mounts CaptureViewSurface over its own canvas. Same UX as viewer refocus, different
-  // destination.
-  if (row.surface === 'plot' && env) {
-    const modParam = (row.address?.plotSpec?.params as { module?: string } | undefined)?.module
-    const path = modParam ? moduleRouteFor(modParam) : null
-    if (modParam && path) {
-      reshowStore.setPending({ module: modParam, envelope: env })
-      // hash-router; the leading `#` is added by the router. Router.push handles same-page
-      // navigation as a no-op re-fire, which the destination page picks up via its mount watch.
-      void router.push(path)
-      return
-    }
-    // No route we know about — fall through and try the viewer path. If the capture has no
-    // imageUid either, `refocusRow` degrades to a no-op below.
-  }
-  const a = row.address; if (!a || !a.imageUid) return
-  // A t-range (slab capture) refocuses to the first frame — the range end is still visible via
-  // the pop-out's own scrubber.
-  const t = Array.isArray(a.t) ? a.t[0] : a.t
-  const marks = env?.overlay ?? []
-  const overlay = marks.length > 0
-    ? { captureId: row.captureId, marks: marks as unknown[] }
-    : undefined
-  if (env?.viewStateSnapshot) {
-    viewer.setPendingViewState({
-      viewState: env.viewStateSnapshot,
-      overlay, imageUid: a.imageUid,
-    })
-  } else {
-    viewer.setPendingViewState({
-      focus: {
-        ...(typeof t === 'number' ? { t } : {}),
-        ...(typeof a.z === 'number' ? { z: a.z } : {}),
-      },
-      overlay, imageUid: a.imageUid,
-    })
-  }
-  openViewerWindow({
-    projectUid: projectUid.value, imageUid: a.imageUid,
-    ...(a.valueName ? { valueName: a.valueName } : {}),
-  })
+  if (env) focusCapture(projectUid.value, env)
 }
 // Per-row copy flash. Separate `useCopyFlash` instance so the chat-starter flash is independent.
 const { isCopied: capCopied, copy: copyCaptureId } = useCopyFlash(2000)
@@ -273,9 +234,9 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 </script>
 
 <template>
-  <FloatingPanel title="Kiwi" icon="pi-comments" storage-key="kiwi"
+  <FloatingPanel ref="panel" title="Kiwi" icon="pi-comments" storage-key="kiwi"
                  accent="var(--cc-kiwi)"
-                 :default-x="260" :default-y="100" :default-w="320" :default-h="520"
+                 :default-x="260" :default-y="100" :default-w="380" :default-h="640"
                  @close="$emit('close')">
     <!-- Header `?` — the "what does Kiwi do here?" how-to. Sits in the header's action slot so it's
          always reachable, not gated behind opening a project. -->
@@ -292,6 +253,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
         Open a project to pair with your assistant.
       </div>
       <template v-else>
+        <KiwiAsk />
         <div class="kiwi-row" data-guide="kiwi.pairing">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Pairing</span>
           <span class="kiwi-chip cc-fs-xs"
@@ -379,6 +341,7 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                   <i class="pi kiwi-cap-icon"
                      :class="capCopied(c.captureId) ? 'pi-check' : 'pi-copy'" />
                 </button>
+                <AddToKiwiButton :kiwi-ref="{ kind: 'capture', captureId: c.captureId }" />
                 <button v-if="(c.address && c.address.imageUid) || c.surface === 'plot'"
                         class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro kiwi-cap-focus"
                         @click="refocusRow(c)"

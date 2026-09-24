@@ -64,3 +64,10 @@ export function maximisedRect(viewportW: number, viewportH: number, headerH: num
   const y = Math.max(0, headerH)
   return { x: 0, y, w: Math.max(0, viewportW), h: Math.max(0, viewportH - y) }
 }
+
+/** Do two boxes overlap (by more than their shared edge)? Plain `{left, top, right, bottom}` so a
+ *  DOMRect passes as-is. */
+export function rectsOverlap(a: { left: number; top: number; right: number; bottom: number },
+                             b: { left: number; top: number; right: number; bottom: number }): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+}

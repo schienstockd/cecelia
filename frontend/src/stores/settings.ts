@@ -240,6 +240,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // (pairing chip, chat handoff; more rows in v2). Off by default. See
   // components/kiwi/KiwiCockpit.vue, docs/todo/KIWI_PLAN.md.
   const kiwiOpen = ref(localStorage.getItem('cc.kiwiOpen') === 'true')
+  // Kiwi's "Think first" switch: ask the engine to write its reasoning before the claims (a free-text
+  // field ordered first in the reply schema). Off by default — on the 18-turn comparison it cost ~40%
+  // more time and tokens with no gain the automatic checks could see (KIWI_ASSISTANT_PLAN Open decision 8).
+  const kiwiReasoning = ref(localStorage.getItem('cc.kiwiReasoning') === 'true')
+  // the model Kiwi turns run — the allow-list is `observer.models` (OBSERVER_MODELS on the backend)
+  const kiwiModel = ref(localStorage.getItem('cc.kiwiModel') || 'sonnet')
   // Which mode the cockpit is on. Persisted so the user's last mode is what they see on reopen.
   const correctionCockpitMode = ref<'tracks' | 'labels' | 'review'>(
     (['tracks', 'labels', 'review'] as const)
@@ -264,10 +270,6 @@ export const useSettingsStore = defineStore('settings', () => {
   // change; UIDs don't), so this is a display-only swap resolved against live project data. Default
   // false (show the compact, stable UIDs). See components/LabLogPanel.vue.
   const labLogShowNames = ref(localStorage.getItem('cc.labLogShowNames') === 'true')
-  // which model "Ask Claude" spawns (Claude CLI --model alias). Default Sonnet — Opus is overkill for
-  // the observer's work; Haiku is the cheap option. Sent per feedback call; the backend allow-lists it.
-  // See app/src/ai/agent_runner.jl OBSERVER_MODELS.
-  const labLogObserverModel = ref(localStorage.getItem('cc.labLogObserverModel') || 'sonnet')
   // Tip of the day (WHATS_NEW_PLAN.md → W4). On app launch, if these say "show + last shown was
   // not today", the What's New modal opens with today's tip prepended. Opt-out from a checkbox on
   // the tip card. Default ON — biologists opening the app benefit from a nudge; power users can
@@ -637,12 +639,13 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
   watch(correctionCockpitOpen,      v => localStorage.setItem('cc.correctionCockpitOpen',      String(v)))
   watch(kiwiOpen,                   v => localStorage.setItem('cc.kiwiOpen',                   String(v)))
+  watch(kiwiReasoning,              v => localStorage.setItem('cc.kiwiReasoning',              String(v)))
+  watch(kiwiModel,                  v => localStorage.setItem('cc.kiwiModel',                  v))
   watch(correctionCockpitMode,      v => localStorage.setItem('cc.correctionCockpitMode',      String(v)))
   watch(correctionCockpitValueName, v => localStorage.setItem('cc.correctionCockpitValueName', v))
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
   watch(hiddenMcpAccounts, v => localStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
   watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
-  watch(labLogObserverModel,      v => localStorage.setItem('cc.labLogObserverModel',      v))
   watch(viewProfile,              v => localStorage.setItem('cc.viewProfile',              v))
   watch(tipsOnLaunch,             v => localStorage.setItem('cc.tipsOnLaunch',             String(v)))
   watch(tipsLastShown,            v => localStorage.setItem('cc.tipsLastShown',            v))
@@ -677,7 +680,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

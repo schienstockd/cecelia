@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { NAV_GROUPS, allNavGroups, customNavGroup, navLabelFor } from './navGroups'
+import { NAV_GROUPS, allNavGroups, customNavGroup, navLabelFor, navGroupFor } from './navGroups'
 
 // The nav catalogue and the router's route table are two lists that must agree, and nothing but this
 // enforced it: a page whose path is mistyped here renders a dead sidebar row, and a page added to the
@@ -105,5 +105,13 @@ describe('navLabelFor', () => {
   })
   it('falls back to the path it was given', () => {
     expect(navLabelFor(NAV_GROUPS, '/nope')).toBe('/nope')
+  })
+})
+
+describe('navGroupFor', () => {
+  it('finds the group of a page and of a sub-route, and nothing for a page off the menu', () => {
+    expect(navGroupFor(NAV_GROUPS, '/gate')).toBe('Populations')
+    expect(navGroupFor([{ heading: 'Custom', items: [{ to: '/custom/x', label: 'X', icon: 'pi-box', tip: '' }] }], '/custom/x/y')).toBe('Custom')
+    expect(navGroupFor(NAV_GROUPS, '/nope')).toBeNull()
   })
 })

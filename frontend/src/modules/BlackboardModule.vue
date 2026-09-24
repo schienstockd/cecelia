@@ -36,19 +36,15 @@ import {
 } from '../utils/blackboardFilters'
 import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
 import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
-import { openViewerWindow } from '../utils/viewerWindow'
-import { useCaptureReshowStore } from '../stores/captureReshow'
-import { moduleRouteFor } from '../utils/moduleRoute'
-import { useRouter } from 'vue-router'
-import { useViewerStore } from '../stores/viewer'
+import { useRoute } from 'vue-router'
+import { useCaptureFocus } from '../composables/useCaptureFocus'
+import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
 import { composeImageWithOverlay } from '../utils/overlayCompose'
 import { loadImg } from '../plots/export'
 
 const projectMeta = useProjectMetaStore()
 const bbStore = useBlackboardStore()
-const viewer = useViewerStore()
-const reshowStore = useCaptureReshowStore()
-const router = useRouter()
+const route = useRoute()
 
 // List-pane width: draggable + persisted, same composable Tasks + Chain use so the "grab the
 // divider and pull" gesture reads the same across the app. Handle on the list's RIGHT edge.
@@ -349,57 +345,12 @@ async function onDelete() {
   }
 }
 
-/** Open the capture in its source surface. Two paths, one entry:
- *   • plot captures (canvas Share) → set the reshow bag + navigate to the module page. The page
- *     mounts CaptureViewSurface over its own canvas.
- *   • viewer captures → seed pendingViewState + open the pop-out viewer, same mechanism
- *     Kiwi and the analysis-board's Zoom-to-source use. Modern captures restore camera/channels/
- *     t/z verbatim; legacy ones fall into the seek-only path.
- *  Same behaviour Kiwi's `refocusRow` gives — this is the Blackboard entry to it. */
+/** Open the capture in its source surface — the shared refocus path (`composables/useCaptureFocus`),
+ *  the same one Kiwi's capture rows and claim chips use. */
+const { focusCapture: refocusCapture } = useCaptureFocus()
 function focusCapture(cid: string) {
   const slot = captureCache.value[cid]
-  if (!slot?.env) return
-
-  // Plot captures — route to the module page.
-  if (slot.env.surface === 'plot') {
-    const modParam = (slot.env.address?.plotSpec?.params as { module?: string } | undefined)?.module
-    const path = modParam ? moduleRouteFor(modParam) : null
-    if (modParam && path) {
-      reshowStore.setPending({ module: modParam, envelope: slot.env })
-      void router.push(path)
-      return
-    }
-    // Unknown module — silently degrade rather than opening the wrong surface.
-    return
-  }
-
-  // Viewer captures — the pre-existing seek-and-open path.
-  const a = slot.env.address
-  if (!a?.imageUid) return
-  const t = Array.isArray(a.t) ? a.t[0] : a.t
-  const marks = slot.env.overlay ?? []
-  const overlay = marks.length > 0
-    ? { captureId: cid, marks: marks as unknown[] }
-    : undefined
-  if (slot.env.viewStateSnapshot) {
-    viewer.setPendingViewState({
-      viewState: slot.env.viewStateSnapshot,
-      overlay, imageUid: a.imageUid,
-    })
-  } else {
-    viewer.setPendingViewState({
-      focus: {
-        ...(typeof t === 'number' ? { t } : {}),
-        ...(typeof a.z === 'number' ? { z: a.z } : {}),
-      },
-      overlay, imageUid: a.imageUid,
-    })
-  }
-  openViewerWindow({
-    projectUid: projectUid.value,
-    imageUid: a.imageUid,
-    ...(a.valueName ? { valueName: a.valueName } : {}),
-  })
+  if (slot?.env) refocusCapture(projectUid.value, slot.env)
 }
 
 // Mermaid: dynamic-import only when the current pane contains ```mermaid fences (0 fences ⇒ no cost).
@@ -457,10 +408,15 @@ watch(projectUid, async () => {
   await loadList()
 })
 
+// `?entry=<id>` opens that entry — how a Kiwi blackboard chip points here. Same-page clicks change
+// only the query, so it is watched as well as read on mount.
+const queryEntry = computed(() => typeof route.query.entry === 'string' ? route.query.entry : '')
 onMounted(async () => {
   await loadList()
-  if (entries.value.length > 0 && !selectedId.value) selectEntry(entries.value[0].entryId)
+  if (queryEntry.value && entries.value.some(e => e.entryId === queryEntry.value)) selectEntry(queryEntry.value)
+  else if (entries.value.length > 0 && !selectedId.value) selectEntry(entries.value[0].entryId)
 })
+watch(queryEntry, (id) => { if (id && entries.value.some(e => e.entryId === id)) selectEntry(id) })
 onUnmounted(() => { mermaidRenderSeq++ })
 </script>
 
@@ -598,6 +554,11 @@ onUnmounted(() => { mermaidRenderSeq++ })
                 <template v-if="selected.current > 0"> · v{{ selected.current }}</template>
               </span>
               <span class="bb-bar-spacer" />
+              <!-- the version being previewed, if any — so Kiwi reads what is on screen -->
+              <AddToKiwiButton size="dense" tip="Add this entry to Kiwi"
+                               :kiwi-ref="viewingVersion !== null
+                                 ? { kind: 'blackboard', entryId: selected.entryId, version: viewingVersion }
+                                 : { kind: 'blackboard', entryId: selected.entryId }" />
               <!-- Status flip — a chip select applied inline; no snapshot fired. -->
               <ChipSelect variant="segmented"
                           aria-label="Entry status"

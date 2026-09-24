@@ -4,7 +4,7 @@
 #  - `API: custom modules status/reload` — /api/tasks/custom-modules read + reload.
 #  - `API: a plugin task options can depend on the form` (optionsFrom/showIf pass-through).
 #  - `API: a plugin task gets a form and a nav entry`.
-#  - `API: observer status + feedback validation`.
+#  - `API: observer status`.
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
@@ -137,7 +137,7 @@ end
 # Observer (in-app AI assistant) — status shape + request validation. The actual agent spawn (a real
 # billed CLI call) is NOT exercised here; only the guard rails around it. See
 # docs/todo/OBSERVER_INTEGRATION_PLAN.md + app/src/ai/agent_runner.jl (pure pieces tested in app/test).
-@testset "API: observer status + feedback validation" begin
+@testset "API: observer status" begin
     # status: availability is a bool (true/false depending on whether `claude` is on PATH — don't
     # assert which, so it passes both in CI and on a dev box with Claude Code installed).
     st, body = api_observer_status(HTTP.Request("GET", "/api/observer/status"))
@@ -147,7 +147,7 @@ end
         # the picker's choices + shipped default are exposed so the panel can populate the dropdown
         @test Set(String.(s.models)) == Set(["haiku", "sonnet", "opus"])
         @test String(s.defaultModel) in Set(["haiku", "sonnet", "opus"])
-        # the MCP config is written on STATUS (not only on a feedback run) so the info panel can always
+        # the MCP config is written on STATUS so the info panel can always
         # offer `claude --mcp-config <path>` — the user never hand-registers an MCP server
         @test isfile(String(s.mcpConfigPath))
         let cfg = JSON3.read(read(String(s.mcpConfigPath), String))
@@ -167,14 +167,6 @@ end
         String(s.terminal.state) == "shadowed" && @test !isempty(s.terminal.shadowedDirs)
         isempty(s.terminal.shadowedDirs) || @test !s.terminal.ready
     end
-
-    # feedback: validated before anything is spawned.
-    @test _post(api_observer_feedback, Dict())[1] == 400                       # projectUid missing
-    @test _post(api_observer_feedback, Dict("projectUid" => "nope"))[1] == 404 # unknown project
-
-    # clear context: same validation, no spawn.
-    @test _post(api_observer_clear, Dict())[1] == 400                          # projectUid missing
-    @test _post(api_observer_clear, Dict("projectUid" => "nope"))[1] == 404    # unknown project
 
     # register (one-click terminal setup) is deliberately NOT called here: on a machine with Claude
     # Code installed it would rewrite the developer's own ~/.claude.json. Its command builders are

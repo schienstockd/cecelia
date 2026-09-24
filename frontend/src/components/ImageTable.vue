@@ -3,6 +3,7 @@ import { useInlineEdit } from '../composables/useInlineEdit'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
+import { useKiwiStore } from '../stores/kiwi'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
@@ -35,6 +36,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'selectionChange', uids: string[]): void }>()
 
 const project     = useProjectStore()
+const kiwi        = useKiwiStore()
 const projectMeta = useProjectMetaStore()
 const log         = useLogStore()
 const route       = useRoute()
@@ -781,6 +783,9 @@ const unselectableUids = computed(() =>
       </button>
       <button class="cc-actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
         <i class="pi pi-copy" /> Copy UID
+      </button>
+      <button class="cc-actions-item" @click.stop="runAction(() => kiwi.addRef({ kind: 'image', imageUid: actionsImg!.uid }))">
+        <i class="pi pi-at" /> Add to Kiwi
       </button>
       <button class="cc-actions-item" @click.stop="runAction(() => setIncluded(actionsImg!, isExcluded(actionsImg!)))">
         <i :class="isExcluded(actionsImg) ? 'pi pi-check-circle' : 'pi pi-ban'" />

@@ -432,11 +432,17 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
 
 
 @mcp.tool()
-def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = "",
+                        kind: str = "", value_names: list[str] | None = None) -> dict:
     """Phenotype + motility SUMMARIES per population — what the cells/tracks actually look like. Use this
     for "how bright is CD8 in the T/_qc cells", "how fast do the tracked B cells move", cross-image
     comparisons of a measure. Scope with `image_uid` / `set_uid` (prefer one — this touches cell data,
     so it's heavier than lineage/populations); omit both for the whole project.
+
+    NARROW A SET-WIDE CALL: `kind` = "motility" (tracks: speed, displacement, straightness, …) or
+    "phenotype" (per-cell intensities + morphology), and `value_names` = the segmentations you need
+    (e.g. ["B", "T"]). Unnarrowed, a set of 8 imaged channels returned ~200k characters — too large to
+    reach you at all; motility for two segmentations across the same set is a few thousand.
 
     Summarised over the MEANINGFUL populations, not the raw segmentation (most labels are usually gated
     out): the user's gated pops when present (e.g. `T/_qc`), else the base `_tracked` population (all
@@ -448,7 +454,8 @@ def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
         tracks). `n` is the cell/track count the stats are over.
     `truncated: true` means the population×measure list was capped. Summary-level only — medians and
     quantiles, never raw cell/track rows. Reads current on-disk state."""
-    return _client.get_measure_summary(project_uid, image_uid or None, set_uid or None)
+    return _client.get_measure_summary(project_uid, image_uid or None, set_uid or None,
+                                       kind or None, value_names or None)
 
 
 @mcp.tool()

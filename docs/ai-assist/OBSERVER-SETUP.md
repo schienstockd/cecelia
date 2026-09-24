@@ -1,8 +1,9 @@
-# Connecting Claude Code to the in-app observer
+# Connecting Claude Code to Cecelia
 
-The in-app observer ("Ask Claude" / "Watch" in the lab-log panel) spawns your local **Claude Code**
-CLI. **There is no MCP setup and no config to edit** — Cecelia generates the MCP config per run and
-hands it to `claude -p`. You only need Claude Code itself installed and logged in.
+Cecelia's in-app assistant (**Kiwi**'s prompt box) spawns your local **Claude Code** CLI. **There is no
+MCP setup and no config to edit** — Cecelia generates the MCP config per run and hands it to `claude -p`.
+You only need Claude Code itself installed and logged in. (The lab-log panel's old "Ask Claude" button
+was removed 2026-09-24; asking in the app is Kiwi.)
 
 ## What you need (once)
 
@@ -10,22 +11,18 @@ hands it to `claude -p`. You only need Claude Code itself installed and logged i
    See <https://docs.anthropic.com/en/docs/claude-code/setup>.
 2. **Log in**: run `claude` once in a terminal and complete the sign-in.
 
-That's it. Reopen the lab-log panel — "Ask Claude" and "Watch" are enabled.
-
 ## Two states you might hit
 
-The panel checks only that `claude` is **on PATH**, not that it's authenticated, so:
+The app checks only that `claude` is **on PATH**, not that it's authenticated, so:
 
 - **"Claude Code not detected"** — the CLI isn't installed / not on PATH → step 1 above.
-- **"Claude Code isn't logged in"** — installed but a run failed to authenticate → step 2 (`claude`
-  once to log in). This shows after a failed pass; the failure is also recorded in the panel's
-  **Claude activity** log.
+- **"Claude Code isn't logged in"** — installed but a Kiwi turn failed to authenticate → step 2
+  (`claude` once to log in). Settings → MCP connections shows it after such a failure.
 
 ## Choosing the model
 
-The picker next to "Ask Claude" selects the model (Haiku / Sonnet / **Sonnet default** / Opus). Opus
-is overkill for the observer's work; Haiku is the cheapest for frequent Watch passes. A machine-wide
-default can be set via `config.toml` `[ai] model`; the CLI binary via `[ai] agent_bin`.
+The picker in Kiwi's prompt box selects the model (Haiku / Sonnet / **Sonnet default** / Opus). A
+machine-wide default can be set via `config.toml` `[ai] model`; the CLI binary via `[ai] agent_bin`.
 
 ## Chatting in your own terminal — one click
 

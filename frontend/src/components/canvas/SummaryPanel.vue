@@ -37,6 +37,7 @@ import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 import { usePanelExport } from '../../stores/canvasPanelExports'
 import { useVisualPanel } from '../../composables/useVisualPanel'
+import { plotSummaryText } from '../../utils/plotSummary'
 import { useRoute } from 'vue-router'
 import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
@@ -767,6 +768,9 @@ if (props.persistKey) {
 // call above — the export path already works; folding both into `useVisualPanel` would touch a
 // working plot for no user-visible gain (see BIDIR PR #8 spec, decision 3).
 const _route = useRoute()
+// the numbers this panel is drawing, as text — what Kiwi reads when the plot is attached
+const plotSummary = computed(() => result.value
+  ? plotSummaryText(result.value, uid => projectStore.imageByUid(uid)?.name ?? uid) : '')
 useVisualPanel(
   () => props.persistKey ?? '',
   () => ({
@@ -789,7 +793,15 @@ useVisualPanel(
       ...(measure.value ? { yLabel: measureLabel(measure.value) } : {}),
       ...(chartType.value !== 'heatmap' ? { xLabel: 'populations' } : {}),
       yScale: vis.value?.logScale ? 'log' : 'linear',
+      // WHAT is plotted — the series and the images — so an assistant handed this plot (Kiwi's
+      // "Add to Kiwi") reads its scope here instead of guessing from the board. `imageUids` empty
+      // with a `setUid` means the whole set.
+      series: props.series.map(s => `${s.valueName}${s.pop}`),
+      ...(groupBy.value ? { groupBy: groupBy.value } : {}),
+      ...(props.setUid ? { setUid: props.setUid, imageUids: props.imageUids ?? [], statUnit: statUnit.value }
+                       : props.imageUid ? { imageUid: props.imageUid } : {}),
     },
+    summary: plotSummary.value,
   }),
 )
 

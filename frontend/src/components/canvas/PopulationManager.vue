@@ -16,6 +16,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
+import { useKiwiStore } from '../../stores/kiwi'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
@@ -73,6 +74,7 @@ const emit = defineEmits<{
   showDefiningPlot: [FlatPop]      // open the plot where this pop's gate was drawn
 }>()
 const g = useGatingStore()
+const kiwi = useKiwiStore()
 const log = useLogStore()
 const projectStore = useProjectStore()
 const settings = useSettingsStore()
@@ -617,6 +619,11 @@ function moveTo(target: string) {
             <div v-if="!moveTargets.length" class="cc-actions-head">nowhere else to put it</div>
           </template>
           <template v-else>
+            <button v-if="!actionsPop.transient && g.imageUid && g.valueName" class="cc-actions-item"
+                    @click.stop="runAction(() => kiwi.addRef({ kind: 'population', imageUid: g.imageUid!,
+                                                               valueName: g.valueName, popPath: actionsPop!.path }))">
+              <i class="pi pi-at" /> Add to Kiwi
+            </button>
             <button v-if="actionsPop.gate" class="cc-actions-item"
                     @click.stop="runAction(() => emit('showDefiningPlot', actionsPop!))">
               <i class="pi pi-search" /> Show the gate's plot

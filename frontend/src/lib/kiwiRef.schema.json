@@ -15,7 +15,8 @@
     { "$ref": "#/definitions/capture" },
     { "$ref": "#/definitions/task" },
     { "$ref": "#/definitions/ui" },
-    { "$ref": "#/definitions/blackboard" }
+    { "$ref": "#/definitions/blackboard" },
+    { "$ref": "#/definitions/proposedPlot" }
   ],
   "definitions": {
     "uid":   { "type": "string", "minLength": 1 },
@@ -92,6 +93,17 @@
       "properties": {
         "kind": { "const": "blackboard" }, "entryId": { "$ref": "#/definitions/uid" },
         "version": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "proposedPlot": {
+      "$comment": "A plot nobody has made yet — pointing at a look not taken. One entry of add_analysis_board's `plots` plus the board's compareBy; resolved by a dry run of expand_board. A click opens a board that already holds it, else adds one.",
+      "type": "object", "additionalProperties": false, "required": ["kind", "plot"],
+      "properties": {
+        "kind": { "const": "proposedPlot" }, "plot": { "$ref": "#/definitions/uid" },
+        "measure": { "type": "string", "minLength": 1 }, "chart": { "type": "string", "minLength": 1 },
+        "pops": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "groupBy": { "type": "string", "minLength": 1 }, "statUnit": { "type": "string", "minLength": 1 },
+        "compareBy": { "type": "string", "minLength": 1 }
       }
     }
   }

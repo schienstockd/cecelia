@@ -35,6 +35,10 @@ export interface PlotMeta {
   // shared frame. Optional; a host that has nothing useful to declare leaves it off. Kept
   // JSON-serialisable; goes on the register payload verbatim.
   content?: Record<string, unknown>
+  // what the plot SHOWS, as text (`utils/plotSummary.ts`) — its own field, not a `content` key: content
+  // is small discriminators with a tight per-value cap, this is the numbers on screen (≤ 12 KB), read
+  // by an assistant the plot was handed to (Kiwi's context pack)
+  summary?: string
 }
 
 // The store holds just enough state to dedupe redundant register POSTs (a panel's meta getter
@@ -86,6 +90,7 @@ function _metaEq(a: PlotMeta | undefined, b: PlotMeta): boolean {
   const bHasC = !!b.content && Object.keys(b.content).length > 0
   if (aHasC !== bHasC) return false
   if (aHasC && JSON.stringify(a.content) !== JSON.stringify(b.content)) return false
+  if ((a.summary ?? '') !== (b.summary ?? '')) return false
   return true
 }
 
@@ -153,6 +158,7 @@ export function usePlotRegistry(key: () => string, meta: () => PlotMeta): void {
     if (m.cellKeys && m.cellKeys.length) payload.cellKeys = m.cellKeys
     if (m.bboxScreen) payload.bboxScreen = m.bboxScreen
     if (m.content && Object.keys(m.content).length) payload.content = m.content
+    if (m.summary) payload.summary = m.summary
     _post('/api/viewer/plots/register', payload)
     store.noteSent(k, { clientId: wsClientId, meta: { ...m }, projectUid })
     lastKey = k

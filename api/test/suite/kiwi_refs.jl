@@ -6,7 +6,7 @@
 
 @testset "Kiwi refs — shape check (the shared schema)" begin
     @test Set(KIWI_REF_KINDS) == Set(["project", "set", "image", "population", "cells", "tracks",
-        "viewer", "plot", "tile", "capture", "task", "ui", "blackboard"])
+        "viewer", "plot", "tile", "capture", "task", "ui", "blackboard", "proposedPlot"])
     ok(r) = kiwi_ref_shape_error(r) == ""
     @test ok(Dict("kind" => "image", "imageUid" => "KDIeEm"))
     @test ok(Dict("kind" => "tracks", "imageUid" => "KDIeEm", "valueName" => "B", "trackIds" => [1, 2]))
@@ -79,13 +79,37 @@ end
         m = load_pop_map(img; value_name = "B", pop_type = "trackclust", backfill_save = false)
         p1 = first(sort!(collect(Cecelia.pop_paths(m))))
         r = res(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => p1))
-        @test r["ok"] && occursin(Cecelia.pop_at(m, p1).name, r["label"])
+        @test r["ok"] && occursin(Cecelia.pop_at(m, p1).name, r["label"]) && occursin(" · B · ", r["label"])   # which segmentation
         @test yes(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/_tracked"))
         @test no(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/nope"),
                  "no population")
         # read-only: resolving touched no gating file
         gdir = joinpath(dir, "testpr", "1", "KDIeEm", "gating")
         @test readdir(gdir) == ["B__trackclust.json"]
+
+        # a proposed plot — nobody has made it; resolved by a dry run of the board builder, nothing written
+        bp = boards_doc_path(joinpath(dir, "testpr")); boards_before = isfile(bp) ? read(bp) : nothing
+        pp = Dict("kind" => "proposedPlot", "plot" => "track_measures", "measure" => "live.track.speed")
+        r = res(pp)
+        @test r["ok"] && r["check"] == "proposal" && occursin("live.track.speed", r["label"])
+        @test !occursin("track_measures", r["label"])                        # the plot type's own label
+        @test no(merge(pp, Dict("measure" => "live.cell.nope")), "does not carry measure")
+        @test no(merge(pp, Dict("pops" => ["B/nope"])), "no population")
+        @test no(Dict("kind" => "proposedPlot", "plot" => "no_such_plot"), "unknown plot")
+        @test res(Dict("kind" => "proposedPlot"))["check"] == "shape"          # `plot` is required
+        @test (isfile(bp) ? read(bp) : nothing) == boards_before              # a dry run: no board written
+        @test readdir(gdir) == ["B__trackclust.json"]
+
+        # a population's cells — what a click on it outlines in the viewer
+        c = kiwi_population_cells("testpr", Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => p1))
+        @test !(c isa String) && c.total > 0 && c.popType == "trackclust" && issorted(c.labelIds) && all(>(0), c.labelIds)
+        small = kiwi_population_cells("testpr", Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => p1); limit = 1)
+        @test length(small.labelIds) == 1 && small.truncated == (c.total > 1)
+        @test occursin("no population", kiwi_population_cells("testpr", Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/nope")))
+        @test kiwi_population_cells("testpr", Dict("kind" => "image", "imageUid" => "KDIeEm")) == "not a population ref"
+        st, _ = api_kiwi_refs_cells(Vector{UInt8}("""{"projectUid":"testpr","ref":{"kind":"population","imageUid":"KDIeEm","valueName":"B","popPath":"/nope"}}"""))
+        @test st == 404
+        @test readdir(gdir) == ["B__trackclust.json"]                    # still read-only
 
         # viewer: an image with no pixels on disk has nothing to view — a failure, not a pass (testpr
         # ships no zarr; 2 of obWDNS's real images are unconverted the same way)
@@ -105,14 +129,25 @@ end
 
         # plot + tile are LIVE: absent until the browser publishes, present after, gone when removed
         pref = Dict("kind" => "plot", "plotId" => "kiwi-test-plot")
-        @test res(pref)["check"] == "live" && no(pref, "not open")
+        @test res(pref)["check"] == "live" && no(pref, "isn’t open")
         lock(_PLOTS_LOCK) do
             get!(_PLOTS_BY_PROJECT, "testpr", Dict{String,PlotEntry}())["kiwi-test-plot"] =
                 PlotEntry("kiwi-test-plot", "c1", "summary", "Speed by pop", "/analysis", String[], nothing,
                           Dict{String,Any}(), time(), "testpr")
         end
         try
-            @test res(pref) == Dict("ok" => true, "check" => "live", "label" => "Speed by pop", "error" => "")
+            @test res(pref) == Dict("ok" => true, "check" => "live", "label" => "Speed by pop", "error" => "", "detail" => "", "route" => "/analysis")
+            # what the panel publishes becomes the label (measure) and the detail (series, grouping, images)
+            lock(_PLOTS_LOCK) do
+                _PLOTS_BY_PROJECT["testpr"]["kiwi-test-plot"] =
+                    PlotEntry("kiwi-test-plot", "c1", "summary", "Track measures", "/analysis", String[], nothing,
+                              Dict{String,Any}("measure" => "live.track.speed", "yLabel" => "speed",
+                                               "series" => ["B/qc", "T/qc"], "groupBy" => "hmm.state",
+                                               "imageUid" => "KDIeEm"), time(), "testpr")
+            end
+            r = res(pref)
+            @test r["label"] == "Track measures · speed"
+            @test startswith(r["detail"], "B/qc, T/qc · by hmm.state · ") && length(r["detail"]) > 30
         finally
             lock(_PLOTS_LOCK) do; delete!(_PLOTS_BY_PROJECT, "testpr") end
         end

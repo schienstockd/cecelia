@@ -14,6 +14,8 @@
 #   "live"    verified against in-memory state the browser published (an open plot panel, a landscape
 #             tile) — true NOW, gone when the panel closes or the server restarts
 #   "format"  only the shape could be checked (a UI anchor: valid anchors are known only to the browser)
+#   "proposal" a plot NOBODY HAS MADE (a proposedPlot): checked buildable against the project — the plot
+#             type, chart, measure and populations — by a dry run of the board builder, `expand_board`
 #
 # READ-ONLY by construction: every lookup is an existing reader, and the one reader that can write
 # (`load_pop_map`'s uid backfill) is called with `backfill_save = false`. Refs are project-relative;
@@ -119,23 +121,34 @@ function _kiwi_resolve_image(puid, ref)
     img isa String ? _kiwi_bad("exists", img) : _kiwi_ok("exists", img.name)
 end
 
+# Which pop type holds `path` on this segmentation, and its display name — `nothing` when none does.
+# The same shortcuts `resolve_pop_type` takes (a derived leaf like `_tracked`, the root), then a probe
+# of every type's map — `resolve_pop_type` itself returns "flow" for an unknown path, so it can't answer
+# "does this exist", and its probe may backfill-save; this one never writes.
+function _kiwi_pop_type(img, vn::AbstractString, path::AbstractString)
+    for seg in split(path, '/'; keepempty = false)
+        d = get(Cecelia._DERIVED_POPS, String(seg), nothing)
+        d === nothing || return (; popType = d.pop_type, name = path, fixed = true)
+    end
+    is_root(path) && return (; popType = "flow", name = "all cells", fixed = true)
+    for pt in Cecelia._POP_TYPE_PROBE_ORDER
+        m = try load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false) catch; continue end
+        has_pop(m, path) && return (; popType = pt, name = pop_at(m, path).name, fixed = false)
+    end
+    nothing
+end
+
 function _kiwi_resolve_population(puid, ref)
     img = _kiwi_image(puid, ref); img isa String && return _kiwi_bad("exists", img)
     vn, path = String(_kiwi_get(ref, "valueName")), String(_kiwi_get(ref, "popPath"))
-    # the same shortcuts `resolve_pop_type` takes: a derived leaf (`_tracked`) and the root always exist
-    for seg in split(path, '/'; keepempty = false)
-        haskey(Cecelia._DERIVED_POPS, String(seg)) && return _kiwi_ok("exists", "$(img.name) · $path")
-    end
-    is_root(path) && return _kiwi_ok("exists", "$(img.name) · all cells")
-    # otherwise probe every pop type's map — `resolve_pop_type` itself returns "flow" for an unknown
-    # path, so it can't answer "does this exist"
-    for pt in Cecelia._POP_TYPE_PROBE_ORDER
-        m = try load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false) catch; continue end
-        # the type in the label: one name often exists under several types (a gate and a cluster
-        # both called "Population 1" on 4kS67f, live check 2026-09-23) and a chip must say which
-        has_pop(m, path) && return _kiwi_ok("exists", "$(img.name) · $(pop_at(m, path).name) ($pt)")
-    end
-    _kiwi_bad("exists", "no population $path on $(img.name) ($vn)")
+    p = _kiwi_pop_type(img, vn, path)
+    p === nothing && return _kiwi_bad("exists", "no population $path on $(img.name) ($vn)")
+    # the segmentation in the label: B's and T's "/qc" on one image read identically without it (the
+    # first real turns, 4kS67f 2026-09-24 — every chip was "M1a…_005 · qc (flow)")
+    p.fixed && return _kiwi_ok("exists", "$(img.name) · $vn · $(p.name)")     # root / derived: always exist
+    # the type in the label: one name often exists under several types (a gate and a cluster both
+    # called "Population 1" on 4kS67f, live check 2026-09-23) and a chip must say which
+    _kiwi_ok("exists", "$(img.name) · $vn · $(p.name) ($(p.popType))")
 end
 
 # Integer label/track ids from an `obs/_index`-style column (strings in the h5ad, ints in a ref).
@@ -207,8 +220,90 @@ function _kiwi_resolve_plot(puid, ref)
     e = lock(_PLOTS_LOCK) do
         get(get(_PLOTS_BY_PROJECT, puid, Dict{String,PlotEntry}()), pid, nothing)
     end
-    e === nothing && return _kiwi_bad("live", "plot $pid is not open (a plot exists only while its panel is)")
-    _kiwi_ok("live", isempty(e.title) ? e.family : e.title)
+    e === nothing && return _kiwi_bad("live", "that plot isn’t open any more — reopen its page to check it")
+    c = e.content
+    what = string(something(get(c, "yLabel", nothing), get(c, "measure", nothing), ""))
+    label = join(filter(!isempty, [isempty(e.title) ? e.family : e.title, what]), " · ")
+    r = _kiwi_ok("live", label)
+    r["detail"] = _kiwi_plot_detail(puid, c)
+    r["route"] = e.route          # where it lives — so a click can reopen its page once it has closed
+    r
+end
+
+# What a plot shows, in a line: its series, its grouping and its images — from the `content` bag the
+# panel publishes (`SummaryPanel` → `series`, `groupBy`, `setUid`/`imageUids`, `statUnit`). A panel
+# that publishes less gets a shorter line; "" when it publishes none of these.
+function _kiwi_plot_detail(puid, c::AbstractDict)::String
+    parts = String[]
+    series = get(c, "series", Any[])
+    series isa AbstractVector && !isempty(series) && push!(parts, join(string.(series), ", "))
+    gb = string(something(get(c, "groupBy", nothing), ""))
+    isempty(gb) || push!(parts, "by $gb")
+    su = string(something(get(c, "setUid", nothing), ""))
+    if !isempty(su)
+        set = _valid_asset_id(su) ? (try init_object(puid, su) catch; nothing end) : nothing
+        uids = get(c, "imageUids", Any[])
+        n = uids isa AbstractVector && !isempty(uids) ? length(uids) : set isa CciaSet ? length(set.image_uids) : 0
+        name = set isa CciaSet ? set.name : su
+        push!(parts, n > 0 ? "$name · $n image$(n == 1 ? "" : "s")" : name)
+        get(c, "statUnit", "") == "image" && push!(parts, "one point per image")
+    else
+        iu = string(something(get(c, "imageUid", nothing), ""))
+        img = isempty(iu) ? nothing : _kiwi_image(puid, Dict("imageUid" => iu))
+        img isa CciaImage && push!(parts, img.name)
+    end
+    join(parts, " · ")
+end
+
+# What an open plot shows, as the panel published it (`PlotEntry.summary`) — "" when it isn't open or
+# publishes none. Read by the context pack, NOT put in the resolve result: that result is stored per
+# cited ref, and a claim table of eight refs would carry eight copies.
+function kiwi_plot_summary(puid::AbstractString, plot_id::AbstractString)::String
+    e = kiwi_plot_entry(puid, plot_id)
+    e === nothing ? "" : e.summary
+end
+
+kiwi_plot_entry(puid::AbstractString, plot_id::AbstractString) = lock(_PLOTS_LOCK) do
+    get(get(_PLOTS_BY_PROJECT, String(puid), Dict{String,PlotEntry}()), String(plot_id), nothing)
+end
+
+# A plot nobody has made — does the project have what it takes? `expand_board` is the validator
+# `add_analysis_board` / POST /api/boards/add run before writing (plot type, chart, measure, which
+# populations its pop type can reach), run here as a dry run: nothing is written. Its message names the
+# bad value and the options, which is what the re-ask needs.
+function _kiwi_resolve_proposedPlot(puid, ref)
+    proj = try load_project(String(puid)) catch; return _kiwi_bad("proposal", "the project could not be read") end
+    entry = Dict{String,Any}(String(k) => v for (k, v) in pairs(ref) if !(String(k) in ("kind", "compareBy")))
+    compare = string(something(_kiwi_get(ref, "compareBy"), ""))
+    try
+        expand_board(proj, "Kiwi proposal", Any[entry]; compare_by = compare)
+    catch e
+        e isa BoardSpecError || return _kiwi_bad("proposal", sprint(showerror, e))
+        return _kiwi_bad("proposal", replace(e.msg, r"^plots\[1\]:\s*" => ""))
+    end
+    r = _kiwi_ok("proposal", kiwi_proposed_plot_label(ref))
+    # already drawn somewhere? then it isn't new — say where (a click opens that board, `kiwi_slot_holds`)
+    for b in (try board_summaries(proj) catch; Any[] end), s in get(b, "plots", Any[])
+        kiwi_slot_holds(s, ref) && (r["detail"] = "already on board “$(b["name"])”"; break)
+    end
+    r
+end
+
+"""
+    kiwi_proposed_plot_label(ref) -> String
+
+"Track measures · live.track.speed · B/qc/_tracked, T/qc/_tracked" — the plot type's own label, then
+what it would show.
+"""
+function kiwi_proposed_plot_label(ref)::String
+    id = string(something(_kiwi_get(ref, "plot"), ""))
+    sp = get(plot_spec_index(), id, nothing)
+    name = sp isa AbstractDict ? string(get(sp, "label", id)) : id
+    pops = _kiwi_get(ref, "pops")
+    parts = String[name, string(something(_kiwi_get(ref, "measure"), "")),
+                   pops isa AbstractVector ? join(string.(pops), ", ") : "",
+                   string(something(_kiwi_get(ref, "groupBy"), ""))]
+    join(filter(!isempty, parts), " · ")
 end
 
 function _kiwi_resolve_tile(puid, ref)
@@ -274,6 +369,7 @@ const _KIWI_RESOLVERS = Dict{String,Function}(
     "tracks" => _kiwi_resolve_tracks, "viewer" => _kiwi_resolve_viewer, "plot" => _kiwi_resolve_plot,
     "tile" => _kiwi_resolve_tile, "capture" => _kiwi_resolve_capture, "task" => _kiwi_resolve_task,
     "ui" => _kiwi_resolve_ui, "blackboard" => _kiwi_resolve_blackboard,
+    "proposedPlot" => _kiwi_resolve_proposedPlot,
 )
 @assert Set(keys(_KIWI_RESOLVERS)) == Set(KIWI_REF_KINDS) "every schema kind needs a resolver"
 
@@ -292,6 +388,51 @@ function resolve_kiwi_ref(project_uid::AbstractString, ref)::Dict{String,Any}
     catch err
         _kiwi_bad("exists", "could not check this $kind ref: $(sprint(showerror, err))")
     end
+end
+
+# ── A population's cells — what pointing at one shows ─────────────────────────────────────────────────
+#
+#   POST /api/kiwi/refs/cells  {projectUid, ref: <population KiwiRef>, limit?}
+#     → {labelIds, total, truncated, popType}
+#
+# Clicking a population ref outlines its cells in the viewer (`PickHighlight`, the same outline the
+# plots' brushing draws). It used to open the image's gating page, where no plot shows a given
+# population — the user got a root scatter on arbitrary axes. Reads through `pop_df` (the sanctioned
+# cell-data entry), at cell granularity, ids only.
+const _KIWI_CELLS_LIMIT = 20000
+
+function kiwi_population_cells(puid::AbstractString, ref; limit::Integer = _KIWI_CELLS_LIMIT)
+    string(_kiwi_get(ref, "kind", "")) == "population" || return "not a population ref"
+    img = _kiwi_image(String(puid), ref); img isa String && return img
+    vn, path = String(_kiwi_get(ref, "valueName")), String(_kiwi_get(ref, "popPath"))
+    p = _kiwi_pop_type(img, vn, path)
+    p === nothing && return "no population $path on $(img.name) ($vn)"
+    df = try
+        pop_df(img, p.popType, [path]; value_name = vn, granularity = :cell, include_obs = false, include_x = false)
+    catch e
+        return "could not read $path: $(sprint(showerror, e))"
+    end
+    "label" in names(df) || return "no cell ids for $path"
+    ids = sort!(unique(Int[Int(l) for l in df.label if !ismissing(l) && l > 0]))
+    total = length(ids)
+    (; labelIds = total > limit ? ids[1:limit] : ids, total, truncated = total > limit, popType = p.popType)
+end
+
+function api_kiwi_refs_cells(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    puid = _wstr(body, :projectUid)
+    (isempty(puid) || !_valid_asset_id(puid)) && return 400, JSON3.write((; error = "projectUid required"))
+    isfile(joinpath(projects_dir(), puid, "project.json")) ||
+        return 404, JSON3.write((; error = "no project $puid"))
+    ref = get(body, :ref, nothing)
+    ref isa AbstractDict || return 400, JSON3.write((; error = "ref required"))
+    err = kiwi_ref_shape_error(ref)
+    isempty(err) || return 400, JSON3.write((; error = err))
+    lim = get(body, :limit, _KIWI_CELLS_LIMIT)
+    out = kiwi_population_cells(puid, ref; limit = lim isa Integer ? clamp(lim, 1, 200_000) : _KIWI_CELLS_LIMIT)
+    out isa String && return 404, JSON3.write((; error = out))
+    200, JSON3.write(out)
 end
 
 function api_kiwi_refs_resolve(body_bytes::Vector{UInt8})

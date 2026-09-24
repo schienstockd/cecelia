@@ -37,19 +37,12 @@ The value of the observer session depends entirely on what Claude can see. Claud
 > noticed the gap. A ⚠️ comment did not prevent either, because you only read it if you already knew
 > the other file existed.
 >
-> It was four surfaces, then three, and is now two, by deleting copies rather than adding warnings:
-> the ~900-word prompt in `frontend/src/lib/chatHandoff.ts` that the user pasted (see *The hand-off is
-> one line*), and then the tool catalogue in `app/src/ai/observer_prompt.jl` — the in-app agent is
-> spawned with `--mcp-config` pointing at this same server, so it already receives
-> `SERVER_INSTRUCTIONS` and `BRIEFING_GUIDANCE`; restating them there was a second copy of exactly the
-> kind that had already gone stale twice. `_OBSERVER_RULES` now carries only what the role adds — the
-> watch loop, the cohort-QC pass, the parameter-suggestion rules and the lab-log discipline — and
-> edits there are needed only when the WATCH LOOP changes, not when a tool is added.
->
-> Each side is enforced in its own language, since neither can import the other:
-> `mcp/tests/test_server.py` → `GuidanceTest` (every registered tool is named in `guidance.py`, bar an
-> explicit three-tool exemption) and `app/test/suite.jl` → *"the in-app observer prompt is a role, not
-> a second tool manual"* (the loop's own tools are named; the shared catalogue is asserted **absent**).
+> It was four surfaces, then three, then two, and is now one, by deleting copies rather than adding
+> warnings: the ~900-word prompt in `frontend/src/lib/chatHandoff.ts` that the user pasted (see *The
+> hand-off is one line*), and then the in-app "Ask Claude" agent's prompt (`observer_prompt.jl`), which
+> first shrank to the role it added and was then removed with that agent (2026-09-24, below).
+> `mcp/tests/test_server.py` → `GuidanceTest` enforces the one that is left: every registered tool is
+> named in `guidance.py`, bar an explicit three-tool exemption.
 
 
 **Read-only (Phase 1 — implement now):**
@@ -124,8 +117,16 @@ infer is *which* project — the app knows, so it says so.
 
 > **Implementation note (2026-07, `feat/observer-remove-watch`):** the in-app auto-firing "Watch"
 > was **removed**. In practice most task completions had nothing worth flagging, so the auto passes
-> were token noise the user stopped reading. Claude is now **on-demand only** — the "Ask Claude"
-> button runs one pass. Deterministic, always-on reporting is **Cecelia's** job (the `capture_context!`
+> were token noise the user stopped reading.
+>
+> **2026-09-24 — the on-demand "Ask Claude" pass went too.** It ran the same engine as Kiwi
+> (`run_agent_turn`, `app/src/ai/agent_runner.jl`) but wrote unchecked free text straight into the
+> append-only lab log, which is what Kiwi's validated claims exist to avoid, and its job ("review what
+> just happened, flag anything") is a Kiwi question or a terminal session's opening. In-app asking is
+> Kiwi (`docs/todo/KIWI_ASSISTANT_PLAN.md`); a terminal session still writes `[Claude]` entries through
+> `append_lab_log`. Two things only that pass's prompt carried and were dropped with it: suggesting a
+> parameter DIRECTION for a cohort outlier, and watching for one function run over and over on one
+> image (`poll_observations` still serves that pattern to any session). Deterministic, always-on reporting is **Cecelia's** job (the `capture_context!`
 > digests + QC traffic lights), not Claude's. The design below is the original vision; the event-push
 > machinery (`monitor.py`) remains for the repeat-failure signal + a possible future opt-in. See
 > `docs/todo/QC_OBSERVER_PLAN.md`.
@@ -280,7 +281,8 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
 - **`get_module_params`** — task param specs (valid ranges/defaults/types) via the existing
   `/api/tasks/definitions`, trimmed at the MCP boundary.
 - **§1 parameter suggestions** — on a cohort outlier, Claude reads the trail + `get_module_params` range
-  and suggests an in-range direction (`observer_prompt.jl`), framed suggestion-not-instruction.
+  and suggests an in-range direction, framed suggestion-not-instruction. (The standing instruction to do
+  so lived in the removed in-app pass's prompt; a session does it when asked.)
 - **`get_session_briefing`** — chat startup context (name/count + flagged images + recent lab log),
   plus the `guidance` payload; the server instructions send every session here first. Flagged uses the
   one canonical `all_qc_docs` (shared with the image table). Each flagged image carries `included` and

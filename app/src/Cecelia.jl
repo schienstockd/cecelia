@@ -399,12 +399,11 @@ include("maintenance.jl")
 # Project Manager export/import — background jobs (jobs.jl) that tar each store in parallel. See docs/JOBS.md.
 include("project_io.jl")
 
-# AI observer (in-app assistant) — spawns a headless agent that reads state + appends to the lab log
-# through the cecelia-observer MCP. After scheduler.jl (uses _kill_proc_tree). See
-# docs/todo/OBSERVER_INTEGRATION_PLAN.md.
-include("ai/observer_prompt.jl")
+# AI assistant plumbing — the engine contract (`agent_runner.jl`, one runner behind Kiwi's turns and
+# the observer MCP registration) and the read-only summaries the observer tools serve. After
+# scheduler.jl (uses _kill_proc_tree). The lab log's one-off "Ask Claude" pass was removed 2026-09-24:
+# Kiwi's validated turn supersedes it; interactive sessions still write the lab log via append_lab_log.
 include("ai/agent_runner.jl")
-include("ai/observer_session.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("ai/populations.jl")
@@ -422,13 +421,11 @@ export BoardSpecError, expand_board, append_board, plot_specs, plot_spec_index, 
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix
-export ClaudeAgent, agent_available, agent_bin_path, run_observer_turn, observer_mcp_config, observer_mcp_spec,
+export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
        read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,
        remove_shadowing_observer_mcps,
-       observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
-       OBSERVER_MODELS, observer_default_model, observer_valid_model,
-       read_observer_session, record_observer_turn!, log_observer_pass!, clear_observer_session!
+       observer_agent_bin, OBSERVER_MODELS, observer_default_model, observer_valid_model
 
 end

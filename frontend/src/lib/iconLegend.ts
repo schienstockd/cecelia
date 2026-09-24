@@ -105,11 +105,14 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-video', means: 'Record a movie' },
       { icon: 'pi-share-alt', means: 'Apply to the others — and cell tracks; polygon draw tool' },
       { icon: 'pi-power-off', means: 'Quit Cecelia' },
-      { icon: 'pi-reply', means: 'Correct what Claude wrote' },
+      { icon: 'pi-reply', means: 'Reply to what the assistant wrote — correct it, or follow it up' },
       { icon: 'pi-external-link', means: 'Opens outside the app' },
       { icon: 'pi-github', means: 'Opens the repository' },
       { icon: 'pi-megaphone', means: 'Call for Datasets — what we can build with your data' },
       { icon: 'pi-comments', means: 'Chat to Claude' },
+      { icon: 'pi-at', means: 'Add to Kiwi — attach it to your next question' },
+      { icon: 'pi-send', means: 'Ask Kiwi' },
+      { icon: 'pi-question', means: 'A question Kiwi asks — a next look you can check' },
       { icon: 'pi-comment', means: 'A note on an image' },
       { icon: 'pi-thumbs-up', means: 'A Blackboard thread that turned out right' },
       { icon: 'pi-thumbs-down', means: 'A Blackboard thread that turned out wrong' },
@@ -234,7 +237,7 @@ export const ICON_LEGEND: IconFamily[] = [
 // Shapes and status — filled/outline variants and near-neighbours of the "Status" family:
 //   pi-circle-on  pi-circle-off  pi-plus-circle  pi-pause-circle
 //   pi-bookmark-fill  pi-filter-fill  pi-flag-fill  pi-star-half  pi-star-half-fill
-//   pi-info  pi-question  pi-verified  pi-shield  pi-bullseye
+//   pi-info  pi-verified  pi-shield  pi-bullseye
 //   pi-bell-slash  pi-unlock  pi-delete-left  pi-eject  pi-search-minus
 //
 // Editing / writing — variants of the pencil/file family:
@@ -267,8 +270,8 @@ export const ICON_LEGEND: IconFamily[] = [
 //   pi-money-bill  pi-credit-card  pi-wallet  pi-dollar  pi-euro  pi-pound  pi-turkish-lira
 //   pi-indian-rupee  pi-barcode  pi-mars  pi-venus  pi-language
 //
-// Messaging — near-neighbours of pi-comments / pi-send / pi-envelope:
-//   pi-envelope  pi-send  pi-at  pi-sign-in  pi-sign-out
+// Messaging — near-neighbours of pi-comments / pi-send (now used) / pi-envelope:
+//   pi-envelope  pi-sign-in  pi-sign-out
 //
 // Odd ones out — the loose bag:
 //   pi-chart-pie  pi-sliders-v  pi-spinner-dotted  pi-fw

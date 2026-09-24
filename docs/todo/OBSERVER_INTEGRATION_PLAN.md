@@ -1,5 +1,9 @@
 # Observer-in-app integration — parked plan
 
+> **2026-09-24:** the in-app "Ask Claude" pass this plan built (`observer_prompt.jl`, `observer_session.jl`,
+> `POST /api/observer/feedback` + `/clear`, the lab-log activity log) was removed — Kiwi's validated turn
+> supersedes it (`KIWI_ASSISTANT_PLAN.md`). The MCP server, the terminal setup and `append_lab_log` remain.
+
 Bring the MCP observer (Slices A–C, see `docs/ai-assist/OBSERVER.md`) *inside* Cecelia: the user runs
 the AI assistant from the app — a toggle to have it watch and comment in the lab log automatically, a
 button to ask for feedback on demand — instead of wiring a separate terminal Claude session. The lab

@@ -114,6 +114,8 @@ import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
+import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
+import { viewerRefFor } from '../utils/kiwiTurn'
 
 const route = useRoute()
 const settings = useSettingsStore()
@@ -1001,6 +1003,11 @@ const loadedLevel = ref(-1)
  */
 const mode = ref<'plane' | 'volume'>('plane')
 const zPlane = ref(0)
+// what the side panel's "Add to Kiwi" would attach right now (utils/kiwiTurn.ts::viewerRefFor)
+const kiwiViewRef = computed(() => viewerRefFor({
+  imageUid, t: t.value, z: zPlane.value, plane: mode.value === 'plane',
+  tracks: viewerStore.trackHighlight, cells: viewerStore.pickHighlight,
+}))
 /** Cache hits and misses since the last (re)allocation, and how long the last miss took end to end.
  *  The plan's headline scrub number was measured with capacity larger than the movie, i.e. with
  *  eviction impossible — so the shipped cache needs its OWN numbers, from real use. */
@@ -5162,6 +5169,9 @@ onUnmounted(() => {
                   @click="advancedOpen = !advancedOpen">
             <i class="pi pi-sliders-h" />
           </button>
+          <!-- Add to Kiwi: the user's selection if there is one, else this view (t, and z in 2D) -->
+          <AddToKiwiButton :kiwi-ref="() => kiwiViewRef.ref" :tip="kiwiViewRef.tip" :project-uid="projectUid"
+                           size="dense" />
           <!-- Shortcuts sits at the far right — a reference popover, not a live control, so it
                reads as separate from the mode/renderer group. -->
           <div class="vw-grow" />

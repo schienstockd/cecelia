@@ -14,7 +14,8 @@
                          `null` rather than `undefined` is load-bearing — see the note by the computed.
 -->
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onBeforeUnmount } from 'vue'
+import { onSectionOpen } from '../utils/sectionOpen'
 
 const props = withDefaults(defineProps<{
   label:        string
@@ -37,6 +38,9 @@ const inner = ref(stored === null ? props.defaultOpen : stored === '1')
 watch(inner, v => {
   if (props.storageKey) { try { localStorage.setItem(props.storageKey, v ? '1' : '0') } catch { /* ignore */ } }
 })
+// opened / closed from outside (`utils/sectionOpen.ts` — e.g. a page folding its image table so a
+// pointed-at plot is the first thing in view)
+if (props.storageKey) onBeforeUnmount(onSectionOpen(props.storageKey, v => { inner.value = v }))
 // `null` MARKS UNCONTROLLED, and it has to be null rather than undefined.
 //
 // An optional prop typed `boolean` is Boolean-CAST by Vue: absent means `false`, not `undefined`. So a

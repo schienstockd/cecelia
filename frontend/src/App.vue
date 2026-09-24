@@ -41,7 +41,7 @@ const ws = useWsStore()
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
 // Observer state lives in a store (not the v-if'd lab-log panel) so it survives the panel closing.
-// Claude is on-demand only (Ask Claude); refresh its status/session whenever the open project changes.
+// Refresh the assistant's availability / terminal setup whenever the open project changes.
 const observer = useObserverStore()
 // The guide runtime, instantiated here so its poll/lifecycle belongs to the shell rather than to the
 // v-if'd bubble — a guide has to survive route changes (docs/todo/GUIDE_SYSTEM_PLAN.md).
