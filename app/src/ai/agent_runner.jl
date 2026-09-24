@@ -288,6 +288,31 @@ read-time default, not a migration). Every consumer of a turn's profile goes thr
 turn_profile(rec::AbstractDict)::String = string(get(rec, "profile", "legacy"))
 
 """
+    set_kiwi_profile!(name) -> String
+
+Persist `name` as `[ai].profile` in `custom.toml` (creating the file if needed, **merging** so
+other keys survive) and hot-reload config. Writer half of the pair with `kiwi_profile_name()` —
+same shape as `set_projects_dir!` (LOGIN_CREDENTIAL_ISOLATION_PLAN P3, server-active-profile
+model — the per-tab handoff is a follow-up that will send an `X-Kiwi-Profile` header instead
+of driving this writer).
+
+Caller validates the name (`_valid_kiwi_profile_name` in the API layer); this writer trusts
+its argument.
+"""
+function set_kiwi_profile!(name::AbstractString)::String
+    stored = strip(String(name))
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    ai  = get(cfg, "ai", Dict{String,Any}())
+    ai["profile"] = stored
+    cfg["ai"] = ai
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()   # hot-reload: kiwi_profile_name() sees the new value on next call
+    stored
+end
+
+"""
     kiwi_profile_dir(name = kiwi_profile_name(); config_root = config_dir()) -> String
 
 Resolve a profile name to its `CLAUDE_CONFIG_DIR`. Returns `""` for the `default` profile
@@ -322,6 +347,38 @@ Add the profile's env overrides to a `Cmd`. Used at every `claude` spawn site so
 _apply_claude_env(cmd::Cmd, profile_dir::AbstractString)::Cmd =
     addenv(cmd, _claude_env_pairs(profile_dir)...)
 _apply_claude_env(cmd::Cmd)::Cmd = _apply_claude_env(cmd, _active_claude_profile_dir!())
+
+_default_user_shell()::String =
+    Sys.iswindows() ? get(ENV, "ComSpec", "cmd.exe") :
+                      get(ENV, "SHELL",   "/bin/bash")
+
+"""
+    kiwi_terminal_command(profile_dir; shell = _default_user_shell()) -> String
+
+The one-liner a user runs (or Cecelia spawns) to open a profile-scoped interactive shell so
+`claude` — and any other tool that reads `CLAUDE_CONFIG_DIR` — picks up the active Kiwi profile
+(LOGIN_CREDENTIAL_ISOLATION_PLAN D9). Ambient credential env vars are scrubbed in the same call
+per D6, otherwise a stray `.bashrc` line would silently override even inside the new shell.
+
+Empty `profile_dir` (the default profile) omits the `CLAUDE_CONFIG_DIR` setting so the CLI
+falls back to `~/.claude*` — matches `_apply_claude_env`'s handling; single-seat unchanged.
+
+PURE → tested without spawning. Platform-switched on `Sys.iswindows()`.
+"""
+function kiwi_terminal_command(profile_dir::AbstractString;
+                               shell::AbstractString = _default_user_shell(),
+                               is_windows::Bool = Sys.iswindows())::String
+    if is_windows
+        unsets  = join(("Remove-Item Env:$(k) -ErrorAction SilentlyContinue"
+                        for k in _AMBIENT_CLAUDE_ENV), "; ")
+        setenv  = isempty(profile_dir) ? "" : "; \$env:CLAUDE_CONFIG_DIR = '$(profile_dir)'"
+        return string("powershell -NoProfile -Command \"", unsets, setenv,
+                      "; & '$(shell)'\"")
+    end
+    unset_args = join(("-u $(k)" for k in _AMBIENT_CLAUDE_ENV), " ")
+    setenv     = isempty(profile_dir) ? "" : string(" CLAUDE_CONFIG_DIR=", profile_dir)
+    string("env ", unset_args, setenv, " ", shell, " -i")
+end
 
 # Live resolver — ensures the named-profile dir exists so the CLI can write on first login.
 # The default profile ("") is a no-op here; the CLI's own paths already exist.

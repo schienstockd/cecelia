@@ -64,6 +64,7 @@ include("plots_registry_api.jl") # bidirectional context — live plot registry 
 include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI_ASSISTANT_PLAN Phase 2; needs the captures/blackboard/landscape/plots files above)
 include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3)
 include("kiwi_api.jl")       # Kiwi — the cockpit's turn routes: background run, WS steps, kept replies (Phase 4)
+include("kiwi_profile_api.jl") # Kiwi profile roster + picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -329,6 +330,9 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_get(req)),
     "/api/correction-plan/presets" => (req, body_bytes) -> (api_correction_plan_presets(req)),
     "/api/correction-plan/get" => (req, body_bytes) -> (api_correction_plan_get(req)),
+    # Kiwi profile roster + terminal one-liner (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6).
+    "/api/kiwi/profiles"          => (req, body_bytes) -> (api_kiwi_profiles_list(req)),
+    "/api/kiwi/terminal/command"  => (req, body_bytes) -> (api_kiwi_terminal_command(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────
@@ -438,6 +442,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/turn" => (req, body_bytes) -> (api_kiwi_turn(body_bytes)),
     "/api/kiwi/turn/cancel" => (req, body_bytes) -> (api_kiwi_turn_cancel(body_bytes)),
     "/api/kiwi/turns/clear" => (req, body_bytes) -> (api_kiwi_turns_clear(body_bytes)),
+    # Kiwi profile picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3) — writes only; GET siblings live in _GET_ROUTES.
+    "/api/kiwi/profiles/select"     => (req, body_bytes) -> (api_kiwi_profiles_select(body_bytes)),
+    "/api/kiwi/profiles/create"     => (req, body_bytes) -> (api_kiwi_profiles_create(body_bytes)),
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),
