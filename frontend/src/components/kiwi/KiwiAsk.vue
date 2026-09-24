@@ -186,6 +186,7 @@ function pick(c: RefCandidate) {
         <div v-if="t.reply.abstain && !t.reply.claims.length" class="cc-muted cc-fs-xs">
           Can’t say from what I looked at.
         </div>
+        <InlineNote v-if="t.reply.note" class="cc-fs-xs" :short="t.reply.note" />
         <SelectionTable v-if="t.reply.claims.length" selection-mode="none" density="compact"
                         column-width-key="cc.kiwi.claims.colw"
                         :columns="CLAIM_COLUMNS" :rows="claimRows(t.reply)" id-key="id"

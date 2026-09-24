@@ -22,6 +22,7 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     @test Set(String.(s.required)) == Set(["abstain", "claims"]) && !haskey(s.properties, :reasoning)
     @test s.properties.claims.items.properties.refs.minItems == 1
     @test s.properties.claims.maxItems == KIWI_MAX_CLAIMS
+    @test s.properties.note.maxLength == KIWI_NOTE_MAX_CHARS && !("note" in String.(s.required))   # optional
     # the app renders the "I think" flag; a model that writes it too is trimmed, not doubled
     @test kiwi_claim_text("interpretation", "I think no single measure is best") == "No single measure is best"
     @test kiwi_claim_text("interpretation", "i think that, B is slower") == "B is slower"
@@ -65,7 +66,11 @@ end
         @test kiwi_claim_bundling(t) == ""
     end
     # bundled — real multi-fact claims from the same run each fail, with the reason named
-    @test occursin("dash", kiwi_claim_bundling("nG1jSi's steps list has two entries — driftCorrect and denoise."))
+    # a comparison is ONE fact — the first real turns' claims, which the old dash / 160-char rules split
+    for t in ("In M1a_005, T tracks move faster than B: median speed 7.00 vs 3.06 µm/min (n=18, n=21) — little overlap.",
+              "Speed separates B from T in 5 of 7 images, but reverses in M2b (B 4.70 vs T 2.50 µm/min).")
+        @test kiwi_claim_bundling(t) == ""
+    end
     @test occursin("parentheses", kiwi_claim_bundling("Pops exist (13 on flowTom, 2 gated on default, one on cpSAM2)."))
     @test occursin("list", kiwi_claim_bundling("It has 13 pops on flowTom, 2 pops on default, and one pop on cpSAM2."))
     # …but a list of NAMES is one fact — the sanity run's three post-re-ask failures, all misfires
@@ -182,7 +187,8 @@ end
         lock(_PLOTS_LOCK) do
             get!(_PLOTS_BY_PROJECT, "testpr", Dict{String,PlotEntry}())["kiwi-turn-plot"] =
                 PlotEntry("kiwi-turn-plot", "c1", "summary", "Track measures", "/analysis", String[], nothing,
-                          Dict{String,Any}("series" => ["B/qc"]), time(), "testpr")
+                          Dict{String,Any}("series" => ["B/qc"]), time(), "testpr",
+                          "measure: live.track.speed · chart: boxplot\nB/qc | M1a (LUkCpP) | - | n=21 median=3.06 q1=2.10 q3=4.17")
         end
         on_plot = Dict("abstain" => false, "claims" => [Dict("kind" => "observation", "text" => "The plot has one series.", "refs" => [pref])])
         closing = _KiwiFakeEngine([_kiwi_fake_reply(on_plot)], Tuple{String,String}[])
@@ -190,7 +196,9 @@ end
         out = run_kiwi_turn("testpr", "what does this show?"; refs = [pref], agent = closing, mcp_config_path = cfg,
                             on_progress = s -> s == "checking refs" && close_it(s))
         @test out["ok"] && out["claims"][1]["refs"][1]["result"]["label"] == "Track measures"
-        @test occursin("(B/qc)", closing.calls[1][1])                   # the pack carries what the plot shows
+        @test occursin("(B/qc)", closing.calls[1][1])                   # the pack carries what the plot is…
+        @test occursin("What this plot shows", closing.calls[1][1])      # …and the numbers it draws
+        @test occursin("    B/qc | M1a (LUkCpP) | - | n=21 median=3.06", closing.calls[1][1])
 
         # 4b'. a follow-up cites a plot attached EARLIER, now closed: its earlier result stands, and the
         #      pack tells the engine it may
@@ -205,6 +213,11 @@ end
                                                     for _ in 1:(KIWI_MAX_CLAIMS + 1)])
         _, errs = kiwi_validate_reply("testpr", JSON3.read(JSON3.write(many)), join(tool_saw_image), [])
         @test only(errs) |> e -> occursin("at most $KIWI_MAX_CLAIMS", e)
+
+        # 4d. a note — what Kiwi couldn't do — comes back as its own line, not as a claim
+        f = _KiwiFakeEngine([_kiwi_fake_reply(merge(good, Dict("note" => "  I couldn't open the board.  ")); seen = tool_saw_image)], Tuple{String,String}[])
+        out = run_kiwi_turn("testpr", "q"; agent = f, mcp_config_path = cfg)
+        @test out["ok"] && out["note"] == "I couldn't open the board." && length(out["claims"]) == 1
 
         # 5. an abstaining reply is ok
         f = _KiwiFakeEngine([_kiwi_fake_reply(Dict("abstain" => true, "claims" => []))], Tuple{String,String}[])

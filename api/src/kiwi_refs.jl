@@ -141,10 +141,12 @@ function _kiwi_resolve_population(puid, ref)
     vn, path = String(_kiwi_get(ref, "valueName")), String(_kiwi_get(ref, "popPath"))
     p = _kiwi_pop_type(img, vn, path)
     p === nothing && return _kiwi_bad("exists", "no population $path on $(img.name) ($vn)")
-    p.fixed && return _kiwi_ok("exists", "$(img.name) · $(p.name)")     # root / derived: always exist
+    # the segmentation in the label: B's and T's "/qc" on one image read identically without it (the
+    # first real turns, 4kS67f 2026-09-24 — every chip was "M1a…_005 · qc (flow)")
+    p.fixed && return _kiwi_ok("exists", "$(img.name) · $vn · $(p.name)")     # root / derived: always exist
     # the type in the label: one name often exists under several types (a gate and a cluster both
     # called "Population 1" on 4kS67f, live check 2026-09-23) and a chip must say which
-    _kiwi_ok("exists", "$(img.name) · $(p.name) ($(p.popType))")
+    _kiwi_ok("exists", "$(img.name) · $vn · $(p.name) ($(p.popType))")
 end
 
 # Integer label/track ids from an `obs/_index`-style column (strings in the h5ad, ints in a ref).
@@ -249,6 +251,16 @@ function _kiwi_plot_detail(puid, c::AbstractDict)::String
         img isa CciaImage && push!(parts, img.name)
     end
     join(parts, " · ")
+end
+
+# What an open plot shows, as the panel published it (`PlotEntry.summary`) — "" when it isn't open or
+# publishes none. Read by the context pack, NOT put in the resolve result: that result is stored per
+# cited ref, and a claim table of eight refs would carry eight copies.
+function kiwi_plot_summary(puid::AbstractString, plot_id::AbstractString)::String
+    e = lock(_PLOTS_LOCK) do
+        get(get(_PLOTS_BY_PROJECT, String(puid), Dict{String,PlotEntry}()), String(plot_id), nothing)
+    end
+    e === nothing ? "" : e.summary
 end
 
 function _kiwi_resolve_tile(puid, ref)

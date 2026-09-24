@@ -28,7 +28,15 @@ struct PlotEntry
     content::Dict{String,Any}
     ts::Float64                # createdAt seconds since epoch — a client can sort or age
     projectUid::String
+    # summary — what the plot SHOWS, as text (`frontend/src/utils/plotSummary.ts`): one row per series
+    # with the statistic the chart drew. Not a `content` key: content is discriminators under a tight
+    # per-value cap; this is the numbers on screen, for an assistant the plot was handed to (Kiwi's
+    # context pack, `kiwi_context_pack`). "" when the panel publishes none.
+    summary::String
 end
+# the pre-`summary` shape — every panel that publishes no summary, and the tests that build entries
+PlotEntry(plotId, clientId, family, title, route, cellKeys, bboxScreen, content, ts, projectUid) =
+    PlotEntry(plotId, clientId, family, title, route, cellKeys, bboxScreen, content, ts, projectUid, "")
 
 const _PLOTS_LOCK        = ReentrantLock()
 const _PLOTS_BY_PROJECT  = Dict{String, Dict{String, PlotEntry}}()
@@ -52,6 +60,8 @@ const _PR_BBOX_KEYS     = ("x", "y", "w", "h")
 const _PLOT_CONTENT_VALUE_MAX = 2048
 const _PLOT_CONTENT_TOTAL_MAX = 8192
 const _PLOT_CONTENT_MAX_DEPTH = 2
+# the summary's own cap — the frontend cuts at 12 000 and says so; this only stops a runaway client
+const _PLOT_SUMMARY_MAX = 16_384
 
 _pr_now() = time()
 
@@ -176,6 +186,7 @@ function _plot_ws_payload(e::PlotEntry)::Dict{String,Any}
     )
     isempty(e.cellKeys) || (out["cellKeys"] = e.cellKeys)
     isnothing(e.bboxScreen) || (out["bboxScreen"] = e.bboxScreen)
+    isempty(e.summary) || (out["summary"] = e.summary)
     out
 end
 
@@ -210,8 +221,10 @@ function api_viewer_plots_register(body_bytes::Vector{UInt8})
     cell_keys = _pr_clean_cell_keys(get(body, :cellKeys, get(body, :cell_keys, nothing)))
     bbox      = _pr_clean_bbox(get(body, :bboxScreen, get(body, :bbox_screen, nothing)))
     content   = _pr_clean_content(get(body, :content, nothing))
+    raw_sum   = get(body, :summary, "")
+    summary   = raw_sum isa AbstractString ? _pr_clean_str(raw_sum, _PLOT_SUMMARY_MAX) : ""
 
-    e = PlotEntry(plot_id, client_id, family, title, route, cell_keys, bbox, content, _pr_now(), project_uid)
+    e = PlotEntry(plot_id, client_id, family, title, route, cell_keys, bbox, content, _pr_now(), project_uid, summary)
     lock(_PLOTS_LOCK) do
         bag = get!(_PLOTS_BY_PROJECT, project_uid, Dict{String,PlotEntry}())
         bag[plot_id] = e

@@ -54,6 +54,7 @@ const KIWI_CLAIM_KINDS = ("observation", "interpretation", "question")
 # median per image per population per measure — and the user read it as "way too many references".
 # In the schema (engines that enforce it never exceed it) and in validation (engines that don't).
 const KIWI_MAX_CLAIMS = 8
+const KIWI_NOTE_MAX_CHARS = 300
 
 """
     kiwi_reply_schema(; reasoning = false) -> String
@@ -73,7 +74,10 @@ function kiwi_reply_schema(; reasoning::Bool = false)::String
             "kind" => Dict("enum" => collect(KIWI_CLAIM_KINDS)),
             "text" => Dict("type" => "string", "minLength" => 1),
             "refs" => Dict("type" => "array", "minItems" => 1, "items" => Dict("\$ref" => "#/definitions/kiwiRef"))))
+    # `note`: one line for what is NOT a claim — "I couldn't open the board", "attach the plot to compare".
+    # Without it the first real turns filed such lines as questions pinned to an unrelated population.
     props = Dict{String,Any}("abstain" => Dict("type" => "boolean"),
+                             "note"    => Dict("type" => "string", "maxLength" => KIWI_NOTE_MAX_CHARS),
                              "claims"  => Dict("type" => "array", "maxItems" => KIWI_MAX_CLAIMS, "items" => claim))
     req = ["abstain", "claims"]
     reasoning && (props["reasoning"] = Dict("type" => "string"); pushfirst!(req, "reasoning"))
@@ -91,20 +95,27 @@ The project is `$(project_uid)`. Read it with the tools before you answer. You c
 
 Reply ONLY through the structured output: at most $(KIWI_MAX_CLAIMS) claims, fewer is better. The first
 claim answers the question as directly as the data allows. Each claim is ONE fact — never two joined by
-"and", never a fact plus what it suggests. Each claim carries at least one ref to an app object, and
+"and", never a fact plus what it suggests. A comparison is one fact: "B median 3.1 vs T 7.0 µm/min" is
+one claim, not two readouts. Each claim carries at least one ref to an app object, and
 every ref must be an object you saw in this conversation — in a tool result or in the attached context —
 with its exact ids copied from there. Never cite from memory. Never invent an id.
 
 Say what stands out, not everything you read. Don't give one claim per image — summarise across the
 images (a range, a count, which ones differ). When a plot or set is attached, its scope (the images, the
-populations) is the scope of your answer: look at all of it, not a sample. A claim about what an
-attached plot shows cites that plot.
+populations) is the scope of your answer: look at all of it, not a sample. An attached plot comes
+with the numbers it draws — answer from those first; they are what the user is looking at. A claim
+about what an attached plot shows cites that plot. A tool that takes a set_uid covers the whole set in
+one call — use that rather than one call per image.
 
 Write for the scientist: name images, populations and measures as the app shows them (an image's name,
 not its uid), and never mention your tools or how you looked something up — the refs carry that.
 
+If you could not look at something, or the user would need to do something for you to answer, say it
+once in `note` (one line) — never as a claim. Leave `note` empty otherwise.
+
 Claim kinds:
-- observation: what is shown. Numbers, counts, names, differences — no reasons.
+- observation: what is shown. Numbers, counts, names, differences — no reasons, no verdicts ("the
+  cleanest split" is a judgement, not an observation).
 - interpretation: what you think it means. The app labels it as yours — don't start it with "I think".
   Use sparingly.
 - question: a checkable next look ("Is track 12 in the same population at t=40?"), never an instruction.
@@ -131,6 +142,13 @@ function kiwi_context_pack(project_uid::AbstractString, refs;
         what = res["ok"] ? string("  → ", res["label"], isempty(get(res, "detail", "")) ? "" : " ($(res["detail"]))") :
                            "  → NOT FOUND: $(res["error"])"
         push!(lines, string("- ", JSON3.write(r), what))
+        # a plot comes with the numbers it is drawing — so Kiwi answers from what the user sees, across
+        # every image the plot covers, instead of rebuilding its own image by image
+        if res["ok"] && string(_kiwi_get(r, "kind", "")) == "plot"
+            s = kiwi_plot_summary(project_uid, string(_kiwi_get(r, "plotId", "")))
+            isempty(s) || push!(lines, "  What this plot shows (the numbers on the user's screen):\n" *
+                                       join(("    " * l for l in split(s, '\n')), "\n"))
+        end
     end
     join(lines, "\n")
 end
@@ -190,21 +208,24 @@ end
 # failure goes into the same one re-ask. Heuristics: they will misfire on some phrasing — the eval
 # harness reports how often they fire (`reaskErrors`), which is the number to watch.
 
-# Longer than this is almost always two facts: the live run's claims were p50 102, p90 185 characters.
-const KIWI_CLAIM_MAX_CHARS = 160
+# Only an EXTREME length counts. 160 (the eval's p90 was 185) re-asked every one of the first four real
+# turns on 4kS67f (2026-09-24), and the only way to comply with "B median 3.06 vs T 7.00 µm/min (n=21,
+# n=18)" was to split the comparison into two readouts — the comparison was the answer. A comparison is
+# one fact; so is a number with its spread and n.
+const KIWI_CLAIM_MAX_CHARS = 260
 
 """
     kiwi_claim_bundling(text) -> String
 
 Why `text` reads as more than one fact, or "" if it doesn't: over `KIWI_CLAIM_MAX_CHARS`, a
-semicolon or em-dash join, a second sentence, or a list of three or more facts (inline or in
+semicolon join, a second sentence, or a list of three or more facts (inline or in
 parentheses — a list of names is one fact, see `_kiwi_clause_list`). Thousands separators ("1,449") don't count as list commas. PURE → tested.
 """
 function kiwi_claim_bundling(text::AbstractString)::String
     length(text) > KIWI_CLAIM_MAX_CHARS && return "longer than $KIWI_CLAIM_MAX_CHARS characters"
     t = replace(text, r"(?<=\d),(?=\d{3}\b)" => "", r"\b(e\.g|i\.e|vs|approx)\." => s"\1")
     occursin(';', t) && return "two facts joined by a semicolon"
-    occursin(r"\s[—–]\s|\s--\s", t) && return "two facts joined by a dash"
+    # no dash rule: "B 3.1 vs T 7.0 — little overlap" is one comparison, and the rule split it
     occursin(r"[.!?]\s+[A-Z]", t) && return "more than one sentence"
     any(m -> _kiwi_clause_list(m.captures[1]), eachmatch(r"\(([^)]*)\)", t)) &&
         return "a list of three or more facts in parentheses"
@@ -395,6 +416,7 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     out(ok, claims, errors, reasked, r; shape = String[]) = Dict{String,Any}(
         "ok" => ok, "shapeErrors" => shape, "abstain" => (r.structured isa AbstractDict && _kiwi_get(r.structured, "abstain", false) == true),
         "claims" => claims, "errors" => errors, "reasked" => reasked,
+        "note" => r.structured isa AbstractDict ? String(first(strip(string(something(_kiwi_get(r.structured, "note", ""), ""))), KIWI_NOTE_MAX_CHARS)) : "",
         "reasoning" => r.structured isa AbstractDict ? string(_kiwi_get(r.structured, "reasoning", "")) : "",
         "sessionId" => r.session_id, "usage" => Dict("input" => usage[1], "output" => usage[2]),
         "toolCalls" => tool_calls, "reaskErrors" => reask_errors, "seconds" => round(time() - t0; digits = 1))

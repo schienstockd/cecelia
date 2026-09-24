@@ -32,6 +32,8 @@ export interface KiwiReply {
   usage: { input: number; output: number }
   toolCalls: number
   seconds: number
+  /** one line that is not a claim — what Kiwi couldn't look at, or needs from the user */
+  note?: string
   /** how Kiwi WROTE that its re-ask didn't fix (a bundled claim) — kept for the record, not shown */
   shapeErrors?: string[]
   /** the engine session — what a follow-up continues */

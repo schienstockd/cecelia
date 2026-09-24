@@ -79,7 +79,7 @@ end
         m = load_pop_map(img; value_name = "B", pop_type = "trackclust", backfill_save = false)
         p1 = first(sort!(collect(Cecelia.pop_paths(m))))
         r = res(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => p1))
-        @test r["ok"] && occursin(Cecelia.pop_at(m, p1).name, r["label"])
+        @test r["ok"] && occursin(Cecelia.pop_at(m, p1).name, r["label"]) && occursin(" · B · ", r["label"])   # which segmentation
         @test yes(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/_tracked"))
         @test no(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/nope"),
                  "no population")

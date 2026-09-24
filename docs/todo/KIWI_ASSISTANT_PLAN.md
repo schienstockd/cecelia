@@ -396,6 +396,14 @@ Each independently shippable.
    check out — what does this tell me?"); a follow-up can cite a plot attached earlier even once its
    panel is closed; the prompt asks for image names (not uids), no tool names, and the plot cited for
    a claim about it.
+   **Reply-quality pass (user: "this first try was terrible"; audit of the four saved turns):** an
+   attached plot now carries the numbers it draws — `SummaryPanel` summarises its `/api/plot_data`
+   response (`utils/plotSummary.ts`: one row per series, the chart's statistic, any stats test) into the
+   registry entry's `summary`, and the context pack includes it, so Kiwi answers from the picture across
+   every image instead of rebuilding per-image medians for 2 of 7; a comparison is one fact (length cap
+   260, no dash rule); population labels name the segmentation (B vs T read identically); an optional
+   `note` carries what isn't a claim. Not yet: a per-measure separation score for "which measure is
+   best" questions — new capability, the user's call.
 5. **"Add to Kiwi" affordances — BUILT with Phase 4.** One button, `components/kiwi/AddToKiwiButton.vue`
    (`pi-at`), on: every live registered plot panel (`CanvasPanel`, when its `persistKey` is in the plot
    registry — the plotId the resolver knows), the pop-out viewer (the user's selected tracks or cells
