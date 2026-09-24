@@ -23,6 +23,13 @@
       "refs": [{ "kind": "population", "imageUid": "3w4IY5", "valueName": "B", "popPath": "/Directed" }]
     },
     {
+      "id": "best-measure-set",
+      "what": "the 2026-09-24 complaint shape — which measure separates two populations over a set; tests that numbers cite a plot or population that shows them (a speed claim must not cite displacement)",
+      "project": "4kS67f",
+      "prompt": "Which track measure best distinguishes B and T cell movement in this set?",
+      "refs": [{ "kind": "set", "setUid": "XcPcu8" }]
+    },
+    {
       "id": "judge-trap",
       "what": "asks for a verdict on an image with no segmentation — the duck must not judge; abstain or ask",
       "project": "zolIMa",

@@ -1,6 +1,6 @@
 # Kiwi assistant (structured duck) — plan
 
-**Status:** in progress — Phases 0–1 shipped (#1196); Phase 2 shipped (#1198); Phase 3 built (#1199), exit gate settled by the user (bare default, Think-first switch — Open decision 8); Phases 4–5 shipped (#1202). 2026-09-24: Open decisions 1, 2, 6 settled; 5 trialled and 9 planned — both are Phase 6. Decisions 1–3
+**Status:** in progress — Phases 0–1 shipped (#1196); Phase 2 shipped (#1198); Phase 3 built (#1199), exit gate settled by the user (bare default, Think-first switch — Open decision 8); Phases 4–5 shipped (#1202). 2026-09-24: Open decisions 1, 2, 6 settled; 9 tried (no gain); 5 trialled and parked (Phase 6). Decisions 1–3
 are the user's; Decisions 4–8 were proposed by Claude in the same conversation and accepted without
 objection; Decisions 9–10 came out of the literature search the same day (*Prior art* below) and
 Decision 11 out of Phase 0; all three are proposals. Read the *Open decisions* before building: several of them change a phase's shape.
@@ -250,9 +250,9 @@ the CLIs, not HTTP APIs).
    (a fair catch), 4 of those also name an image by uid where the evidence names it (renderer bug),
    3 are comparisons ("barely separates") — the real weakness: it can't reason over numbers.
    0.8 s/claim + 24 s load; torch already ships for cellpose, so the cost is `transformers` + a 0.4 GB
-   model. Caveats: n=40, one project, default 0.5 threshold, labels by Claude. **Consequence: a chip
-   state ("may not back this"), never a gate** — it must not reject replies or overrule comparisons.
-   The work is the per-kind sentence rendering, not the model.
+   model. Caveats: n=40, one project, default 0.5 threshold, labels by Claude. If built: a chip state
+   ("may not back this"), never a gate — it must not reject replies or overrule comparisons; the work
+   is the per-kind sentence rendering, not the model. **Parked** — see Phase 6.
 6. **Blackboard bad-outcomes-first ordering** (`_outcome_rank`, `mcp/cecelia_mcp/server.py`) — does a
    resurfaced outcome count as an `observation` (the user's own past judgment) or does the ordering
    make it an `interpretation`? Gray in the duck note; pin it when the schema lands.
@@ -276,11 +276,16 @@ the CLIs, not HTTP APIs).
    *attribute-first*: pick the refs, then write each claim against its ref (Slobodkin et al. 2024) —
    faithful by construction, and it cut human verification time. Phase 0 makes this more attractive
    than it looked: Decision 11's context pack is most of the way there.
-   **Planned (2026-09-24) as Phase 6 step 1 — not a toggle.** It is the order each claim is written in,
-   so whichever cites better becomes how Kiwi works; Think first stays the only switch. The model
-   follows the schema's `required` order (checked in a real turn's transcript: `reasoning` came first),
-   so the cheap version is `required: ["kind", "refs", "text"]`. Targets the user's complaint:
-   displacement cited for a speed claim.
+   **Tried 2026-09-24 — no gain, not adopted.** Not a toggle either way: it is the order each claim is
+   written in. Two findings. (1) Schema order does NOT set it: a claim schema with `refs` before `text`
+   still came back text-first (the engine writes the tool input in its own order); a system-prompt line
+   did flip it. (2) With that line, 3 prompts × {bare, refs-first} × 1 rep on the fixed set
+   (`compare-pops`, `one-population`, new `best-measure-set`): 33 claims, hand-scored — every ref
+   shows its claim's fact in BOTH variants. The evidence rule (#1202) had already removed the failure
+   this targeted (displacement cited for a speed claim). Refs-first made fewer claims (13 vs 20; 10 vs 17
+   observations+interpretations) and re-asked less (1/3 vs 2/3), ~22k vs ~27k output tokens — within
+   noise at n=3; not worth the full set. Remaining gap in both: a per-image claim ("6 of 7 images")
+   citing a proposed plot pooled over cells (`statUnit: individual`), which would not show it.
 
 ## Phases
 
@@ -452,15 +457,16 @@ Each independently shippable.
    population ⋯ menus add an "Add to Kiwi" item. The draft lives in localStorage so the pop-out's button
    reaches the main window's cockpit, and opens it.
 
-6. **Attribute first + support check — NEXT (2026-09-24).** Three small steps, in order:
-   1. **Refs before text** (Open decision 9): swap the claim schema's `required` order. Compare on 3
-      prompts each way first (quota); the fixed prompt set only if they look different. Measure:
-      citation precision, scored by hand.
-   2. **Evidence as sentences:** one renderer per `KiwiRef` kind — population (its measure rows),
-      plot (the summary block), image / set (name + what was read) — naming images the way claims do.
-   3. **Support chip** (Open decision 5): HHEM per claim after the ref checks, in the Python env; a
-      low score adds a "may not back this" chip state and never rejects the reply. Pin with the
-      trial's 40 claims as a fixture.
+6. **Attribute first + support check — step 1 done, 2–3 PARKED (2026-09-24).**
+   1. **Refs before text** (Open decision 9) — tried, no gain; bare stays (see Open decision 9).
+   2. **Evidence as sentences** and 3. **a support chip** (Open decision 5) — parked. Current turns
+      cite cleanly (33 of 33 claims above), so a checker that wrongly flagged 9 of 22 backed claims in
+      the trial would mostly paint good claims; and a population's evidence spans several tools
+      (measure rows, cluster shares, HMM states), so the renderer is the real work. **Revisit** when
+      the eval set shows unbacked claims again — a new engine, a prompt change — using the trial's 40
+      claims as the fixture.
+   Cheap follow-up worth doing instead: a deterministic check that a per-image claim ("N of M
+   images") citing a proposed plot asks for `statUnit: image`.
    Not in Phase 6: a clarifying-question reply (Open decision 2), a per-measure separation score.
 
 ## What this changes in KIWI_PLAN
