@@ -1,9 +1,8 @@
 <script setup lang="ts">
-// Which model an assistant run uses — THE one picker. The lab log's "Ask Claude" had it inline; Kiwi's
-// prompt box is the second site, so it lives here and both read the same allow-list (`observer.models`,
-// served from `OBSERVER_MODELS` in app/src/ai/agent_runner.jl — the backend coerces anything else).
-// Each caller keeps its own persisted choice (`settings.labLogObserverModel`, `settings.kiwiModel`):
-// they are different jobs, and one of them may want a cheaper model than the other.
+// Which model an assistant run uses — THE one picker, over the allow-list `observer.models` (served from
+// `OBSERVER_MODELS` in app/src/ai/agent_runner.jl — the backend coerces anything else). Kiwi's prompt box
+// is the one site today (the lab log's "Ask Claude" had it, and was removed); a new assistant run takes
+// this with its own persisted choice rather than a second <select>.
 import { computed } from 'vue'
 import { useObserverStore } from '../stores/observer'
 

@@ -5,7 +5,7 @@
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { isAuthError, observerSetupReason, terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
+import { observerSetupReason, terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
@@ -13,7 +13,6 @@ import { useLabCaptureStore } from '../stores/labCapture'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CcToggle from './CcToggle.vue'
-import AgentModelSelect from './AgentModelSelect.vue'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, resolveImageRefs,
   visibleEntries as computeVisibleEntries,
@@ -49,31 +48,13 @@ const labCapture = useLabCaptureStore()
 const terminalCtaMode = computed(() => terminalCta(observer.available, observer.terminalState))
 
 const observerAvailable = computed(() => observer.available)
-const observerBusy = computed(() => observer.busy)
-const observerSession = computed(() => observer.session)
-const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
-const activityOpen = ref(false)              // Claude activity <details> open state (opens after an Ask)
-// Set-up guidance: availability only means `claude` is on PATH — not logged in. Show install/login
-// steps when the CLI is missing, or when the most recent pass failed with an auth-shaped error.
+// Set-up guidance: availability only means `claude` is on PATH — not logged in. Show install steps
+// when the CLI is missing. (It also used to catch a failed login from the last "Ask Claude" pass; that
+// pass is gone — Kiwi shows its own error when a turn fails.)
 // This is a CONDITIONAL alert at the point of use — it renders only when something is broken, and
 // vanishes the moment it works. Settings → MCP connections carries the same state as a durable row
 // (via the same `observerSetupReason`), which is where you go to check rather than to be told.
-const observerSetup = computed(() =>
-  observerSetupReason(observerAvailable.value,
-    (observerPasses.value[0] && !observerPasses.value[0].ok && isAuthError(observerPasses.value[0].note)) || false))
-const passTokens = (p: { inputTokens: number; outputTokens: number }) => {
-  const total = p.inputTokens + p.outputTokens
-  return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
-}
-// running token total for the readout (real usage from the assistant's own output, accumulated
-// per project — see docs/todo/OBSERVER_INTEGRATION_PLAN.md Decisions 3/4)
-const observerTokens = computed(() => {
-  const s = observerSession.value
-  if (!s || (s.inputTokens + s.outputTokens) === 0) return ''
-  const total = s.inputTokens + s.outputTokens
-  const fmt = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
-  return `~${fmt} tokens · ${s.turns} turn${s.turns === 1 ? '' : 's'}`
-})
+const observerSetup = computed(() => observerSetupReason(observerAvailable.value, false))
 // entries shown in the panel: hidden (dismissed) ids filtered out. The log FILE still contains them —
 // hide is view-only (a config sidecar), so the append-only methodology record is preserved.
 const visibleEntries = computed(() => computeVisibleEntries(entries.value, dismissed.value))
@@ -124,28 +105,6 @@ async function capture(silent = false) {
 // Reload entries whenever a capture appends — manual, auto-on-open, OR the app-lifetime auto-capture
 // firing while this panel is open (the store bumps captureTick).
 watch(() => labCapture.captureTick, () => { if (projectUid.value) load() })
-
-// Ask the assistant for a one-shot review; it may append a [Claude] entry via the observer MCP. The
-// store owns the run (+ session/tokens/badge); the result (verdict + cost) lands in the Claude
-// activity log below (observer.session.passes) — no separate transient report block. Open the log so
-// the just-run result is visible.
-async function askClaude() {
-  if (!projectUid.value || observer.busy || !observer.available) return
-  error.value = ''
-  activityOpen.value = true
-  await observer.runPass()
-  // the pass + its verdict note appear in observer.session.passes → the activity log; entries reload
-  // via the appendTick watch below when a pass actually appended.
-}
-
-// Reload the log when an Ask-Claude pass appends (the store bumps appendTick).
-watch(() => observer.appendTick, () => { if (projectUid.value) load() })
-
-// Clear context: reset the project's assistant session + token totals (next run starts fresh).
-async function clearContext() {
-  if (!projectUid.value || observer.busy) return
-  await observer.clear()
-}
 
 // (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
 // (Observer status/session is refreshed app-wide by the store — see App.vue.) Refresh it again on
@@ -275,17 +234,10 @@ async function dismissEntry(entry: LabLogEntry) {
 
       <span class="ll-tb-sep" aria-hidden="true" />
 
-      <!-- Claude: the AI assistant (in-app one-shot + external chat handoff). The "What can Claude
-           do here?" ? button moved to Kiwi — one place for assistant controls. -->
+      <!-- Claude: terminal setup only. Asking lives in Kiwi (validated claims); the lab log's one-off
+           "Ask Claude" pass was removed 2026-09-24. A terminal session still writes [Claude] entries here
+           through append_lab_log. -->
       <div class="ll-tb-group">
-        <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
-                @click="askClaude"
-                v-tooltip.top="observerAvailable
-                  ? 'Review recent activity and note anything worth flagging'
-                  : 'Needs Claude Code'">
-          <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
-        </button>
-        <AgentModelSelect v-if="observerAvailable" v-model="settings.labLogObserverModel" tip="Model Ask Claude runs" />
         <!-- Setup CTA: shown until the user's terminal has the observer MCP registered. Once set up
              (`terminalCtaMode === 'chat'`) this slot is empty; the chat-handoff button moved to Kiwi
              (docs/todo/KIWI_PLAN.md Decision 6), which sits beside the pairing state it depends on.
@@ -297,10 +249,6 @@ async function dismissEntry(entry: LabLogEntry) {
           {{ observer.registering ? 'Setting up…'
              : terminalCtaMode === 'resync' ? 'Fix terminal setup' : 'Set up my terminal' }}
         </button>
-        <span v-if="observerTokens" class="ll-tokens cc-muted cc-fs-xs"
-              v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
-        <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
-                v-tooltip.top="'Clear the assistant session and reset the token count'">clear</button>
       </div>
 
       <span v-if="captureNote" class="ll-note cc-muted cc-fs-xs">{{ captureNote }}</span>
@@ -361,21 +309,6 @@ async function dismissEntry(entry: LabLogEntry) {
       </template>
     </CollapsibleSection>
 
-    <!-- Claude activity log: every Ask-Claude pass — its verdict (note), token cost, and outcome. This
-         is where an Ask-Claude result lands (no separate transient block); opens after an Ask so the
-         result is visible. Each entry is tagged "Ask" (sparkles) — an explicit on-demand run. -->
-    <details v-if="observerAvailable && observerPasses.length" class="ll-activity"
-             :open="activityOpen" @toggle="activityOpen = ($event.target as HTMLDetailsElement).open">
-      <summary>Claude activity ({{ observerPasses.length }})</summary>
-      <div v-for="(p, i) in observerPasses" :key="i" class="ll-pass" :class="{ appended: p.appended, failed: !p.ok }">
-        <div class="ll-pass-head">
-          <span class="ll-pass-trig"><i class="pi pi-sparkles" /> Ask</span>
-          <span class="ll-pass-meta">{{ p.model }} · {{ passTokens(p) }} tok<span v-if="p.appended"> · wrote</span><span v-else-if="!p.ok"> · error</span></span>
-          <span class="ll-pass-at">{{ p.at }}</span>
-        </div>
-        <div v-if="p.note" class="ll-pass-note">{{ p.note }}</div>
-      </div>
-    </details>
 
     <div v-if="error" class="ll-error">{{ error }}</div>
 
@@ -459,11 +392,6 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-note { margin-left: auto; }
 /* token readout sits inline within the Claude group (no auto-margin — it's not a toolbar child) */
 
-.ll-clearctx {
-  border: none; background: transparent; color: var(--cc-text-dim);
-  font-size: var(--cc-fs-xs); cursor: pointer; text-decoration: underline; padding: 0;
-}
-.ll-clearctx:hover { color: var(--cc-text); }
 /* setup hint — install/login guidance when Claude Code is missing or not authenticated */
 .ll-setup {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
@@ -481,22 +409,6 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-setup-fail { background: var(--cc-surface-1); border-left: 3px solid var(--cc-sev-warn); }
 .ll-setup-fail strong { color: var(--cc-sev-warn); display: inline-flex; align-items: center; gap: 0.3rem; }
 /* Claude activity log — collapsible; each Ask-Claude pass with its verdict, cost + outcome */
-.ll-activity {
-  flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
-  background: var(--cc-surface-2); padding: 0.3rem 0.6rem; max-height: 11rem; overflow-y: auto;
-}
-.ll-activity > summary {
-  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; user-select: none;
-}
-.ll-pass { margin-top: 0.35rem; padding-left: 0.4rem; border-left: 2px solid var(--cc-border); }
-.ll-pass.appended { border-left-color: var(--cc-accent); }
-.ll-pass.failed   { border-left-color: #f85149; }
-.ll-pass-head { display: flex; align-items: baseline; gap: 0.35rem; font-size: var(--cc-fs-2xs); }
-.ll-pass-trig { display: inline-flex; align-items: center; gap: 0.2rem; font-weight: 600; color: var(--cc-accent); }
-.ll-pass-trig .pi { font-size: var(--cc-fs-2xs); }
-.ll-pass-meta { color: var(--cc-text-dim); }
-.ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
-.ll-pass-note { font-size: var(--cc-fs-xs); color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
 
 /* LabArchives context card — a MIRROR of an external record, so it must not read as one of the
    append-only entries below. Different chrome on purpose: accent left rule, no author colour, no

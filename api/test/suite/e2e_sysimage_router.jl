@@ -390,7 +390,6 @@ end
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
         "/api/optical-flow/rename",
         "/api/denoise/delete", "/api/denoise/rename",
-        "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
         "/api/labels/by_category",   # linked brushing category-source cell-scope (LINKED_BRUSHING_PLAN.md P2)
@@ -466,7 +465,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 103 && length(POST_ROUTES) == 153
+    @test length(GET_ROUTES) == 103 && length(POST_ROUTES) == 151
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

@@ -556,7 +556,7 @@ end
 # different working dir). `--resume <gone-sid>` then makes the CLI exit non-zero with
 # "No conversation found with session ID: …" — which, before the self-heal below, made EVERY
 # subsequent Watch pass fail permanently until the user hit Clear. Detected here (PURE → unit-tested)
-# so `run_observer_turn` can drop the dead id and retry fresh. Matched loosely (message wording is a
+# so `run_agent_turn` can drop the dead id and retry fresh. Matched loosely (message wording is a
 # CLI detail): the "no conversation found" phrase plus a session-id mention.
 function _is_stale_session_error(msg::AbstractString)::Bool
     m = lowercase(String(msg))
@@ -710,6 +710,3 @@ function run_agent_turn(a::AgentBackend, prompt::AbstractString, mcp_config_path
     res
 end
 
-# The observer's turn (Ask Claude / Watch) — unchanged behaviour, now a thin call into the contract.
-run_observer_turn(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString; kw...) =
-    run_agent_turn(a, prompt, mcp_config_path; kw...)

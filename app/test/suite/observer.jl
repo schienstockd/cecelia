@@ -1,10 +1,9 @@
 # ── Observer / MCP / LabArchives testsets ─────────────────────────────
 # Five sections covering: pure command+result builders for the in-app AI observer runner
 # (Claude CLI argv, MCP config, spawn wrapping, registration state, shadow scope cleanup);
-# the in-app observer prompt-as-role contract (asserts the DIVISION — the loop's own tools are
-# named here, the shared MCP catalogue is not restated); MCP connections enumeration (Settings
-# → MCP connections row source); LabArchives context sidecar (round-trip / gaps / briefing);
-# and the AI observer session sidecar (tokens + turns + clear). Extracted from suite.jl to
+# MCP connections enumeration (Settings → MCP connections row source); LabArchives context sidecar
+# (round-trip / gaps / briefing). (The lab log's one-off "Ask Claude" pass — its prompt-as-role
+# contract and its session sidecar — was removed 2026-09-24; Kiwi's validated turn supersedes it.) Extracted from suite.jl to
 # keep it small enough to merge without EOF conflicts on every append. The extracted file
 # loads inside this file's aggregating testset scope, so any helpers defined earlier in
 # suite.jl are still in scope (lexical include).
@@ -58,7 +57,7 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
     @test !g.ok && g.input_tokens == 0
 
     # stale-session detection: a pruned/expired --resume id makes the CLI say "No conversation
-    # found with session ID: …" → run_observer_turn drops the id and retries fresh (self-heal).
+    # found with session ID: …" → run_agent_turn drops the id and retries fresh (self-heal).
     @test Cecelia._is_stale_session_error(
         "No conversation found with session ID: 0df65af8-ae13-4ec5-964a-7231cd8bf005")
     @test Cecelia._is_stale_session_error("no conversation found with session id: x")  # case-insensitive
@@ -232,28 +231,6 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
         Cecelia._build_mcp_remove_cmd(a; scope = "local", dir = "/home/u")).dir == "/home/u"
     # a dir that no longer exists is skipped, not attempted (Claude ignores its entry too)
     @test Cecelia.remove_shadowing_observer_mcps(a, ["/no/such/dir/at/all"]) == (String[], String[])
-
-    # the prompt carries the project + the discipline rules THIS ROLE adds
-    fp = Cecelia.observer_feedback_prompt("NRUBxU")
-    @test occursin("NRUBxU", fp) && occursin("append_lab_log", fp) && occursin("[Claude]", fp)
-    # §1 param-suggestion guidance is present: on an outlier, use get_module_params + the trail to
-    # suggest a param direction — framed as a suggestion, current-state only (not a prediction).
-    @test occursin("get_module_params", fp) && occursin("suggest", fp)
-    # the watch loop's own tools — nobody else polls a running project
-    @test occursin("poll_observations", fp) && occursin("get_cohort_qc", fp)
-    # the lab-log discipline, which is the whole point of the role: most of the time, write nothing
-    @test occursin("write NOTHING", fp)
-    # …and it is pointed at the server's briefing for everything shared, rather than restating it
-    @test occursin("get_session_briefing", fp)
-    # It must NOT restate what the MCP server already tells every client (mcp/cecelia_mcp/guidance.py):
-    # the read catalogue, the grouping discipline, the boards/chains rules, the never-starts boundary.
-    # A second copy is what went stale twice. Match on unwrapped text — the prompt is hard-wrapped, so
-    # a phrase can straddle a newline.
-    flat = replace(fp, r"\s+" => " ")
-    for shared in ("not four replicates", "statUnit", "press Run", "get_image_attributes",
-                   "get_analysis_boards", "get_available_plots", "get_repl_api")
-        @test !occursin(shared, flat)
-    end
 end
 
 
@@ -417,56 +394,6 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     @test sv[findfirst(==("--output-format"), sv) + 1] == "stream-json" && "--verbose" in sv
 end
 
-@testset "the in-app observer prompt is a role, not a second tool manual" begin
-    # THE recurring bug in this area, twice: an MCP tool is added, one of the prompts describing the
-    # toolset is updated and another silently goes stale — an unmentioned tool is an unused one, so the
-    # capability just never gets offered (create_chain the first time, then get_analysis_boards /
-    # get_image_attributes). Both surfaced only because reading a prompt and noticed a gap.
-    #
-    # The fix was to stop having copies. The MCP server describes its own toolset
-    # (mcp/cecelia_mcp/guidance.py: SERVER_INSTRUCTIONS on connect, BRIEFING_GUIDANCE with
-    # get_session_briefing), and the in-app agent is spawned with `--mcp-config` pointing at that same
-    # server, so it gets both. What is left here is the ROLE — the watch loop, the QC pass, the
-    # lab-log discipline — which no chat session has.
-    #
-    # So this no longer checks "does the prompt name every tool". It checks the DIVISION: the loop's
-    # own tools are named here, and the shared catalogue is NOT restated here. Each side is guarded in
-    # its own language, since neither can import the other — mcp/tests/test_server.py → GuidanceTest
-    # holds the other half (every registered tool is named in guidance.py).
-    root = _repo
-    server = read(joinpath(root, "mcp", "cecelia_mcp", "server.py"), String)
-    # The PROMPT, not the file that holds it: a tool name in a source comment (this file's own header
-    # names several) would otherwise count as "mentioned" and mask a real omission. That is not
-    # hypothetical — rewording the header alone flipped this assertion once.
-    jl = Cecelia.observer_feedback_prompt("NRUBxU")
-
-    tools = Set(String[m.captures[1] for m in eachmatch(r"@mcp\.tool\(\)\s*\ndef (\w+)", server)])
-    @test length(tools) >= 30                          # anti-vacuity: a bad regex must not pass
-    named_jl = Set(t for t in tools if occursin(t, jl))
-
-    # The watch loop's OWN tools — the reason this role exists. Nothing else polls a running project
-    # or decides whether a finished-but-degenerate run is worth a line in the lab log.
-    for own in ("poll_observations",        # the 10-attempts pattern, from the session monitor
-                "get_task_history", "get_task_log", "get_recent_logs",   # what ran / what broke
-                "get_cohort_qc",            # a "done" run that produced far too few cells
-                "get_module_params",        # the param-suggestion range
-                "read_lab_log", "append_lab_log",                        # prior context + its output
-                "get_session_briefing")     # …and where the shared rules come from
-        @test own in named_jl
-    end
-    # The SHARED catalogue must not be restated here — that is the second copy, and the second copy is
-    # the bug. These are all named by guidance.py, which reaches this agent through the same MCP.
-    for shared in ("get_image_attributes", "get_analysis_boards", "get_available_plots",
-                   "get_populations", "get_measure_summary", "get_analysis_lineage", "get_repl_api",
-                   "add_analysis_board", "list_projects")
-        @test !(shared in named_jl)
-    end
-    # A tool this role does not use is fine; a tool NOBODY names is not. Every tool the in-app prompt
-    # leaves out must be covered by the server's guidance — asserted in full by GuidanceTest, and
-    # pinned here as the reason this set is allowed to be small.
-    @test length(named_jl) < length(tools)
-end
-
 @testset "MCP connections — enumerate whatever is registered" begin
     # Generic on purpose: it lists what's in the config rather than looking for names we know, so a
     # connector added later needs no change here. Backs Settings → MCP connections.
@@ -574,39 +501,3 @@ end
     @test !isfile(lab_log_path(proj)) || isempty(read_lab_log(proj))
 end
 
-@testset "AI observer session sidecar (tokens + clear)" begin
-    proj = create_project!(name = "obs-sess-$(rand(1000:9999))")
-    # fresh project → zeroed session
-    s0 = read_observer_session(proj)
-    @test s0["sessionId"] == "" && s0["inputTokens"] == 0 && s0["turns"] == 0
-
-    # a turn adopts the session id + accumulates tokens
-    record_observer_turn!(proj, "sessABC", 1000, 40)
-    s1 = read_observer_session(proj)                       # re-read from disk (persisted)
-    @test s1["sessionId"] == "sessABC" && s1["inputTokens"] == 1000 && s1["outputTokens"] == 40
-    @test s1["turns"] == 1
-    # a second turn accumulates; an EMPTY session id keeps the existing one
-    record_observer_turn!(proj, "", 500, 10)
-    s2 = read_observer_session(proj)
-    @test s2["sessionId"] == "sessABC"                     # unchanged (empty id kept prior)
-    @test s2["inputTokens"] == 1500 && s2["outputTokens"] == 50 && s2["turns"] == 2
-
-    # activity log: every pass is recorded (newest-first), even a silent/failed one
-    log_observer_pass!(proj; trigger = "manual", model = "sonnet", ok = true, appended = false,
-                       input_tokens = 900, output_tokens = 20, note = "reviewed — nothing to flag")
-    log_observer_pass!(proj; trigger = "auto", model = "haiku", ok = true, appended = true,
-                       input_tokens = 700, output_tokens = 30, note = "flagged clustTracks failed 4×")
-    ps = read_observer_session(proj)["passes"]
-    @test length(ps) == 2
-    @test ps[1]["trigger"] == "auto" && ps[1]["appended"] == true          # newest-first
-    @test ps[1]["model"] == "haiku" && ps[1]["inputTokens"] == 700
-    @test ps[2]["trigger"] == "manual" && ps[2]["appended"] == false
-    @test occursin("nothing to flag", ps[2]["note"])
-
-    # clear resets everything (next run forks a fresh session), incl. the activity log
-    cleared = clear_observer_session!(proj)
-    @test cleared["sessionId"] == "" && cleared["inputTokens"] == 0 && cleared["turns"] == 0
-    @test isempty(cleared["passes"])
-    @test read_observer_session(proj)["inputTokens"] == 0
-    rm(proj.root; recursive = true)
-end

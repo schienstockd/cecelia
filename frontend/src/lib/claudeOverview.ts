@@ -46,17 +46,17 @@ export function claudeCapabilities(hiddenConnectors: string[] = []): {
     .filter(g => g.items.length > 0)
 }
 
-// The two ways in — both live in the lab-log toolbar next to this dialog's trigger.
-// Framing: these describe the RECORD Kiwi leaves behind, not the answer it gives.
+// The two ways in. Asking in the app is Kiwi's prompt box (the lab log's one-off "Ask Claude" note was
+// removed 2026-09-24 — an unchecked write to the append-only record, where Kiwi's claims are checked).
 export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
   {
-    name: 'Ask Claude',
-    icon: 'pi-sparkles',
-    what: 'Reads your marks + activity, drops a provisional lab-log note.',
+    name: 'Ask Kiwi',
+    icon: 'pi-send',
+    what: 'A question in the Kiwi panel — a few claims, each pointing at what it rests on.',
     steps: [
-      'Mark what looks off',
-      'Click Ask Claude',
-      'Finding lands as a [Claude] lab-log entry — provisional',
+      'Add what you are looking at (the @ button)',
+      'Ask in the Kiwi panel',
+      'Click a claim’s ref to see it — or “plot this” to make the plot',
     ],
   },
   {
@@ -114,7 +114,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
 ]
 
 // ── Terminal hand-off ────────────────────────────────────────────────────────────────────────────
-// "Ask Claude" needs NO setup (Cecelia passes `--mcp-config` to the agent it spawns). A session the
+// Kiwi needs NO setup (Cecelia passes `--mcp-config` to the agent it spawns). A session the
 // USER starts in their own terminal does — so the dialog offers ONE BUTTON that registers the server
 // in their Claude Code config (POST /api/observer/register), after which plain `claude` has the tools.
 // Nothing to copy and no path to mistype: a pasted half-command is exactly how this breaks for someone
@@ -129,7 +129,7 @@ export function claudeChatCommand(mcpConfigPath: string): string {
 
 /** The button's own label + the states around it. Short, imperative (docs/UI.md house style). */
 export const CLAUDE_TERMINAL = {
-  note: 'Ask Claude needs no setup. To chat in your own terminal, set it up once:',
+  note: 'Kiwi needs no setup. To chat in your own terminal, set it up once:',
   action: 'Set up my terminal',
   resync: 'Fix terminal setup',
   busy: 'Setting up…',

@@ -113,7 +113,9 @@ one call — use that rather than one call per image, narrowed to what you need 
 kind "motility" or "phenotype", value_names), or the result is too large to reach you.
 
 Write for the scientist: name images, populations and measures as the app shows them (an image's name,
-not its uid), and never mention your tools or how you looked something up — the refs carry that.
+not its uid), and never mention your tools or how you looked something up — the refs carry that. The
+server's guidance asks chat sessions to end a number with "(via <tool>)"; here a claim's refs are its
+citation, so leave that out.
 Give a unit only when the data you were given states it; otherwise give the number and the measure
 name ("duration median 5.5"). Never guess a unit.
 

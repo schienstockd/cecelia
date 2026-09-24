@@ -23,6 +23,7 @@ import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import { useObserverStore } from '../stores/observer'
+import { useKiwiStore } from '../stores/kiwi'
 import { mcpRows, type McpConnection } from '../utils/mcpConnections'
 import { isAuthError } from '../utils/observerSetup'
 import { claudeChatCommand } from '../lib/claudeOverview'
@@ -543,9 +544,12 @@ const hiddenAccountConnectors = computed(() => settings.hiddenMcpAccounts)
 // The Claude Code CLI row leads the list. Its "not detected / not logged in" state used to be a
 // banner in the lab-log panel; with the connections panel here, that banner was a second home for
 // the same fact — and the one further from where you act on it.
+// "not logged in" is read off the engine's last failure — Kiwi's newest turn (the lab log's Ask-Claude
+// pass it used to come from is gone; both ran the same engine)
+const kiwi = useKiwiStore()
 const observerAuthFailed = computed(() => {
-  const last = observer.session?.passes?.[0]
-  return !!last && !last.ok && isAuthError(last.note)
+  const last = kiwi.turns[kiwi.turns.length - 1]
+  return !!last && last.status === 'failed' && isAuthError(last.error || last.reply?.errors?.[0] || '')
 })
 const mcpConnectionRows = computed(() =>
   mcpRows(mcpRaw.value, observer.terminalState, settings.hiddenMcpAccounts,

@@ -6,9 +6,9 @@ import {
 } from './claudeOverview'
 
 describe('claudeOverview content model', () => {
-  it('has the two entry points (Ask / Chat), each with how-to steps', () => {
+  it('has the two entry points (Ask Kiwi / Chat), each with how-to steps', () => {
     const names = CLAUDE_ENTRY_POINTS.map(e => e.name)
-    expect(names).toEqual(['Ask Claude', 'Chat to Claude'])
+    expect(names).toEqual(['Ask Kiwi', 'Chat to Claude'])
     for (const e of CLAUDE_ENTRY_POINTS) {
       expect(e.steps.length).toBeGreaterThanOrEqual(2)   // it's a how-to, not just a blurb
       expect(e.icon).toMatch(/^pi-/)

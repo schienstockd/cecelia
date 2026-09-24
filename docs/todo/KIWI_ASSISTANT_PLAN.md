@@ -413,7 +413,9 @@ Each independently shippable.
    `measure_summary(; kind, value_names)` narrows it (14 k for B+T motility over 8 images), the context
    pack carries that table for an attached plot over a set, and it lists the project's boards; a
    proposal already on a board says which. Prompt: exact project uid, units only when the data states
-   them. Not yet: a per-measure separation score for "which measure is
+   them. **The lab log's "Ask Claude" pass was removed (user, same day):** the same engine, but an
+   unchecked free-text write into the append-only log; in-app asking is Kiwi, a terminal session still
+   writes the lab log. "Not logged in" now reads off Kiwi's last failed turn. Not yet: a per-measure separation score for "which measure is
    best" questions — new capability, the user's call.
 5. **"Add to Kiwi" affordances — BUILT with Phase 4.** One button, `components/kiwi/AddToKiwiButton.vue`
    (`pi-at`), on: every live registered plot panel (`CanvasPanel`, when its `persistKey` is in the plot
