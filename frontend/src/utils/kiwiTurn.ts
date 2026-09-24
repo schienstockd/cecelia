@@ -95,10 +95,14 @@ export function refLabel(ref: KiwiRef): string {
   }
 }
 
-/** The kind as a chip or row shows it — the schema's name, except where that reads as code. */
-export function kindLabel(kind: KiwiRef['kind']): string {
-  return kind === 'proposedPlot' ? 'plot this' : kind
+/** The kind as a chip or row shows it — the schema's name, except where that reads as code. A proposed
+ *  plot that is already on a board is just a plot (the resolver says so in `detail`). */
+export function kindLabel(kind: KiwiRef['kind'], result?: KiwiRefResult): string {
+  if (kind !== 'proposedPlot') return kind
+  return onBoard(result) ? 'plot' : 'plot this'
 }
+
+const onBoard = (r?: KiwiRefResult) => !!r?.ok && !!r.detail?.startsWith('already on board')
 
 // ── Decision 10: a chip shows how far it was checked ───────────────────────────────────────────────
 
@@ -114,7 +118,10 @@ export function chipState(result: KiwiRefResult | undefined, seen?: boolean): { 
   if (seen === false) return { tone: 'fail', tip: 'Cited without being looked at this turn' }
   if (result.check === 'live') return { tone: 'soft', tip: 'Open now — gone when it closes' }
   if (result.check === 'format') return { tone: 'soft', tip: 'A place in the app — checked when shown' }
-  if (result.check === 'proposal') return { tone: 'ok', tip: 'Not plotted yet — click to plot it' }
+  if (result.check === 'proposal') {
+    return onBoard(result) ? { tone: 'ok', tip: `${result.detail!.replace(/^already on/, 'On')} — click to open it` }
+                           : { tone: 'ok', tip: 'Not plotted yet — click to plot it' }
+  }
   return { tone: 'ok', tip: 'Exists — not checked against the claim' }
 }
 
@@ -285,7 +292,7 @@ export function attachmentRows(refs: KiwiRef[], results: Record<string, KiwiRefR
   return refs.map(ref => {
     const id = refKey(ref)
     const res = results[id]
-    return { id, ref, kind: kindLabel(ref.kind),
+    return { id, ref, kind: kindLabel(ref.kind, res),
              label: res?.ok && res.label ? res.label : refLabel(ref),
              detail: res?.ok ? (res.detail ?? '') : (res?.error ?? ''),
              tip: chipState(res).tip }

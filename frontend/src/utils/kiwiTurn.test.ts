@@ -58,6 +58,9 @@ describe('pointTarget', () => {
     expect(pointTarget({ kind: 'proposedPlot', plot: 'track_measures' })).toEqual({ action: 'proposedPlot' })
     expect(kindLabel('proposedPlot')).toBe('plot this')
     expect(kindLabel('plot')).toBe('plot')
+    const there = { ok: true, check: 'proposal', label: 'L', error: '', detail: 'already on board “Per image measures”' } as const
+    expect(kindLabel('proposedPlot', there)).toBe('plot')
+    expect(chipState(there).tip).toBe('On board “Per image measures” — click to open it')
     expect(chipState({ ok: true, check: 'proposal', label: 'L', error: '' })).toEqual({ tone: 'ok', tip: 'Not plotted yet — click to plot it' })
   })
   it('a population outlines its cells in the viewer, not a bare gating page', () => {

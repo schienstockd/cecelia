@@ -130,6 +130,13 @@ Claim kinds:
   Its refs are what it asks ABOUT — the populations, tracks or images the user would check — not the
   plot that prompted it.
 
+Point at the EVIDENCE — what the user would open to check the claim:
+- a number about populations (a median, a comparison, "in 6 of 7 images") → the plot that shows it: an
+  attached plot, or a `proposedPlot` for that measure and those populations (a click opens the board
+  that already shows it, or makes it);
+- a claim about particular cells or tracks (which, how many, where) → a population, cells or tracks ref.
+Never cite a population on one or two images as evidence for a claim about the whole set.
+
 When the look worth taking is a plot nobody has made, point at it: a `proposedPlot` ref is that plot —
 `plot` is a plot-spec id from get_available_plots, `measure` one it offers, `pops` the populations as
 "valueName/pop" exactly as get_populations or get_analysis_boards print them, plus `groupBy`,
@@ -368,13 +375,19 @@ a `population` ref with that path (or one ending in it — "/Directed" for "/tra
 function kiwi_claim_underspecified(text::AbstractString, refs)::Vector{String}
     kinds_of(k) = [r for r in refs if string(_kiwi_get(r, "kind")) == k]
     pops   = [String(_kiwi_get(r, "popPath", "")) for r in kinds_of("population")]
+    # a PLOT shows populations too — and for a number about them (a median, a per-image comparison) it
+    # is the right evidence. Without this the rule demanded a population ref, which is per image, so a
+    # claim about the whole set cited two arbitrary images' pops (4kS67f, 2026-09-24).
+    shown  = String[string(p) for r in kinds_of("proposedPlot") for p in something(_kiwi_get(r, "pops"), Any[])]
+    any_plot = !isempty(kinds_of("plot"))
     tracks = Set{Int}(Int(x) for r in kinds_of("tracks") for x in _kiwi_get(r, "trackIds", Int[]))
     cells  = Set{Int}(Int(x) for r in kinds_of("cells")  for x in _kiwi_get(r, "labelIds", Int[]))
     missing_ = String[]
     for m in eachmatch(_KIWI_TEXT_POP_RE, text)
         p = String(m.match)
         occursin(_KIWI_FS_ROOT_RE, p) && continue
-        any(q -> q == p || endswith(q, p), pops) || push!(missing_, "population $p (cite it as a population ref)")
+        (any(q -> q == p || endswith(q, p), pops) || any(q -> occursin(p, q), shown) || any_plot) ||
+            push!(missing_, "population $p (cite the plot that shows it, or the population itself)")
     end
     for m in eachmatch(_KIWI_TEXT_TRACK_RE, text)
         parse(Int, m.captures[1]) in tracks || push!(missing_, "track $(m.captures[1]) (cite it as a tracks ref)")
@@ -466,8 +479,8 @@ Your reply failed validation:
 $(join(("- " * e for e in errors), "\n"))
 
 Reply again under the same schema. Split a claim that is more than one fact into separate short
-claims, each with its own refs. Point at the most specific object a claim names — the population or
-tracks, not only their image. Cite only objects you saw in a tool result or an attachment in this conversation,
+claims, each with its own refs. Point at the evidence for each claim — for a number about populations,
+the plot that shows it; for particular cells or tracks, those. Cite only objects you saw in a tool result or an attachment in this conversation,
 copying their exact ids — call a tool first if you need to see one. Drop any claim you cannot support
 that way. If nothing is left, abstain."""
 

@@ -28,7 +28,7 @@ const click = () => void pointAt(props.kiwiRef, label.value, props.result)
 <template>
   <button class="kiwi-ref cc-btn cc-btn-ghost cc-fs-2xs" :class="tone" @click="click"
           v-tooltip.bottom="state.tip">
-    <span class="cc-muted cc-fs-2xs">{{ kindLabel(kiwiRef.kind) }}</span>
+    <span class="cc-muted cc-fs-2xs">{{ kindLabel(kiwiRef.kind, result) }}</span>
     <span class="kiwi-ref-label">{{ label }}</span>
   </button>
 </template>

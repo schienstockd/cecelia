@@ -92,6 +92,12 @@ end
     @test isempty(kiwi_claim_underspecified("/Directed holds 205 cells.", [pop("/Directed")]))
     @test isempty(kiwi_claim_underspecified("/Directed holds 205 cells.", [pop("/tracked/Directed")]))   # leaf form
     @test length(kiwi_claim_underspecified("/Directed is larger than /qc.", [pop("/Directed")])) == 1
+    # a plot shows populations: a number about them is covered by the plot that shows it, not only by a
+    # per-image population ref (a set-wide claim cited two arbitrary images' pops otherwise)
+    pp = Dict("kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/qc/_tracked", "T/qc/_tracked"])
+    @test isempty(kiwi_claim_underspecified("Speed is higher in T/qc than B/qc in 6 of 7 images.", [pp]))
+    @test isempty(kiwi_claim_underspecified("B/qc is slower.", [Dict("kind" => "plot", "plotId" => "p")]))
+    @test length(kiwi_claim_underspecified("/Directed is slower.", [pp])) == 1          # not on that plot
     # tracks / cells by number
     trk = Dict("kind" => "tracks", "imageUid" => "3w4IY5", "valueName" => "B", "trackIds" => [12, 40])
     @test isempty(kiwi_claim_underspecified("Track 12 leaves the field at t=40.", [trk]))
@@ -107,7 +113,7 @@ end
                 "text" => "/Directed has 5 tracks; /qc has 12.", "refs" => [Dict("kind" => "project")])])))
     _, errs = kiwi_validate_reply("no-such-project-zz", reply, "", [])
     @test any(e -> occursin("more than one fact", e), errs)
-    @test count(e -> occursin("cite it as a population ref", e), errs) == 2
+    @test count(e -> occursin("cite the plot that shows it", e), errs) == 2
 end
 
 @testset "Kiwi turn — validation + re-ask against the testpr fixture" begin
