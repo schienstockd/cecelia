@@ -135,7 +135,7 @@ Claim kinds:
 Point at the EVIDENCE — what the user would open to check the claim:
 - a number about populations (a median, a comparison, "in 6 of 7 images") → the plot that shows it: an
   attached plot, or a `proposedPlot` for that measure and those populations (a click opens the board
-  that already shows it, or makes it);
+  that already shows it, or makes it) — per image (`statUnit: "image"`) when the claim counts images;
 - a claim about particular cells or tracks (which, how many, where) → a population, cells or tracks ref.
 Never cite a population on one or two images as evidence for a claim about the whole set.
 
@@ -366,13 +366,18 @@ const _KIWI_TEXT_POP_RE   = r"(?<![\w/.])(?>/[A-Za-z0-9_+\-]+(?:/[A-Za-z0-9_+\-]
 const _KIWI_FS_ROOT_RE    = r"^/(home|Users|tmp|mnt|media|Volumes|data|opt|var|usr|srv)(/|$)"
 const _KIWI_TEXT_TRACK_RE = r"\btracks?\s+(?:id\s+)?#?(\d+)(?![\w.])"i
 const _KIWI_TEXT_CELL_RE  = r"\b(?:cells?|labels?)\s+(?:id\s+)?#?(\d+)(?![\w.])"i
+# a claim that counts images ("6 of 7 images", "in every image", "per image") — a plot pooled over cells
+# does not show it; the per-image version (`statUnit: "image"`) does
+const _KIWI_TEXT_PER_IMAGE_RE = r"\b\d+\s+(?:out\s+)?of\s+(?:the\s+)?\d+\s+(?:\w+\s+)?images\b|\b(?:in\s+)?(?:every|each)\s+image\b|\bper[- ]image\b"i
 
 """
     kiwi_claim_underspecified(text, refs) -> Vector{String}
 
 What the claim's text names that none of its refs points at: every population path in the text needs
 a `population` ref with that path (or one ending in it — "/Directed" for "/tracked/Directed"), every
-"track N" a `tracks` ref holding N, every "cell N" / "label N" a `cells` ref holding N. PURE → tested.
+"track N" a `tracks` ref holding N, every "cell N" / "label N" a `cells` ref holding N; a claim that
+counts images ("6 of 7 images") and rests on proposed plots needs one of them per image
+(`statUnit: "image"`) — a plot pooled over cells does not show the count. PURE → tested.
 """
 function kiwi_claim_underspecified(text::AbstractString, refs)::Vector{String}
     kinds_of(k) = [r for r in refs if string(_kiwi_get(r, "kind")) == k]
@@ -396,6 +401,12 @@ function kiwi_claim_underspecified(text::AbstractString, refs)::Vector{String}
     end
     for m in eachmatch(_KIWI_TEXT_CELL_RE, text)
         parse(Int, m.captures[1]) in cells || push!(missing_, "cell $(m.captures[1]) (cite it as a cells ref)")
+    end
+    # an attached plot may well be per image — only a proposal says what it would pool over
+    props = kinds_of("proposedPlot")
+    if occursin(_KIWI_TEXT_PER_IMAGE_RE, text) && !isempty(props) && !any_plot &&
+       !any(r -> string(something(_kiwi_get(r, "statUnit"), "")) == "image", props)
+        push!(missing_, "the per-image count (propose the plot per image: statUnit \"image\")")
     end
     unique(missing_)
 end

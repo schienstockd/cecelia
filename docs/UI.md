@@ -634,6 +634,9 @@ the **napari Viewer controls** are its first consumer — mounted in `App.vue`, 
   declaration order. The ordering lives in [`utils/panelStack.ts`](../frontend/src/utils/panelStack.ts)
   (`PANEL_Z_BASE` + one step per open panel, always well below the modal layer); `FloatingPanel`
   binds the result inline, so don't reintroduce a flat `z-index` in its stylesheet.
+  Point-out marks (`PointerBubble`, Kiwi's and Claude's "look here") on page content sit at
+  `PANEL_Z_BASE - 1` — under every panel, so an open Kiwi / Viewer / Lab log covers them; a mark on
+  something inside a panel stays above the panels, or its own panel would hide it.
 - Rationale: the viewer controls grew (populations, tracks, colour-by + legend) and crowded the left
   nav; a floating panel frees the nav and lets you place the controls beside the napari window.
 
