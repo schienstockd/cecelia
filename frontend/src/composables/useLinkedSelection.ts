@@ -43,8 +43,20 @@ export interface LinkedSelectionSubscriber {
    *  ONLY when this is true — an empty bag leaves everything at full opacity. */
   anyActive: import('vue').ComputedRef<boolean>
   /** The active id set as a Set (for O(1) membership checks in tight render loops). Empty
-   *  when no matching selection is active. */
+   *  when no matching selection is active.
+   *
+   *  This is the FLAT view — every id from every `perSource` entry unioned together. Suitable
+   *  for a badge count or a single-source subscriber that doesn't discriminate by `(uid, vn, pop)`.
+   *  A plot that renders per-source (boxplot/strip) should use `activePerSource` instead — the
+   *  flat Set collapses cross-source numeric collisions (track_id=5 exists in every image) and
+   *  would light up the wrong dots. See `linkedSourceKey` in `stores/linkedSelection.ts`. */
   activeIds: import('vue').ComputedRef<Set<number>>
+  /** Per-source view — a `Map<linkedSourceKey(uid, vn, pop?), Set<number>>` matching the shape
+   *  `plot.ts`'s `matches()` closure consumes. Empty map when no matching selection is active or
+   *  the producer didn't fill `perSource` (a legacy writer that only knows the flat ids — the
+   *  map is still returned empty and callers fall back to `activeIds`). Same specific-first,
+   *  vn-key-fallback contract the boxplot/strip renderer already implements. */
+  activePerSource: import('vue').ComputedRef<Map<string, Set<number>>>
 }
 
 export function useLinkedSelectionSubscriber(scope: LinkedSelectionScope): LinkedSelectionSubscriber {
@@ -57,10 +69,20 @@ export function useLinkedSelectionSubscriber(scope: LinkedSelectionScope): Linke
     if (!b || b.scope !== scope || b.ids.length === 0) return new Set()
     return new Set(b.ids)
   })
+  const activePerSource = computed<Map<string, Set<number>>>(() => {
+    const b = store.bag
+    if (!b || b.scope !== scope || !b.perSource) return new Map()
+    const out = new Map<string, Set<number>>()
+    for (const [k, ids] of Object.entries(b.perSource)) {
+      if (ids.length) out.set(k, new Set(ids))
+    }
+    return out
+  })
   const anyActive = computed(() => activeIds.value.size > 0)
   return {
     isSelected(id: number) { return activeIds.value.has(id) },
     anyActive,
     activeIds,
+    activePerSource,
   }
 }

@@ -1448,6 +1448,41 @@ def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: lis
 
 
 @mcp.tool()
+def select_on_plot(project_uid: str, kind: str, sources: list[dict],
+                   focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
+    """Highlight a MULTI-SOURCE set of tracks or cells — the reverse of a user's plot brush.
+
+    Use this when you want the SAME set of dots that a lasso on the plot would produce: several
+    `(image_uid, value_name, pop)` scopes each carrying their own id list, delivered as ONE bag
+    write so every subscribed plot lights up atomically and the viewer's own outline follows in
+    the same paint. Preferred over N sequential `mark_tracks` / `mark_cells` calls when the target
+    spans more than one image or population — sequential calls clear-and-set the bag, so only the
+    last one survives.
+
+    `kind` is the OBJECT kind: `"track"` (mirrors `mark_tracks`, `setTrackHighlight`) or `"cell"`
+    (mirrors `mark_cells`, `setPickHighlight`).
+
+    `sources` is a non-empty list of `{imageUid, valueName, pop?, ids}`:
+      - `imageUid`  — the source image (required; per-vn track/label ids are per-image)
+      - `valueName` — the segmentation the ids live under (required)
+      - `pop`       — optional population path; empty broadens the highlight to every dot in
+                      `(imageUid, valueName)` regardless of pop (same fallback the boxplot renderer
+                      uses for `mark_tracks` / `mark_cells`). Provide when you want to narrow to
+                      one population under a segmentation that has several.
+      - `ids`       — non-empty list of track ids or label ids under this source.
+
+    When to pick this vs `mark_tracks` / `mark_cells`: single-image, single-vn → those two are
+    slightly friendlier. Two or more scopes, or a pooled cross-image plot → this one. The single
+    tools are unchanged.
+
+    EPHEMERAL: 5-min default TTL, in-memory only — same contract as the rest of the mark family.
+
+    Returns `{ok: true, markerId}`.
+    """
+    return _client.select_on_plot(project_uid, kind, sources, focus_id, label, ttl_s)
+
+
+@mcp.tool()
 def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300) -> dict:
     """Point at a UI CONTROL on the user's screen — your "click here" pointer.
 

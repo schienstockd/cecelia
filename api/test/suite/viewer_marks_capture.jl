@@ -150,6 +150,45 @@
         @test stp2 == 200
         fp2 = drain()[1]
         @test String(fp2.cell) == "cell=3"
+
+        # Multi-source select (LINKED_BRUSHING follow-up): the reverse of the plot-brush emit
+        # shape. Body requires kind ∈ {track, cell} + a `sources` array of {imageUid, valueName,
+        # pop?, ids}; each source with missing uid/vn or empty ids is silently dropped; the
+        # request 400s if nothing survives. `objectKind` on the WS frame drives the frontend's
+        # scope choice + which highlight setter fans out per source.
+        _reset_marks!(); drain()
+        s(b) = _post(api_viewer_marks_select, b)
+        @test s(Dict("projectUid"=>uid))[1] == 400                                        # kind required
+        @test s(Dict("projectUid"=>uid, "kind"=>"nope",
+                     "sources"=>[Dict("imageUid"=>"I","valueName"=>"v","ids"=>[1])]))[1] == 400
+        @test s(Dict("projectUid"=>uid, "kind"=>"track"))[1] == 400                       # sources required
+        @test s(Dict("projectUid"=>uid, "kind"=>"track", "sources"=>[]))[1] == 400
+        @test s(Dict("projectUid"=>uid, "kind"=>"track",
+                     "sources"=>[Dict("imageUid"=>"","valueName"=>"v","ids"=>[1])]))[1] == 400
+        @test s(Dict("projectUid"=>uid, "kind"=>"track",
+                     "sources"=>[Dict("imageUid"=>"I","valueName"=>"v","ids"=>[])]))[1] == 400
+        # Happy path — two sources, per-source ids preserved, WS frame carries them verbatim.
+        sts, bodys = s(Dict("projectUid"=>uid, "kind"=>"track",
+            "sources"=>[
+                Dict("imageUid"=>"imgA", "valueName"=>"flowTom", "pop"=>"root/B", "ids"=>[3, 7]),
+                Dict("imageUid"=>"imgB", "valueName"=>"flowTom",                     "ids"=>[11]),
+            ], "focusId"=>7, "label"=>"fastest few", "ttl_s"=>120))
+        @test sts == 200
+        rs = JSON3.read(bodys)
+        @test rs.ok == true && startswith(String(rs.markerId), "mark-")
+        fs = drain()[1]
+        @test String(fs.type) == "viewer:mark"
+        @test String(fs.kind) == "select" && String(fs.objectKind) == "track"
+        @test length(fs.sources) == 2
+        @test String(fs.sources[1].imageUid) == "imgA"
+        @test String(fs.sources[1].pop) == "root/B"
+        @test collect(fs.sources[1].ids) == [3, 7]
+        @test String(fs.sources[2].imageUid) == "imgB"
+        @test String(fs.sources[2].pop) == ""
+        @test collect(fs.sources[2].ids) == [11]
+        @test Int(fs.focusId) == 7
+        @test String(fs.label) == "fastest few"
+        @test Int(fs.ttlSeconds) == 120
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
         _reset_marks!()

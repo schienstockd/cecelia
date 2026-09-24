@@ -1391,6 +1391,11 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
 }
 
 // ── numeric: violin (mirrored Gaussian KDE from downsampled raw points) ───────────
+// Brushing is inert here BY DESIGN — a KDE ribbon has no per-point mark to click. The server's
+// `points` branch does emit `pointIds`/`pointUids` (shared with strip), so if we ever want to
+// overlay a boxplot-style jitter for click-through, the data channel is already live: mirror the
+// `strip()` dot mark on top of the Area/Line marks below. Left off today to keep violin the
+// clean "shape only" chart — strip is the raw-points chart for brushing.
 function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                 keyOf: (s: PlotSeries) => string, color: object, logY: object) {
   const { labels, idx } = seriesIndex(r, keyOf, facetSingle(o))
@@ -1423,18 +1428,57 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
 }
 
 // ── numeric: strip / jitter (raw points, downsampled) ─────────────────────────────
+// Point-source brushing is wired the same way as the boxplot jitter — server emits `pointIds`
+// (and `pointUids` for pooled cross-image) on the shared /api/plot_data points branch, the dot
+// mark carries `.cc-brush-dot` + data-* attrs via `stampBrushIds`, and the PlotChart delegate
+// finds them by class regardless of chart type. See `boxplot()` above for the full rationale on
+// the (uid, vn, pop) key and the pointUid precedence.
 function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                keyOf: (s: PlotSeries) => string, color: object, logY: object) {
   const { labels, idx } = seriesIndex(r, keyOf, facetSingle(o))
-  const rows: object[] = []
+  const activeIds = o.brushActiveIds ?? null
+  type PtRow = { series: string; fkey: string; xj: number; value: number;
+                 pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
+  const rows: PtRow[] = []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
+    const pids = (s.pointIds ?? []) as number[]
+    const puids = (s.pointUids ?? []) as string[]
     const off = offsetsFor(o, vals, 0.42)                     // wider swarm (no box to overlay)
-    vals.forEach((v, k) => rows.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v }))
+    vals.forEach((v, k) => rows.push({
+      series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
+      pointId: pids[k] ?? null,
+      pointUid: puids[k] ?? (s.uID || o.defaultImageUid || ''),
+      pointVn: s.value_name,
+      pointPop: s.pop ?? '',
+    }))
   }
   if (!rows.length) return null
   const a = axM(o)
+  const dimOpacity = 0.08
+  const isPerSource = activeIds instanceof Map
+  const matches = (d: PtRow): boolean => {
+    if (d.pointId == null || !activeIds) return false
+    if (isPerSource) {
+      const map = activeIds as Map<string, Set<number>>
+      const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
+      if (map.get(specKey)?.has(d.pointId)) return true
+      const vnKey = `${d.pointUid}|${d.pointVn}`
+      return map.get(vnKey)?.has(d.pointId) ?? false
+    }
+    return (activeIds as Set<number>).has(d.pointId)
+  }
+  const ptFill = o.colorData ? 'series' : 'currentColor'
+  const ptFillOpacity = activeIds
+    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
+    : o.pointOpacity
+  const ptStrokeWidth = activeIds
+    ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
+    : 0.5
+  const ptStrokeOpacity = activeIds
+    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
+    : 0.55
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
     { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
@@ -1442,10 +1486,14 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     [a.pos]: xScale(labels, o), ...fxScale(o),
     [a.meas]: { label: r.measure, grid: false, ...logY },
     marks: [
-      Plot.dot(rows, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: o.colorData ? 'series' : 'currentColor',
+      Plot.dot(rows, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: ptFill,
                        // themed outline so whitish series colours read on the white PDF / light ground
-                       stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
-                       fillOpacity: o.pointOpacity, ...fxCh(o) }),
+                       stroke: 'currentColor',
+                       strokeWidth: ptStrokeWidth, strokeOpacity: ptStrokeOpacity,
+                       fillOpacity: ptFillOpacity,
+                       className: 'cc-brush-dot',
+                       render: stampBrushIds(rows),
+                       ...fxCh(o) }),
       ...statsMarks,
     ],
   }

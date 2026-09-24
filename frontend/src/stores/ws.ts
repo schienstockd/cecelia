@@ -301,6 +301,39 @@ export const useWsStore = defineStore('ws', () => {
             imageUid: imageUid || undefined, valueName: valueName || undefined,
           })
         }
+      } else if (data.kind === 'select') {
+        // LINKED_BRUSHING follow-up — `select_on_plot` MCP tool. Reverse of the plot-brush emit
+        // shape: Claude passes multiple `(imageUid, valueName, pop, ids)` scopes and we write ONE
+        // linkedSelection bag with the full perSource map so every subscribed plot lights up in a
+        // single update. `objectKind` picks the scope (tracks / cells). Also fans out into the
+        // viewer's per-image highlight setters — one call per source so the open image outlines
+        // its ids using the same shader path as `mark_tracks` / `mark_cells`.
+        const objectKind = String(data.objectKind ?? '')
+        if (objectKind !== 'track' && objectKind !== 'cell') return
+        const rawSources = Array.isArray(data.sources) ? (data.sources as Array<Record<string, unknown>>) : []
+        const perSource: Record<string, number[]> = {}
+        const flat: number[] = []
+        for (const s of rawSources) {
+          const uid = String(s.imageUid ?? '')
+          const vn  = String(s.valueName ?? '')
+          const pop = String(s.pop ?? '')
+          const ids = Array.isArray(s.ids) ? (s.ids as unknown[]).map(v => Number(v)).filter(n => Number.isFinite(n)) : []
+          if (!uid || !vn || !ids.length) continue
+          perSource[linkedSourceKey(uid, vn, pop)] = ids
+          for (const id of ids) flat.push(id)
+          if (objectKind === 'track') {
+            viewer.setTrackHighlight({ imageUid: uid, valueName: vn, trackIds: ids, label, origin: 'claude' })
+          } else {
+            viewer.setPickHighlight({ imageUid: uid, valueName: vn, labels: ids, focusId: 0, label, origin: 'claude' })
+          }
+        }
+        if (flat.length) {
+          useLinkedSelectionStore().set({
+            scope: objectKind === 'track' ? 'tracks' : 'cells',
+            ids: flat, source: 'claude:select_on_plot', sourcePlotId: 'claude:select_on_plot',
+            perSource,
+          })
+        }
       } else if (data.kind === 'plot') {
         // BIDIR PR #4b. Plot point-out — Claude's "look at THIS spot on that panel". Consumers
         // (per plot family) filter by `(family, plotId, cell?)` and render a marker at their

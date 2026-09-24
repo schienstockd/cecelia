@@ -116,6 +116,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/freeform"), # freeform overlay on a stored capture (cap-…) — 0..1 frame-relative coords
         ("POST", "/api/viewer/marks/tile"),     # highlight ONE landscape/grid tile (e.g. "B3") — no overlay geometry, the grid is the shape
         ("POST", "/api/viewer/marks/plot"),     # bidir PR #4b: point at a spot on a PLOT panel (family + plotId + 0..1 (u,v) + optional sub-cell)
+        ("POST", "/api/viewer/marks/select"),   # LINKED_BRUSHING follow-up: multi-source track/cell selection Claude → plot brush + viewer highlight (reverse of the plot-brush emit shape)
         ("POST", "/api/viewer/seek"),           # RUBBER_DUCK_FIT_PLAN P2: imperative "look at frame (t, z)" — no mark, no capture; reuses pendingViewState.focus
         ("POST", "/api/viewer/navigate"),       # RUBBER_DUCK_FIT_PLAN P2B: navigate main window to a route (+ optional board tab); MCP resolves ambiguity before calling
         ("GET",  "/api/viewer/landscape"),      # read the last-published landscape heatmap for (image, t, z); browser publishes, MCP reads
@@ -522,6 +523,21 @@ class CeceliaClient:
         if label: body["label"] = label
         if ttl_s is not None: body["ttl_s"] = ttl_s
         return self._request("POST", "/api/viewer/marks/plot", body=body)
+
+    def select_on_plot(self, project_uid: str, kind: str, sources: list[dict],
+                       focus_id: int | None = None, label: str = "", ttl_s: int | None = None):
+        # LINKED_BRUSHING follow-up — multi-source selection Claude → plot brush + viewer highlight.
+        # Reverse of the plot-brush emit shape: `sources` is
+        #   [{imageUid: str, valueName: str, pop?: str, ids: [int]}]
+        # so a pooled cross-image write lands atomically in ONE bag (per-source keyed) rather than
+        # via N sequential mark_tracks calls that clear-and-set each other. Also mirrors per-source
+        # into the viewer's own highlight setter (setTrackHighlight for kind='track', setPickHighlight
+        # for kind='cell') so the open image outlines the ids using the same shader path.
+        body: dict = {"projectUid": project_uid, "kind": kind, "sources": sources}
+        if focus_id is not None: body["focusId"] = int(focus_id)
+        if label: body["label"] = label
+        if ttl_s is not None: body["ttl_s"] = ttl_s
+        return self._request("POST", "/api/viewer/marks/select", body=body)
 
     def navigate_viewer(self, project_uid: str, path: str, board_name: str = ""):
         # RUBBER_DUCK_FIT_PLAN P2B — dispatch a Vue Router push into the main window. Ambiguity

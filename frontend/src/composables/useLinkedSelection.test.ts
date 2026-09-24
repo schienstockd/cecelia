@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useLinkedSelectionSource, useLinkedSelectionSubscriber } from './useLinkedSelection'
-import { useLinkedSelectionStore } from '../stores/linkedSelection'
+import { useLinkedSelectionStore, linkedSourceKey } from '../stores/linkedSelection'
 
 describe('useLinkedSelection composables', () => {
   beforeEach(() => setActivePinia(createPinia()))
@@ -70,6 +70,45 @@ describe('useLinkedSelection composables', () => {
     src.set([42])
     expect(a.isSelected(42)).toBe(true)
     expect(b.isSelected(42)).toBe(true)
+  })
+
+  it('activePerSource exposes the perSource map when the writer set one', () => {
+    // A per-source writer (a plot's brush that knew which (uid, vn, pop) each id came from)
+    // must be readable per-source by a subscriber — otherwise a cross-image pooled brush
+    // collapses into the flat Set and the reader picks up numeric collisions from every
+    // image. This is the reverse of the write-side contract the boxplot/strip renderer uses.
+    const s = useLinkedSelectionStore()
+    s.set({
+      scope: 'tracks', ids: [3, 7, 11], source: 't', sourcePlotId: 't',
+      perSource: {
+        [linkedSourceKey('imgA', 'flowTom', 'root/B')]: [3, 7],
+        [linkedSourceKey('imgB', 'flowTom')]: [11],
+      },
+    })
+    const sub = useLinkedSelectionSubscriber('tracks')
+    const perSrc = sub.activePerSource.value
+    expect(perSrc.size).toBe(2)
+    expect(perSrc.get(linkedSourceKey('imgA', 'flowTom', 'root/B'))?.has(7)).toBe(true)
+    expect(perSrc.get(linkedSourceKey('imgB', 'flowTom'))?.has(11)).toBe(true)
+    // Flat activeIds still works — it's the union across sources.
+    expect(sub.activeIds.value.size).toBe(3)
+  })
+
+  it('activePerSource is empty when the writer only set flat ids', () => {
+    // A legacy flat-Set writer (a Show button) leaves perSource undefined; the subscriber
+    // still gets a valid (empty) Map so callers can uniformly branch on `size`, and consumers
+    // fall back to the flat activeIds view for the actual selection.
+    const src = useLinkedSelectionSource('umap-1', 'tracks')
+    const sub = useLinkedSelectionSubscriber('tracks')
+    src.set([1, 2])
+    expect(sub.activePerSource.value.size).toBe(0)
+    expect(sub.activeIds.value.size).toBe(2)
+  })
+
+  it('activePerSource is scope-gated too', () => {
+    const s = useLinkedSelectionStore()
+    s.set({ scope: 'tracks', ids: [1], source: 't', perSource: { [linkedSourceKey('imgA', 'flowTom')]: [1] } })
+    expect(useLinkedSelectionSubscriber('cells').activePerSource.value.size).toBe(0)
   })
 
   it('a fresh source writer overwrites a previous writer at the same scope', () => {
