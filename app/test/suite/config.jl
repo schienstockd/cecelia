@@ -5,6 +5,74 @@
     @test tasks_concurrent_limit() >= 1
 end
 
+# ── Single-instance lock (LOGIN_CREDENTIAL_ISOLATION_PLAN D7 / P5) ────────
+# Pure pieces: stale-detection predicate, message-building, acquire/release round-trip. The LIVE
+# "second `pixi run dev` produces the friendly error" case is a manual check documented in the plan.
+@testset "Single-instance lock" begin
+    # `_lock_is_stale`: no file / no PID / dead PID → stale (reclaim). Own PID → alive (refuse).
+    @test Cecelia._lock_is_stale(nothing) === true
+    @test Cecelia._lock_is_stale(Dict{String,Any}()) === true                      # no pid field → treat as stale
+    @test Cecelia._lock_is_stale(Dict{String,Any}("pid" => 0)) === true            # bad pid
+    @test Cecelia._lock_is_stale(Dict{String,Any}("pid" => "not an int")) === true # wrong shape
+    # Own PID is always alive — bulletproof "not stale" check across OS + UID.
+    @test Cecelia._lock_is_stale(Dict{String,Any}("pid" => getpid())) === false
+    @test Cecelia._lock_is_stale(Dict{String,Any}("pid" => 99999999)) === true     # very unlikely to exist
+
+    # Message-building — pure. Must name the PID, start time, and port so the remote user has
+    # something to act on. The `pixi run stop` hint is deliberate — that IS the escape hatch.
+    msg = Cecelia._already_running_message(
+        Dict{String,Any}("pid" => 4242, "startedAt" => "2026-09-24 09:00:00", "api_port" => 8080))
+    @test occursin("Cecelia is already running", msg)
+    @test occursin("4242", msg)
+    @test occursin("2026-09-24 09:00:00", msg)
+    @test occursin("8080", msg)
+    @test occursin("pixi run stop", msg)
+    # A record missing optional fields still produces a usable one-liner (defensive against a
+    # pre-P5 lock format if this ever gets one).
+    @test occursin("Cecelia is already running",
+                   Cecelia._already_running_message(Dict{String,Any}("pid" => 4242)))
+
+    # Round-trip: acquire → lock file exists with our PID → release → gone. Uses a temp config dir
+    # via CECELIA_DEV_DIR so the real config_dir() is untouched (memory rule: never write the
+    # shared dev config).
+    mktempdir() do tmp
+        withenv("CECELIA_DEV_DIR" => tmp) do
+            Cecelia.init_cecelia!()   # rebind config_dir()
+            Cecelia.release_single_instance!()   # ensure clean start (idempotent)
+            @test !isfile(Cecelia.single_instance_lock_path())
+            Cecelia.acquire_single_instance!("127.0.0.1", 8080)
+            @test isfile(Cecelia.single_instance_lock_path())
+            data = Cecelia._read_lock()
+            @test data !== nothing
+            @test data["pid"] == getpid()
+            @test data["api_port"] == 8080
+            @test data["host"] == "127.0.0.1"
+            @test haskey(data, "startedAt")
+            # Idempotent within one process — a second acquire is a no-op, not an error.
+            Cecelia.acquire_single_instance!("127.0.0.1", 8080)
+            @test Cecelia._read_lock()["pid"] == getpid()
+            # Re-acquire refuses when the lock names a DIFFERENT live PID.
+            Cecelia.release_single_instance!()
+            other = Dict{String,Any}("pid" => getpid(),   # our own pid stands in for "live"
+                                     "startedAt" => "x", "host" => "127.0.0.1", "api_port" => 8080)
+            write(Cecelia.single_instance_lock_path(), JSON3.write(other))
+            # Force _SINGLE_INSTANCE_HELD to false so this is a real re-check, not a re-entry
+            Cecelia._SINGLE_INSTANCE_HELD[] = false
+            @test_throws Cecelia.AlreadyRunningError Cecelia.acquire_single_instance!("127.0.0.1", 8080)
+            # A lock with a dead PID silently reclaims — no throw.
+            write(Cecelia.single_instance_lock_path(),
+                  JSON3.write(Dict{String,Any}("pid" => 99999999, "startedAt" => "x",
+                                               "host" => "127.0.0.1", "api_port" => 8080)))
+            Cecelia._SINGLE_INSTANCE_HELD[] = false
+            Cecelia.acquire_single_instance!("127.0.0.1", 8080)
+            @test Cecelia._read_lock()["pid"] == getpid()
+            Cecelia.release_single_instance!()
+            @test !isfile(Cecelia.single_instance_lock_path())
+        end
+        Cecelia.init_cecelia!()   # restore the real config_dir() for the rest of the suite
+    end
+end
+
 # ── Version stamp is consistent across the four files that carry it ──────────
 # `cecelia_version()` (from Project.toml, via pkgversion) is the runtime reader; CITATION.cff is the
 # human-facing citation; frontend/package.json is what JS tooling sees; frontend/package-lock.json

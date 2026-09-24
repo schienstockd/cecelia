@@ -1,7 +1,7 @@
 # Cecelia login + per-user Claude credential isolation — plan
 
-**Status:** in progress (2026-09-24) — P1 shipped in #1201, P2 shipped on branch
-`feat/kiwi-profile-spawn-env`. Derived from
+**Status:** in progress (2026-09-24) — P1 shipped #1201, P2 shipped #1204, P5 shipped on
+branch `feat/kiwi-single-instance-lock` (this branch). Derived from
 [`docs/archive/opus-audit-cecelia-login-credential-isolation.md`](../archive/opus-audit-cecelia-login-credential-isolation.md)
 and [`docs/archive/opus-audit-single-instance-identity-gaps.md`](../archive/opus-audit-single-instance-identity-gaps.md).
 Audit findings below have been empirically verified on this box against the currently-installed
@@ -172,15 +172,24 @@ one field addition on the existing record, no new store. Amend `KIWI_ASSISTANT_P
 profile; see LOGIN_CREDENTIAL_ISOLATION_PLAN D8"). Downstream consumers explicitly out of scope
 per D8 — do not add readers speculatively.
 
-### P5 — Single-instance lock (D7)
-Small addition to Julia startup (`app/src/Cecelia.jl` init path). Lock file at
-`<config_dir()>/cecelia.lock` holds `{pid, started_at, api_port}`; on startup, check for it, and
-if the recorded PID is alive AND bound to the recorded port, fail with a clear
-`Cecelia is already running on this machine (PID N since T)` before any HTTP/WS component tries
-to bind. Stale lock (dead PID or bound-to-something-else) is silently reclaimed. Removes the
-"arbitrary component's bind error is what the remote user sees" failure mode. Independently
-shippable; unblocks P3 by collapsing the cross-tab race. Test: unit test on the lock reclaim
-predicate; manual: two `pixi run dev` invocations on the same box produce the friendly error.
+### P5 — Single-instance lock (D7) — SHIPPED
+Landed on branch `feat/kiwi-single-instance-lock`. Lock file at `<config_dir()>/cecelia.lock`
+holds `{pid, startedAt, host, api_port}`; the check runs at the top of `start()` in
+`api/src/server.jl` — BEFORE `_BOUND_HOST[]`, before any `_install_log_tee!` / `_start_runner!`
+/ `HTTP.listen`, so a remote user sees the friendly one-liner instead of a bind traceback.
+Refuses with `Cecelia is already running on this machine (PID N since T on port P). Use
+\`pixi run stop\` to release it if you are certain nothing is using it.`; stale locks (dead PID
+or unparseable JSON) self-heal silently. `AlreadyRunningError` is a typed exception with a
+`showerror` that prints message-only, so `server.jl`'s catch prints the one-liner to stderr and
+`exit(1)`s — non-42 exit, so dev.jl treats it as "stop", not "restart".
+**Deviated from the plan text on one point**: no port-liveness cross-check. A port bind probe
+against the recorded port would falsely refuse a launch on a shared machine where some other
+service happens to occupy 8080; the PID-alive check is enough for the single-seat lab tool this
+is aimed at, and a wrong-refuse is a worse failure mode than a wrong-reclaim (which fails
+loudly at the next bind). Tests: `Single-instance lock` testset in `app/test/suite/config.jl`
+(stale-detection + message-building + acquire/release round-trip + idempotence + refuse-on-live-
+other-pid + reclaim-on-dead-pid). Manual: `pixi run dev` twice on the same box produces the
+friendly error on the second (not run — no live check performed against a running server).
 
 ### P6 — Identity-scoped terminal launcher (D9)
 "Open terminal (profile: X)" button in `KiwiCockpit.vue` that hits a new route which spawns
