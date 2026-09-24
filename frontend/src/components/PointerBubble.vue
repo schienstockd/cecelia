@@ -20,6 +20,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useViewerStore } from '../stores/viewer'
 import { resolveAnchor, isReachable } from '../utils/guideAnchor'
+import { PANEL_Z_BASE } from '../utils/panelStack'
 
 const viewer = useViewerStore()
 const POLL_MS = 250
@@ -48,8 +49,14 @@ interface Placed {
   left: number
   width: number
   height: number
+  // the anchor sits inside a floating panel (Kiwi, Viewer, Lab log, corrections…) — see the template
+  inPanel: boolean
 }
 
+// Two layers: a mark on page content sits just UNDER the floating panels, so an open panel covers
+// it (a plot highlight used to paint over Kiwi when Kiwi was expanded again); a mark on something
+// inside a panel sits above them all, or its own panel would hide it.
+const PAGE_Z = PANEL_Z_BASE - 1
 const placed = computed<Placed[]>(() => {
   void domTick.value
   return viewer.uiMarks.map(m => {
@@ -65,6 +72,7 @@ const placed = computed<Placed[]>(() => {
       left: r ? r.left : 0,
       width: r ? r.width : 0,
       height: r ? r.height : 0,
+      inPanel: !!el?.closest('.fp'),
     }
   })
 })
@@ -73,11 +81,12 @@ function dismiss(id: string) { viewer.dismissUiMark(id) }
 </script>
 
 <template>
-  <!-- Fixed layer above the app but below modals (z-index sits between the guide bubble at 1500
-       and the app content). Only the dots + chips receive pointer events; the layer itself is
-       transparent to clicks. -->
-  <div class="pb-layer">
-    <template v-for="p in placed" :key="p.markerId">
+  <!-- Fixed layers below modals: page marks under the floating panels (PAGE_Z), panel marks above
+       them (1400, under the guide bubble at 1500). Only the dots + chips receive pointer events; the
+       layers themselves are transparent to clicks. -->
+  <div v-for="top in [false, true]" :key="String(top)" class="pb-layer"
+       :style="top ? undefined : { zIndex: PAGE_Z }">
+    <template v-for="p in placed.filter(x => x.inPanel === top)" :key="p.markerId">
       <div v-if="p.reachable" class="pb-dot"
            :style="{ top: (p.top + p.height / 2) + 'px',
                      left: (p.left + p.width  + 8)  + 'px' }">

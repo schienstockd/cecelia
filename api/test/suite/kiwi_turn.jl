@@ -95,7 +95,15 @@ end
     # a plot shows populations: a number about them is covered by the plot that shows it, not only by a
     # per-image population ref (a set-wide claim cited two arbitrary images' pops otherwise)
     pp = Dict("kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/qc/_tracked", "T/qc/_tracked"])
-    @test isempty(kiwi_claim_underspecified("Speed is higher in T/qc than B/qc in 6 of 7 images.", [pp]))
+    @test isempty(kiwi_claim_underspecified("Speed is higher in T/qc than B/qc.", [pp]))
+    # counting images needs the plot per image — a pooled one doesn't show "6 of 7" (4kS67f eval, 2026-09-24)
+    ppi = merge(pp, Dict("statUnit" => "image"))
+    @test only(kiwi_claim_underspecified("Speed is higher in T/qc than B/qc in 6 of 7 images.", [pp])) ==
+          "the per-image count (propose the plot per image: statUnit \"image\")"
+    @test length(kiwi_claim_underspecified("T is faster in 6 of the 7 included images.", [merge(pp, Dict("statUnit" => "individual"))])) == 1
+    @test isempty(kiwi_claim_underspecified("Speed is higher in T/qc than B/qc in 6 of 7 images.", [ppi]))
+    @test isempty(kiwi_claim_underspecified("T is faster in every image.", [pp, Dict("kind" => "plot", "plotId" => "p")]))
+    @test isempty(kiwi_claim_underspecified("T is faster in 6 of 7 images.", [img]))   # not a proposal — the evidence rule's job
     @test isempty(kiwi_claim_underspecified("B/qc is slower.", [Dict("kind" => "plot", "plotId" => "p")]))
     @test length(kiwi_claim_underspecified("/Directed is slower.", [pp])) == 1          # not on that plot
     # tracks / cells by number

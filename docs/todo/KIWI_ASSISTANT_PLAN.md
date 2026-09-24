@@ -465,8 +465,10 @@ Each independently shippable.
       (measure rows, cluster shares, HMM states), so the renderer is the real work. **Revisit** when
       the eval set shows unbacked claims again — a new engine, a prompt change — using the trial's 40
       claims as the fixture.
-   Cheap follow-up worth doing instead: a deterministic check that a per-image claim ("N of M
-   images") citing a proposed plot asks for `statUnit: image`.
+   Cheap follow-up instead — **done**: a claim that counts images ("N of M images") resting on proposed
+   plots needs one per image (`statUnit: "image"`; `kiwi_claim_underspecified`, plus one prompt line).
+   Replayed over the 33 eval claims it fires on exactly the 6 per-image counts; one live
+   `best-measure-set` turn then proposed per-image plots without being re-asked for it.
    Not in Phase 6: a clarifying-question reply (Open decision 2), a per-measure separation score.
 
 ## What this changes in KIWI_PLAN
