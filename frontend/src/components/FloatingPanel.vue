@@ -23,6 +23,7 @@ const stack = ref<string[]>([])
 // it again here is a duplicate-identifier error, not a shadow.
 import { reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { panelBounds, clampPanel, maximisedRect } from '../utils/panelBounds'
+import { resizeRect, type Edges } from '../utils/panelResize'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -98,17 +99,28 @@ onUnmounted(() => {
   stack.value = dropPanel(stack.value, props.storageKey)
 })
 
-// ── drag (by header) / resize (bottom-right handle) — one pointer-move loop for both ──
+// ── drag (by header) / resize (any of 8 handles) — one pointer-move loop for both ──
+// Resize uses a start-rect + start-pointer snapshot rather than a per-frame offset, so corners/edges
+// that anchor to the OPPOSITE side (N/W) can move x/y AND w/h without drift. Maths + tests live in
+// utils/panelResize.ts.
 let mode: 'drag' | 'resize' | null = null
-let offX = 0, offY = 0
+let dragOffX = 0, dragOffY = 0
+let resizeEdges: Edges = {}
+let startPointerX = 0, startPointerY = 0
+let startRect = { x: 0, y: 0, w: 0, h: 0 }
+
 function onHeaderDown(e: PointerEvent) {
   if ((e.target as HTMLElement).closest('.fp-btn')) return   // header buttons aren't drag handles
   if (st.maximised) return                                   // a maximised window doesn't move
-  mode = 'drag'; offX = e.clientX - st.x; offY = e.clientY - st.y; beginGesture(e)
+  mode = 'drag'; dragOffX = e.clientX - st.x; dragOffY = e.clientY - st.y; beginGesture(e)
 }
-function onResizeDown(e: PointerEvent) {
+function onResizeDown(e: PointerEvent, edges: Edges) {
   if (st.maximised) return
-  mode = 'resize'; offX = e.clientX - st.w; offY = e.clientY - st.h; beginGesture(e); e.stopPropagation()
+  mode = 'resize'
+  resizeEdges = edges
+  startPointerX = e.clientX; startPointerY = e.clientY
+  startRect = { x: st.x, y: st.y, w: st.w, h: st.h }
+  beginGesture(e); e.stopPropagation()
 }
 function beginGesture(e: PointerEvent) {
   window.addEventListener('pointermove', onMove)
@@ -119,11 +131,13 @@ function onMove(e: PointerEvent) {
   if (mode === 'drag') {
     // same bounds as clampIntoView — ONE definition, so the drag floor and the mount/resize floor
     // cannot drift apart (they did: both were 0, i.e. both under the app header)
-    const { x, y } = clampPanel(e.clientX - offX, e.clientY - offY, bounds())
+    const { x, y } = clampPanel(e.clientX - dragOffX, e.clientY - dragOffY, bounds())
     st.x = x; st.y = y
   } else if (mode === 'resize') {
-    st.w = Math.max(220, Math.min(e.clientX - offX, window.innerWidth - st.x))
-    st.h = Math.max(140, Math.min(e.clientY - offY, window.innerHeight - st.y))
+    const r = resizeRect(startRect, e.clientX - startPointerX, e.clientY - startPointerY,
+      resizeEdges,
+      { minW: 220, minH: 140, viewportW: window.innerWidth, viewportH: window.innerHeight, bounds: bounds() })
+    st.x = r.x; st.y = r.y; st.w = r.w; st.h = r.h
   }
 }
 function endGesture() {
@@ -165,8 +179,19 @@ function endGesture() {
       </button>
     </div>
     <div v-show="!st.collapsed" class="fp-body"><slot /></div>
-    <div v-show="!st.collapsed && !st.maximised" class="fp-resize" @pointerdown="onResizeDown"
-         v-tooltip.top="'Drag to resize'" />
+    <!-- Eight resize handles: four thin edges + four corner squares (the corners sit on top so their
+         diagonal cursor wins where they overlap the edges). No tooltip — a desktop window doesn't
+         label its own frame, and a tooltip on every edge would flicker as the pointer crosses them. -->
+    <template v-if="!st.collapsed && !st.maximised">
+      <div class="fp-edge fp-edge-n" @pointerdown="e => onResizeDown(e, { n: true })" />
+      <div class="fp-edge fp-edge-s" @pointerdown="e => onResizeDown(e, { s: true })" />
+      <div class="fp-edge fp-edge-e" @pointerdown="e => onResizeDown(e, { e: true })" />
+      <div class="fp-edge fp-edge-w" @pointerdown="e => onResizeDown(e, { w: true })" />
+      <div class="fp-corner fp-corner-nw" @pointerdown="e => onResizeDown(e, { n: true, w: true })" />
+      <div class="fp-corner fp-corner-ne" @pointerdown="e => onResizeDown(e, { n: true, e: true })" />
+      <div class="fp-corner fp-corner-sw" @pointerdown="e => onResizeDown(e, { s: true, w: true })" />
+      <div class="fp-corner fp-corner-se" @pointerdown="e => onResizeDown(e, { s: true, e: true })" />
+    </template>
   </div>
 </template>
 
@@ -214,14 +239,28 @@ function endGesture() {
 /* .fp-btn → cc-btn cc-btn-bare cc-btn-icon */
 .fp-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .fp-body { flex: 1; overflow: auto; min-height: 0; }
-.fp-resize {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 14px;
-  height: 14px;
-  cursor: nwse-resize;
-  /* corner grip lines */
+/* ── resize frame ─────────────────────────────────────────────────────────────
+   Eight invisible hit regions around the edge of the panel, laid out like a
+   desktop window frame. Edges are a thin strip along each side; corners are
+   small squares layered ABOVE the edges (larger z-index) so the diagonal
+   cursor wins in the overlap. Widths chosen wide enough to grab without
+   pixel-perfect aim but small enough not to eat clicks near the border. */
+/* The panel has overflow: hidden (rounded-corner mask), so handles must sit INSIDE the frame — a
+   negative offset would be clipped and un-grabbable. A ~5px inset gives enough grab area without
+   eating clicks near the border. */
+.fp-edge, .fp-corner { position: absolute; z-index: 1; }
+.fp-edge-n { top: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+.fp-edge-s { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+.fp-edge-e { top: 10px; bottom: 10px; right: 0; width: 5px; cursor: ew-resize; }
+.fp-edge-w { top: 10px; bottom: 10px; left: 0; width: 5px; cursor: ew-resize; }
+.fp-corner { width: 14px; height: 14px; z-index: 2; }
+.fp-corner-nw { top: 0; left: 0; cursor: nwse-resize; }
+.fp-corner-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.fp-corner-ne { top: 0; right: 0; cursor: nesw-resize; }
+.fp-corner-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+/* Keep the visible grip lines in the SE corner — the one users already know as "the resize corner".
+   The other seven handles are invisible, discovered by the cursor change like any desktop window. */
+.fp-corner-se {
   background:
     linear-gradient(135deg, transparent 0 6px, var(--cc-border) 6px 7px, transparent 7px 9px,
                     var(--cc-border) 9px 10px, transparent 10px);
