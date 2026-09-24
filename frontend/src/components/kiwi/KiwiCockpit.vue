@@ -4,8 +4,15 @@
 // and Settings → MCP (connection health) to find them.
 //
 // Rows:
+//   - Profile picker — active Kiwi profile (LOGIN_CREDENTIAL_ISOLATION_PLAN P3+P6 frontend); the
+//     `default` profile maps to ~/.claude, named profiles live under <config_dir>/kiwi-profiles/.
+//     `+` opens the create dialog; the terminal icon copies a one-liner that opens a shell scoped
+//     to the active profile (so a raw `claude` in it sees this profile's credentials, not ambient
+//     env). The pairing path (followup-profile-session-claude-code-pairing-stays) needs this — a
+//     raw shell without the one-liner reads ambient credentials on a shared OS login.
 //   - Ask — the structured duck: prompt box with attached ref chips + the claims feed (KiwiAsk.vue,
-//     docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4). First, because it's the reason to open the panel.
+//     docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4). First surface after profile, since it's the reason
+//     to open the panel.
 //   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too)
 //   - Copy chat starter (moved from LabLogPanel)
 //   - Recent captures — click a row to copy its captureId
@@ -51,12 +58,73 @@ import AddToKiwiButton from './AddToKiwiButton.vue'
 // dialog opens from here (was in the lab log toolbar until 2026-09-22). The dialog itself lives
 // outside `kiwi/` and is free to name its provider; the local alias below keeps the ratchet happy.
 import AssistantOverviewDialog from '../ClaudeOverviewDialog.vue'
+import KiwiCreateProfileDialog from './KiwiCreateProfileDialog.vue'
+import { fetchKiwiProfiles, selectKiwiProfile, fetchKiwiTerminalCommand,
+         type KiwiProfileRoster } from '../../utils/kiwiProfileApi'
 
 defineEmits<{ (e: 'close'): void }>()
 
 // "What can the assistant do here?" — provider-neutral wording; the dialog itself lives outside
 // this directory and is free to name what it explains.
 const showAssistantOverview = ref(false)
+
+// ── Profile picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6 frontend) ─────────
+// Roster + active profile are server state (custom.toml [ai].profile). Local `roster` is a cache
+// so the `<select>` renders while the round-trip runs. Failure ⇒ `default`-only fallback (see
+// `fetchKiwiProfiles`), which keeps the picker usable rather than blanking it out.
+const roster = ref<KiwiProfileRoster>({
+  active: 'default',
+  profiles: [{ name: 'default', dir: '', isDefault: true }],
+  legacyReserved: ['legacy'],
+})
+// The `<select>`'s v-model. Kept as a separate ref so a failed select can snap back to
+// `roster.active` without triggering another change event.
+const activeProfile = ref('default')
+const profileSwitching = ref(false)
+const profileError = ref<string | null>(null)
+const showCreateProfile = ref(false)
+
+async function refreshProfiles() {
+  const r = await fetchKiwiProfiles()
+  roster.value = r
+  activeProfile.value = r.active
+}
+
+async function onProfileChange(name: string) {
+  if (name === roster.value.active) return
+  profileSwitching.value = true
+  profileError.value = null
+  try {
+    const r = await selectKiwiProfile(name)
+    if (!r.ok) {
+      profileError.value = r.error ?? 'Select failed'
+      activeProfile.value = roster.value.active   // snap back
+      return
+    }
+    roster.value = { ...roster.value, active: r.active ?? name }
+  } finally { profileSwitching.value = false }
+}
+
+function onProfileCreated(newName: string) {
+  // The dialog already POSTed /select for us — just refresh the local roster.
+  void refreshProfiles().then(() => { activeProfile.value = newName })
+}
+
+// The "Open profile terminal" button: fetch the one-liner for the active profile and copy it.
+// A brand-new profile without `claude login` yet still gets a valid one-liner — running it opens
+// the interactive shell where the user then logs in.
+const { isCopied: termCopied, copy: copyTerm } = useCopyFlash()
+const termFetching = ref(false)
+async function copyTerminalCommand() {
+  if (termFetching.value) return
+  termFetching.value = true
+  try {
+    const r = await fetchKiwiTerminalCommand()
+    if (r?.command) await copyTerm(r.command)
+  } finally { termFetching.value = false }
+}
+
+onMounted(() => { void refreshProfiles() })
 
 const pm = useProjectMetaStore()
 
@@ -249,6 +317,37 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
       </button>
     </template>
     <div class="kiwi-body">
+      <!-- Profile picker — identity is machine-wide, so show it even without a project open. -->
+      <div class="kiwi-row" data-guide="kiwi.profile">
+        <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Profile</span>
+        <select class="kiwi-profile-select cc-input-xs"
+                :value="activeProfile"
+                :disabled="profileSwitching"
+                @change="onProfileChange(($event.target as HTMLSelectElement).value)"
+                v-tooltip.bottom="'Which credential + MCP scope your assistant spawns run under (custom.toml [ai].profile)'">
+          <option v-for="p in roster.profiles" :key="p.name" :value="p.name">
+            {{ p.name }}{{ p.isDefault ? ' (~/.claude)' : '' }}
+          </option>
+        </select>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                @click="showCreateProfile = true"
+                v-tooltip.bottom="'New profile — a separate credential + MCP scope for this seat login'">
+          <i class="pi pi-plus" />
+        </button>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                :disabled="termFetching"
+                @click="copyTerminalCommand"
+                v-tooltip.bottom="termCopied()
+                  ? 'Copied — paste into a terminal, then `claude login` inside it'
+                  : 'Copy a terminal one-liner scoped to the active profile'">
+          <i :class="['pi', termFetching ? 'pi-spin pi-spinner'
+                            : termCopied() ? 'pi-check' : 'pi-desktop']" />
+        </button>
+      </div>
+      <p v-if="profileError" class="kiwi-profile-err cc-fs-2xs">
+        <i class="pi pi-times-circle" /> {{ profileError }}
+      </p>
+
       <div v-if="!projectUid" class="kiwi-empty cc-muted cc-fs-sm">
         Open a project to pair with your assistant.
       </div>
@@ -443,6 +542,9 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
       </template>
     </div>
     <AssistantOverviewDialog v-if="showAssistantOverview" @close="showAssistantOverview = false" />
+    <KiwiCreateProfileDialog v-if="showCreateProfile"
+                             @close="showCreateProfile = false"
+                             @created="onProfileCreated" />
   </FloatingPanel>
 </template>
 
@@ -507,4 +609,9 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 .kiwi-dot-warn { background: var(--cc-sev-warn); }
 .kiwi-dot-fail { background: var(--cc-sev-fail); }
 .kiwi-clear-row { margin-top: 0.4rem; gap: 0.35rem; }
+
+/* Profile picker row — `<select>` takes the remaining width so long names don't clip. */
+.kiwi-profile-select { flex: 1; min-width: 0; }
+.kiwi-profile-err    { margin: -0.2rem 0 0 4.5rem; color: var(--cc-sev-fail);
+                       display: flex; align-items: center; gap: 0.3rem; }
 </style>

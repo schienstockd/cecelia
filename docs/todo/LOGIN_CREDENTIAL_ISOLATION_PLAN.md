@@ -1,10 +1,12 @@
 # Cecelia login + per-user Claude credential isolation — plan
 
 **Status:** in progress (2026-09-24) — P1 shipped #1201, P2 shipped #1204, P5 shipped on
-`feat/kiwi-single-instance-lock` (#1205), P3-backend + P4 + P6-backend shipped on branch
-`feat/kiwi-punchlist` (this branch); P7 collapsed to a read-time default. Follow-ups:
-**P3-frontend** (picker component + selection state) and **P6-frontend** ("Open profile
-terminal" button). Backend routes exist and can be driven from HTTP today. Derived from
+`feat/kiwi-single-instance-lock` (#1205), P3-backend + P4 + P6-backend shipped on
+`feat/kiwi-punchlist` (#1208); P7 collapsed to a read-time default; **P3-frontend picker + P6
+"Open profile terminal" button** shipped on branch `feat/kiwi-picker-ui` (this branch) —
+`KiwiCockpit.vue` grows a Profile row (dropdown + `+` create dialog + terminal one-liner
+copy), consuming `utils/kiwiProfileApi.ts`. Follow-ups: retire verb (D11) is next; per-tab
+handoff via `X-Kiwi-Profile` header remains deferred. Derived from
 [`docs/archive/opus-audit-cecelia-login-credential-isolation.md`](../archive/opus-audit-cecelia-login-credential-isolation.md)
 and [`docs/archive/opus-audit-single-instance-identity-gaps.md`](../archive/opus-audit-single-instance-identity-gaps.md).
 Audit findings below have been empirically verified on this box against the currently-installed
@@ -159,7 +161,7 @@ would have orphaned the existing `~/.claude` login (a re-login the user did not 
 `default` special-cases to `""`. Named profiles land under the plan's directory on first
 resolution — the picker (P3) is what triggers that.
 
-### P3 — Profile roster + picker (backend SHIPPED; frontend follow-up)
+### P3 — Profile roster + picker (SHIPPED — backend + frontend picker)
 Backend shipped on `feat/kiwi-punchlist`: `set_kiwi_profile!(name)` writer in
 `app/src/ai/agent_runner.jl` (analogue of `set_projects_dir!`) plus routes in
 `api/src/kiwi_profile_api.jl` — `GET /api/kiwi/profiles`, `POST /api/kiwi/profiles/select`,
@@ -170,11 +172,16 @@ up via `kiwi_profile_name()`.
 **Deviated from the plan text on selection scope**: per-tab handoff (Q2 recommendation) is
 deferred as a follow-up. `_apply_claude_env` already accepts a per-call profile_dir override,
 so extending to a per-request `X-Kiwi-Profile` header is cheap when a real second seat lands.
-**Frontend picker component is follow-up work** — no `KiwiCockpit.vue` change here; the
-backend routes can be driven from `curl` / the browser dev console today.
-First-use flow: `create` returns a `terminalCommand` field (P6's one-liner) that a user runs
-in their own terminal to complete `claude login`; the picker UI (when built) can copy it to
-the clipboard the same way `claudeChatCommand()` is presented today.
+**Frontend shipped on `feat/kiwi-picker-ui`**: `KiwiCockpit.vue` grows a Profile row
+(dropdown + `+` create-dialog + terminal one-liner copy) above the pairing chip, since the
+profile is identity — everything else in the cockpit scopes to it. Client-side wrapper
+`utils/kiwiProfileApi.ts` (`fetchKiwiProfiles`/`selectKiwiProfile`/`createKiwiProfile`/
+`fetchKiwiTerminalCommand`) + `isValidKiwiProfileName` mirror-tested against the backend
+regex. `components/kiwi/KiwiCreateProfileDialog.vue` is a two-step modal — name → POST
+create + auto-POST select → render the P6 terminal one-liner + copy button — so a fresh
+profile is immediately usable. First-use flow: dialog surfaces the terminal command inline
+and instructs the user to run `claude login` inside that shell; anything Kiwi spawns from
+then on uses the profile's credentials.
 
 ### P4 — Attribution logging (D8) — SHIPPED
 Every Kiwi turn record (`<project>/kiwi/turns.json`, `kiwi_start_turn` in `api/src/kiwi_api.jl`)
@@ -211,7 +218,7 @@ loudly at the next bind). Tests: `Single-instance lock` testset in `app/test/sui
 other-pid + reclaim-on-dead-pid). Manual: `pixi run dev` twice on the same box produces the
 friendly error on the second (not run — no live check performed against a running server).
 
-### P6 — Identity-scoped terminal (backend SHIPPED; frontend follow-up)
+### P6 — Identity-scoped terminal (SHIPPED — backend + frontend button)
 Backend shipped: `kiwi_terminal_command(profile_dir)` in `app/src/ai/agent_runner.jl` returns
 the platform-appropriate one-liner — POSIX `env -u ANTHROPIC_API_KEY … CLAUDE_CONFIG_DIR=<dir>
 $SHELL -i`, Windows `powershell -NoProfile -Command "…$env:CLAUDE_CONFIG_DIR=…; & $env:ComSpec"`
@@ -223,8 +230,10 @@ with the D6 ambient-credential env vars scrubbed at the same time. Route
 from Cecelia (would be platform-fragile — gnome-terminal vs konsole vs Terminal.app vs
 Windows Terminal). The user copies the one-liner into their own terminal — same "copy the
 line" UX pattern as `claudeChatCommand()`, consistent with how the existing "Set up my
-terminal" flow guides users. When the frontend picker (P3 follow-up) adds an "Open profile
-terminal" button, it will present the command via `useCopyFlash`-style clipboard flow.
+terminal" flow guides users. Frontend shipped on `feat/kiwi-picker-ui`: the terminal icon in
+the Kiwi cockpit's Profile row fetches this one-liner for the active profile and copies it
+via `useCopyFlash`; the create dialog surfaces the newly-created profile's one-liner inline
+so the very first paste is set up right.
 
 ### P7 — Pre-identity data → `legacy` (SHIPPED as read-time default, not eager migration)
 **Deviated from the plan text**: no one-shot script. `turn_profile(rec)` in
