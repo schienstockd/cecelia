@@ -209,16 +209,11 @@ function exportBoard(kind: string) {
           <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro tab-dup" type="button" @click.stop="duplicateBoard(t.id)"
                   v-tooltip.bottom="'Duplicate board (plots + layout)'" aria-label="Duplicate board"><i class="pi pi-copy" /></button>
           <ConfirmButton v-if="tabs.length > 1" :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"
-                         v-slot="{ armed, arm, confirm, cancel }">
-            <span @click.stop>
-              <button v-if="!armed" class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="arm"
-                      v-tooltip.bottom="'Close board'" aria-label="Close board"><i class="pi pi-times" /></button>
-              <template v-else>
-                <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="confirm"
-                        v-tooltip.bottom="`Confirm — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}`"><i class="pi pi-check" /></button>
-                <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="cancel" v-tooltip.bottom="'Keep board'"><i class="pi pi-undo" /></button>
-              </template>
-            </span>
+                         v-slot="{ armed, arm, confirm }">
+            <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ armed }" type="button"
+                    @click.stop="armed ? confirm() : arm()"
+                    v-tooltip.bottom="armed ? `Click again — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}` : 'Close board'"
+                    :aria-label="armed ? 'Confirm close board' : 'Close board'"><i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-times'" /></button>
           </ConfirmButton>
         </template>
       </div>
@@ -262,8 +257,9 @@ function exportBoard(kind: string) {
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-edit { width: 8rem;
   border: 1px solid var(--cc-accent-strong); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
-/* .tab-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro */
+/* .tab-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro; armed matches ConfirmDeleteButton's danger fill */
 .tab-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+.tab-close.armed, .tab-close.armed:hover { color: #fff; background: var(--cc-danger); }
 /* full-height cell in the tab strip (stretches as a flex child) — not a fixed square */
 .tab-add {
   display: inline-flex; align-items: center; justify-content: center;
