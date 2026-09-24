@@ -309,6 +309,11 @@ update = "pixi update"
 # notebooks-instantiate); a no-op when already consistent.
 julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'"
 
+# Fresh-clone / new-worktree audit — dispatcher over existing checks (Design pattern adapted from
+# spaCR — see THIRD_PARTY.md → Design patterns adopted). Auto-fixes cheap things (npm ci, etc.);
+# pass `--check` for report-only. Non-zero exit on any red row so CI/install wrappers can gate.
+doctor = "julia --startup-file=no scripts/doctor.jl"
+
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
 # orphaning long-lived children (originally the napari bridge; see docs/SHIPPING.md).
 #
