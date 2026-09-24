@@ -1,9 +1,10 @@
 // Kiwi profile API — the frontend half of LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6.
 //
 // Routes served by `api/src/kiwi_profile_api.jl`:
-//   GET  /api/kiwi/profiles                   → { active, profiles: [{name, dir, isDefault}], legacyReserved }
+//   GET  /api/kiwi/profiles                   → { active, profiles: [{name, dir, isDefault, retired}], legacyReserved }
 //   POST /api/kiwi/profiles/select            → { name }               ; writes [ai].profile in custom.toml
 //   POST /api/kiwi/profiles/create            → { name }               ; mkpath under kiwi-profiles/
+//   POST /api/kiwi/profiles/retire            → { name }               ; writes `.kiwi-retired` sentinel (D11)
 //   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
 //
 // The picker in `KiwiCockpit.vue` reads/writes the active profile through these; the "Open profile
@@ -15,11 +16,13 @@
 // backend rule changes, both must move together.
 
 /** A profile as the roster surfaces it. `default` maps to `~/.claude*` (dir === ''); named
- *  profiles live under `<config_dir>/kiwi-profiles/<name>/`. */
+ *  profiles live under `<config_dir>/kiwi-profiles/<name>/`. A `retired` profile keeps its data
+ *  on disk (D11 immutable-name) but is non-selectable — the picker greys it out. */
 export interface KiwiProfile {
   name: string
   dir: string
   isDefault: boolean
+  retired: boolean
 }
 
 /** The whole roster payload. `active` is the server-side active profile (a name, never a dir).
@@ -58,6 +61,18 @@ export interface KiwiSelectResult {
   error?: string
 }
 
+/** Result of POST /api/kiwi/profiles/retire. `snappedToDefault` is true iff the retired profile
+ *  was the currently-active one (server auto-switches so the next spawn doesn't silently keep
+ *  using retired credentials). `alreadyRetired` is idempotent-hit sugar. */
+export interface KiwiRetireResult {
+  ok: boolean
+  name?: string
+  active?: string
+  snappedToDefault?: boolean
+  alreadyRetired?: boolean
+  error?: string
+}
+
 const _JSON = { 'Content-Type': 'application/json' }
 
 async function _json(res: Response): Promise<any> {
@@ -72,7 +87,8 @@ export async function fetchKiwiProfiles(apiBase = ''): Promise<KiwiProfileRoster
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await _json(res) as KiwiProfileRoster
   } catch {
-    return { active: 'default', profiles: [{ name: 'default', dir: '', isDefault: true }],
+    return { active: 'default',
+             profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
              legacyReserved: ['legacy'] }
   }
 }
@@ -86,6 +102,23 @@ export async function selectKiwiProfile(name: string, apiBase = ''): Promise<Kiw
     const body = await _json(res) as Partial<KiwiSelectResult>
     if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
     return { ok: true, active: body.active }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
+  }
+}
+
+/** Retire a profile (D11). Server writes a `.kiwi-retired` marker in the profile's dir so the
+ *  picker greys it out and select rejects it; if the retired profile was active, the server
+ *  auto-snaps active to `default` (see `snappedToDefault`). Idempotent — a re-retire returns
+ *  200 with `alreadyRetired: true`. */
+export async function retireKiwiProfile(name: string, apiBase = ''): Promise<KiwiRetireResult> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/retire`,
+      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
+    const body = await _json(res) as Partial<KiwiRetireResult>
+    if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
+    return { ok: true, name: body.name, active: body.active,
+             snappedToDefault: body.snappedToDefault, alreadyRetired: body.alreadyRetired }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
   }

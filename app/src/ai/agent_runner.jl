@@ -348,36 +348,42 @@ _apply_claude_env(cmd::Cmd, profile_dir::AbstractString)::Cmd =
     addenv(cmd, _claude_env_pairs(profile_dir)...)
 _apply_claude_env(cmd::Cmd)::Cmd = _apply_claude_env(cmd, _active_claude_profile_dir!())
 
-_default_user_shell()::String =
-    Sys.iswindows() ? get(ENV, "ComSpec", "cmd.exe") :
-                      get(ENV, "SHELL",   "/bin/bash")
-
 """
-    kiwi_terminal_command(profile_dir; shell = _default_user_shell()) -> String
+    kiwi_terminal_command(profile_dir; claude_bin = agent_bin_path("claude")) -> String
 
-The one-liner a user runs (or Cecelia spawns) to open a profile-scoped interactive shell so
-`claude` — and any other tool that reads `CLAUDE_CONFIG_DIR` — picks up the active Kiwi profile
+The one-liner a user pastes to launch `claude` under the active Kiwi profile
 (LOGIN_CREDENTIAL_ISOLATION_PLAN D9). Ambient credential env vars are scrubbed in the same call
-per D6, otherwise a stray `.bashrc` line would silently override even inside the new shell.
+per D6, otherwise a stray `.bashrc` line would silently override even inside the new process.
 
-Empty `profile_dir` (the default profile) omits the `CLAUDE_CONFIG_DIR` setting so the CLI
-falls back to `~/.claude*` — matches `_apply_claude_env`'s handling; single-seat unchanged.
+Launches `claude` directly (not a shell around it): 90% case is "just start Claude in my
+profile", and `claude` itself prompts `/login` on first run inside a fresh `CLAUDE_CONFIG_DIR`.
+Users who want a profile-scoped shell for the freeform pairing path can still get one by
+copying the `env …` prefix — but that's a follow-up surface if it comes up.
+
+Empty `profile_dir` (the default profile) omits `CLAUDE_CONFIG_DIR` so the CLI falls back to
+`~/.claude*` — matches `_apply_claude_env`; single-seat unchanged.
+
+`claude_bin` defaults to the absolute path Cecelia already resolved when it decided the CLI was
+available; passing the abs path means the one-liner works from GUI-launched terminals that don't
+inherit the user's shell PATH. `nothing` (CLI not installed) falls back to the bare `claude`
+name — surfacing the missing-CLI error to the user rather than silently omitting the command.
 
 PURE → tested without spawning. Platform-switched on `Sys.iswindows()`.
 """
 function kiwi_terminal_command(profile_dir::AbstractString;
-                               shell::AbstractString = _default_user_shell(),
+                               claude_bin::Union{AbstractString,Nothing} = agent_bin_path("claude"),
                                is_windows::Bool = Sys.iswindows())::String
+    bin = isnothing(claude_bin) || isempty(String(claude_bin)) ? "claude" : String(claude_bin)
     if is_windows
         unsets  = join(("Remove-Item Env:$(k) -ErrorAction SilentlyContinue"
                         for k in _AMBIENT_CLAUDE_ENV), "; ")
         setenv  = isempty(profile_dir) ? "" : "; \$env:CLAUDE_CONFIG_DIR = '$(profile_dir)'"
         return string("powershell -NoProfile -Command \"", unsets, setenv,
-                      "; & '$(shell)'\"")
+                      "; & '$(bin)'\"")
     end
     unset_args = join(("-u $(k)" for k in _AMBIENT_CLAUDE_ENV), " ")
     setenv     = isempty(profile_dir) ? "" : string(" CLAUDE_CONFIG_DIR=", profile_dir)
-    string("env ", unset_args, setenv, " ", shell, " -i")
+    string("env ", unset_args, setenv, " ", bin)
 end
 
 # Live resolver — ensures the named-profile dir exists so the CLI can write on first login.

@@ -219,21 +219,31 @@ other-pid + reclaim-on-dead-pid). Manual: `pixi run dev` twice on the same box p
 friendly error on the second (not run — no live check performed against a running server).
 
 ### P6 — Identity-scoped terminal (SHIPPED — backend + frontend button)
-Backend shipped: `kiwi_terminal_command(profile_dir)` in `app/src/ai/agent_runner.jl` returns
-the platform-appropriate one-liner — POSIX `env -u ANTHROPIC_API_KEY … CLAUDE_CONFIG_DIR=<dir>
-$SHELL -i`, Windows `powershell -NoProfile -Command "…$env:CLAUDE_CONFIG_DIR=…; & $env:ComSpec"`
-— that a user pastes into their terminal to get a profile-scoped interactive shell where
-`claude` and everything else that reads `CLAUDE_CONFIG_DIR` picks up the active Kiwi profile,
-with the D6 ambient-credential env vars scrubbed at the same time. Route
-`GET /api/kiwi/terminal/command?profile=<name>` returns `{command, profile, profileDir}`.
+Backend shipped: `kiwi_terminal_command(profile_dir; claude_bin = agent_bin_path("claude"))` in
+`app/src/ai/agent_runner.jl` returns the platform-appropriate one-liner — POSIX
+`env -u ANTHROPIC_API_KEY … CLAUDE_CONFIG_DIR=<dir> <abs-claude-path>`, Windows
+`powershell -NoProfile -Command "…; $env:CLAUDE_CONFIG_DIR=…; & '<abs-claude-path>'"` — that a
+user pastes into their terminal to launch `claude` under the active Kiwi profile with the D6
+ambient-credential env vars scrubbed. Route `GET /api/kiwi/terminal/command?profile=<name>`
+returns `{command, profile, profileDir}`.
+Design update after first-use review: the one-liner launches `claude` directly (not a
+`bash -i` around it), because 90% case is "just start Claude in my profile" and `claude`
+itself prompts `/login` on first run inside a fresh `CLAUDE_CONFIG_DIR`. Absolute path is
+resolved via `agent_bin_path("claude")` so the one-liner works from GUI-launched terminals
+that don't inherit the user's shell PATH. Users who want a profile-scoped SHELL (for the
+freeform pairing path's other commands) can strip the trailing `claude` off the copied string
+— that's a follow-up surface if it comes up.
 **Deviated from the plan text on spawn shape**: no attempt to actually spawn a terminal window
 from Cecelia (would be platform-fragile — gnome-terminal vs konsole vs Terminal.app vs
 Windows Terminal). The user copies the one-liner into their own terminal — same "copy the
 line" UX pattern as `claudeChatCommand()`, consistent with how the existing "Set up my
 terminal" flow guides users. Frontend shipped on `feat/kiwi-picker-ui`: the terminal icon in
 the Kiwi cockpit's Profile row fetches this one-liner for the active profile and copies it
-via `useCopyFlash`; the create dialog surfaces the newly-created profile's one-liner inline
-so the very first paste is set up right.
+via `useCopyFlash`; the create dialog surfaces the newly-created profile's one-liner inline,
+and the create flow also auto-runs `/api/observer/register` so the profile's
+`<profile-dir>/.claude.json` gets the observer MCP entry without a separate click — without
+it, a raw `claude` in the profile's shell would have no MCP tools and wouldn't pair back to
+Cecelia.
 
 ### P7 — Pre-identity data → `legacy` (SHIPPED as read-time default, not eager migration)
 **Deviated from the plan text**: no one-shot script. `turn_profile(rec)` in

@@ -4,6 +4,7 @@ import {
   fetchKiwiProfiles,
   selectKiwiProfile,
   createKiwiProfile,
+  retireKiwiProfile,
   fetchKiwiTerminalCommand,
 } from './kiwiProfileApi'
 
@@ -68,7 +69,7 @@ describe('kiwi profile API round-trip', () => {
     fetchMock.mockRejectedValue(new Error('network'))
     const r = await fetchKiwiProfiles()
     expect(r.active).toBe('default')
-    expect(r.profiles).toEqual([{ name: 'default', dir: '', isDefault: true }])
+    expect(r.profiles).toEqual([{ name: 'default', dir: '', isDefault: true, retired: false }])
   })
 
   it('selectKiwiProfile POSTs and returns ok+active on 200', async () => {
@@ -96,6 +97,26 @@ describe('kiwi profile API round-trip', () => {
     const r = await createKiwiProfile('alice')
     expect(r.ok).toBe(true)
     expect(r.terminalCommand).toContain('CLAUDE_CONFIG_DIR=/tmp/kiwi-profiles/alice')
+  })
+
+  it('retireKiwiProfile POSTs and surfaces snappedToDefault', async () => {
+    fetchMock.mockResolvedValue(jsonRes(200, { ok: true, name: 'alice',
+                                                active: 'default', snappedToDefault: true }))
+    const r = await retireKiwiProfile('alice')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/kiwi/profiles/retire')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ name: 'alice' })
+    expect(r).toEqual({ ok: true, name: 'alice', active: 'default',
+                        snappedToDefault: true, alreadyRetired: undefined })
+  })
+
+  it('retireKiwiProfile surfaces backend error without throwing', async () => {
+    fetchMock.mockResolvedValue(jsonRes(400, { ok: false,
+                                                error: '`default` can\'t be retired' }))
+    const r = await retireKiwiProfile('default')
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/can't be retired/)
   })
 
   it('createKiwiProfile surfaces the 409 duplicate error', async () => {

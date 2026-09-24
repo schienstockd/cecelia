@@ -3,21 +3,24 @@
 // so the user doesn't scavenger-hunt across ViewerPanel (push chip), LabLogPanel (chat button)
 // and Settings → MCP (connection health) to find them.
 //
-// Rows:
+// Rows, in visible order:
 //   - Profile picker — active Kiwi profile (LOGIN_CREDENTIAL_ISOLATION_PLAN P3+P6 frontend); the
 //     `default` profile maps to ~/.claude, named profiles live under <config_dir>/kiwi-profiles/.
-//     `+` opens the create dialog; the terminal icon copies a one-liner that opens a shell scoped
-//     to the active profile (so a raw `claude` in it sees this profile's credentials, not ambient
+//     `+` opens the create dialog; the terminal icon copies a one-liner that launches `claude`
+//     under this profile (so a raw `claude` in it sees this profile's credentials, not ambient
 //     env). The pairing path (followup-profile-session-claude-code-pairing-stays) needs this — a
 //     raw shell without the one-liner reads ambient credentials on a shared OS login.
-//   - Ask — the structured duck: prompt box with attached ref chips + the claims feed (KiwiAsk.vue,
-//     docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4). First surface after profile, since it's the reason
-//     to open the panel.
-//   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too)
-//   - Copy chat starter (moved from LabLogPanel)
-//   - Recent captures — click a row to copy its captureId
-//   - Observer state — CLI availability + terminal setup state
-//   - Session identity — sessionLabel + pairedAt + pairedFromPid + "Clear pairing" button
+//   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too).
+//   - Copy chat starter (moved from LabLogPanel).
+//   - Share — viewer / canvas buttons.
+//   - Ask — the structured duck (KiwiAsk.vue, docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4).
+//     Wrapped in a CollapsibleSection so a long conversation thread can be folded away when the
+//     other rows need the panel height; default open, since it's the reason to open the panel.
+//   - Recent captures — click a row to copy its captureId.
+//   - Session identity — sessionLabel + pairedAt + pairedFromPid + "Clear pairing" button.
+//   - Assistant — CLI availability + terminal setup state.
+// The always-glance status rows (Profile, Pairing, Chat, Share) sit above the collapsibles so
+// they never scroll off, no matter how long the Ask thread grows.
 //
 // The "Clear pairing" button deletes push_target.json rather than "re-pair now" — the plan's
 // `register_push_target` MCP tool reads env vars that live only inside the paired MCP process,
@@ -59,8 +62,9 @@ import AddToKiwiButton from './AddToKiwiButton.vue'
 // outside `kiwi/` and is free to name its provider; the local alias below keeps the ratchet happy.
 import AssistantOverviewDialog from '../ClaudeOverviewDialog.vue'
 import KiwiCreateProfileDialog from './KiwiCreateProfileDialog.vue'
-import { fetchKiwiProfiles, selectKiwiProfile, fetchKiwiTerminalCommand,
+import { fetchKiwiProfiles, selectKiwiProfile, retireKiwiProfile, fetchKiwiTerminalCommand,
          type KiwiProfileRoster } from '../../utils/kiwiProfileApi'
+import { useSingleOpenSection } from '../../composables/useSingleOpenSection'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -68,13 +72,25 @@ defineEmits<{ (e: 'close'): void }>()
 // this directory and is free to name what it explains.
 const showAssistantOverview = ref(false)
 
-// ── Profile picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6 frontend) ─────────
+// The observer store is declared here (before the profile picker's onProfileChange /
+// onRetireActiveProfile) so those handlers can call `observer.refresh()` after a profile switch —
+// otherwise the Assistant row's "Terminal: Registered/Stale/…" indicator (which resolves against
+// the ACTIVE profile server-side) lies until the panel is reopened.
+const observer = useObserverStore()
+
+// Accordion — one section open at a time (docs/ui/PRIMITIVES.md + composables/useSingleOpenSection).
+// Ask can then use the whole panel height when open, and the tiny status rows above stay pinned.
+// Default to Ask open — it's the reason to open the panel.
+const { isOpen: sectionOpen, toggle: toggleSection } =
+  useSingleOpenSection('cc.kiwi.openSection', 'ask')
+
+// ── Profile picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6 + D11 frontend) ────
 // Roster + active profile are server state (custom.toml [ai].profile). Local `roster` is a cache
 // so the `<select>` renders while the round-trip runs. Failure ⇒ `default`-only fallback (see
 // `fetchKiwiProfiles`), which keeps the picker usable rather than blanking it out.
 const roster = ref<KiwiProfileRoster>({
   active: 'default',
-  profiles: [{ name: 'default', dir: '', isDefault: true }],
+  profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
   legacyReserved: ['legacy'],
 })
 // The `<select>`'s v-model. Kept as a separate ref so a failed select can snap back to
@@ -83,6 +99,14 @@ const activeProfile = ref('default')
 const profileSwitching = ref(false)
 const profileError = ref<string | null>(null)
 const showCreateProfile = ref(false)
+
+// The retire button is only offered when the active profile is a named, non-retired one — the
+// three states the picker can render (default / active-named / active-named-retired) map to
+// three affordance sets, so the guards live as computeds rather than inline v-if soup.
+const _activeEntry = computed(() =>
+  roster.value.profiles.find(p => p.name === roster.value.active))
+const activeProfileIsDefault = computed(() => _activeEntry.value?.isDefault ?? true)
+const activeProfileIsRetired = computed(() => _activeEntry.value?.retired ?? false)
 
 async function refreshProfiles() {
   const r = await fetchKiwiProfiles()
@@ -102,12 +126,34 @@ async function onProfileChange(name: string) {
       return
     }
     roster.value = { ...roster.value, active: r.active ?? name }
+    // The Assistant row's "Terminal: Registered/Stale/…" indicator reads from the observer store,
+    // which resolves against `claude_config_path()` server-side (i.e. the ACTIVE profile). A stale
+    // cache after a profile switch would lie until the panel is reopened — refresh it now.
+    void observer.refresh()
   } finally { profileSwitching.value = false }
+}
+
+// Retire the currently-active profile (D11). Server writes the sentinel marker and snaps active
+// back to `default` so the next spawn doesn't silently keep using retired credentials. Refresh
+// the roster + observer state so the picker (and the Assistant row) reflect the new reality.
+const retiring = ref(false)
+async function onRetireActiveProfile() {
+  const cur = roster.value.profiles.find(p => p.name === roster.value.active)
+  if (!cur || cur.isDefault || cur.retired || retiring.value) return
+  retiring.value = true
+  profileError.value = null
+  try {
+    const r = await retireKiwiProfile(cur.name)
+    if (!r.ok) { profileError.value = r.error ?? 'Retire failed'; return }
+    await refreshProfiles()
+    void observer.refresh()
+  } finally { retiring.value = false }
 }
 
 function onProfileCreated(newName: string) {
   // The dialog already POSTed /select for us — just refresh the local roster.
   void refreshProfiles().then(() => { activeProfile.value = newName })
+  void observer.refresh()   // new profile's MCP-registration state — Assistant row keys off it.
 }
 
 // The "Open profile terminal" button: fetch the one-liner for the active profile and copy it.
@@ -283,8 +329,7 @@ async function clearPairing() {
   } finally { clearing.value = false }
 }
 
-// ── Observer state (availability + terminal setup) ───────────────────────────
-const observer = useObserverStore()
+// ── Observer state (availability + terminal setup) — store declared with the picker above ─
 const terminalStateLabel = computed(() => {
   const s = observer.terminalState
   if (s === 'current')   return 'Registered'
@@ -325,8 +370,8 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                 :disabled="profileSwitching"
                 @change="onProfileChange(($event.target as HTMLSelectElement).value)"
                 v-tooltip.bottom="'Which credential + MCP scope your assistant spawns run under (custom.toml [ai].profile)'">
-          <option v-for="p in roster.profiles" :key="p.name" :value="p.name">
-            {{ p.name }}{{ p.isDefault ? ' (~/.claude)' : '' }}
+          <option v-for="p in roster.profiles" :key="p.name" :value="p.name" :disabled="p.retired">
+            {{ p.name }}{{ p.isDefault ? ' (~/.claude)' : '' }}{{ p.retired ? ' (retired)' : '' }}
           </option>
         </select>
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
@@ -338,11 +383,32 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                 :disabled="termFetching"
                 @click="copyTerminalCommand"
                 v-tooltip.bottom="termCopied()
-                  ? 'Copied — paste into a terminal, then `claude login` inside it'
-                  : 'Copy a terminal one-liner scoped to the active profile'">
+                  ? 'Copied — paste into a terminal to launch `claude` in this profile'
+                  : 'Copy a terminal one-liner that launches `claude` in the active profile'">
           <i :class="['pi', termFetching ? 'pi-spin pi-spinner'
                             : termCopied() ? 'pi-check' : 'pi-desktop']" />
         </button>
+        <!-- Retire (D11) — only offered when the active profile is a named, non-retired one.
+             ConfirmButton arms on the first click; server marks the sentinel and snaps active
+             back to `default`. Data + credentials stay on disk. -->
+        <ConfirmButton v-if="!activeProfileIsDefault && !activeProfileIsRetired"
+                       @confirm="onRetireActiveProfile" v-slot="{ armed, arm, confirm, cancel }">
+          <button v-if="!armed" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                  :disabled="retiring" @click="arm"
+                  v-tooltip.bottom="'Retire this profile — non-selectable after, data stays on disk'">
+            <i :class="['pi', retiring ? 'pi-spin pi-spinner' : 'pi-user-minus']" />
+          </button>
+          <template v-else>
+            <button class="cc-btn cc-btn-danger cc-btn-icon cc-btn-micro"
+                    @click="confirm" v-tooltip.bottom="'Confirm — retire'">
+              <i class="pi pi-check" />
+            </button>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                    @click="cancel" v-tooltip.bottom="'Cancel'">
+              <i class="pi pi-times" />
+            </button>
+          </template>
+        </ConfirmButton>
       </div>
       <p v-if="profileError" class="kiwi-profile-err cc-fs-2xs">
         <i class="pi pi-times-circle" /> {{ profileError }}
@@ -352,7 +418,10 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
         Open a project to pair with your assistant.
       </div>
       <template v-else>
-        <KiwiAsk />
+        <!-- Pairing/Chat/Share come FIRST so the always-glance identity + capture affordances
+             stay above the fold, no matter how long the Ask thread grows. Ask is a growing
+             conversation → below, wrapped in a collapsible so it can be folded away when the
+             other rows need the full panel height. -->
         <div class="kiwi-row" data-guide="kiwi.pairing">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Pairing</span>
           <span class="kiwi-chip cc-fs-xs"
@@ -408,7 +477,16 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
         <InlineNote v-if="shareNote" :severity="shareNote.severity"
                     :short="shareNote.short" :detail="shareNote.detail" />
 
-        <CollapsibleSection label="Recent captures" storage-key="kiwi.captures.open"
+        <CollapsibleSection label="Ask" max-height="none"
+                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('ask') }]"
+                            :open="sectionOpen('ask')" @update:open="() => toggleSection('ask')"
+                            tip="Ask a structured question — every claim in the reply carries a pointer you can click.">
+          <KiwiAsk />
+        </CollapsibleSection>
+
+        <CollapsibleSection label="Recent captures" max-height="none"
+                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('captures') }]"
+                            :open="sectionOpen('captures')" @update:open="() => toggleSection('captures')"
                             tip="Click a row to copy its captureId; the × button deletes it from disk.">
           <div v-if="capturesLoading" class="kiwi-empty cc-muted cc-fs-xs">Loading…</div>
           <div v-else-if="captures.length === 0" class="kiwi-empty cc-muted cc-fs-xs">
@@ -478,7 +556,9 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
           </template>
         </CollapsibleSection>
 
-        <CollapsibleSection label="Session identity" storage-key="kiwi.session.open"
+        <CollapsibleSection label="Session identity" max-height="none"
+                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('session') }]"
+                            :open="sectionOpen('session')" @update:open="() => toggleSection('session')"
                             tip="Which assistant session is paired here — and a button to unpair.">
           <div v-if="!pushTarget.paired" class="kiwi-empty cc-muted cc-fs-xs">
             Not paired. Your assistant session pairs on its next MCP tool call.
@@ -521,7 +601,9 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
           </template>
         </CollapsibleSection>
 
-        <CollapsibleSection label="Assistant" storage-key="kiwi.observer.open"
+        <CollapsibleSection label="Assistant" max-height="none"
+                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('assistant') }]"
+                            :open="sectionOpen('assistant')" @update:open="() => toggleSection('assistant')"
                             tip="Is the assistant CLI installed, and is its MCP entry registered in your terminal?">
           <div class="kiwi-obs-row">
             <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">CLI</span>
@@ -549,7 +631,17 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 </template>
 
 <style scoped>
-.kiwi-body { padding: 0.6rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.kiwi-body { padding: 0.6rem; display: flex; flex-direction: column; gap: 0.55rem;
+             height: 100%; min-height: 0; box-sizing: border-box; overflow: hidden; }
+/* Accordion: the OPEN section fills the remaining panel height (min-height:0 lets the child
+   scroll instead of pushing kiwi-body — and therefore the FloatingPanel — taller). Closed
+   items keep their natural (header-only) height. `!important` overrides the child's own scoped
+   `.collapsible-section { flex-shrink: 0 }`, which otherwise wins the cascade tie against
+   :deep() and leaves the section at its natural height. The body's own max-height is `none`
+   (passed as a prop) so the flex:1 + overflow-y:auto here own the scroll surface. */
+:deep(.kiwi-acc-open) { flex: 1 1 0 !important; min-height: 0; overflow: hidden; }
+:deep(.kiwi-acc-open .cs-body) { flex: 1 1 0 !important; min-height: 0;
+                                 overflow-y: auto !important; }
 .kiwi-empty { text-align: center; padding: 1rem 0.5rem; }
 .kiwi-row { display: flex; align-items: center; gap: 0.5rem; }
 .kiwi-lbl { min-width: 4rem; }
@@ -610,8 +702,10 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 .kiwi-dot-fail { background: var(--cc-sev-fail); }
 .kiwi-clear-row { margin-top: 0.4rem; gap: 0.35rem; }
 
-/* Profile picker row — `<select>` takes the remaining width so long names don't clip. */
-.kiwi-profile-select { flex: 1; min-width: 0; }
+/* Profile picker row — `<select>` sizes to content with a sensible min, matching the compact
+   look of Pairing/Chat/Share rows next to it. `max-width` keeps long names from stretching the
+   panel; a truly long name overflows the visible width (native select truncates gracefully). */
+.kiwi-profile-select { min-width: 8rem; max-width: 14rem; }
 .kiwi-profile-err    { margin: -0.2rem 0 0 4.5rem; color: var(--cc-sev-fail);
                        display: flex; align-items: center; gap: 0.3rem; }
 </style>
