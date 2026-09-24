@@ -323,6 +323,8 @@ end
         "/api/version",
         "/api/push/target",   # bidir push (PR #1048) — GET reads the pairing record (never returns token)
         "/api/viewer/landscape",   # bidir landscape read (GET); POST at same path is the publish handler
+        "/api/kiwi/profiles",           # LOGIN_CREDENTIAL_ISOLATION_PLAN P3 — roster
+        "/api/kiwi/terminal/command",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P6 — profile-scoped shell one-liner
     ]
     POST_ROUTES = [
         "/api/app/restart", "/api/app/shutdown",
@@ -363,6 +365,8 @@ end
         "/api/kiwi/turn",
         "/api/kiwi/turn/cancel",
         "/api/kiwi/turns/clear",
+        "/api/kiwi/profiles/select",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P3
+        "/api/kiwi/profiles/create",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P3
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
@@ -465,7 +469,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 103 && length(POST_ROUTES) == 151
+    @test length(GET_ROUTES) == 105 && length(POST_ROUTES) == 153
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

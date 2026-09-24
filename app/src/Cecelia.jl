@@ -421,11 +421,13 @@ export BoardSpecError, expand_board, append_board, plot_specs, plot_spec_index, 
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix
+export kiwi_profile_name, kiwi_profile_dir, set_kiwi_profile!, kiwi_terminal_command
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
        read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,
        remove_shadowing_observer_mcps,
-       observer_agent_bin, OBSERVER_MODELS, observer_default_model, observer_valid_model
+       observer_agent_bin, OBSERVER_MODELS, observer_default_model, observer_valid_model,
+       turn_profile
 
 end

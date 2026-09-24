@@ -259,6 +259,8 @@ end
         st, rec = kiwi_start_turn("testpr", "what images?"; refs = [img_ref], model = "haiku")
         @test st == 200 && rec["status"] == "running" && startswith(rec["turnId"], "kt-")
         @test rec["refs"][1]["result"]["ok"]                     # attached refs resolved up front, for the chips
+        @test rec["profile"] == Cecelia.kiwi_profile_name()      # the profile it ran under (D8)
+        @test turn_profile(rec) == rec["profile"]
         @test built == ["haiku"]
         wait_idle("testpr")
         @test !haskey(_KIWI_RUNNING, "testpr")
@@ -278,6 +280,9 @@ end
         @test only(engines).calls[1][2] == "s1"                          # resumed, not fresh
         @test fu["status"] == "done"                                     # cited KDIeEm with no tool call this turn
         @test first(kiwi_start_turn("testpr", "q"; follow_up = "kt-nope")) == 400
+        st, other = kiwi_start_turn("testpr", "q"; profile = "alice"); wait_idle("testpr")
+        @test st == 200 && turn_profile(other) == "alice"               # an explicit profile wins
+        @test turn_profile(Dict{String,Any}("turnId" => "kt-old")) == "legacy"   # pre-stamp record (D10)
         _KIWI_AGENT[] = m -> (push!(built, m); _KiwiFakeEngine([_kiwi_fake_reply(good; seen = ["""{"uid":"KDIeEm"}"""])], Tuple{String,String}[]))
 
         # validation: unknown project, empty ask, unknown model coerced to the allow-list

@@ -35,7 +35,9 @@ A structured reply can.
 2. **v1 engine = the `claude` CLI under the user's own login** (user, 2026-09-23). Garvan's Enterprise
    licence covers claude.ai + Claude Code seats; there is no Console/API org access for the domain
    (checked 2026-09-23 — "You are not a member of any organizations under your domain"). Consequences:
-   no shared API key, no key on anyone's machine, no per-user attribution system — each user's own
+   no shared API key, no key on anyone's machine; attribution rides the active Kiwi profile (see
+   [`LOGIN_CREDENTIAL_ISOLATION_PLAN.md`](LOGIN_CREDENTIAL_ISOLATION_PLAN.md) D8 — one field on
+   each Kiwi turn record (`kiwi/turns.json`), no new store, downstream consumers deferred). Each user's own
    login is the account. A user without Claude access gets no Kiwi replies (the panel's other rows
    still work). Measured 2026-09-23: `claude -p … --output-format json --json-schema <schema>` returns
    a schema-valid `structured_output` under a seat login (Haiku, 3 turns). `--bare` is **not usable** —

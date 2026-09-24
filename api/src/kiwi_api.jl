@@ -74,13 +74,16 @@ end
 _kiwi_project_ok(puid) = !isempty(puid) && _valid_asset_id(puid) && isfile(joinpath(projects_dir(), puid, "project.json"))
 
 """
-    kiwi_start_turn(puid, prompt; refs, reasoning, model) -> (status, record)
+    kiwi_start_turn(puid, prompt; refs, reasoning, model, follow_up, profile) -> (status, record)
 
 Validate and launch one turn in the background; the pieces of `api_kiwi_turn` that don't parse HTTP.
-Returns the record immediately (status `running`); `kiwi:step` / `kiwi:done` carry the rest.
+Returns the record immediately (status `running`); `kiwi:step` / `kiwi:done` carry the rest. The record
+carries the active Kiwi `profile` it ran under (LOGIN_CREDENTIAL_ISOLATION_PLAN D8; read it back with
+`turn_profile`) — overridable so a per-tab picker can hand one in.
 """
 function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = Any[], reasoning::Bool = false,
-                         model::AbstractString = observer_default_model(), follow_up::AbstractString = "")
+                         model::AbstractString = observer_default_model(), follow_up::AbstractString = "",
+                         profile::AbstractString = Cecelia.kiwi_profile_name())
     _kiwi_project_ok(puid) || return 404, Dict{String,Any}("error" => "no project $puid")
     isempty(strip(prompt)) && isempty(refs) && return 400, Dict{String,Any}("error" => "ask something or attach a ref")
     conv = isempty(follow_up) ? nothing : _kiwi_conversation(puid, follow_up)
@@ -92,7 +95,7 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
         "turnId" => "kt-" * gen_uid(), "projectUid" => String(puid), "prompt" => String(prompt),
         "refs" => [Dict{String,Any}("ref" => r, "result" => resolve_kiwi_ref(puid, r)) for r in refs],
         "reasoning" => reasoning, "model" => observer_valid_model(model), "engine" => Cecelia.agent_label(agent),
-        "status" => "running", "startedAt" => _kiwi_now(), "steps" => String[])
+        "profile" => String(profile), "status" => "running", "startedAt" => _kiwi_now(), "steps" => String[])
     if conv !== nothing
         rec["followUp"] = String(follow_up)
         rec["priorRefs"] = conv.refs

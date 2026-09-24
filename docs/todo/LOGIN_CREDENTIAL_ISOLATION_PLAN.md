@@ -1,7 +1,10 @@
 # Cecelia login + per-user Claude credential isolation — plan
 
 **Status:** in progress (2026-09-24) — P1 shipped #1201, P2 shipped #1204, P5 shipped on
-branch `feat/kiwi-single-instance-lock` (this branch). Derived from
+`feat/kiwi-single-instance-lock` (#1205), P3-backend + P4 + P6-backend shipped on branch
+`feat/kiwi-punchlist` (this branch); P7 collapsed to a read-time default. Follow-ups:
+**P3-frontend** (picker component + selection state) and **P6-frontend** ("Open profile
+terminal" button). Backend routes exist and can be driven from HTTP today. Derived from
 [`docs/archive/opus-audit-cecelia-login-credential-isolation.md`](../archive/opus-audit-cecelia-login-credential-isolation.md)
 and [`docs/archive/opus-audit-single-instance-identity-gaps.md`](../archive/opus-audit-single-instance-identity-gaps.md).
 Audit findings below have been empirically verified on this box against the currently-installed
@@ -156,21 +159,38 @@ would have orphaned the existing `~/.claude` login (a re-login the user did not 
 `default` special-cases to `""`. Named profiles land under the plan's directory on first
 resolution — the picker (P3) is what triggers that.
 
-### P3 — Profile roster + picker (frontend + backend)
-List `<config_dir()>/kiwi-profiles/*/` on the backend (a profile exists iff its dir does — cheap
-and self-healing), expose via a new route; frontend adds a picker on `KiwiCockpit.vue`. First-use
-flow spawns `claude login` in a terminal handoff (the same pattern as the existing "Set up my
-terminal" button in `agent_runner.jl:217+`), scoped to the new profile dir. Selection persists
-per browser tab. `legacy` (D10) and any `retired` (D11) profiles are shown but not selectable.
-**Do not** ship without P1's audit passing on the target machine, and not before P5 (single-
-instance lock removes the cross-tab race the picker would otherwise have to design around).
+### P3 — Profile roster + picker (backend SHIPPED; frontend follow-up)
+Backend shipped on `feat/kiwi-punchlist`: `set_kiwi_profile!(name)` writer in
+`app/src/ai/agent_runner.jl` (analogue of `set_projects_dir!`) plus routes in
+`api/src/kiwi_profile_api.jl` — `GET /api/kiwi/profiles`, `POST /api/kiwi/profiles/select`,
+`POST /api/kiwi/profiles/create`. A profile exists iff its dir does; `default` is always
+present (magic → `~/.claude`); `legacy` is reserved (D10). Server-active-profile model: one
+`[ai].profile` in `custom.toml` is truth, hot-reloaded on select, all `claude` spawns pick it
+up via `kiwi_profile_name()`.
+**Deviated from the plan text on selection scope**: per-tab handoff (Q2 recommendation) is
+deferred as a follow-up. `_apply_claude_env` already accepts a per-call profile_dir override,
+so extending to a per-request `X-Kiwi-Profile` header is cheap when a real second seat lands.
+**Frontend picker component is follow-up work** — no `KiwiCockpit.vue` change here; the
+backend routes can be driven from `curl` / the browser dev console today.
+First-use flow: `create` returns a `terminalCommand` field (P6's one-liner) that a user runs
+in their own terminal to complete `claude login`; the picker UI (when built) can copy it to
+the clipboard the same way `claudeChatCommand()` is presented today.
 
-### P4 — Attribution logging (D8)
-Extend the Kiwi turn log record with `{profile, tokens_in, tokens_out, tool_calls, turn_id}` —
-one field addition on the existing record, no new store. Amend `KIWI_ASSISTANT_PLAN.md` Decision
-2 in the same PR (one line: "no per-user attribution system" → "attribution via the active
-profile; see LOGIN_CREDENTIAL_ISOLATION_PLAN D8"). Downstream consumers explicitly out of scope
-per D8 — do not add readers speculatively.
+### P4 — Attribution logging (D8) — SHIPPED
+Every Kiwi turn record (`<project>/kiwi/turns.json`, `kiwi_start_turn` in `api/src/kiwi_api.jl`)
+carries a `profile` field, stamped from `kiwi_profile_name()` when the turn starts (overridable per
+call so the P3-frontend picker's per-tab handoff can pass in the active profile without touching
+this layer). First written against the lab log's observer-session pass log; that log went with the
+lab log's "Ask Claude" pass (#1202), and the Kiwi turn record is its successor (same model + token
+fields). `KIWI_ASSISTANT_PLAN.md` Decision 2 wording amended — "no per-user attribution system" →
+"attribution rides the active Kiwi profile".
+**Deviated on schema shape**: kept to the single `profile` field addition rather than the
+plan text's four (the turn record already has the model and the reply's token counts;
+`tool_calls` would need runner-layer surgery to thread through and has no downstream consumer
+today — D8 explicitly rejects speculative consumers). Added when a consumer needs them.
+Pinned by `turn_profile(rec)` (`app/src/ai/agent_runner.jl`; defaults to `"legacy"` when the field
+is missing — this is how D10 lands, see P7) + the `kiwi_start_turn` testset in
+`api/test/suite/kiwi_turn.jl`.
 
 ### P5 — Single-instance lock (D7) — SHIPPED
 Landed on branch `feat/kiwi-single-instance-lock`. Lock file at `<config_dir()>/cecelia.lock`
@@ -191,20 +211,31 @@ loudly at the next bind). Tests: `Single-instance lock` testset in `app/test/sui
 other-pid + reclaim-on-dead-pid). Manual: `pixi run dev` twice on the same box produces the
 friendly error on the second (not run — no live check performed against a running server).
 
-### P6 — Identity-scoped terminal launcher (D9)
-"Open terminal (profile: X)" button in `KiwiCockpit.vue` that hits a new route which spawns
-`$SHELL -i` (or the platform equivalent — Windows PowerShell / cmd) as a detached child with
-`CLAUDE_CONFIG_DIR` set to the active profile's dir and the ambient-credential env vars scrubbed
-per D6. Same one-line documentation on the button itself so a user opening a raw terminal
-elsewhere knows they are opting out. Composes with the existing "Set up my terminal" MCP-
-registration wire — same code path, one more entry point.
+### P6 — Identity-scoped terminal (backend SHIPPED; frontend follow-up)
+Backend shipped: `kiwi_terminal_command(profile_dir)` in `app/src/ai/agent_runner.jl` returns
+the platform-appropriate one-liner — POSIX `env -u ANTHROPIC_API_KEY … CLAUDE_CONFIG_DIR=<dir>
+$SHELL -i`, Windows `powershell -NoProfile -Command "…$env:CLAUDE_CONFIG_DIR=…; & $env:ComSpec"`
+— that a user pastes into their terminal to get a profile-scoped interactive shell where
+`claude` and everything else that reads `CLAUDE_CONFIG_DIR` picks up the active Kiwi profile,
+with the D6 ambient-credential env vars scrubbed at the same time. Route
+`GET /api/kiwi/terminal/command?profile=<name>` returns `{command, profile, profileDir}`.
+**Deviated from the plan text on spawn shape**: no attempt to actually spawn a terminal window
+from Cecelia (would be platform-fragile — gnome-terminal vs konsole vs Terminal.app vs
+Windows Terminal). The user copies the one-liner into their own terminal — same "copy the
+line" UX pattern as `claudeChatCommand()`, consistent with how the existing "Set up my
+terminal" flow guides users. When the frontend picker (P3 follow-up) adds an "Open profile
+terminal" button, it will present the command via `useCopyFlash`-style clipboard flow.
 
-### P7 — Pre-identity migration (D10)
-One-shot idempotent script that runs at the version bump shipping P4. Reserves the profile name
-`legacy`, sets `profile = "legacy"` on every existing capture / thread / outcome-tag / Blackboard
-entry / lab-log entry / Kiwi turn log record whose profile field is missing. Records completion
-in `custom.toml` (`[ai].legacy_migration_completed = <version>`) so it never re-runs. Test: run
-twice on a fixture, assert idempotence and no double-tagging.
+### P7 — Pre-identity data → `legacy` (SHIPPED as read-time default, not eager migration)
+**Deviated from the plan text**: no one-shot script. `turn_profile(rec)` in
+`app/src/ai/agent_runner.jl` returns `"legacy"` when the `profile` field is missing —
+same observable effect as an eager rewrite that stamps `profile = "legacy"` on every existing
+record, at zero migration cost. Consumers that need the profile of a pre-P4 record read it
+through `turn_profile`; the "legacy" name is reserved by `_valid_kiwi_profile_name` in the
+API layer so it cannot collide with a user-picked name.
+If a future consumer genuinely needs the value written to disk (e.g. for a query optimizer
+that filters JSON on the field), the migration is trivial to add later — the read-time
+default keeps that door open, doesn't close it.
 
 ## Interaction with `KIWI_ASSISTANT_PLAN.md`
 
