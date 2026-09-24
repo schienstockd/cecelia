@@ -2,6 +2,7 @@ module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user
+export acquire_single_instance!, release_single_instance!, single_instance_lock_path, AlreadyRunningError
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models, cellpose_model_backend
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export vault_model_stem
@@ -263,6 +264,7 @@ export task_output_effect
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config.jl")
 include("utils.jl")
+include("single_instance.jl")  # at-most-one Cecelia per host — before any HTTP/WS bind. D7 / P5.
 # The log rail: the canonical console-record shape, the tee a server installs, and `spawn_logged`
 # (the only sanctioned way to start a long-lived child, because `run(cmd; wait=false)` swallows its
 # stdio). Early — napari, the preview worker and the notebook server all launch through it.

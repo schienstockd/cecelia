@@ -838,6 +838,19 @@ end
 #
 # Registered INSIDE `start`, so `CECELIA_NO_SERVE=1` (the test suite, the REPL) never installs it.
 function start(; host=HOST, port=PORT)
+    # Single-instance guard (LOGIN_CREDENTIAL_ISOLATION_PLAN D7 / P5) — refuse a second launch on
+    # this host with a clear message BEFORE any component tries to bind. Fixed ports today mean a
+    # second launch already crashed on whichever bound first, with whatever error that component
+    # threw — fine on a local screen, unreadable over SSH/VNC. Catch the typed exception here so
+    # the remote user sees the one-liner not a Julia traceback, and exit cleanly (dev.jl treats
+    # any non-42 exit as "stop"; nothing to restart). Registers atexit-release itself.
+    try
+        Cecelia.acquire_single_instance!(host, port)
+    catch e
+        e isa Cecelia.AlreadyRunningError || rethrow()
+        println(stderr, e.message)
+        exit(1)
+    end
     _BOUND_HOST[] = string(host)
     _install_log_tee!()   # tee server logs to the WS console (only when actually serving)
     _start_runner!()      # launch or ADOPT the detached task runner (no-op unless CECELIA_RUNNER=1)
