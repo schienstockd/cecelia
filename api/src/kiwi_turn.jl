@@ -44,7 +44,7 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "add_analysis_board" => "write", "open_analysis_board_plot" => "drives the user's UI",
     "seek_viewer" => "drives the user's UI", "point_at_ui" => "point-out — Kiwi points through refs",
     "mark_cells" => "point-out", "mark_tracks" => "point-out", "mark_plot" => "point-out",
-    "mark_tile" => "point-out", "mark_freeform" => "point-out",
+    "mark_tile" => "point-out", "mark_freeform" => "point-out", "select_on_plot" => "point-out",
 )
 _kiwi_allowed_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in KIWI_READ_TOOLS]
 

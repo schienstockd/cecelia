@@ -51,9 +51,28 @@ struct UiFreeformMark
     payload::Dict{String,Any}
 end
 
+# Multi-source point-out (`select_on_plot` MCP tool). The plot-brush emit shape shipped by
+# `frontend/src/components/plots/PlotChart.vue` is `sources: [{imageUid, valueName, pop, ids}]`
+# — several `(uid, vn, pop)` scopes populated in one gesture (a lasso over a pooled cross-image
+# boxplot picks ids from many images at once). Reusing single-scope `Mark` would force N calls to
+# clear-and-set-and-clear the linkedSelection bag; we want ONE bag write with the full perSource
+# map so the plots light up atomically. `objectKind` is "track" / "cell" — same semantics as
+# `Mark.kind`, promoted here so `kind` is free to be the routing tag `"select"`.
+struct SelectMark
+    id::String
+    kind::String              # always "select" — the tag ws.ts dispatches on
+    projectUid::String
+    objectKind::String        # "track" | "cell"
+    sources::Vector{Dict{String,Any}}  # each: {imageUid, valueName, pop, ids::Vector{Int}}
+    focusId::Union{Int,Nothing}
+    label::Union{String,Nothing}
+    createdAt::Float64
+    ttlSeconds::Int
+end
+
 const _MARKS_LOCK = ReentrantLock()
-const _MARKS_BY_PROJECT = Dict{String, Dict{String, Union{Mark, UiFreeformMark}}}()
-const AnyMark = Union{Mark, UiFreeformMark}
+const _MARKS_BY_PROJECT = Dict{String, Dict{String, Union{Mark, UiFreeformMark, SelectMark}}}()
+const AnyMark = Union{Mark, UiFreeformMark, SelectMark}
 const _MARK_TTL_DEFAULT = 300      # 5 min per Decision 18
 const _MARK_TTL_MAX     = 3600     # cap — a "mark" that lasts an hour is no longer ephemeral
 const _MARK_LABEL_MAX   = 120
@@ -117,6 +136,24 @@ function _mark_ws_payload(m::Mark)::Dict{String,Any}
         common["labels"]  = m.ids
         common["focusId"] = something(m.focusId, 0)
     end
+    common
+end
+
+# Multi-source select envelope. `objectKind` tells the frontend which linkedSelection scope
+# (tracks / cells) to write and which viewer setter to loop through per source.
+function _mark_ws_payload(m::SelectMark)::Dict{String,Any}
+    common = Dict{String,Any}(
+        "type"       => "viewer:mark",
+        "kind"       => m.kind,                # "select"
+        "objectKind" => m.objectKind,          # "track" | "cell"
+        "markerId"   => m.id,
+        "projectUid" => m.projectUid,
+        "sources"    => m.sources,
+        "label"      => something(m.label, ""),
+        "ttlSeconds" => m.ttlSeconds,
+        "createdAt"  => m.createdAt,
+    )
+    isnothing(m.focusId) || (common["focusId"] = m.focusId)
     common
 end
 
@@ -198,6 +235,52 @@ function api_viewer_marks_cells(body_bytes::Vector{UInt8})
     ids = _clean_ids(get(body, :labelIds, get(body, :label_ids, nothing)))
     isempty(ids) && return 400, JSON3.write((; error = "labelIds required (non-empty)"))
     m = Mark(_new_mark_id(), "cell", project_uid, image_uid, value_name, ids, focus, label, _now_epoch(), ttl)
+    _store_mark!(m)
+    broadcast_ws(_mark_ws_payload(m))
+    200, JSON3.write((; ok = true, markerId = m.id))
+end
+
+"""
+    POST /api/viewer/marks/select
+
+Body: `{ projectUid, kind, sources: [{imageUid, valueName, pop?, ids:[int]}],
+         focusId?, label?, ttl_s? }`
+Reply: `{ ok:true, markerId }`
+
+Multi-source point-out — the reverse of the plot-brush emit shape. Claude selects on a plot
+panel (or reasons about which tracks/cells to highlight across several images at once), and the
+frontend writes a single perSource-keyed linkedSelection bag so every subscribed plot lights up
+in one atomic update. Also mirrors per-source into the viewer's own highlight setters so the open
+image gets outlined too.
+
+`kind` is the OBJECT kind — "track" or "cell" — same semantics as `mark_tracks` / `mark_cells`.
+`pop` is optional; empty for a (uid, vn)-scoped write (matches the boxplot renderer's fallback).
+"""
+function api_viewer_marks_select(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), project_uid)) || return 400, JSON3.write((; error = "project not found"))
+    kind = String(get(body, :kind, ""))
+    kind in ("track", "cell") || return 400, JSON3.write((; error = "kind must be 'track' or 'cell'"))
+    raw_sources = get(body, :sources, nothing)
+    (raw_sources isa AbstractVector) || return 400, JSON3.write((; error = "sources required (non-empty array)"))
+    sources = Dict{String,Any}[]
+    for s in raw_sources
+        s isa AbstractDict || continue
+        uid  = String(get(s, :imageUid,  get(s, "imageUid",  "")))
+        vn   = String(get(s, :valueName, get(s, "valueName", "")))
+        pop  = String(get(s, :pop,       get(s, "pop",       "")))
+        ids  = _clean_ids(get(s, :ids,   get(s, "ids", nothing)))
+        (isempty(uid) || isempty(vn) || isempty(ids)) && continue
+        push!(sources, Dict{String,Any}("imageUid" => uid, "valueName" => vn, "pop" => pop, "ids" => ids))
+    end
+    isempty(sources) && return 400, JSON3.write((; error = "sources must contain at least one entry with imageUid, valueName, and non-empty ids"))
+    focus = _clean_focus(get(body, :focusId, nothing))
+    label = _clean_label(get(body, :label, nothing))
+    ttl   = _clean_ttl(get(body, :ttl_s, get(body, :ttlSeconds, _MARK_TTL_DEFAULT)))
+    m = SelectMark(_new_mark_id(), "select", project_uid, kind, sources, focus, label, _now_epoch(), ttl)
     _store_mark!(m)
     broadcast_ws(_mark_ws_payload(m))
     200, JSON3.write((; ok = true, markerId = m.id))

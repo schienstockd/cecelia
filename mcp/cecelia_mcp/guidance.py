@@ -177,6 +177,13 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   `persistKey` from the capture envelope). `u` / `v` are 0..1 in that family's own frame — the \
   drawn plot area, not the surrounding axis / legend gutter. `cell` addresses a sub-frame for \
   multi-cell families (image-strip cell index, facet label, pairs-matrix tile, a card path).
+- `select_on_plot(kind, sources, focus_id?, label?, ttl_s?)` — MULTI-SOURCE selection: the reverse \
+  of what a lasso on a linked-brushed plot (boxplot / strip today) produces. `kind` is the OBJECT \
+  kind (`"track"` or `"cell"`); `sources` is a list of `{imageUid, valueName, pop?, ids}` (empty \
+  `pop` broadens to the whole `(imageUid, valueName)`). One atomic write lights every subscribed \
+  plot AND outlines the viewer per source. Prefer over N sequential `mark_tracks` / `mark_cells` \
+  when the target spans more than one image or population — sequential calls overwrite the bag. \
+  Get ids first via `get_object_ids`.
 
 ON THE LANDSCAPE HEATMAP. `get_landscape(image_uid, value_name, t?, z?)` returns the user's \
 current LANDSCAPE OVERLAY — a cheap categorical map over the viewer's grid tiles \

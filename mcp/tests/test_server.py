@@ -34,6 +34,8 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
             "mark_tile", "get_landscape",   # bidir landscape overlay (PR #6, Decision 14 reframe)
             "mark_plot",                    # bidir plot point-out (PR #4b)
+            "select_on_plot",               # LINKED_BRUSHING follow-up — multi-source track/cell selection
+
             "list_plots",                   # bidir PR #8 — live plot registry discovery
             "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
             "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec

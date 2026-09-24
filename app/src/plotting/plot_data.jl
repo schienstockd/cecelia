@@ -266,6 +266,29 @@ function _finite_triples(vs::AbstractVector, ids::AbstractVector,
     fv, fi, fu
 end
 
+# One place that emits the per-dot (value, id, uid) triples for point-source linked brushing —
+# used by boxplot's jitter overlay AND strip/violin's raw-point payload. Returns
+# (pts, pids, puids, has_id, has_uid). `has_uid` is true only for the POOLED cross-image case
+# (`g.uid == ""` + row-level `:uID` on the sub). Keeping this in one function is the fix for
+# the class of bug where two branches drift and one collapses per-dot uid → the panel fallback,
+# which is what caused the boxplot bleed before commit cad78b0a.
+function _emit_points_with_identity(g, m::AbstractString, id_col::Symbol,
+                                    max_points::Int)::Tuple{Vector{Float64}, Vector{Int}, Vector{String}, Bool, Bool}
+    if !(id_col in propertynames(g.sub))
+        return (Float64[], Int[], String[], false, false)
+    end
+    if isempty(g.uid) && (:uID in propertynames(g.sub))
+        fv, fi, fu = _finite_triples(g.sub[!, m], g.sub[!, id_col], g.sub[!, :uID])
+        perm = sortperm(fv)
+        pts, pids, puids = _downsample_triples(fv[perm], fi[perm], fu[perm], max_points)
+        return (pts, pids, puids, true, true)
+    end
+    fv, fi = _finite_pairs(g.sub[!, m], g.sub[!, id_col])
+    perm = sortperm(fv)
+    pts, pids = _downsample_pairs(fv[perm], fi[perm], max_points)
+    return (pts, pids, String[], true, false)
+end
+
 # Morphology/intensity `var` columns are quantitative by construction — an integer-valued one
 # (`euler_number`, voxel-count `area`) is STILL numeric. The categorical heuristic (`_is_categorical_col`)
 # is only for `obs` columns (hmm.state, clusters, generation — written as anndata categoricals). So the
@@ -536,12 +559,27 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     if chart_type == "points"
         # raw (downsampled) values per series — the data source for strip/jitter and (client-side
         # density) violin charts. No server aggregation beyond the per-group downsample.
+        #
+        # POINT-SOURCE BRUSHING — same channel as boxplot: when the group's frame carries a stable
+        # identity column (`track_id` for per-track, `label` for per-cell), each downsampled dot is
+        # emitted with its id in `pointIds`; the pooled cross-image case also emits per-dot
+        # `pointUids`. The strip chart's dot delegate reads these via `stampBrushIds`. Violin is a
+        # density and has no per-point marks, so the ids ride along unused — cheap and future-proof
+        # if we ever overlay a jitter on it.
         measure === nothing && error("plot_summary_data: points needs a `measure`")
         m = String(measure); groups = sgroups(df)
-        series = [merge(base(g),
-                        Dict("points" => _downsample(_finite(g.sub[!, m]), max_points))) for g in groups]
+        id_col = granularity == :track ? :track_id : :label
+        any_ids = false
+        series = map(groups) do g
+            pts, pids, puids, has_id_here, has_uid_here = _emit_points_with_identity(g, m, id_col, max_points)
+            has_id_here || (pts = _downsample(_finite(g.sub[!, m]), max_points))
+            has_id_here && (any_ids = true)
+            base_rec = merge(base(g), Dict("points" => pts, "pointIds" => pids))
+            has_uid_here ? merge(base_rec, Dict("pointUids" => puids)) : base_rec
+        end
         result = withgb(Dict{String,Any}("chartType" => "points", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
+        any_ids && (result["pointIdKind"] = granularity == :track ? "track" : "cell")
         stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
         return result
 
@@ -675,33 +713,17 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # what it rendered before pointIds shipped.
         id_col = granularity == :track ? :track_id : :label
         any_ids = false
-        any_uids = false
         series = map(groups) do g
             vals = sort(_finite(g.sub[!, m]))
-            has_id = raw_points && (id_col in propertynames(g.sub))
-            # Emit per-dot uIDs when the sub carries them AND the group's own uid is empty (the
-            # pooled case: `by_image=false` collapses `g.uid` to `""` even though the rows come
-            # from many images). Track/label ids are per-(image, vn) numeric spaces, so without
-            # per-dot uid the frontend match collapses across every image on the plot — a lasso
-            # on image A picks up any track with the same numeric id in image B, C, … Emitting
-            # them for the per-image case too is wasteful (all rows share one uid) — skip.
-            emit_uids = has_id && isempty(g.uid) && (:uID in propertynames(g.sub))
-            if emit_uids
-                any_ids = true; any_uids = true
-                fv, fi, fu = _finite_triples(g.sub[!, m], g.sub[!, id_col], g.sub[!, :uID])
-                perm = sortperm(fv)
-                pts, pids, puids = _downsample_triples(fv[perm], fi[perm], fu[perm], max_points)
-            elseif has_id
-                any_ids = true
-                fv, fi = _finite_pairs(g.sub[!, m], g.sub[!, id_col])
-                perm = sortperm(fv)
-                pts, pids = _downsample_pairs(fv[perm], fi[perm], max_points)
-                puids = String[]
-            else
-                pts = raw_points ? _downsample(vals, max_points) : Float64[]
-                pids = Int[]
-                puids = String[]
-            end
+            # Emit per-dot ids (+uids in the pooled cross-image case) through the SHARED helper —
+            # points/strip goes through the same path. Falls back to a plain downsample of the
+            # box's own values when the id column isn't present or raw_points was turned off (the
+            # stats-only view — box stays identical to what it rendered before pointIds shipped).
+            pts, pids, puids, has_id_here, has_uid_here = raw_points ?
+                _emit_points_with_identity(g, m, id_col, max_points) :
+                (Float64[], Int[], String[], false, false)
+            (raw_points && !has_id_here) && (pts = _downsample(vals, max_points))
+            has_id_here && (any_ids = true)
             base_rec = if isempty(vals)
                 merge(base(g),
                       Dict("q1"=>NaN,"median"=>NaN,"q3"=>NaN,"lower"=>NaN,"upper"=>NaN,"mean"=>NaN,"n"=>0,"points"=>pts,"pointIds"=>pids))
@@ -715,7 +737,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       Dict("q1"=>q1, "median"=>q2, "q3"=>q3, "lower"=>lower, "upper"=>upper,
                            "mean"=>mean(vals), "n"=>length(vals), "points"=>pts, "pointIds"=>pids))
             end
-            emit_uids ? merge(base_rec, Dict("pointUids" => puids)) : base_rec
+            has_uid_here ? merge(base_rec, Dict("pointUids" => puids)) : base_rec
         end
         result = withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))

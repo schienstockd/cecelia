@@ -453,6 +453,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/marks/freeform" => (req, body_bytes) -> (api_viewer_marks_freeform(body_bytes)),
     "/api/viewer/marks/tile"     => (req, body_bytes) -> (api_viewer_marks_tile(body_bytes)),
     "/api/viewer/marks/plot"     => (req, body_bytes) -> (api_viewer_marks_plot(body_bytes)),
+    "/api/viewer/marks/select"   => (req, body_bytes) -> (api_viewer_marks_select(body_bytes)),
     "/api/viewer/seek"           => (req, body_bytes) -> (api_viewer_seek(body_bytes)),
     "/api/viewer/navigate"       => (req, body_bytes) -> (api_viewer_navigate(body_bytes)),
     # bidir PR #8 — plot registry writes. Frontend authors via `stores/plotRegistry.ts` on panel

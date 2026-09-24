@@ -73,6 +73,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/viewer/marks/cells"),
             ("POST", "/api/viewer/marks/freeform"),
             ("POST", "/api/viewer/marks/plot"),
+            ("POST", "/api/viewer/marks/select"),
             ("POST", "/api/viewer/marks/tile"),
             ("POST", "/api/viewer/marks/tracks"),
             ("POST", "/api/viewer/marks/ui"),
@@ -326,6 +327,35 @@ class ClientTest(unittest.TestCase):
             self.c.mark_plot("p", "image-strip", "strip-abc", 0.5, 0.5, cell="cell=3")
         body = json.loads(u.call_args[0][0].data.decode())
         self.assertEqual(body["cell"], "cell=3")
+
+    def test_select_on_plot_posts_kind_and_sources(self):
+        # LINKED_BRUSHING follow-up — multi-source point-out. `sources` is the exact shape the
+        # plot-brush emit produces on the frontend, so a captured brush can be replayed verbatim.
+        sources = [
+            {"imageUid": "imgA", "valueName": "flowTom", "pop": "root/B", "ids": [3, 7]},
+            {"imageUid": "imgB", "valueName": "flowTom",                   "ids": [11]},
+        ]
+        with _patch_urlopen({"ok": True, "markerId": "mark-s1"}) as u:
+            self.c.select_on_plot("p", "track", sources, focus_id=7, label="fastest few", ttl_s=120)
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "POST")
+        self.assertTrue(req.full_url.endswith("/api/viewer/marks/select"))
+        body = json.loads(req.data.decode())
+        self.assertEqual(body["projectUid"], "p")
+        self.assertEqual(body["kind"], "track")
+        self.assertEqual(body["sources"], sources)
+        self.assertEqual(body["focusId"], 7)
+        self.assertEqual(body["label"], "fastest few")
+        self.assertEqual(body["ttl_s"], 120)
+
+    def test_select_on_plot_omits_optionals_when_default(self):
+        with _patch_urlopen({"ok": True, "markerId": "mark-s2"}) as u:
+            self.c.select_on_plot("p", "cell",
+                                  [{"imageUid": "imgA", "valueName": "default", "ids": [42]}])
+        body = json.loads(u.call_args[0][0].data.decode())
+        self.assertNotIn("focusId", body)
+        self.assertNotIn("label", body)
+        self.assertNotIn("ttl_s", body)
 
     def test_bidir_capture_read_routes_allow_listed_but_write_is_not(self):
         # BIDIR share-in: Claude may READ the captures the user shares, but the write route (POST
