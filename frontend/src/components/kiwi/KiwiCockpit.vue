@@ -3,21 +3,24 @@
 // so the user doesn't scavenger-hunt across ViewerPanel (push chip), LabLogPanel (chat button)
 // and Settings → MCP (connection health) to find them.
 //
-// Rows:
+// Rows, in visible order:
 //   - Profile picker — active Kiwi profile (LOGIN_CREDENTIAL_ISOLATION_PLAN P3+P6 frontend); the
 //     `default` profile maps to ~/.claude, named profiles live under <config_dir>/kiwi-profiles/.
-//     `+` opens the create dialog; the terminal icon copies a one-liner that opens a shell scoped
-//     to the active profile (so a raw `claude` in it sees this profile's credentials, not ambient
+//     `+` opens the create dialog; the terminal icon copies a one-liner that launches `claude`
+//     under this profile (so a raw `claude` in it sees this profile's credentials, not ambient
 //     env). The pairing path (followup-profile-session-claude-code-pairing-stays) needs this — a
 //     raw shell without the one-liner reads ambient credentials on a shared OS login.
-//   - Ask — the structured duck: prompt box with attached ref chips + the claims feed (KiwiAsk.vue,
-//     docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4). First surface after profile, since it's the reason
-//     to open the panel.
-//   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too)
-//   - Copy chat starter (moved from LabLogPanel)
-//   - Recent captures — click a row to copy its captureId
-//   - Observer state — CLI availability + terminal setup state
-//   - Session identity — sessionLabel + pairedAt + pairedFromPid + "Clear pairing" button
+//   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too).
+//   - Copy chat starter (moved from LabLogPanel).
+//   - Share — viewer / canvas buttons.
+//   - Ask — the structured duck (KiwiAsk.vue, docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4).
+//     Wrapped in a CollapsibleSection so a long conversation thread can be folded away when the
+//     other rows need the panel height; default open, since it's the reason to open the panel.
+//   - Recent captures — click a row to copy its captureId.
+//   - Session identity — sessionLabel + pairedAt + pairedFromPid + "Clear pairing" button.
+//   - Assistant — CLI availability + terminal setup state.
+// The always-glance status rows (Profile, Pairing, Chat, Share) sit above the collapsibles so
+// they never scroll off, no matter how long the Ask thread grows.
 //
 // The "Clear pairing" button deletes push_target.json rather than "re-pair now" — the plan's
 // `register_push_target` MCP tool reads env vars that live only inside the paired MCP process,
@@ -352,7 +355,10 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
         Open a project to pair with your assistant.
       </div>
       <template v-else>
-        <KiwiAsk />
+        <!-- Pairing/Chat/Share come FIRST so the always-glance identity + capture affordances
+             stay above the fold, no matter how long the Ask thread grows. Ask is a growing
+             conversation → below, wrapped in a collapsible so it can be folded away when the
+             other rows need the full panel height. -->
         <div class="kiwi-row" data-guide="kiwi.pairing">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Pairing</span>
           <span class="kiwi-chip cc-fs-xs"
@@ -407,6 +413,11 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
         </div>
         <InlineNote v-if="shareNote" :severity="shareNote.severity"
                     :short="shareNote.short" :detail="shareNote.detail" />
+
+        <CollapsibleSection label="Ask" storage-key="kiwi.ask.open"
+                            tip="Ask a structured question — every claim in the reply carries a pointer you can click.">
+          <KiwiAsk />
+        </CollapsibleSection>
 
         <CollapsibleSection label="Recent captures" storage-key="kiwi.captures.open"
                             tip="Click a row to copy its captureId; the × button deletes it from disk.">
