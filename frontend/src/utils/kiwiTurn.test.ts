@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
-         turnMeta, searchRefs, viewerRefFor, claimText, plainError, attachmentRows, claimRows,
+         turnMeta, searchRefs, viewerRefFor, kindLabel, claimText, plainError, attachmentRows, claimRows,
          TASK_PAGES, type KiwiTurn } from './kiwiTurn'
 import { KIWI_REF_KINDS, type KiwiRef } from './kiwiRef'
 
@@ -24,6 +24,7 @@ describe('refLabel + pointTarget cover every kind', () => {
     tile: { kind: 'tile', imageUid: 'i', valueName: 'B', cellId: 'A1' }, capture: { kind: 'capture', captureId: 'c' },
     task: { kind: 'task', funName: 'segment.cellpose' }, ui: { kind: 'ui', anchor: 'nav:/gate' },
     blackboard: { kind: 'blackboard', entryId: 'e', version: 2 },
+    proposedPlot: { kind: 'proposedPlot', plot: 'track_measures', measure: 'live.track.speed', pops: ['B/qc/_tracked'] },
   }
   it('has a sample per schema kind', () => expect(Object.keys(samples).sort()).toEqual([...KIWI_REF_KINDS].sort()))
   it.each(Object.values(samples))('%o → a label and a target', (r) => {
@@ -35,6 +36,7 @@ describe('refLabel + pointTarget cover every kind', () => {
     expect(refLabel(samples.tracks)).toBe('track 12 · B')
     expect(refLabel(samples.viewer)).toBe('viewer i t=3 z=7')
     expect(refLabel(samples.ui)).toBe('/gate')
+    expect(refLabel(samples.proposedPlot)).toBe('live.track.speed · B/qc/_tracked')
   })
 })
 
@@ -51,6 +53,12 @@ describe('pointTarget', () => {
   })
   it('every task page is a route the app has', () => {
     for (const p of Object.values(TASK_PAGES)) expect(p.path).toMatch(/^\/[a-z-]+$/)
+  })
+  it('a proposed plot is plotted on click, and reads as an invitation, not code', () => {
+    expect(pointTarget({ kind: 'proposedPlot', plot: 'track_measures' })).toEqual({ action: 'proposedPlot' })
+    expect(kindLabel('proposedPlot')).toBe('plot this')
+    expect(kindLabel('plot')).toBe('plot')
+    expect(chipState({ ok: true, check: 'proposal', label: 'L', error: '' })).toEqual({ tone: 'ok', tip: 'Not plotted yet — click to plot it' })
   })
   it('a population outlines its cells in the viewer, not a bare gating page', () => {
     expect(pointTarget({ kind: 'population', imageUid: 'i', valueName: 'B', popPath: '/qc' }))

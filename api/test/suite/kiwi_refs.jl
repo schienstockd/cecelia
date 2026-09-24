@@ -6,7 +6,7 @@
 
 @testset "Kiwi refs — shape check (the shared schema)" begin
     @test Set(KIWI_REF_KINDS) == Set(["project", "set", "image", "population", "cells", "tracks",
-        "viewer", "plot", "tile", "capture", "task", "ui", "blackboard"])
+        "viewer", "plot", "tile", "capture", "task", "ui", "blackboard", "proposedPlot"])
     ok(r) = kiwi_ref_shape_error(r) == ""
     @test ok(Dict("kind" => "image", "imageUid" => "KDIeEm"))
     @test ok(Dict("kind" => "tracks", "imageUid" => "KDIeEm", "valueName" => "B", "trackIds" => [1, 2]))
@@ -85,6 +85,19 @@ end
                  "no population")
         # read-only: resolving touched no gating file
         gdir = joinpath(dir, "testpr", "1", "KDIeEm", "gating")
+        @test readdir(gdir) == ["B__trackclust.json"]
+
+        # a proposed plot — nobody has made it; resolved by a dry run of the board builder, nothing written
+        bp = boards_doc_path(joinpath(dir, "testpr")); boards_before = isfile(bp) ? read(bp) : nothing
+        pp = Dict("kind" => "proposedPlot", "plot" => "track_measures", "measure" => "live.track.speed")
+        r = res(pp)
+        @test r["ok"] && r["check"] == "proposal" && occursin("live.track.speed", r["label"])
+        @test !occursin("track_measures", r["label"])                        # the plot type's own label
+        @test no(merge(pp, Dict("measure" => "live.cell.nope")), "does not carry measure")
+        @test no(merge(pp, Dict("pops" => ["B/nope"])), "no population")
+        @test no(Dict("kind" => "proposedPlot", "plot" => "no_such_plot"), "unknown plot")
+        @test res(Dict("kind" => "proposedPlot"))["check"] == "shape"          # `plot` is required
+        @test (isfile(bp) ? read(bp) : nothing) == boards_before              # a dry run: no board written
         @test readdir(gdir) == ["B__trackclust.json"]
 
         # a population's cells — what a click on it outlines in the viewer

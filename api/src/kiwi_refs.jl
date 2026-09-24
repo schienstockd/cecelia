@@ -14,6 +14,8 @@
 #   "live"    verified against in-memory state the browser published (an open plot panel, a landscape
 #             tile) — true NOW, gone when the panel closes or the server restarts
 #   "format"  only the shape could be checked (a UI anchor: valid anchors are known only to the browser)
+#   "proposal" a plot NOBODY HAS MADE (a proposedPlot): checked buildable against the project — the plot
+#             type, chart, measure and populations — by a dry run of the board builder, `expand_board`
 #
 # READ-ONLY by construction: every lookup is an existing reader, and the one reader that can write
 # (`load_pop_map`'s uid backfill) is called with `backfill_save = false`. Refs are project-relative;
@@ -263,6 +265,40 @@ function kiwi_plot_summary(puid::AbstractString, plot_id::AbstractString)::Strin
     e === nothing ? "" : e.summary
 end
 
+# A plot nobody has made — does the project have what it takes? `expand_board` is the validator
+# `add_analysis_board` / POST /api/boards/add run before writing (plot type, chart, measure, which
+# populations its pop type can reach), run here as a dry run: nothing is written. Its message names the
+# bad value and the options, which is what the re-ask needs.
+function _kiwi_resolve_proposedPlot(puid, ref)
+    proj = try load_project(String(puid)) catch; return _kiwi_bad("proposal", "the project could not be read") end
+    entry = Dict{String,Any}(String(k) => v for (k, v) in pairs(ref) if !(String(k) in ("kind", "compareBy")))
+    compare = string(something(_kiwi_get(ref, "compareBy"), ""))
+    try
+        expand_board(proj, "Kiwi proposal", Any[entry]; compare_by = compare)
+    catch e
+        e isa BoardSpecError || return _kiwi_bad("proposal", sprint(showerror, e))
+        return _kiwi_bad("proposal", replace(e.msg, r"^plots\[1\]:\s*" => ""))
+    end
+    _kiwi_ok("proposal", kiwi_proposed_plot_label(ref))
+end
+
+"""
+    kiwi_proposed_plot_label(ref) -> String
+
+"Track measures · live.track.speed · B/qc/_tracked, T/qc/_tracked" — the plot type's own label, then
+what it would show.
+"""
+function kiwi_proposed_plot_label(ref)::String
+    id = string(something(_kiwi_get(ref, "plot"), ""))
+    sp = get(plot_spec_index(), id, nothing)
+    name = sp isa AbstractDict ? string(get(sp, "label", id)) : id
+    pops = _kiwi_get(ref, "pops")
+    parts = String[name, string(something(_kiwi_get(ref, "measure"), "")),
+                   pops isa AbstractVector ? join(string.(pops), ", ") : "",
+                   string(something(_kiwi_get(ref, "groupBy"), ""))]
+    join(filter(!isempty, parts), " · ")
+end
+
 function _kiwi_resolve_tile(puid, ref)
     img = _kiwi_image(puid, ref); img isa String && return _kiwi_bad("live", img)
     vn, cell = String(_kiwi_get(ref, "valueName")), String(_kiwi_get(ref, "cellId"))
@@ -326,6 +362,7 @@ const _KIWI_RESOLVERS = Dict{String,Function}(
     "tracks" => _kiwi_resolve_tracks, "viewer" => _kiwi_resolve_viewer, "plot" => _kiwi_resolve_plot,
     "tile" => _kiwi_resolve_tile, "capture" => _kiwi_resolve_capture, "task" => _kiwi_resolve_task,
     "ui" => _kiwi_resolve_ui, "blackboard" => _kiwi_resolve_blackboard,
+    "proposedPlot" => _kiwi_resolve_proposedPlot,
 )
 @assert Set(keys(_KIWI_RESOLVERS)) == Set(KIWI_REF_KINDS) "every schema kind needs a resolver"
 

@@ -2168,6 +2168,14 @@ end
         @test bb[2]["plots"][1]["statUnit"] == "image" && bb[2]["plots"][1]["imageAgg"] == "median"
         @test bb[1]["plots"][1] != bb[2]["plots"][1]     # distinguishable, which is the point
 
+        # a slot showing its plot type's OWN measure stores none — the summary names it anyway (4kS67f: a
+        # speed plot read as "speed not shown on either board")
+        write(bf, JSON3.write(Dict(
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "defaults")]),
+            "layouts" => Dict("tab:1" => Dict("contents" => [
+                Dict("kind" => "summary", "ref" => "track_measures", "state" => Dict("chartType" => "boxplot"))])))))
+        @test board_summaries(proj)[1]["plots"][1]["measure"] == "live.track.speed"
+
         # degradation: a slot with no state, and an unparseable file
         write(bf, JSON3.write(Dict(
             "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "bare")]),

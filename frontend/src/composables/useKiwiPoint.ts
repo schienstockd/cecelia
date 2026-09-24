@@ -15,7 +15,8 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { usePlotRegistryStore } from '../stores/plotRegistry'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
-import { pointTarget, refLabel, fetchPopulationCells } from '../utils/kiwiTurn'
+import { pointTarget, refLabel, fetchPopulationCells, openProposedPlot } from '../utils/kiwiTurn'
+import { pickBoardTab } from '../utils/boardNav'
 import { useKiwiStore } from '../stores/kiwi'
 import { revealPlots } from '../utils/sectionOpen'
 import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
@@ -114,6 +115,13 @@ export function useKiwiPoint() {
         viewer.pushUiMark({ markerId: `kiwi-${Date.now()}`, anchor: tgt.anchor, label: caption, ttlSeconds: MARK_TTL_S })
         kiwi.notePointed(tgt.anchor)
         return ''
+      case 'proposedPlot': {
+        let out: { board: string }
+        try { out = await openProposedPlot(puid, ref) } catch (e) { return e instanceof Error ? e.message : String(e) }
+        await router.push('/analysis')
+        pickBoardTab(puid, out.board)
+        return ''
+      }
       case 'none':
         return tgt.why
     }

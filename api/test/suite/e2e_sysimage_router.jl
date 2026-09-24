@@ -359,6 +359,7 @@ end
         "/api/notebooks/build-sysimage",
         "/api/kiwi/refs/resolve",
         "/api/kiwi/refs/cells",
+        "/api/kiwi/plot/open",
         "/api/kiwi/turn",
         "/api/kiwi/turn/cancel",
         "/api/kiwi/turns/clear",
@@ -465,7 +466,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 103 && length(POST_ROUTES) == 151
+    @test length(GET_ROUTES) == 103 && length(POST_ROUTES) == 152
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

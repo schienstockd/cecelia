@@ -136,6 +136,72 @@ function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs; session_id::Abstrac
     nothing
 end
 
+# ── "Plot this" — what clicking a proposedPlot does ──────────────────────────────────────────────────
+#
+#   POST /api/kiwi/plot/open  {projectUid, ref: <proposedPlot KiwiRef>} → {ok, board, created}
+#
+# The USER's click, not Kiwi: Kiwi only names the plot (a turn can't write), the user decides to see it.
+# A board that already holds the plot — same plot type and measure (the spec's default counts, see
+# `_board_slot`), every named population, and the grouping if one was named — is opened, not duplicated.
+# Otherwise ONE board is added through the same create-only path `add_analysis_board` uses
+# (`api_boards_add` → `expand_board` + `append_board`), named after the plot; a taken name gets a number.
+
+# Does board slot `s` (a `board_summaries` plot) show what `ref` proposes? PURE → tested.
+function kiwi_slot_holds(s::AbstractDict, ref)::Bool
+    string(get(s, "kind", "")) == "summary" || return false
+    g(k) = string(something(_kiwi_get(ref, k), ""))
+    string(get(s, "ref", "")) == g("plot") || return false
+    want_m = g("measure")
+    if isempty(want_m)
+        sp = get(plot_spec_index(), g("plot"), nothing)
+        ds = sp isa AbstractDict ? get(sp, "dataSource", Dict()) : Dict()
+        want_m = string(something(get(ds, "measure", nothing), ""))
+    end
+    isempty(want_m) || string(get(s, "measure", "")) == want_m || return false
+    pops = _kiwi_get(ref, "pops")
+    have = get(s, "pops", String[])
+    pops isa AbstractVector && !all(p -> string(p) in have, pops) && return false
+    for k in ("groupBy", "statUnit")
+        isempty(g(k)) || string(get(s, k, "")) == g(k) || return false
+    end
+    true
+end
+
+const _KIWI_BOARD_NAME_MAX = 80
+
+function kiwi_open_proposed_plot(puid::AbstractString, ref)
+    string(_kiwi_get(ref, "kind", "")) == "proposedPlot" || return 400, Dict{String,Any}("error" => "not a proposedPlot ref")
+    err = kiwi_ref_shape_error(ref); isempty(err) || return 400, Dict{String,Any}("error" => err)
+    proj = try load_project(String(puid)) catch; return 404, Dict{String,Any}("error" => "no project $puid") end
+    for b in board_summaries(proj), s in get(b, "plots", Any[])
+        kiwi_slot_holds(s, ref) && return 200, Dict{String,Any}("ok" => true, "board" => b["name"], "created" => false)
+    end
+    entry = Dict{String,Any}(String(k) => v for (k, v) in pairs(ref) if !(String(k) in ("kind", "compareBy")))
+    base = String(first("Kiwi · " * kiwi_proposed_plot_label(ref), _KIWI_BOARD_NAME_MAX))
+    compare = string(something(_kiwi_get(ref, "compareBy"), ""))
+    for n in 1:20
+        name = n == 1 ? base : "$base ($n)"
+        body = Dict{String,Any}("projectUid" => String(puid), "name" => name, "plots" => [entry])
+        isempty(compare) || (body["compareBy"] = compare)
+        st, out = api_boards_add(Vector{UInt8}(JSON3.write(body)))
+        st == 409 && occursin("duplicate_board_name", out) && continue
+        st == 200 || return st, Dict{String,Any}("error" => string(get(JSON3.read(out), :error, "could not add the board")))
+        return 200, Dict{String,Any}("ok" => true, "board" => string(JSON3.read(out).name), "created" => true)
+    end
+    409, Dict{String,Any}("error" => "too many boards named \"$base\"")
+end
+
+function api_kiwi_plot_open(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    puid = _wstr(body, :projectUid)
+    _kiwi_project_ok(puid) || return 404, JSON3.write((; error = "no project $puid"))
+    ref = get(body, :ref, nothing)
+    ref isa AbstractDict || return 400, JSON3.write((; error = "ref required"))
+    st, out = kiwi_open_proposed_plot(puid, ref)
+    st, JSON3.write(out)
+end
+
 function api_kiwi_turn(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body

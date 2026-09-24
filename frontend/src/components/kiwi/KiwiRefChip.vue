@@ -6,7 +6,7 @@
 // tooltip says which. Nothing renders "supports the claim" — nothing checks that yet.
 import { computed } from 'vue'
 import type { KiwiRef, KiwiRefResult } from '../../utils/kiwiRef'
-import { chipState, refLabel } from '../../utils/kiwiTurn'
+import { chipState, refLabel, kindLabel } from '../../utils/kiwiTurn'
 import { useKiwiPoint } from '../../composables/useKiwiPoint'
 
 // `seen` defaults to undefined, NOT false: Vue casts an absent boolean prop to false, and false means
@@ -28,7 +28,7 @@ const click = () => void pointAt(props.kiwiRef, label.value, props.result)
 <template>
   <button class="kiwi-ref cc-btn cc-btn-ghost cc-fs-2xs" :class="tone" @click="click"
           v-tooltip.bottom="state.tip">
-    <span class="cc-muted cc-fs-2xs">{{ kiwiRef.kind }}</span>
+    <span class="cc-muted cc-fs-2xs">{{ kindLabel(kiwiRef.kind) }}</span>
     <span class="kiwi-ref-label">{{ label }}</span>
   </button>
 </template>

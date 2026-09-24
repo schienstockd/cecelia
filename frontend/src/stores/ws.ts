@@ -14,7 +14,7 @@ import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
 import { useViewerStore } from './viewer'
-import { useAnalysisTabsStore } from './analysisTabs'
+import { pickBoardTab } from '../utils/boardNav'
 import { parseRailTime } from '../utils/taskElapsed'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
 
@@ -395,24 +395,8 @@ export const useWsStore = defineStore('ws', () => {
       // in vitest's node env (`location is not defined`). A dynamic import keeps ws.ts safe to
       // import in tests; the browser only pays the (already-loaded) main-chunk cost.
       void import('../main').then(({ router }) => router.push(path).then(() => {
-        // Board selection has to wait for the destination to have called
-        // `analysisTabs.ensure()` (mount + first render). A cold `/analysis` is lazy-loaded
-        // (chunk fetch + module mount), so `nextTick` isn't enough on first navigation. Poll
-        // for up to ~1s with a short interval; a missing name after that is a silent no-op
-        // (the destination shows whatever was last active, which is honest — "Claude sent you
-        // here but the board name is gone").
-        if (path === '/analysis' && boardName) {
-          const tabs = useAnalysisTabsStore()
-          const groupKey = `analysis:${projectUid || openProj}`
-          let tries = 0
-          const tryPick = () => {
-            const g = tabs.entries[groupKey]
-            const tab = g?.tabs.find(t => t.name === boardName)
-            if (tab) { tabs.setActive(groupKey, tab.id); return }
-            if (++tries < 20) setTimeout(tryPick, 50)
-          }
-          tryPick()
-        }
+        // board selection waits for `/analysis` to mount (`utils/boardNav.ts`)
+        if (path === '/analysis' && boardName) pickBoardTab(projectUid || openProj, boardName)
       }))
     }
 

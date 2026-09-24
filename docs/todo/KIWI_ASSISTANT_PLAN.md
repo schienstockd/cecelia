@@ -402,7 +402,12 @@ Each independently shippable.
    registry entry's `summary`, and the context pack includes it, so Kiwi answers from the picture across
    every image instead of rebuilding per-image medians for 2 of 7; a comparison is one fact (length cap
    260, no dash rule); population labels name the segmentation (B vs T read identically); an optional
-   `note` carries what isn't a claim. Not yet: a per-measure separation score for "which measure is
+   `note` carries what isn't a claim. **"Plot this" (user, same day: "that's the whole point of the duck
+   pointing towards something you haven't looked at"):** a `proposedPlot` KiwiRef is a plot nobody has
+   made — one `add_analysis_board` plot entry; resolved by a dry run of `expand_board` (check
+   `proposal`); a click (`POST /api/kiwi/plot/open`) opens the board that already shows it, else adds one
+   — the user's write, never the turn's. `board_summaries` now names a slot's DEFAULT measure (a speed
+   plot read as "not shown"). Not yet: a per-measure separation score for "which measure is
    best" questions — new capability, the user's call.
 5. **"Add to Kiwi" affordances — BUILT with Phase 4.** One button, `components/kiwi/AddToKiwiButton.vue`
    (`pi-at`), on: every live registered plot panel (`CanvasPanel`, when its `persistKey` is in the plot

@@ -19,13 +19,16 @@ const MINIMAL: KiwiRef[] = [
   { kind: 'task', funName: 'f' },
   { kind: 'ui', anchor: 'viewer.play' },
   { kind: 'blackboard', entryId: 'bb-1' },
+  { kind: 'proposedPlot', plot: 'track_measures' },
 ]
 const FULL: KiwiRef[] = [
-  ...MINIMAL.filter((r) => !['viewer', 'plot', 'tile', 'blackboard'].includes(r.kind)),
+  ...MINIMAL.filter((r) => !['viewer', 'plot', 'tile', 'blackboard', 'proposedPlot'].includes(r.kind)),
   { kind: 'viewer', imageUid: 'i', t: 0, z: 0 },
   { kind: 'plot', plotId: 'p', u: 0.5, v: 0.5 },
   { kind: 'tile', imageUid: 'i', valueName: 'B', cellId: 'B3', t: 0, z: 0 },
   { kind: 'blackboard', entryId: 'bb-1', version: 2 },
+  { kind: 'proposedPlot', plot: 'track_measures', measure: 'live.track.speed', chart: 'boxplot',
+    pops: ['B/qc/_tracked'], groupBy: 'hmm', statUnit: 'image', compareBy: 'per_image' },
 ]
 
 type Def = { required: string[]; properties: Record<string, unknown> }

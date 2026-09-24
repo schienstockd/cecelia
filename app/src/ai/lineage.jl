@@ -156,6 +156,21 @@ function _board_slot(i::Int, c)
         v = get(st, field, nothing)
         _nonempty(v) && (out[key] = string(v))
     end
+    # A summary slot showing its plot type's OWN measure stores none — the panel falls back to
+    # `spec.dataSource.measure` (SummaryPanel's `measure` getter) — so the summary said nothing about
+    # what it plots. A 4kS67f "Track measures" board had speed in slot 0 and Kiwi reported speed "not
+    # shown on either board" (2026-09-24). Unlike `statUnit` below, this fallback is unconditional in the
+    # panel, so filling it here restates it rather than guessing — except for a spec whose measures are
+    # DISCOVERED from the data (`obsMeasurePatterns`), where the panel picks the first column found.
+    if !haskey(out, "measure") && out["kind"] == "summary"
+        sp = get(plot_spec_index(), out["ref"], nothing)
+        ds = sp isa AbstractDict ? get(sp, "dataSource", nothing) : nothing
+        obs = ds isa AbstractDict ? get(ds, "obsMeasurePatterns", nothing) : nothing
+        discovered = obs isa AbstractVector ? !isempty(obs) : _nonempty(obs)
+        if ds isa AbstractDict && _nonempty(get(ds, "measure", nothing)) && !discovered
+            out["measure"] = string(ds["measure"])
+        end
+    end
     # The caption lives in the `vis` bag, NOT on `state`. Reading `state.title` returned nothing on
     # every real board ever written, while the hand-authored fixture — which put it there — asserted
     # it worked. Same failure as the `_board_tabs` bug above: a fixture invented to match the parser.

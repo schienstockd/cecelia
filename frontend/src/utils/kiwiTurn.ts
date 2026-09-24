@@ -91,7 +91,13 @@ export function refLabel(ref: KiwiRef): string {
     case 'task':       return ref.funName
     case 'ui':         return ref.anchor.startsWith('nav:') ? ref.anchor.slice(4) : ref.anchor
     case 'blackboard': return `note ${ref.entryId}${ref.version != null ? ` v${ref.version}` : ''}`
+    case 'proposedPlot': return [ref.measure ?? ref.plot, ...(ref.pops ?? [])].join(' · ')
   }
+}
+
+/** The kind as a chip or row shows it — the schema's name, except where that reads as code. */
+export function kindLabel(kind: KiwiRef['kind']): string {
+  return kind === 'proposedPlot' ? 'plot this' : kind
 }
 
 // ── Decision 10: a chip shows how far it was checked ───────────────────────────────────────────────
@@ -108,6 +114,7 @@ export function chipState(result: KiwiRefResult | undefined, seen?: boolean): { 
   if (seen === false) return { tone: 'fail', tip: 'Cited without being looked at this turn' }
   if (result.check === 'live') return { tone: 'soft', tip: 'Open now — gone when it closes' }
   if (result.check === 'format') return { tone: 'soft', tip: 'A place in the app — checked when shown' }
+  if (result.check === 'proposal') return { tone: 'ok', tip: 'Not plotted yet — click to plot it' }
   return { tone: 'ok', tip: 'Exists — not checked against the claim' }
 }
 
@@ -141,6 +148,8 @@ export type PointTarget =
   | { action: 'capture'; captureId: string }
   | { action: 'plot'; plotId: string; u?: number; v?: number }
   | { action: 'ui'; anchor: string }
+  // a plot nobody has made: open the board that holds it, else add one (`POST /api/kiwi/plot/open`)
+  | { action: 'proposedPlot' }
   | { action: 'none'; why: string }
 
 /** What clicking this ref should do. Pure: the composable performs it. */
@@ -167,6 +176,7 @@ export function pointTarget(ref: KiwiRef): PointTarget {
       return task ? { action: 'route', path: `/custom/${category}` } : { action: 'none', why: 'Unknown task' }
     }
     case 'tile':       return { action: 'none', why: 'Tiles can’t be pointed at yet' }
+    case 'proposedPlot': return { action: 'proposedPlot' }
   }
 }
 
@@ -275,7 +285,7 @@ export function attachmentRows(refs: KiwiRef[], results: Record<string, KiwiRefR
   return refs.map(ref => {
     const id = refKey(ref)
     const res = results[id]
-    return { id, ref, kind: ref.kind,
+    return { id, ref, kind: kindLabel(ref.kind),
              label: res?.ok && res.label ? res.label : refLabel(ref),
              detail: res?.ok ? (res.detail ?? '') : (res?.error ?? ''),
              tip: chipState(res).tip }
@@ -293,6 +303,11 @@ export function startKiwiTurn(body: { projectUid: string; prompt: string; refs: 
 export async function fetchPopulationCells(projectUid: string, ref: KiwiRef):
     Promise<{ labelIds: number[]; total: number; truncated: boolean } | null> {
   try { return await svcPost('/api/kiwi/refs/cells', { projectUid, ref }, 30_000) } catch { return null }
+}
+
+/** "Plot this": the board that holds the proposed plot, added if none does. */
+export function openProposedPlot(projectUid: string, ref: KiwiRef): Promise<{ ok: boolean; board: string; created: boolean }> {
+  return svcPost('/api/kiwi/plot/open', { projectUid, ref }, 30_000)
 }
 
 export async function resolveKiwiRefs(projectUid: string, refs: KiwiRef[]): Promise<KiwiRefResult[]> {

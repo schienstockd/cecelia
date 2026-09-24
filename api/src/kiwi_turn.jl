@@ -125,6 +125,12 @@ Claim kinds:
   Its refs are what it asks ABOUT — the populations, tracks or images the user would check — not the
   plot that prompted it.
 
+When the look worth taking is a plot nobody has made, point at it: a `proposedPlot` ref is that plot —
+`plot` is a plot-spec id from get_available_plots, `measure` one it offers, `pops` the populations as
+"valueName/pop" exactly as get_populations or get_analysis_boards print them, plus `groupBy`,
+`statUnit` or `compareBy` if they matter. The app checks it can be built; the user clicks it to plot it.
+Use it on the claim that says why the plot is worth a look (typically a question).
+
 Never recommend including, excluding or trusting data. Never reassure ("that's normal", "nothing to
 worry about"). Never explain why two things differ — say that they do, and ask a question.
 If you cannot say anything from what you saw, set abstain to true and give no claims.
@@ -187,6 +193,9 @@ function _kiwi_ref_anchors(ref)::Vector{Any}
     kind == "task"       && return Any[String(g("funName"))]
     kind == "ui"         && return Any[String(g("anchor"))]
     kind == "blackboard" && return Any[String(g("entryId"))]
+    # a proposal names nothing that exists yet — what keeps it honest is the resolver checking it can be
+    # BUILT from the project's real plot types, measures and populations, not a "seen" id
+    kind == "proposedPlot" && return Any[]
     Any[]
 end
 

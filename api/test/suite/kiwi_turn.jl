@@ -292,6 +292,27 @@ end
         st, out = kiwi_start_turn("testpr", "q")
         @test st == 503 && occursin("Claude", out["error"])
 
+        # "plot this": the first click adds ONE board named after the plot, the second opens it
+        pp = Dict("kind" => "proposedPlot", "plot" => "track_measures", "measure" => "live.track.duration")
+        st, out = kiwi_open_proposed_plot("testpr", pp)
+        @test st == 200 && out["created"] && startswith(out["board"], "Kiwi · ") && occursin("live.track.duration", out["board"])
+        st, again = kiwi_open_proposed_plot("testpr", pp)
+        @test st == 200 && !again["created"] && again["board"] == out["board"]
+        @test count(b -> startswith(b["name"], "Kiwi · "), board_summaries(load_project("testpr"))) == 1
+        # a different measure is a different plot; a bad one is refused before anything is written
+        @test kiwi_open_proposed_plot("testpr", merge(pp, Dict("measure" => "live.track.speed")))[2]["created"]
+        st, bad = kiwi_open_proposed_plot("testpr", merge(pp, Dict("measure" => "live.cell.nope")))
+        @test st == 422 && occursin("does not carry measure", bad["error"])
+        @test first(kiwi_open_proposed_plot("testpr", Dict("kind" => "image", "imageUid" => "KDIeEm"))) == 400
+        # the slot matcher: the spec's default measure counts; named pops and grouping must be there
+        slot = Dict("kind" => "summary", "ref" => "track_measures", "measure" => "live.track.speed",
+                    "pops" => ["B/qc/_tracked", "T/qc/_tracked"], "groupBy" => "hmm")
+        @test kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "track_measures"))       # default = speed
+        @test kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/qc/_tracked"]))
+        @test !kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/other"]))
+        @test !kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "track_measures", "groupBy" => "other"))
+        @test !kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "cell_measures"))
+
         # keep only the last KIWI_TURNS_KEEP, then clear
         for i in 1:(KIWI_TURNS_KEEP + 2)
             _kiwi_append_turn!("testpr", Dict{String,Any}("turnId" => "kt-$i"))
