@@ -42,7 +42,8 @@ export function useKiwiPoint() {
     const puid = pm.current?.uid ?? ''
     if (!puid) return 'No project open'
     const tgt = pointTarget(ref)
-    const caption = label || refLabel(ref)
+    // the resolver's label when there is one — a claim row passes no label, and "plot" alone said nothing
+    const caption = label || (result?.ok && result.label ? result.label : '') || refLabel(ref)
     switch (tgt.action) {
       case 'viewer': {
         if (tgt.tracks) viewer.setTrackHighlight({ imageUid: tgt.imageUid, valueName: tgt.tracks.valueName,
