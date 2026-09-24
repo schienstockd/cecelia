@@ -198,6 +198,25 @@ Not in the MVP PR. Once the shape is validated:
 - Producer variants: point-source (Option B) if a family with per-point ids lands; predicate-
   source (Option C) if we need continuous-range filtering.
 
+### Shipped follow-ups (post-MVP)
+
+- **Option B point-source brushing on boxplot** — click + rect + freeform lasso on the jitter
+  dots (PR #1195, `31151d74`..`cad78b0a`). Server emits `pointIds` on the boxplot branch and
+  `pointUids` on pooled cross-image responses; renderer keys `matches()` by `(uid, vn, pop)`
+  with a `(uid, vn)` fallback for writers that don't know pop.
+- **Strip chart brushing** (PR #1206) — same wire on the strip renderer; server `points`
+  branch (shared by strip and violin) now goes through the same
+  `_emit_points_with_identity` helper as boxplot, so the two branches can't drift.
+- **Violin stays inert by design** — a KDE ribbon has no per-point mark. The `points` server
+  branch does emit ids/uids for violin's payload, so an optional jitter overlay could be
+  added later without a server change.
+- **`select_on_plot` MCP tool** (PR #1206) — POST `/api/viewer/marks/select`. Multi-source
+  `{imageUid, valueName, pop?, ids}[]` write from Claude — one atomic bag update lights every
+  subscribed plot AND outlines the viewer per source. Reverse of the plot-brush emit shape.
+- **Per-source consumer view** (PR #1206) — `useLinkedSelectionSubscriber` gains
+  `activePerSource: Map<string, Set<number>>` alongside the flat `activeIds`, so a future
+  subscriber can consume per-source without bypassing the composable.
+
 ## Cross-cutting
 
 - **Additive**: linkedSelection is a new store; nothing shipped is renamed or removed. The 10-
