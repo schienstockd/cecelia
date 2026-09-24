@@ -159,12 +159,14 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
     @test Cecelia.observer_registration_state(no_url, want) === :stale
     @test Cecelia.observer_registration_state(Dict{String,Any}("command" => "/env/python"), want) === :stale
 
-    # config path honours Claude Code's own env override; missing file → not set up, never an error
+    # config path is driven by the ACTIVE PROFILE, not the ambient `CLAUDE_CONFIG_DIR` — deliberate.
+    # Deferring to the ambient env would defeat the isolation guarantee (LOGIN_CREDENTIAL_ISOLATION_PLAN
+    # D6): a stray shell export would silently redirect the "is the terminal set up?" check to a
+    # different profile's config file than the one the app actually spawns under. Explicit profile
+    # arg + `default` = `~/.claude.json` on this box; the P2-plumbing testset below pins the rest.
     withenv("CLAUDE_CONFIG_DIR" => "/tmp/cc-cfg") do
-        @test Cecelia.claude_config_path() == joinpath("/tmp/cc-cfg", ".claude.json")
-    end
-    withenv("CLAUDE_CONFIG_DIR" => nothing) do
-        @test Cecelia.claude_config_path() == joinpath(homedir(), ".claude.json")
+        @test Cecelia.claude_config_path("") == joinpath(homedir(), ".claude.json")   # ambient ignored
+        @test Cecelia.claude_config_path("/tmp/kiwi/bob") == joinpath("/tmp/kiwi/bob", ".claude.json")
     end
     @test Cecelia.read_registered_observer_spec(joinpath(mktempdir(), "nope.json")) === nothing
     let bad = joinpath(mktempdir(), "bad.json")
@@ -252,6 +254,66 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
                    "get_analysis_boards", "get_available_plots", "get_repl_api")
         @test !occursin(shared, flat)
     end
+end
+
+
+# ── Per-profile credential isolation (LOGIN_CREDENTIAL_ISOLATION_PLAN P2) ────────
+# Pins the pure resolver + env-pair builder + apply. LIVE integration (`claude` actually reads
+# the env we set) is out of CI — that was measured in the plan against CLI 2.1.280 and captured
+# in scripts/check_claude_env.sh. These tests pin the shape of what we hand to `addenv`.
+@testset "AI observer per-profile credential env (P2 plumbing)" begin
+    a = Cecelia.ClaudeAgent(bin = "claude", model = "")
+
+    # default profile → empty dir marker (= "let the CLI use ~/.claude* as before"). Named profile
+    # lands under <config_root>/kiwi-profiles/<name>/. Resolver is pure — no mkpath here.
+    @test Cecelia.kiwi_profile_dir("default"; config_root = "/tmp/x") == ""
+    @test Cecelia.kiwi_profile_dir("alice";   config_root = "/tmp/x") ==
+          joinpath("/tmp/x", "kiwi-profiles", "alice")
+
+    # env-pair shape — default profile SCRUBS ambient credential vars but does NOT set
+    # CLAUDE_CONFIG_DIR (that is what makes P2 a no-op for a single-seat setup).
+    pairs_default = Cecelia._claude_env_pairs("")
+    @test all(v === nothing for (_, v) in pairs_default)                        # every entry unsets
+    keys_default = [k for (k, _) in pairs_default]
+    for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+              "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+              "AWS_BEARER_TOKEN_BEDROCK")
+        @test k in keys_default                                                 # measured in the plan
+    end
+    @test !("CLAUDE_CONFIG_DIR" in keys_default)                                # default profile
+
+    # named profile — CLAUDE_CONFIG_DIR added FIRST (visible to child), ambient scrub unchanged
+    pairs_named = Cecelia._claude_env_pairs("/tmp/kiwi/alice")
+    @test first(pairs_named) == ("CLAUDE_CONFIG_DIR" => "/tmp/kiwi/alice")
+    @test length(pairs_named) == length(pairs_default) + 1
+
+    # apply → the Cmd's env has our overrides, and .dir is preserved (the shadow-remove path
+    # depends on this — a cwd carried through addenv is how it targets the right local scope).
+    # `addenv(cmd, "KEY" => nothing)` REMOVES the key from the env vector, so scrubbing shows up
+    # as absence (not as "KEY="). Inject an ambient key first so the scrub is observably a delete,
+    # not just a no-op on an empty slot.
+    withenv("ANTHROPIC_API_KEY" => "would-leak", "ANTHROPIC_AUTH_TOKEN" => "would-leak-too") do
+        base = Cmd(`claude mcp remove observer -s local`; dir = "/home/u")
+        applied = Cecelia._apply_claude_env(base, "/tmp/kiwi/alice")
+        @test applied.dir == "/home/u"
+        @test applied.env !== nothing
+        @test "CLAUDE_CONFIG_DIR=/tmp/kiwi/alice" in applied.env
+        # scrubbed → no entry starts with the key name for any of the ambient vars
+        for k in Cecelia._AMBIENT_CLAUDE_ENV
+            @test !any(startswith(e, string(k, "=")) for e in applied.env)
+        end
+
+        # default profile via apply → still scrubs, does not set CLAUDE_CONFIG_DIR
+        applied_default = Cecelia._apply_claude_env(base, "")
+        @test !any(startswith(e, "CLAUDE_CONFIG_DIR=") for e in applied_default.env)
+        @test !any(startswith(e, "ANTHROPIC_AUTH_TOKEN=") for e in applied_default.env)
+    end
+
+    # claude_config_path routes through the profile — the "is the terminal set up?" check
+    # reflects the profile the app is actually spawning under (D2 consistency)
+    @test Cecelia.claude_config_path("") == joinpath(homedir(), ".claude.json")
+    @test Cecelia.claude_config_path("/tmp/kiwi/alice") ==
+          joinpath("/tmp/kiwi/alice", ".claude.json")
 end
 
 

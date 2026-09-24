@@ -241,9 +241,94 @@ _build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user", dir::Abstr
 # User-scope servers live at the top level of `~/.claude.json` as `mcpServers[<name>]`. Our button
 # writes `-s user`, which works from any directory — but `projects[<dir>].mcpServers` (the per-directory
 # `local` scope) takes PRECEDENCE over it, so it can't be ignored: see `shadowing_observer_dirs`.
-claude_config_path()::String =
-    (d = get(ENV, "CLAUDE_CONFIG_DIR", ""); isempty(d) ? joinpath(homedir(), ".claude.json") :
-                                                         joinpath(d, ".claude.json"))
+# ── Per-profile credential isolation (LOGIN_CREDENTIAL_ISOLATION_PLAN D2, D6, phase P2) ──────────
+#
+# `~/.claude/{.credentials.json, .claude.json}` is one credential home shared by every process on
+# an OS login. Kiwi spawns `claude` here — so on a shared lab login without isolation, the last
+# person to `claude login` is who every Kiwi turn silently authenticates as. This block routes
+# every `claude` spawn through the active Kiwi profile's CLAUDE_CONFIG_DIR (D2), and scrubs the
+# ambient credential env vars that would otherwise silently override it (D6 — `ANTHROPIC_API_KEY`
+# and friends outrank `CLAUDE_CONFIG_DIR` on every platform; measured 2026-09-23 on CLI 2.1.280).
+#
+# The `default` profile is special: `kiwi_profile_dir("default") == ""` — meaning "do not set
+# `CLAUDE_CONFIG_DIR`, let the CLI use its own paths (`~/.claude.json` + `~/.claude/.credentials.json`)".
+# This makes P2 a strict behavioural no-op for a single-seat setup — no re-login, no credential
+# copy. The picker (P3) introduces named profiles that DO get their own dir. Ambient scrubbing
+# runs for every profile including default, so a stray `.bashrc` line can never cross the isolation
+# even for the shared-credential default case.
+
+const _AMBIENT_CLAUDE_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                             "CLAUDE_CODE_OAUTH_TOKEN",
+                             "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                             "CLAUDE_CODE_USE_FOUNDRY",
+                             "AWS_BEARER_TOKEN_BEDROCK")
+
+const _DEFAULT_KIWI_PROFILE = "default"
+
+"""
+    kiwi_profile_name() -> String
+
+Active Kiwi profile name from `custom.toml [ai].profile`, defaulting to `"default"`. The picker
+(phase P3) will write this key; today it is always the default.
+"""
+kiwi_profile_name()::String =
+    string(get(get(cecelia_conf(), "ai", Dict{String,Any}()), "profile", _DEFAULT_KIWI_PROFILE))
+
+"""
+    kiwi_profile_dir(name = kiwi_profile_name(); config_root = config_dir()) -> String
+
+Resolve a profile name to its `CLAUDE_CONFIG_DIR`. Returns `""` for the `default` profile
+(meaning "let the CLI use `~/.claude*` as before") and `<config_root>/kiwi-profiles/<name>/`
+otherwise. PURE — does NOT create the directory (see `_active_claude_profile_dir!` for the live
+resolver that also mkpaths).
+"""
+kiwi_profile_dir(name::AbstractString = kiwi_profile_name();
+                 config_root::AbstractString = config_dir())::String =
+    String(name) == _DEFAULT_KIWI_PROFILE ? "" :
+        joinpath(String(config_root), "kiwi-profiles", String(name))
+
+"""
+    _claude_env_pairs(profile_dir) -> Vector{Pair{String,Any}}
+
+Env overrides for `addenv`: every ambient credential var mapped to `nothing` (unset), and
+`CLAUDE_CONFIG_DIR` set to `profile_dir` unless it is empty (default profile — keep the CLI's own
+resolution). PURE → unit-tested.
+"""
+function _claude_env_pairs(profile_dir::AbstractString)::Vector{Pair{String,Any}}
+    pairs = Pair{String,Any}[k => nothing for k in _AMBIENT_CLAUDE_ENV]
+    isempty(profile_dir) || pushfirst!(pairs, "CLAUDE_CONFIG_DIR" => String(profile_dir))
+    pairs
+end
+
+"""
+    _apply_claude_env(cmd, [profile_dir]) -> Cmd
+
+Add the profile's env overrides to a `Cmd`. Used at every `claude` spawn site so `claude -p`,
+`claude mcp add-json`, and `claude mcp remove` all land in the same profile dir.
+"""
+_apply_claude_env(cmd::Cmd, profile_dir::AbstractString)::Cmd =
+    addenv(cmd, _claude_env_pairs(profile_dir)...)
+_apply_claude_env(cmd::Cmd)::Cmd = _apply_claude_env(cmd, _active_claude_profile_dir!())
+
+# Live resolver — ensures the named-profile dir exists so the CLI can write on first login.
+# The default profile ("") is a no-op here; the CLI's own paths already exist.
+function _active_claude_profile_dir!()::String
+    d = kiwi_profile_dir()
+    isempty(d) || isdir(d) || mkpath(d)
+    d
+end
+
+"""
+    claude_config_path([profile_dir = kiwi_profile_dir()]) -> String
+
+Path to the active profile's `.claude.json` — the file Claude Code writes for its top-level user
+config (project history, MCP registrations). Falls back to `~/.claude.json` when `profile_dir` is
+empty (default profile). Used by `read_registered_observer_spec` for the "is the terminal already
+set up?" UI, so the check reflects the profile the app is actually spawning under.
+"""
+claude_config_path(profile_dir::AbstractString = kiwi_profile_dir())::String =
+    isempty(profile_dir) ? joinpath(homedir(), ".claude.json") :
+        joinpath(String(profile_dir), ".claude.json")
 
 # The registered spec, or `nothing`. Tolerant: an unreadable/!JSON config just means "not set up"
 # (it's another tool's file — never error the status route over its shape).
@@ -399,7 +484,7 @@ function remove_shadowing_observer_mcps(a::ClaudeAgent, dirs::Vector{String}; ti
     for d in dirs
         isdir(d) || continue
         ok = try
-            proc = run(pipeline(_agent_spawn_cmd(_build_mcp_remove_cmd(a; scope = "local", dir = d));
+            proc = run(pipeline(_apply_claude_env(_agent_spawn_cmd(_build_mcp_remove_cmd(a; scope = "local", dir = d)));
                                 stdout = devnull, stderr = devnull); wait = false)
             timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
             wait(proc)
@@ -431,7 +516,7 @@ function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
                                scope::AbstractString = "user", timeout_s::Int = 30)
     agent_available(a) || return (false, "No assistant CLI found. Install Claude Code to enable this.")
     _run_quiet(cmd) = try
-        run(pipeline(_agent_spawn_cmd(cmd), stdout = devnull, stderr = devnull); wait = true); true
+        run(pipeline(_apply_claude_env(_agent_spawn_cmd(cmd)), stdout = devnull, stderr = devnull); wait = true); true
     catch
         false
     end
@@ -442,7 +527,7 @@ function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
     out = Pipe()
     local output = ""
     ok = try
-        proc = run(pipeline(_agent_spawn_cmd(_build_mcp_register_cmd(a, spec_json; scope));
+        proc = run(pipeline(_apply_claude_env(_agent_spawn_cmd(_build_mcp_register_cmd(a, spec_json; scope)));
                             stdout = out, stderr = out); wait = false)
         close(out.in)
         timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
@@ -538,8 +623,8 @@ end
 function _run_agent_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
                          system_prompt::AbstractString, session_id::AbstractString,
                          timeout_s::Real, on_process::Function, cmd_opts...)::AgentResult
-    cmd = _agent_spawn_cmd(_build_claude_cmd(a, prompt, mcp_config_path;
-                                             session_id, system_prompt, cmd_opts...))
+    cmd = _apply_claude_env(_agent_spawn_cmd(_build_claude_cmd(a, prompt, mcp_config_path;
+                                              session_id, system_prompt, cmd_opts...)))
     out = Pipe()
     proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
     close(out.in)
