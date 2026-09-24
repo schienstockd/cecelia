@@ -279,6 +279,15 @@ kiwi_profile_name()::String =
     string(get(get(cecelia_conf(), "ai", Dict{String,Any}()), "profile", _DEFAULT_KIWI_PROFILE))
 
 """
+    turn_profile(rec) -> String
+
+The profile a Kiwi turn record ran under (its `profile` field, stamped by `kiwi_start_turn` —
+LOGIN_CREDENTIAL_ISOLATION_PLAN D8). Records from before the stamp read back as `"legacy"` (D10 as a
+read-time default, not a migration). Every consumer of a turn's profile goes through this.
+"""
+turn_profile(rec::AbstractDict)::String = string(get(rec, "profile", "legacy"))
+
+"""
     kiwi_profile_dir(name = kiwi_profile_name(); config_root = config_dir()) -> String
 
 Resolve a profile name to its `CLAUDE_CONFIG_DIR`. Returns `""` for the `default` profile

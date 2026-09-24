@@ -426,6 +426,7 @@ export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observ
        claude_config_path, read_registered_observer_spec,
        read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,
        remove_shadowing_observer_mcps,
-       observer_agent_bin, OBSERVER_MODELS, observer_default_model, observer_valid_model
+       observer_agent_bin, OBSERVER_MODELS, observer_default_model, observer_valid_model,
+       turn_profile
 
 end
