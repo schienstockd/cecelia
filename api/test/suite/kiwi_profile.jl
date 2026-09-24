@@ -145,3 +145,61 @@ end
         init_cecelia!()   # restore
     end
 end
+
+@testset "Kiwi profile — retire (D11)" begin
+    mktempdir() do tmp
+        write(joinpath(tmp, "custom.toml"), "[dirs]\nprojects = '$(tmp)'\n")
+        withenv("CECELIA_DEV_DIR" => tmp) do
+            init_cecelia!()
+            # Seed two profiles.
+            api_kiwi_profiles_create(Vector{UInt8}(JSON3.write((; name = "alice"))))
+            api_kiwi_profiles_create(Vector{UInt8}(JSON3.write((; name = "bob"))))
+
+            # Retire alice while `default` is active → marker written, active unchanged.
+            code, body = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "alice"))))
+            @test code == 200
+            b = JSON3.read(body)
+            @test b.ok === true && b.snappedToDefault === false && b.active == "default"
+            @test isfile(joinpath(tmp, "kiwi-profiles", "alice", ".kiwi-retired"))
+
+            # Roster still lists alice, now flagged retired; bob stays not-retired.
+            code, body = api_kiwi_profiles_list(HTTP.Request("GET", "/api/kiwi/profiles"))
+            b = JSON3.read(body)
+            byname = Dict{String,Any}(String(p.name) => p for p in b.profiles)
+            @test byname["alice"].retired === true
+            @test byname["bob"].retired   === false
+            @test byname["default"].retired === false
+
+            # Select of retired → 409, active unchanged.
+            code, _ = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "alice"))))
+            @test code == 409
+            @test kiwi_profile_name() == "default"
+
+            # Idempotent retire → 200 + alreadyRetired flag.
+            code, body = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "alice"))))
+            @test code == 200
+            @test JSON3.read(body).alreadyRetired === true
+
+            # Retire the active profile → auto-snap to default so the next spawn doesn't silently
+            # keep using retired credentials.
+            api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "bob"))))
+            @test kiwi_profile_name() == "bob"
+            code, body = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "bob"))))
+            @test code == 200
+            b = JSON3.read(body)
+            @test b.ok === true && b.snappedToDefault === true && b.active == "default"
+            @test kiwi_profile_name() == "default"
+
+            # `default` can't be retired — it maps to ~/.claude.
+            code, _ = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "default"))))
+            @test code == 400
+
+            # Nonexistent → 404. Invalid name → 400.
+            code, _ = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "ghost"))))
+            @test code == 404
+            code, _ = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "Bad Name"))))
+            @test code == 400
+        end
+        init_cecelia!()   # restore
+    end
+end

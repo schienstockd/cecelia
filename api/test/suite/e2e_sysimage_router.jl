@@ -367,6 +367,7 @@ end
         "/api/kiwi/turns/clear",
         "/api/kiwi/profiles/select",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P3
         "/api/kiwi/profiles/create",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P3
+        "/api/kiwi/profiles/retire",   # LOGIN_CREDENTIAL_ISOLATION_PLAN D11
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
@@ -469,7 +470,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 105 && length(POST_ROUTES) == 153
+    @test length(GET_ROUTES) == 105 && length(POST_ROUTES) == 154
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

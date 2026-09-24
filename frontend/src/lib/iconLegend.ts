@@ -97,6 +97,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-eraser', means: 'Delete what was derived, keep the original' },
       { icon: 'pi-plus', means: 'Add' },
       { icon: 'pi-user-plus', means: 'Add a Kiwi profile (a separate credential + MCP scope)' },
+      { icon: 'pi-user-minus', means: 'Retire a Kiwi profile — non-selectable after, data stays on disk' },
       { icon: 'pi-pencil', means: 'Edit or rename' },
       { icon: 'pi-save', means: 'Save' },
       { icon: 'pi-copy', means: 'Copy — to the clipboard, or a copy of this' },

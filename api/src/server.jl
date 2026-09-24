@@ -442,9 +442,10 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/turn" => (req, body_bytes) -> (api_kiwi_turn(body_bytes)),
     "/api/kiwi/turn/cancel" => (req, body_bytes) -> (api_kiwi_turn_cancel(body_bytes)),
     "/api/kiwi/turns/clear" => (req, body_bytes) -> (api_kiwi_turns_clear(body_bytes)),
-    # Kiwi profile picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3) — writes only; GET siblings live in _GET_ROUTES.
+    # Kiwi profile picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + D11) — writes only; GET siblings live in _GET_ROUTES.
     "/api/kiwi/profiles/select"     => (req, body_bytes) -> (api_kiwi_profiles_select(body_bytes)),
     "/api/kiwi/profiles/create"     => (req, body_bytes) -> (api_kiwi_profiles_create(body_bytes)),
+    "/api/kiwi/profiles/retire"     => (req, body_bytes) -> (api_kiwi_profiles_retire(body_bytes)),
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),
