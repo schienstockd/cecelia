@@ -12,6 +12,10 @@
 //                         Not a task runner (edits apply immediately) so it gets its own steps.
 //   run-a-chain         — Pipeline group. "I have forty images, am I really doing this one at a
 //                         time?" The whiteboard's a DAG editor, not a function list.
+//   use-the-blackboard  — Analysis group. Shared markdown surface where conclusions land durably —
+//                         list / new / edit + version / outcome tag / send to Kiwi. Captures arrive
+//                         INBOUND from Kiwi (no attach-a-capture button), so the guide teaches the
+//                         outbound counterpart (addToKiwi) instead.
 //   assist-with-kiwi    — Analysis group. Walks the four Kiwi cockpit rows (help / pairing / chat /
 //                         share) plus the lab-log sibling that most users find first. Replaced the
 //                         earlier `lab-log-and-claude` two-step pointer in 2026-09 — see D13.
@@ -259,6 +263,76 @@ export const runChainGuide: GuideDef = {
     {
       title: 'This is how you scale',
       text: 'Everything the module pages do one image at a time, a chain does for a cohort unattended.',
+    },
+  ],
+}
+
+// ── Blackboard — the shared markdown surface for a project ───────────────────────────────────────
+// Captures arrive INBOUND from Kiwi (no attach-a-capture button lives on the pane); the outbound
+// counterpart is AddToKiwiButton on the entry pane head, so the guide teaches the outbound flow
+// instead. Route /blackboard is confirmed in main.ts; prereq is projectOpen (bb-list is per project).
+export const useTheBlackboardGuide: GuideDef = {
+  id: 'use-the-blackboard',
+  title: 'Use the blackboard',
+  group: 'Analysis',
+  icon: 'pi-comment',
+  summary: 'Shared markdown between you and the assist — where a conclusion becomes durable, not chat scrollback.',
+  prereqs: [PREREQ.projectOpen],
+
+  steps: [
+    {
+      anchor: 'nav:/blackboard',
+      placement: 'right',
+      title: 'Blackboard',
+      text: 'One markdown surface per project — every Kiwi turn about this project lands here too.',
+      bullets: ['Reach it from the sidebar; the list opens straight away.'],
+      clickAnchor: true,
+    },
+    {
+      anchor: 'blackboard.new',
+      route: '/blackboard',
+      placement: 'bottom',
+      title: 'Start an entry',
+      text: 'One entry per thought you are chasing — captures land under it as they arrive from the viewer or Kiwi.',
+      bullets: ['Entries are per project — open a project first.'],
+    },
+    {
+      anchor: 'blackboard.list',
+      route: '/blackboard',
+      placement: 'right',
+      title: 'The entry list',
+      text: 'Sort by any column; the two chip rows above filter by status and outcome.',
+      bullets: ['The project profile row stays pinned to the top.'],
+    },
+    {
+      anchor: 'blackboard.edit',
+      route: '/blackboard',
+      placement: 'bottom',
+      title: 'Edit and version',
+      text: 'Edit takes a snapshot before saving — every revision is kept and previewable from the version dropdown.',
+      bullets: ['Restore v3 with a click if v4 went sideways.'],
+      reveal: {
+        needed: c => !c.anchorExists('blackboard.edit'),
+        anchor: 'blackboard.list',
+        text: 'Pick an entry from the list — the edit button lives on its pane head.',
+        placement: 'right',
+      },
+    },
+    {
+      anchor: 'blackboard.outcome',
+      route: '/blackboard',
+      placement: 'bottom',
+      title: 'Tag outcome',
+      text: 'Good or Bad plus a note when the thread is settled — what carries into the next project.',
+      bullets: ['The note is required; it is what a future session actually needs to know.'],
+    },
+    {
+      anchor: 'blackboard.addToKiwi',
+      route: '/blackboard',
+      placement: 'left',
+      title: 'Send to Kiwi',
+      text: 'Feed this entry (or a specific version) into a Kiwi turn — appears as context alongside your prompt.',
+      bullets: ['Ships the version you are viewing.'],
     },
   ],
 }
