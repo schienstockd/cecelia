@@ -27,7 +27,7 @@ import { recordMovieGuide } from './movies'
 import { animationGuide } from './animation'
 import {
   userProfileGuide, viewProfileGuide,
-  fixMetadataGuide, runChainGuide, labLogGuide,
+  fixMetadataGuide, runChainGuide, kiwiGuide,
 } from './singleTopicGuides'
 
 export const GUIDES: GuideDef[] = [
@@ -55,7 +55,7 @@ export const GUIDES: GuideDef[] = [
   recordMovieGuide,
   animationGuide,
   notebooksGuide,
-  labLogGuide,
+  kiwiGuide,
   // Pipeline — do it at scale
   runChainGuide,
 ]

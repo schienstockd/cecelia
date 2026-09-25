@@ -12,10 +12,9 @@
 //                         Not a task runner (edits apply immediately) so it gets its own steps.
 //   run-a-chain         — Pipeline group. "I have forty images, am I really doing this one at a
 //                         time?" The whiteboard's a DAG editor, not a function list.
-//   lab-log-and-claude  — Analysis group. Deliberately the SHORTEST guide in the catalogue — its job
-//                         is discovery: two surfaces exist that nobody finds on their own. The
-//                         Claude one has its own `?` explainer (ClaudeOverviewDialog) so this guide
-//                         points at it and stops.
+//   assist-with-kiwi    — Analysis group. Walks the four Kiwi cockpit rows (help / pairing / chat /
+//                         share) plus the lab-log sibling that most users find first. Replaced the
+//                         earlier `lab-log-and-claude` two-step pointer in 2026-09 — see D13.
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
@@ -264,15 +263,21 @@ export const runChainGuide: GuideDef = {
   ],
 }
 
-// ── Lab log + Claude: pointer-only, deliberately short ───────────────────────────────────────────
-// The `?` moved from the lab-log toolbar to Kiwi on 2026-09-22 — Kiwi is the canonical cockpit for
-// assistant controls, so the how-to lives beside pairing / chat handoff / observer state.
-export const labLogGuide: GuideDef = {
-  id: 'lab-log-and-claude',
-  title: 'Lab log and Claude',
+// ── Kiwi — the assist cockpit. Replaces the earlier `lab-log-and-claude` two-step pointer ────────
+// The `?` moved from the lab-log toolbar to Kiwi on 2026-09-22, and Kiwi grew into the canonical
+// cockpit for pairing / chat handoff / capture sharing. The old two-step guide undersold that; this
+// one walks the four rows (help, pairing, chat, share) and keeps the lab-log step at the front
+// because that's the sibling surface most users find first. See GUIDE_ADDITIONS_PLAN D13.
+//
+// Pairing / chat / share rows are `v-if`'d on `projectUid` (KiwiCockpit.vue:276-279 — no project =
+// no pairing target), so the prereq is `projectOpen`. Kiwi itself is `v-if`'d in App.vue on
+// `settings.kiwiOpen`, so anchor-not-found reveals point at `sidebar.kiwiCta`.
+export const kiwiGuide: GuideDef = {
+  id: 'assist-with-kiwi',
+  title: 'Assist with Kiwi',
   group: 'Analysis',
-  icon: 'pi-book',
-  summary: 'Where your analysis notes live, and how to find out what the AI assist can do.',
+  icon: 'pi-comments',
+  summary: 'The assistant cockpit — pairing status, chat handoff, and sharing what is on screen.',
   prereqs: [PREREQ.projectOpen],
 
   steps: [
@@ -280,28 +285,54 @@ export const labLogGuide: GuideDef = {
       anchor: 'sidebar.labLogCta',
       placement: 'right',
       title: 'The lab log',
-      text: 'A per-project, append-only record of what was done and what you concluded.',
-      bullets: [
-        'Cecelia adds a daily digest of the runs that finished.',
-        'Reachable from any page — it is a floating panel, not a page.',
-      ],
+      text: 'A per-project, append-only record — Cecelia adds a digest when a run finishes, you and Kiwi append notes.',
+      bullets: ['Floating panel, reachable from any page.'],
+    },
+    {
+      anchor: 'sidebar.kiwiCta',
+      placement: 'right',
+      title: 'Kiwi is the assist cockpit',
+      text: 'Everything Claude-adjacent lives in this panel — pairing, chat starter, and the buttons that share what is on screen.',
+      bullets: ['On-demand only; nothing happens until you ask.'],
       clickAnchor: true,
+    },
+    {
+      anchor: 'kiwi.pairing',
+      placement: 'left',
+      title: 'Pairing status',
+      text: 'The chip shows whether a claude-code session on this machine is paired — the refresh button probes the socket.',
+      bullets: ['Unpaired Kiwi still holds state; shared frames just fall back to the clipboard.'],
+      reveal: {
+        needed: c => !c.anchorExists('kiwi.pairing'),
+        anchor: 'sidebar.kiwiCta',
+        text: 'Open Kiwi first — the pairing row lives inside the panel.',
+        placement: 'right',
+      },
+    },
+    {
+      anchor: 'kiwi.chat',
+      placement: 'left',
+      title: 'Copy a chat starter',
+      text: 'Copies a one-line opener naming this project — paste it into the paired session to start a Kiwi conversation about it.',
+    },
+    {
+      anchor: 'kiwi.share',
+      placement: 'left',
+      title: 'Ship what you are looking at',
+      text: 'Two targets: the viewer frame or a canvas plot — both land in the same capture envelope.',
+      bullets: ['Falls back to the clipboard if nothing is paired.'],
     },
     {
       anchor: 'kiwi.assistantHelp',
       placement: 'bottom-start',
-      title: 'Claude, if you have it',
-      text: 'This ? explains what Claude can see, suggest and create here — and whether it is set up.',
-      bullets: [
-        'On-demand only: it does nothing until you ask.',
-        'Worth one read; nothing else in this guide.',
-      ],
+      title: 'What Kiwi can see and do',
+      text: 'This ? explains Ask vs Chat, captures, chains, blackboard, limits — read once.',
+      bullets: ['Also reports whether the assist is actually set up.'],
       clickAnchor: true,
       reveal: {
-        // Kiwi is `v-if`'d in App.vue, so its rows do not exist until the panel is open.
         needed: c => !c.anchorExists('kiwi.assistantHelp'),
         anchor: 'sidebar.kiwiCta',
-        text: 'Open Kiwi first — the ? lives at the top of it.',
+        text: 'Open Kiwi first — the ? sits in its header.',
         placement: 'right',
       },
     },
