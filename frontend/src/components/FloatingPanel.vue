@@ -23,7 +23,8 @@ const stack = ref<string[]>([])
 // it again here is a duplicate-identifier error, not a shadow.
 import { reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { panelBounds, clampPanel, maximisedRect } from '../utils/panelBounds'
-import { resizeRect, type Edges } from '../utils/panelResize'
+import type { Edges } from '../utils/panelResize'
+import { useResizeHandles } from '../composables/useResizeHandles'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -102,55 +103,47 @@ function raise() { stack.value = raisePanel(stack.value, props.storageKey) }
 onMounted(() => { clampIntoView(); raise(); window.addEventListener('resize', onViewportResize) })
 onUnmounted(() => {
   window.removeEventListener('resize', onViewportResize)
-  endGesture()
+  endDrag()   // resize gesture cleans itself up in the composable's onBeforeUnmount
   stack.value = dropPanel(stack.value, props.storageKey)
 })
 
-// ── drag (by header) / resize (any of 8 handles) — one pointer-move loop for both ──
-// Resize uses a start-rect + start-pointer snapshot rather than a per-frame offset, so corners/edges
-// that anchor to the OPPOSITE side (N/W) can move x/y AND w/h without drift. Maths + tests live in
-// utils/panelResize.ts.
-let mode: 'drag' | 'resize' | null = null
+// ── drag (by header): one pointer-move loop, kept here because it is specific to this component's
+// header + maximise semantics. The 8-handle resize gesture is shared with the canvas panels via
+// `useResizeHandles` — see `docs/todo/PANEL_RESIZE_PRIMITIVE_PLAN.md`. ──
+let dragging = false
 let dragOffX = 0, dragOffY = 0
-let resizeEdges: Edges = {}
-let startPointerX = 0, startPointerY = 0
-let startRect = { x: 0, y: 0, w: 0, h: 0 }
-
 function onHeaderDown(e: PointerEvent) {
   if ((e.target as HTMLElement).closest('.fp-btn')) return   // header buttons aren't drag handles
   if (st.maximised) return                                   // a maximised window doesn't move
-  mode = 'drag'; dragOffX = e.clientX - st.x; dragOffY = e.clientY - st.y; beginGesture(e)
-}
-function onResizeDown(e: PointerEvent, edges: Edges) {
-  if (st.maximised) return
-  mode = 'resize'
-  resizeEdges = edges
-  startPointerX = e.clientX; startPointerY = e.clientY
-  startRect = { x: st.x, y: st.y, w: st.w, h: st.h }
-  beginGesture(e); e.stopPropagation()
-}
-function beginGesture(e: PointerEvent) {
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', endGesture)
+  dragging = true
+  dragOffX = e.clientX - st.x; dragOffY = e.clientY - st.y
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', endDrag)
   e.preventDefault()
 }
-function onMove(e: PointerEvent) {
-  if (mode === 'drag') {
-    // same bounds as clampIntoView — ONE definition, so the drag floor and the mount/resize floor
-    // cannot drift apart (they did: both were 0, i.e. both under the app header)
-    const { x, y } = clampPanel(e.clientX - dragOffX, e.clientY - dragOffY, bounds())
-    st.x = x; st.y = y
-  } else if (mode === 'resize') {
-    const r = resizeRect(startRect, e.clientX - startPointerX, e.clientY - startPointerY,
-      resizeEdges,
-      { minW: 220, minH: 140, viewportW: window.innerWidth, viewportH: window.innerHeight, bounds: bounds() })
-    st.x = r.x; st.y = r.y; st.w = r.w; st.h = r.h
-  }
+function onDragMove(e: PointerEvent) {
+  if (!dragging) return
+  // same bounds as clampIntoView — ONE definition, so the drag floor and the resize floor cannot
+  // drift apart (they did: both were 0, i.e. both under the app header).
+  const { x, y } = clampPanel(e.clientX - dragOffX, e.clientY - dragOffY, bounds())
+  st.x = x; st.y = y
 }
-function endGesture() {
-  mode = null
-  window.removeEventListener('pointermove', onMove)
-  window.removeEventListener('pointerup', endGesture)
+function endDrag() {
+  dragging = false
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', endDrag)
+}
+// The shared 8-handle resize gesture. `viewportSize` defaults to the window, which is what
+// FloatingPanel wants (a top-level viewport window). Bounds match the drag path so a resize can't
+// tuck the header under the app header — exactly what the inline copy used to guarantee.
+const { onResizeDown: baseResizeDown } = useResizeHandles({
+  getRect: () => ({ x: st.x, y: st.y, w: st.w, h: st.h }),
+  setRect: (r) => { st.x = r.x; st.y = r.y; st.w = r.w; st.h = r.h },   // FloatingPanel always writes the full rect — nothing to snap
+  bounds: () => bounds(),
+})
+function onResizeDown(e: PointerEvent, edges: Edges) {
+  if (st.maximised) return
+  baseResizeDown(e, edges)
 }
 </script>
 
