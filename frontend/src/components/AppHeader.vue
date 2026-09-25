@@ -6,6 +6,7 @@ import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { openGuides } from '../lib/guideOpen'
 import { openIconLegend } from '../lib/iconLegendOpen'
+import { openPreferences } from '../lib/preferencesOpen'
 import { openColorLegend } from '../lib/colorLegendOpen'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
@@ -138,6 +139,19 @@ const statusTip: Record<string, string> = {
       </button>
     </span>
 
+    <!-- Active profile chip (USER_PROFILE_PLAN Phase 4). Shows who is driving so every window
+         answers "who am I logged in as?" at a glance — a bare icon (which used to sit inside the
+         guide/legend row) blended into the icon toggles and the profile name was invisible. Sits
+         beside the version + ws chips because those already answer "what am I looking at" —
+         version, connection, profile. Click opens Preferences → Profiles for switching. -->
+    <button type="button" class="profile-chip"
+            v-tooltip.bottom="`Active profile: ${appCtl.activeProfileName} — click to switch`"
+            aria-label="Active profile — open Preferences"
+            @click="openPreferences">
+      <i class="pi pi-user" />
+      {{ appCtl.activeProfileName }}
+    </button>
+
     <!-- Version chip — the running version as `/api/update/check` reports it (verbatim: a tag like
          `v0.2.4` for stable, `dev @ main 1a2b3c4` for dev). Matches what Settings → Software's
          Version field shows, but visible at a glance so a user answering "what version are you on?"
@@ -203,6 +217,26 @@ const statusTip: Record<string, string> = {
 .help-link:hover { background: var(--cc-surface-2); }
 
 .spacer { flex: 1; }
+
+/* Profile chip — same pill shape as version + ws-badge; distinct from the guide/legend icon
+   toggles (which are `.guides-btn .cc-btn-bare .cc-btn-icon`). Clickable (opens Preferences)
+   so the accent-tinted hover is deliberate. */
+.profile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--cc-fs-sm);
+  font-weight: 500;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--cc-radius-pill);
+  background: var(--cc-surface-2);
+  color: var(--cc-text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+.profile-chip:hover { color: var(--cc-text); border-color: var(--cc-kiwi); }
 
 /* Version chip — muted, monospace-numeric, same pill shape as ws-badge for visual rhyme.
    Deliberately status-only, not a control: the Cecelia brand mark is the release-notes entry. */

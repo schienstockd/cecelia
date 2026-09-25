@@ -1,5 +1,9 @@
 # Phase 1c + 1d — QC signal sources, provenance, conflicts, scope, ground truth
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 Reads `audit_phase1a_catalog.md` (catalog) and `audit_phase1b_history.md` (history) as authoritative — this doc does not restate their findings, only cites them.
 
 ---

@@ -1,5 +1,9 @@
 # Audit prompt: multi-panel capture + cross-referenced discuss/refine
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 ## Context
 
 PR #1063 (bidir) built the capture → discuss → refine loop for the viewer:

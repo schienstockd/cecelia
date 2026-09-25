@@ -1,5 +1,9 @@
 # Self-supervised spatiotemporal denoising as an alternative/complement to motion correction
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 Orthogonal to the motion-correction/registration prompt (`drift-3d-followup-prompt.md`,
 covers #791/#793 and intra-frame/intra-stack registration). That prompt is about
 fixing *misalignment*. This one is about whether a better *denoiser* changes the

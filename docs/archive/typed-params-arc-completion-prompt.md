@@ -1,5 +1,9 @@
 # Completing the ChainNode.params Typing Arc — Cecelia
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 ## Background
 
 An arc of PRs (#906 `cleanupImages`, #909 `editImages`, #910 `tracking`, #913

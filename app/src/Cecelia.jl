@@ -404,6 +404,8 @@ include("project_io.jl")
 # scheduler.jl (uses _kill_proc_tree). The lab log's one-off "Ask Claude" pass was removed 2026-09-24:
 # Kiwi's validated turn supersedes it; interactive sessions still write the lab log via append_lab_log.
 include("ai/agent_runner.jl")
+# Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
+include("config/profile_settings.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("ai/populations.jl")
@@ -421,7 +423,8 @@ export BoardSpecError, expand_board, append_board, plot_specs, plot_spec_index, 
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix
-export kiwi_profile_name, kiwi_profile_dir, set_kiwi_profile!, kiwi_terminal_command
+export active_profile_name, active_profile_dir, set_active_profile!, kiwi_terminal_command
+export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,

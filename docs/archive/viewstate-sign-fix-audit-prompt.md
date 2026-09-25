@@ -1,5 +1,9 @@
 # viewState cx/cy sign-fix — consumer audit
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 ## What changed (shipped as its own commit; see the branch `fix/viewstate-cxcy-sign`)
 
 `frontend/src/utils/viewer/viewState.ts` — the `buildViewState` ↔ `applyViewStateToBrowser`

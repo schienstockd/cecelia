@@ -15,6 +15,10 @@ export interface ProjectRecord {
   path: string
   createdAt: string
   lastOpenedAt: string | null
+  // USER_PROFILE_PLAN Phase 5 — profile names authorised to see this project. Empty/missing =
+  // visible to every profile (Decision 8, safe default for pre-identity projects). Presence in
+  // the list is the grant; there is no owner-vs-collaborator distinction (Decision 5).
+  owners?: string[]
 }
 
 export const useProjectMetaStore = defineStore('projectMeta', () => {
@@ -181,7 +185,35 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     }
   }
 
-  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, renameProject, deleteProject, closeProject }
+  // Claim / unclaim: add or remove the active profile from a project's `owners` list. Both are
+  // idempotent server-side. The local `recent` list is updated in place so the UI reacts without
+  // another round-trip. See USER_PROFILE_PLAN.md Phase 5.
+  async function claimProject(uid: string): Promise<boolean> {
+    return await _writeOwners(uid, '/api/projects/claim')
+  }
+  async function unclaimProject(uid: string): Promise<boolean> {
+    return await _writeOwners(uid, '/api/projects/unclaim')
+  }
+  async function _writeOwners(uid: string, url: string): Promise<boolean> {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid }),
+      })
+      const body = await res.json().catch(() => ({})) as { ok?: boolean; owners?: string[]; error?: string }
+      if (!res.ok || !body.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const owners = body.owners ?? []
+      recent.value = recent.value.map(p => p.uid === uid ? { ...p, owners } : p)
+      if (current.value?.uid === uid) current.value = { ...current.value, owners }
+      return true
+    } catch (e) {
+      log.error(`Ownership update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      return false
+    }
+  }
+
+  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, renameProject, deleteProject, closeProject, claimProject, unclaimProject }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

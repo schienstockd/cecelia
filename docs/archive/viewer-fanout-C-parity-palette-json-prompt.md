@@ -1,5 +1,9 @@
 # Session C — VIEWER_PARITY Phases 1 + 2: palette + track-mode JSON
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 Branch: `feat/viewer-parity-palette-json` (fork from origin/main).
 
 ## Goal

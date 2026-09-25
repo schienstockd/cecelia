@@ -1,26 +1,24 @@
 <!--
-  New Kiwi profile — the create-flow dialog opened from KiwiCockpit's profile row (`+` button).
-  LOGIN_CREDENTIAL_ISOLATION_PLAN P3 (frontend) + P6 (terminal one-liner).
+  New user-profile — the create-flow dialog opened from the launch picker (`+ New profile`) and
+  from the Preferences modal / project-panel entry points (USER_PROFILE_PLAN Phase 6 moved this
+  file out of `components/kiwi/` so it is no longer tied to the Kiwi cockpit's profile row).
+  Underlying primitive: LOGIN_CREDENTIAL_ISOLATION_PLAN P3 (backend) + P6 (terminal one-liner).
 
   Three server calls chained in one modal so the profile is FULLY ready after Close:
-    1. POST /api/kiwi/profiles/create      — mkpath under kiwi-profiles/<name>/
+    1. POST /api/kiwi/profiles/create      — mkpath under kiwi-profiles/<name>/ (URL contract
+                                             preserved; the on-disk name stays kiwi-profiles per
+                                             USER_PROFILE_PLAN Decision 7)
     2. POST /api/kiwi/profiles/select      — set [ai].profile = <name>
     3. POST /api/observer/register         — write the observer MCP entry into the new profile's
-                                             .claude.json (which register_observer_mcp routes to
-                                             via _apply_claude_env). Without step 3, a raw
-                                             `claude` in the profile's shell would have no MCP
-                                             tools → wouldn't pair back to Cecelia. Registration
-                                             is best-effort: a create+select stays even if it
-                                             fails so the profile isn't lost, and the failure is
+                                             .claude.json (routed via _apply_claude_env). Without
+                                             step 3, a raw `claude` in the profile's shell would
+                                             have no MCP tools → wouldn't pair back to Cecelia.
+                                             Best-effort: a create+select stays even if it fails
+                                             so the profile isn't lost, and the failure is
                                              surfaced inline.
 
-  The one-liner Cecelia hands back launches `claude` directly (P6 update: not a shell around it).
-  First-time login: `claude` itself prompts `/login` on first run inside a fresh
-  CLAUDE_CONFIG_DIR.
-
-  Kiwi ratchet (kiwiNamingRatchet.test.ts) bans the literal "Claude" in this directory. The
-  instruction text uses the lower-case CLI form `claude`, which is the actual command and not
-  covered by the ratchet.
+  The one-liner Cecelia hands back launches `claude` directly. First-time login: `claude` itself
+  prompts `/login` on first run inside a fresh CLAUDE_CONFIG_DIR.
 
   Built on the shared BaseModal shell (docs/UI.md → "Modals & dialogs").
 -->
@@ -28,8 +26,9 @@
 import { ref, computed, nextTick, onMounted, useTemplateRef } from 'vue'
 import BaseModal from '../BaseModal.vue'
 import { useCopyFlash } from '../../composables/useCopyFlash'
-import { createKiwiProfile, selectKiwiProfile,
-         isValidKiwiProfileName } from '../../utils/kiwiProfileApi'
+import { createProfile, selectProfile,
+         isValidProfileName } from '../../utils/profileApi'
+// serviceApi.observerApi lives under `../` from the previous location; unchanged now.
 import { observerApi } from '../../utils/serviceApi'
 
 const emit = defineEmits<{
@@ -45,7 +44,7 @@ const created = ref<{ name: string; command: string; mcpReady: boolean } | null>
 const nameInput = useTemplateRef<HTMLInputElement>('nameInput')
 onMounted(() => { void nextTick(() => nameInput.value?.focus()) })
 
-const nameValid = computed(() => isValidKiwiProfileName(name.value.trim()))
+const nameValid = computed(() => isValidProfileName(name.value.trim()))
 const canSubmit = computed(() =>
   !submitting.value && nameValid.value && created.value === null)
 
@@ -57,7 +56,7 @@ async function onSubmit() {
   submitting.value = true
   errorMsg.value = null
   try {
-    const c = await createKiwiProfile(trimmed)
+    const c = await createProfile(trimmed)
     if (!c.ok || !c.terminalCommand || !c.name) {
       errorMsg.value = c.error ?? 'Create failed.'
       return
@@ -65,7 +64,7 @@ async function onSubmit() {
     // Auto-select — the whole point of creating one is to use it. A failed select is not fatal:
     // the profile still exists on disk; the parent picker will show it and the user can select
     // manually. Surface the reason without discarding the terminal command.
-    const s = await selectKiwiProfile(c.name)
+    const s = await selectProfile(c.name)
     if (!s.ok) errorMsg.value = `Created, but couldn't select: ${s.error ?? 'unknown'}`
 
     // Register the observer MCP into the new profile's .claude.json. The backend routes this via
@@ -93,7 +92,7 @@ function onDone() { emit('close') }
 </script>
 
 <template>
-  <BaseModal title="New Kiwi profile" icon="pi-user-plus" width="480px" @close="emit('close')">
+  <BaseModal title="New profile" icon="pi-user-plus" width="480px" @close="emit('close')">
     <div class="kp-body">
       <template v-if="!created">
         <p class="cc-fs-xs cc-muted kp-tip">

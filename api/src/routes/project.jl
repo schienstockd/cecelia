@@ -361,6 +361,65 @@ function api_images_value_name_check(body_bytes::Vector{UInt8})
     200, JSON3.write((; available, missing))
 end
 
+# ── Project ownership (USER_PROFILE_PLAN Phase 5) ─────────────────────────────────
+#
+# `owners: [profile-name, …]` in ccid.json — empty/missing = visible to every profile (the safe
+# default for pre-existing projects, Decision 8). Presence in the list is the grant; there is no
+# owner-vs-collaborator distinction (Decision 5). The load-screen filter in the frontend keys off
+# this field. Migration is a no-op — see the plan for the reasoning.
+
+# POST /api/projects/claim   { uid }  → { ok, owners }
+# Add the active profile to the project's owners. Idempotent — a second claim is a no-op.
+function api_projects_claim(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :uid)
+    isempty(uid) && return 400, JSON3.write((; error="uid required"))
+    proj_dir = joinpath(projects_dir(), uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
+    meta_file = joinpath(proj_dir, "project.json")
+    profile = active_profile_name()
+    try
+        raw = read_ccid_raw(meta_file)
+        # Coerce whatever ccid.json holds into a fresh String[] — a legacy project with no `owners`
+        # field is treated as [] rather than an error.
+        owners = String[]
+        for x in get(raw, "owners", Any[])
+            s = string(x); isempty(s) || s in owners || push!(owners, s)
+        end
+        profile in owners || push!(owners, profile)
+        raw["owners"] = owners
+        write_json_atomic(meta_file, raw)
+        return 200, JSON3.write((; ok=true, uid, owners))
+    catch e
+        return 500, JSON3.write((; error="Failed to update project owners: " * sprint(showerror, e)))
+    end
+end
+
+# POST /api/projects/unclaim  { uid }  → { ok, owners }
+# Remove the active profile from the project's owners. Idempotent. When `owners` empties out the
+# key stays as an empty array (not deleted) so a reader can tell "explicitly cleared" apart from
+# "pre-identity, never owned" — both fall through to visible-to-all, but the write is intentional.
+function api_projects_unclaim(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :uid)
+    isempty(uid) && return 400, JSON3.write((; error="uid required"))
+    proj_dir = joinpath(projects_dir(), uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
+    meta_file = joinpath(proj_dir, "project.json")
+    profile = active_profile_name()
+    try
+        raw = read_ccid_raw(meta_file)
+        owners = String[string(x) for x in get(raw, "owners", Any[]) if !isempty(string(x))]
+        raw["owners"] = filter(o -> o != profile, owners)
+        write_json_atomic(meta_file, raw)
+        return 200, JSON3.write((; ok=true, uid, owners=raw["owners"]))
+    catch e
+        return 500, JSON3.write((; error="Failed to update project owners: " * sprint(showerror, e)))
+    end
+end
+
 function api_projects_rename(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body

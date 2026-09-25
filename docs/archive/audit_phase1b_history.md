@@ -1,5 +1,9 @@
 # Phase 1b — Decisions and evidence, correction functions
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 Scope: `app/src/tasks/cleanupImages/*` (`afCorrect`, `driftCorrect`, `smooth`, `stackAlign`, `flowRegister`, `denoise`, `flip`, `dtype`, and the composite `afDriftCorrect`). Sources: `git log`, merged PR bodies (`gh pr view`), and the parked plan docs under `docs/todo/`. Every claim below is either a direct quote or a citation to a file+line.
 
 `docs/todo/CORRECTION_PLAN.md` is about MANUAL mask/track correction in napari; **out of scope** for this audit (image corrections only).

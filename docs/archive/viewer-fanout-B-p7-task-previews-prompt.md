@@ -1,5 +1,9 @@
 # Session B — P7: task preview overlays
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 > **OUTCOME 2026-08-27 — BUILT.** Delivery is a labels-shaped scratch OME-Zarr next to the real one,
 > served by `/api/viewer/slab?labels=<vn>&preview=1`. Napari path deleted. Region source is the
 > browser viewer store (`useViewerStore().visibleRegion` + `openImage`), body-carried to the API.
