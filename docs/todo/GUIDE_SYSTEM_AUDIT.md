@@ -1,5 +1,7 @@
 # Guide system audit — 2026-09-25
 
+Status: **audit complete** (2026-09-25) · consolidation applied in same PR · adds tracked in [`GUIDE_ADDITIONS_PLAN.md`](GUIDE_ADDITIONS_PLAN.md).
+
 Scope: the shipped in-app guide system (`frontend/src/lib/guides/**`, `stores/guide.ts`, `GuidesDialog.vue`, `GuideBubble.vue`, `guideAnchor.ts`, `guideAwait.ts`, `guides.test.ts`) vs. `docs/todo/GUIDE_SYSTEM_PLAN.md` and current main (5f9526e0). No code changes here — punch list only.
 
 Method: read the plan and every guide module; grepped `data-guide=` in `frontend/src/**/*.vue` (78 attrs) against every `anchor:` literal in guide code (74 refs); walked new stores (`user-profile`, `blackboard`, `kiwi`), new routes in `main.ts`, and recent worktrees for shipped UI the guides pre-date.
