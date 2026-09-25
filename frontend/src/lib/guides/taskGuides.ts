@@ -586,7 +586,7 @@ export const preprocessImagesGuide = moduleTaskGuide({
   id: 'preprocess-images',
   title: 'Preprocess an image',
   group: 'Data',
-  icon: 'pi-crop',
+  icon: 'pi-image',
   summary: 'Crop / project / resample raw images before you segment — writes a new version, keeps the original.',
   route: '/preprocess',
   navLabel: 'Preprocessing',
