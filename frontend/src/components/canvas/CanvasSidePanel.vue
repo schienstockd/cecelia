@@ -61,11 +61,24 @@ const props = withDefaults(defineProps<{
   // DOCKED: render in-flow (a fixed rail, e.g. the Analysis-canvas layout) instead of a draggable
   // floating box — no absolute positioning, no drag, full width of its container.
   docked?: boolean
+  // Manual-apply mode toggle + Apply-chip state (OPT-IN, for canvases with many pops / images where
+  // per-click fetches trickle pops into the plot). See useSummaryData.manualApply — the host owns
+  // the staging state; this shell just surfaces the toggle in the footer and the chip in the header.
+  // `manualApply: null` marks the tri-state "the host doesn't offer this" — same anti-cast idiom as
+  // `CollapsibleSection.open`; an optional `boolean` gets Vue-cast to `false`, so the toggle would
+  // always render on the vault / gating manager.
+  manualApply?: boolean | null
+  hasStaged?: boolean
+  stagedChangeCount?: number
 }>(), { title: 'Populations', icon: 'pi-sitemap', count: undefined, width: 300, scope: undefined,
-        vis: undefined, optionsSections: undefined, readout: emptyReadout, docked: false })
+        vis: undefined, optionsSections: undefined, readout: emptyReadout, docked: false,
+        manualApply: null, hasStaged: false, stagedChangeCount: 0 })
 const emit = defineEmits<{
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
+  'update:manualApply': [boolean]
+  'apply:staged': []
+  'discard:staged': []
 }>()
 
 const collapsed = ref(false)
@@ -108,6 +121,18 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
       </button>
     </div>
 
+    <!-- Apply chip: renders in manual-apply mode when the staged selection differs from what the
+         plots are showing. Two buttons — Apply commits, Discard reverts stagedSel to gSel. -->
+    <div v-if="manualApply && hasStaged" v-show="!collapsed" class="csp-apply">
+      <span class="csp-apply-note cc-fs-2xs cc-muted">{{ stagedChangeCount }} pending</span>
+      <button class="csp-apply-btn cc-btn cc-btn-primary cc-btn-dense"
+              v-tooltip.top="'Apply staged selection to the plots'"
+              @click="emit('apply:staged')">Apply</button>
+      <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+              v-tooltip.top="'Remove staged changes'"
+              @click="emit('discard:staged')"><i class="pi pi-times" /></button>
+    </div>
+
     <div v-show="!collapsed" class="csp-body"><slot /></div>
 
     <!-- host-specific extra controls (e.g. the gating manager's gate / viewer options) -->
@@ -121,14 +146,24 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
                    @update:vis="emit('update:vis', $event)" />
     </div>
 
-    <!-- footer: settings toggle (left, when a `vis` bag is passed) + scope chip (right, when a `scope`
-         is passed). Renders when either half is meaningful — hosts without either (rare) get no footer. -->
+    <!-- footer: settings toggle + manual-apply toggle (left, when a `vis` bag is passed) + scope chip
+         (right, when a `scope` is passed). Renders when any half is meaningful — hosts without any
+         (rare) get no footer. Manual-apply is only offered when the host opts in with `manualApply`
+         defined (undefined means "the host doesn't support staging" — hide the toggle entirely). -->
     <div v-show="!collapsed" v-if="scope || vis" class="csp-footer">
       <button v-if="vis" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
               :class="{ 'cc-btn-on cc-btn-on-tint': plotOptionsVisible }"
               v-tooltip.top="plotOptionsVisible ? 'Hide plot settings' : 'Show plot settings'"
               @click="plotOptionsVisible = !plotOptionsVisible">
         <i class="pi pi-sliders-h" />
+      </button>
+      <button v-if="manualApply !== null" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
+              :class="{ 'cc-btn-on cc-btn-on-tint': manualApply }"
+              v-tooltip.top="manualApply
+                ? 'Manual apply — click Apply to update plots'
+                : 'Live — plots update on every pop toggle'"
+              @click="emit('update:manualApply', !manualApply)">
+        <i class="pi pi-clock" />
       </button>
       <ChipSelect v-if="scope" class="csp-seg" variant="segmented" :options="SCOPE_OPTIONS"
                   :model-value="scope" aria-label="Scope"
@@ -174,6 +209,13 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 /* the collapse button is `cc-btn cc-btn-bare cc-btn-icon` and nothing more — its old `.pm-icon:hover`
    rule was byte-identical to `.cc-btn-bare:hover`, so it went rather than got renamed. */
 .csp-opts { border-top: 1px solid var(--cc-border); flex-shrink: 0; }
-.csp-footer { display: flex; align-items: center; padding: 6px 8px; flex-shrink: 0; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
+.csp-footer { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
 .csp-seg { margin-left: auto; }
+/* pending-changes chip: sits directly under the header, above the pop list, so it's visible while
+   the user ticks eyes. Bordered so it separates from the list rows. */
+.csp-apply { display: flex; align-items: center; gap: 6px; padding: 5px 8px; flex-shrink: 0;
+             border-bottom: 1px solid var(--cc-border);
+             background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
+.csp-apply-note { flex: 1; }
+.csp-apply-btn { min-width: 4rem; }
 </style>
