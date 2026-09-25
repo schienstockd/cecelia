@@ -298,3 +298,7 @@ include(joinpath(@__DIR__, "suite", "plots_registry.jl"))
 include(joinpath(@__DIR__, "suite", "kiwi_refs.jl"))
 include(joinpath(@__DIR__, "suite", "kiwi_turn.jl"))    # Phase 3: schema, seen-this-turn, validate + re-ask (scripted fake engine)
 include(joinpath(@__DIR__, "suite", "kiwi_profile.jl")) # LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6: profile roster + terminal launcher
+
+# ── Project ownership (USER_PROFILE_PLAN Phase 5) ────────────────
+# Create-time stamps active profile as owner + claim/unclaim round-trip.
+include(joinpath(@__DIR__, "suite", "project_ownership.jl"))
