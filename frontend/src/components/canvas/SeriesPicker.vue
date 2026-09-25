@@ -42,11 +42,21 @@ const props = defineProps<{
   // SAY so). A list that behaves like radio buttons while looking like checkboxes is a control that
   // lies about itself — the note is the cheapest way to stop that being a surprise.
   single?: boolean
+  // Manual-apply (opt-in): when on, pop toggles stage in the host and only apply on the Apply chip.
+  // See useSummaryData.manualApply — the escape hatch for a canvas with many pops / images where a
+  // per-click fetch trickles pops into the plot. `null` = host doesn't offer staging; anything else
+  // (true / false) forwards the toggle state to CanvasSidePanel. Same tri-state as CollapsibleSection.
+  manualApply?: boolean | null
+  hasStaged?: boolean
+  stagedChangeCount?: number
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
+  'update:manualApply': [boolean]
+  'apply:staged': []
+  'discard:staged': []
 }>()
 
 const total = computed(() => props.groups.reduce((n, g) => n + g.populations.length, 0))
@@ -59,7 +69,11 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
   <CanvasSidePanel :count="total" :scope="scope" :vis="vis" :docked="docked" :readout="readout"
                         v-bind="{ ...(title ? { title } : {}), ...(icon ? { icon } : {}) }"
                         :options-sections="['layout', 'points', 'colours', 'labels', 'stats']"
-                        @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
+                        :manual-apply="manualApply" :has-staged="hasStaged"
+                        :staged-change-count="stagedChangeCount"
+                        @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)"
+                        @update:manualApply="emit('update:manualApply', $event)"
+                        @apply:staged="emit('apply:staged')" @discard:staged="emit('discard:staged')">
     <div v-if="selectionUnused" class="pick-empty cc-muted">
       {{ unusedNote ?? "This plot's populations come from its run." }}
     </div>

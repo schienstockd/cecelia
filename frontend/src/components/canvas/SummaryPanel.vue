@@ -391,19 +391,33 @@ const error = ref('')
 // "cycle". The short window coalesces a burst into one request, only one runs at a time, and the
 // running call's `isCurrent()` goes false the moment a newer one starts, so an older response is
 // discarded rather than written over a newer one. (Was a hand-rolled timer + sequence token.)
-// 60 ms was tight enough that CLICK bursts (toggling several population rows at typical ~200 ms
-// cadence) each fell outside the window and fired their own fetch — because runs serialise, the
-// heatmap then filled in one population at a time as each response landed. 150 ms collapses
-// realistic multi-click bursts into ONE fetch with the final selection; a single deliberate click
-// still feels instant. Not a maxWait scrub — clicks are discrete events, not a sustained drag.
+//
+// `wait` stays at the standard ~80 ms (docs/UI.md → *Continuous controls*) so a single deliberate
+// change fires promptly. Discrete population TOGGLES at ~200 ms cadence don't batch at that window
+// — each fetch completes and applies before the next click, so on a heatmap the pops used to
+// TRICKLE in one by one. Rather than tuning `wait` up (would make single clicks feel laggy),
+// `onState` drives the loading flag directly and a small STICKY window keeps it true through the
+// gap between fetches. Result: the spinner (already ovelaying via PlotSpinner) covers the
+// intermediate re-renders during a burst, so the user sees one state change instead of five.
+const STICKY_MS = 200                                // just longer than a natural click cadence
+let stickyTimer: ReturnType<typeof setTimeout> | null = null
 const fetchRun = debouncedLatest<void>(
   (_arg, isCurrent) => fetchData(isCurrent),
-  { wait: 150, onError: e => {
+  { wait: 80,
+    onState: s => {
+      if (stickyTimer !== null) { clearTimeout(stickyTimer); stickyTimer = null }
+      if (s === 'idle') stickyTimer = setTimeout(() => { loading.value = false; stickyTimer = null }, STICKY_MS)
+      else loading.value = true
+    },
+    onError: e => {
       error.value = e instanceof Error ? e.message : String(e); result.value = null; loading.value = false
     } },
 )
 const scheduleFetch = () => fetchRun.schedule()
-onBeforeUnmount(() => fetchRun.cancel())
+onBeforeUnmount(() => {
+  fetchRun.cancel()
+  if (stickyTimer !== null) { clearTimeout(stickyTimer); stickyTimer = null }
+})
 
 // applicable chart types = the spec's allowed set ∩ the charts valid for the detected measure type
 // (docs/PLOTS.md §2). Before the first response (no measureType) just show the spec's set.
@@ -447,7 +461,9 @@ async function fetchData(isCurrent: () => boolean) {
   // until loadObsCols reports the current (imageUid, valueName)'s columns; the `colsReady` fetch-watch
   // re-fires this, by which point the measure-reset watch has moved `measure` onto a valid option.
   if (props.spec.dataSource.measuresFromData && !colsReady.value) return
-  loading.value = true; error.value = ''
+  // `loading` is driven by the scheduler's onState (with a small sticky window), not per-fetch —
+  // toggling it here would flash the spinner off between two fast fetches during a click burst.
+  error.value = ''
 
   // matrix/heatmap pools the whole frame into ONE grid, so it's a single request (not the per-popType
   // series merge below). All targets go under the first target's popType — behaviour heatmaps are
@@ -484,7 +500,7 @@ async function fetchData(isCurrent: () => boolean) {
     } catch (e) {
       if (!isCurrent()) return
       error.value = e instanceof Error ? e.message : String(e); result.value = null
-    } finally { if (isCurrent()) loading.value = false }
+    }
     return
   }
 
@@ -536,7 +552,7 @@ async function fetchData(isCurrent: () => boolean) {
   } catch (e) {
     if (!isCurrent()) return
     error.value = e instanceof Error ? e.message : String(e); result.value = null
-  } finally { if (isCurrent()) loading.value = false }
+  }
 }
 
 // errorMetric is render-only (the bar response carries sd/sem/ci95) → not a fetch trigger.

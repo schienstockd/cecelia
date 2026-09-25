@@ -160,6 +160,7 @@ watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
 const {
   specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
+  manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
 } = useSummaryData({
   projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module,
@@ -288,7 +289,12 @@ function onDrop(i: number) { if (dragFrom.i >= 0) layout.swap(props.canvasKey, d
 // ── global/local scope (drives eye-selection + vis), targeting the ACTIVE slot when local ─────────
 const panelSel = (c: SlotContent) => scope.value === 'global' ? gSel.value : (st(c).sel ?? [])
 const panelVis = (c: SlotContent) => scope.value === 'global' ? gVis.value : (st(c).vis ?? DEFAULT_VIS)
-const activeSel = computed(() => scope.value === 'global' ? gSel.value : (activeContent.value ? st(activeContent.value).sel : []))
+// The picker eyes reflect the STAGED selection in manual-apply mode (so a click updates the eye
+// immediately while the plots stay on the committed gSel until Apply). Local scope isn't staged —
+// per-panel selection doesn't have the click-burst pattern.
+const pickerSel = computed(() => scope.value === 'global'
+  ? (manualApply.value ? stagedSel.value : gSel.value)
+  : (activeContent.value ? st(activeContent.value).sel : []))
 // fall back to defaultVis() when the active slot has no local vis yet (matches ClusterPlots) — else the
 // pop manager's `vis` is undefined and the whole PlotOptions styling block is hidden (the "cluster-tracks
 // manager has no plot params" bug).
@@ -306,8 +312,12 @@ const activeSinglePop = computed(() => {
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
   const next = (cur: string[]) => toggleSelected(cur, k, { single: activeSinglePop.value })
-  if (scope.value === 'global') gSel.value = next(gSel.value)
-  else if (activeContent.value) st(activeContent.value).sel = next(st(activeContent.value).sel ?? [])
+  if (scope.value === 'global') {
+    // manual-apply: stage the toggle; the plots stay on gSel until Apply is pressed. Escape hatch
+    // for a heavily-populated board — useSummaryData.manualApply covers the rationale.
+    if (manualApply.value) stagedSel.value = next(stagedSel.value)
+    else gSel.value = next(gSel.value)
+  } else if (activeContent.value) st(activeContent.value).sel = next(st(activeContent.value).sel ?? [])
 }
 // the policy can change under an existing selection when the active SLOT changes — narrow rather than
 // let a single-population plot draw one of several and say nothing
@@ -840,11 +850,15 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
                              :suffix="clustSuffix" :vis="activeVis"
                              @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
-          <SeriesPicker v-else :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
+          <SeriesPicker v-else :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"
                         :single="activeSinglePop"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed || activeRail === 'none'"
                         :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"
-                        @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
+                        :manual-apply="manualApply" :has-staged="hasStaged"
+                        :staged-change-count="stagedChangeCount"
+                        @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis"
+                        @update:manualApply="manualApply = $event"
+                        @apply:staged="applyStaged" @discard:staged="discardStaged" />
         </div>
       </div>
     </template>
