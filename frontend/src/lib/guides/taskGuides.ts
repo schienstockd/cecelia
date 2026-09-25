@@ -577,3 +577,134 @@ export const behaviourStatesGuide = moduleTaskGuide({
     },
   ],
 })
+
+// ── Preprocess (crop today) — the module page users find between import and cleanup ──────────────
+// Crop is what ships today under `editImages`; MIP/bin/resample are peers in the same module and
+// will show up in the same dropdown as they land. Deliberately not covered by fixMetadata: metadata
+// edits are in-place, this one writes a NEW image version.
+export const preprocessImagesGuide = moduleTaskGuide({
+  id: 'preprocess-images',
+  title: 'Preprocess an image',
+  group: 'Data',
+  icon: 'pi-crop',
+  summary: 'Crop / project / resample raw images before you segment — writes a new version, keeps the original.',
+  route: '/preprocess',
+  navLabel: 'Preprocessing',
+  taskKey: 'cropImage',
+  funName: 'editImages.cropImage',
+  funLabel: 'Crop image',
+  selectionModule: 'preprocess',
+  waitLabel: 'Cropping',
+  withPreview: true,
+  prereqs: [PREREQ.projectOpen, PREREQ.imageImported],
+  intro: 'Preprocess sits between import and cleanup — trim the region before every downstream step reads the full one.',
+  funHint: [
+    'Crop is what this guide walks; MIP, bin, resample and dtype sit beside it in the same dropdown.',
+    'Every preprocess writes a NEW image version — nothing overwrites your import.',
+  ],
+  params: [
+    'Source image — which version of this image to crop; defaults to the active one.',
+    'Crop area — draw a box on the preview; z/t unset = keep the whole axis.',
+  ],
+  after: [
+    {
+      anchor: 'images.table',
+      route: '/preprocess',
+      placement: 'top-start',
+      title: 'It made a new version',
+      text: 'The row picks up an extra version — the info icon lists every version this image has.',
+      bullets: [
+        'Everything downstream reads the ACTIVE version.',
+        'Nothing is destroyed — flip back by making the original active.',
+      ],
+    },
+  ],
+})
+
+// ── Cluster regions — spatial neighbourhoods, not cells. SET-SCOPE so IDs are cross-image ────────
+// Same engine as `cluster-cells` (Leiden + UMAP + popmanager) but the rows are neighbourhoods.
+// Ends with the shared `clusterToPops` tail — a numbered region becomes a named population.
+export const clusterRegionsGuide = moduleTaskGuide({
+  id: 'cluster-regions',
+  title: 'Cluster spatial regions',
+  group: 'Populations',
+  icon: 'pi-map-marker',
+  summary: 'Group spatial neighbourhoods — what surrounds each cell — into named regions you can plot and gate.',
+  route: '/regions',
+  navLabel: 'Cluster regions',
+  taskKey: 'clusterRegions',
+  funName: 'clustRegions.cluster',
+  funLabel: 'Cluster regions',
+  selectionModule: 'clustRegions',
+  waitLabel: 'Clustering regions',
+  prereqs: [PREREQ.projectOpen, PREREQ.segmented],
+  intro: 'Region clustering groups NEIGHBOURHOODS ("what surrounds each cell"), not the cells themselves.',
+  funHint: [
+    'Needs a Neighbour graph — run Spatial → Neighbour graph first if you have not.',
+    'SET-SCOPE — every selected image is clustered jointly, so region IDs are comparable across them.',
+  ],
+  selectHint: ['Select every image you want clustered TOGETHER — the composition vectors pool across them.'],
+  params: [
+    'Neighbour graph — the graph a Spatial run produced; pick one to cluster over.',
+    'Population basis — the populations whose mix defines each neighbourhood\'s composition vector.',
+    'Suffix — output name for this run; you pick it again when reading the regions downstream.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/regions',
+      placement: 'top-start',
+      title: 'Read the regions',
+      text: 'UMAP shows how the neighbourhoods separate; the heatmap says what each region is composed of.',
+      bullets: [
+        'Bright rows on the heatmap = the populations that define that region.',
+        'Rename a region once its composition is clear — "T-cell rich", "vessel edge".',
+      ],
+    },
+    ...clusterToPops('/regions', 'region'),
+  ],
+})
+
+// ── Spatial analysis — interaction matrix + neighbour stats. IMAGE-scope ─────────────────────────
+// Multiple tasks live in this module (neighbour graph, aggregates, contacts, interaction matrix);
+// this guide teaches the interaction matrix because that is the readout users open the page for.
+// The prerequisite Neighbour graph is a separate run — called out in funHint rather than as a
+// prereq, since a matching graph exists on disk or it doesn't (no local state to check).
+export const spatialAnalysisGuide = moduleTaskGuide({
+  id: 'spatial-analysis',
+  title: 'Score spatial interactions',
+  group: 'Explore',
+  icon: 'pi-share-alt',
+  summary: 'Who is near whom, and how often — the interaction matrix and per-image contact stats.',
+  route: '/spatial',
+  navLabel: 'Spatial',
+  taskKey: 'neighbourStats',
+  funName: 'spatialAnalysis.neighbourStats',
+  funLabel: 'Interaction matrix',
+  selectionModule: 'spatialAnalysis',
+  waitLabel: 'Scoring interactions',
+  prereqs: [PREREQ.projectOpen, PREREQ.segmented],
+  intro: 'Reads relationships between populations on the image — who is near whom, and how often.',
+  funHint: [
+    'Neighbour graph runs first — this task LOADS it, does not build it.',
+    'Interaction matrix, Aggregates and Contacts all live in this dropdown; this guide teaches the matrix.',
+  ],
+  params: [
+    'Neighbour graph — the graph a Neighbour-graph run produced; pick the one you want scored.',
+    'Population basis — the pairs to score interactions between; at least two.',
+    'Name — output name for this run; a later plot picks it up by this name.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/spatial',
+      placement: 'top-start',
+      title: 'Read the matrix',
+      text: 'Log-odds heatmap: bright cells co-locate more than chance; dark ones avoid.',
+      bullets: [
+        'The permutation test tells you if a pattern is a real signal or the same cell types rearranged.',
+        'Contacts and aggregates plot the same underlying graph in different shapes — worth a look next.',
+      ],
+    },
+  ],
+})

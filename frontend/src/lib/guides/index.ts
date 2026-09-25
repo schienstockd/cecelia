@@ -19,6 +19,7 @@ import {
   driftCorrectGuide, segmentGuide, trackCellsGuide,
   trainFlowModelGuide, trainDenoiseModelGuide, segmentByMotionGuide,
   clusterCellsGuide, clusterTracksGuide, behaviourStatesGuide,
+  preprocessImagesGuide, clusterRegionsGuide, spatialAnalysisGuide,
 } from './taskGuides'
 import { gatePopulationsGuide } from './gatePopulations'
 import { notebooksGuide } from './notebooks'
@@ -38,6 +39,7 @@ export const GUIDES: GuideDef[] = [
   // Data — get images in and ready
   importImagesGuide,
   fixMetadataGuide,
+  preprocessImagesGuide,
   driftCorrectGuide,
   segmentGuide,
   trainDenoiseModelGuide,
@@ -48,8 +50,10 @@ export const GUIDES: GuideDef[] = [
   trackCellsGuide,
   clusterCellsGuide,
   clusterTracksGuide,
+  clusterRegionsGuide,
   // Explore — use those populations
   behaviourStatesGuide,
+  spatialAnalysisGuide,
   // Analysis — free-form surfaces
   plotsGuide,
   recordMovieGuide,
