@@ -4,8 +4,9 @@ Status: **planning** (drafted 2026-09-25). Punch list from [`GUIDE_SYSTEM_AUDIT.
 Prior art: [`GUIDE_SYSTEM_PLAN.md`](GUIDE_SYSTEM_PLAN.md) (D1–D11 still binding).
 
 Goal: nine new guides + one tour touch-up, distributed across five phases so each phase is
-independently reviewable and ship-able. Copy is authored by Dominik; this doc plans the plumbing,
-the anchors, and where each guide sits in the catalogue.
+independently reviewable and ship-able. Draft copy inline per phase — Dominik redlines before the
+PR. Tone: matches existing guides (`taskGuides.ts`, `singleTopicGuides.ts`) — one short sentence
+per step, 1–3 punchy bullets, em-dash punch, no fluff.
 
 ## Locked decisions
 
@@ -47,6 +48,17 @@ Two guides, both in the `Start` group, both prereqless-or-nearly-so:
 **New prereq**: `profilesMulti` — true when `stores/userProfile.list.length > 1`. Guide reads
 amber-not-hidden on single-user installs (so it's still findable via the compass).
 
+**Draft copy** — `use-a-user-profile`:
+
+1. `profilePicker.list` · *right* — **Who is using this box** — Pick a profile at launch — each one has its own settings, projects, Kiwi identity. · *One profile per person, not per experiment. · Same box, different people = different profiles.*
+2. `profilePicker.new` · *left* — **Add a profile** — New profile = fresh settings and an empty project list. · *Nothing is shared across profiles by default. · Delete a profile from Settings, not here.*
+3. `header.profileChip` · *bottom* — **Which one you are now** — The chip in the header shows the active profile — click to switch. · *Switching mid-session reloads the app.*
+
+**Draft copy** — `use-a-view-profile`:
+
+1. `profilePicker.viewProfile` · *left* — **A view profile hides pages** — Pick a curated menu — the sidebar shows only what that view enables. · *This is decluttering, not access control — every page is still reachable.*
+2. `viewProfile.editor` · *right* — **Edit or make your own** — Tick which pages a view profile exposes and in what order. · *Great for handing a colleague a "just the segmentation bits" cecelia.*
+
 ### P2 — Kiwi guide, replacing lab-log-and-claude
 
 One rewrite, one file. Rename `labLogGuide` → `kiwiGuide` inside `singleTopicGuides.ts` and
@@ -62,6 +74,15 @@ Steps (approx): sidebar lab-log CTA → sidebar kiwi CTA → pairing row → cha
 
 **Test update**: `guides.test.ts` currently pins guide ids as a set. Update the id.
 
+**Draft copy** — `assist-with-kiwi`:
+
+1. `sidebar.labLogCta` · *right* — **Lab log** — A per-project, append-only record of what was done — cecelia adds a digest when a run finishes. · *Floating panel, reachable from any page.*
+2. `sidebar.kiwiCta` · *right* — **Meet Kiwi** — Kiwi is the assistant cockpit — pair a session, chat, and share context in. · *On-demand only; nothing happens until you ask.*
+3. `kiwi.pairing` · *left* — **Pair a session** — Pair Kiwi with a running claude-code session on your machine — that is who does the work. · *Unpaired Kiwi still remembers state; it just cannot act.*
+4. `kiwi.chat` · *left* — **Talk to Kiwi** — Ask a question here — Kiwi routes to the paired session and streams the reply back. · *A Kiwi turn is a captured record — it lands in the blackboard automatically.*
+5. `kiwi.share` · *left* — **Share what you are looking at** — Ship your current selection or plot into the chat so Kiwi has the same view you do. · *This is how you avoid re-typing "the second cluster on the UMAP".*
+6. `kiwi.assistantHelp` · *bottom-start* — **What Claude can see and do here** — This `?` explains the full assist surface — read it once. · *Also tells you whether the assist is actually set up.*
+
 ### P3 — Blackboard guide
 
 One bespoke `GuideDef` in `singleTopicGuides.ts`. `/blackboard` has its own shape (a shared
@@ -74,6 +95,14 @@ Steps (approx): nav `/blackboard` → new entry → attach a capture → revise 
 **Anchors to add** (~5, all in `BlackboardModule.vue`):
 `blackboard.new`, `blackboard.entry`, `blackboard.attachCapture`, `blackboard.revise`,
 `blackboard.outcome`.
+
+**Draft copy** — `use-the-blackboard`:
+
+1. `nav:/blackboard` · *right* — **Blackboard** — Shared markdown between you and the assist — every Kiwi turn lands here. · *This is where a conclusion becomes durable — not chat scrollback.*
+2. `blackboard.new` · *left* — **New entry** — Start an entry when you begin a thought — attach captures and plots to it as they land. · *Entries are per project; open a project first.*
+3. `blackboard.attachCapture` · *left* — **Attach a capture** — Anything you captured (a plot, a viewer snapshot, a table) can drop into an entry. · *Captures are indexed — Kiwi can cite them back at you later.*
+4. `blackboard.revise` · *left* — **Revise, don't overwrite** — Every revision is kept, so you can see what changed and when. · *Kiwi revisions are marked as such.*
+5. `blackboard.outcome` · *left* — **Mark it done** — Set an outcome when the question is answered — that closes the entry and pins the conclusion. · *An outcome is the "what did we learn" — it is what carries into the next project.*
 
 ### P4 — Module-page trivia (four `moduleTaskGuide` calls)
 
@@ -94,6 +123,32 @@ All four are one call each in `taskGuides.ts`, no bespoke shape needed:
 shared `ModuleLayout`. Confirm each has `nav:/<route>`, `TaskRunner` anchors, and a `plotsSection`
 before writing the guide; add any missing on the same PR.
 
+**Draft copy** — the four `moduleTaskGuide` prose blocks (builder fills the standard 5 steps —
+these are the guide-specific fields):
+
+- **`preprocess-images`** — group `Data`, funName `preprocess.crop` (or the composite when
+  MIP/bin/resample land).
+  *intro*: Preprocess sits between import and cleanup — crop, project, resample, whatever the raw file needs before you segment.
+  *params*: Crop bounds — pull in only the region you care about, everything else follows. · Reference image — copies bounds from a sibling to do a set in one pass.
+  *after* (plotsSection): **Check what came out** — Compare the cropped version against the original in the viewer — this is destructive, no going back per version. · *Preprocessing writes a new version like the other cleanup steps.*
+
+- **`phenotype-cells`** — group `Populations` (recommend), funName `phenotype.classify`.
+  *intro*: Phenotyping is the gated version of clustering — you know the populations already, so pin cells to them from measures.
+  *params*: Populations — the gated pops that define the phenotype vocabulary. · Confidence threshold — cells below it stay unlabelled rather than get a wrong pin.
+  *after* (plotsSection): **Read the assignments** — The panel shows how many cells landed in each phenotype, and how many were left unlabelled. · *A big unlabelled tail means the gates do not cover what is on the slide.*
+
+- **`cluster-regions`** — group `Populations`, funName `clustRegions.cluster`. Uses the shared
+  `clusterToPops` helper for the tail.
+  *intro*: Region clustering groups spatial neighbourhoods, not cells — the output is regions you name and plot on the image.
+  *params*: Cluster on — spatial features (neighbour counts, distances). · Resolution — higher = smaller, more numerous regions.
+  *after* (plotsSection then `...clusterToPops('/regions', 'region')`): **UMAP + heatmap** — Same read as cell clustering — UMAP shows the separation, heatmap says what each region is composed of.
+
+- **`spatial-analysis`** — group `Explore`, funName `spatial.interactionMatrix` (or the composite
+  when others land).
+  *intro*: Spatial analysis reads relationships between populations on the image — who is near whom, and how often.
+  *params*: Populations — the pairs to score interactions between. · Contact radius (µm) — what counts as "near"; scale by cell size.
+  *after* (plotsSection): **The matrix and contacts** — Read the interaction matrix like a heatmap — bright cells are population pairs that co-locate more than chance. · *Contact plots show the same signal per image, not pooled.*
+
 ### P5 — Correction cockpit + tour cleanup
 
 One short bespoke `GuideDef` in `singleTopicGuides.ts` (id `correct-a-mask`, group
@@ -105,6 +160,16 @@ palette → apply. 4 steps.
 
 **Anchors to add** (~3, all in the correction cockpit component):
 `correction.modePicker`, `correction.toolPalette`, `correction.apply`.
+
+**Draft copy** — `correct-a-mask`:
+
+1. `sidebar.correctionCta` · *right* — **Correction cockpit** — When segmentation gets a cell wrong, fix it here — merge, split, redraw, delete. · *Floating panel — it sits over the viewer so you keep looking at the image.*
+2. `correction.modePicker` · *left* — **Pick a mode** — Each mode changes what your click does — merge two, split one, redraw an outline. · *The mode name matches the tool below it.*
+3. `correction.toolPalette` · *left* — **Tool palette** — Draw, click, or lasso — depends on the mode. · *Undo works per correction, not per stroke.*
+4. `correction.apply` · *left* — **Apply and move on** — Corrections write to the label set as a new version — the original run is preserved. · *Downstream tasks read the ACTIVE version, like everywhere else.*
+
+**Tour touch-up**: drop `tour.ts:98-103`'s "*a walkthrough for this is still being written*" —
+the walkthrough exists now.
 
 ## Explicitly out of scope
 
