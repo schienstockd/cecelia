@@ -29,6 +29,7 @@ import { animationGuide } from './animation'
 import {
   userProfileGuide, viewProfileGuide,
   fixMetadataGuide, runChainGuide, useTheBlackboardGuide, kiwiGuide,
+  correctAMaskGuide,
 } from './singleTopicGuides'
 
 export const GUIDES: GuideDef[] = [
@@ -51,6 +52,7 @@ export const GUIDES: GuideDef[] = [
   clusterCellsGuide,
   clusterTracksGuide,
   clusterRegionsGuide,
+  correctAMaskGuide,
   // Explore — use those populations
   behaviourStatesGuide,
   spatialAnalysisGuide,

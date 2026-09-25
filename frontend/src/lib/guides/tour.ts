@@ -99,7 +99,6 @@ export const tourGuide: GuideDef = {
       placement: 'right',
       title: 'The correction cockpit',
       text: 'Join, split or remove tracks, and edit labels — the hand-tools for fixing what an automated run got wrong.',
-      bullets: ['A walkthrough for this is still being written.'],
     },
     {
       anchor: 'sidebar.labLogCta',

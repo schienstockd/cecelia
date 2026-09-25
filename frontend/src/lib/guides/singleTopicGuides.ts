@@ -16,6 +16,9 @@
 //                         list / new / edit + version / outcome tag / send to Kiwi. Captures arrive
 //                         INBOUND from Kiwi (no attach-a-capture button), so the guide teaches the
 //                         outbound counterpart (addToKiwi) instead.
+//   correct-a-mask      — Populations group. The correction cockpit floating panel — mode picker,
+//                         per-mode tools, picked-things chip strip, and Apply. Drops the tour's WIP
+//                         caveat now that the walkthrough exists.
 //   assist-with-kiwi    — Analysis group. Walks the four Kiwi cockpit rows (help / pairing / chat /
 //                         share) plus the lab-log sibling that most users find first. Replaced the
 //                         earlier `lab-log-and-claude` two-step pointer in 2026-09 — see D13.
@@ -333,6 +336,71 @@ export const useTheBlackboardGuide: GuideDef = {
       title: 'Send to Kiwi',
       text: 'Feed this entry (or a specific version) into a Kiwi turn — appears as context alongside your prompt.',
       bullets: ['Ships the version you are viewing.'],
+    },
+  ],
+}
+
+// ── Correction cockpit — the hand-tools panel for fixing what a run got wrong ────────────────────
+// The cockpit is a floating panel over the viewer, so the guide opens it via the sidebar CTA (which
+// already had an anchor from the tour) and then walks the four anchor targets inside. The chip
+// strip only renders once something is picked — reveal covers that. The panel also needs an image
+// open in the viewer; the "Open an image in the viewer to begin" empty state is inside the panel
+// and covers that.
+export const correctAMaskGuide: GuideDef = {
+  id: 'correct-a-mask',
+  title: 'Correct a mask or a track',
+  group: 'Populations',
+  icon: 'pi-wrench',
+  summary: 'The hand-tools for fixing what an automated run got wrong — merge, split, redraw, delete.',
+  prereqs: [PREREQ.projectOpen, PREREQ.segmented],
+
+  steps: [
+    {
+      anchor: 'sidebar.correctionCta',
+      placement: 'right',
+      title: 'The correction cockpit',
+      text: 'When segmentation gets a cell wrong, fix it here — a floating panel that sits over the viewer so you keep looking at the image.',
+      clickAnchor: true,
+    },
+    {
+      anchor: 'correction.modePicker',
+      placement: 'bottom',
+      title: 'Pick a mode',
+      text: 'Tracks / Labels / Review — each drives its own queue and toolbar.',
+      bullets: ['Review pages over the picked labels one at a time.'],
+      reveal: {
+        needed: c => !c.anchorExists('correction.modePicker'),
+        anchor: 'sidebar.correctionCta',
+        text: 'Open the correction cockpit first — the mode chips are inside the panel.',
+        placement: 'right',
+      },
+    },
+    {
+      anchor: 'correction.tools',
+      placement: 'left',
+      title: 'Toolbar for this mode',
+      text: 'Each verb QUEUES an edit — nothing is applied until you press Apply below.',
+      bullets: ['Undo removes the last queued edit; Clear drops all of them.'],
+    },
+    {
+      anchor: 'correction.selection',
+      placement: 'left',
+      title: 'What is picked',
+      text: 'Chips show the tracks or labels the toolbar acts on — click a chip to drop it.',
+      bullets: ['No strip = nothing picked yet; the summary line below still names the state.'],
+      reveal: {
+        needed: c => !c.anchorExists('correction.selection'),
+        anchor: 'correction.tools',
+        text: 'Pick a track or label first — click one in the viewer, or use a verb that seeds a selection.',
+        placement: 'left',
+      },
+    },
+    {
+      anchor: 'correction.apply',
+      placement: 'left',
+      title: 'Apply — it becomes a new version',
+      text: 'Applying writes a new label-set version — the original run is preserved.',
+      bullets: ['Downstream tasks read the ACTIVE version, like everywhere else.'],
     },
   ],
 }
