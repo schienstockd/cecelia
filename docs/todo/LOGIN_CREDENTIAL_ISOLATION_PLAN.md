@@ -175,9 +175,11 @@ so extending to a per-request `X-Kiwi-Profile` header is cheap when a real secon
 **Frontend shipped on `feat/kiwi-picker-ui`**: `KiwiCockpit.vue` grows a Profile row
 (dropdown + `+` create-dialog + terminal one-liner copy) above the pairing chip, since the
 profile is identity — everything else in the cockpit scopes to it. Client-side wrapper
-`utils/kiwiProfileApi.ts` (`fetchKiwiProfiles`/`selectKiwiProfile`/`createKiwiProfile`/
-`fetchKiwiTerminalCommand`) + `isValidKiwiProfileName` mirror-tested against the backend
-regex. `components/kiwi/KiwiCreateProfileDialog.vue` is a two-step modal — name → POST
+`utils/profileApi.ts` (renamed from `utils/kiwiProfileApi.ts` when the surface was promoted
+app-wide by USER_PROFILE_PLAN; `fetchProfiles`/`selectProfile`/`createProfile`/
+`fetchTerminalCommand`) + `isValidProfileName` mirror-tested against the backend
+regex. `components/profile/CreateProfileDialog.vue` (renamed + moved from
+`components/kiwi/KiwiCreateProfileDialog.vue`) is a two-step modal — name → POST
 create + auto-POST select → render the P6 terminal one-liner + copy button — so a fresh
 profile is immediately usable. First-use flow: dialog surfaces the terminal command inline
 and instructs the user to run `claude login` inside that shell; anything Kiwi spawns from

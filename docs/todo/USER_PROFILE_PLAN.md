@@ -33,8 +33,10 @@ is deleted in the same PR that ships the launch-time picker.
   ([`app/src/ai/agent_runner.jl`](../../app/src/ai/agent_runner.jl)).
 - Every `claude` spawn already runs under the active profile's `CLAUDE_CONFIG_DIR` with ambient
   `ANTHROPIC_*` / `CLAUDE_CODE_OAUTH_TOKEN` scrubbed at `addenv` time.
-- Frontend surface: `utils/kiwiProfileApi.ts`, `KiwiCreateProfileDialog.vue`, the profile row
-  in `KiwiCockpit.vue`. This is the picker being retired by Decision 4 below.
+- Frontend surface: `utils/profileApi.ts` (renamed from `utils/kiwiProfileApi.ts` in Phase 3),
+  `components/profile/CreateProfileDialog.vue` (renamed + moved from
+  `components/kiwi/KiwiCreateProfileDialog.vue`). The Kiwi cockpit's profile row was retired
+  by Decision 4 below (Phase 6 shipped).
 - `SettingsModule.vue` currently mixes one **Project** section (Name + Project ID only) with ten
   install/machine-wide sections (Interface, Software updates, Storage, Custom modules, Plugins,
   Data patches, System, Other MCP connections, Diagnostics, Developer, Debug console). The Task-1
@@ -59,7 +61,7 @@ is deleted in the same PR that ships the launch-time picker.
    mounted against the wrong identity by then.
 
 3. **The Kiwi picker in `KiwiCockpit.vue` is deleted, not reconciled.** The Profile row in
-   `KiwiCockpit.vue` and the `KiwiCreateProfileDialog.vue` invocation from it are removed the same
+   `KiwiCockpit.vue` and the `CreateProfileDialog.vue` invocation from it are removed the same
    PR the launch picker ships. Profile *creation* moves into the launch picker (a "+ new profile"
    affordance) and, once the preferences modal lands (Phase 4), into a Profiles pane there. Kiwi
    itself may still *display* the active profile name (read-only reflection) but does not offer
@@ -164,7 +166,8 @@ Phases 2 / 3 / 6.
 ### Phase 2 — Launch-time picker
 
 - New Vue route `AppProfilePicker.vue`, mounted from `App.vue` as the first-child-after-backend
-  gate. Reuses `KiwiCreateProfileDialog.vue` (moved to `frontend/src/components/profile/`).
+  gate. Reuses `components/profile/CreateProfileDialog.vue` (renamed + moved from
+  `components/kiwi/KiwiCreateProfileDialog.vue` in this phase).
 - Uses existing `utils/kiwiProfileApi.ts` (renamed `utils/profileApi.ts` in Phase 3) — no new
   API surface for the picker itself. Sets `[profile].active` via existing endpoint.
 - Auto-skip when `list().profiles.length === 1`.

@@ -10,7 +10,7 @@
 //
 // Layout: card matching /setup, one clickable row per profile. Retired profiles surface greyed out
 // (D11 immutable-name lifecycle — the record must stay resolvable, but new turns can't run under
-// it). The `+` opens KiwiCreateProfileDialog which POSTs /create then /select; on success this
+// it). The `+` opens CreateProfileDialog which POSTs /create then /select; on success this
 // window has an active profile and we call completeProfilePick + navigate to the app.
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'

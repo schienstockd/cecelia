@@ -298,3 +298,4 @@ include(joinpath(@__DIR__, "suite", "plots_registry.jl"))
 include(joinpath(@__DIR__, "suite", "kiwi_refs.jl"))
 include(joinpath(@__DIR__, "suite", "kiwi_turn.jl"))    # Phase 3: schema, seen-this-turn, validate + re-ask (scripted fake engine)
 include(joinpath(@__DIR__, "suite", "kiwi_profile.jl")) # LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6: profile roster + terminal launcher
+include(joinpath(@__DIR__, "suite", "profile_settings.jl")) # USER_PROFILE_PLAN Phase 4: per-profile settings.toml + GET/PATCH round-trip
