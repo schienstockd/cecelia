@@ -27,7 +27,7 @@
   two floating mechanisms are a deliberate split (see INVENTORY.md).
 -->
 <script setup lang="ts">
-import { ref, onMounted, useTemplateRef } from 'vue'
+import { ref, watch, onMounted, useTemplateRef } from 'vue'
 import { useFloatingPanel } from '../../composables/useFloatingPanel'
 import PlotOptions from './PlotOptions.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
@@ -39,6 +39,13 @@ const SCOPE_OPTIONS: ChipOption[] = [
   { value: 'global', label: '', icon: 'pi pi-globe', tip: 'Global — applies to every plot' },
   { value: 'local', label: '', icon: 'pi pi-map-marker', tip: 'Local — applies to the active plot only' },
 ]
+
+// The PlotOptions block gets crowded — the Layout/Points/Colours/Stats/Labels sections plus the pop
+// list on a small panel. This bottom-LEFT toggle folds the block away entirely (mirrors the bottom-
+// RIGHT scope chip so the two footer controls sit at the same tier). Persisted globally via
+// localStorage — same pattern as CollapsibleSection's `storageKey`, so the preference survives a
+// remount and is shared across canvases (nobody wants to re-hide it per panel).
+const PLOT_OPTS_KEY = 'canvasSidePanel.plotOptionsVisible'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -62,6 +69,15 @@ const emit = defineEmits<{
 }>()
 
 const collapsed = ref(false)
+// PlotOptions visibility — defaults OFF (the block is crowded and rarely touched — surface it from
+// the footer toggle when it's wanted). Reads from localStorage so a user who turned it on stays on.
+const plotOptionsVisible = ref((() => {
+  const v = typeof window !== 'undefined' ? window.localStorage.getItem(PLOT_OPTS_KEY) : null
+  return v === null ? false : v === '1'
+})())
+watch(plotOptionsVisible, v => {
+  try { window.localStorage.setItem(PLOT_OPTS_KEY, v ? '1' : '0') } catch { /* ignore */ }
+})
 // drag-to-move, clamped to the workspace; open at the top-right so it doesn't start on the plots.
 // (docked mode ignores all of this — it renders in-flow.)
 const panel = useTemplateRef<HTMLElement>('panel')
@@ -97,15 +113,24 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
     <!-- host-specific extra controls (e.g. the gating manager's gate / viewer options) -->
     <div v-show="!collapsed"><slot name="options" /></div>
 
-    <!-- shared plot-styling block (only when the host passes a `vis` bag), obeys the scope below -->
-    <div v-show="!collapsed" v-if="vis" class="csp-opts">
+    <!-- shared plot-styling block (only when the host passes a `vis` bag), obeys the scope below.
+         `v-if` on `plotOptionsVisible` UNMOUNTS the block when the settings toggle is off, so it costs
+         nothing to render while hidden. -->
+    <div v-show="!collapsed" v-if="vis && plotOptionsVisible" class="csp-opts">
       <PlotOptions :vis="vis" :sections="optionsSections" :readout="readout"
                    @update:vis="emit('update:vis', $event)" />
     </div>
 
-    <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom -->
-    <div v-show="!collapsed" v-if="scope" class="csp-footer">
-      <ChipSelect class="csp-seg" variant="segmented" :options="SCOPE_OPTIONS"
+    <!-- footer: settings toggle (left, when a `vis` bag is passed) + scope chip (right, when a `scope`
+         is passed). Renders when either half is meaningful — hosts without either (rare) get no footer. -->
+    <div v-show="!collapsed" v-if="scope || vis" class="csp-footer">
+      <button v-if="vis" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
+              :class="{ 'cc-btn-on cc-btn-on-tint': plotOptionsVisible }"
+              v-tooltip.top="plotOptionsVisible ? 'Hide plot settings' : 'Show plot settings'"
+              @click="plotOptionsVisible = !plotOptionsVisible">
+        <i class="pi pi-sliders-h" />
+      </button>
+      <ChipSelect v-if="scope" class="csp-seg" variant="segmented" :options="SCOPE_OPTIONS"
                   :model-value="scope" aria-label="Scope"
                   @update:model-value="v => emit('update:scope', v as 'global' | 'local')" />
     </div>

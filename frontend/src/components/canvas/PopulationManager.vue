@@ -21,6 +21,7 @@ import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import CanvasSidePanel from './CanvasSidePanel.vue'
+import CollapsibleSection from '../CollapsibleSection.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import ColourPicker from '../ColourPicker.vue'
@@ -87,7 +88,6 @@ const viewerPointSize = computed<number>({
   set: v => { if (viewerSetUid.value) settings.setPointSize(viewerSetUid.value, v) },
 })
 
-const optionsOpen = ref(false)     // gate / viewer options box (host-specific, in the shell #options slot)
 // edit-in-place, shared with the model vault and the tables (composables/useInlineEdit). Adopting it
 // also fixed a real bug here: `@keyup.enter` and `@blur` both called `commitRename` straight through,
 // so Enter renamed and the blur it caused ran the whole thing again.
@@ -679,11 +679,9 @@ function moveTo(target: string) {
          (the plot group); trackclust has no viewer control either, so the whole block is hidden. ── -->
     <template v-if="props.popType !== 'trackclust'" #options>
       <div class="pm-opts">
-        <button class="pm-opts-toggle cc-section-toggle" @click="optionsOpen = !optionsOpen">
-          <i :class="optionsOpen ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-          <span class="cc-eyebrow">Options</span>
-        </button>
-        <div v-show="optionsOpen" class="pm-opts-body">
+        <CollapsibleSection label="Options" :default-open="false" max-height="none"
+                            storage-key="popManager.options">
+        <div class="pm-opts-body">
           <template v-if="!clusterMode">
           <div class="pm-opt-head cc-eyebrow cc-fs-2xs"><span>plot</span></div>
           <div class="pm-opt-row">
@@ -734,6 +732,7 @@ function moveTo(target: string) {
             </div>
           </template>
         </div>
+        </CollapsibleSection>
       </div>
     </template>
   </CanvasSidePanel>
@@ -838,9 +837,9 @@ button.pm-filter-badge:hover { opacity: 1; }
 .seg-btn:hover { color: var(--cc-text); border-color: #484f58; }
 
 /* ── extra options ── */
+/* wraps CollapsibleSection, which brings its own toggle chrome; just the border-top matches the
+   plot-options block below it. */
 .pm-opts { border-top: 1px solid var(--cc-border); }
-/* + cc-section-toggle (row) + cc-eyebrow on the label — padding is all that is this site's */
-.pm-opts-toggle { padding: 6px 8px; }
 .pm-opts-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 /* small section heading: ──── plot ──── */
 .pm-opt-head { display: flex; align-items: center; gap: 6px; margin-top: 2px; }

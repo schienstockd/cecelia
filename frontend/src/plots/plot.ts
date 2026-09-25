@@ -676,8 +676,15 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     (c.zScore != null ? `\nz ${fmt(c.zScore)}` : '') +
     (c.pValue != null ? `\n${formatPValue(c.pValue)}${c.significance ? ` ${c.significance}` : ''}` : '')
   // reserve a top band for the colour-ramp legend (drawn top-right as an overlay) so it never covers
-  // the top row of cells — and a touch more when a title (top-left) shares the band.
-  const topPad = o.legend ? (o.title ? 44 : 38) : (o.title ? 28 : 8)
+  // the top row of cells — and a touch more when a title (top-left) shares the band. The estimate
+  // (~30 px) was hard-coded and drifted below the actual rendered legend once its tick labels wrap
+  // or the font ticked up, at which point the ramp overlaid the top row (asphericity in the report).
+  // PlotChart measures the legend post-render and passes `legendHeight` back for a corrective pass —
+  // use it when present, same policy as `legendTopPad`.
+  const measuredLeg = o.legend && o.legendHeight && o.legendHeight > 0
+    ? Math.ceil(o.legendHeight) + LEGEND_GAP : 0
+  const legendPad = o.legend ? Math.max(measuredLeg, 38) : 8
+  const topPad = o.title ? Math.max(legendPad, TITLE_PAD + 10) : legendPad
   // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
   // clipped at a fixed 120). MEASURE the rendered width so it fits exactly (a char-count estimate
   // over-reserved → a big left gap); +12 for the tick mark + gap, clamped so it never eats the plot.

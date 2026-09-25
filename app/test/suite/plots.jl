@@ -257,6 +257,25 @@ end
                                normalize=:fraction, by_image=true)
     by3f = Dict(s["pop"] => s for s in pr3["series"])
     @test by3f["A/q"]["n"] == 2 && by3f["A/q"]["median"] ≈ 1/6
+
+    # BY ATTRIBUTE (compareMode='by_attr'): with `attr_map`, each per-image row must be RELABELLED by
+    # its attribute value and pooled per (attr, pop) — one series per (attr, pop), points = images.
+    # Before this pin the substitution forced `by_image=false`, `_series_groups` ignored the attr map,
+    # and the frontend showed a single boxplot per pop no matter what the attribute picker was set to.
+    df4 = DataFrame("value_name" => fill("A", 10),
+                    "pop" => ["/p","/p","/p","/q","/q","/p","/p","/q","/q","/q"],
+                    "uID" => ["x1","x1","x1","x1","x1","x2","x2","x2","y1","y1"])
+    amap = Dict("x1"=>"WT", "x2"=>"WT", "y1"=>"KO")
+    bx4 = Cecelia._summary_agg(df4, "boxplot"; measure=nothing, granularity=:cell, nbins=10,
+                                normalize=:none, by_image=false, attr_map=amap)
+    seriesk = Set((s["uID"], s["pop"]) for s in bx4["series"])
+    # /p exists under WT (images x1, x2) but NOT KO (y1 has 0 /p rows completed → 0 data point in KO)
+    # /q exists under WT (x1, x2) AND KO (y1)
+    @test ("WT", "A/p") in seriesk && ("WT", "A/q") in seriesk && ("KO", "A/q") in seriesk
+    # WT points for /p: [3(x1), 2(x2)] → n=2 median=2.5; KO for /q: [2(y1)] → n=1 median=2
+    byattr = Dict((s["uID"], s["pop"]) => s for s in bx4["series"])
+    @test byattr[("WT","A/p")]["n"] == 2 && byattr[("WT","A/p")]["median"] == 2.5
+    @test byattr[("KO","A/q")]["n"] == 1 && byattr[("KO","A/q")]["median"] == 2.0
 end
 
 @testset "plot raw (per-datapoint export)" begin
