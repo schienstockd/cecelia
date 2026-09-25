@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUpdated, nextTick, useTemplateRef, watch, useSlots } from 'vue'
 import { useFloatingPanel, type ArrangeCmd } from '../../composables/useFloatingPanel'
+import { useResizeHandles } from '../../composables/useResizeHandles'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useInjectedZoom } from '../../composables/useCanvasZoom'
 import { rafCoalesce } from '../../utils/rafCoalesce'
@@ -100,6 +101,39 @@ const { pos, startDrag } = useFloatingPanel(root, {
   onActivate: () => emit('activate', props.index),
   arrange: () => fitted(props.arrange),
   zoom: injectedZoom,
+})
+// The 8-handle resize gesture — same primitive as the top-level `FloatingPanel`. Bounds sit inside
+// the canvas offsetParent (0,0 → parent width/height) so a resize cannot push the panel outside its
+// workspace; `zoom` matches the drag path so screen-pixel deltas are canvas-pixel-correct.
+// `setRect` writes SIZE straight to the DOM style (so the existing `ResizeObserver` continues to fire
+// `persist()` + `enforceSquare`) and updates `pos` for the anchor edges (W/N). It respects the
+// `edges` mask: for a `:square` panel a horizontal-only drag must NOT rewrite `height`, otherwise
+// the composable would overwrite `enforceSquare`'s snap every pointermove and flicker.
+const { onResizeDown } = useResizeHandles({
+  getRect: () => ({ x: pos.value.x, y: pos.value.y, w: root.value?.offsetWidth ?? 0, h: root.value?.offsetHeight ?? 0 }),
+  setRect: (r, edges) => {
+    if (edges.w || edges.n) pos.value = { x: r.x, y: r.y }   // N/W anchor to the opposite side, so position moves too
+    if (!root.value) return
+    if (edges.e || edges.w) root.value.style.width = r.w + 'px'
+    if (edges.n || edges.s) root.value.style.height = r.h + 'px'
+  },
+  bounds: () => {
+    // resize floor inside the canvas — matches the drag `clamp` in `useFloatingPanel` (top-left ≥ 0
+    // for the y axis; negative x is allowed for the drag path but a resize can't drag the top-left
+    // out of the parent, so it stays at 0 here).
+    const par = root.value?.offsetParent as HTMLElement | null
+    return { minX: 0, minY: 0, maxX: par?.clientWidth ?? 0, maxY: par?.clientHeight ?? 0 }
+  },
+  viewportSize: () => {
+    // ceiling for E/S — the canvas, not the browser window. The panel sits inside a zoomable canvas
+    // that can be smaller than the viewport, and a browser-window ceiling would let the panel be
+    // dragged past the canvas edge.
+    const par = root.value?.offsetParent as HTMLElement | null
+    return { w: par?.clientWidth ?? window.innerWidth, h: par?.clientHeight ?? window.innerHeight }
+  },
+  min: { w: 340, h: 320 },   // matches `.panel { min-width / min-height }`
+  zoom: injectedZoom,
+  onActivate: () => emit('activate', props.index),
 })
 
 // A TILE cell is a BOX TO FIT INTO, not a size to adopt. A :square panel that took the cell's width
@@ -202,6 +236,18 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
       </template>
     </div>
     <div v-if="!autoHide && slots.footer && !collapsed" class="panel-foot inflow"><slot name="footer" /></div>
+    <!-- 8-handle resize frame — shared with `FloatingPanel` via `useResizeHandles`. Docked/collapsed
+         panels don't resize (docked = grid slot owns the size; collapsed = height is transient). -->
+    <template v-if="!docked && !collapsed">
+      <div class="panel-edge panel-edge-n" @pointerdown="e => onResizeDown(e, { n: true })" />
+      <div class="panel-edge panel-edge-s" @pointerdown="e => onResizeDown(e, { s: true })" />
+      <div class="panel-edge panel-edge-e" @pointerdown="e => onResizeDown(e, { e: true })" />
+      <div class="panel-edge panel-edge-w" @pointerdown="e => onResizeDown(e, { w: true })" />
+      <div class="panel-corner panel-corner-nw" @pointerdown="e => onResizeDown(e, { n: true, w: true })" />
+      <div class="panel-corner panel-corner-ne" @pointerdown="e => onResizeDown(e, { n: true, e: true })" />
+      <div class="panel-corner panel-corner-sw" @pointerdown="e => onResizeDown(e, { s: true, w: true })" />
+      <div class="panel-corner panel-corner-se" @pointerdown="e => onResizeDown(e, { s: true, e: true })" />
+    </template>
   </div>
 </template>
 
@@ -209,15 +255,15 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 /* free-floating, draggable + resizable box */
 .panel { position: absolute; display: flex; flex-direction: column; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-md); background: var(--cc-surface-1); overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.35);
-  width: 460px; height: 440px; min-width: 340px; min-height: 320px; resize: both; z-index: 5;
+  width: 460px; height: 440px; min-width: 340px; min-height: 320px; z-index: 5;
   transition: border-color 0.12s, box-shadow 0.12s; }
 .panel.active { border-color: var(--cc-selected); box-shadow: 0 0 0 1px var(--cc-selected), 0 6px 22px rgba(0,0,0,0.45); z-index: 6; }
 /* docked: fill the grid slot, no float/drag/resize/shadow */
-.panel.docked { position: static; width: 100%; height: 100%; min-width: 0; min-height: 0; resize: none;
+.panel.docked { position: static; width: 100%; height: 100%; min-width: 0; min-height: 0;
   box-shadow: none; z-index: auto; }
 .panel.docked .panel-head { cursor: default; }
-/* collapsed: box shrinks to just the header (overrides any inline/resized height); no resize handle */
-.panel.collapsed { height: auto !important; min-height: 0 !important; resize: none; }
+/* collapsed: box shrinks to just the header (overrides any inline/resized height); handles hidden via v-if */
+.panel.collapsed { height: auto !important; min-height: 0 !important; }
 .panel-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: move;
   border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2); }
 /* min-width:0 lets the title shrink; the text span truncates so it never shoves the head buttons */
@@ -248,4 +294,27 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 .panel-remove:hover { color: #f87171; border-color: #f87171; }
 /* the panel content fills the rest; body is a column so a plot area can flex:1 inside it */
 .panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* ── resize frame ─────────────────────────────────────────────────────────────
+   Eight invisible hit regions around the edge of the panel (same rig as
+   `FloatingPanel.vue`; the maths + pointer loop live in `useResizeHandles`).
+   Corners sit ABOVE the edges so the diagonal cursor wins in the overlap.
+   Panel has `overflow: hidden` (rounded-corner mask), so handles sit INSIDE
+   the frame — a negative offset would be clipped and un-grabbable. */
+.panel-edge, .panel-corner { position: absolute; z-index: 1; }
+.panel-edge-n { top: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+.panel-edge-s { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+.panel-edge-e { top: 10px; bottom: 10px; right: 0; width: 5px; cursor: ew-resize; }
+.panel-edge-w { top: 10px; bottom: 10px; left: 0; width: 5px; cursor: ew-resize; }
+.panel-corner { width: 14px; height: 14px; z-index: 2; }
+.panel-corner-nw { top: 0; left: 0; cursor: nwse-resize; }
+.panel-corner-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.panel-corner-ne { top: 0; right: 0; cursor: nesw-resize; }
+.panel-corner-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+/* Visible SE grip — the "resize corner" users already know from CSS `resize: both`. Other seven
+   handles are invisible, discovered by the cursor change like any desktop window. */
+.panel-corner-se {
+  background:
+    linear-gradient(135deg, transparent 0 6px, var(--cc-border) 6px 7px, transparent 7px 9px,
+                    var(--cc-border) 9px 10px, transparent 10px);
+}
 </style>

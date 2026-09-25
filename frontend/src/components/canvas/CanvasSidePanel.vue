@@ -29,6 +29,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, useTemplateRef } from 'vue'
 import { useFloatingPanel } from '../../composables/useFloatingPanel'
+import { useResizeHandles } from '../../composables/useResizeHandles'
 import PlotOptions from './PlotOptions.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
@@ -95,6 +96,27 @@ watch(plotOptionsVisible, v => {
 // (docked mode ignores all of this — it renders in-flow.)
 const panel = useTemplateRef<HTMLElement>('panel')
 const { pos, startDrag } = useFloatingPanel(panel)
+// The 8-handle resize gesture — same rig as `FloatingPanel` and `CanvasPanel` via `useResizeHandles`.
+// SidePanel has no `:square` snap, so `setRect` writes DOM styles unconditionally for the edges the
+// user grabbed. `max-height: 90vh` in the stylesheet stays as the "long list" guardrail.
+const { onResizeDown } = useResizeHandles({
+  getRect: () => ({ x: pos.value.x, y: pos.value.y, w: panel.value?.offsetWidth ?? 0, h: panel.value?.offsetHeight ?? 0 }),
+  setRect: (r, edges) => {
+    if (edges.w || edges.n) pos.value = { x: r.x, y: r.y }
+    if (!panel.value) return
+    if (edges.e || edges.w) panel.value.style.width = r.w + 'px'
+    if (edges.n || edges.s) panel.value.style.height = r.h + 'px'
+  },
+  bounds: () => {
+    const par = panel.value?.offsetParent as HTMLElement | null
+    return { minX: 0, minY: 0, maxX: par?.clientWidth ?? 0, maxY: par?.clientHeight ?? 0 }
+  },
+  viewportSize: () => {
+    const par = panel.value?.offsetParent as HTMLElement | null
+    return { w: par?.clientWidth ?? window.innerWidth, h: par?.clientHeight ?? window.innerHeight }
+  },
+  min: { w: 240, h: 140 },   // matches `.canvas-side-panel { min-width / min-height }`
+})
 onMounted(() => {
   if (props.docked) return
   // `width` is a STARTING width, applied once — not a bound `:style`. CSS `resize` works by writing
@@ -173,34 +195,46 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
                   :model-value="scope" aria-label="Scope"
                   @update:model-value="v => emit('update:scope', v as 'global' | 'local')" />
     </div>
+    <!-- 8-handle resize frame — shared with `FloatingPanel` + `CanvasPanel` via `useResizeHandles`.
+         Docked/collapsed panels don't resize (docked = in-flow rail; collapsed = header-only). -->
+    <template v-if="!docked && !collapsed">
+      <div class="csp-edge csp-edge-n" @pointerdown="e => onResizeDown(e, { n: true })" />
+      <div class="csp-edge csp-edge-s" @pointerdown="e => onResizeDown(e, { s: true })" />
+      <div class="csp-edge csp-edge-e" @pointerdown="e => onResizeDown(e, { e: true })" />
+      <div class="csp-edge csp-edge-w" @pointerdown="e => onResizeDown(e, { w: true })" />
+      <div class="csp-corner csp-corner-nw" @pointerdown="e => onResizeDown(e, { n: true, w: true })" />
+      <div class="csp-corner csp-corner-ne" @pointerdown="e => onResizeDown(e, { n: true, e: true })" />
+      <div class="csp-corner csp-corner-sw" @pointerdown="e => onResizeDown(e, { s: true, w: true })" />
+      <div class="csp-corner csp-corner-se" @pointerdown="e => onResizeDown(e, { s: true, e: true })" />
+    </template>
   </div>
 </template>
 
 <style scoped>
 /* Width: set ONCE on mount from the `width` prop (see onMounted — a bound `:style` would fight the
-   resize grip), so a drag sticks. Docked fills its container instead.
-   `resize` needs a non-`visible` overflow, so the box clips and the LIST scrolls inside it — which is
-   also what lets a taller drag show more rows instead of just more empty box. Same idiom as
-   CanvasPanel (CSS `resize`, not a hand-rolled grip); the height cap is the viewport so a long list
-   can't run off the canvas. */
+   resize handles), so a drag sticks. Docked fills its container instead.
+   `overflow: hidden` is kept so the box clips and the LIST scrolls inside it — a taller drag shows
+   more rows instead of just more empty box. The height cap (`max-height: 90vh`) stays as the "long
+   list" guardrail so a resize can't run the panel off the canvas. Resize handles come from
+   `useResizeHandles` — same rig as `CanvasPanel` and `FloatingPanel`. */
 .canvas-side-panel {
   position: absolute; z-index: 20;
   display: flex; flex-direction: column;
   max-height: 90vh; min-width: 240px; min-height: 140px;
-  resize: both; overflow: hidden;
+  overflow: hidden;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-md); box-shadow: 0 6px 24px rgba(0,0,0,0.4);
   font-size: var(--cc-fs-sm); color: var(--cc-text); user-select: none;
 }
 /* docked: in-flow rail (no float/drag/resize/shadow), fills its container column */
 .canvas-side-panel.docked { position: static; z-index: auto; width: 100%; box-shadow: none;
-                            resize: none; overflow: visible; max-height: none; min-height: 0; }
+                            overflow: visible; max-height: none; min-height: 0; }
 .canvas-side-panel.docked .csp-header { cursor: default; }
 /* docked has no box height of its own to fill, so the list keeps its own cap (the board rail must not
    grow without bound on a long population list) */
 .canvas-side-panel.docked .csp-body { max-height: 60vh; }
-/* collapsed: shrink to the header, overriding any dragged height; no grip on a header-only box */
-.canvas-side-panel.collapsed { height: auto !important; min-height: 0 !important; resize: none; }
+/* collapsed: shrink to the header, overriding any dragged height; handles hidden via v-if */
+.canvas-side-panel.collapsed { height: auto !important; min-height: 0 !important; }
 .csp-header {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0;
   cursor: move; border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2);
@@ -223,4 +257,23 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
              background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
 .csp-apply-note { flex: 1; }
 .csp-apply-btn { min-width: 4rem; }
+/* ── resize frame ─────────────────────────────────────────────────────────────
+   Same 8-handle rig as CanvasPanel + FloatingPanel; pointer loop lives in
+   `useResizeHandles`. Panel has `overflow: hidden`, so handles sit INSIDE
+   the frame. */
+.csp-edge, .csp-corner { position: absolute; z-index: 1; }
+.csp-edge-n { top: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+.csp-edge-s { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+.csp-edge-e { top: 10px; bottom: 10px; right: 0; width: 5px; cursor: ew-resize; }
+.csp-edge-w { top: 10px; bottom: 10px; left: 0; width: 5px; cursor: ew-resize; }
+.csp-corner { width: 14px; height: 14px; z-index: 2; }
+.csp-corner-nw { top: 0; left: 0; cursor: nwse-resize; }
+.csp-corner-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.csp-corner-ne { top: 0; right: 0; cursor: nesw-resize; }
+.csp-corner-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.csp-corner-se {
+  background:
+    linear-gradient(135deg, transparent 0 6px, var(--cc-border) 6px 7px, transparent 7px 9px,
+                    var(--cc-border) 9px 10px, transparent 10px);
+}
 </style>
