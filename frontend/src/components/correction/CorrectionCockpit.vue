@@ -601,7 +601,7 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
     @close="emit('close')"
   >
     <div class="cockpit">
-      <div class="cockpit-mode">
+      <div class="cockpit-mode" data-guide="correction.modePicker">
         <ChipSelect variant="pill" :options="MODES" :model-value="mode"
                     @update:model-value="v => mode = (v as 'tracks' | 'labels' | 'review')" />
       </div>
@@ -618,7 +618,7 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
         </template>
       </div>
 
-      <div class="cockpit-tools">
+      <div class="cockpit-tools" data-guide="correction.tools">
         <template v-if="mode === 'tracks'">
           <div v-if="!currentKey" class="cockpit-placeholder cc-fs-sm cc-muted">
             Pick a tracked segmentation to enable the verbs.
@@ -727,7 +727,7 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
              mechanic ChipSelect exposes everywhere else. Empty = no strip; the summary line
              below still names the state. Review's focused label gets the accent so the pager's
              cursor is visible in the strip too. -->
-        <div v-if="chipOptions.length" class="cockpit-chip-strip"
+        <div v-if="chipOptions.length" class="cockpit-chip-strip" data-guide="correction.selection"
              v-tooltip.top="stripKind === 'labels'
                ? 'Picked labels — click one to drop it'
                : 'Selected tracks — click one to drop it'">
@@ -763,7 +763,8 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
                 v-tooltip.top="'Clear all queued edits'" @click="onClear">
           <i class="pi pi-times" />
         </button>
-        <button class="cc-btn cc-btn-primary cc-btn-dense" :disabled="!pendingCount"
+        <button class="cc-btn cc-btn-primary cc-btn-dense" data-guide="correction.apply"
+                :disabled="!pendingCount"
                 :class="{ 'cc-btn-bare': !pendingCount }"
                 v-tooltip.top="'Apply all queued edits as one correction'" @click="onApply">
           {{ pendingCount ? `Apply ${pendingCount}` : 'Apply' }}
