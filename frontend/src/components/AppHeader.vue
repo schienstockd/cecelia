@@ -145,6 +145,7 @@ const statusTip: Record<string, string> = {
          beside the version + ws chips because those already answer "what am I looking at" —
          version, connection, profile. Click opens Preferences → Profiles for switching. -->
     <button type="button" class="profile-chip"
+            data-guide="header.profileChip"
             v-tooltip.bottom="`Active profile: ${appCtl.activeProfileName} — click to switch`"
             aria-label="Active profile — open Preferences"
             @click="openPreferences">
