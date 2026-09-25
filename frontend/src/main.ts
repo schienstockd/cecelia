@@ -9,6 +9,7 @@ import 'primeicons/primeicons.css'
 import './style.css'
 import App from './App.vue'
 import { useAppControlStore } from './stores/appControl'
+import { useSettingsStore } from './stores/settings'
 import { useLogStore } from './stores/log'
 import { useLinkedSelectionStore } from './stores/linkedSelection'
 import { useViewerStore } from './stores/viewer'
@@ -74,6 +75,9 @@ export const router = createRouter({
     // first-launch setup wizard — bare (clean welcome screen, no sidebar/header). The boot guard
     // below routes here when the backend reports setupRequired. See docs/todo/ONBOARDING_PLAN.md.
     { path: '/setup',     component: () => import('./modules/SetupModule.vue'),          meta: { label: 'Setup', bare: true } },
+    // Launch-time profile picker — bare (matches /setup). Shown when more than one profile exists;
+    // auto-skipped otherwise. See docs/todo/USER_PROFILE_PLAN.md Phase 2.
+    { path: '/profile-picker', component: () => import('./modules/AppProfilePicker.vue'), meta: { label: 'Profile', bare: true } },
   ],
 })
 
@@ -89,6 +93,19 @@ router.beforeEach(async (to) => {
   }
   if (appCtl.setupRequired === true && to.path !== '/setup') return '/setup'
   if (appCtl.setupRequired === false && to.path === '/setup') return '/'
+  // Launch-time profile picker (USER_PROFILE_PLAN Phase 2). Only runs once setup is out of the way,
+  // so a first-launch install never sees the picker before it has a projects dir. Popouts are exempt
+  // — a picker in a Task Manager popup would strand the popup with no way home.
+  if (appCtl.setupRequired === false && !popoutRouteOfWindow()) {
+    if (appCtl.needsProfilePick === true && to.path !== '/profile-picker') return '/profile-picker'
+    if (appCtl.needsProfilePick === false && to.path === '/profile-picker') return '/'
+  }
+  // Hydrate per-profile settings once both gates have resolved (USER_PROFILE_PLAN Phase 4). Fires
+  // on the FIRST navigation after picker completion (or straight through on a single-profile
+  // install). The store guards `hydrateFromProfile()` internally so a re-entry is a no-op.
+  if (appCtl.setupRequired === false && appCtl.needsProfilePick === false) {
+    void useSettingsStore().hydrateFromProfile()
+  }
   // A popout window stays the view it was opened as. Its NAME says which one (lib/popout.ts) and the
   // name survives what the hash does not — a reload, a restored session, a stale bundle whose router
   // had no such route yet. A window that ends up somewhere else is not a page you can use: the Task

@@ -109,6 +109,9 @@ describe('task-refresh coverage', () => {
     const forks = sources
       .filter(s => s.path !== 'composables/useDataRefresh.ts' && !s.path.endsWith('.test.ts'))
       .filter(s => s.path !== 'stores/settings.ts' && !s.path.startsWith('modules/SettingsModule'))
+      // PreferencesModal edits the setting via v-model — that's a WRITE, not a fork of the decision.
+      // The chokepoint for READS stays useDataRefresh; the setting is bound here so the user can flip it.
+      .filter(s => s.path !== 'components/PreferencesModal.vue')
       .filter(s => code(s.text).includes('autoRefreshOnTask'))
       .map(s => s.path)
     expect(forks).toEqual([])

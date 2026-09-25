@@ -27,11 +27,13 @@ import ColorLegendDialog from './components/ColorLegendDialog.vue'
 import CallForDatasetsModal from './components/CallForDatasetsModal.vue'
 import GuideBubble from './components/GuideBubble.vue'
 import PointerBubble from './components/PointerBubble.vue'
+import PreferencesModal from './components/PreferencesModal.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
 import { isGuidesOpen } from './lib/guideOpen'
 import { isIconLegendOpen } from './lib/iconLegendOpen'
 import { isColorLegendOpen } from './lib/colorLegendOpen'
 import { isCallForDatasetsOpen, openCallForDatasets } from './lib/callForDatasetsOpen'
+import { isPreferencesOpen, closePreferences } from './lib/preferencesOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useOverlayAutoShow } from './composables/useOverlayAutoShow'
@@ -216,6 +218,10 @@ const bare = computed(() => popout || route.meta.bare === true)
          lib/callForDatasetsOpen.ts; opened from AppHeader and (once wired) from vis-aid chips via
          `?ask=<id>`. -->
     <CallForDatasetsModal v-if="isCallForDatasetsOpen" />
+    <!-- Per-profile preferences modal (USER_PROFILE_PLAN Phase 4). Mounted here so any caller
+         — sidebar footer, header, KiwiCockpit's read-only profile row (Phase 6) — can open it
+         via `openPreferences()`. -->
+    <PreferencesModal v-if="isPreferencesOpen" @close="closePreferences" />
     <GuideBubble v-if="guide.active" />
     <!-- Claude's "click here" pointers — BIDIR PR #5. Always mounted (poll is off when the
          viewerStore.uiMarks bag is empty), so a mark that lands mid-session appears instantly. -->

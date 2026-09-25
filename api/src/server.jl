@@ -65,6 +65,7 @@ include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI
 include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3)
 include("kiwi_api.jl")       # Kiwi — the cockpit's turn routes: background run, WS steps, kept replies (Phase 4)
 include("kiwi_profile_api.jl") # Kiwi profile roster + picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6)
+include("profile_settings_api.jl") # Per-profile settings (USER_PROFILE_PLAN Phase 4)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -333,6 +334,8 @@ const _GET_ROUTES = Dict{String, Function}(
     # Kiwi profile roster + terminal one-liner (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6).
     "/api/kiwi/profiles"          => (req, body_bytes) -> (api_kiwi_profiles_list(req)),
     "/api/kiwi/terminal/command"  => (req, body_bytes) -> (api_kiwi_terminal_command(req)),
+    # Per-profile settings (USER_PROFILE_PLAN Phase 4). Hydrates the frontend Pinia store on launch.
+    "/api/profile/settings"       => (req, body_bytes) -> (api_profile_settings_get(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────
@@ -369,6 +372,10 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/hmm_state_cards" => (req, body_bytes) -> (api_hmm_state_cards(body_bytes)),
     "/api/projects/rename" => (req, body_bytes) -> (api_projects_rename(body_bytes)),
     "/api/projects/delete" => (req, body_bytes) -> (api_projects_delete(body_bytes)),
+    # Project ownership (USER_PROFILE_PLAN Phase 5): claim adds the active profile to `owners`;
+    # unclaim removes it. Empty/missing `owners` = visible to all (Decision 8).
+    "/api/projects/claim"   => (req, body_bytes) -> (api_projects_claim(body_bytes)),
+    "/api/projects/unclaim" => (req, body_bytes) -> (api_projects_unclaim(body_bytes)),
     "/api/sets/create" => (req, body_bytes) -> (api_sets_create(body_bytes)),
     "/api/sets/rename" => (req, body_bytes) -> (api_sets_rename(body_bytes)),
     "/api/sets/delete" => (req, body_bytes) -> (api_sets_delete(body_bytes)),
@@ -446,6 +453,10 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/profiles/select"     => (req, body_bytes) -> (api_kiwi_profiles_select(body_bytes)),
     "/api/kiwi/profiles/create"     => (req, body_bytes) -> (api_kiwi_profiles_create(body_bytes)),
     "/api/kiwi/profiles/retire"     => (req, body_bytes) -> (api_kiwi_profiles_retire(body_bytes)),
+    "/api/kiwi/profiles/rename"     => (req, body_bytes) -> (api_kiwi_profiles_rename(body_bytes)),
+    "/api/kiwi/profiles/delete"     => (req, body_bytes) -> (api_kiwi_profiles_delete(body_bytes)),
+    # Per-profile settings — partial-dict merge (USER_PROFILE_PLAN Phase 4). Value `null` deletes.
+    "/api/profile/settings/patch"   => (req, body_bytes) -> (api_profile_settings_patch(body_bytes)),
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),

@@ -267,7 +267,7 @@ end
         st, rec = kiwi_start_turn("testpr", "what images?"; refs = [img_ref], model = "haiku")
         @test st == 200 && rec["status"] == "running" && startswith(rec["turnId"], "kt-")
         @test rec["refs"][1]["result"]["ok"]                     # attached refs resolved up front, for the chips
-        @test rec["profile"] == Cecelia.kiwi_profile_name()      # the profile it ran under (D8)
+        @test rec["profile"] == Cecelia.active_profile_name()      # the profile it ran under (D8)
         @test turn_profile(rec) == rec["profile"]
         @test built == ["haiku"]
         wait_idle("testpr")

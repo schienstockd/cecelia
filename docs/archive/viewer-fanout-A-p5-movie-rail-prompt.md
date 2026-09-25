@@ -1,5 +1,9 @@
 # Session A — P5-a: movie rail wiring off napari
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 Branch: `feat/viewer-p5-movie-rail` (fork from origin/main).
 
 ## Goal

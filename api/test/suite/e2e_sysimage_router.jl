@@ -325,6 +325,7 @@ end
         "/api/viewer/landscape",   # bidir landscape read (GET); POST at same path is the publish handler
         "/api/kiwi/profiles",           # LOGIN_CREDENTIAL_ISOLATION_PLAN P3 — roster
         "/api/kiwi/terminal/command",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P6 — profile-scoped shell one-liner
+        "/api/profile/settings",        # USER_PROFILE_PLAN Phase 4 — per-profile settings hydration
     ]
     POST_ROUTES = [
         "/api/app/restart", "/api/app/shutdown",
@@ -368,6 +369,11 @@ end
         "/api/kiwi/profiles/select",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P3
         "/api/kiwi/profiles/create",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P3
         "/api/kiwi/profiles/retire",   # LOGIN_CREDENTIAL_ISOLATION_PLAN D11
+        "/api/kiwi/profiles/rename",   # USER_PROFILE_PLAN D11 amendment — rename dir + update [ai].profile
+        "/api/kiwi/profiles/delete",   # USER_PROFILE_PLAN D11 amendment — rm -rf profile dir
+        "/api/profile/settings/patch", # USER_PROFILE_PLAN Phase 4 — merge partial dict, null deletes
+        "/api/projects/claim",         # USER_PROFILE_PLAN Phase 5 — add active profile to owners
+        "/api/projects/unclaim",       # USER_PROFILE_PLAN Phase 5 — remove active profile from owners
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
@@ -470,7 +476,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 105 && length(POST_ROUTES) == 154
+    @test length(GET_ROUTES) == 106 && length(POST_ROUTES) == 159
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

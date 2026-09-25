@@ -1,5 +1,9 @@
 # Audit prompt: complementary landscape — per-tile stats beyond category
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 ## Context
 
 PR #1086 snapshots the Landscape overlay (`{grid, tiles, legend}`, category

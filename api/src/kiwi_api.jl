@@ -83,7 +83,7 @@ carries the active Kiwi `profile` it ran under (LOGIN_CREDENTIAL_ISOLATION_PLAN 
 """
 function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = Any[], reasoning::Bool = false,
                          model::AbstractString = observer_default_model(), follow_up::AbstractString = "",
-                         profile::AbstractString = Cecelia.kiwi_profile_name())
+                         profile::AbstractString = Cecelia.active_profile_name())
     _kiwi_project_ok(puid) || return 404, Dict{String,Any}("error" => "no project $puid")
     isempty(strip(prompt)) && isempty(refs) && return 400, Dict{String,Any}("error" => "ask something or attach a ref")
     conv = isempty(follow_up) ? nothing : _kiwi_conversation(puid, follow_up)

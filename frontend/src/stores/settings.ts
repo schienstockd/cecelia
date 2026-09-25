@@ -1,10 +1,50 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, watch, type Ref } from 'vue'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg, type BatchMovieCfg } from '../utils/batchMovie'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
 import { decodeViewerBagEvent } from '../utils/viewerBagChannel'
+import { debouncedSave } from '../utils/debouncedSave'
+import { fetchProfileSettings, patchProfileSettings,
+         type ProfileSettingsValue } from '../utils/profileSettingsApi'
+
+// ── USER_PROFILE_PLAN Phase 4: per-profile setting manifest ────────────────────────
+// Keys in this list are hydrated from `<config_dir>/kiwi-profiles/<name>/settings.toml` on
+// launch and PATCHed back when the user flips a switch. Every other key stays localStorage-only:
+// per-machine renderer knobs (viewerCacheMB, viewerBricksMode, …) depend on THIS GPU, and
+// per-image/per-set bags (setPrefs, labelVis, …) belong with the project data.
+// Source of truth for the classification: `docs/audit/user-profile-field-audit.md`.
+const PROFILE_KEYS = [
+  // Working preferences
+  'taskListAutoFollow', 'tasksThisProjectOnly', 'tasksShowHistory',
+  'autoRefreshOnTask', 'viewerAutoUpdate', 'preferDevChannel',
+  'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps',
+  // Overlay preferences
+  'viewerScaleBar', 'viewerTimestamp', 'viewerGrid', 'viewerGridDensity',
+  'viewerLandscape', 'viewerLandscapeLabels',
+  'viewerScaleBarPx', 'viewerTimestampPx',
+  'viewerPointSize', 'viewerPointBorder', 'viewerTailLength', 'viewerTailWidth',
+  'viewerLabelOpacity', 'viewerLabelContour', 'viewerPointZTol', 'viewerTrackZTol',
+  // Movies + animation
+  'moviesPlaybackRate', 'moviesZoom', 'moviesAutoplay', 'moviesEndMode',
+  'moviesShowDetails', 'moviesChannelMode',
+  // Panel / layout
+  'sidebarCollapsed', 'rightPanelCollapsed', 'viewerWindowSideCollapsed',
+  'viewerPanelOpen', 'labLogPanelOpen', 'correctionCockpitOpen',
+  'correctionCockpitMode', 'correctionCockpitValueName',
+  'kiwiOpen', 'viewerSelectMode',
+  // Kiwi / lab log / tips / view profile
+  'kiwiReasoning', 'kiwiModel', 'labLogAutoContext', 'labLogShowNames',
+  'tipsOnLaunch', 'tipsLastShown', 'viewProfile',
+] as const
+type ProfileKey = typeof PROFILE_KEYS[number]
+
+// Debounce for the coalesced PATCH — one round-trip per burst, not per keystroke. Continuous
+// controls (sliders) already go through their own scheduler in `utils/*`; this is the last
+// line of defence for the fast-clicked toggle case. Matches the shared write-behind window
+// (`utils/debouncedSave` is the canonical scheduler).
+const _PROFILE_PATCH_WAIT_MS = 400
 
 export const useSettingsStore = defineStore('settings', () => {
   const taskListAutoFollow = ref(
@@ -694,7 +734,105 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  // ── Per-profile hydration + write-back (USER_PROFILE_PLAN Phase 4) ──────────────
+  // The store still initialises from localStorage as before (that path is unchanged and remains
+  // the fallback if the backend is unreachable). AFTER launch, `hydrateFromProfile` fetches the
+  // active profile's `settings.toml`: keys present there OVERRIDE localStorage; keys absent are
+  // BOOTSTRAPPED (the current value is written up as the profile's starting preference). Every
+  // subsequent write to a per-profile ref is coalesced into a PATCH through the canonical
+  // write-behind scheduler.
+  //
+  // Called from `main.ts`'s boot guard once setupRequired = false AND needsProfilePick = false —
+  // i.e. after any picker gate has resolved, so we hydrate the CORRECT profile.
+  //
+  // Idempotent: calling twice is a no-op after the first.
+  const profileHydrated = ref(false)
+
+  const _profileRefs: Record<ProfileKey, Ref<ProfileSettingsValue>> = {
+    taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory,
+    autoRefreshOnTask, viewerAutoUpdate, preferDevChannel,
+    importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps,
+    viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity,
+    viewerLandscape, viewerLandscapeLabels,
+    viewerScaleBarPx, viewerTimestampPx,
+    viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth,
+    viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol,
+    moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode,
+    moviesShowDetails, moviesChannelMode,
+    sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed,
+    viewerPanelOpen, labLogPanelOpen, correctionCockpitOpen,
+    correctionCockpitMode, correctionCockpitValueName,
+    kiwiOpen, viewerSelectMode,
+    kiwiReasoning, kiwiModel, labLogAutoContext, labLogShowNames,
+    tipsOnLaunch, tipsLastShown, viewProfile,
+  } as unknown as Record<ProfileKey, Ref<ProfileSettingsValue>>
+
+  // Canonical write-behind scheduler (`utils/debouncedSave`). Coalesces a burst of toggles into
+  // ONE PATCH round-trip and — critically — suppresses echoes during hydration via
+  // `_autosave.duringRestore(...)`, so the watchers installed below can be registered up front
+  // without racing the initial TOML overrides.
+  const _dirtyKeys = new Set<string>()
+  const _autosave = debouncedSave(async () => {
+    if (_dirtyKeys.size === 0) return
+    const snapshot: Record<string, ProfileSettingsValue> = {}
+    for (const key of _dirtyKeys) {
+      const refX = _profileRefs[key as ProfileKey]
+      if (refX) snapshot[key] = refX.value as ProfileSettingsValue
+    }
+    _dirtyKeys.clear()
+    await patchProfileSettings(snapshot)
+  }, { wait: _PROFILE_PATCH_WAIT_MS })
+
+  for (const key of PROFILE_KEYS) {
+    const refX = _profileRefs[key]
+    if (!refX) continue
+    watch(refX, () => { _dirtyKeys.add(key); _autosave.schedule() })
+  }
+
+  // Best-effort flush on tab close — a toggle flipped within the debounce window would otherwise
+  // be lost when the page unloads (400ms is longer than the typical click-then-close). Fires
+  // ONCE per browser window; the popout has its own store instance and its own listener.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => { void _autosave.flush() })
+  }
+
+  async function hydrateFromProfile() {
+    if (profileHydrated.value) return
+    // `profileHydrated` MUST land true whether the round-trip succeeded or not — the store is
+    // still fully usable on the localStorage values, and any UI keyed off this flag (e.g. a
+    // "loading your profile" hint) would otherwise hang forever if the backend hasn't been
+    // restarted to pick up the /api/profile/settings routes (api/src/ is NOT Revise-tracked).
+    try {
+      const r = await fetchProfileSettings()
+      // Bootstrap payload: keys missing from TOML take the current (localStorage-derived) value.
+      const bootstrap: Record<string, ProfileSettingsValue> = {}
+      for (const key of PROFILE_KEYS) {
+        const refX = _profileRefs[key]
+        if (!refX) continue
+        if (!(key in r.settings)) bootstrap[key] = refX.value as ProfileSettingsValue
+      }
+      // Apply the TOML overrides with the autosave suppressed — the watchers installed above
+      // must not echo these initial writes back as PATCHes. The helper's `duringRestore` holds
+      // the suppression through the debounce window PLUS a settle margin, exactly to survive
+      // the asynchronous watcher fire (same trap `stores/animation` was written to avoid).
+      _autosave.duringRestore(() => {
+        for (const key of PROFILE_KEYS) {
+          const refX = _profileRefs[key]
+          if (!refX || !(key in r.settings)) continue
+          const v = r.settings[key]
+          if (v !== undefined && v !== null) refX.value = v as ProfileSettingsValue
+        }
+      })
+      // Bootstrap: direct PATCH, not through the scheduler — schedule() inside the duringRestore
+      // suppression window is a no-op. Fire-and-forget; a network failure is recoverable on the
+      // next real setting change (the ref value stays put, next PATCH re-includes it).
+      if (Object.keys(bootstrap).length) void patchProfileSettings(bootstrap)
+    } finally {
+      profileHydrated.value = true
+    }
+  }
+
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

@@ -10,10 +10,13 @@ import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import FileBrowser from './FileBrowser.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CcProgressBar from './CcProgressBar.vue'
+import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import TeleportPopover from './TeleportPopover.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
 import { runningTaskCount } from '../utils/runningTasks'
+import { fetchProfiles } from '../utils/profileApi'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -48,16 +51,108 @@ const selectedUidModel = computed<string>({
 
 // The table renders display strings and sorts on the raw value beside them (docs/UI.md), so the
 // truncated path and the formatted date each carry what they mean.
-const PROJECT_COLUMNS: SelectionColumn[] = [
-  { key: 'name',     label: 'Name',        sortable: true },
-  { key: 'pathText', label: 'Location',    sortable: true, sortKey: 'path' },
-  { key: 'dateText', label: 'Last opened', sortable: true, sortKey: 'lastOpenedAt' },
+// Owners column only appears on multi-profile installs — a single-profile box has no meaningful
+// sharing, so a column that would read "you" on every row is noise. Same gating rule as the
+// claim/unclaim row actions and the "Mine / All" scope picker.
+const PROJECT_COLUMNS = computed<SelectionColumn[]>(() => {
+  const cols: SelectionColumn[] = [
+    { key: 'name',     label: 'Name',        sortable: true },
+  ]
+  if (profileCount.value > 1) {
+    // Sort by the alphabetically-first owner name; pre-identity rows (no owners) sort last via a
+    // high-sentinel sort key, so "who's on this?" clusters cleanly and un-owned drops out of the way.
+    cols.push({ key: 'owners', label: 'Owners', sortable: true, sortKey: '_ownersSort' })
+  }
+  // Project UID replaces the old "Location" column. The projects dir is the same for every row
+  // (one CECELIA_PROJECTS_DIR per install), so a full path column was 90% shared prefix; the uid
+  // is the only part that actually varies, and the full path stays on hover for the disk-hunter.
+  cols.push({ key: 'uid',      label: 'ID',          sortable: true })
+  cols.push({ key: 'dateText', label: 'Last opened', sortable: true, sortKey: 'lastOpenedAt' })
+  return cols
+})
+// ── Ownership filter (USER_PROFILE_PLAN Phase 5) ──────────────────────────────────
+// Active profile drives the default filter — projects with `owners` unset or containing the
+// active profile are visible; "Show all" overrides. Total is meaningful only when the picker was
+// gated on more than one profile (`profileCount > 1`); on a single-profile install `showAll` is
+// forced true because there is no other profile to filter for.
+const activeProfile = ref<string>('default')
+const profileCount = ref<number>(1)
+// Scope picked from a two-option segmented ChipSelect (app convention — docs/ui/PRIMITIVES.md,
+// docs/UI.md). A bare `<input type="checkbox"> Show all profiles' projects` was the first draft
+// and read as an alien toggle beside every other filter surface in the app; a named two-state
+// pick ("Mine" vs "All") matches ChipSelect segmented, same primitive DrawSurface tool bar +
+// MovieCompare layout picker + several others use.
+const scope = ref<'mine' | 'all'>('mine')
+const SCOPE_OPTIONS: ChipOption[] = [
+  { value: 'mine', label: 'Mine', icon: 'pi-user',
+    tip: 'Projects owned by you, plus unowned pre-identity projects' },
+  { value: 'all',  label: 'All',  icon: 'pi-users',
+    tip: 'Every project on this box, regardless of owner' },
 ]
-const projectRows = computed(() => projectMeta.recent.map(p => ({
-  ...p,
-  pathText: p.path.length > 40 ? '…' + p.path.slice(-38) : p.path,
-  dateText: formatDate(p.lastOpenedAt),
-})))
+onMounted(async () => {
+  try {
+    const r = await fetchProfiles()
+    activeProfile.value = r.active
+    profileCount.value  = r.profiles.length
+    if (r.profiles.length <= 1) scope.value = 'all'   // no other profile → filter is a no-op
+  } catch { /* fall back to defaults — scope stays 'mine', filter treats owner-less projects as visible */ }
+})
+
+// A project is visible under the current profile when it has NO owners recorded (pre-identity
+// default, visible to all) OR the active profile is listed. Currently-open project is always
+// shown so the user can never lose the ability to close/rename what they have in front of them.
+function visibleUnderActive(p: { uid: string; owners?: string[] }): boolean {
+  if (scope.value === 'all') return true
+  if (projectMeta.current?.uid === p.uid) return true
+  const os = p.owners
+  return !os || os.length === 0 || os.includes(activeProfile.value)
+}
+
+const projectRows = computed(() => projectMeta.recent
+  .filter(visibleUnderActive)
+  .map(p => ({
+    ...p,
+    dateText: formatDate(p.lastOpenedAt),
+    // Ownership state per row — the Claim/Unclaim action reads this without recomputing owners.
+    _mine: !!p.owners?.includes(activeProfile.value),
+    _shared: !p.owners || p.owners.length === 0,
+    // Alphabetical so "first owner" is stable across sessions — no order signal in the underlying
+    // list. The active profile floats to the front so the row reads "you (+N others)" when you're
+    // on it, which is the question the chip is actually there to answer.
+    _owners: [...(p.owners ?? [])].sort((a, b) => {
+      if (a === activeProfile.value) return -1
+      if (b === activeProfile.value) return 1
+      return a.localeCompare(b)
+    }),
+    // Sort key for the Owners column — alphabetically-first owner name (ignoring the you-first
+    // display order), so column-sort behaviour is stable across profiles. Un-owned rows use a
+    // high-Unicode sentinel so they cluster at the bottom.
+    _ownersSort: (p.owners && p.owners.length > 0)
+      ? [...p.owners].sort()[0].toLowerCase()
+      : '￿',
+  })))
+
+// One popover open at a time — `openOwnersUid` names the row; `ownersAnchor` is the +N button that
+// opened it. Follows the ColourPicker convention (currentTarget snapshot on click, close on picker
+// v-model false) so `TeleportPopover` positions and dismisses like every other floating panel.
+const openOwnersUid = ref<string | null>(null)
+const ownersAnchor = ref<HTMLElement | null>(null)
+const openOwnersOpen = computed<boolean>({
+  get: () => openOwnersUid.value !== null,
+  set: v => { if (!v) openOwnersUid.value = null },
+})
+const openOwnersRow = computed(() =>
+  projectRows.value.find(r => r.uid === openOwnersUid.value) ?? null)
+function toggleOwners(uid: string, e: MouseEvent) {
+  if (openOwnersUid.value === uid) { openOwnersUid.value = null; return }
+  ownersAnchor.value = e.currentTarget as HTMLElement
+  openOwnersUid.value = uid
+}
+
+const hiddenCount = computed(() => projectMeta.recent.length - projectRows.value.length)
+
+async function claimSelected(uid: string) { await projectMeta.claimProject(uid) }
+async function unclaimSelected(uid: string) { await projectMeta.unclaimProject(uid) }
 
 async function openSelected() {
   if (!selectedUid.value) return
@@ -231,6 +326,19 @@ function formatDate(iso: string | null): string {
       <!-- ── RECENT tab ─────────────────────────────────────────────────── -->
       <div v-if="tab === 'recent'" class="pp-body">
 
+        <!-- Ownership filter (USER_PROFILE_PLAN Phase 5). Hidden on a single-profile install —
+             nothing to filter by, and a two-chip picker with a single meaningful option is noise. -->
+        <div v-if="profileCount > 1" class="pp-filter cc-fs-xs">
+          <span class="cc-muted cc-eyebrow cc-fs-2xs">Show</span>
+          <ChipSelect variant="segmented" :options="SCOPE_OPTIONS"
+                      :model-value="scope"
+                      aria-label="Project visibility scope"
+                      @update:model-value="scope = $event as 'mine' | 'all'" />
+          <span v-if="scope === 'mine' && hiddenCount > 0" class="cc-muted">
+            · {{ hiddenCount }} hidden
+          </span>
+        </div>
+
         <div v-if="projectMeta.recent.length === 0" class="pp-empty cc-empty">
           <i class="pi pi-folder" style="font-size:2rem; opacity:0.2" />
           <p>No projects yet.<br>A project holds all your images and analysis for one experiment.</p>
@@ -253,10 +361,50 @@ function formatDate(iso: string | null): string {
             <span v-if="projectMeta.current?.uid === p.uid" class="open-badge"
               v-tooltip.right="'Currently open project'">open</span>
           </template>
-          <template #cell-pathText="{ row: p }">
-            <span class="dim cc-muted" v-tooltip.bottom="p.path">{{ p.pathText }}</span>
+          <template #cell-owners="{ row: p }">
+            <!-- Passive owner chip (USER_PROFILE_PLAN P5). Most projects have one owner, so the
+                 row shows the primary alphabetically (you, if you're on it) and collapses the rest
+                 behind a "+N" chip that opens a TeleportPopover — same overflow pattern the row ⋯
+                 menu uses. Pre-identity projects have no owners recorded — surface that as a muted
+                 "shared" pill so the row still answers the question. -->
+            <span v-if="p._owners.length === 0" class="owner-chip shared"
+                  v-tooltip.bottom="'No owner recorded — visible to every profile on this box'">
+              shared
+            </span>
+            <span v-else class="owner-chips">
+              <span class="owner-chip" :class="{ me: p._owners[0] === activeProfile }"
+                    v-tooltip.bottom="p._owners[0] === activeProfile
+                      ? 'You are an owner of this project'
+                      : `Profile ${p._owners[0]} owns this project`">
+                <i class="pi pi-user" />{{ p._owners[0] }}
+              </span>
+              <button v-if="p._owners.length > 1" type="button" class="owner-chip owner-more"
+                      v-tooltip.bottom="`${p._owners.length - 1} more owner${p._owners.length - 1 === 1 ? '' : 's'} — click to see all`"
+                      @click.stop="toggleOwners(p.uid, $event)">
+                +{{ p._owners.length - 1 }}
+              </button>
+            </span>
+          </template>
+          <template #cell-uid="{ row: p }">
+            <!-- Tooltip carries the full on-disk path — the only reason someone reads a project id
+                 is usually to find it on disk, and it's still one hover away. -->
+            <code class="proj-uid cc-muted" v-tooltip.bottom="p.path">{{ p.uid }}</code>
           </template>
           <template #actions="{ row: p }">
+            <!-- Claim / Unclaim — only surface on a multi-profile install; single-profile users
+                 have nothing to filter by so a toggle here would be noise. USER_PROFILE_PLAN P5. -->
+            <button v-if="profileCount > 1 && !p._mine" class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon"
+                    @click="claimSelected(p.uid)"
+                    v-tooltip.left="p._shared
+                      ? 'Claim this project — adds you as an owner'
+                      : 'Also visible to you — adds you as an additional owner'">
+              <i class="pi pi-user-plus" />
+            </button>
+            <button v-else-if="profileCount > 1" class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon"
+                    @click="unclaimSelected(p.uid)"
+                    v-tooltip.left="'Release ownership — you stop seeing this in the filtered list'">
+              <i class="pi pi-user-minus" />
+            </button>
             <!-- export to a portable .ccbundle (allowed for any project, incl. the open one) -->
             <button class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="ioBusy"
                     @click="exportProject(p)"
@@ -399,6 +547,21 @@ function formatDate(iso: string | null): string {
 
   </BaseModal>
 
+  <!-- Owners overflow popover — anchored to the +N chip that opened it. Lists every owner as its
+       own chip (active profile tinted) so the reader can scan who is on the project without a
+       separate dialog. `TeleportPopover` handles positioning + outside-click dismissal. -->
+  <TeleportPopover v-model="openOwnersOpen" :anchor="ownersAnchor" placement="bottom-start">
+    <div class="owners-pop">
+      <div class="cc-eyebrow cc-fs-2xs cc-muted">Owners of {{ openOwnersRow?.name ?? '' }}</div>
+      <div class="owner-chips owners-pop-list">
+        <span v-for="name in openOwnersRow?._owners ?? []" :key="name"
+              class="owner-chip" :class="{ me: name === activeProfile }">
+          <i class="pi pi-user" />{{ name }}
+        </span>
+      </div>
+    </div>
+  </TeleportPopover>
+
   <!-- server-side picker: export destination (dir) or import source (.ccbundle) — any path, incl. mounts -->
   <FileBrowser v-if="browserMode"
     :mode="browserMode === 'export' ? 'dir' : 'bundle'"
@@ -477,6 +640,10 @@ function formatDate(iso: string | null): string {
 
 .pp-empty { gap: 0.75rem; padding: 3rem 1rem; }
 .pp-empty p { margin: 0; }
+/* Filter row above the table — kept subtle since the whole point is that a single-profile install
+   never sees this and a multi-profile install already understands its own filter default. */
+.pp-filter { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.15rem 0.5rem; }
+.pp-filter label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
 
 /* project table — the header, row, hover, selected and cell padding are all SelectionTable's now.
    What is left is only what this panel means: the already-open project reads as a tint. */
@@ -530,6 +697,39 @@ function formatDate(iso: string | null): string {
 :deep(.active) { background: #a78bfa0a; }
 
 .proj-name { color: var(--cc-text); font-weight: 500; margin-right: 0.4rem; }
+/* uid cell — monospace so the alphanumeric id lines up column-wise; tooltip carries the full path.
+   Size stays whatever `.cc-muted` gives (sm) — no shadowing. */
+.proj-uid { font-family: var(--cc-mono); }
+
+/* Owner chips — passive display, one pill per profile that owns the project. Same pill shape as
+   AppHeader's active-profile chip so the two read as the same primitive. `.me` tints your own
+   chip so the row answers "am I on this?" at a glance; `.shared` is the muted pre-identity case. */
+/* nowrap: the +N chip must stay on the same visual row as the primary owner. Wrapping to a second
+   line grows every row's height (and the whole table's) for one small badge — the popover already
+   handles the overflow case, so no wrap is needed here. */
+.owner-chips { display: inline-flex; flex-wrap: nowrap; gap: 0.25rem; align-items: center; }
+.owner-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: var(--cc-fs-xs); line-height: 1;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--cc-radius-pill);
+  background: var(--cc-surface-2); color: var(--cc-text-dim);
+  border: 1px solid transparent; white-space: nowrap;
+}
+.owner-chip .pi { font-size: var(--cc-fs-2xs); }
+.owner-chip.me { color: var(--cc-text); border-color: var(--cc-kiwi); }
+.owner-chip.shared { font-style: italic; opacity: 0.7; }
+/* +N overflow chip — visually the same pill but declared as a real button so keyboard focus works
+   and the tinted hover reads as "this opens something". */
+button.owner-more { cursor: pointer; font-variant-numeric: tabular-nums; }
+button.owner-more:hover { color: var(--cc-text); border-color: var(--cc-kiwi);
+  background: color-mix(in srgb, var(--cc-kiwi) 12%, var(--cc-surface-2)); }
+
+/* Owners popover contents — TeleportPopover supplies the surface + border, this is just padding
+   and the chip list layout. */
+.owners-pop { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem 0.6rem; min-width: 160px; }
+.owners-pop-list { max-width: 260px; }
+
 .open-badge {
   font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase;
   padding: 0.05rem 0.35rem; border-radius: var(--cc-radius-xs);

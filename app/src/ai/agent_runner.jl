@@ -254,7 +254,7 @@ _build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user", dir::Abstr
 # ambient credential env vars that would otherwise silently override it (D6 — `ANTHROPIC_API_KEY`
 # and friends outrank `CLAUDE_CONFIG_DIR` on every platform; measured 2026-09-23 on CLI 2.1.280).
 #
-# The `default` profile is special: `kiwi_profile_dir("default") == ""` — meaning "do not set
+# The `default` profile is special: `active_profile_dir("default") == ""` — meaning "do not set
 # `CLAUDE_CONFIG_DIR`, let the CLI use its own paths (`~/.claude.json` + `~/.claude/.credentials.json`)".
 # This makes P2 a strict behavioural no-op for a single-seat setup — no re-login, no credential
 # copy. The picker (P3) introduces named profiles that DO get their own dir. Ambient scrubbing
@@ -267,16 +267,18 @@ const _AMBIENT_CLAUDE_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
                              "CLAUDE_CODE_USE_FOUNDRY",
                              "AWS_BEARER_TOKEN_BEDROCK")
 
-const _DEFAULT_KIWI_PROFILE = "default"
+const _DEFAULT_PROFILE = "default"
 
 """
-    kiwi_profile_name() -> String
+    active_profile_name() -> String
 
-Active Kiwi profile name from `custom.toml [ai].profile`, defaulting to `"default"`. The picker
-(phase P3) will write this key; today it is always the default.
+Active user-profile name from `custom.toml [ai].profile`, defaulting to `"default"`. Kiwi turns,
+per-profile settings and project ownership all read this — see `docs/todo/USER_PROFILE_PLAN.md`
+(the primitive was originally Kiwi-scoped in `LOGIN_CREDENTIAL_ISOLATION_PLAN`; the `[ai]` TOML
+section stays put per Phase 3, only the code identifiers renamed).
 """
-kiwi_profile_name()::String =
-    string(get(get(cecelia_conf(), "ai", Dict{String,Any}()), "profile", _DEFAULT_KIWI_PROFILE))
+active_profile_name()::String =
+    string(get(get(cecelia_conf(), "ai", Dict{String,Any}()), "profile", _DEFAULT_PROFILE))
 
 """
     turn_profile(rec) -> String
@@ -288,18 +290,18 @@ read-time default, not a migration). Every consumer of a turn's profile goes thr
 turn_profile(rec::AbstractDict)::String = string(get(rec, "profile", "legacy"))
 
 """
-    set_kiwi_profile!(name) -> String
+    set_active_profile!(name) -> String
 
 Persist `name` as `[ai].profile` in `custom.toml` (creating the file if needed, **merging** so
-other keys survive) and hot-reload config. Writer half of the pair with `kiwi_profile_name()` —
+other keys survive) and hot-reload config. Writer half of the pair with `active_profile_name()` —
 same shape as `set_projects_dir!` (LOGIN_CREDENTIAL_ISOLATION_PLAN P3, server-active-profile
 model — the per-tab handoff is a follow-up that will send an `X-Kiwi-Profile` header instead
 of driving this writer).
 
-Caller validates the name (`_valid_kiwi_profile_name` in the API layer); this writer trusts
+Caller validates the name (`_valid_profile_name` in the API layer); this writer trusts
 its argument.
 """
-function set_kiwi_profile!(name::AbstractString)::String
+function set_active_profile!(name::AbstractString)::String
     stored = strip(String(name))
     ensure_config_dir()
     cfg_path = custom_toml_path()
@@ -308,21 +310,22 @@ function set_kiwi_profile!(name::AbstractString)::String
     ai["profile"] = stored
     cfg["ai"] = ai
     write_atomic(io -> TOML.print(io, cfg), cfg_path)
-    init_cecelia!()   # hot-reload: kiwi_profile_name() sees the new value on next call
+    init_cecelia!()   # hot-reload: active_profile_name() sees the new value on next call
     stored
 end
 
 """
-    kiwi_profile_dir(name = kiwi_profile_name(); config_root = config_dir()) -> String
+    active_profile_dir(name = active_profile_name(); config_root = config_dir()) -> String
 
 Resolve a profile name to its `CLAUDE_CONFIG_DIR`. Returns `""` for the `default` profile
 (meaning "let the CLI use `~/.claude*` as before") and `<config_root>/kiwi-profiles/<name>/`
 otherwise. PURE — does NOT create the directory (see `_active_claude_profile_dir!` for the live
-resolver that also mkpaths).
+resolver that also mkpaths). On-disk name stays `kiwi-profiles/` per USER_PROFILE_PLAN Decision 7
+(the top-level `profiles/` is taken by View Profiles).
 """
-kiwi_profile_dir(name::AbstractString = kiwi_profile_name();
-                 config_root::AbstractString = config_dir())::String =
-    String(name) == _DEFAULT_KIWI_PROFILE ? "" :
+active_profile_dir(name::AbstractString = active_profile_name();
+                   config_root::AbstractString = config_dir())::String =
+    String(name) == _DEFAULT_PROFILE ? "" :
         joinpath(String(config_root), "kiwi-profiles", String(name))
 
 """
@@ -389,20 +392,20 @@ end
 # Live resolver — ensures the named-profile dir exists so the CLI can write on first login.
 # The default profile ("") is a no-op here; the CLI's own paths already exist.
 function _active_claude_profile_dir!()::String
-    d = kiwi_profile_dir()
+    d = active_profile_dir()
     isempty(d) || isdir(d) || mkpath(d)
     d
 end
 
 """
-    claude_config_path([profile_dir = kiwi_profile_dir()]) -> String
+    claude_config_path([profile_dir = active_profile_dir()]) -> String
 
 Path to the active profile's `.claude.json` — the file Claude Code writes for its top-level user
 config (project history, MCP registrations). Falls back to `~/.claude.json` when `profile_dir` is
 empty (default profile). Used by `read_registered_observer_spec` for the "is the terminal already
 set up?" UI, so the check reflects the profile the app is actually spawning under.
 """
-claude_config_path(profile_dir::AbstractString = kiwi_profile_dir())::String =
+claude_config_path(profile_dir::AbstractString = active_profile_dir())::String =
     isempty(profile_dir) ? joinpath(homedir(), ".claude.json") :
         joinpath(String(profile_dir), ".claude.json")
 

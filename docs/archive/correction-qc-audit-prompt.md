@@ -1,5 +1,9 @@
 # Phase 1 Audit Prompt — Correction Function & QC Decision Tree
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 ## Context for Opus
 
 Cecelia.jl has accumulated multiple image correction task functions (denoising, spillover/overspill correction, drift correction, etc.) and multiple image "versions" produced by them. This has grown hard to reason about — even the maintainer is no longer certain which correction applies to which acquisition type, or in what order.

@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
+import { fetchProfiles } from '../utils/profileApi'
 
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
 // panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
@@ -11,6 +12,18 @@ export const useAppControlStore = defineStore('appControl', () => {
   // first-launch: no custom.toml / projects dir unset. null = not yet known (don't redirect until we
   // know). The boot guard in main.ts sends the user to /setup while true. See docs/todo/ONBOARDING_PLAN.md.
   const setupRequired = ref<boolean | null>(null)
+  // Launch-time profile picker (docs/todo/USER_PROFILE_PLAN.md Phase 2). Populated by refreshStartup:
+  // TRUE when more than one profile exists AND the user hasn't picked in THIS window yet, so the boot
+  // guard redirects to /profile-picker. `null` while the fetch is in flight — same "don't redirect
+  // until we know" discipline as setupRequired. FALSE for a single-profile install (auto-skipped) OR
+  // after the picker calls completeProfilePick(). Does NOT survive a reload — pick every launch.
+  const needsProfilePick = ref<boolean | null>(null)
+  // Active profile name — sourced from the same fetchProfiles roundtrip. Drives the header chip
+  // (AppHeader) so every window shows who is driving without a per-component fetch. Change-of-
+  // profile forces a reload (PreferencesModal.pickProfile), so this is only ever set once per
+  // window session — no watch needed.
+  const activeProfileName = ref<string>('default')
+  const profileCount = ref<number>(1)
 
   const _post = (url: string, body: unknown = {}) =>
     fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -34,11 +47,66 @@ export const useAppControlStore = defineStore('appControl', () => {
       dev.value = !!d.dev
       setupRequired.value = !!d.setupRequired
     } catch { /* leave setupRequired as null → don't redirect */ }
+    // Profile picker gating (USER_PROFILE_PLAN Phase 2). Only meaningful once the setup wizard is
+    // out of the way — a first-launch install has no profiles surface to speak of. On failure leave
+    // needsProfilePick false so we never trap the user on the picker over a transient backend blip.
+    if (setupRequired.value === false) {
+      try {
+        const roster = await fetchProfiles()
+        activeProfileName.value = roster.active
+        profileCount.value      = roster.profiles.length
+        // "Just picked" grace window: a switch made through Preferences writes a sessionStorage
+        // marker BEFORE forcing a reload; on the next boot within N seconds we treat the picker
+        // as already answered so the user doesn't have to reaffirm what they just decided. Cold
+        // reloads (new tab, long-dormant session) have no fresh marker → picker fires normally.
+        const picked = _readJustPickedMarker()
+        if (picked && picked.name === roster.active) {
+          needsProfilePick.value = false
+          _clearJustPickedMarker()
+        } else {
+          needsProfilePick.value = roster.profiles.length > 1
+        }
+      } catch { needsProfilePick.value = false }
+    } else {
+      needsProfilePick.value = false
+    }
     return setupRequired.value === true
+  }
+
+  // sessionStorage marker consumed by refreshStartup. Session-scoped so a browser restart still
+  // sees the picker; short freshness window because a marker outliving its intent (e.g. tab
+  // reopened days later) shouldn't suppress the picker under a stale name.
+  const _JUST_PICKED_KEY = 'cc.profileJustPicked'
+  const _JUST_PICKED_MAX_AGE_MS = 60_000
+  function _readJustPickedMarker(): { name: string; at: number } | null {
+    if (typeof sessionStorage === 'undefined') return null
+    try {
+      const raw = sessionStorage.getItem(_JUST_PICKED_KEY)
+      if (!raw) return null
+      const v = JSON.parse(raw) as { name?: string; at?: number }
+      if (!v?.name || typeof v.at !== 'number') return null
+      if (Date.now() - v.at > _JUST_PICKED_MAX_AGE_MS) return null
+      return { name: v.name, at: v.at }
+    } catch { return null }
+  }
+  function _clearJustPickedMarker() {
+    try { sessionStorage.removeItem(_JUST_PICKED_KEY) } catch { /* private mode */ }
+  }
+  /** Preferences → Profiles calls this right before it reloads the page. Skips the picker on
+   *  the next boot as long as the roster's active profile matches (the reload re-hydrates every
+   *  store against the new identity, so a mismatch means something raced and we WANT the picker). */
+  function markProfileJustPicked(name: string) {
+    try {
+      sessionStorage.setItem(_JUST_PICKED_KEY, JSON.stringify({ name, at: Date.now() }))
+    } catch { /* private mode → picker will re-fire once; acceptable */ }
   }
 
   // wizard finished (POST /api/setup/init succeeded): clear the flag so the guard stops redirecting.
   function completeSetup() { setupRequired.value = false }
+
+  // The launch-time picker calls this after a successful /select — the guard then lets the app
+  // through instead of bouncing back to the picker. Only affects this window; a reload re-arms.
+  function completeProfilePick() { needsProfilePick.value = false }
 
   // ── Software updates (single source; consumed by Settings → Software AND the header badge) ──
   // The check/apply/staging backend + Settings UI already exist; this store centralises the STATE so
@@ -181,13 +249,14 @@ export const useAppControlStore = defineStore('appControl', () => {
     return null
   }
 
-  return { dev, busy, message, setupRequired, worktrees, canSwitch,
+  return { dev, busy, message, setupRequired, needsProfilePick, activeProfileName, profileCount, worktrees, canSwitch,
            updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
            updateChecking, updateBusy, updateMsg, updateDismissed,
            updateUrl, updateNotes, updatePublished, canApplyUpdate,
            updateHasPrevious, updateRevertBusy,
            checkUpdate, applyUpdate, revertUpdate, dismissUpdate,
-           refreshDev, refreshStartup, completeSetup, refreshWorktrees, quit, restartBackend, switchWorktree }
+           refreshDev, refreshStartup, completeSetup, completeProfilePick, markProfileJustPicked,
+           refreshWorktrees, quit, restartBackend, switchWorktree }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

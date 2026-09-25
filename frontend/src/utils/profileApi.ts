@@ -12,13 +12,13 @@
 // handoff via `X-Kiwi-Profile` header is deferred (see the plan).
 //
 // The validator mirrors backend `_valid_kiwi_profile_name` in `api/src/kiwi_profile_api.jl` so the
-// dialog can fail fast without a round-trip. Kept in sync by `kiwiProfileApi.test.ts` — if the
+// dialog can fail fast without a round-trip. Kept in sync by `profileApi.test.ts` — if the
 // backend rule changes, both must move together.
 
 /** A profile as the roster surfaces it. `default` maps to `~/.claude*` (dir === ''); named
  *  profiles live under `<config_dir>/kiwi-profiles/<name>/`. A `retired` profile keeps its data
  *  on disk (D11 immutable-name) but is non-selectable — the picker greys it out. */
-export interface KiwiProfile {
+export interface Profile {
   name: string
   dir: string
   isDefault: boolean
@@ -28,9 +28,9 @@ export interface KiwiProfile {
 /** The whole roster payload. `active` is the server-side active profile (a name, never a dir).
  *  `legacyReserved` names must never appear in `profiles` — surfaced so a UI can explain WHY a
  *  user typing `legacy` in the create dialog is rejected. */
-export interface KiwiProfileRoster {
+export interface ProfileRoster {
   active: string
-  profiles: KiwiProfile[]
+  profiles: Profile[]
   legacyReserved: string[]
 }
 
@@ -38,7 +38,7 @@ export interface KiwiProfileRoster {
  *  `env -u ANTHROPIC_API_KEY … CLAUDE_CONFIG_DIR=<dir> <shell> -i`; on Windows a PowerShell
  *  `Remove-Item Env:… ; $env:CLAUDE_CONFIG_DIR = '<dir>' ; & '<shell>'` string. The frontend
  *  just copies the string — it never parses it. */
-export interface KiwiTerminalCommand {
+export interface TerminalCommand {
   command: string
   profile: string
   profileDir: string
@@ -46,7 +46,7 @@ export interface KiwiTerminalCommand {
 
 /** Result of POST /api/kiwi/profiles/create. On success carries the newly-minted terminal
  *  one-liner so the create dialog can hand it to the user without a second round-trip. */
-export interface KiwiCreateResult {
+export interface CreateProfileResult {
   ok: boolean
   name?: string
   dir?: string
@@ -55,7 +55,7 @@ export interface KiwiCreateResult {
 }
 
 /** Result of POST /api/kiwi/profiles/select. `active` is the server's new active-profile name. */
-export interface KiwiSelectResult {
+export interface SelectProfileResult {
   ok: boolean
   active?: string
   error?: string
@@ -64,7 +64,7 @@ export interface KiwiSelectResult {
 /** Result of POST /api/kiwi/profiles/retire. `snappedToDefault` is true iff the retired profile
  *  was the currently-active one (server auto-switches so the next spawn doesn't silently keep
  *  using retired credentials). `alreadyRetired` is idempotent-hit sugar. */
-export interface KiwiRetireResult {
+export interface RetireProfileResult {
   ok: boolean
   name?: string
   active?: string
@@ -81,11 +81,11 @@ async function _json(res: Response): Promise<any> {
 
 /** Fetch the full roster. Any network failure ⇒ empty roster with `default` active — the same
  *  shape the backend returns on a fresh install, so the picker can render either way. */
-export async function fetchKiwiProfiles(apiBase = ''): Promise<KiwiProfileRoster> {
+export async function fetchProfiles(apiBase = ''): Promise<ProfileRoster> {
   try {
     const res = await fetch(`${apiBase}/api/kiwi/profiles`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await _json(res) as KiwiProfileRoster
+    return await _json(res) as ProfileRoster
   } catch {
     return { active: 'default',
              profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
@@ -95,11 +95,11 @@ export async function fetchKiwiProfiles(apiBase = ''): Promise<KiwiProfileRoster
 
 /** Switch the server-active profile. Returns `{ok:false, error}` on rejection so the caller
  *  can surface a message; never throws for a non-2xx (the picker needs to reset its select). */
-export async function selectKiwiProfile(name: string, apiBase = ''): Promise<KiwiSelectResult> {
+export async function selectProfile(name: string, apiBase = ''): Promise<SelectProfileResult> {
   try {
     const res = await fetch(`${apiBase}/api/kiwi/profiles/select`,
       { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res) as Partial<KiwiSelectResult>
+    const body = await _json(res) as Partial<SelectProfileResult>
     if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
     return { ok: true, active: body.active }
   } catch (e) {
@@ -111,11 +111,48 @@ export async function selectKiwiProfile(name: string, apiBase = ''): Promise<Kiw
  *  picker greys it out and select rejects it; if the retired profile was active, the server
  *  auto-snaps active to `default` (see `snappedToDefault`). Idempotent — a re-retire returns
  *  200 with `alreadyRetired: true`. */
-export async function retireKiwiProfile(name: string, apiBase = ''): Promise<KiwiRetireResult> {
+export interface RenameProfileResult {
+  ok: boolean
+  oldName?: string
+  newName?: string
+  active?: string
+  error?: string
+}
+export async function renameProfile(oldName: string, newName: string,
+                                    apiBase = ''): Promise<RenameProfileResult> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/rename`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldName, newName }),
+    })
+    const body = await _json(res) as Partial<RenameProfileResult>
+    if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` }
+    return { ok: true, oldName: body?.oldName, newName: body?.newName, active: body?.active }
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) } }
+}
+
+export interface DeleteProfileResult {
+  ok: boolean
+  name?: string
+  error?: string
+}
+export async function deleteProfile(name: string, apiBase = ''): Promise<DeleteProfileResult> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/delete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const body = await _json(res) as Partial<DeleteProfileResult>
+    if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` }
+    return { ok: true, name: body?.name }
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) } }
+}
+
+export async function retireProfile(name: string, apiBase = ''): Promise<RetireProfileResult> {
   try {
     const res = await fetch(`${apiBase}/api/kiwi/profiles/retire`,
       { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res) as Partial<KiwiRetireResult>
+    const body = await _json(res) as Partial<RetireProfileResult>
     if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
     return { ok: true, name: body.name, active: body.active,
              snappedToDefault: body.snappedToDefault, alreadyRetired: body.alreadyRetired }
@@ -126,11 +163,11 @@ export async function retireKiwiProfile(name: string, apiBase = ''): Promise<Kiw
 
 /** Create a new profile directory. Success surfaces the terminal one-liner so the caller can
  *  render it immediately — no second GET needed. */
-export async function createKiwiProfile(name: string, apiBase = ''): Promise<KiwiCreateResult> {
+export async function createProfile(name: string, apiBase = ''): Promise<CreateProfileResult> {
   try {
     const res = await fetch(`${apiBase}/api/kiwi/profiles/create`,
       { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res) as Partial<KiwiCreateResult>
+    const body = await _json(res) as Partial<CreateProfileResult>
     if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
     return { ok: true, name: body.name, dir: body.dir, terminalCommand: body.terminalCommand }
   } catch (e) {
@@ -140,21 +177,21 @@ export async function createKiwiProfile(name: string, apiBase = ''): Promise<Kiw
 
 /** Fetch the terminal one-liner. Omit `profile` to get the active one; pass a name to preview
  *  a specific profile's command (used by the create-dialog's Retry-copy fallback). */
-export async function fetchKiwiTerminalCommand(profile?: string, apiBase = ''):
-  Promise<KiwiTerminalCommand | null> {
+export async function fetchTerminalCommand(profile?: string, apiBase = ''):
+  Promise<TerminalCommand | null> {
   try {
     const qs = profile ? `?profile=${encodeURIComponent(profile)}` : ''
     const res = await fetch(`${apiBase}/api/kiwi/terminal/command${qs}`)
     if (!res.ok) return null
-    return await _json(res) as KiwiTerminalCommand
+    return await _json(res) as TerminalCommand
   } catch { return null }
 }
 
 /** Client-side mirror of the backend rule (`_valid_kiwi_profile_name` in
  *  `api/src/kiwi_profile_api.jl`). Same character class + length + reserved-name check, so the
  *  create dialog can show a live-validity hint. If this diverges from the backend, the round-trip
- *  will silently reject a name the dialog accepted — kept green by `kiwiProfileApi.test.ts`. */
-export function isValidKiwiProfileName(name: string,
+ *  will silently reject a name the dialog accepted — kept green by `profileApi.test.ts`. */
+export function isValidProfileName(name: string,
                                        reserved: readonly string[] = ['legacy']): boolean {
   if (name.length < 1 || name.length > 32) return false
   if (name === 'default') return false                          // magic name — reserved

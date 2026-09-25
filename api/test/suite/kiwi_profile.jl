@@ -109,22 +109,34 @@ end
             b = JSON3.read(body)
             @test [String(p.name) for p in b.profiles] == ["default", "alice"]
 
-            # Select alice → hot-reloads config, kiwi_profile_name() sees it.
+            # USER_PROFILE_PLAN Phase 4 introduced `kiwi-profiles/default/` as a REAL on-disk dir
+            # (that's where the default profile's settings.toml lives — profile_settings_dir
+            # mkpaths it). Before this ratchet, the roster picker showed TWO "default" rows:
+            # one synthetic + one from disk. `_kiwi_list_profiles` must skip the literal name
+            # when it walks the directory.
+            mkpath(joinpath(tmp, "kiwi-profiles", "default"))
+            code, body = api_kiwi_profiles_list(HTTP.Request("GET", "/api/kiwi/profiles"))
+            b = JSON3.read(body)
+            names = [String(p.name) for p in b.profiles]
+            @test names == ["default", "alice"]          # only ONE default
+            @test count(==( "default"), names) == 1
+
+            # Select alice → hot-reloads config, active_profile_name() sees it.
             code, body = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "alice"))))
             @test code == 200 && JSON3.read(body).active == "alice"
-            @test kiwi_profile_name() == "alice"
-            @test kiwi_profile_dir() == joinpath(tmp, "kiwi-profiles", "alice")
+            @test active_profile_name() == "alice"
+            @test active_profile_dir() == joinpath(tmp, "kiwi-profiles", "alice")
 
             # Select `default` → resolves back to empty dir marker.
             code, _ = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "default"))))
             @test code == 200
-            @test kiwi_profile_name() == "default"
-            @test kiwi_profile_dir() == ""
+            @test active_profile_name() == "default"
+            @test active_profile_dir() == ""
 
             # Select nonexistent → 404, config unchanged.
             code, _ = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "ghost"))))
             @test code == 404
-            @test kiwi_profile_name() == "default"
+            @test active_profile_name() == "default"
 
             # Terminal one-liner route: active vs explicit profile. Platform-agnostic — the
             # default-profile branch omits CLAUDE_CONFIG_DIR on both POSIX and PowerShell; a
@@ -173,7 +185,7 @@ end
             # Select of retired → 409, active unchanged.
             code, _ = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "alice"))))
             @test code == 409
-            @test kiwi_profile_name() == "default"
+            @test active_profile_name() == "default"
 
             # Idempotent retire → 200 + alreadyRetired flag.
             code, body = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "alice"))))
@@ -183,12 +195,12 @@ end
             # Retire the active profile → auto-snap to default so the next spawn doesn't silently
             # keep using retired credentials.
             api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "bob"))))
-            @test kiwi_profile_name() == "bob"
+            @test active_profile_name() == "bob"
             code, body = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "bob"))))
             @test code == 200
             b = JSON3.read(body)
             @test b.ok === true && b.snappedToDefault === true && b.active == "default"
-            @test kiwi_profile_name() == "default"
+            @test active_profile_name() == "default"
 
             # `default` can't be retired — it maps to ~/.claude.
             code, _ = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "default"))))

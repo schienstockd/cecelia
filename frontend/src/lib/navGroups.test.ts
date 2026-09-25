@@ -29,6 +29,7 @@ const NOT_IN_MENU: Record<string, string> = {
   '/tasks-window':      'bare route, the Task Manager opened in its own window',
   '/viewer-window':     'bare route, the volume viewer opened in its own window from the viewer panel',
   '/setup':             'bare route, the first-launch wizard',
+  '/profile-picker':    'bare route, the launch-time user-profile picker (USER_PROFILE_PLAN Phase 2)',
   '/custom/:category':  'parameterised — the Custom group is generated per category at runtime',
   '/optical-flow':      'legacy redirect to /model-training — pinned tabs and old guide links land here, then bounce',
 }

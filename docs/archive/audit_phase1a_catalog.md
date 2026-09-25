@@ -1,5 +1,9 @@
 # Phase 1a — Catalog of correction functions
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 ## Scope note
 
 **Included** — every task under `app/src/tasks/cleanupImages/` (nine files; one is a composite JSON with no `.jl`). `cleanupImages.cellposeCorrect` is retired (deleted in #610 / `CELLPOSE_V4_PLAN.md`) but included as a row because its output stores (`cpCorrected`) still live on disk and its ccid.json version key stays readable — the audit needs to see that. `importImages/saturation_run.py` is not itself a correction but writes `meta.saturation` which the denoise task's gate consumes, so it appears in the "provenance" column of denoise and in an out-of-scope note here.

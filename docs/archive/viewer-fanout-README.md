@@ -1,5 +1,9 @@
 # Viewer P5+ fan-out — session briefs
 
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked and
+> investigated at the time. It is not a description of how the code works now, and not instructions
+> to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
+
 Five briefs, each self-contained and hand-off-ready. Each session runs on its own
 worktree + branch. The "files NOT to touch" list in each brief protects the other
 sessions' surfaces.
