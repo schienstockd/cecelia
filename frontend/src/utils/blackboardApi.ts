@@ -55,6 +55,10 @@ export interface BlackboardEntry {
   attachments: string[]          // captureIds — resolvable via kiwiCaptures.fetchCaptureFrame
   status: BlackboardStatus
   outcome?: BlackboardOutcome
+  /** KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9. Per-ref sidecar for a saved Kiwi turn — absent
+   *  on a normal (non-Kiwi) Blackboard entry. Shape mirrors `kiwiTurnSave.KiwiRefsSidecar`; parsed
+   *  loosely here so a schema drift on either side degrades gracefully. */
+  kiwiRefs?: Record<string, unknown>
 }
 
 interface ListResp    { entries?: unknown[] }
@@ -89,6 +93,8 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
     ? (r.attachments as unknown[]).filter((v): v is string => typeof v === 'string')
     : []
   const outcome = parseOutcome(r.outcome)
+  const kiwiRefs = (r.kiwiRefs && typeof r.kiwiRefs === 'object' && !Array.isArray(r.kiwiRefs))
+    ? r.kiwiRefs as Record<string, unknown> : undefined
   return {
     entryId,
     title:     typeof r.title === 'string' ? r.title : '',
@@ -99,6 +105,7 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
     attachments,
     status:    parseStatus(r.status),
     ...(outcome ? { outcome } : {}),
+    ...(kiwiRefs ? { kiwiRefs } : {}),
   }
 }
 
@@ -143,11 +150,17 @@ async function postJson(url: string, body: Record<string, unknown>): Promise<Rec
   } catch { return null }
 }
 
-/** POST /api/blackboard/create — returns the new entryId, or '' on failure. */
+/** POST /api/blackboard/create — returns the new entryId, or '' on failure. `kiwiRefs` is the
+ *  optional per-ref sidecar for a saved Kiwi turn (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9);
+ *  a normal Blackboard write omits it. */
 export async function createBlackboardEntry(
-  projectUid: string, title: string, content: string, attachments: string[] = [], apiBase = '',
+  projectUid: string, title: string, content: string, attachments: string[] = [],
+  opts?: { kiwiRefs?: Record<string, unknown> },
+  apiBase = '',
 ): Promise<string> {
-  const r = await postJson(`${apiBase}/api/blackboard/create`, { projectUid, title, content, attachments })
+  const body: Record<string, unknown> = { projectUid, title, content, attachments }
+  if (opts?.kiwiRefs && Object.keys(opts.kiwiRefs).length > 0) body.kiwiRefs = opts.kiwiRefs
+  const r = await postJson(`${apiBase}/api/blackboard/create`, body)
   return r && typeof r.entryId === 'string' ? r.entryId : ''
 }
 

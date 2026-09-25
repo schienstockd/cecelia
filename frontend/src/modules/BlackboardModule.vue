@@ -39,8 +39,12 @@ import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCapture
 import { useRoute } from 'vue-router'
 import { useCaptureFocus } from '../composables/useCaptureFocus'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
+import KiwiRefChip from '../components/kiwi/KiwiRefChip.vue'
 import { composeImageWithOverlay } from '../utils/overlayCompose'
 import { loadImg } from '../plots/export'
+import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
+import type { KiwiRefSidecar } from '../utils/kiwiTurnSave'
+import { resolveKiwiRefs } from '../utils/kiwiTurn'
 
 const projectMeta = useProjectMetaStore()
 const bbStore = useBlackboardStore()
@@ -270,8 +274,59 @@ async function loadEntry(id: string, version?: number) {
   } finally { entryLoading.value = false }
   if (selected.value) {
     for (const cid of selected.value.attachments) void loadAttachment(cid)
+    void refreshKiwiRefResults(selected.value.kiwiRefs)
   }
 }
+
+// KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2 — for a saved Kiwi turn, resolve every fragile-ref sidecar
+// against live state so `KiwiRefChip` renders the right tone (ok / soft / fail-with-was-fallback).
+// A stable ref (project/set/image/viewer/task/blackboard) never lands in `kiwiRefs` — the saved
+// entry lists it in `attachments` (for `capture`) or the markdown body only. `kiwiRefResults` is
+// keyed by the same refKey the sidecar uses.
+const kiwiRefResults = ref<Record<string, KiwiRefResult>>({})
+async function refreshKiwiRefResults(kr: Record<string, unknown> | undefined): Promise<void> {
+  kiwiRefResults.value = {}
+  if (!kr || !projectUid.value) return
+  const keys = Object.keys(kr)
+  if (!keys.length) return
+  const refs: KiwiRef[] = []
+  const keyed: string[] = []
+  for (const k of keys) {
+    const s = kr[k] as { ref?: KiwiRef } | undefined
+    if (s?.ref && typeof s.ref === 'object' && 'kind' in s.ref) {
+      refs.push(s.ref)
+      keyed.push(k)
+    }
+  }
+  if (!refs.length) return
+  try {
+    const results = await resolveKiwiRefs(projectUid.value, refs)
+    const next: Record<string, KiwiRefResult> = {}
+    keyed.forEach((k, i) => { next[k] = results[i] })
+    kiwiRefResults.value = next
+  } catch { /* leave chips as "not checked yet" — the sidecar fallback still shows the label */ }
+}
+
+/** Parse the loosely-typed `kiwiRefs` map from `getBlackboardEntry` into a list of typed
+ *  `{key, sidecar}` rows for rendering. Skips a malformed row rather than failing the pane. */
+const savedKiwiRefRows = computed<{ key: string; sidecar: KiwiRefSidecar }[]>(() => {
+  const kr = selected.value?.kiwiRefs
+  if (!kr) return []
+  const rows: { key: string; sidecar: KiwiRefSidecar }[] = []
+  for (const [k, v] of Object.entries(kr)) {
+    if (!v || typeof v !== 'object') continue
+    const s = v as Record<string, unknown>
+    const ref = s.ref as KiwiRef | undefined
+    if (!ref || typeof ref !== 'object' || !('kind' in ref)) continue
+    rows.push({ key: k, sidecar: {
+      ref,
+      label: typeof s.label === 'string' ? s.label : '',
+      snapshot: s.snapshot as KiwiRefSidecar['snapshot'],
+      savedAt: typeof s.savedAt === 'string' ? s.savedAt : '',
+    }})
+  }
+  return rows
+})
 
 function selectEntry(id: string) {
   if (!id) return
@@ -661,6 +716,18 @@ onUnmounted(() => { mermaidRenderSeq++ })
                 </button>
               </div>
             </div>
+
+            <!-- KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2 — a saved Kiwi turn carries a per-ref sidecar
+                 (`meta.kiwiRefs`) with a minimal snapshot per fragile ref kind. Chips resolve live
+                 first; on a gone target the sidecar fallback shows "was: <label>". -->
+            <div v-if="savedKiwiRefRows.length > 0" class="bb-attach">
+              <div class="bb-attach-label cc-muted cc-fs-2xs">Kiwi refs</div>
+              <div class="cc-row cc-row-tight bb-kiwi-refs">
+                <KiwiRefChip v-for="row in savedKiwiRefRows" :key="row.key"
+                             :kiwi-ref="row.sidecar.ref" :result="kiwiRefResults[row.key]"
+                             :sidecar="row.sidecar" />
+              </div>
+            </div>
           </template>
 
           <div v-else class="bb-pane-empty cc-muted">
@@ -867,6 +934,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
 }
 .bb-attach-label { margin-bottom: 0.3rem; }
 .bb-attach-strip { display: flex; gap: 0.4rem; overflow-x: auto; }
+.bb-kiwi-refs { flex-wrap: wrap; }
 /* Bare bordered picture button — canonical square thumbnail (same shape Kiwi's row uses). */
 .bb-attach-thumb {
   width: 4rem; height: 4rem; padding: 0;
