@@ -167,9 +167,9 @@ popVis, trackColorMode, trackSourceColour, colourByOverrides, movie, cropZ, crop
 
 These are keyed by `imageUid` / `setUid`. They're not personal preferences — they describe
 "how I set up this dataset's view last time." Currently in `localStorage`, which means (a)
-they don't survive a browser wipe, (b) they don't travel with an export/import (see
-[`PROJECT_EXPORT_IMPORT_PLAN.md`](../todo/PROJECT_EXPORT_IMPORT_PLAN.md) — the `.ccbundle`
-misses these), and (c) two users on the same machine share them. **The right home is inside
+they don't survive a browser wipe, (b) they don't travel with an export/import (the `.ccbundle` bundle format,
+[`docs/JOBS.md`](../JOBS.md), misses these), and (c) two users on the same
+machine share them. **The right home is inside
 the project directory** (`<project>/settings/viewer-state.json` or similar), not the profile
 dir. **Out of scope for this plan** — flagged so it isn't picked up by mistake when Phase 4
 moves the profile-scoped keys. Belongs in a follow-up plan.
