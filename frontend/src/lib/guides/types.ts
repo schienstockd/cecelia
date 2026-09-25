@@ -18,6 +18,10 @@ import type { CciaImage } from '../../stores/project'
 export interface GuideCtx {
   route: string                              // current path, e.g. '/segment'
   hasProject: boolean
+  // How many profiles this box has (see USER_PROFILE_PLAN). A guide about switching profiles has
+  // nothing to point at on a single-profile install — the header chip is still there but Preferences
+  // has no Switch action to demonstrate — so it soft-gates on this rather than blocking the guide.
+  profileCount: number
   setUid: string | null                      // the ACTIVE set, or null
   // How many sets the project has AT ALL. Distinct from `setUid`, and the distinction matters: with no
   // sets there is nothing to select, so a step saying "pick a set" has to point at "New set" instead.

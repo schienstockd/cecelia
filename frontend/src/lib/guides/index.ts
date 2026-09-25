@@ -6,8 +6,9 @@
 //
 // Adding a guide:
 //   1. If the page is a ModuleLayout + TaskRunner one, add a `moduleTaskGuide({…})` call in
-//      `taskGuides.ts` / `extraGuides.ts` — do NOT hand-write the five standard steps (plan D8).
-//   2. Otherwise write a `GuideDef` in its own file here.
+//      `taskGuides.ts` — do NOT hand-write the five standard steps (plan D8).
+//   2. Otherwise write a `GuideDef` in its own file here (per-page-shape bespoke files) or
+//      alongside the other odd ones in `singleTopicGuides.ts` (fixMetadata / runChain / labLog).
 //   3. Register it below.
 //   4. Anchor ids must exist in the markup as `data-guide` attributes — `guides.test.ts` fails if not.
 
@@ -17,23 +18,29 @@ import { importImagesGuide } from './importImages'
 import {
   driftCorrectGuide, segmentGuide, trackCellsGuide,
   trainFlowModelGuide, trainDenoiseModelGuide, segmentByMotionGuide,
+  clusterCellsGuide, clusterTracksGuide, behaviourStatesGuide,
+  preprocessImagesGuide, clusterRegionsGuide, spatialAnalysisGuide,
 } from './taskGuides'
 import { gatePopulationsGuide } from './gatePopulations'
 import { notebooksGuide } from './notebooks'
 import { plotsGuide } from './plots'
 import { recordMovieGuide } from './movies'
 import { animationGuide } from './animation'
-import { labLogGuide } from './labLog'
 import {
-  fixMetadataGuide, behaviourStatesGuide, clusterCellsGuide, clusterTracksGuide, runChainGuide,
-} from './extraGuides'
+  userProfileGuide, viewProfileGuide,
+  fixMetadataGuide, runChainGuide, useTheBlackboardGuide, kiwiGuide,
+  correctAMaskGuide,
+} from './singleTopicGuides'
 
 export const GUIDES: GuideDef[] = [
   // Start — the app itself, before any data
   tourGuide,
+  userProfileGuide,
+  viewProfileGuide,
   // Data — get images in and ready
   importImagesGuide,
   fixMetadataGuide,
+  preprocessImagesGuide,
   driftCorrectGuide,
   segmentGuide,
   trainDenoiseModelGuide,
@@ -44,14 +51,18 @@ export const GUIDES: GuideDef[] = [
   trackCellsGuide,
   clusterCellsGuide,
   clusterTracksGuide,
+  clusterRegionsGuide,
+  correctAMaskGuide,
   // Explore — use those populations
   behaviourStatesGuide,
+  spatialAnalysisGuide,
   // Analysis — free-form surfaces
   plotsGuide,
   recordMovieGuide,
   animationGuide,
   notebooksGuide,
-  labLogGuide,
+  useTheBlackboardGuide,
+  kiwiGuide,
   // Pipeline — do it at scale
   runChainGuide,
 ]

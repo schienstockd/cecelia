@@ -209,8 +209,12 @@ no data migration.
 
 ### Phase 5 — Project ownership + load-screen filter (conditional on Phase 4)
 
-- `ccid.json` grows `owners: [string]` (empty by default). Same versioning discipline as
-  other `ccid.json` fields ([`docs/OBJECTMODEL.md`](../OBJECTMODEL.md)).
+- `ccid.json` grows `owners: [string]`. Same versioning discipline as
+  other `ccid.json` fields ([`docs/OBJECTMODEL.md`](../OBJECTMODEL.md)). Empty/missing = the
+  pre-identity default (Decision 8). A NEWLY created project is stamped with the active profile at
+  create-time — the server already knows who's creating it, and the [] default only exists to cover
+  the migration case where identity was never known. Without this, every fresh project needed a
+  follow-up Claim to appear under Mine, which is what "why isn't my project mine?" surfaced.
 - Load screen (`ProjectPicker` / `ImageTable`) filters by
   `owners.length === 0 || owners.includes(activeProfile)`; Show-all toggle overrides.
 - Project settings section grows a **Claim** button (adds active profile to `owners`) and a

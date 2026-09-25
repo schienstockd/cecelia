@@ -333,6 +333,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const viewProfile = ref(localStorage.getItem('cc.viewProfile') ?? '')
   const tipsOnLaunch = ref(localStorage.getItem('cc.tipsOnLaunch') !== 'false')  // default true
   const tipsLastShown = ref(localStorage.getItem('cc.tipsLastShown') ?? '')      // YYYY-MM-DD
+  // Machine-scoped "the orientation tour has fired once on this box" — kept OUT of PROFILE_KEYS
+  // deliberately (see App.vue's firstEverTips watcher). Under per-profile settings, `tipsLastShown`
+  // hydrates to '' whenever a new profile is picked, which would re-fire the tour for every second
+  // person on a shared workstation. The tour is chrome-only; one run per install is the right shape.
+  // Always reachable from the compass afterward.
+  const tipsEverShown = ref(localStorage.getItem('cc.tipsEverShown') === 'true')
 
   // transient (not persisted): a one-line preview of an unseen lab-log addition — set when Claude
   // (observer) or Cecelia (auto-digest) appends while the panel is closed; drives the sidebar badge,
@@ -702,6 +708,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewProfile,              v => localStorage.setItem('cc.viewProfile',              v))
   watch(tipsOnLaunch,             v => localStorage.setItem('cc.tipsOnLaunch',             String(v)))
   watch(tipsLastShown,            v => localStorage.setItem('cc.tipsLastShown',            v))
+  watch(tipsEverShown,            v => localStorage.setItem('cc.tipsEverShown',            String(v)))
   watch(labLogPanelOpen, open => { if (open) {          // opening clears the badge (all facets)
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
@@ -832,7 +839,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

@@ -14,6 +14,10 @@
 // Both segment and track teach the COMPOSITE (`…cellposeMeasure`, `…bayesian_track_measures`) rather
 // than the bare task beside it in the dropdown. Labels without measures, or tracks without measures,
 // leave every downstream page with nothing to read — which the guides' own endings promised.
+//
+// The clustering pair (`clusterCells`/`clusterTracks`) and the HMM guide (`behaviourStates`) also live
+// here — same builder, same shape. They used to sit in `extraGuides.ts` as "the guides beyond the
+// original seven"; that split was historical rather than architectural (see docs/todo/GUIDE_SYSTEM_AUDIT.md).
 
 import { moduleTaskGuide } from './moduleTask'
 import { PREREQ } from './prereqs'
@@ -391,6 +395,316 @@ export const segmentByMotionGuide = moduleTaskGuide({
       title: 'What you now have',
       text: 'Labels and measures on a movie cellpose could not read — track them next.',
       bullets: ['Tracking is the point of segmenting a movie; gating works on these too.'],
+    },
+  ],
+})
+
+// Clustering ends with numbered clusters, which are not yet populations. Turning them into named
+// populations is a distinct move with its own UI — no gate to draw, you create a population and tick
+// cluster IDs into it — and it is the step that makes the result usable downstream, so both cluster
+// guides end here.
+const clusterToPops = (route: string, what: string): GuideStep[] => [
+  {
+    anchor: 'cluster.popManager',
+    route,
+    placement: 'bottom-end',
+    title: 'Clusters are numbers, not populations yet',
+    text: 'Open the population manager — this is where numbered clusters become named groups.',
+    clickAnchor: true,
+  },
+  {
+    anchor: 'popmanager.addClusterPop',
+    route,
+    placement: 'left',
+    title: 'Add a population',
+    text: 'There is no gate to draw here — you create the population first, then fill it.',
+    bullets: ['Name it for what it is: "patrolling", "CD4 T cell".'],
+    // The chip row only exists once a population does, so its appearance is the signal.
+    when: c => c.anchorExists('popmanager.clusterChips'),
+  },
+  {
+    anchor: 'popmanager.clusterChips',
+    route,
+    placement: 'left',
+    title: 'Tick clusters into it',
+    text: `Each chip is one cluster — click to put it in this population.`,
+    bullets: [
+      'A cluster belongs to at most one population; ticking it elsewhere moves it.',
+      'The heatmap is how you decide which clusters belong together.',
+    ],
+  },
+  {
+    anchor: 'popmanager.row',
+    route,
+    placement: 'left',
+    title: 'Now it behaves like any population',
+    text: `Your ${what} populations are usable everywhere a gated one is.`,
+    bullets: [
+      'Plot them on the analysis board, show them in the viewer, use them as an input.',
+      'Populations are per clustering run — they follow that run\'s suffix.',
+    ],
+  },
+]
+
+// ── Cluster cells: a plain task run ──────────────────────────────────────────────────────────────
+export const clusterCellsGuide = moduleTaskGuide({
+  id: 'cluster-cells',
+  title: 'Cluster cells into phenotypes',
+  group: 'Populations',
+  icon: 'pi-share-alt',
+  summary: 'Group cells by their whole measure profile instead of gating two channels at a time.',
+  funHint: ['Clustering CELLS — the track counterpart is its own page, and needs tracking first.'],
+  route: '/clust-cells',
+  navLabel: 'Cluster cells',
+  taskKey: 'clusterCells',
+  funName: 'clustPops.cluster',
+  funLabel: 'Cluster cells',
+  selectionModule: 'clustPops',
+  waitLabel: 'Clustering',
+  prereqs: [PREREQ.projectOpen, PREREQ.segmented],
+  intro: 'Clustering finds cell types from all measures at once — the unsupervised counterpart to gating.',
+  selectHint: ['Select every image you want clustered TOGETHER — the run pools across them.'],
+  params: [
+    'Populations — which cells to cluster; every selection is clustered jointly.',
+    'Cluster on — the feature columns, usually the channel intensities.',
+    'Resolution — the Leiden resolution; higher gives more, smaller clusters.',
+    'Calculate UMAP — leave on, it is what the embedding plot draws.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/clust-cells',
+      placement: 'top-start',
+      title: 'UMAP plus heatmap',
+      text: 'The UMAP shows how clusters separate; the heatmap says what each one actually expresses.',
+      bullets: [
+        'The heatmap is what turns "cluster 4" into "CD4 T cell".',
+        'Read it before naming anything — it says what each cluster expresses.',
+      ],
+    },
+    ...clusterToPops('/clust-cells', 'phenotype'),
+  ],
+})
+
+// ── Cluster TRACKS: the same engine, a different table ────────────────────────────────────────────
+// Clustering comes in two kinds and they are separate pages: cells (above, needs a segmentation) and
+// tracks (here, needs TRACKING). Same Leiden/UMAP machinery, but the rows are tracks and the features
+// are per-track aggregates, so a user who has only segmented cannot use this one.
+export const clusterTracksGuide = moduleTaskGuide({
+  id: 'cluster-tracks',
+  title: 'Cluster tracks into behaviours',
+  group: 'Populations',
+  icon: 'pi-share-alt',
+  summary: 'Group whole tracks by how they move, rather than grouping cells by what they express.',
+  route: '/clust-tracks',
+  navLabel: 'Cluster tracks',
+  taskKey: 'clusterTracks',
+  funName: 'clustTracks.cluster',
+  funLabel: 'Cluster tracks',
+  selectionModule: 'clustTracks',
+  waitLabel: 'Clustering tracks',
+  prereqs: [PREREQ.projectOpen, PREREQ.tracked],
+  intro: 'One row per track instead of per cell — so this needs tracking, not just segmentation.',
+  funHint: ['Cell measures are aggregated per track for you; you pick the base measures.'],
+  selectHint: [
+    'Select every image to cluster TOGETHER — the run pools across them.',
+    'Needs measured tracks — the Track guide\'s function does both.',
+  ],
+  params: [
+    'Track populations — which tracks to cluster; every selection is clustered jointly.',
+    'Cluster on — base measures; cell measures are aggregated per track automatically.',
+    'Minimum track length — drop tracks too short to characterise.',
+    'Resolution — the Leiden resolution; higher gives more, smaller clusters.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/clust-tracks',
+      placement: 'top-start',
+      title: 'Clusters of movement',
+      text: 'The UMAP separates behaviours; the heatmap says which measures define each one.',
+      bullets: [
+        'This answers "how many kinds of movement are in here", without naming them first.',
+        'HMM states are the supervised alternative — fixed states, fitted per timepoint.',
+      ],
+    },
+    ...clusterToPops('/clust-tracks', 'behaviour'),
+  ],
+})
+
+// ── Behaviour states: a plain task run ───────────────────────────────────────────────────────────
+export const behaviourStatesGuide = moduleTaskGuide({
+  id: 'behaviour-states',
+  title: 'Classify behaviour states',
+  group: 'Explore',
+  icon: 'pi-directions',
+  summary: 'Fit an HMM to track movement so each cell gets an arrested / directed / meandering state.',
+  route: '/behaviour',
+  navLabel: 'Behaviour',
+  taskKey: 'hmm',
+  funName: 'behaviour.hmm',
+  funLabel: 'HMM (states + transitions)',
+  selectionModule: 'behaviourAnalysis',
+  waitLabel: 'Fitting states',
+  prereqs: [PREREQ.projectOpen, PREREQ.tracked],
+  intro: 'A Gaussian HMM turns raw track movement into a small set of named behaviour states.',
+  selectHint: [
+    'Only tracked images qualify — the states are fitted to track measures.',
+    'The tracking must have MEASURED — the Track guide\'s function does both.',
+  ],
+  params: [
+    'Number of states — 3 is the usual starting point (arrested / meandering / directed).',
+    'Which track measures to fit on — speed and angle are the standard pair.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/behaviour',
+      placement: 'top-start',
+      title: 'Read the states off the plots',
+      text: 'The panel shows what each fitted state actually looks like, so you can name them.',
+      bullets: [
+        'A state is only meaningful once you have seen its speed profile.',
+        'Fit landed oddly? Change the number of states and re-run.',
+      ],
+    },
+    {
+      anchor: 'sidebar.viewerCta',
+      placement: 'right',
+      title: 'Colour tracks by state',
+      text: 'The Viewer panel can colour tracks by the new state column.',
+      bullets: ['That is the quickest sanity check that the states mean something.'],
+    },
+  ],
+})
+
+// ── Preprocess (crop today) — the module page users find between import and cleanup ──────────────
+// Crop is what ships today under `editImages`; MIP/bin/resample are peers in the same module and
+// will show up in the same dropdown as they land. Deliberately not covered by fixMetadata: metadata
+// edits are in-place, this one writes a NEW image version.
+export const preprocessImagesGuide = moduleTaskGuide({
+  id: 'preprocess-images',
+  title: 'Preprocess an image',
+  group: 'Data',
+  icon: 'pi-image',
+  summary: 'Crop / project / resample raw images before you segment — writes a new version, keeps the original.',
+  route: '/preprocess',
+  navLabel: 'Preprocessing',
+  taskKey: 'cropImage',
+  funName: 'editImages.cropImage',
+  funLabel: 'Crop image',
+  selectionModule: 'preprocess',
+  waitLabel: 'Cropping',
+  withPreview: true,
+  prereqs: [PREREQ.projectOpen, PREREQ.imageImported],
+  intro: 'Preprocess sits between import and cleanup — trim the region before every downstream step reads the full one.',
+  funHint: [
+    'Crop is what this guide walks; MIP, bin, resample and dtype sit beside it in the same dropdown.',
+    'Every preprocess writes a NEW image version — nothing overwrites your import.',
+  ],
+  params: [
+    'Source image — which version of this image to crop; defaults to the active one.',
+    'Crop area — draw a box on the preview; z/t unset = keep the whole axis.',
+  ],
+  after: [
+    {
+      anchor: 'images.table',
+      route: '/preprocess',
+      placement: 'top-start',
+      title: 'It made a new version',
+      text: 'The row picks up an extra version — the info icon lists every version this image has.',
+      bullets: [
+        'Everything downstream reads the ACTIVE version.',
+        'Nothing is destroyed — flip back by making the original active.',
+      ],
+    },
+  ],
+})
+
+// ── Cluster regions — spatial neighbourhoods, not cells. SET-SCOPE so IDs are cross-image ────────
+// Same engine as `cluster-cells` (Leiden + UMAP + popmanager) but the rows are neighbourhoods.
+// Ends with the shared `clusterToPops` tail — a numbered region becomes a named population.
+export const clusterRegionsGuide = moduleTaskGuide({
+  id: 'cluster-regions',
+  title: 'Cluster spatial regions',
+  group: 'Populations',
+  icon: 'pi-map-marker',
+  summary: 'Group spatial neighbourhoods — what surrounds each cell — into named regions you can plot and gate.',
+  route: '/regions',
+  navLabel: 'Cluster regions',
+  taskKey: 'clusterRegions',
+  funName: 'clustRegions.cluster',
+  funLabel: 'Cluster regions',
+  selectionModule: 'clustRegions',
+  waitLabel: 'Clustering regions',
+  prereqs: [PREREQ.projectOpen, PREREQ.segmented],
+  intro: 'Region clustering groups NEIGHBOURHOODS ("what surrounds each cell"), not the cells themselves.',
+  funHint: [
+    'Needs a Neighbour graph — run Spatial → Neighbour graph first if you have not.',
+    'SET-SCOPE — every selected image is clustered jointly, so region IDs are comparable across them.',
+  ],
+  selectHint: ['Select every image you want clustered TOGETHER — the composition vectors pool across them.'],
+  params: [
+    'Neighbour graph — the graph a Spatial run produced; pick one to cluster over.',
+    'Population basis — the populations whose mix defines each neighbourhood\'s composition vector.',
+    'Suffix — output name for this run; you pick it again when reading the regions downstream.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/regions',
+      placement: 'top-start',
+      title: 'Read the regions',
+      text: 'UMAP shows how the neighbourhoods separate; the heatmap says what each region is composed of.',
+      bullets: [
+        'Bright rows on the heatmap = the populations that define that region.',
+        'Rename a region once its composition is clear — "T-cell rich", "vessel edge".',
+      ],
+    },
+    ...clusterToPops('/regions', 'region'),
+  ],
+})
+
+// ── Spatial analysis — interaction matrix + neighbour stats. IMAGE-scope ─────────────────────────
+// Multiple tasks live in this module (neighbour graph, aggregates, contacts, interaction matrix);
+// this guide teaches the interaction matrix because that is the readout users open the page for.
+// The prerequisite Neighbour graph is a separate run — called out in funHint rather than as a
+// prereq, since a matching graph exists on disk or it doesn't (no local state to check).
+export const spatialAnalysisGuide = moduleTaskGuide({
+  id: 'spatial-analysis',
+  title: 'Score spatial interactions',
+  group: 'Explore',
+  icon: 'pi-share-alt',
+  summary: 'Who is near whom, and how often — the interaction matrix and per-image contact stats.',
+  route: '/spatial',
+  navLabel: 'Spatial',
+  taskKey: 'neighbourStats',
+  funName: 'spatialAnalysis.neighbourStats',
+  funLabel: 'Interaction matrix',
+  selectionModule: 'spatialAnalysis',
+  waitLabel: 'Scoring interactions',
+  prereqs: [PREREQ.projectOpen, PREREQ.segmented],
+  intro: 'Reads relationships between populations on the image — who is near whom, and how often.',
+  funHint: [
+    'Neighbour graph runs first — this task LOADS it, does not build it.',
+    'Interaction matrix, Aggregates and Contacts all live in this dropdown; this guide teaches the matrix.',
+  ],
+  params: [
+    'Neighbour graph — the graph a Neighbour-graph run produced; pick the one you want scored.',
+    'Population basis — the pairs to score interactions between; at least two.',
+    'Name — output name for this run; a later plot picks it up by this name.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/spatial',
+      placement: 'top-start',
+      title: 'Read the matrix',
+      text: 'Log-odds heatmap: bright cells co-locate more than chance; dark ones avoid.',
+      bullets: [
+        'The permutation test tells you if a pattern is a real signal or the same cell types rearranged.',
+        'Contacts and aggregates plot the same underlying graph in different shapes — worth a look next.',
+      ],
     },
   ],
 })

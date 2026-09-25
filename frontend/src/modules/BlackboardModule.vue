@@ -484,7 +484,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
     <template v-else>
       <!-- Toolbar — mirrors ChainModule's top bar shape. -->
       <div class="bb-bar cc-row cc-row-loose">
-        <button class="cc-btn cc-btn-primary cc-btn-dense" @click="beginNew"
+        <button class="cc-btn cc-btn-primary cc-btn-dense" data-guide="blackboard.new"
+                @click="beginNew"
                 v-tooltip.bottom="'Start a new blackboard entry'">
           <i class="pi pi-plus" /> New entry
         </button>
@@ -515,7 +516,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
           <div class="bb-divider" @mousedown="onListResizeStart"
                v-tooltip.top="'Drag to resize the list'" />
           <div class="bb-list-scroll">
-          <SelectionTable class="bb-list-table"
+          <SelectionTable class="bb-list-table" data-guide="blackboard.list"
                           selection-mode="single"
                           id-key="entryId"
                           :columns="LIST_COLUMNS"
@@ -611,6 +612,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
               <span class="bb-bar-spacer" />
               <!-- the version being previewed, if any — so Kiwi reads what is on screen -->
               <AddToKiwiButton size="dense" tip="Add this entry to Kiwi"
+                               data-guide="blackboard.addToKiwi"
                                :kiwi-ref="viewingVersion !== null
                                  ? { kind: 'blackboard', entryId: selected.entryId, version: viewingVersion }
                                  : { kind: 'blackboard', entryId: selected.entryId }" />
@@ -639,7 +641,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
                       v-tooltip.bottom="'Restore this version as current; the current live content is snapshotted first'">
                 <i class="pi pi-history" /> Restore v{{ viewingVersion }}
               </button>
-              <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="beginEditExisting"
+              <button class="cc-btn cc-btn-ghost cc-btn-dense" data-guide="blackboard.edit"
+                      @click="beginEditExisting"
                       v-tooltip.bottom="'Edit; a snapshot is taken automatically before saving'">
                 <i class="pi pi-pencil" /> Edit
               </button>
@@ -652,7 +655,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
             <!-- Outcome row — good/bad tag with required note. Idle state shows the current tag or
                  a compact "Tag" button; editing state shows note input + Good/Bad buttons (each
                  disabled until the note is non-empty). Decision 11. -->
-            <div class="bb-outcome cc-row cc-row-loose">
+            <div class="bb-outcome cc-row cc-row-loose" data-guide="blackboard.outcome">
               <template v-if="!outcomeEditing">
                 <template v-if="selected.outcome">
                   <span class="bb-chip bb-chip-outcome" :class="`bb-chip-outcome-${selected.outcome.verdict}`">

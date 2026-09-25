@@ -1,11 +1,15 @@
 # In-app guide system — bubble walkthroughs
 
-Status: **built** (P1–P4) · branch `work/guide-system` · durable docs promoted to `docs/UI.md` → *Guides*
-and `INVENTORY.md`. This file stays as the decision record — the *why* behind D1–D10 and the
-reservations, which the reference docs deliberately don't repeat.
+Status: **shipped and stable** · durable docs promoted to `docs/UI.md` → *Guides* and `INVENTORY.md` ·
+catalogue ratcheted by `frontend/src/lib/guides/guides.test.ts`. This file stays as the decision
+record — the *why* behind D1–D10 and the reservations, which the reference docs deliberately don't
+repeat. For an audit of what has drifted since — including new surfaces (user profiles, blackboard,
+expanded Kiwi) with no guide yet — see [`GUIDE_SYSTEM_AUDIT.md`](GUIDE_SYSTEM_AUDIT.md).
 
-**What shipped, against the plan.** All four phases, 11 guides (the 7 planned + 4 obvious candidates —
-see *The guides*). Changes made while building, each for a reason found in the code:
+**What shipped, against the plan.** All four phases, plus additions after the initial build (fix
+metadata, behaviour states, both clustering pages, run-a-chain, the orientation tour, the flow /
+denoise / motion-segment trio, lab log + Claude → 18 guides total). Changes made while building, each
+for a reason found in the code:
 
 - **The runtime reads the route from `location.hash`, not `useRoute()`.** No other store touches
   vue-router, and a store that needs router injection context would be the first. Hash history means
@@ -311,14 +315,17 @@ family. It is not an exception to D6; it is the guide D6 has nothing to say abou
 
 **Three entries, one implementation.** The compass (as any guide), `guideId` on the *about Cecelia*
 card (the D7 link, no new plumbing), and — new — **automatic on the first-ever close of the What's New
-dialog**. That last one needs no new persisted flag: `settings.tipsLastShown` is `''` until the daily
-launch tip fires once ever, so reading it before the date stamp *is* the first-launch signal.
+dialog**. This uses `settings.tipsEverShown` — a machine-scoped localStorage flag kept OUT of
+`PROFILE_KEYS` on purpose. `tipsLastShown` (per-profile) still drives the daily-tip cadence; using it
+also as the first-ever signal was a bug under `USER_PROFILE_PLAN` — a new profile inherits an empty
+stamp, which would re-fire the orientation tour for every second person on a shared workstation. The
+tour is chrome-only; one run per install is the right shape (compass still opens it on demand).
 
 Rejected: a first-time highlight ring on the compass (the original ask). A ring is a passive hint that
 still requires the user to work out what the icon is for; the tour answers that directly, and adding
 both means two competing first-run affordances pointing at the same button. Rejected too: a welcome-page
-CTA — there is no welcome page (`/` redirects to `/manage-images`; `/setup` is the bare first-launch
-wizard), and the What's New dialog is already the de-facto welcome surface.
+CTA — `/` is now `WelcomeModule.vue`, deliberately empty of copy so it does not compete with the tour
+or the What's New dialog for the first-run moment. The reasoning stands even now that a page exists.
 
 Two anchor rules fell out of writing it, both now in `docs/UI.md`: a control behind a `v-if` that may
 *never* render (Settings' "Free up space") needs a **different anchor**, not a `reveal` — so the step
@@ -406,9 +413,10 @@ frontend/src/
 - Completion is remembered per guide (`cc.guide.<id>.done`, the `HintCallout` idiom) — a tick in the
   picker, nothing more. No nagging, no badge (`WHATS_NEW_PLAN` D3 already ruled out a fifth surface).
 
-### Anchors to add
+### Anchors to add (✅ done — pinned by `guides.test.ts`)
 
-~35–45 attributes, concentrated in shared components — which is why D8 pays off:
+~35–45 attributes, concentrated in shared components — which is why D8 pays off. Kept below as the
+original inventory; the current set is enforced by the test rather than by hand-maintenance here.
 
 | File | Anchors | Serves |
 |---|---|---|
@@ -561,3 +569,23 @@ pure positioner test is written against the current behaviour first.
 miss if the element is re-created between resolve and click (a `v-for` re-render, a `KeepAlive`
 restore). Prefer `when()` over stores wherever a state change is observable; `clickAnchor` is for
 controls with genuinely no end state, and it always has `Next` behind it.
+
+---
+
+## Audit (2026-09-25) — what shipped since and what to do
+
+Full punch list in [`GUIDE_SYSTEM_AUDIT.md`](GUIDE_SYSTEM_AUDIT.md). Headlines:
+
+- **Consolidated (this file's PR)** — `extraGuides.ts` renamed `singleTopicGuides.ts` and now holds
+  only fixMetadata + runChain + labLog; the three moduleTaskGuide calls (behaviourStates, clusterCells,
+  clusterTracks) plus the `clusterToPops` helper moved to `taskGuides.ts` so all builder calls live in
+  one file. 15 files → 14, minor line-count drop. The per-page-shape split (gate/plots/notebooks/
+  movies/animation/import/tour) is kept — a full 5-bundle collapse would trade navigability for a
+  smaller tree.
+- **Add (missing coverage)** — three new surfaces post-date the plan and have zero anchors + zero
+  guide: **user profile picker** (`/profile-picker`, gates every above-project surface), **Blackboard**
+  (`/blackboard`), and expanded **Kiwi** (three unused anchors already in `KiwiCockpit.vue`; the
+  current lab-log guide points at one `?` dialog and stops). Plus `/preprocess`, `/phenotype`,
+  `/regions`, `/spatial`, view profiles, correction cockpit — see the audit doc.
+- **Update (broken/stale)** — no dead anchors. Tour's WIP caveat on correction-cockpit, and lab-log
+  guide undersells Kiwi. Small.

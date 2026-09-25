@@ -205,7 +205,7 @@ async function copyTerminalCommand(profile?: string) {
             Your identity for this session — drives Kiwi credentials, per-profile preferences and
             which projects you see. Switching reloads the app.
           </p>
-          <ul class="pp-list">
+          <ul class="pp-list" data-guide="prefs.profilesPane">
             <li v-for="p in roster.profiles" :key="p.name" class="pp-row"
                 :class="{ 'pp-row-active': p.name === roster.active,
                           'pp-row-retired': p.retired }">
@@ -293,11 +293,13 @@ async function copyTerminalCommand(profile?: string) {
           </p>
 
           <div class="cc-row cc-row-tight" style="flex-wrap:wrap; margin-top:0.6rem;">
-            <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="showCreateProfile = true"
+            <button class="cc-btn cc-btn-ghost cc-fs-xs" data-guide="prefs.newProfile"
+                    @click="showCreateProfile = true"
                     v-tooltip.top="'A separate credential + MCP scope for this seat login'">
               <i class="pi pi-user-plus" /> New profile
             </button>
-            <button class="cc-btn cc-btn-ghost cc-fs-xs" :disabled="!!termFetching"
+            <button class="cc-btn cc-btn-ghost cc-fs-xs" data-guide="prefs.copyLogin"
+                    :disabled="!!termFetching"
                     @click="copyTerminalCommand()"
                     v-tooltip.top="termCopied()
                       ? `Copied — paste in a terminal to log ${roster.active} in`
