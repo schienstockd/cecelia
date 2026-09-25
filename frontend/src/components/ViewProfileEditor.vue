@@ -113,7 +113,7 @@ function duplicate() {
 
 <template>
   <BaseModal title="View profiles" icon="pi-eye" width="620px" @close="emit('close')">
-    <div class="vp-body">
+    <div class="vp-body" data-guide="viewProfile.editor">
 
       <!-- existing profiles + the implicit All -->
       <div class="vp-row">

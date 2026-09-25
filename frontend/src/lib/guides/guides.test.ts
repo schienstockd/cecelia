@@ -286,6 +286,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
   const ctx = (over: Partial<GuideCtx> = {}): GuideCtx => ({
     route: '/manage-images',
     hasProject: false,
+    profileCount: 1,
     setUid: null,
     setCount: 0,
     images: [],

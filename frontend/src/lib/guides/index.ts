@@ -25,11 +25,16 @@ import { notebooksGuide } from './notebooks'
 import { plotsGuide } from './plots'
 import { recordMovieGuide } from './movies'
 import { animationGuide } from './animation'
-import { fixMetadataGuide, runChainGuide, labLogGuide } from './singleTopicGuides'
+import {
+  userProfileGuide, viewProfileGuide,
+  fixMetadataGuide, runChainGuide, labLogGuide,
+} from './singleTopicGuides'
 
 export const GUIDES: GuideDef[] = [
   // Start — the app itself, before any data
   tourGuide,
+  userProfileGuide,
+  viewProfileGuide,
   // Data — get images in and ready
   importImagesGuide,
   fixMetadataGuide,

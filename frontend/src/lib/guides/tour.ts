@@ -108,6 +108,13 @@ export const tourGuide: GuideDef = {
       text: 'A per-project record of what was run and what you concluded, kept as you go.',
     },
     {
+      anchor: 'sidebar.kiwiCta',
+      placement: 'right',
+      title: 'Kiwi — the assist cockpit',
+      text: 'Pairing, chat handoff and the buttons that share what is on screen with Claude — all here.',
+      bullets: ['On-demand only: nothing happens until you ask.'],
+    },
+    {
       anchor: 'sidebar.settings',
       placement: 'right',
       title: 'Settings',

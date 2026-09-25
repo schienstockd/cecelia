@@ -745,7 +745,7 @@ async function switchWt(path: string) {
 
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
            pages stay reachable by URL — this declutters, it does not restrict. -->
-      <div class="field">
+      <div class="field" data-guide="settings.viewProfile">
         <label class="field-label">View profile</label>
         <div class="field-row">
           <!-- Edit FIRST: the chip row grows with every profile, and a trailing button would drift

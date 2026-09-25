@@ -1,21 +1,115 @@
 // The single-topic bespoke guides — each answers a question users actually arrive with, and each has a
 // shape different enough that the `moduleTaskGuide` builder does not fit:
 //
-//   fix-metadata        — "the scale bar is wrong / my channels are called Channel 1". THE most common
-//                         first failure, and the import guide already points at it. Not a task runner
-//                         (edits apply immediately) so it gets its own steps.
-//   run-a-chain         — "I have forty images, am I really doing this one at a time?" The whiteboard's
-//                         a DAG editor, not a function list.
-//   lab-log-and-claude  — deliberately the SHORTEST guide in the catalogue. Its job is discovery: two
-//                         surfaces exist that nobody finds on their own. The Claude one already has an
-//                         in-app explainer behind its `?` (ClaudeOverviewDialog, content in
-//                         lib/claudeOverview.ts) — duplicating that here would be a second copy to keep
-//                         in step, so this guide points at it and stops. Claude is on-demand only and
-//                         may not be installed at all, so nothing here promises it works; the `?`
-//                         dialog is also where the setup state is reported.
+//   use-a-user-profile  — Start group. Who is driving this box, and where switching / creating /
+//                         logging-in a profile lives. Targets the header chip → Preferences (NOT the
+//                         launch picker, which is a boot interstitial the router bounces away from
+//                         mid-session — see GUIDE_ADDITIONS_PLAN D14).
+//   use-a-view-profile  — Start group. The sidebar-curation surface in Settings — every step still
+//                         works on a single-profile install.
+//   fix-metadata        — Data group. "The scale bar is wrong / my channels are called Channel 1".
+//                         THE most common first failure, and the import guide already points at it.
+//                         Not a task runner (edits apply immediately) so it gets its own steps.
+//   run-a-chain         — Pipeline group. "I have forty images, am I really doing this one at a
+//                         time?" The whiteboard's a DAG editor, not a function list.
+//   lab-log-and-claude  — Analysis group. Deliberately the SHORTEST guide in the catalogue — its job
+//                         is discovery: two surfaces exist that nobody finds on their own. The
+//                         Claude one has its own `?` explainer (ClaudeOverviewDialog) so this guide
+//                         points at it and stops.
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+
+// ── User profile: the header chip is the mid-session entry point ─────────────────────────────────
+// The launch picker (AppProfilePicker.vue) is a bare-route boot interstitial — the router bounces
+// there when appCtl.needsProfilePick is true and away when it's false. A guide's "click here" step
+// on it cannot land mid-session, so this walks the always-reachable surfaces instead: the header
+// chip and the Profiles pane it opens.
+export const userProfileGuide: GuideDef = {
+  id: 'use-a-user-profile',
+  title: 'Use a user profile',
+  group: 'Start',
+  icon: 'pi-user',
+  summary: 'Who is driving this box — and where switching, creating or logging in a profile lives.',
+  prereqs: [],
+
+  steps: [
+    {
+      anchor: 'header.profileChip',
+      placement: 'bottom',
+      title: 'Who is driving',
+      text: 'The chip in the header names the active profile — click it to open Preferences → Profiles.',
+      bullets: ['One profile per person, not per experiment.'],
+      clickAnchor: true,
+    },
+    {
+      anchor: 'prefs.profilesPane',
+      placement: 'right',
+      title: 'The Profiles pane',
+      text: 'Every profile has its own Kiwi credentials, preferences and project list — switching one over reloads the app.',
+      bullets: ['No cross-profile sharing by default.'],
+    },
+    {
+      anchor: 'prefs.newProfile',
+      placement: 'top',
+      title: 'Add a profile',
+      text: 'New profile = fresh credentials and an empty project list.',
+      bullets: ['Retire one from the row above; the record stays resolvable for old turn logs.'],
+    },
+    {
+      anchor: 'prefs.copyLogin',
+      placement: 'top',
+      title: 'Log the profile in',
+      text: 'Copies a terminal one-liner scoped to this profile\'s CLAUDE_CONFIG_DIR — paste and run /login.',
+      bullets: ['Each profile logs Claude in separately.'],
+    },
+  ],
+}
+
+// ── View profile: the sidebar curator, lives in Settings ─────────────────────────────────────────
+// Different from a user profile — a view profile only decides which sidebar entries this user sees;
+// every hidden page is still reachable by URL. Settings → View profile is the only entry point.
+export const viewProfileGuide: GuideDef = {
+  id: 'use-a-view-profile',
+  title: 'Use a view profile',
+  group: 'Start',
+  icon: 'pi-eye',
+  summary: 'Curate the sidebar down to the pages you actually work on — declutter, not access control.',
+  prereqs: [],
+
+  steps: [
+    {
+      anchor: 'nav:/settings',
+      placement: 'right',
+      title: 'Settings',
+      text: 'View profiles live in Settings — they curate the sidebar down to the pages this user actually works on.',
+      bullets: ['This is decluttering, not access control — every page still opens by URL.'],
+      clickAnchor: true,
+    },
+    {
+      anchor: 'settings.viewProfile',
+      route: '/settings',
+      placement: 'left',
+      title: 'Pick or edit one',
+      text: 'The chip row picks which profile is active; Edit opens the builder.',
+      bullets: ['"All pages" is the default — you never lose access to a page by picking a profile.'],
+    },
+    {
+      anchor: 'viewProfile.editor',
+      placement: 'bottom',
+      title: 'Tick pages into a profile',
+      text: 'One row per sidebar group — tick the pages this profile should surface.',
+      bullets: ['Great for handing a colleague a "just the segmentation bits" cecelia.'],
+      reveal: {
+        // The editor only exists once the user clicks Edit in the previous step.
+        needed: c => !c.anchorExists('viewProfile.editor'),
+        anchor: 'settings.viewProfile',
+        text: 'Click Edit above to open the view-profile builder.',
+        placement: 'left',
+      },
+    },
+  ],
+}
 
 // ── Metadata: not a task runner (edits apply immediately), so it gets its own steps ──────────────
 export const fixMetadataGuide: GuideDef = {

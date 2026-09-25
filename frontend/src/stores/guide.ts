@@ -18,6 +18,7 @@
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed, watch, nextTick, onScopeDispose } from 'vue'
+import { useAppControlStore } from './appControl'
 import { useProjectStore } from './project'
 import { useProjectMetaStore } from './projectMeta'
 import { useSettingsStore } from './settings'
@@ -40,6 +41,7 @@ const ADVANCE_DELAY_MS = 450
 export type GuidePhase = 'step' | 'waiting' | 'failed' | 'done'
 
 export const useGuideStore = defineStore('guide', () => {
+  const appCtl = useAppControlStore()
   const project = useProjectStore()
   const meta = useProjectMetaStore()
   const settings = useSettingsStore()
@@ -95,6 +97,7 @@ export const useGuideStore = defineStore('guide', () => {
     return {
       route: currentPath.value,
       hasProject: meta.current !== null,
+      profileCount: appCtl.profileCount,
       setUid: set?.uid ?? null,
       setCount: project.sets.length,
       images: set?.images ?? [],
