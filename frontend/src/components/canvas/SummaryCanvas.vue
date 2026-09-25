@@ -116,6 +116,7 @@ const tileCols = computed<number>({ get: () => (shared.value.tileCols as number)
 const {
   specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
+  manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
 } = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared,
   // The population picker follows the ACTIVE plot's spec, exactly as on the Analysis board. This used
@@ -175,7 +176,11 @@ const viewContext = (id: number, st: PanelState) => {
 // global/local scope governs BOTH the eye-selection AND the visual properties (like the gating
 // PopulationManager): global = one value shared by every plot, local = the active plot's own.
 const panelSel = (s: PanelState) => scope.value === 'global' ? gSel.value : s.sel
-const activeSel = computed(() => scope.value === 'global' ? gSel.value : (activePanel.value?.state.sel ?? []))
+// The picker shows STAGED selection in manual-apply mode (so ticking an eye updates the row
+// immediately even though the plots don't refetch until Apply). Local scope isn't staged.
+const pickerSel = computed(() => scope.value === 'global'
+  ? (manualApply.value ? stagedSel.value : gSel.value)
+  : (activePanel.value?.state.sel ?? []))
 // the SAME registry policy the other two hosts read (`singlePopFor`). No plugin-nameable view declares
 // it today, but a policy honoured by two hosts out of three is how the three drift apart.
 const activeSinglePop = computed(() => {
@@ -361,8 +366,12 @@ function removeAllPanels() { removeAll(); readouts.value = {} }
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
   const next = (cur: string[]) => toggleSelected(cur, k, { single: activeSinglePop.value })
-  if (scope.value === 'global') gSel.value = next(gSel.value)
-  else if (activePanel.value) activePanel.value.state.sel = next(activePanel.value.state.sel)
+  if (scope.value === 'global') {
+    // manual-apply mode: stage the toggle; plots stay on the committed gSel until Apply is pressed.
+    // See useSummaryData `manualApply` — the opt-in trickle escape hatch for users with many pops.
+    if (manualApply.value) stagedSel.value = next(stagedSel.value)
+    else gSel.value = next(gSel.value)
+  } else if (activePanel.value) activePanel.value.state.sel = next(activePanel.value.state.sel)
 }
 // the policy can change under an existing selection when the ACTIVE panel changes — narrow rather than
 // let a single-population plot draw one of several and say nothing
@@ -560,9 +569,13 @@ watch(segPops, () => {
           <!-- Floating population picker: `position: absolute` on the undocked CanvasSidePanel
                anchors it to the nearest positioned ancestor, so it stays in the overlay slot
                (inside `.floating-canvas`) alongside the share chip — not below the host. -->
-          <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
+          <SeriesPicker v-if="showManager" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
-                        @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
+                        :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
+                        :has-staged="hasStaged"
+                        @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis"
+                        @update:manualApply="manualApply = $event"
+                        @apply:staged="applyStaged" @discard:staged="discardStaged" />
         </template>
       </FloatingCanvasHost>
     </template>

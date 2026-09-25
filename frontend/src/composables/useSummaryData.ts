@@ -45,7 +45,8 @@ export function useSummaryData(opts: {
   const ws = useWsStore()
   const imageUid = computed(() => imageUids.value[0] ?? null)
 
-  const { compareMode, compareAttr, compareAttr2, scope, sel: gSel, vis: gVis, poolGroups } =
+  const { compareMode, compareAttr, compareAttr2, scope, sel: gSel, vis: gVis, poolGroups,
+          manualApply, stagedSel } =
     useViewState(opts.shared, {
       // DEFAULT = per_image, not 'image'. `'image'` means "the first selected image only", so with the
       // old default you could tick five images and see one, with nothing but a dropdown labelled
@@ -60,6 +61,13 @@ export function useSummaryData(opts: {
       sel: [] as string[],
       vis: defaultVis() as VisProps,
       poolGroups: false as boolean,
+      // MANUAL APPLY (opt-in) — for a user with many pops/images where every toggle firing a fetch
+      // trickles pops into the plot. When on, the picker's toggles stage into `stagedSel` and the
+      // plots stay on `gSel` until Apply. Default off — the current live behaviour is what most
+      // sessions want. Only affects the GLOBAL scope pop selection (local-scope selection is per-
+      // panel and doesn't have the same burst pattern).
+      manualApply: false as boolean,
+      stagedSel: [] as string[],
     })
 
   const canCompare = computed(() => !!setUid.value && imageUids.value.length > 1)
@@ -198,12 +206,32 @@ export function useSummaryData(opts: {
   onMounted(async () => { ws.on('gating:popmap', onPopmap); await loadSpecs(); await loadPops(); await loadAttrs() })
   onUnmounted(() => ws.off('gating:popmap', onPopmap))
 
+  // Manual-apply staging helpers. `stagedSel` mirrors `gSel` when manualApply is OFF (via the sync
+  // watcher below), so consumers can always read stagedSel to render the picker's eyes without
+  // branching on the mode. When ON, the two diverge until `applyStaged` copies over.
+  const hasStaged = computed(() => stagedSel.value.length !== gSel.value.length
+    || stagedSel.value.some((k, i) => k !== gSel.value[i]))
+  const stagedChangeCount = computed(() => {
+    const cur = new Set(gSel.value); const stg = new Set(stagedSel.value)
+    let n = 0
+    for (const k of stg) if (!cur.has(k)) n++
+    for (const k of cur) if (!stg.has(k)) n++
+    return n
+  })
+  const applyStaged = () => { gSel.value = [...stagedSel.value] }
+  const discardStaged = () => { stagedSel.value = [...gSel.value] }
+  // keep stagedSel = gSel while manual mode is off, so flipping the toggle on starts from the
+  // current live selection rather than an empty / stale staged bag.
+  watch([manualApply, gSel], ([on, sel]) => { if (!on) stagedSel.value = [...sel] }, { immediate: true })
+
   return {
     // data
     specs, specById, popType, granularity, segPops, popColors, setAttrs, seriesColor, reloadToken,
     validSelKeys, loadSpecs, loadPops, loadAttrs,
     // shared view-state
     compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
+    // manual-apply staging (opt-in)
+    manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
     // compare-derived
     canCompare, crossImage, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2,
   }
