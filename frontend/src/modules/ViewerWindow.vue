@@ -52,7 +52,7 @@ import {
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
-import MarksOverlay from '../components/MarksOverlay.vue'
+import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
@@ -4141,20 +4141,29 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
     if (typeof focus.z === 'number' && focus.z < m.nZ && focus.z !== zPlane.value) zPlane.value = focus.z
   }
 
-  // Overlay sidecar — the capture's stored marks paint over the live canvas until the user
-  // seeks away (the [shownT, zPlane] watcher above auto-clears activeMarks). Applies whether the
-  // main payload was a full restore, a focus-only seek, or nothing (`marks-only` isn't in use
-  // today but the shape allows it).
+  // Reshow the frozen capture on top of the live view. Same pathway as the module-page reshow
+  // (SummaryCanvas etc): mount CaptureViewSurface so the pencil chip → re-annotate → append-chain
+  // route is present here too. The live viewer is still restored underneath (viewState / focus
+  // above); the capture surface just sits over it. Fetching the envelope is one extra round-trip,
+  // but it's the only way to get the PNG data URL to the popup — `setPendingViewState` crosses
+  // windows via localStorage and can't carry a base64 frame reliably.
   const overlay = pending.overlay as { captureId: string, marks: OverlayMark[] } | undefined
-  if (overlay?.captureId && Array.isArray(overlay.marks) && overlay.marks.length > 0) {
-    const step = (vs as ViewerViewState | null)?.dims?.current_step
-    const anchorT = vs ? (Array.isArray(step) && typeof step[0] === 'number' ? step[0] : -1) : (focus?.t ?? -1)
-    const anchorZ = vs ? (Array.isArray(step) && typeof step[1] === 'number' ? step[1] : -1) : (focus?.z ?? -1)
-    activeMarks.value = {
-      captureId: overlay.captureId,
-      marks: overlay.marks,
-      t: anchorT,
-      z: anchorZ,
+  if (overlay?.captureId && projectUid) {
+    const env = await fetchCaptureEnvelope(projectUid, overlay.captureId)
+    if (env && env.frame) {
+      // kiwiCaptures has a subtly looser CaptureAddress shape than captureAddress.ts (projectUid /
+      // plotSpec.specId are optional there); a plot-shaped field wouldn't appear on a viewer_frame
+      // capture anyway, and we fill projectUid from the popup's own uid — cast bridges the drift.
+      const addr = { ...(env.address ?? {}), projectUid } as CaptureAddress
+      captureView.value = {
+        captureId: env.captureId,
+        frameDataUrl: env.frame,
+        overlay: env.overlay,
+        address: addr,
+        addressLine: drawAddressLine.value,
+        viewStateSnapshot: env.viewStateSnapshot,
+        notes: env.notes,
+      }
     }
   }
 
@@ -4548,26 +4557,6 @@ interface CaptureView {
 const captureView = ref<CaptureView | null>(null)
 function closeCaptureView() { captureView.value = null }
 
-// Live annotation restore (BIDIR Part 4 follow-up). When a blackboard attachment is clicked the
-// main-window publishes a seek + marks payload; we mount `MarksOverlay` over the live canvas + show
-// a dismissible chip. Auto-clears when the user seeks t / z away — the marks are anchored to a
-// specific captured frame, and reading them over a different frame is worse than reading nothing.
-interface ActiveMarks {
-  captureId: string
-  marks: OverlayMark[]
-  t: number     // the capture's t (may be -1 if unknown; still valid for the chip label)
-  z: number     // the capture's z
-}
-const activeMarks = ref<ActiveMarks | null>(null)
-function dismissActiveMarks() { activeMarks.value = null }
-watch([shownT, zPlane], ([t2, z2]) => {
-  const am = activeMarks.value
-  if (!am) return
-  const tOk = am.t < 0 || am.t === t2
-  const zOk = am.z < 0 || am.z === z2
-  if (!tOk || !zOk) activeMarks.value = null
-})
-
 // Landscape overlay (BIDIR PR #6, Decision 14): a categorical heatmap over the same tiles as
 // GridOverlay. Recompute on toggle / density / frame changes; the categorical output is a small
 // prior for Claude AND a pass at "where is the interesting stuff" for the eye. Publishing to the
@@ -4904,23 +4893,6 @@ onUnmounted(() => {
                         :landscape="landscape" :show-labels="settings.viewerLandscapeLabels" />
       <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity"
                    :hide-labels="settings.viewerLandscape && settings.viewerLandscapeLabels" />
-      <!-- Restored annotations from a blackboard attachment (BIDIR Part 4). Read-only; the source of
-           truth is the capture on disk, and edits happen on the blackboard side, not here. Chip below
-           labels it + dismisses. Auto-drops when the user seeks t / z away — the marks belong to a
-           specific frame. -->
-      <MarksOverlay v-if="activeMarks" :marks="activeMarks.marks" />
-      <div v-if="activeMarks" class="vw-marks-chip" role="status">
-        <i class="pi pi-eye" />
-        <span class="vw-marks-chip-lbl"
-              v-tooltip.bottom="`Restored from capture ${activeMarks.captureId} · auto-clears when you leave t=${activeMarks.t}, z=${activeMarks.z}`">
-          Annotations · {{ activeMarks.captureId }}
-        </span>
-        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-marks-chip-x"
-                @click="dismissActiveMarks"
-                v-tooltip.bottom="'Hide these annotations'">
-          <i class="pi pi-times" />
-        </button>
-      </div>
       <!-- Share-in draw overlay (BIDIR PR #3): mounts DIRECTLY on the viewer so users draw on
            what they're looking at. Triggered from the main-window ViewerPanel's Share button
            via `__cceceliaViewerBeginDraw()` exposed above. -->
@@ -6081,29 +6053,6 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
 
-/* Chip that appears when a blackboard attachment restored its annotations onto the live view.
-   Top-right of the canvas, translucent black plate so it's legible over any fluorescence colour;
-   dismissible ✕ hides both the chip and the overlay. Auto-clears when the user seeks t/z away. */
-.vw-marks-chip {
-  position: absolute;
-  top: 0.5rem; right: 0.5rem;
-  display: flex; align-items: center; gap: 0.35rem;
-  padding: 0.25rem 0.35rem 0.25rem 0.55rem;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: var(--cc-fs-xs);
-  border-radius: var(--cc-radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  pointer-events: auto;
-  z-index: 5;
-}
-.vw-marks-chip-lbl {
-  font-family: var(--cc-mono);
-  max-width: 20rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.vw-marks-chip-x { color: #fff; }
-.vw-marks-chip-x:hover { color: var(--cc-kiwi); }
 .vw-side {
   /* Fills the CollapsiblePanel slot; width and left border come from the panel. Padding + overflow
      stay here — the panel deliberately owns no padding so its consumers pad their own root. */
