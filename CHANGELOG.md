@@ -17,74 +17,56 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ## [0.2.8] — 2026-09-25
 
-Two-day patch after v0.2.7. Three threads: **Kiwi** grows from prompt-file plumbing into a working
-cockpit (Phases 1–6 land — engine contract, per-profile isolation, single-instance lock, headless-turn
-eval harness, prompt box + claims feed, profile picker + terminal); **linked brushing** goes end-to-end
-so a chart selection, a Claude `mark_tracks`, and a viewer track-eye all speak one language; and
-**floating panels** resize from any edge or corner. Plus a viewer regression fix that motivated the
-cut (trackclust ribbons) and a `pixi run doctor` for one-command worktree audits.
+Two-day patch. Identity moves from Kiwi-scoped to an app-wide primitive (USER_PROFILE_PLAN P1–P6:
+launch picker, Preferences modal, per-profile `settings.toml`, project ownership); Kiwi becomes a
+working cockpit that persists into the Blackboard; guides catalogue rebuilt (P1–P5); linked
+brushing goes end-to-end; the panel family shares one resize gesture. Plus the viewer regression
+that motivated the cut.
 
 ### Added
 
-- **Kiwi cockpit (Phases 4–5).** In-app prompt box + a live claims feed with per-claim "Add to Kiwi"
-  → notebook, replacing the lab log's one-off "Ask Claude" pass (asking is Kiwi now). First-use
-  fixes: tables render, follow-ups suggested, model picker, fewer fabricated claims. Populations
-  render their cells, plots come into view, and only a broken ref fails a turn — everything else
-  degrades. Attached-plot handling: an attached plot scopes images + populations (not measures),
-  Kiwi reads its own numbers off it, per-image counts cite a per-image plot, and set-wide stats
-  reach Kiwi as narrowed summaries packed up front. "Plot this" — Kiwi can point at a plot nobody
-  has made yet. Evidence citations: a plot for a number, populations for cells.
-- **Kiwi engine + isolation (Phases 1–3, 6–7).** `AgentBackend` engine contract so headless turns
-  never pair on the observer's MCP; `KiwiRef` schema + read-only resolver (Phase 2). Per-profile
-  `CLAUDE_CONFIG_DIR` + ambient-env scrub on every `claude` spawn so profiles cannot bleed. P3
-  frontend picker + backend, P4 per-turn profile stamp (D8), P5 single-instance lock at server
-  start, P6 "Open profile terminal" button, P7 as the read-time default. Headless-turn scaffold +
-  claim-shape checks + eval harness (`eval --slice` / `eval --from`); read-tool allow-list
-  test-enforced.
-- **Linked brushing (MVP + chart strip).** Shared `linkedSelection` store + composable; category
-  chip strip on frequency-family charts; freeform lasso + shift-drag rectangle on jitter/beeswarm
-  dots; per-image scoping so a brush cannot bleed across images; per-dot `pointUids` on pooled
-  boxplots drops the cross-image false-positive path; brushed dots visibly pop rather than merely
-  un-dim. `POST /api/tracks/by_category` resolves category → track_ids. `showTracksInViewer`
-  mirrors both ways into `linkedSelection('tracks')`, and Claude's `mark_tracks`/`mark_cells` +
-  MCP `select_on_plot` reach the same store. Highlight keyed by `(uid, vn, pop)` with a
-  `(uid, vn)` fallback.
-- **Floating panels — resize from any edge or corner.**
-- **`pixi run doctor`.** One-command fresh-clone / new-worktree audit.
-- **MCP — `seek_viewer` + `open_analysis_board_plot`.** Imperative jump to `(t, z)` and navigate to
-  an existing board.
-- **DrawSurface — notes pop-out.** Expand-popover for annotation notes.
-- **Notes modal (`feat/notes-modal`).**
+- **User profile primitive (USER_PROFILE_PLAN P1–P6).** Launch picker (`AppProfilePicker.vue`,
+  boot guard traps every route while `> 1` profile until one is picked); Preferences modal
+  (`PreferencesModal.vue`) editing per-profile settings via `/api/profile/settings{,/patch}` →
+  `kiwi-profiles/<name>/settings.toml`; project ownership stamped at create + `POST
+  /api/projects/{claim,unclaim}` (`owners: []` empty/missing = pre-identity, visible everywhere).
+- **Kiwi cockpit + headless engine.** In-app prompt box, live claims feed, per-claim "Add to Kiwi"
+  → Blackboard entry with a per-ref sidecar. Per-profile `CLAUDE_CONFIG_DIR` + ambient-env scrub on
+  every `claude` spawn; `AgentBackend` contract so headless turns never pair on the observer's MCP;
+  single-instance lock at server start; headless-turn eval harness. Capture-destination toggles on
+  the annotate overlay (attach-to-Kiwi + send-to-paired).
+- **Guides — P1–P5 rebuild.** User + view profile · Kiwi (replacing lab-log-and-claude) ·
+  Blackboard · preprocess / cluster-regions / spatial-analysis · correction cockpit.
+- **Linked brushing.** Shared `linkedSelection` store; category chip strip on frequency charts;
+  freeform lasso + shift-drag rectangle on boxplot dots; per-image scoping. Claude's
+  `mark_tracks`/`mark_cells` + MCP `select_on_plot` mirror into the same store.
+- **Panels — one 8-handle resize.** `useResizeHandles.ts` powers `FloatingPanel`, `CanvasPanel`,
+  `CanvasSidePanel` from any edge or corner.
+- **Populations panel — accordion + opt-in manual-apply**, so a big picker no longer trickles pops
+  into the plot one fetch at a time.
+- **`pixi run doctor`** — one-command fresh-clone / new-worktree audit.
+- **MCP — `seek_viewer` + `open_analysis_board_plot`.** Jump to `(t, z)` and open a board.
+- **DrawSurface — notes pop-out.**
 
 ### Changed
 
-- **Lab log — the one-off "Ask Claude" pass is gone; asking is Kiwi.** If a workflow relied on the
-  lab log path, move to the Kiwi cockpit.
+- **Capture toggles per-profile.** `captureAttachToKiwi` / `captureSendToPaired` moved from browser
+  `localStorage` into the profile bag. **Migration:** a v0.2.7 user's setting doesn't carry over —
+  they see the state-derived default once, next toggle seeds the bag.
+- **Lab log's one-off "Ask Claude" pass is gone.** Asking is Kiwi now.
+- **Kiwi cockpit profile row removed** — `AppProfilePicker` + Preferences own identity.
 
 ### Fixed
 
 - **Viewer — trackclust ribbons render for every trackable vn, not just `popMgrVn`.** The
   pi-sitemap "Show track-cluster populations as ribbons" toggle was silently a no-op on a fresh
-  viewer session (before the pop manager had been opened on the current image) and only ever drew
-  ribbons for one vn even when several segmentations carried trackclust pops. Two joined bugs:
-  server-side, `resolve_pops(img, "trackclust", ...)` read the cell-level h5ad, but the
-  `clusters.{suffix}` filter that defines every trackclust pop lives on `{vn}__tracks.h5ad` — so
-  every pop degraded to empty members and overlays returned `pops: []`. Client-side, both
-  `loadTracks` and `rebuildOverlays` scoped to `gatingCurrent.valueName` alone. Fix: route
-  track/trackclust through the canonical `pop_df(granularity=:cell)` path server-side, and widen
-  client fetch + iteration to every trackable vn (`meta.labelNames`). When trackclust ribbons draw
-  for a vn, suppress that vn's plain per-vn ribbon and its flow-pop cell-track ribbons so the same
-  tracks do not double up in lump colour underneath.
-- **Viewer — `/api/viewer/seek` accepts string ints.** `Int(::String)` throws MethodError; the
-  previous catch swallowed it as `nothing`, so a perfectly legal JSON `"t": "12"` reached the "at
-  least one of t, z required" branch and returned 400. Type-dispatch: Integer passes through,
-  Number tries `Int(...)`, String goes through `tryparse(Int, ...)`. Testset caught it on CI.
-- **Test — e2e router registers `/api/viewer/{seek,navigate}`.**
-- **Gating — name error on its own row; no self-collision flash on Add.**
-- **DrawSurface — notes tooltip shortened; popover textarea covered.**
-- **Brushing — click delegate + shift-drag rectangle brush on boxplot dots; hit-test uses client
-  coords, not svg-root coords.**
-- **`SelectionTable` — a filled table gives spare width to one column rather than a fixed one.**
+  viewer session and only ever drew ribbons for one vn when several segmentations carried
+  trackclust pops. Server-side `resolve_pops(..., "trackclust", ...)` read the cell-level h5ad, but
+  the `clusters.{suffix}` filter defining a trackclust pop lives on `{vn}__tracks.h5ad`. Fix:
+  route through `pop_df(granularity=:cell)`; widen client fetch to every trackable vn.
+- **Viewer — `/api/viewer/seek` accepts string ints.** A legal JSON `"t": "12"` was 400ing.
+- **Guides tour — `tipsEverShown` machine-scoped**, so a second seat sharing the box doesn't
+  replay the first-ever tour.
 
 ## [0.2.7] — 2026-09-23
 
