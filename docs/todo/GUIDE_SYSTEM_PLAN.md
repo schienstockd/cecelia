@@ -315,10 +315,11 @@ family. It is not an exception to D6; it is the guide D6 has nothing to say abou
 
 **Three entries, one implementation.** The compass (as any guide), `guideId` on the *about Cecelia*
 card (the D7 link, no new plumbing), and — new — **automatic on the first-ever close of the What's New
-dialog**. That last one needs no new persisted flag: `settings.tipsLastShown` is `''` until the daily
-launch tip fires once ever, so reading it before the date stamp *is* the first-launch signal.
-*(Re-check this signal when `USER_PROFILE_PLAN.md` moves settings per-profile — a fresh profile
-inherits an empty stamp, so the tour would re-fire for every second person on the same box.)*
+dialog**. This uses `settings.tipsEverShown` — a machine-scoped localStorage flag kept OUT of
+`PROFILE_KEYS` on purpose. `tipsLastShown` (per-profile) still drives the daily-tip cadence; using it
+also as the first-ever signal was a bug under `USER_PROFILE_PLAN` — a new profile inherits an empty
+stamp, which would re-fire the orientation tour for every second person on a shared workstation. The
+tour is chrome-only; one run per install is the right shape (compass still opens it on demand).
 
 Rejected: a first-time highlight ring on the compass (the original ask). A ring is a passive hint that
 still requires the user to work out what the icon is for; the tour answers that directly, and adding
