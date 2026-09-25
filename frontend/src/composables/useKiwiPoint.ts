@@ -15,7 +15,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { usePlotRegistryStore } from '../stores/plotRegistry'
 import { openViewerWindow } from '../utils/viewerWindow'
 import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
-import { pointTarget, refLabel, fetchPopulationCells, openProposedPlot } from '../utils/kiwiTurn'
+import { pointTarget, refLabel, openProposedPlot } from '../utils/kiwiTurn'
 import { pickBoardTab } from '../utils/boardNav'
 import { useKiwiStore } from '../stores/kiwi'
 import { revealPlots } from '../utils/sectionOpen'
@@ -58,16 +58,6 @@ export function useKiwiPoint() {
         }
         const vn = tgt.tracks?.valueName ?? tgt.cells?.valueName
         openViewerWindow({ projectUid: puid, imageUid: tgt.imageUid, ...(vn ? { valueName: vn } : {}) })
-        return ''
-      }
-      case 'population': {
-        // its cells, outlined in the viewer — the same PickHighlight a plot's brushing draws
-        const cells = await fetchPopulationCells(puid, ref)
-        if (!cells) return 'Couldn’t read that population'
-        if (!cells.labelIds.length) return 'That population has no cells'
-        viewer.setPickHighlight({ imageUid: tgt.imageUid, valueName: tgt.valueName, labels: cells.labelIds,
-                                  focusId: 0, label: caption, origin: 'claude' })
-        openViewerWindow({ projectUid: puid, imageUid: tgt.imageUid, valueName: tgt.valueName })
         return ''
       }
       case 'set':

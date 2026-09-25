@@ -44,7 +44,7 @@ describe('snapshotForRef', () => {
       expect(s!.savedAt).toBe(savedAt)
     }
   })
-  it('returns null for the six stable kinds', () => {
+  it('carries a snapshot-less sidecar for stable kinds so they still chip', () => {
     const stable: KiwiRef[] = [
       { kind: 'project' },
       { kind: 'set', setUid: 'S' },
@@ -52,13 +52,18 @@ describe('snapshotForRef', () => {
       { kind: 'viewer', imageUid: 'IMG1', t: 3 },
       { kind: 'task', funName: 'x' },
       { kind: 'blackboard', entryId: 'bb-1' },
-      { kind: 'capture', captureId: 'cap-1' },
       { kind: 'proposedPlot', plot: 'x' },
     ]
     for (const r of stable) {
-      expect(snapshotForRef(r, cb, '2026-09-25T12:00:00.000Z'),
-        `${r.kind} must not sidecar`).toBeNull()
+      const s = snapshotForRef(r, cb, '2026-09-25T12:00:00.000Z')
+      expect(s, `${r.kind} should sidecar`).not.toBeNull()
+      expect(s!.snapshot, `${r.kind} carries no snapshot`).toBeUndefined()
+      expect(s!.ref).toEqual(r)
     }
+  })
+  it('returns null for capture (surfaced via attachments)', () => {
+    const cap: KiwiRef = { kind: 'capture', captureId: 'cap-1' }
+    expect(snapshotForRef(cap, cb, '2026-09-25T12:00:00.000Z')).toBeNull()
   })
   it('freezes the plot summary text verbatim', () => {
     const s = snapshotForRef({ kind: 'plot', plotId: 'p1' }, cb, 'x')
@@ -86,12 +91,39 @@ describe('buildTurnSave', () => {
     expect(out.content).toContain('## Attachments')
     expect(out.content).toContain('**observation** — the drift shrinks')
     expect(out.content).toContain('**interpretation** — flow register')
-    // The plot ref is fragile → sidecar + snapshot; the image + capture refs don't sidecar.
-    const keys = Object.keys(out.kiwiRefs)
-    expect(keys.length).toBe(1)
-    expect(out.kiwiRefs[keys[0]].snapshot?.kind).toBe('plot')
-    // Capture id lifted to attachments so the entry's chip strip surfaces it.
+    // The plot ref (fragile) carries a snapshot; the image ref (stable) sidecars without one; the
+    // capture ref never sidecars — it's surfaced via `attachments`.
+    const bySidecarKind = Object.values(out.kiwiRefs).map(v => ({ kind: v.ref.kind, snap: !!v.snapshot }))
+    expect(bySidecarKind).toEqual(expect.arrayContaining([
+      { kind: 'plot',  snap: true },
+      { kind: 'image', snap: false },
+    ]))
+    expect(bySidecarKind.some(x => x.kind === 'capture')).toBe(false)
     expect(out.attachments).toEqual(['cap-1'])
+  })
+  it('numbers capture refs by order of first appearance in attachments', () => {
+    const capA: KiwiRef = { kind: 'capture', captureId: 'cap-A' }
+    const capB: KiwiRef = { kind: 'capture', captureId: 'cap-B' }
+    const t = turn({
+      refs: [
+        { ref: capA, result: { ok: true, check: 'exists', label: 'A', error: '' } },
+        { ref: capB, result: { ok: true, check: 'exists', label: 'B', error: '' } },
+      ],
+      reply: { ok: true, abstain: false, claims: [
+        claim('observation', 'refers back to first',  [rr(capA)]),
+        claim('observation', 'refers back to second', [rr(capB)]),
+        claim('observation', 'both',                  [rr(capA), rr(capB)]),
+      ], errors: [], reasked: false, reasoning: '', usage: { input: 0, output: 0 }, toolCalls: 0, seconds: 1 },
+    })
+    const out = buildTurnSave(t, cb, NOW)
+    expect(out.attachments).toEqual(['cap-A', 'cap-B'])
+    // Attachments header uses the numbered labels.
+    expect(out.content).toContain('- `capture 1`')
+    expect(out.content).toContain('- `capture 2`')
+    // Claim tails point back at the same numbers.
+    expect(out.content).toContain('refers back to first  \n  _refs:_ `capture 1`')
+    expect(out.content).toContain('refers back to second  \n  _refs:_ `capture 2`')
+    expect(out.content).toContain('both  \n  _refs:_ `capture 1`, `capture 2`')
   })
   it('escapes claim text that leads with a markdown-active character', () => {
     const t = turn({

@@ -707,12 +707,13 @@ onUnmounted(() => { mermaidRenderSeq++ })
             <div v-if="selected.attachments.length > 0" class="bb-attach">
               <div class="bb-attach-label cc-muted cc-fs-2xs">Attachments</div>
               <div class="bb-attach-strip">
-                <button v-for="cid in selected.attachments" :key="cid"
+                <button v-for="(cid, i) in selected.attachments" :key="cid"
                         class="bb-attach-thumb"
                         @click="focusCapture(cid)"
-                        v-tooltip.top="`${cid} — click to focus the pop-out viewer + restore the annotation overlay`">
+                        v-tooltip.top="`capture ${i + 1} — ${cid} — click to focus the pop-out viewer + restore the annotation overlay`">
                   <img v-if="captureCache[cid]?.thumb" :src="captureCache[cid].thumb" :alt="cid" />
                   <span v-else class="bb-attach-fallback"><i class="pi pi-image" /></span>
+                  <span class="bb-attach-index cc-fs-2xs">{{ i + 1 }}</span>
                 </button>
               </div>
             </div>
@@ -952,4 +953,12 @@ onUnmounted(() => { mermaidRenderSeq++ })
   color: var(--cc-text-dim);
 }
 .bb-attach-thumb:hover { border-color: var(--cc-kiwi); }
+/* Small counter badge in the corner, so a claim's `_refs:_ capture 2` maps back to the thumbnail. */
+.bb-attach-thumb { position: relative; }
+.bb-attach-index {
+  position: absolute; top: 2px; left: 2px;
+  padding: 0 4px; border-radius: var(--cc-radius-sm);
+  background: rgba(0, 0, 0, 0.6); color: var(--cc-text);
+  pointer-events: none;
+}
 </style>

@@ -63,9 +63,10 @@ describe('pointTarget', () => {
     expect(chipState(there).tip).toBe('On board “Per image measures” — click to open it')
     expect(chipState({ ok: true, check: 'proposal', label: 'L', error: '' })).toEqual({ tone: 'ok', tip: 'Not plotted yet — click to plot it' })
   })
-  it('a population outlines its cells in the viewer, not a bare gating page', () => {
-    expect(pointTarget({ kind: 'population', imageUid: 'i', valueName: 'B', popPath: '/qc' }))
-      .toEqual({ action: 'population', imageUid: 'i', valueName: 'B', popPath: '/qc' })
+  it('a population is a no-op — too general to point at a single destination', () => {
+    const t = pointTarget({ kind: 'population', imageUid: 'i', valueName: 'B', popPath: '/qc' })
+    expect(t.action).toBe('none')
+    expect(t.action === 'none' && t.why).toMatch(/no single place/i)
   })
   it('a blackboard entry opens by query; a tile says why not', () => {
     expect(pointTarget({ kind: 'blackboard', entryId: 'e1' })).toEqual({ action: 'route', path: '/blackboard', query: { entry: 'e1' } })

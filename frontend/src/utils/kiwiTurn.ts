@@ -147,9 +147,6 @@ export const TASK_PAGES: Record<string, { path: string; module: string }> = {
 export type PointTarget =
   | { action: 'viewer'; imageUid: string; t?: number; z?: number;
       tracks?: { valueName: string; ids: number[] }; cells?: { valueName: string; ids: number[] } }
-  // a population: its cells, outlined in the viewer (`POST /api/kiwi/refs/cells`) — it used to open the
-  // gating page, where nothing shows a given population (a root scatter on arbitrary axes)
-  | { action: 'population'; imageUid: string; valueName: string; popPath: string }
   | { action: 'set'; setUid: string }
   | { action: 'route'; path: string; query?: Record<string, string>; rememberFn?: { module: string; task: string } }
   | { action: 'capture'; captureId: string }
@@ -169,7 +166,12 @@ export function pointTarget(ref: KiwiRef): PointTarget {
                                 ...(ref.t != null ? { t: ref.t } : {}), ...(ref.z != null ? { z: ref.z } : {}) }
     case 'tracks':     return { action: 'viewer', imageUid: ref.imageUid, tracks: { valueName: ref.valueName, ids: ref.trackIds } }
     case 'cells':      return { action: 'viewer', imageUid: ref.imageUid, cells: { valueName: ref.valueName, ids: ref.labelIds } }
-    case 'population': return { action: 'population', imageUid: ref.imageUid, valueName: ref.valueName, popPath: ref.popPath }
+    // A population reference is too general to point at — the "right" landing depends on why you'd
+    // want it (gate definition, plots that use it, or its cells in the viewer). Opening the viewer
+    // with cells highlighted was misleading: it looked like "here is that population" when it was
+    // really a transient PickHighlight over the raw cells, not the gate. No-op instead. `why` is
+    // shown as the chip's tooltip (KiwiRefChip disables + tips off `pointTarget.why`).
+    case 'population': return { action: 'none', why: 'Reference only — no single place to open' }
     case 'plot':       return { action: 'plot', plotId: ref.plotId,
                                 ...(ref.u != null ? { u: ref.u } : {}), ...(ref.v != null ? { v: ref.v } : {}) }
     case 'capture':    return { action: 'capture', captureId: ref.captureId }
@@ -182,7 +184,7 @@ export function pointTarget(ref: KiwiRef): PointTarget {
       if (page) return { action: 'route', path: page.path, rememberFn: { module: page.module, task } }
       return task ? { action: 'route', path: `/custom/${category}` } : { action: 'none', why: 'Unknown task' }
     }
-    case 'tile':       return { action: 'none', why: 'Tiles can’t be pointed at yet' }
+    case 'tile':       return { action: 'none', why: 'Tile — nothing to open yet' }
     case 'proposedPlot': return { action: 'proposedPlot' }
   }
 }
@@ -304,12 +306,6 @@ export function attachmentRows(refs: KiwiRef[], results: Record<string, KiwiRefR
 export function startKiwiTurn(body: { projectUid: string; prompt: string; refs: KiwiRef[];
                                       reasoning: boolean; model?: string; followUp?: string }): Promise<KiwiTurn> {
   return svcPost('/api/kiwi/turn', body, 15_000)
-}
-
-/** A population's cell ids, for the viewer outline. */
-export async function fetchPopulationCells(projectUid: string, ref: KiwiRef):
-    Promise<{ labelIds: number[]; total: number; truncated: boolean } | null> {
-  try { return await svcPost('/api/kiwi/refs/cells', { projectUid, ref }, 30_000) } catch { return null }
 }
 
 /** "Plot this": the board that holds the proposed plot, added if none does. */

@@ -13,7 +13,7 @@
 import { computed } from 'vue'
 import type { KiwiRef, KiwiRefResult } from '../../utils/kiwiRef'
 import type { KiwiRefSidecar } from '../../utils/kiwiTurnSave'
-import { chipState, refLabel, kindLabel } from '../../utils/kiwiTurn'
+import { chipState, refLabel, kindLabel, pointTarget } from '../../utils/kiwiTurn'
 import { useKiwiPoint } from '../../composables/useKiwiPoint'
 
 // `seen` defaults to undefined, NOT false: Vue casts an absent boolean prop to false, and false means
@@ -33,15 +33,26 @@ const hasSidecar = computed(() => !!props.sidecar)
 // A sidecar fallback fires when live resolution says the object isn't there. `state.tone === 'fail'`
 // is the resolver's own signal for that (see `chipState`).
 const usingSidecar = computed(() => hasSidecar.value && state.value.tone === 'fail')
+// An `inert` chip is one whose ref has no meaningful click destination (population, tile, unknown
+// task) — `pointTarget` returns `none`. Without this the chip clicked and silently did nothing,
+// which reads as broken. Render disabled + muted, with the `why` as the tooltip.
+const inert = computed(() => pointTarget(props.kiwiRef).action === 'none')
+const inertWhy = computed(() => {
+  const t = pointTarget(props.kiwiRef)
+  return t.action === 'none' ? t.why : ''
+})
 const label = computed(() => {
   if (props.result?.ok && props.result.label) return props.result.label
   if (usingSidecar.value) return `was: ${props.sidecar!.label}`
   return refLabel(props.kiwiRef)
 })
-const tone = computed(() => usingSidecar.value
+const tone = computed(() => (usingSidecar.value || inert.value)
   ? 'cc-muted'
   : ({ ok: '', soft: 'cc-muted', fail: 'cc-muted-error' })[state.value.tone])
-const tip = computed(() => usingSidecar.value ? sidecarTip(props.sidecar!) : state.value.tip)
+const tip = computed(() =>
+  usingSidecar.value ? sidecarTip(props.sidecar!)
+  : inert.value    ? inertWhy.value
+  : state.value.tip)
 
 function sidecarTip(s: KiwiRefSidecar): string {
   const snap = s.snapshot
@@ -59,14 +70,15 @@ function sidecarTip(s: KiwiRefSidecar): string {
 const { pointAt } = useKiwiPoint()
 const click = () => {
   // A sidecar fallback isn't clickable — the underlying object is gone; there's nothing to point at.
-  if (usingSidecar.value) return
+  // An inert chip is disabled in the template but guard here too.
+  if (usingSidecar.value || inert.value) return
   void pointAt(props.kiwiRef, label.value, props.result)
 }
 </script>
 
 <template>
   <button class="kiwi-ref cc-btn cc-btn-ghost cc-fs-2xs" :class="tone"
-          :disabled="usingSidecar" @click="click"
+          :disabled="usingSidecar || inert" @click="click"
           v-tooltip.bottom="tip">
     <span class="cc-muted cc-fs-2xs">{{ kindLabel(kiwiRef.kind, result) }}</span>
     <span class="kiwi-ref-label">{{ label }}</span>

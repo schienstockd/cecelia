@@ -53,37 +53,47 @@ export interface KiwiSaveCallbacks {
   plotSummary: (plotId: string) => string
 }
 
-/** Build a sidecar entry for one ref if it's a fragile kind; return `null` for a stable kind (no
- *  sidecar needed — live resolve-or-"gone" is enough per Decision 7). `savedAtISO` is threaded from
- *  the top so every entry on one turn shares one timestamp — no time-of-flight drift within a
- *  single Save. */
+/** Build a sidecar entry for one ref. Fragile kinds (population, cells, tracks, plot, tile, ui)
+ *  carry a kind-specific `snapshot` for the "was: <label>" fallback per Decision 7. Stable kinds
+ *  (project, set, image, viewer, task, blackboard, proposedPlot) carry NO snapshot — their live
+ *  resolver either finds the object or reports it gone, and that's enough. Both flavours land in
+ *  the sidecar so the saved Blackboard entry can chip every ref cited on the turn, not just the
+ *  fragile ones. `capture` is the exception: it already lands in `attachments`, so returning `null`
+ *  here avoids a duplicate chip. `savedAtISO` is threaded from the top so every entry on one turn
+ *  shares one timestamp. */
 export function snapshotForRef(
   ref: KiwiRef,
   cb: KiwiSaveCallbacks,
   savedAtISO: string,
 ): KiwiRefSidecar | null {
   const label = refLabel(ref)
+  const base = { ref, label, savedAt: savedAtISO }
   switch (ref.kind) {
+    // Fragile — carry a snapshot for the resolve-fail fallback.
     case 'population':
-      return { ref, label, savedAt: savedAtISO,
-               snapshot: { kind: 'population', imageName: cb.imageName(ref.imageUid), label } }
+      return { ...base, snapshot: { kind: 'population', imageName: cb.imageName(ref.imageUid), label } }
     case 'cells':
-      return { ref, label, savedAt: savedAtISO,
-               snapshot: { kind: 'cells', imageName: cb.imageName(ref.imageUid), count: ref.labelIds.length } }
+      return { ...base, snapshot: { kind: 'cells', imageName: cb.imageName(ref.imageUid), count: ref.labelIds.length } }
     case 'tracks':
-      return { ref, label, savedAt: savedAtISO,
-               snapshot: { kind: 'tracks', imageName: cb.imageName(ref.imageUid), count: ref.trackIds.length } }
+      return { ...base, snapshot: { kind: 'tracks', imageName: cb.imageName(ref.imageUid), count: ref.trackIds.length } }
     case 'plot':
-      return { ref, label, savedAt: savedAtISO,
-               snapshot: { kind: 'plot', plotSummary: cb.plotSummary(ref.plotId), label } }
+      return { ...base, snapshot: { kind: 'plot', plotSummary: cb.plotSummary(ref.plotId), label } }
     case 'tile':
-      return { ref, label, savedAt: savedAtISO,
-               snapshot: { kind: 'tile', imageName: cb.imageName(ref.imageUid), cellId: ref.cellId } }
+      return { ...base, snapshot: { kind: 'tile', imageName: cb.imageName(ref.imageUid), cellId: ref.cellId } }
     case 'ui':
-      return { ref, label, savedAt: savedAtISO,
-               snapshot: { kind: 'ui', anchor: ref.anchor } }
-    // Stable kinds — Decision 7. No sidecar; the chip resolves live or shows "gone".
-    default: return null
+      return { ...base, snapshot: { kind: 'ui', anchor: ref.anchor } }
+    // Stable — no snapshot; the chip renders live-only.
+    case 'project':
+    case 'set':
+    case 'image':
+    case 'viewer':
+    case 'task':
+    case 'blackboard':
+    case 'proposedPlot':
+      return base
+    // Capture is surfaced via `attachments`, so skip it here to avoid a duplicate chip.
+    case 'capture':
+      return null
   }
 }
 
@@ -183,9 +193,9 @@ export function buildTurnSave(
   const savedAt = now.toISOString()
   const claimRefs: KiwiClaimRef[] = (turn.reply?.claims ?? []).flatMap(c => c.refs)
   const kiwiRefs = collectSidecars(turn.refs, claimRefs, cb, savedAt)
-  const resolved = (r: KiwiRef) => refLabel(r)
-  const content = turnMarkdown(turn, resolved)
   const attachments = extractCaptureIds([...turn.refs.map(x => x.ref), ...claimRefs.map(x => x.ref)])
+  const resolved = labelResolver(attachments)
+  const content = turnMarkdown(turn, resolved)
   const title = shortTitle(turn.prompt, 'Kiwi turn')
   return { title, content, attachments, kiwiRefs }
 }
@@ -200,11 +210,28 @@ export function buildClaimSave(
 ): KiwiSavePayload {
   const savedAt = now.toISOString()
   const kiwiRefs = collectSidecars([], claim.refs, cb, savedAt)
-  const resolved = (r: KiwiRef) => refLabel(r)
-  const content = claimMarkdown(turn, claim, resolved)
   const attachments = extractCaptureIds(claim.refs.map(x => x.ref))
+  const resolved = labelResolver(attachments)
+  const content = claimMarkdown(turn, claim, resolved)
   const title = shortTitle(claim.text, 'Kiwi claim')
   return { title, content, attachments, kiwiRefs }
+}
+
+/** A label function for the markdown body. Capture refs render as `capture 1`, `capture 2`, … in
+ *  order of first appearance in the entry's `attachments`, so a claim tail like `_refs:_ \`capture 2\``
+ *  points back at the second thumbnail in the Blackboard's attachments strip. A capture id absent
+ *  from `attachments` (shouldn't happen — `extractCaptureIds` collects everything cited) falls back
+ *  to the bare label so nothing renders empty. */
+function labelResolver(attachments: readonly string[]): (r: KiwiRef) => string {
+  const index = new Map<string, number>()
+  attachments.forEach((id, i) => index.set(id, i + 1))
+  return (r: KiwiRef) => {
+    if (r.kind === 'capture') {
+      const n = index.get(r.captureId)
+      return n ? `capture ${n}` : refLabel(r)
+    }
+    return refLabel(r)
+  }
 }
 
 function extractCaptureIds(refs: readonly KiwiRef[]): string[] {

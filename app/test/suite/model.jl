@@ -456,6 +456,23 @@ end
     write_atomic(io -> print(io, "# hello"), t)
     @test read(t, String) == "# hello"
 
+    # keys and scalars with `"` inside round-trip. `JSON3.pretty` (the previous serialiser) silently
+    # emitted invalid JSON here — see the block comment on `write_json_atomic` for the story. The
+    # KIWI_CAPTURE_AND_BLACKBOARD_PLAN sidecar `kiwiRefs` was keyed by a JSON-encoded refKey, so
+    # every entry with one on it became unreadable and vanished from the blackboard list.
+    tricky = joinpath(td, "tricky.json")
+    payload = Dict{String,Any}(
+        "kiwiRefs" => Dict{String,Any}("[[\"a\",\"b\"]]" => 1, "plain" => 2),
+        "quoted"   => "hello \"world\"",
+        "empty"    => Any[],
+    )
+    write_json_atomic(tricky, payload)
+    back = JSON3.read(read(tricky, String), Dict{String,Any})
+    @test back["kiwiRefs"]["[[\"a\",\"b\"]]"] == 1
+    @test back["kiwiRefs"]["plain"] == 2
+    @test back["quoted"] == "hello \"world\""
+    @test back["empty"] == Any[]
+
     rm(td; recursive=true)
 end
 
