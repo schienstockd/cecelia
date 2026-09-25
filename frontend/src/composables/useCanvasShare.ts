@@ -34,6 +34,8 @@ import type { CaptureAddress, OverlayMark } from '../utils/captureAddress'
 import type { CaptureEnvelope } from '../utils/kiwiCaptures'
 import type { PanelHit } from '../utils/panelSelectionHit'
 import { announceShareOutcome, shareFailMessage, type ShareOutcome } from '../utils/shareOutcome'
+import { useCaptureDestination } from './useCaptureDestination'
+import { useKiwiStore } from '../stores/kiwi'
 
 /** Per-panel input the host passes for the geom-lookup step. `id` is stable across the panels()
  *  array; the composable uses it to key the exporter registry (`${canvasKey}:${id}`) and to look
@@ -102,6 +104,11 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
   const geomStore = useCanvasPanelsStore()
   const exportStore = useCanvasPanelExportsStore()
   const shareSel = useCanvasShareSelection()
+  // KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1: FrameAnnotator's two capture-destination toggles resolve
+  // through this composable. Same helper the viewer path uses, so both surfaces read/write the
+  // same persisted setting + share the pairing WS watcher.
+  const captureDest = useCaptureDestination(opts.projectUid)
+  const kiwiStore = useKiwiStore()
 
   // `pendingShare` is the Phase 1→2 handoff; null when share is idle or when the selection was
   // cancelled before the composite was built.
@@ -210,6 +217,10 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
       projectUid: puid,
       plotSpec: opts.buildPlotSpec({ panelCount: pending.panels.length }),
     }
+    // Read the toggles ONCE, same discipline as ViewerWindow.onDrawSave — a flip mid-flight
+    // would otherwise split request vs. post-response behaviour.
+    const sendToPaired = captureDest.sendToPaired.value
+    const attachToKiwi = captureDest.attachToKiwi.value
     try {
       const res = await fetch('/api/viewer/capture', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -220,6 +231,7 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
           frames: [{ png }],
           overlay: payload.overlay,
           ...(payload.notes ? { notes: payload.notes } : {}),
+          ...(sendToPaired ? {} : { noPush: true }),
         }),
       })
       let respJson: Record<string, unknown> | null = null
@@ -228,6 +240,15 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
       const captureId = String(respJson?.captureId ?? '')
       if (!captureId) throw new Error('capture POST returned no captureId')
       const pushOutcome = String(respJson?.push ?? 'not_paired')
+
+      // Attach-to-Kiwi: same shape AddToKiwiButton uses on capture rows.
+      let attachedToKiwi = false
+      if (attachToKiwi) {
+        try {
+          kiwiStore.addRef({ kind: 'capture', captureId }, puid)
+          attachedToKiwi = true
+        } catch { /* attach failure is silent — the capture itself succeeded */ }
+      }
 
       // Envelope for the host's reshow ref — mirrors the pre-extraction shape one-for-one so the
       // per-canvas CaptureViewSurface mount reads the same fields it did before.
@@ -251,7 +272,8 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
       pendingShare.value = null
       shareBusy.value = false
 
-      void announceShareOutcome(pushOutcome, payload.notes)
+      void announceShareOutcome(pushOutcome, payload.notes,
+                                 { sendRequested: sendToPaired, attachedToKiwi })
         .then(outcome => { showShareToast(outcome.kind, outcome.message) })
         .catch(e => {
           // eslint-disable-next-line no-console
@@ -278,5 +300,8 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
     onAnnotateCancel,
     onAnnotateSave,
     dismissShareToast,
+    /** Bind these to FrameAnnotator's v-model:attach-to-kiwi + v-model:send-to-paired so the
+     *  destination toggles render on the plot-canvas annotate overlay. */
+    captureDest,
   }
 }

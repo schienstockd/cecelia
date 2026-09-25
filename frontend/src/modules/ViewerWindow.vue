@@ -116,6 +116,8 @@ import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
 import { viewerRefFor } from '../utils/kiwiTurn'
+import { useCaptureDestination } from '../composables/useCaptureDestination'
+import { useKiwiStore } from '../stores/kiwi'
 
 const route = useRoute()
 const settings = useSettingsStore()
@@ -127,6 +129,11 @@ const logStore = useLogStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
+
+// KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1: DrawSurface's two capture-destination toggles resolve
+// through this composable (persists to settings, refreshes pairing state on WS broadcasts).
+const captureDest = useCaptureDestination(() => projectUid)
+const kiwiStore = useKiwiStore()
 
 // The cache-clear rev — bumped by `ViewerPanel` on task completion (or by any other publisher on the
 // channel). Threaded into `sourceId` (tile atlas) and `BrickSource.rev` (brick page table) so a
@@ -4744,6 +4751,11 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       }
       landscapeSnapshot ??= landscape.value
     }
+    // KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1: read the toggle values ONCE here so a toggle flip while
+    // the POST is in flight doesn't split the request/response semantics — the flags decide both
+    // what we ask the backend to do and what we do locally afterwards.
+    const sendToPaired = captureDest.sendToPaired.value
+    const attachToKiwi = captureDest.attachToKiwi.value
     const res = await fetch('/api/viewer/capture', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,
@@ -4753,7 +4765,8 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
                              // Session-wide notes the user typed on DrawSurface — the free-text
                              // context that travels alongside the pixels + marks. Only sent when
                              // non-empty; a Save with no notes stays lean.
-                             ...(payload.notes ? { notes: payload.notes } : {}) }),
+                             ...(payload.notes ? { notes: payload.notes } : {}),
+                             ...(sendToPaired ? {} : { noPush: true }) }),
     })
     // Response body is a one-shot stream — read once. On !ok extract .error if present; on ok
     // extract .captureId so the viewer can carry it into CaptureViewSurface.
@@ -4777,9 +4790,19 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       viewStateSnapshot,
       notes: payload.notes,
     }
+    // Attach-to-Kiwi (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1): drop the freshly-created captureId
+    // into the Kiwi prompt as a ref chip, same shape `AddToKiwiButton` uses on capture rows.
+    let attachedToKiwi = false
+    if (attachToKiwi && captureId) {
+      try {
+        kiwiStore.addRef({ kind: 'capture', captureId }, projectUid)
+        attachedToKiwi = true
+      } catch { /* attach failure is silent — the capture itself succeeded */ }
+    }
     // Announce the outcome — push landed OR fall back to the clipboard prompt. Shared with the
     // plot canvas's Save via `utils/shareOutcome.ts` so both surfaces stay in lockstep.
-    const outcome = await announceShareOutcome(pushOutcome, payload.notes)
+    const outcome = await announceShareOutcome(pushOutcome, payload.notes,
+                                                { sendRequested: sendToPaired, attachedToKiwi })
     showShareToast(outcome.kind, outcome.message)
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -4897,6 +4920,8 @@ onUnmounted(() => {
            what they're looking at. Triggered from the main-window ViewerPanel's Share button
            via `__cceceliaViewerBeginDraw()` exposed above. -->
       <DrawSurface :visible="drawMode" :address-line="drawAddressLine" :busy="drawBusy"
+                   v-model:attach-to-kiwi="captureDest.attachToKiwi.value"
+                   v-model:send-to-paired="captureDest.sendToPaired.value"
                    @save="onDrawSave" @cancel="onDrawCancel" />
       <!-- Frozen-frame view after Save: keep the shared frame visible on the viewer so the user
            can discuss it with Claude, and Claude's `mark_freeform` marks land ON the frame they

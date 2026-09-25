@@ -520,6 +520,8 @@ watch(segPops, () => {
                         :frame-data-url="pendingShare.composite"
                         :address-line="`${module ?? 'universal'} · ${pendingShare.panels.length} panels`"
                         :busy="shareBusy"
+                        v-model:attach-to-kiwi="share.captureDest.attachToKiwi.value"
+                        v-model:send-to-paired="share.captureDest.sendToPaired.value"
                         @save="onAnnotateSave" @cancel="onAnnotateCancel" />
         <!-- Reshow mode: same CaptureViewSurface the viewer uses. Mounts over the plot canvas,
              shows the frozen composite + user marks + any Claude freeform paint targeted at this

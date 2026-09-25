@@ -791,6 +791,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                           :frame-data-url="pendingShare.composite"
                           :address-line="`analysis · ${pendingShare.panels.length} panels`"
                           :busy="shareBusy"
+                          v-model:attach-to-kiwi="share.captureDest.attachToKiwi.value"
+                          v-model:send-to-paired="share.captureDest.sendToPaired.value"
                           @save="onAnnotateSave" @cancel="onAnnotateCancel" />
           <!-- Reshow (Kiwi refocus / Blackboard click). Zoom-to-source disabled — grid layout
                restore needs its own path; the frame + marks still show. -->

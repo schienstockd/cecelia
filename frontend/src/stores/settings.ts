@@ -240,6 +240,14 @@ export const useSettingsStore = defineStore('settings', () => {
   // (pairing chip, chat handoff; more rows in v2). Off by default. See
   // components/kiwi/KiwiCockpit.vue, docs/todo/KIWI_PLAN.md.
   const kiwiOpen = ref(localStorage.getItem('cc.kiwiOpen') === 'true')
+  // DrawSurface's two capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decisions 2–4).
+  // `null` = never set — DrawSurface derives a first-use default from live state (attach: cockpit
+  // open? send: paired?) then writes the resolved boolean back. Once a user has toggled, their
+  // choice wins for subsequent captures.
+  const _rawAttach = localStorage.getItem('cc.captureAttachToKiwi')
+  const _rawSend   = localStorage.getItem('cc.captureSendToPaired')
+  const captureAttachToKiwi = ref<boolean | null>(_rawAttach === null ? null : _rawAttach === 'true')
+  const captureSendToPaired = ref<boolean | null>(_rawSend   === null ? null : _rawSend   === 'true')
   // Kiwi's "Think first" switch: ask the engine to write its reasoning before the claims (a free-text
   // field ordered first in the reply schema). Off by default — on the 18-turn comparison it cost ~40%
   // more time and tokens with no gain the automatic checks could see (KIWI_ASSISTANT_PLAN Open decision 8).
@@ -639,6 +647,12 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
   watch(correctionCockpitOpen,      v => localStorage.setItem('cc.correctionCockpitOpen',      String(v)))
   watch(kiwiOpen,                   v => localStorage.setItem('cc.kiwiOpen',                   String(v)))
+  watch(captureAttachToKiwi, v => v === null
+    ? localStorage.removeItem('cc.captureAttachToKiwi')
+    : localStorage.setItem('cc.captureAttachToKiwi', String(v)))
+  watch(captureSendToPaired, v => v === null
+    ? localStorage.removeItem('cc.captureSendToPaired')
+    : localStorage.setItem('cc.captureSendToPaired', String(v)))
   watch(kiwiReasoning,              v => localStorage.setItem('cc.kiwiReasoning',              String(v)))
   watch(kiwiModel,                  v => localStorage.setItem('cc.kiwiModel',                  v))
   watch(correctionCockpitMode,      v => localStorage.setItem('cc.correctionCockpitMode',      String(v)))
@@ -680,7 +694,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
