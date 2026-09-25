@@ -121,26 +121,17 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
       </button>
     </div>
 
-    <!-- Manual-apply row: renders whenever the host opts in (`manualApply !== null`), so the MODE
-         toggle stays visible even when nothing is staged — the previous "toggle in the footer, Apply
-         chip mid-panel" layout looked like the mode reset itself every time you hit Apply (the chip
-         vanishes when hasStaged goes false). Two buttons, side by side: LEFT = persistent mode
-         toggle ("Manual"), RIGHT = Apply/Remove pair that appears only when there's a staged diff. -->
-    <div v-if="manualApply !== null" v-show="!collapsed" class="csp-apply">
-      <button class="csp-mode cc-btn cc-btn-ghost cc-btn-dense"
-              :class="{ 'cc-btn-on cc-btn-on-tint': manualApply }"
-              v-tooltip.top="manualApply
-                ? 'Manual apply on — pop toggles stage until you click Apply'
-                : 'Live — plots update on every pop toggle'"
-              @click="emit('update:manualApply', !manualApply)">
-        <i class="pi pi-clock" /> Manual
-      </button>
-      <span v-if="manualApply && hasStaged" class="csp-apply-note cc-fs-2xs cc-muted">{{ stagedChangeCount }} pending</span>
-      <span class="csp-apply-spacer" />
-      <button v-if="manualApply && hasStaged" class="csp-apply-btn cc-btn cc-btn-primary cc-btn-dense"
+    <!-- Apply chip: renders in manual-apply mode when the staged selection differs from what the
+         plots are showing. Compact — small counter + Apply pill + Remove-X. The MODE toggle itself
+         sits in the footer next to the settings icon (see below), so it stays visible even when this
+         chip is not — the previous "text-button in the row" version pulled the toggle away from the
+         other footer chips for no gain. -->
+    <div v-if="manualApply && hasStaged" v-show="!collapsed" class="csp-apply">
+      <span class="csp-apply-note cc-fs-2xs cc-muted">{{ stagedChangeCount }} pending</span>
+      <button class="csp-apply-btn cc-btn cc-btn-primary cc-btn-dense"
               v-tooltip.top="'Apply staged selection to the plots'"
               @click="emit('apply:staged')">Apply</button>
-      <button v-if="manualApply && hasStaged" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+      <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
               v-tooltip.top="'Remove staged changes'"
               @click="emit('discard:staged')"><i class="pi pi-times" /></button>
     </div>
@@ -158,17 +149,25 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
                    @update:vis="emit('update:vis', $event)" />
     </div>
 
-    <!-- footer: settings toggle (left, when a `vis` bag is passed) + scope chip (right, when a
-         `scope` is passed). Renders when any half is meaningful — hosts without any (rare) get no
-         footer. Manual-apply lives ABOVE the body (see .csp-apply above), not here — the mode toggle
-         has to stay visible even when nothing is staged, and it belongs next to Apply, not next to
-         Scope which is a different concern. -->
+    <!-- footer: settings toggle + manual-apply mode toggle (left, when a `vis` bag / `manualApply`
+         is passed) + scope chip (right, when a `scope` is passed). Renders when any half is
+         meaningful — hosts without any (rare) get no footer. Manual-apply is only offered when the
+         host opts in with `manualApply` defined (null = "the host doesn't support staging" — hide
+         the toggle entirely). -->
     <div v-show="!collapsed" v-if="scope || vis" class="csp-footer">
       <button v-if="vis" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
               :class="{ 'cc-btn-on cc-btn-on-tint': plotOptionsVisible }"
               v-tooltip.top="plotOptionsVisible ? 'Hide plot settings' : 'Show plot settings'"
               @click="plotOptionsVisible = !plotOptionsVisible">
         <i class="pi pi-sliders-h" />
+      </button>
+      <button v-if="manualApply !== null" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
+              :class="{ 'cc-btn-on cc-btn-on-tint': manualApply }"
+              v-tooltip.top="manualApply
+                ? 'Manual apply on — pop toggles stage until you click Apply'
+                : 'Live — plots update on every pop toggle'"
+              @click="emit('update:manualApply', !manualApply)">
+        <i class="pi pi-clock" />
       </button>
       <ChipSelect v-if="scope" class="csp-seg" variant="segmented" :options="SCOPE_OPTIONS"
                   :model-value="scope" aria-label="Scope"
@@ -216,13 +215,12 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 .csp-opts { border-top: 1px solid var(--cc-border); flex-shrink: 0; }
 .csp-footer { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
 .csp-seg { margin-left: auto; }
-/* manual-apply row: sits directly under the header, above the pop list. Renders whenever the host
-   opts in (mode toggle stays visible even when nothing is staged) — the accent tint only kicks in
-   when there ARE staged changes, so an idle manual-mode session doesn't look permanently pending.
-   Attribute selector avoids splitting the rule between two class names. */
+/* apply chip: sits directly under the header when there are staged changes in manual-apply mode.
+   Small count on the left, Apply pill + Remove-X on the right. Accent tint separates it from the
+   list rows. The MODE toggle itself lives in the footer next to the settings icon. */
 .csp-apply { display: flex; align-items: center; gap: 6px; padding: 5px 8px; flex-shrink: 0;
-             border-bottom: 1px solid var(--cc-border); }
-.csp-apply:has(.csp-apply-btn) { background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
-.csp-apply-spacer { flex: 1; }
+             border-bottom: 1px solid var(--cc-border);
+             background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
+.csp-apply-note { flex: 1; }
 .csp-apply-btn { min-width: 4rem; }
 </style>
