@@ -38,10 +38,19 @@ function api_projects_create(body_bytes::Vector{UInt8})
     # from axes (see Cecelia.img_axes / task_applies). `kind` is retained on the struct as a
     # vestigial no-op so pre-existing project.json files still round-trip.
     proj = create_project!(name=name)
+    # Stamp the active profile as the sole owner — a fresh project is not the "pre-identity" case
+    # Decision 8 defaults ([]) to cover, so we skip the Claim round trip. Symmetric with the claim
+    # endpoint; kept inline (no shared helper) because the create-time set is trivially `[profile]`
+    # with none of the coerce-legacy / idempotent-merge logic Claim carries.
+    owner = active_profile_name()
+    commit_state!(proj) do raw
+        raw["owners"] = String[owner]
+    end
     meta = Dict{String,Any}("uid"=>proj.uid, "name"=>proj.name, "path"=>proj.root,
                              "meta"=>proj.meta, "set_uids"=>proj.set_uids,
+                             "owners"=>String[owner],
                              "createdAt"=>string(now()), "lastOpenedAt"=>string(now()))
-    @info "Created project" name uid=proj.uid
+    @info "Created project" name uid=proj.uid owner
     200, JSON3.write((; project=meta))
 end
 
@@ -364,9 +373,11 @@ end
 # ── Project ownership (USER_PROFILE_PLAN Phase 5) ─────────────────────────────────
 #
 # `owners: [profile-name, …]` in ccid.json — empty/missing = visible to every profile (the safe
-# default for pre-existing projects, Decision 8). Presence in the list is the grant; there is no
-# owner-vs-collaborator distinction (Decision 5). The load-screen filter in the frontend keys off
-# this field. Migration is a no-op — see the plan for the reasoning.
+# default for PRE-EXISTING projects, Decision 8). A NEWLY created project is stamped with the
+# active profile at create-time (see `api_projects_create` above) — the server already knows who's
+# creating it, so requiring a follow-up Claim was busywork. Presence in the list is the grant;
+# there is no owner-vs-collaborator distinction (Decision 5). The load-screen filter in the
+# frontend keys off this field. Migration is a no-op — see the plan for the reasoning.
 
 # POST /api/projects/claim   { uid }  → { ok, owners }
 # Add the active profile to the project's owners. Idempotent — a second claim is a no-op.
