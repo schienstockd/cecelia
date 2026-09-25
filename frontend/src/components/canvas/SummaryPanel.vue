@@ -391,9 +391,14 @@ const error = ref('')
 // "cycle". The short window coalesces a burst into one request, only one runs at a time, and the
 // running call's `isCurrent()` goes false the moment a newer one starts, so an older response is
 // discarded rather than written over a newer one. (Was a hand-rolled timer + sequence token.)
+// 60 ms was tight enough that CLICK bursts (toggling several population rows at typical ~200 ms
+// cadence) each fell outside the window and fired their own fetch — because runs serialise, the
+// heatmap then filled in one population at a time as each response landed. 150 ms collapses
+// realistic multi-click bursts into ONE fetch with the final selection; a single deliberate click
+// still feels instant. Not a maxWait scrub — clicks are discrete events, not a sustained drag.
 const fetchRun = debouncedLatest<void>(
   (_arg, isCurrent) => fetchData(isCurrent),
-  { wait: 60, onError: e => {
+  { wait: 150, onError: e => {
       error.value = e instanceof Error ? e.message : String(e); result.value = null; loading.value = false
     } },
 )

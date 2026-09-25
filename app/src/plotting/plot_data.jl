@@ -476,7 +476,11 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         metric_label = normalize in (:fraction, :total) ? "proportion" : "count"
         df = _population_metric_frame(df; normalize=normalize, col=metric_label)
         measure = metric_label
-        by_image = false           # pool images into the pop series as individual points
+        # `by_image=false` pools images into ONE series per pop with each image's count as a dot.
+        # With `attr_map` the caller asked to compare *by attribute*, so keep the per-image rows and
+        # let `_series_groups` relabel them by attribute value — otherwise the population summary
+        # ignores groupAttr and pools every image into a single per-pop box regardless of the mode.
+        by_image = attr_map !== nothing
         normalize = :none
     elseif stat_unit == :image && measure !== nothing && chart_type in ("boxplot", "points", "bar")
         # IMAGE is the statistical unit: collapse each image to its per-series MEAN/MEDIAN, then plot

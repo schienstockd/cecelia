@@ -1,30 +1,50 @@
 <!--
   Shared plot-styling controls (VisProps) for every canvas population panel — the collapsible
-  Layout / Points / Colours / Labels sub-sections ported from the old R plotCharts adjustments.
+  Layout / Points / Colours / Stats / Labels sub-sections ported from the old R plotCharts adjustments.
   Presentational only: reads `vis`, emits `update:vis` patches. Embedded by SeriesPicker (summary
   canvas) and PopulationManager (gating / cluster canvas) so the styling UI lives in ONE place — the
   same knobs everywhere, and the future universal analysis board gets them for free.
+
+  Each section is a `CollapsibleSection` (canonical primitive, see `frontend/CLAUDE.md` — the
+  hand-rolled `.po-toggle` chevrons drifted away from the ones every other menu uses). Open/closed
+  persists across nav via localStorage under `plotOptions.<key>`, mirroring the other menus' pattern.
 
   `sections` optionally restricts which sub-sections show (e.g. a plot family with no raw points hides
   Points). Default = all four.
 -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { facetMode, type VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
+import CollapsibleSection from '../CollapsibleSection.vue'
 import { emptyReadout, overrideFor, type PlotReadout } from '../../plots/plotReadout'
 import { overrideTooltip, effectiveOf } from '../../plots/autoOverride'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 
+type SectionKey = 'layout' | 'points' | 'colours' | 'labels' | 'stats'
+
 const props = withDefaults(defineProps<{
   vis: VisProps
-  sections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
+  sections?: SectionKey[]
   // What the active plot's last render actually DID, as opposed to what these controls asked for: which
   // stats test `auto` resolved to (and why), and any setting the renderer had to substitute. A control
   // whose value was overridden marks itself amber and explains in its tooltip — see plots/plotReadout.ts.
   readout?: PlotReadout
 }>(), { sections: () => ['layout', 'points', 'colours', 'labels'], readout: emptyReadout })
 const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
+
+// ACCORDION: only one section open at a time. `CollapsibleSection` supports this via its controlled
+// mode (`:open` + `@update:open`); a group-level fact like "one at a time" cannot live in a section
+// (see the component's own comment). Persist the currently-open key across nav via localStorage —
+// same policy as the individual `storageKey`s the other menus use, just at the group level.
+const OPEN_KEY = 'plotOptions.openSection'
+const openKey = ref<SectionKey | null>((() => {
+  const v = typeof window !== 'undefined' ? window.localStorage.getItem(OPEN_KEY) : null
+  return (v === 'layout' || v === 'points' || v === 'colours' || v === 'labels' || v === 'stats') ? v : null
+})())
+watch(openKey, v => { try { window.localStorage.setItem(OPEN_KEY, v ?? '') } catch { /* ignore */ } })
+const isOpen = (k: SectionKey) => openKey.value === k
+const setOpen = (k: SectionKey, v: boolean) => { openKey.value = v ? k : (openKey.value === k ? null : openKey.value) }
 
 // the facet mode, migrating the legacy boolean so a canvas saved before the mode existed still
 // shows as faceted rather than silently reverting to None
@@ -44,7 +64,6 @@ const rotateXShown = computed<boolean>({
   get: () => effectiveOf(xLabelOverride.value, !!props.vis.rotateXLabel, true),
   set: v => set({ rotateXLabel: v }),
 })
-const open = ref<Record<string, boolean>>({ layout: false, points: false, colours: false, labels: false, stats: false })
 const set = (patch: Partial<VisProps>) => emit('update:vis', patch)
 
 // Free-text fields commit on `@change` (blur / Enter) — an axis caption applied per keystroke would
@@ -57,17 +76,15 @@ const labYDraft   = useFieldDraft(() => props.vis.labY)
 const yMinDraft   = useFieldDraft(() => props.vis.yMin)
 const yMaxDraft   = useFieldDraft(() => props.vis.yMax)
 const coloursDraft = useFieldDraft(() => props.vis.userColors)
-const has = (s: string) => props.sections.includes(s as 'layout')
+const has = (s: SectionKey) => props.sections.includes(s)
 </script>
 
 <template>
   <div class="po">
     <!-- Layout / scale -->
-    <template v-if="has('layout')">
-      <button class="po-toggle cc-section-toggle" @click="open.layout = !open.layout">
-        <i :class="open.layout ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Layout</span>
-      </button>
-      <div v-show="open.layout" class="po-body">
+    <CollapsibleSection v-if="has('layout')" label="Layout" max-height="none"
+                        :open="isOpen('layout')" @update:open="v => setOpen('layout', v)">
+      <div class="po-body">
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Show the series key beside the plot'"><span>Legend</span>
           <CcToggle aria-label="Legend" :model-value="vis.legend" @update:model-value="set({ legend: $event })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Log scale on the measure axis'"><span>Log scale</span>
@@ -105,14 +122,12 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Measure-axis range (blank = auto)'"><span>Y max</span>
           <input class="po-txt" type="text" v-model="yMaxDraft" @change="set({ yMax: yMaxDraft })" /></label>
       </div>
-    </template>
+    </CollapsibleSection>
 
     <!-- Points / data -->
-    <template v-if="has('points')">
-      <button class="po-toggle cc-section-toggle" @click="open.points = !open.points">
-        <i :class="open.points ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Points</span>
-      </button>
-      <div v-show="open.points" class="po-body">
+    <CollapsibleSection v-if="has('points')" label="Points" max-height="none"
+                        :open="isOpen('points')" @update:open="v => setOpen('points', v)">
+      <div class="po-body">
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Data offset (beeswarm / random / none)'"><span>Offset</span>
           <select class="po-sel" :value="vis.jitter" @change="set({ jitter: ($event.target as HTMLSelectElement).value as VisProps['jitter'] })">
             <option value="beeswarm">beeswarm</option><option value="random">random</option><option value="none">none</option>
@@ -128,14 +143,12 @@ const has = (s: string) => props.sections.includes(s as 'layout')
                  @input="set({ pointOpacity: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.pointOpacity.toFixed(2) }}</span></label>
       </div>
-    </template>
+    </CollapsibleSection>
 
     <!-- Colours -->
-    <template v-if="has('colours')">
-      <button class="po-toggle cc-section-toggle" @click="open.colours = !open.colours">
-        <i :class="open.colours ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Colours</span>
-      </button>
-      <div v-show="open.colours" class="po-body">
+    <CollapsibleSection v-if="has('colours')" label="Colours" max-height="none"
+                        :open="isOpen('colours')" @update:open="v => setOpen('colours', v)">
+      <div class="po-body">
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Colour scheme series are drawn in'"><span>Palette</span>
           <select class="po-sel" :value="vis.palette" @change="set({ palette: ($event.target as HTMLSelectElement).value as VisProps['palette'] })">
             <option value="standard">standard (population)</option><option value="distinct">distinct</option>
@@ -149,14 +162,12 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           <input class="po-txt wide" type="text" v-model="coloursDraft" placeholder="#4477AA,#EE6677,…"
                  @change="set({ userColors: coloursDraft })" /></label>
       </div>
-    </template>
+    </CollapsibleSection>
 
     <!-- Stats — between-group hypothesis test (applies to bar/boxplot/violin/strip) -->
-    <template v-if="has('stats')">
-      <button class="po-toggle cc-section-toggle" @click="open.stats = !open.stats">
-        <i :class="open.stats ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Stats</span>
-      </button>
-      <div v-show="open.stats" class="po-body">
+    <CollapsibleSection v-if="has('stats')" label="Stats" max-height="none"
+                        :open="isOpen('stats')" @update:open="v => setOpen('stats', v)">
+      <div class="po-body">
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Between-group test — Mann-Whitney (2 groups) / Kruskal-Wallis (>2) by default'"><span>Compare groups</span>
           <CcToggle aria-label="Compare groups" :model-value="!!vis.statsEnabled" @update:model-value="set({ statsEnabled: $event })" /></div>
         <label v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'auto = Mann-Whitney (2) / Kruskal-Wallis (>2)'"><span>Test</span>
@@ -178,14 +189,12 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Swap p-values for the * / ** / *** ladder'"><span>Stars only</span>
           <CcToggle aria-label="Stars only" :model-value="!!vis.statsUseStars" @update:model-value="set({ statsUseStars: $event })" /></div>
       </div>
-    </template>
+    </CollapsibleSection>
 
     <!-- Labels / captions -->
-    <template v-if="has('labels')">
-      <button class="po-toggle cc-section-toggle" @click="open.labels = !open.labels">
-        <i :class="open.labels ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Labels</span>
-      </button>
-      <div v-show="open.labels" class="po-body">
+    <CollapsibleSection v-if="has('labels')" label="Labels" max-height="none"
+                        :open="isOpen('labels')" @update:open="v => setOpen('labels', v)">
+      <div class="po-body">
         <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'Heading above the plot (blank = none)'"><span>Title</span>
           <input class="po-txt wide" type="text" v-model="titleDraft" @change="set({ title: titleDraft })" /></label>
         <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'X axis caption (blank = the measure name)'"><span>X label</span>
@@ -197,7 +206,7 @@ const has = (s: string) => props.sections.includes(s as 'layout')
                  @input="set({ fontSize: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.fontSize }}</span></label>
       </div>
-    </template>
+    </CollapsibleSection>
   </div>
 </template>
 
@@ -205,8 +214,7 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 /* inline warning glyph on an auto-overridden row (amber comes from .cc-auto-override) */
 .po-warn { margin-left: 4px; }
 .po { display: flex; flex-direction: column; }
-/* + cc-section-toggle (row) — this keeps only the padding and the uppercase section-label tier */
-.po-toggle { padding: 6px 8px; }
+/* padding + rhythm for a section's body; sits inside CollapsibleSection's .cs-body wrapper */
 .po-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .po-row { display: flex; align-items: center; gap: 8px; }
 .po-row > span:first-child { flex: 1; }

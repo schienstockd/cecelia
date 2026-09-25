@@ -162,11 +162,22 @@ function track_bbox(img::CciaImage, value_name::AbstractString, track_id::Intege
                 include_obs = true, centroids = :pixel)
     :track_id in propertynames(df) ||
         error("track_bbox: pop_df returned no track_id column for $(value_name)")
-    sub = subset(df, :track_id => x -> .!ismissing.(x) .& (Int.(x) .== Int(track_id)))
+    # `.&` is elementwise (not short-circuit), so `Int.(x)` used to run across every row regardless
+    # of the ismissing mask and blew up on NaNs with InexactError(Int64, NaN). Filter row-by-row.
+    match = [(!ismissing(v) && v isa Real && isfinite(v) && Int(round(Float64(v))) == Int(track_id))
+             for v in df.track_id]
+    sub = df[match, :]
     nrow(sub) == 0 && error("track_bbox: no cells with track_id=$track_id under $(value_name)")
-    xs = Int.(round.(Float64.(sub[!, :centroid_x])))
-    ys = Int.(round.(Float64.(sub[!, :centroid_y])))
-    ts = :centroid_t in propertynames(sub) ? Int.(sub[!, :centroid_t]) : Int[0 for _ in eachrow(sub)]
+    # A NaN centroid on a matched row would also throw at the Int coercion; drop those.
+    fx = Float64[Float64(coalesce(v, NaN)) for v in sub[!, :centroid_x]]
+    fy = Float64[Float64(coalesce(v, NaN)) for v in sub[!, :centroid_y]]
+    has_t = :centroid_t in propertynames(sub)
+    ft = has_t ? Float64[Float64(coalesce(v, NaN)) for v in sub[!, :centroid_t]] :
+                 fill(0.0, nrow(sub))
+    keep = isfinite.(fx) .& isfinite.(fy) .& isfinite.(ft)
+    any(keep) || error("track_bbox: track $track_id has no finite centroids under $(value_name)")
+    xs = Int.(round.(fx[keep])); ys = Int.(round.(fy[keep]))
+    ts = has_t ? Int.(round.(ft[keep])) : Int[0 for _ in 1:count(keep)]
     (x = (minimum(xs) - pad_px, maximum(xs) + pad_px),
      y = (minimum(ys) - pad_px, maximum(ys) + pad_px),
      t0 = minimum(ts), t1 = maximum(ts))
@@ -221,7 +232,10 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
         col = df[!, Symbol(cluster_col)]
         @inbounds for i in eachindex(col)
             v = col[i]; ismissing(v) && continue
-            sub_rows[i] = Int(round(Float64(v))) in cids
+            # NaN pad rows from sibling frames (see clustering_features_pooled) slip past `ismissing`
+            # (NaN is not missing) — Int(round(NaN)) throws InexactError; skip explicitly.
+            fv = Float64(v); isnan(fv) && continue
+            sub_rows[i] = Int(round(fv)) in cids
         end
         n = count(sub_rows)
         n == 0 && continue    # pop has no rows in the pool → skip (rather than fake a medoid)
