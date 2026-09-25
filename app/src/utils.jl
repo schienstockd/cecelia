@@ -145,8 +145,62 @@ end
 this is state a human reads when something has gone wrong, and one writer means one on-disk format.
 (Before this, `save!` wrote pretty while every task-commit site wrote compact JSON to the *same*
 ccid.json, so a file's formatting depended on who touched it last.)
+
+Uses our own pretty-printer rather than `JSON3.pretty`, which fails to escape `"` inside dict keys
+(it appears to re-parse the compact JSON at the byte level for reformatting, and the reformatting
+step strips escapes from keys). That corruption is silent: `_read_bb_meta` and every other
+`JSON3.read` caller returns `nothing` on the resulting invalid JSON. Our walker only calls
+`JSON3.write` for scalar/key emission — which does escape correctly — and hand-rolls the
+indentation.
 """
-write_json_atomic(path::AbstractString, data) = write_atomic(io -> JSON3.pretty(io, data), path)
+write_json_atomic(path::AbstractString, data) = write_atomic(io -> _pretty_json(io, data), path)
+
+# Pretty-printer that keeps `JSON3.write`'s escaping for keys and scalars. Format target: 4-space
+# indent; non-empty containers span multiple lines; empty containers stay on one line (`{}` / `[]`).
+# See `write_json_atomic` above for why this exists rather than `JSON3.pretty`.
+function _pretty_json(io::IO, data)
+    _pretty_json_walk(io, data, 0)
+    write(io, "\n")
+    nothing
+end
+function _pretty_json_walk(io::IO, x, depth::Int)
+    if x isa AbstractDict
+        if isempty(x)
+            write(io, "{}")
+        else
+            write(io, "{\n")
+            pad = repeat("    ", depth + 1)
+            n = length(x); i = 0
+            for (k, v) in x
+                i += 1
+                write(io, pad)
+                JSON3.write(io, string(k))
+                write(io, ": ")
+                _pretty_json_walk(io, v, depth + 1)
+                i < n && write(io, ",")
+                write(io, "\n")
+            end
+            write(io, repeat("    ", depth), "}")
+        end
+    elseif x isa AbstractVector || x isa Tuple
+        if isempty(x)
+            write(io, "[]")
+        else
+            write(io, "[\n")
+            pad = repeat("    ", depth + 1)
+            n = length(x)
+            for (i, v) in enumerate(x)
+                write(io, pad)
+                _pretty_json_walk(io, v, depth + 1)
+                i < n && write(io, ",")
+                write(io, "\n")
+            end
+            write(io, repeat("    ", depth), "]")
+        end
+    else
+        JSON3.write(io, x)
+    end
+end
 
 function _dir_bytes(path::String)::Int
     if Sys.isunix()

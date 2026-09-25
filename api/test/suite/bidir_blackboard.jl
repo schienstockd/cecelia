@@ -820,3 +820,68 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: blackboard kiwiRefs sidecar (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2)" begin
+    # Additive `kiwiRefs` field on meta.json — a saved Kiwi turn's per-ref sidecar. Round-trips
+    # through create → read; preserved across revise + status flip + outcome tag; missing on a
+    # normal (non-Kiwi) entry; a runaway sidecar rejected at write; malformed shape rejected.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTKR"; mkpath(joinpath(tmp, uid))
+        w(path, b) = _post(path, b)
+        get_entry(id) = api_blackboard_entry_get(HTTP.Request("GET",
+            "/api/blackboard/entry?projectUid=$uid&entryId=$id"))
+
+        # Reject a non-object sidecar; reject one that blows the 200 KiB cap.
+        @test w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t",
+            "content"=>"body", "kiwiRefs"=>"not-an-object"))[1] == 400
+        oversized = Dict("k$(i)" => Dict("ref"=>Dict("kind"=>"plot","plotId"=>"p"),
+                                          "label"=>"x", "snapshot"=>Dict("kind"=>"plot",
+                                                                          "plotSummary"=>repeat("y", 4_000),
+                                                                          "label"=>"x"),
+                                          "savedAt"=>"2026-09-25T12:00:00Z") for i in 1:100)
+        @test w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t",
+            "content"=>"body", "kiwiRefs"=>oversized))[1] == 400
+
+        # Normal entry (no kiwiRefs) → field absent on read.
+        _, body_plain = w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"plain", "content"=>""))
+        eid_plain = String(JSON3.read(body_plain).entryId)
+        @test !haskey(JSON3.read(get_entry(eid_plain)[2]).entry, :kiwiRefs)
+
+        # Saved Kiwi turn with two fragile refs (a plot + a population) round-trips through create,
+        # revise (content edit preserves sidecar), status flip, outcome tag.
+        refs = Dict(
+            "k-plot" => Dict("ref"=>Dict("kind"=>"plot","plotId"=>"p1"), "label"=>"plot",
+                              "snapshot"=>Dict("kind"=>"plot", "plotSummary"=>"chart: box\nN=7", "label"=>"plot"),
+                              "savedAt"=>"2026-09-25T12:00:00.000Z"),
+            "k-pop"  => Dict("ref"=>Dict("kind"=>"population","imageUid"=>"IMG1","valueName"=>"default","popPath"=>"/x"),
+                              "label"=>"/x · default",
+                              "snapshot"=>Dict("kind"=>"population","imageName"=>"img_005","label"=>"/x · default"),
+                              "savedAt"=>"2026-09-25T12:00:00.000Z"),
+        )
+        _, body_k = w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"Kiwi turn — why the drift",
+            "content"=>"# Kiwi turn", "kiwiRefs"=>refs))
+        eid_k = String(JSON3.read(body_k).entryId)
+        got1 = JSON3.read(get_entry(eid_k)[2]).entry
+        @test String(got1.kiwiRefs["k-plot"].snapshot.plotSummary) == "chart: box\nN=7"
+        @test String(got1.kiwiRefs["k-pop"].snapshot.imageName) == "img_005"
+
+        # Revise (content edit) preserves sidecar unchanged.
+        st_r, _ = w(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>eid_k,
+            "content"=>"# Kiwi turn\n\nrevised"))
+        @test st_r == 200
+        got2 = JSON3.read(get_entry(eid_k)[2]).entry
+        @test String(got2.kiwiRefs["k-plot"].snapshot.plotSummary) == "chart: box\nN=7"
+
+        # Status flip preserves sidecar too.
+        st_s, _ = w(api_blackboard_status, Dict("projectUid"=>uid, "entryId"=>eid_k, "status"=>"resolved"))
+        @test st_s == 200
+        got3 = JSON3.read(get_entry(eid_k)[2]).entry
+        @test haskey(got3.kiwiRefs, :"k-plot")
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

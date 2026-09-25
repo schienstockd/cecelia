@@ -1191,7 +1191,8 @@ def read_blackboard_entry(project_uid: str, entry_id: str, version: int | None =
 @mcp.tool()
 def create_blackboard_entry(project_uid: str, title: str, content_md: str,
                             attach_capture_ids: list[str] | None = None,
-                            image_uid: str | None = None) -> dict:
+                            image_uid: str | None = None,
+                            kiwi_refs: dict | None = None) -> dict:
     """Create a new BLACKBOARD entry — a shared idea worth keeping across sessions. Distinct from a
     CHAIN (executable, needs the user to Run) and a NOTEBOOK (analysis code the user opens and
     edits). This is prose + Mermaid diagrams (triple-backtick `mermaid` fences render on the
@@ -1205,6 +1206,11 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
     context fingerprint (channel count, stain classes, pipeline stage) is snapshotted into the
     entry's meta. Set once at create; if the image is unknown or unresolvable, the entry is still
     created — the fingerprint is best-effort, not a gate.
+    `kiwi_refs` — KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9. Optional per-ref sidecar for a saved
+    Kiwi turn: a `{refKey: {ref, label, snapshot?, savedAt}}` map keyed by canonical refKey. Only
+    the six fragile ref kinds (population/cells/tracks/plot/tile/ui) carry a snapshot; the other
+    kinds resolve-or-say-"gone" and don't need one. Almost never used from an MCP client — this is
+    the frontend's Kiwi Save button's channel; passed through to the server for shape/byte checks.
 
     Create when the user asks to "record" / "keep" / "add to the board" a concept the two of you
     have been developing. Don't create speculatively — an unused entry sits in the list forever.
@@ -1212,7 +1218,7 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
     nothing is lost. Say "it's on the Blackboard" when you're done, no more."""
     fingerprint = _infer_fingerprint(project_uid, image_uid)
     return _client.create_blackboard_entry(project_uid, title, content_md,
-                                            attach_capture_ids, fingerprint)
+                                            attach_capture_ids, fingerprint, kiwi_refs)
 
 
 @mcp.tool()

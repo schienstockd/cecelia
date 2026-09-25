@@ -8,6 +8,7 @@
 // takes 30 s to 2 min (Open decision 4). A reply can be followed up: the next question continues its
 // engine session. State lives in `stores/kiwi.ts`.
 import { ref, computed, nextTick } from 'vue'
+import { useToast } from 'primevue/usetoast'
 import CcToggle from '../CcToggle.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -18,21 +19,79 @@ import KiwiRefChip from './KiwiRefChip.vue'
 import { useKiwiStore } from '../../stores/kiwi'
 import { useSettingsStore } from '../../stores/settings'
 import { useProjectStore } from '../../stores/project'
+import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useTaskDefsStore } from '../../stores/taskDefs'
 import { useObserverStore } from '../../stores/observer'
+import { usePlotRegistryStore } from '../../stores/plotRegistry'
 import { useNowTick } from '../../composables/useNowTick'
 import { useKiwiPoint } from '../../composables/useKiwiPoint'
 import { TASK_STATUS } from '../../lib/taskStatus'
 import { parseRailTime, taskElapsed } from '../../utils/taskElapsed'
 import { searchRefs, stepLabel, turnMeta, attachmentRows, claimRows,
-         type AttachmentRow, type ClaimRow, type KiwiTurn, type RefCandidate } from '../../utils/kiwiTurn'
+         type AttachmentRow, type ClaimRow, type KiwiClaim, type KiwiTurn, type RefCandidate } from '../../utils/kiwiTurn'
+import { buildTurnSave, buildClaimSave } from '../../utils/kiwiTurnSave'
+import { createBlackboardEntry } from '../../utils/blackboardApi'
 
 const kiwi = useKiwiStore()
 const settings = useSettingsStore()
 const project = useProjectStore()
+const pm = useProjectMetaStore()
 const taskDefs = useTaskDefsStore()
 const observer = useObserverStore()
+const plotsRegistry = usePlotRegistryStore()
 const now = useNowTick()
+const toast = useToast()
+
+// KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2 — per-turn (primary) and per-claim (secondary) Save to
+// Blackboard. Builder is pure (`utils/kiwiTurnSave.ts`); the callbacks here read live store data
+// at save-time so plot summaries + image names are frozen against what the user is looking at.
+const saveBusy = ref<Record<string, boolean>>({})     // keyed by turnId or `${turnId}:claim:${i}`
+function saveCallbacks() {
+  return {
+    imageName: (uid: string) => project.imageByUid?.(uid)?.name ?? uid,
+    plotSummary: (plotId: string) => plotsRegistry.getLast(plotId)?.meta?.summary ?? '',
+  }
+}
+async function persistSavedEntry(entryId: string) {
+  const puid = pm.current?.uid ?? ''
+  toast.add({ severity: 'success', life: 5000, summary: 'Saved to Blackboard',
+              detail: 'Click to open the entry.',
+              // primevue toasts aren't routable; leave the message and let the button do the work.
+            })
+  // Nudge the Blackboard list; it listens for `blackboard:changed` broadcasts (backend fires one
+  // on create) so we don't strictly need a manual refresh — a user already on /blackboard will
+  // pick up the new row via WS. Opening the entry directly is a nice-to-have follow-up.
+  void entryId; void puid
+}
+async function saveTurn(t: KiwiTurn) {
+  if (saveBusy.value[t.turnId]) return
+  const puid = pm.current?.uid ?? ''
+  if (!puid) return
+  saveBusy.value = { ...saveBusy.value, [t.turnId]: true }
+  try {
+    const payload = buildTurnSave(t, saveCallbacks())
+    const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
+                                            { kiwiRefs: payload.kiwiRefs })
+    if (id) await persistSavedEntry(id)
+    else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
+                     detail: 'Blackboard rejected the entry.' })
+  } finally { saveBusy.value = { ...saveBusy.value, [t.turnId]: false } }
+}
+async function saveClaim(t: KiwiTurn, c: KiwiClaim, i: number) {
+  const key = `${t.turnId}:claim:${i}`
+  if (saveBusy.value[key]) return
+  const puid = pm.current?.uid ?? ''
+  if (!puid) return
+  saveBusy.value = { ...saveBusy.value, [key]: true }
+  try {
+    const payload = buildClaimSave(t, c, saveCallbacks())
+    const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
+                                            { kiwiRefs: payload.kiwiRefs })
+    if (id) await persistSavedEntry(id)
+    else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
+                     detail: 'Blackboard rejected the claim.' })
+  } finally { saveBusy.value = { ...saveBusy.value, [key]: false } }
+}
 
 const canAsk = computed(() => !kiwi.busy && (kiwi.prompt.trim().length > 0 || kiwi.refs.length > 0))
 function onKey(e: KeyboardEvent) {
@@ -190,6 +249,7 @@ function pick(c: RefCandidate) {
         <SelectionTable v-if="t.reply.claims.length" selection-mode="none" density="compact"
                         column-width-key="cc.kiwi.claims.colw"
                         :columns="CLAIM_COLUMNS" :rows="claimRows(t.reply)" id-key="id"
+                        actions-width="1.6rem"
                         @row-click="openClaim">
           <!-- a failed claim's number carries WHY: a ref that doesn't resolve or wasn't looked at -->
           <template #cell-n="{ row: r }">
@@ -209,10 +269,23 @@ function pick(c: RefCandidate) {
               <KiwiRefChip v-for="(x, j) in r.refs" :key="j" :kiwi-ref="x.ref" :result="x.result" :seen="x.seen" />
             </div>
           </template>
+          <template #actions="{ row: r }">
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                    :disabled="saveBusy[`${t.turnId}:claim:${r.n - 1}`]"
+                    @click.stop="saveClaim(t, t.reply!.claims[r.n - 1], r.n - 1)"
+                    v-tooltip.left="'Save this claim to Blackboard'">
+              <i class="pi pi-bookmark" />
+            </button>
+          </template>
         </SelectionTable>
       </template>
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-3xs kiwi-grow">{{ turnMeta(t) }}</span>
+        <button v-if="t.reply" class="cc-btn cc-btn-ghost cc-fs-2xs" :disabled="saveBusy[t.turnId]"
+                @click="saveTurn(t)"
+                v-tooltip.bottom="'Save this whole turn to the Blackboard'">
+          <i class="pi pi-bookmark" /> Save
+        </button>
         <button v-if="canFollow(t)" class="cc-btn cc-btn-ghost cc-fs-2xs" :disabled="kiwi.busy"
                 @click="kiwi.followUp = t.turnId"
                 v-tooltip.bottom="'Ask a follow-up — Kiwi keeps this conversation'">

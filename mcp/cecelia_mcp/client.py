@@ -645,16 +645,22 @@ class CeceliaClient:
 
     def create_blackboard_entry(self, project_uid: str, title: str, content_md: str,
                                 attach_capture_ids: list[str] | None = None,
-                                fingerprint: dict | None = None):
+                                fingerprint: dict | None = None,
+                                kiwi_refs: dict | None = None):
         # `fingerprint` is a PROJECT_MEMORY_PLAN P5.1 dict inferred by the MCP layer (image context
         # snapshot); the server validates it has an integer `v` field and byte-caps it. Passed only
         # when present so an unrelated caller that doesn't infer one lands on the same wire shape as
         # before P5.1.
+        # `kiwi_refs` (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9) is the per-ref sidecar map for
+        # a saved Kiwi turn (fragile-kind snapshots keyed by refKey). Server validates shape + byte
+        # cap. Additive — MCP callers that don't produce a Kiwi turn omit it.
         body = {"projectUid": project_uid, "title": title, "content": content_md}
         if attach_capture_ids:
             body["attachments"] = attach_capture_ids
         if fingerprint:
             body["fingerprint"] = fingerprint
+        if kiwi_refs:
+            body["kiwiRefs"] = kiwi_refs
         return self._request("POST", "/api/blackboard/create", body=body)
 
     def revise_blackboard_entry(self, project_uid: str, entry_id: str, content_md: str,

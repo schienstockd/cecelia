@@ -278,7 +278,8 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
     title, createdAt, updatedAt, current, attachments,
     snapshots = Any[], status::AbstractString = "open",
     outcome::Union{Nothing,AbstractDict} = nothing,
-    fingerprint::Union{Nothing,AbstractDict} = nothing)
+    fingerprint::Union{Nothing,AbstractDict} = nothing,
+    kiwiRefs::Union{Nothing,AbstractDict} = nothing)
     dir = _bb_entry_dir(uid, id)
     meta = Dict{String,Any}(
         "entryId"     => id,
@@ -320,7 +321,36 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
         fp_out["v"] = Int(get(fp_out, "v", _BB_FINGERPRINT_VERSION))
         meta["fingerprint"] = fp_out
     end
+    # kiwiRefs — KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9. Additive sidecar; absent-on-missing.
+    # Shape is a map keyed by canonical refKey, each entry a `{ref, label, snapshot?, savedAt}` dict
+    # (see `frontend/src/utils/kiwiTurnSave.ts`). Stored verbatim under String keys so the on-disk
+    # shape stays stable regardless of JSON3's Symbol/String choice. Size-capped at write to keep a
+    # runaway snapshot from blowing meta.json — same discipline as fingerprint.
+    if kiwiRefs !== nothing && !isempty(kiwiRefs)
+        kr_out = Dict{String,Any}()
+        for (k, v) in kiwiRefs
+            kr_out[String(k)] = v
+        end
+        meta["kiwiRefs"] = kr_out
+    end
     write_json_atomic(joinpath(dir, "meta.json"), meta)
+end
+# KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2. Cap the sidecar so a runaway plotSummary can't blow
+# meta.json. 200 KiB fits ~15 full-cap plot summaries (12 KB each) — plenty of headroom for a
+# real Kiwi turn's refs; a plan reader hitting this ceiling is a signal, not a limit.
+const _BB_KIWI_REFS_MAX_BYTES = 200 * 1024
+_valid_bb_kiwi_refs(kr) = kr isa AbstractDict
+"""
+    _kiwi_refs_from_meta(meta) -> Union{Dict{String,Any},Nothing}
+
+Return the kiwiRefs sidecar recorded on `meta`, or `nothing` when the entry has none / the on-disk
+shape is malformed. Absent-on-missing so a reader can distinguish "not a saved Kiwi turn" from
+"saved turn with no fragile refs". Read-only.
+"""
+function _kiwi_refs_from_meta(meta)::Union{Dict{String,Any},Nothing}
+    kr = get(meta, "kiwiRefs", nothing)
+    _valid_bb_kiwi_refs(kr) || return nothing
+    Dict{String,Any}(String(k) => v for (k, v) in kr)
 end
 function _read_bb_meta(uid::AbstractString, id::AbstractString)::Union{Dict{String,Any},Nothing}
     p = joinpath(_bb_entry_dir(uid, id), "meta.json")
@@ -534,6 +564,10 @@ function api_blackboard_entry_get(req::HTTP.Request)
     # it's a property of the entry as a whole, so the read exposes it alongside status/outcome.
     fp = _fingerprint_from_meta(meta)
     fp !== nothing && (entry_out["fingerprint"] = fp)
+    # kiwiRefs sidecar (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9). Same absent-on-missing
+    # discipline — a normal Blackboard entry has none; a saved Kiwi turn carries a map.
+    kr = _kiwi_refs_from_meta(meta)
+    kr !== nothing && (entry_out["kiwiRefs"] = kr)
     200, JSON3.write((; entry = entry_out))
 end
 
@@ -688,7 +722,8 @@ function api_blackboard_status(body_bytes::Vector{UInt8})
         snapshots = get(meta, "snapshots", Any[]),
         status = status,
         outcome = _outcome_from_meta(meta),
-        fingerprint = _fingerprint_from_meta(meta))
+        fingerprint = _fingerprint_from_meta(meta),
+        kiwiRefs = _kiwi_refs_from_meta(meta))
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -768,7 +803,8 @@ function api_blackboard_outcome(body_bytes::Vector{UInt8})
         snapshots = get(meta, "snapshots", Any[]),
         status = _status_from_meta(meta),
         outcome = new_outcome,
-        fingerprint = _fingerprint_from_meta(meta))
+        fingerprint = _fingerprint_from_meta(meta),
+        kiwiRefs = _kiwi_refs_from_meta(meta))
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -828,6 +864,18 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
             return 400, JSON3.write((; error = "fingerprint exceeds $_BB_FINGERPRINT_MAX_BYTES bytes"))
         fingerprint = fp_in
     end
+    # Optional kiwiRefs sidecar (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9). Same discipline as
+    # fingerprint — set once on create; a later revise preserves prior value via `_kiwi_refs_from_meta`.
+    # Byte-capped so a runaway plotSummary can't blow meta.json.
+    kr_in = get(body, :kiwiRefs, nothing)
+    kiwi_refs = nothing
+    if kr_in !== nothing
+        _valid_bb_kiwi_refs(kr_in) ||
+            return 400, JSON3.write((; error = "kiwiRefs must be an object keyed by refKey"))
+        length(codeunits(JSON3.write(kr_in))) > _BB_KIWI_REFS_MAX_BYTES &&
+            return 400, JSON3.write((; error = "kiwiRefs exceeds $_BB_KIWI_REFS_MAX_BYTES bytes"))
+        kiwi_refs = kr_in
+    end
 
     dir = _bb_entry_dir(uid, id); mkpath(dir)
     write_atomic(joinpath(dir, "entry.md")) do io
@@ -835,7 +883,8 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     end
     _write_bb_meta!(uid, id;
         title = title, createdAt = ts, updatedAt = ts, current = 0,
-        attachments = attachments, status = status, fingerprint = fingerprint)
+        attachments = attachments, status = status, fingerprint = fingerprint,
+        kiwiRefs = kiwi_refs)
 
     reg = _read_bb_registry(uid)
     reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)
@@ -911,12 +960,14 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
     # outcome, they hit the outcome endpoint separately (Decision 11).
     prev_outcome = _outcome_from_meta(meta)
     prev_fingerprint = _fingerprint_from_meta(meta)
+    prev_kiwi_refs = _kiwi_refs_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v, attachments = atts,
         snapshots = snapshots, status = prev_status,
-        outcome = prev_outcome, fingerprint = prev_fingerprint)
+        outcome = prev_outcome, fingerprint = prev_fingerprint,
+        kiwiRefs = prev_kiwi_refs)
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -982,13 +1033,15 @@ function api_blackboard_restore(body_bytes::Vector{UInt8})
     prev_status  = _status_from_meta(meta)
     prev_outcome = _outcome_from_meta(meta)
     prev_fingerprint = _fingerprint_from_meta(meta)
+    prev_kiwi_refs = _kiwi_refs_from_meta(meta)
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
         createdAt = String(get(meta, "createdAt", ts)),
         updatedAt = ts, current = v_asked,
         attachments = restored_atts, snapshots = snapshots,
         status = prev_status, outcome = prev_outcome,
-        fingerprint = prev_fingerprint)
+        fingerprint = prev_fingerprint,
+        kiwiRefs = prev_kiwi_refs)
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
     entry["current"]   = v_asked
@@ -1055,7 +1108,8 @@ function api_blackboard_prune(body_bytes::Vector{UInt8})
                     snapshots = snapshots,
                     status = _status_from_meta(meta),
                     outcome = _outcome_from_meta(meta),
-                    fingerprint = _fingerprint_from_meta(meta))
+                    fingerprint = _fingerprint_from_meta(meta),
+                    kiwiRefs = _kiwi_refs_from_meta(meta))
             end
         end
     end
