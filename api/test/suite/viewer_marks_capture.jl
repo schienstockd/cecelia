@@ -275,6 +275,19 @@ end
         @test String(got.capture.overlay[3].color) == "black"
         @test !haskey(got.capture.overlay[3], :rotate)                    # zero rotation kept off the wire
 
+        # KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 5: `noPush=true` suppresses the paired-session
+        # push and reports `push="not_requested"`. Default (flag absent) still fires the normal push
+        # path — this project has no paired session in test so the outcome is `not_paired`. Absence
+        # of the flag must NOT be treated as `true`.
+        st_np, body_np = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
+                                "frames"=>[Dict("png"=>frame_data_url)], "noPush"=>true))
+        @test st_np == 200
+        @test String(JSON3.read(body_np).push) == "not_requested"
+        st_dp, body_dp = w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr,
+                                "frames"=>[Dict("png"=>frame_data_url)]))
+        @test st_dp == 200
+        @test String(JSON3.read(body_dp).push) == "not_paired"
+
         # guards on the read side
         @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture"))[1] == 400
         @test api_viewer_capture_get(HTTP.Request("GET", "/api/viewer/capture?projectUid=$uid"))[1] == 400
@@ -397,7 +410,8 @@ end
 
         # Bulk clear — write a couple more captures, then clear all. Count includes the two
         # re-annotate captures written above (cap_id2, cap_id3) which weren't individually deleted,
-        # plus the two multi-panel probes written for the panels[] round-trip (cap_mp, cap_sp).
+        # the two multi-panel probes written for the panels[] round-trip (cap_mp, cap_sp), and
+        # the two noPush probes (with + without the flag) above.
         addr2 = Dict("projectUid"=>uid, "imageUid"=>"IMG2", "t"=>0)
         for _ in 1:3
             w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr2,
@@ -405,7 +419,7 @@ end
         end
         st_c, r_c = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c == 200
-        @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 7
+        @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 9
         st_c2, r_c2 = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c2 == 200
         @test JSON3.read(r_c2, Dict{String,Any})["cleared"] == 0

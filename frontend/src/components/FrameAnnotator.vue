@@ -43,6 +43,14 @@ defineProps<{
   /** Parent-driven busy flag (mid-POST) that disables DrawSurface's Save button — a fast
    *  double-click otherwise sends two captures. */
   busy?: boolean
+  /** Capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1). Forwarded verbatim to
+   *  DrawSurface; the caller drives them through `useCaptureDestination`. `null` (or absent) ⇒
+   *  the toggles are hidden — used by CaptureViewSurface's re-annotate flow, where the
+   *  destination choice was made at first Save. Union with `null` on purpose: an optional bare
+   *  boolean would coerce absent → false, collapsing the "hide" branch (see the ratchet in
+   *  `utils/booleanProps.test.ts`). */
+  attachToKiwi?: boolean | null
+  sendToPaired?: boolean | null
 }>()
 
 const emit = defineEmits<{
@@ -57,6 +65,8 @@ const emit = defineEmits<{
   /** DrawSurface Cancel — the caller decides whether that means "close the whole surface" or
    *  "back to a prior state". */
   (e: 'cancel'): void
+  (e: 'update:attachToKiwi', v: boolean): void
+  (e: 'update:sendToPaired', v: boolean): void
 }>()
 
 // The `<img>` ref is what `composeImageWithOverlay` reads from — a same-origin data URL image
@@ -86,6 +96,9 @@ function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
   <div class="fa-root">
     <img ref="frameImg" :src="frameDataUrl" class="fa-frame" alt="Shared frame" />
     <DrawSurface :visible="true" :address-line="addressLine" :busy="busy"
+                 :attach-to-kiwi="attachToKiwi" :send-to-paired="sendToPaired"
+                 @update:attachToKiwi="(v: boolean) => emit('update:attachToKiwi', v)"
+                 @update:sendToPaired="(v: boolean) => emit('update:sendToPaired', v)"
                  @save="onDrawSave" @cancel="emit('cancel')" />
   </div>
 </template>

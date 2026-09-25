@@ -22,6 +22,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import CcToggle from './CcToggle.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import {
   beginPoly, beginRect, beginStroke, addVertex, extendStroke, updateCursor, updateRect,
@@ -44,6 +45,15 @@ const props = defineProps<{
   // Optional busy flag (parent is capturing + POSTing). Disables Save so a fast double-click
   // doesn't send twice.
   busy?: boolean
+  // Capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1). The parent owns the state
+  // via `useCaptureDestination`, which resolves the state-derived defaults + persists last user
+  // choice. Two-way bound so the toolbar chips update the parent's persisted setting directly.
+  // Type is `boolean | null` so `null` (parent chose to hide these toggles — e.g. re-annotate)
+  // stays distinguishable from `false` (parent set it and it's off). An optional bare boolean
+  // would coerce absent → false and the "hide" branch would collapse — see the ratchet in
+  // `utils/booleanProps.test.ts`.
+  attachToKiwi?: boolean | null
+  sendToPaired?: boolean | null
 }>()
 const emit = defineEmits<{
   // `notes` is the free-text context the user attaches to the whole capture (BIDIR follow-up
@@ -51,6 +61,8 @@ const emit = defineEmits<{
   // string when nothing was typed — the parent decides whether to include it on the envelope.
   (e: 'save', payload: { overlay: OverlayMark[]; notes: string }): void
   (e: 'cancel'): void
+  (e: 'update:attachToKiwi', v: boolean): void
+  (e: 'update:sendToPaired', v: boolean): void
 }>()
 
 // '' = EDIT mode (no draw tool armed — click a mark to move it, drag a rect corner to resize).
@@ -910,6 +922,19 @@ const firstVertexMarker = computed(() => {
       <button class="cc-btn cc-btn-ghost cc-btn-sm" :disabled="!marks.length" @click="clearAll"
               v-tooltip.bottom="'Remove all marks'">Clear</button>
       <span class="cc-spacer" />
+      <!-- Capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1). Two independent
+           booleans — attach and send are not mutually exclusive. Rendered only when the parent
+           has wired the v-model, so the plot-overlay path stays visually unchanged until it is
+           migrated in the same PR. Order: Attach first (reads left-to-right as "into Kiwi, or
+           over to the paired session"). -->
+      <CcToggle v-if="attachToKiwi !== null &amp;&amp; attachToKiwi !== undefined" class="ds-dest cc-fs-xs"
+                :model-value="!!attachToKiwi" label="Attach to Kiwi"
+                @update:modelValue="(v: boolean) => emit('update:attachToKiwi', v)"
+                v-tooltip.bottom="'On save, drop this capture into the Kiwi prompt as a ref chip'" />
+      <CcToggle v-if="sendToPaired !== null &amp;&amp; sendToPaired !== undefined" class="ds-dest cc-fs-xs"
+                :model-value="!!sendToPaired" label="Send to paired session"
+                @update:modelValue="(v: boolean) => emit('update:sendToPaired', v)"
+                v-tooltip.bottom="'On save, notify the paired Claude Code session over its inbox socket'" />
       <span v-if="addressLine" class="ds-address cc-fs-2xs">{{ addressLine }}</span>
       <button class="cc-btn cc-btn-ghost" @click="cancel" v-tooltip.bottom="'Close without saving (Esc)'">Cancel</button>
       <button class="cc-btn cc-btn-primary" :disabled="busy" @click="save"
@@ -962,6 +987,7 @@ const firstVertexMarker = computed(() => {
   font-family: inherit;
 }
 .ds-notes-footer { color: var(--cc-text-dim); text-align: right; }
+.ds-dest { color: var(--cc-text-dim); }
 .ds-address { color: var(--cc-text-dim); font-family: var(--cc-mono); }
 .ds-mode {
   position: absolute; top: 3.4rem; left: 0.75rem;

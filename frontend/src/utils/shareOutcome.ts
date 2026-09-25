@@ -39,16 +39,35 @@ export type ShareOutcome = { kind: 'ok' | 'fail'; message: string }
 export async function announceShareOutcome(
   pushOutcome: string,
   notes: string | undefined,
+  opts?: {
+    /** KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1: user turned off Send-to-paired for this capture. Skip
+     *  the clipboard round-trip and just confirm the file landed; do not fall back — they said no. */
+    sendRequested?: boolean
+    /** Attach-to-Kiwi ran on this capture — surface it in the toast so the user sees their
+     *  toggle took effect (and knows to look in the Kiwi prompt). */
+    attachedToKiwi?: boolean
+  },
 ): Promise<ShareOutcome> {
+  const sendRequested = opts?.sendRequested !== false
+  const attached = !!opts?.attachedToKiwi
   if (pushOutcome === 'sent') {
-    return { kind: 'ok', message: 'Sent to your Claude session — check for the incoming message.' }
+    return { kind: 'ok', message: attached
+      ? 'Sent to your Claude session and attached to Kiwi.'
+      : 'Sent to your Claude session — check for the incoming message.' }
+  }
+  if (!sendRequested) {
+    return { kind: 'ok', message: attached
+      ? 'Capture saved and attached to Kiwi.'
+      : 'Capture saved.' }
   }
   const prompt = shareClipboardPrompt(notes)
   const copied = await copyText(prompt)
   return {
     kind: 'ok',
     message: copied
-      ? 'Capture saved — prompt in your clipboard. Switch to Claude and paste.'
+      ? (attached
+          ? 'Capture saved and attached to Kiwi — prompt in your clipboard for Claude.'
+          : 'Capture saved — prompt in your clipboard. Switch to Claude and paste.')
       : `Capture saved — copy manually: "${prompt}"`,
   }
 }

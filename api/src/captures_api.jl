@@ -249,12 +249,19 @@ end
 """
     POST /api/viewer/capture
 
-Body: `{ projectUid, surface?, address, frames:[{png:<dataURL|base64>}], overlay?, viewStateSnapshot?, viewerPropsRef?, landscape?, notes? }`
-Reply: `{ ok:true, captureId, path }`
+Body: `{ projectUid, surface?, address, frames:[{png:<dataURL|base64>}], overlay?, viewStateSnapshot?, viewerPropsRef?, landscape?, notes?, noPush? }`
+Reply: `{ ok:true, captureId, path, push }`
 
 Writes `<proj>/captures/<captureId>/{meta.json, frame.png}` atomically (via `write_json_atomic` +
 `write_atomic`). Rejects a missing/unknown project (404), a missing project uid (400), an
 unreadable PNG (400).
+
+`noPush=true` suppresses `push_capture_notification` so the paired Claude Code session does not
+receive an inbox notification for this capture (the overlay's Send-to-paired toggle is off, see
+`docs/todo/KIWI_CAPTURE_AND_BLACKBOARD_PLAN.md` Decision 5). The reply's `push` field is then
+`"not_requested"` — treated by the frontend the same as `"fallback"` / `"not_paired"` (anything
+other than `"sent"` takes the clipboard path); the frontend can additionally choose to skip the
+clipboard announcement when it was the one that asked for suppression.
 """
 function api_viewer_capture(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -290,8 +297,16 @@ function api_viewer_capture(body_bytes::Vector{UInt8})
     # unpaired case; the frontend renders it the same as `:fallback` today (both mean "no
     # push happened"). The address here is the same envelope dict the meta.json carries; the
     # writer picks the fields it needs (surface / imageUid / t / z).
-    push_outcome, _msg = push_capture_notification(uid, id, get(envelope, "address", nothing),
-                                                    String(get(envelope, "notes", "")))
+    # `noPush` (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 5) suppresses the push entirely; the
+    # outcome reported is a new `:not_requested` so a reader can distinguish "we chose not to"
+    # from "we tried and no one was there".
+    push_outcome = if get(body, :noPush, false) === true
+        :not_requested
+    else
+        outcome, _msg = push_capture_notification(uid, id, get(envelope, "address", nothing),
+                                                   String(get(envelope, "notes", "")))
+        outcome
+    end
 
     # Nudge any open Kiwi (this window OR another Cecelia session on this project) to refresh its
     # Recent-captures list. Symmetric with delete/clear — both surfaces should reflect a WRITE the
