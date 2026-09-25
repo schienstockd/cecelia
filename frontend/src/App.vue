@@ -71,7 +71,10 @@ let firstEverTips = false
 watch(isWhatsNewOpen, (open) => {
   if (open || !firstEverTips) return
   firstEverTips = false
-  if (appCtl.setupRequired === false && !guide.active) guide.start('find-your-way-around')
+  if (appCtl.setupRequired === false && !guide.active) {
+    settings.tipsEverShown = true
+    guide.start('find-your-way-around')
+  }
 })
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
@@ -128,9 +131,12 @@ onMounted(async () => {
   // permanently. We stamp the date BEFORE opening so a crash mid-open doesn't re-trigger.
   const today = todayKey()
   if (!popout && settings.tipsOnLaunch && settings.tipsLastShown !== today) {
-    // `tipsLastShown` is '' until this branch has run ONCE, ever — so reading it before the stamp is
-    // the first-launch signal, and no second flag has to be persisted to get it. See onWhatsNewClose.
-    firstEverTips = settings.tipsLastShown === ''
+    // First-ever launch is now signalled by `tipsEverShown` (a machine-scoped localStorage flag,
+    // kept OUT of PROFILE_KEYS on purpose). `tipsLastShown` is per-profile — it drives the daily
+    // tip cadence — so a new profile inheriting an empty stamp would otherwise re-fire the
+    // orientation tour for every second person on a shared workstation. The tour is chrome-only;
+    // one run per install is the right shape (compass still opens it on demand).
+    firstEverTips = !settings.tipsEverShown
     settings.tipsLastShown = today
     openWhatsNew({ withTip: true })
   }
