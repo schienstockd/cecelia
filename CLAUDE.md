@@ -94,17 +94,9 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 
 ---
 
-> **Watch for divergent re-implementation — flag it, don't add another variant.** The most
-> expensive mistakes here are doing the same *cross-cutting* thing more than one way — e.g. touching
-> `.h5ad` outside the label view, or spawning Python without `run_py`. The moment you notice you're
-> hand-rolling something that already has (or obviously should have) a single canonical helper,
-> **stop and say so** — propose centralising it (one helper, used everywhere) instead of writing a
-> second variant. "I'll just inline it here" is how the duplication starts. One way to do each
-> thing; the second way is the bug.
->
-> Same reflex for going in circles or losing the thread: if two+ rounds pass on one question without
-> clear progress, or an important aspect keeps being deferred/glossed over, surface it explicitly for
-> the user to decide (or add it to `docs/TODO.md` and move on) rather than pushing through.
+> **Going in circles or losing the thread:** if two+ rounds pass on one question without clear
+> progress, or an important aspect keeps being deferred/glossed over, surface it explicitly for the
+> user to decide (or add it to `docs/TODO.md` and move on) rather than pushing through.
 
 ## Before implementing anything — mandatory discovery step
 
