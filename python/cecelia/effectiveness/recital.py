@@ -150,26 +150,7 @@ def _inject_slugs(output: str, findings: _t.Sequence[Finding]) -> str:
     return regex.sub(_sub, output)
 
 
-def _current_pr() -> str | None:
-    """Best-effort PR-number capture via `gh pr view --json number`. Returns `"#N"` or None.
-
-    Failure modes silently return None: no `gh`, not in a PR branch, offline, `gh` not
-    authenticated. Recital works fine without a PR context — the log row just has `pr: null`.
-    """
-    gh = shutil.which("gh")
-    if gh is None:
-        return None
-    try:
-        result = subprocess.run(
-            [gh, "pr", "view", "--json", "number", "-q", ".number"],
-            capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8",
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if result.returncode != 0:
-        return None
-    n = (result.stdout or "").strip()
-    return f"#{n}" if n.isdigit() else None
+from .git_context import current_pr as _current_pr  # noqa: E402  (kept near use for clarity)
 
 
 def _resolve_claude_bin() -> str:

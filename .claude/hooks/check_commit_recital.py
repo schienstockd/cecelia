@@ -49,6 +49,7 @@ import sys
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event  # noqa: E402
+from cecelia.effectiveness.git_context import current_pr as _current_pr  # noqa: E402
 
 #: Every finding line in the recital carries one of these bold markers.
 _FINDING_MARKERS = re.compile(r"\*\*(?:confirmed|should reuse)\*\*")
@@ -180,29 +181,6 @@ def write_resolutions(command: str, *, pr: str | None = None) -> int:
         except Exception:  # noqa: BLE001 — best-effort emission
             pass
     return written
-
-
-def _current_pr() -> str | None:
-    """Best-effort PR-number capture via `gh pr view --json number`. Returns `"#N"` or None on
-    any failure. Mirror of the same helper in `recital.py` — kept here so the hook is
-    self-contained and doesn't grow a runtime dep on the recital module."""
-    import shutil
-    import subprocess
-
-    gh = shutil.which("gh")
-    if gh is None:
-        return None
-    try:
-        result = subprocess.run(
-            [gh, "pr", "view", "--json", "number", "-q", ".number"],
-            capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8",
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if result.returncode != 0:
-        return None
-    n = (result.stdout or "").strip()
-    return f"#{n}" if n.isdigit() else None
 
 
 def main() -> int:
