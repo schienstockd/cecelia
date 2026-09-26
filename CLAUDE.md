@@ -31,11 +31,11 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
   (Vue/CSS + the two mandatory UI lookups), [`app/CLAUDE.md`](app/CLAUDE.md) (Julia conventions, tasks,
   `run_py`, `channel_indices`, ccid.json versioning). Don't duplicate their content up here.
 
-## Doc index — what it covers, and when to update it
+## Doc index
 
 **Keep the docs current — update the relevant file in the same change, not after.**
 
-| Doc | Covers — and update it when you change this |
+| Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
@@ -94,17 +94,9 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 
 ---
 
-> **Watch for divergent re-implementation — flag it, don't add another variant.** The most
-> expensive mistakes here are doing the same *cross-cutting* thing more than one way — e.g. touching
-> `.h5ad` outside the label view, or spawning Python without `run_py`. The moment you notice you're
-> hand-rolling something that already has (or obviously should have) a single canonical helper,
-> **stop and say so** — propose centralising it (one helper, used everywhere) instead of writing a
-> second variant. "I'll just inline it here" is how the duplication starts. One way to do each
-> thing; the second way is the bug.
->
-> Same reflex for going in circles or losing the thread: if two+ rounds pass on one question without
-> clear progress, or an important aspect keeps being deferred/glossed over, surface it explicitly for
-> the user to decide (or add it to `docs/TODO.md` and move on) rather than pushing through.
+> **Going in circles or losing the thread:** if two+ rounds pass on one question without clear
+> progress, or an important aspect keeps being deferred/glossed over, surface it explicitly for the
+> user to decide (or add it to `docs/TODO.md` and move on) rather than pushing through.
 
 ## Before implementing anything — mandatory discovery step
 
@@ -178,8 +170,7 @@ DataFrame, you write a labeled DataFrame.
 - Deviating (e.g. a cheap one-attribute metadata peek) needs an **inline comment on that exact line**
   saying why. No silent raw access.
 
-Why each of these exists, and what a truncated HDF5 costs: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) →
-*Reading and writing `.h5ad` — the full rule*.
+Full rule + rationale + truncated-HDF5 case: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
 
 ---
 
@@ -215,11 +206,9 @@ bridge, and external consumers (coastal).
   chunked evaluation — and mark the import with `# DASK-OK: <reason>` so the discipline is visible.
   Library utils under `python/cecelia/**` are unrestricted (they compose whole-level pipelines).
 
-Enforced by `test_zarr_access_convention.py` (bare `zarr`/`tifffile`/OME-XML imports, `.from_zarr`
-calls, dask in runners) and the `zarr-access ratchet` testset in `app/test/suite.jl` (Julia side —
-only `api/src/image_render.jl` may `using Zarr`). The drifted private napari reader stack, the
-measured compressor numbers, and the full rationale:
-[`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Image / OME-ZARR access — the full rule*.
+Enforced by `test_zarr_access_convention.py` + the `zarr-access ratchet` testset in `app/test/suite.jl`
+(Julia side: only `api/src/image_render.jl` may `using Zarr`). Full rationale + drifted-reader case +
+compressor numbers: [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Image / OME-ZARR access*.
 
 ---
 
@@ -279,12 +268,21 @@ merge). Full conventions — branch naming, commit style, how PRs are opened, re
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
 commit or push proactively.** A "go ahead" to do the work is not approval to commit it.
 
-**Agents: state your reservations BEFORE every commit.** When asked to commit/push (or asked for the
-PR url — that request itself calls the commit), first volunteer honest reservations about the change —
-what's unverified (e.g. never run in a browser, an untested regression surface), plus real limitations
-(perf, edge cases, silent no-ops) — as a short prioritized list. Don't reassure or wait to be asked
-"any reservations?". Surface the risk at the decision point, then commit on the go-ahead. See
-[`docs/DEV.md`](docs/DEV.md) → *Commits*.
+**Agents: state your reservations BEFORE every commit — ONE prioritized list with sibling-call
+findings woven in, evidence cited underneath.** Kiwi-shape: claims + references. When asked to
+commit/push (or asked for the PR url — that request itself calls the commit): spawn a fresh
+`sonnet` subagent per [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](docs/ai-assist/SIBLING_CALL_AUDIT.md)
+with `git diff --staged`, read its findings, then emit ONE prioritized reservations list where
+**confirmed** siblings become items ranked by how much they matter, **plausible** ones fold in with
+the right hedge, latent-only ones as forecasted-risk notes — alongside the usual unverified /
+perf / edge-case / silent-no-op items. Follow the list with the raw reviewer output verbatim under
+a `_Sibling-call audit (evidence):_` fold, so each woven item cites its source (a `**confirmed**`
+reservation like "sibling of `_load_set` at `_read_project:112` unpatched" points back to the raw
+finding for the user to verify). Close with a one-line tail — `_Sibling-call audit: run_` (or
+`_skipped — docs-only diff_` / `_skipped — no modified code_` / `_no sibling-call audit needed_`) —
+the leading indicator that proves the check ran; missing line = the mechanism went dark. Don't
+reassure or wait to be asked "any reservations?". Catches case-F drift: a fix that silently leaves
+divergent copies broken. See [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
 ---
 

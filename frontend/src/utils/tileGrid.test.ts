@@ -45,9 +45,27 @@ describe('tileGrid — fill mode (free-form panels)', () => {
     const g = tileGrid(4, 1, 1, { cols: 2 })
     expect(g.cols).toBe(2)
     expect(g.rows).toBe(2)
-    // width floor is skipped by design — the knob is the escape hatch — but the height floor still
-    // applies so rows keep flowing down when there is no vertical room
+    // BOTH floors still apply: the width floor so the placement stride matches the panel's
+    // `min-width: 340px` (a narrower stride would overlap panels — see the pinned-cols report);
+    // the height floor so rows keep flowing down when there is no vertical room. The grid then
+    // extends past the viewport and the canvas scrolls, which is the correct escape hatch for
+    // "user asked for more columns than fit."
+    expect(g.w).toBe(MIN_TILE_W)
     expect(g.h).toBe(MIN_TILE_H)
+  })
+
+  it('keeps pinned cells at the width floor so adjacent panels do not overlap', () => {
+    // The report: 4 plots pinned to 4 columns in a ~955x700 workspace tiled cells 228x684, but the
+    // panel's `.panel { min-width: 340px }` refused to shrink → 112px of horizontal overlap between
+    // neighbours. Cell width stays at MIN_TILE_W so the placement stride matches the panel width.
+    const g = tileGrid(4, 955, 700, { cols: 4 })
+    expect(g.cols).toBe(4)
+    expect(g.w).toBe(MIN_TILE_W)
+    // …and the grid extends past the viewport — the canvas scrolls to reveal it.
+    expect(g.gridW).toBeGreaterThan(955)
+    // adjacent cells are stride ≥ panel width — no overlap
+    const a = tileCell(0, g), b = tileCell(1, g)
+    expect(b.x - a.x).toBeGreaterThanOrEqual(g.w)
   })
 
   it('clamps a pinned column count to the panel count (no empty columns)', () => {
@@ -62,6 +80,19 @@ describe('tileGrid — fill mode (free-form panels)', () => {
     expect(g.cols).toBe(4)
     expect(g.rows).toBe(1)
     expect(g.w).toBe(Math.floor((W - 40) / 4))
+  })
+
+  it('caps cell height by width so a single row does not stretch to the workspace height', () => {
+    // The report: three plots pinned to 3 columns in a ~1080x700 workspace tiled ~350x684 tall — one
+    // row ate the full height because `cellH(H, rows=1, gap) = H - 16`. Cap keeps h ≤ w so the plots
+    // stay landscape-or-square regardless of workspace shape.
+    const g = tileGrid(3, 1080, 700, { cols: 3 })
+    expect(g.cols).toBe(3)
+    expect(g.rows).toBe(1)
+    expect(g.h).toBeLessThanOrEqual(g.w)
+    // …and the multi-row case is unchanged (cellH is already ≤ cellW at 3 plots in 2x2).
+    const g2 = tileGrid(3, W, H)
+    expect(g2).toMatchObject({ cols: 2, rows: 2, w: 788, h: 388 })
   })
 })
 

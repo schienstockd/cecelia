@@ -265,7 +265,7 @@ end
 const DERIVED_POP_PREFIX = "_"
 
 struct DerivedPopSpec
-    pop_type::String        # the pop_type it is derived under (e.g. "live")
+    pop_type::PopType       # the pop_type it is derived under (e.g. POP_LIVE)
     filter_measure::String  # obs/measure column the membership filters on
     filter_fun::String      # gt|gte|lt|lte|eq|neq|in
     filter_values::Any
@@ -274,7 +274,7 @@ end
 
 # reserved leaf name (incl. the `_` prefix) → how to derive it
 const _DERIVED_POPS = Dict{String,DerivedPopSpec}(
-    "_tracked" => DerivedPopSpec("live", "track_id", "gt", 0, true),
+    "_tracked" => DerivedPopSpec(POP_LIVE, "track_id", "gt", 0, true),
 )
 
 # Reserved leaf name for the auto-created spatial-aggregate population (Decision 14). Unlike
@@ -296,7 +296,7 @@ that enumerate selectable populations (e.g. the summary-canvas population picker
 surface them. Generic over `_DERIVED_POPS`, so future reserved pops appear automatically.
 """
 derived_pop_paths(pop_type::PopTypeArg)::Vector{String} =
-    ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == string(pop_type)]
+    ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == _coerce_pop_type(pop_type)]
 
 # Cached by the gating sidecar's + the h5ad's mtimes, the same auto-invalidation `pop_df` keys on
 # (`_pop_df_mtime`): a saved gate edit or a re-tracked segmentation changes a stamp, anything else

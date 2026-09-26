@@ -39,6 +39,14 @@ python/cecelia/utils/zarr_utils.py
 pixi.toml
 pixi.lock
 
+# Shared frontend/Julia JSON — read at server load. The frontend imports the same file at build
+# time (inlined into dist/), so a stable install still needs the raw JSON on disk for the Julia
+# side. Missing kiwiRef.schema.json ⇒ server dies at load (v0.2.8 rc catch). Missing palettes.json
+# ⇒ overlay_author falls back to frozen literals with a warn, so track colours in offline movies
+# drift from the browser.
+frontend/src/lib/kiwiRef.schema.json
+frontend/src/plots/palettes.json
+
 # ── licensing ────────────────────────────────────────────────────────────────────────────────────
 # GPL-3: a conveyed copy carries the license text and the third-party attributions with it.
 LICENSE

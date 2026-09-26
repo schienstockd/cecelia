@@ -10,7 +10,7 @@ import { fetchProfileSettings, patchProfileSettings,
          type ProfileSettingsValue } from '../utils/profileSettingsApi'
 
 // ── USER_PROFILE_PLAN Phase 4: per-profile setting manifest ────────────────────────
-// Keys in this list are hydrated from `<config_dir>/kiwi-profiles/<name>/settings.toml` on
+// Keys in this list are hydrated from `<config_dir>/user-profiles/<name>/settings.toml` on
 // launch and PATCHed back when the user flips a switch. Every other key stays localStorage-only:
 // per-machine renderer knobs (viewerCacheMB, viewerBricksMode, …) depend on THIS GPU, and
 // per-image/per-set bags (setPrefs, labelVis, …) belong with the project data.
@@ -325,7 +325,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // not today", the What's New modal opens with today's tip prepended. Opt-out from a checkbox on
   // the tip card. Default ON — biologists opening the app benefit from a nudge; power users can
   // switch it off from the card and never see one again.
-  // Which view profile curates the sidebar — the id of a <config_dir>/profiles/<id>.json, or '' for
+  // Which view profile curates the sidebar — the id of a <config_dir>/view-profiles/<id>.json, or '' for
   // the implicit "All" (the full menu, today's behaviour and always the fallback). PER USER, not per
   // project: a profile is about who is driving, so it must not travel with a shared project. The
   // definitions live in files (stores/viewProfiles.ts); only the choice lives here.

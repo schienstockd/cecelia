@@ -34,6 +34,9 @@ import unittest
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 # Files allowed to talk to zarr / tifffile / OME-XML / lxml directly. Every entry has a reason.
+# _BASELINE_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
+# reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+_BASELINE_MAX = 5
 _BASELINE = {
     # Owns the idiom: zarr_utils IS the canonical zarr wrapper; ome_xml_utils IS the OME-XML parser.
     os.path.join('python', 'cecelia', 'utils', 'zarr_utils.py'),
@@ -153,6 +156,15 @@ class ZarrAccessConventionTest(unittest.TestCase):
                 offenders.append(f'{rel}:{lineno}: `*.from_zarr(...)` — use '
                                  f'`zarr_utils.open_as_zarr(..., as_dask=True)`')
         self.assertEqual(offenders, [], '\n  ' + '\n  '.join(offenders))
+
+    def test_baseline_has_not_grown(self):
+        """Meta-ratchet: growing _BASELINE means an agent added a file to skip a violation
+        instead of fixing it. Bumping _BASELINE_MAX in the same PR makes that visible."""
+        self.assertLessEqual(
+            len(_BASELINE), _BASELINE_MAX,
+            f'_BASELINE grew to {len(_BASELINE)} (cap {_BASELINE_MAX}). Either fix the new '
+            f'violation, or bump _BASELINE_MAX and justify in the PR body. See '
+            f'docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.')
 
     def test_baseline_still_needed(self):
         """A file in `_BASELINE` that became clean must leave the list in the same PR."""

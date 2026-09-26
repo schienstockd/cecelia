@@ -199,7 +199,7 @@ const customModules = useCustomModulesStore()
 
 // ── View profiles ────────────────────────────────────────────────────────────
 // A curated sidebar: which module pages show, in which order (docs/todo/VIEW_PROFILES_PLAN.md). The
-// selection is per user; the definitions are files under <config_dir>/profiles/, authored by the
+// selection is per user; the definitions are files under <config_dir>/view-profiles/, authored by the
 // editor below. Refreshed when the panel opens so a hand-dropped file shows up without a restart.
 const viewProfiles = useViewProfilesStore()
 const showProfileEditor = ref(false)

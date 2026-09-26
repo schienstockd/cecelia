@@ -3,7 +3,7 @@
   The view-profile builder (docs/todo/VIEW_PROFILES_PLAN.md → Decisions 3-4).
 
   A profile is a curated sidebar: which pages show, in which order. The file under
-  <config_dir>/profiles/ is the STORAGE format, not the authoring path — nobody should write JSON to
+  <config_dir>/view-profiles/ is the STORAGE format, not the authoring path — nobody should write JSON to
   get a smaller menu.
 
   Assembled from canonical primitives, not hand-rolled: `BaseModal` for the shell, and ONE

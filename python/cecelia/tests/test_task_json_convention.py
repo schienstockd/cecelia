@@ -31,6 +31,9 @@ _TASKS_ROOT = os.path.join(_REPO, 'app', 'src', 'tasks')
 # Above this many top-level params, at least one `type: "section"` is required.
 _MAX_TOPLEVEL = 6
 
+# _BASELINE_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
+# reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+_BASELINE_MAX = 5
 _BASELINE = {
     # Every entry: shipped with a flat param list; can be split into a `type: "section"` "advanced"
     # block when the task is next touched. Not a regression — the ratchet exists to stop NEW tasks
@@ -85,6 +88,15 @@ class TaskJsonCollapseConventionTest(unittest.TestCase):
             "the cellpose/coastal/ridges pattern (an `advanced` section with `collapsed: true`) or "
             "add the file to `_BASELINE` here with a reason:\n  "
             + '\n  '.join(offenders))
+
+    def test_baseline_has_not_grown(self):
+        """Meta-ratchet: growing _BASELINE means an agent added a file to skip a violation
+        instead of fixing it. Bumping _BASELINE_MAX in the same PR makes that visible."""
+        self.assertLessEqual(
+            len(_BASELINE), _BASELINE_MAX,
+            f'_BASELINE grew to {len(_BASELINE)} (cap {_BASELINE_MAX}). Either fix the new '
+            f'violation, or bump _BASELINE_MAX and justify in the PR body. See '
+            f'docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.')
 
     def test_baseline_still_needed(self):
         stale = []

@@ -26,6 +26,9 @@ _STORE_WRITERS = {'create_multiscales', 'open_multiscales_for_writing'}
 _STAGING = 'staged_store'
 
 # Files allowed to write a store path directly, and why.
+# _EXEMPT_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
+# reviewer sees "weaken the check" attempts.
+_EXEMPT_MAX = 2
 _EXEMPT = {
     # Owns the idiom: defines staged_store/promote_store and the low-level writers themselves.
     os.path.join('python', 'cecelia', 'utils', 'zarr_utils.py'),
@@ -112,6 +115,14 @@ class StoreStagingConventionTest(unittest.TestCase):
             'these open a store in write mode without zarr_utils.staged_store — write into a '
             'staging path and rename it into place instead — see docs/SEGMENTATION.md:\n  '
             + '\n  '.join(offenders))
+
+    def test_exempt_has_not_grown(self):
+        """Meta-ratchet: growing _EXEMPT means an agent added a file to skip a violation
+        instead of fixing it. Bumping _EXEMPT_MAX in the same PR makes that visible."""
+        self.assertLessEqual(
+            len(_EXEMPT), _EXEMPT_MAX,
+            f'_EXEMPT grew to {len(_EXEMPT)} (cap {_EXEMPT_MAX}). Either fix the new '
+            f'violation, or bump _EXEMPT_MAX and justify in the PR body.')
 
     def test_the_scan_actually_reaches_the_writers(self):
         """Guard against the scan silently covering nothing (a wrong root, a bad exclude)."""

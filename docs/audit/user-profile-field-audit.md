@@ -56,7 +56,7 @@ classification — they are status, not settings.
 | `taskListAutoFollow` | **per-profile** | Working style. Follows the person across projects and machines. |
 | `autoRefreshOnTask` | **per-profile** | Working style. |
 | `importPyramidAdvisor` | **per-profile** | Working style; also `feedback_dont_over_ask_commit` says this class is nudge-not-required. |
-| `viewProfile` (sidebar curation) | **per-profile** | **Direct confirmation in the code**: comment at `stores/settings.ts:277-281` says *"PER USER, not per project"*. The profile *definitions* live in files under `<config_dir>/profiles/*.json`; only the *choice* lives in localStorage today — move the choice to `profiles/<name>/settings.toml`. |
+| `viewProfile` (sidebar curation) | **per-profile** | **Direct confirmation in the code**: comment at `stores/settings.ts:277-281` says *"PER USER, not per project"*. The profile *definitions* live in files under `<config_dir>/view-profiles/*.json`; only the *choice* lives in localStorage today — move the choice to `profiles/<name>/settings.toml`. |
 
 ### Section: Software updates
 

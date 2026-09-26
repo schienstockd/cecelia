@@ -1,7 +1,7 @@
 # Example view profile
 
-Copy `gating-behaviour.json` into `<config_dir>/profiles/` (`~/.cecelia/profiles/`, or
-`$CECELIA_DEV_DIR/profiles/` in dev) and pick it in **Settings → Interface → View profile**.
+Copy `gating-behaviour.json` into `<config_dir>/view-profiles/` (`~/.cecelia/view-profiles/`, or
+`$CECELIA_DEV_DIR/view-profiles/` in dev) and pick it in **Settings → Interface → View profile**.
 
 You do not have to write one by hand — that panel's **Edit** button builds them. The file is the
 storage format (so a profile can be copied between machines), not the authoring path.

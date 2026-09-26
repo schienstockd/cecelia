@@ -63,7 +63,7 @@ CLI: `claude 2.1.280 (Claude Code)`, binary at `/home/dominik/.local/bin/claude`
 2. **Mechanism: per-profile `CLAUDE_CONFIG_DIR`, keyed to a Cecelia login/profile name.**
    Layout:
    ```
-   <config_dir()>/kiwi-profiles/<profile-name>/     # holds .credentials.json, .claude.json, etc.
+   <config_dir()>/user-profiles/<profile-name>/     # holds .credentials.json, .claude.json, etc.
    ```
    One-time setup per person: create the dir, run `claude login` with `CLAUDE_CONFIG_DIR` pointed
    at it. Thereafter every claude-CLI invocation Cecelia spawns sets `CLAUDE_CONFIG_DIR` to the
@@ -149,14 +149,14 @@ lab install. Ships this phase; landable independently.
 Landed on branch `feat/kiwi-profile-spawn-env`. `kiwi_profile_name()` reads `custom.toml
 [ai].profile` (defaulting to `"default"`); `kiwi_profile_dir(name)` resolves it — `default` maps
 to `""` (i.e. keep the CLI's own `~/.claude*` paths, so a single-seat setup needs NO re-login),
-and any named profile maps to `<config_dir()>/kiwi-profiles/<name>/`. Every `claude` spawn site
+and any named profile maps to `<config_dir()>/user-profiles/<name>/`. Every `claude` spawn site
 (`claude -p`, `claude mcp add-json`, `claude mcp remove`) is now wrapped in `_apply_claude_env` —
 which sets `CLAUDE_CONFIG_DIR` (or omits it for `default`) AND scrubs the ambient credential env
 vars via `addenv(cmd, "KEY" => nothing)` (Julia unsets on `nothing`). `claude_config_path` grew
 an optional `profile_dir` arg so the "is the terminal already set up?" UI check reflects the
 profile the app actually spawns under. Pinned by the `AI observer per-profile credential env (P2
 plumbing)` testset in `app/test/suite/observer.jl`. **Deviated from the original wording**: the
-plan text said the default profile would resolve to `<config_dir()>/kiwi-profiles/default/`; that
+plan text said the default profile would resolve to `<config_dir()>/user-profiles/default/`; that
 would have orphaned the existing `~/.claude` login (a re-login the user did not sign up for), so
 `default` special-cases to `""`. Named profiles land under the plan's directory on first
 resolution — the picker (P3) is what triggers that.

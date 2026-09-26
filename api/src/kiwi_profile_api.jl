@@ -8,7 +8,7 @@
 #
 #   GET  /api/kiwi/profiles                   → { active, profiles: [{name, dir, isDefault, retired}], legacyReserved }
 #   POST /api/kiwi/profiles/select            → { name }               ; writes [ai].profile in custom.toml
-#   POST /api/kiwi/profiles/create            → { name }               ; mkpath under kiwi-profiles/
+#   POST /api/kiwi/profiles/create            → { name }               ; mkpath under user-profiles/
 #   POST /api/kiwi/profiles/retire            → { name }               ; writes `.kiwi-retired` marker (D11)
 #   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
 #
@@ -20,10 +20,13 @@
 
 import JSON3
 
-# The `legacy` profile is reserved for the D10 read-time default on pass entries missing the
-# profile field. It must never be creatable (would collide with the sentinel) or selectable (a
-# user picking "legacy" as their identity is meaningless).
-const _KIWI_RESERVED_PROFILE_NAMES = ("legacy",)
+# Reserved profile names — never creatable, never listed in the roster:
+#   `legacy` — D10 read-time default for pass entries missing the profile field. A user picking
+#              "legacy" as their identity would collide with the sentinel and is meaningless.
+#   `peanut` — the frontend's display alias for `default` (mirror of `DEFAULT_PROFILE_DISPLAY_NAME`
+#              in `frontend/src/utils/profileApi.ts`). Blocked here so no new profile can visually
+#              collide with the picker's synthetic default row.
+const _KIWI_RESERVED_PROFILE_NAMES = ("legacy", "peanut")
 
 # Kiwi profile names must be usable as directory names AND look like git-author-shaped labels.
 # Deliberately narrow: lower-ASCII alnum + `-` + `_`, 1..32 chars. Rejects `.` / `/` / whitespace
@@ -48,7 +51,7 @@ _kiwi_profile_retired(profile_dir::AbstractString)::Bool =
 
 # Enumerate the profile roster. `default` is always present (special-cased in `active_profile_dir`
 # to point at `~/.claude*` — see LOGIN_CREDENTIAL_ISOLATION_PLAN P2) and is prepended here
-# SYNTHETICALLY. USER_PROFILE_PLAN Phase 4 introduced `<config_dir>/kiwi-profiles/default/` as a
+# SYNTHETICALLY. USER_PROFILE_PLAN Phase 4 introduced `<config_dir>/user-profiles/default/` as a
 # real on-disk directory (to hold the default profile's `settings.toml`), so the scan below has
 # to SKIP the literal name `default` — otherwise the picker shows two "default" entries, one
 # synthetic + one from disk. Same treatment for the reserved `legacy` sentinel. Retired named
@@ -59,7 +62,7 @@ function _kiwi_list_profiles()::Vector{Dict{String,Any}}
                                 "dir"  => "",           # empty → CLI defaults per P2
                                 "isDefault" => true,
                                 "retired" => false)]
-    root = joinpath(config_dir(), "kiwi-profiles")
+    root = joinpath(config_dir(), "user-profiles")
     isdir(root) || return out
     for entry in sort!(readdir(root))
         p = joinpath(root, entry)
@@ -85,11 +88,11 @@ function api_kiwi_profiles_create(body_bytes::Vector{UInt8})
     _valid_kiwi_profile_name(String(name)) || return 400, JSON3.write((;
         ok = false,
         error = "Profile name must be 1-32 chars, lower-ASCII alnum + `-` / `_`; " *
-                "`legacy` and `default` are reserved."))
+                "`legacy`, `default` and `peanut` are reserved."))
     # `default` is not creatable — it's a magic name that maps to `~/.claude`.
     String(name) == "default" && return 400, JSON3.write((;
         ok = false, error = "`default` already exists — it maps to `~/.claude`."))
-    dir = joinpath(config_dir(), "kiwi-profiles", String(name))
+    dir = joinpath(config_dir(), "user-profiles", String(name))
     if isdir(dir)
         return 409, JSON3.write((; ok = false, error = "Profile `$(name)` already exists."))
     end
@@ -104,10 +107,10 @@ function api_kiwi_profiles_select(body_bytes::Vector{UInt8})
     isempty(name) && return 400, JSON3.write((; ok = false, error = "Missing `name`."))
     if name != "default"
         # A named profile must exist on disk before we select it. `default` bypasses this check —
-        # it's the magic name that maps to `~/.claude`, no dir under kiwi-profiles/ required.
+        # it's the magic name that maps to `~/.claude`, no dir under user-profiles/ required.
         _valid_kiwi_profile_name(name) || return 400, JSON3.write((;
             ok = false, error = "Invalid profile name."))
-        dir = joinpath(config_dir(), "kiwi-profiles", name)
+        dir = joinpath(config_dir(), "user-profiles", name)
         isdir(dir) ||
             return 404, JSON3.write((; ok = false, error = "Profile `$(name)` not found."))
         # A retired profile is non-selectable — the whole point of the marker is that new Kiwi
@@ -132,7 +135,7 @@ function api_kiwi_profiles_retire(body_bytes::Vector{UInt8})
         error = "`default` can't be retired — it maps to `~/.claude`."))
     _valid_kiwi_profile_name(name) || return 400, JSON3.write((;
         ok = false, error = "Invalid profile name."))
-    dir = joinpath(config_dir(), "kiwi-profiles", name)
+    dir = joinpath(config_dir(), "user-profiles", name)
     isdir(dir) || return 404, JSON3.write((; ok = false, error = "Profile `$(name)` not found."))
     _kiwi_profile_retired(dir) &&
         return 200, JSON3.write((; ok = true, name = name, active = active_profile_name(),
@@ -165,10 +168,10 @@ function api_kiwi_profiles_rename(body_bytes::Vector{UInt8})
         ok = false, error = "Invalid old profile name."))
     _valid_kiwi_profile_name(new_name) || return 400, JSON3.write((;
         ok = false, error = "New profile name must be 1-32 chars, lower-ASCII alnum + `-` / `_`; " *
-                            "`legacy` and `default` are reserved."))
+                            "`legacy`, `default` and `peanut` are reserved."))
     old_name == new_name && return 400, JSON3.write((;
         ok = false, error = "New name matches the old name."))
-    root = joinpath(config_dir(), "kiwi-profiles")
+    root = joinpath(config_dir(), "user-profiles")
     old_dir = joinpath(root, old_name)
     new_dir = joinpath(root, new_name)
     isdir(old_dir) || return 404, JSON3.write((; ok = false, error = "Profile `$(old_name)` not found."))
@@ -208,7 +211,7 @@ function api_kiwi_profiles_delete(body_bytes::Vector{UInt8})
     active_profile_name() == name && return 409, JSON3.write((;
         ok = false,
         error = "Can't delete the active profile — switch to another profile first."))
-    dir = joinpath(config_dir(), "kiwi-profiles", name)
+    dir = joinpath(config_dir(), "user-profiles", name)
     isdir(dir) || return 404, JSON3.write((; ok = false, error = "Profile `$(name)` not found."))
     try
         rm(dir; recursive = true, force = true)
@@ -232,7 +235,7 @@ function api_kiwi_terminal_command(req::HTTP.Request)
     else
         _valid_kiwi_profile_name(name) ||
             return 400, JSON3.write((; ok = false, error = "Invalid profile name."))
-        joinpath(config_dir(), "kiwi-profiles", name)
+        joinpath(config_dir(), "user-profiles", name)
     end
     200, JSON3.write((; ok = true,
                         profile = isempty(name) ? active_profile_name() : name,

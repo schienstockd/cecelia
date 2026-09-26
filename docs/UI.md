@@ -2317,7 +2317,7 @@ routed page missing from the menu without an entry in that test's stated-excepti
 
 A **view profile** is a named, ordered SUBSET of the nav catalogue, so someone doing narrow work
 (gating + behaviour on already-segmented data) isn't navigating 20 items. Definitions are drop-in
-files (`<config_dir>/profiles/<id>.json`, served by `GET /api/profiles`); the *selection* is per user
+files (`<config_dir>/view-profiles/<id>.json`, served by `GET /api/profiles`); the *selection* is per user
 (`settings.viewProfile`, `cc.viewProfile`). Built in the GUI — Settings → Interface → **View profile** is a
 `ChipSelect` of the profiles plus "All pages", and **Edit** opens `ViewProfileEditor.vue`: one
 reorderable `ChipSelect` per sidebar group, where the selection is the pages and the chip order is

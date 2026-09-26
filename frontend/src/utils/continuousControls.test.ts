@@ -171,6 +171,9 @@ describe('no text field lets the DOM drift from its binding', () => {
 // request, `rafCoalesce` for a paint, `debouncedSave` for a write); a new hand-rolled one must say what
 // it is. Legitimate re-arming timers exist — that's what this list is; it is not an exemption from the
 // rule so much as the inventory that makes a NEW entry a visible decision.
+// Meta-ratchet: growing DECLARED_TIMERS requires bumping DECLARED_TIMERS_MAX in the same PR, so a
+// reviewer sees "weaken the check" attempts.
+const DECLARED_TIMERS_MAX = 13
 const DECLARED_TIMERS: Record<string, string> = {
   'utils/debouncedLatest.ts': 'IS the canonical request scheduler',
   'utils/debouncedSave.ts':   'IS the canonical write-behind scheduler',
@@ -214,6 +217,10 @@ describe('nobody hand-rolls a fourth debounce', () => {
     })
     expect(stale).toEqual([])
   })
+
+  it('the declared list has not grown — bump DECLARED_TIMERS_MAX with justification', () => {
+    expect(Object.keys(DECLARED_TIMERS).length).toBeLessThanOrEqual(DECLARED_TIMERS_MAX)
+  })
 })
 
 // The live-viewer pushes are the ones this audit started from: the movie z slider and the mask-outline
@@ -246,6 +253,9 @@ describe('live viewer view-property endpoints have exactly one owner', () => {
 // its host, the host grows, the observer fires again. The browser breaks the cycle and reports
 // "ResizeObserver loop completed with undelivered notifications" — which is exactly what showed up in
 // the log rail. `usePlotResize` is the fix (rAF coalescing + skip a render the size did not ask for).
+// Meta-ratchet: growing RO_EXEMPT requires bumping RO_EXEMPT_MAX in the same PR, so a reviewer sees
+// "weaken the check" attempts.
+const RO_EXEMPT_MAX = 11
 const RO_EXEMPT: Record<string, string> = {
   'components/canvas/CanvasPanel.vue':
     'writes its OWN height to keep a square plot square — but through rafCoalesce, NOT in the callback (pinned below)',
@@ -284,6 +294,10 @@ describe('no plot re-renders into the element it observes', () => {
       .filter(s => !s.path.endsWith('.test.ts'))
       .map(s => s.path)
     expect(offenders).toEqual([])
+  })
+
+  it('the RO exemption list has not grown — bump RO_EXEMPT_MAX with justification', () => {
+    expect(Object.keys(RO_EXEMPT).length).toBeLessThanOrEqual(RO_EXEMPT_MAX)
   })
 
   // Two exemptions are CONDITIONAL, and the condition is the whole point: each writes layout that the

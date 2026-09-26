@@ -318,15 +318,15 @@ end
     active_profile_dir(name = active_profile_name(); config_root = config_dir()) -> String
 
 Resolve a profile name to its `CLAUDE_CONFIG_DIR`. Returns `""` for the `default` profile
-(meaning "let the CLI use `~/.claude*` as before") and `<config_root>/kiwi-profiles/<name>/`
+(meaning "let the CLI use `~/.claude*` as before") and `<config_root>/user-profiles/<name>/`
 otherwise. PURE — does NOT create the directory (see `_active_claude_profile_dir!` for the live
-resolver that also mkpaths). On-disk name stays `kiwi-profiles/` per USER_PROFILE_PLAN Decision 7
+resolver that also mkpaths). On-disk name stays `user-profiles/` per USER_PROFILE_PLAN Decision 7
 (the top-level `profiles/` is taken by View Profiles).
 """
 active_profile_dir(name::AbstractString = active_profile_name();
                    config_root::AbstractString = config_dir())::String =
     String(name) == _DEFAULT_PROFILE ? "" :
-        joinpath(String(config_root), "kiwi-profiles", String(name))
+        joinpath(String(config_root), "user-profiles", String(name))
 
 """
     _claude_env_pairs(profile_dir) -> Vector{Pair{String,Any}}

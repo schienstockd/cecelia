@@ -6,7 +6,7 @@
     mktempdir() do tmp
         # Pure: never touches disk.
         d = Cecelia.profile_settings_dir("alice"; config_root = tmp)
-        @test d == joinpath(tmp, "kiwi-profiles", "alice")
+        @test d == joinpath(tmp, "user-profiles", "alice")
         @test !isdir(d)
 
         p = Cecelia.profile_settings_path("alice"; config_root = tmp)
@@ -15,13 +15,13 @@
 
         # `default` gets a settings dir like every other profile — settings need a home even
         # for a single-seat install (credentials still live at ~/.claude for default; only
-        # settings.toml sits under kiwi-profiles/default/).
+        # settings.toml sits under user-profiles/default/).
         @test Cecelia.profile_settings_dir("default"; config_root = tmp) ==
-              joinpath(tmp, "kiwi-profiles", "default")
+              joinpath(tmp, "user-profiles", "default")
 
         # Live resolver mkpaths the dir.
         p! = Cecelia.profile_settings_path!("alice"; config_root = tmp)
-        @test isdir(joinpath(tmp, "kiwi-profiles", "alice"))
+        @test isdir(joinpath(tmp, "user-profiles", "alice"))
         @test p! == p
     end
 end
@@ -95,8 +95,8 @@ end
             @test b.settings.kiwiOpen === true
             @test b.settings.ribbonThickness == 3
 
-            # File landed under kiwi-profiles/default/settings.toml.
-            @test isfile(joinpath(tmp, "kiwi-profiles", "default", "settings.toml"))
+            # File landed under user-profiles/default/settings.toml.
+            @test isfile(joinpath(tmp, "user-profiles", "default", "settings.toml"))
 
             # GET reflects the merged state.
             code, body = api_profile_settings_get(HTTP.Request("GET", "/api/profile/settings"))
@@ -151,7 +151,7 @@ end
             code, _ = api_profile_settings_patch(
                 Vector{UInt8}(JSON3.write(Dict("theme" => "dark"))))
             @test code == 200
-            @test isfile(joinpath(tmp, "kiwi-profiles", "alice", "settings.toml"))
+            @test isfile(joinpath(tmp, "user-profiles", "alice", "settings.toml"))
 
             # Switch back — default's bag is still empty.
             code, _ = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "default"))))

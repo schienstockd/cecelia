@@ -4,7 +4,7 @@
   ONE manager, TWO kinds today: optical-flow (`opticalFlow.train`) and denoise (`opticalFlow.trainSupportDenoise`).
   A chip row at the top switches which vault is being browsed — same list, same rename, same delete,
   same info modal — because a second vault manager with slightly different colours would drift and be
-  the second way to do the same thing (root CLAUDE.md → *Watch for divergent re-implementation*).
+  the second way to do the same thing (root CLAUDE.md → *Before implementing anything — mandatory discovery step*).
 
   Kind determines: which endpoints (`/api/optical-flow/*` vs `/api/denoise/*`), what the empty state
   says, and which details modal opens. The "Load these settings into the form" action is currently

@@ -572,31 +572,38 @@ end
     roots = [joinpath(_repo, "app", "src"), joinpath(_repo, "api", "src")]
     # Every write-mode `open` is an offender unless listed here WITH a reason. Deliberately an
     # allow-list of exact call sites, not of whole files: exempting a file would let the next
-    # state write in that file slip through, which is precisely how this spread.
+    # state write in that file slip through, which is precisely how this spread. Keyed by full
+    # repo-relative path (not basename) — a second file named e.g. `utils.jl` in another dir
+    # would otherwise silently inherit the exemption.
+    # Meta-ratchet: growing the allow-list requires bumping `allowed_max` in the same PR, so a
+    # reviewer sees "weaken the check" attempts.
+    allowed_max = 5
     allowed = Dict(
         # the atomic writer itself — this IS the tmp-then-rename implementation
-        "utils.jl"       => [raw"""open(tmp, "w") do io"""],
+        joinpath("app", "src", "utils.jl")      => [raw"""open(tmp, "w") do io"""],
         # transient per-run params blob handed to a Python subprocess, in the run's task dir
-        "py_runner.jl"   => [raw"""open(params_file, "w") do io"""],
+        joinpath("app", "src", "py_runner.jl")  => [raw"""open(params_file, "w") do io"""],
         # bundle manifest, written INTO the export staging dir that is then tarred and deleted
-        "project_io.jl"  => [raw"""open(joinpath(tmp, BUNDLE_MANIFEST), "w") do io"""],
+        joinpath("app", "src", "project_io.jl") => [raw"""open(joinpath(tmp, BUNDLE_MANIFEST), "w") do io"""],
         # bulk image-data copy (multi-GB, chunked); not state, and the import task owns cleanup
         # (moved from `omezarr.jl` when it was split into `omezarr/`; `staging.jl` is the new home)
-        "staging.jl"    => [raw"""open(dst, "w") do d"""],
+        joinpath("app", "src", "tasks", "importImages", "omezarr", "staging.jl")
+                                                => [raw"""open(dst, "w") do d"""],
         # raw RGB24 frames streamed to the run's task dir and handed straight to the encoder, then
         # deleted (the offline renderer, docs/todo/WEB_VIEWER_PLAN.md P5). Multi-GB and transient: staging a
         # copy to rename would double the disk for a file nothing ever reads back.
-        "movie_render.jl" => [raw"""open(raw, "w") do io"""],
+        joinpath("api", "src", "movie_render.jl") => [raw"""open(raw, "w") do io"""],
     )
     offenders = String[]
     for root in roots, (dir, _, files) in walkdir(root), f in files
         endswith(f, ".jl") || continue
-        ok = get(allowed, f, String[])
+        rel = relpath(joinpath(dir, f), _repo)
+        ok = get(allowed, rel, String[])
         for (i, line) in enumerate(eachline(joinpath(dir, f)))
             occursin(r"""open\([^)]*,\s*"w"\)""", line) || continue
             startswith(strip(line), "#") && continue
             any(a -> occursin(a, line), ok) && continue
-            push!(offenders, "$f:$i: $(strip(line))")
+            push!(offenders, "$rel:$i: $(strip(line))")
         end
     end
     if !isempty(offenders)
@@ -604,5 +611,13 @@ end
               "allow-list entry with a reason if it genuinely isn't durable state" offenders
     end
     @test isempty(offenders)
+
+    # Meta-ratchet: allow-list size hasn't grown.
+    if length(allowed) > allowed_max
+        @error "no hand-rolled state writes: allow-list grew to $(length(allowed)) " *
+               "(cap $allowed_max). Either fix the new write to use write_atomic, or bump " *
+               "`allowed_max` and justify in the PR body."
+    end
+    @test length(allowed) <= allowed_max
 end
 

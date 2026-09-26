@@ -7,7 +7,7 @@ project ownership/filtering) around a **single primitive** — the launch-time u
 folds in the design decision that the Kiwi picker in `KiwiCockpit.vue` is **dropped** when this
 primitive lands, not reconciled with. Builds directly on
 [`LOGIN_CREDENTIAL_ISOLATION_PLAN.md`](LOGIN_CREDENTIAL_ISOLATION_PLAN.md) — the per-profile
-`<config_dir>/kiwi-profiles/<name>/` machinery already exists and is what this plan promotes from
+`<config_dir>/user-profiles/<name>/` machinery already exists and is what this plan promotes from
 a Kiwi-scoped mechanism to the app-wide identity anchor.
 
 ## Goal
@@ -25,7 +25,7 @@ is deleted in the same PR that ships the launch-time picker.
 
 ## What already exists (verified 2026-09-25)
 
-- `<config_dir>/kiwi-profiles/<name>/` layout, created by
+- `<config_dir>/user-profiles/<name>/` layout, created by
   [`api/src/kiwi_profile_api.jl`](../../api/src/kiwi_profile_api.jl) (create / list / retire /
   info endpoints).
 - Server-side active-profile: `kiwi_profile_name()` reads `[ai].profile` from `custom.toml`;
@@ -71,7 +71,7 @@ is deleted in the same PR that ships the launch-time picker.
 4. **"App-wide" = per-profile.** Every per-profile settings key lives under the profile's dir, not
    at `custom.toml` root. `custom.toml` stays as the install-wide store (pool limits, storage
    compressor, TLS, plugin registry, `[ai].profile` itself). New file:
-   `<config_dir>/kiwi-profiles/<name>/settings.toml`. Same TOML shape as `custom.toml`; the
+   `<config_dir>/user-profiles/<name>/settings.toml`. Same TOML shape as `custom.toml`; the
    resolver reads the profile file first, falling back to `custom.toml`. Frontend preferences
    currently in localStorage move to this file via a new `/api/profile/settings` round-trip;
    localStorage is retained only for pre-login bootstrap (theme so the picker paints correctly).
@@ -90,19 +90,17 @@ is deleted in the same PR that ships the launch-time picker.
    regardless of profile count so a person on a single-profile install who later adds a second
    profile does not lose visibility of pre-existing work.
 
-7. **Rename `kiwi_profile_*` code identifiers to `active_profile_*` in Phase 3, but the on-disk
-   directory stays `<config_dir>/kiwi-profiles/`.** `<config_dir>/profiles/` is **already taken**
-   by View Profiles (verified 2026-09-25: `~/cecelia-feijoa/dev/profiles/test.json` exists;
-   `frontend/src/stores/viewProfiles.ts` writes there). Migrating the identity dir into a
-   collision would either force View Profiles to move (bigger scope than this plan) or nest under
-   `profiles/_identities/` (adds a symbol nobody types). Cheaper answer: leave the on-disk name
-   alone — nobody's shell alias reads it — and only rename the code identifiers people reason
-   about: `kiwi_profile_name()` → `active_profile_name()`, `set_kiwi_profile!` →
-   `set_active_profile!`, `[ai].profile` → `[profile].active` (with a read-time fallback to
+7. **Rename `kiwi_profile_*` code identifiers to `active_profile_*` in Phase 3. On-disk directories
+   renamed 2026-09-26 to symmetric names: `<config_dir>/user-profiles/` (identities) and
+   `<config_dir>/view-profiles/` (view profiles).** The original decision kept the identity dir at
+   `kiwi-profiles/` because `<config_dir>/profiles/` was taken by View Profiles and moving either
+   would collide. Amended after neither surface hit prod: with no installs to migrate, both dirs
+   were renamed together in one hard cutover — no fallback shim, no read-time compat. Code identifier
+   renames stayed as planned: `kiwi_profile_name()` → `active_profile_name()`, `set_kiwi_profile!`
+   → `set_active_profile!`, `[ai].profile` → `[profile].active` (with a read-time fallback to
    `[ai].profile`), `utils/kiwiProfileApi.ts` → `utils/profileApi.ts`. Old identifiers retained
    as one-line deprecation shims through Phase 3, removed in Phase 6. The `Kiwi` naming ratchet
-   in `frontend/src/components/kiwi/` stays scoped to Kiwi UI. Directory rename revisited only
-   if a future consolidation moves View Profiles under the identity dir.
+   in `frontend/src/components/kiwi/` stays scoped to Kiwi UI.
 
 8. **Migration: pre-identity projects default to `owners: []` (visible to all).** Same category
    of question as the pre-identity-data migration flagged in
@@ -137,11 +135,11 @@ is deleted in the same PR that ships the launch-time picker.
     confirm) alongside retire, each with its own use case:
     - **Retire** — "I'm done for now but keep the record." Data + credentials stay on disk;
       profile becomes non-selectable. Turn logs still resolve. What D11 always meant.
-    - **Rename** — "typo / rebrand." Renames the on-disk `kiwi-profiles/<old>/` directory and
+    - **Rename** — "typo / rebrand." Renames the on-disk `user-profiles/<old>/` directory and
       updates `[ai].profile` if the profile was active. Past turn logs still reference the OLD
       name — that's a break from D11's dataRef pattern and is surfaced in the confirm dialog
       copy. Refuse if `default`, if the profile is retired, or if the target name collides.
-    - **Delete** — "remove everything." `rm -rf kiwi-profiles/<name>/` — credentials, settings,
+    - **Delete** — "remove everything." `rm -rf user-profiles/<name>/` — credentials, settings,
       retired marker, all gone. Refuse if the profile is active (user must switch first) or
       `default`. Surfaced through the canonical `ConfirmDeleteButton` (arm→confirm). Past turn
       logs become orphaned — the confirm copy names this out loud.
@@ -187,7 +185,7 @@ in the same pass — no code shims, direct rename (per the *no backwards-compat 
   read-fallback and Dominik's dev environment has multiple `cecelia-*` worktrees pointing at
   the same `custom.toml` — an older worktree reading a config written by a newer one would
   lose the active profile. Cosmetic-only; defer.
-- **`<config_dir>/kiwi-profiles/` on-disk directory stays put** (Decision 7 — `profiles/` is
+- **`<config_dir>/user-profiles/` on-disk directory stays put** (Decision 7 — `profiles/` is
   taken by View Profiles).
 - **`turn_profile()` in `agent_runner.jl` stays put** — it's about a Kiwi turn record, not the
   identity primitive; still Kiwi-scoped.
@@ -197,7 +195,7 @@ no data migration.
 
 ### Phase 4 — Per-profile settings store + preferences modal (conditional on Phase 1)
 
-- Server: `<config_dir>/profiles/<name>/settings.toml`; TOML reader/writer analogous to
+- Server: `<config_dir>/view-profiles/<name>/settings.toml`; TOML reader/writer analogous to
   `custom.toml`. Resolver: profile file first, `custom.toml` fallback.
 - API: `GET/PATCH /api/profile/settings` returning the merged view + writing only the profile
   layer.

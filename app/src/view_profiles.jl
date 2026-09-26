@@ -4,7 +4,7 @@
 # doing narrow work isn't navigating a 20-item menu of pages they never touch. Same drop-in spirit as
 # custom modules — a file in the per-user config dir, no rebuild:
 #
-#   <config_dir>/profiles/<id>.json   # { "label": "Gating + behaviour", "items": ["/gate", …] }
+#   <config_dir>/view-profiles/<id>.json   # { "label": "Gating + behaviour", "items": ["/gate", …] }
 #
 # The filename stem is the id (so a file can be renamed without editing it). A profile can only
 # include/exclude/reorder EXISTING routes — it cannot invent a page, and it is NOT access control: a
@@ -17,11 +17,11 @@
 """
     view_profiles_dir([dev_dir]) -> String
 
-The per-user view-profiles root, `<config_dir>/profiles` (see [`config_dir`](@ref)). Not created here:
+The per-user view-profiles root, `<config_dir>/view-profiles` (see [`config_dir`](@ref)). Not created here:
 reading a missing dir is the normal "no profiles" case.
 """
 view_profiles_dir(dev_dir::Union{String,Nothing} = nothing)::String =
-    joinpath(config_dir(dev_dir), "profiles")
+    joinpath(config_dir(dev_dir), "view-profiles")
 
 """
     parse_view_profile(id, raw) -> NamedTuple
@@ -54,7 +54,7 @@ end
 """
     read_view_profiles([; dev_dir]) -> (; dir, profiles, errors)
 
-Scan `<config_dir>/profiles/*.json`. Returns the resolved `dir`, the valid `profiles`
+Scan `<config_dir>/view-profiles/*.json`. Returns the resolved `dir`, the valid `profiles`
 (`(; id, label, items)`, sorted by label) and per-file `errors` (`(; file, error)`).
 
 Never throws: a broken profile is reported, so the Settings panel can name it instead of the sidebar
@@ -96,7 +96,7 @@ end
 """
     write_view_profile(label, items; id = nothing, dev_dir = nothing) -> NamedTuple
 
-Create or overwrite `<config_dir>/profiles/<id>.json` and return the stored
+Create or overwrite `<config_dir>/view-profiles/<id>.json` and return the stored
 `(; id, label, items)`. `id` defaults to one derived from `label` — pass it explicitly to rename a
 profile's label **without** changing its id, so an active selection doesn't break (Decision 4).
 
@@ -119,7 +119,7 @@ end
 """
     delete_view_profile!(id; dev_dir = nothing) -> Bool
 
-Remove `<config_dir>/profiles/<id>.json`. Returns `false` when it wasn't there (deleting an
+Remove `<config_dir>/view-profiles/<id>.json`. Returns `false` when it wasn't there (deleting an
 already-gone profile is not an error). The id is sanitised, so a request cannot escape the dir.
 """
 function delete_view_profile!(id::AbstractString; dev_dir::Union{String,Nothing} = nothing)::Bool
