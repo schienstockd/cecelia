@@ -87,7 +87,7 @@ function onProfileCreated(name: string) {
                   @click="pick(p)"
                   v-tooltip.right="p.isDefault
                     ? 'Default profile — uses your shared ~/.claude credentials'
-                    : `Named profile — credentials live under kiwi-profiles/${p.name}/`">
+                    : `Named profile — credentials live under user-profiles/${p.name}/`">
             <span class="pp-name">
               {{ p.name }}
               <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-xs">(~/.claude)</span>

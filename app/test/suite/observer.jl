@@ -242,10 +242,10 @@ end
     a = Cecelia.ClaudeAgent(bin = "claude", model = "")
 
     # default profile → empty dir marker (= "let the CLI use ~/.claude* as before"). Named profile
-    # lands under <config_root>/kiwi-profiles/<name>/. Resolver is pure — no mkpath here.
+    # lands under <config_root>/user-profiles/<name>/. Resolver is pure — no mkpath here.
     @test Cecelia.active_profile_dir("default"; config_root = "/tmp/x") == ""
     @test Cecelia.active_profile_dir("alice";   config_root = "/tmp/x") ==
-          joinpath("/tmp/x", "kiwi-profiles", "alice")
+          joinpath("/tmp/x", "user-profiles", "alice")
 
     # env-pair shape — default profile SCRUBS ambient credential vars but does NOT set
     # CLAUDE_CONFIG_DIR (that is what makes P2 a no-op for a single-seat setup).
@@ -503,7 +503,7 @@ end
 
 
 # ── Per-profile settings store (USER_PROFILE_PLAN Phase 4) ────────────────
-# Reader/writer + merge semantics for `<config_dir>/kiwi-profiles/<name>/settings.toml`.
+# Reader/writer + merge semantics for `<config_dir>/user-profiles/<name>/settings.toml`.
 # Uses a temp CECELIA_DEV_DIR so no shared config is touched (memory rule: never write
 # the shared dev config).
 @testset "Per-profile settings — read / write / patch" begin
@@ -514,9 +514,9 @@ end
             # Pure path resolver: same for `default` as for a named profile — settings need a
             # home for every profile, even though the DEFAULT profile has no credential dir.
             @test Cecelia.profile_settings_path("default"; config_root = tmp) ==
-                  joinpath(tmp, "kiwi-profiles", "default", "settings.toml")
+                  joinpath(tmp, "user-profiles", "default", "settings.toml")
             @test Cecelia.profile_settings_path("alice";   config_root = tmp) ==
-                  joinpath(tmp, "kiwi-profiles", "alice",   "settings.toml")
+                  joinpath(tmp, "user-profiles", "alice",   "settings.toml")
 
             # Missing file → empty bag, not an error.
             @test Cecelia.read_profile_settings("alice"; config_root = tmp) == Dict{String,Any}()
@@ -527,7 +527,7 @@ end
                 "alice"; config_root = tmp)
             @test written["taskListAutoFollow"] == true
             @test written["kiwiModel"] == "sonnet"
-            @test isfile(joinpath(tmp, "kiwi-profiles", "alice", "settings.toml"))
+            @test isfile(joinpath(tmp, "user-profiles", "alice", "settings.toml"))
             back = Cecelia.read_profile_settings("alice"; config_root = tmp)
             @test back["taskListAutoFollow"] == true
             @test back["kiwiModel"] == "sonnet"
@@ -550,15 +550,15 @@ end
             @test after["viewerPointSize"] == 8
 
             # Parse error → empty bag (tolerant of a hand-edited half-written file).
-            write(joinpath(tmp, "kiwi-profiles", "alice", "settings.toml"),
+            write(joinpath(tmp, "user-profiles", "alice", "settings.toml"),
                   "not valid toml =")
             @test Cecelia.read_profile_settings("alice"; config_root = tmp) == Dict{String,Any}()
 
             # Writing under a fresh profile name creates the dir automatically.
-            @test !isdir(joinpath(tmp, "kiwi-profiles", "bob"))
+            @test !isdir(joinpath(tmp, "user-profiles", "bob"))
             Cecelia.write_profile_settings!(Dict("labLogPanelOpen" => true),
                                             "bob"; config_root = tmp)
-            @test isdir(joinpath(tmp, "kiwi-profiles", "bob"))
+            @test isdir(joinpath(tmp, "user-profiles", "bob"))
             @test Cecelia.read_profile_settings("bob"; config_root = tmp)["labLogPanelOpen"] == true
 
             # Two profiles are independent — bob's write doesn't leak into alice's file.

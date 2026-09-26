@@ -43,7 +43,7 @@ const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
 const active = ref<CategoryId>('profiles')
 
 // ── Profiles pane state ──────────────────────────────────────────────────────
-// Roster is server truth (custom.toml [ai].profile + kiwi-profiles subdirectories). Local state is
+// Roster is server truth (custom.toml [ai].profile + user-profiles subdirectories). Local state is
 // a cache so the pane renders while the round-trip runs. Failure → `default`-only fallback via
 // `fetchProfiles`, which keeps the pane usable rather than blanking it out.
 const roster = ref<ProfileRoster>({

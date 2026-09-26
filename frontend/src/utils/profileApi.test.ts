@@ -55,7 +55,7 @@ describe('kiwi profile API round-trip', () => {
     fetchMock.mockResolvedValue(jsonRes(200, {
       active: 'alice',
       profiles: [{ name: 'default', dir: '', isDefault: true },
-                 { name: 'alice',   dir: '/tmp/kiwi-profiles/alice', isDefault: false }],
+                 { name: 'alice',   dir: '/tmp/user-profiles/alice', isDefault: false }],
       legacyReserved: ['legacy'],
     }))
     const r = await fetchProfiles()
@@ -91,12 +91,12 @@ describe('kiwi profile API round-trip', () => {
 
   it('createProfile returns terminalCommand on success', async () => {
     fetchMock.mockResolvedValue(jsonRes(200, {
-      ok: true, name: 'alice', dir: '/tmp/kiwi-profiles/alice',
-      terminalCommand: 'env -u ANTHROPIC_API_KEY CLAUDE_CONFIG_DIR=/tmp/kiwi-profiles/alice /bin/bash -i',
+      ok: true, name: 'alice', dir: '/tmp/user-profiles/alice',
+      terminalCommand: 'env -u ANTHROPIC_API_KEY CLAUDE_CONFIG_DIR=/tmp/user-profiles/alice /bin/bash -i',
     }))
     const r = await createProfile('alice')
     expect(r.ok).toBe(true)
-    expect(r.terminalCommand).toContain('CLAUDE_CONFIG_DIR=/tmp/kiwi-profiles/alice')
+    expect(r.terminalCommand).toContain('CLAUDE_CONFIG_DIR=/tmp/user-profiles/alice')
   })
 
   it('retireProfile POSTs and surfaces snappedToDefault', async () => {

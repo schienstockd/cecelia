@@ -81,12 +81,12 @@ end
             @test names == ["default"]
             @test "legacy" in [String(x) for x in b.legacyReserved]
 
-            # Create alice → mkpath under kiwi-profiles/alice, response carries terminal cmd.
+            # Create alice → mkpath under user-profiles/alice, response carries terminal cmd.
             code, body = api_kiwi_profiles_create(Vector{UInt8}(JSON3.write((; name = "alice"))))
             @test code == 200
             b = JSON3.read(body)
             @test b.ok === true && b.name == "alice"
-            @test isdir(joinpath(tmp, "kiwi-profiles", "alice"))
+            @test isdir(joinpath(tmp, "user-profiles", "alice"))
             # Platform-agnostic — POSIX `CLAUDE_CONFIG_DIR=<path>` and PowerShell
             # `$env:CLAUDE_CONFIG_DIR = '<path>'` both mention the profile name.
             @test occursin("CLAUDE_CONFIG_DIR", String(b.terminalCommand))
@@ -109,12 +109,12 @@ end
             b = JSON3.read(body)
             @test [String(p.name) for p in b.profiles] == ["default", "alice"]
 
-            # USER_PROFILE_PLAN Phase 4 introduced `kiwi-profiles/default/` as a REAL on-disk dir
+            # USER_PROFILE_PLAN Phase 4 introduced `user-profiles/default/` as a REAL on-disk dir
             # (that's where the default profile's settings.toml lives — profile_settings_dir
             # mkpaths it). Before this ratchet, the roster picker showed TWO "default" rows:
             # one synthetic + one from disk. `_kiwi_list_profiles` must skip the literal name
             # when it walks the directory.
-            mkpath(joinpath(tmp, "kiwi-profiles", "default"))
+            mkpath(joinpath(tmp, "user-profiles", "default"))
             code, body = api_kiwi_profiles_list(HTTP.Request("GET", "/api/kiwi/profiles"))
             b = JSON3.read(body)
             names = [String(p.name) for p in b.profiles]
@@ -125,7 +125,7 @@ end
             code, body = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "alice"))))
             @test code == 200 && JSON3.read(body).active == "alice"
             @test active_profile_name() == "alice"
-            @test active_profile_dir() == joinpath(tmp, "kiwi-profiles", "alice")
+            @test active_profile_dir() == joinpath(tmp, "user-profiles", "alice")
 
             # Select `default` → resolves back to empty dir marker.
             code, _ = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "default"))))
@@ -172,7 +172,7 @@ end
             @test code == 200
             b = JSON3.read(body)
             @test b.ok === true && b.snappedToDefault === false && b.active == "default"
-            @test isfile(joinpath(tmp, "kiwi-profiles", "alice", ".kiwi-retired"))
+            @test isfile(joinpath(tmp, "user-profiles", "alice", ".kiwi-retired"))
 
             # Roster still lists alice, now flagged retired; bob stays not-retired.
             code, body = api_kiwi_profiles_list(HTTP.Request("GET", "/api/kiwi/profiles"))

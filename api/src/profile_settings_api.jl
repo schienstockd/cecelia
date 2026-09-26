@@ -6,7 +6,7 @@
 # for what belongs here (~25 keys, working preferences that follow the person; per-machine
 # renderer knobs stay in localStorage, per-image/per-set bags stay in the project data).
 #
-# Server writes go to `<config_dir>/kiwi-profiles/<name>/settings.toml`. See
+# Server writes go to `<config_dir>/user-profiles/<name>/settings.toml`. See
 # `app/src/config/profile_settings.jl` for the reader/writer.
 #
 # Routes (see server.jl for wiring):

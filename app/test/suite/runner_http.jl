@@ -15,10 +15,10 @@ _app_src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "app", "src")
 
 @testset "view profiles (curated sidebar)" begin
     # A profile is a named, ORDERED subset of sidebar routes, dropped in as a file under
-    # <config_dir>/profiles/. The reader validates SHAPE ONLY — it deliberately does not know the route
+    # <config_dir>/view-profiles/. The reader validates SHAPE ONLY — it deliberately does not know the route
     # table (that lives in frontend/src/main.ts), so an item naming a route that no longer exists is a
     # frontend concern, not an error here. See docs/todo/VIEW_PROFILES_PLAN.md.
-    @test view_profiles_dir() == joinpath(config_dir(), "profiles")
+    @test view_profiles_dir() == joinpath(config_dir(), "view-profiles")
 
     # ── parse: what a valid profile is ────────────────────────────────────────
     p = parse_view_profile("focused", Dict("label" => "Gating + behaviour",
