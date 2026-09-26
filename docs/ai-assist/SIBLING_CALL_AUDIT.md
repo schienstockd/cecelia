@@ -23,6 +23,8 @@ The subagent's reply is used **twice** in the recital (Kiwi-shape: claims + refe
 2. **Printed verbatim as evidence** under a `_Sibling-call audit (evidence):_` fold after the list — so each woven item cites its source and the user can verify Opus didn't drop or misrepresent a finding. Missing evidence fold = the check silently didn't run.
 3. **Tail line** — `_Sibling-call audit: run_` (or a skip line, see below) — the leading indicator that the check happened. Missing tail = mechanism went dark.
 
+**Per-finding outcome tag — enforced by a pre-commit hook.** Every `**confirmed**` sibling finding must carry an outcome from the closed vocabulary at the end of the line, in square brackets: `[fixed_pre_commit]` / `[shipped_with_finding: <reason>]` / `[false_positive: <reason>]` / `[dropped_no_action: <reason>]`. `.claude/hooks/check_commit_recital.py` grep-checks the commit message and blocks if any finding lacks an outcome. See root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits* for the full rationale.
+
 **Model = sonnet, not Opus.** The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match. That's many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at cost that adds up when this runs on every commit. The reviewer surfaces candidates; Opus (implementing agent) synthesises the woven reservations from them.
 
 **Log emission — best-effort, after the reviewer returns.** The parent agent emits ONE `sibling_audit_run` event via `python scripts/log_event.py` at reviewer completion:
