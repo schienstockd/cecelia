@@ -18,6 +18,17 @@ license.
 | **Galene** (`flimfit/Galene`, `flimfit/frame-aligner`) — Warren et al., *eLife* 7:e35800 (2018), [DOI 10.7554/eLife.35800](https://doi.org/10.7554/eLife.35800) | GPL-3.0-or-later (compatible with cecelia's GPL-3-or-later) | The per-frame post-warp correlation metric in [`app/src/tasks/cleanupImages/flow_register_run.py`](app/src/tasks/cleanupImages/flow_register_run.py) — pearson correlation between warped and reference over the covered region, banked per-frame + averaged as the cohort metric `meanFrameCorrelation` — is derived from Galene's `FrameWarpAligner::addFrame` (`FrameWarpAligner.cpp:241-243`). Galene also uses it as a frame gate (`:277-278`); cecelia ships the metric only after measuring on the anchor movie (c91ICQ) that flow was uniformly helping and no frame needed gating. Cited inline against the paper DOI + reference-implementation file:line pointer. Rationale + phased plan: [`docs/todo/FLOW_REGISTER_ROBUSTNESS_PLAN.md`](docs/todo/FLOW_REGISTER_ROBUSTNESS_PLAN.md). |
 | **SUPPORT** (`NICALab/SUPPORT`) — Eom et al., *Nature Methods* 20:1581-1588 (2023), [DOI 10.1038/s41592-023-02005-8](https://doi.org/10.1038/s41592-023-02005-8) | GPL-3.0 (compatible with cecelia's GPL-3-or-later) | The self-supervised temporal blind-spot denoiser used by `cleanupImages.denoise` and trained by `opticalFlow.trainSupportDenoise`. **Lives in the sibling [coastal](https://github.com/schienstockd/coastal) project** (see `coastal/support/`, migrated 2026-09-05 from cecelia's `python/cecelia/vendor/support/` to match the CPnet pattern — algorithms in coastal, cecelia is the orchestration layer). Cecelia's runners import `coastal.support.train_support` (trainer) and `coastal.support.denoise_stack` (inference); the coastal `THIRD_PARTY.md` carries the vendored-subset detail, commit pin and upstream `#25` rationale. Verbatim third-party algorithm — cited inline in the runners. Source: [github.com/NICALab/SUPPORT](https://github.com/NICALab/SUPPORT). |
 
+## Design patterns adopted
+
+Ideas — not code — borrowed from another tool. Cecelia's implementations are from scratch and no
+upstream licence attaches; the acknowledgement is academic. Each adoption is also cited at the top of
+the module that lands the pattern (`# Design pattern adapted from <tool> (<citation>). See
+THIRD_PARTY.md → Design patterns adopted.`), same as the inline-cite convention for methods.
+
+| Component | License (source) | Relationship |
+|-----------|------------------|--------------|
+| **spaCR** (`EinarOlafsson/spacr`) — Olafsson et al. | BSD-3-Clause | The one-command fresh-clone environment audit exposed as `pixi run doctor` (`scripts/doctor.jl`) — a dispatcher over cecelia's existing checks (`scripts/check_claude_env.sh`, `scripts/bundle_check.sh`, `pixi.toml` sanity, `npm ci` on the worktree, optional pixi envs, `set_projects_dir` isolation) that prints one ordered green/amber/red report with a fix hint per row — is modelled on spaCR's `spacr doctor` (`spacr/doctor.py`). No code lifted. Source: [github.com/EinarOlafsson/spacr](https://github.com/EinarOlafsson/spacr). |
+
 ## Bundled / dependencies
 
 ### Python analysis env (Pixi — see `pixi.toml`)
