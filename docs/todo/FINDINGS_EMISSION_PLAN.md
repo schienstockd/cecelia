@@ -6,7 +6,7 @@ Companion to [`EFFECTIVENESS_LOG_PLAN.md`](EFFECTIVENESS_LOG_PLAN.md) — closes
 
 ## Goal
 
-Move `docs/ai-assist/EFFECTIVENESS.md` from **runtime telemetry** ("Fanout audit — 1 runs · median duration 18.2s") to **evidence** ("Fanout audit — 3 findings across [#1240](url), [#1247](url), [#1251](url); 2 fixed pre-commit, 1 shipped with finding — see rows below").
+Move `docs/ai-assist/EFFECTIVENESS.md` from **runtime telemetry** ("Fanout audit — 1 runs · median duration 18.2s") to **evidence** ("Fanout audit — 3 findings across `#1240` / `#1247` / `#1251`; 2 fixed pre-commit, 1 shipped with finding — see rows below").
 
 Same substrate — `~/.cecelia-effectiveness/events.jsonl` — new events + new rollup rendering.
 
@@ -85,7 +85,7 @@ Hook regex: `\[([a-z]+-[0-9a-f]{8}): (\w+)\]`. Hook validates that (a) each slug
 - Group `_finding` rows by slug
 - For each slug: look up latest `_finding_resolved` row → outcome; if none, mark `unresolved`
 - Render as bulleted list under the section, sorted by outcome (fixed_pre_commit first, unresolved last)
-- Format: `- [#PR](url) — file:line — desc [**outcome**]` (or `[unresolved]`)
+- Format: `- <PR-link> — file:line — desc [**outcome**]` (or `[unresolved]`), where `<PR-link>` is a real markdown link to the PR
 
 Existing count summary stays as the header line of each section.
 

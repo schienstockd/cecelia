@@ -12,22 +12,24 @@ Usage (from an agent, via the CLI wrapper):
 
     pixi run recital
 
-which reads `git diff --staged`, spawns both reviewers, emits `_run` events, and prints the
-recital body. Agent captures stdout and appends to the commit message body.
+which reads `git diff --staged`, spawns both reviewers, emits `_run` events and one
+`_finding` event per outcome-tagged reviewer bullet, and prints the recital body — with a
+`[slug]` prefixed to each outcome-tagged finding line so the author can paste the slug into
+the commit message inside a `[slug: outcome]` pair. Full design in
+`docs/todo/FINDINGS_EMISSION_PLAN.md`.
 
 Test seam: `run_recital(diff, claude_runner=fake)` bypasses real claude spawning. Same pattern
 as `api/test/suite/kiwi_turn.jl`'s fake engine.
 
-Not built here (deferred):
+Not built here (deferred to later phases of FINDINGS_EMISSION_PLAN.md):
 - Escape-valve detection (docs-only / no-additions / tests-only). v1 always spawns both;
   reviewers' own short-circuit handles empty cases.
-- Finding parsing + per-finding outcome-tag scaffolding. v1 passes reviewer output through
-  verbatim under the evidence fold; the agent tags outcomes at commit time.
-- `_finding` event emission. `_run` events (with duration + escape valve) are enough for the
-  first N commits of data; findings need outcome-resolution design.
+- Hook parses `[slug: outcome]` pairs and writes `_finding_resolved` rows (P3).
+- Rollup renders per-finding rows with PR links (P2).
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -48,6 +50,126 @@ class RecitalError(RuntimeError):
     Emission still happens in the finally-block above the raise, so the log records the
     attempt even when the reviewer failed.
     """
+
+
+#: The two outcome-tag-requiring markers per CLAUDE.md → Git & commits (only these produce
+#: `_finding` rows; `plausible` / `potential duplicate` are surfaced in the recital body but
+#: don't need outcome resolution, so they stay out of the log to keep the pending↔resolution
+#: contract 1:1 with the hook's tag-count check).
+_FANOUT_MARKER = "confirmed"
+_CONVENTION_MARKER = "should reuse"
+
+#: Bullet-line grammar shared by both reviewer prompts:
+#:   `- **file:LINE** — <prose> [**marker**]`
+#: `file` allows anything but `*` and `:`; `line` is digits; `desc` is non-greedy.
+#: Matches the exact shape locked in SIBLING_CALL_AUDIT.md and CONVENTION_CHECK.md
+#: (Decision 1 of FINDINGS_EMISSION_PLAN.md). Alternate markers per mechanism are baked in.
+_FANOUT_FINDING_RE = re.compile(
+    r"^- \*\*([^*:]+):(\d+)\*\*\s+[—-]\s+(.+?)\s*\[\*\*confirmed\*\*\]\s*$",
+    re.MULTILINE,
+)
+_CONVENTION_FINDING_RE = re.compile(
+    r"^- \*\*([^*:]+):(\d+)\*\*\s+[—-]\s+(.+?)\s*\[\*\*should reuse\*\*\]\s*$",
+    re.MULTILINE,
+)
+
+
+class Finding(_t.NamedTuple):
+    """A single outcome-tag-requiring finding parsed from a reviewer's output."""
+
+    mechanism: str  # "fanout" | "convention"
+    file: str
+    line: int
+    desc: str
+    marker: str  # the literal marker text (e.g. "confirmed" / "should reuse")
+    slug: str  # deterministic id — see `_slug`
+
+
+def _slug(mechanism: str, file: str, line: int, marker: str) -> str:
+    """Deterministic short id for a finding, per Decision 3 of FINDINGS_EMISSION_PLAN.md.
+
+    Same (mechanism, file, line, marker) → same slug across runs, so the author can quote a
+    stale slug from a re-run of the recital without breaking correlation. sha1 truncated to
+    8 hex chars — collision-safe at this cardinality (findings-per-PR ~O(10)); prefixed with
+    a short mechanism tag for human readability in commit messages.
+    """
+    key = f"{mechanism}|{file}|{line}|{marker}".encode("utf-8")
+    digest = hashlib.sha1(key).hexdigest()[:8]
+    prefix = "fanout" if mechanism == "fanout" else "conv"
+    return f"{prefix}-{digest}"
+
+
+def _parse_findings(output: str, mechanism: str) -> list[Finding]:
+    """Extract outcome-tag-requiring findings from a reviewer's raw output.
+
+    Non-matching lines (commentary bullets, plausibles, short-circuits) are silently ignored;
+    the parser is strict-regex to avoid over-emitting log rows for lines the hook won't be
+    asked to resolve. Order-preserving.
+    """
+    regex = _FANOUT_FINDING_RE if mechanism == "fanout" else _CONVENTION_FINDING_RE
+    marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
+    findings: list[Finding] = []
+    for m in regex.finditer(output):
+        file, line_s, desc = m.group(1).strip(), m.group(2), m.group(3).strip()
+        try:
+            line = int(line_s)
+        except ValueError:  # unreachable — regex \d+ guarantees digit-only, but belt-and-braces
+            continue
+        findings.append(Finding(
+            mechanism=mechanism,
+            file=file,
+            line=line,
+            desc=desc,
+            marker=marker,
+            slug=_slug(mechanism, file, line, marker),
+        ))
+    return findings
+
+
+def _inject_slugs(output: str, findings: _t.Sequence[Finding]) -> str:
+    """Rewrite each matched finding line to lead with its slug, so the author can copy it
+    verbatim into a `[slug: outcome]` pair. Non-matching lines untouched. Idempotent enough:
+    if the reviewer already included a slug we'd double-tag, but that shape isn't produced by
+    the reviewer prompts today."""
+    if not findings:
+        return output
+    by_line: dict[tuple[str, int, str], Finding] = {
+        (f.file, f.line, f.marker): f for f in findings
+    }
+    mechanism = findings[0].mechanism
+    regex = _FANOUT_FINDING_RE if mechanism == "fanout" else _CONVENTION_FINDING_RE
+    marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
+
+    def _sub(m: re.Match) -> str:
+        file, line_s, desc = m.group(1).strip(), m.group(2), m.group(3).strip()
+        f = by_line.get((file, int(line_s), marker))
+        if f is None:
+            return m.group(0)
+        return f"- [{f.slug}] **{file}:{line_s}** — {desc} [**{marker}**]"
+
+    return regex.sub(_sub, output)
+
+
+def _current_pr() -> str | None:
+    """Best-effort PR-number capture via `gh pr view --json number`. Returns `"#N"` or None.
+
+    Failure modes silently return None: no `gh`, not in a PR branch, offline, `gh` not
+    authenticated. Recital works fine without a PR context — the log row just has `pr: null`.
+    """
+    gh = shutil.which("gh")
+    if gh is None:
+        return None
+    try:
+        result = subprocess.run(
+            [gh, "pr", "view", "--json", "number", "-q", ".number"],
+            capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8",
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    n = (result.stdout or "").strip()
+    return f"#{n}" if n.isdigit() else None
 
 
 def _resolve_claude_bin() -> str:
@@ -108,13 +230,16 @@ _STRIP_TRAILING_TAIL = re.compile(
 def _run_reviewer(
     *,
     event_name: str,
+    finding_event_name: str,
+    mechanism: str,
     title: str,
     tail_none: str,
     doc_path: str,
     diff: str,
     claude_runner: _t.Callable[[str], str],
+    pr: str | None,
 ) -> str:
-    """Spawn one reviewer, emit its `_run` event, format its section of the recital."""
+    """Spawn one reviewer, emit its `_run` + per-finding events, format its recital section."""
     prompt = _reviewer_prompt(doc_path, diff)
     start = time.monotonic()
     error: str | None = None
@@ -128,7 +253,7 @@ def _run_reviewer(
     payload: dict = {"duration_s": round(duration, 2)}
     if error is not None:
         payload["error"] = error
-    append_event(event_name, payload)
+    append_event(event_name, payload, pr=pr)
 
     if error is not None:
         return (
@@ -153,10 +278,26 @@ def _run_reviewer(
                 return stripped
             return f"_{title}: {tail_none}_"
 
+    # Parse outcome-tag-requiring findings and emit one `_finding` row per (Decision 2 of
+    # FINDINGS_EMISSION_PLAN.md — written pre-commit as pending, i.e. no `outcome` field;
+    # log.py's UnknownOutcomeError check only fires when outcome is *present*-and-unknown).
+    findings = _parse_findings(stripped, mechanism)
+    for f in findings:
+        append_event(
+            finding_event_name,
+            {"file": f.file, "line": f.line, "desc": f.desc, "slug": f.slug, "marker": f.marker},
+            pr=pr,
+        )
+
+    # Inject slugs so the author can copy each into a `[slug: outcome]` pair in the commit
+    # message. Only the outcome-tag-requiring findings get slugs; other bullets (plausible /
+    # potential duplicate) render unchanged.
+    slugged = _inject_slugs(stripped, findings)
+
     # Defensive strip: even with the "no tail line" directive in the prompt, the subagent
     # sometimes still emits one. Remove trailing `_<title>: <verdict>_` so the recital's
     # wrapper tail isn't a duplicate.
-    cleaned = _STRIP_TRAILING_TAIL.sub("", stripped).rstrip()
+    cleaned = _STRIP_TRAILING_TAIL.sub("", slugged).rstrip()
 
     return f"_{title} (evidence):_\n\n{cleaned}\n\n_{title}: run_"
 
@@ -178,22 +319,29 @@ def run_recital(
     payload gets `error` in it, so the log has both signals.
     """
     runner = claude_runner or _default_runner
+    pr = _current_pr()
 
     fanout_section = _run_reviewer(
         event_name="fanout_audit_run",
+        finding_event_name="fanout_audit_finding",
+        mechanism="fanout",
         title="Fanout audit",
         tail_none="no fanout audit needed",
         doc_path=_FANOUT_DOC,
         diff=diff,
         claude_runner=runner,
+        pr=pr,
     )
     convention_section = _run_reviewer(
         event_name="convention_check_run",
+        finding_event_name="convention_check_finding",
+        mechanism="convention",
         title="Convention check",
         tail_none="no convention check needed",
         doc_path=_CONVENTION_DOC,
         diff=diff,
         claude_runner=runner,
+        pr=pr,
     )
 
     return f"{fanout_section}\n\n{convention_section}"
