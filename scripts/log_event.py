@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """CLI wrapper for the effectiveness log's `append_event`.
 
-Called by the sibling-call audit and convention-check reviewer hooks after a run — the parent
-agent emits an event to jsonl so the log accumulates data the rollup script can render later.
+For ad-hoc / retrospective / manual emission. The standard automatic path is
+`pixi run recital` (`python/cecelia/effectiveness/recital.py`), which spawns both reviewers
+and calls `append_event` in-process — no CLI shell-out per event. This wrapper stays for
+retrospective backfill rows, manual `human_override` entries, and any pattern the recital
+script doesn't cover.
 
 Usage:
     python scripts/log_event.py --event sibling_audit_run \\
