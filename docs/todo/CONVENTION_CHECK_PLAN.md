@@ -268,12 +268,12 @@ This closes the gap flagged in the effectiveness plan's [Ceiling](EFFECTIVENESS_
 ## Open decisions — Dominik's call
 
 1. ~~**Inventory scope**~~: answered by the companion audit (2026-09-26). Confirmed doc list is in §Inventory scope; ground-truth set spans `docs/inventory/*.md` + `docs/ui/PRIMITIVES.md` + `docs/ui/COPY.md` + `docs/PLOTS.md` + module `CLAUDE.md` files.
-2. **Ship order**: this reviewer before, after, or alongside the effectiveness log? Building the reviewer first gives the log something new to measure; building the log first means the first N reviewer runs are captured with zero backfill. Weak lean: reviewer first — case-studies give it acceptance criteria, log follows once mechanism is stable.
-3. **Escape valve for tests-only diffs**: proposed above. Fine grain or too coarse? Some tests do add fixtures worth checking.
-4. **PR CI check severity**: hard required check (blocks merge), or advisory (comments only)? Hard = teeth; advisory = safer while calibrating.
+2. ~~**Ship order**~~: **log first (or alongside).** The cost-gradient section makes the argument — without the log wired, the first N reviewer runs go unmeasured and the "worth 60s/commit" claim can't be earned back with data.
+3. ~~**Escape valve for tests-only diffs**~~: **as drafted** — skip pure `test_**` / `tests/**` / `*_test.jl` diffs; fixtures are legitimately local. Watch for the specific failure of a fixture graduating into shipped code — if it happens once, tighten.
+4. ~~**PR CI check severity**~~: **advisory first, hard-required once measured.** Reasoning: an unmeasured reviewer produces calibration false positives; if those block merges from day one, the fix-up habit becomes "just override," which mutes the guard. Advisory keeps findings in the reservations recital + log while calibration runs; flip to required when the log shows FP rate is tolerable. **The local pre-commit hook that forces the reviewer to RUN stays hard from day one — different teeth: mechanism vs verdict.**
 5. ~~**Reviewer prompt v1 — dry-run against the blackboard case first?**~~ **Done 2026-09-26: dry-run passed 5/5.** Sonnet subagent given the prompt verbatim + `git show 19738976` produced all five predicted `should reuse` findings with direct doc citations. Finding #4 (module shell shape) is the one thin place, addressed by §Inventory gaps worth closing item 3.
-6. **Latency threshold**: at what wall-clock does pre-commit friction become a problem? Number worth naming now so we don't argue about it later.
-7. **Close the two inventory gaps first?** §Inventory scope names two small write-ups (plot-registry inventory entry, private-helpers caveat note). Not blockers, but cheap and would tighten the reviewer's floor. Do them before or after reviewer ships?
+6. ~~**Latency threshold**~~: **90 seconds combined pre-commit** as the pain floor. Under 90s = tolerable; over = investigate a mitigation from §Pre-commit latency.
+7. ~~**Close the two inventory gaps first?**~~ **Yes — do them before wiring.** Both are one-liners (§Inventory gaps worth closing items 1 and 2). Item 3 (module-shell convention) is being closed on branch `docs/module-shell-convention` (#1245).
 
 ## Not in scope (this plan)
 
