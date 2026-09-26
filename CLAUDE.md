@@ -268,17 +268,19 @@ merge). Full conventions — branch naming, commit style, how PRs are opened, re
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
 commit or push proactively.** A "go ahead" to do the work is not approval to commit it.
 
-**Agents: state your reservations BEFORE every commit.** When asked to commit/push (or asked for the
-PR url — that request itself calls the commit), first volunteer honest reservations about the change —
-what's unverified (e.g. never run in a browser, an untested regression surface), plus real limitations
-(perf, edge cases, silent no-ops) — as a short prioritized list. Don't reassure or wait to be asked
-"any reservations?". Surface the risk at the decision point, then commit on the go-ahead. See
-[`docs/DEV.md`](docs/DEV.md) → *Commits*.
-
-**Agents: run the sibling-call audit at reservations time.** Spawn a fresh `sonnet` subagent per
+**Agents: state your reservations BEFORE every commit — and the recital MUST include a
+`**Sibling-call audit:**` heading.** Both halves are one step; do not stop after the older-style
+bullets. When asked to commit/push (or asked for the PR url — that request itself calls the commit):
+(a) volunteer honest reservations — what's unverified (never run in a browser, an untested regression
+surface), plus real limitations (perf, edge cases, silent no-ops) — as a short prioritized list;
+(b) as part of the same recital, spawn a fresh `sonnet` subagent per
 [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](docs/ai-assist/SIBLING_CALL_AUDIT.md) with `git diff --staged`
-and fold findings under a `**Sibling-call audit:**` heading — always printed, so the check is on
-record. Catches case-F drift: a fix that silently leaves divergent copies broken.
+and print its findings (or the skip line — docs-only, new-file-only, `no sibling-call audit needed`)
+under the `**Sibling-call audit:**` heading. The heading is ALWAYS printed, even on skips — a
+silently-skipped audit looks identical to a genuinely-empty one. Don't reassure or wait to be asked
+"any reservations?". Surface risk + audit findings at the decision point, then commit on the
+go-ahead. Catches case-F drift: a fix that silently leaves divergent copies broken. See
+[`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
 ---
 
