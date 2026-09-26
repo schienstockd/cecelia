@@ -294,6 +294,12 @@ models-fetch = "python scripts/models_fetch.py"
 # app/test/runtests.jl. Parsing lives in frontend/src/utils/uiCopy.ts. See docs/UI.md → UI copy.
 ui-copy = "node scripts/ui_copy_inventory.mjs"
 
+# Read ~/.cecelia-effectiveness/events.jsonl (or $CECELIA_EFFECTIVENESS_LOG) and rewrite
+# docs/ai-assist/EFFECTIVENESS.md — the public rollup of the AI-assist infrastructure's catch/FP
+# numbers. On-demand only; never auto-committed. Review the diff, commit if the update is
+# meaningful. Package: python/cecelia/effectiveness/. Design: docs/todo/EFFECTIVENESS_LOG_PLAN.md.
+audit-rollup = "python scripts/audit_rollup.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the
