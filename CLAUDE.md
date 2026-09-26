@@ -297,13 +297,13 @@ reservations?".
 
 _Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
 
-- `_Sibling-call audit: run_` (or `_skipped — docs-only diff_` / `_skipped — no modified code_` /
-  `_no sibling-call audit needed_`)
+- `_Fanout audit: run_` (or `_skipped — docs-only diff_` / `_skipped — no modified code_` /
+  `_no fanout audit needed_`)
 - `_Convention check: run_` (or `_skipped — docs-only diff_` / `_skipped — no additions_` /
   `_skipped — tests-only_` / `_no convention check needed_`)
 
 Missing either tail = that mechanism went dark. Don't reassure or wait to be asked "any
-reservations?". Sibling-call catches case-F fix drift; convention check catches convention drift
+reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
 (a new helper/component/endpoint that duplicates an existing canonical). See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
@@ -332,7 +332,7 @@ in a text output the reader may not see.
 
 Bypass with `CECELIA_SKIP_RECITAL_CHECK=1` for real emergencies.
 
-**Best-effort log emission after each reviewer returns.** Emit a `sibling_audit_run` and a
+**Best-effort log emission after each reviewer returns.** Emit a `fanout_audit_run` and a
 `convention_check_run` event via `python scripts/log_event.py` — the exact commands (payload
 shapes and escape-valve values) are in each reviewer's doc under *Log emission*. Failure to emit
 is not a commit blocker: the log is a best-effort collector, not a gate. Findings emission is

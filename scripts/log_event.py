@@ -8,7 +8,7 @@ retrospective backfill rows, manual `human_override` entries, and any pattern th
 script doesn't cover.
 
 Usage:
-    python scripts/log_event.py --event sibling_audit_run \\
+    python scripts/log_event.py --event fanout_audit_run \\
         --payload '{"hunks_reviewed": 3, "duration_s": 27.4}'
 
     # OR read the event dict from stdin:

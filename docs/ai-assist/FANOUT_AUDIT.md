@@ -1,8 +1,8 @@
-# Sibling-call audit — the pre-commit reviewer
+# Fanout audit — the pre-commit reviewer
 
-**What this file is:** the exact prompt the pre-commit sibling-call reviewer subagent is spawned with. Also the mechanism note and the escape valves. Cited from [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*.
+**What this file is:** the exact prompt the pre-commit fanout reviewer subagent is spawned with. Also the mechanism note and the escape valves. Cited from [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*.
 
-**Why this exists:** catch **case-F-shaped bugs** — *a fix that silently leaves other divergent copies of the same guard, resolver, or contract broken*. Three confirmed pairs in the 2026-Jun–Sep window: #816→#822, #828→#839, #1101→#1151. Design record: [`../todo/SIBLING_CALL_AUDIT_PLAN.md`](../todo/SIBLING_CALL_AUDIT_PLAN.md).
+**Why this exists:** catch **case-F-shaped bugs** — *a fix that silently leaves other divergent copies of the same guard, resolver, or contract broken*. Three confirmed pairs in the 2026-Jun–Sep window: #816→#822, #828→#839, #1101→#1151. Design record: [`../todo/FANOUT_AUDIT_PLAN.md`](../todo/FANOUT_AUDIT_PLAN.md).
 
 ## How it runs
 
@@ -20,23 +20,23 @@ Agent(
 The subagent's reply is used **twice** in the recital (Kiwi-shape: claims + references):
 
 1. **Woven into the reservations list** — `**confirmed**` siblings become reservation items ranked by how much they matter (same voice, same prioritization as the rest); `**plausible**` ones fold in with hedging; latent-only ones as forecasted-risk notes.
-2. **Printed verbatim as evidence** under a `_Sibling-call audit (evidence):_` fold after the list — so each woven item cites its source and the user can verify Opus didn't drop or misrepresent a finding. Missing evidence fold = the check silently didn't run.
-3. **Tail line** — `_Sibling-call audit: run_` (or a skip line, see below) — the leading indicator that the check happened. Missing tail = mechanism went dark.
+2. **Printed verbatim as evidence** under a `_Fanout audit (evidence):_` fold after the list — so each woven item cites its source and the user can verify Opus didn't drop or misrepresent a finding. Missing evidence fold = the check silently didn't run.
+3. **Tail line** — `_Fanout audit: run_` (or a skip line, see below) — the leading indicator that the check happened. Missing tail = mechanism went dark.
 
 **Per-finding outcome tag — enforced by a pre-commit hook.** Every `**confirmed**` sibling finding must carry an outcome from the closed vocabulary at the end of the line, in square brackets: `[fixed_pre_commit]` / `[shipped_with_finding: <reason>]` / `[false_positive: <reason>]` / `[dropped_no_action: <reason>]`. `.claude/hooks/check_commit_recital.py` grep-checks the commit message and blocks if any finding lacks an outcome. See root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits* for the full rationale.
 
 **Model = sonnet, not Opus.** The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match. That's many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at cost that adds up when this runs on every commit. The reviewer surfaces candidates; Opus (implementing agent) synthesises the woven reservations from them.
 
-**Log emission** — done automatically by `pixi run recital` (`python/cecelia/effectiveness/recital.py`) which is the standard invocation path (see root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*). Recital emits a `sibling_audit_run` event with `duration_s` (and `error` on failure) atomically with the reviewer spawn, so the parent agent can't silently skip. The full payload documented in [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) (`hunks_reviewed`, `escape_valve`) is not populated in v1 — parsing the reviewer output for those fields is deferred. Findings emission (`sibling_audit_finding`) also deferred — needs outcome-resolution design.
+**Log emission** — done automatically by `pixi run recital` (`python/cecelia/effectiveness/recital.py`) which is the standard invocation path (see root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*). Recital emits a `fanout_audit_run` event with `duration_s` (and `error` on failure) atomically with the reviewer spawn, so the parent agent can't silently skip. The full payload documented in [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) (`hunks_reviewed`, `escape_valve`) is not populated in v1 — parsing the reviewer output for those fields is deferred. Findings emission (`fanout_audit_finding`) also deferred — needs outcome-resolution design.
 
 Manual emission via `python scripts/log_event.py` remains available for ad-hoc / retrospective rows.
 
 ## Escape valves — skip the subagent when
 
-- Diff is docs-only (only `docs/**`, `*.md`, `CLAUDE.md` files touched). Tail: `_Sibling-call audit: skipped — docs-only diff_`. No evidence fold (nothing to evidence).
-- Diff is a pure new-file addition (no modifications to existing code). Tail: `_Sibling-call audit: skipped — no modified code_`.
+- Diff is docs-only (only `docs/**`, `*.md`, `CLAUDE.md` files touched). Tail: `_Fanout audit: skipped — docs-only diff_`. No evidence fold (nothing to evidence).
+- Diff is a pure new-file addition (no modifications to existing code). Tail: `_Fanout audit: skipped — no modified code_`.
 
-Otherwise spawn the subagent — even for small diffs. The prompt's own short-circuit handles no-fix-hunk cases (tail becomes `_no sibling-call audit needed_`, no evidence fold).
+Otherwise spawn the subagent — even for small diffs. The prompt's own short-circuit handles no-fix-hunk cases (tail becomes `_no fanout audit needed_`, no evidence fold).
 
 ## Reviewer prompt
 
@@ -68,7 +68,7 @@ You have full read access to the repo (do not modify). `git diff --staged` follo
 If >8 findings: top 8 + `N more not listed`.
 
 **Short-circuits (reply verbatim):**
-- No fix-shaped hunks → `no sibling-call audit needed`
+- No fix-shaped hunks → `no fanout audit needed`
 - Fix modifies a symbol with zero other callers → `- <symbol> — sole caller, no siblings`
 
 **Don't:** suggest fixes; re-review the diff for its own bugs; flag stylistic siblings; fabricate call sites (say so if grep is empty).

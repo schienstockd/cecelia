@@ -37,15 +37,8 @@ import typing as _t
 from .log import append_event
 
 #: Path to each reviewer's spec doc. `claude -p` reads it itself — the reviewer prompt is
-#: the single source of truth. Post-rename (#1251), `SIBLING_CALL_AUDIT.md` becomes
-#: `FANOUT_AUDIT.md` — resolver walks the two candidates so this file survives either merge
-#: order. The candidate list uses os.path.join so the literal `docs/…md` string doesn't
-#: trigger the `test_doc_paths_cited_from_code_resolve` guard for a file that doesn't exist
-#: yet on this branch.
-_FANOUT_DOC_CANDIDATES = (
-    "docs/ai-assist/SIBLING_CALL_AUDIT.md",  # current name
-    "docs/" + "ai-assist/" + "FANOUT_" + "AUDIT.md",  # post-#1251; split so doc-pointer test skips
-)
+#: the single source of truth.
+_FANOUT_DOC = "docs/ai-assist/FANOUT_AUDIT.md"
 _CONVENTION_DOC = "docs/ai-assist/CONVENTION_CHECK.md"
 
 
@@ -89,18 +82,6 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
             f"claude exited {result.returncode}; stderr:\n{(result.stderr or '').strip()}"
         )
     return (result.stdout or "").strip()
-
-
-def _pick_fanout_doc() -> str:
-    """Return the reviewer doc path that exists in the checkout — post-rename first, then the
-    pre-rename fallback. Avoids a hard dependency on #1251's merge order."""
-    import os
-
-    for path in _FANOUT_DOC_CANDIDATES:
-        if os.path.exists(path):
-            return path
-    # Neither exists: still return the post-rename path so the error message is intelligible.
-    return _FANOUT_DOC_CANDIDATES[0]
 
 
 def _reviewer_prompt(doc_path: str, diff: str) -> str:
@@ -158,11 +139,18 @@ def _run_reviewer(
     stripped = output.strip()
 
     # Short-circuit detection — reviewer replied with the "no X needed" tail directly.
-    # Accepts both the wrapped `_no fanout audit needed_` and the bare form the subagent
-    # sometimes returns (`no sibling-call audit needed`). Single-line reply only.
+    # Two shapes both count: wrapped `_no fanout audit needed_` (passes through verbatim as the
+    # tail — the reply IS the tail line) and bare `no fanout audit needed` (wrapped with the
+    # standard `_<title>: <verdict>_` frame). The bare match also accepts the pre-rename
+    # "no sibling-call audit needed" wording — the reviewer may still emit it from muscle memory
+    # or an older cached prompt. Single-line reply only.
     if "\n" not in stripped:
-        bare = stripped.strip("_").strip()
-        if bare.lower() == tail_none.lower():
+        wrapped = stripped.startswith("_") and stripped.endswith("_")
+        bare = stripped.strip("_").strip().lower()
+        short_circuit_wordings = {tail_none.lower(), "no sibling-call audit needed"}
+        if bare in short_circuit_wordings:
+            if wrapped:
+                return stripped
             return f"_{title}: {tail_none}_"
 
     # Defensive strip: even with the "no tail line" directive in the prompt, the subagent
@@ -190,18 +178,12 @@ def run_recital(
     payload gets `error` in it, so the log has both signals.
     """
     runner = claude_runner or _default_runner
-    fanout_doc = _pick_fanout_doc()
-
-    # Event name is `sibling_audit_run` on current main; renamed to `fanout_audit_run` by
-    # #1251. Pick whichever is in the closed vocabulary at runtime so this survives the rename.
-    from .log import EVENT_TYPES
-    fanout_event = "fanout_audit_run" if "fanout_audit_run" in EVENT_TYPES else "sibling_audit_run"
 
     fanout_section = _run_reviewer(
-        event_name=fanout_event,
-        title="Fanout audit" if fanout_event == "fanout_audit_run" else "Sibling-call audit",
-        tail_none="no fanout audit needed" if fanout_event == "fanout_audit_run" else "no sibling-call audit needed",
-        doc_path=fanout_doc,
+        event_name="fanout_audit_run",
+        title="Fanout audit",
+        tail_none="no fanout audit needed",
+        doc_path=_FANOUT_DOC,
         diff=diff,
         claude_runner=runner,
     )

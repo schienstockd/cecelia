@@ -35,7 +35,7 @@ _NO_EVENTS = """# AI-assist infrastructure — effectiveness
 
 _Rendered {rendered} — no events logged yet._
 
-The AI-assist infrastructure (pre-commit sibling-call audit, CLAUDE.md ratchets, convention-check reviewer) writes structured rows to `~/.cecelia-effectiveness/events.jsonl` as it runs. This page renders those rows into an aggregate view of catch rate, false-positive rate, and what the infrastructure structurally cannot measure.
+The AI-assist infrastructure (pre-commit fanout audit, CLAUDE.md ratchets, convention-check reviewer) writes structured rows to `~/.cecelia-effectiveness/events.jsonl` as it runs. This page renders those rows into an aggregate view of catch rate, false-positive rate, and what the infrastructure structurally cannot measure.
 
 See [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) for the schema, event taxonomy, sample method, and the honest ceiling on what this log can and cannot tell you.
 """
@@ -75,10 +75,22 @@ def _date_range(events: _t.Sequence[dict]) -> str:
 
 
 def _mechanism_section(
-    title: str, run_event: str, finding_event: str, events: _t.Sequence[dict]
+    title: str,
+    run_event: str | tuple[str, ...],
+    finding_event: str | tuple[str, ...],
+    events: _t.Sequence[dict],
 ) -> str:
-    runs = [e for e in events if e.get("event") == run_event]
-    findings = [e for e in events if e.get("event") == finding_event]
+    """Fold events matching ANY of the given event names into a single mechanism section.
+
+    Accepts a tuple to survive event-name migrations — the fanout audit was `sibling_audit_run`
+    before this rename PR, and the jsonl log is append-only, so a rollup that hardcoded the
+    new name would silently drop every pre-rename row. Passing
+    `("fanout_audit_run", "sibling_audit_run")` folds both under the same "Fanout audit" header.
+    """
+    run_events = (run_event,) if isinstance(run_event, str) else run_event
+    finding_events = (finding_event,) if isinstance(finding_event, str) else finding_event
+    runs = [e for e in events if e.get("event") in run_events]
+    findings = [e for e in events if e.get("event") in finding_events]
     if not runs and not findings:
         return ""
 
@@ -166,7 +178,12 @@ def render_rollup(events: _t.Iterable[dict], *, rendered_ts: str | None = None) 
 
     parts = [header]
     for section in (
-        _mechanism_section("Sibling-call audit", "sibling_audit_run", "sibling_audit_finding", events),
+        _mechanism_section(
+            "Fanout audit",
+            ("fanout_audit_run", "sibling_audit_run"),
+            ("fanout_audit_finding", "sibling_audit_finding"),
+            events,
+        ),
         _mechanism_section("Convention check", "convention_check_run", "convention_check_finding", events),
         _ratchets_section(events),
         _misses_section(events),
