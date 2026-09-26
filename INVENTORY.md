@@ -9,6 +9,13 @@ and one-off components are omitted; shared/cross-cutting things are not.
 every discovery step paid ~39k tokens to read eight areas to use one. Each area file below is
 self-contained.
 
+**Inventory covers public/canonical things only.** Private / non-exported helpers with opaque names
+(`_impl`, `_catkey`, module-internal utilities) are NOT catalogued here and never will be — the
+reader has to `grep` the source before concluding no equivalent exists. Inventory is a floor for
+discovery, not a ceiling: an uninventoried helper may still exist. Automated reviewers that cite this
+set as ground truth (e.g. the convention-check reviewer) must grep source too, not just read
+inventory.
+
 | Area you're touching | Open | Size |
 |---|---|---|
 | Anything cross-cutting — shutdown, update, the WS rails, the log rail, image selection, task gating | [`docs/inventory/FLOWS.md`](docs/inventory/FLOWS.md) | 4 KB |
@@ -18,6 +25,7 @@ self-contained.
 | `api/src/` — HTTP/WS handlers | [`docs/inventory/JULIA_API.md`](docs/inventory/JULIA_API.md) | 8 KB |
 | `python/cecelia/` — utils, writers, task runners | [`docs/inventory/PYTHON.md`](docs/inventory/PYTHON.md) | 8 KB |
 | `mcp/` — the read-only observer server | [`docs/inventory/MCP.md`](docs/inventory/MCP.md) | 9 KB |
+| Plots + analysis-board panels (`INTERACTIVE_VIEWS` / `CLUSTER_PANELS`) | [`docs/inventory/PLOTS.md`](docs/inventory/PLOTS.md) | 1 KB |
 | Blackboard fingerprint extractors — stain / modality / tissue | [`docs/inventory/fingerprint_extractors.md`](docs/inventory/fingerprint_extractors.md) | 6 KB |
 
 **FRONTEND.md and JULIA_APP.md are still big — slice them.** `grep -n -i '<thing>' docs/inventory/FRONTEND.md`
@@ -33,6 +41,7 @@ These are the duplications that have actually cost us. Full detail in `CLAUDE.md
 - **Spawning Python** — `run_py` (`app/src/py_runner.jl`). Never a hand-rolled `run(pipeline(...))`.
 - **Channel names → indices** — `channel_indices` + `channel_names` (`app/src/model/image.jl`).
 - **Any UI control** — the canonical component in [`docs/ui/PRIMITIVES.md`](docs/ui/PRIMITIVES.md). Never a new variant of a primitive that already exists.
+- **Any plot / analysis-board panel** — register it via `INTERACTIVE_VIEWS` or `CLUSTER_PANELS`. Full reference [`docs/PLOTS.md`](docs/PLOTS.md); inventory pointer [`docs/inventory/PLOTS.md`](docs/inventory/PLOTS.md). Never a bespoke panel component or `/plots/…` route.
 
 ## Keeping this current
 
