@@ -20,27 +20,21 @@
 
 import JSON3
 
-# The `legacy` profile is reserved for the D10 read-time default on pass entries missing the
-# profile field. It must never be creatable (would collide with the sentinel) or selectable (a
-# user picking "legacy" as their identity is meaningless).
-const _KIWI_RESERVED_PROFILE_NAMES = ("legacy",)
-
-# The frontend's display alias for `default` (mirror of `DEFAULT_PROFILE_DISPLAY_NAME` in
-# `frontend/src/utils/profileApi.ts`). Reserved at CREATE-time so no new profile can visually
-# collide with the picker's synthetic default row. Deliberately NOT in the tuple above — that one
-# also drives the roster's hide-list, and hiding a pre-existing on-disk profile literally named
-# `peanut` would be worse than the (already tag-differentiated) visual clash.
-const _KIWI_DEFAULT_DISPLAY_ALIAS = "peanut"
+# Reserved profile names — never creatable, never listed in the roster:
+#   `legacy` — D10 read-time default for pass entries missing the profile field. A user picking
+#              "legacy" as their identity would collide with the sentinel and is meaningless.
+#   `peanut` — the frontend's display alias for `default` (mirror of `DEFAULT_PROFILE_DISPLAY_NAME`
+#              in `frontend/src/utils/profileApi.ts`). Blocked here so no new profile can visually
+#              collide with the picker's synthetic default row.
+const _KIWI_RESERVED_PROFILE_NAMES = ("legacy", "peanut")
 
 # Kiwi profile names must be usable as directory names AND look like git-author-shaped labels.
 # Deliberately narrow: lower-ASCII alnum + `-` + `_`, 1..32 chars. Rejects `.` / `/` / whitespace
-# / uppercase (which fails on case-insensitive filesystems), every reserved name, AND the
-# default's display alias (see the constant above).
+# / uppercase (which fails on case-insensitive filesystems), and every reserved name.
 function _valid_kiwi_profile_name(name::AbstractString)::Bool
     s = String(name)
     (1 <= length(s) <= 32) || return false
     s in _KIWI_RESERVED_PROFILE_NAMES && return false
-    s == _KIWI_DEFAULT_DISPLAY_ALIAS && return false
     all(c -> ('a' <= c <= 'z') || ('0' <= c <= '9') || c == '-' || c == '_', s)
 end
 
