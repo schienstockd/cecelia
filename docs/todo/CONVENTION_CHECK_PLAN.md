@@ -135,12 +135,13 @@ Inventory is a floor, not a ceiling. A canonical public helper may exist in the 
 
 ### Inventory gaps worth closing
 
-No domain has zero inventory — nothing structurally missing — but two small write-ups would materially help:
+No domain has zero inventory — nothing structurally missing — but three small write-ups would materially help:
 
 1. A short plot-registry entry in `docs/inventory/` pointing at `docs/PLOTS.md` and naming `INTERACTIVE_VIEWS` / `CLUSTER_PANELS`.
 2. A note in each inventory file that private helpers are NOT inventoried, so the reviewer must grep source before saying "no equivalent."
+3. **Codify the module-shell convention** in `docs/ui/PRIMITIVES.md` or `frontend/CLAUDE.md`: "New module pages match `ChainModule`'s full-height flex-column shape (toolbar top, content below) — use `ModulePage layout="fill"` for standalone pages, or match `ChainModule` directly for pipeline surfaces. No bordered `surface-1` box scaffolding." Named as gap by the 2026-09-26 dry-run — Finding #4 was reachable but weakest, and a less-thorough reviewer run plausibly misses it without this line. **Close this one before wiring the reviewer unattended.**
 
-These are not blockers on shipping the reviewer — the reviewer can read `PLOTS.md` directly and can be prompt-instructed to grep source — but they narrow the surface area an inventory reader has to remember.
+Items 1 and 2 are not blockers on shipping the reviewer. Item 3 is the pre-wire cleanup surfaced by the dry-run.
 
 ## Case studies — real drift the reviewer must catch
 
@@ -169,6 +170,8 @@ Concrete cases from the repo's own history. The reviewer prompt is calibrated so
 **What actually happened**: Dominik reviewed, filed feedback, and the fix landed as **three separate follow-up commits** — `81b6d2e3` (canonical primitives), `7df00c55` (canonical divider), `20b11c7f` (collapsed one-mechanism-not-two). Fix commit message states verbatim: *"I hand-rolled a list + bespoke layout + non-canonical buttons + attachment thumbnails that didn't show the annotations. Rewritten against the frontend inventory."*
 
 **Reviewer expectation**: On the initial `19738976` diff, the reviewer must produce **at least four `should reuse` findings** citing `SelectionTable`, `ConfirmDeleteButton`, `usePanelResize`, `ChainModule` layout, and — likely a fifth — `composeImageWithOverlay`. All five canonicals are named in `docs/ui/PRIMITIVES.md` and/or `docs/inventory/FRONTEND.md`. Missing this case = reviewer is broken.
+
+**Dry-run result (2026-09-26)**: **5/5 CAUGHT.** A fresh sonnet subagent given only the reviewer prompt (§Reviewer prompt above) and `git show 19738976` produced all five `should reuse` findings with direct doc citations (PRIMITIVES.md:27 for SelectionTable, PRIMITIVES.md:41 for ConfirmDeleteButton, PRIMITIVES.md:52-53 for usePanelResize) plus grep-surfaced hits for `composeImageWithOverlay`. **Finding #4 (module shell shape) was the weakest** — no doc line pre-existed naming "new module pages must match `ChainModule`'s toolbar+split shape"; the reviewer inferred it from `ModulePage layout="fill"` consumers. A less-thorough run could miss #4. Recommend closing that gap before wiring the reviewer unattended (see §Inventory gaps worth closing).
 
 **Why the audit's inventory finding matters here**: `SelectionTable` and `ConfirmDeleteButton` are catalogued in `docs/ui/PRIMITIVES.md`, which is currently **not** referenced by any inventory file. If the reviewer prompt says "read inventory" and stops, it misses this case. Hence the requirement (§Reviewer prompt step 3) to read `PRIMITIVES.md` and `COPY.md` explicitly.
 
@@ -226,6 +229,18 @@ Sibling-audit ~30s. Convention check ~30s. Total ~60s per commit. If both routin
 - Run both reviewers in parallel rather than sequentially.
 - Fold the addition-hunk pass into the sibling reviewer (single prompt, two search shapes). Costs prompt clarity.
 
+### Cost-gradient check — unaudited
+
+Raised in review (2026-09-26): sibling-audit's case for existence was earned from concrete evidence — three confirmed case-F pairs (#816→#822, #828→#839, #1101→#1151) plus a 3-month PR-trail audit that measured value against overhead. This plan justifies a *second* reviewer largely by **structural analogy** to sibling-audit — same fresh-subagent shape, similar failure class, therefore similar cost/return. That analogy is unaudited: the case-F cost-gradient evidence does not automatically transfer to convention drift.
+
+What that means honestly:
+
+- The four case studies in this plan (blackboard, `pop_df`, h5ad, JSON) are *acceptance criteria* — the reviewer must catch these — but they are not *cost-gradient evidence*. They say "worth catching," not "worth catching at this overhead."
+- **The effectiveness log is the answer to this critique.** Once the reviewer runs at N=5–10 real commits, the log rows (catch rate, false-positive rate, `outcome=fixed_pre_commit` fraction, per-run duration) let a similar retrospective audit compute return-per-overhead against a real denominator. That's what earned sibling-audit its keep; the same discipline earns or unearns this reviewer's.
+- **Ship-order implication**: this argues for wiring the log BEFORE (or at least alongside) wiring the reviewer, so the first commits under the new reviewer are captured with zero backfill. Aligns with §Open decisions #2.
+
+Not resolved in this plan. Named so it isn't waved through on momentum.
+
 ## Wiring
 
 Same shape as sibling-audit — four touchpoints:
@@ -256,7 +271,7 @@ This closes the gap flagged in the effectiveness plan's [Ceiling](EFFECTIVENESS_
 2. **Ship order**: this reviewer before, after, or alongside the effectiveness log? Building the reviewer first gives the log something new to measure; building the log first means the first N reviewer runs are captured with zero backfill. Weak lean: reviewer first — case-studies give it acceptance criteria, log follows once mechanism is stable.
 3. **Escape valve for tests-only diffs**: proposed above. Fine grain or too coarse? Some tests do add fixtures worth checking.
 4. **PR CI check severity**: hard required check (blocks merge), or advisory (comments only)? Hard = teeth; advisory = safer while calibrating.
-5. **Reviewer prompt v1 — dry-run against the blackboard case first?** Strongest ground-truth is `19738976`. Suggest a one-shot dry-run: point the reviewer prompt at that diff and check whether it produces the four `should reuse` findings §Case A predicts. If yes, prompt ships. If no, prompt is wrong and needs iteration before wiring in.
+5. ~~**Reviewer prompt v1 — dry-run against the blackboard case first?**~~ **Done 2026-09-26: dry-run passed 5/5.** Sonnet subagent given the prompt verbatim + `git show 19738976` produced all five predicted `should reuse` findings with direct doc citations. Finding #4 (module shell shape) is the one thin place, addressed by §Inventory gaps worth closing item 3.
 6. **Latency threshold**: at what wall-clock does pre-commit friction become a problem? Number worth naming now so we don't argue about it later.
 7. **Close the two inventory gaps first?** §Inventory scope names two small write-ups (plot-registry inventory entry, private-helpers caveat note). Not blockers, but cheap and would tighten the reviewer's floor. Do them before or after reviewer ships?
 
