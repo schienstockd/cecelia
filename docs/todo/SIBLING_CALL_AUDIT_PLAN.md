@@ -1,6 +1,6 @@
 # Sibling-call audit — parked plan
 
-**Status:** planning (2026-09-26) · no branch yet · unbuilt.
+**Status:** **P1 + P2 built** (2026-09-26) on `docs/drift-catch-modes`; P0 skipped in favour of running live — the reviewer is now wired into every reservations recital via [`CLAUDE.md`](../../CLAUDE.md) and its prompt lives at [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md).
 
 **Related:**
 - Parent decision: [`DRIFT_PREVENTION_ASSESSMENT.md`](DRIFT_PREVENTION_ASSESSMENT.md) — declined the general harness (2026-09-26). This plan reopens **one** of the three shapes that doc kept as "future option" (the scoped adversarial-review subagent), because the parent doc's own trigger — *"one is chance; two is a pattern that pays for a scoped adversarial reviewer"* — has already fired.
@@ -22,37 +22,28 @@ Plus one live open instance the fix PR self-disclosed: **#812** flagged `ViewerP
 
 ## Locked decisions
 
-1. **Model = `claude-sonnet-5`.** Not Opus. The task is bounded (read the diff, grep the repo, list siblings), doesn't reward long reasoning chains, and Opus's reasoning overhead has been shown to burn tokens without changing the answer on tasks this small.
+1. **Model = `claude-sonnet-5`.** Not Opus. The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match — many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at a cost that accumulates because the reviewer runs on *every* commit. The reviewer surfaces **candidates** for the user's judgement — the `confirmed`/`plausible` confidence marker does the calibration work Opus would otherwise refine. Not decided by measurement — decided by task-shape reasoning + the user's stated frustration with Opus over-reasoning on tight tasks; revisit if live runs show sonnet misses siblings that Opus would have caught.
 2. **Trigger = the pre-commit reservations step, in-session.** Not a git hook, not CI. The implementing agent already recites reservations before every commit ([`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*); the reviewer's findings fold into that recital under a "sibling-call audit" heading. Zero-latency; user decides at the same moment they were already deciding.
 3. **Isolation = a fresh subagent.** `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: …)`. Empty conversation — the reviewer must not inherit the implementing session's reasoning. That's the whole "adversarial" property.
 4. **Scope = by symptom, not by directory.** The reviewer's prompt says: *"For each guard, resolver, or helper this diff modifies, grep for other callers in the repo. Report any caller the diff didn't update but arguably should have."* The three confirmed case-F pairs sit in `frontend/src/utils`, a Julia vault-path helper, and canvas composables respectively — a reviewer scoped to the parent doc's proposed directories (`frontend/src/components/`, `app/src/gating/`, `app/src/tasks/chain/`) would have caught **zero of three**.
-5. **Reviewer prompt lives in the repo, versioned.** As `docs/dev/sibling-call-audit-prompt.md`, cited from [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits* → *Reservations*. Not baked into a hook, not embedded in a skill file the user can't easily edit — the shape of what "sibling" means will iterate.
-6. **Cost gate before it goes standing — P0 measures first.** Run it manually on the next 3–5 PRs the user would have committed anyway; capture findings, note signal-to-noise. If it surfaces at least one real sibling in that window it's paying; if it's all noise, tighten the prompt before making it default.
+5. **Reviewer prompt lives in the repo, versioned.** As [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md), cited from [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits* → *Reservations*. Not baked into a hook, not embedded in a skill file the user can't easily edit — the shape of what "sibling" means will iterate. Placed under `docs/ai-assist/` (not the parent doc's speculative `docs/dev/`) because that directory already houses AI-assist process docs (`OBSERVER.md`, `QC-PROCESS.md`) and doesn't need to be created for one file.
+6. **P0 (measure-first) skipped.** Cost gate dropped in favour of running the reviewer live from commit 1. Rationale: manual-invocation gate was recognised as forgettable — by the time the reservations recital fires, the moment to have asked has passed. The prompt's own short-circuit (`no sibling-call audit needed`) plus the docs-only / new-file-only skip valves make the invocation cost near-zero on trivial commits. Signal:noise gets measured in prod use; if the reviewer proves noisy, tighten the prompt via a normal doc edit.
 7. **No GitHub CI backstop.** Considered and ruled out: runner minutes are free on the public repo, but the reviewer call itself needs a Claude invocation, and the Enterprise-seat-via-`claude`-CLI setup (memory-noted: no direct Anthropic API access) isn't shaped for headless CI. Copilot is a different vendor and does not substitute. Local-only.
 8. **The reviewer is the ONLY hook of the three the parent doc considered that we build.** `PreToolUse` write-gates and `SessionStart` context injection stay declined — the parent doc's cost-gradient reasoning against them still holds; the nested-CLAUDE.md discipline (verified: `./CLAUDE.md`, `./frontend/CLAUDE.md`, `./app/CLAUDE.md` all exist) is load-bearing.
 
 ## Phases
 
-Each phase is independently useful; stop after any of them if the evidence stops paying.
+### P0 — Measure (SKIPPED per Decision 6)
 
-### P0 — Measure (unbuilt)
+Original plan called for manual invocation on 3–5 PRs first as a signal:noise gate. Dropped — the manual gate was itself the failure mode (forgotten at the moment of reservations). Measurement now happens in prod use.
 
-Manually invoke a fresh sonnet subagent on the next 3–5 PRs before commit. Prompt draft: *"Here is `git diff --staged`. For each guard, resolver, or helper it modifies, grep the repo for other call sites. Report any caller the diff didn't update but arguably should have. Include file:line for each finding. Under 300 words."* Track:
+### P1 — Encode the reviewer prompt (SHIPPED)
 
-- How many findings per PR (target ≥1 real sibling across the 3–5 sample).
-- Ratio of real to noise findings.
-- Wall-clock cost.
-- Whether Opus disagrees with Sonnet on any of these (single Opus re-run per PR, spot check).
+[`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md) — the exact prompt the subagent gets, plus the mechanism note (how to spawn) and the escape valves (docs-only, new-file-only). The `## Reviewer prompt` section is what gets passed verbatim; everything above it is context for the human reader.
 
-Decision gate at end of P0: proceed to P1 only if signal-to-noise justifies standing invocation. If it doesn't, park this plan with the P0 numbers written up.
+### P2 — Reservations recital picks it up automatically (SHIPPED)
 
-### P1 — Encode the reviewer prompt
-
-Write `docs/dev/sibling-call-audit-prompt.md` from the P0-iterated prompt. Cite it from `CLAUDE.md`'s Reservations section: *"Before commit, spawn a fresh subagent per `docs/dev/sibling-call-audit-prompt.md` and fold its findings into the reservations recital under a 'Sibling-call audit' heading."*
-
-### P2 — Reservations recital picks it up automatically
-
-Update `CLAUDE.md`'s reservations rule so the recital template includes a mandatory *"Sibling-call audit:"* line (either the reviewer's findings or an explicit "no sibling-call audit run" note). No enforcement code — a rule the agent follows the way it follows the reservations rule itself.
+Added a paragraph to [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits* → immediately after the existing reservations rule. Requires spawning the reviewer + folding findings under a `**Sibling-call audit:**` heading, always printed (so the record shows the check ran even on skips).
 
 ## Reservations
 
