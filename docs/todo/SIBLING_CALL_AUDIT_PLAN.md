@@ -20,6 +20,20 @@ The parent decision doc says the reviewer earns its keep at a *second* case-F. A
 
 Plus one live open instance the fix PR self-disclosed: **#812** flagged `ViewerPanel.loadObsCols:470` as an unfixed sibling — still sitting in the codebase, not counted above.
 
+## What actually justifies this build
+
+Not the parent doc's cost-gradient argument. That argument justifies **not** building `PreToolUse` / `SessionStart` (they'd reprice the wrong cost, and pay discovery upfront on every session including the 90% that don't need it). It does **not** carry over to justify this reviewer — which is not a hook in the repricing sense at all. Findings are advisory, folded into a recital; nothing here blocks a write or makes the cheap path expensive.
+
+The actual argument for this build is smaller and different: **a fresh-context sonnet subagent doing targeted grep is cheap on trivial diffs (short-circuit + escape valves keep the invocation near-zero) and catches more than a human eyeball skim of a fresh diff — because the human has just written the fix and knows what it's supposed to do, so their eye slides past the siblings that don't fit the mental model of "the change I just made"**. That's the case-F failure mode. Fresh context breaks the mental-model grip.
+
+Both arguments can be right in isolation. Keeping straight which claim justifies which build matters — this reviewer is a sharper *catch* tool slotted into the existing catch layer, not a new *prevention* layer.
+
+## Leading indicator — watch this before you watch findings
+
+**"Did the `**Sibling-call audit:**` heading print on every non-trivial commit?"** This is the leading indicator, before "did it catch anything." A silently-skipped recital looks identical to a genuinely-empty audit — zero findings and no output are indistinguishable at the record level. If the heading is missing, the whole mechanism is dark.
+
+Concrete failure the trigger is watching for: on 2026-09-26 (the day this shipped), a session ran reservations on `audit/plot-grid-tile` and skipped the sibling-call audit entirely — satisfied the memory-cached "state reservations" habit without noticing CLAUDE.md had grown a companion sibling-call rule. Structural fix (fold the two rules into one paragraph in CLAUDE.md, plus an auto-memory) shipped in the same commit as this note. If it re-occurs on another agent or another install, the mechanism has a second, deeper, enforcement-tier problem — reach for a `Stop` hook.
+
 ## Locked decisions
 
 1. **Model = `claude-sonnet-5`.** Not Opus. The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match — many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at a cost that accumulates because the reviewer runs on *every* commit. The reviewer surfaces **candidates** for the user's judgement — the `confirmed`/`plausible` confidence marker does the calibration work Opus would otherwise refine. Not decided by measurement — decided by task-shape reasoning + the user's stated frustration with Opus over-reasoning on tight tasks; revisit if live runs show sonnet misses siblings that Opus would have caught.
@@ -41,16 +55,18 @@ Original plan called for manual invocation on 3–5 PRs first as a signal:noise 
 
 [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md) — the exact prompt the subagent gets, plus the mechanism note (how to spawn) and the escape valves (docs-only, new-file-only). The `## Reviewer prompt` section is what gets passed verbatim; everything above it is context for the human reader.
 
-### P2 — Reservations recital picks it up automatically (SHIPPED)
+### P2 — Reservations recital picks it up automatically (SHIPPED, then folded, then reshaped to Kiwi-weave)
 
-Added a paragraph to [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits* → immediately after the existing reservations rule. Requires spawning the reviewer + folding findings under a `**Sibling-call audit:**` heading, always printed (so the record shows the check ran even on skips).
+Iteration history: first shipped as a separate paragraph in [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*, adjacent to the existing reservations rule. Same day, a session's memory-cached "state reservations" habit fired the older rule and stopped without emitting the heading. Folded into a single reservations rule where the sibling-call heading was a mandatory `(b)` half. **Reshaped again** to the Kiwi claims+references pattern the user prefers: findings weave INTO the reservations list as prioritized items (a `**confirmed**` sibling becomes a reservation item, not a separate output block), followed by the raw reviewer output verbatim under a `_Sibling-call audit (evidence):_` fold so each woven item cites its source, then a one-line tail `_Sibling-call audit: run_` (or a skip variant) as the leading indicator. Auto-memory `feedback_reservations_include_sibling_call.md` binds the whole thing together for future sessions.
+
+**Why the weave over the fold:** the fold kept sibling findings under their own heading — easy for Opus to paste raw and skate past. The weave forces Opus to *engage with* the findings (rank them, integrate them into the same voice as the other reservations); the evidence fold prevents Opus from filtering a finding out silently; the tail line is the "did it run" indicator. Kiwi-shape (claims + citation) is the user's established pattern.
 
 ## Reservations
 
-- **Untested at N=0.** The whole plan turns on the P0 measurement. If P0 says the reviewer misses real cases or fabricates noise, this plan parks.
-- **Sonnet vs Opus not measured for this specific task.** Decision 1 is grounded in general reasoning-overhead feedback, not a head-to-head on sibling-call review. P0's Opus spot-check is where that gets checked.
-- **Cost per invocation unknown.** Every reservations recital would spawn one reviewer subagent — even on diffs where no fix is being made (a purely additive PR). P1's prompt should short-circuit on "diff contains no fix-shaped hunks" to avoid the always-on tax.
-- **Symptom scope is a heuristic.** "Guards, resolvers, helpers" is loose. A fix to a copy-pasted block that isn't a helper (raw duplicated logic) is still a case-F candidate and the current phrasing may miss it. Iterate the prompt in P0.
+- **First live run (2026-09-26) on `audit/plot-grid-tile` produced useful output.** Two fix-shaped hunks, classified cleanly (sole-caller, structurally-immune, deliberately-separate-algorithm, latent-recur). The latent-only finding on `CanvasPanel.vue` is the highest-value shape — a forecasted case-F, not a historical one. Single data point.
+- **Sonnet vs Opus not measured for this specific task.** Decision 1 is grounded in general reasoning-overhead feedback, not a head-to-head on sibling-call review. Revisit if live runs show sonnet missing what opus would catch.
+- **Enforcement-tier collision (structural).** The reviewer only fires if the reservations recital fires, and the recital is itself a CLAUDE.md instruction — the same advisory tier whose reliability was the original problem. The P2 fold + auto-memory close the local case (session's own memory-cached shortcut); real cross-session enforcement would need a `Stop` hook that fails if the last agent output doesn't contain the heading. Not built. Watch the leading indicator (above) — reach for the hook only if it re-fails.
+- **Symptom scope is a heuristic.** "Guards, resolvers, helpers" is loose. A fix to a copy-pasted block that isn't a helper (raw duplicated logic) is still a case-F candidate and the current phrasing may miss it. Iterate the prompt as failures surface.
 - **Reviewer can be talked into "no siblings" by a well-written diff.** Fresh context helps but isn't proof against a fix whose commit message convincingly explains why the sibling shouldn't be updated. Doesn't invalidate the mechanism; means findings are advisory, not blocking.
 - **Doesn't retroactively catch #812's still-open sibling.** That's a today-in-the-codebase bug the reviewer would only catch on the next PR that touches `ViewerPanel.loadObsCols` — filing it as a separate `docs/TODO.md` item is out of scope for this plan but worth the two-line note.
 
