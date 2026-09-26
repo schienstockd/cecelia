@@ -70,8 +70,9 @@ export function tileGrid(
   // `cols`: pin the column count instead of picking it from the workspace. Escape hatch for the
   // narrow-workspace collapse — auto picks `ceil(sqrt(n))` then falls back to `colsAcross` when a cell
   // would go below the floor, and on a very narrow (or unmeasured) viewport that lands on 1. A pinned
-  // value skips the floor check on the WIDTH: cells shrink to `(W-gap)/cols`, the height floor still
-  // applies so rows keep flowing down when the vertical space runs out. Clamped to [1, n].
+  // value HONOURS the user's column count even when cells fall below the floor: the width floor still
+  // applies (`.panel { min-width: 340px }` — a shorter stride would overlap panels), so the grid may
+  // extend past the viewport and the canvas scrolls horizontally to reveal it. Clamped to [1, n].
   opts: { gap?: number; mode?: 'fill' | 'square'; cols?: number } = {},
 ): TileGrid {
   const gap = opts.gap ?? 8
@@ -103,10 +104,20 @@ export function tileGrid(
     cols = colsAcross(W, w, gap)
   }
   // A pinned column count keeps the user's chosen columns even when cells fall below the floor — the
-  // knob is the escape hatch, so honour it. The height floor still applies, so rows still flow down.
-  if (pinned) w = Math.max(1, w)
+  // knob is the escape hatch, so honour it. The width floor still applies: `.panel { min-width:
+  // 340px }` refuses to shrink below MIN_TILE_W anyway, so handing out a narrower stride only makes
+  // adjacent panels overlap (the "4 columns pinned in a narrow workspace → plots overlap 112px"
+  // report). The height floor still applies, so rows still flow down. When cells hit the width floor
+  // the grid extends past the viewport and the canvas scrolls — see FloatingCanvasHost.
+  if (pinned) w = Math.max(MIN_TILE_W, w)
   const rows = Math.ceil(count / cols)
-  return finish(cols, rows, w, Math.max(MIN_TILE_H, Math.floor(cellH(H, rows, gap))), gap)
+  // Aspect cap: never taller than wide. Without it, a single-row layout (rows === 1, count ≤ cols)
+  // stretched to the full workspace height — three plots pinned to 3 columns in a ~1080x700 workspace
+  // came out ~350x684, the "Tile makes plots artificially tall" report. Multi-row grids already have
+  // cellH ≤ w naturally (the near-square shape), so the cap is a no-op for them. Cap sits between the
+  // floor (min-cell) and the computed cellH so a cramped viewport still uses the readable floor.
+  const rawH = Math.floor(cellH(H, rows, gap))
+  return finish(cols, rows, w, Math.max(MIN_TILE_H, Math.min(rawH, w)), gap)
 }
 
 /** Top-left of panel `i`'s cell, row-major so the placement follows the panel order. */
