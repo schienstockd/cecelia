@@ -268,21 +268,34 @@ merge). Full conventions — branch naming, commit style, how PRs are opened, re
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
 commit or push proactively.** A "go ahead" to do the work is not approval to commit it.
 
-**Agents: state your reservations BEFORE every commit — ONE prioritized list with sibling-call
-findings woven in, evidence cited underneath.** Kiwi-shape: claims + references. When asked to
-commit/push (or asked for the PR url — that request itself calls the commit): spawn a fresh
-`sonnet` subagent per [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](docs/ai-assist/SIBLING_CALL_AUDIT.md)
-with `git diff --staged`, read its findings, then emit ONE prioritized reservations list where
-**confirmed** siblings become items ranked by how much they matter, **plausible** ones fold in with
-the right hedge, latent-only ones as forecasted-risk notes — alongside the usual unverified /
-perf / edge-case / silent-no-op items. Follow the list with the raw reviewer output verbatim under
-a `_Sibling-call audit (evidence):_` fold, so each woven item cites its source (a `**confirmed**`
-reservation like "sibling of `_load_set` at `_read_project:112` unpatched" points back to the raw
-finding for the user to verify). Close with a one-line tail — `_Sibling-call audit: run_` (or
-`_skipped — docs-only diff_` / `_skipped — no modified code_` / `_no sibling-call audit needed_`) —
-the leading indicator that proves the check ran; missing line = the mechanism went dark. Don't
-reassure or wait to be asked "any reservations?". Catches case-F drift: a fix that silently leaves
-divergent copies broken. See [`docs/DEV.md`](docs/DEV.md) → *Commits*.
+**Agents: state your reservations BEFORE every commit — ONE prioritized list with sibling-call AND
+convention-check findings woven in, evidence cited underneath.** Kiwi-shape: claims + references.
+When asked to commit/push (or asked for the PR url — that request itself calls the commit): spawn
+**two** fresh `sonnet` subagents in parallel — one per [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](docs/ai-assist/SIBLING_CALL_AUDIT.md)
+(fix drift outward from the hunk) and one per [`docs/ai-assist/CONVENTION_CHECK.md`](docs/ai-assist/CONVENTION_CHECK.md)
+(convention drift inward from inventory). Read their findings, then emit ONE prioritized
+reservations list where **confirmed** siblings + **should reuse** convention findings become items
+ranked by how much they matter, **plausible** / **potential duplicate** fold in with the right
+hedge, latent-only ones as forecasted-risk notes — alongside the usual unverified / perf /
+edge-case / silent-no-op items. Follow the list with the raw reviewer outputs verbatim under two
+folds — `_Sibling-call audit (evidence):_` and `_Convention check (evidence):_` — so each woven
+item cites its source and the user can verify the finding wasn't dropped or misrepresented. Close
+with **two one-line tails**:
+
+- `_Sibling-call audit: run_` (or `_skipped — docs-only diff_` / `_skipped — no modified code_` /
+  `_no sibling-call audit needed_`)
+- `_Convention check: run_` (or `_skipped — docs-only diff_` / `_skipped — no additions_` /
+  `_skipped — tests-only_` / `_no convention check needed_`)
+
+Missing either tail = that mechanism went dark. Don't reassure or wait to be asked "any
+reservations?". Sibling-call catches case-F fix drift; convention check catches convention drift
+(a new helper/component/endpoint that duplicates an existing canonical). See
+[`docs/DEV.md`](docs/DEV.md) → *Commits*.
+
+**Convention-check is advisory for now**: findings land in the reservations recital and (once
+wired) the effectiveness log, but do not block a commit. Locked decision #4 in
+`docs/todo/CONVENTION_CHECK_PLAN.md` — flip to hard-required once the effectiveness log shows the
+FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
 
 ---
 
