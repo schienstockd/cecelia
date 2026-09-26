@@ -33,11 +33,16 @@ import typing as _t
 SCHEMA_VERSION = 1
 
 #: The full closed event taxonomy from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Event taxonomy.
+#: `_finding_resolved` variants added by FINDINGS_EMISSION_PLAN.md P3 — written by the commit
+#: hook when the author quotes a slug in a `[slug: outcome]` pair. Rollup joins them to the
+#: matching `_finding` row via the slug.
 EVENT_TYPES = frozenset({
     "fanout_audit_run",
     "fanout_audit_finding",
+    "fanout_audit_finding_resolved",
     "convention_check_run",
     "convention_check_finding",
+    "convention_check_finding_resolved",
     "ratchet_hit",
     "human_override",
     "retrospective_miss",

@@ -304,7 +304,7 @@ def render_rollup(events: _t.Iterable[dict], *, rendered_ts: str | None = None) 
             ("fanout_audit_run", "sibling_audit_run"),
             ("fanout_audit_finding", "sibling_audit_finding"),
             events,
-            resolved_event=("fanout_audit_finding_resolved", "sibling_audit_finding_resolved"),
+            resolved_event="fanout_audit_finding_resolved",
         ),
         _mechanism_section(
             "Convention check",
