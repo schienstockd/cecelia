@@ -19,7 +19,7 @@ import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
-         fetchTerminalCommand, isValidProfileName,
+         fetchTerminalCommand, isValidProfileName, profileDisplayName,
          type ProfileRoster } from '../utils/profileApi'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -236,7 +236,7 @@ async function copyTerminalCommand(profile?: string) {
               <template v-else>
                 <span class="pp-name">
                   <i class="pi" :class="p.retired ? 'pi-user-minus' : 'pi-user'" />
-                  {{ p.name }}
+                  {{ profileDisplayName(p) }}
                   <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-2xs">(~/.claude)</span>
                   <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
                   <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
@@ -248,7 +248,7 @@ async function copyTerminalCommand(profile?: string) {
                           class="cc-btn cc-btn-ghost cc-fs-xs"
                           :disabled="!!profilesBusy"
                           @click="pickProfile(p.name)"
-                          v-tooltip.bottom="`Switch to ${p.name} — the app will reload`">
+                          v-tooltip.bottom="`Switch to ${profileDisplayName(p)} — the app will reload`">
                     <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
                     Switch
                   </button>

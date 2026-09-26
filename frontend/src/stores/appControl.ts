@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchProfiles } from '../utils/profileApi'
+import { fetchProfiles, DEFAULT_PROFILE_DISPLAY_NAME } from '../utils/profileApi'
 
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
 // panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
@@ -23,6 +23,10 @@ export const useAppControlStore = defineStore('appControl', () => {
   // profile forces a reload (PreferencesModal.pickProfile), so this is only ever set once per
   // window session — no watch needed.
   const activeProfileName = ref<string>('default')
+  // Display alias for the magic `default` profile — same helper the picker uses. Header chip
+  // + any UI that reads the active identity should show this, not the raw API name.
+  const activeProfileDisplayName = computed(() =>
+    activeProfileName.value === 'default' ? DEFAULT_PROFILE_DISPLAY_NAME : activeProfileName.value)
   const profileCount = ref<number>(1)
 
   const _post = (url: string, body: unknown = {}) =>
@@ -64,7 +68,12 @@ export const useAppControlStore = defineStore('appControl', () => {
           needsProfilePick.value = false
           _clearJustPickedMarker()
         } else {
-          needsProfilePick.value = roster.profiles.length > 1
+          // Only count *selectable* profiles — a retired sibling can't be picked, so it must not
+          // trigger the picker (the picker would render a single clickable row alongside greyed-
+          // out retirees, forcing a redundant click). profileCount stays total-including-retired
+          // for the project-panel filter (retired profiles can still OWN projects).
+          const selectable = roster.profiles.filter(p => !p.retired).length
+          needsProfilePick.value = selectable > 1
         }
       } catch { needsProfilePick.value = false }
     } else {
@@ -249,7 +258,7 @@ export const useAppControlStore = defineStore('appControl', () => {
     return null
   }
 
-  return { dev, busy, message, setupRequired, needsProfilePick, activeProfileName, profileCount, worktrees, canSwitch,
+  return { dev, busy, message, setupRequired, needsProfilePick, activeProfileName, activeProfileDisplayName, profileCount, worktrees, canSwitch,
            updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
            updateChecking, updateBusy, updateMsg, updateDismissed,
            updateUrl, updateNotes, updatePublished, canApplyUpdate,
