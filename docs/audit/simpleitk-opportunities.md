@@ -100,9 +100,10 @@ is a one-line wrapper around `sitk.Resample` with a fixed `sitkLinear`.
 
 **Reuse opportunity.** If we ever add an ITK-backed drift estimator (§2.1), an image-fusion
 tile-stitch, or a per-frame rigid alignment for tracked cells, the same `ImageRegistrationMethod`
-recipe wants to be one helper — not copy-pasted. **Extract `python/cecelia/utils/sitk_registration.py`
-holding `register_rigid`, `register_affine`, and a shared `resample` and let `sitkibex.registration`
-route through it (or migrate the register task off `sitkibex` entirely and drop the vendor).**
+recipe wants to be one helper — not copy-pasted. **Extract a new `python/cecelia/utils/` module
+(not created yet, proposed name `sitk_registration.py`) holding `register_rigid`, `register_affine`,
+and a shared `resample` and let `sitkibex.registration` route through it (or migrate the register
+task off `sitkibex` entirely and drop the vendor).**
 
 **Touchpoints.** 1 new helper file, `editImages/register_run.py` update (10 lines), removal of
 `python/sitkibex/*` if we go the whole way (deletes 5 files, ~700 lines Apache-2.0 vendored) plus
