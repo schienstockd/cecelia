@@ -300,6 +300,12 @@ ui-copy = "node scripts/ui_copy_inventory.mjs"
 # meaningful. Package: python/cecelia/effectiveness/. Design: docs/todo/EFFECTIVENESS_LOG_PLAN.md.
 audit-rollup = "python scripts/audit_rollup.py"
 
+# Spawn both reviewers (fanout audit + convention check), emit `_run` events to the log, and
+# print the formatted recital body to stdout. The one-command replacement for the manual
+# "agent spawns two subagents, formats findings, emits events" protocol. Agent captures stdout
+# and appends to the commit message. See CLAUDE.md → Git & commits.
+recital = "python scripts/recital.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the

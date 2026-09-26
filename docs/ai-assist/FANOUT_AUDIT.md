@@ -27,14 +27,9 @@ The subagent's reply is used **twice** in the recital (Kiwi-shape: claims + refe
 
 **Model = sonnet, not Opus.** The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match. That's many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at cost that adds up when this runs on every commit. The reviewer surfaces candidates; Opus (implementing agent) synthesises the woven reservations from them.
 
-**Log emission — best-effort, after the reviewer returns.** The parent agent emits ONE `fanout_audit_run` event via `python scripts/log_event.py` at reviewer completion:
+**Log emission** — done automatically by `pixi run recital` (`python/cecelia/effectiveness/recital.py`) which is the standard invocation path (see root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*). Recital emits a `fanout_audit_run` event with `duration_s` (and `error` on failure) atomically with the reviewer spawn, so the parent agent can't silently skip. The full payload documented in [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) (`hunks_reviewed`, `escape_valve`) is not populated in v1 — parsing the reviewer output for those fields is deferred. Findings emission (`fanout_audit_finding`) also deferred — needs outcome-resolution design.
 
-```bash
-python scripts/log_event.py --event fanout_audit_run --payload \
-  '{"hunks_reviewed": <int>, "duration_s": <float>, "escape_valve": <null|"docs_only"|"no_modified_code"|"no_fix_hunk">}'
-```
-
-Failure to emit is NOT a commit blocker — the log is a best-effort collector, not a gate. If `scripts/log_event.py` is missing (older tree) or the write fails, tail-line the recital as usual and commit anyway. Findings emission (`fanout_audit_finding`) is deferred v1 — same reason as convention-check: needs outcome-resolution design. See [`CONVENTION_CHECK.md`](CONVENTION_CHECK.md) and [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md).
+Manual emission via `python scripts/log_event.py` remains available for ad-hoc / retrospective rows.
 
 ## Escape valves — skip the subagent when
 

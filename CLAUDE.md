@@ -268,19 +268,34 @@ merge). Full conventions — branch naming, commit style, how PRs are opened, re
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
 commit or push proactively.** A "go ahead" to do the work is not approval to commit it.
 
-**Agents: state your reservations BEFORE every commit — ONE prioritized list with fanout audit AND
+**Agents: state your reservations BEFORE every commit — ONE prioritized list with fanout AND
 convention-check findings woven in, evidence cited underneath.** Kiwi-shape: claims + references.
-When asked to commit/push (or asked for the PR url — that request itself calls the commit): spawn
-**two** fresh `sonnet` subagents in parallel — one per [`docs/ai-assist/FANOUT_AUDIT.md`](docs/ai-assist/FANOUT_AUDIT.md)
-(fix drift outward from the hunk) and one per [`docs/ai-assist/CONVENTION_CHECK.md`](docs/ai-assist/CONVENTION_CHECK.md)
-(convention drift inward from inventory). Read their findings, then emit ONE prioritized
-reservations list where **confirmed** siblings + **should reuse** convention findings become items
-ranked by how much they matter, **plausible** / **potential duplicate** fold in with the right
-hedge, latent-only ones as forecasted-risk notes — alongside the usual unverified / perf /
-edge-case / silent-no-op items. Follow the list with the raw reviewer outputs verbatim under two
-folds — `_Fanout audit (evidence):_` and `_Convention check (evidence):_` — so each woven
-item cites its source and the user can verify the finding wasn't dropped or misrepresented. Close
-with **two one-line tails**:
+When asked to commit/push (or asked for the PR url — that request itself calls the commit):
+
+```bash
+pixi run recital
+```
+
+`recital` (`python/cecelia/effectiveness/recital.py`) spawns both reviewers via `claude -p`,
+emits their `_run` events to the effectiveness log **atomically with the spawn** (so nothing
+can be silently skipped in autonomous mode — the failure that motivated this design was four
+consecutive reviewer runs where the parent skipped emission every time), and prints the
+formatted recital body — evidence folds + tail lines already in place — to stdout. Weave the
+printed `**confirmed**` / `**should reuse**` findings into your prioritized reservations list,
+tag each with an outcome in square brackets from the closed vocabulary:
+
+- `[fixed_pre_commit]` — the fix is in the diff you're about to commit.
+- `[shipped_with_finding: <reason>]` — shipping despite the finding; state why.
+- `[false_positive: <reason>]` — the finding is wrong; state why.
+- `[dropped_no_action: <reason>]` — raised but not resolved before session ended; state why.
+
+Then append the recital body to the commit message. Don't reassure or wait to be asked "any
+reservations?".
+
+- **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
+- **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework.
+
+_Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
 
 - `_Fanout audit: run_` (or `_skipped — docs-only diff_` / `_skipped — no modified code_` /
   `_no fanout audit needed_`)

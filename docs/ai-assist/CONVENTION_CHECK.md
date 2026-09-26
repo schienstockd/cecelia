@@ -27,16 +27,9 @@ The subagent's reply is used the same way the sibling's is:
 
 **Model = sonnet, not Opus.** Same reasoning as sibling — many small independent reads (diff → identify additions → grep inventory + repo), not one deep reasoning chain.
 
-**Log emission — best-effort, after the reviewer returns.** The parent agent emits ONE `convention_check_run` event via `python scripts/log_event.py` at reviewer completion:
+**Log emission** — done automatically by `pixi run recital` (`python/cecelia/effectiveness/recital.py`) which is the standard invocation path (see root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*). Recital emits a `convention_check_run` event with `duration_s` (and `error` on failure) atomically with the reviewer spawn, so the parent agent can't silently skip. The full payload documented in [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) (`additions_reviewed`, `escape_valve`, `cited_doc_refs`) is not populated in v1 — parsing the reviewer output for those fields is deferred. Findings emission (`convention_check_finding`) also deferred — needs outcome-resolution design (a finding only carries meaningful signal once labelled `fixed_pre_commit` / `false_positive` / etc.). Rows accumulate in `~/.cecelia-effectiveness/events.jsonl` for later rollup and usage-weighted spot-check.
 
-```bash
-python scripts/log_event.py --event convention_check_run --payload \
-  '{"additions_reviewed": <int>, "duration_s": <float>, "escape_valve": <null|"docs_only"|"no_additions"|"tests_only"|"no_additions_worth_checking">, "cited_doc_refs": [<paths the reviewer read>]}'
-```
-
-Failure to emit is NOT a commit blocker — the log is a best-effort collector, not a gate. If `scripts/log_event.py` is missing (older tree) or the write fails, tail-line the recital as usual and commit anyway; a missed row is invisible in aggregate, not a bug in the reviewer.
-
-**Findings emission (`convention_check_finding`) is deferred v1** — needs outcome-resolution design (findings only carry meaningful signal once labelled `fixed_pre_commit` / `false_positive` / etc., which happens between recital and commit). Schema supports it; wire-in comes when the resolution flow is designed. Rows accumulate in `~/.cecelia-effectiveness/events.jsonl` for later rollup and usage-weighted spot-check — see [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md).
+Manual emission via `python scripts/log_event.py` remains available for ad-hoc / retrospective rows.
 
 ## Escape valves — skip the subagent when
 
