@@ -1,6 +1,6 @@
 # Drift detection — prior art
 
-Scope search done 2026-09-26 so the reviewer stack (see [`SIBLING_CALL_AUDIT_PLAN.md`](../todo/SIBLING_CALL_AUDIT_PLAN.md), [`CONVENTION_CHECK_PLAN.md`](../todo/CONVENTION_CHECK_PLAN.md), [`EFFECTIVENESS_LOG_PLAN.md`](../todo/EFFECTIVENESS_LOG_PLAN.md), [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md)) can be presented as a considered choice rather than an unaware one.
+Scope search done 2026-09-26 so the reviewer stack (see [`FANOUT_AUDIT_PLAN.md`](../todo/FANOUT_AUDIT_PLAN.md), [`CONVENTION_CHECK_PLAN.md`](../todo/CONVENTION_CHECK_PLAN.md), [`EFFECTIVENESS_LOG_PLAN.md`](../todo/EFFECTIVENESS_LOG_PLAN.md), [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md)) can be presented as a considered choice rather than an unaware one.
 
 ## What "drift" means here
 
@@ -22,7 +22,7 @@ Three shapes we have actually hit:
 
 ## What we do instead, and why
 
-- **Two reviewers, task-scoped prompts.** One catches fanout drift (`SIBLING_CALL_AUDIT.md`), one catches addition drift vs inventory (`CONVENTION_CHECK.md`). Prompts live verbatim in the docs so a reviewer of the reviewers can read them.
+- **Two reviewers, task-scoped prompts.** One catches fanout drift (`FANOUT_AUDIT.md`), one catches addition drift vs inventory (`CONVENTION_CHECK.md`). Prompts live verbatim in the docs so a reviewer of the reviewers can read them.
 - **Closed outcome vocabulary, single source, imported.** `OUTCOME_VOCABULARY` in `python/cecelia/effectiveness/log.py`; the recital hook imports it rather than copying. Regression against copying is `test_vocabulary_matches_effectiveness_log_module`.
 - **Effectiveness log the reviewer never reads.** Goodhart-motivated. Log is passive; only the human and the offline rollup read it. Rationale spelled out in `EFFECTIVENESS_METHODOLOGY.md` § Non-goals.
 - **One entrypoint, atomic emission** (`pixi run recital`, #1252). Spawns both reviewers via `claude -p` subprocess, emits their `_run` events to the effectiveness log in-process the moment the subprocess returns, prints the formatted recital body. Replaces the agent-remembers-to-emit trust path — that path failed four times consecutively in the session that motivated #1252 (zero rows in `~/.cecelia-effectiveness/events.jsonl` across four reviewer runs). Emission is now Python code, not a step the parent agent has to execute after the fact.

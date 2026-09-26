@@ -1,6 +1,6 @@
 # Convention-check reviewer — the pre-commit anti-duplication check
 
-Status: **DRAFT (2026-09-26)** — plan only, nothing built. Reviewer prompt is a draft; inventory scope is under audit (see [Open decisions](#open-decisions--dominiks-call)). Companion to [`EFFECTIVENESS_LOG_PLAN.md`](EFFECTIVENESS_LOG_PLAN.md); parallel in shape to [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md).
+Status: **DRAFT (2026-09-26)** — plan only, nothing built. Reviewer prompt is a draft; inventory scope is under audit (see [Open decisions](#open-decisions--dominiks-call)). Companion to [`EFFECTIVENESS_LOG_PLAN.md`](EFFECTIVENESS_LOG_PLAN.md); parallel in shape to [`docs/ai-assist/FANOUT_AUDIT.md`](../ai-assist/FANOUT_AUDIT.md).
 
 **Prior-art scope search:** [`docs/ai-assist/DRIFT_DETECTION_PRIOR_ART.md`](../ai-assist/DRIFT_DETECTION_PRIOR_ART.md) — why we didn't adopt drift-analyzer / Revieko / Conclave / AgentSync and what we borrowed.
 
@@ -8,9 +8,9 @@ Status: **DRAFT (2026-09-26)** — plan only, nothing built. Reviewer prompt is 
 
 Catch **convention drift** — when an implementing agent writes a new helper, component, or endpoint that already exists under another name, or a new implementation that skips an existing canonical framework (e.g. building bespoke gating logic instead of reusing `population_utils`, hand-rolling a button instead of using `AppButton`, adding a new zarr accessor instead of going through `zarr_utils`).
 
-Complementary — not overlapping — with the [sibling-call audit](../ai-assist/SIBLING_CALL_AUDIT.md):
+Complementary — not overlapping — with the [fanout audit](../ai-assist/FANOUT_AUDIT.md):
 
-| | Sibling-call audit | Convention check (this plan) |
+| | Fanout audit | Convention check (this plan) |
 |---|---|---|
 | Fires on | fix-shaped hunks | addition-shaped hunks |
 | Search shape | grep same symbol at other call sites | grep functional near-equivalents by domain + inventory |
@@ -23,7 +23,7 @@ Different failure classes, different search shapes, different reviewer prompts. 
 
 - 2026-09-26 chat with Dominik. He observed: "every time I point out to Opus — hey this button looks hand rolled, did you check app convention — it normally gets it and says, oh, yeah, I didn't actually check. Wouldn't all we need is a tick on the PR requiring the agent to say yes I checked app conventions XYZ. And couple this to a git commit hook."
 - Immediate refinement: a self-attested tick is gameable — the cheapest way to satisfy "yes I checked" is to say yes. What actually forces the check when Dominik prompts after the fact is *specificity* — naming what the agent should have looked at. That specificity plus a fresh subagent that has to produce evidence, not just an assertion, is the mechanism.
-- Direct precedent: [`SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md) — same shape (fresh subagent, tail line, evidence fold), different job.
+- Direct precedent: [`FANOUT_AUDIT.md`](../ai-assist/FANOUT_AUDIT.md) — same shape (fresh subagent, tail line, evidence fold), different job.
 
 ## Why not just self-attestation
 
@@ -36,7 +36,7 @@ The point isn't the tick. It's the fresh reviewer holding evidence.
 
 ## How it runs
 
-Parallel to the sibling-call audit. At the pre-commit reservations step, the implementing agent spawns a second subagent:
+Parallel to the fanout audit. At the pre-commit reservations step, the implementing agent spawns a second subagent:
 
 ```
 Agent(
@@ -247,7 +247,7 @@ Not resolved in this plan. Named so it isn't waved through on momentum.
 
 Same shape as sibling-audit — four touchpoints:
 
-1. **This reviewer prompt** — lives at `docs/ai-assist/CONVENTION_CHECK.md` once shipped (parallel to `SIBLING_CALL_AUDIT.md`).
+1. **This reviewer prompt** — lives at `docs/ai-assist/CONVENTION_CHECK.md` once shipped (parallel to `FANOUT_AUDIT.md`).
 2. **CLAUDE.md §*Git & commits*** — the reservations section already requires the sibling tail line; add convention-check tail line + evidence fold with parallel enforcement.
 3. **Pre-commit hook (local)** — verifies both tail lines and the evidence folds. Missing either = commit fails with a message directing the agent to run the reviewer.
 4. **PR CI check (remote)** — same verification, applied to the reservations section of the PR body or the tip-of-branch commit message. GitHub Actions workflow; required check for merge.
@@ -286,7 +286,7 @@ This closes the gap flagged in the effectiveness plan's [Ceiling](EFFECTIVENESS_
 
 ## Prior art in this repo
 
-- [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md) — the fix-drift reviewer this plan parallels.
+- [`docs/ai-assist/FANOUT_AUDIT.md`](../ai-assist/FANOUT_AUDIT.md) — the fix-drift reviewer this plan parallels.
 - [`docs/todo/EFFECTIVENESS_LOG_PLAN.md`](EFFECTIVENESS_LOG_PLAN.md) — the measurement layer both reviewers feed.
 - [`docs/inventory/*.md`](../inventory/) — the ground truth this reviewer cites.
 - `CLAUDE.md` §*Git & commits* — where the reservations discipline and tail-line enforcement live.

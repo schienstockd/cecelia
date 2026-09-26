@@ -18,7 +18,7 @@ Every row on disk is a single JSON object per line (`jsonl`):
 {
   "schema_version": 1,
   "ts": "2026-09-26T14:22:11Z",        // ISO-8601 UTC
-  "event": "sibling_audit_finding",    // one of EVENT_TYPES below
+  "event": "fanout_audit_finding",    // one of EVENT_TYPES below
   "session": "<claude-code-session-id>",
   "source": "live",                    // "live" | "retrospective_<tag>"
   "pr": "#1240",                       // may be null pre-commit
@@ -39,8 +39,8 @@ Adding a new event later is fine. Renaming one is painful.
 
 | `event` | When emitted | Payload fields |
 |---|---|---|
-| `sibling_audit_run` | Every time the sibling-call reviewer subagent is spawned | `hunks_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_modified_code" \| "no_fix_hunk"` |
-| `sibling_audit_finding` | Per finding the reviewer returns | `verdict: "confirmed" \| "plausible" \| "latent"`, `file: str`, `line: int`, `symbol: str`, `outcome: <see below>` |
+| `fanout_audit_run` | Every time the fanout reviewer subagent is spawned | `hunks_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_modified_code" \| "no_fix_hunk"` |
+| `fanout_audit_finding` | Per finding the reviewer returns | `verdict: "confirmed" \| "plausible" \| "latent"`, `file: str`, `line: int`, `symbol: str`, `outcome: <see below>` |
 | `convention_check_run` | Every time the convention-check reviewer subagent is spawned | `additions_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_additions" \| "tests_only" \| "no_additions_worth_checking"`, `cited_doc_refs: list[str]` |
 | `convention_check_finding` | Per finding the convention-check reviewer returns | `verdict: "should_reuse" \| "potential_duplicate"`, `file: str`, `line: int`, `added_symbol: str`, `canonical_symbol: str \| null`, `cited_doc_refs: list[str]`, `outcome: <see below>` |
 | `ratchet_hit` | When a CLAUDE.md ratchet flags something during a review or edit | `ratchet_id: str` (kebab-case matching CLAUDE.md), `file: str`, `line: int`, `outcome: <see below>` |
@@ -92,4 +92,4 @@ State this explicitly on the public [`EFFECTIVENESS.md`](EFFECTIVENESS.md) page 
 
 - [`docs/todo/EFFECTIVENESS_LOG_PLAN.md`](../todo/EFFECTIVENESS_LOG_PLAN.md) — design record; keep for future reference.
 - [`docs/todo/CONVENTION_CHECK_PLAN.md`](../todo/CONVENTION_CHECK_PLAN.md) — the convention-check reviewer that emits `convention_check_*` events.
-- [`SIBLING_CALL_AUDIT.md`](SIBLING_CALL_AUDIT.md) — the sibling-call reviewer that emits `sibling_audit_*` events.
+- [`FANOUT_AUDIT.md`](FANOUT_AUDIT.md) — the fanout reviewer that emits `fanout_audit_*` events.

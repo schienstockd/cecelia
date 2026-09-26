@@ -268,27 +268,27 @@ merge). Full conventions — branch naming, commit style, how PRs are opened, re
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
 commit or push proactively.** A "go ahead" to do the work is not approval to commit it.
 
-**Agents: state your reservations BEFORE every commit — ONE prioritized list with sibling-call AND
+**Agents: state your reservations BEFORE every commit — ONE prioritized list with fanout audit AND
 convention-check findings woven in, evidence cited underneath.** Kiwi-shape: claims + references.
 When asked to commit/push (or asked for the PR url — that request itself calls the commit): spawn
-**two** fresh `sonnet` subagents in parallel — one per [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](docs/ai-assist/SIBLING_CALL_AUDIT.md)
+**two** fresh `sonnet` subagents in parallel — one per [`docs/ai-assist/FANOUT_AUDIT.md`](docs/ai-assist/FANOUT_AUDIT.md)
 (fix drift outward from the hunk) and one per [`docs/ai-assist/CONVENTION_CHECK.md`](docs/ai-assist/CONVENTION_CHECK.md)
 (convention drift inward from inventory). Read their findings, then emit ONE prioritized
 reservations list where **confirmed** siblings + **should reuse** convention findings become items
 ranked by how much they matter, **plausible** / **potential duplicate** fold in with the right
 hedge, latent-only ones as forecasted-risk notes — alongside the usual unverified / perf /
 edge-case / silent-no-op items. Follow the list with the raw reviewer outputs verbatim under two
-folds — `_Sibling-call audit (evidence):_` and `_Convention check (evidence):_` — so each woven
+folds — `_Fanout audit (evidence):_` and `_Convention check (evidence):_` — so each woven
 item cites its source and the user can verify the finding wasn't dropped or misrepresented. Close
 with **two one-line tails**:
 
-- `_Sibling-call audit: run_` (or `_skipped — docs-only diff_` / `_skipped — no modified code_` /
-  `_no sibling-call audit needed_`)
+- `_Fanout audit: run_` (or `_skipped — docs-only diff_` / `_skipped — no modified code_` /
+  `_no fanout audit needed_`)
 - `_Convention check: run_` (or `_skipped — docs-only diff_` / `_skipped — no additions_` /
   `_skipped — tests-only_` / `_no convention check needed_`)
 
 Missing either tail = that mechanism went dark. Don't reassure or wait to be asked "any
-reservations?". Sibling-call catches case-F fix drift; convention check catches convention drift
+reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
 (a new helper/component/endpoint that duplicates an existing canonical). See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
@@ -317,7 +317,7 @@ in a text output the reader may not see.
 
 Bypass with `CECELIA_SKIP_RECITAL_CHECK=1` for real emergencies.
 
-**Best-effort log emission after each reviewer returns.** Emit a `sibling_audit_run` and a
+**Best-effort log emission after each reviewer returns.** Emit a `fanout_audit_run` and a
 `convention_check_run` event via `python scripts/log_event.py` — the exact commands (payload
 shapes and escape-valve values) are in each reviewer's doc under *Log emission*. Failure to emit
 is not a commit blocker: the log is a best-effort collector, not a gate. Findings emission is
