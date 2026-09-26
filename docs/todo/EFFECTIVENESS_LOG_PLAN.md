@@ -164,7 +164,7 @@ Not heartbeated. Not auto-committed. Rationale in the chat that led to this plan
 
 Someone lands on the Cecelia GitHub page. What do they read in 30 seconds?
 
-1. **README** — one paragraph: "Cecelia uses an AI-assist infrastructure (pre-commit reviewer, CLAUDE.md ratchets) to catch a specific class of bugs. We track how well it works. See [ai-assist effectiveness](docs/ai-assist/EFFECTIVENESS.md)."
+1. **README** — one paragraph: "Cecelia uses an AI-assist infrastructure (pre-commit reviewer, CLAUDE.md ratchets) to catch a specific class of bugs. We track how well it works. See ai-assist effectiveness at `docs/ai-assist/EFFECTIVENESS.md`" (that file does not exist yet — the rollup produces it).
 2. **`docs/ai-assist/EFFECTIVENESS.md`** — headline table (catch / FP / miss counts, retrospective vs live), then per-mechanism breakdown (sibling-audit, each ratchet), then a "what we can't measure" section, then link to methodology.
 3. **`docs/ai-assist/EFFECTIVENESS_METHODOLOGY.md`** — schema, event taxonomy, outcome vocabulary, sample method for the retrospective, honest ceiling. This plan doc, minus the design-decision framing, becomes the seed of that page.
 
