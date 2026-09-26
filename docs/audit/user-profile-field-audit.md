@@ -147,8 +147,10 @@ viewing preference, not this machine's.
 ### Kiwi personal preferences → **per-profile** (3)
 
 `kiwiReasoning`, `kiwiModel`, `hiddenMcpAccounts`, `labLogAutoContext`, `labLogShowNames`,
-`tipsOnLaunch`, `tipsLastShown`. These especially — "did I see today's tip" is meaningless
-shared across users, and `kiwiModel` per profile lets Alice run Sonnet while Ben runs Opus.
+`tipsOnLaunch`, `tipsLastShown`, `captureAttachToKiwi`, `captureSendToPaired`. These
+especially — "did I see today's tip" is meaningless shared across users, `kiwiModel` per
+profile lets Alice run Sonnet while Ben runs Opus, and Alice's capture-to-Kiwi preference
+shouldn't overwrite Ben's when they share a workstation.
 
 ### Renderer / hardware knobs → **per-machine** (~9)
 

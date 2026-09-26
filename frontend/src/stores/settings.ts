@@ -34,6 +34,8 @@ const PROFILE_KEYS = [
   'viewerPanelOpen', 'labLogPanelOpen', 'correctionCockpitOpen',
   'correctionCockpitMode', 'correctionCockpitValueName',
   'kiwiOpen', 'viewerSelectMode',
+  // Kiwi capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decisions 2–4)
+  'captureAttachToKiwi', 'captureSendToPaired',
   // Kiwi / lab log / tips / view profile
   'kiwiReasoning', 'kiwiModel', 'labLogAutoContext', 'labLogShowNames',
   'tipsOnLaunch', 'tipsLastShown', 'viewProfile',
@@ -283,11 +285,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // DrawSurface's two capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decisions 2–4).
   // `null` = never set — DrawSurface derives a first-use default from live state (attach: cockpit
   // open? send: paired?) then writes the resolved boolean back. Once a user has toggled, their
-  // choice wins for subsequent captures.
-  const _rawAttach = localStorage.getItem('cc.captureAttachToKiwi')
-  const _rawSend   = localStorage.getItem('cc.captureSendToPaired')
-  const captureAttachToKiwi = ref<boolean | null>(_rawAttach === null ? null : _rawAttach === 'true')
-  const captureSendToPaired = ref<boolean | null>(_rawSend   === null ? null : _rawSend   === 'true')
+  // choice wins for subsequent captures. **Per-profile** (USER_PROFILE_PLAN Phase 4): a shared box
+  // with two profiles keeps two independent capture preferences. The `null`-default + autosave
+  // hydration means a v0.2.7 user's browser-scoped setting does not migrate — they see the
+  // state-derived default once and their next toggle seeds the profile bag.
+  const captureAttachToKiwi = ref<boolean | null>(null)
+  const captureSendToPaired = ref<boolean | null>(null)
   // Kiwi's "Think first" switch: ask the engine to write its reasoning before the claims (a free-text
   // field ordered first in the reply schema). Off by default — on the 18-turn comparison it cost ~40%
   // more time and tokens with no gain the automatic checks could see (KIWI_ASSISTANT_PLAN Open decision 8).
@@ -693,12 +696,8 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
   watch(correctionCockpitOpen,      v => localStorage.setItem('cc.correctionCockpitOpen',      String(v)))
   watch(kiwiOpen,                   v => localStorage.setItem('cc.kiwiOpen',                   String(v)))
-  watch(captureAttachToKiwi, v => v === null
-    ? localStorage.removeItem('cc.captureAttachToKiwi')
-    : localStorage.setItem('cc.captureAttachToKiwi', String(v)))
-  watch(captureSendToPaired, v => v === null
-    ? localStorage.removeItem('cc.captureSendToPaired')
-    : localStorage.setItem('cc.captureSendToPaired', String(v)))
+  // captureAttachToKiwi / captureSendToPaired persist via the per-profile bag (see PROFILE_KEYS
+  // + `_autosave`); no localStorage watcher.
   watch(kiwiReasoning,              v => localStorage.setItem('cc.kiwiReasoning',              String(v)))
   watch(kiwiModel,                  v => localStorage.setItem('cc.kiwiModel',                  v))
   watch(correctionCockpitMode,      v => localStorage.setItem('cc.correctionCockpitMode',      String(v)))
@@ -770,6 +769,7 @@ export const useSettingsStore = defineStore('settings', () => {
     viewerPanelOpen, labLogPanelOpen, correctionCockpitOpen,
     correctionCockpitMode, correctionCockpitValueName,
     kiwiOpen, viewerSelectMode,
+    captureAttachToKiwi, captureSendToPaired,
     kiwiReasoning, kiwiModel, labLogAutoContext, labLogShowNames,
     tipsOnLaunch, tipsLastShown, viewProfile,
   } as unknown as Record<ProfileKey, Ref<ProfileSettingsValue>>
