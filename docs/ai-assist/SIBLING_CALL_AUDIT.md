@@ -25,6 +25,15 @@ The subagent's reply is used **twice** in the recital (Kiwi-shape: claims + refe
 
 **Model = sonnet, not Opus.** The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match. That's many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at cost that adds up when this runs on every commit. The reviewer surfaces candidates; Opus (implementing agent) synthesises the woven reservations from them.
 
+**Log emission — best-effort, after the reviewer returns.** The parent agent emits ONE `sibling_audit_run` event via `python scripts/log_event.py` at reviewer completion:
+
+```bash
+python scripts/log_event.py --event sibling_audit_run --payload \
+  '{"hunks_reviewed": <int>, "duration_s": <float>, "escape_valve": <null|"docs_only"|"no_modified_code"|"no_fix_hunk">}'
+```
+
+Failure to emit is NOT a commit blocker — the log is a best-effort collector, not a gate. If `scripts/log_event.py` is missing (older tree) or the write fails, tail-line the recital as usual and commit anyway. Findings emission (`sibling_audit_finding`) is deferred v1 — same reason as convention-check: needs outcome-resolution design. See [`CONVENTION_CHECK.md`](CONVENTION_CHECK.md) and [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md).
+
 ## Escape valves — skip the subagent when
 
 - Diff is docs-only (only `docs/**`, `*.md`, `CLAUDE.md` files touched). Tail: `_Sibling-call audit: skipped — docs-only diff_`. No evidence fold (nothing to evidence).

@@ -25,7 +25,16 @@ The subagent's reply is used the same way the sibling's is:
 
 **Model = sonnet, not Opus.** Same reasoning as sibling — many small independent reads (diff → identify additions → grep inventory + repo), not one deep reasoning chain.
 
-**Log emission (once effectiveness log is on-hand)** — after the review, the parent agent emits a `convention_check_run` event (with `cited_doc_refs` = the docs the reviewer read) and one `convention_check_finding` event per finding. Via `python scripts/log_event.py`. Rows accumulate in `~/.cecelia-effectiveness/events.jsonl` for later rollup and usage-weighted spot-check. See [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md).
+**Log emission — best-effort, after the reviewer returns.** The parent agent emits ONE `convention_check_run` event via `python scripts/log_event.py` at reviewer completion:
+
+```bash
+python scripts/log_event.py --event convention_check_run --payload \
+  '{"additions_reviewed": <int>, "duration_s": <float>, "escape_valve": <null|"docs_only"|"no_additions"|"tests_only"|"no_additions_worth_checking">, "cited_doc_refs": [<paths the reviewer read>]}'
+```
+
+Failure to emit is NOT a commit blocker — the log is a best-effort collector, not a gate. If `scripts/log_event.py` is missing (older tree) or the write fails, tail-line the recital as usual and commit anyway; a missed row is invisible in aggregate, not a bug in the reviewer.
+
+**Findings emission (`convention_check_finding`) is deferred v1** — needs outcome-resolution design (findings only carry meaningful signal once labelled `fixed_pre_commit` / `false_positive` / etc., which happens between recital and commit). Schema supports it; wire-in comes when the resolution flow is designed. Rows accumulate in `~/.cecelia-effectiveness/events.jsonl` for later rollup and usage-weighted spot-check — see [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md).
 
 ## Escape valves — skip the subagent when
 
