@@ -15,6 +15,7 @@
     @test !ok("with/slash")           # path traversal
     @test !ok("with.dot")
     @test !ok("legacy")               # reserved (D10 sentinel — mustn't collide)
+    @test !ok("peanut")               # frontend display alias for `default` — create-blocked
 end
 
 @testset "Kiwi profile — terminal one-liner (POSIX)" begin

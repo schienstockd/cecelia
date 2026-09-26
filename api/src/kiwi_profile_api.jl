@@ -25,13 +25,22 @@ import JSON3
 # user picking "legacy" as their identity is meaningless).
 const _KIWI_RESERVED_PROFILE_NAMES = ("legacy",)
 
+# The frontend's display alias for `default` (mirror of `DEFAULT_PROFILE_DISPLAY_NAME` in
+# `frontend/src/utils/profileApi.ts`). Reserved at CREATE-time so no new profile can visually
+# collide with the picker's synthetic default row. Deliberately NOT in the tuple above — that one
+# also drives the roster's hide-list, and hiding a pre-existing on-disk profile literally named
+# `peanut` would be worse than the (already tag-differentiated) visual clash.
+const _KIWI_DEFAULT_DISPLAY_ALIAS = "peanut"
+
 # Kiwi profile names must be usable as directory names AND look like git-author-shaped labels.
 # Deliberately narrow: lower-ASCII alnum + `-` + `_`, 1..32 chars. Rejects `.` / `/` / whitespace
-# / uppercase (which fails on case-insensitive filesystems), and every reserved name.
+# / uppercase (which fails on case-insensitive filesystems), every reserved name, AND the
+# default's display alias (see the constant above).
 function _valid_kiwi_profile_name(name::AbstractString)::Bool
     s = String(name)
     (1 <= length(s) <= 32) || return false
     s in _KIWI_RESERVED_PROFILE_NAMES && return false
+    s == _KIWI_DEFAULT_DISPLAY_ALIAS && return false
     all(c -> ('a' <= c <= 'z') || ('0' <= c <= '9') || c == '-' || c == '_', s)
 end
 
@@ -85,7 +94,7 @@ function api_kiwi_profiles_create(body_bytes::Vector{UInt8})
     _valid_kiwi_profile_name(String(name)) || return 400, JSON3.write((;
         ok = false,
         error = "Profile name must be 1-32 chars, lower-ASCII alnum + `-` / `_`; " *
-                "`legacy` and `default` are reserved."))
+                "`legacy`, `default` and `peanut` are reserved."))
     # `default` is not creatable — it's a magic name that maps to `~/.claude`.
     String(name) == "default" && return 400, JSON3.write((;
         ok = false, error = "`default` already exists — it maps to `~/.claude`."))
@@ -165,7 +174,7 @@ function api_kiwi_profiles_rename(body_bytes::Vector{UInt8})
         ok = false, error = "Invalid old profile name."))
     _valid_kiwi_profile_name(new_name) || return 400, JSON3.write((;
         ok = false, error = "New profile name must be 1-32 chars, lower-ASCII alnum + `-` / `_`; " *
-                            "`legacy` and `default` are reserved."))
+                            "`legacy`, `default` and `peanut` are reserved."))
     old_name == new_name && return 400, JSON3.write((;
         ok = false, error = "New name matches the old name."))
     root = joinpath(config_dir(), "kiwi-profiles")

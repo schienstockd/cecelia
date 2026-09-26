@@ -29,6 +29,7 @@ describe('isValidProfileName', () => {
   it('rejects reserved / magic names', () => {
     expect(isValidProfileName('legacy')).toBe(false)   // D10 sentinel
     expect(isValidProfileName('default')).toBe(false)  // maps to ~/.claude
+    expect(isValidProfileName('peanut')).toBe(false)   // display alias for `default`
   })
 })
 

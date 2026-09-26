@@ -108,7 +108,7 @@ function onDone() { emit('close') }
           <p class="kp-hint cc-fs-2xs"
              :class="{ 'kp-hint-bad': name.length > 0 && !nameValid }">
             1-32 chars, lower-ASCII alnum + <code>-</code> / <code>_</code>.
-            <code>default</code> and <code>legacy</code> are reserved.
+            <code>default</code>, <code>legacy</code> and <code>peanut</code> are reserved.
           </p>
         </form>
         <p v-if="errorMsg" class="kp-err cc-fs-xs">
