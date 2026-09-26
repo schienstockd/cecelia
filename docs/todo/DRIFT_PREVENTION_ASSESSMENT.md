@@ -6,6 +6,7 @@ second case-F-shaped bug lands (see *When to revisit* below).
 **Related:**
 - Brief: [`docs/archive/drift_prevention_mechanism_prompt.md`](../archive/drift_prevention_mechanism_prompt.md)
 - Findings: [`docs/archive/drift_prevention_mechanism_audit.md`](../archive/drift_prevention_mechanism_audit.md)
+- Catch-mode audit (follow-up): [`docs/archive/drift_catch_modes_audit.md`](../archive/drift_catch_modes_audit.md)
 
 ## Goal
 
@@ -25,13 +26,42 @@ The audit's "no enforcement" root-cause is technically correct but frames PR rev
 non-enforcement. PR review IS enforcement, just late. The right question isn't *"add prevention"*
 — it's *"where is late catching actually expensive?"*
 
-Answer, from the seven PR-trail cases the audit collected:
+Answer, from the seven PR-trail cases the audit collected, refined by the follow-up catch-mode
+audit that sampled ~45 classifiable drift PRs across the full 1,225-PR window:
 
-- **Six cost one review cycle each.** Cheap.
-- **One (#1151) was expensive** — divergence *caused* a bug: a fix landed on 1 of 3 wrapper
-  variants and the other two stayed silently broken.
+- **Frontend drift is caught same-day by user-visual-notice** — the model ships a module page or
+  panel, the user opens it, it looks different from everything else, follow-up PR the same day.
+  Blackboard is the archetype (#1070 → #1074 same day). Cost: one refactor cycle, no downstream
+  code depended on the drifted shape yet.
+- **Backend drift is caught by self-audit sweeps** — the model finds N duplicates while doing
+  another task, closes them together, often ships a detector in the same change. Sixteen PRs of
+  this shape in the sample (#420, #423, #425, #442, #476, #504, #521, #587, #598, #721, …). Cost:
+  *(one audit + N fixes) / N* — arguably cheaper than PR-time review per case.
+- **One case in the whole sample was expensive** — #1151, a fix that silently left divergent copies
+  broken. Rare — the wider sweep didn't surface a second.
 
-That's not yet a pattern that pays for infrastructure.
+None of these are a pattern that pays for infrastructure — the two dominant catch modes have
+different economics but both stay cheap, and the one expensive case is rare enough that a scoped
+adversarial reviewer would sit idle most of the time.
+
+### The frame underneath — cost-gradient, not rule-following
+
+Why the discovery-first rule in `CLAUDE.md` is skipped even when it's in context: it's a
+cost-gradient problem, not a rule-following problem. At the moment of writing, the discovery path
+(grep inventory, read the helper, wire it in) costs the agent real tokens/tool-calls/latency
+*now*. The bespoke path (write the helper from memory) costs zero *now*, and the duplication cost
+lands on some future maintainer. Classic externality: the person who pays isn't the person who
+decides.
+
+This is why prose rules lose — they add a moral obligation without changing either cost. It's also
+why hooks would work in principle (they reprice the alternatives: not-checking becomes infinitely
+expensive), and why we still say no (building a hook costs more than the drift it would prevent,
+right now). And it's why `SessionStart` injection is the worst intervention shape — it pays the
+discovery cost upfront on *every* session, including the 90% that don't need it. A hook only fires
+on the writes that would otherwise drift; that's making the *right* cost cheaper.
+
+The revisit triggers below are proxies for the cost balance flipping: *drift cost per unit time >
+amortised hook cost*. Don't build the intervention until the inequality does.
 
 ## Why each proposed layer was rejected
 
@@ -66,9 +96,21 @@ directory (`frontend/src/components/`, `app/src/gating/`, `app/src/tasks/chain/`
 drift-prone areas from the audit) or by diff size (>N lines in a churn-prone dir). Skipping cheap
 diffs is what makes it affordable.
 
-### PR-time post-hoc net (existing) — kept
+### Existing backstops — kept
 
-The current backstop. Already caught six of the seven audited cases. Keeps working.
+Two distinct catch mechanisms, not one. Design as if both exist; don't collapse them into "PR
+review is the backstop."
+
+- **User-visual-catch (frontend/UX).** The user opens a new module page or panel and notices it
+  looks different from everything else. Same-day catch when it works. Not a fallback — an active
+  human-in-the-loop enforcement mechanism, and the primary one for whole-page shape (which no
+  ratchet in the repo covers today — the `cssScenarios.test.ts` family catches rule-level shape,
+  not layout-level shape).
+- **Self-audit sweep (backend).** A session working on task A notices duplication in area B,
+  closes N offenders together, often ships a detector in the same change. The `_BASELINE`
+  ratchets in `app/test/suite/ratchets.jl` and the `_convention.py` family are the durable
+  artifact this mode leaves behind.
+- **PR-time review.** The general net under both — most useful when the two above missed.
 
 ## What we did instead — the four fixes (2026-09-26)
 
@@ -106,10 +148,18 @@ Each fix ships in the same change as this doc.
 Open this doc and re-run the audit if any of these fires:
 
 - A second case-F-shaped bug lands — a fix that silently leaves other divergent copies broken.
-  One is chance; two is a pattern that pays for a scoped adversarial reviewer.
+  One is chance; two is a pattern that pays for a scoped adversarial reviewer. Catch-mode audit
+  confirms the wider PR sample surfaces no second case, so this trigger stays well-calibrated.
 - The PR-trail drift rate — measured as "cases per month where the reviewer or user had to point
   at a canonical helper the agent missed" — sustains above ~2/month for two consecutive months.
-  Cheap to check via `gh pr list` with the same keyword filter the audit used.
+  Cheap to check via `gh pr list` with the same keyword filter the audits used.
+- **User-visual-catch on a module page starts arriving days-later rather than same-day.** Today it
+  arrives same-day (the blackboard PRs are the archetype), which means drift never lives long
+  enough to accumulate downstream. If new module-page drift starts landing before the user opens
+  the page — because the user is heads-down elsewhere, because a chained PR ships two together,
+  because a page ships in a mode the user doesn't routinely open — then user-visual-catch has
+  failed and downstream code will start depending on the drifted shape. That's when a scoped
+  adversarial-review subagent on new `frontend/src/modules/*.vue` earns its keep.
 - `INVENTORY.md` staleness becomes causal — the audit found it wasn't; that could change.
 - A specific area develops a repeated drift pattern that a scoped write-time regex could catch
   cleanly (not the general case, a specific one). E.g. every new Vue component under
@@ -119,13 +169,18 @@ Open this doc and re-run the audit if any of these fires:
 ## What NOT to bring back without new evidence
 
 - **Broad `SessionStart` context injection.** The nested-CLAUDE.md pattern is load-bearing; don't
-  regress it.
+  regress it. And per the cost-gradient frame above, it makes the *wrong* cost cheaper — pays the
+  discovery bill on every session including the ones that won't drift.
 - **A general-purpose `PreToolUse` regex gate on Write/Edit.** Coverage is too narrow, false
   positives train around it.
 - **A longer `CLAUDE.md` or `MAINTAINABILITY.md`.** Per Anthropic's own docs: *"If your CLAUDE.md
   is too long, Claude ignores half of it because important rules get lost in the noise."* Root
   CLAUDE.md is 306 lines and edge-of-comfort; prose additions have a negative expected value
   until enforcement mechanics land.
+- **A design that treats user-visual-catch as a fallback rather than a real mechanism.** It is the
+  primary catch mode for whole-page UX shape (see catch-mode audit). Any future intervention that
+  competes with or short-circuits it should be justified against what it displaces, not against a
+  vacuum.
 
 ## References
 
@@ -134,3 +189,6 @@ Open this doc and re-run the audit if any of these fires:
   adversarial-review pattern.
 - `mehmethk88-dot/eval-gate-ratchet` — the silent-weakening pattern the `_BASELINE_MAX_SIZE`
   meta-ratchet defends against.
+- Catch-mode audit ([`docs/archive/drift_catch_modes_audit.md`](../archive/drift_catch_modes_audit.md)) —
+  wider 1,225-PR sweep confirming user-visual-catch (frontend) and self-audit-sweep (backend) as
+  the two dominant catch modes, and #1151 as the only case-F-shaped bug in the wider sample.
