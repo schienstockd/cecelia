@@ -209,8 +209,8 @@ moves the profile-scoped keys. Belongs in a follow-up plan.
    rather than by the browser origin, so a person carrying a laptop between browsers keeps their
    tuning — but that's independent and out of scope here.
 3. **Do NOT move the per-image / per-set bags into the profile store.** They belong with the
-   project data. Track that as a separate follow-up plan
-   (`docs/todo/PROJECT_VIEWER_STATE_PLAN.md`, not created yet) — it's the same category of
+   project data. Track that as a separate follow-up plan in `docs/todo/`
+   (proposed name `PROJECT_VIEWER_STATE_PLAN.md`, not created yet) — it's the same category of
    question as `PROJECT_EXPORT_IMPORT_PLAN` handles for `ccid.json`.
 4. **Consolidate `[ai].model` and `kiwiModel` in Phase 4.** Two homes for the same choice today;
    the profile-scoped one wins.

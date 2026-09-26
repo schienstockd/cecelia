@@ -50,8 +50,9 @@ server carries its own instructions:
 Per-tool detail belongs in the tool's own docstring (also always in context); `guidance.py` is only
 for what spans tools. **A new tool must be named there** or the assistant never offers it — enforced by
 `GuidanceTest` in `mcp/tests/test_server.py`, with a three-tool exemption for the observer's own
-autonomous-loop bookkeeping. The in-app observer has its own prompt (`app/src/ai/observer_prompt.jl`)
-carrying only the watch loop and the lab-log discipline, with the matching guard in `app/test/suite.jl`.
+autonomous-loop bookkeeping. The in-app agent is Kiwi, spawned against this same server with its own
+system prompt (`kiwi_system_prompt` in `api/src/kiwi_turn.jl`) layered on top — the earlier standalone
+autonomous "Ask Claude" pass and its separate `observer_prompt.jl` rules file were dropped.
 
 ### A promise must name the test that backs it
 

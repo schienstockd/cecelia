@@ -166,7 +166,7 @@ but ratcheted by tests.
 
 - **Big Julia-side split-by-responsibility refactor.** `api/src/routes.jl` (3082 L) into
   `routes/*.jl` families; `app/src/gating/population_manager.jl`, `app/src/tasks/scheduler.jl`,
-  `app/src/tasks/chain.jl`, `app/src/tasks/task.jl`, and `app/src/cleanupImages/af_correct.jl` each
+  `app/src/tasks/chain.jl`, `app/src/tasks/task.jl`, and `app/src/tasks/cleanupImages/af_correct.jl` each
   split into sub-module directories. Segmentation label-store writers collapsed into
   `open_multiscales_for_writing`; per-frame zarr streaming enforced.
 - **API — null-safety sweep** across every `_api.jl` handler and `routes/*.jl` family: body reads

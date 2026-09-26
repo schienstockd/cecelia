@@ -47,7 +47,7 @@ The area-per-area reference: [root doc index](../CLAUDE.md).
 | Change AF correction — QC scoring | `app/src/tasks/cleanupImages/af_correct.jl:af_qc_findings` |
 | Change AF correction — frontend→Python param translation | `app/src/tasks/cleanupImages/af_correct.jl:af_combinations_for_python` |
 | Change AF correction — run orchestration | `app/src/tasks/cleanupImages/af_correct.jl:_run_task` |
-| Change AF weight math (bleedthrough alphas, weight stats) | Python side: `python/cecelia/correction_utils.py` (`af_bleedthrough_alphas`, `af_correct_frame`, `af_weight_stats`) |
+| Change AF weight math (bleedthrough alphas, weight stats) | Python side: `python/cecelia/utils/correction_utils.py` (`af_bleedthrough_alphas`, `af_correct_frame`, `af_weight_stats`) |
 | Add or change an HMM fit over track measurements | `app/src/behaviour/hmm.jl:hmm_fit_states` |
 | Change how HMM transitions are labelled (self-transitions, start rows, hybrid states) | `app/src/behaviour/hmm.jl:hmm_transitions` |
 | Change track-measure algorithms (celltrackR port) | `app/src/tasks/tracking/track_measures.jl` |

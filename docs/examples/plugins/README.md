@@ -59,7 +59,7 @@ Three things make it a template rather than a hard-coded reader:
   "could the form decide this on its own?", and it moved: the XML rule started life in the hook and
   reappeared on every restored form until it became a spec field.
 
-**`python/track_readers.py` — shared code.** `run_py` puts each plugin's `python/` directory on
+**`docs/examples/plugins/ccia-importTracks/python/track_readers.py` — shared code.** `run_py` puts each plugin's `python/` directory on
 `PYTHONPATH`, so a runner imports it as plain `from track_readers import ...`. Note the plugin's own
 name never appears in that import — `ccia-importTracks` has a hyphen and is not a Python identifier,
 so anything that spelled the plugin name into a module path could not work.
