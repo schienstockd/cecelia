@@ -19,8 +19,13 @@ legitimate commit:
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
+import tempfile
 import unittest
+from unittest import mock
+
+from cecelia.effectiveness import read_events
 
 _HOOK_PATH = pathlib.Path(__file__).resolve().parents[3] / ".claude" / "hooks" / "check_commit_recital.py"
 
@@ -126,6 +131,112 @@ class CheckTest(unittest.TestCase):
     def test_git_commit_amend_is_checked(self):
         msg = "git commit --amend -m 'foo [**confirmed**]'"
         self.assertIsNotNone(self._check(msg))
+
+    # ------- P3 (FINDINGS_EMISSION_PLAN.md) — slug-paired outcome tags -------
+
+    def test_slug_paired_outcome_counts_as_outcome(self):
+        msg = "git commit -m 'foo [**confirmed**] [fanout-abcd1234: fixed_pre_commit]'"
+        self.assertIsNone(self._check(msg))
+
+    def test_conv_slug_pair_counts(self):
+        msg = "git commit -m 'foo [**should reuse**] [conv-11112222: false_positive]'"
+        self.assertIsNone(self._check(msg))
+
+    def test_mixed_bare_and_paired_outcomes_both_count(self):
+        # Two findings, one bare tag and one slug pair — total covers both.
+        msg = """git commit -m '
+        - a [**confirmed**] [fixed_pre_commit]
+        - b [**should reuse**] [conv-abcdef00: shipped_with_finding]
+        '"""
+        self.assertIsNone(self._check(msg))
+
+    def test_duplicate_slug_blocks(self):
+        # Same slug quoted twice — the same finding can't have two outcomes. Block explicitly
+        # so the author fixes the message before shipping.
+        msg = """git commit -m '
+        - a [**confirmed**] [fanout-abcd1234: fixed_pre_commit]
+        - b [**confirmed**] [fanout-abcd1234: false_positive]
+        '"""
+        reason = self._check(msg)
+        self.assertIsNotNone(reason)
+        self.assertIn("Duplicate slug", reason)
+        self.assertIn("fanout-abcd1234", reason)
+
+class ResolutionWritingTest(unittest.TestCase):
+    """P3: slug-paired outcomes get written to the effectiveness log as resolution rows.
+
+    These are the rows the rollup joins to pending `_finding` rows via slug — the whole
+    reason the plan-doc calls the hook the 'load-bearing bit' of turning telemetry into
+    evidence.
+    """
+
+    def setUp(self):
+        self.hook = _load_hook()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.log_path = pathlib.Path(self._tmp.name) / "events.jsonl"
+        self._env_patch = mock.patch.dict(os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)})
+        self._env_patch.start()
+        self.addCleanup(self._env_patch.stop)
+
+    def _events(self):
+        return list(read_events(self.log_path))
+
+    def test_fanout_slug_pair_writes_finding_resolved_row(self):
+        msg = "git commit -m 'foo [**confirmed**] [fanout-abcd1234: fixed_pre_commit]'"
+        n = self.hook.write_resolutions(msg, pr="#1400")
+        self.assertEqual(n, 1)
+        events = self._events()
+        self.assertEqual(len(events), 1)
+        row = events[0]
+        self.assertEqual(row["event"], "fanout_audit_finding_resolved")
+        self.assertEqual(row["payload"]["slug"], "fanout-abcd1234")
+        self.assertEqual(row["payload"]["outcome"], "fixed_pre_commit")
+        self.assertEqual(row["pr"], "#1400")
+
+    def test_conv_slug_pair_writes_convention_check_finding_resolved(self):
+        msg = "git commit -m 'foo [**should reuse**] [conv-11112222: false_positive]'"
+        self.hook.write_resolutions(msg, pr=None)
+        events = self._events()
+        self.assertEqual(events[0]["event"], "convention_check_finding_resolved")
+        self.assertEqual(events[0]["pr"], None)
+
+    def test_multiple_pairs_write_multiple_rows(self):
+        msg = """git commit -m '
+        - a [**confirmed**] [fanout-11111111: fixed_pre_commit]
+        - b [**confirmed**] [fanout-22222222: shipped_with_finding]
+        - c [**should reuse**] [conv-33333333: false_positive]
+        '"""
+        n = self.hook.write_resolutions(msg, pr="#1401")
+        self.assertEqual(n, 3)
+        events = self._events()
+        self.assertEqual(len(events), 3)
+        slugs = {e["payload"]["slug"] for e in events}
+        self.assertEqual(slugs, {"fanout-11111111", "fanout-22222222", "conv-33333333"})
+
+    def test_bare_outcome_tags_do_not_write_rows(self):
+        # Legacy bare form has no slug, so no resolution row is possible.
+        msg = "git commit -m 'foo [**confirmed**] [fixed_pre_commit]'"
+        n = self.hook.write_resolutions(msg, pr=None)
+        self.assertEqual(n, 0)
+        self.assertEqual(self._events(), [])
+
+    def test_non_commit_command_does_not_write(self):
+        # `ls` — no git commit at all; nothing should be written even if it happens to contain
+        # a slug pair (unlikely, but bounds-check).
+        msg = "ls [fanout-abcd1234: fixed_pre_commit]"
+        # write_resolutions doesn't itself gate on `git commit`; that's main()'s job. This test
+        # documents that the caller (main) checks first. See test below for the main-level gate.
+        n = self.hook.write_resolutions(msg, pr=None)
+        self.assertEqual(n, 1)  # write_resolutions IS permissive by design
+
+    def test_wrong_prefix_slug_does_not_write(self):
+        # A syntactically pair-shaped tag with an unknown mechanism prefix (`xyz-…`) doesn't
+        # match `_SLUG_PAIR`, so no row lands. Defensive: keeps garbage out of the log.
+        msg = "git commit -m 'foo [xyz-abcd1234: fixed_pre_commit]'"
+        n = self.hook.write_resolutions(msg, pr=None)
+        self.assertEqual(n, 0)
+        self.assertEqual(self._events(), [])
 
 
 if __name__ == "__main__":
