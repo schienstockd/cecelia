@@ -25,7 +25,8 @@ Three shapes we have actually hit:
 - **Two reviewers, task-scoped prompts.** One catches fanout drift (`SIBLING_CALL_AUDIT.md`), one catches addition drift vs inventory (`CONVENTION_CHECK.md`). Prompts live verbatim in the docs so a reviewer of the reviewers can read them.
 - **Closed outcome vocabulary, single source, imported.** `OUTCOME_VOCABULARY` in `python/cecelia/effectiveness/log.py`; the recital hook imports it rather than copying. Regression against copying is `test_vocabulary_matches_effectiveness_log_module`.
 - **Effectiveness log the reviewer never reads.** Goodhart-motivated. Log is passive; only the human and the offline rollup read it. Rationale spelled out in `EFFECTIVENESS_METHODOLOGY.md` § Non-goals.
-- **Self-catch is the acceptance test.** First draft of the recital hook (#1250) had its own vocab drift; both reviewers caught it pre-commit. That is the shape of evidence we treat as validating the loop.
+- **One entrypoint, atomic emission** (`pixi run recital`, #1252). Spawns both reviewers via `claude -p` subprocess, emits their `_run` events to the effectiveness log in-process the moment the subprocess returns, prints the formatted recital body. Replaces the agent-remembers-to-emit trust path — that path failed four times consecutively in the session that motivated #1252 (zero rows in `~/.cecelia-effectiveness/events.jsonl` across four reviewer runs). Emission is now Python code, not a step the parent agent has to execute after the fact.
+- **Self-catch is the acceptance test.** Two independent proofs on load-bearing infrastructure so far: (i) first draft of the recital hook (#1250) had its own vocab drift — both reviewers caught it pre-commit; (ii) first draft of the recital script (#1252) had a Windows-compat should-reuse + doc-drift finding — convention-check caught them in the same PR, fixed in-diff. Not a one-off — the shape of evidence we treat as validating the loop.
 
 ## Notes for write-up
 
