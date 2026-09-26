@@ -576,7 +576,7 @@ end
     # repo-relative path (not basename) — a second file named e.g. `utils.jl` in another dir
     # would otherwise silently inherit the exemption.
     # Meta-ratchet: growing the allow-list requires bumping `allowed_max` in the same PR, so a
-    # reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+    # reviewer sees "weaken the check" attempts.
     allowed_max = 5
     allowed = Dict(
         # the atomic writer itself — this IS the tmp-then-rename implementation
@@ -616,7 +616,7 @@ end
     if length(allowed) > allowed_max
         @error "no hand-rolled state writes: allow-list grew to $(length(allowed)) " *
                "(cap $allowed_max). Either fix the new write to use write_atomic, or bump " *
-               "`allowed_max` and justify in the PR body. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md."
+               "`allowed_max` and justify in the PR body."
     end
     @test length(allowed) <= allowed_max
 end

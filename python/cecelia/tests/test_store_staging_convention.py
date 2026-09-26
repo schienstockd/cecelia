@@ -27,7 +27,7 @@ _STAGING = 'staged_store'
 
 # Files allowed to write a store path directly, and why.
 # _EXEMPT_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
-# reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+# reviewer sees "weaken the check" attempts.
 _EXEMPT_MAX = 2
 _EXEMPT = {
     # Owns the idiom: defines staged_store/promote_store and the low-level writers themselves.
@@ -122,8 +122,7 @@ class StoreStagingConventionTest(unittest.TestCase):
         self.assertLessEqual(
             len(_EXEMPT), _EXEMPT_MAX,
             f'_EXEMPT grew to {len(_EXEMPT)} (cap {_EXEMPT_MAX}). Either fix the new '
-            f'violation, or bump _EXEMPT_MAX and justify in the PR body. See '
-            f'docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.')
+            f'violation, or bump _EXEMPT_MAX and justify in the PR body.')
 
     def test_the_scan_actually_reaches_the_writers(self):
         """Guard against the scan silently covering nothing (a wrong root, a bad exclude)."""

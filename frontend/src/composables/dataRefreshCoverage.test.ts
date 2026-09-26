@@ -40,7 +40,7 @@ const MUST_REFRESH = [
 // Fetches plot/population data but must NOT self-refresh — with the reason, so removing an entry is a
 // deliberate act rather than a shrug.
 // Meta-ratchet: growing EXEMPT requires bumping EXEMPT_MAX in the same PR, so a reviewer sees
-// "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+// "weaken the check" attempts.
 const EXEMPT_MAX = 10
 const EXEMPT: Record<string, string> = {
   'components/canvas/SummaryPanel.vue':

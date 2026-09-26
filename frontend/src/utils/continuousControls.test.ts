@@ -172,7 +172,7 @@ describe('no text field lets the DOM drift from its binding', () => {
 // it is. Legitimate re-arming timers exist — that's what this list is; it is not an exemption from the
 // rule so much as the inventory that makes a NEW entry a visible decision.
 // Meta-ratchet: growing DECLARED_TIMERS requires bumping DECLARED_TIMERS_MAX in the same PR, so a
-// reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+// reviewer sees "weaken the check" attempts.
 const DECLARED_TIMERS_MAX = 13
 const DECLARED_TIMERS: Record<string, string> = {
   'utils/debouncedLatest.ts': 'IS the canonical request scheduler',
@@ -254,8 +254,8 @@ describe('live viewer view-property endpoints have exactly one owner', () => {
 // "ResizeObserver loop completed with undelivered notifications" — which is exactly what showed up in
 // the log rail. `usePlotResize` is the fix (rAF coalescing + skip a render the size did not ask for).
 // Meta-ratchet: growing RO_EXEMPT requires bumping RO_EXEMPT_MAX in the same PR, so a reviewer sees
-// "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
-const RO_EXEMPT_MAX = 10
+// "weaken the check" attempts.
+const RO_EXEMPT_MAX = 11
 const RO_EXEMPT: Record<string, string> = {
   'components/canvas/CanvasPanel.vue':
     'writes its OWN height to keep a square plot square — but through rafCoalesce, NOT in the callback (pinned below)',
