@@ -61,6 +61,51 @@ _SECTION_PTR = re.compile(
 _INDEX_ROW = re.compile(r'^\|\s*\[`([^`]+)`\]\(([^)]+)\)\s*\|(.*?)\|\s*$', re.M)
 _STATED_KB = re.compile(r'(\d+)\s*KB')
 
+#: Repo-relative path prefixes that mean "this token is a real repo path, not a documentation
+#: shorthand". Inventory files write informal shorthand a lot (`tasks/task.jl` meaning
+#: `app/src/tasks/task.jl`), and there is no way to tell the two apart without knowing the base
+#: directory the doc is walking from. So only check backticked paths that ARE rooted; the
+#: shorthand ones are trusted, on the grounds that a stale one there is caught the moment the
+#: reader clicks through and fails to find it. The complementary check for the load-bearing docs
+#: (docs/inventory/*.md, docs/ui/PRIMITIVES.md, COPY.md, docs/PLOTS.md, module CLAUDE.md files)
+#: is that they cite the same paths from BOTH the shorthand and the rooted forms, so a rename
+#: that misses one form typically also breaks the other.
+_ROOTED_PATH_PREFIXES = (
+    'api/', 'app/', 'docs/', 'frontend/', 'mcp/', 'notebooks/', 'pluto/',
+    'preview/', 'python/', 'scripts/', 'test-data/',
+)
+#: A backticked repo path (with optional `:line`). Rooted only — see `_ROOTED_PATH_PREFIXES`.
+#: Catches `` `frontend/src/components/SelectionTable.vue` `` and
+#: `` `python/cecelia/utils/pop_utils.py:22` `` — the two shapes inventory-style docs use most.
+_BACKTICK_ROOTED_PATH = re.compile(
+    r'`((?:' + '|'.join(re.escape(p) for p in _ROOTED_PATH_PREFIXES) +
+    r')[\w./_-]+\.\w+)(?::(\d+))?`'
+)
+
+#: Snapshot 2026-09-26 of pre-existing backticked-path drift in authoritative docs. Every entry
+#: is a `(containing-doc, broken-target)` tuple; the target is the path alone for a
+#: missing-file miss, or `path:line` for a past-EOF miss. Follow-up branch `fix/doc-ref-drift`
+#: targets all originals — remove entries here as PRs land. The test is deliberately
+#: shape-conservative about what enters here: it accepts only what the current baseline
+#: surfaces, so a NEW stale ref introduced by a later PR fails immediately.
+_KNOWN_STALE_BACKTICK_PATHS = {
+    ('CHANGELOG.md', 'app/src/cleanupImages/af_correct.jl'),
+    ('docs/DEV.md', 'api/src/napari_api.jl'),
+    ('docs/FUTURE.md', 'app/src/tasks/behaviour/track_measures.jl'),
+    ('docs/MAP.md', 'python/cecelia/correction_utils.py'),
+    ('docs/POPULATION.md', 'python/cecelia/utils/spatial_gate_units.py'),
+    ('docs/ai-assist/OBSERVER.md', 'docs/todo/OBSERVER_PHASE2_PLAN.md'),
+    ('docs/audit/simpleitk-opportunities.md', 'python/cecelia/utils/sitk_registration.py'),
+    ('docs/audit/user-profile-field-audit.md', 'docs/todo/PROJECT_VIEWER_STATE_PLAN.md'),
+    ('docs/examples/plugins/README.md', 'python/track_readers.py'),
+    ('docs/inventory/FLOWS.md', 'app/src/napari.jl'),
+    ('docs/inventory/FRONTEND.md', 'python/cecelia/utils/napari_utils.py'),
+    ('docs/inventory/FRONTEND.md', 'frontend/src/components/MarksOverlay.vue'),
+    ('docs/inventory/JULIA_APP.md', 'frontend/src/utils/napariAutoShow.ts'),
+    ('docs/inventory/MCP.md', 'app/src/ai/observer_prompt.jl'),
+    ('mcp/README.md', 'app/src/ai/observer_prompt.jl'),
+}
+
 #: `docs/archive/` is explicitly not authoritative (`CLAUDE.md` -> *Where a note goes*), so a stale
 #: pointer inside an archived brief is a record of what was asked, not a defect to fix.
 _SKIP_DIRS = ('docs/archive/',)
@@ -108,6 +153,53 @@ class DocPointerConventionTest(unittest.TestCase):
                     if not os.path.exists(os.path.join(_REPO, resolved)):
                         bad.append(f'{rel}:{line_no} -> {target}')
         self.assertEqual([], bad, 'dangling markdown links:\n  ' + '\n  '.join(bad))
+
+    def test_backticked_repo_paths_in_docs_resolve(self):
+        """`` `frontend/src/components/SelectionTable.vue` `` and `` `python/cecelia/utils/pop_utils.py:22` ``
+        are the shape inventory-style docs use to point at a specific canonical helper. A rename that
+        moves the file (or a rewrite that shortens the file below the cited line) leaves the doc naming
+        a thing that isn't there — the exact staleness a reader assumes cannot happen for a doc the
+        convention-check reviewer is meant to cite as ground truth.
+
+        Only checks paths ROOTED at a known top-level dir (see `_ROOTED_PATH_PREFIXES`) — inventory
+        shorthand like `` `tasks/task.jl` `` (which means `app/src/tasks/task.jl` in context) is not
+        checkable without knowing the base, so it isn't.
+        """
+        bad = []
+        for rel in _git_ls('*.md'):
+            # `docs/todo/*_PLAN.md` reference aspirational future files and historical
+            # states that were correct when the plan was written. Same rationale that skips
+            # `docs/archive/` in `_SKIP_DIRS` — a plan is a record, not authoritative doc.
+            # Markdown-link checking still applies to plans (see `test_markdown_links_resolve`).
+            if rel.startswith('docs/todo/'):
+                continue
+            for line_no, line in enumerate(_read(rel).split('\n'), 1):
+                for match in _BACKTICK_ROOTED_PATH.finditer(line):
+                    path, line_ref = match.group(1), match.group(2)
+                    # Placeholder patterns used in prose examples ("`docs/todo/X_PLAN.md`",
+                    # "`test-data/.../B.h5ad`") and build-artifact conventions ("`pluto/deps.so`")
+                    # look like paths but never resolve. Skip explicit shapes.
+                    if '...' in path or '<' in path or path.endswith(('X_PLAN.md', 'deps.so')):
+                        continue
+                    full = os.path.join(_REPO, path)
+                    if not os.path.exists(full):
+                        if (rel, path) in _KNOWN_STALE_BACKTICK_PATHS:
+                            continue
+                        bad.append(f'{rel}:{line_no} -> `{path}` (missing)')
+                        continue
+                    if line_ref is None:
+                        continue
+                    n = int(line_ref)
+                    with open(full, 'rb') as fh:
+                        actual = sum(1 for _ in fh)
+                    if n > actual:
+                        if (rel, f'{path}:{line_ref}') in _KNOWN_STALE_BACKTICK_PATHS:
+                            continue
+                        bad.append(
+                            f'{rel}:{line_no} -> `{path}:{line_ref}` (file has {actual} lines)')
+        self.assertEqual([], bad,
+                         'backticked repo paths in docs that no longer resolve (renamed / moved / '
+                         'shrunk past the cited line):\n  ' + '\n  '.join(bad))
 
     def test_doc_paths_cited_from_code_resolve(self):
         bad = []
