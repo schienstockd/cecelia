@@ -42,7 +42,7 @@ regions and tracked cells from one picker.
 """
 function resolve_pop_type(img::CciaImage, value_name::AbstractString, path::AbstractString)::String
     for seg in split(String(path), '/'; keepempty=false)         # derived leaf (e.g. _tracked) → live
-        haskey(_DERIVED_POPS, String(seg)) && return _DERIVED_POPS[String(seg)].pop_type
+        haskey(_DERIVED_POPS, String(seg)) && return string(_DERIVED_POPS[String(seg)].pop_type)
     end
     is_root(path) && return "flow"                               # all-cells root → cells
     # Collect EVERY map the path exists in — not just the first. A single path in two maps (a gate and

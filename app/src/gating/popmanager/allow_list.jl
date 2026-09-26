@@ -144,7 +144,7 @@ function _inject_derived_pops!(m::PopulationMap, paths, pop_type::PopTypeArg)::P
         path = String(path)
         has_pop(m, path) && continue
         spec = get(_DERIVED_POPS, pop_name(path), nothing)
-        (spec === nothing || spec.pop_type != string(pop_type)) && continue
+        (spec === nothing || spec.pop_type != _coerce_pop_type(pop_type)) && continue
         parent = pop_parent(path)
         (is_root(parent) || has_pop(m, parent)) || continue
         add_pop!(m, pop_name(path); parent=parent, filter_measure=spec.filter_measure,
@@ -632,7 +632,7 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
     # Derived pop_types (e.g. `live`): gates are stored under `flow`; layer the derived pops
     # (e.g. _tracked) on top, transiently. Pop_types with no registered derived specs load normally.
     groups = _group_pops_by_value_name(pops, resolved_vn)
-    has_derived = any(s -> s.pop_type == string(pop_type), values(_DERIVED_POPS))
+    has_derived = any(s -> s.pop_type == _coerce_pop_type(pop_type), values(_DERIVED_POPS))
     load_map = function (vn)
         if has_derived
             m = load_pop_map(img; value_name=vn, pop_type="flow")

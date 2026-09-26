@@ -87,16 +87,19 @@ Each fix ships in the same change as this doc.
    baselines (`test_zarr_access_convention.py`, `test_task_json_convention.py`, and the two Julia
    ratchets in `app/test/suite/ratchets.jl`). Growing the baseline now requires bumping the
    constant in the same PR — visible in diff.
-4. **@enum flag verified.** The audit flagged two post-doc `String`-typed fields where the
-   canonical `@enum` sat one dir over:
+4. **@enum flags — one verified as sugar, one fixed inline.** The audit flagged two post-doc
+   `String`-typed fields where the canonical `@enum` sat one dir over:
    - `app/src/tasks/chain/api.jl:205` — `scope::String = ""` in the `chain_node` builder is
-     **intentional API sugar**; the `ChainNode` field itself is `ChainScope` (enum), and the
-     builder converts internally. Not a violation.
-   - `app/src/gating/popmanager/pop_df.jl:268` — `pop_type::String` in `DerivedPopSpec` **is**
-     inconsistent with the `pop_type::PopType` fields in the two `Population` structs one file
-     over (`app/src/gating/popmanager/population.jl:20,57`). Flagged in
-     [`docs/TODO.md`](../TODO.md) as a follow-up; not fixed here because the change touches
-     callers.
+     **intentional API sugar**. Traced: the `ChainNode` field is `ChainScope` (enum), and
+     `_coerce_scope(::AbstractString, fn)` in `app/src/tasks/chain/types.jl:69` handles
+     `String → ChainScope` conversion (documented at 64-66). Not a violation.
+   - `app/src/gating/popmanager/pop_df.jl:268` — `pop_type::String` in `DerivedPopSpec` **was**
+     inconsistent with `pop_type::PopType` on `Population`/`DerivedPop` one file over
+     (`population.jl:20,57`). Fixed in this PR: field flipped to `PopType`, the `_DERIVED_POPS`
+     literal now uses `POP_LIVE` instead of `"live"`, the `resolve_pop_type::String` return-path
+     (`mixed_resolution.jl:45`) got a `string(...)` wrap, and the four `spec.pop_type == /!=
+     string(pop_type)` comparisons across `allow_list.jl` and `pop_df.jl` now compare enum-to-enum
+     via `_coerce_pop_type(pop_type)`.
 
 ## When to revisit this decision
 
