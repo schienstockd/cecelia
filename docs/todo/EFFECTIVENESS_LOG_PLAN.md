@@ -91,6 +91,8 @@ Adding a new event later is fine. Renaming one is painful — decide these caref
 |---|---|---|
 | `sibling_audit_run` | Every time the reviewer subagent is spawned | `hunks_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_modified_code" \| "no_fix_hunk"` |
 | `sibling_audit_finding` | Per finding the reviewer returns | `verdict: "confirmed" \| "plausible" \| "latent"`, `file: str`, `line: int`, `symbol: str`, `outcome: <see below>` |
+| `convention_check_run` | Every time the convention-check reviewer subagent is spawned (see [`CONVENTION_CHECK_PLAN.md`](CONVENTION_CHECK_PLAN.md)) | `additions_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_additions" \| "tests_only" \| "no_additions_worth_checking"`, **`cited_doc_refs: list[str]`** |
+| `convention_check_finding` | Per finding the convention-check reviewer returns | `verdict: "should_reuse" \| "potential_duplicate"`, `file: str`, `line: int`, `added_symbol: str`, `canonical_symbol: str \| null`, **`cited_doc_refs: list[str]`**, `outcome: <see below>` |
 | `ratchet_hit` | When a CLAUDE.md ratchet flags something during a review or edit | `ratchet_id: str` (kebab-case matching CLAUDE.md), `file: str`, `line: int`, `outcome: <see below>` |
 | `human_override` | When Dominik overrules a finding or ratchet ("ship it anyway") | `target_event_ref: {ts, event}`, `reason: str` |
 | `retrospective_miss` | Reserved for post-hoc misses: a bug found later that infra should have caught | `discovered_via: "pr_comment" \| "later_commit" \| "incident" \| "refactor"`, `original_pr: str`, `should_have_fired: str` (which ratchet or "sibling_audit"), `bug_class: str` |
@@ -98,6 +100,8 @@ Adding a new event later is fine. Renaming one is painful — decide these caref
 | `prompt_logged` | When a notable prompt or slash-command is recorded | `command: str` |
 
 The last two are optional and lower-priority; they're listed so the schema has room for them without needing a bump if we wire them up later.
+
+**`cited_doc_refs` — why this field exists.** The convention-check reviewer's evidence fold already lists which docs it consulted (§Reviewer prompt in `CONVENTION_CHECK_PLAN.md`). Capturing that structured — one entry per doc:anchor cited — enables **usage-weighted spot-check** without a separate store or second pass. Shape: `["docs/ui/PRIMITIVES.md#SelectionTable", "docs/inventory/FRONTEND.md:62"]`. On a *run* row it's the union of docs read; on a *finding* row it's the specific citation that grounded the `canonical_symbol` claim. See [Usage-weighted spot-check as a derived query](#usage-weighted-spot-check-as-a-derived-query) below.
 
 ### Outcome vocabulary — CLOSED LIST
 
@@ -159,6 +163,35 @@ Recommendation: **option 1**. Keeps the repo clean of high-churn machine output;
 `/audit-rollup` slash command or `pixi run audit-rollup` task. Reads the jsonl, produces `docs/ai-assist/EFFECTIVENESS.md`, stages it. Dominik reviews the diff, commits if the update is meaningful, discards if it isn't.
 
 Not heartbeated. Not auto-committed. Rationale in the chat that led to this plan: a scheduled agent producing commits creates git churn Dominik didn't ask for, and stale numbers landing publicly without a diff review defeats the transparency goal.
+
+## Usage-weighted spot-check as a derived query
+
+Ground-truth doc staleness (`docs/inventory/*.md`, `docs/ui/PRIMITIVES.md`, `COPY.md`, `docs/PLOTS.md`, module `CLAUDE.md`) is a separate class of failure from the reviewer's own catch rate — a stale doc silently misses drift the reviewer would have flagged. The mechanical `test_backticked_repo_paths_in_docs_resolve` check catches the file-existence class (a doc names something that no longer exists). Semantic drift (doc names a real thing whose behavior changed) is harder.
+
+**With `cited_doc_refs` in the log, semantic-drift spot-check becomes a query over data we're already keeping.** No new store, no separate audit pass:
+
+```
+-- pseudo, over the jsonl:
+SELECT cited_doc_ref, COUNT(*) AS cite_count
+FROM (convention_check_run UNION ALL convention_check_finding)
+GROUP BY cited_doc_ref
+ORDER BY cite_count DESC
+```
+
+The output is a **heat map** of the ground-truth doc set:
+
+- **Hot** (cited N× per quarter) — reviewer relies on this entry heavily. Worth a 5-minute manual spot-check every few months: does the entry still describe the current canonical, or has behavior drifted since the entry was written? Cheap because you only look at a handful.
+- **Cold** (cited 0×) — two hypotheses: either the entry is genuinely unused (candidate for pruning), or the reviewer never runs against changes in that area (worth knowing — a whole domain going unchecked is a distinct failure).
+
+This is *not* a metric to optimize against — same reason as [Non-goals](#non-goals). It's a passive signal Dominik reads between sessions when deciding what to spot-check. Combined with the mechanical link-checker (file existence) and the reviewer-override `outcome=false_positive` signal (which surfaces stale-doc candidates on the hot end directly), it covers three classes of doc staleness at effectively zero incremental cost:
+
+| Staleness class | Detected by |
+|---|---|
+| Doc names a file that doesn't exist | `test_backticked_repo_paths_in_docs_resolve` (mechanical, in CI) |
+| Doc names a real thing but reviewer flags it as stale during review | `convention_check_finding.outcome=false_positive` with reason `stale_doc` |
+| Doc names a real thing, behavior drifted, no one noticed | Usage-weighted spot-check — hot entries reviewed manually every N months |
+
+Nothing new to build for the third row *if* `cited_doc_refs` is in the schema from v1.
 
 ## Reader path — the GitHub landing page
 
