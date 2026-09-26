@@ -37,6 +37,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | The ITEM LIST inside a row's ⋯ overflow menu | `.cc-actions-menu` + `.cc-actions-item` (+ `.cc-actions-head` for a section label, `.danger`, `.armed`) in `style.css`, inside a `TeleportPopover flush`; destructive items arm in place with `ConfirmButton`. Hosts: `ImageTable`, `canvas/PopulationManager` | a per-component `.menu-item` block, or a dialog for a one-click action |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
 | Standalone module page (not the image-table layout) | `components/ModulePage.vue` — a `#controls` slot + content, `layout="flow\|scroll\|fill"` | a per-page `.x-page`/`.x-head` wrapper, a page `<h1>`, or a descriptive subtitle paragraph |
+| Pipeline / writing-surface module page (toolbar + list-and-viewer split) | Match `modules/ChainModule.vue`'s shape — full-height flex column, toolbar on top, two-pane split below via `SelectionTable` + `usePanelResize({edge:'right'})`. Family: `ChainModule`, `TasksModule`, `BlackboardModule`. See *A pipeline / writing-surface module page* below | a per-page `.x-page`/`.x-head`/`.x-split` scaffold, or bordered `surface-1` boxes around the halves |
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
@@ -178,6 +179,17 @@ as display type.) `ModulePage` fixes controls and spacing; `layout="flow|scroll|
 real axis — whether the page flows, scrolls itself, or is a full-height pane whose child scrolls. Per-page
 extras go on the call site as a class (Vue puts the parent's scope ID on a child's root, so a scoped rule
 still applies).
+
+**A pipeline / writing-surface module page matches `ChainModule`'s shape.** `ChainModule`, `TasksModule`
+and `BlackboardModule` read the same: full-height flex column, toolbar on top, two-pane split below
+(`SelectionTable` list on the left, viewer or editor on the right, divider via
+`usePanelResize({edge:'right'})`). No bordered `surface-1` boxes around the halves — the borders are
+dividers, not floating panels. Distinct from both `ModulePage` (single content area) and `ModuleLayout`
+(per-image work surface): a writing surface is project-scoped, not image-scoped. Reach for this shape
+when the page's job is "pick from a list, view/edit one entry at a time" — do not invent a per-page
+`.x-page`/`.x-head`/`.x-split` scaffold. `BlackboardModule` was the case that surfaced the missing
+convention (PR #1070's initial commit hand-rolled all four pieces; three follow-up fix commits rewrote
+it against this shape).
 
 **A page whose work is per-image belongs on `ModuleLayout`, however it started.** Animation moved
 across (Dominik, 2026-08-10): as a standalone page it read whichever image napari happened to have
