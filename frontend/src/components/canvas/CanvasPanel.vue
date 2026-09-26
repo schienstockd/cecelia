@@ -299,13 +299,17 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
    `FloatingPanel.vue`; the maths + pointer loop live in `useResizeHandles`).
    Corners sit ABOVE the edges so the diagonal cursor wins in the overlap.
    Panel has `overflow: hidden` (rounded-corner mask), so handles sit INSIDE
-   the frame — a negative offset would be clipped and un-grabbable. */
-.panel-edge, .panel-corner { position: absolute; z-index: 1; }
+   the frame — a negative offset would be clipped and un-grabbable.
+   z-index sits ABOVE the auto-hide control overlays (`.cc-panel-controls` z:6 in style.css) so a
+   revealed bottom-strip does not eat the S / SE handles it sits over — the drift after this rig
+   replaced browser-native `resize: both`, when the SE handle rode on the panel's own corner and had
+   no z-index competition. Handles are 5px / 14px, so covering the control strip is imperceptible. */
+.panel-edge, .panel-corner { position: absolute; z-index: 7; }
 .panel-edge-n { top: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
 .panel-edge-s { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
 .panel-edge-e { top: 10px; bottom: 10px; right: 0; width: 5px; cursor: ew-resize; }
 .panel-edge-w { top: 10px; bottom: 10px; left: 0; width: 5px; cursor: ew-resize; }
-.panel-corner { width: 14px; height: 14px; z-index: 2; }
+.panel-corner { width: 14px; height: 14px; z-index: 8; }
 .panel-corner-nw { top: 0; left: 0; cursor: nwse-resize; }
 .panel-corner-se { bottom: 0; right: 0; cursor: nwse-resize; }
 .panel-corner-ne { top: 0; right: 0; cursor: nesw-resize; }
