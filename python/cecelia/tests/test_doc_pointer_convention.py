@@ -82,30 +82,6 @@ _BACKTICK_ROOTED_PATH = re.compile(
     r')[\w./_-]+\.\w+)(?::(\d+))?`'
 )
 
-#: Snapshot 2026-09-26 of pre-existing backticked-path drift in authoritative docs. Every entry
-#: is a `(containing-doc, broken-target)` tuple; the target is the path alone for a
-#: missing-file miss, or `path:line` for a past-EOF miss. Follow-up branch `fix/doc-ref-drift`
-#: targets all originals — remove entries here as PRs land. The test is deliberately
-#: shape-conservative about what enters here: it accepts only what the current baseline
-#: surfaces, so a NEW stale ref introduced by a later PR fails immediately.
-_KNOWN_STALE_BACKTICK_PATHS = {
-    ('CHANGELOG.md', 'app/src/cleanupImages/af_correct.jl'),
-    ('docs/DEV.md', 'api/src/napari_api.jl'),
-    ('docs/FUTURE.md', 'app/src/tasks/behaviour/track_measures.jl'),
-    ('docs/MAP.md', 'python/cecelia/correction_utils.py'),
-    ('docs/POPULATION.md', 'python/cecelia/utils/spatial_gate_units.py'),
-    ('docs/ai-assist/OBSERVER.md', 'docs/todo/OBSERVER_PHASE2_PLAN.md'),
-    ('docs/audit/simpleitk-opportunities.md', 'python/cecelia/utils/sitk_registration.py'),
-    ('docs/audit/user-profile-field-audit.md', 'docs/todo/PROJECT_VIEWER_STATE_PLAN.md'),
-    ('docs/examples/plugins/README.md', 'python/track_readers.py'),
-    ('docs/inventory/FLOWS.md', 'app/src/napari.jl'),
-    ('docs/inventory/FRONTEND.md', 'python/cecelia/utils/napari_utils.py'),
-    ('docs/inventory/FRONTEND.md', 'frontend/src/components/MarksOverlay.vue'),
-    ('docs/inventory/JULIA_APP.md', 'frontend/src/utils/napariAutoShow.ts'),
-    ('docs/inventory/MCP.md', 'app/src/ai/observer_prompt.jl'),
-    ('mcp/README.md', 'app/src/ai/observer_prompt.jl'),
-}
-
 #: `docs/archive/` is explicitly not authoritative (`CLAUDE.md` -> *Where a note goes*), so a stale
 #: pointer inside an archived brief is a record of what was asked, not a defect to fix.
 _SKIP_DIRS = ('docs/archive/',)
@@ -183,8 +159,6 @@ class DocPointerConventionTest(unittest.TestCase):
                         continue
                     full = os.path.join(_REPO, path)
                     if not os.path.exists(full):
-                        if (rel, path) in _KNOWN_STALE_BACKTICK_PATHS:
-                            continue
                         bad.append(f'{rel}:{line_no} -> `{path}` (missing)')
                         continue
                     if line_ref is None:
@@ -193,8 +167,6 @@ class DocPointerConventionTest(unittest.TestCase):
                     with open(full, 'rb') as fh:
                         actual = sum(1 for _ in fh)
                     if n > actual:
-                        if (rel, f'{path}:{line_ref}') in _KNOWN_STALE_BACKTICK_PATHS:
-                            continue
                         bad.append(
                             f'{rel}:{line_no} -> `{path}:{line_ref}` (file has {actual} lines)')
         self.assertEqual([], bad,
