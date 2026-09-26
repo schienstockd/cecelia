@@ -1,19 +1,19 @@
 # ── Per-profile settings store (USER_PROFILE_PLAN Phase 4) ─────────────────────────
 #
 # The user profile is the app-wide identity primitive (see docs/todo/USER_PROFILE_PLAN.md). The
-# credential dir under `<config_dir>/kiwi-profiles/<name>/` was introduced in Phase P2 of
+# credential dir under `<config_dir>/user-profiles/<name>/` was introduced in Phase P2 of
 # LOGIN_CREDENTIAL_ISOLATION_PLAN for `.credentials.json`. This file adds a sibling
 # `settings.toml` under the SAME dir — no second layout to reason about, no collision with the
-# View Profiles files that already live at `<config_dir>/profiles/`.
+# View Profiles files that already live at `<config_dir>/view-profiles/`.
 #
 # Storage layout:
 #
-#   <config_dir>/kiwi-profiles/<name>/settings.toml
+#   <config_dir>/user-profiles/<name>/settings.toml
 #
 # The `default` profile is special everywhere else (credentials fall back to `~/.claude`) — for
 # SETTINGS we give it a settings dir like every other profile. The `default` profile's
 # `.credentials.json` still lives at `~/.claude`; only `settings.toml` sits under
-# `<config_dir>/kiwi-profiles/default/`. Rationale: a single-seat install must have SOMEWHERE to
+# `<config_dir>/user-profiles/default/`. Rationale: a single-seat install must have SOMEWHERE to
 # park its preferences, and shoving them into `custom.toml` would blur the install-wide /
 # per-profile boundary that the whole plan exists to draw.
 #
@@ -30,7 +30,7 @@ directory; see `profile_settings_path!` for the live-resolver form.
 """
 profile_settings_dir(name::AbstractString = active_profile_name();
                      config_root::AbstractString = config_dir())::String =
-    joinpath(String(config_root), "kiwi-profiles", String(name))
+    joinpath(String(config_root), "user-profiles", String(name))
 
 """
     profile_settings_path(name = active_profile_name()) -> String

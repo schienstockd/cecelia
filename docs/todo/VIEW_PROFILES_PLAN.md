@@ -47,7 +47,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
 
 1. **Definitions are files; the selection is a setting.** Two different things, and the brief's
    question list conflated them. Profile *definitions* live as drop-in JSON under
-   `<config_dir>/profiles/<name>.json` (same no-rebuild spirit as custom modules, same
+   `<config_dir>/view-profiles/<name>.json` (same no-rebuild spirit as custom modules, same
    `config_dir()` resolver). The *active selection* is a single string.
 2. **The selection is per-user, not per-project** — `cc.viewProfile` in `settings.ts`, following the
    pattern in finding 2. A profile describes **who is driving**, not what the data is; a project
@@ -56,7 +56,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
 3. **Profiles are BUILT in the GUI. A config file is the storage format, not the authoring path**
    (Dominik, 2026-08-17 — this reverses an earlier "picked, not authored" draft). Settings gets the
    selector *and* a builder: create, rename, duplicate, delete a profile, choose its pages and their
-   order, all in the app. Hand-editing a `<config_dir>/profiles/*.json` keeps working (that is how a
+   order, all in the app. Hand-editing a `<config_dir>/view-profiles/*.json` keeps working (that is how a
    profile is shared between machines, and how a plugin can ship one —
    the plugin work, which keeps the two systems decoupled), but nobody should have to write JSON to get
    a smaller menu.
@@ -75,7 +75,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
    Rendering a bespoke drag-and-drop list here would be a new variant of a primitive that already
    exists — the exact bug `CLAUDE.md` names.
 4. **Writes go through the same file store, atomically.** `POST /api/profiles` (create/update) and
-   `DELETE /api/profiles/:id`, writing `<config_dir>/profiles/<id>.json` via `write_json_atomic`. The
+   `DELETE /api/profiles/:id`, writing `<config_dir>/view-profiles/<id>.json` via `write_json_atomic`. The
    **id is derived from the label** with `safe_name_part` (`app/src/utils.jl`) — the user types a name,
    never a filename. Renaming the label of an existing profile keeps its id, so a selection doesn't
    break; "Duplicate" is how you get a new id.
@@ -109,7 +109,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
 
 ## Profile file shape
 
-`<config_dir>/profiles/gating-behaviour.json`:
+`<config_dir>/view-profiles/gating-behaviour.json`:
 
 ```json
 {
@@ -133,7 +133,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
 
 ## Phases
 
-- **P1 — backend.** `<config_dir>/profiles/` reader + shape validation + `GET /api/profiles` returning
+- **P1 — backend.** `<config_dir>/view-profiles/` reader + shape validation + `GET /api/profiles` returning
   `{ dir, profiles: [{ id, label, items }], errors: [{ file, error }] }`. The server validates
   **shape only** — it does not know the route table, which lives in `frontend/src/main.ts`, so
   *unknown paths are resolved in the frontend against the live router* (Decision 8). Package test: a

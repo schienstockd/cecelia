@@ -3,7 +3,7 @@
 // Routes served by `api/src/kiwi_profile_api.jl`:
 //   GET  /api/kiwi/profiles                   → { active, profiles: [{name, dir, isDefault, retired}], legacyReserved }
 //   POST /api/kiwi/profiles/select            → { name }               ; writes [ai].profile in custom.toml
-//   POST /api/kiwi/profiles/create            → { name }               ; mkpath under kiwi-profiles/
+//   POST /api/kiwi/profiles/create            → { name }               ; mkpath under user-profiles/
 //   POST /api/kiwi/profiles/retire            → { name }               ; writes `.kiwi-retired` sentinel (D11)
 //   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
 //
@@ -16,7 +16,7 @@
 // backend rule changes, both must move together.
 
 /** A profile as the roster surfaces it. `default` maps to `~/.claude*` (dir === ''); named
- *  profiles live under `<config_dir>/kiwi-profiles/<name>/`. A `retired` profile keeps its data
+ *  profiles live under `<config_dir>/user-profiles/<name>/`. A `retired` profile keeps its data
  *  on disk (D11 immutable-name) but is non-selectable — the picker greys it out. */
 export interface Profile {
   name: string

@@ -6,7 +6,7 @@ import type { ViewProfile } from '../utils/viewProfiles'
 // View profiles — a curated sidebar (docs/todo/VIEW_PROFILES_PLAN.md).
 //
 // Two separate things, and keeping them separate is the whole design: the profile DEFINITIONS are
-// drop-in files under <config_dir>/profiles/ (this store mirrors /api/profiles), while the ACTIVE
+// drop-in files under <config_dir>/view-profiles/ (this store mirrors /api/profiles), while the ACTIVE
 // SELECTION is a per-user setting (`settings.viewProfile`) — a profile says who is driving, not what
 // the data is, so it must not travel with a shared project.
 //

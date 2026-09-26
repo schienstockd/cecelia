@@ -5,8 +5,8 @@
   Underlying primitive: LOGIN_CREDENTIAL_ISOLATION_PLAN P3 (backend) + P6 (terminal one-liner).
 
   Three server calls chained in one modal so the profile is FULLY ready after Close:
-    1. POST /api/kiwi/profiles/create      — mkpath under kiwi-profiles/<name>/ (URL contract
-                                             preserved; the on-disk name stays kiwi-profiles per
+    1. POST /api/kiwi/profiles/create      — mkpath under user-profiles/<name>/ (URL contract
+                                             preserved; the on-disk name stays user-profiles per
                                              USER_PROFILE_PLAN Decision 7)
     2. POST /api/kiwi/profiles/select      — set [ai].profile = <name>
     3. POST /api/observer/register         — write the observer MCP entry into the new profile's
@@ -68,7 +68,7 @@ async function onSubmit() {
     if (!s.ok) errorMsg.value = `Created, but couldn't select: ${s.error ?? 'unknown'}`
 
     // Register the observer MCP into the new profile's .claude.json. The backend routes this via
-    // _apply_claude_env, which reads the active profile — so this write lands under kiwi-profiles/
+    // _apply_claude_env, which reads the active profile — so this write lands under user-profiles/
     // <name>/, not ~/.claude.json. Without it, a raw `claude` in the profile's shell has no MCP
     // tools and won't pair back to Cecelia. Best-effort: any failure is surfaced but does NOT
     // roll back create/select.
