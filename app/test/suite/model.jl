@@ -573,6 +573,9 @@ end
     # Every write-mode `open` is an offender unless listed here WITH a reason. Deliberately an
     # allow-list of exact call sites, not of whole files: exempting a file would let the next
     # state write in that file slip through, which is precisely how this spread.
+    # Meta-ratchet: growing the allow-list requires bumping `allowed_max` in the same PR, so a
+    # reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+    allowed_max = 5
     allowed = Dict(
         # the atomic writer itself — this IS the tmp-then-rename implementation
         "utils.jl"       => [raw"""open(tmp, "w") do io"""],
@@ -604,5 +607,13 @@ end
               "allow-list entry with a reason if it genuinely isn't durable state" offenders
     end
     @test isempty(offenders)
+
+    # Meta-ratchet: allow-list size hasn't grown.
+    if length(allowed) > allowed_max
+        @error "no hand-rolled state writes: allow-list grew to $(length(allowed)) " *
+               "(cap $allowed_max). Either fix the new write to use write_atomic, or bump " *
+               "`allowed_max` and justify in the PR body. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md."
+    end
+    @test length(allowed) <= allowed_max
 end
 

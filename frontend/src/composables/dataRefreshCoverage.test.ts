@@ -39,6 +39,9 @@ const MUST_REFRESH = [
 
 // Fetches plot/population data but must NOT self-refresh — with the reason, so removing an entry is a
 // deliberate act rather than a shrug.
+// Meta-ratchet: growing EXEMPT requires bumping EXEMPT_MAX in the same PR, so a reviewer sees
+// "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+const EXEMPT_MAX = 10
 const EXEMPT: Record<string, string> = {
   'components/canvas/SummaryPanel.vue':
     'receives `reloadToken` from its host (useSummaryData owns the refresh) — a second watcher would double-fetch',
@@ -97,6 +100,10 @@ describe('task-refresh coverage', () => {
       return !s || !PLOT_DATA_FETCH.test(s.text)
     })
     expect(stale).toEqual([])
+  })
+
+  it('the exemption list has not grown — bump EXEMPT_MAX with justification', () => {
+    expect(Object.keys(EXEMPT).length).toBeLessThanOrEqual(EXEMPT_MAX)
   })
 
   it('is gated by the global setting in ONE place, so the toggle governs everything', () => {
