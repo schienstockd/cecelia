@@ -292,10 +292,16 @@ reservations?". Sibling-call catches case-F fix drift; convention check catches 
 (a new helper/component/endpoint that duplicates an existing canonical). See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
-**Convention-check is advisory for now**: findings land in the reservations recital and (once
-wired) the effectiveness log, but do not block a commit. Locked decision #4 in
+**Convention-check is advisory for now**: findings land in the reservations recital and the
+effectiveness log, but do not block a commit. Locked decision #4 in
 `docs/todo/CONVENTION_CHECK_PLAN.md` — flip to hard-required once the effectiveness log shows the
 FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
+
+**Best-effort log emission after each reviewer returns.** Emit a `sibling_audit_run` and a
+`convention_check_run` event via `python scripts/log_event.py` — the exact commands (payload
+shapes and escape-valve values) are in each reviewer's doc under *Log emission*. Failure to emit
+is not a commit blocker: the log is a best-effort collector, not a gate. Findings emission is
+deferred v1 — needs outcome-resolution design.
 
 ---
 
