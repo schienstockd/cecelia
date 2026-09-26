@@ -74,11 +74,49 @@ def _date_range(events: _t.Sequence[dict]) -> str:
     return f", spanning {_fmt_ts(tss[0])} → {_fmt_ts(tss[-1])}"
 
 
+#: Display order for outcomes in the per-finding table and per-mechanism summary — the more
+#: consequential outcomes lead. `unresolved` is the pending state (a `_finding` row with no
+#: matching `_finding_resolved`); it sits last because a growing pile of unresolveds means
+#: outcome-tag discipline is slipping and warrants attention.
+_OUTCOME_DISPLAY_ORDER = (
+    "fixed_pre_commit",
+    "shipped_with_finding",
+    "false_positive",
+    "dropped_no_action",
+    "unresolved",
+    "no_outcome",  # only for pre-P2 finding rows that carried outcome inline
+)
+
+
+def _latest_resolutions_by_slug(
+    events: _t.Sequence[dict], resolved_event_names: tuple[str, ...]
+) -> dict[str, dict]:
+    """Return the newest `_finding_resolved` row per slug, keyed by slug.
+
+    Append-only log means an outcome can be revised in a later commit (rare but legal). The
+    latest resolution wins — that's what surfaces in the rendered rollup, and the older row
+    stays in the log as history a reader can walk manually.
+    """
+    latest: dict[str, dict] = {}
+    for e in events:
+        if e.get("event") not in resolved_event_names:
+            continue
+        slug = e.get("payload", {}).get("slug")
+        if not slug:
+            continue
+        prev = latest.get(slug)
+        if prev is None or (e.get("ts", "") > prev.get("ts", "")):
+            latest[slug] = e
+    return latest
+
+
 def _mechanism_section(
     title: str,
     run_event: str | tuple[str, ...],
     finding_event: str | tuple[str, ...],
     events: _t.Sequence[dict],
+    *,
+    resolved_event: str | tuple[str, ...] = (),
 ) -> str:
     """Fold events matching ANY of the given event names into a single mechanism section.
 
@@ -86,16 +124,47 @@ def _mechanism_section(
     before this rename PR, and the jsonl log is append-only, so a rollup that hardcoded the
     new name would silently drop every pre-rename row. Passing
     `("fanout_audit_run", "sibling_audit_run")` folds both under the same "Fanout audit" header.
+
+    P2 of FINDINGS_EMISSION_PLAN.md — renders per-finding rows with PR links. Each `_finding`
+    row (keyed by slug) is joined to its latest `_finding_resolved` row (via `resolved_event`,
+    written by the P3 hook). Findings without a resolution render as `[unresolved]`.
     """
     run_events = (run_event,) if isinstance(run_event, str) else run_event
     finding_events = (finding_event,) if isinstance(finding_event, str) else finding_event
+    resolved_events = (resolved_event,) if isinstance(resolved_event, str) else resolved_event
     runs = [e for e in events if e.get("event") in run_events]
     findings = [e for e in events if e.get("event") in finding_events]
     if not runs and not findings:
         return ""
 
-    outcomes: collections.Counter = collections.Counter()
+    resolutions_by_slug = _latest_resolutions_by_slug(events, resolved_events)
+
+    # De-dupe findings by slug (a slug may repeat across recital re-runs of the same PR — the
+    # substantive information is the same, so counting once matches how a reader would count).
+    # Findings without a slug (retrospective backfills, pre-P1 rows) count individually.
+    findings_by_slug: dict[str, dict] = {}
+    slugless_findings: list[dict] = []
     for f in findings:
+        slug = f.get("payload", {}).get("slug")
+        if slug:
+            # Keep the newest one so the description/marker reflect the current recital.
+            prev = findings_by_slug.get(slug)
+            if prev is None or (f.get("ts", "") > prev.get("ts", "")):
+                findings_by_slug[slug] = f
+        else:
+            slugless_findings.append(f)
+
+    unique_findings = list(findings_by_slug.values()) + slugless_findings
+
+    # Outcome summary — for slugged findings the outcome comes from the latest resolution;
+    # for slugless (legacy) rows it comes from the finding payload directly.
+    outcomes: collections.Counter = collections.Counter()
+    for f in findings_by_slug.values():
+        slug = f["payload"]["slug"]
+        resolved = resolutions_by_slug.get(slug)
+        outcome = (resolved or {}).get("payload", {}).get("outcome") or "unresolved"
+        outcomes[outcome] += 1
+    for f in slugless_findings:
         outcomes[f.get("payload", {}).get("outcome") or "no_outcome"] += 1
 
     lines = [f"## {title}", ""]
@@ -108,14 +177,66 @@ def _mechanism_section(
         median = sorted(durations)[len(durations) // 2] if durations else None
         median_txt = f" · median duration {median:.1f}s" if median is not None else ""
         lines.append(f"- **{len(runs)} runs**{median_txt}")
-    if findings:
-        lines.append(f"- **{len(findings)} findings** total")
-        for outcome in ("fixed_pre_commit", "shipped_with_finding", "false_positive", "dropped_no_action", "no_outcome"):
+    if unique_findings:
+        lines.append(f"- **{len(unique_findings)} findings** total")
+        for outcome in _OUTCOME_DISPLAY_ORDER:
             n = outcomes.get(outcome, 0)
             if n:
                 lines.append(f"  - `{outcome}`: {n}")
+        # Per-finding rows — grouped by outcome (resolved-order first, unresolved last), each
+        # with PR link + file:line + desc + outcome tag. This is what makes the page evidence
+        # rather than telemetry: every count is traceable to the PR that raised it.
+        lines.append("")
+        lines.append("<details><summary>Findings</summary>")
+        lines.append("")
+        _render_finding_rows(lines, findings_by_slug, resolutions_by_slug, slugless_findings)
+        lines.append("</details>")
     lines.append("")
     return "\n".join(lines)
+
+
+def _render_finding_rows(
+    lines: list[str],
+    findings_by_slug: dict[str, dict],
+    resolutions_by_slug: dict[str, dict],
+    slugless_findings: list[dict],
+) -> None:
+    """Append one `- <PR> — file:line — desc [**outcome**]` line per finding to `lines`.
+
+    Groups by outcome in the display order; within a group, PR-then-file for stability across
+    renders. Slugless legacy findings render last under the same grouping.
+    """
+    def _row_for_slug(slug: str, f: dict) -> tuple[str, str]:
+        payload = f.get("payload", {})
+        resolved = resolutions_by_slug.get(slug)
+        outcome = (resolved or {}).get("payload", {}).get("outcome") or "unresolved"
+        file = payload.get("file", "?")
+        line = payload.get("line", "?")
+        desc = payload.get("desc", "").strip()
+        pr = (resolved or {}).get("pr") or f.get("pr")
+        pr_txt = f"{pr} — " if pr else ""
+        return outcome, f"- {pr_txt}`{file}:{line}` — {desc} [**{outcome}**]"
+
+    def _row_for_slugless(f: dict) -> tuple[str, str]:
+        payload = f.get("payload", {})
+        outcome = payload.get("outcome") or "no_outcome"
+        file = payload.get("file", "?")
+        line = payload.get("line", "?")
+        desc = payload.get("desc", "").strip()
+        pr = f.get("pr")
+        pr_txt = f"{pr} — " if pr else ""
+        return outcome, f"- {pr_txt}`{file}:{line}` — {desc} [**{outcome}**]"
+
+    rows: list[tuple[str, str]] = []
+    for slug, f in findings_by_slug.items():
+        rows.append(_row_for_slug(slug, f))
+    for f in slugless_findings:
+        rows.append(_row_for_slugless(f))
+
+    order_index = {o: i for i, o in enumerate(_OUTCOME_DISPLAY_ORDER)}
+    rows.sort(key=lambda r: (order_index.get(r[0], 99), r[1]))
+    for _, row in rows:
+        lines.append(row)
 
 
 def _ratchets_section(events: _t.Sequence[dict]) -> str:
@@ -183,8 +304,15 @@ def render_rollup(events: _t.Iterable[dict], *, rendered_ts: str | None = None) 
             ("fanout_audit_run", "sibling_audit_run"),
             ("fanout_audit_finding", "sibling_audit_finding"),
             events,
+            resolved_event=("fanout_audit_finding_resolved", "sibling_audit_finding_resolved"),
         ),
-        _mechanism_section("Convention check", "convention_check_run", "convention_check_finding", events),
+        _mechanism_section(
+            "Convention check",
+            "convention_check_run",
+            "convention_check_finding",
+            events,
+            resolved_event="convention_check_finding_resolved",
+        ),
         _ratchets_section(events),
         _misses_section(events),
     ):
