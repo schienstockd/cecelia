@@ -20,10 +20,13 @@
 
 import JSON3
 
-# The `legacy` profile is reserved for the D10 read-time default on pass entries missing the
-# profile field. It must never be creatable (would collide with the sentinel) or selectable (a
-# user picking "legacy" as their identity is meaningless).
-const _KIWI_RESERVED_PROFILE_NAMES = ("legacy",)
+# Reserved profile names — never creatable, never listed in the roster:
+#   `legacy` — D10 read-time default for pass entries missing the profile field. A user picking
+#              "legacy" as their identity would collide with the sentinel and is meaningless.
+#   `peanut` — the frontend's display alias for `default` (mirror of `DEFAULT_PROFILE_DISPLAY_NAME`
+#              in `frontend/src/utils/profileApi.ts`). Blocked here so no new profile can visually
+#              collide with the picker's synthetic default row.
+const _KIWI_RESERVED_PROFILE_NAMES = ("legacy", "peanut")
 
 # Kiwi profile names must be usable as directory names AND look like git-author-shaped labels.
 # Deliberately narrow: lower-ASCII alnum + `-` + `_`, 1..32 chars. Rejects `.` / `/` / whitespace
@@ -85,7 +88,7 @@ function api_kiwi_profiles_create(body_bytes::Vector{UInt8})
     _valid_kiwi_profile_name(String(name)) || return 400, JSON3.write((;
         ok = false,
         error = "Profile name must be 1-32 chars, lower-ASCII alnum + `-` / `_`; " *
-                "`legacy` and `default` are reserved."))
+                "`legacy`, `default` and `peanut` are reserved."))
     # `default` is not creatable — it's a magic name that maps to `~/.claude`.
     String(name) == "default" && return 400, JSON3.write((;
         ok = false, error = "`default` already exists — it maps to `~/.claude`."))
@@ -165,7 +168,7 @@ function api_kiwi_profiles_rename(body_bytes::Vector{UInt8})
         ok = false, error = "Invalid old profile name."))
     _valid_kiwi_profile_name(new_name) || return 400, JSON3.write((;
         ok = false, error = "New profile name must be 1-32 chars, lower-ASCII alnum + `-` / `_`; " *
-                            "`legacy` and `default` are reserved."))
+                            "`legacy`, `default` and `peanut` are reserved."))
     old_name == new_name && return 400, JSON3.write((;
         ok = false, error = "New name matches the old name."))
     root = joinpath(config_dir(), "kiwi-profiles")

@@ -4,9 +4,11 @@
 // project list filter) reads from the choice made here. See docs/todo/USER_PROFILE_PLAN.md Phase 2.
 //
 // Gate is in main.ts's boot guard, keyed off `appCtl.needsProfilePick` set by refreshStartup():
-//   - single profile → picker is auto-skipped (never mounted).
-//   - > 1 profile   → boot guard bounces every other route here until the user picks.
+//   - one *selectable* (non-retired) profile → picker is auto-skipped (never mounted).
+//   - > 1 selectable   → boot guard bounces every other route here until the user picks.
 //   - reload re-arms — the pick does NOT survive a page reload (a shared box switches drivers).
+//   - onMounted also auto-picks if it lands here with a single selectable row (belt-and-suspenders
+//     for older builds where the gate counted retired siblings).
 //
 // Layout: card matching /setup, one clickable row per profile. Retired profiles surface greyed out
 // (D11 immutable-name lifecycle — the record must stay resolvable, but new turns can't run under
@@ -16,7 +18,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppControlStore } from '../stores/appControl'
 import { useLogStore } from '../stores/log'
-import { fetchProfiles, selectProfile, type Profile, type ProfileRoster } from '../utils/profileApi'
+import { fetchProfiles, selectProfile, profileDisplayName,
+         type Profile, type ProfileRoster } from '../utils/profileApi'
 import CreateProfileDialog from '../components/profile/CreateProfileDialog.vue'
 
 const router = useRouter()
@@ -35,6 +38,11 @@ const retired = computed(() => roster.value.profiles.filter(p => p.retired))
 onMounted(async () => {
   try {
     roster.value = await fetchProfiles()
+    // Belt-and-suspenders auto-pick: if a user lands on the picker with exactly one selectable
+    // profile (e.g. the store gate lagged, or a retired sibling padded the count in an older
+    // build), pick it for them instead of forcing a redundant click.
+    const sel = roster.value.profiles.filter(p => !p.retired)
+    if (sel.length === 1) { void pick(sel[0]); return }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     log.error(`Profile picker: fetch failed — ${error.value}`, { source: 'profile-picker' })
@@ -89,7 +97,7 @@ function onProfileCreated(name: string) {
                     ? 'Default profile — uses your shared ~/.claude credentials'
                     : `Named profile — credentials live under kiwi-profiles/${p.name}/`">
             <span class="pp-name">
-              {{ p.name }}
+              {{ profileDisplayName(p) }}
               <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-xs">(~/.claude)</span>
               <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-xs">last used</span>
             </span>
@@ -99,7 +107,7 @@ function onProfileCreated(name: string) {
         </li>
         <li v-for="p in retired" :key="p.name" class="pp-row-retired">
           <span class="pp-name cc-muted">
-            {{ p.name }} <span class="pp-tag cc-fs-xs">(retired)</span>
+            {{ profileDisplayName(p) }} <span class="pp-tag cc-fs-xs">(retired)</span>
           </span>
         </li>
       </ul>

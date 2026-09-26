@@ -146,11 +146,11 @@ const statusTip: Record<string, string> = {
          version, connection, profile. Click opens Preferences → Profiles for switching. -->
     <button type="button" class="profile-chip"
             data-guide="header.profileChip"
-            v-tooltip.bottom="`Active profile: ${appCtl.activeProfileName} — click to switch`"
+            v-tooltip.bottom="`Active profile: ${appCtl.activeProfileDisplayName} — click to switch`"
             aria-label="Active profile — open Preferences"
             @click="openPreferences">
       <i class="pi pi-user" />
-      {{ appCtl.activeProfileName }}
+      {{ appCtl.activeProfileDisplayName }}
     </button>
 
     <!-- Version chip — the running version as `/api/update/check` reports it (verbatim: a tag like

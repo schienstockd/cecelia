@@ -73,6 +73,17 @@ export interface RetireProfileResult {
   error?: string
 }
 
+/** Display alias for the magic `default` profile — a gender-neutral pet name in the spirit of the
+ *  R version's `random.names.animals` list. Internally the profile is still `default` (maps to
+ *  `~/.claude`); this is a cosmetic-only relabel wherever the UI would otherwise say "default". */
+export const DEFAULT_PROFILE_DISPLAY_NAME = 'peanut'
+
+/** How a profile should read in the UI. `default` → `DEFAULT_PROFILE_DISPLAY_NAME`; anything else
+ *  is its own name. Keep the on-disk / API name unchanged — this is display only. */
+export function profileDisplayName(p: Pick<Profile, 'name' | 'isDefault'>): string {
+  return p.isDefault ? DEFAULT_PROFILE_DISPLAY_NAME : p.name
+}
+
 const _JSON = { 'Content-Type': 'application/json' }
 
 async function _json(res: Response): Promise<any> {
@@ -195,6 +206,8 @@ export function isValidProfileName(name: string,
                                        reserved: readonly string[] = ['legacy']): boolean {
   if (name.length < 1 || name.length > 32) return false
   if (name === 'default') return false                          // magic name — reserved
+  // Also reserve the default's display alias so the picker never shows two identical rows.
+  if (name === DEFAULT_PROFILE_DISPLAY_NAME) return false
   for (const r of reserved) if (name === r) return false
   for (const c of name) {
     const ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c === '-' || c === '_'
