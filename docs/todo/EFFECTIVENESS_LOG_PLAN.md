@@ -2,6 +2,8 @@
 
 Status: **DRAFT (2026-09-26)** — plan only, nothing built. Awaiting Dominik's pushback on schema, event taxonomy, and the public-vs-private split before any code lands.
 
+**Prior-art scope search:** [`docs/ai-assist/DRIFT_DETECTION_PRIOR_ART.md`](../ai-assist/DRIFT_DETECTION_PRIOR_ART.md) — why we didn't adopt drift-analyzer / Revieko / Conclave / AgentSync and what we borrowed.
+
 ## Goal
 
 Produce **structured evidence** — not prose highlights — that Cecelia's AI-assist infrastructure (the [sibling-call audit reviewer](../ai-assist/SIBLING_CALL_AUDIT.md), the CLAUDE.md ratchets, plan/prompt logs) catches what it claims to catch, at what false-positive cost, and — where possible — what it misses.

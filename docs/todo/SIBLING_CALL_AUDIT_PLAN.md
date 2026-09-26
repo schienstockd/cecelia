@@ -2,6 +2,8 @@
 
 **Status:** **P1 + P2 built** (2026-09-26) on `docs/drift-catch-modes`; P0 skipped in favour of running live — the reviewer is now wired into every reservations recital via [`CLAUDE.md`](../../CLAUDE.md) and its prompt lives at [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md).
 
+**Prior-art scope search:** [`docs/ai-assist/DRIFT_DETECTION_PRIOR_ART.md`](../ai-assist/DRIFT_DETECTION_PRIOR_ART.md) — why we didn't adopt drift-analyzer / Revieko / Conclave / AgentSync and what we borrowed.
+
 **Related:**
 - Parent decision: [`DRIFT_PREVENTION_ASSESSMENT.md`](DRIFT_PREVENTION_ASSESSMENT.md) — declined the general harness (2026-09-26). This plan reopens **one** of the three shapes that doc kept as "future option" (the scoped adversarial-review subagent), because the parent doc's own trigger — *"one is chance; two is a pattern that pays for a scoped adversarial reviewer"* — has already fired.
 - Catch-mode audit: [`../archive/drift_catch_modes_audit.md`](../archive/drift_catch_modes_audit.md)

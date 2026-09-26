@@ -297,6 +297,26 @@ effectiveness log, but do not block a commit. Locked decision #4 in
 `docs/todo/CONVENTION_CHECK_PLAN.md` — flip to hard-required once the effectiveness log shows the
 FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
 
+**Per-finding outcome tag — required, enforced by a pre-commit hook.** Every `**confirmed**`
+sibling finding and every `**should reuse**` convention finding in the recital must carry an
+outcome tag from the closed vocabulary. The tag goes at the end of the finding line, in square
+brackets:
+
+- `[fixed_pre_commit]` — the fix is in the diff you're about to commit.
+- `[shipped_with_finding: <reason>]` — you're choosing to ship despite the finding; state why.
+- `[false_positive: <reason>]` — the finding is wrong; state why.
+- `[dropped_no_action: <reason>]` — raised but not resolved before session ended; state why.
+
+The hook (`.claude/hooks/check_commit_recital.py`, wired via `.claude/settings.json` PreToolUse
+on Bash) grep-checks the commit message for a matching outcome tag per finding and blocks the
+commit if any are missing. It doesn't validate the outcome itself — a bad-faith
+`false_positive: reasons` still passes — but the disclosure step can't be silently skipped.
+That's what turns advisory into "advisory-with-teeth" for autonomous mode: findings in the log
+become gradeable later (did shipped-anyway correlate with real bugs?) rather than just noise
+in a text output the reader may not see.
+
+Bypass with `CECELIA_SKIP_RECITAL_CHECK=1` for real emergencies.
+
 **Best-effort log emission after each reviewer returns.** Emit a `sibling_audit_run` and a
 `convention_check_run` event via `python scripts/log_event.py` — the exact commands (payload
 shapes and escape-valve values) are in each reviewer's doc under *Log emission*. Failure to emit

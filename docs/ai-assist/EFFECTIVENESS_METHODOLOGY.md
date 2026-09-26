@@ -1,6 +1,6 @@
 # Effectiveness log — methodology
 
-Companion to [`EFFECTIVENESS.md`](EFFECTIVENESS.md) (the rendered rollup). Design record: [`docs/todo/EFFECTIVENESS_LOG_PLAN.md`](../todo/EFFECTIVENESS_LOG_PLAN.md).
+Companion to [`EFFECTIVENESS.md`](EFFECTIVENESS.md) (the rendered rollup). Design record: [`docs/todo/EFFECTIVENESS_LOG_PLAN.md`](../todo/EFFECTIVENESS_LOG_PLAN.md). Prior-art scope search: [`DRIFT_DETECTION_PRIOR_ART.md`](DRIFT_DETECTION_PRIOR_ART.md).
 
 **What this page is:** the schema and rules the rollup renders under — what a row means, what the closed vocabularies are, and (deliberately, in the same file) what the log structurally cannot measure. Kept alongside the rollup so an external reader sees the ceiling and the numbers in the same place, not one link away.
 
