@@ -164,6 +164,7 @@ For how these actually work, read the permanent `docs/<AREA>.md`. A built plan d
 | [`NOTEBOOK_PLAYGROUND_PLAN.md`](NOTEBOOK_PLAYGROUND_PLAN.md) | BUILT (confirmed 2026-08-20) | Pluto notebooks as the structured home for downstream analysis. As-built: `docs/NOTEBOOKS.md` |
 | [`ANIMATION_PLAN.md`](ANIMATION_PLAN.md) | BUILT — A–G + F1/F2 + Phase H all done (2026-07-24) | Publication figures and movies: channel layers, colours, tracks, title cards, on the shared snapshot foundation |
 | [`MULTI_POP_TRACKING_PLAN.md`](MULTI_POP_TRACKING_PLAN.md) | **shipped** #741–#746 (2026-09-01) | Stable population UIDs, provenance-aware `_write_back` (`track_source` obs column), per-pop `hasTracks` payload flag + per-pop track-layer rows in the viewer. Follow-up gaps (orphan cleanup, cross-pop collision) in [`MULTI_POP_TRACKING_ORPHANS_PLAN.md`](MULTI_POP_TRACKING_ORPHANS_PLAN.md) |
+| [`SPACR_INSPIRED_PLAN.md`](SPACR_INSPIRED_PLAN.md) | **parked** (2026-09-24) · branch `docs/spacr-inspired-plan` · `pixi run doctor` already shipped (`scripts/doctor.jl`); THIRD_PARTY.md citation still outstanding | Two additive features lifted from spaCR (Olafsson et al., BSD-3): **HeldPin** (chain-edge inputs pinned against upstream drift) and **`pixi run doctor`** (one-command fresh-clone audit), plus the citation policy for ideas borrowed from other single-lab tools. Ideas not code — no BSD-3 obligation, academic acknowledgement only. Surveys in `scratchpad/spacr-analysis.md` + `scratchpad/spacr-items-vs-cecelia.md` |
 
 ### Trackers and audits — not plans
 
