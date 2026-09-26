@@ -5,7 +5,7 @@ The row shape (schema_version 1):
     {
       "schema_version": 1,
       "ts": "2026-09-26T14:22:11Z",  # ISO-8601 UTC
-      "event": "sibling_audit_finding",
+      "event": "fanout_audit_finding",
       "session": "<claude-code-session-id>",
       "source": "live" | "retrospective_<tag>",
       "pr": "#1240" | null,
@@ -34,8 +34,8 @@ SCHEMA_VERSION = 1
 
 #: The full closed event taxonomy from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Event taxonomy.
 EVENT_TYPES = frozenset({
-    "sibling_audit_run",
-    "sibling_audit_finding",
+    "fanout_audit_run",
+    "fanout_audit_finding",
     "convention_check_run",
     "convention_check_finding",
     "ratchet_hit",
@@ -46,7 +46,7 @@ EVENT_TYPES = frozenset({
 })
 
 #: Closed outcome vocabulary from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Outcome vocabulary.
-#: Used on `sibling_audit_finding`, `convention_check_finding`, `ratchet_hit` payloads.
+#: Used on `fanout_audit_finding`, `convention_check_finding`, `ratchet_hit` payloads.
 OUTCOME_VOCABULARY = frozenset({
     "fixed_pre_commit",
     "shipped_with_finding",

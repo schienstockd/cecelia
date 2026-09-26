@@ -1,12 +1,12 @@
 # Convention-check — the pre-commit anti-duplication reviewer
 
-**What this file is:** the exact prompt the pre-commit convention-check reviewer subagent is spawned with. Also the mechanism note and the escape valves. Cited from [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*. Companion to [`SIBLING_CALL_AUDIT.md`](SIBLING_CALL_AUDIT.md) — same shape, different job.
+**What this file is:** the exact prompt the pre-commit convention-check reviewer subagent is spawned with. Also the mechanism note and the escape valves. Cited from [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*. Companion to [`FANOUT_AUDIT.md`](FANOUT_AUDIT.md) — same shape, different job.
 
-**Why this exists:** catch **convention drift** — a new helper, component, endpoint, or accessor that duplicates an existing canonical implementation, or that skips an existing framework. The two real cases the plan calibrated on: [PR #1070](https://github.com/schienstockd/cecelia/pull/1070)'s Blackboard page hand-rolled `<ul>` / bespoke buttons / fixed-width pane instead of `SelectionTable` / `ConfirmDeleteButton` / `usePanelResize` — three follow-up fix commits rewrote it. Sibling-call audit does not catch this class (it hunts fix drift outward from a hunk, not addition-drift inward from inventory). Design record: [`../todo/CONVENTION_CHECK_PLAN.md`](../todo/CONVENTION_CHECK_PLAN.md).
+**Why this exists:** catch **convention drift** — a new helper, component, endpoint, or accessor that duplicates an existing canonical implementation, or that skips an existing framework. The two real cases the plan calibrated on: [PR #1070](https://github.com/schienstockd/cecelia/pull/1070)'s Blackboard page hand-rolled `<ul>` / bespoke buttons / fixed-width pane instead of `SelectionTable` / `ConfirmDeleteButton` / `usePanelResize` — three follow-up fix commits rewrote it. Fanout audit does not catch this class (it hunts fix drift outward from a hunk, not addition-drift inward from inventory). Design record: [`../todo/CONVENTION_CHECK_PLAN.md`](../todo/CONVENTION_CHECK_PLAN.md).
 
 ## How it runs
 
-At the pre-commit reservations step, the implementing agent spawns a fresh subagent — parallel to the sibling-call audit, same shape:
+At the pre-commit reservations step, the implementing agent spawns a fresh subagent — parallel to the fanout audit, same shape:
 
 ```
 Agent(

@@ -2,7 +2,7 @@
 
 _Rendered 2026-09-26T07:35:59Z — no events logged yet._
 
-The AI-assist infrastructure (pre-commit sibling-call audit, CLAUDE.md ratchets, convention-check reviewer) writes structured rows to `~/.cecelia-effectiveness/events.jsonl` as it runs. This page renders those rows into an aggregate view of catch rate, false-positive rate, and what the infrastructure structurally cannot measure.
+The AI-assist infrastructure (pre-commit fanout audit, CLAUDE.md ratchets, convention-check reviewer) writes structured rows to `~/.cecelia-effectiveness/events.jsonl` as it runs. This page renders those rows into an aggregate view of catch rate, false-positive rate, and what the infrastructure structurally cannot measure.
 
 See [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) for the schema, event taxonomy, sample method, and the honest ceiling on what this log can and cannot tell you.
 

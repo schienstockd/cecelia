@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """CLI wrapper for the effectiveness log's `append_event`.
 
-Called by the sibling-call audit and convention-check reviewer hooks after a run — the parent
+Called by the fanout audit and convention-check reviewer hooks after a run — the parent
 agent emits an event to jsonl so the log accumulates data the rollup script can render later.
 
 Usage:
-    python scripts/log_event.py --event sibling_audit_run \\
+    python scripts/log_event.py --event fanout_audit_run \\
         --payload '{"hunks_reviewed": 3, "duration_s": 27.4}'
 
     # OR read the event dict from stdin:

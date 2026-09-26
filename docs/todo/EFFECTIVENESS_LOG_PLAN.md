@@ -6,12 +6,12 @@ Status: **DRAFT (2026-09-26)** — plan only, nothing built. Awaiting Dominik's 
 
 ## Goal
 
-Produce **structured evidence** — not prose highlights — that Cecelia's AI-assist infrastructure (the [sibling-call audit reviewer](../ai-assist/SIBLING_CALL_AUDIT.md), the CLAUDE.md ratchets, plan/prompt logs) catches what it claims to catch, at what false-positive cost, and — where possible — what it misses.
+Produce **structured evidence** — not prose highlights — that Cecelia's AI-assist infrastructure (the [fanout audit reviewer](../ai-assist/FANOUT_AUDIT.md), the CLAUDE.md ratchets, plan/prompt logs) catches what it claims to catch, at what false-positive cost, and — where possible — what it misses.
 
 Two audiences, both under-served today:
 
 1. **Presentation audience.** When Dominik shows this infra externally, the only evidence available is Claude-generated highlight prose from `docs/ai-assist/*` — cherry-picked cases, no denominator, no false-positive counterweight. A skeptical reviewer can dismiss it as anecdote.
-2. **Internal tuning loop.** Ratchets and audits already get adjusted via PR-trail evidence (`feedback_measure_before_calling_churn`, the two PR-trail audits cited in [SIBLING_CALL_AUDIT.md](../ai-assist/SIBLING_CALL_AUDIT.md)). That reading is manual, slow, and doesn't compound. Structured rows do.
+2. **Internal tuning loop.** Ratchets and audits already get adjusted via PR-trail evidence (`feedback_measure_before_calling_churn`, the two PR-trail audits cited in [FANOUT_AUDIT.md](../ai-assist/FANOUT_AUDIT.md)). That reading is manual, slow, and doesn't compound. Structured rows do.
 
 The goal is the **same data serving both**, without the model ever reading its own scoreboard (see [Non-goals](#non-goals)).
 
@@ -38,12 +38,12 @@ One-time systematic re-reading of a **fixed sample** of recent PRs, classifying 
 **Sample method** (draft — needs Dominik's call):
 
 - Fixed window, e.g. last quarter (2026-Q3) or last 30 merged PRs on `main`. Stated up front on the rollup page.
-- No exclusions. Every PR in the window is classified, including trivial docs-only PRs (they get `sibling_audit: skipped_docs_only` and count as a valid sample point, not a discard).
+- No exclusions. Every PR in the window is classified, including trivial docs-only PRs (they get `fanout_audit: skipped_docs_only` and count as a valid sample point, not a discard).
 - Rows tagged `source: "retrospective_2026Q3"` so aggregate numbers can split retrospective from live rows.
 
 **What gets classified per PR**:
 
-- Did the sibling-call audit run? (Skipped-docs / skipped-no-code / ran.)
+- Did the fanout audit run? (Skipped-docs / skipped-no-code / ran.)
 - If it ran, what did it flag? Confirmed / plausible / none.
 - Per confirmed finding: real bug, false positive, or unclear?
 - Per real bug: fixed pre-commit, shipped with finding, or dropped?
@@ -68,7 +68,7 @@ Every row is a JSON object with these top-level fields:
 {
   "schema_version": 1,
   "ts": "2026-09-26T14:22:11Z",       // ISO-8601 UTC
-  "event": "sibling_audit_finding",   // closed list — see Event taxonomy
+  "event": "fanout_audit_finding",   // closed list — see Event taxonomy
   "session": "ee757e9e",              // Claude Code session id — PRIVATE, stripped on public render
   "source": "live",                   // "live" | "retrospective_<tag>"
   "pr": "#1240",                      // may be null pre-commit
@@ -91,13 +91,13 @@ Adding a new event later is fine. Renaming one is painful — decide these caref
 
 | `event` | When emitted | Payload fields |
 |---|---|---|
-| `sibling_audit_run` | Every time the reviewer subagent is spawned | `hunks_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_modified_code" \| "no_fix_hunk"` |
-| `sibling_audit_finding` | Per finding the reviewer returns | `verdict: "confirmed" \| "plausible" \| "latent"`, `file: str`, `line: int`, `symbol: str`, `outcome: <see below>` |
+| `fanout_audit_run` | Every time the reviewer subagent is spawned | `hunks_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_modified_code" \| "no_fix_hunk"` |
+| `fanout_audit_finding` | Per finding the reviewer returns | `verdict: "confirmed" \| "plausible" \| "latent"`, `file: str`, `line: int`, `symbol: str`, `outcome: <see below>` |
 | `convention_check_run` | Every time the convention-check reviewer subagent is spawned (see [`CONVENTION_CHECK_PLAN.md`](CONVENTION_CHECK_PLAN.md)) | `additions_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_additions" \| "tests_only" \| "no_additions_worth_checking"`, **`cited_doc_refs: list[str]`** |
 | `convention_check_finding` | Per finding the convention-check reviewer returns | `verdict: "should_reuse" \| "potential_duplicate"`, `file: str`, `line: int`, `added_symbol: str`, `canonical_symbol: str \| null`, **`cited_doc_refs: list[str]`**, `outcome: <see below>` |
 | `ratchet_hit` | When a CLAUDE.md ratchet flags something during a review or edit | `ratchet_id: str` (kebab-case matching CLAUDE.md), `file: str`, `line: int`, `outcome: <see below>` |
 | `human_override` | When Dominik overrules a finding or ratchet ("ship it anyway") | `target_event_ref: {ts, event}`, `reason: str` |
-| `retrospective_miss` | Reserved for post-hoc misses: a bug found later that infra should have caught | `discovered_via: "pr_comment" \| "later_commit" \| "incident" \| "refactor"`, `original_pr: str`, `should_have_fired: str` (which ratchet or "sibling_audit"), `bug_class: str` |
+| `retrospective_miss` | Reserved for post-hoc misses: a bug found later that infra should have caught | `discovered_via: "pr_comment" \| "later_commit" \| "incident" \| "refactor"`, `original_pr: str`, `should_have_fired: str` (which ratchet or "fanout_audit"), `bug_class: str` |
 | `plan_logged` | When a plan doc is written into `docs/todo/` (currently manual, could auto-instrument) | `path: str`, `origin_session: str` |
 | `prompt_logged` | When a notable prompt or slash-command is recorded | `command: str` |
 
@@ -234,7 +234,7 @@ Naming these on the page up front kills the strongest pushback lines before they
 
 ## Prior art in this repo
 
-- [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](../ai-assist/SIBLING_CALL_AUDIT.md) — the reviewer being measured.
+- [`docs/ai-assist/FANOUT_AUDIT.md`](../ai-assist/FANOUT_AUDIT.md) — the reviewer being measured.
 - [`docs/ai-assist/ROADMAP.md`](../ai-assist/ROADMAP.md) — the phased vision this fits into.
-- [`docs/todo/SIBLING_CALL_AUDIT_PLAN.md`](SIBLING_CALL_AUDIT_PLAN.md) — original design record for the reviewer.
+- [`docs/todo/FANOUT_AUDIT_PLAN.md`](FANOUT_AUDIT_PLAN.md) — original design record for the reviewer.
 - `CLAUDE.md` §*Git & commits* — where the ratchets and reservations discipline are defined.
