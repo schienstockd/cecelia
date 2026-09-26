@@ -43,6 +43,15 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### `DerivedPopSpec.pop_type` is `String` where the canonical type is `PopType`
+
+`app/src/gating/popmanager/pop_df.jl:268` declares `pop_type::String` in `DerivedPopSpec`, storing
+values like `"live"` — inconsistent with `Population`/`DerivedPop` in `population.jl:20,57` which
+declare `pop_type::PopType` (the `@enum` from `types.jl:62`). Flagged by the drift-prevention audit
+(2026-09-26); not fixed there because the change touches callers. Change to `pop_type::PopType`,
+update the `_DERIVED_POPS` literal (`POP_LIVE` instead of `"live"`), and check the resolution site
+in `pop_df.jl` that reads it. See `docs/todo/DRIFT_PREVENTION_ASSESSMENT.md` → *fix 4*.
+
 ### `segment.measureLabels` picks the wrong intensity image on any drift-corrected project
 
 Reproduces on any image whose labels were computed against a *derived* value (denoised, drift-

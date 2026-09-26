@@ -40,4 +40,6 @@ When you add a significant new shared component (a shared util, a canonical help
 component, a new API handler file), add a line to the matching area file in the same change — not to
 this index. Only add a row here if you create a genuinely new *area*.
 
-Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce165).
+Last audited: 2026-09-26 (this stamp applies to the *index shape and area partitioning* only; the
+per-area `docs/inventory/*.md` files carry their own currency and are updated in-line as new
+canonical helpers land — a stale stamp here doesn't imply a stale index).

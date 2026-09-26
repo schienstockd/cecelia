@@ -113,6 +113,9 @@ end
     # #913 (segment), #914 (opticalFlow), #915 (tail: importImages, exportImages, clust*,
     # behaviour, spatialAnalysis). See docs/archive/comment-audit-findings.md for the register.
     TYPED_PARAMS_MIGRATION_BASELINE = Set{String}()
+    # Meta-ratchet: growing the baseline requires bumping this cap in the same PR, so a reviewer
+    # sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+    TYPED_PARAMS_MIGRATION_BASELINE_MAX = 0
 
     # Walk every _run_task body via Meta.parseall — robust vs regex (docstrings, nested `end`,
     # helper functions that happen to name their positional arg `params`).
@@ -251,6 +254,15 @@ end
     end
     @test isempty(stale_baseline)
 
+    # Meta-ratchet: baseline size hasn't grown.
+    if length(TYPED_PARAMS_MIGRATION_BASELINE) > TYPED_PARAMS_MIGRATION_BASELINE_MAX
+        @error "typed-params ratchet: baseline grew to $(length(TYPED_PARAMS_MIGRATION_BASELINE)) " *
+               "(cap $TYPED_PARAMS_MIGRATION_BASELINE_MAX). Either fix the new violation, or bump " *
+               "`TYPED_PARAMS_MIGRATION_BASELINE_MAX` and justify in the PR body. " *
+               "See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md."
+    end
+    @test length(TYPED_PARAMS_MIGRATION_BASELINE) <= TYPED_PARAMS_MIGRATION_BASELINE_MAX
+
     # Sanity: the scan must actually find `_run_task` bodies; a wrong root would let real offenders
     # slip through with an empty offender list. cleanupImages + editImages already ship the pattern.
     canonical = String[]
@@ -305,6 +317,9 @@ end
         # cohort-comparable. Close in a follow-up.
         joinpath("tasks", "segment", "ridges.jl"),
     ])
+    # Meta-ratchet: growing the baseline requires bumping this cap in the same PR, so a reviewer
+    # sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
+    COHORT_METRICS_BASELINE_MAX = 6
 
     # Extract the `fun_name` a task's write_qc call names (`write_qc(img, "segment.ridges", …)`).
     _fun_from_write_qc = function (src::AbstractString)
@@ -351,6 +366,15 @@ end
                join(stale_baseline, "\n  ")
     end
     @test isempty(stale_baseline)
+
+    # Meta-ratchet: baseline size hasn't grown.
+    if length(COHORT_METRICS_BASELINE) > COHORT_METRICS_BASELINE_MAX
+        @error "cohort-metrics ratchet: baseline grew to $(length(COHORT_METRICS_BASELINE)) " *
+               "(cap $COHORT_METRICS_BASELINE_MAX). Either register/exempt the new violation, or " *
+               "bump `COHORT_METRICS_BASELINE_MAX` and justify in the PR body. " *
+               "See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md."
+    end
+    @test length(COHORT_METRICS_BASELINE) <= COHORT_METRICS_BASELINE_MAX
 
     # Sanity: a wrong scan root would let real offenders slip through with an empty offender list.
     @test coverage >= 20
