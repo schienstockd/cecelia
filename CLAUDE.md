@@ -31,11 +31,11 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
   (Vue/CSS + the two mandatory UI lookups), [`app/CLAUDE.md`](app/CLAUDE.md) (Julia conventions, tasks,
   `run_py`, `channel_indices`, ccid.json versioning). Don't duplicate their content up here.
 
-## Doc index — what it covers, and when to update it
+## Doc index
 
 **Keep the docs current — update the relevant file in the same change, not after.**
 
-| Doc | Covers — and update it when you change this |
+| Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
@@ -170,8 +170,7 @@ DataFrame, you write a labeled DataFrame.
 - Deviating (e.g. a cheap one-attribute metadata peek) needs an **inline comment on that exact line**
   saying why. No silent raw access.
 
-Why each of these exists, and what a truncated HDF5 costs: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) →
-*Reading and writing `.h5ad` — the full rule*.
+Full rule + rationale + truncated-HDF5 case: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
 
 ---
 
@@ -207,11 +206,9 @@ bridge, and external consumers (coastal).
   chunked evaluation — and mark the import with `# DASK-OK: <reason>` so the discipline is visible.
   Library utils under `python/cecelia/**` are unrestricted (they compose whole-level pipelines).
 
-Enforced by `test_zarr_access_convention.py` (bare `zarr`/`tifffile`/OME-XML imports, `.from_zarr`
-calls, dask in runners) and the `zarr-access ratchet` testset in `app/test/suite.jl` (Julia side —
-only `api/src/image_render.jl` may `using Zarr`). The drifted private napari reader stack, the
-measured compressor numbers, and the full rationale:
-[`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Image / OME-ZARR access — the full rule*.
+Enforced by `test_zarr_access_convention.py` + the `zarr-access ratchet` testset in `app/test/suite.jl`
+(Julia side: only `api/src/image_render.jl` may `using Zarr`). Full rationale + drifted-reader case +
+compressor numbers: [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Image / OME-ZARR access*.
 
 ---
 
@@ -277,6 +274,11 @@ what's unverified (e.g. never run in a browser, an untested regression surface),
 (perf, edge cases, silent no-ops) — as a short prioritized list. Don't reassure or wait to be asked
 "any reservations?". Surface the risk at the decision point, then commit on the go-ahead. See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
+
+**Agents: run the sibling-call audit at reservations time.** Spawn a fresh `sonnet` subagent per
+[`docs/ai-assist/SIBLING_CALL_AUDIT.md`](docs/ai-assist/SIBLING_CALL_AUDIT.md) with `git diff --staged`
+and fold findings under a `**Sibling-call audit:**` heading — always printed, so the check is on
+record. Catches case-F drift: a fix that silently leaves divergent copies broken.
 
 ---
 
