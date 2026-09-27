@@ -17,78 +17,49 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ## [0.2.8] — 2026-09-28
 
-Three-day patch. Identity moves from Kiwi-scoped to an app-wide primitive (USER_PROFILE_PLAN P1–P6:
-launch picker, Preferences modal, per-profile `settings.toml`, project ownership); Kiwi becomes a
-working cockpit that persists into the Blackboard; guides catalogue rebuilt (P1–P5); linked
-brushing goes end-to-end; the panel family shares one resize gesture. Plus the viewer regression
-that motivated the cut.
+Identity becomes an app-wide primitive (USER_PROFILE_PLAN P1–P6); Kiwi becomes a working cockpit
+persisting into the Blackboard; guides catalogue rebuilt (P1–P5); linked brushing end-to-end; one
+resize gesture across floating panels.
 
 ### Added
 
-- **User profile primitive (USER_PROFILE_PLAN P1–P6).** Launch picker (`AppProfilePicker.vue`,
-  boot guard traps every route while `> 1` selectable profile until one is picked, auto-skips on a
-  single-profile install); Preferences modal (`PreferencesModal.vue`) editing per-profile settings
-  via `/api/profile/settings{,/patch}` → `user-profiles/<name>/settings.toml`; project ownership
-  stamped at create + `POST /api/projects/{claim,unclaim}` (`owners: []` empty/missing =
-  pre-identity, visible everywhere).
-- **Kiwi cockpit + headless engine.** In-app prompt box, live claims feed, per-claim "Add to Kiwi"
-  → Blackboard entry with a per-ref sidecar. Per-profile `CLAUDE_CONFIG_DIR` + ambient-env scrub on
-  every `claude` spawn; `AgentBackend` contract so headless turns never pair on the observer's MCP;
-  single-instance lock at server start; headless-turn eval harness. Capture-destination toggles on
-  the annotate overlay (attach-to-Kiwi + send-to-paired).
-- **Guides — P1–P5 rebuild.** User + view profile · Kiwi (replacing lab-log-and-claude) ·
-  Blackboard · preprocess / cluster-regions / spatial-analysis · correction cockpit.
-- **Linked brushing.** Shared `linkedSelection` store; category chip strip on frequency charts;
-  freeform lasso + shift-drag rectangle on boxplot dots; per-image scoping. Claude's
-  `mark_tracks`/`mark_cells` + MCP `select_on_plot` mirror into the same store.
-- **Panels — one 8-handle resize.** `useResizeHandles.ts` powers `FloatingPanel`, `CanvasPanel`,
-  `CanvasSidePanel` from any edge or corner.
-- **Populations panel — accordion + opt-in manual-apply**, so a big picker no longer trickles pops
-  into the plot one fetch at a time.
-- **`pixi run doctor`** — one-command fresh-clone / new-worktree audit.
-- **MCP — `seek_viewer` + `open_analysis_board_plot`.** Jump to `(t, z)` and open a board.
-- **DrawSurface — notes pop-out.**
+- **User profile primitive (USER_PROFILE_PLAN P1–P6).** Launch picker, Preferences modal,
+  per-profile `settings.toml` via `/api/profile/settings{,/patch}`, project ownership +
+  `POST /api/projects/{claim,unclaim}`.
+- **Kiwi cockpit + headless engine.** In-app prompt box, live claims feed, per-claim "Add to
+  Kiwi" → Blackboard. Per-profile `CLAUDE_CONFIG_DIR`, ambient-env scrub, single-instance lock,
+  eval harness. Capture toggles on the annotate overlay.
+- **Guides P1–P5 rebuild.** User + view profile · Kiwi · Blackboard · preprocess /
+  cluster-regions / spatial-analysis · correction cockpit.
+- **Linked brushing.** Shared `linkedSelection` store; category chips on frequency charts; lasso +
+  shift-drag rectangle on boxplot dots. MCP `select_on_plot` + `mark_tracks`/`mark_cells` mirror in.
+- **One 8-handle resize** across `FloatingPanel`, `CanvasPanel`, `CanvasSidePanel`.
+- **Populations panel** — accordion + opt-in manual-apply.
+- **`pixi run doctor`** — fresh-clone / new-worktree audit.
+- **MCP** — `seek_viewer`, `open_analysis_board_plot`.
+- **DrawSurface** — notes pop-out.
 
 ### Changed
 
-- **Profile dirs renamed** — `<config_dir>/kiwi-profiles/` → `user-profiles/` (identities),
-  `<config_dir>/profiles/` → `view-profiles/`. Symmetric names after USER_PROFILE_PLAN elevated
-  the Kiwi profile to the app-wide user-profile primitive; the old asymmetry read backwards. Hard
-  cutover — no read-time fallback. HTTP routes (`/api/kiwi/profiles/*`, `/api/profiles/*`) are
-  unchanged; the disk name is internal. **Migration:** dev boxes that already have a
-  `~/.cecelia/kiwi-profiles/` or `~/.cecelia/profiles/` need a one-time `mv` by hand; neither
-  surface had shipped to users, so no installed user is affected.
-- **Capture toggles per-profile.** `captureAttachToKiwi` / `captureSendToPaired` moved from browser
-  `localStorage` into the profile bag. **Migration:** a v0.2.7 user's setting doesn't carry over —
-  they see the state-derived default once, next toggle seeds the bag.
-- **Default profile displayed as `peanut`.** The first-created profile (internal name `default`,
-  mapping to `~/.claude`) is now surfaced as **peanut** in the picker, Preferences pane, and header
-  chip. UI relabel only — the on-disk name is unchanged. `peanut` is reserved server-side, so a
-  new profile can't collide with the alias.
-- **Lab log's one-off "Ask Claude" pass is gone.** Asking is Kiwi now.
+- **Profile dirs renamed** — `kiwi-profiles/` → `user-profiles/`, `profiles/` → `view-profiles/`.
+  HTTP routes unchanged. **Migration:** dev boxes need a one-time `mv`; no installed user affected.
+- **Capture toggles per-profile.** **Migration:** v0.2.7 setting doesn't carry over; next toggle
+  seeds the bag.
+- **Default profile displayed as `peanut`** (UI relabel; on-disk name unchanged).
+- **Lab-log "Ask Claude" removed** — asking is Kiwi now.
 - **Kiwi cockpit profile row removed** — `AppProfilePicker` + Preferences own identity.
-- **Terminal setup CTA moves from the lab log to Kiwi → Assistant → Terminal.** Last
-  Claude-flavoured control still sitting in the lab-log toolbar after the 2026-09-24 Kiwi
-  migration; it now lives next to the state indicator it acts on. Labels shortened to "Set up" /
-  "Fix" (the row already carries "Terminal" + state); error strip switches to `InlineNote`. Viewer
-  pop-out: `@` (Add-to-Kiwi) moves out of the mode/gear row into a new title row next to the image
-  name — attaching *this* image is a per-image action.
+- **Terminal setup CTA** moves from the lab log to Kiwi → Assistant → Terminal. Viewer pop-out
+  `@` (Add-to-Kiwi) moves to a new title row next to the image name.
 
 ### Fixed
 
-- **Viewer — trackclust ribbons render for every trackable vn, not just `popMgrVn`.** The
-  pi-sitemap "Show track-cluster populations as ribbons" toggle was silently a no-op on a fresh
-  viewer session and only ever drew ribbons for one vn when several segmentations carried
-  trackclust pops. Server-side `resolve_pops(..., "trackclust", ...)` read the cell-level h5ad, but
-  the `clusters.{suffix}` filter defining a trackclust pop lives on `{vn}__tracks.h5ad`. Fix:
-  route through `pop_df(granularity=:cell)`; widen client fetch to every trackable vn.
-- **Viewer — `/api/viewer/seek` accepts string ints.** A legal JSON `"t": "12"` was 400ing.
-- **Analysis Tile — plots no longer stretch or overlap; resize handles clear the control
-  overlay.** Two drifts landed after the 8-handle resize replaced browser-native `resize: both`.
-- **Guides tour — `tipsEverShown` machine-scoped**, so a second seat sharing the box doesn't
-  replay the first-ever tour.
-- **Header icon buttons — spurious blue underline gone.** `.cc-btn` explicitly clears the default
-  anchor `text-decoration`, so anchor-rendered icon buttons no longer underline on hover.
+- **Viewer — trackclust ribbons render for every trackable vn.** The pi-sitemap toggle was a
+  no-op on a fresh viewer session and only drew for one vn otherwise; route through
+  `pop_df(granularity=:cell)` and widen the client fetch.
+- **Viewer — `/api/viewer/seek` accepts string ints** (`"t": "12"` was 400ing).
+- **Analysis Tile — plots no longer stretch or overlap; resize handles clear the control overlay.**
+- **Guides tour — `tipsEverShown` machine-scoped** so a shared box doesn't replay the first-ever tour.
+- **Header icon buttons — spurious anchor underline gone** (`.cc-btn` clears `text-decoration`).
 
 ## [0.2.7] — 2026-09-23
 
