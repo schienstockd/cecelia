@@ -58,13 +58,15 @@ EVENT_TYPES = frozenset({
     #: staged diff, and warns when a cited file is touched but the citing doc is not. See
     #: `python/cecelia/effectiveness/citation_currency.py`.
     "citation_currency_run",
-    # `claude_md_eval_*` — behavioural compliance eval, one row per (prompt, run) + one summary
-    # row per full pass. See docs/todo/CLAUDE_MD_EVAL_PLAN.md. Payload carries prompt_id, rule,
-    # verdict ∈ {compliant, noncompliant, error}, compliant_hits, anti_hits. Row-level `commit`
-    # is the CLAUDE.md SHA the eval ran under (not the current worktree HEAD), so a trend
-    # across CLAUDE.md edits is legible in the rollup.
+    # `claude_md_eval_*` — behavioural compliance eval, one row per (prompt, run) + one pass
+    # summary per prompt + one suite summary per full-catalog run. See
+    # docs/todo/CLAUDE_MD_EVAL_PLAN.md. Payload on `_run` carries prompt_id, rule, verdict
+    # ∈ {compliant, noncompliant, error}, compliant_hits, anti_hits. Row-level `commit` is the
+    # CLAUDE.md SHA the eval ran under (not the current worktree HEAD), so a trend across
+    # CLAUDE.md edits is legible in the rollup. `_suite` aggregates all prompts in one pass.
     "claude_md_eval_run",
     "claude_md_eval_pass",
+    "claude_md_eval_suite",
 })
 
 #: Closed outcome vocabulary from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Outcome vocabulary.
