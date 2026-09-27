@@ -312,6 +312,12 @@ recital = "python scripts/recital.py"
 # <prompt_id>` — see docs/todo/CLAUDE_MD_EVAL_PLAN.md.
 claude-md-eval-one = "python scripts/claude_md_eval/run_prompt.py"
 
+# Behavioural compliance eval — iterate the full prompt catalog under
+# `scripts/claude_md_eval/prompts/`, spawn N fresh `claude -p` agents per prompt (default
+# N=3), score each diff, and emit one `claude_md_eval_suite` summary to the effectiveness
+# log. `pixi run claude-md-eval` (see docs/todo/CLAUDE_MD_EVAL_PLAN.md).
+claude-md-eval = "python scripts/claude_md_eval/run_suite.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the
