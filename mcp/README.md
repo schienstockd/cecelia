@@ -172,8 +172,8 @@ Chains need no snapshot/versioning of the kind notebooks have — see `docs/SCHE
 
 ### Wire into Claude Code
 
-**You don't have to do this by hand.** The lab-log panel's info dialog has a **Set up my terminal**
-button: it POSTs `/api/observer/register`, which runs `claude mcp add-json cecelia-observer <spec> -s user`
+**You don't have to do this by hand.** Kiwi → Assistant has a **Set up** / **Fix** button on the
+Terminal row: it POSTs `/api/observer/register`, which runs `claude mcp add-json cecelia-observer <spec> -s user`
 with the spec below already resolved (python bin, `PYTHONPATH`, API port), so plain `claude` gets the
 tools in every session. It removes-then-adds, so it's also the re-sync after a move/reinstall. The
 config file it uses for the *in-app* agent is `<config_dir>/observer-mcp.json`

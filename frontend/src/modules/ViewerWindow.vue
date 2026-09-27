@@ -5038,7 +5038,14 @@ onUnmounted(() => {
                       :default-width="290" :min="240" :max="480"
                       collapsed-key="viewerWindowSideCollapsed">
       <div class="vw-side">
-      <div class="vw-title cc-fs-sm">{{ imageName || imageUid }}</div>
+      <!-- Image name + Add-to-Kiwi. Add sits with the name (not with the mode/gear/shortcuts row):
+           attaching THIS image to Kiwi is a per-image action, so it reads with the identifier
+           rather than with the viewer settings. -->
+      <div class="vw-title-row cc-row cc-row-tight">
+        <div class="vw-title cc-fs-sm">{{ imageName || imageUid }}</div>
+        <AddToKiwiButton :kiwi-ref="() => kiwiViewRef.ref" :tip="kiwiViewRef.tip" :project-uid="projectUid"
+                         size="dense" />
+      </div>
       <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
         <!-- Table with a column per mode: same gesture does different things in pan vs select
@@ -5166,9 +5173,6 @@ onUnmounted(() => {
                   @click="advancedOpen = !advancedOpen">
             <i class="pi pi-sliders-h" />
           </button>
-          <!-- Add to Kiwi: the user's selection if there is one, else this view (t, and z in 2D) -->
-          <AddToKiwiButton :kiwi-ref="() => kiwiViewRef.ref" :tip="kiwiViewRef.tip" :project-uid="projectUid"
-                           size="dense" />
           <!-- Shortcuts sits at the far right — a reference popover, not a live control, so it
                reads as separate from the mode/renderer group. -->
           <div class="vw-grow" />
@@ -6104,7 +6108,8 @@ onUnmounted(() => {
    didn't actually take. */
 .vw-side > * { flex-shrink: 0; flex-grow: 0; }
 .vw-side > .vw-grow, .vw-side > .rs { flex-grow: 0; }
-.vw-title { font-weight: 600; word-break: break-word; }
+.vw-title-row { align-items: flex-start; }
+.vw-title { font-weight: 600; word-break: break-word; flex: 1; min-width: 0; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
      card (a stray-wide readout, a wrapping row) is clipped rather than poking past the card border
