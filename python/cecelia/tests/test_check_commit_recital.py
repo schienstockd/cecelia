@@ -25,7 +25,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from cecelia.effectiveness import read_events
+from cecelia.effectiveness import append_event, read_events
 
 _HOOK_PATH = pathlib.Path(__file__).resolve().parents[3] / ".claude" / "hooks" / "check_commit_recital.py"
 
@@ -40,6 +40,12 @@ def _load_hook():
 class CheckTest(unittest.TestCase):
     def setUp(self):
         self.hook = _load_hook()
+        # Existing outcome-tag tests don't exercise the SHA-anchored real-review gate; force
+        # `_current_head_sha` to None so that gate degrades to allow. Tests for the SHA gate
+        # itself live in SHAAnchoredCheckTest below.
+        self._sha_patch = mock.patch.object(self.hook, "_current_head_sha", return_value=None)
+        self._sha_patch.start()
+        self.addCleanup(self._sha_patch.stop)
 
     def _check(self, command: str):
         return self.hook.check(command)
@@ -237,6 +243,117 @@ class ResolutionWritingTest(unittest.TestCase):
         n = self.hook.write_resolutions(msg, pr=None)
         self.assertEqual(n, 0)
         self.assertEqual(self._events(), [])
+
+
+class SHAAnchoredCheckTest(unittest.TestCase):
+    """The SHA-anchored real-review gate.
+
+    A findings-carrying commit must have at least one recital `_run` row in the effectiveness
+    log whose `commit` matches HEAD-at-hook-time (i.e. the parent SHA of the commit being made).
+    Catches:
+    - hand-typed recital body with no real `pixi run recital` invocation (no `_run` row exists);
+    - a `_run` from before a rebase (SHA no longer matches the new parent);
+    - a `_run` from a different branch tip (SHA doesn't match).
+
+    Degrades to allow when HEAD SHA can't be captured — the hook must not block on its own
+    failure to reach git.
+    """
+
+    def setUp(self):
+        self.hook = _load_hook()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.log_path = pathlib.Path(self._tmp.name) / "events.jsonl"
+        self._env_patch = mock.patch.dict(
+            os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)},
+        )
+        self._env_patch.start()
+        self.addCleanup(self._env_patch.stop)
+
+    def _msg_with_finding(self) -> str:
+        return "git commit -m 'foo [**confirmed**] [fanout-abcd1234: fixed_pre_commit]'"
+
+    def _patch_head(self, sha: str | None):
+        p = mock.patch.object(self.hook, "_current_head_sha", return_value=sha)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_findings_with_matching_run_passes(self):
+        head = "b" * 40
+        self._patch_head(head)
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=head)
+        self.assertIsNone(self.hook.check(self._msg_with_finding()))
+
+    def test_findings_with_no_run_at_all_blocks(self):
+        head = "c" * 40
+        self._patch_head(head)
+        # log is empty
+        reason = self.hook.check(self._msg_with_finding())
+        self.assertIsNotNone(reason)
+        self.assertIn("no matching `_run` row", reason)
+        self.assertIn(head[:8], reason)
+
+    def test_findings_with_run_for_different_sha_blocks(self):
+        head = "d" * 40
+        other = "e" * 40
+        self._patch_head(head)
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=other)
+        append_event("convention_check_run", {"duration_s": 1.0}, commit=other)
+        reason = self.hook.check(self._msg_with_finding())
+        self.assertIsNotNone(reason)
+        self.assertIn("no matching `_run` row", reason)
+
+    def test_findings_with_null_commit_run_blocks(self):
+        # Legacy rows written before this feature carry `commit: null`; they must not satisfy
+        # the SHA gate for the current HEAD. Blocks so a stale log can't grandfather.
+        head = "f" * 40
+        self._patch_head(head)
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=None)
+        self.assertIsNotNone(self.hook.check(self._msg_with_finding()))
+
+    def test_convention_run_alone_also_satisfies(self):
+        # Either mechanism's `_run` counts — a recital run always emits both, so any one
+        # matching row proves recital fired.
+        head = "1" * 40
+        self._patch_head(head)
+        append_event("convention_check_run", {"duration_s": 1.0}, commit=head)
+        self.assertIsNone(self.hook.check(self._msg_with_finding()))
+
+    def test_no_findings_skips_sha_gate_entirely(self):
+        # A trivial commit (no findings) never touches the SHA gate — even if the log is empty
+        # and HEAD is known, it must pass. The gate is scoped to "findings-carrying commit."
+        self._patch_head("2" * 40)
+        self.assertIsNone(self.hook.check("git commit -m 'small fix'"))
+
+    def test_head_sha_none_degrades_to_allow(self):
+        # `git rev-parse HEAD` failed — the hook cannot verify the review anchor, so it must
+        # allow rather than block on its own failure. Prevents a broken CI from wedging git.
+        self._patch_head(None)
+        # No `_run` rows at all, but head_sha=None → pass.
+        self.assertIsNone(self.hook.check(self._msg_with_finding()))
+
+    def test_missing_log_file_blocks_findings_commit(self):
+        # First-ever recital hasn't been run → log doesn't exist → no matching row exists.
+        # A findings-bearing commit in that state IS the failure mode we want to catch
+        # (someone hand-typed recital text without invoking `pixi run recital`).
+        head = "3" * 40
+        self._patch_head(head)
+        # log_path is set in setUp but the file itself is never created here.
+        self.assertFalse(self.log_path.exists())
+        self.assertIsNotNone(self.hook.check(self._msg_with_finding()))
+
+    def test_finding_event_row_does_not_satisfy_sha_gate(self):
+        # Only `_run` rows count. A `_finding` row on its own must not pass the gate — if
+        # someone wrote finding rows directly to the log without a matching `_run`, we still
+        # want to catch that as an incomplete recital.
+        head = "4" * 40
+        self._patch_head(head)
+        append_event(
+            "fanout_audit_finding",
+            {"file": "x", "line": 1, "desc": "y", "slug": "fanout-abcd1234", "marker": "confirmed"},
+            commit=head,
+        )
+        self.assertIsNotNone(self.hook.check(self._msg_with_finding()))
 
 
 if __name__ == "__main__":
