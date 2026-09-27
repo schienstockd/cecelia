@@ -207,6 +207,21 @@ Someone lands on the Cecelia GitHub page. What do they read in 30 seconds?
 
 Design the reader path first. The schema is chosen to serve it.
 
+## Review-burden monitoring
+
+The apparatus above measures the *codebase* it watches. There is a separate, second-order question: **is the reviewer-of-reviewers load sustainable?** The user reads fanout findings, convention findings, outcome tags in commit messages, and periodic re-audits — that reading time is not free, and nothing in the log so far measures it.
+
+Landed by governance-layer audit Item 2 ([`../archive/governance_layer_audit.md`](../archive/governance_layer_audit.md)):
+
+- **Signal.** A weekly `attention_tick` row (reserved in the closed taxonomy; see [`../ai-assist/EFFECTIVENESS_METHODOLOGY.md`](../ai-assist/EFFECTIVENESS_METHODOLOGY.md)) aggregating:
+  - `findings_resolved` — `*_finding_resolved` rows in the trailing 7 days (each = one moment the user decided + tagged);
+  - `audit_prompts_added` — new files matching `docs/archive/*prompt*.md` in the window (each = one audit the user authored);
+  - `manual_resolution_prs` — PRs with more than 3 review comments (proxy for "landed but needed follow-up conversation");
+  - `human_attention_events` — sum.
+- **Threshold (stated a priori).** **> 20 human-attention events / week for 3 consecutive weeks** = the governance layer is the bottleneck, not a net time-saver. Derived from a ~2 h/week realistic budget for governance-adjacent review × ~5 min/event, minus 20% context-switching cost → 20 events/week; three consecutive weeks because single-week spikes are normal (one big audit week, e.g. the one that produced this section, doesn't mean the system is broken).
+- **Emitter status.** Not yet built. The reviewer + emission apparatus was <2 days old at audit time (2026-09-27) with zero real `_finding_resolved` events tagged; the counter would be measuring noise. Build the emitter once the log has accumulated ≥ 30 `_finding_resolved` events across ≥ 4 weeks — projected 2026-10-24 at current commit cadence. Not before.
+- **When the emitter lands.** Extend the rollup script (`pixi run audit-rollup`) with a `--emit-attention` flag that appends one `attention_tick` row for the trailing 7 days. Weekly cron or on-demand; append-only; never fed back to the agent — same discipline as the rest of the log.
+
 ## Ceiling — what this CANNOT measure
 
 State this explicitly on the public page, not buried in methodology:
