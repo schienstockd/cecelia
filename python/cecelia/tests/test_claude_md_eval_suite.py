@@ -110,6 +110,13 @@ class RunSuiteTest(unittest.TestCase):
         )
         self._blob_patch.start()
         self.addCleanup(self._blob_patch.stop)
+        # The suite driver captures `branch` for the `_suite` summary row (same rollup-join
+        # reason as `_run`/`_pass`). Stub so tests don't shell out to git.
+        self._branch_patch = mock.patch.object(
+            self.suite, "_current_branch", return_value="test-branch",
+        )
+        self._branch_patch.start()
+        self.addCleanup(self._branch_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))
@@ -132,6 +139,7 @@ class RunSuiteTest(unittest.TestCase):
         suite_rows = [e for e in self._events() if e["event"] == "claude_md_eval_suite"]
         self.assertEqual(len(suite_rows), 1)
         self.assertEqual(suite_rows[0]["commit"], "b" * 40)
+        self.assertEqual(suite_rows[0]["branch"], "test-branch")
         self.assertEqual(suite_rows[0]["payload"]["prompt_ids"], ["h5ad-read", "zarr-read"])
 
     def test_per_prompt_error_does_not_stop_the_suite(self):
