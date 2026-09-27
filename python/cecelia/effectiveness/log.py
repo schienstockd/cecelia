@@ -103,7 +103,7 @@ def append_event(
     - `event` MUST be in `EVENT_TYPES` (raises `UnknownEventError` otherwise).
     - `payload['outcome']`, if present, MUST be in `OUTCOME_VOCABULARY`.
     - `ts` defaults to now-UTC in ISO-8601 with `Z` suffix.
-    - `session` defaults to env `CLAUDE_SESSION_ID` if set, else `"unknown"`.
+    - `session` defaults to env `CLAUDE_CODE_SESSION_ID` if set, else `"unknown"`.
     - `source` defaults to `"live"`; use `"retrospective_<tag>"` for backfilled rows.
     - `log_path` defaults to `default_log_path()`; set explicitly in tests.
 
@@ -127,7 +127,7 @@ def append_event(
         "schema_version": SCHEMA_VERSION,
         "ts": ts or _iso_now(),
         "event": event,
-        "session": session or os.environ.get("CLAUDE_SESSION_ID") or "unknown",
+        "session": session or os.environ.get("CLAUDE_CODE_SESSION_ID") or "unknown",
         "source": source,
         "pr": pr,
         "commit": commit,

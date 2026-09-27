@@ -31,7 +31,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--event", help="event type (see EVENT_TYPES). Required unless --stdin.")
     p.add_argument("--payload", default="{}", help="event payload as JSON string (default {}).")
-    p.add_argument("--session", help="Claude Code session id; defaults to $CLAUDE_SESSION_ID or 'unknown'.")
+    p.add_argument("--session", help="Claude Code session id; defaults to $CLAUDE_CODE_SESSION_ID or 'unknown'.")
     p.add_argument("--source", default="live", help="'live' (default) or 'retrospective_<tag>'.")
     p.add_argument("--pr", help="PR reference, e.g. '#1240'.")
     p.add_argument("--commit", help="Commit SHA (short).")
