@@ -81,10 +81,14 @@ class RecitalTest(unittest.TestCase):
 
         recital = run_recital("some diff", claude_runner=fake_that_fails)
 
-        events = self._events()
-        # BOTH reviewers "ran" (attempted) and both should have events, both with error.
-        self.assertEqual(len(events), 2)
-        for e in events:
+        # Failure recording covers the reviewers; the mechanical citation-currency check
+        # can't fail via a runner (it's a local grep) so it's out of scope for this test.
+        reviewer_events = [
+            e for e in self._events()
+            if e["event"] in {"fanout_audit_run", "convention_check_run"}
+        ]
+        self.assertEqual(len(reviewer_events), 2)
+        for e in reviewer_events:
             self.assertIn("error", e["payload"])
             self.assertIn("simulated subprocess crash", e["payload"]["error"])
 
@@ -228,9 +232,13 @@ class FindingsEmissionTest(unittest.TestCase):
 
         finding_events = [e for e in self._events() if e["event"].endswith("_finding")]
         self.assertEqual(finding_events, [])
-        # But _run events still fire — the reviewers ran.
-        run_events = [e for e in self._events() if e["event"].endswith("_run")]
-        self.assertEqual(len(run_events), 2)
+        # But reviewer _run events still fire — both reviewers ran. (The mechanical
+        # citation-currency check also runs, but is scoped separately.)
+        reviewer_run_events = [
+            e for e in self._events()
+            if e["event"] in {"fanout_audit_run", "convention_check_run"}
+        ]
+        self.assertEqual(len(reviewer_run_events), 2)
 
     def test_multiple_findings_in_one_reviewer_output_each_emit(self):
         def fake(prompt: str) -> str:

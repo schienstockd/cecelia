@@ -53,6 +53,11 @@ EVENT_TYPES = frozenset({
     #: no emitter yet — target: post-2026-10-24 when four weeks of _finding_resolved data
     #: have accumulated and the burden trend becomes readable.
     "attention_tick",
+    #: Citation-currency check — mechanical (not a reviewer subagent) third recital step
+    #: that greps governance docs for `Enforced by \`path\`` claims, cross-refs against the
+    #: staged diff, and warns when a cited file is touched but the citing doc is not. See
+    #: `python/cecelia/effectiveness/citation_currency.py`.
+    "citation_currency_run",
 })
 
 #: Closed outcome vocabulary from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Outcome vocabulary.
