@@ -31,6 +31,7 @@ _PROMPTS_DIR = _REPO / "scripts" / "claude_md_eval" / "prompts"
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import append_event  # noqa: E402
+from cecelia.effectiveness.git_context import current_branch as _current_branch  # noqa: E402
 
 # Reuse the P1 runner's public surface. `run_prompt` isn't a package — spec-loaded from disk
 # so this script works whether or not it's installed as a module.
@@ -113,7 +114,8 @@ def run_suite(
         "totals": totals,
         "duration_s": round(duration, 2),
     }
-    append_event("claude_md_eval_suite", summary_payload, commit=blob_sha)
+    append_event("claude_md_eval_suite", summary_payload,
+                 commit=blob_sha, branch=_current_branch())
     _print_summary(ids, per_prompt, totals, runs, duration, blob_sha)
     return summary_payload
 

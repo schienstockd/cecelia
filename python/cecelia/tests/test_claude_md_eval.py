@@ -164,6 +164,13 @@ class RunOnePromptTest(unittest.TestCase):
                                              return_value="a" * 40)
         self._blob_patch.start()
         self.addCleanup(self._blob_patch.stop)
+        # `branch=` on the row is the invoker's git branch at pixi-run time; stub to a fixed
+        # value so tests don't spawn a real `git rev-parse` and don't depend on which branch
+        # the test process was invoked from.
+        self._branch_patch = mock.patch.object(self.runner, "_current_branch",
+                                               return_value="test-branch")
+        self._branch_patch.start()
+        self.addCleanup(self._branch_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))
@@ -198,6 +205,10 @@ class RunOnePromptTest(unittest.TestCase):
         self.assertEqual(run_row["payload"]["compliant_hits"], 1)
         self.assertEqual(run_row["payload"]["anti_hits"], 0)
         self.assertEqual(run_row["commit"], "a" * 40)
+        # Every eval row carries the invoker's branch — the rollup joins branch → PR at
+        # render time so trend annotations survive even when `pr` is null at write time.
+        self.assertEqual(run_row["branch"], "test-branch")
+        self.assertEqual(pass_row["branch"], "test-branch")
         self.assertEqual(pass_row["payload"]["compliant"], 1)
         self.assertEqual(pass_row["payload"]["noncompliant"], 0)
         self.assertEqual(pass_row["payload"]["error"], 0)

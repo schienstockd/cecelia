@@ -41,6 +41,7 @@ _DEFAULT_RUNS = 3
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import append_event  # noqa: E402
+from cecelia.effectiveness.git_context import current_branch as _current_branch  # noqa: E402
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
@@ -194,6 +195,10 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
         raise PromptParseError(f"no prompt at {prompt_path}")
     meta, body = parse_prompt(prompt_path)
     blob_sha = claude_md_blob_sha(primary_repo)
+    # `branch` = the invoker's branch at pixi-run time (usually `main` on cecelia-feijoa).
+    # Captured once per prompt; every `_run` and `_pass` row on this pass carries it so the
+    # rollup can join to a PR later via `gh pr list --head <branch>` when `pr` is null.
+    branch = _current_branch()
 
     rows: list[dict] = []
     for run_number in range(1, runs + 1):
@@ -232,7 +237,7 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
         }
         if error is not None:
             payload["error"] = error
-        row = append_event("claude_md_eval_run", payload, commit=blob_sha)
+        row = append_event("claude_md_eval_run", payload, commit=blob_sha, branch=branch)
         rows.append(row)
         print(f"  run {run_number}/{runs}: {outcome} "
               f"(compliant={compliant_hits}, anti={anti_hits}, diff={payload['diff_bytes']}b, "
@@ -252,7 +257,7 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
         "noncompliant": outcomes.count("noncompliant"),
         "error": outcomes.count("error"),
     }
-    append_event("claude_md_eval_pass", summary_payload, commit=blob_sha)
+    append_event("claude_md_eval_pass", summary_payload, commit=blob_sha, branch=branch)
     return rows
 
 
