@@ -84,7 +84,11 @@ _BACKTICK_ROOTED_PATH = re.compile(
 
 #: `docs/archive/` is explicitly not authoritative (`CLAUDE.md` -> *Where a note goes*), so a stale
 #: pointer inside an archived brief is a record of what was asked, not a defect to fix.
-_SKIP_DIRS = ('docs/archive/',)
+#: `scripts/claude_md_eval/prompts/` holds task briefs handed to `claude -p` as inputs — their
+#: backticked paths (e.g. `python/cecelia/analysis_scratch/read_track_speed.py`) are aspirational
+#: (where the agent SHOULD write the file), not existing pointers to resolve. See
+#: `docs/todo/CLAUDE_MD_EVAL_PLAN.md` for the runner and rationale.
+_SKIP_DIRS = ('docs/archive/', 'scripts/claude_md_eval/prompts/')
 #: This file itself: the docstring above has to spell out the pointer shapes being checked
 #: (`docs/todo/X_PLAN.md`, `CLAUDE.md` -> *Section*), and every one of them is a placeholder.
 #: It flagged itself the moment it was staged, which is at least evidence the matcher works.
