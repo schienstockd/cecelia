@@ -15,7 +15,7 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
-## [0.2.8] — 2026-09-26
+## [0.2.8] — 2026-09-28
 
 Three-day patch. Identity moves from Kiwi-scoped to an app-wide primitive (USER_PROFILE_PLAN P1–P6:
 launch picker, Preferences modal, per-profile `settings.toml`, project ownership); Kiwi becomes a
@@ -67,6 +67,12 @@ that motivated the cut.
   new profile can't collide with the alias.
 - **Lab log's one-off "Ask Claude" pass is gone.** Asking is Kiwi now.
 - **Kiwi cockpit profile row removed** — `AppProfilePicker` + Preferences own identity.
+- **Terminal setup CTA moves from the lab log to Kiwi → Assistant → Terminal.** Last
+  Claude-flavoured control still sitting in the lab-log toolbar after the 2026-09-24 Kiwi
+  migration; it now lives next to the state indicator it acts on. Labels shortened to "Set up" /
+  "Fix" (the row already carries "Terminal" + state); error strip switches to `InlineNote`. Viewer
+  pop-out: `@` (Add-to-Kiwi) moves out of the mode/gear row into a new title row next to the image
+  name — attaching *this* image is a per-image action.
 
 ### Fixed
 
@@ -81,6 +87,8 @@ that motivated the cut.
   overlay.** Two drifts landed after the 8-handle resize replaced browser-native `resize: both`.
 - **Guides tour — `tipsEverShown` machine-scoped**, so a second seat sharing the box doesn't
   replay the first-ever tour.
+- **Header icon buttons — spurious blue underline gone.** `.cc-btn` explicitly clears the default
+  anchor `text-decoration`, so anchor-rendered icon buttons no longer underline on hover.
 
 ## [0.2.7] — 2026-09-23
 
