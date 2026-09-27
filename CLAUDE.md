@@ -38,6 +38,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
+| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 12 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
 | [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md) | The standard a change gets checked against — comment/docstring rules, cross-module contracts, file-responsibility rules. Checklist at the bottom. Update when a future audit finds a new pattern |
 | [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
