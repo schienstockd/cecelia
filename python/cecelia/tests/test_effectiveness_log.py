@@ -97,6 +97,20 @@ class AppendEventTest(unittest.TestCase):
             append_event("fanout_audit_finding", {"outcome": outcome}, log_path=self.log_path)
         self.assertEqual(len(self._rows()), len(OUTCOME_VOCABULARY))
 
+    def test_branch_field_round_trips(self):
+        # The `branch` field is the safety net for `pr` resolution — the rollup joins
+        # branch → PR when `pr` is null at write time. Must land on the row + read back.
+        row = append_event(
+            "fanout_audit_run", {}, branch="feat/log-branch-capture", log_path=self.log_path,
+        )
+        self.assertEqual(row["branch"], "feat/log-branch-capture")
+        self.assertEqual(self._rows()[0]["branch"], "feat/log-branch-capture")
+
+    def test_branch_defaults_to_null(self):
+        # Old callers that don't pass `branch` get null — backwards compatible.
+        row = append_event("fanout_audit_run", {}, log_path=self.log_path)
+        self.assertIsNone(row["branch"])
+
     def test_source_defaults_to_live(self):
         append_event("fanout_audit_run", {}, log_path=self.log_path)
         self.assertEqual(self._rows()[0]["source"], "live")
@@ -189,6 +203,61 @@ class RollupTest(unittest.TestCase):
         self.assertIn("`app/src/foo.jl:42`", md)
         self.assertIn("resolve_ref sibling not updated", md)
         self.assertIn("[**fixed_pre_commit**]", md)
+
+    def test_rollup_resolves_pr_from_branch_when_pr_null(self):
+        # The common shape: finding + resolved both wrote `pr=null` (recital and hook ran
+        # before the PR existed). Both wrote `branch`. The rollup does one gh lookup and
+        # renders the PR link exactly as if `pr` had been captured at write time.
+        events = [
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-09-27T10:00:01Z",
+             "pr": None, "commit": "aa" * 20, "branch": "feat/log-branch-capture",
+             "payload": {"slug": "fanout-77abc123", "file": "x.jl", "line": 1,
+                         "desc": "d", "marker": "confirmed"}},
+            {"event": "fanout_audit_finding_resolved", "source": "live",
+             "ts": "2026-09-27T10:05:00Z", "pr": None, "commit": "bb" * 20,
+             "branch": "feat/log-branch-capture",
+             "payload": {"slug": "fanout-77abc123", "outcome": "fixed_pre_commit"}},
+        ]
+        calls: list[str] = []
+        def fake_lookup(branch: str, cache):
+            calls.append(branch)
+            return "#9999" if branch == "feat/log-branch-capture" else None
+        md = render_rollup(events, rendered_ts="2026-09-27T11:00:00Z", pr_lookup=fake_lookup)
+        self.assertIn("#9999", md)
+        # Only one gh call per unique branch — the cache is shared across rows in one render.
+        self.assertEqual(calls, ["feat/log-branch-capture"])
+
+    def test_rollup_pr_at_write_time_wins_over_branch_lookup(self):
+        # If `pr` was known at write time, no gh lookup fires — the row is authoritative.
+        events = [
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-09-27T10:00:01Z",
+             "pr": "#1400", "branch": "feat/x",
+             "payload": {"slug": "fanout-abcd1234", "file": "x.jl", "line": 1,
+                         "desc": "d", "marker": "confirmed"}},
+        ]
+        calls: list[str] = []
+        def fake_lookup(branch: str, cache):
+            calls.append(branch); return "#9999"
+        md = render_rollup(events, rendered_ts="2026-09-27T11:00:00Z", pr_lookup=fake_lookup)
+        self.assertIn("#1400", md)
+        self.assertNotIn("#9999", md)
+        self.assertEqual(calls, [])  # no gh call at all
+
+    def test_rollup_omits_pr_when_no_pr_and_no_branch(self):
+        # Pre-branch-capture rows carry neither `pr` nor `branch`. Rollup must not crash and
+        # must render the row with no PR prefix (same behaviour as before this PR landed).
+        events = [
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-09-27T10:00:01Z",
+             "pr": None,
+             "payload": {"slug": "fanout-11112222", "file": "x.jl", "line": 1,
+                         "desc": "d", "marker": "confirmed"}},
+        ]
+        def fake_lookup(branch, cache):
+            raise AssertionError("gh lookup called when no branch present")
+        md = render_rollup(events, rendered_ts="2026-09-27T11:00:00Z", pr_lookup=fake_lookup)
+        # No PR text on the row (no `#` prefix on the line).
+        self.assertIn("`x.jl:1`", md)
+        self.assertNotIn("#", md.split("`x.jl:1`")[0].splitlines()[-1])
 
     def test_rollup_marks_unresolved_findings(self):
         # A finding with NO matching _finding_resolved event renders as `[**unresolved**]`.

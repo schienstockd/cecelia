@@ -35,6 +35,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--source", default="live", help="'live' (default) or 'retrospective_<tag>'.")
     p.add_argument("--pr", help="PR reference, e.g. '#1240'.")
     p.add_argument("--commit", help="Commit SHA (short).")
+    p.add_argument("--branch", help="Git branch name — lets the rollup join to a PR via "
+                                    "`gh pr list --head <branch>` when --pr is null. Especially "
+                                    "worth setting on retrospective/backfill rows.")
     p.add_argument("--stdin", action="store_true", help="Read a full event dict from stdin as JSON.")
     return p.parse_args()
 
@@ -54,6 +57,7 @@ def main() -> int:
         source = obj.get("source") or args.source
         pr = obj.get("pr") or args.pr
         commit = obj.get("commit") or args.commit
+        branch = obj.get("branch") or args.branch
     else:
         if not args.event:
             print("log_event: --event required (or use --stdin)", file=sys.stderr)
@@ -68,6 +72,7 @@ def main() -> int:
         source = args.source
         pr = args.pr
         commit = args.commit
+        branch = args.branch
 
     try:
         row = append_event(
@@ -77,6 +82,7 @@ def main() -> int:
             source=source,
             pr=pr,
             commit=commit,
+            branch=branch,
         )
     except (UnknownEventError, UnknownOutcomeError) as e:
         print(f"log_event: {e}", file=sys.stderr)

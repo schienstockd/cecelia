@@ -187,6 +187,8 @@ def run_citation_check(
     *,
     repo_root: Path | None = None,
     pr: str | None = None,
+    commit: str | None = None,
+    branch: str | None = None,
     repo_files: list[str] | None = None,
 ) -> str:
     """Full pipeline: build index, extract touched files, find stales, format section, emit event.
@@ -209,6 +211,8 @@ def run_citation_check(
             "duration_s": round(duration, 3),
         },
         pr=pr,
+        commit=commit,
+        branch=branch,
     )
     return format_section(stale, touched_count=len(touched), indexed_count=len(index))
 

@@ -220,6 +220,16 @@ class ResolutionWritingTest(unittest.TestCase):
         slugs = {e["payload"]["slug"] for e in events}
         self.assertEqual(slugs, {"fanout-11111111", "fanout-22222222", "conv-33333333"})
 
+    def test_branch_field_lands_on_resolution_row(self):
+        # The hook captures the current branch so the rollup can resolve `pr` even when
+        # `write_resolutions` is called with `pr=None` (typical — first commit of a new PR
+        # runs before `gh pr view` returns anything).
+        msg = "git commit -m 'foo [**confirmed**] [fanout-abcd1234: fixed_pre_commit]'"
+        self.hook.write_resolutions(msg, pr=None, branch="feat/log-branch-capture")
+        row = self._events()[0]
+        self.assertEqual(row["branch"], "feat/log-branch-capture")
+        self.assertIsNone(row["pr"])
+
     def test_bare_outcome_tags_do_not_write_rows(self):
         # Legacy bare form has no slug, so no resolution row is possible.
         msg = "git commit -m 'foo [**confirmed**] [fixed_pre_commit]'"

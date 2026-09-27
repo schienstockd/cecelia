@@ -21,11 +21,19 @@ Every row on disk is a single JSON object per line (`jsonl`):
   "event": "fanout_audit_finding",    // one of EVENT_TYPES below
   "session": "<claude-code-session-id>",
   "source": "live",                    // "live" | "retrospective_<tag>"
-  "pr": "#1240",                       // may be null pre-commit
-  "commit": "2d13dc21",                // may be null pre-commit
+  "pr": "#1240",                       // best-effort at write time; often null pre-commit
+  "commit": "2d13dc21",                // HEAD SHA at write time; may be null pre-repo/pre-git
+  "branch": "feat/foo",                // git branch at write time; null in detached HEAD
   "payload": { ... }                   // event-specific fields
 }
 ```
+
+**`pr` resolution.** Findings land pre-commit, so `pr` is usually null at write time (no PR
+opened for the branch yet). `branch` is the safety net: the rollup resolves null-pr rows via
+`gh pr list --head <branch> --state all` (one call per unique branch, cached per render). The
+log itself is append-only — the join is resolve-at-render, not backfill. Full priority chain
+and rationale: [`docs/todo/EFFECTIVENESS_LOG_PLAN.md`](../todo/EFFECTIVENESS_LOG_PLAN.md) →
+*Schema*.
 
 ### Schema versioning
 
