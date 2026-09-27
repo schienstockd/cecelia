@@ -603,3 +603,47 @@ end
     @test isfile(launcher_path)
     @test occursin(r"\bfunction\s+run_py\b", read(launcher_path, String))
 end
+
+# ── dir-bytes ratchet ─────────────────────────────────────────────────────────
+# Root CLAUDE.md → *Windows compatibility* names `_dir_bytes` (`app/src/utils.jl`) as the one
+# helper for on-disk directory size. Hand-rolling `\`du -sk ...\`` / `\`du -sh ...\`` inside a
+# task or handler works on Linux/macOS and errors on Windows (no `du`). Sole sanctioned owner is
+# `app/src/utils.jl`; every current call site already routes through `_dir_bytes(...)` or the
+# `_path_bytes` wrapper above it.
+@testset "dir-bytes ratchet — `du` only via `_dir_bytes` in `app/src/utils.jl`" begin
+    # Match a `du` invocation at the start of a backtick command. Guards against every flag
+    # form (`-sk`, `-sh`, `-s`, `--bytes`, etc.) by only anchoring on the exe name.
+    banned = (r"`\s*du(?:\s|`)",)
+    exempt = Set([joinpath("app", "src", "utils.jl")])
+
+    roots = [_app_src, _api_src]
+    offenders = String[]
+    for root in roots, (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        rel = relpath(path, _repo)
+        rel in exempt && continue
+        src = read(path, String)
+        for (i, line) in enumerate(split(src, '\n'; keepempty = true))
+            _is_spawn_line(line) || continue
+            for pat in banned
+                if occursin(pat, line)
+                    push!(offenders, "$rel:$i: `$(strip(line))`")
+                end
+            end
+        end
+    end
+
+    if !isempty(offenders)
+        @error "dir-bytes ratchet: Julia file(s) shell out to `du` instead of routing through " *
+               "`_dir_bytes(...)` (`app/src/utils.jl`). Windows has no `du` — inline use is a " *
+               "silent OS-specific bug. See CLAUDE.md → *Windows compatibility*.\n" *
+               "Offending line(s):\n  " * join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+
+    # Coverage: the sanctioned owner must still exist and still hold `_dir_bytes`.
+    owner_path = joinpath(_app_src, "utils.jl")
+    @test isfile(owner_path)
+    @test occursin(r"\bfunction\s+_dir_bytes\b", read(owner_path, String))
+end
