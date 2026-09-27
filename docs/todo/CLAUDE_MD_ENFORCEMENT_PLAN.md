@@ -124,9 +124,12 @@ Re-open item 1 (the write-time gate cost comparison) when *any* of the following
 
 Re-open the full inventory when:
 
-- `CLAUDE.md` grows past ~500 lines or `docs/MAINTAINABILITY.md` past ~300, indicating density
-  actually has become a problem (currently 359 lines / 25.5 KB and below the prompt's own
-  threshold for concern).
+- The compliance eval defined in [`CLAUDE_MD_EVAL_PLAN.md`](CLAUDE_MD_EVAL_PLAN.md) shows a
+  sustained drop in agent compliance on any rule — the behavioural signal, not a line count.
+  Concrete threshold set once baseline data exists (candidate: any rule below 80% pass rate
+  over three consecutive eval passes). The earlier "500-line trigger" was a placeholder
+  invented at scoping time; a rule stops working when agents stop following it, and that is
+  what should trigger the audit.
 
 ## Deliverable shape (when this plan runs)
 
