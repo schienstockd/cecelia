@@ -164,6 +164,85 @@ class RollupTest(unittest.TestCase):
         self.assertIn("`fixed_pre_commit`: 1", md)
         self.assertIn("`false_positive`: 1", md)
 
+    def test_rollup_renders_per_finding_rows_with_pr_and_outcome(self):
+        # P2 of FINDINGS_EMISSION_PLAN.md: findings with resolutions render as evidence rows,
+        # not just as a count. Every count in the summary must be traceable to a PR line.
+        events = [
+            {"event": "fanout_audit_run", "source": "live", "ts": "2026-09-26T10:00:00Z",
+             "payload": {"duration_s": 18.0}},
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-09-26T10:00:01Z",
+             "pr": "#1300",
+             "payload": {"slug": "fanout-abcd1234", "file": "app/src/foo.jl", "line": 42,
+                         "desc": "resolve_ref sibling not updated", "marker": "confirmed"}},
+            # Author committed with `[fanout-abcd1234: fixed_pre_commit]` → P3 hook wrote:
+            {"event": "fanout_audit_finding_resolved", "source": "live",
+             "ts": "2026-09-26T10:05:00Z", "pr": "#1300", "commit": "deadbeef",
+             "payload": {"slug": "fanout-abcd1234", "outcome": "fixed_pre_commit"}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-09-26T11:00:00Z")
+
+        # Summary counts the finding.
+        self.assertIn("**1 findings**", md)
+        self.assertIn("`fixed_pre_commit`: 1", md)
+        # And the per-finding row shows PR + file + desc + outcome tag.
+        self.assertIn("#1300", md)
+        self.assertIn("`app/src/foo.jl:42`", md)
+        self.assertIn("resolve_ref sibling not updated", md)
+        self.assertIn("[**fixed_pre_commit**]", md)
+
+    def test_rollup_marks_unresolved_findings(self):
+        # A finding with NO matching _finding_resolved event renders as `[**unresolved**]`.
+        # This surfaces slipping outcome-tag discipline (findings raised but never resolved).
+        events = [
+            {"event": "convention_check_finding", "source": "live", "ts": "2026-09-26T10:00:00Z",
+             "pr": "#1301",
+             "payload": {"slug": "conv-11112222", "file": "frontend/Foo.vue", "line": 7,
+                         "desc": "hand-rolled zarr access", "marker": "should reuse"}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-09-26T11:00:00Z")
+
+        self.assertIn("`unresolved`: 1", md)
+        self.assertIn("[**unresolved**]", md)
+        self.assertIn("#1301", md)
+
+    def test_rollup_dedupes_finding_by_slug_across_recital_reruns(self):
+        # Recital re-run on the same PR emits the same slug twice — should count once, not
+        # inflate the finding total.
+        events = [
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-09-26T10:00:00Z",
+             "pr": "#1302",
+             "payload": {"slug": "fanout-aa11bb22", "file": "a.jl", "line": 1,
+                         "desc": "first take", "marker": "confirmed"}},
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-09-26T10:15:00Z",
+             "pr": "#1302",
+             "payload": {"slug": "fanout-aa11bb22", "file": "a.jl", "line": 1,
+                         "desc": "same finding, second recital", "marker": "confirmed"}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-09-26T11:00:00Z")
+        self.assertIn("**1 findings**", md)  # deduped by slug
+        # Latest description wins so the rendered row reflects the current reviewer text.
+        self.assertIn("same finding, second recital", md)
+
+    def test_rollup_latest_resolution_wins(self):
+        # A finding can be re-resolved (author changed their mind and shipped a follow-up
+        # commit reclassifying it). Latest resolution is what the rollup shows.
+        events = [
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-09-26T10:00:00Z",
+             "pr": "#1303",
+             "payload": {"slug": "fanout-99887766", "file": "b.jl", "line": 2,
+                         "desc": "flakey", "marker": "confirmed"}},
+            {"event": "fanout_audit_finding_resolved", "source": "live",
+             "ts": "2026-09-26T10:05:00Z", "pr": "#1303",
+             "payload": {"slug": "fanout-99887766", "outcome": "false_positive"}},
+            {"event": "fanout_audit_finding_resolved", "source": "live",
+             "ts": "2026-09-27T09:00:00Z", "pr": "#1303",
+             "payload": {"slug": "fanout-99887766", "outcome": "fixed_pre_commit"}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-09-27T10:00:00Z")
+        self.assertIn("`fixed_pre_commit`: 1", md)
+        self.assertNotIn("`false_positive`: 1", md)
+        self.assertIn("[**fixed_pre_commit**]", md)
+
     def test_rollup_ratchet_section_orders_by_hit_count(self):
         events = [
             {"event": "ratchet_hit", "source": "live", "payload": {"ratchet_id": "zarr-access", "outcome": "fixed_pre_commit"}},

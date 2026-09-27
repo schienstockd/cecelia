@@ -277,17 +277,24 @@ pixi run recital
 ```
 
 `recital` (`python/cecelia/effectiveness/recital.py`) spawns both reviewers via `claude -p`,
-emits their `_run` events to the effectiveness log **atomically with the spawn** (so nothing
-can be silently skipped in autonomous mode — the failure that motivated this design was four
-consecutive reviewer runs where the parent skipped emission every time), and prints the
-formatted recital body — evidence folds + tail lines already in place — to stdout. Weave the
-printed `**confirmed**` / `**should reuse**` findings into your prioritized reservations list,
-tag each with an outcome in square brackets from the closed vocabulary:
+emits their `_run` events **and** one `_finding` row per outcome-tag-requiring bullet
+(`**confirmed**` / `**should reuse**`) to the effectiveness log **atomically with the spawn**
+(so nothing can be silently skipped in autonomous mode — the failure that motivated this
+design was four consecutive reviewer runs where the parent skipped emission every time), and
+prints the formatted recital body — evidence folds + tail lines already in place, each
+outcome-tag-requiring bullet prefixed with a `[slug]` — to stdout. Weave the printed findings
+into your prioritized reservations list, tag each with a `[slug: outcome]` pair from the
+closed vocabulary (copy the slug from the recital body verbatim):
 
-- `[fixed_pre_commit]` — the fix is in the diff you're about to commit.
-- `[shipped_with_finding: <reason>]` — shipping despite the finding; state why.
-- `[false_positive: <reason>]` — the finding is wrong; state why.
-- `[dropped_no_action: <reason>]` — raised but not resolved before session ended; state why.
+- `[<slug>: fixed_pre_commit]` — the fix is in the diff you're about to commit.
+- `[<slug>: shipped_with_finding]` — shipping despite the finding; reason goes in the commit body prose.
+- `[<slug>: false_positive]` — the finding is wrong; reason goes in the commit body prose.
+- `[<slug>: dropped_no_action]` — raised but not resolved before session ended; reason goes in the commit body prose.
+
+Bare `[fixed_pre_commit]` / `[<outcome>: <reason>]` forms are still accepted for legacy /
+un-slugged findings, but slug-paired form is preferred — the commit hook writes a
+`_finding_resolved` row per pair, which is what turns the effectiveness rollup from runtime
+telemetry into evidence (see [`docs/todo/FINDINGS_EMISSION_PLAN.md`](docs/todo/FINDINGS_EMISSION_PLAN.md)).
 
 Then append the recital body to the commit message. Don't reassure or wait to be asked "any
 reservations?".
@@ -313,30 +320,24 @@ effectiveness log, but do not block a commit. Locked decision #4 in
 FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
 
 **Per-finding outcome tag — required, enforced by a pre-commit hook.** Every `**confirmed**`
-sibling finding and every `**should reuse**` convention finding in the recital must carry an
-outcome tag from the closed vocabulary. The tag goes at the end of the finding line, in square
-brackets:
-
-- `[fixed_pre_commit]` — the fix is in the diff you're about to commit.
-- `[shipped_with_finding: <reason>]` — you're choosing to ship despite the finding; state why.
-- `[false_positive: <reason>]` — the finding is wrong; state why.
-- `[dropped_no_action: <reason>]` — raised but not resolved before session ended; state why.
+fanout finding and every `**should reuse**` convention finding in the recital must carry an
+outcome tag. Preferred form is the slug-paired `[<slug>: <outcome>]` — copy the slug printed by
+`pixi run recital` verbatim; the hook parses each pair and writes a matching
+`_finding_resolved` row to `~/.cecelia-effectiveness/events.jsonl`, so the effectiveness rollup
+can join it back to the pending `_finding` row and render evidence rather than just counts.
+Legacy bare `[fixed_pre_commit]` / `[<outcome>: <reason>]` still accepted for un-slugged
+findings.
 
 The hook (`.claude/hooks/check_commit_recital.py`, wired via `.claude/settings.json` PreToolUse
-on Bash) grep-checks the commit message for a matching outcome tag per finding and blocks the
-commit if any are missing. It doesn't validate the outcome itself — a bad-faith
-`false_positive: reasons` still passes — but the disclosure step can't be silently skipped.
-That's what turns advisory into "advisory-with-teeth" for autonomous mode: findings in the log
-become gradeable later (did shipped-anyway correlate with real bugs?) rather than just noise
-in a text output the reader may not see.
+on Bash) grep-checks the commit message for a matching outcome tag per finding, blocks the
+commit if any are missing, blocks if any slug is duplicated (the same finding can't have two
+outcomes), and writes resolution rows for each slug-paired outcome. It doesn't validate the
+outcome itself — a bad-faith `false_positive` still passes — but the disclosure step can't be
+silently skipped. That's what turns advisory into "advisory-with-teeth" for autonomous mode:
+findings in the log become gradeable later (did shipped-anyway correlate with real bugs?)
+rather than just noise in a text output the reader may not see.
 
 Bypass with `CECELIA_SKIP_RECITAL_CHECK=1` for real emergencies.
-
-**Best-effort log emission after each reviewer returns.** Emit a `fanout_audit_run` and a
-`convention_check_run` event via `python scripts/log_event.py` — the exact commands (payload
-shapes and escape-valve values) are in each reviewer's doc under *Log emission*. Failure to emit
-is not a commit blocker: the log is a best-effort collector, not a gate. Findings emission is
-deferred v1 — needs outcome-resolution design.
 
 ---
 
