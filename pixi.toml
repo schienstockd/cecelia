@@ -306,6 +306,12 @@ audit-rollup = "python scripts/audit_rollup.py"
 # and appends to the commit message. See CLAUDE.md → Git & commits.
 recital = "python scripts/recital.py"
 
+# Behavioural compliance eval — spawn N fresh `claude -p` agents on ONE canned prompt,
+# capture the diff, score it via regex against the prompt's compliant/anti signals, and emit
+# rows to the effectiveness log with the CLAUDE.md blob SHA. `pixi run claude-md-eval-one
+# <prompt_id>` — see docs/todo/CLAUDE_MD_EVAL_PLAN.md.
+claude-md-eval-one = "python scripts/claude_md_eval/run_prompt.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the
