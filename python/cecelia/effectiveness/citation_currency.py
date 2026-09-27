@@ -148,7 +148,7 @@ def find_stale_citations(
 
 
 def _format_citations(cites: _t.Sequence[Citation]) -> str:
-    """`docs/A.md:12`, `docs/B.md:34` — no fancy grouping, just readable."""
+    """Comma-joined `path:line` pairs — no fancy grouping, just readable."""
     return ", ".join(f"`{c.citing_doc}:{c.line}`" for c in cites)
 
 
