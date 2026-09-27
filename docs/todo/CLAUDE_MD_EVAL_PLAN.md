@@ -1,8 +1,18 @@
 # CLAUDE.md compliance eval — plan
 
-**Status:** planning (design 2026-09-27, no implementation yet). Follow-up from the
-enforcement-coverage work in PRs #1258 (recital SHA-anchoring) and #1263 (h5ad / utf-8 / Windows
-helpers / run_py ratchets). Written to be picked up cold by another session.
+**Status:** P1 (single-prompt runner) + P2 driver + 9-of-10-prompt catalog **SHIPPED** on PR
+#1264 (2026-09-27). One prompt (`discovery-first`) deferred pending tool-log-inspection
+scaffolding. Rollup markdown (`docs/ai-assist/CLAUDE_MD_EVAL.md`) still unbuilt — deferred as
+P2.5. P3 (cron) still unbuilt.
+
+Baseline behavioural datum: `h5ad-read` scores **3/3 compliant** at CLAUDE.md blob
+`2f05fefc…` — three fresh `claude -p` agents, given only the task text, all reached for
+`LabelPropsView` unprompted. Full catalog rerun (`pixi run claude-md-eval`) will produce the
+first cross-rule number.
+
+Follow-up from the enforcement-coverage work in PRs #1258 (recital SHA-anchoring) and #1263
+(h5ad / utf-8 / Windows helpers / run_py ratchets). Written to be picked up cold by another
+session.
 
 ## Goal
 
@@ -165,12 +175,29 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
 
 ## Deliverable phases
 
-- **P1** — prompt catalog (10 `.md` files), single-prompt runner, single-run scorer, manual
-  invocation. First pass emits `claude_md_eval_run` rows to the log; rollup is a one-off script
-  that prints to stdout.
-- **P2** — full runner (N agents × M prompts), full rollup writing to
-  `docs/ai-assist/CLAUDE_MD_EVAL.md`, `pixi run claude-md-eval` task.
-- **P3** — optional cron/schedule + trend-annotation-by-CLAUDE.md-SHA in the rollup.
+- **P1 SHIPPED** — prompt catalog (9 `.md` files, one deferred — see below), single-prompt
+  runner, single-run scorer, manual invocation. Emits `claude_md_eval_run` + `_pass` rows.
+- **P2 driver SHIPPED** — full runner (`pixi run claude-md-eval`) iterates the catalog, emits
+  one `claude_md_eval_suite` summary per invocation, prints per-prompt table to stdout. Per-
+  prompt failure records `error` verdict and doesn't stop the suite.
+- **P2.5 rollup** — DEFERRED. Writing to `docs/ai-assist/CLAUDE_MD_EVAL.md` (trend annotated
+  by CLAUDE.md blob SHA changes) is still stdout-only. Ship once we have >1 pass's data.
+- **P3** — DEFERRED. Optional cron/schedule + trend-annotation in the rollup.
+
+### One prompt still deferred: `discovery-first`
+
+The rule ("before implementing anything, mandatory discovery step — grep
+`docs/inventory/*.md` before writing new code") is compliance-visible only via **tool-log
+inspection** (was a `docs/inventory/*` Read/Grep issued before the first Write?), not diff-
+inspect. P1 scores via regex on the diff; the tool-log seam isn't wired. Ship the missing
+prompt in the same PR that adds tool-log inspection to the scorer.
+
+### `cite-algorithm` is scored loosely
+
+The rule has no ratchet, so scoring is regex on the diff for citation-shaped tokens (DOI,
+arXiv id, `10.NNNN/` prefix, `github.com/<owner>/<repo>` URL) in a comment. Anti-signal is a
+sentinel that never matches — a "no citation added" run scores `noncompliant` via the
+"neither matches" branch, which is the honest floor for a prose-only rule.
 
 ## Follow-ups the plan doc updates
 
