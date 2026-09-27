@@ -48,9 +48,19 @@ EVENT_TYPES = frozenset({
     "retrospective_miss",
     "plan_logged",
     "prompt_logged",
+    #: Weekly rollup of human-attention events (findings the user tagged, audit prompts
+    #: authored, PRs needing manual resolution). Reserved by governance-layer audit Item 2;
+    #: no emitter yet — target: post-2026-10-24 when four weeks of _finding_resolved data
+    #: have accumulated and the burden trend becomes readable.
+    "attention_tick",
+    #: Citation-currency check — mechanical (not a reviewer subagent) third recital step
+    #: that greps governance docs for `Enforced by \`path\`` claims, cross-refs against the
+    #: staged diff, and warns when a cited file is touched but the citing doc is not. See
+    #: `python/cecelia/effectiveness/citation_currency.py`.
+    "citation_currency_run",
     # `claude_md_eval_*` — behavioural compliance eval, one row per (prompt, run) + one summary
     # row per full pass. See docs/todo/CLAUDE_MD_EVAL_PLAN.md. Payload carries prompt_id, rule,
-    # outcome ∈ {compliant, noncompliant, error}, compliant_hits, anti_hits. Row-level `commit`
+    # verdict ∈ {compliant, noncompliant, error}, compliant_hits, anti_hits. Row-level `commit`
     # is the CLAUDE.md SHA the eval ran under (not the current worktree HEAD), so a trend
     # across CLAUDE.md edits is legible in the rollup.
     "claude_md_eval_run",
@@ -110,7 +120,7 @@ def append_event(
     - `event` MUST be in `EVENT_TYPES` (raises `UnknownEventError` otherwise).
     - `payload['outcome']`, if present, MUST be in `OUTCOME_VOCABULARY`.
     - `ts` defaults to now-UTC in ISO-8601 with `Z` suffix.
-    - `session` defaults to env `CLAUDE_SESSION_ID` if set, else `"unknown"`.
+    - `session` defaults to env `CLAUDE_CODE_SESSION_ID` if set, else `"unknown"`.
     - `source` defaults to `"live"`; use `"retrospective_<tag>"` for backfilled rows.
     - `log_path` defaults to `default_log_path()`; set explicitly in tests.
 
@@ -134,7 +144,7 @@ def append_event(
         "schema_version": SCHEMA_VERSION,
         "ts": ts or _iso_now(),
         "event": event,
-        "session": session or os.environ.get("CLAUDE_SESSION_ID") or "unknown",
+        "session": session or os.environ.get("CLAUDE_CODE_SESSION_ID") or "unknown",
         "source": source,
         "pr": pr,
         "commit": commit,

@@ -38,6 +38,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
+| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 12 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
 | [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md) | The standard a change gets checked against — comment/docstring rules, cross-module contracts, file-responsibility rules. Checklist at the bottom. Update when a future audit finds a new pattern |
 | [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
@@ -170,7 +171,9 @@ DataFrame, you write a labeled DataFrame.
 - Deviating (e.g. a cheap one-attribute metadata peek) needs an **inline comment on that exact line**
   saying why. No silent raw access.
 
-Full rule + rationale + truncated-HDF5 case: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
+Enforced by `test_h5ad_access_convention.py` (Python side: only the listed sanctioned wrappers +
+task creators may `import h5py` / `import anndata`). Full rule + rationale + truncated-HDF5 case:
+[`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
 
 ---
 
@@ -221,6 +224,10 @@ every Python task runner and data-layer writer. It writes the params JSON to the
 the process for cancellation, and checks `exitcode` **and** `termsignal`. Signature, options and the
 anti-patterns it exists to delete: [`app/CLAUDE.md`](app/CLAUDE.md) → *Spawning Python*.
 
+Enforced by the `python spawn ratchet` testset in `app/test/suite/ratchets.jl` (only
+`app/src/py_runner.jl` — and the boot-time cellpose model warm in `api/src/system_api.jl` — may
+spawn `python` by hand).
+
 ---
 
 ## Windows compatibility
@@ -234,6 +241,12 @@ Python text I/O** (the default is cp1252 on Windows). Launcher logic lives in `p
 shell scripts. The full table — which helper, which bug, and why each one exists — is in
 [`docs/DEV.md`](docs/DEV.md) → *Windows compatibility*. **Read it before writing any path, process, or
 file-encoding code.**
+
+Enforced by: `app/test/suite/ratchets.jl` (`bioformats2raw-bin ratchet`, `process-kill helpers
+ratchet`, `python spawn ratchet` — only sanctioned owners may spawn those binaries) +
+`test_utf8_encoding_convention.py` (every text-mode `open()` in `python/cecelia/**` and `app/src/**`
+must pass `encoding="utf-8"`). The Julia helpers themselves have unit tests under
+`app/test/suite/config.jl` + `observer.jl`.
 
 ---
 
@@ -255,7 +268,9 @@ bad-param case), the fixture conventions and the enforced fixture size cap are i
 [`docs/DEV.md`](docs/DEV.md) → *Core-functionality test rule* / *Test data fixtures*.
 
 Tests must **not** depend on the dev projects dir — use the committed `test-data/` fixtures via
-`fixture_path(...)` + `have_fixture(...)`.
+`fixture_path(...)` + `have_fixture(...)`. Enforced on the Python side by
+`test_dev_dir_leakage_convention.py` (no `CECELIA_DEV_DIR` reads, no `cecelia_conf()["dirs"]
+["projects"]` reads, no hardcoded `~/cecelia*/dev/projects/` paths).
 
 ---
 
@@ -308,10 +323,15 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
   `_no fanout audit needed_`)
 - `_Convention check: run_` (or `_skipped — docs-only diff_` / `_skipped — no additions_` /
   `_skipped — tests-only_` / `_no convention check needed_`)
+- `_Citation-currency check: run_` (or `_run — no stale citations_` / `_skipped — no code changes_` /
+  `_skipped — no citations indexed_`) — mechanical, not a reviewer subagent; warns when a
+  governance doc cites a code file that changed but the citing doc didn't. See
+  `python/cecelia/effectiveness/citation_currency.py`.
 
-Missing either tail = that mechanism went dark. Don't reassure or wait to be asked "any
+Missing any of the three tails = that mechanism went dark. Don't reassure or wait to be asked "any
 reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
-(a new helper/component/endpoint that duplicates an existing canonical). See
+(a new helper/component/endpoint that duplicates an existing canonical); citation-currency catches
+doc↔code drift (an "Enforced by ..." claim whose subject moved without the doc noticing). See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
 **Convention-check is advisory for now**: findings land in the reservations recital and the

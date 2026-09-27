@@ -56,7 +56,7 @@ One-time systematic re-reading of a **fixed sample** of recent PRs, classifying 
 
 ### Artifact B — forward log (compounds over time)
 
-`~/.claude/projects/…/cecelia-effectiveness/events.jsonl` (path TBD — see [Storage location](#storage-location)). Append-only, one line per event. Rollup script (`/audit-rollup` or `pixi run audit-rollup`) reads it and emits a curated markdown to `docs/ai-assist/EFFECTIVENESS.md` for public rendering.
+`~/.cecelia-effectiveness/events.jsonl` (per-user, cross-worktree; overridable via `CECELIA_EFFECTIVENESS_LOG`). Append-only, one line per event. Rollup script (`/audit-rollup` or `pixi run audit-rollup`) reads it and emits a curated markdown to `docs/ai-assist/EFFECTIVENESS.md` for public rendering.
 
 Not heartbeated. Rollup runs **on-demand** when Dominik is about to review or present. Auto-committing weekly would (a) fill git history with noise, (b) let stale/uncurated numbers land publicly without a diff review.
 
@@ -151,7 +151,9 @@ Even so, *some* miss data on the page turns "look how well we do" into "here's w
 
 ## Storage location
 
-Two candidates:
+**Shipped:** `~/.cecelia-effectiveness/events.jsonl` — a simpler flavour of option 1 below (no `<project-hash>` segment; per-user, cross-worktree; overridable via `CECELIA_EFFECTIVENESS_LOG`).
+
+Two candidates were considered:
 
 1. **`~/.claude/projects/<project-hash>/cecelia-effectiveness/events.jsonl`** — outside the repo, per-user, cross-session. Rollup script reads from here. Never committed. Consequence: another Claude Code session on a fresh machine has no history until it accumulates its own.
 2. **`docs/audit-log/events.jsonl` in the repo, gitignored** — same effect but co-located with the code. Slight risk of accidental commit; requires a `.gitignore` line and a note.
@@ -199,11 +201,26 @@ Nothing new to build for the third row *if* `cited_doc_refs` is in the schema fr
 
 Someone lands on the Cecelia GitHub page. What do they read in 30 seconds?
 
-1. **README** — one paragraph: "Cecelia uses an AI-assist infrastructure (pre-commit reviewer, CLAUDE.md ratchets) to catch a specific class of bugs. We track how well it works. See ai-assist effectiveness at `docs/ai-assist/EFFECTIVENESS.md`" (that file does not exist yet — the rollup produces it).
+1. **README** — one paragraph: "Cecelia uses an AI-assist infrastructure (pre-commit reviewer, CLAUDE.md ratchets) to catch a specific class of bugs. We track how well it works. See ai-assist effectiveness at [`docs/ai-assist/EFFECTIVENESS.md`](../ai-assist/EFFECTIVENESS.md)."
 2. **`docs/ai-assist/EFFECTIVENESS.md`** — headline table (catch / FP / miss counts, retrospective vs live), then per-mechanism breakdown (sibling-audit, each ratchet), then a "what we can't measure" section, then link to methodology.
 3. **`docs/ai-assist/EFFECTIVENESS_METHODOLOGY.md`** — schema, event taxonomy, outcome vocabulary, sample method for the retrospective, honest ceiling. This plan doc, minus the design-decision framing, becomes the seed of that page.
 
 Design the reader path first. The schema is chosen to serve it.
+
+## Review-burden monitoring
+
+The apparatus above measures the *codebase* it watches. There is a separate, second-order question: **is the reviewer-of-reviewers load sustainable?** The user reads fanout findings, convention findings, outcome tags in commit messages, and periodic re-audits — that reading time is not free, and nothing in the log so far measures it.
+
+Landed by governance-layer audit Item 2 ([`../archive/governance_layer_audit.md`](../archive/governance_layer_audit.md)):
+
+- **Signal.** A weekly `attention_tick` row (reserved in the closed taxonomy; see [`../ai-assist/EFFECTIVENESS_METHODOLOGY.md`](../ai-assist/EFFECTIVENESS_METHODOLOGY.md)) aggregating:
+  - `findings_resolved` — `*_finding_resolved` rows in the trailing 7 days (each = one moment the user decided + tagged);
+  - `audit_prompts_added` — new files matching `docs/archive/*prompt*.md` in the window (each = one audit the user authored);
+  - `manual_resolution_prs` — PRs with more than 3 review comments (proxy for "landed but needed follow-up conversation");
+  - `human_attention_events` — sum.
+- **Threshold (stated a priori).** **> 20 human-attention events / week for 3 consecutive weeks** = the governance layer is the bottleneck, not a net time-saver. Derived from a ~2 h/week realistic budget for governance-adjacent review × ~5 min/event, minus 20% context-switching cost → 20 events/week; three consecutive weeks because single-week spikes are normal (one big audit week, e.g. the one that produced this section, doesn't mean the system is broken).
+- **Emitter status.** Not yet built. The reviewer + emission apparatus was <2 days old at audit time (2026-09-27) with zero real `_finding_resolved` events tagged; the counter would be measuring noise. Build the emitter once the log has accumulated ≥ 30 `_finding_resolved` events across ≥ 4 weeks — projected 2026-10-24 at current commit cadence. Not before.
+- **When the emitter lands.** Extend the rollup script (`pixi run audit-rollup`) with a `--emit-attention` flag that appends one `attention_tick` row for the trailing 7 days. Weekly cron or on-demand; append-only; never fed back to the agent — same discipline as the rest of the log.
 
 ## Ceiling — what this CANNOT measure
 

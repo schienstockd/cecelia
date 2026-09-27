@@ -42,11 +42,16 @@ class RecitalTest(unittest.TestCase):
         self._env_patch = mock.patch.dict(os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)})
         self._env_patch.start()
         self.addCleanup(self._env_patch.stop)
-        # Avoid real `gh pr view` subprocess spawns in every test; individual tests that
-        # exercise PR capture patch this explicitly.
+        # Avoid real `gh pr view` / `git rev-parse HEAD` subprocess spawns in every test;
+        # individual tests that exercise PR / HEAD-SHA capture patch these explicitly.
         self._pr_patch = mock.patch("cecelia.effectiveness.recital._current_pr", return_value=None)
         self._pr_patch.start()
         self.addCleanup(self._pr_patch.stop)
+        self._sha_patch = mock.patch(
+            "cecelia.effectiveness.recital._current_head_sha", return_value=None,
+        )
+        self._sha_patch.start()
+        self.addCleanup(self._sha_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))
@@ -81,10 +86,14 @@ class RecitalTest(unittest.TestCase):
 
         recital = run_recital("some diff", claude_runner=fake_that_fails)
 
-        events = self._events()
-        # BOTH reviewers "ran" (attempted) and both should have events, both with error.
-        self.assertEqual(len(events), 2)
-        for e in events:
+        # Failure recording covers the reviewers; the mechanical citation-currency check
+        # can't fail via a runner (it's a local grep) so it's out of scope for this test.
+        reviewer_events = [
+            e for e in self._events()
+            if e["event"] in {"fanout_audit_run", "convention_check_run"}
+        ]
+        self.assertEqual(len(reviewer_events), 2)
+        for e in reviewer_events:
             self.assertIn("error", e["payload"])
             self.assertIn("simulated subprocess crash", e["payload"]["error"])
 
@@ -165,6 +174,11 @@ class FindingsEmissionTest(unittest.TestCase):
         self._pr_patch = mock.patch("cecelia.effectiveness.recital._current_pr", return_value=None)
         self._pr_patch.start()
         self.addCleanup(self._pr_patch.stop)
+        self._sha_patch = mock.patch(
+            "cecelia.effectiveness.recital._current_head_sha", return_value=None,
+        )
+        self._sha_patch.start()
+        self.addCleanup(self._sha_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))
@@ -228,9 +242,13 @@ class FindingsEmissionTest(unittest.TestCase):
 
         finding_events = [e for e in self._events() if e["event"].endswith("_finding")]
         self.assertEqual(finding_events, [])
-        # But _run events still fire — the reviewers ran.
-        run_events = [e for e in self._events() if e["event"].endswith("_run")]
-        self.assertEqual(len(run_events), 2)
+        # But reviewer _run events still fire — both reviewers ran. (The mechanical
+        # citation-currency check also runs, but is scoped separately.)
+        reviewer_run_events = [
+            e for e in self._events()
+            if e["event"] in {"fanout_audit_run", "convention_check_run"}
+        ]
+        self.assertEqual(len(reviewer_run_events), 2)
 
     def test_multiple_findings_in_one_reviewer_output_each_emit(self):
         def fake(prompt: str) -> str:
@@ -303,6 +321,48 @@ class FindingsEmissionTest(unittest.TestCase):
 
         finding_events = [e for e in self._events() if e["event"].endswith("_finding")]
         self.assertEqual(finding_events, [])
+
+    def test_head_sha_captured_when_available(self):
+        # When `git rev-parse HEAD` returns a SHA, both `_run` and `_finding` rows carry it in
+        # the row-level `commit` field. That is what the SHA-anchored gate in
+        # `.claude/hooks/check_commit_recital.py` matches against.
+        # Scoped to fanout+convention events — `citation_currency_run` is emitted by a separate
+        # helper (`citation_currency.run_citation_check`) whose own `commit=` threading is the
+        # subject of a different PR (#1265, branch-capture).
+        head = "a" * 40
+        reviewer_events = {"fanout_audit_run", "convention_check_run",
+                           "fanout_audit_finding", "convention_check_finding"}
+        with mock.patch(
+            "cecelia.effectiveness.recital._current_head_sha", return_value=head,
+        ):
+            def fake(prompt: str) -> str:
+                if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
+                    return "- **foo.jl:1** — bar [**confirmed**]"
+                return "no convention check needed"
+
+            run_recital("some diff", claude_runner=fake)
+
+        for e in self._events():
+            if e["event"] not in reviewer_events:
+                continue
+            self.assertEqual(e["commit"], head)
+
+    def test_head_sha_none_leaves_commit_null(self):
+        # No repo / no `git` → the row still lands (best-effort), commit is null. The hook's
+        # SHA gate degrades to allow when head_sha is None, so this doesn't strand commits.
+        reviewer_events = {"fanout_audit_run", "convention_check_run",
+                           "fanout_audit_finding", "convention_check_finding"}
+        def fake(prompt: str) -> str:
+            if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
+                return "- **foo.jl:1** — bar [**confirmed**]"
+            return "no convention check needed"
+
+        run_recital("some diff", claude_runner=fake)  # setUp already patches sha to None
+
+        for e in self._events():
+            if e["event"] not in reviewer_events:
+                continue
+            self.assertIsNone(e["commit"])
 
 
 if __name__ == "__main__":

@@ -48,6 +48,7 @@ Adding a new event later is fine. Renaming one is painful.
 | `retrospective_miss` | Post-hoc misses: a bug found later that infra should have caught | `discovered_via: "pr_comment" \| "later_commit" \| "incident" \| "refactor"`, `original_pr: str`, `should_have_fired: str`, `bug_class: str` |
 | `plan_logged` | When a plan doc is written into `docs/todo/` | `path: str`, `origin_session: str` |
 | `prompt_logged` | When a notable prompt or slash-command is recorded | `command: str` |
+| `attention_tick` *(reserved — no emitter yet)* | Weekly rollup of human-attention events. Landed as a schema placeholder by governance-layer audit Item 2; the emitter builds once four weeks of `_finding_resolved` data have accumulated (target: post-2026-10-24) and the burden trend becomes readable. See [`../todo/EFFECTIVENESS_LOG_PLAN.md#review-burden-monitoring`](../todo/EFFECTIVENESS_LOG_PLAN.md#review-burden-monitoring). | `window_days: int`, `findings_resolved: int`, `audit_prompts_added: int`, `manual_resolution_prs: int`, `human_attention_events: int` |
 
 Enforced at write time in `python/cecelia/effectiveness/log.py::EVENT_TYPES` — an unknown value raises rather than silently mis-classifying.
 

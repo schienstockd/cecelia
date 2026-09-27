@@ -12,15 +12,19 @@ decision #4) — findings land in the reservations recital but do not block a co
 toothless in autonomous mode: nothing challenges a `**should reuse`` finding that the agent
 silently commits over. Fanout audit is the same shape for its own findings.
 
-This hook is the presence-check: for every `**confirmed**` fanout / `**should reuse**`
-convention finding line the recital carries, the message must ALSO carry an outcome tag from
-the closed vocabulary — `fixed_pre_commit`, `shipped_with_finding: <reason>`, or
-`false_positive: <reason>`. Missing one blocks the commit with an explanation.
+This hook enforces two gates on a `git commit` whose message carries reviewer findings:
 
-The check is deliberately mechanical text-matching, not semantic judgment: it does NOT validate
-whether the outcome itself is honest (an agent could write `false_positive: reasons` untruthfully),
-just that the disclosure step happened. That makes it cheap and reliable, and it is a
-fundamentally different cost profile from the fuzzy-inventory-match gate previously declined.
+1. **Outcome-tag presence.** For every `**confirmed**` fanout / `**should reuse**` convention
+   finding line, the message must carry an outcome tag from the closed vocabulary —
+   `fixed_pre_commit`, `shipped_with_finding: <reason>`, or `false_positive: <reason>`.
+   Deliberately mechanical text-matching, not semantic judgment: an agent could still write
+   `false_positive: reasons` untruthfully; only the disclosure step is checked.
+2. **SHA-anchored real-review.** A findings-carrying commit must have at least one recital
+   `_run` row in the effectiveness log with `commit == HEAD-at-hook-time` — i.e. recital
+   actually ran, and against the same tree the commit is being made on top of. Catches
+   hand-typed recital bodies with no real `pixi run recital` invocation, and stale reviews
+   from before a rebase. If HEAD SHA can't be captured (not a repo, git missing), the check
+   degrades to allow rather than block on its own failure.
 
 P3 of FINDINGS_EMISSION_PLAN.md — log writing
 ---------------------------------------------
@@ -48,8 +52,11 @@ import sys
 #: fanout + convention-check both caught on this hook's first draft.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
-from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event  # noqa: E402
-from cecelia.effectiveness.git_context import current_pr as _current_pr  # noqa: E402
+from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
+from cecelia.effectiveness.git_context import (  # noqa: E402
+    current_head_sha as _current_head_sha,
+    current_pr as _current_pr,
+)
 
 #: Every finding line in the recital carries one of these bold markers.
 _FINDING_MARKERS = re.compile(r"\*\*(?:confirmed|should reuse)\*\*")
@@ -96,6 +103,10 @@ def _outcome_help() -> str:
 #: The command has to actually be a `git commit` — subshells count (`cd path && git commit …`).
 _GIT_COMMIT = re.compile(r"\bgit\s+commit\b")
 
+#: `_run` events the SHA-anchored check considers. A recital run always emits both; findings-
+#: carrying commits must have at least one row with `commit == HEAD-at-hook-time`.
+_RUN_EVENTS = frozenset({"fanout_audit_run", "convention_check_run"})
+
 _EXIT_ALLOW = 0
 _EXIT_BLOCK = 2  # PreToolUse convention: non-zero = block; stderr shown to Claude.
 
@@ -123,12 +134,35 @@ def _finding_event_for_slug(slug: str) -> str | None:
     return None
 
 
+def _has_matching_run(head_sha: str) -> bool:
+    """True if the log has any `_run` row with `commit == head_sha`.
+
+    Log-read failure counts as "no matching run" — a missing log means recital never
+    emitted anything for this HEAD, which is exactly what the check is meant to catch.
+    """
+    try:
+        for row in read_events():
+            if row.get("event") in _RUN_EVENTS and row.get("commit") == head_sha:
+                return True
+    except OSError:
+        pass
+    return False
+
+
 def check(command: str) -> str | None:
     """Return None if the commit is allowed; else a human-readable reason string.
 
-    Passing means the total number of outcome tags (bare + slug-paired, but a duplicate slug
-    only counts once — quoting the same finding twice is a bug the message author should fix
-    before shipping) is at least the number of finding markers in the recital.
+    Two gates:
+    1. **Outcome-tag presence** — every finding marker (`**confirmed**` / `**should reuse**`)
+       needs a matching outcome tag (bare or slug-paired). Duplicate slugs are rejected.
+    2. **SHA-anchored real-review** — a findings-carrying commit must have at least one
+       recital `_run` row in the effectiveness log with `commit == HEAD-at-hook-time` (i.e.
+       recital ran against the same tree the commit is being made on top of). Catches
+       hand-typed recital bodies with no real `pixi run recital` invocation, and stale
+       reviews from before a rebase.
+
+    Gate 2 is skipped when HEAD SHA cannot be captured (not a repo, git missing) — degrade
+    to allow rather than block on our own failure.
     """
     if not _GIT_COMMIT.search(command):
         return None
@@ -150,25 +184,42 @@ def check(command: str) -> str | None:
 
     total_outcomes = len(bare_outcomes) + len(set(slugs))
 
-    if len(findings) <= total_outcomes:
-        return None
+    if len(findings) > total_outcomes:
+        return (
+            f"Recital carries {len(findings)} reviewer finding(s) marked "
+            f"**confirmed** / **should reuse** but only {total_outcomes} outcome tag(s). "
+            "Every finding needs one:\n"
+            f"{_outcome_help()}\n"
+            "Add the outcome tag to each finding line, then retry. "
+            "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1`."
+        )
 
-    return (
-        f"Recital carries {len(findings)} reviewer finding(s) marked "
-        f"**confirmed** / **should reuse** but only {total_outcomes} outcome tag(s). "
-        "Every finding needs one:\n"
-        f"{_outcome_help()}\n"
-        "Add the outcome tag to each finding line, then retry. "
-        "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1`."
-    )
+    if findings:
+        head_sha = _current_head_sha()
+        if head_sha is not None and not _has_matching_run(head_sha):
+            return (
+                f"Recital carries {len(findings)} reviewer finding(s) but no matching "
+                f"`_run` row is in the effectiveness log for HEAD {head_sha[:8]}. Run "
+                "`pixi run recital` against the current tree, then retry — a hand-typed "
+                "recital body without a real reviewer invocation is what this check exists "
+                "to catch. After a rebase, re-run recital: the parent SHA changed. "
+                "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1`."
+            )
+
+    return None
 
 
-def write_resolutions(command: str, *, pr: str | None = None) -> int:
+def write_resolutions(
+    command: str, *, pr: str | None = None, commit: str | None = None,
+) -> int:
     """Write one `_finding_resolved` row per slug-paired outcome in the commit message.
 
     Returns the number of rows written. Log-write failures are swallowed so a bad log path
-    can't wedge the commit — the presence-check is the only gate. `pr` is captured from
-    `gh pr view` if available; None on any failure (offline, not in PR, gh not installed).
+    can't wedge the commit — the presence-check is the only gate. `pr` and `commit` are
+    captured from `gh pr view` and `git rev-parse HEAD`; None on any failure (offline, not
+    in PR, gh not installed, git not installed). `commit` here is the parent SHA of the
+    commit being made (HEAD hasn't advanced yet at PreToolUse time), matching the SHA the
+    recital `_run` row was written with.
     """
     written = 0
     for slug, outcome in _parse_pairs(command):
@@ -176,7 +227,7 @@ def write_resolutions(command: str, *, pr: str | None = None) -> int:
         if event is None:
             continue  # unknown mechanism prefix — silently skip; hook regex won't match anyway
         try:
-            append_event(event, {"slug": slug, "outcome": outcome}, pr=pr)
+            append_event(event, {"slug": slug, "outcome": outcome}, pr=pr, commit=commit)
             written += 1
         except Exception:  # noqa: BLE001 — best-effort emission
             pass
@@ -200,7 +251,7 @@ def main() -> int:
     # Presence check passed — write any slug-paired outcomes to the log before the commit
     # runs. Best-effort: log failures don't block the commit.
     if _GIT_COMMIT.search(command):
-        write_resolutions(command, pr=_current_pr())
+        write_resolutions(command, pr=_current_pr(), commit=_current_head_sha())
     return _EXIT_ALLOW
 
 
