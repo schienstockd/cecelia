@@ -170,7 +170,9 @@ DataFrame, you write a labeled DataFrame.
 - Deviating (e.g. a cheap one-attribute metadata peek) needs an **inline comment on that exact line**
   saying why. No silent raw access.
 
-Full rule + rationale + truncated-HDF5 case: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
+Enforced by `test_h5ad_access_convention.py` (Python side: only the listed sanctioned wrappers +
+task creators may `import h5py` / `import anndata`). Full rule + rationale + truncated-HDF5 case:
+[`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
 
 ---
 
@@ -221,6 +223,10 @@ every Python task runner and data-layer writer. It writes the params JSON to the
 the process for cancellation, and checks `exitcode` **and** `termsignal`. Signature, options and the
 anti-patterns it exists to delete: [`app/CLAUDE.md`](app/CLAUDE.md) → *Spawning Python*.
 
+Enforced by the `python spawn ratchet` testset in `app/test/suite/ratchets.jl` (only
+`app/src/py_runner.jl` — and the boot-time cellpose model warm in `api/src/system_api.jl` — may
+spawn `python` by hand).
+
 ---
 
 ## Windows compatibility
@@ -234,6 +240,12 @@ Python text I/O** (the default is cp1252 on Windows). Launcher logic lives in `p
 shell scripts. The full table — which helper, which bug, and why each one exists — is in
 [`docs/DEV.md`](docs/DEV.md) → *Windows compatibility*. **Read it before writing any path, process, or
 file-encoding code.**
+
+Enforced by: `app/test/suite/ratchets.jl` (`bioformats2raw-bin ratchet`, `process-kill helpers
+ratchet`, `python spawn ratchet` — only sanctioned owners may spawn those binaries) +
+`test_utf8_encoding_convention.py` (every text-mode `open()` in `python/cecelia/**` and `app/src/**`
+must pass `encoding="utf-8"`). The Julia helpers themselves have unit tests under
+`app/test/suite/config.jl` + `observer.jl`.
 
 ---
 
@@ -255,7 +267,9 @@ bad-param case), the fixture conventions and the enforced fixture size cap are i
 [`docs/DEV.md`](docs/DEV.md) → *Core-functionality test rule* / *Test data fixtures*.
 
 Tests must **not** depend on the dev projects dir — use the committed `test-data/` fixtures via
-`fixture_path(...)` + `have_fixture(...)`.
+`fixture_path(...)` + `have_fixture(...)`. Enforced on the Python side by
+`test_dev_dir_leakage_convention.py` (no `CECELIA_DEV_DIR` reads, no `cecelia_conf()["dirs"]
+["projects"]` reads, no hardcoded `~/cecelia*/dev/projects/` paths).
 
 ---
 

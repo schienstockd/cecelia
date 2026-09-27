@@ -427,3 +427,179 @@ end
     @test isfile(exempt_path)
     @test occursin(r"\busing\s+Zarr\b", read(exempt_path, String))
 end
+
+# ── spawn-line filter (shared by the three spawn ratchets) ────────────────────
+# Julia comments and docstrings mention `bioformats2raw` / `kill` / `python` in backticks all
+# over the place (markdown code style). To avoid false positives, a "spawn line" must (a) not be
+# a comment-only line and (b) contain a real spawn context — `run(` / `Cmd(` / `pipeline(` /
+# `open(pipeline`. That is tight enough to skip prose and loose enough to catch every real
+# process-spawn idiom this codebase uses.
+_is_spawn_line(line) = !startswith(strip(line), "#") &&
+    (occursin("run(", line) || occursin("Cmd(", line) ||
+     occursin("pipeline(", line) || occursin("open(pipeline", line))
+
+# ── bioformats2raw-bin ratchet ────────────────────────────────────────────────
+# Root CLAUDE.md → *Windows compatibility* names `bioformats2raw_bin()` as the one launcher for
+# the bftools binary. A bare `\`bioformats2raw ...\`` or `Cmd(["bioformats2raw", ...])` inside a
+# task silently defeats the Windows-PATH-vs-exe branch the helper exists to handle. The task's
+# one legitimate call site (`app/src/tasks/importImages/omezarr/task.jl`) already goes through
+# `bioformats2raw_bin()`, so the baseline is empty; this ratchet is pure floor.
+@testset "bioformats2raw-bin ratchet — spawn only via `bioformats2raw_bin()`" begin
+    # Matches an unqualified `bioformats2raw` at the start of a backtick command, or as a bare
+    # string in a Cmd([...]) call. The helper name itself contains "bioformats2raw" so the raw
+    # bin-path binding at `app/src/config/binaries.jl` (`const _BF2RAW_BIN = ...`) matches too —
+    # exempt it explicitly.
+    banned = (r"`\s*bioformats2raw(?:\s|`)",
+              r"Cmd\(\s*\[\s*\"bioformats2raw\"")
+    # Sanctioned: only the helper module may bind or spawn the executable.
+    exempt = Set([joinpath("app", "src", "config", "binaries.jl")])
+
+    roots = [_app_src, _api_src]
+    offenders = String[]
+    for root in roots, (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        rel = relpath(path, _repo)
+        rel in exempt && continue
+        src = read(path, String)
+        for (i, line) in enumerate(split(src, '\n'; keepempty = true))
+            _is_spawn_line(line) || continue
+            for pat in banned
+                if occursin(pat, line)
+                    push!(offenders, "$rel:$i: `$(strip(line))`")
+                end
+            end
+        end
+    end
+
+    if !isempty(offenders)
+        @error "bioformats2raw-bin ratchet: Julia file(s) spawn `bioformats2raw` by bare name " *
+               "instead of routing through `bioformats2raw_bin()` (`app/src/config/binaries.jl`). " *
+               "See CLAUDE.md → *Windows compatibility*.\n" *
+               "Offending line(s):\n  " * join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+
+    # Coverage: the helper must still exist and still be the one place that owns the binary path.
+    helper_path = joinpath(_app_src, "config", "binaries.jl")
+    @test isfile(helper_path)
+    @test occursin(r"\bbioformats2raw_bin\s*\(", read(helper_path, String))
+end
+
+# ── process-kill helpers ratchet ──────────────────────────────────────────────
+# Root CLAUDE.md → *Windows compatibility* names `_kill_tree` / `free_port` as the launchers for
+# process-tree kill and port-listener kill. A bare `\`kill ...\`` / `\`pgrep ...\`` /
+# `\`taskkill ...\`` / `\`lsof ...\`` in a task or handler is either a Linux-only bug (Windows
+# has no `pgrep`) or a Windows-only bug (Linux has no `taskkill`). Sanctioned owners:
+#   • `app/src/jobs.jl`       — where `_kill_tree` / `_kill_proc_tree` live.
+#   • `api/portkill.jl`       — where `free_port` lives.
+#   • `app/src/single_instance.jl` — uses a `\`kill -0 pid\`` liveness probe (documented alternate
+#     use, not a process-tree kill; the module header explains why).
+@testset "process-kill helpers ratchet — spawn only via `_kill_tree` / `free_port`" begin
+    # Each pattern matches a backtick command that starts with the banned exe. The line-start-
+    # anchored `\`` catches only actual `run(\`kill ...\`)` / `pipeline(\`pgrep ...\`)` / etc.
+    banned = (r"`\s*kill(?:\s|`)",
+              r"`\s*pgrep(?:\s|`)",
+              r"`\s*taskkill(?:\s|`)",
+              r"`\s*lsof(?:\s|`)",
+              r"`\s*fuser(?:\s|`)")
+    exempt = Set([
+        joinpath("app", "src", "jobs.jl"),
+        joinpath("app", "src", "single_instance.jl"),
+        joinpath("api", "portkill.jl"),
+    ])
+
+    roots = [_app_src, _api_src, joinpath(_repo, "api")]
+    offenders = String[]
+    seen = Set{String}()
+    for root in roots
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(dir, f)
+            path in seen && continue
+            push!(seen, path)
+            rel = relpath(path, _repo)
+            rel in exempt && continue
+            src = read(path, String)
+            for (i, line) in enumerate(split(src, '\n'; keepempty = true))
+                _is_spawn_line(line) || continue
+                for pat in banned
+                    if occursin(pat, line)
+                        push!(offenders, "$rel:$i: `$(strip(line))`")
+                    end
+                end
+            end
+        end
+    end
+
+    if !isempty(offenders)
+        @error "process-kill helpers ratchet: Julia file(s) spawn `kill`/`pgrep`/`taskkill`/" *
+               "`lsof`/`fuser` inline instead of going through `_kill_tree` (`app/src/jobs.jl`) " *
+               "or `free_port` (`api/portkill.jl`). Each of these tools exists on one platform " *
+               "and not another — inline use is a silent OS-specific bug. See CLAUDE.md → " *
+               "*Windows compatibility*.\n" *
+               "Offending line(s):\n  " * join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+
+    # Coverage: each sanctioned owner must still hold its helper.
+    jobs_path = joinpath(_app_src, "jobs.jl")
+    portkill_path = joinpath(dirname(_api_src), "portkill.jl")
+    @test isfile(jobs_path) && occursin(r"\b_kill_tree\b", read(jobs_path, String))
+    @test isfile(portkill_path) && occursin(r"\bfree_port\b", read(portkill_path, String))
+end
+
+# ── python spawn ratchet ──────────────────────────────────────────────────────
+# Root CLAUDE.md → *Spawning Python* names `run_py` (`app/src/py_runner.jl`) as the one launcher
+# for every Python subprocess. Hand-rolling `\`... python ...\`` / `Cmd(["python", ...])` /
+# `pipeline(\`python ...\`)` in a task means losing the PYTHONPATH the runner sets, the
+# `[PROGRESS]` streaming, the cancellation registration, and the `exitcode`+`termsignal` check —
+# every one of which was a distinct bug at some point. Sanctioned owners:
+#   • `app/src/py_runner.jl`   — where `run_py` lives.
+#   • `api/src/system_api.jl`  — a one-off boot-time cellpose model warm at admin request, not a
+#     task runner and not on any user path; documented alternate use.
+@testset "python spawn ratchet — spawn only via `run_py`" begin
+    # Matches a backtick command that spawns `python` by bare name, or an interpolated
+    # `\`$python ...\`` form, or a Cmd([...]) literal.
+    banned = (r"`\s*python(?:\s|`)",
+              r"`\s*\$python(?:\s|`)",
+              r"`\s*\$pixi\s+run.*\s+python(?:\s|`)",
+              r"Cmd\(\s*\[\s*\"python\"")
+    exempt = Set([
+        joinpath("app", "src", "py_runner.jl"),
+        joinpath("api", "src", "system_api.jl"),
+    ])
+
+    roots = [_app_src, _api_src]
+    offenders = String[]
+    for root in roots, (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        rel = relpath(path, _repo)
+        rel in exempt && continue
+        src = read(path, String)
+        for (i, line) in enumerate(split(src, '\n'; keepempty = true))
+            _is_spawn_line(line) || continue
+            for pat in banned
+                if occursin(pat, line)
+                    push!(offenders, "$rel:$i: `$(strip(line))`")
+                end
+            end
+        end
+    end
+
+    if !isempty(offenders)
+        @error "python spawn ratchet: Julia file(s) spawn `python` by hand instead of routing " *
+               "through `run_py` (`app/src/py_runner.jl`). Every hand-spawn loses the PYTHONPATH " *
+               "setup, [PROGRESS] parsing, cancellation registration, and combined exit+signal " *
+               "check. See CLAUDE.md → *Spawning Python* + `app/CLAUDE.md` → *Spawning Python*.\n" *
+               "Offending line(s):\n  " * join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+
+    # Coverage: the sanctioned launcher must still exist and still hold the entry point.
+    launcher_path = joinpath(_app_src, "py_runner.jl")
+    @test isfile(launcher_path)
+    @test occursin(r"\bfunction\s+run_py\b", read(launcher_path, String))
+end
