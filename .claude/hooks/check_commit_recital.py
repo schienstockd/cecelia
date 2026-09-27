@@ -54,6 +54,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
 from cecelia.effectiveness.git_context import (  # noqa: E402
+    current_branch as _current_branch,
     current_head_sha as _current_head_sha,
     current_pr as _current_pr,
 )
@@ -211,15 +212,17 @@ def check(command: str) -> str | None:
 
 def write_resolutions(
     command: str, *, pr: str | None = None, commit: str | None = None,
+    branch: str | None = None,
 ) -> int:
     """Write one `_finding_resolved` row per slug-paired outcome in the commit message.
 
     Returns the number of rows written. Log-write failures are swallowed so a bad log path
-    can't wedge the commit — the presence-check is the only gate. `pr` and `commit` are
-    captured from `gh pr view` and `git rev-parse HEAD`; None on any failure (offline, not
-    in PR, gh not installed, git not installed). `commit` here is the parent SHA of the
-    commit being made (HEAD hasn't advanced yet at PreToolUse time), matching the SHA the
-    recital `_run` row was written with.
+    can't wedge the commit — the presence-check is the only gate. `pr`, `commit`, and
+    `branch` are captured from `gh pr view`, `git rev-parse HEAD`, and `git rev-parse
+    --abbrev-ref HEAD`; None on any failure. `commit` here is the parent SHA of the commit
+    being made (HEAD hasn't advanced yet at PreToolUse time), matching the SHA the recital
+    `_run` row was written with. `branch` lets the rollup join to a PR later even when `pr`
+    is null at write time (typical — findings land pre-commit).
     """
     written = 0
     for slug, outcome in _parse_pairs(command):
@@ -227,7 +230,8 @@ def write_resolutions(
         if event is None:
             continue  # unknown mechanism prefix — silently skip; hook regex won't match anyway
         try:
-            append_event(event, {"slug": slug, "outcome": outcome}, pr=pr, commit=commit)
+            append_event(event, {"slug": slug, "outcome": outcome},
+                         pr=pr, commit=commit, branch=branch)
             written += 1
         except Exception:  # noqa: BLE001 — best-effort emission
             pass
@@ -251,7 +255,8 @@ def main() -> int:
     # Presence check passed — write any slug-paired outcomes to the log before the commit
     # runs. Best-effort: log failures don't block the commit.
     if _GIT_COMMIT.search(command):
-        write_resolutions(command, pr=_current_pr(), commit=_current_head_sha())
+        write_resolutions(command, pr=_current_pr(), commit=_current_head_sha(),
+                          branch=_current_branch())
     return _EXIT_ALLOW
 
 

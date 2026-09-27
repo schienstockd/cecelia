@@ -42,8 +42,8 @@ class RecitalTest(unittest.TestCase):
         self._env_patch = mock.patch.dict(os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)})
         self._env_patch.start()
         self.addCleanup(self._env_patch.stop)
-        # Avoid real `gh pr view` / `git rev-parse HEAD` subprocess spawns in every test;
-        # individual tests that exercise PR / HEAD-SHA capture patch these explicitly.
+        # Avoid real `gh pr view` / `git rev-parse` subprocess spawns in every test;
+        # individual tests that exercise capture patch these explicitly.
         self._pr_patch = mock.patch("cecelia.effectiveness.recital._current_pr", return_value=None)
         self._pr_patch.start()
         self.addCleanup(self._pr_patch.stop)
@@ -52,6 +52,11 @@ class RecitalTest(unittest.TestCase):
         )
         self._sha_patch.start()
         self.addCleanup(self._sha_patch.stop)
+        self._branch_patch = mock.patch(
+            "cecelia.effectiveness.recital._current_branch", return_value=None,
+        )
+        self._branch_patch.start()
+        self.addCleanup(self._branch_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))
@@ -179,6 +184,11 @@ class FindingsEmissionTest(unittest.TestCase):
         )
         self._sha_patch.start()
         self.addCleanup(self._sha_patch.stop)
+        self._branch_patch = mock.patch(
+            "cecelia.effectiveness.recital._current_branch", return_value=None,
+        )
+        self._branch_patch.start()
+        self.addCleanup(self._branch_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))
@@ -339,6 +349,36 @@ class FindingsEmissionTest(unittest.TestCase):
 
         for e in self._events():
             self.assertEqual(e["commit"], head)
+
+    def test_branch_captured_when_available(self):
+        # `_current_branch()` result lands on every emitted row so the rollup can join to a
+        # PR later via `gh pr list --head <branch>` — even when `pr` is null at write time.
+        with mock.patch(
+            "cecelia.effectiveness.recital._current_branch",
+            return_value="feat/log-branch-capture",
+        ):
+            def fake(prompt: str) -> str:
+                if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
+                    return "- **foo.jl:1** — bar [**confirmed**]"
+                return "no convention check needed"
+
+            run_recital("some diff", claude_runner=fake)
+
+        for e in self._events():
+            self.assertEqual(e["branch"], "feat/log-branch-capture")
+
+    def test_branch_none_leaves_field_null(self):
+        # No repo / detached HEAD → row lands with branch=null; rollup skips the gh lookup
+        # for that row (can't join without a branch name).
+        def fake(prompt: str) -> str:
+            if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
+                return "- **foo.jl:1** — bar [**confirmed**]"
+            return "no convention check needed"
+
+        run_recital("some diff", claude_runner=fake)
+
+        for e in self._events():
+            self.assertIsNone(e["branch"])
 
     def test_head_sha_none_leaves_commit_null(self):
         # No repo / no `git` → the row still lands (best-effort), commit is null. The hook's

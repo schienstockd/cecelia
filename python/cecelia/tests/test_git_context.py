@@ -50,5 +50,72 @@ class CurrentHeadShaTest(unittest.TestCase):
             self.assertIsNone(git_context.current_head_sha())
 
 
+class PrForBranchTest(unittest.TestCase):
+    def test_returns_pr_number_on_success(self):
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/gh"), \
+             mock.patch.object(git_context.subprocess, "run",
+                               return_value=_completed("1264\n")):
+            self.assertEqual(git_context.pr_for_branch("docs/x"), "#1264")
+
+    def test_returns_none_when_gh_missing(self):
+        with mock.patch.object(git_context.shutil, "which", return_value=None):
+            self.assertIsNone(git_context.pr_for_branch("docs/x"))
+
+    def test_returns_none_on_nonzero_returncode(self):
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/gh"), \
+             mock.patch.object(git_context.subprocess, "run",
+                               return_value=_completed("", returncode=1)):
+            self.assertIsNone(git_context.pr_for_branch("docs/x"))
+
+    def test_returns_none_on_empty_output(self):
+        # No PR was ever opened for this branch — gh returns empty stdout, no error.
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/gh"), \
+             mock.patch.object(git_context.subprocess, "run",
+                               return_value=_completed("")):
+            self.assertIsNone(git_context.pr_for_branch("docs/x"))
+
+    def test_returns_none_on_timeout(self):
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/gh"), \
+             mock.patch.object(
+                 git_context.subprocess, "run",
+                 side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=10.0),
+             ):
+            self.assertIsNone(git_context.pr_for_branch("docs/x"))
+
+
+class CurrentBranchTest(unittest.TestCase):
+    def test_returns_branch_name_on_success(self):
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(git_context.subprocess, "run",
+                               return_value=_completed("feat/log-branch-capture\n")):
+            self.assertEqual(git_context.current_branch(), "feat/log-branch-capture")
+
+    def test_returns_none_when_git_missing(self):
+        with mock.patch.object(git_context.shutil, "which", return_value=None):
+            self.assertIsNone(git_context.current_branch())
+
+    def test_detached_head_returns_none(self):
+        # `git rev-parse --abbrev-ref HEAD` returns the literal string `HEAD` in detached-HEAD
+        # state. That's not a branch we can join a PR to later, so treat as no-branch.
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(git_context.subprocess, "run",
+                               return_value=_completed("HEAD\n")):
+            self.assertIsNone(git_context.current_branch())
+
+    def test_returns_none_on_nonzero_returncode(self):
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(git_context.subprocess, "run",
+                               return_value=_completed("", returncode=128)):
+            self.assertIsNone(git_context.current_branch())
+
+    def test_returns_none_on_timeout(self):
+        with mock.patch.object(git_context.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(
+                 git_context.subprocess, "run",
+                 side_effect=subprocess.TimeoutExpired(cmd="git", timeout=10.0),
+             ):
+            self.assertIsNone(git_context.current_branch())
+
+
 if __name__ == "__main__":
     unittest.main()

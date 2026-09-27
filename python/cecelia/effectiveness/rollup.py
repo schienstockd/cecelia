@@ -22,6 +22,8 @@ import collections
 import datetime as _dt
 import typing as _t
 
+from .git_context import pr_for_branch as _pr_for_branch
+
 _HEADER_TEMPLATE = """# AI-assist infrastructure — effectiveness
 
 _Rendered {rendered} from `~/.cecelia-effectiveness/events.jsonl` — this file is regenerated on demand by `pixi run audit-rollup`. Not auto-committed._
@@ -117,6 +119,7 @@ def _mechanism_section(
     events: _t.Sequence[dict],
     *,
     resolved_event: str | tuple[str, ...] = (),
+    pr_lookup: _t.Callable[[str, dict[str, str | None]], str | None] | None = None,
 ) -> str:
     """Fold events matching ANY of the given event names into a single mechanism section.
 
@@ -189,10 +192,47 @@ def _mechanism_section(
         lines.append("")
         lines.append("<details><summary>Findings</summary>")
         lines.append("")
-        _render_finding_rows(lines, findings_by_slug, resolutions_by_slug, slugless_findings)
+        _render_finding_rows(lines, findings_by_slug, resolutions_by_slug, slugless_findings,
+                             pr_lookup=pr_lookup)
         lines.append("</details>")
     lines.append("")
     return "\n".join(lines)
+
+
+def _pr_from_branch(branch: str, cache: dict[str, str | None]) -> str | None:
+    """Cache wrapper around `git_context.pr_for_branch` — one gh call per unique branch per
+    render pass. Mutates `cache` in place. A lookup failure caches None so it isn't retried."""
+    if branch in cache:
+        return cache[branch]
+    pr = _pr_for_branch(branch)
+    cache[branch] = pr
+    return pr
+
+
+def _resolve_pr(
+    finding: dict, resolved: dict | None, cache: dict[str, str | None],
+    *, pr_lookup: _t.Callable[[str, dict[str, str | None]], str | None] | None = None,
+) -> str | None:
+    """Return the effective PR for a row, using resolved > finding > branch→gh.
+
+    Priority chain reflects "prefer what was known at write time, only shell out if we have
+    to." `pr_lookup` is an injectable seam so tests never hit real gh; production defaults to
+    `_pr_from_branch`. Passing `_PR_LOOKUP_DISABLED` in `cache` (empty dict OK too) disables
+    lookup entirely — used by tests that don't want any subprocess calls.
+    """
+    resolved = resolved or {}
+    if resolved.get("pr"):
+        return resolved["pr"]
+    if finding.get("pr"):
+        return finding["pr"]
+    lookup = pr_lookup or _pr_from_branch
+    for candidate in (resolved.get("branch"), finding.get("branch")):
+        if not candidate:
+            continue
+        pr = lookup(candidate, cache)
+        if pr:
+            return pr
+    return None
 
 
 def _render_finding_rows(
@@ -200,12 +240,16 @@ def _render_finding_rows(
     findings_by_slug: dict[str, dict],
     resolutions_by_slug: dict[str, dict],
     slugless_findings: list[dict],
+    *,
+    pr_lookup: _t.Callable[[str, dict[str, str | None]], str | None] | None = None,
 ) -> None:
     """Append one `- <PR> — file:line — desc [**outcome**]` line per finding to `lines`.
 
     Groups by outcome in the display order; within a group, PR-then-file for stability across
     renders. Slugless legacy findings render last under the same grouping.
     """
+    pr_cache: dict[str, str | None] = {}
+
     def _row_for_slug(slug: str, f: dict) -> tuple[str, str]:
         payload = f.get("payload", {})
         resolved = resolutions_by_slug.get(slug)
@@ -213,7 +257,7 @@ def _render_finding_rows(
         file = payload.get("file", "?")
         line = payload.get("line", "?")
         desc = payload.get("desc", "").strip()
-        pr = (resolved or {}).get("pr") or f.get("pr")
+        pr = _resolve_pr(f, resolved, pr_cache, pr_lookup=pr_lookup)
         pr_txt = f"{pr} — " if pr else ""
         return outcome, f"- {pr_txt}`{file}:{line}` — {desc} [**{outcome}**]"
 
@@ -223,7 +267,7 @@ def _render_finding_rows(
         file = payload.get("file", "?")
         line = payload.get("line", "?")
         desc = payload.get("desc", "").strip()
-        pr = f.get("pr")
+        pr = _resolve_pr(f, None, pr_cache, pr_lookup=pr_lookup)
         pr_txt = f"{pr} — " if pr else ""
         return outcome, f"- {pr_txt}`{file}:{line}` — {desc} [**{outcome}**]"
 
@@ -276,11 +320,17 @@ def _misses_section(events: _t.Sequence[dict]) -> str:
     return "\n".join(lines)
 
 
-def render_rollup(events: _t.Iterable[dict], *, rendered_ts: str | None = None) -> str:
+def render_rollup(
+    events: _t.Iterable[dict], *, rendered_ts: str | None = None,
+    pr_lookup: _t.Callable[[str, dict[str, str | None]], str | None] | None = None,
+) -> str:
     """Produce the public markdown artifact from an iterable of event rows.
 
     Called by `scripts/audit_rollup.py`; also directly usable in tests. `rendered_ts` lets
     tests fix a deterministic timestamp; production leaves it None and uses now-UTC.
+    `pr_lookup(branch, cache) -> pr_or_None` is an injectable seam so tests skip the real gh
+    call; production defaults to `_pr_from_branch` (one gh call per unique branch, cached
+    within the render pass — findings-heavy branches only pay once).
     """
     events = list(events)
     rendered = rendered_ts or _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -305,6 +355,7 @@ def render_rollup(events: _t.Iterable[dict], *, rendered_ts: str | None = None) 
             ("fanout_audit_finding", "sibling_audit_finding"),
             events,
             resolved_event="fanout_audit_finding_resolved",
+            pr_lookup=pr_lookup,
         ),
         _mechanism_section(
             "Convention check",
@@ -312,6 +363,7 @@ def render_rollup(events: _t.Iterable[dict], *, rendered_ts: str | None = None) 
             "convention_check_finding",
             events,
             resolved_event="convention_check_finding_resolved",
+            pr_lookup=pr_lookup,
         ),
         _ratchets_section(events),
         _misses_section(events),

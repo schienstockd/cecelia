@@ -71,13 +71,29 @@ Every row is a JSON object with these top-level fields:
   "event": "fanout_audit_finding",   // closed list — see Event taxonomy
   "session": "ee757e9e",              // Claude Code session id — PRIVATE, stripped on public render
   "source": "live",                   // "live" | "retrospective_<tag>"
-  "pr": "#1240",                      // may be null pre-commit
-  "commit": "2d13dc21",               // may be null pre-commit
+  "pr": "#1240",                      // best-effort at write time; often null pre-commit
+  "commit": "2d13dc21",               // HEAD SHA at write time; may be null pre-repo/pre-git
+  "branch": "feat/foo",               // git branch at write time; null in detached HEAD
   "payload": { … }                    // event-specific fields
 }
 ```
 
 `payload` shape depends on `event`. See [Event taxonomy](#event-taxonomy).
+
+**How `pr` fills in.** Findings land pre-commit, so `pr` is usually null at write time (no
+PR opened for the branch yet). `branch` closes that gap: the rollup, when it renders a row
+whose `pr` is null and `branch` is set, does one `gh pr list --head <branch> --state all`
+lookup per unique branch (cached per render pass) and fills the PR link in the rendered
+output. The log itself is never mutated — the join is resolve-at-render, not backfill.
+
+- **Priority chain in the rollup**: `resolved.pr` > `finding.pr` > `resolved.branch → gh` >
+  `finding.branch → gh` > omit.
+- **Why keep `pr` at write time if `branch` can resolve it?** Because ~2nd-and-later commits
+  on any PR do have `pr` at write time (recital ran on a branch with a PR already open) —
+  storing it saves a gh call per row on the happy path. Cost of keeping: three lines.
+- **Why not backfill the log?** Append-only is a simple invariant that lets any reader diff
+  two snapshots without a schema-migration story; the resolve-at-render join is cheap enough
+  (one call per unique branch per render) that mutating history isn't worth it.
 
 ### Schema versioning
 

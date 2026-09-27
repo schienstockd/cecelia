@@ -10,8 +10,14 @@ The row shape (schema_version 1):
       "source": "live" | "retrospective_<tag>",
       "pr": "#1240" | null,
       "commit": "2d13dc21" | null,
+      "branch": "feat/foo" | null,   # captured so the rollup can resolve `pr` later
       "payload": { ... }             # event-specific
     }
+
+`branch` fills the "findings land pre-commit, PR opens later" gap: `pr` is usually null when
+the row is written (no PR exists yet); `branch` is always knowable and lets the rollup do a
+one-time `gh pr list --head <branch> --state all` lookup to backfill `pr` at render time. See
+`docs/todo/EFFECTIVENESS_LOG_PLAN.md` → *Row shape*.
 
 Event type + outcome vocabulary are CLOSED lists (`EVENT_TYPES`, `OUTCOME_VOCABULARY`). An
 unknown value raises rather than silently mis-classifying — a mis-spelled event type would
@@ -105,6 +111,7 @@ def append_event(
     source: str = "live",
     pr: str | None = None,
     commit: str | None = None,
+    branch: str | None = None,
     ts: str | None = None,
     log_path: pathlib.Path | None = None,
 ) -> dict:
@@ -141,6 +148,7 @@ def append_event(
         "source": source,
         "pr": pr,
         "commit": commit,
+        "branch": branch,
         "payload": payload,
     }
 
