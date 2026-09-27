@@ -48,6 +48,11 @@ EVENT_TYPES = frozenset({
     "retrospective_miss",
     "plan_logged",
     "prompt_logged",
+    #: Weekly rollup of human-attention events (findings the user tagged, audit prompts
+    #: authored, PRs needing manual resolution). Reserved by governance-layer audit Item 2;
+    #: no emitter yet — target: post-2026-10-24 when four weeks of _finding_resolved data
+    #: have accumulated and the burden trend becomes readable.
+    "attention_tick",
 })
 
 #: Closed outcome vocabulary from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Outcome vocabulary.
