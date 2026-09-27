@@ -56,7 +56,7 @@ One-time systematic re-reading of a **fixed sample** of recent PRs, classifying 
 
 ### Artifact B — forward log (compounds over time)
 
-`~/.claude/projects/…/cecelia-effectiveness/events.jsonl` (path TBD — see [Storage location](#storage-location)). Append-only, one line per event. Rollup script (`/audit-rollup` or `pixi run audit-rollup`) reads it and emits a curated markdown to `docs/ai-assist/EFFECTIVENESS.md` for public rendering.
+`~/.cecelia-effectiveness/events.jsonl` (per-user, cross-worktree; overridable via `CECELIA_EFFECTIVENESS_LOG`). Append-only, one line per event. Rollup script (`/audit-rollup` or `pixi run audit-rollup`) reads it and emits a curated markdown to `docs/ai-assist/EFFECTIVENESS.md` for public rendering.
 
 Not heartbeated. Rollup runs **on-demand** when Dominik is about to review or present. Auto-committing weekly would (a) fill git history with noise, (b) let stale/uncurated numbers land publicly without a diff review.
 
@@ -151,7 +151,9 @@ Even so, *some* miss data on the page turns "look how well we do" into "here's w
 
 ## Storage location
 
-Two candidates:
+**Shipped:** `~/.cecelia-effectiveness/events.jsonl` — a simpler flavour of option 1 below (no `<project-hash>` segment; per-user, cross-worktree; overridable via `CECELIA_EFFECTIVENESS_LOG`).
+
+Two candidates were considered:
 
 1. **`~/.claude/projects/<project-hash>/cecelia-effectiveness/events.jsonl`** — outside the repo, per-user, cross-session. Rollup script reads from here. Never committed. Consequence: another Claude Code session on a fresh machine has no history until it accumulates its own.
 2. **`docs/audit-log/events.jsonl` in the repo, gitignored** — same effect but co-located with the code. Slight risk of accidental commit; requires a `.gitignore` line and a note.
@@ -199,7 +201,7 @@ Nothing new to build for the third row *if* `cited_doc_refs` is in the schema fr
 
 Someone lands on the Cecelia GitHub page. What do they read in 30 seconds?
 
-1. **README** — one paragraph: "Cecelia uses an AI-assist infrastructure (pre-commit reviewer, CLAUDE.md ratchets) to catch a specific class of bugs. We track how well it works. See ai-assist effectiveness at `docs/ai-assist/EFFECTIVENESS.md`" (that file does not exist yet — the rollup produces it).
+1. **README** — one paragraph: "Cecelia uses an AI-assist infrastructure (pre-commit reviewer, CLAUDE.md ratchets) to catch a specific class of bugs. We track how well it works. See ai-assist effectiveness at [`docs/ai-assist/EFFECTIVENESS.md`](../ai-assist/EFFECTIVENESS.md)."
 2. **`docs/ai-assist/EFFECTIVENESS.md`** — headline table (catch / FP / miss counts, retrospective vs live), then per-mechanism breakdown (sibling-audit, each ratchet), then a "what we can't measure" section, then link to methodology.
 3. **`docs/ai-assist/EFFECTIVENESS_METHODOLOGY.md`** — schema, event taxonomy, outcome vocabulary, sample method for the retrospective, honest ceiling. This plan doc, minus the design-decision framing, becomes the seed of that page.
 
