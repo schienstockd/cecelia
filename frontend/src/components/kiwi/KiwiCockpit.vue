@@ -38,6 +38,7 @@ import { useCopyFlash } from '../../composables/useCopyFlash'
 import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
+import { terminalCta, terminalSetupTooltip } from '../../utils/observerSetup'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureEnvelope, type CaptureEnvelope,
@@ -135,14 +136,16 @@ watch(() => pushStore.tick, () => {
 })
 
 onUnmounted(() => { if (pushFlashTimer) clearTimeout(pushFlashTimer) })
-// observer.refresh() is already installed app-wide in App.vue on project change — don't double it.
-// The probe runs after refreshPushTarget so the chip renders once with the stored state, then
-// silently updates if the socket is dead. Order: read → probe → maybe self-heal via WS broadcast.
+// observer.refresh() runs app-wide in App.vue on project change; ALSO on mount here because the
+// Assistant → Terminal row + its Set up / Fix button live in this panel now (moved from the lab log,
+// which used to refresh on mount for the same reason). A user who registers/breaks `cecelia-observer`
+// in a shell then opens Kiwi should see the live state, not App.vue's last cached read.
 watch(projectUid, async () => {
   await refreshPushTarget()
   void refreshCaptures()
   void checkPairing()
 }, { immediate: true })
+onMounted(() => observer.refresh())
 
 // ── Share with Claude ─────────────────────────────────────────────────────────
 // Two targets, one store — see `stores/shareTarget.ts`. Kiwi owns the buttons; the store owns
@@ -251,6 +254,10 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
   if (s === 'stale' || s === 'shadowed') return 'warn'
   return 'fail'
 })
+// Fix action for the Terminal row: shown until the entry is 'current' (setup or resync). The lab log
+// used to carry this button; it lives next to the state it acts on now. Uses the same shared classifier
+// (utils/observerSetup.ts) so the wording stays honest across CLI-missing / stale / shadowed / missing.
+const terminalCtaMode = computed(() => terminalCta(observer.available, observer.terminalState))
 </script>
 
 <template>
@@ -478,7 +485,19 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
                                              'kiwi-dot-fail': terminalStateKind === 'fail' }"
                   aria-hidden="true" />
             <span class="cc-fs-xs">{{ terminalStateLabel }}</span>
+            <!-- Fix action — one button, only when the entry needs it. Wording carries the case:
+                 "Set up" first-run, "Fix" for stale/shadowed (an existing entry points elsewhere). -->
+            <button v-if="terminalCtaMode !== 'chat'" class="cc-btn cc-btn-ghost cc-fs-2xs kiwi-obs-fix"
+                    :disabled="observer.registering" @click="observer.registerMcp()"
+                    v-tooltip.bottom="terminalSetupTooltip(observer.terminalState)">
+              <i class="pi pi-download" />
+              {{ observer.registering ? 'Setting up…'
+                 : terminalCtaMode === 'resync' ? 'Fix' : 'Set up' }}
+            </button>
           </div>
+          <InlineNote v-if="observer.registerError" severity="warn"
+                      :short="observer.registerError"
+                      detail="See Settings → MCP connections." class="kiwi-obs-err" />
         </CollapsibleSection>
       </template>
     </div>
@@ -557,5 +576,9 @@ const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
 .kiwi-dot-warn { background: var(--cc-sev-warn); }
 .kiwi-dot-fail { background: var(--cc-sev-fail); }
 .kiwi-clear-row { margin-top: 0.4rem; gap: 0.35rem; }
+/* Fix action sits at the right end of the Terminal row so the label + dot + state read first, then
+   the action. Not warn-toned itself — the dot already carries severity. */
+.kiwi-obs-fix { margin-left: auto; display: inline-flex; align-items: center; gap: 0.25rem; }
+.kiwi-obs-err { padding-top: 0.2rem; }
 
 </style>

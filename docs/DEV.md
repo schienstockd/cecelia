@@ -153,7 +153,6 @@ runner**, which is the whole point of it.
 | `api/src/*.jl` (routes, sockets, handlers) | **Restart** |
 | `app/src/*.jl` (the package) | **Restart** |
 | `app/src/tasks/**` or a `*_run.py` — the code that runs on an image | **Restart**, then **Restart** on the Task runner row |
-| `napari/napari_bridge.py` or `api/src/napari_api.jl` | **Restart** (it stops napari too), then reopen the image to reload its layers |
 | `preview/preview_worker.py` | **Restart** (it stops the preview worker too) |
 | `pluto/` | **Restart**, or just the Notebooks row |
 

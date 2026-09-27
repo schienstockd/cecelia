@@ -273,7 +273,7 @@ Implement the configurable per-session cap in the MCP server: after N surfaced o
 
 Phase 1 was read + flag. Phase 2 makes the assist *actionable* and gives Claude a way to produce
 verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (the parked plan
-`docs/todo/OBSERVER_PHASE2_PLAN.md` has been retired). Full tool list: the table above + `mcp/README.md`.
+`OBSERVER_PHASE2_PLAN.md` has since been deleted from `docs/todo/`). Full tool list: the table above + `mcp/README.md`.
 
 **What landed**
 - **Tuning trail** — the per-image run log now records each run's `params` (`run_log.jl`); surfaced in

@@ -50,8 +50,9 @@ server carries its own instructions:
 Per-tool detail belongs in the tool's own docstring (also always in context); `guidance.py` is only
 for what spans tools. **A new tool must be named there** or the assistant never offers it — enforced by
 `GuidanceTest` in `mcp/tests/test_server.py`, with a three-tool exemption for the observer's own
-autonomous-loop bookkeeping. The in-app observer has its own prompt (`app/src/ai/observer_prompt.jl`)
-carrying only the watch loop and the lab-log discipline, with the matching guard in `app/test/suite.jl`.
+autonomous-loop bookkeeping. The in-app agent is Kiwi, spawned against this same server with its own
+system prompt (`kiwi_system_prompt` in `api/src/kiwi_turn.jl`) layered on top — the earlier standalone
+autonomous "Ask Claude" pass and its separate `observer_prompt.jl` rules file were dropped.
 
 ### A promise must name the test that backs it
 
@@ -171,8 +172,8 @@ Chains need no snapshot/versioning of the kind notebooks have — see `docs/SCHE
 
 ### Wire into Claude Code
 
-**You don't have to do this by hand.** The lab-log panel's info dialog has a **Set up my terminal**
-button: it POSTs `/api/observer/register`, which runs `claude mcp add-json cecelia-observer <spec> -s user`
+**You don't have to do this by hand.** Kiwi → Assistant has a **Set up** / **Fix** button on the
+Terminal row: it POSTs `/api/observer/register`, which runs `claude mcp add-json cecelia-observer <spec> -s user`
 with the spec below already resolved (python bin, `PYTHONPATH`, API port), so plain `claude` gets the
 tools in every session. It removes-then-adds, so it's also the re-sync after a move/reinstall. The
 config file it uses for the *in-app* agent is `<config_dir>/observer-mcp.json`

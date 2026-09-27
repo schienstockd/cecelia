@@ -411,8 +411,8 @@ new enough that no project contains a pixel-space position gate, so it could onl
 permanent Settings entry that did nothing (the same call as the retired centroid-axes patch — see
 `docs/todo/CENTROID_AXES_PLAN.md` Phase 2). The lazy adoption in rule 3 covers every real case. The one
 thing it does not: a position gate drawn *before* this change stays in px forever, and keeps evaluating
-correctly as px. If one ever turns up, the converter is in git history on `work/spatial-gate-units`
-(`python/cecelia/utils/spatial_gate_units.py`) — note that it needed the stamp for idempotency, because
+correctly as px. If one ever turns up, the converter (`spatial_gate_units.py`) is in git history on a
+now-deleted work branch — note that it needed the stamp for idempotency, because
 500 px and 500 µm are the same number on disk.
 
 - **`value_name=nothing`** resolves to the image's **active** segmentation (same resolution

@@ -184,7 +184,7 @@ export const TIPS: WhatNewCard[] = [
     title: 'Claude Code can read your project',
     description: 'The cecelia-observer MCP server gives a Claude Code session read-only access to this project — images, QC, cohort outliers, lineage, populations, behaviour, clusters. It points out what looks off and names the knob worth trying; you make the change and run it. Ask, and it notes the decision in the lab log or builds you a Pluto notebook.',
     steps: [
-      'Lab log → Set up my terminal (once).',
+      'Kiwi → Assistant → Set up (once).',
       'Run claude in a terminal.',
       'Ask: "check my current project in cecelia".',
     ],

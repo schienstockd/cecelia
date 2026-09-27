@@ -38,6 +38,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
+| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 12 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
 | [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md) | The standard a change gets checked against — comment/docstring rules, cross-module contracts, file-responsibility rules. Checklist at the bottom. Update when a future audit finds a new pattern |
 | [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
@@ -170,7 +171,9 @@ DataFrame, you write a labeled DataFrame.
 - Deviating (e.g. a cheap one-attribute metadata peek) needs an **inline comment on that exact line**
   saying why. No silent raw access.
 
-Full rule + rationale + truncated-HDF5 case: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
+Enforced by `test_h5ad_access_convention.py` (Python side: only the listed sanctioned wrappers +
+task creators may `import h5py` / `import anndata`). Full rule + rationale + truncated-HDF5 case:
+[`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading and writing `.h5ad`*.
 
 ---
 
@@ -221,6 +224,10 @@ every Python task runner and data-layer writer. It writes the params JSON to the
 the process for cancellation, and checks `exitcode` **and** `termsignal`. Signature, options and the
 anti-patterns it exists to delete: [`app/CLAUDE.md`](app/CLAUDE.md) → *Spawning Python*.
 
+Enforced by the `python spawn ratchet` testset in `app/test/suite/ratchets.jl` (only
+`app/src/py_runner.jl` — and the boot-time cellpose model warm in `api/src/system_api.jl` — may
+spawn `python` by hand).
+
 ---
 
 ## Windows compatibility
@@ -234,6 +241,12 @@ Python text I/O** (the default is cp1252 on Windows). Launcher logic lives in `p
 shell scripts. The full table — which helper, which bug, and why each one exists — is in
 [`docs/DEV.md`](docs/DEV.md) → *Windows compatibility*. **Read it before writing any path, process, or
 file-encoding code.**
+
+Enforced by: `app/test/suite/ratchets.jl` (`bioformats2raw-bin ratchet`, `process-kill helpers
+ratchet`, `python spawn ratchet` — only sanctioned owners may spawn those binaries) +
+`test_utf8_encoding_convention.py` (every text-mode `open()` in `python/cecelia/**` and `app/src/**`
+must pass `encoding="utf-8"`). The Julia helpers themselves have unit tests under
+`app/test/suite/config.jl` + `observer.jl`.
 
 ---
 
@@ -255,7 +268,9 @@ bad-param case), the fixture conventions and the enforced fixture size cap are i
 [`docs/DEV.md`](docs/DEV.md) → *Core-functionality test rule* / *Test data fixtures*.
 
 Tests must **not** depend on the dev projects dir — use the committed `test-data/` fixtures via
-`fixture_path(...)` + `have_fixture(...)`.
+`fixture_path(...)` + `have_fixture(...)`. Enforced on the Python side by
+`test_dev_dir_leakage_convention.py` (no `CECELIA_DEV_DIR` reads, no `cecelia_conf()["dirs"]
+["projects"]` reads, no hardcoded `~/cecelia*/dev/projects/` paths).
 
 ---
 
@@ -268,21 +283,81 @@ merge). Full conventions — branch naming, commit style, how PRs are opened, re
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
 commit or push proactively.** A "go ahead" to do the work is not approval to commit it.
 
-**Agents: state your reservations BEFORE every commit — ONE prioritized list with sibling-call
-findings woven in, evidence cited underneath.** Kiwi-shape: claims + references. When asked to
-commit/push (or asked for the PR url — that request itself calls the commit): spawn a fresh
-`sonnet` subagent per [`docs/ai-assist/SIBLING_CALL_AUDIT.md`](docs/ai-assist/SIBLING_CALL_AUDIT.md)
-with `git diff --staged`, read its findings, then emit ONE prioritized reservations list where
-**confirmed** siblings become items ranked by how much they matter, **plausible** ones fold in with
-the right hedge, latent-only ones as forecasted-risk notes — alongside the usual unverified /
-perf / edge-case / silent-no-op items. Follow the list with the raw reviewer output verbatim under
-a `_Sibling-call audit (evidence):_` fold, so each woven item cites its source (a `**confirmed**`
-reservation like "sibling of `_load_set` at `_read_project:112` unpatched" points back to the raw
-finding for the user to verify). Close with a one-line tail — `_Sibling-call audit: run_` (or
-`_skipped — docs-only diff_` / `_skipped — no modified code_` / `_no sibling-call audit needed_`) —
-the leading indicator that proves the check ran; missing line = the mechanism went dark. Don't
-reassure or wait to be asked "any reservations?". Catches case-F drift: a fix that silently leaves
-divergent copies broken. See [`docs/DEV.md`](docs/DEV.md) → *Commits*.
+**Agents: state your reservations BEFORE every commit — ONE prioritized list with fanout AND
+convention-check findings woven in, evidence cited underneath.** Kiwi-shape: claims + references.
+When asked to commit/push (or asked for the PR url — that request itself calls the commit):
+
+```bash
+pixi run recital
+```
+
+`recital` (`python/cecelia/effectiveness/recital.py`) spawns both reviewers via `claude -p`,
+emits their `_run` events **and** one `_finding` row per outcome-tag-requiring bullet
+(`**confirmed**` / `**should reuse**`) to the effectiveness log **atomically with the spawn**
+(so nothing can be silently skipped in autonomous mode — the failure that motivated this
+design was four consecutive reviewer runs where the parent skipped emission every time), and
+prints the formatted recital body — evidence folds + tail lines already in place, each
+outcome-tag-requiring bullet prefixed with a `[slug]` — to stdout. Weave the printed findings
+into your prioritized reservations list, tag each with a `[slug: outcome]` pair from the
+closed vocabulary (copy the slug from the recital body verbatim):
+
+- `[<slug>: fixed_pre_commit]` — the fix is in the diff you're about to commit.
+- `[<slug>: shipped_with_finding]` — shipping despite the finding; reason goes in the commit body prose.
+- `[<slug>: false_positive]` — the finding is wrong; reason goes in the commit body prose.
+- `[<slug>: dropped_no_action]` — raised but not resolved before session ended; reason goes in the commit body prose.
+
+Bare `[fixed_pre_commit]` / `[<outcome>: <reason>]` forms are still accepted for legacy /
+un-slugged findings, but slug-paired form is preferred — the commit hook writes a
+`_finding_resolved` row per pair, which is what turns the effectiveness rollup from runtime
+telemetry into evidence (see [`docs/todo/FINDINGS_EMISSION_PLAN.md`](docs/todo/FINDINGS_EMISSION_PLAN.md)).
+
+Then append the recital body to the commit message. Don't reassure or wait to be asked "any
+reservations?".
+
+- **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
+- **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework.
+
+_Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
+
+- `_Fanout audit: run_` (or `_skipped — docs-only diff_` / `_skipped — no modified code_` /
+  `_no fanout audit needed_`)
+- `_Convention check: run_` (or `_skipped — docs-only diff_` / `_skipped — no additions_` /
+  `_skipped — tests-only_` / `_no convention check needed_`)
+- `_Citation-currency check: run_` (or `_run — no stale citations_` / `_skipped — no code changes_` /
+  `_skipped — no citations indexed_`) — mechanical, not a reviewer subagent; warns when a
+  governance doc cites a code file that changed but the citing doc didn't. See
+  `python/cecelia/effectiveness/citation_currency.py`.
+
+Missing any of the three tails = that mechanism went dark. Don't reassure or wait to be asked "any
+reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
+(a new helper/component/endpoint that duplicates an existing canonical); citation-currency catches
+doc↔code drift (an "Enforced by ..." claim whose subject moved without the doc noticing). See
+[`docs/DEV.md`](docs/DEV.md) → *Commits*.
+
+**Convention-check is advisory for now**: findings land in the reservations recital and the
+effectiveness log, but do not block a commit. Locked decision #4 in
+`docs/todo/CONVENTION_CHECK_PLAN.md` — flip to hard-required once the effectiveness log shows the
+FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
+
+**Per-finding outcome tag — required, enforced by a pre-commit hook.** Every `**confirmed**`
+fanout finding and every `**should reuse**` convention finding in the recital must carry an
+outcome tag. Preferred form is the slug-paired `[<slug>: <outcome>]` — copy the slug printed by
+`pixi run recital` verbatim; the hook parses each pair and writes a matching
+`_finding_resolved` row to `~/.cecelia-effectiveness/events.jsonl`, so the effectiveness rollup
+can join it back to the pending `_finding` row and render evidence rather than just counts.
+Legacy bare `[fixed_pre_commit]` / `[<outcome>: <reason>]` still accepted for un-slugged
+findings.
+
+The hook (`.claude/hooks/check_commit_recital.py`, wired via `.claude/settings.json` PreToolUse
+on Bash) grep-checks the commit message for a matching outcome tag per finding, blocks the
+commit if any are missing, blocks if any slug is duplicated (the same finding can't have two
+outcomes), and writes resolution rows for each slug-paired outcome. It doesn't validate the
+outcome itself — a bad-faith `false_positive` still passes — but the disclosure step can't be
+silently skipped. That's what turns advisory into "advisory-with-teeth" for autonomous mode:
+findings in the log become gradeable later (did shipped-anyway correlate with real bugs?)
+rather than just noise in a text output the reader may not see.
+
+Bypass with `CECELIA_SKIP_RECITAL_CHECK=1` for real emergencies.
 
 ---
 

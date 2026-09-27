@@ -260,7 +260,7 @@ offer them for free because it computed track measures **on the fly**, so the kn
 arguments passed down into celltrackR at analysis time.
 
 **Why deferred.** The new stack precomputes `live.cell.*` at native resolution
-(`app/src/tasks/behaviour/track_measures.jl`), so there is nothing left to push the arguments into —
+(`app/src/tasks/tracking/track_measures.jl`), so there is nothing left to push the arguments into —
 they were silent no-ops on `behaviour.hmm_states` and were dropped rather than left as controls that
 did nothing. Restoring the capability is therefore not a parameter, it is a storage decision, and
 none of the three ways in is obviously right:
@@ -277,7 +277,7 @@ frame intervals — that is the case the knobs existed for, and it is the one th
 three options above. (Option (c) is the only one that solves it without asking the user to guess a
 stride.) Nobody has hit it on current data.
 
-**Reference:** `docs/TRACKING.md`, `app/src/tasks/behaviour/track_measures.jl`. Old implementation:
+**Reference:** `docs/TRACKING.md`, `app/src/tasks/tracking/track_measures.jl`. Old implementation:
 `old-R-shiny-version/R/trackHelpers.R` (`celltrackR::subtracks(x, steps.subtracks, steps.overlap)`),
 called from `inst/modules/sources/behaviourAnalysis/hmmStates.R:42-43`.
 

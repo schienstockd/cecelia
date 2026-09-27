@@ -4,11 +4,9 @@
 // Zero-friction by design: an always-focused entry field at the top, submit on Enter, newest-first
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { observerSetupReason, terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
-import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
@@ -38,23 +36,7 @@ const imageNames = ref<Record<string, string>>({})   // uid → current name, fo
 // LabArchives context (the experiment, from the lab's ELN). Rides along with the lab-log payload —
 // the card lives in this panel, so a second round-trip buys nothing. See utils/labLog.ts.
 const labarchives = ref<LabArchivesCtx>({ present: false })
-// AI observer (in-app assistant, on-demand only). State lives in the observer STORE (survives this
-// v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
-const observer = useObserverStore()
 const labCapture = useLabCaptureStore()
-// Which terminal button the toolbar shows: 'setup' / 'resync' vs 'chat' (empty slot). The
-// chat-handoff button used to live in this slot; it moved to Kiwi (docs/todo/KIWI_PLAN.md
-// Decision 6) so the pairing state and the chat handoff sit side-by-side in one place.
-const terminalCtaMode = computed(() => terminalCta(observer.available, observer.terminalState))
-
-const observerAvailable = computed(() => observer.available)
-// Set-up guidance: availability only means `claude` is on PATH — not logged in. Show install steps
-// when the CLI is missing. (It also used to catch a failed login from the last "Ask Claude" pass; that
-// pass is gone — Kiwi shows its own error when a turn fails.)
-// This is a CONDITIONAL alert at the point of use — it renders only when something is broken, and
-// vanishes the moment it works. Settings → MCP connections carries the same state as a durable row
-// (via the same `observerSetupReason`), which is where you go to check rather than to be told.
-const observerSetup = computed(() => observerSetupReason(observerAvailable.value, false))
 // entries shown in the panel: hidden (dismissed) ids filtered out. The log FILE still contains them —
 // hide is view-only (a config sidecar), so the append-only methodology record is preserved.
 const visibleEntries = computed(() => computeVisibleEntries(entries.value, dismissed.value))
@@ -107,14 +89,10 @@ async function capture(silent = false) {
 watch(() => labCapture.captureTick, () => { if (projectUid.value) load() })
 
 // (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
-// (Observer status/session is refreshed app-wide by the store — see App.vue.) Refresh it again on
-// mount so the terminal-setup button reflects the config as of NOW: the user may have registered (or
-// broken) `cecelia-observer` in a terminal since the app loaded, and this panel is where they'd look.
 watch(projectUid, async () => {
   await load()
   if (settings.labLogAutoContext) capture(true)
 }, { immediate: true })
-onMounted(() => observer.refresh())
 
 async function submit() {
   const lines = draftToLines(draft.value)
@@ -217,9 +195,10 @@ async function dismissEntry(entry: LabLogEntry) {
       </div>
     </div>
 
-    <!-- controls in two slots: Cecelia (the app's own activity digest) | Claude (the AI assistant) -->
+    <!-- Cecelia activity digest: manual capture + auto-on-open + the view toggle for its uid-based
+         digest. The old "Claude" toolbar slot (terminal-setup CTA + setup guidance) moved to Kiwi's
+         Assistant section — pairing/terminal state and its fix action sit together there. -->
     <div class="ll-toolbar cc-row">
-      <!-- Cecelia: manual capture + auto-on-open + the view toggle for its uid-based digest -->
       <div class="ll-tb-group">
         <button class="ll-capture" :disabled="!projectUid || capturing" @click="capture(false)"
                 v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
@@ -232,48 +211,7 @@ async function dismissEntry(entry: LabLogEntry) {
           v-tooltip.top="'Show current image names instead of stable IDs'" />
       </div>
 
-      <span class="ll-tb-sep" aria-hidden="true" />
-
-      <!-- Claude: terminal setup only. Asking lives in Kiwi (validated claims); the lab log's one-off
-           "Ask Claude" pass was removed 2026-09-24. A terminal session still writes [Claude] entries here
-           through append_lab_log. -->
-      <div class="ll-tb-group">
-        <!-- Setup CTA: shown until the user's terminal has the observer MCP registered. Once set up
-             (`terminalCtaMode === 'chat'`) this slot is empty; the chat-handoff button moved to Kiwi
-             (docs/todo/KIWI_PLAN.md Decision 6), which sits beside the pairing state it depends on.
-             See utils/observerSetup.ts terminalCta. -->
-        <button v-if="terminalCtaMode !== 'chat'" class="ll-capture" :disabled="observer.registering"
-                @click="observer.registerMcp()"
-                v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
-          <i class="pi pi-download" />
-          {{ observer.registering ? 'Setting up…'
-             : terminalCtaMode === 'resync' ? 'Fix terminal setup' : 'Set up my terminal' }}
-        </button>
-      </div>
-
       <span v-if="captureNote" class="ll-note cc-muted cc-fs-xs">{{ captureNote }}</span>
-    </div>
-
-    <!-- Set-up guidance: the integration needs NO config — just Claude Code installed + logged in.
-         Shown when the CLI is missing, or when a run failed because it isn't authenticated. Conditional,
-         so it costs nothing once it works; the durable status lives in Settings → MCP connections. -->
-    <div v-if="observerSetup" class="ll-setup">
-      <template v-if="observerSetup === 'missing'">
-        <strong>Claude Code not detected.</strong> Install it, then run <code>claude</code> once to log in.
-      </template>
-      <template v-else>
-        <strong>Claude Code isn't logged in.</strong> Run <code>claude</code> in a terminal, then try again.
-      </template>
-      <a href="https://docs.anthropic.com/en/docs/claude-code/setup" target="_blank" rel="noopener">Setup guide ↗</a>
-    </div>
-
-    <!-- Terminal set-up FAILED: one line, so the click isn't silent. The DIAGNOSTIC (the resolved
-         command to run by hand, MCP connection states) lives in Settings → MCP connections — this
-         panel keeps the action, not the troubleshooting. Warn-toned so it doesn't merge into the
-         setup/activity bands, which share one background. -->
-    <div v-if="observer.registerError" class="ll-setup ll-setup-fail cc-row cc-row-tight">
-      <strong><i class="pi pi-exclamation-triangle" /> {{ observer.registerError }}</strong>
-      <span class="cc-muted">See Settings → MCP connections.</span>
     </div>
 
     <!-- LabArchives CONTEXT — the experiment as the lab notebook records it. Pinned above the dated
@@ -376,10 +314,7 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-save:disabled { opacity: 0.5; cursor: default; }
 
 .ll-toolbar { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; }
-/* two control slots (Cecelia | Claude), each an inline row; the divider sits between them and the
-   whole bar wraps as a unit when the panel is narrow (a group drops to the next line intact). */
 .ll-tb-group { display: inline-flex; align-items: center; gap: 0.5rem; }
-.ll-tb-sep { align-self: stretch; width: 1px; min-height: 1.1rem; background: var(--cc-border); }
 .ll-capture {
   display: inline-flex; align-items: center; gap: 0.3rem;
   border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text);
@@ -390,25 +325,6 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; }
 /* capture status: floats to the far right of the whole bar (direct toolbar child) */
 .ll-note { margin-left: auto; }
-/* token readout sits inline within the Claude group (no auto-margin — it's not a toolbar child) */
-
-/* setup hint — install/login guidance when Claude Code is missing or not authenticated */
-.ll-setup {
-  flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
-  background: var(--cc-surface-2); padding: 0.4rem 0.6rem;
-  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); line-height: 1.5;
-}
-/* the FAILED-setup variant: warn accent + a left rule so it can't be read as one slab with the
-   activity band below it (both otherwise sit on --cc-surface-2 with a bottom border) */
-.ll-setup strong { color: var(--cc-text); }
-.ll-setup code {
-  font-size: var(--cc-fs-2xs); padding: 0 0.2rem; border-radius: var(--cc-radius-xs);
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border);
-}
-.ll-setup a { margin-left: 0.3rem; color: var(--cc-accent); white-space: nowrap; }
-.ll-setup-fail { background: var(--cc-surface-1); border-left: 3px solid var(--cc-sev-warn); }
-.ll-setup-fail strong { color: var(--cc-sev-warn); display: inline-flex; align-items: center; gap: 0.3rem; }
-/* Claude activity log — collapsible; each Ask-Claude pass with its verdict, cost + outcome */
 
 /* LabArchives context card — a MIRROR of an external record, so it must not read as one of the
    append-only entries below. Different chrome on purpose: accent left rule, no author colour, no
