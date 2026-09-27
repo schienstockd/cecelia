@@ -136,9 +136,20 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
 
 
 def _capture_diff(worktree: pathlib.Path) -> str:
-    """`git diff HEAD` in the worktree — captures every modification the agent made."""
+    """Every file change the agent made — including new files.
+
+    `git diff HEAD` alone omits untracked files, so a prompt that asks the agent to CREATE a
+    module (typical — most rules-under-test involve a new helper somewhere) would score zero
+    even when the agent wrote a perfect file. Stage first (`git add -A`), then diff the index
+    against HEAD, which captures new file content the same as modifications. Safe because the
+    worktree is thrown away right after this call.
+    """
+    subprocess.run(
+        ["git", "add", "-A"],
+        cwd=str(worktree), capture_output=True, text=True, timeout=30.0, check=False, encoding="utf-8",
+    )
     result = subprocess.run(
-        ["git", "diff", "HEAD"],
+        ["git", "diff", "--cached", "HEAD"],
         cwd=str(worktree), capture_output=True, text=True, timeout=30.0, check=False, encoding="utf-8",
     )
     if result.returncode != 0:
