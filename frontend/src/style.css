@@ -231,6 +231,7 @@ body {
   transition: filter 0.1s, background 0.1s, color 0.1s;
   white-space: nowrap;
   user-select: none;
+  text-decoration: none;   /* strips the default underline when the utility is applied to <a> */
 }
 .cc-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
