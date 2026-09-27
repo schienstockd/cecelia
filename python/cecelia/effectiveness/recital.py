@@ -150,6 +150,7 @@ def _inject_slugs(output: str, findings: _t.Sequence[Finding]) -> str:
     return regex.sub(_sub, output)
 
 
+from .git_context import current_head_sha as _current_head_sha  # noqa: E402
 from .git_context import current_pr as _current_pr  # noqa: E402  (kept near use for clarity)
 
 
@@ -219,6 +220,7 @@ def _run_reviewer(
     diff: str,
     claude_runner: _t.Callable[[str], str],
     pr: str | None,
+    commit: str | None,
 ) -> str:
     """Spawn one reviewer, emit its `_run` + per-finding events, format its recital section."""
     prompt = _reviewer_prompt(doc_path, diff)
@@ -234,7 +236,7 @@ def _run_reviewer(
     payload: dict = {"duration_s": round(duration, 2)}
     if error is not None:
         payload["error"] = error
-    append_event(event_name, payload, pr=pr)
+    append_event(event_name, payload, pr=pr, commit=commit)
 
     if error is not None:
         return (
@@ -268,6 +270,7 @@ def _run_reviewer(
             finding_event_name,
             {"file": f.file, "line": f.line, "desc": f.desc, "slug": f.slug, "marker": f.marker},
             pr=pr,
+            commit=commit,
         )
 
     # Inject slugs so the author can copy each into a `[slug: outcome]` pair in the commit
@@ -297,10 +300,13 @@ def run_recital(
     Return value is markdown ready to append to the commit-message body. Includes both
     reviewers' evidence folds and tail lines. `_run` events are appended to
     `~/.cecelia-effectiveness/events.jsonl` regardless of reviewer success — a failure
-    payload gets `error` in it, so the log has both signals.
+    payload gets `error` in it, so the log has both signals. Each row records the HEAD SHA
+    at recital time in the row-level `commit` field so the pre-commit hook can enforce that
+    a findings-carrying commit was reviewed against the tree it is being made on top of.
     """
     runner = claude_runner or _default_runner
     pr = _current_pr()
+    commit = _current_head_sha()
 
     fanout_section = _run_reviewer(
         event_name="fanout_audit_run",
@@ -312,6 +318,7 @@ def run_recital(
         diff=diff,
         claude_runner=runner,
         pr=pr,
+        commit=commit,
     )
     convention_section = _run_reviewer(
         event_name="convention_check_run",
@@ -323,6 +330,7 @@ def run_recital(
         diff=diff,
         claude_runner=runner,
         pr=pr,
+        commit=commit,
     )
 
     return f"{fanout_section}\n\n{convention_section}"
