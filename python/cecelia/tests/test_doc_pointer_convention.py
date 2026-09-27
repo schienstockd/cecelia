@@ -88,7 +88,14 @@ _SKIP_DIRS = ('docs/archive/',)
 #: This file itself: the docstring above has to spell out the pointer shapes being checked
 #: (`docs/todo/X_PLAN.md`, `CLAUDE.md` -> *Section*), and every one of them is a placeholder.
 #: It flagged itself the moment it was staged, which is at least evidence the matcher works.
-_SKIP_FILES = (os.path.relpath(os.path.abspath(__file__), _REPO).replace(os.sep, '/'),)
+#: `test_citation_currency.py` has the same shape at scale: it writes fake `docs/A.md` /
+#: `docs/todo/PLAN.md` fixtures into temp dirs to exercise the citation-currency scanner
+#: against its real hard-coded `docs/` scan root; every path in that file is a fixture, not a
+#: real doc claim.
+_SKIP_FILES = (
+    os.path.relpath(os.path.abspath(__file__), _REPO).replace(os.sep, '/'),
+    'python/cecelia/tests/test_citation_currency.py',
+)
 
 
 def _git_ls(*globs):

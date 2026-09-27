@@ -308,10 +308,15 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
   `_no fanout audit needed_`)
 - `_Convention check: run_` (or `_skipped — docs-only diff_` / `_skipped — no additions_` /
   `_skipped — tests-only_` / `_no convention check needed_`)
+- `_Citation-currency check: run_` (or `_run — no stale citations_` / `_skipped — no code changes_` /
+  `_skipped — no citations indexed_`) — mechanical, not a reviewer subagent; warns when a
+  governance doc cites a code file that changed but the citing doc didn't. See
+  `python/cecelia/effectiveness/citation_currency.py`.
 
-Missing either tail = that mechanism went dark. Don't reassure or wait to be asked "any
+Missing any of the three tails = that mechanism went dark. Don't reassure or wait to be asked "any
 reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
-(a new helper/component/endpoint that duplicates an existing canonical). See
+(a new helper/component/endpoint that duplicates an existing canonical); citation-currency catches
+doc↔code drift (an "Enforced by ..." claim whose subject moved without the doc noticing). See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
 **Convention-check is advisory for now**: findings land in the reservations recital and the

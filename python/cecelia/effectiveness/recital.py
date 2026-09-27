@@ -36,6 +36,7 @@ import subprocess
 import time
 import typing as _t
 
+from .citation_currency import run_citation_check
 from .log import append_event
 
 #: Path to each reviewer's spec doc. `claude -p` reads it itself — the reviewer prompt is
@@ -332,5 +333,6 @@ def run_recital(
         pr=pr,
         commit=commit,
     )
+    citation_section = run_citation_check(diff, pr=pr)
 
-    return f"{fanout_section}\n\n{convention_section}"
+    return f"{fanout_section}\n\n{convention_section}\n\n{citation_section}"
