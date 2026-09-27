@@ -1,10 +1,9 @@
 # Governance-layer audit — parked plan
 
-**Status:** parked (2026-09-27) — plan only, no execution. Four independent asks about the
-governance layer itself (the drift-prevention apparatus, not the codebase it watches). Un-park
-when any of the triggers in *When to un-park* fires.
+**Status:** **run 2026-09-27** — findings at [`../archive/governance_layer_audit.md`](../archive/governance_layer_audit.md). Four independent asks about the governance layer itself (the drift-prevention apparatus, not the codebase it watches). Kept as a record of the scoping decisions; re-un-park only if one of the triggers in *When to un-park* fires and warrants a fresh pass.
 
 **Related:**
+- Findings: [`../archive/governance_layer_audit.md`](../archive/governance_layer_audit.md) — the audit output.
 - Brief: [`../archive/governance_layer_sprawl_review_prompt.md`](../archive/governance_layer_sprawl_review_prompt.md) — the source prompt, archived.
 - Parent decision: [`DRIFT_PREVENTION_ASSESSMENT.md`](DRIFT_PREVENTION_ASSESSMENT.md) — declined the general prevention harness.
 - Sibling shipped: [`FANOUT_AUDIT_PLAN.md`](FANOUT_AUDIT_PLAN.md) → [`../ai-assist/FANOUT_AUDIT.md`](../ai-assist/FANOUT_AUDIT.md).
