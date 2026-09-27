@@ -25,9 +25,10 @@ export function observerSetupReason(available: boolean, lastFailedAuth: boolean)
   return null
 }
 
-// ── Which terminal button the lab-log toolbar shows ───────────────────────────────────────────────
-// One button in one slot, so the setup step isn't hidden in the info dialog: until the user's own
-// terminal is set up they get "Set up my terminal"; after that, "Chat to Claude".
+// ── Which terminal button Kiwi's Assistant row shows ─────────────────────────────────────────────
+// One button in one slot, next to the Terminal state indicator (moved from the lab-log toolbar
+// 2026-09-27): until the user's own terminal is set up they get "Set up" (label kept short so it
+// fits the Kiwi row); after that, no button — chat handoff lives on Kiwi's Chat row.
 export type TerminalCta = 'setup' | 'resync' | 'chat'
 
 /**

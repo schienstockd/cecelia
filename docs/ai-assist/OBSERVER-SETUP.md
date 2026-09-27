@@ -29,16 +29,16 @@ machine-wide default can be set via `config.toml` `[ai] model`; the CLI binary v
 The above is all you need for the **in-app** feature. To have a full back-and-forth session about the
 project in your own terminal, Cecelia sets Claude Code up for you:
 
-1. Lab-log panel → **Set up my terminal**. (This button sits where *Chat to Claude* will be — until
-   your terminal is set up, that IS the next step, so it isn't tucked away in the info dialog.)
+1. Kiwi → Assistant → **Set up** (once). Same button becomes **Fix** if the registered entry drifts
+   (stale/shadowed). The action lives next to the Terminal state indicator it acts on.
 2. Run `claude` in a terminal.
 3. Ask away — `check my current project in cecelia` is enough. The server briefs the session itself
    (`mcp/cecelia_mcp/guidance.py`; see OBSERVER.md → *The hand-off is one line*), so there is no prompt
    to paste and nothing to remember.
 
-The toolbar button is now **Chat to Claude**. It copies one line naming the project you have open —
-`I'm working in the Cecelia project <name> (<uid>). Have a look at it…` — for when you want *that*
-project rather than the one you opened most recently.
+Chat handoff lives on Kiwi too (**Chat** row → **Copy chat starter**). It copies one line naming the
+project you have open — `I'm working in the Cecelia project <name> (<uid>). Have a look at it…` — for
+when you want *that* project rather than the one you opened most recently.
 
 There is nothing to copy and no path to type. The button POSTs `/api/observer/register`, which runs
 `claude mcp add-json cecelia-observer <spec> -s user` with the same server spec the in-app agent uses,
@@ -51,10 +51,10 @@ this install needs → `terminal.state` of `missing`, `stale`, `shadowed`, or `c
 read: the `claude mcp get`/`list` commands health-check every configured server, which would spawn our
 Python MCP process every time the panel refreshes.
 
-**`stale` shows "Fix terminal setup".** An entry left behind by an older checkout (different `.pixi`
-interpreter) or a different port still *looks* registered to Claude Code, but the tools can't reach this
-Cecelia — and it fails quietly. That's treated as not-set-up rather than offering a Chat button that
-appears to work.
+**`stale` flips the Terminal-row button to "Fix".** An entry left behind by an older checkout
+(different `.pixi` interpreter) or a different port still *looks* registered to Claude Code, but the
+tools can't reach this Cecelia — and it fails quietly. That's treated as not-set-up rather than
+letting the row read as ready.
 
 **`shadowed` shows it too — and this one masqueraded as a broken button.** We register at `user` scope,
 but Claude Code resolves **`local` scope first** (`projects[<dir>].mcpServers` in the same file). A
@@ -62,16 +62,16 @@ leftover local entry therefore *overrides* a perfectly correct user-scope regist
 started in that directory. When it points at a checkout that no longer exists, the server never starts —
 `ENOENT` on the interpreter — so `claude` comes up with no observer tools at all.
 
-Reading only the top level made this invisible: status reported `current` and the toolbar offered *Chat
-to Claude* while every session was in fact broken. So the status route now also reads local scope
+Reading only the top level made this invisible: status reported `current` and Kiwi read as ready
+while every session was in fact broken. So the status route now also reads local scope
 (`read_local_observer_specs`) and reports the offending folders as `terminal.shadowedDirs`. A local entry
 that *matches* what we'd register is left alone — it resolves to the same server, so it breaks nothing.
 
-Clicking **Fix terminal setup** clears the shadowing entries, each via `claude mcp remove
-cecelia-observer -s local` spawned *in* that directory (the command acts on its cwd). It runs only after
-the user-scope entry is known good — clearing first and then failing to add would leave you with
-nothing — and names each folder it cleaned in the panel. Claude Code diagnoses the same conflict itself
-if you ever want to confirm by hand:
+Clicking **Fix** (Kiwi → Assistant → Terminal) clears the shadowing entries, each via
+`claude mcp remove cecelia-observer -s local` spawned *in* that directory (the command acts on its cwd).
+It runs only after the user-scope entry is known good — clearing first and then failing to add would
+leave you with nothing — and names each folder it cleaned in the panel. Claude Code diagnoses the same
+conflict itself if you ever want to confirm by hand:
 
 ```
 $ claude mcp list

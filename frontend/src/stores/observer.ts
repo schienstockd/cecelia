@@ -14,8 +14,8 @@ export const useObserverStore = defineStore('observer', () => {
   // `claude --mcp-config <path>` line the info panel offers if one-click setup fails.
   const mcpConfigPath = ref('')
   // Is the user's OWN terminal set up? 'missing' | 'stale' | 'shadowed' | 'current', from Claude's config
-  // by the backend. Drives which button the lab-log toolbar shows (setup vs Chat to Claude), so it must
-  // come from the real config — never from optimistic local state after a click.
+  // by the backend. Drives Kiwi's Assistant → Terminal-row Set up / Fix button (moved from the lab log
+  // 2026-09-27), so it must come from the real config — never from optimistic local state after a click.
   const terminalState = ref('')
 
   async function refresh() {
