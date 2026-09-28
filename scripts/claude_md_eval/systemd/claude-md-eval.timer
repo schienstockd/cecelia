@@ -1,0 +1,17 @@
+[Unit]
+Description=Weekly CLAUDE.md compliance eval — Wednesday midnight
+Documentation=file://%h/cc-workspace/cecelia/cecelia-feijoa/docs/todo/CLAUDE_MD_EVAL_PLAN.md
+
+[Timer]
+# Wednesday 00:00 local time. Wed is midweek — away from weekend batch jobs +
+# any Sunday releases, and gives a full working week between rows in the trend.
+OnCalendar=Wed *-*-* 00:00:00
+# Fire on next boot if the machine was off at the scheduled time — otherwise a
+# laptop-off Wednesday would silently drop a row from the trend.
+Persistent=true
+# Small random spread so a same-hour timer collision doesn't turn into a fight.
+RandomizedDelaySec=5min
+Unit=claude-md-eval.service
+
+[Install]
+WantedBy=timers.target

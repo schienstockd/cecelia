@@ -8,8 +8,8 @@ via #1273). **P2.5 rollup SHIPPED** (2026-09-28, #1273) — renders
 + on demand via `pixi run claude-md-eval-rollup`. **Indirect tier on
 `feat/indirect-eval-tier`** (2026-09-28, PR #1274): additions-only regex scoring, synthetic
 session id, widened `tool_order` matcher (lists), reworked `discovery-first` prompt, one
-indirect pilot (`crop-failure`) — see *Indirect tier (2026-09-28)* below. P3 (cron) still
-unbuilt.
+indirect pilot (`crop-failure`), weekly Wednesday 00:00 systemd user timer — see
+*Indirect tier (2026-09-28)* + *Cadence* below.
 
 ## Sonnet 2026-09-28 discipline additions
 
@@ -252,7 +252,15 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
 
 - **Manual** (`pixi run claude-md-eval`) before/after every material `CLAUDE.md` edit. Doc-doc
   tweaks don't warrant a run; adding/removing/rewording a rule does.
-- **Weekly cron** — optional P3, uses the existing scheduling infrastructure. Not built now.
+- **Weekly cron** (2026-09-28, this branch) — systemd user timer fires
+  `pixi run claude-md-eval` Wednesday 00:00 local time. Wraps the suite in
+  [`scripts/claude_md_eval/cron_pass.sh`](../../scripts/claude_md_eval/cron_pass.sh)
+  under `nice -n 10 ionice -c 3` + a lockfile. Battery-guarded
+  (`ConditionACPower=true`) so a laptop-off midnight doesn't burn spend without
+  the machine plugged in; `Persistent=true` so a missed fire runs on next boot.
+  Ships suite-only, not ablation — ablation needs trace inspection per D12.
+  Install:
+  [`scripts/claude_md_eval/systemd/README.md`](../../scripts/claude_md_eval/systemd/README.md).
 
 ## Non-goals
 
@@ -292,7 +300,10 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
   multi-pass trend annotated by CLAUDE.md blob SHA. Auto-rendered at the end of every
   `pixi run claude-md-eval` pass; standalone regen via `pixi run claude-md-eval-rollup`.
   Not auto-committed — user reviews the diff.
-- **P3** — DEFERRED. Optional cron/schedule for weekly `pixi run claude-md-eval`.
+- **P3 SHIPPED** (2026-09-28, this branch) — systemd user timer fires
+  `pixi run claude-md-eval` Wednesday 00:00 local time; see *Cadence* below +
+  [`scripts/claude_md_eval/systemd/README.md`](../../scripts/claude_md_eval/systemd/README.md)
+  for the install steps. Suite only; ablation stays manual.
 
 ### One prompt still deferred: `discovery-first`
 
