@@ -159,8 +159,9 @@ class RunSuiteTest(unittest.TestCase):
         self.assertEqual(sorted(seen), sorted(["h5ad-read", "zarr-read", "dir-size"]))
         self.assertEqual(len(seen), 3)
         # The failing prompt records `error` = runs (the full set was lost), zero others.
+        # `cost_usd: 0.0` added 2026-09-28 (stream-json capture — D-additions).
         self.assertEqual(summary["per_prompt"]["zarr-read"],
-                         {"compliant": 0, "noncompliant": 0, "error": 2})
+                         {"compliant": 0, "noncompliant": 0, "error": 2, "cost_usd": 0.0})
         # Successful prompts still get counted.
         self.assertEqual(summary["per_prompt"]["h5ad-read"]["compliant"], 1)
         self.assertEqual(summary["per_prompt"]["dir-size"]["compliant"], 1)
@@ -177,7 +178,9 @@ class RunSuiteTest(unittest.TestCase):
             runs=2, timeout=60, claude_path="fake", worktree_root=self.tmpdir,
             keep_worktrees=False, only="h5ad-read,zarr-read", run_one=fake_run_one,
         )
-        self.assertEqual(summary["totals"], {"compliant": 1, "noncompliant": 3, "error": 0})
+        # `cost_usd: 0` added 2026-09-28 (stream-json cost capture — D-additions).
+        self.assertEqual(summary["totals"],
+                         {"compliant": 1, "noncompliant": 3, "error": 0, "cost_usd": 0})
 
 
 if __name__ == "__main__":

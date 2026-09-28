@@ -1,14 +1,49 @@
 # CLAUDE.md compliance eval — plan
 
 **Status:** P1 (single-prompt runner) + P2 driver + 9-of-10-prompt catalog **SHIPPED** on PR
-#1264 (2026-09-27). One prompt (`discovery-first`) deferred pending tool-log-inspection
-scaffolding. Rollup markdown (`docs/ai-assist/CLAUDE_MD_EVAL.md`) still unbuilt — deferred as
+#1264 (2026-09-27). One prompt (`discovery-first`) originally deferred pending tool-log
+inspection — **now built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28,
+this branch). Rollup markdown (`docs/ai-assist/CLAUDE_MD_EVAL.md`) still unbuilt — deferred as
 P2.5. P3 (cron) still unbuilt.
 
+## Sonnet 2026-09-28 discipline additions
+
+Following the abandoned plugin-eval port (see [`CLAUDE_MD_EVAL_PORT_PLAN.md`](CLAUDE_MD_EVAL_PORT_PLAN.md)
+for the record — plugin-eval sandbox doesn't load CLAUDE.md as system context, invalidating
+the port's ablation semantics), three selective backports to the bespoke runner:
+
+- **Transcript-reader for `tool_order` grader.** `scripts/claude_md_eval/transcript.py`
+  parses `claude -p --output-format=stream-json --verbose` stdout, exposes ordered
+  tool_calls list + `TranscriptSignals.tool_order_passes(before_tool, before_arg_match,
+  after_tool)`. Prompts declare `tool_order_before_tool` / `tool_order_before_arg_match` /
+  `tool_order_after_tool` in frontmatter; scorer combines with regex graders (compliant iff
+  ALL declared graders pass).
+- **CLAUDE.md ablation via worktree cleanup.** `run_prompt.py --arm {with,without}`;
+  `_make_detached_worktree(arm=without)` strips every CLAUDE.md from the throwaway
+  worktree before spawn. `pixi run claude-md-eval-ablation` fires suite twice + computes
+  per-prompt Δ + emits `claude_md_eval_ablation` row. Same loading mechanism as production
+  in both arms — Claude Code loads CLAUDE.md from cwd; we just make it absent in
+  without-arm.
+- **Cost + turns capture** from the same stream-json parse. Emitted as `cost_usd` +
+  `turns` on every `claude_md_eval_run` row. Would have caught the "compliance costs 60%
+  more than the bypass" pattern natively.
+
+**Canary rule in CLAUDE.md** (Sonnet-suggested pre-flight). Made-up marker
+(`# canary: CLAUDE.md loaded`) that only exists in CLAUDE.md prose. `canary` eval prompt
+asks the agent to create `python/cecelia/analysis_scratch/canary_probe.py`; grader checks
+for the marker. If a with-arm canary run scores noncompliant, CLAUDE.md isn't reaching
+the agent and every other run in the same session is suspect. Run canary once before
+paying for a full ablation pass.
+
+**D12 discipline** (formerly "N≥3 before quoting Δ"): **N≥3 AND read at least one trace
+per arm before quoting Δ anywhere.** N≥3 alone didn't catch the plugin-eval "CLAUDE.md
+never loaded" class — trace inspection would have. The trace is the ground truth; the
+scoring output is a derivative signal that can be right for the wrong reason (e.g. the
+2026-09-28 h5ad-read Δ=1 claim — retracted, likely artefact).
+
 Baseline behavioural datum: `h5ad-read` scores **3/3 compliant** at CLAUDE.md blob
-`2f05fefc…` — three fresh `claude -p` agents, given only the task text, all reached for
-`LabelPropsView` unprompted. Full catalog rerun (`pixi run claude-md-eval`) will produce the
-first cross-rule number.
+`2f05fefc…` (via the bespoke runner in a real worktree — production loading semantics).
+Full catalog rerun (`pixi run claude-md-eval`) will produce the first cross-rule number.
 
 Follow-up from the enforcement-coverage work in PRs #1258 (recital SHA-anchoring) and #1263
 (h5ad / utf-8 / Windows helpers / run_py ratchets). Written to be picked up cold by another

@@ -43,6 +43,17 @@ sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import append_event  # noqa: E402
 from cecelia.effectiveness.git_context import current_branch as _current_branch  # noqa: E402
 
+# Sibling module — parses `claude -p --output-format=stream-json --verbose` stdout for
+# ordered tool_calls + cost/turns. Spec-loaded so this script works whether the
+# `scripts/claude_md_eval/` dir is on sys.path or not.
+import importlib.util as _importlib_util  # noqa: E402
+_transcript_spec = _importlib_util.spec_from_file_location(
+    "_ce_transcript", pathlib.Path(__file__).parent / "transcript.py")
+_transcript = _importlib_util.module_from_spec(_transcript_spec)
+_transcript_spec.loader.exec_module(_transcript)
+parse_stream_json = _transcript.parse_stream_json
+TranscriptSignals = _transcript.TranscriptSignals
+
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
 
@@ -73,29 +84,86 @@ def parse_prompt(path: pathlib.Path) -> tuple[dict[str, str], str]:
         if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
             v = v[1:-1]
         meta[k.strip()] = v
-    for required in ("id", "rule", "compliant_signal", "anti_signal"):
+    for required in ("id", "rule"):
         if required not in meta:
             raise PromptParseError(f"{path}: frontmatter missing required key {required!r}")
+    # Must have AT LEAST ONE grader declaration — regex-based (compliant/anti signals) or
+    # tool-order-based (before/after tool + arg-match). A prompt with neither can't score.
+    has_regex = "compliant_signal" in meta or "anti_signal" in meta
+    has_tool_order = "tool_order_before_tool" in meta or "tool_order_after_tool" in meta
+    if not (has_regex or has_tool_order):
+        raise PromptParseError(
+            f"{path}: frontmatter must declare at least one grader — either "
+            f"`compliant_signal`/`anti_signal` (regex on diff) or "
+            f"`tool_order_before_tool`/`tool_order_after_tool` (tool-log order)")
     return meta, body.strip()
 
 
-def score_diff(diff: str, meta: dict[str, str]) -> tuple[str, int, int]:
-    """Apply the compliant/anti regexes to the diff. Returns (outcome, compliant_hits, anti_hits).
+def _regex_hits(diff: str, meta: dict[str, str]) -> tuple[int, int]:
+    """Compliant + anti regex hit counts against `diff`. Missing signal → 0 hits."""
+    compliant_signal = meta.get("compliant_signal", "")
+    anti_signal = meta.get("anti_signal", "")
+    compliant_hits = len(re.findall(compliant_signal, diff)) if compliant_signal else 0
+    anti_hits = len(re.findall(anti_signal, diff)) if anti_signal else 0
+    return compliant_hits, anti_hits
 
-    outcome ∈ {compliant, noncompliant, error}. `error` is reserved for empty-diff and spawn
-    failures upstream; this function returns compliant/noncompliant only.
+
+def score_diff(diff: str, meta: dict[str, str]) -> tuple[str, int, int]:
+    """Legacy scorer — kept for tests + any caller not yet threading tool_calls.
+
+    Applies compliant/anti regexes to the diff (via `_regex_hits`). Returns
+    (outcome, compliant_hits, anti_hits). Callers with a tool-order grader should
+    use `score_all` instead — both share `_regex_hits` so the regex logic can't drift.
     """
-    compliant_hits = len(re.findall(meta["compliant_signal"], diff))
-    anti_hits = len(re.findall(meta["anti_signal"], diff))
+    compliant_hits, anti_hits = _regex_hits(diff, meta)
     if anti_hits > 0:
         outcome = "noncompliant"
     elif compliant_hits > 0:
         outcome = "compliant"
     else:
-        # Neither signal matched — the agent didn't touch the rule's surface at all. Treat as
-        # noncompliant with zero hits; the summary makes it visible.
         outcome = "noncompliant"
     return outcome, compliant_hits, anti_hits
+
+
+def score_all(diff: str, signals: "TranscriptSignals",
+              meta: dict[str, str]) -> tuple[str, dict[str, _t.Any]]:
+    """Combine every declared grader into a single verdict.
+
+    Compliant iff EVERY declared grader passes:
+      - `compliant_signal` regex matches the diff (if declared),
+      - `anti_signal` regex does NOT match the diff (if declared),
+      - `tool_order_before_tool` fired with matching `tool_order_before_arg_match`
+        before the first `tool_order_after_tool` (if declared).
+
+    Returns (verdict, details) where details carries the per-grader outcomes for the
+    emitted row (`compliant_hits`, `anti_hits`, `tool_order_passed` — the last is
+    None for prompts that don't declare a tool_order grader).
+    """
+    compliant_hits, anti_hits = _regex_hits(diff, meta)
+
+    tool_order_passed: bool | None = None
+    if meta.get("tool_order_before_tool") or meta.get("tool_order_after_tool"):
+        tool_order_passed = signals.tool_order_passes(
+            before_tool=meta.get("tool_order_before_tool", ""),
+            before_arg_match=meta.get("tool_order_before_arg_match", ""),
+            after_tool=meta.get("tool_order_after_tool", "Write"),
+        )
+
+    graders_pass = []
+    if meta.get("compliant_signal"):
+        graders_pass.append(compliant_hits > 0)
+    if meta.get("anti_signal"):
+        graders_pass.append(anti_hits == 0)
+    if tool_order_passed is not None:
+        graders_pass.append(tool_order_passed)
+
+    verdict = "compliant" if graders_pass and all(graders_pass) else "noncompliant"
+    details = {
+        "compliant_hits": compliant_hits,
+        "anti_hits": anti_hits,
+        "tool_order_passed": tool_order_passed,
+    }
+    return verdict, details
 
 
 def claude_md_blob_sha(cwd: pathlib.Path) -> str | None:
@@ -129,8 +197,14 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
             "no `claude` binary found on PATH — pass --claude-path=/path/to/claude, or install "
             "claude. See CLAUDE.md → Windows compatibility."
         )
+    # `--output-format=stream-json --verbose` — emits one JSON event per line on stdout,
+    # including every assistant tool_use block AND a terminal `result` event carrying
+    # `total_cost_usd` + `num_turns`. Parsed by `transcript.parse_stream_json` for the
+    # tool_order grader + cost/turns emission. Was `--output-format=text` before the
+    # 2026-09-28 additions — the text mode discarded tool_use structure.
     return subprocess.run(
-        [claude_path, "-p", "--dangerously-skip-permissions"],
+        [claude_path, "-p", "--dangerously-skip-permissions",
+         "--output-format", "stream-json", "--verbose"],
         input=prompt_body, cwd=str(worktree),
         capture_output=True, text=True, timeout=timeout, check=False, encoding="utf-8",
     )
@@ -159,8 +233,16 @@ def _capture_diff(worktree: pathlib.Path) -> str:
 
 
 def _make_detached_worktree(primary_repo: pathlib.Path, worktree_root: pathlib.Path,
-                            prompt_id: str) -> pathlib.Path:
-    """Create a detached worktree off HEAD at `<worktree_root>/cecelia-eval-<prompt_id>-<uuid>`."""
+                            prompt_id: str, *, arm: str = "with") -> pathlib.Path:
+    """Create a detached worktree off HEAD at `<worktree_root>/cecelia-eval-<prompt_id>-<uuid>`.
+
+    `arm` controls the CLAUDE.md ablation: `with` keeps every CLAUDE.md (root + nested
+    frontend/app), `without` strips them all AFTER the worktree is created but BEFORE
+    the agent spawns. This is the bespoke-runner equivalent of the plugin-eval port's
+    scaffold-swap — and closer to production semantics because the loading mechanism
+    is identical in both arms (Claude Code loads CLAUDE.md from the working dir); we
+    just make it absent in the without-arm.
+    """
     tag = uuid.uuid4().hex[:8]
     dest = worktree_root / f"cecelia-eval-{prompt_id}-{tag}"
     subprocess.run(
@@ -170,6 +252,12 @@ def _make_detached_worktree(primary_repo: pathlib.Path, worktree_root: pathlib.P
     env_src = primary_repo / ".env"
     if env_src.is_file():
         shutil.copy(str(env_src), str(dest / ".env"))
+    if arm == "without":
+        # Strip every CLAUDE.md — root, frontend/, app/, and any nested. Skip .git/.
+        for p in dest.rglob("CLAUDE.md"):
+            if ".git" in p.parts:
+                continue
+            p.unlink()
     return dest
 
 
@@ -184,7 +272,7 @@ def _remove_worktree(primary_repo: pathlib.Path, dest: pathlib.Path) -> None:
 
 
 def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str | None,
-                   worktree_root: pathlib.Path, keep_worktrees: bool,
+                   worktree_root: pathlib.Path, keep_worktrees: bool, arm: str = "with",
                    claude_runner: _t.Callable[..., subprocess.CompletedProcess] | None = None,
                    primary_repo: pathlib.Path | None = None) -> list[dict]:
     """Run one prompt N times, emit rows to the effectiveness log, return the row list."""
@@ -202,24 +290,30 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
 
     rows: list[dict] = []
     for run_number in range(1, runs + 1):
-        worktree = _make_detached_worktree(primary_repo, worktree_root, prompt_id)
+        worktree = _make_detached_worktree(primary_repo, worktree_root, prompt_id, arm=arm)
         start = time.monotonic()
         diff = ""
+        signals = TranscriptSignals()
         error: str | None = None
         try:
             proc = claude_runner(worktree, body, timeout=timeout, claude_path=claude_path)
             if proc.returncode != 0:
                 error = f"claude exited {proc.returncode}: {(proc.stderr or '')[:400]}"
             diff = _capture_diff(worktree)
+            # Parse stream-json stdout for tool-call sequence + cost/turns. A malformed
+            # stream (e.g. an old `claude` binary that ignores the flag) yields zero
+            # tool_calls / zero cost — captured as parse_errors on the signals object.
+            signals = parse_stream_json(proc.stdout or "")
         except subprocess.TimeoutExpired:
             error = f"claude spawn timed out after {timeout}s"
         except (OSError, ClaudeSpawnError) as e:
             error = f"{type(e).__name__}: {e}"
         duration = time.monotonic() - start
         if error is not None:
-            outcome, compliant_hits, anti_hits = "error", 0, 0
+            verdict = "error"
+            details = {"compliant_hits": 0, "anti_hits": 0, "tool_order_passed": None}
         else:
-            outcome, compliant_hits, anti_hits = score_diff(diff, meta)
+            verdict, details = score_all(diff, signals, meta)
 
         payload: dict = {
             "prompt_id": prompt_id,
@@ -227,11 +321,15 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
             # `verdict` (not `outcome`) — `outcome` is a reserved payload key validated against
             # `OUTCOME_VOCABULARY` in log.py; eval verdicts (`compliant`/`noncompliant`/`error`)
             # are a separate closed set that must not collide with the reviewer vocab.
-            "verdict": outcome,
-            "compliant_hits": compliant_hits,
-            "anti_hits": anti_hits,
+            "verdict": verdict,
+            "compliant_hits": details["compliant_hits"],
+            "anti_hits": details["anti_hits"],
+            "tool_order_passed": details["tool_order_passed"],
+            "arm": arm,
             "diff_bytes": len(diff.encode("utf-8")),
             "duration_s": round(duration, 2),
+            "cost_usd": round(signals.cost_usd, 4),
+            "turns": signals.turns,
             "run_number": run_number,
             "runs_total": runs,
         }
@@ -239,8 +337,12 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
             payload["error"] = error
         row = append_event("claude_md_eval_run", payload, commit=blob_sha, branch=branch)
         rows.append(row)
-        print(f"  run {run_number}/{runs}: {outcome} "
-              f"(compliant={compliant_hits}, anti={anti_hits}, diff={payload['diff_bytes']}b, "
+        tool_bit = ""
+        if details["tool_order_passed"] is not None:
+            tool_bit = f", tool_order={'pass' if details['tool_order_passed'] else 'FAIL'}"
+        print(f"  run {run_number}/{runs} (arm={arm}): {verdict} "
+              f"(compliant={details['compliant_hits']}, anti={details['anti_hits']}"
+              f"{tool_bit}, ${payload['cost_usd']:.3f}, {payload['turns']} turns, "
               f"{payload['duration_s']}s)", flush=True)
         if not keep_worktrees:
             _remove_worktree(primary_repo, worktree)
@@ -249,13 +351,16 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
 
     # Pass-level summary row.
     outcomes = [r["payload"]["verdict"] for r in rows]
+    total_cost = sum(r["payload"].get("cost_usd", 0) for r in rows)
     summary_payload = {
         "prompt_id": prompt_id,
         "rule": meta["rule"],
         "runs_total": runs,
+        "arm": arm,
         "compliant": outcomes.count("compliant"),
         "noncompliant": outcomes.count("noncompliant"),
         "error": outcomes.count("error"),
+        "total_cost_usd": round(total_cost, 4),
     }
     append_event("claude_md_eval_pass", summary_payload, commit=blob_sha, branch=branch)
     return rows
@@ -293,6 +398,11 @@ def main() -> int:
                     help="Parent directory for the throwaway worktrees (default: sibling of repo)")
     ap.add_argument("--keep-worktrees", action="store_true",
                     help="Don't remove worktrees after each run (debugging).")
+    ap.add_argument("--arm", choices=("with", "without"), default="with",
+                    help="CLAUDE.md ablation arm — `with` keeps CLAUDE.md in the worktree "
+                         "(default); `without` strips every CLAUDE.md (root + nested) before "
+                         "spawn. Used by `pixi run claude-md-eval-ablation` to run each prompt "
+                         "in both arms and compute the per-prompt delta.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Parse the prompt and print the task; do not spawn any agent.")
     args = ap.parse_args()
@@ -307,17 +417,21 @@ def main() -> int:
     if args.dry_run:
         print(f"prompt_id: {meta['id']}")
         print(f"rule:      {meta['rule']}")
-        print(f"compliant: {meta['compliant_signal']}")
-        print(f"anti:      {meta['anti_signal']}")
+        print(f"compliant: {meta.get('compliant_signal', '(none)')}")
+        print(f"anti:      {meta.get('anti_signal', '(none)')}")
+        if meta.get("tool_order_before_tool") or meta.get("tool_order_after_tool"):
+            print(f"tool_order: before={meta.get('tool_order_before_tool', '?')} "
+                  f"arg_match={meta.get('tool_order_before_arg_match', '(none)')} "
+                  f"after={meta.get('tool_order_after_tool', 'Write')}")
         print(f"task ({len(body)} chars):\n{body}")
         return 0
 
-    print(f"claude-md-eval-one: prompt={args.prompt_id} runs={args.runs} "
+    print(f"claude-md-eval-one: prompt={args.prompt_id} runs={args.runs} arm={args.arm} "
           f"timeout={args.timeout}s claude={args.claude_path}", flush=True)
     rows = run_one_prompt(
         args.prompt_id, runs=args.runs, timeout=args.timeout,
         claude_path=args.claude_path, worktree_root=args.worktree_root,
-        keep_worktrees=args.keep_worktrees,
+        keep_worktrees=args.keep_worktrees, arm=args.arm,
     )
     _print_summary(rows)
     return 0

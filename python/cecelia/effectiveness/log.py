@@ -73,6 +73,12 @@ EVENT_TYPES = frozenset({
     "claude_md_eval_run",
     "claude_md_eval_pass",
     "claude_md_eval_suite",
+    # One row per ablation pass — pairs a with-CLAUDE.md suite result against a
+    # without-CLAUDE.md suite result and emits per-prompt + total deltas. Fired by
+    # `scripts/claude_md_eval/run_ablation.py` / `pixi run claude-md-eval-ablation`.
+    # Payload carries `per_prompt: {id: {with_compliant, without_compliant, delta_compliant,
+    # with_cost, without_cost, delta_cost}}` + totals. See CLAUDE_MD_EVAL_PLAN.md.
+    "claude_md_eval_ablation",
 })
 
 #: Closed outcome vocabulary from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Outcome vocabulary.
