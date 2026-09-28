@@ -353,6 +353,31 @@ CI, that flag is the first suspect.
 (`img_branch_value_names` did, and read the previous testset's files). If a testset writes files it
 will then read back, pass an explicit `uid=` to `add_image!` rather than trusting `gen_uid`.
 
+## Creating a new worktree
+
+**One command:**
+
+```bash
+pixi run bootstrap-worktree <name> [<branch>] [<ref>]
+```
+
+Creates `../cecelia-<name>` off `origin/main` (override with `<ref>`), on a new branch `<branch>`
+(defaults to `<name>`). Does `git worktree add` + `.env` copy + a fresh per-worktree `pixi
+install`, then runs `pixi run doctor` in the new tree — which auto-repairs `npm ci`, verifies
+`.env`/`CECELIA_DEV_DIR`, and checks the julia envs. Do NOT run just `git worktree add` — each
+follow-up breaks in a way that reads as a code bug:
+
+- Missing `.env` → `CECELIA_DEV_DIR` resolves to `~/.cecelia` (the installed-app placeholder), so
+  the new worktree opens a *different* projects dir than the primary and looks empty.
+- Sharing the primary's `.pixi` → an editable-install collision points `import cecelia.*` at
+  another checkout's `python/` (see next section). A fresh `pixi install` per worktree avoids it.
+- Skipping `npm ci` in `frontend/` → Vite fails to start on a missing dep, or picks up a stale
+  lockfile mismatch that looks like a build error.
+
+Bundling into one task is deliberate — three separate memory bullets ("copy .env", "npm ci",
+"pixi install per worktree") produced the split-attention pattern where at least one was omitted
+every time.
+
 ## Dev worktree switch (Settings → System)
 
 When several git worktrees exist (the branch-preview workflow), **Settings → System → Worktree** lists
