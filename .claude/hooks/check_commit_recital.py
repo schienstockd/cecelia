@@ -238,6 +238,70 @@ def write_resolutions(
     return written
 
 
+#: Finding-emitting events the drop sweep considers. `_finding` events land in the log
+#: atomically with the reviewer spawn (`recital.py::_run_reviewer`); if the author trims
+#: the finding from the commit body, the row stays unresolved forever without this sweep.
+_FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding"})
+#: Their resolution counterparts. Kept as a frozenset for O(1) membership in the sweep.
+_RESOLVED_EVENTS = frozenset({
+    "fanout_audit_finding_resolved", "convention_check_finding_resolved",
+})
+
+
+def write_dropped_for_orphan_slugs(
+    command: str, *, pr: str | None = None, commit: str | None = None,
+    branch: str | None = None,
+) -> int:
+    """Auto-emit `dropped_no_action` for every slug the recital emitted against the current
+    HEAD that this commit neither tags nor previously resolved.
+
+    Closes the "silent drop" gap: before this sweep, an agent could trim a finding line from
+    the commit body and the `_finding` row would stay `unresolved` forever, making the rollup
+    unable to tell "ignored" from "not yet handled." The sweep runs post-presence-check, so
+    an agent that DID tag a slug isn't second-guessed; only slugs on the current HEAD that no
+    commit has ever touched get the auto-drop. `commit` must be the parent SHA (matching the
+    recital row's `commit` field) — passing `None` skips the sweep (the finding→HEAD join is
+    the whole selection, so a missing HEAD would broadcast drops across every unresolved slug
+    in the log). Best-effort like `write_resolutions`: log failures don't block the commit.
+    """
+    if commit is None:
+        return 0
+
+    tagged_slugs = {slug for slug, _ in _parse_pairs(command)}
+    findings_on_head: dict[str, str] = {}  # slug -> event name (for the resolved-event mapping)
+    resolved_slugs: set[str] = set()
+    try:
+        for row in read_events():
+            event = row.get("event")
+            slug = (row.get("payload") or {}).get("slug")
+            if not slug:
+                continue
+            if event in _FINDING_EVENTS and row.get("commit") == commit:
+                findings_on_head.setdefault(slug, event)
+            elif event in _RESOLVED_EVENTS:
+                resolved_slugs.add(slug)
+    except OSError:
+        return 0
+
+    orphans = set(findings_on_head) - resolved_slugs - tagged_slugs
+    written = 0
+    for slug in sorted(orphans):  # sorted so tests get stable ordering
+        resolved_event = _finding_event_for_slug(slug)
+        if resolved_event is None:
+            continue
+        try:
+            append_event(
+                resolved_event,
+                {"slug": slug, "outcome": "dropped_no_action",
+                 "reason": "auto-emitted: finding on HEAD not tagged in commit message"},
+                pr=pr, commit=commit, branch=branch,
+            )
+            written += 1
+        except Exception:  # noqa: BLE001 — best-effort emission
+            pass
+    return written
+
+
 def main() -> int:
     if os.environ.get("CECELIA_SKIP_RECITAL_CHECK") == "1":
         return _EXIT_ALLOW
@@ -255,8 +319,12 @@ def main() -> int:
     # Presence check passed — write any slug-paired outcomes to the log before the commit
     # runs. Best-effort: log failures don't block the commit.
     if _GIT_COMMIT.search(command):
-        write_resolutions(command, pr=_current_pr(), commit=_current_head_sha(),
-                          branch=_current_branch())
+        pr, head_sha, branch = _current_pr(), _current_head_sha(), _current_branch()
+        write_resolutions(command, pr=pr, commit=head_sha, branch=branch)
+        # Then close orphan slugs — findings the recital emitted for this HEAD that neither
+        # this commit nor any prior one tagged. Auto-emit `dropped_no_action` per slug so the
+        # rollup can tell "ignored" from "not yet handled" (Sonnet's audit note, Sep 2026).
+        write_dropped_for_orphan_slugs(command, pr=pr, commit=head_sha, branch=branch)
     return _EXIT_ALLOW
 
 
