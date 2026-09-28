@@ -2,10 +2,14 @@
 
 **Status:** P1 (single-prompt runner) + P2 driver + 9-of-10-prompt catalog **SHIPPED** on PR
 #1264 (2026-09-27). One prompt (`discovery-first`) originally deferred pending tool-log
-inspection — **now built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28,
-this branch). **P2.5 rollup SHIPPED** (2026-09-28, this branch) — renders
+inspection — **built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28
+via #1273). **P2.5 rollup SHIPPED** (2026-09-28, #1273) — renders
 [`docs/ai-assist/CLAUDE_MD_EVAL.md`](../ai-assist/CLAUDE_MD_EVAL.md) at the end of every pass
-+ on demand via `pixi run claude-md-eval-rollup`. P3 (cron) still unbuilt.
++ on demand via `pixi run claude-md-eval-rollup`. **Indirect tier on
+`feat/indirect-eval-tier`** (2026-09-28, PR #1274): additions-only regex scoring, synthetic
+session id, widened `tool_order` matcher (lists), reworked `discovery-first` prompt, one
+indirect pilot (`crop-failure`), weekly Wednesday 00:00 systemd user timer — see
+*Indirect tier (2026-09-28)* + *Cadence* below.
 
 ## Sonnet 2026-09-28 discipline additions
 
@@ -50,6 +54,71 @@ Full catalog rerun (`pixi run claude-md-eval`) will produce the first cross-rule
 Follow-up from the enforcement-coverage work in PRs #1258 (recital SHA-anchoring) and #1263
 (h5ad / utf-8 / Windows helpers / run_py ratchets). Written to be picked up cold by another
 session.
+
+## Indirect tier (2026-09-28)
+
+Sonnet pushed back on scrapping indirect. The direct catalog names the guarded util
+(`zarr_utils`, `label_props`, `run_py`) in the prompt, so a without-arm agent can just
+grep the name — both arms score high, Δ shrinks by construction, and low Δ reads as
+"CLAUDE.md doesn't matter" when it actually reads "the prompt gave away the answer."
+Direct-only can't disprove that failure mode.
+
+Adopted shape:
+
+- **`crop-failure` indirect pilot** (`scripts/claude_md_eval/prompts/crop-failure.md`) —
+  symptom-first bug report seeded by past init prompt `9fb138d2`. Agent must discover
+  and use `zarr_utils` without being told. Graders: `compliant_signal = zarr_utils\.`,
+  `anti_signal = bare zarr.open( / da.from_zarr / tifffile.imread`, `tool_order`
+  (inventory-touching Grep/Read/Glob before Write/Edit/MultiEdit).
+- **Reworked `discovery-first`** — the prior `next_multiple(x, n)` task was too trivial
+  to plausibly need discovery, so both arms scored noncompliant and the rule wasn't
+  actually being tested. Replaced with a tile-origin helper task where `zarr_utils`
+  might genuinely already own the helper, forcing real inventory grep.
+- **Widened `tool_order` matcher** — added plural `tool_order_before_tools` /
+  `tool_order_after_tools` frontmatter keys that accept comma-separated alternatives.
+  `TranscriptSignals.tool_order_passes` accepts str or list. Wanted for indirect
+  because a real agent may Read `INVENTORY.md` instead of Grepping it and reach for
+  Edit/MultiEdit instead of Write on an existing file — the discovery-first rule is
+  about ordering, not tool identity. Singular form stays valid.
+
+**Deferred (Sonnet-flagged, planned):** widen indirect coverage to the frontend rule
+surface — see [`CLAUDE_MD_EVAL_FRONTEND_PLAN.md`](CLAUDE_MD_EVAL_FRONTEND_PLAN.md).
+That's where the fanout / convention findings keep flagging real drift and the
+current catalog has zero coverage. Same runner + scorer (regex on additions +
+tool_order) — the design phase turned out simpler than expected once real findings
+were on the table. Gate on the current pilot producing clean signal before
+committing the P1 pilot's ~\$1.50 budget.
+
+## Scoring artefacts fixed (2026-09-28)
+
+- **Additions-only regex scoring.** `_regex_hits` runs the compliant/anti regexes only
+  against `+`-prefixed lines of the diff (via `_additions_only`) — scoring the agent's
+  CHOICE, not incidental text. Guards against two artefacts:
+  - `arm=without` strips every CLAUDE.md before the spawn; without the filter, the
+    compliant regex fires on the DELETED CLAUDE.md prose ("use `zarr_utils`…") and
+    inflates `compliant_hits`. Surfaced by the `crop-failure` without-arm pilot on
+    PR #1274 (`compliant_hits=7` on a diff with zero real refs).
+  - Pasted anti-pattern snippets an agent minimally edits — retained lines don't
+    appear as `+` and don't count against the agent.
+- **CLAUDE.md excluded from `_capture_diff`.** Belt-and-suspenders to the above +
+  keeps `diff_bytes` comparable between arms (without-arm otherwise reports 5–10×
+  larger diffs from the CLAUDE.md deletion).
+- **Synthetic session id.** `_ensure_eval_session()` sets `CLAUDE_CODE_SESSION_ID`
+  to `eval-<uuid8>` if unset, so every row of one pass groups under one id. Previously
+  every eval row emitted `sess=unknown` because pixi doesn't propagate the env var
+  from the launching Claude Code shell.
+
+## Log isolation — considered, dropped
+
+Briefly implemented (`_harvest_sandbox_log` + per-spawn `CECELIA_EFFECTIVENESS_LOG`
+sandbox + `source="eval"` filter in the audit rollup) to catch an accidental recital
+run inside an eval-spawned `claude -p` session that would inflate the audit rollup
+with runs that never touched shipped code. Trimmed same day — the trigger surface is
+tiny: `ratchet_hit` fires from commits (eval prompts say "don't commit"), and every
+recital emission originates from `pixi run recital` which we don't invoke from prompts.
+Zero pollution measured in the log (2026-09-28 audit). ~50 LoC + 4 tests wasn't
+earning its keep against a threat we control at prompt-authoring time. Revisit if we
+ever ship an eval prompt that legitimately runs recital or commits.
 
 ## Goal
 
@@ -183,7 +252,18 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
 
 - **Manual** (`pixi run claude-md-eval`) before/after every material `CLAUDE.md` edit. Doc-doc
   tweaks don't warrant a run; adding/removing/rewording a rule does.
-- **Weekly cron** — optional P3, uses the existing scheduling infrastructure. Not built now.
+- **Weekly cron** (2026-09-28, this branch) — systemd user timer fires
+  `pixi run claude-md-eval` Monday 23:59 local time ("Monday midnight"
+  colloquially — installed on a Monday afternoon, fires that same night rather
+  than a week later). Wraps the suite in
+  [`scripts/claude_md_eval/cron_pass.sh`](../../scripts/claude_md_eval/cron_pass.sh)
+  under `nice -n 10 ionice -c 3` + a lockfile. Battery-guarded
+  (`ConditionACPower=true`) so a laptop-off midnight doesn't burn spend without
+  the machine plugged in. Deliberately NOT `Persistent=true` — a machine that
+  was off at 23:59 Mon must NOT fire on next boot; otherwise powering on an
+  old laptop weeks later triggers a paid pass unexpectedly. Ships suite-only,
+  not ablation — ablation needs trace inspection per D12. Install:
+  [`scripts/claude_md_eval/systemd/README.md`](../../scripts/claude_md_eval/systemd/README.md).
 
 ## Non-goals
 
@@ -223,7 +303,10 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
   multi-pass trend annotated by CLAUDE.md blob SHA. Auto-rendered at the end of every
   `pixi run claude-md-eval` pass; standalone regen via `pixi run claude-md-eval-rollup`.
   Not auto-committed — user reviews the diff.
-- **P3** — DEFERRED. Optional cron/schedule for weekly `pixi run claude-md-eval`.
+- **P3 SHIPPED** (2026-09-28, this branch) — systemd user timer fires
+  `pixi run claude-md-eval` Wednesday 00:00 local time; see *Cadence* below +
+  [`scripts/claude_md_eval/systemd/README.md`](../../scripts/claude_md_eval/systemd/README.md)
+  for the install steps. Suite only; ablation stays manual.
 
 ### One prompt still deferred: `discovery-first`
 

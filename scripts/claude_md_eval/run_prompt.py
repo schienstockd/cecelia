@@ -90,7 +90,10 @@ def parse_prompt(path: pathlib.Path) -> tuple[dict[str, str], str]:
     # Must have AT LEAST ONE grader declaration — regex-based (compliant/anti signals) or
     # tool-order-based (before/after tool + arg-match). A prompt with neither can't score.
     has_regex = "compliant_signal" in meta or "anti_signal" in meta
-    has_tool_order = "tool_order_before_tool" in meta or "tool_order_after_tool" in meta
+    has_tool_order = any(k in meta for k in (
+        "tool_order_before_tool", "tool_order_before_tools",
+        "tool_order_after_tool", "tool_order_after_tools",
+    ))
     if not (has_regex or has_tool_order):
         raise PromptParseError(
             f"{path}: frontmatter must declare at least one grader — either "
@@ -99,12 +102,52 @@ def parse_prompt(path: pathlib.Path) -> tuple[dict[str, str], str]:
     return meta, body.strip()
 
 
+def _split_tool_list(raw: str | None) -> list[str]:
+    """Comma-separated tool list → clean list. `None`/empty → []."""
+    if not raw:
+        return []
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
+def _additions_only(diff: str) -> str:
+    """Reduce a unified diff to just the `+` lines (excluding the `+++ b/foo` file header).
+
+    Rationale: `compliant_signal` / `anti_signal` should score the agent's CHOICE — code the
+    agent actually wrote — not incidental text elsewhere in the diff. Two artefacts this
+    guards against:
+
+    - **CLAUDE.md deletions in arm=without.** The ablation strips every CLAUDE.md before
+      the spawn, so a plain regex on the diff matches the DELETED prose (`use zarr_utils`,
+      `never zarr.open`) and reports inflated compliant/anti hits — surfaced by the
+      `crop-failure` without-arm pilot on PR #1274.
+    - **Pasted anti-pattern snippets.** A prompt that pastes broken code the agent must
+      fix (e.g. `crop-failure.md` shows `import zarr` + `zarr.open(...)`). If the file
+      is being CREATED, all its content lands as `+` lines regardless of what the agent
+      changed — but if the paste is in a pre-existing file the agent edits minimally,
+      only the actually-changed lines are `+`, which is the honest read.
+
+    A less-strict alternative (matching on the full diff) would flag agents for prose
+    they read but didn't write. The strictest alternative (matching on the resulting file
+    only) would miss regressions where the agent replaced canonical code with anti-pattern
+    code but added net-zero net lines. Additions-only is the middle ground.
+    """
+    return "\n".join(
+        line for line in diff.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    )
+
+
 def _regex_hits(diff: str, meta: dict[str, str]) -> tuple[int, int]:
-    """Compliant + anti regex hit counts against `diff`. Missing signal → 0 hits."""
+    """Compliant + anti regex hit counts against `diff`. Missing signal → 0 hits.
+
+    Regex runs against the additions-only slice of the diff (see `_additions_only`) —
+    scoring the agent's CHOICE, not text elsewhere in the diff.
+    """
+    additions = _additions_only(diff)
     compliant_signal = meta.get("compliant_signal", "")
     anti_signal = meta.get("anti_signal", "")
-    compliant_hits = len(re.findall(compliant_signal, diff)) if compliant_signal else 0
-    anti_hits = len(re.findall(anti_signal, diff)) if anti_signal else 0
+    compliant_hits = len(re.findall(compliant_signal, additions)) if compliant_signal else 0
+    anti_hits = len(re.findall(anti_signal, additions)) if anti_signal else 0
     return compliant_hits, anti_hits
 
 
@@ -142,11 +185,20 @@ def score_all(diff: str, signals: "TranscriptSignals",
     compliant_hits, anti_hits = _regex_hits(diff, meta)
 
     tool_order_passed: bool | None = None
-    if meta.get("tool_order_before_tool") or meta.get("tool_order_after_tool"):
+    if any(k in meta for k in ("tool_order_before_tool", "tool_order_before_tools",
+                                "tool_order_after_tool", "tool_order_after_tools")):
+        # Plural keys (`_tools`) accept a comma-separated list of alternatives and win
+        # over singular (`_tool`) — the indirect-prompt tier uses lists so a Read of
+        # `INVENTORY.md` scores the same as a Grep, and an Edit/MultiEdit is treated
+        # as write-shaped alongside Write.
+        before = _split_tool_list(meta.get("tool_order_before_tools")) or \
+                 meta.get("tool_order_before_tool", "")
+        after = _split_tool_list(meta.get("tool_order_after_tools")) or \
+                meta.get("tool_order_after_tool", "Write")
         tool_order_passed = signals.tool_order_passes(
-            before_tool=meta.get("tool_order_before_tool", ""),
+            before_tool=before,
             before_arg_match=meta.get("tool_order_before_arg_match", ""),
-            after_tool=meta.get("tool_order_after_tool", "Write"),
+            after_tool=after,
         )
 
     graders_pass = []
@@ -166,6 +218,25 @@ def score_all(diff: str, signals: "TranscriptSignals",
     return verdict, details
 
 
+def _ensure_eval_session() -> str:
+    """Set `CLAUDE_CODE_SESSION_ID` to a synthetic `eval-<uuid8>` if it's not already set.
+
+    `append_event` falls back to `"unknown"` when the env var is absent, which is the
+    default state inside a `pixi run <task>` subprocess — pixi doesn't propagate
+    `CLAUDE_CODE_SESSION_ID` from the launching shell. Every `claude_md_eval_*` row
+    written before this fix carried `sess=unknown`, breaking one useful signal:
+    grouping every row of one eval pass under a single session id. Idempotent — if
+    the env var IS set (nested Claude Code session, CI with an explicit id), we
+    respect it. Returns the id in effect.
+    """
+    existing = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if existing:
+        return existing
+    synthetic = f"eval-{uuid.uuid4().hex[:8]}"
+    os.environ["CLAUDE_CODE_SESSION_ID"] = synthetic
+    return synthetic
+
+
 def claude_md_blob_sha(cwd: pathlib.Path) -> str | None:
     """Content-addressed SHA of CLAUDE.md at HEAD. None if not a repo / file missing."""
     try:
@@ -182,7 +253,8 @@ def claude_md_blob_sha(cwd: pathlib.Path) -> str | None:
 
 
 def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
-                          timeout: int, claude_path: str | None) -> subprocess.CompletedProcess:
+                          timeout: int, claude_path: str | None,
+                          **_ignored) -> subprocess.CompletedProcess:
     """Real `claude -p` invocation. Injectable via CLI for tests.
 
     Deliberately raises `ClaudeSpawnError` with a clear message when `claude_path` is empty —
@@ -191,6 +263,10 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
     in `CLAUDE.md → Windows compatibility`. Recital's sibling `_resolve_claude_bin` raises for
     the same reason; when a third `claude -p` caller lands, extract these into a shared
     `resolve_claude_bin()` helper (finding conv-97a704d6 from this PR's convention check).
+
+    Trailing `**_ignored` swallows kwargs that legacy call sites may still pass (e.g.
+    the `sandbox_log` kwarg that briefly existed for the log-isolation mechanism before
+    it was trimmed as unnecessary — see plan doc *Log-isolation scaffolding removed*).
     """
     if not claude_path:
         raise ClaudeSpawnError(
@@ -211,20 +287,31 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
 
 
 def _capture_diff(worktree: pathlib.Path) -> str:
-    """Every file change the agent made — including new files.
+    """Every file change the agent made — including new files, EXCLUDING CLAUDE.md files.
 
     `git diff HEAD` alone omits untracked files, so a prompt that asks the agent to CREATE a
     module (typical — most rules-under-test involve a new helper somewhere) would score zero
     even when the agent wrote a perfect file. Stage first (`git add -A`), then diff the index
     against HEAD, which captures new file content the same as modifications. Safe because the
     worktree is thrown away right after this call.
+
+    `**/CLAUDE.md` is excluded via pathspec: in arm=without runs, `_make_detached_worktree`
+    strips every CLAUDE.md before the spawn, so `git diff --cached HEAD` would include those
+    deletions and the compliant_signal regex would match the DELETED prose ("... use
+    `zarr_utils.` ..." etc.) — reporting `compliant_hits=7` for a run where the agent wrote
+    zero references to the canonical util. That's a scoring artefact, not agent behaviour,
+    and it would flip verdicts wrong on any prompt where anti_signal doesn't also fire to
+    force the noncompliant read. Excluding the deletions from the scored diff keeps
+    `compliant_hits` honest across arms. Surfaced by the `crop-failure` without-arm pilot
+    (PR #1274 second comment).
     """
     subprocess.run(
         ["git", "add", "-A"],
         cwd=str(worktree), capture_output=True, text=True, timeout=30.0, check=False, encoding="utf-8",
     )
     result = subprocess.run(
-        ["git", "diff", "--cached", "HEAD"],
+        ["git", "diff", "--cached", "HEAD", "--", ".", ":(exclude,glob)**/CLAUDE.md",
+         ":(exclude)CLAUDE.md"],
         cwd=str(worktree), capture_output=True, text=True, timeout=30.0, check=False, encoding="utf-8",
     )
     if result.returncode != 0:
@@ -278,6 +365,7 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
     """Run one prompt N times, emit rows to the effectiveness log, return the row list."""
     primary_repo = primary_repo or _REPO
     claude_runner = claude_runner or default_claude_runner
+    _ensure_eval_session()
     prompt_path = _PROMPTS_DIR / f"{prompt_id}.md"
     if not prompt_path.is_file():
         raise PromptParseError(f"no prompt at {prompt_path}")
@@ -419,10 +507,18 @@ def main() -> int:
         print(f"rule:      {meta['rule']}")
         print(f"compliant: {meta.get('compliant_signal', '(none)')}")
         print(f"anti:      {meta.get('anti_signal', '(none)')}")
-        if meta.get("tool_order_before_tool") or meta.get("tool_order_after_tool"):
-            print(f"tool_order: before={meta.get('tool_order_before_tool', '?')} "
+        if any(k in meta for k in ("tool_order_before_tool", "tool_order_before_tools",
+                                    "tool_order_after_tool", "tool_order_after_tools")):
+            # Print whichever form is authored — plural list wins over singular so an
+            # indirect-tier prompt (which uses only plural keys) shows a real before/after
+            # column instead of `?`. Same key-precedence as `score_all`.
+            before = _split_tool_list(meta.get("tool_order_before_tools")) or \
+                     meta.get("tool_order_before_tool", "?")
+            after = _split_tool_list(meta.get("tool_order_after_tools")) or \
+                    meta.get("tool_order_after_tool", "Write")
+            print(f"tool_order: before={before} "
                   f"arg_match={meta.get('tool_order_before_arg_match', '(none)')} "
-                  f"after={meta.get('tool_order_after_tool', 'Write')}")
+                  f"after={after}")
         print(f"task ({len(body)} chars):\n{body}")
         return 0
 

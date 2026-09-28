@@ -1,0 +1,25 @@
+[Unit]
+Description=CLAUDE.md compliance eval — scheduled pass
+Documentation=file://%h/cc-workspace/cecelia/cecelia-feijoa/docs/todo/CLAUDE_MD_EVAL_PLAN.md
+# Don't fire if the machine is on battery — a pass costs ~$4-6 (real API spend)
+# and shouldn't drain the laptop unattended.
+ConditionACPower=true
+
+[Service]
+Type=oneshot
+# %h expands to the invoking user's HOME. Set REPO explicitly via `systemctl edit`
+# if this checkout lives somewhere else.
+Environment=REPO=%h/cc-workspace/cecelia/cecelia-feijoa
+# PATH must include `pixi` and `claude`. `~/.local/bin` covers the default installs
+# of both; adjust via `systemctl --user edit claude-md-eval.service` if either
+# binary lives elsewhere.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/claude_md_eval/cron_pass.sh"'
+# One-shot pass caps at 30 min — 3 runs × 10 prompts × ~30s = ~15 min at N=3,
+# so this buys 2× headroom. A hung run gets killed rather than wedging the timer.
+TimeoutStartSec=30min
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

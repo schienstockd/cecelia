@@ -159,6 +159,7 @@ class RollupTest(unittest.TestCase):
         self.assertIn("Fanout audit", md)
         self.assertIn("`fixed_pre_commit`: 1", md)
 
+
     def test_rollup_folds_old_and_new_event_names_for_fanout(self):
         # The rename from sibling_audit_* to fanout_audit_* leaves pre-rename rows in the
         # append-only log forever. Rollup must fold both under the same mechanism section.

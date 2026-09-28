@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Wednesday-midnight scheduled `pixi run claude-md-eval` pass.
+#
+# Wraps the suite driver with (a) logging to `~/.cecelia-effectiveness/cron/`,
+# (b) a `nice`/`ionice` niceness bump so a mid-run pass doesn't fight interactive
+# work, (c) a lockfile so overlapping timer fires don't double-spawn.
+#
+# Design: docs/todo/CLAUDE_MD_EVAL_PLAN.md → *Cadence* / *P3 cron*.
+#
+# Installed as a systemd user timer via `scripts/claude_md_eval/systemd/*` — see
+# that dir's install instructions. Not run directly by the timer; the .service
+# unit calls this script.
+#
+# Fails loudly (exit non-zero) on any error so `systemctl --user status
+# claude-md-eval.service` shows a red bar the next time the user looks.
+
+set -euo pipefail
+
+# Repo root — this script lives at `<repo>/scripts/claude_md_eval/cron_pass.sh`.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+LOG_DIR="${CECELIA_EVAL_CRON_LOG_DIR:-$HOME/.cecelia-effectiveness/cron}"
+mkdir -p "$LOG_DIR"
+
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+LOG_FILE="$LOG_DIR/eval-$TS.log"
+
+LOCK="$LOG_DIR/.lock"
+exec 200>"$LOCK"
+if ! flock -n 200; then
+    echo "$(date -Is) another claude-md-eval cron pass is already running; exiting" \
+        | tee -a "$LOG_FILE" >&2
+    exit 0
+fi
+
+# Runs `pixi run claude-md-eval` at the default N=3. Ablation stays manual — it
+# needs trace inspection per D12 discipline, which cron can't do.
+{
+    echo "=== cron pass started $(date -Is) ==="
+    echo "repo: $REPO_ROOT"
+    echo "pixi: $(command -v pixi || echo '(not found)')"
+    cd "$REPO_ROOT"
+    nice -n 10 ionice -c 3 pixi run claude-md-eval
+    echo "=== cron pass finished $(date -Is) ==="
+} 2>&1 | tee -a "$LOG_FILE"
