@@ -17,6 +17,23 @@
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
+"""
+    sibling_dst(repo_root::AbstractString, name::AbstractString) -> String
+
+The sibling worktree path: `<repo_root>/../cecelia-<name>`, absolute + normalised.
+
+Extracted (and factored via `joinpath(..., "..", ...)` instead of `dirname(repo_root)`)
+after the bug where a bootstrapped tree landed INSIDE the source worktree instead of as
+its sibling. Root cause: `normpath(joinpath(@__DIR__, ".."))` on Unix ends in a trailing
+`/`, and `dirname("/…/cecelia-source/")` strips only the slash — it returns the SAME
+directory, not its parent. `joinpath(REPO_ROOT, "..")` + `normpath` is trailing-slash-safe
+and reads as what we want: "go up one, then into the sibling name".
+
+Pure — no side effects, no `git` calls — so the test suite drives it with synthetic paths.
+"""
+sibling_dst(repo_root::AbstractString, name::AbstractString) =
+    normpath(joinpath(repo_root, "..", "cecelia-$name"))
+
 function usage()
     println(stderr, "usage: pixi run bootstrap-worktree <name> [<branch>] [<ref>]")
     println(stderr, "  name    — path suffix; the worktree lives at ../cecelia-<name>")
@@ -33,8 +50,7 @@ function main()
     branch = length(ARGS) >= 2 ? ARGS[2] : name
     ref    = length(ARGS) >= 3 ? ARGS[3] : "origin/main"
 
-    # Sibling of THIS checkout. `dirname(REPO_ROOT)` is `~/cc-workspace/cecelia/`.
-    dst = joinpath(dirname(REPO_ROOT), "cecelia-$name")
+    dst = sibling_dst(REPO_ROOT, name)
     if ispath(dst)
         println(stderr, "error: $dst already exists")
         exit(1)
@@ -71,4 +87,9 @@ function main()
     println("next: cd $dst && pixi run dev")
 end
 
-main()
+# Only fire `main()` when the script is the process entrypoint. `include`-ing it from a
+# test (or another script) then must not spawn `git worktree add`. Matches the pattern used
+# by `api/task_console.jl` at the bottom.
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
