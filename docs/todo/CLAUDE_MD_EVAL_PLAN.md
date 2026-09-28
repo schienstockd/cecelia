@@ -253,13 +253,16 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
 - **Manual** (`pixi run claude-md-eval`) before/after every material `CLAUDE.md` edit. Doc-doc
   tweaks don't warrant a run; adding/removing/rewording a rule does.
 - **Weekly cron** (2026-09-28, this branch) — systemd user timer fires
-  `pixi run claude-md-eval` Wednesday 00:00 local time. Wraps the suite in
+  `pixi run claude-md-eval` Monday 23:59 local time ("Monday midnight"
+  colloquially — installed on a Monday afternoon, fires that same night rather
+  than a week later). Wraps the suite in
   [`scripts/claude_md_eval/cron_pass.sh`](../../scripts/claude_md_eval/cron_pass.sh)
   under `nice -n 10 ionice -c 3` + a lockfile. Battery-guarded
   (`ConditionACPower=true`) so a laptop-off midnight doesn't burn spend without
-  the machine plugged in; `Persistent=true` so a missed fire runs on next boot.
-  Ships suite-only, not ablation — ablation needs trace inspection per D12.
-  Install:
+  the machine plugged in. Deliberately NOT `Persistent=true` — a machine that
+  was off at 23:59 Mon must NOT fire on next boot; otherwise powering on an
+  old laptop weeks later triggers a paid pass unexpectedly. Ships suite-only,
+  not ablation — ablation needs trace inspection per D12. Install:
   [`scripts/claude_md_eval/systemd/README.md`](../../scripts/claude_md_eval/systemd/README.md).
 
 ## Non-goals
