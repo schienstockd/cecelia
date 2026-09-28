@@ -58,7 +58,8 @@ function _notebook_server_alive()::Bool
                  connect_timeout = 2, read_idle_timeout = 3, status_exception = false)
         true
     catch e
-        e isa Base.IOError || e isa HTTP.ConnectError ||
+        # `SystemError` covers Reseau's socket-layer connection-refused; the rest are HTTP.jl wraps.
+        e isa Base.IOError || e isa Base.SystemError || e isa HTTP.ConnectError ||
             e isa HTTP.TimeoutError || rethrow()
         false
     end

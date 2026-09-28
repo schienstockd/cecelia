@@ -66,7 +66,10 @@ function _preview_ping(w::PreviewWorker)
         reply = send(w, Dict("type" => "ping"))
         (true, Int(get(reply, "protocol", 1)))
     catch e
-        e isa Base.IOError || e isa HTTP.ConnectError ||
+        # `SystemError` is what Reseau's socket layer raises for a plain connection refused (real
+        # log excerpt: `connect tcp -> 127.0.0.1:7656: SystemError: connect: Connection refused`);
+        # `IOError`/`ConnectError`/`WebSocketError` cover the HTTP.jl-side wraps.
+        e isa Base.IOError || e isa Base.SystemError || e isa HTTP.ConnectError ||
             e isa HTTP.WebSockets.WebSocketError || rethrow()
         (false, 0)
     end

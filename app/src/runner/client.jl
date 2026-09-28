@@ -66,7 +66,7 @@ function runner_ping(h::RunnerHandle; timeout::Real = 2)::Union{Dict{String,Any}
     try
         _runner_get(h, "/ping"; timeout)
     catch e
-        e isa Base.IOError || e isa HTTP.ConnectError ||
+        e isa Base.IOError || e isa Base.SystemError || e isa HTTP.ConnectError ||
             e isa HTTP.TimeoutError || e isa HTTP.StatusError || rethrow()
         nothing
     end

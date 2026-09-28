@@ -142,7 +142,7 @@ function launch!(w::PreviewWorker)::PreviewWorker
             # surface. A bare `catch` here would turn e.g. a `MethodError` in `send` into "still
             # waiting" for the full 90 s and then blame the launch for something that never even
             # tried to bind. Same rule as `_preview_ping` in `api/src/preview_api.jl`.
-            e isa Base.IOError || e isa HTTP.ConnectError ||
+            e isa Base.IOError || e isa Base.SystemError || e isa HTTP.ConnectError ||
                 e isa HTTP.WebSockets.WebSocketError || rethrow()
         end
         if !process_running(w.proc)
