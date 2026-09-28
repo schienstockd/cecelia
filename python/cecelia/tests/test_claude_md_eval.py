@@ -142,6 +142,42 @@ class ScoreDiffTest(unittest.TestCase):
         self.assertEqual(outcome, "noncompliant")
         self.assertEqual((c, a), (0, 0))
 
+    def test_signals_on_deletion_lines_are_not_counted(self):
+        # Real-world artefact: arm=without strips CLAUDE.md before the spawn, so the
+        # diff includes `- ... LabelPropsView(...) ...` deletion lines from CLAUDE.md
+        # prose. Without additions-only filtering the compliant_signal fires on those
+        # deletions and reports inflated hits for a run where the agent wrote nothing
+        # compliant. Surfaced by the `crop-failure` without-arm pilot (PR #1274 second
+        # comment) — WITHOUT-arm reported compliant_hits=7 with zero real refs.
+        diff = (
+            "--- a/CLAUDE.md\n"
+            "+++ /dev/null\n"
+            "-Use `LabelPropsView(...)` — never `.read_h5ad(...)`.\n"
+            "-The `LabelPropsView` view family covers reads AND writes.\n"
+            "--- /dev/null\n"
+            "+++ b/agent_output.py\n"
+            "+import anndata\n"
+            "+data = anndata.read_h5ad(path)\n"
+        )
+        outcome, c, a = self.runner.score_diff(diff, self.meta)
+        # Only the agent's `read_h5ad` addition should register — the `LabelPropsView`
+        # references in the deleted CLAUDE.md prose are ignored.
+        self.assertEqual(c, 0)
+        self.assertEqual(a, 1)
+        self.assertEqual(outcome, "noncompliant")
+
+    def test_diff_file_header_plus_lines_are_not_counted(self):
+        # `+++ b/path` file header lines start with `+` but aren't content — additions-
+        # only filter must skip them. Otherwise a filename containing the signal token
+        # (unlikely but plausible: a file called `label_props_view.py`) would count.
+        diff = (
+            "--- /dev/null\n"
+            "+++ b/label_props_view/LabelPropsView_helper.py\n"
+            "+pass\n"
+        )
+        _outcome, c, a = self.runner.score_diff(diff, self.meta)
+        self.assertEqual((c, a), (0, 0))
+
 
 class RunOnePromptTest(unittest.TestCase):
     """End-to-end with a fake `claude_runner` + stubbed worktree/diff seams.
@@ -318,76 +354,6 @@ class RunOnePromptTest(unittest.TestCase):
         self.assertEqual(summary["runs_total"], 3)
 
 
-class HarvestSandboxLogTest(unittest.TestCase):
-    """`_harvest_sandbox_log` drains a per-spawn scratch log and re-appends every row to
-    the real log with `source="eval"`. Load-bearing invariant:
-
-    - **Eval-spawned events are preserved (rows aren't silently dropped) but tagged so the
-      audit rollup filters them out.** A ratchet_hit or recital finding emitted from
-      inside an eval-spawned `claude -p` session shouldn't count as real-work signal —
-      but throwing the row away would also lose the eval-side evidence that the ratchet
-      fired. This test pins the halfway point: preserved-but-tagged.
-    """
-
-    def setUp(self):
-        self.runner = _load_runner()
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.tmpdir = pathlib.Path(self._tmp.name)
-        self.real_log = self.tmpdir / "real-events.jsonl"
-        self._env_patch = mock.patch.dict(
-            os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.real_log)},
-        )
-        self._env_patch.start()
-        self.addCleanup(self._env_patch.stop)
-
-    def test_absent_sandbox_log_returns_zero(self):
-        n = self.runner._harvest_sandbox_log(
-            self.tmpdir / "missing.jsonl",
-            parent_prompt_id="p", parent_arm="with",
-            parent_commit=None, parent_branch=None,
-        )
-        self.assertEqual(n, 0)
-
-    def test_rows_are_re_appended_with_source_eval_and_parent_context(self):
-        # Simulate a spawn that ran recital, emitting one `fanout_audit_run` row.
-        sandbox = self.tmpdir / "sandbox.jsonl"
-        from cecelia.effectiveness import append_event as _append
-        _append("fanout_audit_run", {"duration_s": 3.2},
-                log_path=sandbox, session="child-session", commit="c" * 40,
-                branch="feat/x")
-        n = self.runner._harvest_sandbox_log(
-            sandbox, parent_prompt_id="crop-failure", parent_arm="with",
-            parent_commit="parent-sha", parent_branch="feat/indirect",
-        )
-        self.assertEqual(n, 1)
-        rows = list(read_events(self.real_log))
-        self.assertEqual(len(rows), 1)
-        row = rows[0]
-        self.assertEqual(row["event"], "fanout_audit_run")
-        self.assertEqual(row["source"], "eval")
-        # Parent context stapled into payload so a later inspector can join back.
-        self.assertEqual(row["payload"]["parent_prompt_id"], "crop-failure")
-        self.assertEqual(row["payload"]["parent_arm"], "with")
-        # Child-emitted metadata is preserved (session, commit, branch fall through).
-        self.assertEqual(row["session"], "child-session")
-        self.assertEqual(row["commit"], "c" * 40)
-        self.assertEqual(row["branch"], "feat/x")
-
-    def test_row_missing_commit_falls_back_to_parent(self):
-        sandbox = self.tmpdir / "sandbox.jsonl"
-        from cecelia.effectiveness import append_event as _append
-        _append("ratchet_hit", {"ratchet_id": "utf-8"}, log_path=sandbox,
-                session="child", commit=None, branch=None)
-        self.runner._harvest_sandbox_log(
-            sandbox, parent_prompt_id="p", parent_arm="without",
-            parent_commit="parent-sha", parent_branch="feat/indirect",
-        )
-        row = next(iter(read_events(self.real_log)))
-        self.assertEqual(row["commit"], "parent-sha")
-        self.assertEqual(row["branch"], "feat/indirect")
-
-
 class EnsureEvalSessionTest(unittest.TestCase):
     """`_ensure_eval_session` writes a synthetic session id when the env is bare.
 
@@ -417,6 +383,72 @@ class EnsureEvalSessionTest(unittest.TestCase):
             first = self.runner._ensure_eval_session()
             second = self.runner._ensure_eval_session()
             self.assertEqual(first, second)
+
+
+class CaptureDiffExcludesClaudeMdTest(unittest.TestCase):
+    """`_capture_diff` must exclude every `**/CLAUDE.md` from the scored diff.
+
+    In arm=without runs the sandbox worktree gets every CLAUDE.md stripped before the
+    agent spawns, so `git diff --cached HEAD` would otherwise include those deletions
+    and the `compliant_signal` / `anti_signal` regexes would match the DELETED prose
+    (canonical util names, anti-pattern examples) — inflating hit counts on lines the
+    agent never wrote. Surfaced by the `crop-failure` without-arm pilot (PR #1274):
+    without the pathspec exclusion the row reported `compliant_hits=7` on an agent
+    diff that contained zero references to the canonical util.
+
+    Test uses a real git repo (subprocess `git init` + `git commit`) — the pathspec
+    exclusion is a git feature, so a fake would just test the wrong thing.
+    """
+
+    def setUp(self):
+        self.runner = _load_runner()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.repo = pathlib.Path(self._tmp.name)
+        # Initialise a repo with a committed root CLAUDE.md + a nested frontend/CLAUDE.md.
+        # Config `user.email`/`user.name` locally so the commit doesn't need a global git
+        # config (CI sandboxes often don't have one).
+        for cmd in (
+            ["git", "init", "-q"],
+            ["git", "config", "user.email", "eval@test"],
+            ["git", "config", "user.name", "eval-test"],
+        ):
+            subprocess.run(cmd, cwd=self.repo, check=True, capture_output=True)
+        (self.repo / "CLAUDE.md").write_text(
+            "# Root guide\n\nUse `zarr_utils.open_as_zarr` — never `zarr.open(`.\n",
+            encoding="utf-8")
+        (self.repo / "frontend").mkdir()
+        (self.repo / "frontend" / "CLAUDE.md").write_text(
+            "# Frontend rules\n\nCall `zarr_utils.open_as_zarr` etc.\n",
+            encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True,
+                       capture_output=True)
+        subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=self.repo, check=True,
+                       capture_output=True)
+
+    def test_deleted_claude_md_files_are_not_in_scored_diff(self):
+        # Simulate an arm=without spawn: strip every CLAUDE.md, then have the agent add
+        # a new file at the canonical scratch location.
+        (self.repo / "CLAUDE.md").unlink()
+        (self.repo / "frontend" / "CLAUDE.md").unlink()
+        (self.repo / "python").mkdir()
+        (self.repo / "python" / "crop.py").write_text(
+            "from cecelia.utils import zarr_utils\n\n"
+            "def crop(p):\n"
+            "    return zarr_utils.open_as_zarr(p)\n",
+            encoding="utf-8")
+        diff = self.runner._capture_diff(self.repo)
+        # The agent's addition IS in the diff (positive control — makes sure the pathspec
+        # didn't accidentally exclude everything).
+        self.assertIn("crop.py", diff)
+        self.assertIn("zarr_utils", diff)
+        # The stripped CLAUDE.md files are NOT in the diff — this is the fix under test.
+        self.assertNotIn("CLAUDE.md", diff,
+                         "CLAUDE.md must be excluded from the scored diff so deleted "
+                         "prose doesn't inflate compliant/anti hit counts")
+        # And no anti-pattern token from CLAUDE.md prose leaks in (would cause false
+        # anti_hits even when the agent wrote clean code).
+        self.assertNotIn("never `zarr.open", diff)
 
 
 class ToolOrderWidenedMatcherTest(unittest.TestCase):

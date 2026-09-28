@@ -5,11 +5,11 @@
 inspection — **built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28
 via #1273). **P2.5 rollup SHIPPED** (2026-09-28, #1273) — renders
 [`docs/ai-assist/CLAUDE_MD_EVAL.md`](../ai-assist/CLAUDE_MD_EVAL.md) at the end of every pass
-+ on demand via `pixi run claude-md-eval-rollup`. **Indirect tier + log-isolation
-scaffolding on `feat/indirect-eval-tier`** (2026-09-28): sandbox log per spawn, harvest
-with `source="eval"`, synthetic session id, widened `tool_order` matcher (lists),
-reworked `discovery-first` prompt, one indirect pilot (`crop-failure`) — see
-*Indirect tier (2026-09-28)* below. P3 (cron) still unbuilt.
++ on demand via `pixi run claude-md-eval-rollup`. **Indirect tier on
+`feat/indirect-eval-tier`** (2026-09-28, PR #1274): additions-only regex scoring, synthetic
+session id, widened `tool_order` matcher (lists), reworked `discovery-first` prompt, one
+indirect pilot (`crop-failure`) — see *Indirect tier (2026-09-28)* below. P3 (cron) still
+unbuilt.
 
 ## Sonnet 2026-09-28 discipline additions
 
@@ -88,29 +88,36 @@ and the suite doesn't cover it at all — but it needs a different scorer than
 regex-on-diff (a bug fix has many valid solutions across many files). Land after
 the indirect pilot has produced a pass or two of usable data.
 
-## Log-isolation scaffolding (2026-09-28)
+## Scoring artefacts fixed (2026-09-28)
 
-The exposure landed 2026-09-28 while looking at the effectiveness log. Eval-spawned
-`claude -p` agents inherit `~/.cecelia-effectiveness/events.jsonl` and would emit
-`ratchet_hit` / `fanout_audit_finding` / `convention_check_finding` rows into it if
-they ever ran recital or tripped a ratchet — inflating the audit rollup with signal
-that never touched shipped code. No pollution today (checked: eval agents don't commit
-and don't run recital), but the fix is cheap and the indirect tier makes leaks more
-likely (longer sessions, more discovery, more tool use):
-
-- **Per-spawn sandbox log.** `default_claude_runner` sets `CECELIA_EFFECTIVENESS_LOG`
-  in the spawn env to `<worktree>/.eval-events.jsonl`. Any `append_event` inside the
-  sandbox lands there, not in the shared log.
-- **Harvest on spawn return.** `_harvest_sandbox_log` drains the scratch log and
-  re-appends every row to the real log with `source="eval"` + `payload.parent_prompt_id`
-  + `payload.parent_arm`. Rows are preserved (evidence, not thrown away) but tagged.
-- **Audit rollup filter.** `python/cecelia/effectiveness/rollup.py:render_rollup`
-  filters `source == "eval"` up front. The CLAUDE.md-eval rollup filters by event
-  type (`claude_md_eval_*`) and is unaffected.
+- **Additions-only regex scoring.** `_regex_hits` runs the compliant/anti regexes only
+  against `+`-prefixed lines of the diff (via `_additions_only`) — scoring the agent's
+  CHOICE, not incidental text. Guards against two artefacts:
+  - `arm=without` strips every CLAUDE.md before the spawn; without the filter, the
+    compliant regex fires on the DELETED CLAUDE.md prose ("use `zarr_utils`…") and
+    inflates `compliant_hits`. Surfaced by the `crop-failure` without-arm pilot on
+    PR #1274 (`compliant_hits=7` on a diff with zero real refs).
+  - Pasted anti-pattern snippets an agent minimally edits — retained lines don't
+    appear as `+` and don't count against the agent.
+- **CLAUDE.md excluded from `_capture_diff`.** Belt-and-suspenders to the above +
+  keeps `diff_bytes` comparable between arms (without-arm otherwise reports 5–10×
+  larger diffs from the CLAUDE.md deletion).
 - **Synthetic session id.** `_ensure_eval_session()` sets `CLAUDE_CODE_SESSION_ID`
   to `eval-<uuid8>` if unset, so every row of one pass groups under one id. Previously
   every eval row emitted `sess=unknown` because pixi doesn't propagate the env var
   from the launching Claude Code shell.
+
+## Log isolation — considered, dropped
+
+Briefly implemented (`_harvest_sandbox_log` + per-spawn `CECELIA_EFFECTIVENESS_LOG`
+sandbox + `source="eval"` filter in the audit rollup) to catch an accidental recital
+run inside an eval-spawned `claude -p` session that would inflate the audit rollup
+with runs that never touched shipped code. Trimmed same day — the trigger surface is
+tiny: `ratchet_hit` fires from commits (eval prompts say "don't commit"), and every
+recital emission originates from `pixi run recital` which we don't invoke from prompts.
+Zero pollution measured in the log (2026-09-28 audit). ~50 LoC + 4 tests wasn't
+earning its keep against a threat we control at prompt-authoring time. Revisit if we
+ever ship an eval prompt that legitimately runs recital or commits.
 
 ## Goal
 

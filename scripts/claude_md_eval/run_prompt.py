@@ -40,7 +40,7 @@ _DEFAULT_TIMEOUT_SEC = 300
 _DEFAULT_RUNS = 3
 
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness import append_event, read_events  # noqa: E402
+from cecelia.effectiveness import append_event  # noqa: E402
 from cecelia.effectiveness.git_context import current_branch as _current_branch  # noqa: E402
 
 # Sibling module — parses `claude -p --output-format=stream-json --verbose` stdout for
@@ -109,12 +109,45 @@ def _split_tool_list(raw: str | None) -> list[str]:
     return [t.strip() for t in raw.split(",") if t.strip()]
 
 
+def _additions_only(diff: str) -> str:
+    """Reduce a unified diff to just the `+` lines (excluding the `+++ b/foo` file header).
+
+    Rationale: `compliant_signal` / `anti_signal` should score the agent's CHOICE — code the
+    agent actually wrote — not incidental text elsewhere in the diff. Two artefacts this
+    guards against:
+
+    - **CLAUDE.md deletions in arm=without.** The ablation strips every CLAUDE.md before
+      the spawn, so a plain regex on the diff matches the DELETED prose (`use zarr_utils`,
+      `never zarr.open`) and reports inflated compliant/anti hits — surfaced by the
+      `crop-failure` without-arm pilot on PR #1274.
+    - **Pasted anti-pattern snippets.** A prompt that pastes broken code the agent must
+      fix (e.g. `crop-failure.md` shows `import zarr` + `zarr.open(...)`). If the file
+      is being CREATED, all its content lands as `+` lines regardless of what the agent
+      changed — but if the paste is in a pre-existing file the agent edits minimally,
+      only the actually-changed lines are `+`, which is the honest read.
+
+    A less-strict alternative (matching on the full diff) would flag agents for prose
+    they read but didn't write. The strictest alternative (matching on the resulting file
+    only) would miss regressions where the agent replaced canonical code with anti-pattern
+    code but added net-zero net lines. Additions-only is the middle ground.
+    """
+    return "\n".join(
+        line for line in diff.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    )
+
+
 def _regex_hits(diff: str, meta: dict[str, str]) -> tuple[int, int]:
-    """Compliant + anti regex hit counts against `diff`. Missing signal → 0 hits."""
+    """Compliant + anti regex hit counts against `diff`. Missing signal → 0 hits.
+
+    Regex runs against the additions-only slice of the diff (see `_additions_only`) —
+    scoring the agent's CHOICE, not text elsewhere in the diff.
+    """
+    additions = _additions_only(diff)
     compliant_signal = meta.get("compliant_signal", "")
     anti_signal = meta.get("anti_signal", "")
-    compliant_hits = len(re.findall(compliant_signal, diff)) if compliant_signal else 0
-    anti_hits = len(re.findall(anti_signal, diff)) if anti_signal else 0
+    compliant_hits = len(re.findall(compliant_signal, additions)) if compliant_signal else 0
+    anti_hits = len(re.findall(anti_signal, additions)) if anti_signal else 0
     return compliant_hits, anti_hits
 
 
@@ -221,7 +254,6 @@ def claude_md_blob_sha(cwd: pathlib.Path) -> str | None:
 
 def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
                           timeout: int, claude_path: str | None,
-                          sandbox_log: pathlib.Path | None = None,
                           **_ignored) -> subprocess.CompletedProcess:
     """Real `claude -p` invocation. Injectable via CLI for tests.
 
@@ -232,21 +264,15 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
     the same reason; when a third `claude -p` caller lands, extract these into a shared
     `resolve_claude_bin()` helper (finding conv-97a704d6 from this PR's convention check).
 
-    `sandbox_log` — when set, spawns get `CECELIA_EFFECTIVENESS_LOG=<sandbox_log>` in their
-    env, so any `append_event` call inside the sandbox lands in a per-spawn scratch log
-    instead of the shared real log. The parent (`run_one_prompt`) later harvests that
-    scratch log and re-appends the rows with `source="eval"` + parent context, so eval-
-    triggered events are preserved but excluded from the audit rollup. Trailing `**_ignored`
-    lets tests inject fake runners that don't yet know about this kwarg without breaking.
+    Trailing `**_ignored` swallows kwargs that legacy call sites may still pass (e.g.
+    the `sandbox_log` kwarg that briefly existed for the log-isolation mechanism before
+    it was trimmed as unnecessary — see plan doc *Log-isolation scaffolding removed*).
     """
     if not claude_path:
         raise ClaudeSpawnError(
             "no `claude` binary found on PATH — pass --claude-path=/path/to/claude, or install "
             "claude. See CLAUDE.md → Windows compatibility."
         )
-    env = os.environ.copy()
-    if sandbox_log is not None:
-        env["CECELIA_EFFECTIVENESS_LOG"] = str(sandbox_log)
     # `--output-format=stream-json --verbose` — emits one JSON event per line on stdout,
     # including every assistant tool_use block AND a terminal `result` event carrying
     # `total_cost_usd` + `num_turns`. Parsed by `transcript.parse_stream_json` for the
@@ -257,25 +283,35 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
          "--output-format", "stream-json", "--verbose"],
         input=prompt_body, cwd=str(worktree),
         capture_output=True, text=True, timeout=timeout, check=False, encoding="utf-8",
-        env=env,
     )
 
 
 def _capture_diff(worktree: pathlib.Path) -> str:
-    """Every file change the agent made — including new files.
+    """Every file change the agent made — including new files, EXCLUDING CLAUDE.md files.
 
     `git diff HEAD` alone omits untracked files, so a prompt that asks the agent to CREATE a
     module (typical — most rules-under-test involve a new helper somewhere) would score zero
     even when the agent wrote a perfect file. Stage first (`git add -A`), then diff the index
     against HEAD, which captures new file content the same as modifications. Safe because the
     worktree is thrown away right after this call.
+
+    `**/CLAUDE.md` is excluded via pathspec: in arm=without runs, `_make_detached_worktree`
+    strips every CLAUDE.md before the spawn, so `git diff --cached HEAD` would include those
+    deletions and the compliant_signal regex would match the DELETED prose ("... use
+    `zarr_utils.` ..." etc.) — reporting `compliant_hits=7` for a run where the agent wrote
+    zero references to the canonical util. That's a scoring artefact, not agent behaviour,
+    and it would flip verdicts wrong on any prompt where anti_signal doesn't also fire to
+    force the noncompliant read. Excluding the deletions from the scored diff keeps
+    `compliant_hits` honest across arms. Surfaced by the `crop-failure` without-arm pilot
+    (PR #1274 second comment).
     """
     subprocess.run(
         ["git", "add", "-A"],
         cwd=str(worktree), capture_output=True, text=True, timeout=30.0, check=False, encoding="utf-8",
     )
     result = subprocess.run(
-        ["git", "diff", "--cached", "HEAD"],
+        ["git", "diff", "--cached", "HEAD", "--", ".", ":(exclude,glob)**/CLAUDE.md",
+         ":(exclude)CLAUDE.md"],
         cwd=str(worktree), capture_output=True, text=True, timeout=30.0, check=False, encoding="utf-8",
     )
     if result.returncode != 0:
@@ -322,53 +358,6 @@ def _remove_worktree(primary_repo: pathlib.Path, dest: pathlib.Path) -> None:
         shutil.rmtree(str(dest), ignore_errors=True)
 
 
-def _harvest_sandbox_log(sandbox_log: pathlib.Path, *,
-                         parent_prompt_id: str, parent_arm: str,
-                         parent_commit: str | None, parent_branch: str | None) -> int:
-    """Re-emit spawn-side effectiveness rows to the real log with `source="eval"`.
-
-    An eval-spawned `claude -p` agent that runs recital, trips a ratchet or otherwise
-    reaches `append_event` would land its rows in the shared `~/.cecelia-effectiveness/
-    events.jsonl` and pollute the audit rollup with runs that never touched real code.
-    `default_claude_runner` redirects those writes to `<sandbox_log>` via
-    `CECELIA_EFFECTIVENESS_LOG` in the spawn env; this helper drains that scratch log
-    and re-appends every row to the real log with:
-
-    - `source="eval"` — filtered out by the audit rollup so eval runs never count as
-      real-work signal.
-    - `payload.parent_prompt_id` + `payload.parent_arm` — enough context that a later
-      inspector can join a harvested row back to the eval pass that produced it.
-
-    Returns the number of rows harvested (0 if the sandbox log doesn't exist — the
-    common case, since most prompts don't run recital).
-    """
-    if not sandbox_log.exists():
-        return 0
-    count = 0
-    for row in read_events(sandbox_log):
-        event = row.get("event")
-        if not event:
-            continue
-        payload = dict(row.get("payload") or {})
-        payload["parent_prompt_id"] = parent_prompt_id
-        payload["parent_arm"] = parent_arm
-        try:
-            append_event(
-                event, payload,
-                session=row.get("session"),
-                source="eval",
-                pr=row.get("pr"),
-                commit=row.get("commit") or parent_commit,
-                branch=row.get("branch") or parent_branch,
-                ts=row.get("ts"),
-            )
-        except Exception as e:  # noqa: BLE001 — best-effort; skip a bad row, keep harvesting
-            print(f"  harvest: skipped row ({type(e).__name__}: {e})", flush=True)
-            continue
-        count += 1
-    return count
-
-
 def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str | None,
                    worktree_root: pathlib.Path, keep_worktrees: bool, arm: str = "with",
                    claude_runner: _t.Callable[..., subprocess.CompletedProcess] | None = None,
@@ -390,17 +379,12 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
     rows: list[dict] = []
     for run_number in range(1, runs + 1):
         worktree = _make_detached_worktree(primary_repo, worktree_root, prompt_id, arm=arm)
-        # Per-spawn scratch log — receives any `append_event` call from inside the
-        # sandbox. Harvested after the diff is captured so we can preserve those rows
-        # under `source="eval"` before the worktree gets removed.
-        sandbox_log = worktree / ".eval-events.jsonl"
         start = time.monotonic()
         diff = ""
         signals = TranscriptSignals()
         error: str | None = None
         try:
-            proc = claude_runner(worktree, body, timeout=timeout,
-                                 claude_path=claude_path, sandbox_log=sandbox_log)
+            proc = claude_runner(worktree, body, timeout=timeout, claude_path=claude_path)
             if proc.returncode != 0:
                 error = f"claude exited {proc.returncode}: {(proc.stderr or '')[:400]}"
             diff = _capture_diff(worktree)
@@ -412,14 +396,6 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
             error = f"claude spawn timed out after {timeout}s"
         except (OSError, ClaudeSpawnError) as e:
             error = f"{type(e).__name__}: {e}"
-        # Harvest sandbox log BEFORE `_remove_worktree` deletes the worktree. Silent on
-        # zero — most prompts never trigger a sandbox emission.
-        harvested = _harvest_sandbox_log(
-            sandbox_log, parent_prompt_id=prompt_id, parent_arm=arm,
-            parent_commit=blob_sha, parent_branch=branch,
-        )
-        if harvested:
-            print(f"    harvested {harvested} sandbox row(s) as source=eval", flush=True)
         duration = time.monotonic() - start
         if error is not None:
             verdict = "error"
