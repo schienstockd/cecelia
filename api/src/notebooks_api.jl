@@ -48,19 +48,22 @@ _pluto_env_ready() = isfile(joinpath(_pluto_root(), "Manifest.toml"))
 # Alive = the Pluto HTTP server answers on the port. Any HTTP response (200 with secret disabled)
 # counts; a refused connection throws → not alive.
 #
-# Only network-shape errors are swallowed. Same reason as `_preview_ping` in `preview_api.jl`: a bare
-# `catch → false` masked a `send`-ambiguity bug there for months and drove a duplicate-launch loop
-# whenever the probe raised. This function drives `_ensure_notebook_server!`'s launch decision the
-# same way, so it takes the same narrow catch.
+# `Cecelia._is_probe_code_bug` rethrows the two Julia-language shapes that must surface (see its
+# docstring — this is the shared predicate every "is the worker there" probe uses). Everything else
+# is treated as "not there" the way the original bare `catch` did, but a rename of `HTTP.get` or an
+# ambiguous export can no longer hide as "not there" and drive a duplicate-launch loop.
+#
+# Unlike `_preview_worker_alive`, this can't shortcut through a proc handle: the Pluto server is
+# addressed by URL rather than by process, and adoption of a pre-existing Pluto is a normal
+# lifecycle here, so the ping IS the alive check. Frontend polling is much sparser than the preview
+# case, so the per-call ping cost is not the hot-path concern it is there.
 function _notebook_server_alive()::Bool
     try
         HTTP.get(NOTEBOOKS_URL; retry = false, redirect = false,
                  connect_timeout = 2, read_idle_timeout = 3, status_exception = false)
         true
     catch e
-        # `SystemError` covers Reseau's socket-layer connection-refused; the rest are HTTP.jl wraps.
-        e isa Base.IOError || e isa Base.SystemError || e isa HTTP.ConnectError ||
-            e isa HTTP.TimeoutError || rethrow()
+        Cecelia._is_probe_code_bug(e) && rethrow()
         false
     end
 end

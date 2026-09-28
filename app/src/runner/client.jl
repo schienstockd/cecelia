@@ -56,18 +56,17 @@ this preserves: a reply with the WRONG protocol is still a reply — the caller 
 it — because reporting "nothing there" for a process that is very much there produces a relaunch loop
 against a port that can never be bound.
 
-Only network-shape errors are swallowed. Same reason as `_preview_ping` and `_notebook_server_alive`
-(both in `api/src/`): a bare `catch → nothing` here would report "nothing there" for a code bug
-(a `MethodError` from an `HTTP.get` refactor, a `JSON3.read` shape drift) — the same relaunch loop
-this docstring warns against, just triggered by a compile-shape error instead of a real network
-failure. The narrower catch surfaces those loudly.
+`_is_probe_code_bug` rethrows the two Julia-language shapes that must surface (a `MethodError` from
+an `HTTP.get` refactor, an `UndefVarError` from a name-resolution drift); everything else is treated
+as "nothing there". This shared predicate is the one canonical answer to "which errors from a
+worker-liveness probe mean 'not there' versus 'code bug'" — see its docstring in
+`app/src/preview.jl`.
 """
 function runner_ping(h::RunnerHandle; timeout::Real = 2)::Union{Dict{String,Any},Nothing}
     try
         _runner_get(h, "/ping"; timeout)
     catch e
-        e isa Base.IOError || e isa Base.SystemError || e isa HTTP.ConnectError ||
-            e isa HTTP.TimeoutError || e isa HTTP.StatusError || rethrow()
+        _is_probe_code_bug(e) && rethrow()
         nothing
     end
 end
