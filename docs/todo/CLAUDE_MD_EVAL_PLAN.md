@@ -81,12 +81,13 @@ Adopted shape:
   Edit/MultiEdit instead of Write on an existing file — the discovery-first rule is
   about ordering, not tool identity. Singular form stays valid.
 
-**Deferred (Sonnet-flagged, not yet):** widen indirect coverage to the frontend rule
-surface (`frontend/CLAUDE.md` — primitive catalog, analysis-board registries,
-`InlineNote`). That's where the fanout/convention findings keep flagging real drift
-and the suite doesn't cover it at all — but it needs a different scorer than
-regex-on-diff (a bug fix has many valid solutions across many files). Land after
-the indirect pilot has produced a pass or two of usable data.
+**Deferred (Sonnet-flagged, planned):** widen indirect coverage to the frontend rule
+surface — see [`CLAUDE_MD_EVAL_FRONTEND_PLAN.md`](CLAUDE_MD_EVAL_FRONTEND_PLAN.md).
+That's where the fanout / convention findings keep flagging real drift and the
+current catalog has zero coverage. Same runner + scorer (regex on additions +
+tool_order) — the design phase turned out simpler than expected once real findings
+were on the table. Gate on the current pilot producing clean signal before
+committing the P1 pilot's ~\$1.50 budget.
 
 ## Scoring artefacts fixed (2026-09-28)
 
