@@ -10,6 +10,14 @@
 # in the POST body, and the API checks that against the store the task would read. A mismatch is a
 # 409 with the version to open, never a silent switch. See docs/todo/WEB_VIEWER_PLAN.md → P7.
 
+# `send` is exported by BOTH `Cecelia` and `Sockets` (`Sockets` is transitively `using`d via HTTP).
+# In `Main` — where every `api/src/*.jl` gets included — those two exports collide, and an unqualified
+# `send(w, …)` raises `UndefVarError: send not defined`. Both this file and `optical_flow_api.jl` need
+# the pin. Was the load-bearing name-resolution failure behind the duplicate-launch bug — see the
+# rewrite of `_preview_worker_alive` below for the design-level fix that superseded relying on the
+# `_preview_ping` catch to protect us.
+import Cecelia: send
+
 const _preview_ref      = Ref{Union{PreviewWorker,Nothing}}(nothing)
 const _preview_starting = Ref(false)
 const _preview_lock     = ReentrantLock()
@@ -46,22 +54,45 @@ end
 """
 `(reachable, protocol)` for a worker — protocol 1 when it answers but names none, which is what every
 worker built before the handshake existed does.
+
+`Cecelia._is_probe_code_bug` rethrows the two Julia-language shapes that must surface (see its
+docstring for why blacklist over whitelist); everything else is treated as "not reachable".
 """
 function _preview_ping(w::PreviewWorker)
     try
         reply = send(w, Dict("type" => "ping"))
         (true, Int(get(reply, "protocol", 1)))
-    catch
+    catch e
+        Cecelia._is_probe_code_bug(e) && rethrow()
         (false, 0)
     end
 end
 
-# Alive means USABLE, not merely listening: a worker running older code answers a ping perfectly well
-# and then fails the actual request (see PREVIEW_PROTOCOL). Treating a mismatch as not-alive is what
-# makes `_ensure_preview!` replace it.
+# ── The hot-path alive check ─────────────────────────────────────────────────
+#
+# This function is hit on every incoming preview / optical-flow / notebooks-adjacent request that
+# calls into `_ensure_preview!`, which during a live FlowMetricsView means 1.5 s polling — dozens of
+# calls during the 17.7 s a fresh worker pays for its Python imports. Making it fast and reliable
+# matters far more than making it exhaustively correct on every path.
+#
+# **Trust the OS, not the network.** When we launched the worker ourselves we hold its `Base.Process`
+# handle, so "is it alive" is a syscall (`process_running`), not a WebSocket round-trip. Trading a
+# ping per poll for a syscall per poll eliminates a whole class of failure: a probe that flakes for
+# any reason (a transient WS handshake failure, an upstream exception type we don't recognise, the
+# worker briefly busy on a real request) was reading as "not alive" and driving the caller into the
+# launch path, which then hit `EADDRINUSE` against the very worker the probe couldn't reach. That
+# was the loop behind the reported duplicate-spawn bug.
+#
+# The protocol check — the whole reason `_preview_ping` existed on this path — is a startup-time
+# concern, not a per-poll one: a worker whose protocol matched when `launch!` returned cannot start
+# mismatching without exiting, which the proc-handle check catches too. Adopted workers have no proc
+# handle we own, so they fall back to the ping — but adoption happens at most once per backend
+# lifecycle, not per request, so the ping cost is bounded.
 function _preview_worker_alive()::Bool
     w = _preview_ref[]
     w === nothing && return false
+    w.proc !== nothing && return preview_alive(w)   # hot path — no I/O
+    # Adopted (no proc handle) — the ping is the only signal we have.
     ok, protocol = _preview_ping(w)
     ok && protocol == PREVIEW_PROTOCOL
 end

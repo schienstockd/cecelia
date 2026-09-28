@@ -17,6 +17,36 @@
 
 using HTTP    # napari.jl carried this at file scope for the Cecelia module; keep it here.
 
+"""
+    _is_probe_code_bug(e) -> Bool
+
+Predicate shared by every "is the resident worker there?" probe (`_preview_ping`,
+`_notebook_server_alive`, `runner_ping`, `launch!`'s wait loop). True iff the exception is a Julia
+language shape — a `MethodError` or an `UndefVarError` — that names a code bug the probe MUST NOT
+silently treat as "not there".
+
+**Blacklist, not whitelist, on purpose.** The obvious shape is to catch known network types
+(`IOError`, `HTTP.ConnectError`, `Reseau.OpError`, `SystemError`, …) and rethrow the rest. That
+turns out to be fragile: `HTTP.jl` and its transport reorganise their exception hierarchies between
+versions, so the whitelist springs a leak every time an upstream renames a type or introduces a new
+one — and each leak looks like the app 500ing a routine ping while the worker isn't up yet. This
+was demonstrated live in the send-ambiguity fix: two rounds of whitelist expansion (adding
+`SystemError`, then `Reseau.OpError`) still weren't enough.
+
+`MethodError` and `UndefVarError` are the two shapes a code bug in a probe actually takes: a rename
+of `send`/`get`, an ambiguous export (`send` from both `Cecelia` and `Sockets`), a signature drift
+in a helper. Both are Julia-language shapes, not library types, so they don't drift as HTTP.jl
+evolves. Anything else — including exception classes we've never seen from Reseau or HTTP — is
+assumed to be a network condition the caller wanted to swallow.
+
+Called by:
+- `_preview_ping`, `_preview_worker_alive` (api/src/preview_api.jl)
+- `_notebook_server_alive` (api/src/notebooks_api.jl)
+- `runner_ping` (app/src/runner/client.jl)
+- `launch!` inner ping loop (this file)
+"""
+_is_probe_code_bug(e) = e isa MethodError || e isa UndefVarError
+
 const PREVIEW_PORT   = 7656
 
 # Reply-shape + backend-set version the backend expects, mirroring `preview_worker.PROTOCOL`. A worker
@@ -137,7 +167,14 @@ function launch!(w::PreviewWorker)::PreviewWorker
             # the process we just spawned cannot bind until it goes) — but remember what answered so the
             # timeout can name the cause instead of blaming the launch.
             squatter = protocol
-        catch
+        catch e
+            # Anything not a code-bug shape is treated as "still not up" — the child pays 17.7 s
+            # of Python imports before it can bind, so a stream of connect-refused / read-timeout /
+            # transport errors is the normal case here. `_is_probe_code_bug` rethrows the two
+            # Julia-language shapes that MUST surface (a `MethodError` in `send` would otherwise
+            # look like "still waiting" for the full 90 s and then blame the launch for something
+            # that never even tried to bind). See its docstring for why blacklist over whitelist.
+            _is_probe_code_bug(e) && rethrow()
         end
         if !process_running(w.proc)
             error("Preview worker exited immediately" *

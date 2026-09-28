@@ -55,9 +55,20 @@ Identity of whatever is listening on the port, or `nothing` if nothing answers. 
 this preserves: a reply with the WRONG protocol is still a reply — the caller decides whether to use
 it — because reporting "nothing there" for a process that is very much there produces a relaunch loop
 against a port that can never be bound.
+
+`_is_probe_code_bug` rethrows the two Julia-language shapes that must surface (a `MethodError` from
+an `HTTP.get` refactor, an `UndefVarError` from a name-resolution drift); everything else is treated
+as "nothing there". This shared predicate is the one canonical answer to "which errors from a
+worker-liveness probe mean 'not there' versus 'code bug'" — see its docstring in
+`app/src/preview.jl`.
 """
 function runner_ping(h::RunnerHandle; timeout::Real = 2)::Union{Dict{String,Any},Nothing}
-    try; _runner_get(h, "/ping"; timeout); catch; nothing; end
+    try
+        _runner_get(h, "/ping"; timeout)
+    catch e
+        _is_probe_code_bug(e) && rethrow()
+        nothing
+    end
 end
 
 runner_alive(h::RunnerHandle)::Bool = runner_ping(h) !== nothing
