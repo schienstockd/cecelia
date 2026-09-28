@@ -336,8 +336,14 @@ def render_rollup(
     `pr_lookup(branch, cache) -> pr_or_None` is an injectable seam so tests skip the real gh
     call; production defaults to `_pr_from_branch` (one gh call per unique branch, cached
     within the render pass — findings-heavy branches only pay once).
+
+    Rows with `source="eval"` are filtered out — those come from
+    `scripts/claude_md_eval/run_prompt.py`'s sandbox-log harvest and represent
+    events emitted from inside an eval-spawned `claude -p` session, not from real
+    development work. Including them would over-count fanout/convention findings
+    against runs that never touched shipped code.
     """
-    events = list(events)
+    events = [e for e in events if e.get("source") != "eval"]
     rendered = rendered_ts or _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     if not events:

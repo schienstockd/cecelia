@@ -41,27 +41,38 @@ class TranscriptSignals:
         self.final_message = final_message
         self.parse_errors = parse_errors
 
-    def tool_order_passes(self, before_tool: str, before_arg_match: str,
-                          after_tool: str) -> bool:
-        """True iff a `before_tool` call whose input args regex-match `before_arg_match`
-        appears before the FIRST `after_tool` call in the tool-call sequence.
+    def tool_order_passes(self, before_tool: "str | list[str]",
+                          before_arg_match: str,
+                          after_tool: "str | list[str]") -> bool:
+        """True iff ANY `before_tool` call whose args regex-match `before_arg_match`
+        appears before the FIRST call to any tool in `after_tool` in the tool-call
+        sequence.
 
-        Semantics chosen to match CLAUDE.md → *Before implementing anything* rule 1:
-        "Check the matching docs/inventory/*.md ... it's a **grep**, not a read." The
-        first `Write` is the point-of-no-return; a `Grep` after it doesn't count.
+        `before_tool` / `after_tool` accept either a single tool name or a list of
+        alternatives. Widened for the indirect-prompt tier (2026-09-28+): a real
+        agent chasing a bug may Read `INVENTORY.md` instead of Grepping it, or reach
+        for `Edit` / `MultiEdit` instead of `Write` when patching existing files —
+        the discovery-first rule is satisfied by any inventory-touching read tool
+        before any write-shaped tool. The singular string form stays valid for
+        prompts that want an exact match.
 
-        Returns False if `after_tool` never fires (rule vacuous — treat as failed so
-        the run scores noncompliant rather than trivially compliant).
+        Semantics still match CLAUDE.md → *Before implementing anything*: the first
+        write-shaped call is the point-of-no-return; a Grep AFTER it doesn't count.
+
+        Returns False if no `after_tool` ever fires (rule vacuous — treat as failed
+        so the run scores noncompliant rather than trivially compliant).
         """
+        before_set = {before_tool} if isinstance(before_tool, str) else set(before_tool)
+        after_set = {after_tool} if isinstance(after_tool, str) else set(after_tool)
         after_idx = next(
-            (i for i, c in enumerate(self.tool_calls) if c["tool"] == after_tool),
+            (i for i, c in enumerate(self.tool_calls) if c["tool"] in after_set),
             None,
         )
         if after_idx is None:
             return False
         pat = re.compile(before_arg_match) if before_arg_match else None
         for c in self.tool_calls[:after_idx]:
-            if c["tool"] != before_tool:
+            if c["tool"] not in before_set:
                 continue
             if pat is None:
                 return True

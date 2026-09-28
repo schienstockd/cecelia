@@ -2,10 +2,14 @@
 
 **Status:** P1 (single-prompt runner) + P2 driver + 9-of-10-prompt catalog **SHIPPED** on PR
 #1264 (2026-09-27). One prompt (`discovery-first`) originally deferred pending tool-log
-inspection — **now built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28,
-this branch). **P2.5 rollup SHIPPED** (2026-09-28, this branch) — renders
+inspection — **built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28
+via #1273). **P2.5 rollup SHIPPED** (2026-09-28, #1273) — renders
 [`docs/ai-assist/CLAUDE_MD_EVAL.md`](../ai-assist/CLAUDE_MD_EVAL.md) at the end of every pass
-+ on demand via `pixi run claude-md-eval-rollup`. P3 (cron) still unbuilt.
++ on demand via `pixi run claude-md-eval-rollup`. **Indirect tier + log-isolation
+scaffolding on `feat/indirect-eval-tier`** (2026-09-28): sandbox log per spawn, harvest
+with `source="eval"`, synthetic session id, widened `tool_order` matcher (lists),
+reworked `discovery-first` prompt, one indirect pilot (`crop-failure`) — see
+*Indirect tier (2026-09-28)* below. P3 (cron) still unbuilt.
 
 ## Sonnet 2026-09-28 discipline additions
 
@@ -50,6 +54,63 @@ Full catalog rerun (`pixi run claude-md-eval`) will produce the first cross-rule
 Follow-up from the enforcement-coverage work in PRs #1258 (recital SHA-anchoring) and #1263
 (h5ad / utf-8 / Windows helpers / run_py ratchets). Written to be picked up cold by another
 session.
+
+## Indirect tier (2026-09-28)
+
+Sonnet pushed back on scrapping indirect. The direct catalog names the guarded util
+(`zarr_utils`, `label_props`, `run_py`) in the prompt, so a without-arm agent can just
+grep the name — both arms score high, Δ shrinks by construction, and low Δ reads as
+"CLAUDE.md doesn't matter" when it actually reads "the prompt gave away the answer."
+Direct-only can't disprove that failure mode.
+
+Adopted shape:
+
+- **`crop-failure` indirect pilot** (`scripts/claude_md_eval/prompts/crop-failure.md`) —
+  symptom-first bug report seeded by past init prompt `9fb138d2`. Agent must discover
+  and use `zarr_utils` without being told. Graders: `compliant_signal = zarr_utils\.`,
+  `anti_signal = bare zarr.open( / da.from_zarr / tifffile.imread`, `tool_order`
+  (inventory-touching Grep/Read/Glob before Write/Edit/MultiEdit).
+- **Reworked `discovery-first`** — the prior `next_multiple(x, n)` task was too trivial
+  to plausibly need discovery, so both arms scored noncompliant and the rule wasn't
+  actually being tested. Replaced with a tile-origin helper task where `zarr_utils`
+  might genuinely already own the helper, forcing real inventory grep.
+- **Widened `tool_order` matcher** — added plural `tool_order_before_tools` /
+  `tool_order_after_tools` frontmatter keys that accept comma-separated alternatives.
+  `TranscriptSignals.tool_order_passes` accepts str or list. Wanted for indirect
+  because a real agent may Read `INVENTORY.md` instead of Grepping it and reach for
+  Edit/MultiEdit instead of Write on an existing file — the discovery-first rule is
+  about ordering, not tool identity. Singular form stays valid.
+
+**Deferred (Sonnet-flagged, not yet):** widen indirect coverage to the frontend rule
+surface (`frontend/CLAUDE.md` — primitive catalog, analysis-board registries,
+`InlineNote`). That's where the fanout/convention findings keep flagging real drift
+and the suite doesn't cover it at all — but it needs a different scorer than
+regex-on-diff (a bug fix has many valid solutions across many files). Land after
+the indirect pilot has produced a pass or two of usable data.
+
+## Log-isolation scaffolding (2026-09-28)
+
+The exposure landed 2026-09-28 while looking at the effectiveness log. Eval-spawned
+`claude -p` agents inherit `~/.cecelia-effectiveness/events.jsonl` and would emit
+`ratchet_hit` / `fanout_audit_finding` / `convention_check_finding` rows into it if
+they ever ran recital or tripped a ratchet — inflating the audit rollup with signal
+that never touched shipped code. No pollution today (checked: eval agents don't commit
+and don't run recital), but the fix is cheap and the indirect tier makes leaks more
+likely (longer sessions, more discovery, more tool use):
+
+- **Per-spawn sandbox log.** `default_claude_runner` sets `CECELIA_EFFECTIVENESS_LOG`
+  in the spawn env to `<worktree>/.eval-events.jsonl`. Any `append_event` inside the
+  sandbox lands there, not in the shared log.
+- **Harvest on spawn return.** `_harvest_sandbox_log` drains the scratch log and
+  re-appends every row to the real log with `source="eval"` + `payload.parent_prompt_id`
+  + `payload.parent_arm`. Rows are preserved (evidence, not thrown away) but tagged.
+- **Audit rollup filter.** `python/cecelia/effectiveness/rollup.py:render_rollup`
+  filters `source == "eval"` up front. The CLAUDE.md-eval rollup filters by event
+  type (`claude_md_eval_*`) and is unaffected.
+- **Synthetic session id.** `_ensure_eval_session()` sets `CLAUDE_CODE_SESSION_ID`
+  to `eval-<uuid8>` if unset, so every row of one pass groups under one id. Previously
+  every eval row emitted `sess=unknown` because pixi doesn't propagate the env var
+  from the launching Claude Code shell.
 
 ## Goal
 

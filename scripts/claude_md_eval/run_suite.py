@@ -75,6 +75,11 @@ def run_suite(
     Returns the summary payload as a dict (also emitted as a `claude_md_eval_suite` row).
     """
     run_one = run_one or _run_prompt.run_one_prompt
+    # Set a synthetic session id BEFORE the first append_event so the suite row + every
+    # per-prompt row shares one identifier. Called here (in addition to inside
+    # `run_one_prompt`) so the `claude_md_eval_suite` summary row emitted below also
+    # gets a real session, not `unknown`.
+    _run_prompt._ensure_eval_session()
     ids = _filter_ids(_list_prompt_ids(), only, exclude)
     if not ids:
         raise SystemExit("no prompts to run (catalog empty or filtered out)")

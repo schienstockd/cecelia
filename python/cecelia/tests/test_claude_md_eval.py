@@ -215,7 +215,7 @@ class RunOnePromptTest(unittest.TestCase):
 
     def test_compliant_run_emits_one_run_row_and_one_pass_row(self):
         self._write_default_prompt()
-        def compliant_runner(worktree, prompt_body, *, timeout, claude_path):
+        def compliant_runner(worktree, prompt_body, *, timeout, claude_path, sandbox_log=None):
             (worktree / "diff-marker").write_text("+ LabelPropsView(path)\n", encoding="utf-8")
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with mock.patch.object(self.runner, "_capture_diff",
@@ -245,7 +245,7 @@ class RunOnePromptTest(unittest.TestCase):
 
     def test_noncompliant_run_is_scored_noncompliant(self):
         self._write_default_prompt()
-        def anti_runner(worktree, prompt_body, *, timeout, claude_path):
+        def anti_runner(worktree, prompt_body, *, timeout, claude_path, sandbox_log=None):
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with mock.patch.object(self.runner, "_capture_diff",
                                return_value="+ adata = anndata.read_h5ad(path)\n"):
@@ -276,7 +276,7 @@ class RunOnePromptTest(unittest.TestCase):
 
     def test_timeout_emits_error_row_not_crash(self):
         self._write_default_prompt()
-        def timeout_runner(worktree, prompt_body, *, timeout, claude_path):
+        def timeout_runner(worktree, prompt_body, *, timeout, claude_path, sandbox_log=None):
             raise subprocess.TimeoutExpired(cmd="claude", timeout=timeout)
         with mock.patch.object(self.runner, "_capture_diff", return_value=""):
             self.runner.run_one_prompt(
@@ -290,7 +290,7 @@ class RunOnePromptTest(unittest.TestCase):
 
     def test_multiple_runs_emit_one_row_each_plus_one_summary(self):
         self._write_default_prompt()
-        def alternating_runner(worktree, prompt_body, *, timeout, claude_path):
+        def alternating_runner(worktree, prompt_body, *, timeout, claude_path, sandbox_log=None):
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         # Two compliant, one anti.
         diffs = iter([
@@ -316,6 +316,161 @@ class RunOnePromptTest(unittest.TestCase):
         self.assertEqual(summary["compliant"], 2)
         self.assertEqual(summary["noncompliant"], 1)
         self.assertEqual(summary["runs_total"], 3)
+
+
+class HarvestSandboxLogTest(unittest.TestCase):
+    """`_harvest_sandbox_log` drains a per-spawn scratch log and re-appends every row to
+    the real log with `source="eval"`. Load-bearing invariant:
+
+    - **Eval-spawned events are preserved (rows aren't silently dropped) but tagged so the
+      audit rollup filters them out.** A ratchet_hit or recital finding emitted from
+      inside an eval-spawned `claude -p` session shouldn't count as real-work signal —
+      but throwing the row away would also lose the eval-side evidence that the ratchet
+      fired. This test pins the halfway point: preserved-but-tagged.
+    """
+
+    def setUp(self):
+        self.runner = _load_runner()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmpdir = pathlib.Path(self._tmp.name)
+        self.real_log = self.tmpdir / "real-events.jsonl"
+        self._env_patch = mock.patch.dict(
+            os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.real_log)},
+        )
+        self._env_patch.start()
+        self.addCleanup(self._env_patch.stop)
+
+    def test_absent_sandbox_log_returns_zero(self):
+        n = self.runner._harvest_sandbox_log(
+            self.tmpdir / "missing.jsonl",
+            parent_prompt_id="p", parent_arm="with",
+            parent_commit=None, parent_branch=None,
+        )
+        self.assertEqual(n, 0)
+
+    def test_rows_are_re_appended_with_source_eval_and_parent_context(self):
+        # Simulate a spawn that ran recital, emitting one `fanout_audit_run` row.
+        sandbox = self.tmpdir / "sandbox.jsonl"
+        from cecelia.effectiveness import append_event as _append
+        _append("fanout_audit_run", {"duration_s": 3.2},
+                log_path=sandbox, session="child-session", commit="c" * 40,
+                branch="feat/x")
+        n = self.runner._harvest_sandbox_log(
+            sandbox, parent_prompt_id="crop-failure", parent_arm="with",
+            parent_commit="parent-sha", parent_branch="feat/indirect",
+        )
+        self.assertEqual(n, 1)
+        rows = list(read_events(self.real_log))
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["event"], "fanout_audit_run")
+        self.assertEqual(row["source"], "eval")
+        # Parent context stapled into payload so a later inspector can join back.
+        self.assertEqual(row["payload"]["parent_prompt_id"], "crop-failure")
+        self.assertEqual(row["payload"]["parent_arm"], "with")
+        # Child-emitted metadata is preserved (session, commit, branch fall through).
+        self.assertEqual(row["session"], "child-session")
+        self.assertEqual(row["commit"], "c" * 40)
+        self.assertEqual(row["branch"], "feat/x")
+
+    def test_row_missing_commit_falls_back_to_parent(self):
+        sandbox = self.tmpdir / "sandbox.jsonl"
+        from cecelia.effectiveness import append_event as _append
+        _append("ratchet_hit", {"ratchet_id": "utf-8"}, log_path=sandbox,
+                session="child", commit=None, branch=None)
+        self.runner._harvest_sandbox_log(
+            sandbox, parent_prompt_id="p", parent_arm="without",
+            parent_commit="parent-sha", parent_branch="feat/indirect",
+        )
+        row = next(iter(read_events(self.real_log)))
+        self.assertEqual(row["commit"], "parent-sha")
+        self.assertEqual(row["branch"], "feat/indirect")
+
+
+class EnsureEvalSessionTest(unittest.TestCase):
+    """`_ensure_eval_session` writes a synthetic session id when the env is bare.
+
+    The pixi subprocess doesn't inherit `CLAUDE_CODE_SESSION_ID`, so every
+    `claude_md_eval_*` row historically emitted with `sess=unknown`. With a synthetic
+    id, all rows of one pass share a session — which is enough to group them.
+    """
+
+    def setUp(self):
+        self.runner = _load_runner()
+
+    def test_synthesises_when_env_unset(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            sess = self.runner._ensure_eval_session()
+            self.assertTrue(sess.startswith("eval-"))
+            self.assertEqual(os.environ["CLAUDE_CODE_SESSION_ID"], sess)
+
+    def test_respects_existing_env(self):
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "real-sess-123"}):
+            sess = self.runner._ensure_eval_session()
+            self.assertEqual(sess, "real-sess-123")
+
+    def test_idempotent(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            first = self.runner._ensure_eval_session()
+            second = self.runner._ensure_eval_session()
+            self.assertEqual(first, second)
+
+
+class ToolOrderWidenedMatcherTest(unittest.TestCase):
+    """`tool_order_passes` accepts a list of alternatives for both before/after tools.
+
+    The single-tool matcher missed a compliant agent that Reads `INVENTORY.md` instead
+    of Grepping it, or reaches for Edit instead of Write on an existing file — the rule
+    is about the discovery-before-write ordering, not the tool identity.
+    """
+
+    def setUp(self):
+        transcript_path = _REPO / "scripts" / "claude_md_eval" / "transcript.py"
+        spec = importlib.util.spec_from_file_location("_transcript_t", transcript_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self.TS = mod.TranscriptSignals
+
+    def _sig(self, calls):
+        s = self.TS()
+        s.tool_calls = calls
+        return s
+
+    def test_singular_form_still_works(self):
+        s = self._sig([
+            {"tool": "Grep", "input": {"pattern": "inventory"}},
+            {"tool": "Write", "input": {"file_path": "x.py"}},
+        ])
+        self.assertTrue(s.tool_order_passes("Grep", "inventory", "Write"))
+
+    def test_list_of_before_tools_any_matches(self):
+        # Agent Read INVENTORY.md instead of Grepping — should still pass.
+        s = self._sig([
+            {"tool": "Read", "input": {"file_path": "INVENTORY.md"}},
+            {"tool": "Write", "input": {"file_path": "x.py"}},
+        ])
+        self.assertTrue(s.tool_order_passes(
+            ["Grep", "Read", "Glob"], "INVENTORY", ["Write", "Edit"]))
+
+    def test_list_of_after_tools_any_matches(self):
+        # Agent used Edit to patch an existing file — Edit counts as the write.
+        s = self._sig([
+            {"tool": "Grep", "input": {"pattern": "docs/inventory"}},
+            {"tool": "Edit", "input": {"file_path": "x.py"}},
+        ])
+        self.assertTrue(s.tool_order_passes(
+            ["Grep", "Read"], "docs/inventory", ["Write", "Edit", "MultiEdit"]))
+
+    def test_after_without_before_still_fails(self):
+        # Wrote without discovering — anti case, must fail.
+        s = self._sig([
+            {"tool": "Edit", "input": {"file_path": "x.py"}},
+        ])
+        self.assertFalse(s.tool_order_passes(
+            ["Grep", "Read", "Glob"], "inventory", ["Write", "Edit"]))
 
 
 if __name__ == "__main__":

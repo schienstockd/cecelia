@@ -159,6 +159,28 @@ class RollupTest(unittest.TestCase):
         self.assertIn("Fanout audit", md)
         self.assertIn("`fixed_pre_commit`: 1", md)
 
+    def test_rollup_filters_out_source_eval_rows(self):
+        # Eval-spawned recital/ratchet emissions get harvested with `source="eval"` and
+        # must NOT count as real-work signal. If they did, a compliance-eval pass that
+        # accidentally triggered a ratchet inside the sandbox would inflate the audit
+        # rollup's finding counts on merges that never touched shipped code.
+        events = [
+            {"event": "fanout_audit_run", "source": "live", "ts": "2026-01-01T00:00:00Z",
+             "payload": {"duration_s": 20}},
+            {"event": "fanout_audit_run", "source": "eval", "ts": "2026-01-01T00:00:00Z",
+             "payload": {"duration_s": 3, "parent_prompt_id": "crop-failure",
+                         "parent_arm": "with"}},
+            {"event": "ratchet_hit", "source": "eval", "ts": "2026-01-01T00:00:00Z",
+             "payload": {"ratchet_id": "utf-8", "parent_prompt_id": "utf-8-json-write",
+                         "parent_arm": "with"}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-02-01T00:00:00Z")
+        # One live row remains — the eval rows are excluded from every count.
+        self.assertIn("1 events logged", md)
+        # The Ratchet-hits section only fires when there's a real ratchet_hit row; the
+        # eval-tagged one shouldn't materialise the section.
+        self.assertNotIn("Ratchet hits", md)
+
     def test_rollup_folds_old_and_new_event_names_for_fanout(self):
         # The rename from sibling_audit_* to fanout_audit_* leaves pre-rename rows in the
         # append-only log forever. Rollup must fold both under the same mechanism section.

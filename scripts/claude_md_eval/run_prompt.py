@@ -40,7 +40,7 @@ _DEFAULT_TIMEOUT_SEC = 300
 _DEFAULT_RUNS = 3
 
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness import append_event  # noqa: E402
+from cecelia.effectiveness import append_event, read_events  # noqa: E402
 from cecelia.effectiveness.git_context import current_branch as _current_branch  # noqa: E402
 
 # Sibling module — parses `claude -p --output-format=stream-json --verbose` stdout for
@@ -90,13 +90,23 @@ def parse_prompt(path: pathlib.Path) -> tuple[dict[str, str], str]:
     # Must have AT LEAST ONE grader declaration — regex-based (compliant/anti signals) or
     # tool-order-based (before/after tool + arg-match). A prompt with neither can't score.
     has_regex = "compliant_signal" in meta or "anti_signal" in meta
-    has_tool_order = "tool_order_before_tool" in meta or "tool_order_after_tool" in meta
+    has_tool_order = any(k in meta for k in (
+        "tool_order_before_tool", "tool_order_before_tools",
+        "tool_order_after_tool", "tool_order_after_tools",
+    ))
     if not (has_regex or has_tool_order):
         raise PromptParseError(
             f"{path}: frontmatter must declare at least one grader — either "
             f"`compliant_signal`/`anti_signal` (regex on diff) or "
             f"`tool_order_before_tool`/`tool_order_after_tool` (tool-log order)")
     return meta, body.strip()
+
+
+def _split_tool_list(raw: str | None) -> list[str]:
+    """Comma-separated tool list → clean list. `None`/empty → []."""
+    if not raw:
+        return []
+    return [t.strip() for t in raw.split(",") if t.strip()]
 
 
 def _regex_hits(diff: str, meta: dict[str, str]) -> tuple[int, int]:
@@ -142,11 +152,20 @@ def score_all(diff: str, signals: "TranscriptSignals",
     compliant_hits, anti_hits = _regex_hits(diff, meta)
 
     tool_order_passed: bool | None = None
-    if meta.get("tool_order_before_tool") or meta.get("tool_order_after_tool"):
+    if any(k in meta for k in ("tool_order_before_tool", "tool_order_before_tools",
+                                "tool_order_after_tool", "tool_order_after_tools")):
+        # Plural keys (`_tools`) accept a comma-separated list of alternatives and win
+        # over singular (`_tool`) — the indirect-prompt tier uses lists so a Read of
+        # `INVENTORY.md` scores the same as a Grep, and an Edit/MultiEdit is treated
+        # as write-shaped alongside Write.
+        before = _split_tool_list(meta.get("tool_order_before_tools")) or \
+                 meta.get("tool_order_before_tool", "")
+        after = _split_tool_list(meta.get("tool_order_after_tools")) or \
+                meta.get("tool_order_after_tool", "Write")
         tool_order_passed = signals.tool_order_passes(
-            before_tool=meta.get("tool_order_before_tool", ""),
+            before_tool=before,
             before_arg_match=meta.get("tool_order_before_arg_match", ""),
-            after_tool=meta.get("tool_order_after_tool", "Write"),
+            after_tool=after,
         )
 
     graders_pass = []
@@ -166,6 +185,25 @@ def score_all(diff: str, signals: "TranscriptSignals",
     return verdict, details
 
 
+def _ensure_eval_session() -> str:
+    """Set `CLAUDE_CODE_SESSION_ID` to a synthetic `eval-<uuid8>` if it's not already set.
+
+    `append_event` falls back to `"unknown"` when the env var is absent, which is the
+    default state inside a `pixi run <task>` subprocess — pixi doesn't propagate
+    `CLAUDE_CODE_SESSION_ID` from the launching shell. Every `claude_md_eval_*` row
+    written before this fix carried `sess=unknown`, breaking one useful signal:
+    grouping every row of one eval pass under a single session id. Idempotent — if
+    the env var IS set (nested Claude Code session, CI with an explicit id), we
+    respect it. Returns the id in effect.
+    """
+    existing = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if existing:
+        return existing
+    synthetic = f"eval-{uuid.uuid4().hex[:8]}"
+    os.environ["CLAUDE_CODE_SESSION_ID"] = synthetic
+    return synthetic
+
+
 def claude_md_blob_sha(cwd: pathlib.Path) -> str | None:
     """Content-addressed SHA of CLAUDE.md at HEAD. None if not a repo / file missing."""
     try:
@@ -182,7 +220,9 @@ def claude_md_blob_sha(cwd: pathlib.Path) -> str | None:
 
 
 def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
-                          timeout: int, claude_path: str | None) -> subprocess.CompletedProcess:
+                          timeout: int, claude_path: str | None,
+                          sandbox_log: pathlib.Path | None = None,
+                          **_ignored) -> subprocess.CompletedProcess:
     """Real `claude -p` invocation. Injectable via CLI for tests.
 
     Deliberately raises `ClaudeSpawnError` with a clear message when `claude_path` is empty —
@@ -191,12 +231,22 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
     in `CLAUDE.md → Windows compatibility`. Recital's sibling `_resolve_claude_bin` raises for
     the same reason; when a third `claude -p` caller lands, extract these into a shared
     `resolve_claude_bin()` helper (finding conv-97a704d6 from this PR's convention check).
+
+    `sandbox_log` — when set, spawns get `CECELIA_EFFECTIVENESS_LOG=<sandbox_log>` in their
+    env, so any `append_event` call inside the sandbox lands in a per-spawn scratch log
+    instead of the shared real log. The parent (`run_one_prompt`) later harvests that
+    scratch log and re-appends the rows with `source="eval"` + parent context, so eval-
+    triggered events are preserved but excluded from the audit rollup. Trailing `**_ignored`
+    lets tests inject fake runners that don't yet know about this kwarg without breaking.
     """
     if not claude_path:
         raise ClaudeSpawnError(
             "no `claude` binary found on PATH — pass --claude-path=/path/to/claude, or install "
             "claude. See CLAUDE.md → Windows compatibility."
         )
+    env = os.environ.copy()
+    if sandbox_log is not None:
+        env["CECELIA_EFFECTIVENESS_LOG"] = str(sandbox_log)
     # `--output-format=stream-json --verbose` — emits one JSON event per line on stdout,
     # including every assistant tool_use block AND a terminal `result` event carrying
     # `total_cost_usd` + `num_turns`. Parsed by `transcript.parse_stream_json` for the
@@ -207,6 +257,7 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
          "--output-format", "stream-json", "--verbose"],
         input=prompt_body, cwd=str(worktree),
         capture_output=True, text=True, timeout=timeout, check=False, encoding="utf-8",
+        env=env,
     )
 
 
@@ -271,6 +322,53 @@ def _remove_worktree(primary_repo: pathlib.Path, dest: pathlib.Path) -> None:
         shutil.rmtree(str(dest), ignore_errors=True)
 
 
+def _harvest_sandbox_log(sandbox_log: pathlib.Path, *,
+                         parent_prompt_id: str, parent_arm: str,
+                         parent_commit: str | None, parent_branch: str | None) -> int:
+    """Re-emit spawn-side effectiveness rows to the real log with `source="eval"`.
+
+    An eval-spawned `claude -p` agent that runs recital, trips a ratchet or otherwise
+    reaches `append_event` would land its rows in the shared `~/.cecelia-effectiveness/
+    events.jsonl` and pollute the audit rollup with runs that never touched real code.
+    `default_claude_runner` redirects those writes to `<sandbox_log>` via
+    `CECELIA_EFFECTIVENESS_LOG` in the spawn env; this helper drains that scratch log
+    and re-appends every row to the real log with:
+
+    - `source="eval"` — filtered out by the audit rollup so eval runs never count as
+      real-work signal.
+    - `payload.parent_prompt_id` + `payload.parent_arm` — enough context that a later
+      inspector can join a harvested row back to the eval pass that produced it.
+
+    Returns the number of rows harvested (0 if the sandbox log doesn't exist — the
+    common case, since most prompts don't run recital).
+    """
+    if not sandbox_log.exists():
+        return 0
+    count = 0
+    for row in read_events(sandbox_log):
+        event = row.get("event")
+        if not event:
+            continue
+        payload = dict(row.get("payload") or {})
+        payload["parent_prompt_id"] = parent_prompt_id
+        payload["parent_arm"] = parent_arm
+        try:
+            append_event(
+                event, payload,
+                session=row.get("session"),
+                source="eval",
+                pr=row.get("pr"),
+                commit=row.get("commit") or parent_commit,
+                branch=row.get("branch") or parent_branch,
+                ts=row.get("ts"),
+            )
+        except Exception as e:  # noqa: BLE001 — best-effort; skip a bad row, keep harvesting
+            print(f"  harvest: skipped row ({type(e).__name__}: {e})", flush=True)
+            continue
+        count += 1
+    return count
+
+
 def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str | None,
                    worktree_root: pathlib.Path, keep_worktrees: bool, arm: str = "with",
                    claude_runner: _t.Callable[..., subprocess.CompletedProcess] | None = None,
@@ -278,6 +376,7 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
     """Run one prompt N times, emit rows to the effectiveness log, return the row list."""
     primary_repo = primary_repo or _REPO
     claude_runner = claude_runner or default_claude_runner
+    _ensure_eval_session()
     prompt_path = _PROMPTS_DIR / f"{prompt_id}.md"
     if not prompt_path.is_file():
         raise PromptParseError(f"no prompt at {prompt_path}")
@@ -291,12 +390,17 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
     rows: list[dict] = []
     for run_number in range(1, runs + 1):
         worktree = _make_detached_worktree(primary_repo, worktree_root, prompt_id, arm=arm)
+        # Per-spawn scratch log — receives any `append_event` call from inside the
+        # sandbox. Harvested after the diff is captured so we can preserve those rows
+        # under `source="eval"` before the worktree gets removed.
+        sandbox_log = worktree / ".eval-events.jsonl"
         start = time.monotonic()
         diff = ""
         signals = TranscriptSignals()
         error: str | None = None
         try:
-            proc = claude_runner(worktree, body, timeout=timeout, claude_path=claude_path)
+            proc = claude_runner(worktree, body, timeout=timeout,
+                                 claude_path=claude_path, sandbox_log=sandbox_log)
             if proc.returncode != 0:
                 error = f"claude exited {proc.returncode}: {(proc.stderr or '')[:400]}"
             diff = _capture_diff(worktree)
@@ -308,6 +412,14 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
             error = f"claude spawn timed out after {timeout}s"
         except (OSError, ClaudeSpawnError) as e:
             error = f"{type(e).__name__}: {e}"
+        # Harvest sandbox log BEFORE `_remove_worktree` deletes the worktree. Silent on
+        # zero — most prompts never trigger a sandbox emission.
+        harvested = _harvest_sandbox_log(
+            sandbox_log, parent_prompt_id=prompt_id, parent_arm=arm,
+            parent_commit=blob_sha, parent_branch=branch,
+        )
+        if harvested:
+            print(f"    harvested {harvested} sandbox row(s) as source=eval", flush=True)
         duration = time.monotonic() - start
         if error is not None:
             verdict = "error"
@@ -419,10 +531,18 @@ def main() -> int:
         print(f"rule:      {meta['rule']}")
         print(f"compliant: {meta.get('compliant_signal', '(none)')}")
         print(f"anti:      {meta.get('anti_signal', '(none)')}")
-        if meta.get("tool_order_before_tool") or meta.get("tool_order_after_tool"):
-            print(f"tool_order: before={meta.get('tool_order_before_tool', '?')} "
+        if any(k in meta for k in ("tool_order_before_tool", "tool_order_before_tools",
+                                    "tool_order_after_tool", "tool_order_after_tools")):
+            # Print whichever form is authored — plural list wins over singular so an
+            # indirect-tier prompt (which uses only plural keys) shows a real before/after
+            # column instead of `?`. Same key-precedence as `score_all`.
+            before = _split_tool_list(meta.get("tool_order_before_tools")) or \
+                     meta.get("tool_order_before_tool", "?")
+            after = _split_tool_list(meta.get("tool_order_after_tools")) or \
+                    meta.get("tool_order_after_tool", "Write")
+            print(f"tool_order: before={before} "
                   f"arg_match={meta.get('tool_order_before_arg_match', '(none)')} "
-                  f"after={meta.get('tool_order_after_tool', 'Write')}")
+                  f"after={after}")
         print(f"task ({len(body)} chars):\n{body}")
         return 0
 

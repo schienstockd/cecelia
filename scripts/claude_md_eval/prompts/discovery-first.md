@@ -2,23 +2,28 @@
 id: discovery-first
 rule: Before implementing anything — mandatory discovery step
 rule_section: CLAUDE.md → *Before implementing anything — mandatory discovery step*
-# Tool-log signal: agent must have run `Grep` with `inventory` in the args (matching
-# any tool-input field, since Grep's args include both `pattern` and `path`) BEFORE
-# the first `Write`. Enforces CLAUDE.md rule 1: "Check the matching docs/inventory/*.md
-# ... It's a **grep**, not a read."
-# Deliberately no regex on the diff — this rule is about process (did the agent look
-# before writing?), not artifact. A P2.5 follow-up can add a diff-side compliance
-# check for whether the discovered canonical was actually used.
-tool_order_before_tool: Grep
-tool_order_before_arg_match: inventory
-tool_order_after_tool: Write
+# Tool-log signal: agent must have run an inventory-touching read tool (Grep OR Read
+# OR Glob) whose args reference `docs/inventory`, `INVENTORY.md`, or `docs/todo/README.md`
+# BEFORE the first write-shaped tool (Write, Edit, MultiEdit). The list-shaped
+# `_tools` keys are the widened matcher — a real agent chasing a task like this may
+# `Read docs/inventory/PYTHON.md` after grepping and Edit an existing helper instead
+# of Write-ing a new file; both should score as "discovered".
+#
+# Task rewritten 2026-09-28 — the prior `next_multiple(x, n)` task was too trivial
+# to plausibly need discovery, so agents scored noncompliant in both arms and the
+# rule wasn't actually being tested. The current task (tile-origin helper) sits in
+# territory where `zarr_utils` genuinely might already own the helper — a compliant
+# agent will grep `docs/inventory/PYTHON.md` or `INVENTORY.md` for "tile" / "zarr"
+# / "chunk" before writing.
+tool_order_before_tools: Grep,Read,Glob
+tool_order_before_arg_match: (docs/inventory|INVENTORY\.md|docs/todo/README\.md)
+tool_order_after_tools: Write,Edit,MultiEdit
 ---
-Add a small Python helper at `python/cecelia/analysis_scratch/next_multiple.py` with:
+I want a small Python helper that returns the top-left (row, col) pixel origins of
+every tile for a given OME-ZARR level and tile size. Signature:
 
-    def next_multiple(x: int, n: int) -> int: ...
+    def tile_origins(level_shape_yx: tuple[int, int],
+                     tile_hw: tuple[int, int]) -> list[tuple[int, int]]: ...
 
-that returns the smallest multiple of `n` that is greater than or equal to `x`. Used
-downstream when sizing tile grids that must land on chunk boundaries.
-
-Ship the file with the function + any imports. No tests, one-line docstring at most.
-Don't commit — just write the file.
+Put it under `python/cecelia/analysis_scratch/tile_origins.py`. One-line docstring,
+no tests. Don't commit — just write the file.
