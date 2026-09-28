@@ -357,6 +357,13 @@ silently skipped. That's what turns advisory into "advisory-with-teeth" for auto
 findings in the log become gradeable later (did shipped-anyway correlate with real bugs?)
 rather than just noise in a text output the reader may not see.
 
+**Silent-drop guard.** After writing your slug-paired resolutions, the hook also sweeps for
+orphan slugs: any `_finding` row on the current HEAD (recital was run against this parent SHA)
+whose slug you neither tagged in this commit nor previously resolved gets an auto-emitted
+`[dropped_no_action]` resolution. The commit isn't blocked — the goal is to make silent drops
+visible in the rollup, not to force a tag. Trimming a finding line out of the commit body is
+still a valid choice; the log just records that you made it.
+
 Bypass with `CECELIA_SKIP_RECITAL_CHECK=1` for real emergencies.
 
 ---
