@@ -318,6 +318,14 @@ claude-md-eval-one = "python scripts/claude_md_eval/run_prompt.py"
 # log. `pixi run claude-md-eval` (see docs/todo/CLAUDE_MD_EVAL_PLAN.md).
 claude-md-eval = "python scripts/claude_md_eval/run_suite.py"
 
+# Same eval, ported to Anthropic's built-in `claude plugin eval` harness — cases at
+# `evals/<id>/`, adapter reshapes plugin-eval JSON into the same effectiveness-log
+# schema. Costs ~$0.20/agent-run (real API spend, unlike the bespoke runner where cost
+# was invisible). See docs/todo/CLAUDE_MD_EVAL_PORT_PLAN.md — the bespoke tasks above
+# are retired in the port's P4 sunset once parity is confirmed.
+claude-md-eval-plugin-one = "python scripts/claude_md_eval/run_plugin_eval.py"
+claude-md-eval-plugin = "python scripts/claude_md_eval/run_plugin_eval_suite.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the

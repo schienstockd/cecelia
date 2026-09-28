@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: h5ad-write
+tags: ['compliance', 'h5ad']
+context:
+  scaffold_script: setup.sh
+execution:
+  max_turns: 20
+  timeout_seconds: 300
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Edit]
+prompt_file: prompt.md
+runs: 3

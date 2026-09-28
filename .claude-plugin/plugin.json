@@ -1,0 +1,8 @@
+{
+  "name": "cecelia-claude-md-eval",
+  "description": "Behavioural eval suite for CLAUDE.md compliance rules — see docs/todo/CLAUDE_MD_EVAL_PORT_PLAN.md.",
+  "version": "0.1.0",
+  "experimental": {
+    "evals": "evals"
+  }
+}
