@@ -70,9 +70,15 @@ export interface DenoiseTraining {
 
 export interface DenoiseManifest {
   kind: 'denoise-support'
+  // "pooled" (one model over all channels) or "perChannel" (one sub-model per channel — bundle).
+  // Absent on legacy pooled manifests written before the perChannel work; treat missing as pooled.
+  mode?: 'pooled' | 'perChannel' | string
   // A denoise model pools N channels into one training run (DENOISE_INTEGRATION_PLAN.md D3
   // amendment, measured on fXgbTl 2026-09-05); the list is what the vault label reads.
   channels?: string[]
+  // perChannel bundles only — the enumerated sub-models the inference resolver looks up.
+  // Names duplicate `channels`; the extra fields are on-disk paths that aren't user-relevant.
+  perChannel?: { index: number; name: string; slug: string; pt: string }[]
   arch?: DenoiseArch
   training?: DenoiseTraining
 }
@@ -119,10 +125,25 @@ export function denoiseTrainingSeries(m: DenoiseManifest | null | undefined): De
             stepValues: tr.stepLosses, steps: tr.stepIndices }]
 }
 
+const _stringify = (v: unknown): string => {
+  if (v === null || v === undefined) return ''
+  if (Array.isArray(v)) return v.map(_stringify).join(', ')
+  // A plain object (or class instance) hits String()'s [object Object] fallback — JSON keeps it
+  // readable so a future manifest key can't regress the Other bucket to the perChannel-style dump.
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
 const field = (label: string, value: unknown, mono = false): DetailField | null => {
   if (value === undefined || value === null) return null
-  const text = Array.isArray(value) ? value.join(', ') : String(value)
+  const text = _stringify(value)
   return text === '' ? null : { label, value: text, mono }
+}
+
+const MODE_LABEL: Record<string, string> = {
+  pooled:            'Pooled (one model, all channels)',
+  perChannel:        'Per channel (one sub-model each)',
+  'perChannel-sub':  'Per-channel sub-model',
 }
 
 const filter = (fs: (DetailField | null)[]): DetailField[] => fs.filter((x): x is DetailField => !!x)
@@ -138,7 +159,7 @@ export function denoiseModelDetailGroups(m: DenoiseManifest | null | undefined):
   const tr   = m.training ?? {}
 
   const known = new Set([
-    'kind', 'channels', 'arch', 'training',
+    'kind', 'mode', 'channels', 'perChannel', 'arch', 'training',
   ])
   const other = Object.entries(m).filter(([k]) => !known.has(k))
     .map(([k, v]) => field(k, v, true))
@@ -147,9 +168,12 @@ export function denoiseModelDetailGroups(m: DenoiseManifest | null | undefined):
   // the raw list is rendered by the Training convergence plot, so no need to dump the vector here.
   const nLosses = Array.isArray(tr.epochLosses) ? tr.epochLosses.length : null
 
+  const modeText = m.mode ? (MODE_LABEL[m.mode] ?? m.mode) : null
+
   return [
     { label: 'Model', fields: filter([
         field('Kind', m.kind),
+        field('Mode', modeText),
         field('Channels', m.channels),
     ])},
     { label: 'Architecture', fields: filter([

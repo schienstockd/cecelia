@@ -23,6 +23,17 @@ describe('modelDetailGroups', () => {
     expect(g).toEqual({ someLaterField: 'v2' })
   })
 
+  // Sibling of the denoise `[object Object]` regression (2026-09-29). Guard both here so a
+  // future array-of-objects top-level key never falls back to `Array.join` on the flow side.
+  it('unknown object-valued keys render as JSON, never [object Object]', () => {
+    const g = fieldsOf({ epochs: 30,
+      subModels: [{ name: 'a', pt: 'a.pt' }, { name: 'b', pt: 'b.pt' }],
+      provenance: { user: 'x', at: 't' } } as unknown as FlowManifest, 'Other')
+    expect(g.subModels).not.toContain('[object Object]')
+    expect(g.subModels).toBe('{"name":"a","pt":"a.pt"}, {"name":"b","pt":"b.pt"}')
+    expect(g.provenance).toBe('{"user":"x","at":"t"}')
+  })
+
   it('does not dump the loss curves into Other — they are the convergence plot', () => {
     expect(groupNames({ lossCurves: { total: [3, 2] } })).toEqual([])
   })

@@ -59,6 +59,40 @@ describe('denoiseModelDetailGroups', () => {
     const other = groups.find(g => g.label === 'Other')
     expect(other?.fields.map(f => f.label)).toContain('provenance')
   })
+
+  it('a perChannel bundle renders a Mode row and does NOT dump `perChannel` under Other', () => {
+    // Reported by user 2026-09-29: a perChannel `supp.MERTK` model showed
+    //   perChannel [object Object], [object Object], [object Object]
+    // under Other, because the top-level `perChannel: [{index,name,slug,pt},...]` array fell
+    // through the KNOWN set and was joined with commas. Regression guard for both the human
+    // Mode label and the dump-suppression.
+    const m: DenoiseManifest = {
+      kind: 'denoise-support', mode: 'perChannel',
+      channels: ['nuc-GFP', 'CD169-Kat'],
+      perChannel: [
+        { index: 0, name: 'nuc-GFP',   slug: 'nuc-GFP',   pt: 'nuc-GFP.pt' },
+        { index: 1, name: 'CD169-Kat', slug: 'CD169-Kat', pt: 'CD169-Kat.pt' },
+      ],
+    }
+    const groups = denoiseModelDetailGroups(m)
+    const model = groups.find(g => g.label === 'Model')
+    const modeRow = model?.fields.find(f => f.label === 'Mode')
+    expect(modeRow?.value).toMatch(/per channel/i)
+    const other = groups.find(g => g.label === 'Other')
+    const otherLabels = other?.fields.map(f => f.label) ?? []
+    expect(otherLabels).not.toContain('perChannel')
+    expect(otherLabels).not.toContain('mode')
+  })
+
+  it('an unknown object-valued key renders as JSON, never [object Object]', () => {
+    // Defence in depth for the same failure mode: if a later trainer adds a new object-valued
+    // top-level key without extending KNOWN, the Other bucket should stay legible.
+    const m = { kind: 'denoise-support', extra: { a: 1, b: 'x' } } as unknown as DenoiseManifest
+    const other = denoiseModelDetailGroups(m).find(g => g.label === 'Other')
+    const extra = other?.fields.find(f => f.label === 'extra')
+    expect(extra?.value).not.toContain('[object Object]')
+    expect(extra?.value).toBe('{"a":1,"b":"x"}')
+  })
 })
 
 describe('denoiseTrainingSeries', () => {
