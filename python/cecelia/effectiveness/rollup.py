@@ -28,6 +28,7 @@ import datetime as _dt
 import typing as _t
 
 from .git_context import pr_for_branch as _pr_for_branch
+from .log import OUTCOME_DISPLAY_ORDER
 
 _HEADER_TEMPLATE = """# AI-assist infrastructure — effectiveness
 
@@ -79,20 +80,6 @@ def _date_range(events: _t.Sequence[dict]) -> str:
         return ""
     tss.sort()
     return f", spanning {_fmt_ts(tss[0])} → {_fmt_ts(tss[-1])}"
-
-
-#: Display order for outcomes in the per-finding table and per-mechanism summary — the more
-#: consequential outcomes lead. `unresolved` is the pending state (a `_finding` row with no
-#: matching `_finding_resolved`); it sits last because a growing pile of unresolveds means
-#: outcome-tag discipline is slipping and warrants attention.
-_OUTCOME_DISPLAY_ORDER = (
-    "fixed_pre_commit",
-    "shipped_with_finding",
-    "false_positive",
-    "dropped_no_action",
-    "unresolved",
-    "no_outcome",  # only for pre-P2 finding rows that carried outcome inline
-)
 
 
 def _latest_resolutions_by_slug(
@@ -187,7 +174,7 @@ def _mechanism_section(
         lines.append(f"- **{len(runs)} runs**{median_txt}")
     if unique_findings:
         lines.append(f"- **{len(unique_findings)} findings** total")
-        for outcome in _OUTCOME_DISPLAY_ORDER:
+        for outcome in OUTCOME_DISPLAY_ORDER:
             n = outcomes.get(outcome, 0)
             if n:
                 lines.append(f"  - `{outcome}`: {n}")
@@ -282,7 +269,7 @@ def _render_finding_rows(
     for f in slugless_findings:
         rows.append(_row_for_slugless(f))
 
-    order_index = {o: i for i, o in enumerate(_OUTCOME_DISPLAY_ORDER)}
+    order_index = {o: i for i, o in enumerate(OUTCOME_DISPLAY_ORDER)}
     rows.sort(key=lambda r: (order_index.get(r[0], 99), r[1]))
     for _, row in rows:
         lines.append(row)

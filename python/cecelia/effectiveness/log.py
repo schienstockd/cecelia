@@ -90,6 +90,21 @@ OUTCOME_VOCABULARY = frozenset({
     "dropped_no_action",
 })
 
+#: Display order for outcomes in the rollup + live console — most-consequential first, with the
+#: two pseudo-outcomes trailing. `unresolved` is a pending `_finding` with no matching
+#: `_finding_resolved`; `no_outcome` is a pre-P2 legacy row that carried outcome inline. Both
+#: sit last because a growing pile signals outcome-tag discipline slipping. Public because
+#: two renderers (`rollup.py` markdown table, `console.py` cockpit header) walk it — a second
+#: copy in either was the drift pattern convention-check catches.
+OUTCOME_DISPLAY_ORDER: tuple[str, ...] = (
+    "fixed_pre_commit",
+    "shipped_with_finding",
+    "false_positive",
+    "dropped_no_action",
+    "unresolved",
+    "no_outcome",
+)
+
 _DEFAULT_LOG_PATH = "~/.cecelia-effectiveness/events.jsonl"
 
 

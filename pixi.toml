@@ -306,6 +306,16 @@ audit-rollup = "python scripts/audit_rollup.py"
 # and appends to the commit message. See CLAUDE.md → Git & commits.
 recital = "python scripts/recital.py"
 
+# Live console for the effectiveness log — the recital-side twin of `pixi run console`
+# (which watches scheduler tasks). TTY: full-screen dashboard with per-mechanism counters
+# (runs, findings by marker, resolved by outcome), a recent-findings pane with the wrapped
+# description of each flag, and an activity stream at the bottom. Pipe / --stream: append-only
+# formatted event log so `... | tee out.log` gives a clean file. Reads
+# ~/.cecelia-effectiveness/events.jsonl (or $CECELIA_EFFECTIVENESS_LOG). `-- --no-follow` for
+# a one-shot snapshot; `-- --tail 0` seeds from the whole history; `-- --since 24h` seeds
+# from the last day; `-- --width COLS` overrides the wrap column.
+recital-console = "python -m cecelia.effectiveness.console"
+
 # Behavioural compliance eval — spawn N fresh `claude -p` agents on ONE canned prompt,
 # capture the diff, score it via regex against the prompt's compliant/anti signals, and emit
 # rows to the effectiveness log with the CLAUDE.md blob SHA. `pixi run claude-md-eval-one
