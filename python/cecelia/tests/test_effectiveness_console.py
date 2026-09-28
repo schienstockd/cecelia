@@ -108,6 +108,78 @@ class FormatEventTest(unittest.TestCase):
         self.assertIn("@abc1234", line)
         self.assertNotIn("deadbeef", line)
 
+    def test_errored_run_renders_as_ERR_verb(self):
+        # `recital.py::_run_reviewer` puts the exception string on `payload.error` when the
+        # reviewer subprocess fails hard (timeout, non-zero exit) but still emits the `_run`
+        # row so the fold stays legible. The console must distinguish an errored spawn from
+        # a genuine multi-minute review — otherwise a 180s "RUN 3m 00s" reads as reviewer
+        # work when it was actually a claude timeout.
+        event = {
+            "event": "fanout_audit_run", "ts": "2026-09-27T10:00:00Z",
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+            "payload": {"duration_s": 180.0, "error": "claude timed out after 180.0s"},
+        }
+        line = format_event(event, use_colour=False)
+        self.assertIn("ERR", line)
+        self.assertNotIn("RUN", line)
+        # Duration still shown — the reader wants to know how long the errored run took.
+        self.assertIn("3m 00s", line)
+
+    def test_claude_md_eval_error_verdict_renders_as_ERR(self):
+        # `claude_md_eval_run` uses `payload.verdict == "error"` for the same signal in a
+        # different field. Same UI, one source of truth for what "errored" means to the reader.
+        event = {
+            "event": "claude_md_eval_run", "ts": "2026-09-27T10:00:00Z",
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+            "payload": {"duration_s": 45.0, "verdict": "error", "prompt_id": "p"},
+        }
+        line = format_event(event, use_colour=False)
+        self.assertIn("ERR", line)
+
+    def test_errored_citation_currency_run_still_renders(self):
+        # Quiet citation-currency runs are normally dropped (no warnings, no staged files),
+        # but if the mechanism ERRORED that IS the signal — must not be silently swallowed.
+        event = {
+            "event": "citation_currency_run", "ts": "2026-09-27T10:00:00Z",
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+            "payload": {"duration_s": 0.05, "citations_indexed": 26,
+                        "staged_files_checked": 0, "warnings_emitted": 0,
+                        "error": "citation-currency crashed"},
+        }
+        line = format_event(event, use_colour=False)
+        self.assertIsNotNone(line)
+        self.assertIn("ERR", line)
+
+    def test_normal_run_still_shows_RUN(self):
+        # Regression guard — a healthy run with no error field must keep saying RUN.
+        event = {
+            "event": "fanout_audit_run", "ts": "2026-09-27T10:00:00Z",
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+            "payload": {"duration_s": 60.0},
+        }
+        line = format_event(event, use_colour=False)
+        self.assertIn("RUN", line)
+        self.assertNotIn("ERR", line)
+
+    def test_timestamp_rendered_in_local_time(self):
+        # The log stores UTC (`log.py::_iso_now`); a Sydney reader (UTC+10/+11) glancing at
+        # a UTC clock on the console was reading "20:00" for something they ran at 06:00.
+        # `_fmt_hms` must convert to local for display. Pin by comparing to the local
+        # rendering of the same instant computed here, so the test passes in every zone
+        # (CI runs in UTC — where local == UTC — and this still holds).
+        ev = {"event": "fanout_audit_run", "ts": "2026-09-27T10:00:00Z",
+              "pr": None, "branch": None, "commit": None,
+              "session": "s", "source": "live", "schema_version": 1,
+              "payload": {"duration_s": 5.0}}
+        expected_hms = (_dt.datetime(2026, 9, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
+                        .astimezone().strftime("%H:%M:%S"))
+        line = format_event(ev, use_colour=False)
+        self.assertIn(expected_hms, line)
+
     def test_citation_currency_quiet_run_is_dropped(self):
         # A citation-currency run with no warnings and no staged files carries no reader
         # signal — same reason `plan_logged` is dropped. Every recital emits one; showing

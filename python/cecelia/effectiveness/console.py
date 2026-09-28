@@ -128,9 +128,15 @@ _OUTCOME_COLOUR: dict[str, str] = {
 
 
 def _fmt_hms(ts: str) -> str:
-    """Trim ISO timestamp to HH:MM:SS UTC; fall back to raw if unparseable."""
+    """Trim ISO timestamp to HH:MM:SS in the reader's local time.
+
+    The log stores UTC (see `log.py::_iso_now`). The console reads it in a local terminal,
+    where a UTC clock looked odd next to the machine's own — a reviewer that ran at 15:00
+    local rendered as "05:00" for a Sydney reader, which broke the "when did this happen"
+    intuition. `.astimezone()` with no arg converts to the process's local zone.
+    """
     try:
-        return _dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%H:%M:%S")
+        return _dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone().strftime("%H:%M:%S")
     except (ValueError, AttributeError):
         return ts[-8:] if ts else "--:--:--"
 
@@ -365,7 +371,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     """Build the full-screen dashboard as one string, sized to fit `height` rows.
 
     Layout (mirrors `task_console.jl::render()`):
-      - Title line: name · log path · current UTC time
+      - Title line: name · log path · current local time
       - Header counters: total runs · total findings by marker · total resolved by outcome
       - `── by mechanism ──` block: one row per mechanism
       - `── recent findings ──` pane: newest N findings with capped descriptions
@@ -377,12 +383,13 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     activity pane. If the terminal is genuinely tiny (< ~15 rows) the activity pane collapses
     to zero and the findings pane keeps one finding; below that only the counters remain.
     """
-    now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    # Local time — matches per-event rows (`_fmt_hms`), so the reader compares like-for-like.
+    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # ── Chrome (unbudgeted — a terminal that can't fit the counters isn't usable anyway) ──
     title = _col(_BOLD, "Cecelia recital console", use_colour=use_colour)
     path_str = _col(_DIM, str(log_path), use_colour=use_colour)
-    time_str = _col(_GREY, now + " UTC", use_colour=use_colour)
+    time_str = _col(_GREY, now, use_colour=use_colour)
     chrome: list[str] = [f"{title}  {path_str}   {time_str}"]
 
     total_runs = sum(state.tally.runs.values())
@@ -535,14 +542,25 @@ def format_event(event: dict, *, use_colour: bool = True,
     if name.endswith("_run"):
         duration = payload.get("duration_s")
         dur_str = _fmt_duration(duration) if isinstance(duration, (int, float)) else "?"
-        # Signal-only extras — a quiet citation-currency run (0 warnings, 0 staged files) has
-        # nothing for a reader to act on, so drop the whole row. Same principle for empty
-        # convention / fanout runs: the `_finding` rows carry the signal, `_run` says only
-        # "the reviewer ran" and matters chiefly when there are counts to eyeball.
+        # Errored recital runs — `recital.py::_run_reviewer` puts the exception string in
+        # `payload.error` when the reviewer subprocess fails hard (non-zero exit, timeout,
+        # missing CLI) but still emits the `_run` row so the fold is legible. Show them as
+        # `ERR` in red so the reader (and Sonnet reviewing the stream) can tell a timed-out
+        # spawn from a genuine 3-minute review. Also honours `payload.verdict == "error"`
+        # from `claude_md_eval_run`, which uses the same signal in a different field.
+        errored = (isinstance(payload.get("error"), str) and bool(payload["error"])) \
+            or payload.get("verdict") == "error"
+        run_verb = _col(_RED, "ERR ", use_colour=use_colour) if errored \
+            else _verb("RUN")
         if name == "citation_currency_run":
+            # Signal-only extras — a quiet citation-currency run (0 warnings, 0 staged files)
+            # has nothing for a reader to act on, so drop the whole row. Same principle for
+            # empty convention / fanout runs: the `_finding` rows carry the signal, `_run`
+            # says only "the reviewer ran" and matters chiefly when there are counts to
+            # eyeball. Errored runs render regardless — an ERR row IS the signal.
             warnings = payload.get("warnings_emitted", 0) or 0
             staged = payload.get("staged_files_checked", 0) or 0
-            if warnings == 0 and staged == 0:
+            if warnings == 0 and staged == 0 and not errored:
                 return None
             extras = []
             if warnings:
@@ -550,10 +568,10 @@ def format_event(event: dict, *, use_colour: bool = True,
             if staged:
                 extras.append(f"{staged} staged")
             extras_str = "  " + "  ".join(extras) if extras else ""
-            return f"{ts} {tag} {_verb('RUN')} {dur_str}{extras_str}{ctx_str}"
+            return f"{ts} {tag} {run_verb} {dur_str}{extras_str}{ctx_str}"
         # For fanout/convention runs the timing is the whole `_run` payload — findings render
         # separately. Suppress extras to keep the row narrow.
-        return f"{ts} {tag} {_verb('RUN')} {dur_str}{ctx_str}"
+        return f"{ts} {tag} {run_verb} {dur_str}{ctx_str}"
 
     if name == "ratchet_hit":
         rid = payload.get("ratchet_id", "?")
@@ -709,7 +727,7 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                         *, out: _t.TextIO, follow: bool) -> int:
     """Full-screen dashboard — clear + redraw on every event and every _REFRESH_TICK.
 
-    The refresh tick exists to keep the title line's `HH:MM:SS UTC` alive even when nothing
+    The refresh tick exists to keep the title line's `HH:MM:SS` clock alive even when nothing
     is landing — same reason task_console.jl redraws on a timer, not just on frames.
     """
     state = DashboardState()
