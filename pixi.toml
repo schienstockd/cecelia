@@ -351,6 +351,14 @@ julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.insta
 # pass `--check` for report-only. Non-zero exit on any red row so CI/install wrappers can gate.
 doctor = "julia --startup-file=no scripts/doctor.jl"
 
+# Create a fully bootstrapped sibling worktree — `git worktree add` + `.env` copy + a fresh
+# per-worktree `pixi install`, then delegates `.env`/frontend/deps verification to `pixi run
+# doctor` in the new tree (which auto-fixes npm ci). Bootstrap owns only what doctor cannot do
+# (no tree to audit yet, no source to copy `.env` from, no per-worktree `.pixi` yet).
+# Usage: `pixi run bootstrap-worktree <name> [<branch>] [<ref>]`. See docs/DEV.md → Creating a
+# new worktree.
+bootstrap-worktree = "julia --startup-file=no scripts/bootstrap_worktree.jl"
+
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
 # orphaning long-lived children (originally the napari bridge; see docs/SHIPPING.md).
 #
