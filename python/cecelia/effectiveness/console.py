@@ -33,7 +33,7 @@ import textwrap
 import time
 import typing as _t
 
-from .log import OUTCOME_DISPLAY_ORDER, default_log_path, read_events
+from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
 
 # ── Palette ────────────────────────────────────────────────────────────────────────────────
 # Swatches loaded from `share/console_palette.json` via `palette.py`, so this console and
@@ -227,6 +227,9 @@ class _Tally:
 
     Grouped by mechanism (`fnut`/`conv`/`cite`/`ratc`), each mechanism carries:
       - `runs`: how many `_run` events landed (including the ones we dropped as quiet).
+      - `errored_runs`: subset of `runs` classified as errored by `log.is_errored_run`.
+        Kept separately so a failed reviewer isn't rendered as a clean pass; parallels the
+        split in `rollup.py::_mechanism_section`.
       - `findings`: total finding events, broken down by marker (`confirmed`/`should reuse`).
       - `resolved`: total `_finding_resolved` events, broken down by outcome.
 
@@ -237,6 +240,7 @@ class _Tally:
 
     def __init__(self) -> None:
         self.runs: dict[str, int] = {}
+        self.errored_runs: dict[str, int] = {}
         self.findings: dict[str, dict[str, int]] = {}
         self.resolved: dict[str, dict[str, int]] = {}
 
@@ -250,6 +254,8 @@ class _Tally:
         key = self._key(name)
         if name.endswith("_run"):
             self.runs[key] = self.runs.get(key, 0) + 1
+            if is_errored_run(payload):
+                self.errored_runs[key] = self.errored_runs.get(key, 0) + 1
         elif name.endswith("_finding_resolved"):
             outcome = payload.get("outcome", "unresolved")
             self.resolved.setdefault(key, {})[outcome] = self.resolved.get(key, {}).get(outcome, 0) + 1
@@ -273,7 +279,11 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
     parts: list[str] = []
     runs = tally.runs.get(mech, 0)
     if runs:
-        parts.append(f"{runs} run{'' if runs == 1 else 's'}")
+        errored = tally.errored_runs.get(mech, 0)
+        run_txt = f"{runs} run{'' if runs == 1 else 's'}"
+        if errored:
+            run_txt += _col(_RED, f" ({errored} errored)", use_colour=use_colour)
+        parts.append(run_txt)
     fnd = tally.findings.get(mech, {})
     total_findings = sum(fnd.values())
     if total_findings:
@@ -393,12 +403,16 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     chrome: list[str] = [f"{title}  {path_str}   {time_str}"]
 
     total_runs = sum(state.tally.runs.values())
+    total_errored = sum(state.tally.errored_runs.values())
     total_findings = sum(sum(v.values()) for v in state.tally.findings.values())
     confirmed = sum(v.get("confirmed", 0) for v in state.tally.findings.values())
     should_reuse = sum(v.get("should reuse", 0) for v in state.tally.findings.values())
     header_parts: list[str] = []
     if total_runs:
-        header_parts.append(_col(_CYAN, f"{total_runs} runs", use_colour=use_colour))
+        run_txt = f"{total_runs} runs"
+        if total_errored:
+            run_txt += f" ({total_errored} errored)"
+        header_parts.append(_col(_RED if total_errored else _CYAN, run_txt, use_colour=use_colour))
     if total_findings:
         header_parts.append(_col(_RED if confirmed else _YELLOW,
                                  f"{total_findings} findings", use_colour=use_colour))
@@ -542,14 +556,10 @@ def format_event(event: dict, *, use_colour: bool = True,
     if name.endswith("_run"):
         duration = payload.get("duration_s")
         dur_str = _fmt_duration(duration) if isinstance(duration, (int, float)) else "?"
-        # Errored recital runs — `recital.py::_run_reviewer` puts the exception string in
-        # `payload.error` when the reviewer subprocess fails hard (non-zero exit, timeout,
-        # missing CLI) but still emits the `_run` row so the fold is legible. Show them as
-        # `ERR` in red so the reader (and Sonnet reviewing the stream) can tell a timed-out
-        # spawn from a genuine 3-minute review. Also honours `payload.verdict == "error"`
-        # from `claude_md_eval_run`, which uses the same signal in a different field.
-        errored = (isinstance(payload.get("error"), str) and bool(payload["error"])) \
-            or payload.get("verdict") == "error"
+        # Errored reviewer runs (timeout / non-zero exit / `verdict:"error"`) render as
+        # `ERR` in red so the reader can tell a failed spawn from a genuine slow review.
+        # See `is_errored_run` for the shared definition — the header tally uses the same.
+        errored = is_errored_run(payload)
         run_verb = _col(_RED, "ERR ", use_colour=use_colour) if errored \
             else _verb("RUN")
         if name == "citation_currency_run":
