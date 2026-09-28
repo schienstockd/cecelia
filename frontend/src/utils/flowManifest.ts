@@ -125,8 +125,16 @@ const KNOWN = new Set([
   'physicalScales', 'physicalScaleSource', 'coastalBuild',
 ])
 
-const list = (v: unknown): string =>
-  Array.isArray(v) ? v.join(', ') : v === undefined || v === null ? '' : String(v)
+// Array.isArray FIRST — an array of objects must NOT hit `String(v)` (renders as `[object Object]`)
+// or the top-level ternary's object branch (a raw array wouldn't reach it anyway). JSON-encode plain
+// objects so an unknown object-valued top-level key can't regress the Other bucket to the
+// perChannel-style dump. Mirror of `_stringify` in `denoiseManifest.ts`.
+const list = (v: unknown): string => {
+  if (v === undefined || v === null) return ''
+  if (Array.isArray(v)) return v.map(list).join(', ')
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
 
 /**
  * A row, or `null` when the manifest has nothing to say. An absent field is DROPPED rather than
@@ -135,7 +143,7 @@ const list = (v: unknown): string =>
  */
 function field(label: string, value: unknown, mono = false): DetailField | null {
   if (value === undefined || value === null) return null
-  const text = Array.isArray(value) ? list(value) : String(value)
+  const text = list(value)
   return text === '' ? null : { label, value: text, mono }
 }
 
@@ -319,8 +327,7 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
   // still be a field inference reads.
   const other: (DetailField | null)[] = Object.entries(m)
     .filter(([k]) => !KNOWN.has(k))
-    .map(([k, v]) => field(k, Array.isArray(v) ? list(v) : typeof v === 'object'
-      ? JSON.stringify(v) : v, true))
+    .map(([k, v]) => field(k, v, true))
 
   return ([
     { label: 'Input', fields: input },
