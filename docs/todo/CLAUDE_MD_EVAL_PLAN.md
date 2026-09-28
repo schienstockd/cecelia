@@ -1,14 +1,51 @@
 # CLAUDE.md compliance eval — plan
 
 **Status:** P1 (single-prompt runner) + P2 driver + 9-of-10-prompt catalog **SHIPPED** on PR
-#1264 (2026-09-27). One prompt (`discovery-first`) deferred pending tool-log-inspection
-scaffolding. Rollup markdown (`docs/ai-assist/CLAUDE_MD_EVAL.md`) still unbuilt — deferred as
-P2.5. P3 (cron) still unbuilt.
+#1264 (2026-09-27). One prompt (`discovery-first`) originally deferred pending tool-log
+inspection — **now built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28,
+this branch). **P2.5 rollup SHIPPED** (2026-09-28, this branch) — renders
+[`docs/ai-assist/CLAUDE_MD_EVAL.md`](../ai-assist/CLAUDE_MD_EVAL.md) at the end of every pass
++ on demand via `pixi run claude-md-eval-rollup`. P3 (cron) still unbuilt.
+
+## Sonnet 2026-09-28 discipline additions
+
+Following the abandoned plugin-eval port (PR #1272, closed — the `claude plugin eval` sandbox
+doesn't load CLAUDE.md as system context, which invalidates the whole point of a compliance
+eval; see the PR body for the trace and diagnosis), three selective backports to the bespoke
+runner:
+
+- **Transcript-reader for `tool_order` grader.** `scripts/claude_md_eval/transcript.py`
+  parses `claude -p --output-format=stream-json --verbose` stdout, exposes ordered
+  tool_calls list + `TranscriptSignals.tool_order_passes(before_tool, before_arg_match,
+  after_tool)`. Prompts declare `tool_order_before_tool` / `tool_order_before_arg_match` /
+  `tool_order_after_tool` in frontmatter; scorer combines with regex graders (compliant iff
+  ALL declared graders pass).
+- **CLAUDE.md ablation via worktree cleanup.** `run_prompt.py --arm {with,without}`;
+  `_make_detached_worktree(arm=without)` strips every CLAUDE.md from the throwaway
+  worktree before spawn. `pixi run claude-md-eval-ablation` fires suite twice + computes
+  per-prompt Δ + emits `claude_md_eval_ablation` row. Same loading mechanism as production
+  in both arms — Claude Code loads CLAUDE.md from cwd; we just make it absent in
+  without-arm.
+- **Cost + turns capture** from the same stream-json parse. Emitted as `cost_usd` +
+  `turns` on every `claude_md_eval_run` row. Would have caught the "compliance costs 60%
+  more than the bypass" pattern natively.
+
+**Canary rule in CLAUDE.md** (Sonnet-suggested pre-flight). Made-up marker
+(`# canary: CLAUDE.md loaded`) that only exists in CLAUDE.md prose. `canary` eval prompt
+asks the agent to create `python/cecelia/analysis_scratch/canary_probe.py`; grader checks
+for the marker. If a with-arm canary run scores noncompliant, CLAUDE.md isn't reaching
+the agent and every other run in the same session is suspect. Run canary once before
+paying for a full ablation pass.
+
+**D12 discipline** (formerly "N≥3 before quoting Δ"): **N≥3 AND read at least one trace
+per arm before quoting Δ anywhere.** N≥3 alone didn't catch the plugin-eval "CLAUDE.md
+never loaded" class — trace inspection would have. The trace is the ground truth; the
+scoring output is a derivative signal that can be right for the wrong reason (e.g. the
+2026-09-28 h5ad-read Δ=1 claim — retracted, likely artefact).
 
 Baseline behavioural datum: `h5ad-read` scores **3/3 compliant** at CLAUDE.md blob
-`2f05fefc…` — three fresh `claude -p` agents, given only the task text, all reached for
-`LabelPropsView` unprompted. Full catalog rerun (`pixi run claude-md-eval`) will produce the
-first cross-rule number.
+`2f05fefc…` (via the bespoke runner in a real worktree — production loading semantics).
+Full catalog rerun (`pixi run claude-md-eval`) will produce the first cross-rule number.
 
 Follow-up from the enforcement-coverage work in PRs #1258 (recital SHA-anchoring) and #1263
 (h5ad / utf-8 / Windows helpers / run_py ratchets). Written to be picked up cold by another
@@ -180,9 +217,13 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
 - **P2 driver SHIPPED** — full runner (`pixi run claude-md-eval`) iterates the catalog, emits
   one `claude_md_eval_suite` summary per invocation, prints per-prompt table to stdout. Per-
   prompt failure records `error` verdict and doesn't stop the suite.
-- **P2.5 rollup** — DEFERRED. Writing to `docs/ai-assist/CLAUDE_MD_EVAL.md` (trend annotated
-  by CLAUDE.md blob SHA changes) is still stdout-only. Ship once we have >1 pass's data.
-- **P3** — DEFERRED. Optional cron/schedule + trend-annotation in the rollup.
+- **P2.5 rollup SHIPPED** (2026-09-28, this branch) — `scripts/claude_md_eval/rollup.py`
+  renders [`docs/ai-assist/CLAUDE_MD_EVAL.md`](../ai-assist/CLAUDE_MD_EVAL.md): latest suite
+  table, latest ablation delta (when an `_ablation` row exists), failing-rule callouts,
+  multi-pass trend annotated by CLAUDE.md blob SHA. Auto-rendered at the end of every
+  `pixi run claude-md-eval` pass; standalone regen via `pixi run claude-md-eval-rollup`.
+  Not auto-committed — user reviews the diff.
+- **P3** — DEFERRED. Optional cron/schedule for weekly `pixi run claude-md-eval`.
 
 ### One prompt still deferred: `discovery-first`
 

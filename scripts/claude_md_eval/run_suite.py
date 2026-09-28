@@ -64,15 +64,15 @@ def _filter_ids(all_ids: list[str], only: str | None, exclude: str | None) -> li
 
 def run_suite(
     *, runs: int, timeout: int, claude_path: str | None,
-    worktree_root: pathlib.Path, keep_worktrees: bool,
+    worktree_root: pathlib.Path, keep_worktrees: bool, arm: str = "with",
     only: str | None = None, exclude: str | None = None,
     run_one: _t.Callable[..., list[dict]] | None = None,
 ) -> dict:
     """Iterate every prompt, invoke run_one per prompt, emit one suite summary row.
 
     `run_one` is an injectable seam so tests bypass the real `claude -p` spawn. Default is the
-    P1 `run_one_prompt` function. Returns the summary payload as a dict (also emitted as a
-    `claude_md_eval_suite` row).
+    P1 `run_one_prompt` function. `arm` is threaded through (with/without CLAUDE.md ablation).
+    Returns the summary payload as a dict (also emitted as a `claude_md_eval_suite` row).
     """
     run_one = run_one or _run_prompt.run_one_prompt
     ids = _filter_ids(_list_prompt_ids(), only, exclude)
@@ -80,25 +80,29 @@ def run_suite(
         raise SystemExit("no prompts to run (catalog empty or filtered out)")
 
     blob_sha = _run_prompt.claude_md_blob_sha(_REPO)
-    per_prompt: dict[str, dict[str, int]] = {}
+    per_prompt: dict[str, dict] = {}
     start = time.monotonic()
     for prompt_id in ids:
-        print(f"\n=== {prompt_id} ({runs} run{'s' if runs != 1 else ''}) ===", flush=True)
+        print(f"\n=== {prompt_id} ({runs} run{'s' if runs != 1 else ''}, arm={arm}) ===",
+              flush=True)
         try:
             rows = run_one(
                 prompt_id, runs=runs, timeout=timeout,
                 claude_path=claude_path, worktree_root=worktree_root,
-                keep_worktrees=keep_worktrees,
+                keep_worktrees=keep_worktrees, arm=arm,
             )
         except Exception as e:  # noqa: BLE001 — best-effort: one prompt's failure must not wedge the whole suite
             print(f"  ERROR: {type(e).__name__}: {e}", flush=True)
-            per_prompt[prompt_id] = {"compliant": 0, "noncompliant": 0, "error": runs}
+            per_prompt[prompt_id] = {"compliant": 0, "noncompliant": 0, "error": runs,
+                                     "cost_usd": 0.0}
             continue
         verdicts = [r["payload"]["verdict"] for r in rows]
+        cost = sum(r["payload"].get("cost_usd", 0) for r in rows)
         per_prompt[prompt_id] = {
             "compliant": verdicts.count("compliant"),
             "noncompliant": verdicts.count("noncompliant"),
             "error": verdicts.count("error"),
+            "cost_usd": round(cost, 4),
         }
     duration = time.monotonic() - start
 
@@ -106,35 +110,59 @@ def run_suite(
         "compliant": sum(p["compliant"] for p in per_prompt.values()),
         "noncompliant": sum(p["noncompliant"] for p in per_prompt.values()),
         "error": sum(p["error"] for p in per_prompt.values()),
+        "cost_usd": round(sum(p["cost_usd"] for p in per_prompt.values()), 4),
     }
     summary_payload = {
         "prompt_ids": ids,
         "runs_per_prompt": runs,
+        "arm": arm,
         "per_prompt": per_prompt,
         "totals": totals,
         "duration_s": round(duration, 2),
     }
     append_event("claude_md_eval_suite", summary_payload,
                  commit=blob_sha, branch=_current_branch())
-    _print_summary(ids, per_prompt, totals, runs, duration, blob_sha)
+    _print_summary(ids, per_prompt, totals, runs, arm, duration, blob_sha)
+    _render_rollup_safely()
     return summary_payload
 
 
-def _print_summary(ids: list[str], per_prompt: dict[str, dict[str, int]],
-                   totals: dict[str, int], runs: int, duration: float,
+def _render_rollup_safely() -> None:
+    """Regenerate `docs/ai-assist/CLAUDE_MD_EVAL.md` at the end of every pass.
+
+    Wrapped so a rollup-render failure never masks a successful suite — the suite row
+    is already appended before we get here; the artifact is a side-effect, not the
+    contract. Errors print to stderr and are otherwise swallowed.
+    """
+    try:
+        _render_rollup_mod = _importlib_util.spec_from_file_location(
+            "render_rollup", _REPO / "scripts" / "claude_md_eval" / "render_rollup.py")
+        mod = _importlib_util.module_from_spec(_render_rollup_mod)
+        _render_rollup_mod.loader.exec_module(mod)
+        target = mod.render_to_file()
+        print(f"rollup: {target}", flush=True)
+    except Exception as e:  # noqa: BLE001 — best-effort side-effect
+        print(f"rollup render failed ({type(e).__name__}): {e}", file=sys.stderr,
+              flush=True)
+
+
+def _print_summary(ids: list[str], per_prompt: dict[str, dict],
+                   totals: dict, runs: int, arm: str, duration: float,
                    blob_sha: str | None) -> None:
     total_runs = len(ids) * runs
     print("", flush=True)
-    print(f"suite summary — {len(ids)} prompt(s) × {runs} run(s) = {total_runs} spawn(s), "
-          f"{duration:.1f}s wall clock, CLAUDE.md blob {blob_sha or '<unknown>'}", flush=True)
+    print(f"suite summary (arm={arm}) — {len(ids)} prompt(s) × {runs} run(s) = {total_runs} "
+          f"spawn(s), {duration:.1f}s wall clock, CLAUDE.md blob {blob_sha or '<unknown>'}, "
+          f"total cost ${totals['cost_usd']:.2f}", flush=True)
     max_id = max((len(i) for i in ids), default=10)
-    print(f"  {'prompt':<{max_id}}  compliant  noncompliant  error", flush=True)
+    print(f"  {'prompt':<{max_id}}  compliant  noncompliant  error  cost", flush=True)
     for prompt_id in ids:
-        c = per_prompt.get(prompt_id, {"compliant": 0, "noncompliant": 0, "error": 0})
+        c = per_prompt.get(prompt_id,
+                           {"compliant": 0, "noncompliant": 0, "error": 0, "cost_usd": 0})
         print(f"  {prompt_id:<{max_id}}  {c['compliant']:>9}  {c['noncompliant']:>12}  "
-              f"{c['error']:>5}", flush=True)
+              f"{c['error']:>5}  ${c['cost_usd']:>6.3f}", flush=True)
     print(f"  {'TOTAL':<{max_id}}  {totals['compliant']:>9}  {totals['noncompliant']:>12}  "
-          f"{totals['error']:>5}", flush=True)
+          f"{totals['error']:>5}  ${totals['cost_usd']:>6.2f}", flush=True)
 
 
 def main() -> int:
@@ -147,6 +175,10 @@ def main() -> int:
                     help="Parent dir for throwaway worktrees (default: sibling of repo)")
     ap.add_argument("--keep-worktrees", action="store_true",
                     help="Don't remove worktrees after each run (debugging).")
+    ap.add_argument("--arm", choices=("with", "without"), default="with",
+                    help="CLAUDE.md ablation arm — `with` (default) keeps CLAUDE.md in the "
+                         "worktree, `without` strips it before spawn. Use "
+                         "`pixi run claude-md-eval-ablation` to fire both arms + compute delta.")
     ap.add_argument("--only", help="Comma-separated prompt ids to run (default: all).")
     ap.add_argument("--exclude", help="Comma-separated prompt ids to skip.")
     ap.add_argument("--dry-run", action="store_true",
@@ -155,17 +187,17 @@ def main() -> int:
 
     ids = _filter_ids(_list_prompt_ids(), args.only, args.exclude)
     if args.dry_run:
-        print(f"dry-run: {len(ids)} prompt(s), {args.runs} run(s) each")
+        print(f"dry-run (arm={args.arm}): {len(ids)} prompt(s), {args.runs} run(s) each")
         for i in ids:
             print(f"  {i}")
         return 0
 
-    print(f"claude-md-eval: {len(ids)} prompt(s) × {args.runs} run(s), "
+    print(f"claude-md-eval: {len(ids)} prompt(s) × {args.runs} run(s), arm={args.arm} "
           f"timeout={args.timeout}s claude={args.claude_path}", flush=True)
     run_suite(
         runs=args.runs, timeout=args.timeout,
         claude_path=args.claude_path, worktree_root=args.worktree_root,
-        keep_worktrees=args.keep_worktrees,
+        keep_worktrees=args.keep_worktrees, arm=args.arm,
         only=args.only, exclude=args.exclude,
     )
     return 0

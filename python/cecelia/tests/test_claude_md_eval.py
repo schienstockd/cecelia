@@ -75,11 +75,36 @@ class PromptParseTest(unittest.TestCase):
             self.runner.parse_prompt(p)
 
     def test_missing_required_key_raises(self):
-        p = self.tmpdir / "no-anti.md"
-        p.write_text("---\nid: x\nrule: R\ncompliant_signal: A\n---\nbody\n", encoding="utf-8")
+        # `id` and `rule` are the only always-required keys. Graders (`compliant_signal` /
+        # `anti_signal` regex OR `tool_order_before_tool` / `tool_order_after_tool`) are
+        # optional individually but the prompt MUST declare at least one — see the D-additions
+        # in docs/todo/CLAUDE_MD_EVAL_PLAN.md (2026-09-28).
+        p = self.tmpdir / "no-rule.md"
+        p.write_text("---\nid: x\ncompliant_signal: A\nanti_signal: B\n---\nbody\n",
+                     encoding="utf-8")
         with self.assertRaises(self.runner.PromptParseError) as cm:
             self.runner.parse_prompt(p)
-        self.assertIn("anti_signal", str(cm.exception))
+        self.assertIn("rule", str(cm.exception))
+
+    def test_prompt_with_no_grader_raises(self):
+        # Neither regex signals nor tool_order fields — nothing to score against.
+        p = self.tmpdir / "no-grader.md"
+        p.write_text("---\nid: x\nrule: R\n---\nbody\n", encoding="utf-8")
+        with self.assertRaises(self.runner.PromptParseError) as cm:
+            self.runner.parse_prompt(p)
+        self.assertIn("grader", str(cm.exception))
+
+    def test_tool_order_only_prompt_parses(self):
+        # Discovery-first is pure tool-order — no regex signals. Must parse cleanly.
+        p = self.tmpdir / "tool-order-only.md"
+        p.write_text(
+            "---\nid: x\nrule: R\ntool_order_before_tool: Grep\n"
+            "tool_order_before_arg_match: inventory\ntool_order_after_tool: Write\n---\nbody\n",
+            encoding="utf-8",
+        )
+        meta, _ = self.runner.parse_prompt(p)
+        self.assertEqual(meta["tool_order_before_tool"], "Grep")
+        self.assertEqual(meta["tool_order_after_tool"], "Write")
 
     def test_comment_lines_in_frontmatter_are_skipped(self):
         p = self.tmpdir / "commented.md"
@@ -146,7 +171,10 @@ class RunOnePromptTest(unittest.TestCase):
         self.addCleanup(self._prompts_patch.stop)
         # Stub worktree creation — return a subdir of tmp. Stub removal.
         self._wt_seq = 0
-        def fake_make(primary_repo, wt_root, prompt_id):
+        def fake_make(primary_repo, wt_root, prompt_id, *, arm="with"):
+            # `arm` kwarg added 2026-09-28 (ablation via worktree cleanup — D-additions in
+            # docs/todo/CLAUDE_MD_EVAL_PLAN.md). Accepted here but ignored: tests never
+            # populate the fake worktree with a CLAUDE.md, so there's nothing to strip.
             self._wt_seq += 1
             dest = self.tmpdir / f"wt-{self._wt_seq}"
             dest.mkdir()

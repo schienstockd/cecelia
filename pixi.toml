@@ -314,9 +314,22 @@ claude-md-eval-one = "python scripts/claude_md_eval/run_prompt.py"
 
 # Behavioural compliance eval — iterate the full prompt catalog under
 # `scripts/claude_md_eval/prompts/`, spawn N fresh `claude -p` agents per prompt (default
-# N=3), score each diff, and emit one `claude_md_eval_suite` summary to the effectiveness
-# log. `pixi run claude-md-eval` (see docs/todo/CLAUDE_MD_EVAL_PLAN.md).
+# N=3), score each diff (+ optional tool-log signals via --output-format=stream-json), and
+# emit one `claude_md_eval_suite` summary to the effectiveness log. `pixi run claude-md-eval`
+# (see docs/todo/CLAUDE_MD_EVAL_PLAN.md).
 claude-md-eval = "python scripts/claude_md_eval/run_suite.py"
+
+# CLAUDE.md ablation — fires the suite twice, once with CLAUDE.md present in the throwaway
+# worktree, once with CLAUDE.md stripped, then computes per-prompt Δ (compliance + cost).
+# ~$11/pass at N=3 × 9 prompts × 2 arms (real API spend). D12: read at least one trace per
+# arm before quoting Δ anywhere — regex + tool-order graders can both pass on artefacts.
+claude-md-eval-ablation = "python scripts/claude_md_eval/run_ablation.py"
+
+# Regenerate `docs/ai-assist/CLAUDE_MD_EVAL.md` from the effectiveness log without spawning
+# any agents. `claude-md-eval` and `claude-md-eval-ablation` already re-render at the end of
+# each pass; this is the on-demand entry when you want to preview the artifact against
+# existing rows (e.g. after backfilling a `_suite` row by hand). Not auto-committed.
+claude-md-eval-rollup = "python scripts/claude_md_eval/render_rollup.py"
 
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the

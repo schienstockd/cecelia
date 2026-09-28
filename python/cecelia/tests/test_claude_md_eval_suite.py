@@ -117,6 +117,14 @@ class RunSuiteTest(unittest.TestCase):
         )
         self._branch_patch.start()
         self.addCleanup(self._branch_patch.stop)
+        # Post-pass rollup render writes to a real docs path in the repo — stub it in
+        # tests so we don't clobber `docs/ai-assist/CLAUDE_MD_EVAL.md`. The rollup
+        # renderer has its own test coverage in test_claude_md_eval_rollup.py.
+        self._rollup_patch = mock.patch.object(
+            self.suite, "_render_rollup_safely", return_value=None,
+        )
+        self._rollup_patch.start()
+        self.addCleanup(self._rollup_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))
@@ -159,8 +167,9 @@ class RunSuiteTest(unittest.TestCase):
         self.assertEqual(sorted(seen), sorted(["h5ad-read", "zarr-read", "dir-size"]))
         self.assertEqual(len(seen), 3)
         # The failing prompt records `error` = runs (the full set was lost), zero others.
+        # `cost_usd: 0.0` added 2026-09-28 (stream-json capture — D-additions).
         self.assertEqual(summary["per_prompt"]["zarr-read"],
-                         {"compliant": 0, "noncompliant": 0, "error": 2})
+                         {"compliant": 0, "noncompliant": 0, "error": 2, "cost_usd": 0.0})
         # Successful prompts still get counted.
         self.assertEqual(summary["per_prompt"]["h5ad-read"]["compliant"], 1)
         self.assertEqual(summary["per_prompt"]["dir-size"]["compliant"], 1)
@@ -177,7 +186,9 @@ class RunSuiteTest(unittest.TestCase):
             runs=2, timeout=60, claude_path="fake", worktree_root=self.tmpdir,
             keep_worktrees=False, only="h5ad-read,zarr-read", run_one=fake_run_one,
         )
-        self.assertEqual(summary["totals"], {"compliant": 1, "noncompliant": 3, "error": 0})
+        # `cost_usd: 0` added 2026-09-28 (stream-json cost capture — D-additions).
+        self.assertEqual(summary["totals"],
+                         {"compliant": 1, "noncompliant": 3, "error": 0, "cost_usd": 0})
 
 
 if __name__ == "__main__":
