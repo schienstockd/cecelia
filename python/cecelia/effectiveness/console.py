@@ -221,6 +221,10 @@ class _Tally:
 
     Grouped by mechanism (`fnut`/`conv`/`cite`/`ratc`), each mechanism carries:
       - `runs`: how many `_run` events landed (including the ones we dropped as quiet).
+      - `errored_runs`: subset of `runs` whose payload carried `error` (reviewer subprocess
+        timed out or exited non-zero — see `_run_reviewer` in recital.py). Kept separately
+        so a failed reviewer isn't rendered as a clean pass; parallels the split in
+        `rollup.py::_mechanism_section`.
       - `findings`: total finding events, broken down by marker (`confirmed`/`should reuse`).
       - `resolved`: total `_finding_resolved` events, broken down by outcome.
 
@@ -231,6 +235,7 @@ class _Tally:
 
     def __init__(self) -> None:
         self.runs: dict[str, int] = {}
+        self.errored_runs: dict[str, int] = {}
         self.findings: dict[str, dict[str, int]] = {}
         self.resolved: dict[str, dict[str, int]] = {}
 
@@ -244,6 +249,8 @@ class _Tally:
         key = self._key(name)
         if name.endswith("_run"):
             self.runs[key] = self.runs.get(key, 0) + 1
+            if payload.get("error"):
+                self.errored_runs[key] = self.errored_runs.get(key, 0) + 1
         elif name.endswith("_finding_resolved"):
             outcome = payload.get("outcome", "unresolved")
             self.resolved.setdefault(key, {})[outcome] = self.resolved.get(key, {}).get(outcome, 0) + 1
@@ -267,7 +274,11 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
     parts: list[str] = []
     runs = tally.runs.get(mech, 0)
     if runs:
-        parts.append(f"{runs} run{'' if runs == 1 else 's'}")
+        errored = tally.errored_runs.get(mech, 0)
+        run_txt = f"{runs} run{'' if runs == 1 else 's'}"
+        if errored:
+            run_txt += _col(_RED, f" ({errored} errored)", use_colour=use_colour)
+        parts.append(run_txt)
     fnd = tally.findings.get(mech, {})
     total_findings = sum(fnd.values())
     if total_findings:
@@ -386,12 +397,16 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     chrome: list[str] = [f"{title}  {path_str}   {time_str}"]
 
     total_runs = sum(state.tally.runs.values())
+    total_errored = sum(state.tally.errored_runs.values())
     total_findings = sum(sum(v.values()) for v in state.tally.findings.values())
     confirmed = sum(v.get("confirmed", 0) for v in state.tally.findings.values())
     should_reuse = sum(v.get("should reuse", 0) for v in state.tally.findings.values())
     header_parts: list[str] = []
     if total_runs:
-        header_parts.append(_col(_CYAN, f"{total_runs} runs", use_colour=use_colour))
+        run_txt = f"{total_runs} runs"
+        if total_errored:
+            run_txt += f" ({total_errored} errored)"
+        header_parts.append(_col(_RED if total_errored else _CYAN, run_txt, use_colour=use_colour))
     if total_findings:
         header_parts.append(_col(_RED if confirmed else _YELLOW,
                                  f"{total_findings} findings", use_colour=use_colour))
@@ -553,6 +568,12 @@ def format_event(event: dict, *, use_colour: bool = True,
             return f"{ts} {tag} {_verb('RUN')} {dur_str}{extras_str}{ctx_str}"
         # For fanout/convention runs the timing is the whole `_run` payload — findings render
         # separately. Suppress extras to keep the row narrow.
+        error = payload.get("error")
+        if error:
+            # A 180s-timeout or non-zero-exit `_run` prints indistinguishably from a legitimate
+            # slow reviewer without this branch — mark it with a verb-and-colour signal.
+            err_str = _col(_RED, "errored", use_colour=use_colour)
+            return f"{ts} {tag} {_verb('RUN')} {dur_str}  {err_str}{ctx_str}"
         return f"{ts} {tag} {_verb('RUN')} {dur_str}{ctx_str}"
 
     if name == "ratchet_hit":

@@ -108,6 +108,22 @@ class FormatEventTest(unittest.TestCase):
         self.assertIn("@abc1234", line)
         self.assertNotIn("deadbeef", line)
 
+    def test_run_row_marks_errored_reviewer(self):
+        # A `_run` row with `error` in the payload (timeout or non-zero exit from
+        # `_run_reviewer` in recital.py) renders indistinguishably from a legitimate slow run
+        # without this branch — mark it explicitly so the live stream doesn't hide the failure.
+        event = {
+            "event": "fanout_audit_run",
+            "ts": "2026-09-27T10:01:00Z",
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+            "payload": {"duration_s": 180.0, "error": "claude timed out after 180.0s"},
+        }
+        line = format_event(event, use_colour=False)
+        self.assertIn("RUN", line)
+        self.assertIn("3m 00s", line)
+        self.assertIn("errored", line)
+
     def test_citation_currency_quiet_run_is_dropped(self):
         # A citation-currency run with no warnings and no staged files carries no reader
         # signal — same reason `plan_logged` is dropped. Every recital emits one; showing
@@ -430,6 +446,23 @@ class DashboardTest(unittest.TestCase):
         # Per-mechanism rows both present.
         self.assertIn("fnut", out)
         self.assertIn("conv", out)
+
+    def test_counters_split_errored_runs(self):
+        # Header + by-mechanism row must both call out errored runs — otherwise a failed
+        # reviewer (timeout / non-zero exit) is folded into the same "N runs" tally as a
+        # clean pass. Matches the split in `rollup.py::_mechanism_section`.
+        events = [
+            {"event": "fanout_audit_run", "ts": "2026-09-27T10:00:00Z",
+             "payload": {"duration_s": 20.0}, "pr": None, "branch": None, "commit": None,
+             "session": "s", "source": "live", "schema_version": 1},
+            {"event": "fanout_audit_run", "ts": "2026-09-27T10:01:00Z",
+             "payload": {"duration_s": 180.0, "error": "claude timed out after 180.0s"},
+             "pr": None, "branch": None, "commit": None,
+             "session": "s", "source": "live", "schema_version": 1},
+        ]
+        out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                               width=120, use_colour=False)
+        self.assertIn("2 runs (1 errored)", out)
 
     def test_findings_pane_shows_descriptions(self):
         # The whole cockpit point: recent findings render with their wrapped description so

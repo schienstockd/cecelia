@@ -164,14 +164,23 @@ def _mechanism_section(
 
     lines = [f"## {title}", ""]
     if runs:
+        # Errored runs carry `error` in the payload (timeout / non-zero exit from
+        # `_run_reviewer` in recital.py). They also produce zero findings, so counting
+        # them into the same run tally as successful ones makes a failed reviewer look
+        # like a clean pass. Split them out and exclude their durations from the median
+        # (a 180s-timeout row would pull the median to a floor that doesn't reflect
+        # normal reviewer latency).
+        errored = [r for r in runs if r.get("payload", {}).get("error")]
+        successful = [r for r in runs if not r.get("payload", {}).get("error")]
         durations = [
             r.get("payload", {}).get("duration_s")
-            for r in runs
+            for r in successful
             if isinstance(r.get("payload", {}).get("duration_s"), (int, float))
         ]
         median = sorted(durations)[len(durations) // 2] if durations else None
         median_txt = f" · median duration {median:.1f}s" if median is not None else ""
-        lines.append(f"- **{len(runs)} runs**{median_txt}")
+        errored_txt = f" ({len(errored)} errored)" if errored else ""
+        lines.append(f"- **{len(runs)} runs**{errored_txt}{median_txt}")
     if unique_findings:
         lines.append(f"- **{len(unique_findings)} findings** total")
         for outcome in OUTCOME_DISPLAY_ORDER:

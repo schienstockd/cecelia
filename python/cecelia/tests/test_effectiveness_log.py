@@ -160,6 +160,23 @@ class RollupTest(unittest.TestCase):
         self.assertIn("`fixed_pre_commit`: 1", md)
 
 
+    def test_rollup_splits_errored_runs_and_excludes_them_from_median(self):
+        # A reviewer subprocess that times out or exits non-zero writes a `_run` row with
+        # `error` in the payload (see `_run_reviewer` in recital.py). Before this split, an
+        # errored run counted as a normal one — a 180s timeout followed by a clean 20s
+        # retry rendered as "2 runs · median 100s", indistinguishable from two slow runs.
+        # Now the errored count is called out, and the median comes from successful runs only.
+        events = [
+            {"event": "fanout_audit_run", "source": "live", "payload": {"duration_s": 20.0}},
+            {"event": "fanout_audit_run", "source": "live",
+             "payload": {"duration_s": 180.0, "error": "claude timed out after 180.0s"}},
+            {"event": "fanout_audit_run", "source": "live", "payload": {"duration_s": 22.0}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-01-01T00:00:00Z")
+        self.assertIn("**3 runs** (1 errored)", md)
+        # Median over successful (20, 22) — sorted[1] = 22.
+        self.assertIn("median duration 22.0s", md)
+
     def test_rollup_folds_old_and_new_event_names_for_fanout(self):
         # The rename from sibling_audit_* to fanout_audit_* leaves pre-rename rows in the
         # append-only log forever. Rollup must fold both under the same mechanism section.
