@@ -120,6 +120,22 @@ class UnknownOutcomeError(ValueError):
     """Raised when a payload's `outcome` field is not in `OUTCOME_VOCABULARY`."""
 
 
+def is_errored_run(payload: dict) -> bool:
+    """True when a `*_run` payload represents an errored reviewer, not a clean pass.
+
+    Two shapes count as errored: `payload.error` is a non-empty string (recital.py's
+    `_run_reviewer` sets it on timeout / non-zero exit), OR `payload.verdict == "error"`
+    (used by `claude_md_eval_run` for the same signal in a different field). Both the
+    per-row `format_event` verb and the header/rollup tallies MUST agree on this — a
+    `verdict:"error"` run rendering as `ERR` in the stream but counted as a clean pass
+    in the header was the drift this helper prevents.
+    """
+    err = payload.get("error")
+    if isinstance(err, str) and err:
+        return True
+    return payload.get("verdict") == "error"
+
+
 def default_log_path() -> pathlib.Path:
     """Log-file path — env var `CECELIA_EFFECTIVENESS_LOG` if set, else `~/.cecelia-effectiveness/events.jsonl`.
 

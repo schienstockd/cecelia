@@ -520,6 +520,24 @@ class DashboardTest(unittest.TestCase):
                                width=120, use_colour=False)
         self.assertIn("2 runs (1 errored)", out)
 
+    def test_counters_split_errored_runs_via_verdict_field(self):
+        # `claude_md_eval_run` signals errors via `payload.verdict == "error"` rather than
+        # `payload.error`. Header/tally must recognise it — otherwise a verdict-error run
+        # rendered as `ERR` in the per-row stream but as a clean pass in the counter.
+        events = [
+            {"event": "claude_md_eval_run", "ts": "2026-09-27T10:00:00Z",
+             "payload": {"duration_s": 20.0, "verdict": "pass"},
+             "pr": None, "branch": None, "commit": None,
+             "session": "s", "source": "live", "schema_version": 1},
+            {"event": "claude_md_eval_run", "ts": "2026-09-27T10:01:00Z",
+             "payload": {"duration_s": 45.0, "verdict": "error"},
+             "pr": None, "branch": None, "commit": None,
+             "session": "s", "source": "live", "schema_version": 1},
+        ]
+        out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                               width=120, use_colour=False)
+        self.assertIn("2 runs (1 errored)", out)
+
     def test_findings_pane_shows_descriptions(self):
         # The whole cockpit point: recent findings render with their wrapped description so
         # the reader sees WHAT was flagged without opening the roundup.

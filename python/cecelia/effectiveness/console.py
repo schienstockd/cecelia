@@ -33,7 +33,7 @@ import textwrap
 import time
 import typing as _t
 
-from .log import OUTCOME_DISPLAY_ORDER, default_log_path, read_events
+from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
 
 # ── Palette ────────────────────────────────────────────────────────────────────────────────
 # Swatches loaded from `share/console_palette.json` via `palette.py`, so this console and
@@ -227,10 +227,9 @@ class _Tally:
 
     Grouped by mechanism (`fnut`/`conv`/`cite`/`ratc`), each mechanism carries:
       - `runs`: how many `_run` events landed (including the ones we dropped as quiet).
-      - `errored_runs`: subset of `runs` whose payload carried `error` (reviewer subprocess
-        timed out or exited non-zero — see `_run_reviewer` in recital.py). Kept separately
-        so a failed reviewer isn't rendered as a clean pass; parallels the split in
-        `rollup.py::_mechanism_section`.
+      - `errored_runs`: subset of `runs` classified as errored by `log.is_errored_run`.
+        Kept separately so a failed reviewer isn't rendered as a clean pass; parallels the
+        split in `rollup.py::_mechanism_section`.
       - `findings`: total finding events, broken down by marker (`confirmed`/`should reuse`).
       - `resolved`: total `_finding_resolved` events, broken down by outcome.
 
@@ -255,7 +254,7 @@ class _Tally:
         key = self._key(name)
         if name.endswith("_run"):
             self.runs[key] = self.runs.get(key, 0) + 1
-            if payload.get("error"):
+            if is_errored_run(payload):
                 self.errored_runs[key] = self.errored_runs.get(key, 0) + 1
         elif name.endswith("_finding_resolved"):
             outcome = payload.get("outcome", "unresolved")
@@ -557,14 +556,10 @@ def format_event(event: dict, *, use_colour: bool = True,
     if name.endswith("_run"):
         duration = payload.get("duration_s")
         dur_str = _fmt_duration(duration) if isinstance(duration, (int, float)) else "?"
-        # Errored recital runs — `recital.py::_run_reviewer` puts the exception string in
-        # `payload.error` when the reviewer subprocess fails hard (non-zero exit, timeout,
-        # missing CLI) but still emits the `_run` row so the fold is legible. Show them as
-        # `ERR` in red so the reader (and Sonnet reviewing the stream) can tell a timed-out
-        # spawn from a genuine 3-minute review. Also honours `payload.verdict == "error"`
-        # from `claude_md_eval_run`, which uses the same signal in a different field.
-        errored = (isinstance(payload.get("error"), str) and bool(payload["error"])) \
-            or payload.get("verdict") == "error"
+        # Errored reviewer runs (timeout / non-zero exit / `verdict:"error"`) render as
+        # `ERR` in red so the reader can tell a failed spawn from a genuine slow review.
+        # See `is_errored_run` for the shared definition — the header tally uses the same.
+        errored = is_errored_run(payload)
         run_verb = _col(_RED, "ERR ", use_colour=use_colour) if errored \
             else _verb("RUN")
         if name == "citation_currency_run":

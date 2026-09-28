@@ -28,7 +28,7 @@ import datetime as _dt
 import typing as _t
 
 from .git_context import pr_for_branch as _pr_for_branch
-from .log import OUTCOME_DISPLAY_ORDER
+from .log import OUTCOME_DISPLAY_ORDER, is_errored_run
 
 _HEADER_TEMPLATE = """# AI-assist infrastructure — effectiveness
 
@@ -164,14 +164,12 @@ def _mechanism_section(
 
     lines = [f"## {title}", ""]
     if runs:
-        # Errored runs carry `error` in the payload (timeout / non-zero exit from
-        # `_run_reviewer` in recital.py). They also produce zero findings, so counting
-        # them into the same run tally as successful ones makes a failed reviewer look
-        # like a clean pass. Split them out and exclude their durations from the median
-        # (a 180s-timeout row would pull the median to a floor that doesn't reflect
-        # normal reviewer latency).
-        errored = [r for r in runs if r.get("payload", {}).get("error")]
-        successful = [r for r in runs if not r.get("payload", {}).get("error")]
+        # Errored runs (see `is_errored_run`) produce zero findings, so counting them in
+        # the same tally as successful ones makes a failed reviewer look like a clean pass.
+        # Split them out and exclude their durations from the median (a 180s-timeout row
+        # would pull the median to a floor that doesn't reflect normal reviewer latency).
+        errored = [r for r in runs if is_errored_run(r.get("payload", {}))]
+        successful = [r for r in runs if not is_errored_run(r.get("payload", {}))]
         durations = [
             r.get("payload", {}).get("duration_s")
             for r in successful
