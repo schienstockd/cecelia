@@ -149,6 +149,19 @@ indirect.
   section pull weight?" claim survives Sonnet's critique — the P1 direct-cue prompts
   overstate compliance by handing the agent the domain terms.
 
+- **P2.6 rollup rendering (open — needs decision at build time)** — the general
+  effectiveness rollup (`python/cecelia/effectiveness/rollup.py` →
+  `docs/ai-assist/EFFECTIVENESS.md`) already exists but doesn't render
+  `claude_md_eval_*` events. Two shape decisions to make together:
+  (a) **rendering target** — dedicated `docs/ai-assist/CLAUDE_MD_EVAL.md` page (parent
+  plan's original design, pre-dates general rollup existing) vs section-within-
+  EFFECTIVENESS.md (unified rollup, may now be cleaner);
+  (b) **source segmentation** — add `source: "eval"` field on emitted rows so
+  cost-summing can separate real-work API spend from eval-run API spend. Otherwise
+  `cost_usd` totals mix mechanisms once real-work events start carrying cost.
+  Both are cheap adds. Neither belonged in the port PR (they're consumer decisions);
+  land them together when the eval-events consumer is built.
+
 - **P3 ablation as separate pixi task (~1 hr)** — `pixi run claude-md-eval-ablation`
   fires `claude-md-eval-plugin --arm with` and `--arm without` back-to-back, computes
   per-prompt delta, emits `claude_md_eval_ablation` rows to
