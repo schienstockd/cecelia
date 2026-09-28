@@ -10,10 +10,11 @@ Type=oneshot
 # %h expands to the invoking user's HOME. Set REPO explicitly via `systemctl edit`
 # if this checkout lives somewhere else.
 Environment=REPO=%h/cc-workspace/cecelia/cecelia-feijoa
-# PATH must include `pixi` and `claude`. `~/.local/bin` covers the default installs
-# of both; adjust via `systemctl --user edit claude-md-eval.service` if either
-# binary lives elsewhere.
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# PATH must include `pixi` and `claude`. Pixi's installer drops the binary in
+# `~/.pixi/bin` (not `~/.local/bin`); `claude`'s installer drops it in
+# `~/.local/bin`. Both are covered here. Adjust via `systemctl --user edit
+# claude-md-eval.service` if either binary lives elsewhere.
+Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/claude_md_eval/cron_pass.sh"'
 # One-shot pass caps at 30 min — 3 runs × 10 prompts × ~30s = ~15 min at N=3,
 # so this buys 2× headroom. A hung run gets killed rather than wedging the timer.
