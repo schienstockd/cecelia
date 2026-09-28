@@ -3,14 +3,16 @@
 **Status:** P1 (single-prompt runner) + P2 driver + 9-of-10-prompt catalog **SHIPPED** on PR
 #1264 (2026-09-27). One prompt (`discovery-first`) originally deferred pending tool-log
 inspection — **now built via a bespoke transcript-reader + `tool_order` grader** (2026-09-28,
-this branch). Rollup markdown (`docs/ai-assist/CLAUDE_MD_EVAL.md`) still unbuilt — deferred as
-P2.5. P3 (cron) still unbuilt.
+this branch). **P2.5 rollup SHIPPED** (2026-09-28, this branch) — renders
+[`docs/ai-assist/CLAUDE_MD_EVAL.md`](../ai-assist/CLAUDE_MD_EVAL.md) at the end of every pass
++ on demand via `pixi run claude-md-eval-rollup`. P3 (cron) still unbuilt.
 
 ## Sonnet 2026-09-28 discipline additions
 
-Following the abandoned plugin-eval port (see [`CLAUDE_MD_EVAL_PORT_PLAN.md`](CLAUDE_MD_EVAL_PORT_PLAN.md)
-for the record — plugin-eval sandbox doesn't load CLAUDE.md as system context, invalidating
-the port's ablation semantics), three selective backports to the bespoke runner:
+Following the abandoned plugin-eval port (PR #1272, closed — the `claude plugin eval` sandbox
+doesn't load CLAUDE.md as system context, which invalidates the whole point of a compliance
+eval; see the PR body for the trace and diagnosis), three selective backports to the bespoke
+runner:
 
 - **Transcript-reader for `tool_order` grader.** `scripts/claude_md_eval/transcript.py`
   parses `claude -p --output-format=stream-json --verbose` stdout, exposes ordered
@@ -215,9 +217,13 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
 - **P2 driver SHIPPED** — full runner (`pixi run claude-md-eval`) iterates the catalog, emits
   one `claude_md_eval_suite` summary per invocation, prints per-prompt table to stdout. Per-
   prompt failure records `error` verdict and doesn't stop the suite.
-- **P2.5 rollup** — DEFERRED. Writing to `docs/ai-assist/CLAUDE_MD_EVAL.md` (trend annotated
-  by CLAUDE.md blob SHA changes) is still stdout-only. Ship once we have >1 pass's data.
-- **P3** — DEFERRED. Optional cron/schedule + trend-annotation in the rollup.
+- **P2.5 rollup SHIPPED** (2026-09-28, this branch) — `scripts/claude_md_eval/rollup.py`
+  renders [`docs/ai-assist/CLAUDE_MD_EVAL.md`](../ai-assist/CLAUDE_MD_EVAL.md): latest suite
+  table, latest ablation delta (when an `_ablation` row exists), failing-rule callouts,
+  multi-pass trend annotated by CLAUDE.md blob SHA. Auto-rendered at the end of every
+  `pixi run claude-md-eval` pass; standalone regen via `pixi run claude-md-eval-rollup`.
+  Not auto-committed — user reviews the diff.
+- **P3** — DEFERRED. Optional cron/schedule for weekly `pixi run claude-md-eval`.
 
 ### One prompt still deferred: `discovery-first`
 

@@ -117,6 +117,14 @@ class RunSuiteTest(unittest.TestCase):
         )
         self._branch_patch.start()
         self.addCleanup(self._branch_patch.stop)
+        # Post-pass rollup render writes to a real docs path in the repo — stub it in
+        # tests so we don't clobber `docs/ai-assist/CLAUDE_MD_EVAL.md`. The rollup
+        # renderer has its own test coverage in test_claude_md_eval_rollup.py.
+        self._rollup_patch = mock.patch.object(
+            self.suite, "_render_rollup_safely", return_value=None,
+        )
+        self._rollup_patch.start()
+        self.addCleanup(self._rollup_patch.stop)
 
     def _events(self):
         return list(read_events(self.log_path))

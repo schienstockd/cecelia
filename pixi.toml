@@ -325,6 +325,12 @@ claude-md-eval = "python scripts/claude_md_eval/run_suite.py"
 # arm before quoting Δ anywhere — regex + tool-order graders can both pass on artefacts.
 claude-md-eval-ablation = "python scripts/claude_md_eval/run_ablation.py"
 
+# Regenerate `docs/ai-assist/CLAUDE_MD_EVAL.md` from the effectiveness log without spawning
+# any agents. `claude-md-eval` and `claude-md-eval-ablation` already re-render at the end of
+# each pass; this is the on-demand entry when you want to preview the artifact against
+# existing rows (e.g. after backfilling a `_suite` row by hand). Not auto-committed.
+claude-md-eval-rollup = "python scripts/claude_md_eval/render_rollup.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the

@@ -91,6 +91,11 @@ def run_ablation(*, runs: int, timeout: int, claude_path: str,
     append_event("claude_md_eval_ablation", payload,
                  commit=blob_sha, branch=_current_branch())
     _print_ablation_summary(prompt_ids, per_prompt, totals, runs, duration, blob_sha)
+    # Re-render the rollup once after the `_ablation` row is appended — the two inner
+    # `run_suite()` calls each fire `_render_rollup_safely()` themselves, but both
+    # predate this row, so without a final render the "Latest ablation" section stays
+    # one pass behind until the user manually runs `pixi run claude-md-eval-rollup`.
+    _run_suite._render_rollup_safely()
     return payload
 
 

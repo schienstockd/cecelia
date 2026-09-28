@@ -123,7 +123,27 @@ def run_suite(
     append_event("claude_md_eval_suite", summary_payload,
                  commit=blob_sha, branch=_current_branch())
     _print_summary(ids, per_prompt, totals, runs, arm, duration, blob_sha)
+    _render_rollup_safely()
     return summary_payload
+
+
+def _render_rollup_safely() -> None:
+    """Regenerate `docs/ai-assist/CLAUDE_MD_EVAL.md` at the end of every pass.
+
+    Wrapped so a rollup-render failure never masks a successful suite — the suite row
+    is already appended before we get here; the artifact is a side-effect, not the
+    contract. Errors print to stderr and are otherwise swallowed.
+    """
+    try:
+        _render_rollup_mod = _importlib_util.spec_from_file_location(
+            "render_rollup", _REPO / "scripts" / "claude_md_eval" / "render_rollup.py")
+        mod = _importlib_util.module_from_spec(_render_rollup_mod)
+        _render_rollup_mod.loader.exec_module(mod)
+        target = mod.render_to_file()
+        print(f"rollup: {target}", flush=True)
+    except Exception as e:  # noqa: BLE001 — best-effort side-effect
+        print(f"rollup render failed ({type(e).__name__}): {e}", file=sys.stderr,
+              flush=True)
 
 
 def _print_summary(ids: list[str], per_prompt: dict[str, dict],

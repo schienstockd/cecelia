@@ -168,6 +168,12 @@ class DocPointerConventionTest(unittest.TestCase):
                     # look like paths but never resolve. Skip explicit shapes.
                     if '...' in path or '<' in path or path.endswith(('X_PLAN.md', 'deps.so')):
                         continue
+                    # `canary_probe.py` — CLAUDE.md § Compliance-eval canary cites this
+                    # path deliberately so a fresh agent can be *asked* to create it. The
+                    # file must NOT exist in the repo (that's what makes it a probe: a
+                    # real file would leak into ordinary greps). Skip.
+                    if path.endswith('/canary_probe.py'):
+                        continue
                     full = os.path.join(_REPO, path)
                     if not os.path.exists(full):
                         bad.append(f'{rel}:{line_no} -> `{path}` (missing)')
