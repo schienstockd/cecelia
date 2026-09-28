@@ -27,6 +27,11 @@ from .log import (
 )
 from .rollup import render_rollup
 
+# The live console is CLI-only (`python -m cecelia.effectiveness.console`); not re-exported
+# from the package root, because doing so re-imports the submodule under a second name when
+# it is executed as a script, and Python's `runpy` warns on the double-import. Import it
+# directly from `cecelia.effectiveness.console` when a caller genuinely needs the helpers.
+
 __all__ = [
     "EVENT_TYPES",
     "LogPathError",

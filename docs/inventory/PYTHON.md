@@ -25,3 +25,12 @@
 
 - **Task runners**: `app/src/tasks/<category>/<name>_run.py` — thin subprocess entry points co-located with their `.jl`/`.json` (segment, cleanupImages, tracking, editImages, importImages, clustPops, clustTracks). Run by path via `run_py`; reusable logic lives in `python/cecelia/utils/`, not the runners. (`python/cecelia/` is the IO library only — no task runners.)
 - **Data-layer writers**: `python/cecelia/writers/*_run.py` — e.g. `write_categorical_obs_run` (delegates to `obs_utils`).
+
+## AI-assist effectiveness (`python/cecelia/effectiveness/`)
+
+- **effectiveness.log**: `append_event`/`read_events`/`default_log_path` + `EVENT_TYPES`/`OUTCOME_VOCABULARY` — the closed schema for `~/.cecelia-effectiveness/events.jsonl`, the substrate for every reviewer-emission signal. Design: `docs/todo/EFFECTIVENESS_LOG_PLAN.md`; row shape: `docs/ai-assist/EFFECTIVENESS_METHODOLOGY.md`.
+- **effectiveness.recital**: `run_recital` — one-command spawn of fanout audit + convention check + citation-currency via `claude -p`; emits `_run` and `_finding` rows atomically with the spawn (so autonomous-mode skips can't hide). Wired to `pixi run recital`; called by the agent before every commit per root `CLAUDE.md` → *Git & commits*.
+- **effectiveness.rollup**: `render_rollup` — reads the jsonl, renders the public `docs/ai-assist/EFFECTIVENESS.md` (per-mechanism counts + finding rows joined to `_finding_resolved` outcomes + ratchets + misses). On-demand via `pixi run audit-rollup`.
+- **effectiveness.console**: `format_event`/`render_dashboard`/`DashboardState`/`follow_events`/`main` — live view of the log, the recital-side twin of `api/task_console.jl` (`pixi run console`). TTY: full-screen dashboard with per-mechanism counters, a recent-findings pane (wrapped descriptions) and an activity pane; pipe / `--stream`: append-only formatted event stream. Wired to `pixi run recital-console`. Reuses `log.default_log_path` + `log.read_events`; does NOT share the finding-row formatter with `rollup.py` (markdown vs ANSI are different output media — both read the payload fields the same way).
+- **effectiveness.citation_currency**: mechanical check — greps governance docs for `Enforced by \`path\`` claims and warns when a cited file is staged but the citing doc is not. Fired inside `run_recital`; findings land as `citation_currency_run` rows.
+- **effectiveness.git_context**: `pr_for_branch` — one gh-shell-out helper, cached inside the rollup render pass, so a findings-heavy branch pays for `gh pr list` once, not per finding.
