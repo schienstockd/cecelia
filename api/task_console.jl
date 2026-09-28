@@ -33,19 +33,60 @@ const WS_URL    = "ws://$HOST:$PORT/ws"
 # (so `pixi run console | tee run.log` produces a clean, un-escaped log).
 const STREAM_MODE = ("--stream" in ARGS) || !(stdout isa Base.TTY)
 
-# ── ANSI ──────────────────────────────────────────────────────────────────────
+# ── ANSI palette ──────────────────────────────────────────────────────────────
+# Truecolor swatches loaded from `share/console_palette.json` — shared with the recital
+# console (`python/cecelia/effectiveness/console.py`) so both dev consoles render as one
+# system. Semantic mapping (running / queued / done / failed / cancelled) stays here;
+# the recital console maps the same swatches to its own concepts (confirmed / fixed / …).
+# Source & CVD rationale: `share/console_palette.json` `_meta.source`.
 const RESET = "\e[0m"; const BOLD = "\e[1m"; const DIM = "\e[2m"
-const RED = "\e[31m"; const GREEN = "\e[32m"; const YELLOW = "\e[33m"
-const BLUE = "\e[34m"; const MAGENTA = "\e[35m"; const CYAN = "\e[36m"; const GREY = "\e[90m"
+
+_hex_to_ansi(hex::AbstractString) = begin
+    (length(hex) == 7 && startswith(hex, "#")) || error("palette hex $hex not #RRGGBB")
+    r = parse(Int, hex[2:3], base = 16)
+    g = parse(Int, hex[4:5], base = 16)
+    b = parse(Int, hex[6:7], base = 16)
+    "\e[38;2;$r;$g;$(b)m"
+end
+
+# Walk up from `api/task_console.jl` → `api/` → repo root, then into `share/`. Same layout
+# as the Python loader (`python/cecelia/effectiveness/palette.py`), just from a different
+# starting point.
+const _PALETTE_JSON = joinpath(@__DIR__, "..", "share", "console_palette.json")
+const _PALETTE = let
+    isfile(_PALETTE_JSON) || error("shared palette missing at $_PALETTE_JSON; both dev consoles need it")
+    JSON3.read(read(_PALETTE_JSON, String))
+end
+_swatch(name::AbstractString) = _hex_to_ansi(String(_PALETTE.swatches[Symbol(name)]))
+
+const GREY           = _swatch("grey")
+const VERMILLION     = _swatch("vermillion")      # alerts (failed)
+const ORANGE         = _swatch("orange")          # warnings (queued)
+const YELLOW         = _swatch("yellow")          # attention
+const BLUISH_GREEN   = _swatch("bluish_green")    # positive (done)
+const SKY_BLUE       = _swatch("sky_blue")        # info (running)
+const BLUE           = _swatch("blue")            # neutral
+const REDDISH_PURPLE = _swatch("reddish_purple")  # distinctive (cancelled)
+
+# Legacy aliases — the render code below reads `RED`/`GREEN`/`CYAN`/`MAGENTA` by their
+# standard names; rebinding to the CVD-safe swatch is a one-line swap for each call site,
+# and the semantic (alert / positive / info / distinctive) is what matters at the use site.
+const RED = VERMILLION
+const GREEN = BLUISH_GREEN
+const CYAN = SKY_BLUE
+const MAGENTA = REDDISH_PURPLE
 
 col(c, s) = STREAM_MODE ? s : string(c, s, RESET)
 
 function status_colour(s::AbstractString)
-    s == "running"   ? CYAN    :
-    s == "queued"    ? YELLOW  :
-    s == "done"      ? GREEN   :
-    s == "failed"    ? RED     :
-    s == "cancelled" ? MAGENTA : GREY
+    # Semantic-colour mapping over the CVD-safe swatches. `queued` uses ORANGE (warning
+    # hue) rather than YELLOW: Okabe pale yellow reads as very low-contrast on dark
+    # terminal backgrounds, and a queued-vs-running pair needs to pop.
+    s == "running"   ? SKY_BLUE        :
+    s == "queued"    ? ORANGE          :
+    s == "done"      ? BLUISH_GREEN    :
+    s == "failed"    ? VERMILLION      :
+    s == "cancelled" ? REDDISH_PURPLE  : GREY
 end
 
 const TERMINAL = ("done", "failed", "cancelled")   # everything else is active (queued / running)

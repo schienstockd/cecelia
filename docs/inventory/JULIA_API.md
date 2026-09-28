@@ -21,4 +21,4 @@
 - **app_api.jl**: `_stop_children_for_exit`, `/api/app/shutdown|restart`, dev worktree-switch.
 - **storage_api.jl**: `/api/storage/summary` (walked disk/reclaimable scan) + `/api/storage/reclaim` — thin adapters over `storage.jl`.
 - **repl_api.jl / update_api.jl / setup_api.jl**: diagnostics + gated REPL; self-update; first-launch wizard.
-- **task_console.jl / dev.jl**: standalone `pixi run console` WS *client*; the `pixi run dev` supervisor. (Both outside the server.)
+- **task_console.jl / dev.jl**: standalone `pixi run console` WS *client*; the `pixi run dev` supervisor. (Both outside the server.) Palette: reads `share/console_palette.json` — same CVD-safe swatches the recital console (`python/cecelia/effectiveness/palette.py`) uses, so both dev consoles render as one system.

@@ -35,17 +35,37 @@ import typing as _t
 
 from .log import OUTCOME_DISPLAY_ORDER, default_log_path, read_events
 
-# ── ANSI palette — mirrors api/task_console.jl so the two consoles read as one system ─────
+# ── Palette ────────────────────────────────────────────────────────────────────────────────
+# Swatches loaded from `share/console_palette.json` via `palette.py`, so this console and
+# `api/task_console.jl` render as one system with no drift between "green" here and
+# "green" there. Semantic mapping (which swatch is "confirmed", which is "fixed") stays
+# local — the task console maps the same swatches to "running"/"queued"/etc.
+#
+# Truecolor SGR — the standard ANSI 8-colour red/green a terminal theme decides for the
+# user isn't necessarily CVD-safe. Source & rationale: `palette.py` docstring.
+from .palette import (
+    BLUE as _BLUE,
+    BLUISH_GREEN as _BLUISH_GREEN,
+    GREY as _GREY,
+    ORANGE as _ORANGE,
+    REDDISH_PURPLE as _REDDISH_PURPLE,
+    SKY_BLUE as _SKY_BLUE,
+    VERMILLION as _VERMILLION,
+    YELLOW as _YELLOW,
+)
+
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
-_RED = "\033[31m"
-_GREEN = "\033[32m"
-_YELLOW = "\033[33m"
-_BLUE = "\033[34m"
-_MAGENTA = "\033[35m"
-_CYAN = "\033[36m"
-_GREY = "\033[90m"
+
+# Legacy aliases — call sites below reference `_RED`/`_GREEN`/`_CYAN`/`_MAGENTA` by their
+# standard names; rebinding to the CVD-safe swatch is a one-line swap for each. The names
+# stay because the semantic (alert / positive / info / distinctive) is what matters at the
+# use site, not the exact hue.
+_RED = _VERMILLION
+_GREEN = _BLUISH_GREEN
+_CYAN = _SKY_BLUE
+_MAGENTA = _REDDISH_PURPLE
 
 
 def _col(code: str, s: str, *, use_colour: bool) -> str:
@@ -94,9 +114,9 @@ def _colour_for_label(label: str) -> str:
 # the outcome on a resolved row says what the author did about it. Colours cover every entry
 # in the shared `OUTCOME_DISPLAY_ORDER` from `log.py` (both renderers walk that list).
 _MARKER_COLOUR: dict[str, str] = {
-    "confirmed": _RED,
-    "should reuse": _YELLOW,
-    "plausible": _YELLOW,  # sibling-audit legacy marker; keep tolerant
+    "confirmed": _VERMILLION,          # alert semantic — the finding is confirmed
+    "should reuse": _ORANGE,           # warning semantic — reviewer thinks there's a better path
+    "plausible": _ORANGE,              # sibling-audit legacy marker; keep tolerant
 }
 _OUTCOME_COLOUR: dict[str, str] = {
     "fixed_pre_commit": _GREEN,
