@@ -16,6 +16,11 @@
 # second listing that can disagree with the task's picker.
 # See docs/todo/OPTICAL_FLOW_MODULE_PLAN.md.
 
+# `send` is ambiguous in Main (Cecelia and Sockets both export it) — see the incident note atop
+# `preview_api.jl`. `api_optical_flow_inspect` calls `send(w, preview_request(...))` and would
+# UndefVarError without this pin.
+import Cecelia: send
+
 function api_optical_flow_models(::HTTP.Request)
     dir = Cecelia.coastal_models_dir()
     models = [vault_model_row(dir, m) for m in Cecelia.list_coastal_models()]

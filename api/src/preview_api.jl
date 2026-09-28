@@ -10,6 +10,15 @@
 # in the POST body, and the API checks that against the store the task would read. A mismatch is a
 # 409 with the version to open, never a silent switch. See docs/todo/WEB_VIEWER_PLAN.md → P7.
 
+# `send` is exported by BOTH `Cecelia` and `Sockets` (`Sockets` is transitively `using`d via HTTP).
+# In `Main` — where every `api/src/*.jl` gets included — those two exports collide, and an unqualified
+# `send(w, …)` raises `UndefVarError: send not defined`. The bare `catch` in `_preview_ping` was
+# swallowing that error as `(false, 0)`, which made every `_preview_worker_alive()` return false, which
+# fell every incoming request into the launch path — so the second poll of `/api/optical-flow/inspect`
+# from a mounted FlowMetricsView spawned a duplicate worker that hit `EADDRINUSE`. The catch is now
+# narrowed (see `_preview_ping`) so this shape can't hide again; this import pins the resolution.
+import Cecelia: send
+
 const _preview_ref      = Ref{Union{PreviewWorker,Nothing}}(nothing)
 const _preview_starting = Ref(false)
 const _preview_lock     = ReentrantLock()
@@ -46,12 +55,19 @@ end
 """
 `(reachable, protocol)` for a worker — protocol 1 when it answers but names none, which is what every
 worker built before the handshake existed does.
+
+Only network-shape errors are swallowed. A `MethodError` / `UndefVarError` / anything else is a code
+bug and must surface — a bare `catch` here previously hid an `UndefVarError` on the ambiguous `send`
+export (see the `import Cecelia: send` note at the top of the file) and made every alive-check
+falsely negative for months.
 """
 function _preview_ping(w::PreviewWorker)
     try
         reply = send(w, Dict("type" => "ping"))
         (true, Int(get(reply, "protocol", 1)))
-    catch
+    catch e
+        e isa Base.IOError || e isa HTTP.ConnectError ||
+            e isa HTTP.WebSockets.WebSocketError || rethrow()
         (false, 0)
     end
 end

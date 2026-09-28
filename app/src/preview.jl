@@ -137,7 +137,13 @@ function launch!(w::PreviewWorker)::PreviewWorker
             # the process we just spawned cannot bind until it goes) — but remember what answered so the
             # timeout can name the cause instead of blaming the launch.
             squatter = protocol
-        catch
+        catch e
+            # Only network-shape errors are "still not up" — anything else is a code bug and must
+            # surface. A bare `catch` here would turn e.g. a `MethodError` in `send` into "still
+            # waiting" for the full 90 s and then blame the launch for something that never even
+            # tried to bind. Same rule as `_preview_ping` in `api/src/preview_api.jl`.
+            e isa Base.IOError || e isa HTTP.ConnectError ||
+                e isa HTTP.WebSockets.WebSocketError || rethrow()
         end
         if !process_running(w.proc)
             error("Preview worker exited immediately" *

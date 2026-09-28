@@ -55,9 +55,21 @@ Identity of whatever is listening on the port, or `nothing` if nothing answers. 
 this preserves: a reply with the WRONG protocol is still a reply — the caller decides whether to use
 it — because reporting "nothing there" for a process that is very much there produces a relaunch loop
 against a port that can never be bound.
+
+Only network-shape errors are swallowed. Same reason as `_preview_ping` and `_notebook_server_alive`
+(both in `api/src/`): a bare `catch → nothing` here would report "nothing there" for a code bug
+(a `MethodError` from an `HTTP.get` refactor, a `JSON3.read` shape drift) — the same relaunch loop
+this docstring warns against, just triggered by a compile-shape error instead of a real network
+failure. The narrower catch surfaces those loudly.
 """
 function runner_ping(h::RunnerHandle; timeout::Real = 2)::Union{Dict{String,Any},Nothing}
-    try; _runner_get(h, "/ping"; timeout); catch; nothing; end
+    try
+        _runner_get(h, "/ping"; timeout)
+    catch e
+        e isa Base.IOError || e isa HTTP.ConnectError ||
+            e isa HTTP.TimeoutError || e isa HTTP.StatusError || rethrow()
+        nothing
+    end
 end
 
 runner_alive(h::RunnerHandle)::Bool = runner_ping(h) !== nothing

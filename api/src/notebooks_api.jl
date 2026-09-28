@@ -47,12 +47,19 @@ _pluto_env_ready() = isfile(joinpath(_pluto_root(), "Manifest.toml"))
 
 # Alive = the Pluto HTTP server answers on the port. Any HTTP response (200 with secret disabled)
 # counts; a refused connection throws → not alive.
+#
+# Only network-shape errors are swallowed. Same reason as `_preview_ping` in `preview_api.jl`: a bare
+# `catch → false` masked a `send`-ambiguity bug there for months and drove a duplicate-launch loop
+# whenever the probe raised. This function drives `_ensure_notebook_server!`'s launch decision the
+# same way, so it takes the same narrow catch.
 function _notebook_server_alive()::Bool
     try
         HTTP.get(NOTEBOOKS_URL; retry = false, redirect = false,
                  connect_timeout = 2, read_idle_timeout = 3, status_exception = false)
         true
-    catch
+    catch e
+        e isa Base.IOError || e isa HTTP.ConnectError ||
+            e isa HTTP.TimeoutError || rethrow()
         false
     end
 end
