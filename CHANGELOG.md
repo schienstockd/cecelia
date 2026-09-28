@@ -15,6 +15,52 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.8] — 2026-09-28
+
+Identity becomes an app-wide primitive (USER_PROFILE_PLAN P1–P6); Kiwi becomes a working cockpit
+persisting into the Blackboard; guides catalogue rebuilt (P1–P5); linked brushing end-to-end; one
+resize gesture across floating panels.
+
+### Added
+
+- **User profile primitive (USER_PROFILE_PLAN P1–P6).** Launch picker, Preferences modal,
+  per-profile `settings.toml` via `/api/profile/settings{,/patch}`, project ownership +
+  `POST /api/projects/{claim,unclaim}`.
+- **Kiwi cockpit + headless engine.** In-app prompt box, live claims feed, per-claim "Add to
+  Kiwi" → Blackboard. Per-profile `CLAUDE_CONFIG_DIR`, ambient-env scrub, single-instance lock,
+  eval harness. Capture toggles on the annotate overlay.
+- **Guides P1–P5 rebuild.** User + view profile · Kiwi · Blackboard · preprocess /
+  cluster-regions / spatial-analysis · correction cockpit.
+- **Linked brushing.** Shared `linkedSelection` store; category chips on frequency charts; lasso +
+  shift-drag rectangle on boxplot dots. MCP `select_on_plot` + `mark_tracks`/`mark_cells` mirror in.
+- **One 8-handle resize** across `FloatingPanel`, `CanvasPanel`, `CanvasSidePanel`.
+- **Populations panel** — accordion + opt-in manual-apply.
+- **`pixi run doctor`** — fresh-clone / new-worktree audit.
+- **MCP** — `seek_viewer`, `open_analysis_board_plot`.
+- **DrawSurface** — notes pop-out.
+
+### Changed
+
+- **Profile dirs renamed** — `kiwi-profiles/` → `user-profiles/`, `profiles/` → `view-profiles/`.
+  HTTP routes unchanged. **Migration:** dev boxes need a one-time `mv`; no installed user affected.
+- **Capture toggles per-profile.** **Migration:** v0.2.7 setting doesn't carry over; next toggle
+  seeds the bag.
+- **Default profile displayed as `peanut`** (UI relabel; on-disk name unchanged).
+- **Lab-log "Ask Claude" removed** — asking is Kiwi now.
+- **Kiwi cockpit profile row removed** — `AppProfilePicker` + Preferences own identity.
+- **Terminal setup CTA** moves from the lab log to Kiwi → Assistant → Terminal. Viewer pop-out
+  `@` (Add-to-Kiwi) moves to a new title row next to the image name.
+
+### Fixed
+
+- **Viewer — trackclust ribbons render for every trackable vn.** The pi-sitemap toggle was a
+  no-op on a fresh viewer session and only drew for one vn otherwise; route through
+  `pop_df(granularity=:cell)` and widen the client fetch.
+- **Viewer — `/api/viewer/seek` accepts string ints** (`"t": "12"` was 400ing).
+- **Analysis Tile — plots no longer stretch or overlap; resize handles clear the control overlay.**
+- **Guides tour — `tipsEverShown` machine-scoped** so a shared box doesn't replay the first-ever tour.
+- **Header icon buttons — spurious anchor underline gone** (`.cc-btn` clears `text-decoration`).
+
 ## [0.2.7] — 2026-09-23
 
 Patch release: one fix for installs running over HTTPS (the default since v0.2.5, reachable since

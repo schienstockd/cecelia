@@ -8,6 +8,7 @@ import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
 import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
 import { fetchSegmentationPops } from '../plots/populations'
+import { hasStagedChanges, stagedChangeCount as stagedDiff } from '../utils/manualApplyStaging'
 
 // Data + shared view-state for a summary-plot surface — the part that is IDENTICAL whether the plots
 // float freely (SummaryCanvas, per-module) or sit in a grid (LayoutCanvas, /analysis). Extracted so the
@@ -209,15 +210,11 @@ export function useSummaryData(opts: {
   // Manual-apply staging helpers. `stagedSel` mirrors `gSel` when manualApply is OFF (via the sync
   // watcher below), so consumers can always read stagedSel to render the picker's eyes without
   // branching on the mode. When ON, the two diverge until `applyStaged` copies over.
-  const hasStaged = computed(() => stagedSel.value.length !== gSel.value.length
-    || stagedSel.value.some((k, i) => k !== gSel.value[i]))
-  const stagedChangeCount = computed(() => {
-    const cur = new Set(gSel.value); const stg = new Set(stagedSel.value)
-    let n = 0
-    for (const k of stg) if (!cur.has(k)) n++
-    for (const k of cur) if (!stg.has(k)) n++
-    return n
-  })
+  // Semantics pinned in `utils/manualApplyStaging.test.ts`: hasStaged is order-sensitive
+  // (a reorder arms Apply — the legend reorders too), stagedChangeCount is set-based (the
+  // chip counts pops ADDED / REMOVED, a pure reorder shows 0).
+  const hasStaged = computed(() => hasStagedChanges(stagedSel.value, gSel.value))
+  const stagedChangeCount = computed(() => stagedDiff(stagedSel.value, gSel.value))
   const applyStaged = () => { gSel.value = [...stagedSel.value] }
   const discardStaged = () => { stagedSel.value = [...gSel.value] }
   // keep stagedSel = gSel while manual mode is off, so flipping the toggle on starts from the
