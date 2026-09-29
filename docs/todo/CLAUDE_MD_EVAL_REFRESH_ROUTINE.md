@@ -547,3 +547,86 @@ corroboration of S3; no numerical threshold was extracted because the full paper
 wasn't read this pass. **S5 (SZZ)** transferred as *methodological warrant* for
 mining real PRs to seed test candidates; the specific fix-to-introducer algorithm
 did not transfer.
+
+---
+
+## Findings from 2026-09-29 first real ablation + pilot pass
+
+The plan above was written before any real data existed at the blob under evaluation.
+This section is the first empirical check. **Written same day as the runs (2026-09-29),
+against blob `436f7b6…`. ~$24 total spend (P2 backend ablation WITH-arm + N=3 frontend
+pilots + one WITHOUT-arm smoke).** All runs live in `~/.cecelia-effectiveness/events.jsonl`
+(filter `event=claude_md_eval_run` and `commit=436f7b6…`).
+
+### What we ran
+
+- Backend N=3 WITH-arm on the 4 previously-failing prompts: `cite-algorithm`,
+  `dir-size`, `discovery-first`, `kill-process-tree` (P2 ablation, WITH arm only —
+  see *WITHOUT-arm status* below).
+- Backend N=3 WITH-arm on the 8 stable-compliant regulars: `canary`, `h5ad-read`,
+  `h5ad-write`, `zarr-read`, `zarr-write`, `utf-8-json-write`, `spawn-python`,
+  `crop-failure`.
+- Frontend N=3 WITH-arm on 3 new pilot prompts: `frontend-inlinenote`,
+  `frontend-copy-canonical`, `frontend-coalesce`.
+
+Total: 15 prompts × N=3 = 45 runs. **Compliance: 34/45 (76%).**
+
+### Verdict against the plan's headline claims
+
+- **"Distillation over escalation" — falsified for `cite-algorithm` + `discovery-first`.**
+  Both had been rewritten pre-run to anchor in real repo territory (logicle transform +
+  its Moore-Parks-2012 CLAUDE.md example; tile-slice generator + the `slice_utils`
+  inventory hit). Both scored **0/3 compliant** — unchanged from the pre-rewrite
+  baseline. `discovery-first` also had tool_order=FAIL 3/3, meaning the agent didn't
+  even do the discovery step, let alone reach the canonical helper. The Wang-et-al
+  distillation argument (that a real, credible task cues the rule better than a
+  contrived one) is not sufficient here; the rule wording in CLAUDE.md itself, or the
+  learnability of the rule via a task prompt at all, is the next constraint to check.
+  Rewriting the *task* twice with no movement is evidence the mechanism is upstream.
+- **8-of-15 prompts stable 3/3 vindicates the S3 discrimination concern.** The stable
+  regulars (`canary` + 7 backend I/O prompts) are consuming ~53% of every weekly run's
+  budget to re-confirm behaviour we have established. Per S3, a 3/3 prompt over
+  multiple weeks is a **discrimination candidate for retirement**, not evidence the
+  rule is being internalised harder. This is the exact case anchor set A was designed
+  for: keep the canary + one representative per rule family under long cadence, retire
+  the rest.
+- **Frontend pilot signal quality is high.** `frontend-inlinenote` clean 3/3 (agent
+  reaches for `InlineNote` unprompted); `frontend-coalesce` clean 3/3 post regex fix
+  (initial pilot missed `debouncedLatest<T>(` because `\(` didn't allow the type
+  param — caught + fixed before landing); `frontend-copy-canonical` 0/3 with
+  tool_order=FAIL 3/3 is **not a scoring bug — it is a real drift signal.** Agents do
+  not reach for `CLAUDE_TERMINAL.action` unprompted; they hardcode `'Fix'` and
+  `'Setting up…'` inline. This is exactly the shape of finding the frontend eval was
+  designed to catch, and it caught one first pass.
+
+### WITHOUT-arm status
+
+Claude auto-updated to 2.1.284 on 2026-09-29 04:31 local (~6 h before the run). The
+P2 ablation WITHOUT arm errored on **all 12/12** runs — exit 1, empty stderr,
+~3 s per run. A follow-up single WITHOUT-arm smoke on `canary` several hours later
+succeeded normally ($0.20, 5 turns). **Diagnosis: transient breakage in the initial
+post-update pairing/auth path, not a persistent bug.** Historic Δ data from prior
+ablations remains the authoritative "CLAUDE.md is the mechanism" evidence for now;
+next ablation can quote a real Δ.
+
+### What this means for the plan doc's design
+
+- **Anchor set A stays as designed** (canary, h5ad-read, zarr-write, utf-8-json-write,
+  spawn-python) — all 3/3 stable, no reason to change.
+- **Rotation set R_t candidates for retirement (based on this pass alone,
+  provisional):** the 3 remaining backend I/O prompts that mirror anchors
+  (`h5ad-write` mirrors `h5ad-read`; `zarr-read` mirrors `zarr-write`; `crop-failure`
+  is a `zarr-utils` variant). One-per-family suffices for weekly compliance signal.
+  **Do not retire on one pass** — plan doc's `1.0 for 3 weeks` retirement floor
+  applies. Flag for review at the 2026-10-19 checkpoint.
+- **Rule-wording review (new open question):** for `cite-algorithm` and
+  `discovery-first`, is the CLAUDE.md rule wording itself the blocker? A rule that
+  a task-anchored, inventory-grounded, real-example-cued prompt cannot score
+  compliant on — after two rewrites — is a candidate for rule rewrite (a change to
+  `CLAUDE.md` itself, tracked as a distinct blob-SHA baseline), not just prompt
+  rewrite.
+- **Cost model update:** first three real weekly-scale passes to date were $17.09
+  (2026-09-28 full weekly cron), ~$6 (this ablation WITH-arm), ~$14 (this narrow
+  re-fire). Landing the 3 frontend pilots pushes weekly to 15×3=45 runs, ~+25% cost
+  every week without offsetting retirements. The $20/week cap proposed in *Cost and
+  cadence* is now the actual next-week reality, not a projection.
