@@ -113,10 +113,15 @@ def _colour_for_label(label: str) -> str:
 # ── Outcome / marker colours — the marker on a finding says how confident the reviewer is;
 # the outcome on a resolved row says what the author did about it. Colours cover every entry
 # in the shared `OUTCOME_DISPLAY_ORDER` from `log.py` (both renderers walk that list).
+#
+# RED is reserved for genuine error conditions (errored reviewer runs, unresolved outcomes,
+# retrospective misses) — mirroring `api/task_console.jl` where red = `failed`. A confirmed
+# finding is actionable but not an error, so it uses the warning hue; `should reuse` /
+# `plausible` are advisory and use the attention hue.
 _MARKER_COLOUR: dict[str, str] = {
-    "confirmed": _VERMILLION,          # alert semantic — the finding is confirmed
-    "should reuse": _ORANGE,           # warning semantic — reviewer thinks there's a better path
-    "plausible": _ORANGE,              # sibling-audit legacy marker; keep tolerant
+    "confirmed": _ORANGE,              # warning semantic — reviewer confirms; act on it
+    "should reuse": _YELLOW,           # attention semantic — reviewer suggests a better path
+    "plausible": _YELLOW,              # sibling-audit legacy marker; keep tolerant
 }
 _OUTCOME_COLOUR: dict[str, str] = {
     "fixed_pre_commit": _GREEN,
@@ -289,7 +294,7 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
     if total_findings:
         breakdown = ", ".join(f"{n} {marker}" for marker, n in sorted(fnd.items(), key=lambda x: -x[1]))
         noun = "findings" if total_findings != 1 else "finding"
-        marker_col = _RED if "confirmed" in fnd else _YELLOW
+        marker_col = _ORANGE if "confirmed" in fnd else _YELLOW
         parts.append(_col(marker_col, f"{total_findings} {noun}", use_colour=use_colour) + f" ({breakdown})")
     res = tally.resolved.get(mech, {})
     if res:
@@ -414,10 +419,10 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
             run_txt += f" ({total_errored} errored)"
         header_parts.append(_col(_RED if total_errored else _CYAN, run_txt, use_colour=use_colour))
     if total_findings:
-        header_parts.append(_col(_RED if confirmed else _YELLOW,
+        header_parts.append(_col(_ORANGE if confirmed else _YELLOW,
                                  f"{total_findings} findings", use_colour=use_colour))
     if confirmed:
-        header_parts.append(_col(_RED, f"{confirmed} confirmed", use_colour=use_colour))
+        header_parts.append(_col(_ORANGE, f"{confirmed} confirmed", use_colour=use_colour))
     if should_reuse:
         header_parts.append(_col(_YELLOW, f"{should_reuse} should reuse", use_colour=use_colour))
     for outcome in OUTCOME_DISPLAY_ORDER:
@@ -614,6 +619,42 @@ def _tail(events: _t.Sequence[dict], n: int, since: _dt.datetime | None) -> list
     return list(events)[-n:]
 
 
+def _drain_new_events(log_path: pathlib.Path, offset: int) -> tuple[list[dict], int]:
+    """One non-blocking pass: read new events since `offset`, return (events, new_offset).
+
+    Handles the three invariants both the `follow_events` generator and the dashboard's
+    tick loop need: rotation reset (file shrank → reseek to 0), partial-line JSON skip
+    (a torn write at process kill isn't fatal), and the utf-8 encoding pin the CLAUDE.md
+    Windows-compat rule requires. Returning `(events, offset)` lets a caller drive the
+    tail on its own clock — the tick loop wants a synchronous drain per repaint, not the
+    blocking generator.
+
+    A missing file returns `([], offset)` unchanged, so a caller that hits a rare race
+    against log rotation just retries next tick.
+    """
+    try:
+        size = log_path.stat().st_size
+    except FileNotFoundError:
+        return [], offset
+    if size < offset:
+        offset = 0  # rotated or truncated — reread from the top
+    if size <= offset:
+        return [], offset
+    events: list[dict] = []
+    with log_path.open("r", encoding="utf-8") as fh:
+        fh.seek(offset)
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        offset = fh.tell()
+    return events, offset
+
+
 def follow_events(
     log_path: pathlib.Path,
     *,
@@ -631,7 +672,7 @@ def follow_events(
     log rotation. A malformed line (partial write at process kill) is skipped silently by
     `read_events`; the same generator handles the follow case, so the behaviour is identical
     to the batch reader — the failure that motivated this is a partial jsonl line wedging
-    every downstream consumer at once.
+    every downstream consumer at once. Both invariants live in `_drain_new_events`.
     """
     if not log_path.exists():
         # Wait for the file to appear — the log is created on first `append_event`, which may
@@ -643,28 +684,8 @@ def follow_events(
 
     offset = start_offset if start_offset is not None else log_path.stat().st_size
     while True:
-        try:
-            size = log_path.stat().st_size
-        except FileNotFoundError:
-            if stop_after_one_pass:
-                return
-            time.sleep(poll_interval)
-            continue
-        if size < offset:
-            # File was rotated or truncated — reread from the top.
-            offset = 0
-        if size > offset:
-            with log_path.open("r", encoding="utf-8") as fh:
-                fh.seek(offset)
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        yield json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                offset = fh.tell()
+        events, offset = _drain_new_events(log_path, offset)
+        yield from events
         if stop_after_one_pass:
             return
         time.sleep(poll_interval)
@@ -735,10 +756,19 @@ def _run_stream_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
 
 def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                         *, out: _t.TextIO, follow: bool) -> int:
-    """Full-screen dashboard — clear + redraw on every event and every _REFRESH_TICK.
+    """Full-screen dashboard — poll + repaint on every _REFRESH_TICK, plus SIGWINCH.
 
-    The refresh tick exists to keep the title line's `HH:MM:SS` clock alive even when nothing
-    is landing — same reason task_console.jl redraws on a timer, not just on frames.
+    The refresh tick exists to keep the title line's `HH:MM:SS` clock alive when nothing
+    lands AND to pick up terminal resizes (each `_paint()` re-reads `_terminal_size()`).
+    The earlier implementation blocked on the follow generator, which yields nothing on
+    an idle log — so a resize sat un-noticed until the next event. Same repaint model as
+    `api/task_console.jl` now: the 2s snapshot loop repaints unconditionally, WS events
+    trigger throttled repaints on top. Here the tick is 0.5s and events are polled from
+    the log file on the same tick.
+
+    SIGWINCH (Unix only) sets a flag that the tick loop clears with an immediate repaint,
+    so a resize is snappy rather than waiting up to _REFRESH_TICK. Windows / non-main
+    thread falls back to tick-latency, which is imperceptible in practice.
     """
     state = DashboardState()
     for event in seed_events:
@@ -765,26 +795,53 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
         out.flush()
         return 0
 
+    # SIGWINCH handler — sets a flag, doesn't paint from the signal (a paint mid-signal
+    # can interleave with the tick's paint, corrupting the frame). The tick loop notices
+    # the flag on its next iteration and repaints immediately.
+    resize_pending = [False]
+    _signal_mod = None
+    _prev_winch = None
     try:
-        start = log_path.stat().st_size if log_path.exists() else 0
-        gen = follow_events(log_path, start_offset=start, poll_interval=_REFRESH_TICK)
-        last_paint = time.monotonic()
-        # The follow generator blocks on `time.sleep(poll_interval)` between polls, so it
-        # yields at least every _REFRESH_TICK when idle — that gives the loop a natural
-        # heartbeat for the title-line clock. On busy periods it yields per event, so the
-        # dashboard updates as soon as a new row lands.
-        for event in gen:
-            state.add(event)
+        import signal as _signal_mod  # Windows lacks SIGWINCH (AttributeError below)
+        _prev_winch = _signal_mod.signal(
+            _signal_mod.SIGWINCH, lambda *_: resize_pending.__setitem__(0, True)
+        )
+    except (AttributeError, ValueError):
+        # AttributeError → Windows (no SIGWINCH). ValueError → not the main thread.
+        # In both cases we fall back to tick-latency resize response.
+        _signal_mod = None
+
+    offset = log_path.stat().st_size if log_path.exists() else 0
+    try:
+        while True:
+            # Drain any new events from the log without blocking, then repaint. Reuses
+            # `_drain_new_events` — same rotation-reset + partial-line + utf-8 invariants
+            # `follow_events` runs on, so the two consumers can't drift.
+            events, offset = _drain_new_events(log_path, offset)
+            for event in events:
+                state.add(event)
             _paint()
-            last_paint = time.monotonic()
+            resize_pending[0] = False
+            # Sleep in small slices so SIGWINCH can shorten the wait — a signal interrupts
+            # `time.sleep` on most Unixes but not all (glibc pre-2.24 didn't), and we want
+            # the resize response to be snappy either way.
+            slept = 0.0
+            slice_ = 0.05
+            while slept < _REFRESH_TICK and not resize_pending[0]:
+                time.sleep(slice_)
+                slept += slice_
     except KeyboardInterrupt:
         pass
     finally:
+        if _signal_mod is not None and _prev_winch is not None:
+            try:
+                _signal_mod.signal(_signal_mod.SIGWINCH, _prev_winch)
+            except (AttributeError, ValueError):
+                pass
         # Restore the cursor no matter how we exit — leaving it hidden across a `pixi run`
         # is the worst debug session I never want to repeat.
         out.write("\033[?25h")
         out.flush()
-    _ = last_paint  # silence linter — kept for future "n seconds since paint" HUD line
     return 0
 
 
