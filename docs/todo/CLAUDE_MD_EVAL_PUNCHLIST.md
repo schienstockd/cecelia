@@ -51,22 +51,28 @@ specific claim.
 Ordered by (payoff / cost). Check off in place as items complete; delete the row when the work
 lands (per the *When work is done, delete it* rule in `docs/todo/README.md`).
 
-### P1 — Rewrite the two 0/3 prompts before next Monday (2026-10-05)
+### P1 — Rewrite the two 0/3 prompts before next Monday (2026-10-05) — **REWRITES LANDED 2026-09-29, awaiting cron verification**
 
 **Cost:** ~1 hour, $0 (no eval runs until Monday). **Blocks:** meaningful trend row.
 
-- [ ] `cite-algorithm` — currently 0/3. SSIM is ordinary-code-shaped in Claude's prior. Swap to
-      a less-Wikipedia algorithm — [`CLAUDE_MD_EVAL_REFRESH_ROUTINE.md`](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md)
-      *§ Verdict* proposes **logicle transform** (already cited in-repo per CLAUDE.md's own
-      *Cite sources* example — anchor exists).
-- [ ] `discovery-first` — currently 0/3, tool_order FAIL all runs. The current `tile_origins`
-      framing doesn't make the "helper might already exist" claim credible. Fix per design doc:
-      plant a plausible helper in `docs/inventory/PYTHON.md` grep hits **before** the prompt, then
-      rewrite the prompt to *nudge* (not name) that path.
-- [ ] Both rewrites land in one PR; commit under the same branch pattern
-      (`fix/eval-prompt-rewrite` or similar). Do NOT run the eval on-branch — the CLAUDE.md blob
-      SHA is stable, and running mid-week pollutes the log with an extra WITH-arm row that
-      distorts the trend at the wrong blob.
+- [x] `cite-algorithm` — swapped from SSIM to **logicle transform** (2026-09-29). Anchor exists in
+      CLAUDE.md's own *Cite sources* example (`app/src/gating/transforms.jl` cites Moore & Parks
+      2012). Task wording now says "specific published algorithm; its implementation must be
+      traceable to its source" — stronger cue than the previous "should follow a published
+      reference". `compliant_signal` unchanged (requires `#`-comment citation, matching CLAUDE.md's
+      exact "add a comment with the citation" wording).
+- [x] `discovery-first` — task rewritten to a **tile-slice generator** for 3D+time zarr iteration
+      (2026-09-29). Territory `slice_utils` genuinely owns (`create_slices_multiscales`,
+      `preview_region_bounds`, `crop_slice_tuple` — all in `docs/inventory/PYTHON.md`). A grep
+      for `slice`, `tile`, or `zarr` in the inventory now returns a plausible hit, restoring the
+      credibility of the "helper might already exist" cue that was missing when the task described
+      a `tile_origins` helper with no inventory match.
+- [ ] **Cron-verification pending.** Monday 2026-10-05 23:59 AEDT fires the weekly cron against
+      the new blob. Delete this P1 section after that trend row lands and shows either
+      (a) improved compliance on both prompts, or (b) still-failing prompts with new failure
+      mode — either result is a real data point, and the rewrites themselves are complete.
+      Do NOT run the eval on-branch — the CLAUDE.md blob SHA is stable, and running mid-week
+      pollutes the log with an extra WITH-arm row that distorts the trend at the wrong blob.
 
 ### P2 — First paired ablation on the 4 failing prompts
 
