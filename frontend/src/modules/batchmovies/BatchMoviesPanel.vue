@@ -30,6 +30,7 @@ import { versionsFromConfig, compareSuffix, compareActionTip,
          type CompareLayout, type CompareContrast } from '../../utils/movieCompare'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
+import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
 import SceneAid from '../../components/SceneAid.vue'
 import { buildOverlayScene, renderOverlayPreview } from './overlayPreview'
 import CcToggle from '../../components/CcToggle.vue'
@@ -246,9 +247,12 @@ watch(() => [props.selectedUids[0], segNames.value[0]] as const, loadObs, { imme
 // representative image (first selected) is enough — the backend clamps unknown paths per image, and
 // a batch designed around a set typically has parallel pop trees. Refreshes when the image, the
 // segmentation, or the `popType` changes (each yields a different tree).
-interface PopNode { name: string; children?: PopNode[]; transient?: boolean }
+// `uid` is emitted by the server on every pop node (`persistence.jl:14`) — carried so the
+// popsFilter pruner below can remap by uid rather than by path (so an upstream RENAME follows,
+// only a DELETE drops).
+interface PopNode { name: string; uid?: string; children?: PopNode[]; transient?: boolean }
 interface PopTree { populations?: PopNode[] }
-const popPaths = ref<{ path: string; label: string }[]>([])
+const popPaths = ref<{ path: string; label: string; uid: string }[]>([])
 async function loadPopPaths() {
   const uid = props.selectedUids[0]
   const projectUid = projectMeta.current?.uid
@@ -260,12 +264,12 @@ async function loadPopPaths() {
     const res = await fetch(`/api/gating/popmap?${q}`)
     if (!res.ok) { popPaths.value = []; return }
     const j = await res.json() as { tree?: PopTree }
-    const out: { path: string; label: string }[] = []
+    const out: { path: string; label: string; uid: string }[] = []
     const walk = (nodes: PopNode[] | undefined, parent: string, depth: number) => {
       for (const n of nodes ?? []) {
         if (n.transient) continue                // ephemeral (viewer selection), never a batch input
         const path = parent === 'root' ? `/${n.name}` : `${parent}/${n.name}`
-        out.push({ path, label: `${'  '.repeat(depth)}${n.name}` })
+        out.push({ path, label: `${'  '.repeat(depth)}${n.name}`, uid: n.uid ?? '' })
         walk(n.children, path, depth + 1)
       }
     }
@@ -279,12 +283,18 @@ const popsFilter = computed<string[]>({
   get: () => (cfg.value.popsFilter as string[] | undefined) ?? [],
   set: v => patch({ popsFilter: v }),
 })
-// Prune the persisted selection to what the fetched tree offers — a pop the user deleted upstream
-// shouldn't sit in the config as a phantom filter that always misses.
-watch(popPaths, (paths) => {
-  const known = new Set(paths.map(p => p.path))
-  const kept = popsFilter.value.filter(p => known.has(p))
-  if (kept.length !== popsFilter.value.length) patch({ popsFilter: kept })
+// Remap the persisted selection across pop mutations upstream. Uid-aware (docs/todo/POP_SYNC_PLAN.md):
+// a RENAME carries the filter entry to the pop's new path (uid preserved by `rename_pop!`), a DELETE
+// drops it, first fetch falls back to path-presence for legacy trees with no uid. The pre-uid pruner
+// silently dropped a rename — the entry became a phantom filter that always missed.
+watch(popPaths, (paths, oldPaths) => {
+  const oldIdents: PopIdent[] = (oldPaths ?? []).map(p => ({ key: p.path, uid: p.uid }))
+  const newIdents: PopIdent[] = paths.map(p => ({ key: p.path, uid: p.uid }))
+  const remap = makePopPathRemap(oldIdents, newIdents)
+  const kept = remapPopKeys(popsFilter.value, remap)
+  const same = kept.length === popsFilter.value.length &&
+               kept.every((k, i) => k === popsFilter.value[i])
+  if (!same) patch({ popsFilter: kept })
 })
 const popPathOptions = computed<ChipOption[]>(() =>
   popPaths.value.map(p => ({ value: p.path, label: p.label.trim(), tip: p.path })))
