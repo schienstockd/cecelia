@@ -47,7 +47,10 @@ function _sort_cats(keys::Vector{String})::Vector{String}
     all(!isnothing, nums) ? keys[sortperm(Float64.(nums))] : sort(keys)
 end
 
-# Split a pop_df frame into one series per distinct group, in first-appearance order. The group key
+# Split a pop_df frame into one series per distinct group; the series axis is category-sorted via
+# `_sort_cats` on the primary image key (attribute value when `attr_map` is set, else uID) so
+# multi-attribute crosses like "Treatment.Mouse" read by category rather than image-import order.
+# The group key
 # is `(value_name, pop)` — plus `uID` when `by_image=true` and a `uID` column is present (set-level
 # pooling), so each image becomes its own series for cross-image comparison; with `by_image=false`
 # the images are pooled (uID ignored). `pop_df` stores the pop PATH (e.g. "/_tracked") and the
@@ -103,6 +106,13 @@ function _series_groups(df::DataFrame; by_image::Bool=false,
         k = (has_uid ? imgkeys[i] : "",
              has_vn  ? String(df.value_name[i]) : "", String(df.pop[i]), grp)
         (k in seen) || (push!(order, k); push!(seen, k))
+    end
+    # Category-sort the series axis so composed multi-attribute keys ("WT.M1", "MerTK.M2", …) group
+    # cleanly instead of reading in first-appearance-of-row order. `_sort_cats` on the primary axis
+    # (imgkey — the attribute value when `attr_map` is set, else uID), vn/pop/grp as stable secondaries.
+    if !isempty(order)
+        img_rank = Dict(k => i for (i, k) in enumerate(_sort_cats(unique(String[t[1] for t in order]))))
+        sort!(order, by = t -> (img_rank[t[1]], t[2], t[3], t[4]))
     end
     for (uid, vn, pop, grp) in order
         mask = trues(nrow(df))
@@ -1072,7 +1082,8 @@ end
 # the `base` labels next to `/macrophages` from `nuc`). Targets are grouped by `value_name`, each
 # group read through `pop_df` with that segmentation, then `vcat`-ed into one frame. `_series_groups`
 # keys by `(uID, value_name, pop)`, so each (segmentation, pop) — and each image, when cross-image —
-# becomes its own series. Order is preserved (first appearance) for a stable series order/colouring.
+# becomes its own series. Series axis is category-sorted by `_series_groups` (`_sort_cats`), so the
+# order/colouring is stable across runs regardless of the caller's target list order.
 
 # ── Interaction matrix (a PRECOMPUTED, per-population-PAIR statistic) ─────────────────────────────
 #
