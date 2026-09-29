@@ -37,8 +37,8 @@ seeded four*.
 |---|---|---|
 | S1 | Yoo, S. & Harman, M. (2010), "Regression testing minimization, selection and prioritization: a survey," *STVR* 22(2):67–120 — [DOI 10.1002/stvr.430](https://doi.org/10.1002/stvr.430) | Minimization/selection/prioritization vocabulary; ~2–3 fault-linked triggers as the repeat-count threshold |
 | S2 | Zhou et al. (2023), "Instruction-Following Evaluation for Large Language Models" (IFEval), [arXiv:2311.07911](https://arxiv.org/abs/2311.07911) | Verifiable-instruction pattern — validates our regex + tool_order scorer architecture |
-| S3 | Li et al., "ATLAS: Adaptive Testing for LLM Evaluation," ICML 2026 Spotlight — [arXiv:2511.04689](https://arxiv.org/abs/2511.04689) | IRT-derived *discrimination-vs-difficulty* distinction — names why a 3/3 prompt may be trivial rather than internalised |
-| S4 | Zhou et al. (2025), "Lost in Benchmarks? Rethinking LLM Benchmarking with Item Response Theory" (PSN-IRT), AAAI 2026 — [arXiv:2505.15055](https://arxiv.org/abs/2505.15055) | Corroborates S3's discrimination argument at population scale; **no concrete threshold extracted** |
+| S3 | Li, Tang, Chen, Cheng, Metoyer, Hua & Chawla (2026), "Adaptive Testing for LLM Evaluation: A Psychometric Alternative to Static Benchmarks" (ATLAS), ICML 2026 Spotlight — [arXiv:2511.04689](https://arxiv.org/abs/2511.04689) | IRT-derived *discrimination-vs-difficulty* distinction — names why a 3/3 prompt may be trivial rather than internalised |
+| S4 | Zhou et al. (2025), "Lost in Benchmarks? Rethinking Large Language Model Benchmarking with Item Response Theory" (PSN-IRT), AAAI 2026 Oral — [arXiv:2505.15055](https://arxiv.org/abs/2505.15055) | Corroborates S3's discrimination argument at population scale; **no concrete threshold extracted** |
 | S5 | Śliwerski, Zimmermann & Zeller (2005), "When do changes induce fixes?" (SZZ), MSR 2005 — [DOI 10.1145/1082983.1083147](https://doi.org/10.1145/1082983.1083147) | Fix-to-introducer chain as methodological warrant for walking PR history into prompt candidates |
 
 **Excluded / unverified** — one number the research prompt flagged (LiveBench "58% degradation
@@ -51,36 +51,41 @@ specific claim.
 Ordered by (payoff / cost). Check off in place as items complete; delete the row when the work
 lands (per the *When work is done, delete it* rule in `docs/todo/README.md`).
 
-### P1 — Rewrite the two 0/3 prompts before next Monday (2026-10-05) — **REWRITES LANDED 2026-09-29, awaiting cron verification**
+### P1 — Rewrites landed 2026-09-29, **verified ineffective same day**
 
-**Cost:** ~1 hour, $0 (no eval runs until Monday). **Blocks:** meaningful trend row.
+**Cost:** ~1 hour + $6 eval spend on backend P2-ablation WITH-arm. **Blocks:** deciding whether
+these two rules stay in the catalog or get retired.
 
-- [x] `cite-algorithm` — swapped from SSIM to **logicle transform** (2026-09-29). Anchor exists in
-      CLAUDE.md's own *Cite sources* example (`app/src/gating/transforms.jl` cites Moore & Parks
-      2012). Task wording now says "specific published algorithm; its implementation must be
-      traceable to its source" — stronger cue than the previous "should follow a published
-      reference". `compliant_signal` unchanged (requires `#`-comment citation, matching CLAUDE.md's
-      exact "add a comment with the citation" wording).
-- [x] `discovery-first` — task rewritten to a **tile-slice generator** for 3D+time zarr iteration
-      (2026-09-29). Territory `slice_utils` genuinely owns (`create_slices_multiscales`,
-      `preview_region_bounds`, `crop_slice_tuple` — all in `docs/inventory/PYTHON.md`). A grep
-      for `slice`, `tile`, or `zarr` in the inventory now returns a plausible hit, restoring the
-      credibility of the "helper might already exist" cue that was missing when the task described
-      a `tile_origins` helper with no inventory match.
-- [ ] **Cron-verification pending.** Monday 2026-10-05 23:59 AEDT fires the weekly cron against
-      the new blob. Delete this P1 section after that trend row lands and shows either
-      (a) improved compliance on both prompts, or (b) still-failing prompts with new failure
-      mode — either result is a real data point, and the rewrites themselves are complete.
-      Do NOT run the eval on-branch — the CLAUDE.md blob SHA is stable, and running mid-week
-      pollutes the log with an extra WITH-arm row that distorts the trend at the wrong blob.
+- [x] `cite-algorithm` — swapped from SSIM to **logicle transform**. Anchor exists in CLAUDE.md's
+      own *Cite sources* example. Task wording strengthened to "specific published algorithm; its
+      implementation must be traceable to its source".
+- [x] `discovery-first` — task rewritten to a **tile-slice generator**. Territory `slice_utils`
+      genuinely owns (`create_slices_multiscales`, `preview_region_bounds`, `crop_slice_tuple`).
+- [x] **Re-tested at N=3 WITH-arm same day** (part of the P2 backend ablation, blob `436f7b6…`).
+      Both prompts scored **0/3 compliant** — no change from pre-rewrite. `discovery-first`
+      additionally tool_order=FAIL 3/3. See [findings 2026-09-29](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md#findings-from-2026-09-29-first-real-ablation-pilot-pass)
+      for the interpretation.
+
+**Distillation-over-escalation hypothesis falsified for these two rules.** Anchoring the task
+in real repo territory + strengthening the wording did not move the score. Either the rule
+wording in CLAUDE.md itself is the failure, or these rules aren't teachable via a compliance
+prompt of the current shape. Next action is not "wait for Monday" — it's:
+
+- [ ] Read the actual scored diffs for one WITH-arm run of each (needs `--keep-worktrees` re-fire,
+      ~$0.60 each) — is the agent citing the wrong way, or not citing at all?
+- [ ] If not-citing-at-all: candidate for retirement per the anchor set logic in
+      [`CLAUDE_MD_EVAL_REFRESH_ROUTINE.md`](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md) *§ Weekly selection
+      algorithm* — a rule scoring 0/N for 3 consecutive passes on a stable prompt shape is
+      either unteachable or the rule text itself needs rewriting (a separate move from rewriting
+      the prompt).
 
 ### P2 — First paired ablation on the 4 failing prompts
 
 **Cost:** ~$3–4 (4 prompts × 2 arms × N=3 = 24 runs at ~$0.40 avg). **Blocks:** first quotable Δ.
 
-- [ ] Run `pixi run claude-md-eval-ablation --prompts cite-algorithm,discovery-first,dir-size,kill-process-tree`
-      (or the equivalent one-off invocation — check `scripts/claude_md_eval/run_ablation.py --help`
-      for the exact CLI, may need extension).
+- [ ] Run `pixi run claude-md-eval-ablation --only cite-algorithm,discovery-first,dir-size,kill-process-tree --runs 3`
+      (`--only` is the actual flag name — verified 2026-09-29 by reading
+      `scripts/claude_md_eval/run_ablation.py`; no CLI extension needed).
 - [ ] Read at least one trace per arm per prompt before quoting Δ — D12 discipline.
 - [ ] If a prompt's `without`-arm score is ≥ its `with`-arm score, CLAUDE.md is not the mechanism
       keeping compliance up; that prompt is measuring something else. Flag in the rollup as a
@@ -91,12 +96,19 @@ lands (per the *When work is done, delete it* rule in `docs/todo/README.md`).
 **Cost:** ~$1.50 (3 prompts × N=1 WITH-arm). **Blocks:** frontend coverage in anchor + rotation
 selection.
 
-- [ ] Author 3 prompts per [`CLAUDE_MD_EVAL_FRONTEND_PLAN.md`](CLAUDE_MD_EVAL_FRONTEND_PLAN.md)
-      *§ P1 pilot* (primitive catalog, UI-copy canonicalisation, coalescing). Use plural-key
-      `tool_order_before_tools` / additions-only regex per the artifact-fix constraints in the
-      refresh-routine doc's *New prompt authoring constraints* section.
-- [ ] Run each at N=1 WITH-arm, read the trace, gate the P2 decision on whether the signal is
-      distinguishing anything.
+- [x] Author 3 prompts per [`CLAUDE_MD_EVAL_FRONTEND_PLAN.md`](CLAUDE_MD_EVAL_FRONTEND_PLAN.md)
+      *§ P1 pilot* — landed 2026-09-29 as `frontend-inlinenote.md`,
+      `frontend-copy-canonical.md`, `frontend-coalesce.md`.
+- [x] N=1 WITH-arm pilot, trace-inspected, regex bug on `coalesce` (`\(` didn't allow `<T>(`)
+      caught + fixed.
+- [x] N=3 WITH-arm signal check at blob `436f7b6…`. Results:
+      `frontend-inlinenote` 3/3, `frontend-coalesce` 3/3, `frontend-copy-canonical` 0/3 with
+      tool_order=FAIL 3/3. The 0/3 is a **real drift signal** — agents don't reach the
+      canonical UI-copy const — not a scoring bug. See [findings 2026-09-29](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md#findings-from-2026-09-29-first-real-ablation-pilot-pass).
+- **Cost implication:** landing these 3 as `.md` files under `prompts/` auto-adds them to the
+  weekly `pixi run claude-md-eval` catalog (the runner enumerates the directory). Weekly cost
+  goes from 12×3=36 to 15×3=45 runs, ~+25% on the current $17/pass baseline. Rotation-set logic
+  in P5 will address; not blocking today's landing.
 
 ### P4 — Update anchor set based on real weeks of trend data
 
