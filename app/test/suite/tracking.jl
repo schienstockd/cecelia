@@ -771,10 +771,12 @@ end
     @test [g.label for g in per] == uids
     @test all(g -> length(g.items) == 1, per)
 
-    # by attribute: images sharing a value POOL, in first-appearance order
+    # by attribute: images sharing a value POOL. Category-sorted axis (`_sort_cats`, lex for
+    # non-numeric): "MerTK" before "WT", not insertion order — so multi-attribute crosses read
+    # by category rather than "randomly" by image import order.
     byattr = Cecelia._track_image_groups(collect(zip(imgs, uids)), ["Treatment"], false)
-    @test [g.label for g in byattr] == ["WT", "MerTK"]
-    @test length(byattr[1].items) == 2 && length(byattr[2].items) == 1
+    @test [g.label for g in byattr] == ["MerTK", "WT"]
+    @test length(byattr[1].items) == 1 && length(byattr[2].items) == 2
 
     # pooled: one unlabelled bundle (there is nothing to distinguish)
     pooled = Cecelia._track_image_groups(collect(zip(imgs, uids)), String[], true)
@@ -884,10 +886,11 @@ end
         gs2, = track_plot_groups([i1, i2], ["u1", "u2"]; value_name = "B")
         @test [x.label for x in gs2] == ["u1", "u2"]
 
-        # by attribute — one group per treatment, and each pools its own images
+        # by attribute — one group per treatment, and each pools its own images. Category-sorted
+        # axis ("MerTK" before "WT"), same rule as _series_groups.
         gs3, = track_plot_groups([i1, i2], ["u1", "u2"]; value_name = "B",
                                  group_attrs = ["Treatment"])
-        @test [x.label for x in gs3] == ["WT", "MerTK"]
+        @test [x.label for x in gs3] == ["MerTK", "WT"]
 
         # pooled — ONE group over both images, and its track keys say which movie each came from
         gs4, = track_plot_groups([i1, i2], ["u1", "u2"]; value_name = "B", pool_images = true)

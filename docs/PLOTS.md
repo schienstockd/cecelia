@@ -354,6 +354,12 @@ add a new plot with its own popover/menu, follow this pattern — a plain absolu
 
    The series **key** includes every varying dimension, so groups never collapse onto one another.
 
+   **Axis order.** The series axis is category-sorted (`_sort_cats`: numeric-when-all-numeric, else
+   lex) on the primary axis (attribute value when `attr_map` is set, else `uID`) with the remaining
+   dimensions as stable secondaries. So a two-attribute cross like "Treatment.Mouse" groups cleanly
+   ("MerTK.M2" → "WT.M1" → "WT.M3") instead of reading in image-insertion order. The colour legend
+   inherits the same domain. Same rule in `_track_image_groups` for the track-plot family.
+
    **`groupBy` — a generic categorical sub-axis.** Optionally split the measure by the levels of any
    categorical obs column (e.g. `live.cell.hmm.state.*`, `track_generation`, a cluster id). Each
    `(…, groupBy-level)` becomes its own series, so a box/violin/strip/bar plot shows the measure's

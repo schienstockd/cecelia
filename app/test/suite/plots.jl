@@ -484,6 +484,17 @@ end
     r3 = Cecelia._summary_agg(df, "bar"; measure="m", granularity=:cell, nbins=0,
                               normalize=:none, by_image=true)
     @test length(r3["series"]) == 3
+
+    # SERIES AXIS is category-sorted (`_sort_cats`): a multi-attribute cross like "Treatment.Mouse"
+    # reads by category ("MerTK.M1", "MerTK.M2", "WT.M1", "WT.M2") instead of image insertion order
+    # ("WT.M2", "MerTK.M1", "WT.M1", …). The colour legend + x-axis both inherit this ordering.
+    df_sorted = DataFrame("value_name" => fill("A", 4), "pop" => fill("/p", 4),
+                          "uID" => ["u2", "u4", "u1", "u3"],   # deliberately scrambled uID order
+                          "m"   => [1.0, 2.0, 3.0, 4.0])
+    amap_sorted = Dict("u2"=>"WT.M2", "u4"=>"MerTK.M1", "u1"=>"WT.M1", "u3"=>"MerTK.M2")
+    rs = Cecelia._summary_agg(df_sorted, "bar"; measure="m", granularity=:cell, nbins=0,
+                              normalize=:none, by_image=true, attr_map=amap_sorted)
+    @test [s["uID"] for s in rs["series"]] == ["MerTK.M1", "MerTK.M2", "WT.M1", "WT.M2"]
 end
 
 # ── cross-image (set-level) aggregation: pool pop_df across images by uID ──

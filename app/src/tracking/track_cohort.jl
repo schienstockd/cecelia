@@ -179,7 +179,10 @@ function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bo
             haskey(byval, v) || (push!(order, v); byval[v] = Any[])
             push!(byval[v], (img, String(uid)))
         end
-        return [(; key = v, label = v, items = byval[v]) for v in order]
+        # Sort the attribute-value axis (composed "Treatment.Mouse" when group_attrs is multi-)
+        # so facets read in category order instead of image-insertion order — same rationale
+        # as _series_groups for the summary plots.
+        return [(; key = v, label = v, items = byval[v]) for v in _sort_cats(order)]
     end
     pool_images && return [(; key = "pooled", label = "",
                              items = Any[(img, String(uid)) for (img, uid) in pairs])]
