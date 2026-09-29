@@ -79,11 +79,21 @@ class ListPromptIdsTest(unittest.TestCase):
     def test_catalog_contains_expected_seed_prompts(self):
         suite = _load_suite()
         ids = suite._list_prompt_ids()
-        # Sanity — the catalog has AT LEAST the seed prompts. Adding more later is fine.
-        expected = {"h5ad-read", "h5ad-write", "zarr-read", "zarr-write", "spawn-python",
-                    "kill-process-tree", "dir-size", "utf-8-json-write", "cite-algorithm"}
+        # Sanity — the catalog has AT LEAST the live diagnostic-frame prompts. Adding more
+        # later is fine. 2026-09-29: seven backend I/O prompts retired to `prompts/retired/`
+        # after ratchets showed to fully cover them (see `prompts/retired/README.md`); this
+        # list is the live subset that still probes an open weakness.
+        expected = {"canary", "cite-algorithm", "discovery-first", "dir-size",
+                    "kill-process-tree"}
         self.assertTrue(expected.issubset(set(ids)),
                         f"catalog missing: {sorted(expected - set(ids))}")
+        # Retired prompts must NOT appear — the runner enumerates non-recursively so a
+        # `prompts/retired/*.md` file leaking back into `prompts/` would silently re-enrol
+        # it in the weekly cron.
+        retired = {"h5ad-read", "h5ad-write", "zarr-read", "zarr-write",
+                   "utf-8-json-write", "spawn-python", "crop-failure"}
+        self.assertFalse(retired & set(ids),
+                         f"retired prompts leaked into catalog: {sorted(retired & set(ids))}")
 
     def test_ids_are_returned_sorted(self):
         suite = _load_suite()
@@ -139,52 +149,53 @@ class RunSuiteTest(unittest.TestCase):
             return [_fake_row(prompt_id, "compliant")]
         summary = self.suite.run_suite(
             runs=1, timeout=60, claude_path="fake", worktree_root=self.tmpdir,
-            keep_worktrees=False, only="h5ad-read,zarr-read", run_one=fake_run_one,
+            keep_worktrees=False, only="canary,cite-algorithm", run_one=fake_run_one,
         )
-        self.assertEqual(calls, ["h5ad-read", "zarr-read"])
+        self.assertEqual(calls, ["canary", "cite-algorithm"])
         self.assertEqual(summary["totals"]["compliant"], 2)
         # Exactly one suite row landed in the log.
         suite_rows = [e for e in self._events() if e["event"] == "claude_md_eval_suite"]
         self.assertEqual(len(suite_rows), 1)
         self.assertEqual(suite_rows[0]["commit"], "b" * 40)
         self.assertEqual(suite_rows[0]["branch"], "test-branch")
-        self.assertEqual(suite_rows[0]["payload"]["prompt_ids"], ["h5ad-read", "zarr-read"])
+        self.assertEqual(suite_rows[0]["payload"]["prompt_ids"],
+                         ["canary", "cite-algorithm"])
 
     def test_per_prompt_error_does_not_stop_the_suite(self):
         seen: list[str] = []
         def fake_run_one(prompt_id: str, **kw):
             seen.append(prompt_id)
-            if prompt_id == "zarr-read":
+            if prompt_id == "cite-algorithm":
                 raise RuntimeError("simulated hang / crash")
             return [_fake_row(prompt_id, "compliant")]
         summary = self.suite.run_suite(
             runs=2, timeout=60, claude_path="fake", worktree_root=self.tmpdir,
-            keep_worktrees=False, only="h5ad-read,zarr-read,dir-size",
+            keep_worktrees=False, only="canary,cite-algorithm,dir-size",
             run_one=fake_run_one,
         )
         # All three prompts were attempted (order is alphabetical — see
         # `_list_prompt_ids`, sorted for stable rollup order).
-        self.assertEqual(sorted(seen), sorted(["h5ad-read", "zarr-read", "dir-size"]))
+        self.assertEqual(sorted(seen), sorted(["canary", "cite-algorithm", "dir-size"]))
         self.assertEqual(len(seen), 3)
         # The failing prompt records `error` = runs (the full set was lost), zero others.
         # `cost_usd: 0.0` added 2026-09-28 (stream-json capture — D-additions).
-        self.assertEqual(summary["per_prompt"]["zarr-read"],
+        self.assertEqual(summary["per_prompt"]["cite-algorithm"],
                          {"compliant": 0, "noncompliant": 0, "error": 2, "cost_usd": 0.0})
         # Successful prompts still get counted.
-        self.assertEqual(summary["per_prompt"]["h5ad-read"]["compliant"], 1)
+        self.assertEqual(summary["per_prompt"]["canary"]["compliant"], 1)
         self.assertEqual(summary["per_prompt"]["dir-size"]["compliant"], 1)
 
     def test_totals_aggregate_across_prompts(self):
         def fake_run_one(prompt_id: str, **kw):
             # Mixed verdicts across the two prompts.
-            if prompt_id == "h5ad-read":
+            if prompt_id == "canary":
                 return [_fake_row(prompt_id, "compliant"),
                         _fake_row(prompt_id, "noncompliant")]
             return [_fake_row(prompt_id, "noncompliant"),
                     _fake_row(prompt_id, "noncompliant")]
         summary = self.suite.run_suite(
             runs=2, timeout=60, claude_path="fake", worktree_root=self.tmpdir,
-            keep_worktrees=False, only="h5ad-read,zarr-read", run_one=fake_run_one,
+            keep_worktrees=False, only="canary,cite-algorithm", run_one=fake_run_one,
         )
         # `cost_usd: 0` added 2026-09-28 (stream-json cost capture — D-additions).
         self.assertEqual(summary["totals"],

@@ -60,8 +60,8 @@ def run_ablation(*, runs: int, timeout: int, claude_path: str,
     prompt_ids = with_summary["prompt_ids"]
     per_prompt: dict[str, dict] = {}
     for pid in prompt_ids:
-        w = with_summary["per_prompt"].get(pid, {"compliant": 0, "cost_usd": 0.0})
-        wo = without_summary["per_prompt"].get(pid, {"compliant": 0, "cost_usd": 0.0})
+        w = with_summary["per_prompt"].get(pid, {"compliant": 0, "cost_usd": 0.0, "error": 0})
+        wo = without_summary["per_prompt"].get(pid, {"compliant": 0, "cost_usd": 0.0, "error": 0})
         per_prompt[pid] = {
             "with_compliant": w["compliant"],
             "without_compliant": wo["compliant"],
@@ -69,6 +69,12 @@ def run_ablation(*, runs: int, timeout: int, claude_path: str,
             "with_cost_usd": w["cost_usd"],
             "without_cost_usd": wo["cost_usd"],
             "delta_cost_usd": round(w["cost_usd"] - wo["cost_usd"], 4),
+            # Per-arm error counts recorded so the rollup can suppress the Δ table
+            # when an arm broke transiently (2026-09-29 claude 2.1.284 auth transient
+            # errored 12/12 WITHOUT runs and published a bogus Δ=+4). Fallback
+            # to 0 keeps old ablation rows renderable.
+            "with_error": w.get("error", 0),
+            "without_error": wo.get("error", 0),
         }
     totals = {
         "with_compliant": with_summary["totals"]["compliant"],
@@ -79,6 +85,8 @@ def run_ablation(*, runs: int, timeout: int, claude_path: str,
         "without_cost_usd": without_summary["totals"]["cost_usd"],
         "delta_cost_usd": round(with_summary["totals"]["cost_usd"]
                                 - without_summary["totals"]["cost_usd"], 4),
+        "with_error": with_summary["totals"].get("error", 0),
+        "without_error": without_summary["totals"].get("error", 0),
     }
     payload = {
         "prompt_ids": prompt_ids,
@@ -99,12 +107,38 @@ def run_ablation(*, runs: int, timeout: int, claude_path: str,
     return payload
 
 
+def _arm_errored(per_prompt: dict, runs: int, arm: str) -> bool:
+    """Terminal sibling of `rollup.py._ablation_arm_errored` — same suppression rule.
+
+    Same 2026-09-29 case: an operator watching the shell during the transient WITHOUT
+    breakage would otherwise see `TOTAL 4 0 +4` and misread it as a real CLAUDE.md Δ.
+    The rollup silences this in the doc; this silences it in the terminal output. Kept
+    duplicated (not imported) — rollup.py is a pure renderer with no side-effects and
+    a callsite here would drag its whole import graph into this driver.
+    """
+    if runs <= 0:
+        return False
+    key = f"{arm}_error"
+    return sum(1 for r in per_prompt.values() if r.get(key, 0) >= runs) \
+        >= max(1, len(per_prompt) // 2)
+
+
 def _print_ablation_summary(ids, per_prompt, totals, runs, duration, blob_sha):
     print("", flush=True)
     print(f"ablation summary — {len(ids)} prompt(s) × {runs} run(s) × 2 arms, "
           f"{duration:.1f}s wall clock, CLAUDE.md blob {blob_sha or '<unknown>'}, "
           f"total cost ${totals['with_cost_usd'] + totals['without_cost_usd']:.2f}",
           flush=True)
+    without_errored = _arm_errored(per_prompt, runs, "without")
+    with_errored = _arm_errored(per_prompt, runs, "with")
+    if without_errored or with_errored:
+        broken = "WITHOUT" if without_errored else "WITH"
+        print(f"  ⚠ {broken} arm errored across ≥50% of runs — Δ suppressed. "
+              f"An arm-wide error means the numeric delta is not evidence about "
+              f"CLAUDE.md; it is evidence the arm broke. Re-run once the underlying "
+              f"cause is fixed.", flush=True)
+        print("", flush=True)
+        return
     max_id = max((len(i) for i in ids), default=10)
     print(f"  {'prompt':<{max_id}}  with  without  Δ    with$    without$  Δ$", flush=True)
     for pid in ids:

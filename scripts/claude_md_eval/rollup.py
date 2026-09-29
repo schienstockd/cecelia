@@ -180,6 +180,33 @@ def _suite_section(suite: dict, rules: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _ablation_arm_errored(per_prompt: dict, runs: int, arm: str) -> bool:
+    """Did ≥50% of runs in an arm error?
+
+    2026-09-29 case: claude 2.1.284 auto-updated between the WITH and WITHOUT passes,
+    the initial pairing/auth path threw on every WITHOUT spawn (exit 1, ~3s, empty
+    stderr), and the rollup rendered a bogus Δ=+4 that any reader would misread as
+    "CLAUDE.md is +4 compliant." When most of an arm errored, the numeric Δ is not
+    evidence about CLAUDE.md — it is evidence the arm broke. Suppress rather than
+    publish.
+
+    Prefers the explicit `{arm}_error` counts recorded by `run_ablation.py`. Falls
+    back to a cost-based sentinel for ablation rows written before those counts were
+    added (`{arm}_cost_usd` ≪ the other arm's cost).
+    """
+    if runs <= 0:
+        return False
+    key = f"{arm}_error"
+    if any(key in r for r in per_prompt.values()):
+        errored = sum(1 for r in per_prompt.values() if r.get(key, 0) >= runs)
+        return errored >= max(1, len(per_prompt) // 2)
+    # Fallback for legacy rows without per-arm error counts.
+    this_cost = sum(r.get(f"{arm}_cost_usd", 0.0) for r in per_prompt.values())
+    other = "with" if arm == "without" else "without"
+    other_cost = sum(r.get(f"{other}_cost_usd", 0.0) for r in per_prompt.values())
+    return other_cost >= 1.0 and this_cost < 0.05 * other_cost
+
+
 def _ablation_section(ablation: dict) -> str:
     p = ablation.get("payload", {})
     pids: list[str] = p.get("prompt_ids") or []
@@ -188,6 +215,24 @@ def _ablation_section(ablation: dict) -> str:
     runs = p.get("runs_per_arm") or 0
     ts = _fmt_ts(ablation.get("ts", ""))
     sha = _short_sha(ablation.get("commit"))
+
+    without_errored = _ablation_arm_errored(per_prompt, runs, "without")
+    with_errored = _ablation_arm_errored(per_prompt, runs, "with")
+    if without_errored or with_errored:
+        broken = "WITHOUT" if without_errored else "WITH"
+        return "\n".join([
+            "## Latest ablation (with vs without CLAUDE.md)",
+            "",
+            f"- **When:** {ts} UTC · **Blob:** `{sha}` · **Runs per arm:** {runs}",
+            "",
+            f"> ⚠ **{broken} arm errored across ≥50% of runs — Δ suppressed.** "
+            f"An arm-wide error means the numeric delta is not evidence about "
+            f"CLAUDE.md; it is evidence the arm broke. Re-run "
+            f"`pixi run claude-md-eval-ablation` once the underlying cause is "
+            f"fixed. First known case: 2026-09-29 claude 2.1.284 post-update "
+            f"pairing/auth transient (errored 12/12 WITHOUT runs).",
+            "",
+        ])
 
     lines = [
         "## Latest ablation (with vs without CLAUDE.md)",

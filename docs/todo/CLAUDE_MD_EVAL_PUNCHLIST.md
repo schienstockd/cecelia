@@ -66,18 +66,16 @@ these two rules stay in the catalog or get retired.
       additionally tool_order=FAIL 3/3. See [findings 2026-09-29](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md#findings-from-2026-09-29-first-real-ablation-pilot-pass)
       for the interpretation.
 
-**Distillation-over-escalation hypothesis falsified for these two rules.** Anchoring the task
-in real repo territory + strengthening the wording did not move the score. Either the rule
-wording in CLAUDE.md itself is the failure, or these rules aren't teachable via a compliance
-prompt of the current shape. Next action is not "wait for Monday" — it's:
+**Diagnostic-frame verdict: escalate out of the rule-rewrite loop.** Two well-formed rewrites
+did not move the score. A third rewrite of the same shape is diagnostic-mode churn. Next
+action is to pick an intervention layer that isn't "the prompt":
 
-- [ ] Read the actual scored diffs for one WITH-arm run of each (needs `--keep-worktrees` re-fire,
-      ~$0.60 each) — is the agent citing the wrong way, or not citing at all?
-- [ ] If not-citing-at-all: candidate for retirement per the anchor set logic in
-      [`CLAUDE_MD_EVAL_REFRESH_ROUTINE.md`](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md) *§ Weekly selection
-      algorithm* — a rule scoring 0/N for 3 consecutive passes on a stable prompt shape is
-      either unteachable or the rule text itself needs rewriting (a separate move from rewriting
-      the prompt).
+- [ ] Read the actual scored diffs for one WITH-arm run of each (needs `--keep-worktrees`
+      re-fire, ~$0.60 each) — is the agent citing the wrong way, or not citing at all?
+- [ ] Choose one for each rule: (a) redesign the CLAUDE.md rule *section* (not the prompt),
+      (b) add a ratchet that enforces the anti-pattern deterministically, (c) accept the rule
+      isn't teachable at this layer, document, and retire the probe.
+      **Do not rewrite the prompt again** — the mechanism is upstream of the prompt.
 
 ### P2 — First paired ablation on the 4 failing prompts
 
@@ -110,29 +108,63 @@ selection.
   goes from 12×3=36 to 15×3=45 runs, ~+25% on the current $17/pass baseline. Rotation-set logic
   in P5 will address; not blocking today's landing.
 
-### P4 — Update anchor set based on real weeks of trend data
+### P4 — Retire the stable-3/3 backend anchors (diagnostic framing)
 
-**Cost:** review-only, $0. **Blocks:** committing to the design doc's anchor set for 2026H2.
+**Cost:** minutes; frees ~$8/wk of cron spend. **Blocks:** stopping the eval from re-confirming
+what ratchets already enforce.
 
-- [ ] After 3 weekly cron passes (~2026-10-19), verify the design doc's anchor picks
-      (`canary`, `h5ad-read`, `zarr-write`, `utf-8-json-write`, `spawn-python`) are all still
-      stable 3/3. If any has drifted, treat as a data point on whether "3/3 for 3 weeks" is the
-      right stability threshold, per S3 discrimination logic.
-- [ ] Update [`CLAUDE_MD_EVAL_REFRESH_ROUTINE.md`](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md)
-      *§ Anchor set A* with the confirmed picks + one line on the observed 3-week stability.
+Under the diagnostic frame the seven backend I/O prompts stable at 3/3 have delivered their
+result — the weakness they probed does not exist (or is closed by an existing ratchet). Move
+them out of the weekly enumeration:
 
-### P5 — Implement the rotation selection script
+- [ ] Move to `scripts/claude_md_eval/prompts/retired/`: `h5ad-read`, `h5ad-write`,
+      `zarr-read`, `zarr-write`, `utf-8-json-write`, `spawn-python`, `crop-failure`.
+      Justification per-prompt is the ratchet that already enforces the same rule
+      (`test_h5ad_access_convention.py`, `test_zarr_access_convention.py`,
+      `test_utf8_encoding_convention.py`, `python spawn ratchet`).
+- [ ] Add `prompts/retired/README.md` naming the retirement discipline (why here,
+      how to un-retire if a ratchet is removed).
+- [ ] After the next Monday cron with the frontend three still enrolled, decide on
+      `frontend-inlinenote` + `frontend-coalesce` (no ratchet backstop — needs one more
+      pass of confirmation before retirement).
 
-**Cost:** weeks of engineering, not hours. **Blocks:** rotation actually happening.
+### P4a — Guard rollup against errored-arm rendering
 
-- [ ] Build `scripts/claude_md_eval/select_rotation.py` per the algorithm in
-      [`CLAUDE_MD_EVAL_REFRESH_ROUTINE.md`](CLAUDE_MD_EVAL_REFRESH_ROUTINE.md)
-      *§ Weekly selection algorithm*.
-- [ ] Emit a new `claude_md_eval_rotation` event type to `~/.cecelia-effectiveness/events.jsonl`
-      when a prompt is added, retired, or rewritten. Effectiveness rollup renders these as a
-      rotation-history section under the trend table.
-- [ ] Manual rotation is the fallback until this ships; the design doc's decisions are firm
-      enough to rotate by hand for 2–3 weeks without drift.
+**Cost:** 30 min. **Blocks:** stopping the misleading Δ=+4 table from persisting in
+`docs/ai-assist/CLAUDE_MD_EVAL.md` when the WITHOUT arm errors.
+
+The 2026-09-29 post-update transient rendered a bogus Δ=+4 in the ablation section
+(WITH=4/12 vs WITHOUT=0/12-all-errored). The rollup should detect the errored-arm case and
+suppress or banner the Δ table, not publish a false comparison.
+
+- [ ] `run_ablation.py`: record `with_error` / `without_error` counts per prompt + in totals.
+- [ ] `rollup.py._ablation_section`: if ≥50% of runs in either arm errored, replace the Δ
+      table with a banner (`⚠ WITHOUT arm errored across ≥50% of runs — Δ suppressed`) and
+      link the transient case as prior art.
+
+### P4b — Add first mined indirect probe: `hand-rolled-debounce`
+
+**Cost:** ~$1.50 first pass; ongoing $0.50/wk if kept. **Blocks:** the first
+non-copy-canonical indirect probe in the catalog.
+
+From the 2026-09-29 PR-history mining pass (cluster #1, `existing-helper-not-reached-for`).
+Same shape as `frontend-copy-canonical`: realistic multi-step task, never names the canonical
+helper (`debouncedLatest`), scored by whether the agent grep-and-imports it.
+
+- [ ] Author `scripts/claude_md_eval/prompts/hand-rolled-debounce.md`.
+- [ ] Interpret the first pass as diagnostic evidence, not a compliance number: 3/3 → retire +
+      inspect whether `continuousControls.test.ts` ratchet can relax; 0/3 → the rule is not
+      teaching, fix the inventory pointer or the CLAUDE.md section.
+
+### P5 — Rotation selection script (deferred under diagnostic framing)
+
+**Cost:** weeks of engineering, not hours.
+
+**Deferred indefinitely.** The rotation-set-under-a-cap logic was a compliance-suite
+construct. Under the diagnostic frame there's no rotation *set* — there's a small backlog of
+weakness probes to author from PR-history mining, and probes retire as their weakness closes.
+Manual authoring + retirement is sufficient at this scale. Un-defer if the backlog grows past
+the point where hand-management drifts.
 
 ## Not in scope
 
