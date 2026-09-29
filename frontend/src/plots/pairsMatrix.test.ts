@@ -9,7 +9,7 @@ const rect = (xc: string, yc: string): GateSpec => ({
   x_min: 0, x_max: 1, y_min: 2, y_max: 3,
 })
 const child = (name: string, gate?: GateSpec): FlatPop => ({
-  path: `/${name}`, name, parent: 'root', colour: '#fff', show: true, depth: 0, gate,
+  path: `/${name}`, name, uid: '', parent: 'root', colour: '#fff', show: true, depth: 0, gate,
 })
 
 describe('buildPairDefs (ggpairs matrix)', () => {

@@ -38,6 +38,7 @@ const props = defineProps<{
   vis?: VisProps                          // plot styling (from the pop manager, global/local scope)
   state: { measure?: string }
   docked?: boolean                        // fill a grid slot (Analysis board) instead of free-floating
+  reloadToken?: number                    // bumped by the host to force a refetch (canvas reload)
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
@@ -169,7 +170,8 @@ function exportAs(kind: string) {
 }
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setUid, () => props.suffix,
-       () => measure.value, () => JSON.stringify(props.shownPops.map(p => [p.path, p.clusterIds]))], load)
+       () => measure.value, () => JSON.stringify(props.shownPops.map(p => [p.path, p.clusterIds])),
+       () => props.reloadToken], load)
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // styling is render-only (no refetch) — re-render when the vis bag changes
 watch(v, () => plotBox.redraw(), { deep: true })

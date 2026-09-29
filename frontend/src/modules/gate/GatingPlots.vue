@@ -17,6 +17,8 @@
 import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
+import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
+import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import CellSelectionTools from '../../components/CellSelectionTools.vue'
@@ -214,8 +216,22 @@ const panelLabels = (s: PlotState) => scope.value === 'global' ? gLabels.value :
 const panelFromZero = (s: PlotState) => scope.value === 'global' ? gFromZero.value : s.fromZero
 const panelDotSize = (s: PlotState) => scope.value === 'global' ? gDotSize.value : (s.dotSize ?? DOT_R)
 
-// what the manager shows/edits = the active scope's value
-const activeHL = computed(() => scope.value === 'global' ? gHL.value : (activePanel.value?.state.hl ?? []))
+// Manual-apply staging — same "wait for population selection to update plots" toggle the summary
+// and cluster hosts offer, from the shared composable. Only affects GLOBAL scope; local scope
+// commits per-click as before (docs/todo/POP_SYNC_PLAN.md).
+const { manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
+        remapStaged } = usePopSelectionMode({ shared, live: gHL })
+
+// Manual reload — bumped by the manager's reload button; threaded into GatePlotPanel /
+// GatePairsPanel so their fetch watches re-fire. Ungated by autoRefreshOnTask.
+const reloadTokenLocal = ref(0)
+const reload = () => { reloadTokenLocal.value++ }
+
+// what the manager shows/edits = the active scope's value; global uses stagedSel when staging is on
+// so the row updates immediately even though the plots stay on `gHL` until Apply.
+const activeHL = computed(() => scope.value === 'global'
+  ? (manualApply.value ? stagedSel.value : gHL.value)
+  : (activePanel.value?.state.hl ?? []))
 const activeLineWidth = computed(() => scope.value === 'global' ? gLineWidth.value : (activePanel.value?.state.lineWidth ?? 1.5))
 const activeLabels = computed(() => scope.value === 'global' ? gLabels.value : (activePanel.value?.state.labels ?? true))
 const activeFromZero = computed(() => scope.value === 'global' ? gFromZero.value : (activePanel.value?.state.fromZero ?? true))
@@ -312,8 +328,11 @@ watch(activeSinglePop, single => {
 const memoSeries = seriesMemo<number>()
 
 function toggleHighlight(path: string) {
-  if (scope.value === 'global') gHL.value = toggle(gHL.value, path)
-  else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl, path)
+  if (scope.value === 'global') {
+    // manual-apply mode: stage the toggle; plots stay on `gHL` until Apply. Mirrors SummaryCanvas.
+    if (manualApply.value) stagedSel.value = toggle(stagedSel.value, path)
+    else gHL.value = toggle(gHL.value, path)
+  } else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl, path)
 }
 function setLineWidth(v: number) { if (scope.value === 'global') gLineWidth.value = v; else if (activePanel.value) activePanel.value.state.lineWidth = v }
 function setDotSize(v: number) { if (scope.value === 'global') gDotSize.value = v; else if (activePanel.value) activePanel.value.state.dotSize = v }
@@ -414,21 +433,32 @@ watch(() => props.imageUid, () => {
 watch(() => g.transientPaths, (paths) => {
   for (const p of paths) if (!gHL.value.includes(p)) gHL.value = [...gHL.value, p]
 }, { deep: true })
-// a pop disappeared (cleared viewer selection, deleted pop) → drop it from highlights and any
-// plot displaying it. Without this a stale highlight keeps showPops true, so the base plot stays
-// dimmed/flat with no overlay to load (grey) instead of reverting to pseudocolour/contour.
-watch(() => g.flat.map(p => p.path).join('\n'), () => {
+// a pop disappeared or was renamed → remap highlights (and each panel's parent gate) to the new
+// path, or drop them on delete. `makePopPathRemap` follows uid → new path so a rename doesn't wipe
+// a highlight; a delete drops it, and a fresh mount falls back to path-presence. Without this a
+// stale highlight keeps showPops true, so the base plot stays dimmed/flat with no overlay to load
+// (grey) instead of reverting to pseudocolour/contour.
+let _prevFlatGate: PopIdent[] = g.flat.map(p => ({ key: p.path, uid: p.uid }))
+watch(() => g.flat.map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
   // Same singleton-store guard as the panel watches: `g.flat` is whichever popType is active in the
   // store. If the Tracking page loaded (`g.popType = 'track'`), a flow page's flat is track pops —
   // none of which contain `/qc/CD169-`, so a flow panel's `state.parent` would reset to root even
   // though its own tree still has the pop. Only prune when the store's popType matches this page's.
   if (g.popType !== props.popType) return
-  const exist = new Set(g.flat.map(p => p.path))
-  gHL.value = gHL.value.filter(p => exist.has(p))
+  const next: PopIdent[] = g.flat.map(p => ({ key: p.path, uid: p.uid }))
+  const remap = makePopPathRemap(_prevFlatGate, next)
+  gHL.value = remapPopKeys(gHL.value, remap)
   for (const p of panels.value) {
-    p.state.hl = p.state.hl.filter(x => exist.has(x))
-    if (p.state.parent !== 'root' && !exist.has(p.state.parent)) p.state.parent = 'root'
+    p.state.hl = remapPopKeys(p.state.hl, remap)
+    if (p.state.parent !== 'root') {
+      const mapped = remap(p.state.parent)
+      p.state.parent = mapped ?? 'root'
+    }
   }
+  // Carry a rename through the staged bag too — a pending pop must not vanish because of a rename
+  // mid-edit.
+  remapStaged(remap)
+  _prevFlatGate = next
 })
 // WS (re)connect resync: the transient viewer-selection pop lives ONLY in the server's in-memory
 // registry (never persisted — see docs/POPULATION.md), so a backend restart wipes it. But the client's
@@ -623,12 +653,14 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                           :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
                           :dot-size="panelDotSize(p.state)" :pop-type="props.popType"
                           :ui="p.state" :persist-key="`${ckey}:${p.id}`"
+                          :reload-token="reloadTokenLocal"
                           @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
           <GatePlotPanel v-else :index="i" :arrange="p.arrange"
                          :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                          :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
                          :dot-size="panelDotSize(p.state)" :pop-type="props.popType"
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
+                         :reload-token="reloadTokenLocal"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
         <!-- Share Phase 1 — panel selection overlay. Same shape as SummaryCanvas + ClusterPlots. -->
@@ -683,9 +715,14 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                              :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
                              :dot-size="activeDotSize"
+                             :manual-apply="manualApply" :has-staged="hasStaged"
+                             :staged-change-count="stagedChangeCount" :reloadable="true"
                              @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
                              @update:line-width="setLineWidth" @update:dot-size="setDotSize" @update:gate-labels="setLabels"
-                             @update:axis-from-zero="setFromZero" @show-defining-plot="showDefiningPlot" />
+                             @update:axis-from-zero="setFromZero" @show-defining-plot="showDefiningPlot"
+                             @update:manualApply="manualApply = $event"
+                             @apply:staged="applyStaged" @discard:staged="discardStaged"
+                             @reload="reload" />
         </template>
       </FloatingCanvasHost>
     </template>

@@ -53,6 +53,7 @@ const props = defineProps<{
   // window-arrangement command (Tile/Cascade); seq bumps to force re-apply
   arrange?: ArrangeCmd | null
   persistKey?: string        // CanvasPanel geometry persistence key
+  reloadToken?: number       // bumped by the host to force a refetch (canvas reload button)
 }>()
 const emit = defineEmits<{ activate: [number]; 'update:parent': [string]; remove: [] }>()
 const g = useGatingStore()
@@ -443,6 +444,12 @@ watch(hlVersion, loadPopLayers)
 // Same popType guard as the store-readiness watch above: only refetch when the singleton store is on
 // this panel's popType — otherwise plotmeta would query the wrong popType's tree.
 useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => {
+  if (g.popType !== props.popType) return
+  fetchPlot()
+})
+// Manual reload from the canvas — bumped by GatingPlots on the reload button. Same guard as the
+// auto path so we don't fetch under the wrong popType; ungated by autoRefreshOnTask.
+watch(() => props.reloadToken, () => {
   if (g.popType !== props.popType) return
   fetchPlot()
 })

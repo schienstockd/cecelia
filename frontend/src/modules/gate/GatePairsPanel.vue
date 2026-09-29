@@ -49,6 +49,7 @@ const props = defineProps<{
         z?: string; zt?: Kind }
   arrange?: ArrangeCmd | null
   persistKey?: string
+  reloadToken?: number       // bumped by the host to force a refetch (canvas reload button)
 }>()
 const emit = defineEmits<{ activate: [number]; 'update:parent': [string]; remove: [] }>()
 const g = useGatingStore()
@@ -97,6 +98,10 @@ const taskReload = ref(0)
 // data should not force a tile refetch of this panel against a store transiently on the wrong popType.
 useDataRefresh(() => (g.imageUid ? [g.imageUid] : []),
                () => { if (g.popType === props.popType) taskReload.value++ })
+// Manual reload from the canvas — bumped by GatingPlots on the reload button. Same popType guard;
+// ungated by autoRefreshOnTask.
+watch(() => props.reloadToken,
+      () => { if (g.popType === props.popType) taskReload.value++ })
 // force a point refresh when membership moves without the tiles changing (ancestor gate edit, viewer
 // selection re-evaluated) — the parent's / a highlighted pop's version bumps in the store.
 const reloadKey = computed(() =>

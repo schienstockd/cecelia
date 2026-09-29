@@ -39,6 +39,7 @@ const props = defineProps<{
   vis?: VisProps                 // canvas plot styling (dark-theme etc.) — see ClusterPlots panelVis
   state: { features?: string[]; heatmapScale?: 'minmax' | 'zscore'; heatmapValues?: boolean }
   docked?: boolean               // fill a grid slot (Analysis board) instead of free-floating
+  reloadToken?: number           // bumped by the host to force a refetch (canvas reload button)
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
@@ -115,7 +116,8 @@ async function load() {
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setUid, () => props.popType,
        () => props.suffix, () => features.value.join(','),
-       () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds]))], load)
+       () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds])),
+       () => props.reloadToken], load)
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 onMounted(load)
 // self-seed: default to the run's full feature set once known (don't clobber a user pick / an empty
