@@ -31,6 +31,7 @@ const PROFILE_KEYS = [
   'moviesShowDetails', 'moviesChannelMode',
   // Panel / layout
   'sidebarCollapsed', 'rightPanelCollapsed', 'viewerWindowSideCollapsed',
+  'plotsMaximised',
   'viewerPanelOpen', 'labLogPanelOpen', 'correctionCockpitOpen',
   'correctionCockpitMode', 'correctionCockpitValueName',
   'kiwiOpen', 'viewerSelectMode',
@@ -260,6 +261,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // page's task list was collapsed. CollapsiblePanel accepts a `collapsedRef`
   // override; ViewerWindow points it here.
   const viewerWindowSideCollapsed = ref(localStorage.getItem('cc.viewerWindowSideCollapsed') === 'true')
+  // Every module page's plot canvas (ModuleLayout's #plots CollapsibleSection) fills the whole browser
+  // window when this is on. One flag app-wide so a laptop workflow doesn't have to re-maximise on every
+  // page switch — Esc or the header button restores. Bound to `composables/usePlotFullscreen.ts`.
+  const plotsMaximised = ref(localStorage.getItem('cc.plotsMaximised') === 'true')
   // the Viewer controls are a floating dockable panel (not a sidebar section) — this is its
   // open/closed state, toggled from the sidebar "Viewer" button. Off by default (opt-in, no intrusion).
   const viewerPanelOpen = ref(localStorage.getItem('cc.viewerPanelOpen') === 'true')
@@ -691,6 +696,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
   watch(viewerWindowSideCollapsed, v => localStorage.setItem('cc.viewerWindowSideCollapsed', String(v)))
+  watch(plotsMaximised,           v => localStorage.setItem('cc.plotsMaximised',           String(v)))
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
   watch(viewerSelectMode,         v => localStorage.setItem('cc.viewerSelectMode',         String(v)))
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
@@ -766,6 +772,7 @@ export const useSettingsStore = defineStore('settings', () => {
     moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode,
     moviesShowDetails, moviesChannelMode,
     sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed,
+    plotsMaximised,
     viewerPanelOpen, labLogPanelOpen, correctionCockpitOpen,
     correctionCockpitMode, correctionCockpitValueName,
     kiwiOpen, viewerSelectMode,
@@ -839,7 +846,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
