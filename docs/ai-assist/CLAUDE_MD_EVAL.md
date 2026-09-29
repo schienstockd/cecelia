@@ -1,6 +1,6 @@
 # CLAUDE.md compliance eval
 
-_Rendered 2026-09-29T04:29:11Z from `~/.cecelia-effectiveness/events.jsonl` — auto-regenerated at the end of every `pixi run claude-md-eval` pass. Standalone regen via `pixi run claude-md-eval-rollup`. Not auto-committed._
+_Rendered 2026-09-29T08:56:02Z from `~/.cecelia-effectiveness/events.jsonl` — auto-regenerated at the end of every `pixi run claude-md-eval` pass. Standalone regen via `pixi run claude-md-eval-rollup`. Not auto-committed._
 
 Behavioral compliance signal for `CLAUDE.md`: a fresh `claude -p` agent is given a task under a rule, the diff + tool trace are scored deterministically. Design + methodology: [`docs/todo/CLAUDE_MD_EVAL_PLAN.md`](../todo/CLAUDE_MD_EVAL_PLAN.md).
 
@@ -23,15 +23,7 @@ Behavioral compliance signal for `CLAUDE.md`: a fresh `claude -p` agent is given
 
 - **When:** 2026-09-29 00:50 UTC · **Blob:** `436f7b69` · **Runs per arm:** 3
 
-> Δ discipline: N≥3 AND at least one trace per arm inspected before quoting these numbers as evidence anywhere (plan D12). This table is data, not conclusion.
-
-| Prompt | With | Without | ΔCompliant | With $ | Without $ | Δ$ |
-|---|---:|---:|---:|---:|---:|---:|
-| `cite-algorithm` | 0/3 | 0/3 | +0 | $1.713 | $0.000 | +$1.713 |
-| `dir-size` | 3/3 | 0/3 | +3 | $1.297 | $0.000 | +$1.297 |
-| `discovery-first` | 0/3 | 0/3 | +0 | $1.251 | $0.000 | +$1.251 |
-| `kill-process-tree` | 1/3 | 0/3 | +1 | $1.629 | $0.000 | +$1.629 |
-| **TOTAL** | **4** | **0** | **+4** | $5.89 | $0.00 | +$5.89 |
+> ⚠ **WITHOUT arm errored across ≥50% of runs — Δ suppressed.** An arm-wide error means the numeric delta is not evidence about CLAUDE.md; it is evidence the arm broke. Re-run `pixi run claude-md-eval-ablation` once the underlying cause is fixed. First known case: 2026-09-29 claude 2.1.284 post-update pairing/auth transient (errored 12/12 WITHOUT runs).
 
 ## Failing rules (latest suite)
 

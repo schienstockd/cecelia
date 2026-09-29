@@ -247,6 +247,60 @@ class AblationSectionTest(unittest.TestCase):
         self.assertIn("N≥3", md)
         self.assertIn("trace per arm", md)
 
+    def test_ablation_suppresses_delta_when_without_arm_errored(self):
+        # 2026-09-29 case: WITHOUT arm errored 12/12 on a Claude Code post-update
+        # transient. The old rollup published a bogus Δ=+4 that any reader would
+        # misread as CLAUDE.md compliance evidence. Explicit error counts trigger
+        # the guard.
+        events = [
+            _suite_row(ts="2026-09-28T09:00:00Z",
+                       per_prompt={"a": {"compliant": 3}}),
+            _ablation_row(ts="2026-09-28T10:00:00Z",
+                          per_prompt={
+                              "a": {"with_compliant": 3, "without_compliant": 0,
+                                    "delta_compliant": 3,
+                                    "with_cost_usd": 1.71, "without_cost_usd": 0.0,
+                                    "delta_cost_usd": 1.71,
+                                    "with_error": 0, "without_error": 3},
+                              "b": {"with_compliant": 3, "without_compliant": 0,
+                                    "delta_compliant": 3,
+                                    "with_cost_usd": 1.30, "without_cost_usd": 0.0,
+                                    "delta_cost_usd": 1.30,
+                                    "with_error": 0, "without_error": 3},
+                          }),
+        ]
+        md = self.rollup.render_eval_rollup(events, rendered_ts="2026-09-28T12:00:00Z")
+        self.assertIn("## Latest ablation", md)
+        self.assertIn("Δ suppressed", md)
+        self.assertIn("WITHOUT arm errored", md)
+        # The numeric delta table must not render — no `+3` cells, no `ΔCompliant`
+        # header. (Also verifies the guard fires before the table body is composed.)
+        self.assertNotIn("ΔCompliant", md)
+        self.assertNotIn("+3", md)
+
+    def test_ablation_suppresses_delta_when_legacy_row_shows_cost_asymmetry(self):
+        # Old ablation rows written before per-arm error counts landed have to fall
+        # back to a cost-based sentinel: if one arm's total cost is <5% of the other's
+        # (and the other's is meaningful), treat as errored.
+        events = [
+            _suite_row(ts="2026-09-28T09:00:00Z",
+                       per_prompt={"a": {"compliant": 3}}),
+            _ablation_row(ts="2026-09-28T10:00:00Z",
+                          per_prompt={
+                              # No `with_error`/`without_error` keys.
+                              "a": {"with_compliant": 3, "without_compliant": 0,
+                                    "delta_compliant": 3,
+                                    "with_cost_usd": 1.71, "without_cost_usd": 0.0,
+                                    "delta_cost_usd": 1.71},
+                              "b": {"with_compliant": 3, "without_compliant": 0,
+                                    "delta_compliant": 3,
+                                    "with_cost_usd": 1.30, "without_cost_usd": 0.0,
+                                    "delta_cost_usd": 1.30},
+                          }),
+        ]
+        md = self.rollup.render_eval_rollup(events, rendered_ts="2026-09-28T12:00:00Z")
+        self.assertIn("Δ suppressed", md)
+
 
 class TrendSectionTest(unittest.TestCase):
     def setUp(self):

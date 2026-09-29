@@ -10,25 +10,40 @@ Where this doc departs from the plan doc's stance, the plan-doc section is named
 
 ---
 
-## TL;DR
+## TL;DR — diagnostic tool, not a compliance suite
 
-- **`D_t` = anchor set A (5 stable prompts, unchanged for the whole year) ∪ rotation set
-  R\_t (5–7 prompts, weekly churn).** `|D_t|` ≤ 12, matching current suite size.
-- **Distillation over escalation.** Reference 3 (Wang et al.) transfers as written:
-  single-contributor, non-adversarial repo has nobody to escalate against; every added
-  prompt spends real dollars against one reader (Dominik).
-- **Retire on prompt-triviality, not on rule-compliance.** A prompt at 3/3 for three
-  weeks retires only if the *rule* also produced ≥3 real findings in the same period;
-  otherwise the prompt is trivial and gets rewritten. Directly extends
-  *Sonnet 2026-09-28 discipline additions* (D12) and the *What to design* item 1
-  distinction in the prompt.
-- **Add on repeat-count ≥3 across distinct PRs**, not on first sight. Directly borrowed
-  from Yoo & Harman 2012 selection theory (see Sources).
-- **Cost cap: $20/week WITH-arm.** Tonight's $17.09 already sits at 85% of that ceiling
-  with no rotation activity — the plan doc's $1–2 estimate (*Cost model*) is ~10× low,
-  flag and correct.
-- **Direct:indirect target: 3:2 in R\_t, 4:1 in A.** Shift indirect share by +1 prompt
-  per quarter until R\_t reaches 1:1.
+**Original intent (Dominik, 2026-09-29):** *"I thought we can build a system to diagnose
+weaknesses in our dev setup, and clean those up over time."* This doc restores that
+frame — the compliance-suite reading that had crept in gets called out and reversed.
+
+- **Every prompt is a hypothesis about a specific weakness.** Not "a helper to enforce"
+  but "I suspect a fresh Claude, given only CLAUDE.md, does not reach for X."
+- **Every prompt has an exit condition.** Stable 3/3 for N weeks = weakness cleaned up
+  (or never was) → **retire**. Stable 0/3 across two well-formed interventions =
+  weakness isn't fixable at this layer → **escalate** to a different intervention layer
+  (ratchet, doc restructure, workflow change) and retire from the eval.
+- **The suite SHRINKS as weaknesses close.** New probes cycle in as new drift is
+  spotted; old ones cycle out. Growing headcount is compliance thinking — the
+  ~$17/week baseline should be a peak, not a floor.
+- **Direct probes should live as ratchets, not eval prompts.** If a compliance signal
+  is a regex on a symbol name (`write_h5ad_atomic`, `_kill_tree`, `debouncedLatest`),
+  a ratchet catches it deterministically, cheaper, per-PR. The eval's unique value is
+  behavioural probes ratchets *can't* reach: sibling-parity, repair-not-warn, whether
+  fresh Claude picks the canonical from cold context. **Copy-canonical is the shape;
+  h5ad-write is not.**
+- **Add on repeat-count ≥3 across distinct PRs** (S1 Yoo & Harman) — one-off drift is
+  noise. Mine `~/.claude/projects/-home-dominik-cc-workspace-cecelia*/` sessions for
+  the correction language ("no", "don't", "we already have"), cluster, prioritise by
+  frequency.
+
+**Concrete implications of the diagnostic frame** (open at time of writing):
+- The 7 stable-3/3 backend I/O prompts (h5ad-read/write, zarr-read/write,
+  utf-8-json-write, spawn-python, crop-failure) are **retirement candidates**, not
+  vindicated fixtures. See *Findings* §.
+- `cite-algorithm` + `discovery-first` at 0/3 across two rewrites is a signal the rule
+  is not teachable at the current layer, not a signal to try a third rewrite. Escalate.
+- `canary` is infrastructure (pre-flight for the eval itself), not a weakness probe —
+  it stays regardless of the exit-condition rules.
 
 ---
 
@@ -571,33 +586,36 @@ pilots + one WITHOUT-arm smoke).** All runs live in `~/.cecelia-effectiveness/ev
 
 Total: 15 prompts × N=3 = 45 runs. **Compliance: 34/45 (76%).**
 
-### Verdict against the plan's headline claims
+### Verdict against the plan's headline claims (diagnostic re-reading)
 
-- **"Distillation over escalation" — falsified for `cite-algorithm` + `discovery-first`.**
-  Both had been rewritten pre-run to anchor in real repo territory (logicle transform +
-  its Moore-Parks-2012 CLAUDE.md example; tile-slice generator + the `slice_utils`
-  inventory hit). Both scored **0/3 compliant** — unchanged from the pre-rewrite
-  baseline. `discovery-first` also had tool_order=FAIL 3/3, meaning the agent didn't
-  even do the discovery step, let alone reach the canonical helper. The Wang-et-al
-  distillation argument (that a real, credible task cues the rule better than a
-  contrived one) is not sufficient here; the rule wording in CLAUDE.md itself, or the
-  learnability of the rule via a task prompt at all, is the next constraint to check.
-  Rewriting the *task* twice with no movement is evidence the mechanism is upstream.
-- **8-of-15 prompts stable 3/3 vindicates the S3 discrimination concern.** The stable
-  regulars (`canary` + 7 backend I/O prompts) are consuming ~53% of every weekly run's
-  budget to re-confirm behaviour we have established. Per S3, a 3/3 prompt over
-  multiple weeks is a **discrimination candidate for retirement**, not evidence the
-  rule is being internalised harder. This is the exact case anchor set A was designed
-  for: keep the canary + one representative per rule family under long cadence, retire
-  the rest.
-- **Frontend pilot signal quality is high.** `frontend-inlinenote` clean 3/3 (agent
-  reaches for `InlineNote` unprompted); `frontend-coalesce` clean 3/3 post regex fix
-  (initial pilot missed `debouncedLatest<T>(` because `\(` didn't allow the type
-  param — caught + fixed before landing); `frontend-copy-canonical` 0/3 with
-  tool_order=FAIL 3/3 is **not a scoring bug — it is a real drift signal.** Agents do
-  not reach for `CLAUDE_TERMINAL.action` unprompted; they hardcode `'Fix'` and
-  `'Setting up…'` inline. This is exactly the shape of finding the frontend eval was
-  designed to catch, and it caught one first pass.
+- **`cite-algorithm` + `discovery-first` at 0/3 across two rewrites = escalate out of
+  the rule-rewrite loop.** Both were rewritten pre-run to anchor in real repo
+  territory (logicle transform + its Moore-Parks-2012 CLAUDE.md example; tile-slice
+  generator + the `slice_utils` inventory hit). Both scored **0/3 compliant** —
+  unchanged from the pre-rewrite baseline. `discovery-first` also had tool_order=FAIL
+  3/3: the agent didn't even do the discovery step. Under the diagnostic frame this is
+  a decisive result — the rule text is not teachable at the current layer. Next
+  interventions are (a) restructure the CLAUDE.md section itself (not the prompt),
+  (b) add a ratchet that enforces the anti-pattern instead of trusting the rule to
+  steer, or (c) accept the rule can't carry it, document, and retire both prompts. A
+  third rewrite of the same shape would be diagnostic-mode churn.
+- **7-of-15 stable 3/3 = 7 retirement candidates.** Under compliance framing these
+  were "vindicated"; under diagnostic framing they are prompts that have delivered
+  their result — the weakness they probed does not exist (or is closed). `h5ad-read`,
+  `h5ad-write`, `zarr-read`, `zarr-write`, `utf-8-json-write`, `spawn-python`,
+  `crop-failure` are all direct probes on symbol names already enforced by ratchets
+  in `python/cecelia/tests/test_*_convention.py` + `app/test/suite/ratchets.jl`. The
+  eval is duplicating the ratchet's job. Retire from `prompts/` (move to
+  `prompts/retired/`); ratchet remains the correctness backstop. `canary` stays as
+  eval infrastructure (pre-flight check that CLAUDE.md loads at all).
+- **Frontend pilot signal quality validates the indirect-probe shape.**
+  `frontend-inlinenote` clean 3/3 direct-shape → retirement candidate under the same
+  logic as the backend anchors. `frontend-coalesce` clean 3/3 post regex fix → same,
+  and the regex was fragile enough that the signal-per-dollar is low even before
+  retirement. `frontend-copy-canonical` 0/3 with tool_order=FAIL 3/3 is **the shape
+  that pays** — task never names `CLAUDE_TERMINAL.action`, compliant path requires
+  grep + import, agents hardcode `'Fix'` and `'Setting up…'` inline. This is the only
+  prompt in the current suite that could not be replaced by a ratchet; the rest could.
 
 ### WITHOUT-arm status
 
@@ -609,24 +627,47 @@ post-update pairing/auth path, not a persistent bug.** Historic Δ data from pri
 ablations remains the authoritative "CLAUDE.md is the mechanism" evidence for now;
 next ablation can quote a real Δ.
 
-### What this means for the plan doc's design
+### What this means going forward
 
-- **Anchor set A stays as designed** (canary, h5ad-read, zarr-write, utf-8-json-write,
-  spawn-python) — all 3/3 stable, no reason to change.
-- **Rotation set R_t candidates for retirement (based on this pass alone,
-  provisional):** the 3 remaining backend I/O prompts that mirror anchors
-  (`h5ad-write` mirrors `h5ad-read`; `zarr-read` mirrors `zarr-write`; `crop-failure`
-  is a `zarr-utils` variant). One-per-family suffices for weekly compliance signal.
-  **Do not retire on one pass** — plan doc's `1.0 for 3 weeks` retirement floor
-  applies. Flag for review at the 2026-10-19 checkpoint.
-- **Rule-wording review (new open question):** for `cite-algorithm` and
-  `discovery-first`, is the CLAUDE.md rule wording itself the blocker? A rule that
-  a task-anchored, inventory-grounded, real-example-cued prompt cannot score
-  compliant on — after two rewrites — is a candidate for rule rewrite (a change to
-  `CLAUDE.md` itself, tracked as a distinct blob-SHA baseline), not just prompt
-  rewrite.
-- **Cost model update:** first three real weekly-scale passes to date were $17.09
-  (2026-09-28 full weekly cron), ~$6 (this ablation WITH-arm), ~$14 (this narrow
-  re-fire). Landing the 3 frontend pilots pushes weekly to 15×3=45 runs, ~+25% cost
-  every week without offsetting retirements. The $20/week cap proposed in *Cost and
-  cadence* is now the actual next-week reality, not a projection.
+- **Anchor set concept goes away.** Under diagnostic framing there is no "anchor" —
+  there are open weakness probes, and there is `canary` (infrastructure). Prompts
+  either reveal an open weakness (keep + intervene) or they don't (retire). The
+  compliance-suite habit of keeping stable prompts around "for the trend" is what
+  ballooned the cost baseline.
+- **Retirements to execute now** (do not wait for the 2026-10-19 checkpoint — that
+  checkpoint was designed under compliance framing):
+  - Move `h5ad-read`, `h5ad-write`, `zarr-read`, `zarr-write`, `utf-8-json-write`,
+    `spawn-python`, `crop-failure` to `scripts/claude_md_eval/prompts/retired/`.
+    Justification for N=1 retirement: each is enforced by a ratchet
+    (`test_h5ad_access_convention.py`, `test_zarr_access_convention.py`,
+    `test_utf8_encoding_convention.py`, the `python spawn ratchet` in
+    `app/test/suite/ratchets.jl`). The eval is duplicating the ratchet's job — the
+    weakness is closed regardless of eval N. The runner enumerates `prompts/*.md`
+    non-recursively so a move suffices.
+- **Retirements to review after one more pass** (no ratchet backstop, so a single
+  data point isn't enough):
+  - `frontend-inlinenote` (3/3 direct probe) and `frontend-coalesce` (3/3 post-fix,
+    but the regex fragility on `debouncedLatest<T>(` dropped the signal-per-dollar).
+    If both hold 3/3 next Monday and no drift-mining pass surfaces them, retire.
+- **Escalations to execute now:**
+  - `cite-algorithm`: choose one of (a) redesign the CLAUDE.md rule section (not the
+    prompt) after inspecting one `--keep-worktrees` trace, (b) add a ratchet on the
+    anti-pattern if one is expressible, (c) accept + retire. Do NOT rewrite the
+    prompt a third time.
+  - `discovery-first`: same three-choice escalation. tool_order FAIL 3/3 across two
+    prompt rewrites is a strong signal (b) or (c) is where the fix lives.
+- **New probes cycle in from PR-history mining, not from imagination.** First
+  candidate `hand-rolled-debounce` (indirect probe on `debouncedLatest`, cluster
+  #1 from the 2026-09-29 mining pass). Task shape mirrors `frontend-copy-canonical`.
+  Score of 3/3 → retire probe + inspect whether the corresponding ratchet
+  (`continuousControls.test.ts`) can be relaxed. Score of 0/3 → the rule text is
+  not teaching; either the rule doesn't exist in a discoverable place, or the
+  inventory pointer is missing. Fix that layer, not the prompt.
+- **Cost baseline reframed as a peak, not a floor.** The $17/wk figure is one
+  weekly-scale pass and reflects the compliance-era headcount. After the 7 hard
+  retirements above the live weekly is 8 prompts (canary + cite-algorithm +
+  discovery-first + dir-size + kill-process-tree + frontend-copy-canonical +
+  frontend-inlinenote + frontend-coalesce), plus `hand-rolled-debounce` = 9; the
+  frontend anchor retirements would drop that to 7. Projected weekly: ~$8–12/wk
+  depending on which candidates land. That is the diagnostic-era band — new probes
+  add, closures subtract, the number should drift, not grow monotonically.
