@@ -76,7 +76,8 @@ inspection per D12 discipline, which cron can't do.
 ## Adjust for your setup
 
 If your checkout lives somewhere other than `~/cc-workspace/cecelia/cecelia-feijoa`,
-or if `pixi` / `claude` live outside `~/.local/bin`:
+or if `pixi` / `claude` live outside the covered defaults (`~/.pixi/bin` for
+`pixi`, `~/.local/bin` for `claude`):
 
 ```bash
 systemctl --user edit claude-md-eval.service

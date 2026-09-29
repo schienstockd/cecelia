@@ -288,7 +288,8 @@ Do not set `CECELIA_HOST=0.0.0.0` and do not open TCP 8080 in the cloud firewall
 
 **Environment adjustments.** After `install.sh` finishes:
 - Re-source `~/.bashrc` (or open a new shell) — juliaup adds `~/.local/bin` to `PATH`, and `pixi`
-  installs its own shim there. Without this, `pixi run app` won't find `julia`.
+  installs its own shim in `~/.pixi/bin` (added to `PATH` by pixi's installer). Without this,
+  `pixi run app` won't find `julia`, and `pixi` itself won't be on `PATH`.
 - `~/.cecelia/` is the default config + projects root. If the boot disk is small, mount a persistent
   disk and set `projects_dir` in `~/.cecelia/custom.toml` (or in the first-run wizard, which you
   reach through the tunnel).
