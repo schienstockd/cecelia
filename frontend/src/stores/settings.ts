@@ -414,8 +414,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // pop's ribbons drawn at once. The row-eye lets the user hide one; persistence is what makes the
   // hide stick — the pop-manager pings that fire `loadOverlays` on every gate write used to reset a
   // transient set, so hides evaporated within a second ("i've set the toggles correctly. there must
-  // be a wiring that is off"). Stored as an array in JSON; consumed as a Set. Reconciled on load —
-  // paths absent from the current payload are dropped, so a renamed/removed pop doesn't linger.
+  // be a wiring that is off"). Stored as an array in JSON; consumed as a Set. Reconciled on load
+  // via `makePopPathRemap` in `ViewerWindow.loadOverlays` — a RENAME carries the hide to the pop's
+  // new path (server-side `Population.uid` survives rename), a DELETE drops it; that's what stops
+  // a renamed pop from becoming visible again on the next payload.
   const _trackPopHiddenStore = ref<Record<string, Record<string, string[]>>>(
     JSON.parse(localStorage.getItem('cc.viewerTrackPopHidden') ?? '{}')
   )

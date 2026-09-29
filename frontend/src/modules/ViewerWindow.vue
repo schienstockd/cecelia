@@ -85,6 +85,7 @@ import {
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
+import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
@@ -1725,14 +1726,21 @@ async function loadOverlays() {
     if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
     // Track-layer hides are user intent, not server state — reconcile against the fresh payload
-    // (drop entries for pops no longer present) instead of resetting. See `hiddenTrackPops` docstring
+    // instead of resetting. Uid-aware remap (docs/todo/POP_SYNC_PLAN.md): a RENAME carries the hide
+    // to the pop's new path (its uid is preserved by `rename_pop!`), a DELETE drops it, first fetch
+    // falls back to path-presence for legacy payloads with no uid. See `hiddenTrackPops` docstring
     // for why persistence is the right shape here.
     const gcVn = gatingCurrent.value.valueName || ''
     const persisted = imageUid ? settings.getTrackPopHidden(imageUid, gcVn) : new Set<string>()
-    const live = new Set((p.pops ?? []).map(x => x.path))
-    hiddenTrackPops.value = new Set([...persisted].filter(path => live.has(path)))
-    if (imageUid && persisted.size !== hiddenTrackPops.value.size) {
-      settings.setTrackPopHidden(imageUid, gcVn, hiddenTrackPops.value)
+    const prevPopIdents: PopIdent[] = (overlays.value?.pops ?? []).map(x => ({ key: x.path, uid: x.uid ?? '' }))
+    const nextPopIdents: PopIdent[] = (p.pops ?? []).map(x => ({ key: x.path, uid: x.uid ?? '' }))
+    const remap = makePopPathRemap(prevPopIdents, nextPopIdents)
+    const nextHidden = new Set(remapPopKeys([...persisted], remap))
+    hiddenTrackPops.value = nextHidden
+    const same = persisted.size === nextHidden.size &&
+                 [...persisted].every(k => nextHidden.has(k))
+    if (imageUid && !same) {
+      settings.setTrackPopHidden(imageUid, gcVn, nextHidden)
     }
     overlays.value = p
     rebuildOverlays()
