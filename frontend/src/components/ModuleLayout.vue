@@ -44,6 +44,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { onRevealPlots, setSectionOpen } from '../utils/sectionOpen'
+import { usePlotFullscreen } from '../composables/usePlotFullscreen'
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
@@ -105,6 +106,12 @@ onBeforeUnmount(onRevealPlots(() => {
   setSectionOpen(imagesOpenKey.value, false)
   setSectionOpen(plotsOpenKey.value, true)
 }))
+
+// Plot-canvas fullscreen — one app-wide flag (per-profile), reachable from every module page's
+// action bar. When maximised, the plots CollapsibleSection covers the viewport; force it open
+// on maximise (and on mount) so switching pages while maximised does not land in a closed section.
+const { maximised: plotsMaximised, toggle: togglePlotsMaximised } = usePlotFullscreen()
+watch(plotsMaximised, (v) => { if (v) setSectionOpen(plotsOpenKey.value, true) }, { immediate: true })
 
 const emit = defineEmits<{
   selectionChange: [uids: string[]]
@@ -336,6 +343,19 @@ const visibleUids = computed<string[]>(() =>
               <span class="filter-label">Filter{{ hasApplied ? ' •' : '' }}</span>
               <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
             </button>
+
+            <!-- Maximise the plot canvas to the whole browser window (covers AppHeader, AppSidebar,
+                 SetBar, image table, right panel and floating panels). When on, the button repositions
+                 to top-right of the viewport so it stays reachable; Esc also restores. Icon + label
+                 wording mirrors FloatingPanel's per-panel maximise. -->
+            <button v-if="$slots.plots && activeSet"
+              class="filter-toggle plots-max" :class="{ 'is-max': plotsMaximised }"
+              @click="togglePlotsMaximised"
+              v-tooltip.left="plotsMaximised ? 'Restore plot canvas (Esc)' : 'Maximise plot canvas'"
+              :aria-label="plotsMaximised ? 'Restore plot canvas' : 'Maximise plot canvas'">
+              <i class="pi" :class="plotsMaximised ? 'pi-window-minimize' : 'pi-window-maximize'" />
+              <span class="filter-label">{{ plotsMaximised ? 'Restore' : 'Max' }}</span>
+            </button>
           </div>
         </div>
 
@@ -388,9 +408,13 @@ const visibleUids = computed<string[]>(() =>
           </CollapsibleSection>
 
           <!-- Plot canvas — ONE consistent, collapse-persisted section for every module page.
-               ModuleLayout owns the wrapper so no module can forget it or diverge. -->
+               ModuleLayout owns the wrapper so no module can forget it or diverge.
+               `is-plots-maximised` fixes the section to inset:0 z:9999, covering the app shell —
+               the class rides Vue's fallthrough onto the child's root, so the scoped rule below
+               reaches it without touching the CollapsibleSection primitive. -->
           <CollapsibleSection v-if="$slots.plots && activeSet"
             data-guide="layout.plotsSection"
+            :class="{ 'is-plots-maximised': plotsMaximised }"
             :label="plotsLabel" max-height="none"
             :storage-key="plotsOpenKey">
             <slot name="plots"
@@ -548,4 +572,32 @@ const visibleUids = computed<string[]>(() =>
 }
 
 .no-set p { margin: 0; }
+
+/* ── Plot canvas maximise ─────────────────────────────────────────────────
+   The plots CollapsibleSection covers the viewport when maximised. z: 9999 sits above the
+   floating-panel stack (PANEL_Z_BASE = 60) and AppHeader (z: 100). Layout is column-flex so the
+   section header stays a natural-height strip and the body takes the remainder — plots that ask
+   for `height: 100%` (TabbedCanvas, SummaryCanvas) then fill the browser window. */
+.is-plots-maximised {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999;
+  background: var(--cc-bg);
+  display: flex;
+  flex-direction: column;
+}
+.is-plots-maximised :deep(.cs-body) {
+  flex: 1;
+  min-height: 0;
+  max-height: none !important;
+}
+
+/* Maximise toggle — normal filter-toggle button; when maximised, breaks out to top-right of the
+   viewport (above the fixed plots section) so restore is always reachable. */
+.filter-toggle.plots-max.is-max {
+  position: fixed;
+  top: 6px;
+  right: 8px;
+  z-index: 10000;
+}
 </style>
