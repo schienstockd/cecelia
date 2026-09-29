@@ -161,8 +161,10 @@ def check(command: str) -> str | None:
        recital ran against the same tree the commit is being made on top of). Catches
        hand-typed recital bodies with no real `pixi run recital` invocation, and stale
        reviews from before a rebase.
+    3. **Slug form when slugs exist** — if the message uses bare tags and the log holds
+       `_finding` rows for HEAD that no commit has tagged, block and list their slugs.
 
-    Gate 2 is skipped when HEAD SHA cannot be captured (not a repo, git missing) — degrade
+    Gates 2 and 3 are skipped when HEAD SHA cannot be captured (not a repo, git missing) — degrade
     to allow rather than block on our own failure.
     """
     if not _GIT_COMMIT.search(command):
@@ -206,6 +208,19 @@ def check(command: str) -> str | None:
                 "to catch. After a rebase, re-run recital: the parent SHA changed. "
                 "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1`."
             )
+        # Gate 3: bare tags write nothing to the log, so when recital slugged findings for
+        # this HEAD, a bare-tagged commit would leave them to the orphan sweep and record a
+        # fixed finding as `dropped_no_action`. Require the slug form for those.
+        if head_sha is not None and bare_outcomes:
+            untagged = _untagged_slugs_on_head(head_sha, set(slugs))
+            if untagged:
+                return (
+                    f"Recital logged {len(untagged)} finding(s) for HEAD {head_sha[:8]} that "
+                    f"this commit doesn't tag by slug: {', '.join(sorted(untagged))}. Bare "
+                    "tags like `[fixed_pre_commit]` don't reach the effectiveness log. Use "
+                    "`[<slug>: <outcome>]` for each. "
+                    "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1`."
+                )
 
     return None
 
@@ -248,6 +263,27 @@ _RESOLVED_EVENTS = frozenset({
 })
 
 
+def _untagged_slugs_on_head(head_sha: str, tagged_slugs: set[str]) -> dict[str, str]:
+    """Slugs the recital emitted against `head_sha` that neither `tagged_slugs` nor any prior
+    resolution covers, mapped to their `_finding` event name. Log-read failure → empty."""
+    findings_on_head: dict[str, str] = {}
+    resolved_slugs: set[str] = set()
+    try:
+        for row in read_events():
+            event = row.get("event")
+            slug = (row.get("payload") or {}).get("slug")
+            if not slug:
+                continue
+            if event in _FINDING_EVENTS and row.get("commit") == head_sha:
+                findings_on_head.setdefault(slug, event)
+            elif event in _RESOLVED_EVENTS:
+                resolved_slugs.add(slug)
+    except OSError:
+        return {}
+    return {s: e for s, e in findings_on_head.items()
+            if s not in resolved_slugs and s not in tagged_slugs}
+
+
 def write_dropped_for_orphan_slugs(
     command: str, *, pr: str | None = None, commit: str | None = None,
     branch: str | None = None,
@@ -268,22 +304,7 @@ def write_dropped_for_orphan_slugs(
         return 0
 
     tagged_slugs = {slug for slug, _ in _parse_pairs(command)}
-    findings_on_head: dict[str, str] = {}  # slug -> event name (for the resolved-event mapping)
-    resolved_slugs: set[str] = set()
-    try:
-        for row in read_events():
-            event = row.get("event")
-            slug = (row.get("payload") or {}).get("slug")
-            if not slug:
-                continue
-            if event in _FINDING_EVENTS and row.get("commit") == commit:
-                findings_on_head.setdefault(slug, event)
-            elif event in _RESOLVED_EVENTS:
-                resolved_slugs.add(slug)
-    except OSError:
-        return 0
-
-    orphans = set(findings_on_head) - resolved_slugs - tagged_slugs
+    orphans = _untagged_slugs_on_head(commit, tagged_slugs)
     written = 0
     for slug in sorted(orphans):  # sorted so tests get stable ordering
         resolved_event = _finding_event_for_slug(slug)

@@ -308,6 +308,78 @@ class FindingsEmissionTest(unittest.TestCase):
         # it directly into a `[slug: outcome]` pair.
         self.assertRegex(recital, r"- \[fanout-[0-9a-f]{8}\] \*\*foo\.jl:42\*\* — bar \[\*\*confirmed\*\*\]")
 
+    def test_real_drifted_bullet_shapes_all_emit(self):
+        # Verbatim shapes from reviewer outputs the strict regex dropped (sessions 4f331a3b,
+        # b8b65e0d, 134ef9fb, 94ccd376, 2c44f2fa — 11 of 29 findings lost, none since
+        # 2026-09-28 reached the log). Each must yield exactly one finding + slug.
+        drifted = [
+            ("- **python/cecelia/effectiveness/console.py:245-246** — `_Tally.add` bumps runs "
+             "[**confirmed**]", "python/cecelia/effectiveness/console.py", 245),
+            ("- **docs/todo/CLAUDE_MD_EVAL_PLAN.md:11, :309**: the cadence text still says "
+             '"weekly Wednesday 00:00". [**confirmed**]', "docs/todo/CLAUDE_MD_EVAL_PLAN.md", 11),
+            ("- **scripts/claude_md_eval/systemd/claude-md-eval.timer:8**: \"Pass takes ~15 min\" "
+             "[**confirmed**]", "scripts/claude_md_eval/systemd/claude-md-eval.timer", 8),
+            ("- **`python/cecelia/effectiveness/rollup.py:207`** — added `_pr_from_branch` "
+             "[**confirmed**]", "python/cecelia/effectiveness/rollup.py", 207),
+            ("- **scripts/claude_md_eval/run_plugin_eval_suite.py:44,49** — added "
+             "`_list_case_ids` [**confirmed**]", "scripts/claude_md_eval/run_plugin_eval_suite.py", 44),
+        ]
+
+        def fake(prompt: str) -> str:
+            if "FANOUT" in prompt:
+                return "\n".join(line for line, _, _ in drifted)
+            return "no convention check needed"
+
+        recital = run_recital("some diff", claude_runner=fake)
+        rows = [e["payload"] for e in self._events() if e["event"] == "fanout_audit_finding"]
+        self.assertEqual([(r["file"], r["line"]) for r in rows],
+                         [(f, n) for _, f, n in drifted])
+        self.assertEqual(len({r["slug"] for r in rows}), len(drifted))
+        for r in rows:
+            self.assertIn(f"- [{r['slug']}] **", recital)
+        self.assertNotIn("PARSE WARNING", recital)
+
+    def test_range_suffix_keeps_single_line_slug(self):
+        # `foo.jl:42-50` slugs the same as `foo.jl:42` — a reviewer re-run that switches to a
+        # range must not orphan the slug the author already quoted.
+        def fake_for(loc):
+            def fake(prompt: str) -> str:
+                if "FANOUT" in prompt:
+                    return f"- **{loc}** — bar [**confirmed**]"
+                return "no convention check needed"
+            return fake
+
+        run_recital("d", claude_runner=fake_for("foo.jl:42"))
+        run_recital("d", claude_runner=fake_for("foo.jl:42-50"))
+        slugs = [e["payload"]["slug"] for e in self._events() if e["event"] == "fanout_audit_finding"]
+        self.assertEqual(len(slugs), 2)
+        self.assertEqual(slugs[0], slugs[1])
+
+    def test_location_less_bullet_still_emits_with_distinct_slugs(self):
+        def fake(prompt: str) -> str:
+            if "CONVENTION_CHECK" in prompt:
+                return ("- added a JSON writer, use write_json_atomic [**should reuse**]\n"
+                        "- added a zarr opener, use open_as_zarr [**should reuse**]")
+            return "no fanout audit needed"
+
+        run_recital("d", claude_runner=fake)
+        rows = [e["payload"] for e in self._events() if e["event"] == "convention_check_finding"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["file"] for r in rows}, {"?"})
+        self.assertNotEqual(rows[0]["slug"], rows[1]["slug"])
+
+    def test_marker_off_bullet_surfaces_parse_warning(self):
+        # Tripwire for the next drift: a marker that isn't on a bullet line can't be slugged,
+        # so the recital says so instead of dropping it.
+        def fake(prompt: str) -> str:
+            if "FANOUT" in prompt:
+                return "1. **foo.jl:3** — numbered list, not a bullet [**confirmed**]"
+            return "no convention check needed"
+
+        recital = run_recital("d", claude_runner=fake)
+        self.assertIn("RECITAL PARSE WARNING", recital)
+        self.assertIn("1 finding marker(s)", recital)
+
     def test_pr_context_captured_when_available(self):
         # When `gh pr view` returns a number, both `_run` and `_finding` rows carry `pr`.
         with mock.patch("cecelia.effectiveness.recital._current_pr", return_value="#9999"):

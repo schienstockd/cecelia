@@ -60,19 +60,22 @@ class RecitalError(RuntimeError):
 _FANOUT_MARKER = "confirmed"
 _CONVENTION_MARKER = "should reuse"
 
-#: Bullet-line grammar shared by both reviewer prompts:
+#: Bullet-line grammar the reviewer prompts ask for:
 #:   `- **file:LINE** — <prose> [**marker**]`
-#: `file` allows anything but `*` and `:`; `line` is digits; `desc` is non-greedy.
-#: Matches the exact shape locked in SIBLING_CALL_AUDIT.md and CONVENTION_CHECK.md
-#: (Decision 1 of FINDINGS_EMISSION_PLAN.md). Alternate markers per mechanism are baked in.
-_FANOUT_FINDING_RE = re.compile(
-    r"^- \*\*([^*:]+):(\d+)\*\*\s+[—-]\s+(.+?)\s*\[\*\*confirmed\*\*\]\s*$",
-    re.MULTILINE,
+#: Reviewers drift from it in practice — line ranges (`:245-246`), line lists (`:11, :309`,
+#: `:44,49`), backtick-wrapped paths, `**:` instead of `** —`. A strict regex silently dropped
+#: every finding from 2026-09-28 on (11 of 29 across session history), so the parser is
+#: tolerant: ANY bullet line carrying the marker is a finding. The location is best-effort —
+#: first `file:LINE` wins, so `foo.jl:42` slugs the same with or without a trailing range.
+_BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+(?!\[(?:fanout|conv)-[0-9a-f]{8}\] )(.+)$", re.MULTILINE)
+_LEAD_LOCATION_RE = re.compile(
+    r"^\*\*`?([^*:`\s]+):(\d+)[^*]*?`?\*\*\s*[—–:-]?\s*(.*)$"
 )
-_CONVENTION_FINDING_RE = re.compile(
-    r"^- \*\*([^*:]+):(\d+)\*\*\s+[—-]\s+(.+?)\s*\[\*\*should reuse\*\*\]\s*$",
-    re.MULTILINE,
-)
+_ANY_LOCATION_RE = re.compile(r"`?([^\s*:`(),]+\.[A-Za-z0-9]+):(\d+)")
+
+
+def _marker_tag(marker: str) -> str:
+    return f"[**{marker}**]"
 
 
 class Finding(_t.NamedTuple):
@@ -86,69 +89,75 @@ class Finding(_t.NamedTuple):
     slug: str  # deterministic id — see `_slug`
 
 
-def _slug(mechanism: str, file: str, line: int, marker: str) -> str:
+def _slug(mechanism: str, file: str, line: int, marker: str, desc: str = "") -> str:
     """Deterministic short id for a finding, per Decision 3 of FINDINGS_EMISSION_PLAN.md.
 
     Same (mechanism, file, line, marker) → same slug across runs, so the author can quote a
     stale slug from a re-run of the recital without breaking correlation. sha1 truncated to
     8 hex chars — collision-safe at this cardinality (findings-per-PR ~O(10)); prefixed with
-    a short mechanism tag for human readability in commit messages.
+    a short mechanism tag for human readability in commit messages. `desc` joins the key only
+    when no location parsed (`line == 0`), so location-less findings don't all collide.
     """
-    key = f"{mechanism}|{file}|{line}|{marker}".encode("utf-8")
-    digest = hashlib.sha1(key).hexdigest()[:8]
+    key = f"{mechanism}|{file}|{line}|{marker}"
+    if line == 0:
+        key += f"|{desc}"
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
     prefix = "fanout" if mechanism == "fanout" else "conv"
     return f"{prefix}-{digest}"
+
+
+def _parse_bullet(body: str, mechanism: str, marker: str) -> Finding | None:
+    """Parse one bullet body (text after `- `); None if it doesn't carry `marker`."""
+    tag = _marker_tag(marker)
+    if tag not in body:
+        return None
+    text = body.replace(tag, " ").strip()
+    m = _LEAD_LOCATION_RE.match(text)
+    if m:
+        file, line, desc = m.group(1), int(m.group(2)), m.group(3).strip()
+    else:
+        loc = _ANY_LOCATION_RE.search(text)
+        file, line = (loc.group(1), int(loc.group(2))) if loc else ("?", 0)
+        desc = text
+    return Finding(
+        mechanism=mechanism, file=file, line=line, desc=desc, marker=marker,
+        slug=_slug(mechanism, file, line, marker, desc),
+    )
 
 
 def _parse_findings(output: str, mechanism: str) -> list[Finding]:
     """Extract outcome-tag-requiring findings from a reviewer's raw output.
 
-    Non-matching lines (commentary bullets, plausibles, short-circuits) are silently ignored;
-    the parser is strict-regex to avoid over-emitting log rows for lines the hook won't be
-    asked to resolve. Order-preserving.
+    Every bullet line carrying the mechanism's marker is one finding (see `_BULLET_RE`);
+    plausibles, commentary, and short-circuits carry no marker and are ignored. Order-preserving.
     """
-    regex = _FANOUT_FINDING_RE if mechanism == "fanout" else _CONVENTION_FINDING_RE
     marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
-    findings: list[Finding] = []
-    for m in regex.finditer(output):
-        file, line_s, desc = m.group(1).strip(), m.group(2), m.group(3).strip()
-        try:
-            line = int(line_s)
-        except ValueError:  # unreachable — regex \d+ guarantees digit-only, but belt-and-braces
-            continue
-        findings.append(Finding(
-            mechanism=mechanism,
-            file=file,
-            line=line,
-            desc=desc,
-            marker=marker,
-            slug=_slug(mechanism, file, line, marker),
-        ))
+    findings = []
+    for m in _BULLET_RE.finditer(output):
+        f = _parse_bullet(m.group(1), mechanism, marker)
+        if f is not None:
+            findings.append(f)
     return findings
 
 
-def _inject_slugs(output: str, findings: _t.Sequence[Finding]) -> str:
-    """Rewrite each matched finding line to lead with its slug, so the author can copy it
-    verbatim into a `[slug: outcome]` pair. Non-matching lines untouched. Idempotent enough:
-    if the reviewer already included a slug we'd double-tag, but that shape isn't produced by
-    the reviewer prompts today."""
-    if not findings:
-        return output
-    by_line: dict[tuple[str, int, str], Finding] = {
-        (f.file, f.line, f.marker): f for f in findings
-    }
-    mechanism = findings[0].mechanism
-    regex = _FANOUT_FINDING_RE if mechanism == "fanout" else _CONVENTION_FINDING_RE
+def _inject_slugs(output: str, mechanism: str) -> str:
+    """Prefix each finding bullet with its slug, so the author can copy it verbatim into a
+    `[slug: outcome]` pair. The reviewer's own text is kept as-is (ranges and all). Bullets
+    already carrying a slug are skipped by `_BULLET_RE`."""
     marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
 
     def _sub(m: re.Match) -> str:
-        file, line_s, desc = m.group(1).strip(), m.group(2), m.group(3).strip()
-        f = by_line.get((file, int(line_s), marker))
-        if f is None:
-            return m.group(0)
-        return f"- [{f.slug}] **{file}:{line_s}** — {desc} [**{marker}**]"
+        f = _parse_bullet(m.group(1), mechanism, marker)
+        return m.group(0) if f is None else f"- [{f.slug}] {m.group(1)}"
 
-    return regex.sub(_sub, output)
+    return _BULLET_RE.sub(_sub, output)
+
+
+def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding], mechanism: str) -> int:
+    """Marker occurrences that did NOT become a finding — i.e. not on a bullet line. Tripwire
+    for the next grammar drift: surfaced in the recital body instead of dropping silently."""
+    marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
+    return output.count(_marker_tag(marker)) - len(findings)
 
 
 from .git_context import current_branch as _current_branch  # noqa: E402
@@ -280,12 +289,20 @@ def _run_reviewer(
     # Inject slugs so the author can copy each into a `[slug: outcome]` pair in the commit
     # message. Only the outcome-tag-requiring findings get slugs; other bullets (plausible /
     # potential duplicate) render unchanged.
-    slugged = _inject_slugs(stripped, findings)
+    slugged = _inject_slugs(stripped, mechanism)
 
     # Defensive strip: even with the "no tail line" directive in the prompt, the subagent
     # sometimes still emits one. Remove trailing `_<title>: <verdict>_` so the recital's
     # wrapper tail isn't a duplicate.
     cleaned = _STRIP_TRAILING_TAIL.sub("", slugged).rstrip()
+
+    unparsed = _unparsed_marker_count(stripped, findings, mechanism)
+    if unparsed > 0:
+        cleaned += (
+            f"\n\n> **RECITAL PARSE WARNING** — {unparsed} finding marker(s) are not on a "
+            "`- ` bullet line, so they got no slug and no log row. Tag each with the legacy "
+            "bare form in the commit message, and report the reviewer output shape."
+        )
 
     return f"_{title} (evidence):_\n\n{cleaned}\n\n_{title}: run_"
 
