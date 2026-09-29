@@ -1,4 +1,4 @@
-import { ref, computed, watch, onMounted, onUnmounted, type Ref } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, type Ref } from 'vue'
 import { useWsStore } from '../stores/ws'
 import { useDataRefresh } from './useDataRefresh'
 import { useViewState } from './useViewState'
@@ -8,7 +8,8 @@ import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
 import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
 import { fetchSegmentationPops } from '../plots/populations'
-import { hasStagedChanges, stagedChangeCount as stagedDiff } from '../utils/manualApplyStaging'
+import { makePopPathRemap, type PopIdent } from '../utils/popRenameRemap'
+import { usePopSelectionMode } from './usePopSelectionMode'
 
 // Data + shared view-state for a summary-plot surface — the part that is IDENTICAL whether the plots
 // float freely (SummaryCanvas, per-module) or sit in a grid (LayoutCanvas, /analysis). Extracted so the
@@ -46,8 +47,7 @@ export function useSummaryData(opts: {
   const ws = useWsStore()
   const imageUid = computed(() => imageUids.value[0] ?? null)
 
-  const { compareMode, compareAttr, compareAttr2, scope, sel: gSel, vis: gVis, poolGroups,
-          manualApply, stagedSel } =
+  const { compareMode, compareAttr, compareAttr2, scope, sel: gSel, vis: gVis, poolGroups } =
     useViewState(opts.shared, {
       // DEFAULT = per_image, not 'image'. `'image'` means "the first selected image only", so with the
       // old default you could tick five images and see one, with nothing but a dropdown labelled
@@ -62,14 +62,16 @@ export function useSummaryData(opts: {
       sel: [] as string[],
       vis: defaultVis() as VisProps,
       poolGroups: false as boolean,
-      // MANUAL APPLY (opt-in) — for a user with many pops/images where every toggle firing a fetch
-      // trickles pops into the plot. When on, the picker's toggles stage into `stagedSel` and the
-      // plots stay on `gSel` until Apply. Default off — the current live behaviour is what most
-      // sessions want. Only affects the GLOBAL scope pop selection (local-scope selection is per-
-      // panel and doesn't have the same burst pattern).
-      manualApply: false as boolean,
-      stagedSel: [] as string[],
     })
+  // MANUAL APPLY (opt-in) — for a user with many pops/images where every toggle firing a fetch
+  // trickles pops into the plot. When on, the picker's toggles stage into `stagedSel` and the
+  // plots stay on `gSel` until Apply. Default off. Only affects GLOBAL scope pop selection
+  // (local-scope selection is per-panel and doesn't have the same burst pattern). Shared shape
+  // with the cluster + gate hosts via `usePopSelectionMode` — one toggle, one Apply chip.
+  // Note: `remapStaged` not destructured — the segPops watcher below applies the same array-level
+  // remap (`localSelRemap`) to both gSel and stagedSel inline, since it's already popType-filtered.
+  const { manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged } =
+    usePopSelectionMode({ shared: opts.shared, live: gSel })
 
   const canCompare = computed(() => !!setUid.value && imageUids.value.length > 1)
   const crossImage = computed(() => compareMode.value !== 'image' && canCompare.value)
@@ -184,47 +186,62 @@ export function useSummaryData(opts: {
   // a task finishing on one of THESE images → refetch (pop list may have new pops; data may have
   // changed in place). Same mechanism as the gate popmap above; targeted per-image via useDataRefresh.
   useDataRefresh(() => imageUids.value, () => { loadPops(); reloadToken.value++ })
-  // the set of currently-valid target keys (for pruning host selections)
-  const validSelKeys = computed(() => {
-    const exist = new Set<string>()
-    for (const g of segPops.value) for (const p of g.populations) exist.add(tkey(p.popType, g.valueName, p.path))
-    return exist
-  })
-
+  // Manual reload — hosts wire this to the CanvasSidePanel reload button. Same chokepoint as the
+  // auto path (bump reloadToken → every panel that watches it refetches), but ungated.
+  const reload = () => { loadPops(); reloadToken.value++ }
   watch([() => imageUids.value.join(','), popType, setUid], () => { loadPops(); loadAttrs() })
-  // prune the selection to populations that still exist — but ONLY once we actually have populations.
+  // Prune / rename-preserve gSel across pop mutations. ONLY once we actually have populations —
   // segPops is transiently [] during load / image-switch / a failed fetch; pruning then would wipe a
   // restored selection (and it would save back empty). Guard so an empty segPops never clears gSel.
-  // popType-AWARE: only prune keys of the CURRENTLY-LOADED popType. On the mixed board (popType follows
+  // popType-AWARE: only remap keys of the CURRENTLY-LOADED popType. On the mixed board (popType follows
   // the active slot), segPops holds only one popType at a time — pruning blindly would drop the OTHER
   // plots' selections (e.g. selecting a trackclust pop-summary slot wiped the track-measure plots'
   // live/track pops). Keep any key whose popType isn't the current one; it belongs to another slot.
-  watch(segPops, () => {
-    if (!segPops.value.length) return
-    const valid = validSelKeys.value, pt = popType.value
-    gSel.value = gSel.value.filter(k => parseTkey(k).popType !== pt || valid.has(k))
+  // Rename-preserve: `Population.uid` (per `SegmentationPops`) survives a rename, so we key by uid
+  // via `makePopPathRemap` — a rename swaps in the pop's NEW tkey, a delete drops it. The pre-uid
+  // pruner intersected on tkey and silently dropped every rename. See docs/todo/POP_SYNC_PLAN.md.
+  const _asTkeyIdents = (groups: typeof segPops.value): PopIdent[] => {
+    const out: PopIdent[] = []
+    for (const gp of groups) for (const p of gp.populations) {
+      out.push({ key: tkey(p.popType, gp.valueName, p.path), uid: p.uid })
+    }
+    return out
+  }
+  let _prevSegIdents: PopIdent[] = []
+  // Snapshot of {prev, next} idents at the last segPops change — hosts read `localSelRemap` from
+  // their OWN segPops watcher to prune each panel's LOCAL selection with the same uid-aware
+  // semantics. Composable's watcher is registered first (during setup) → it fires FIRST and updates
+  // this pair before the host's watcher observes it.
+  const _segPopsIdentsPair = shallowRef<{ prev: PopIdent[]; next: PopIdent[] }>({ prev: [], next: [] })
+  const localSelRemap = computed(() => {
+    const { prev, next } = _segPopsIdentsPair.value
+    const map = makePopPathRemap(prev, next)
+    const pt = popType.value
+    return (sel: readonly string[]): string[] => sel.flatMap(k => {
+      if (parseTkey(k).popType !== pt) return [k]
+      const mapped = map(k)
+      return mapped !== null ? [mapped] : []
+    })
+  })
+  watch(segPops, (next) => {
+    if (!next.length) return
+    const nextIdents = _asTkeyIdents(next)
+    _segPopsIdentsPair.value = { prev: _prevSegIdents, next: nextIdents }
+    const remap = localSelRemap.value
+    gSel.value = remap(gSel.value)
+    // The staged bag needs the same remap for the same reason gSel does — a rename mid-edit
+    // would otherwise drop the pending pop. Reuse `localSelRemap`, which already filters by
+    // the currently-loaded popType (mixed board: don't touch other-popType keys).
+    stagedSel.value = remap(stagedSel.value)
+    _prevSegIdents = nextIdents
   })
   onMounted(async () => { ws.on('gating:popmap', onPopmap); await loadSpecs(); await loadPops(); await loadAttrs() })
   onUnmounted(() => ws.off('gating:popmap', onPopmap))
 
-  // Manual-apply staging helpers. `stagedSel` mirrors `gSel` when manualApply is OFF (via the sync
-  // watcher below), so consumers can always read stagedSel to render the picker's eyes without
-  // branching on the mode. When ON, the two diverge until `applyStaged` copies over.
-  // Semantics pinned in `utils/manualApplyStaging.test.ts`: hasStaged is order-sensitive
-  // (a reorder arms Apply — the legend reorders too), stagedChangeCount is set-based (the
-  // chip counts pops ADDED / REMOVED, a pure reorder shows 0).
-  const hasStaged = computed(() => hasStagedChanges(stagedSel.value, gSel.value))
-  const stagedChangeCount = computed(() => stagedDiff(stagedSel.value, gSel.value))
-  const applyStaged = () => { gSel.value = [...stagedSel.value] }
-  const discardStaged = () => { stagedSel.value = [...gSel.value] }
-  // keep stagedSel = gSel while manual mode is off, so flipping the toggle on starts from the
-  // current live selection rather than an empty / stale staged bag.
-  watch([manualApply, gSel], ([on, sel]) => { if (!on) stagedSel.value = [...sel] }, { immediate: true })
-
   return {
     // data
     specs, specById, popType, granularity, segPops, popColors, setAttrs, seriesColor, reloadToken,
-    validSelKeys, loadSpecs, loadPops, loadAttrs,
+    localSelRemap, reload, loadSpecs, loadPops, loadAttrs,
     // shared view-state
     compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
     // manual-apply staging (opt-in)

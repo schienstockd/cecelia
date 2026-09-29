@@ -37,6 +37,11 @@ export interface BooleanSpec { op: 'and' | 'or'; pops: string[]; not: string[] }
 
 export interface PopNode {
   name: string; colour: string; show: boolean
+  // Stable gating-map identity (`PopulationMap._fresh_pop_uid` on the server, always emitted by
+  // `to_tree` in `app/src/gating/popmanager/persistence.jl`). Preserved across rename/reparent —
+  // used by `utils/popRenameRemap` to keep path-keyed highlights alive when a rename rewrites the
+  // pop's path. Optional on the wire type for legacy pop trees that predate the field.
+  uid?: string
   gate?: GateSpec
   filter?: FilterSpec
   boolean?: BooleanSpec
@@ -47,9 +52,10 @@ export interface PopNode {
 }
 export interface PopTree { value_name: string; pop_type: string; populations: PopNode[] }
 
-// flattened view for the manager (path-keyed, with depth)
+// flattened view for the manager (path-keyed, with depth). `uid` is the pop's stable identity;
+// empty string when the source tree carries none (a legacy sidecar that predates the field).
 export interface FlatPop {
-  path: string; name: string; parent: string; colour: string; show: boolean
+  path: string; name: string; uid: string; parent: string; colour: string; show: boolean
   depth: number; gate?: GateSpec; transient?: boolean
   filter?: FilterSpec  // cluster / region / user-defined filter pops
   boolean?: BooleanSpec  // a combination of OTHER populations (Decision 16)
@@ -60,8 +66,8 @@ function flatten(tree: PopTree): FlatPop[] {
   const walk = (nodes: PopNode[], parent: string, depth: number) => {
     for (const n of nodes) {
       const path = popPath(parent, n.name)
-      out.push({ path, name: n.name, parent, colour: n.colour, show: n.show, depth,
-                 gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean })
+      out.push({ path, name: n.name, uid: n.uid ?? '', parent, colour: n.colour, show: n.show,
+                 depth, gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean })
       walk(n.children ?? [], path, depth + 1)
     }
   }

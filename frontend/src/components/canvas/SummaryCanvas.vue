@@ -27,7 +27,7 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import { INTERACTIVE_VIEWS, isPluginView, railFor, popTypesFor, popTypeSpecFor, singlePopFor } from './interactiveViews'
 import CanvasZoomControl from './CanvasZoomControl.vue'
-import { tkey, parseTkey, seriesMemo } from '../../plots/series'
+import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
@@ -114,7 +114,7 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
+  specs, specById, segPops, seriesColor, reloadToken, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
@@ -421,11 +421,11 @@ function explodePanel(src: { state: PanelState }, measures: string[]) {
 }
 
 // useSummaryData prunes the GLOBAL selection when pops vanish; prune each panel's LOCAL selection here.
-// popType-aware (keep other-popType keys) for parity with the board's mixed-popType prune.
+// Uses the SAME uid-aware remap (`localSelRemap`) as the global prune, so a rename carries a local
+// highlight over to the pop's new tkey instead of silently dropping it.
 watch(segPops, () => {
-  const valid = validSelKeys.value, pt = popType.value
-  const keep = (k: string) => parseTkey(k).popType !== pt || valid.has(k)
-  for (const p of panels.value) p.state.sel = p.state.sel.filter(keep)
+  const remap = localSelRemap.value
+  for (const p of panels.value) p.state.sel = remap(p.state.sel)
 })
 </script>
 
@@ -572,10 +572,11 @@ watch(segPops, () => {
           <SeriesPicker v-if="showManager" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
-                        :has-staged="hasStaged"
+                        :has-staged="hasStaged" :reloadable="true"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
-                        @apply:staged="applyStaged" @discard:staged="discardStaged" />
+                        @apply:staged="applyStaged" @discard:staged="discardStaged"
+                        @reload="reload" />
         </template>
       </FloatingCanvasHost>
     </template>

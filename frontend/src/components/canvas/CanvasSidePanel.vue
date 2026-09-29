@@ -71,15 +71,20 @@ const props = withDefaults(defineProps<{
   manualApply?: boolean | null
   hasStaged?: boolean
   stagedChangeCount?: number
+  // Manual reload button (OPT-IN, tri-state like `manualApply`). Emits `reload` — the host bumps its
+  // `reloadToken` so every panel that watches it refetches. Ungated by `autoRefreshOnTask`: the user
+  // asked for it explicitly. Complements, does NOT replace, `useDataRefresh` (auto on task done).
+  reloadable?: boolean | null
 }>(), { title: 'Populations', icon: 'pi-sitemap', count: undefined, width: 300, scope: undefined,
         vis: undefined, optionsSections: undefined, readout: emptyReadout, docked: false,
-        manualApply: null, hasStaged: false, stagedChangeCount: 0 })
+        manualApply: null, hasStaged: false, stagedChangeCount: 0, reloadable: null })
 const emit = defineEmits<{
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
   'update:manualApply': [boolean]
   'apply:staged': []
   'discard:staged': []
+  reload: []
 }>()
 
 const collapsed = ref(false)
@@ -176,7 +181,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
          meaningful — hosts without any (rare) get no footer. Manual-apply is only offered when the
          host opts in with `manualApply` defined (null = "the host doesn't support staging" — hide
          the toggle entirely). -->
-    <div v-show="!collapsed" v-if="scope || vis" class="csp-footer">
+    <div v-show="!collapsed" v-if="scope || vis || reloadable" class="csp-footer">
       <button v-if="vis" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
               :class="{ 'cc-btn-on cc-btn-on-tint': plotOptionsVisible }"
               v-tooltip.top="plotOptionsVisible ? 'Hide plot settings' : 'Show plot settings'"
@@ -190,6 +195,11 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
                 : 'Live — plots update on every pop toggle'"
               @click="emit('update:manualApply', !manualApply)">
         <i class="pi pi-clock" />
+      </button>
+      <button v-if="reloadable" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
+              v-tooltip.top="'Reload plots'"
+              @click="emit('reload')">
+        <i class="pi pi-refresh" />
       </button>
       <ChipSelect v-if="scope" class="csp-seg" variant="segmented" :options="SCOPE_OPTIONS"
                   :model-value="scope" aria-label="Scope"

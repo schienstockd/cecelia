@@ -27,7 +27,7 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAnalysisLayoutStore, type SlotContent } from '../../stores/analysisLayout'
 import { useSummaryData } from '../../composables/useSummaryData'
 import { useClusterContext } from '../../composables/useClusterContext'
-import { tkey, parseTkey, seriesMemo } from '../../plots/series'
+import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
 import type { SeriesTarget } from '../../plots/types'
@@ -158,7 +158,7 @@ watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
 
 // shared summary-plot data + view-state (same composable the free-floating canvas uses)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
+  specs, specById, segPops, seriesColor, reloadToken, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
@@ -431,16 +431,15 @@ function clusterPanelProps(i: number) {
   }
 }
 
-// prune vanished pops from every slot's local selection (the composable prunes the global one). Guard on
-// a non-empty segPops — it's transiently [] during load/image-switch, and pruning then would wipe (and
-// then persist-empty) a restored per-slot selection. popType-AWARE (mixed board): segPops holds only the
-// active slot's popType, so only prune keys of THAT popType — else selecting e.g. a trackclust slot would
-// wipe the live/track selections of the other (track-measure) plots.
+// Remap vanished pops on every slot's LOCAL selection (the composable prunes the global one). Uses
+// the composable's shared `localSelRemap` so a rename carries a local highlight over to the pop's
+// new tkey with the same uid-aware semantics as the global prune. Guard on a non-empty segPops —
+// it's transiently [] during load/image-switch, and remapping then would wipe (and then
+// persist-empty) a restored per-slot selection.
 watch(segPops, () => {
   if (!segPops.value.length) return
-  const valid = validSelKeys.value, pt = popType.value
-  const keep = (k: string) => parseTkey(k).popType !== pt || valid.has(k)
-  for (const c of entry.value.contents) if (c && Array.isArray(st(c).sel)) st(c).sel = st(c).sel.filter(keep)
+  const remap = localSelRemap.value
+  for (const c of entry.value.contents) if (c && Array.isArray(st(c).sel)) st(c).sel = remap(st(c).sel)
 })
 
 // ── PDF export: capture each filled slot to a PNG (hiding the drag grips), keyed by its grid-area ──
@@ -848,17 +847,19 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :selected="''" :highlighted="activeClustHl" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
-                             :suffix="clustSuffix" :vis="activeVis"
-                             @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
+                             :suffix="clustSuffix" :vis="activeVis" :reloadable="true"
+                             @update:scope="scope = $event" @update:vis="setVis"
+                             @toggle-highlight="toggleClustHl" @reload="reload" />
           <SeriesPicker v-else :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"
                         :single="activeSinglePop"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed || activeRail === 'none'"
                         :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"
                         :manual-apply="manualApply" :has-staged="hasStaged"
-                        :staged-change-count="stagedChangeCount"
+                        :staged-change-count="stagedChangeCount" :reloadable="true"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
-                        @apply:staged="applyStaged" @discard:staged="discardStaged" />
+                        @apply:staged="applyStaged" @discard:staged="discardStaged"
+                        @reload="reload" />
         </div>
       </div>
     </template>

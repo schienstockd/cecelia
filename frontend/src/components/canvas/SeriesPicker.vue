@@ -49,6 +49,7 @@ const props = defineProps<{
   manualApply?: boolean | null
   hasStaged?: boolean
   stagedChangeCount?: number
+  reloadable?: boolean | null      // forward to CanvasSidePanel — manual reload button (null = hide)
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
@@ -57,6 +58,7 @@ const emit = defineEmits<{
   'update:manualApply': [boolean]
   'apply:staged': []
   'discard:staged': []
+  reload: []
 }>()
 
 const total = computed(() => props.groups.reduce((n, g) => n + g.populations.length, 0))
@@ -70,10 +72,11 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
                         v-bind="{ ...(title ? { title } : {}), ...(icon ? { icon } : {}) }"
                         :options-sections="['layout', 'points', 'colours', 'labels', 'stats']"
                         :manual-apply="manualApply" :has-staged="hasStaged"
-                        :staged-change-count="stagedChangeCount"
+                        :staged-change-count="stagedChangeCount" :reloadable="reloadable"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)"
                         @update:manualApply="emit('update:manualApply', $event)"
-                        @apply:staged="emit('apply:staged')" @discard:staged="emit('discard:staged')">
+                        @apply:staged="emit('apply:staged')" @discard:staged="emit('discard:staged')"
+                        @reload="emit('reload')">
     <div v-if="selectionUnused" class="pick-empty cc-muted">
       {{ unusedNote ?? "This plot's populations come from its run." }}
     </div>

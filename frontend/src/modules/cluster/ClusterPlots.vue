@@ -16,6 +16,8 @@
 -->
 <script setup lang="ts">
 import { toggleSelected } from '../../utils/selection'
+import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
+import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
 import { ref, computed, watch } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
@@ -100,16 +102,34 @@ const {
   popType: computed(() => props.popType), suffix,
 })
 
+// Manual-apply staging — the same "wait for population selection to update plots" toggle the
+// summary hosts offer, wired here via the shared composable. Only affects GLOBAL scope; local
+// scope commits per-click as before (docs/todo/POP_SYNC_PLAN.md).
+const { manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
+        remapStaged } = usePopSelectionMode({ shared, live: highlighted })
+
+// Manual reload token — bumped by the manager's reload button. Threaded into each cluster panel
+// via `clusterPanelProps` so its fetch watch re-fires on manual reload (same shape as
+// SummaryPanel.reloadToken). Ungated by autoRefreshOnTask: the user asked for it explicitly.
+const reloadToken = ref(0)
+const reload = () => { reloadToken.value++ }
+
 // the ONE selection toggle (utils/selection.ts) — four hosts had a copy of it each
 const toggle = (arr: string[], v: string) => toggleSelected(arr, v)
 function toggleHighlight(path: string) {
-  if (scope.value === 'global') highlighted.value = toggle(highlighted.value, path)
-  else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl ?? [], path)
+  if (scope.value === 'global') {
+    // manual-apply mode: stage the toggle; plots stay on `highlighted` until Apply. Mirrors
+    // SummaryCanvas.toggleTarget.
+    if (manualApply.value) stagedSel.value = toggle(stagedSel.value, path)
+    else highlighted.value = toggle(highlighted.value, path)
+  } else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl ?? [], path)
 }
-// effective highlight set for a panel, and the set the manager shows/edits (the active scope's)
+// effective highlight set for a panel (drives the PLOTS — always the applied selection so plots
+// don't refetch until Apply), and the set the MANAGER shows/edits (staged when manualApply is on).
 const panelHL = (s: ClusterPanelState) => scope.value === 'global' ? highlighted.value : (s.hl ?? [])
-const activeHL = computed(() =>
-  scope.value === 'global' ? highlighted.value : (activePanel.value?.state.hl ?? []))
+const activeHL = computed(() => scope.value === 'global'
+  ? (manualApply.value ? stagedSel.value : highlighted.value)
+  : (activePanel.value?.state.hl ?? []))
 
 // plot styling (VisProps) follows the SAME global/local scope as the highlights (like the summary
 // canvas): GLOBAL = one styling bag for every plot; LOCAL = the active plot's own. The pop manager
@@ -132,11 +152,23 @@ function duplicatePanel(s: ClusterPanelState) {
   activeId.value = id
 }
 
-// drop stale highlights (global + each panel's local) as pops are deleted/renamed
-watch(() => g.flat.map(p => p.path).join('\n'), () => {
-  const exist = new Set(g.flat.map(p => p.path))
-  highlighted.value = highlighted.value.filter(p => exist.has(p))
-  for (const p of panels.value) if (p.state.hl) p.state.hl = p.state.hl.filter(x => exist.has(x))
+// Rename-preserve highlights (global + each panel's local) across pop mutations. A path-only
+// intersect (the pre-uid pruner) silently dropped a rename — the pop's uid stays but the path
+// changes, so the highlight vanished from the plots. `makePopPathRemap` follows uid → new path
+// for a rename, drops a delete, and falls back to path-presence for the first mount and for
+// synthetic pops (no uid). Add is not represented: a fresh pop is not in `highlighted` until
+// the user clicks the eye (deliberate gate, docs/todo/POP_SYNC_PLAN.md).
+const _asIdents = (): PopIdent[] => g.flat.map(p => ({ key: p.path, uid: p.uid }))
+let _prevFlat: PopIdent[] = _asIdents()
+watch(() => g.flat.map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
+  const next = _asIdents()
+  const remap = makePopPathRemap(_prevFlat, next)
+  highlighted.value = remapPopKeys(highlighted.value, remap)
+  for (const p of panels.value) if (p.state.hl) p.state.hl = remapPopKeys(p.state.hl, remap)
+  // Carry a rename through the staged bag too — a pending pop must not vanish because of a rename
+  // mid-edit. `remapStaged` uses the SAME remap and mirrors `remapPopKeys` semantics.
+  remapStaged(remap)
+  _prevFlat = next
 })
 
 // plot types in the "+ Plot" picker, discovered from the SAME two registries the Analysis board uses
@@ -173,6 +205,7 @@ function clusterPanelProps(p: CanvasItem<ClusterPanelState>) {
     projectUid: projectUid.value, setUid: setUid.value, imageUids: validUids.value,
     popType: props.popType, suffix: suffix.value,
     shownPops: shownPopsFor(panelHL(p.state)), vis: panelVis(p.state), state: p.state,
+    reloadToken: reloadToken.value,
     ...(CLUSTER_PANELS[p.state.kind].props?.(ctx) ?? {}),
   }
 }
@@ -383,8 +416,13 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
                              :vis="activeVis"
+                             :manual-apply="manualApply" :has-staged="hasStaged"
+                             :staged-change-count="stagedChangeCount" :reloadable="true"
                              @update:selected="selectedPop = $event" @update:scope="scope = $event"
-                             @update:vis="setVis" @toggle-highlight="toggleHighlight" />
+                             @update:vis="setVis" @toggle-highlight="toggleHighlight"
+                             @update:manualApply="manualApply = $event"
+                             @apply:staged="applyStaged" @discard:staged="discardStaged"
+                             @reload="reload" />
         </template>
       </FloatingCanvasHost>
     </template>

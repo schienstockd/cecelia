@@ -62,7 +62,15 @@ const props = withDefaults(defineProps<{
   docked?: boolean                 // fill a docked rail (Analysis board) instead of floating
   readonly?: boolean               // read-only surface (Analysis board): highlight only — no add / delete /
                                    // rename / recolour / cluster reassignment (project_analysis_canvas_readonly)
-}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, docked: false, readonly: false })
+  // Manual-apply staging (opt-in). `null` (default) hides the toggle — same tri-state convention as
+  // `CanvasSidePanel.manualApply`. Wired end-to-end via `usePopSelectionMode`; the host branches
+  // its toggle handler on `manualApply` to write to `stagedSel` instead of the live selection.
+  manualApply?: boolean | null
+  hasStaged?: boolean
+  stagedChangeCount?: number
+  reloadable?: boolean | null      // forward to CanvasSidePanel — manual reload button (null = hide)
+}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, docked: false, readonly: false,
+        manualApply: null, hasStaged: false, stagedChangeCount: 0, reloadable: null })
 const emit = defineEmits<{
   'update:selected': [string]
   'update:scope': ['global' | 'local']
@@ -71,6 +79,10 @@ const emit = defineEmits<{
   'update:gateLabels': [boolean]
   'update:axisFromZero': [boolean]
   'update:vis': [patch: Partial<VisProps>]
+  'update:manualApply': [boolean]
+  'apply:staged': []
+  'discard:staged': []
+  reload: []
   toggleHighlight: [string]
   showDefiningPlot: [FlatPop]      // open the plot where this pop's gate was drawn
 }>()
@@ -396,7 +408,12 @@ function moveTo(target: string) {
 
 <template>
   <CanvasSidePanel :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
-                        @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
+                        :manual-apply="manualApply" :has-staged="hasStaged"
+                        :staged-change-count="stagedChangeCount" :reloadable="reloadable"
+                        @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)"
+                        @update:manualApply="emit('update:manualApply', $event)"
+                        @apply:staged="emit('apply:staged')" @discard:staged="emit('discard:staged')"
+                        @reload="emit('reload')">
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
       <div v-if="clusterMode && !readonly" class="pm-add cc-row cc-row-tight">
