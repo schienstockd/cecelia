@@ -65,7 +65,8 @@ function onDocPointer(e: PointerEvent) {
   if (el?.closest('.cc-popover')) return
   emit('update:modelValue', false)
 }
-function onKey(e: KeyboardEvent) { if (e.key === 'Escape') emit('update:modelValue', false) }
+// preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it
+function onKey(e: KeyboardEvent) { if (e.key === 'Escape') { emit('update:modelValue', false); e.preventDefault() } }
 
 // The content can GROW after the first measurement — a popover whose body waits on a fetch (the
 // thread budget in `PoolThrottle`) renders short, then gets taller once the response lands. The

@@ -32,7 +32,8 @@ let pressedOnOverlay = false
 function onOverlayMouseDown(e: MouseEvent) { pressedOnOverlay = e.target === e.currentTarget }
 function onOverlayClick() { if (pressedOnOverlay) emit('close'); pressedOnOverlay = false }
 
-function onKey(e: KeyboardEvent) { if (e.key === 'Escape') emit('close') }
+// preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it
+function onKey(e: KeyboardEvent) { if (e.key === 'Escape') { emit('close'); e.preventDefault() } }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
