@@ -478,3 +478,26 @@ class FindingsEmissionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DefaultRunnerTest(unittest.TestCase):
+    """`_default_runner` passes the prompt on stdin and turns a spawn failure into
+    `RecitalError`, so `_run_reviewer` logs an errored `_run` row instead of crashing."""
+
+    def test_prompt_goes_over_stdin_not_argv(self):
+        from cecelia.effectiveness import recital as r
+        big = "x" * 300_000  # > Linux MAX_ARG_STRLEN (128 KB) — E2BIG if it were argv
+        done = mock.Mock(returncode=0, stdout="ok\n", stderr="")
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", return_value=done) as run:
+            self.assertEqual(r._default_runner(big), "ok")
+        argv, kwargs = run.call_args.args[0], run.call_args.kwargs
+        self.assertEqual(argv, ["/bin/claude", "-p"])
+        self.assertEqual(kwargs["input"], big)
+
+    def test_spawn_oserror_becomes_recital_error(self):
+        from cecelia.effectiveness import recital as r
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", side_effect=OSError(7, "Argument list too long")):
+            with self.assertRaises(RecitalError):
+                r._default_runner("p")
