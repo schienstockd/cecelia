@@ -1762,7 +1762,11 @@ whole stack. This is not a lesser mode — on `Dml3RG` (37 z, 4 ch, 181 t) a pla
 Both views come out of ONE shader: a plane is a volume one deep seen face-on with `steps = 1`, which
 samples the box midpoint — exactly that plane. What 2D does need is **orthographic** projection, because
 under perspective a flat plane foreshortens towards the edges, which is wrong for a view people measure
-on; the two share a framing convention so the toggle does not jump. Changing the plane or the mode drops
+on; the two share a framing convention so the toggle does not jump. **Z controls:** 3D has a **Depth**
+range (↶ resets it to the whole stack); a **± planes** toggle in either view swaps it for `plane ± n` —
+in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
+`loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes load; the window is off on
+the 2D tile path. Changing the plane or the mode drops
 every cached texture (different shape, different pixels) and refetches — ~4 s for a plane movie, ~90 s
 for the volume, which is why 2D is the default rather than something you opt into.
 

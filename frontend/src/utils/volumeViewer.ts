@@ -363,9 +363,12 @@ export function shouldUseBricks(
   meta: ViewerMeta,
   mode: 'plane' | 'volume' = 'volume',
   budgetBytes: number = CACHE_BUDGET_BYTES,
+  planeDepth = 1,
 ): boolean {
+  // `planeDepth`: planes the 2D view loads — 1, or `2n+1` with a ±n window (`loadedPlanes`), which
+  // costs that many planes per timepoint. The 3D count stays the whole stack, as before.
   const perT = mode === 'plane'
-    ? meta.nX * meta.nY * meta.nC * meta.bytesPerVoxel
+    ? meta.nX * meta.nY * Math.max(1, planeDepth) * meta.nC * meta.bytesPerVoxel
     : meta.nX * meta.nY * meta.nZ * meta.nC * meta.bytesPerVoxel
   if (!Number.isFinite(perT) || perT <= 0) return false
   const nT = Math.max(meta.nT, 1)
@@ -440,7 +443,7 @@ export function labelDimsMismatch(
  *
  * `lo` is the only thing here the renderer cannot supply: it knows how deep it is, not where the slab
  * starts. Getting it wrong shows the wrong planes at the right size, so the shape guard cannot catch
- * it — which is why it comes straight from the slider and nothing else derives it.
+ * it — which is why it comes from `loadedPlanes` and nothing else derives it.
  */
 export function slabZ(
   textureDepth: number, nZ: number, zPlane: number, lo = 0,
@@ -449,6 +452,30 @@ export function slabZ(
   if (textureDepth === 1) return nZ > 1 ? { z: zPlane } : {}
   const start = Math.max(0, Math.min(lo, nZ - textureDepth))
   return { z: start, zTo: start + textureDepth - 1 }
+}
+
+/**
+ * The planes the viewer LOADS, `[lo, hi]` inclusive — the one place the three z controls resolve:
+ *
+ *  - 2D, no window — the single plane `zPlane`.
+ *  - 3D, no window — the Depth slider's `zRange`.
+ *  - either mode with a window (`half > 0`) — `zPlane ± half`, CLIPPED at the stack ends rather than
+ *    slid inwards: "±2 around plane 0" is planes 0–2, not 0–4. Sliding would put a different plane at
+ *    the centre than the one the Plane slider says. In 2D this is a top-down MIP of the window; in 3D
+ *    the same box, rotatable.
+ *
+ * Always clamped to `[0, nZ-1]` with `lo <= hi`, so the depth derived from it is ≥ 1 — a restored or
+ * stale value from a deeper stack cannot drive a zero or negative texture depth.
+ */
+export function loadedPlanes(
+  mode: 'plane' | 'volume', zPlane: number, zRange: [number, number], half: number, nZ: number,
+): [number, number] {
+  const maxZ = Math.max(nZ - 1, 0)
+  const c = (v: number) => Math.max(0, Math.min(maxZ, Math.round(v)))
+  if (half > 0) return [c(zPlane - half), c(zPlane + half)]
+  if (mode === 'plane') return [c(zPlane), c(zPlane)]
+  const lo = c(zRange[0]), hi = c(zRange[1])
+  return lo <= hi ? [lo, hi] : [hi, lo]
 }
 
 /**
