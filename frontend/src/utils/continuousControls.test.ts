@@ -223,27 +223,6 @@ describe('nobody hand-rolls a fourth debounce', () => {
   })
 })
 
-// The live-viewer pushes are the ones this audit started from: the movie z slider and the mask-outline
-// slider each landed a viewer command per slider event, and the bridge runs one command at a time, so
-// the viewer kept stepping through slices long after the mouse was released. The fix is at the SINK —
-// `utils/viewerOverlays` owns the coalescing — which only holds while it stays the sole owner.
-describe('live viewer view-property endpoints have exactly one owner', () => {
-  const LIVE_ENDPOINTS = /\/api\/viewer\/(set-z-view|apply-view-state)/
-  const ALL = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
-  const all = Object.entries(ALL).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
-
-  it('the glob resolved', () => { expect(all.length).toBeGreaterThan(sources.length) })
-
-  it('nobody else POSTs to them', () => {
-    const code = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-    const others = all
-      .filter(s => s.path !== 'utils/viewerOverlays.ts' && !s.path.endsWith('.test.ts'))
-      .filter(s => LIVE_ENDPOINTS.test(code(s.text)))
-      .map(s => s.path)
-    expect(others).toEqual([])
-  })
-})
-
 // ── A ResizeObserver that re-renders INTO what it observes ────────────────────
 //
 // Same family as the rules above — an effect that outruns its cause — but the feedback is structural

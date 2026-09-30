@@ -8,10 +8,12 @@ shared root whose name appears in no inventory doc — and every route the diff 
 table (`api/src/server.jl`) that `docs/API.md` → *Route index* doesn't list.
 
 **Mechanical, not a reviewer subagent** — advisory only; never blocks. "Significant" is a judgement
-the check can't make, so a flagged file may rightly stay out; the warning asks the author to decide.
+the check can't make, so a flagged file may rightly stay out: a comment `INVENTORY-EXEMPT: <reason>`
+anywhere in the new file silences it, and the reason is on record in the file itself.
 Replayed over the 150 merged PRs before it landed: fired on 19, flagging 30 files — 5 were added
 to inventory by hand later (real misses, caught late), 24 still weren't, incl. 5 new API handlers.
-Routes, same replay: 14 PRs added routes, 12 would have fired, 24 routes — 2 ever reached API.md.
+Routes, same replay: 14 PRs added routes, 12 would have fired, 24 routes — 2 reached API.md
+before the 2026-09-30 backfill of the route index.
 
 Replaces the earlier citation-currency check (warned when an `Enforced by X` file changed but
 the citing doc didn't): 0 real hits in 150 PRs, and the dangling-path half of its job is covered in
@@ -60,12 +62,25 @@ _NEW_FILE = re.compile(r"^diff --git a/\S+ b/(\S+)\n(?:(?!diff --git ).*\n)*?new
 _NEW_ROUTE = re.compile(r'^\+\s*"(/api/[^"\s]+)"\s*=>', re.MULTILINE)
 _ROUTE_DOC = "docs/API.md"
 
+#: Opt-out for a genuine one-off, same shape as `# COHORT-EXEMPT:` / `# DASK-OK:` elsewhere.
+_EXEMPT_MARKER = re.compile(r"INVENTORY-EXEMPT:\s*\S")
+
 _TITLE = "Inventory check"
 
 
 def new_files_from_diff(diff: str) -> list[str]:
     """Repo-relative paths the diff creates, in diff order."""
     return _NEW_FILE.findall(diff)
+
+
+def exempt_files_from_diff(diff: str) -> set[str]:
+    """New files whose added lines carry an `INVENTORY-EXEMPT: <reason>` marker."""
+    exempt: set[str] = set()
+    for block in re.split(r"^(?=diff --git )", diff, flags=re.MULTILINE):
+        m = _NEW_FILE.match(block)
+        if m and any(_EXEMPT_MARKER.search(ln) for ln in block.splitlines() if ln.startswith("+")):
+            exempt.add(m.group(1))
+    return exempt
 
 
 def area_doc_for(path: str) -> str | None:
@@ -108,10 +123,23 @@ def new_routes_from_diff(diff: str) -> list[str]:
     return list(dict.fromkeys(_NEW_ROUTE.findall(diff)))
 
 
+#: A backticked path using brace shorthand for siblings: `` `/api/sets/{create,rename,delete}` ``.
+_BRACE_PATH = re.compile(r"`(/api/[^`{}]*)\{([^`{}]*,[^`{}]*)\}([^`{}]*)`")
+
+
+def _expand_braces(text: str) -> str:
+    """Append each brace-shorthand path's expansions as plain backticked paths, so one matcher
+    handles both forms. One brace group per path — the only shape the docs use."""
+    extra = [f"`{head}{alt.strip()}{tail}`"
+             for head, alts, tail in _BRACE_PATH.findall(text) for alt in alts.split(",")]
+    return text + "\n" + "\n".join(extra)
+
+
 def is_route_documented(route: str, api_doc_text: str) -> bool:
-    """True if `docs/API.md` names the route as a backticked path — `` `/api/x` `` or with a query
-    `` `/api/x?projectUid` ``. `/api/x` does NOT count as documenting `/api/x/y`, or the reverse."""
-    return re.search(rf"`{re.escape(route)}[`?]", api_doc_text) is not None
+    """True if `docs/API.md` names the route as a backticked path — `` `/api/x` ``, with a query
+    `` `/api/x?projectUid` ``, or inside brace shorthand `` `/api/{x,y}` ``. `/api/x` does NOT count
+    as documenting `/api/x/y`, or the reverse."""
+    return re.search(rf"`{re.escape(route)}[`?]", _expand_braces(api_doc_text)) is not None
 
 
 def find_undocumented_routes(diff: str, api_doc_text: str) -> tuple[list[str], list[str]]:
@@ -122,7 +150,9 @@ def find_undocumented_routes(diff: str, api_doc_text: str) -> tuple[list[str], l
 
 def find_uninventoried(diff: str, inventory_text: str) -> tuple[list[str], list[tuple[str, str]]]:
     """Return `(new_shared_files, [(file, area_doc), ...] not named in the inventory)`."""
-    shared = [(f, doc) for f in new_files_from_diff(diff) if (doc := area_doc_for(f))]
+    exempt = exempt_files_from_diff(diff)
+    shared = [(f, doc) for f in new_files_from_diff(diff)
+              if f not in exempt and (doc := area_doc_for(f))]
     missing = [(f, doc) for f, doc in shared if not is_named(f, inventory_text)]
     return [f for f, _ in shared], missing
 
@@ -143,7 +173,8 @@ def format_section(
     for f, doc in missing:
         lines.append(
             f"- `{f}` — new shared file, not named in any inventory doc. If other code should "
-            f"reuse it, add a line to `{doc}` in this change."
+            f"reuse it, add a line to `{doc}` in this change; if it's a one-off, say so with an "
+            f"`INVENTORY-EXEMPT: <reason>` comment in the file."
         )
     for r in missing_routes:
         lines.append(

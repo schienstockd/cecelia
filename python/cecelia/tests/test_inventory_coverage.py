@@ -114,10 +114,37 @@ class RoutesTest(unittest.TestCase):
         self.assertFalse(is_route_documented("/api/x", doc))
         self.assertFalse(is_route_documented("/api/y/sub", doc))
 
+    def test_brace_shorthand_counts(self):
+        doc = "| POST | `/api/images/{register,labels/delete}` · `/api/sets/{create, rename}?projectUid` |"
+        for route in ("/api/images/register", "/api/images/labels/delete", "/api/sets/rename"):
+            self.assertTrue(is_route_documented(route, doc), route)
+        self.assertFalse(is_route_documented("/api/images/move", doc))
+
     def test_flags_undocumented(self):
         routes, missing = find_undocumented_routes(_ROUTE_DIFF, "`/api/x/documented`")
         self.assertEqual(routes, ["/api/x/new", "/api/x/documented"])
         self.assertEqual(missing, ["/api/x/new"])
+
+
+class ExemptMarkerTest(unittest.TestCase):
+    def test_marker_with_reason_silences_the_file(self):
+        exempt_diff = (
+            "diff --git a/frontend/src/utils/oneOff.ts b/frontend/src/utils/oneOff.ts\n"
+            "new file mode 100644\n--- /dev/null\n+++ b/frontend/src/utils/oneOff.ts\n@@ -0,0 +1,2 @@\n"
+            "+// INVENTORY-EXEMPT: only SelectionTable.vue uses it\n+export const x = 1\n"
+        )
+        diff = exempt_diff + _new_file_diff("frontend/src/utils/other.ts")
+        shared, missing = find_uninventoried(diff, "")
+        self.assertEqual(shared, ["frontend/src/utils/other.ts"])
+        self.assertEqual([f for f, _ in missing], ["frontend/src/utils/other.ts"])
+
+    def test_marker_without_reason_does_not_count(self):
+        diff = (
+            "diff --git a/frontend/src/utils/oneOff.ts b/frontend/src/utils/oneOff.ts\n"
+            "new file mode 100644\n--- /dev/null\n+++ b/frontend/src/utils/oneOff.ts\n@@ -0,0 +1 @@\n"
+            "+// INVENTORY-EXEMPT:\n"
+        )
+        self.assertEqual(len(find_uninventoried(diff, "")[1]), 1)
 
 
 class FormatSectionTest(unittest.TestCase):

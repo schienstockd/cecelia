@@ -327,7 +327,8 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
 - `_Inventory check: run_` (or `_run — every new shared file and route is documented_` /
   `_skipped — no new shared files or routes_`) — mechanical, not a reviewer subagent; warns when the
   diff adds a shared util/component/handler file that no `docs/inventory/*.md` names, or a route
-  `docs/API.md` → *Route index* doesn't list. See
+  `docs/API.md` → *Route index* doesn't list. A genuine one-off file opts out with an
+  `INVENTORY-EXEMPT: <reason>` comment. See
   `python/cecelia/effectiveness/inventory_coverage.py`.
 
 Missing any of the three tails = that mechanism went dark. Don't reassure or wait to be asked "any

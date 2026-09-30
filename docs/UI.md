@@ -336,9 +336,8 @@ way to do it, and the second way is the bug. A slider three components away from
 audited by reading either file — only the sink can hold the guarantee.
 
 Enforced by `utils/continuousControls.test.ts`: it scans every SFC for range inputs, and a handler that
-*calls* something (rather than writing a value or emitting) must name where its effect lands. It also
-pins the live viewer endpoints (`set-z-view`, `apply-view-state`) to one owner — neither is called
-anywhere today, so that half passes vacuously until a live endpoint returns. It cannot follow an `emit` into the parent — which is
+*calls* something (rather than writing a value or emitting) must name where its effect lands. (It also pinned the napari
+live endpoints to their one owner; that check went when the endpoints did.) It cannot follow an `emit` into the parent — which is
 exactly how the z-slider bug got in — so the sink-side rule above is the part that actually holds.
 
 **A `ResizeObserver` callback may MEASURE, never write layout.** Same rule, structural version: a
