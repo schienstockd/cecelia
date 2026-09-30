@@ -264,3 +264,65 @@ end
     recon([row("c5")])
     @test !haskey(C.TASKS, "c5") && C.TALLY["done"] == 1
 end
+
+# ── Task console: the logs pane wraps within the terminal width ──
+# A long log line (usually a path) used to be cut at `cols + 40` — slack meant for ANSI bytes, so the
+# plain text overran the window and the terminal wrapped it mid-word back to column 0, reading as a new
+# entry and pushing the header off the top. Every row must now fit, continuations hang under the text.
+@testset "API: task console wraps long log lines" begin
+    C = TaskConsoleUT
+    plain(s) = replace(s, r"\e\[[0-9;]*m" => "")
+    long = (; ts="14:09:06", id="idlKFF",
+            text=">> write cropped image: /home/dominik/cecelia-feijoa/projects/zolIMa/0/3Xs42U/ccidImage.ome.zarr")
+    short_e = (; ts="14:09:07", id="idlKFF", text="done")
+
+    @test C.wrap_words("a bb ccc", 4) == ["a bb", "ccc"]
+    @test C.wrap_words("abcdefghij", 4) == ["abcd", "efgh", "ij"]   # an unbreakable path is hard-split
+    @test C.wrap_words("", 10) == [""]
+
+    for cols in (60, 80, 100)
+        rows = plain.(C.log_rows(long, cols))
+        @test length(rows) > 1
+        @test all(r -> textwidth(r) <= cols, rows)
+        @test all(r -> startswith(r, " "^C.LOG_INDENT), rows[2:end])   # hanging indent, not column 0
+    end
+
+    rows = plain.(C.log_rows(long, 40; cap = 2))                         # elided, and says so
+    @test length(rows) == 2 && endswith(rows[end], "…") && textwidth(rows[end]) <= 40
+
+    pane = C.log_pane([long, short_e], 60, 3)                            # budget is ROWS, not entries
+    @test length(pane) == 3 && occursin("done", plain(pane[end]))
+    @test endswith(plain(pane[2]), "…")                                  # the older one, cut to fit
+    @test length(C.log_pane([long], 60, 1)) == 1                         # newest is clipped, never hidden
+end
+
+# ── Task console: one frame fills the window exactly — no row past it, no dead space below ──
+# The logs pane takes whatever the table and activity leave; a fixed cap left the bottom of a tall
+# terminal empty once long lines stopped overflowing into it.
+@testset "API: task console frame fills the terminal" begin
+    C = TaskConsoleUT
+    plain(s) = replace(s, r"\e\[[0-9;]*m" => "")
+    empty!(C.TASKS); empty!(C.EVENTS); empty!(C.LOGS); empty!(C.POOLS)
+    push!(C.POOLS, C.PoolView("cpu", 3, 1, 0))
+    redirect_stdout(devnull) do
+        for i in 1:3
+            C.push_event!("status", "t$i done in 3s (" * "editImages.cropImage "^6 * ")")   # overlong
+        end
+        for i in 1:40
+            C.push_log!("idlKFF", ">> write cropped image: /home/dominik/cecelia-feijoa/projects/zolIMa/0/3Xs42U/ccidImage.ome.zarr $i")
+        end
+    end
+    frame(rows, cols) = withenv("LINES" => string(rows), "COLUMNS" => string(cols)) do
+        path, io = mktemp()
+        redirect_stdout(io) do; C.render() end
+        close(io); lines = split(plain(read(path, String)), '\n'); rm(path)
+        lines
+    end
+    for (rows, cols) in ((24, 80), (50, 100), (40, 70))
+        lines = frame(rows, cols)
+        @test length(lines) == rows                                   # filled, not padded or overrun
+        @test all(l -> textwidth(replace(l, r"\e\[[HJ2]*" => "")) <= cols, lines)
+        @test occursin("Cecelia task console", lines[1])              # header still on screen
+    end
+    empty!(C.EVENTS); empty!(C.LOGS); empty!(C.POOLS)
+end
