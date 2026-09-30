@@ -374,6 +374,12 @@ doctor = "julia --startup-file=no scripts/doctor.jl"
 # new worktree.
 bootstrap-worktree = "julia --startup-file=no scripts/bootstrap_worktree.jl"
 
+# Activate the tracked git hooks (`.githooks/commit-msg` — recital outcome-tag gates + log
+# resolution rows). Once per clone: `core.hooksPath` lives in the shared `.git/config`, so every
+# worktree picks it up and runs its own checkout's copy. The Claude Code Bash guard blocks
+# commits until it's set. See `.claude/hooks/check_commit_recital.py`.
+install-git-hooks = "git config core.hooksPath .githooks"
+
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
 # orphaning long-lived children (originally the napari bridge; see docs/SHIPPING.md).
 #

@@ -279,6 +279,9 @@ class SHAAnchoredCheckTest(unittest.TestCase):
         )
         self._env_patch.start()
         self.addCleanup(self._env_patch.stop)
+        b = mock.patch.object(self.hook, "_current_branch", return_value="feat/x")
+        b.start()
+        self.addCleanup(b.stop)
 
     def _msg_with_finding(self) -> str:
         return "git commit -m 'foo [**confirmed**] [fanout-abcd1234: fixed_pre_commit]'"
@@ -291,7 +294,7 @@ class SHAAnchoredCheckTest(unittest.TestCase):
     def test_findings_with_matching_run_passes(self):
         head = "b" * 40
         self._patch_head(head)
-        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=head)
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=head, branch="feat/x")
         self.assertIsNone(self.hook.check(self._msg_with_finding()))
 
     def test_findings_with_no_run_at_all_blocks(self):
@@ -326,7 +329,7 @@ class SHAAnchoredCheckTest(unittest.TestCase):
         # matching row proves recital fired.
         head = "1" * 40
         self._patch_head(head)
-        append_event("convention_check_run", {"duration_s": 1.0}, commit=head)
+        append_event("convention_check_run", {"duration_s": 1.0}, commit=head, branch="feat/x")
         self.assertIsNone(self.hook.check(self._msg_with_finding()))
 
     def test_no_findings_skips_sha_gate_entirely(self):
@@ -381,17 +384,20 @@ class SlugFormGateTest(unittest.TestCase):
         )
         self._env_patch.start()
         self.addCleanup(self._env_patch.stop)
+        b = mock.patch.object(self.hook, "_current_branch", return_value="feat/x")
+        b.start()
+        self.addCleanup(b.stop)
         self.head = "e" * 40
         p = mock.patch.object(self.hook, "_current_head_sha", return_value=self.head)
         p.start()
         self.addCleanup(p.stop)
-        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head)
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
 
     def _emit_finding(self, slug: str, commit: str | None = None):
         append_event(
             "fanout_audit_finding",
             {"slug": slug, "file": "x.py", "line": 1, "desc": "d", "marker": "confirmed"},
-            commit=commit or self.head,
+            commit=commit or self.head, branch="feat/x",
         )
 
     def test_bare_tag_with_logged_slug_blocks_and_names_it(self):
@@ -412,8 +418,29 @@ class SlugFormGateTest(unittest.TestCase):
     def test_already_resolved_slug_does_not_block_bare_tag(self):
         self._emit_finding("fanout-11111111")
         append_event("fanout_audit_finding_resolved",
-                     {"slug": "fanout-11111111", "outcome": "fixed_pre_commit"}, commit=self.head)
+                     {"slug": "fanout-11111111", "outcome": "fixed_pre_commit"}, commit=self.head, branch="feat/x")
         self.assertIsNone(self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'"))
+
+    def test_slug_pair_alone_is_not_treated_as_bare(self):
+        # Another untagged slug on the change must not trip the bare-tag gate when this
+        # message tags by slug only — the outcome word inside the pair isn't a bare tag.
+        self._emit_finding("fanout-11111111")
+        self._emit_finding("fanout-22222222")
+        self.assertIsNone(self.hook.check(
+            "git commit -m 'x [**confirmed**] [fanout-11111111: fixed_pre_commit]'"))
+
+    def test_slug_on_other_branch_same_sha_does_not_block(self):
+        append_event("fanout_audit_finding", {"slug": "fanout-22222222", "file": "x.py",
+                     "line": 1, "desc": "d", "marker": "confirmed"},
+                     commit=self.head, branch="other-worktree")
+        self.assertIsNone(self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'"))
+
+    def test_run_from_other_branch_same_sha_does_not_satisfy_gate_2(self):
+        self.log_path.unlink()
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head,
+                     branch="other-worktree")
+        self.assertIsNotNone(self.hook.check(
+            "git commit -m 'x [**confirmed**] [fanout-11111111: fixed_pre_commit]'"))
 
     def test_slug_on_other_head_does_not_block(self):
         self._emit_finding("fanout-11111111", commit="f" * 40)
@@ -444,11 +471,12 @@ class OrphanSlugDropTest(unittest.TestCase):
     def _events(self):
         return list(read_events(self.log_path))
 
-    def _emit_finding(self, slug: str, commit: str, event: str = "fanout_audit_finding"):
+    def _emit_finding(self, slug: str, commit: str, event: str = "fanout_audit_finding",
+                      branch: str = "feat/x"):
         append_event(
             event,
             {"slug": slug, "file": "x.py", "line": 1, "desc": "d", "marker": "confirmed"},
-            commit=commit,
+            commit=commit, branch=branch,
         )
 
     def test_untagged_slug_on_head_gets_auto_dropped(self):
@@ -468,7 +496,7 @@ class OrphanSlugDropTest(unittest.TestCase):
         head = "b" * 40
         self._emit_finding("fanout-22222222", commit=head)
         msg = "git commit -m 'foo [**confirmed**] [fanout-22222222: fixed_pre_commit]'"
-        n = self.hook.write_dropped_for_orphan_slugs(msg, pr=None, commit=head, branch=None)
+        n = self.hook.write_dropped_for_orphan_slugs(msg, pr=None, commit=head, branch="feat/x")
         self.assertEqual(n, 0)
 
     def test_previously_resolved_slug_is_not_re_dropped(self):
@@ -479,10 +507,10 @@ class OrphanSlugDropTest(unittest.TestCase):
         append_event(
             "fanout_audit_finding_resolved",
             {"slug": "fanout-33333333", "outcome": "fixed_pre_commit"},
-            commit=head,
+            commit=head, branch="feat/x",
         )
         n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'later unrelated commit'", pr=None, commit=head, branch=None,
+            "git commit -m 'later unrelated commit'", pr=None, commit=head, branch="feat/x",
         )
         self.assertEqual(n, 0)
 
@@ -494,7 +522,7 @@ class OrphanSlugDropTest(unittest.TestCase):
         self._emit_finding("fanout-44444444", commit=old_head)
         n = self.hook.write_dropped_for_orphan_slugs(
             "git commit -m 'commit against new head'",
-            pr=None, commit=new_head, branch=None,
+            pr=None, commit=new_head, branch="feat/x",
         )
         self.assertEqual(n, 0)
 
@@ -514,12 +542,46 @@ class OrphanSlugDropTest(unittest.TestCase):
         head = "0" * 40
         self._emit_finding("conv-66666666", commit=head, event="convention_check_finding")
         n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'no tag'", pr=None, commit=head, branch=None,
+            "git commit -m 'no tag'", pr=None, commit=head, branch="feat/x",
         )
         self.assertEqual(n, 1)
         rows = [e for e in self._events() if e["event"] == "convention_check_finding_resolved"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["payload"]["outcome"], "dropped_no_action")
+
+    def test_missing_branch_skips_sweep(self):
+        # Without a branch the sweep can't tell this worktree's findings from another's on
+        # the same base SHA, so it writes nothing rather than guess.
+        head = "2" * 40
+        self._emit_finding("fanout-aaaaaaaa", commit=head)
+        n = self.hook.write_dropped_for_orphan_slugs(
+            "git commit -m 'no tag'", pr=None, commit=head, branch=None,
+        )
+        self.assertEqual(n, 0)
+
+    def test_other_branch_on_same_base_sha_is_not_dropped(self):
+        # The 2026-09-30 incident: `card-reshuffle` and `module-keepalive` both branched off
+        # the same main tip; card-reshuffle's commit auto-dropped module-keepalive's finding.
+        head = "3" * 40
+        self._emit_finding("fanout-7d998e9e", commit=head, branch="module-keepalive")
+        n = self.hook.write_dropped_for_orphan_slugs(
+            "git commit -m 'no tag'", pr=None, commit=head, branch="card-reshuffle",
+        )
+        self.assertEqual(n, 0)
+        self.assertEqual([e for e in self._events() if e["event"].endswith("_resolved")], [])
+
+    def test_other_branch_resolution_does_not_hide_this_branch_finding(self):
+        # Slugs carry no branch: two worktrees flagging the same file:line share one. The other
+        # branch resolving it must not make this branch's pending finding look handled.
+        head = "4" * 40
+        self._emit_finding("fanout-bbbbbbbb", commit=head, branch="feat/x")
+        append_event("fanout_audit_finding_resolved",
+                     {"slug": "fanout-bbbbbbbb", "outcome": "fixed_pre_commit"},
+                     commit=head, branch="other-worktree")
+        n = self.hook.write_dropped_for_orphan_slugs(
+            "no tag", pr=None, commit=head, branch="feat/x",
+        )
+        self.assertEqual(n, 1)
 
     def test_multiple_orphans_all_get_dropped(self):
         head = "1" * 40
@@ -527,9 +589,121 @@ class OrphanSlugDropTest(unittest.TestCase):
         self._emit_finding("fanout-88888888", commit=head)
         self._emit_finding("conv-99999999", commit=head, event="convention_check_finding")
         n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'no tags'", pr=None, commit=head, branch=None,
+            "git commit -m 'no tags'", pr=None, commit=head, branch="feat/x",
         )
         self.assertEqual(n, 3)
+
+
+class GuardTest(unittest.TestCase):
+    """PreToolUse guard: only ensures the git hook can't be skipped. It never reads the message
+    and never writes the log — the 2026-09-30 failure was the in-command checks writing fake
+    resolution rows from a test heredoc that merely contained `git commit` + a slug pair."""
+
+    def setUp(self):
+        self.hook = _load_hook()
+
+    def _guard(self, command: str, hooks_path: str | None = ".githooks", in_repo: bool = True):
+        def fake_git(*args, cwd=None):
+            if args[:2] == ("config", "--get"):
+                return hooks_path
+            if args[:1] == ("rev-parse",):
+                return ".git" if in_repo else None
+            return None
+        with mock.patch.object(self.hook, "_git", side_effect=fake_git):
+            return self.hook.guard(command, cwd="/x")
+
+    def test_non_commit_passes_without_touching_git(self):
+        with mock.patch.object(self.hook, "_git", side_effect=AssertionError("no git call")):
+            self.assertIsNone(self.hook.guard("ls -la && grep -rn foo .", cwd="/x"))
+
+    def test_heredoc_mentioning_a_slug_pair_is_not_checked_or_logged(self):
+        # The guard allows it (hooks active) and nothing reads the text as a message.
+        cmd = "cat > t.py <<'EOF'\ncheck(\"git commit -m 'x [fanout-11111111: fixed_pre_commit]'\")\nEOF"
+        self.assertIsNone(self._guard(cmd))
+
+    def test_commit_with_hooks_active_passes(self):
+        self.assertIsNone(self._guard("cd wt && git commit -q -F msg.txt"))
+
+    def test_commit_without_hooks_path_blocks(self):
+        reason = self._guard("git commit -m x", hooks_path=None)
+        self.assertIsNotNone(reason)
+        self.assertIn("install-git-hooks", reason)
+
+    def test_outside_a_repo_allows(self):
+        self.assertIsNone(self._guard("git commit -m x", hooks_path=None, in_repo=False))
+
+    def test_no_verify_and_dash_n_block(self):
+        self.assertIsNotNone(self._guard("git commit --no-verify -m x"))
+        self.assertIsNotNone(self._guard("git commit -n -m x"))
+        self.assertIsNotNone(self._guard("git -c core.hooksPath=/dev/null commit -m x"))
+
+    def test_dash_n_outside_the_commit_segment_is_fine(self):
+        self.assertIsNone(self._guard("git commit -m x && git log -n 1"))
+        self.assertIsNone(self._guard("git commit -m x | head -n 5"))
+
+
+class CommitMsgHookTest(unittest.TestCase):
+    """git `commit-msg` entry point: gates run on the real message file; resolutions written."""
+
+    def setUp(self):
+        self.hook = _load_hook()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.log_path = pathlib.Path(self._tmp.name) / "events.jsonl"
+        env = mock.patch.dict(os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)})
+        env.start()
+        self.addCleanup(env.stop)
+        self.head = "9" * 40
+        for name, value in (("_current_head_sha", self.head), ("_current_branch", "feat/x"),
+                            ("_current_pr", None), ("_in_sequencer_commit", False)):
+            p = mock.patch.object(self.hook, name, return_value=value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _msg_file(self, text: str) -> str:
+        path = pathlib.Path(self._tmp.name) / "COMMIT_EDITMSG"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def _resolved(self):
+        return [e for e in read_events(self.log_path) if e["event"].endswith("_resolved")]
+
+    def test_slug_pair_in_message_file_writes_resolution(self):
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
+        append_event("fanout_audit_finding", {"slug": "fanout-abcd1234", "file": "x.py",
+                     "line": 1, "desc": "d", "marker": "confirmed"},
+                     commit=self.head, branch="feat/x")
+        rc = self.hook.main(["--commit-msg", self._msg_file(
+            "fix: thing\n\n- [fanout-abcd1234: fixed_pre_commit] x [**confirmed**]\n")])
+        self.assertEqual(rc, 0)
+        self.assertEqual([(e["payload"]["slug"], e["payload"]["outcome"]) for e in self._resolved()],
+                         [("fanout-abcd1234", "fixed_pre_commit")])
+
+    def test_untagged_finding_blocks_with_exit_1(self):
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
+        rc = self.hook.main(["--commit-msg", self._msg_file("x [**confirmed**]\n")])
+        self.assertEqual(rc, 1)
+        self.assertEqual(self._resolved(), [])
+
+    def test_comment_lines_are_ignored(self):
+        # git strips `#` lines from the commit; a commented-out finding must not count.
+        rc = self.hook.main(["--commit-msg", self._msg_file(
+            "small fix\n# - x [**confirmed**]\n")])
+        self.assertEqual(rc, 0)
+
+    def test_merge_commit_is_skipped_entirely(self):
+        append_event("fanout_audit_finding", {"slug": "fanout-abcd1234", "file": "x.py",
+                     "line": 1, "desc": "d", "marker": "confirmed"},
+                     commit=self.head, branch="feat/x")
+        with mock.patch.object(self.hook, "_in_sequencer_commit", return_value=True):
+            rc = self.hook.main(["--commit-msg", self._msg_file("Merge branch 'main'\n")])
+        self.assertEqual(rc, 0)
+        self.assertEqual(self._resolved(), [])  # no orphan auto-drop on a merge
+
+    def test_skip_env_bypasses(self):
+        with mock.patch.dict(os.environ, {"CECELIA_SKIP_RECITAL_CHECK": "1"}):
+            rc = self.hook.main(["--commit-msg", self._msg_file("x [**confirmed**]\n")])
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":

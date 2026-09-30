@@ -106,7 +106,8 @@ def current_head_sha() -> str | None:
     `git` not installed, timeout. Used to anchor recital `_run` rows to the tree the review
     ran against; the commit hook enforces that findings-carrying commits have a matching
     `_run` row with `commit == HEAD-at-hook-time` (i.e. the parent SHA of the commit being
-    made).
+    made) AND the same branch — parallel worktrees share a base SHA, so SHA alone isn't an
+    identity (see the hook's `_same_change`).
     """
     git = shutil.which("git")
     if git is None:
@@ -138,3 +139,21 @@ def repo_root() -> Path:
         if result is not None and result.returncode == 0 and result.stdout.strip():
             return Path(result.stdout.strip())
     return Path.cwd()
+
+
+def git_output(*args: str, cwd: str | None = None) -> str | None:
+    """`git <args>` stdout (stripped), or None on any failure — not a repo, `git` missing, non-zero
+    exit, timeout. For one-off git-state questions (the commit hook's `core.hooksPath` /
+    in-progress-merge checks) so they don't grow a second subprocess wrapper. `cwd` defaults to
+    the process cwd."""
+    git = shutil.which("git")
+    if git is None:
+        return None
+    try:
+        result = subprocess.run(
+            [git, *args], capture_output=True, text=True, timeout=10.0, check=False,
+            encoding="utf-8", cwd=cwd,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
