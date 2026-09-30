@@ -67,7 +67,7 @@ import {
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
-  prefetchWindow, prefetchDepth, stripCells, playbackAdvance, playbackIntervalMs,
+  prefetchWindow, prefetchDepth, walkPrefetch, stripCells, playbackAdvance, playbackIntervalMs,
 } from '../utils/volumeCache'
 import {
   playHealthSummary, trimSamples, type PlayHealthSample,
@@ -2097,15 +2097,20 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
   const dir = Math.sign(tp - lastT) || 1
   lastT = tp
 
-  const want = prefetchWindow(tp, dir, m.nT, depth())
-  for (const u of want) {
-    // The checkpoint. It is between fetches rather than inside one, so abandoning a window costs at
-    // most the request already in flight — which is why `schedulePump` cuts that one short as well.
-    if (!isCurrent()) return
-    if (r.hasTimepoint(u)) { r.touch(u); continue }
-    const ok = await fetchTimepoint(u)
-    syncCacheState()
-    if (!ok || !isCurrent()) return
+  // The walk itself is `walkPrefetch` — see there for the stale-walk race that left the first frame
+  // loaded but unpainted. `schedulePump` aborts the in-flight fetch a new window has no use for.
+  await walkPrefetch(prefetchWindow(tp, dir, m.nT, depth()), {
+    isCurrent,
+    has: u => r.hasTimepoint(u),
+    touch: u => r.touch(u),
+    fetch: async u => { const ok = await fetchTimepoint(u); syncCacheState(); return ok },
+    target: () => t.value,
+    // No `shownT !== u` guard: after `r.setZPlane` bumps `planeVersion`, every slot is stale so
+    // showT(t.value) failed (shownT stayed on the OLD-plane t.value), and skipping the paint left the
+    // new bytes bound but unpainted — the z slider looked dead until the user nudged t. showT is
+    // idempotent for an already-bound slot, and only the target is painted, so playback's per-tick
+    // paint isn't disturbed.
+    paint: u => { showT(u) },
     // Symptom-based OOM guard for the FLAT path only. Flat's `uploadFrame` catches VRAM OOMs
     // INSIDE its own error scope: on failure it silently returns without adding a slot, and the
     // promise resolves truthy — `hasTimepoint(u)` is the only reliable "did the upload actually
@@ -2113,19 +2118,12 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
     // returns false during normal LOD paging (bricks arrive per-view, not per-timepoint), which
     // spuriously fired the flat-OOM fallback with a bricks renderer already active (dismissed
     // chip kept re-firing in bricks mode).
-    if (currentRendererKind.value === 'flat' && !r.hasTimepoint(u)) {
+    lostUpload: u => {
+      if (currentRendererKind.value !== 'flat' || r.hasTimepoint(u)) return false
       handleRendererError('flat', 'flat renderer out of memory: uploaded frame is not resident')
-      return
-    }
-    // Only paints when the walk is still the current one, so a frame the user has already left cannot
-    // land on the canvas; playback's own tick paints whatever became resident meanwhile.
-    // No `shownT !== u` guard: after `r.setZPlane` bumps `planeVersion`, every slot is stale so
-    // showT(t.value) failed (shownT stayed on the OLD-plane t.value), and skipping here left the
-    // new bytes bound but unpainted — the z slider looked dead until the user nudged t.
-    // showT is idempotent for an already-bound slot, and this line only runs when
-    // u === t.value, so playback's per-tick paint isn't disturbed.
-    if (u === t.value) showT(u)
-  }
+      return true
+    },
+  })
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
 
 /**

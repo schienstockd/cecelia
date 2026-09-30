@@ -88,6 +88,56 @@ export function prefetchDepth(
   return 1
 }
 
+/** What `walkPrefetch` needs from the viewer — the renderer's cache, the fetch, and the paint. */
+export interface PrefetchWalkIO {
+  /** False once a newer walk has been requested (`debouncedLatest`'s `isCurrent`). */
+  isCurrent(): boolean
+  has(t: number): boolean
+  touch(t: number): void
+  /** Fetch + upload one timepoint. False on abort or error. */
+  fetch(t: number): Promise<boolean>
+  /** The timepoint the user is looking at NOW — read at each paint decision, never snapshotted. */
+  target(): number
+  /** Bind + draw `t`. Idempotent for an already-bound slot. */
+  paint(t: number): void
+  /** A fetch resolved but the frame is not resident (flat OOM). Stops the walk. Only asked while the
+   *  walk is current — a superseded walk's upload may be legitimately dropped by a `setImage`. */
+  lostUpload?(t: number): boolean
+}
+
+/**
+ * Fill the cache along `want`, one timepoint at a time, and paint the target whenever it is resident.
+ *
+ * THE RACE THIS SHAPE CLOSES. Walk A is fetching the target when a second request for the same target
+ * arrives (a restore, a z step, a watcher firing after load): A goes stale mid-fetch. A's frame still
+ * lands in the cache — but A used to return without painting because it was stale, and walk B found the
+ * frame resident and skipped it without painting either. The frame sat in the cache, unbound, and the
+ * canvas stayed blank until the user moved the time slider. So the paint no longer depends on WHICH
+ * walk loaded the target: painting the timepoint the user is on is always correct, whoever fetched it.
+ * Same fix the tile pump needed (`ViewerWindow` → `tilePump`).
+ */
+export async function walkPrefetch(want: readonly number[], io: PrefetchWalkIO): Promise<void> {
+  for (const u of want) {
+    // The checkpoint. Between fetches rather than inside one, so abandoning a window costs at most
+    // the request already in flight.
+    if (!io.isCurrent()) return
+    if (io.has(u)) {
+      io.touch(u)
+      if (u === io.target()) io.paint(u)
+      continue
+    }
+    const ok = await io.fetch(u)
+    if (!ok) return
+    if (!io.isCurrent()) {
+      // Stale, but the bytes are in: still paint if it is what the user is looking at.
+      if (u === io.target() && io.has(u)) io.paint(u)
+      return
+    }
+    if (io.lostUpload?.(u)) return
+    if (u === io.target()) io.paint(u)
+  }
+}
+
 /**
  * Which resident timepoints to drop, least-recently-used first, to get down to `capacity`.
  *

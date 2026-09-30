@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   cacheCapacity, prefetchWindow, prefetchDepth, lruEvictions, stripCells, playbackAdvance,
-  playbackIntervalMs,
+  playbackIntervalMs, walkPrefetch, type PrefetchWalkIO,
 } from './volumeCache'
+import { debouncedLatest } from './debouncedLatest'
 
 describe('cacheCapacity', () => {
   it('divides the budget by a timepoint', () => {
@@ -195,5 +196,64 @@ describe('prefetchDepth', () => {
   })
   it('does not depend on a measurement it has not got', () => {
     expect(prefetchDepth(4, 0, false)).toBe(4)   // before the first slab, behave as before
+  })
+})
+
+describe('walkPrefetch', () => {
+  /** A cache + fetch whose resolution the test controls, and a record of every paint. */
+  function rig(target: number) {
+    const cache = new Set<number>()
+    const gates = new Map<number, () => void>()
+    const painted: number[] = []
+    const io = (isCurrent: () => boolean): PrefetchWalkIO => ({
+      isCurrent,
+      has: u => cache.has(u),
+      touch: () => {},
+      fetch: u => new Promise<boolean>(res => gates.set(u, () => { cache.add(u); res(true) })),
+      target: () => target,
+      paint: u => { painted.push(u) },
+    })
+    const land = async (u: number) => { gates.get(u)!(); gates.delete(u); await flush() }
+    return { cache, painted, io, land }
+  }
+  const flush = () => new Promise(r => setTimeout(r, 0))
+
+  it('paints the target when a re-request lands mid-fetch (blank-on-load race)', async () => {
+    // Walk A is fetching t=0; a second request for t=0 arrives. A goes stale, its frame lands, and
+    // B finds it resident. Before the fix neither walk painted and the canvas stayed blank.
+    const { painted, io, land } = rig(0)
+    const pump = debouncedLatest<number>(
+      (tp, isCurrent) => walkPrefetch([tp, tp + 1], io(isCurrent)), { wait: 0 })
+    pump.schedule(0)
+    await flush()                                 // A is now awaiting the fetch of 0
+    pump.schedule(0)                              // the re-request: A is stale from here
+    await land(0)                                 // A's frame lands; B runs and finds it resident
+    expect(painted).toContain(0)
+  })
+
+  it('paints a resident target without refetching', async () => {
+    const { cache, painted, io } = rig(3)
+    cache.add(3); cache.add(4)
+    await walkPrefetch([3, 4], io(() => true))
+    expect(painted).toEqual([3])                  // the target only, not the read-ahead
+  })
+
+  it('never paints a timepoint the user has left', async () => {
+    // Stale mid-fetch, and the frame that lands is not the target: it must not reach the canvas.
+    const { painted, io, land } = rig(5)
+    let current = true
+    const done = walkPrefetch([0, 1], io(() => current))
+    current = false
+    await land(0)
+    await done
+    expect(painted).toEqual([])
+  })
+
+  it('stops on a lost upload without painting', async () => {
+    const { painted, io, land } = rig(0)
+    const done = walkPrefetch([0, 1], { ...io(() => true), lostUpload: () => true })
+    await land(0)
+    await done
+    expect(painted).toEqual([])
   })
 })
