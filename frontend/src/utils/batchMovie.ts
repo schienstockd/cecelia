@@ -5,6 +5,7 @@
 //  - movieFilename: the output filename preview, mirroring the backend `_movie_basename`
 //    (<attr1>_<attr2>_..._<uid|image name>.mp4; blanks dropped, unsafe chars → '_').
 
+import { viewerColormapForHex } from './viewerColormap'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
@@ -295,4 +296,23 @@ export function defaultChannelSeed(channelNames: string[], palette: string[]): R
   if (!palette.length) return out
   channelNames.forEach((n, i) => { out[n] = palette[i % palette.length] })
   return out
+}
+
+/** The channel picker's options plus one entry per hex colour in use that the palette
+ *  doesn't name. The viewer publishes a colour that matches no palette entry as its HEX
+ *  (`viewState.ts` → `viewerColormapForHex(hex) ?? hex`), and fill-from-view / a restored movie carry
+ *  that hex through — the renderer accepts it — but a picker listing only palette NAMES showed
+ *  "Select..." for it, so a correct fill looked like it had done nothing. */
+export function withCustomColours<T extends { value: string; label: string; hex: string | null }>(
+  options: T[], used: Iterable<string>): (T | { value: string; label: string; hex: string })[] {
+  const known = new Set(options.map(o => o.value.toLowerCase()))
+  const extra: { value: string; label: string; hex: string }[] = []
+  for (const v of used) {
+    const k = v.toLowerCase()
+    if (!/^#[0-9a-f]{6}$/.test(k) || known.has(k)) continue
+    known.add(k)
+    // a hex the palette happens to hold keeps its name; the value stays the hex, which is what's stored
+    extra.push({ value: v, label: viewerColormapForHex(v) ?? 'custom', hex: v })
+  }
+  return [...options, ...extra]
 }

@@ -148,6 +148,46 @@ function axis_dims(c_axes::Vector{String}, nd::Int)
 end
 
 """
+    label_geometry_mismatch(img_arr, img_caxes, lab_arr, lab_caxes) -> Union{Nothing,String}
+
+`nothing` when a label store can be drawn over an image version — same Y, X and (where both have
+one) Z extent — else a short `"Z×Y×X vs Z×Y×X"` description. A segmentation lives in the pixel grid
+of the version it was run on; drift correction pads the frame and a crop shrinks it, so the other
+versions of the same image usually differ by a few pixels. Drawing across that boundary either
+crashed (label store smaller than the frame) or silently cut the mask and drew it misaligned (larger).
+"""
+function label_geometry_mismatch(img_arr, img_caxes::Vector{String},
+                                 lab_arr, lab_caxes::Vector{String})::Union{Nothing,String}
+    di = axis_dims(img_caxes, ndims(img_arr))
+    dl = axis_dims(lab_caxes, ndims(lab_arr))
+    ext(a, d, k) = haskey(d, k) ? size(a, d[k]) : 0
+    keys_ = haskey(di, "z") && haskey(dl, "z") ? ("z", "y", "x") : ("y", "x")
+    ei = [ext(img_arr, di, k) for k in keys_]
+    el = [ext(lab_arr, dl, k) for k in keys_]
+    ei == el && return nothing
+    "$(join(el, "×")) vs $(join(ei, "×"))"
+end
+
+"""
+    mask_fits_frame(img, value_name, arr, caxes; on_log=nothing) -> Bool
+
+The one gate every offline mask path asks before building a mask: does segmentation `value_name`
+share the pixel grid of the image version `arr` came from? On a mismatch, logs one `[WARN]` line
+through `on_log` (the task log) and returns `false` so the caller records without the mask. A label
+store that isn't on disk passes — the mask author reports that itself.
+"""
+function mask_fits_frame(img, value_name::AbstractString, arr, caxes::Vector{String};
+                         on_log::Union{Nothing,Function} = nothing)::Bool
+    zp = img_labels_path(img, value_name)
+    isdir(zp) || return true
+    mismatch = label_geometry_mismatch(arr, caxes, open_level0(String(zp))...)
+    mismatch === nothing && return true
+    on_log === nothing || on_log("[WARN] mask '$value_name' skipped — it was segmented on another " *
+                                 "version of this image (Z×Y×X mask vs image: $mismatch)")
+    false
+end
+
+"""
     resolve_image_version(project_uid, image_uid, value_name; version=nothing)
         -> (zarr_path, meta_dir, error)
 

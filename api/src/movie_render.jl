@@ -543,7 +543,8 @@ end
 # branch to draw labels-contour outlines alongside points/segments. 3D animations skip masks (a
 # 2D contour on a z-plane doesn't project naturally onto a MIP; documented as a known gap in the
 # PR body).
-function _resolve_keyframe_overlay_builders(img, overlays_config)
+function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothing,
+                                            on_log::Union{Nothing,Function} = nothing)
     (img === nothing || overlays_config === nothing) && return (nothing, nothing, nothing)
     show_pops   = _ov_bool(overlays_config, "showPopulations", false)
     show_tracks = _ov_bool(overlays_config, "showTracks",      false)
@@ -552,7 +553,10 @@ function _resolve_keyframe_overlay_builders(img, overlays_config)
     (show_pops || show_tracks || show_gated || show_mask) || return (nothing, nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
-    isempty(vn) && return (nothing, nothing)
+    isempty(vn) && return (nothing, nothing, nothing)
+    # `frame` = the recorded version's `(arr, caxes)` — a mask from another version's grid is skipped.
+    show_mask && frame !== nothing && !mask_fits_frame(img, vn, frame...; on_log = on_log) &&
+        (show_mask = false)
     pt   = _ov_str(overlays_config, "popType", "flow")
     tail = _ov_int(overlays_config, "tailLength", 30)
     tcm  = _ov_str(overlays_config, "trackColourMode", "track")
@@ -779,7 +783,9 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     # crop/max_px, so we curry it here and pass the crop into every 2D frame; `per_t3d` is one
     # closure the 3D emitter calls with each frame's t. `build_mask` is the 2D-only mask factory
     # (labels contour on the CPU per-frame path) — 3D animations skip it.
-    build2d, per_t3d, build_mask = _resolve_keyframe_overlay_builders(img, overlays_config)
+    build2d, per_t3d, build_mask = _resolve_keyframe_overlay_builders(img, overlays_config;
+                                                                      frame = (arr, caxes),
+                                                                      on_log = on_log)
     ov_tail = overlays_config === nothing ? 30 : _ov_int(overlays_config, "tailLength", 30)
     ov_psz  = overlays_config === nothing ? 6  : _ov_int(overlays_config, "pointSizePx", 6)
     ov_sw   = overlays_config === nothing ? 2  : _ov_int(overlays_config, "segmentWidthPx", 2)
