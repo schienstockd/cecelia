@@ -109,6 +109,7 @@ export function computeNextSameFunStart(log: RunLogEntry[]): Map<number, Date> {
  */
 export function taskHistoryEntries(images: HistoryImage[], ctx: HistoryContext): TaskEntry[] {
   const out: TaskEntry[] = []
+  const seen = new Set<string>()             // row ids handed out so far — see the id below
   for (const img of images) {
     const log = img.runLog ?? []
     // `nextByIndex[i]` = the `startedAt` of the NEXT same-fun run after entry `i` in this image's
@@ -125,8 +126,15 @@ export function taskHistoryEntries(images: HistoryImage[], ctx: HistoryContext):
       if (!fun) continue
       // The run's own id when it has one — which also makes the row dedup against, and be updated by,
       // the live row for the same run. The synthetic fallback only has to be unique and stable.
-      const id = e.taskId || `history::${img.uid}::${i}::${fun}`
-      if (ctx.hasId?.(id)) continue
+      //
+      // A `taskId` is NOT unique across run-log entries: a set-level run writes its one id into every
+      // image it touched (zolIMa: 24 ids on up to 12 images each), and a few repeat within one image.
+      // The id is the table's row KEY, and duplicate keys made Vue mis-patch the list — rows cloned on
+      // every re-sort and survived the History toggle going off. So only the first claimant keeps the
+      // scheduler id; every repeat takes the synthetic one.
+      if (e.taskId && ctx.hasId?.(e.taskId)) continue
+      const id = e.taskId && !seen.has(e.taskId) ? e.taskId : `history::${img.uid}::${i}::${fun}`
+      seen.add(id)
       out.push({
         id,
         seq:         0,              // not a session task — the `#N` counter is hidden for these

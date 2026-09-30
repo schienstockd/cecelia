@@ -16,7 +16,7 @@ import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
-import { taskRows } from '../utils/taskRows'
+import { taskRows, taskMatchesQuery } from '../utils/taskRows'
 import { usePanelResize } from '../composables/usePanelResize'
 import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
@@ -69,6 +69,10 @@ const throttleOpen = ref(false)
 
 const selectedId   = ref<string | null>(null)
 const statusFilter = ref<'all' | 'active' | 'done' | 'failed' | 'cancelled'>('all')
+// free-text narrowing — with History on the list is hundreds of rows, and "that run on THIS image" is
+// the usual question. The rule is `taskMatchesQuery` (utils/taskRows.ts). Transient, like the status
+// chips beside it: a search is a lookup, not a setting to come back to.
+const query        = ref('')
 const logEl        = ref<HTMLElement | null>(null)
 // shared copy+flash helper (docs/ui/PRIMITIVES.md)
 const { isCopied: copied, copy } = useCopyFlash()
@@ -85,6 +89,7 @@ const inScope = (t: TaskEntry) =>
 const filtered = computed(() => {
   return tasks.tasks.filter(t => {
     if (!inScope(t)) return false
+    if (!taskMatchesQuery(t, query.value)) return false
     if (statusFilter.value === 'all')    return true
     if (statusFilter.value === 'active') return t.status === 'running' || t.status === 'queued'
     return t.status === statusFilter.value
@@ -255,6 +260,10 @@ const FILTERS: ChipOption[] = [
         v-tooltip.bottom="'Show only tasks in this state'"
         @update:model-value="v => statusFilter = v as typeof statusFilter" />
 
+      <input v-model="query" class="tm-search cc-input-xs" type="search" placeholder="Search"
+        aria-label="Search tasks"
+        v-tooltip.bottom="'Filter by image, task or module'" />
+
       <CcToggle class="follow-toggle" v-model="settings.tasksShowHistory" label="History"
         v-tooltip.bottom="'Include runs recorded before this session'" />
 
@@ -291,11 +300,6 @@ const FILTERS: ChipOption[] = [
            `@row-click` rather than `@update:model-value` — clicking the row that is already selected
            emits no model change, and re-opening a row is what triggers its log backfill. -->
       <div class="tm-list" :style="listWidthStyle">
-        <!-- drag the list/log divider (persisted). Handle on the list's RIGHT edge, hence
-             `edge: 'right'` — dragging right widens the list. OUTSIDE the scrolling half, or it
-             scrolls away with the rows. -->
-        <div class="tm-divider" @mousedown="onListResizeStart"
-          v-tooltip.top="'Drag to resize the list'" />
         <div class="tm-list-scroll">
         <SelectionTable
           class="tm-table" selection-mode="single" density="compact"
@@ -370,6 +374,12 @@ const FILTERS: ChipOption[] = [
           <template #empty>No tasks.</template>
         </SelectionTable>
         </div>
+        <!-- drag the list/log divider (persisted). Handle on the list's RIGHT edge, hence
+             `edge: 'right'` — dragging right widens the list. OUTSIDE the scrolling half, or it
+             scrolls away with the rows; and BESIDE it rather than overlaid, or it sits on top of the
+             list's scrollbar and swallows every grab of the thumb. -->
+        <div class="tm-divider" @mousedown="onListResizeStart"
+          v-tooltip.top="'Drag to resize the list'" />
       </div>
 
       <!-- Log panel -->
@@ -458,6 +468,7 @@ const FILTERS: ChipOption[] = [
 .filter-chips {
   flex: 1;
 }
+.tm-search { width: 12rem; flex-shrink: 1; min-width: 6rem; }
 
 .follow-toggle {
   display: flex;
@@ -492,17 +503,15 @@ const FILTERS: ChipOption[] = [
    than the pane; the fill layout means it is otherwise dormant. */
 .tm-list {
   flex-shrink: 0;
+  display: flex;                 /* scroll half | divider — side by side, never stacked */
   border-right: 1px solid var(--cc-border);
-  position: relative;
   overflow: hidden;              /* the scrolling is the inner half's, so the divider can't scroll away */
 }
-.tm-list-scroll { height: 100%; overflow: auto; }
-/* the divider: a grab strip on the pane's right edge, over the border it sits on */
+.tm-list-scroll { flex: 1; min-width: 0; height: 100%; overflow: auto; }
+/* the divider: a grab strip on the pane's right edge, right of the scrollbar (it used to overlay it) */
 .tm-divider {
-  position: absolute; top: 0; right: 0; bottom: 0;
-  width: 5px;
+  flex: 0 0 5px;
   cursor: col-resize;
-  z-index: 4;                      /* above the table's sticky header */
 }
 .tm-divider:hover { background: var(--cc-accent); opacity: 0.35; }
 
