@@ -131,7 +131,7 @@ end
 
 const TASKS      = Dict{String,TaskView}()   # taskId => view — ACTIVE tasks only (finished ones drop out)
 const EVENTS     = String[]                   # ring buffer of rendered ACTIVITY lines (status/chain/result)
-const LOGS       = String[]                   # ring buffer of task LOG lines — shown in their own pane
+const LOGS       = NamedTuple{(:ts, :id, :text),NTuple{3,String}}[]   # ring buffer of task LOG lines — own pane
 const LOCK       = ReentrantLock()
 const MAX_EVENTS = 500
 const MAX_LOGS   = 500
@@ -164,6 +164,23 @@ now_hms() = Dates.format(Dates.now(), "HH:MM:SS")
 # of concurrent tasks (and matches the backend's 6-char gen_uid object ids). The real id is untouched.
 short(id::AbstractString, n::Int=6) = length(id) <= n ? String(id) : String(last(id, n))
 trunc_s(s::AbstractString, n::Int) = length(s) <= n ? String(s) : String(first(s, max(0, n - 1))) * "…"
+
+# `trunc_s` for a line carrying ANSI colour: counts only VISIBLE cells, so the row fits `n` columns
+# however many escapes it holds (a fixed byte allowance let plain-heavy lines overrun the window).
+function trunc_vis(s::AbstractString, n::Int)
+    textwidth(replace(s, r"\e\[[0-9;]*m" => "")) <= n && return String(s)
+    io = IOBuffer(); vis = 0; i = firstindex(s)
+    while i <= lastindex(s)
+        m = match(r"\e\[[0-9;]*m", s, i)
+        if m !== nothing && m.offset == i            # an escape: copy through, zero width
+            print(io, m.match); i += ncodeunits(m.match); continue
+        end
+        c = s[i]
+        vis + textwidth(c) > n - 1 && break
+        print(io, c); vis += textwidth(c); i = nextind(s, i)
+    end
+    string(String(take!(io)), "…\e[0m")
+end
 
 # Elapsed as a compact string: 42s · 4m 12s · 1h 30m. Same spelling as the GUI's
 # `formatTaskDuration` (`frontend/src/utils/taskElapsed.ts`) so one duration doesn't read two ways
@@ -236,11 +253,76 @@ end
 
 # Task log lines go in their OWN buffer, rendered in a separate confined pane (they're high-volume and
 # would otherwise drown the activity stream). Prefixed with the short task id for context.
+# Kept as fields, not a rendered string, so the pane can re-wrap them when the terminal is resized.
 function push_log!(id::AbstractString, line::AbstractString)
-    entry = string(col(GREY, now_hms()), "  ", col(DIM, short(id)), "  ", line)
+    entry = (; ts = now_hms(), id = short(id), text = String(line))
     push!(LOGS, entry)
     length(LOGS) > MAX_LOGS && deleteat!(LOGS, 1:(length(LOGS) - MAX_LOGS))
-    STREAM_MODE && println(entry)
+    STREAM_MODE && println(log_prefix(entry), entry.text)
+end
+
+log_prefix(e) = string(col(GREY, e.ts), "  ", col(DIM, e.id), "  ")
+const LOG_INDENT     = 18   # visible width of `log_prefix`: "HH:MM:SS  xxxxxx  "
+const LOG_LINES_EACH = 3    # wrapped lines one entry may take before it is elided with `…`
+
+# Word-wrap `text` into lines of at most `width` cells. The terminal's own wrap breaks mid-word and
+# restarts at column 0, which reads as a new log line — the same fix the recital console's findings
+# pane makes with `textwrap` (`_wrap_desc` in `python/cecelia/effectiveness/console.py`). Unlike its
+# prose, a log line is often one unbreakable path, so a word wider than a line is hard-split.
+function wrap_words(text::AbstractString, width::Int)
+    width = max(1, width)
+    lines = String[]
+    cur = ""
+    for w in split(text)
+        word = String(w)
+        while textwidth(word) > width
+            isempty(cur) || (push!(lines, cur); cur = "")
+            n = 0; cut = 0
+            for (i, c) in pairs(word)
+                n + textwidth(c) > width && break
+                n += textwidth(c); cut = i
+            end
+            cut == 0 && (cut = firstindex(word))   # a single char wider than the line — emit it anyway
+            push!(lines, word[1:cut])
+            word = word[nextind(word, cut):end]
+        end
+        isempty(word) && continue
+        if isempty(cur)
+            cur = word
+        elseif textwidth(cur) + 1 + textwidth(word) <= width
+            cur = string(cur, " ", word)
+        else
+            push!(lines, cur); cur = word
+        end
+    end
+    isempty(cur) || push!(lines, cur)
+    isempty(lines) ? [""] : lines
+end
+
+# One log entry as screen rows: prefix + first line, then a hanging indent under the text column so a
+# continuation never reads as its own entry. At most `cap` rows; an elided tail ends in `…`.
+function log_rows(e, cols::Int; cap::Int = LOG_LINES_EACH)
+    width = max(20, cols - LOG_INDENT)
+    body  = wrap_words(e.text, width)
+    if length(body) > cap
+        body = body[1:cap]
+        last_l = body[end]
+        textwidth(last_l) >= width && (last_l = first(last_l, width - 1))
+        body[end] = last_l * col(DIM, "…")
+    end
+    [i == 1 ? log_prefix(e) * l : " "^LOG_INDENT * l for (i, l) in enumerate(body)]
+end
+
+# The newest entries filling exactly `budget` rows, oldest first. The oldest one shown is cut to the
+# rows left (ending in `…`), so the pane fills its budget rather than leaving a gap below.
+function log_pane(logs, cols::Int, budget::Int)
+    out = String[]
+    for e in Iterators.reverse(logs)
+        left = budget - length(out)
+        left <= 0 && break
+        prepend!(out, log_rows(e, cols; cap = min(LOG_LINES_EACH, left)))
+    end
+    out
 end
 
 # A task's first terminal sighting: bump its outcome tally and drop the row (kept only as a count).
@@ -588,19 +670,23 @@ function render()
     n_run = count(t -> t.status == "running", tasks)
     n_q   = count(t -> t.status == "queued", tasks)
 
-    # ── ONE height budget so nothing ever clips: fixed chrome (title/counts/blank, table header,
-    # dividers, footer) ≈ 6 lines (+1 with a logs pane), reserved generously; the rest splits between
-    # the task table (priority), a small activity peek and the logs pane. EVERY section obeys this — no
-    # per-pane minimum can push content past the window (the earlier bug: min-6 logs + min-3 activity
-    # overran a short terminal and shoved the header off the top).
+    # ── ONE height budget so nothing ever clips: fixed chrome counted exactly (title, counts, pools,
+    # blank, table header, dividers, footer); the rest splits between the task table (priority), a small
+    # activity peek and the logs pane, which takes whatever the other two leave — so the window is
+    # filled, not padded. EVERY section obeys this — no per-pane minimum can push content past the
+    # window (the earlier bug: min-6 logs + min-3 activity overran a short terminal and shoved the
+    # header off the top). Exact counting relies on every row fitting `cols` (`trunc_vis`, `log_pane`).
     haveLogs  = !isempty(LOGS)
     havePools = !isempty(POOLS)
-    content   = max(4, rows - 9 - (haveLogs ? 1 : 0) - (havePools ? 1 : 0))
-    logCap    = haveLogs ? clamp(content ÷ 3, 1, 6) : 0
-    evtCap    = clamp(content ÷ 4, 1, 4)
-    tableRoom = max(2, content - logCap - evtCap)
+    chrome    = 5 + havePools + haveLogs + !isempty(tasks)
+    content   = max(4, rows - chrome)
+    evtRows   = min(length(EVENTS), clamp(content ÷ 4, 1, 4))
+    logMin    = haveLogs ? clamp(content ÷ 3, 1, 6) : 0
+    tableRoom = max(2, content - logMin - evtRows)
     truncated = length(tasks) > tableRoom
     nShown    = truncated ? max(1, tableRoom - 1) : length(tasks)   # reserve a line for "…and N more"
+    tableRows = isempty(tasks) ? 1 : nShown + truncated
+    logCap    = haveLogs ? max(1, content - evtRows - tableRows) : 0
 
     # header — live counts + cumulative finished tallies (so you see "how many done" without 50 rows)
     print(io, "\e[H\e[2J")
@@ -660,13 +746,13 @@ function render()
 
     # activity peek, then the confined logs pane — both bounded by the budget above
     print(io, col(DIM, "── activity " * "─"^max(0, w - 12)), "\n")
-    for line in (length(EVENTS) > evtCap ? EVENTS[(end - evtCap + 1):end] : EVENTS)
-        print(io, trunc_s(line, cols + 40), "\n")   # +40 slack for ANSI escape bytes
+    for line in EVENTS[(end - evtRows + 1):end]
+        print(io, trunc_vis(line, cols), "\n")
     end
     if logCap > 0
         print(io, col(DIM, "── logs " * "─"^max(0, w - 8)), "\n")
-        for line in (length(LOGS) > logCap ? LOGS[(end - logCap + 1):end] : LOGS)
-            print(io, trunc_s(line, cols + 40), "\n")
+        for line in log_pane(LOGS, cols, logCap)
+            print(io, line, "\n")
         end
     end
     print(io, col(DIM, "(reporting only — Ctrl-C to quit)"))
