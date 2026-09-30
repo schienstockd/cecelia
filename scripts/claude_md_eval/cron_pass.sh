@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Wednesday-midnight scheduled `pixi run claude-md-eval` pass.
+# Scheduled (systemd user timer, Monday 23:59) `pixi run claude-md-eval` pass.
 #
 # Wraps the suite driver with (a) logging to `~/.cecelia-effectiveness/cron/`,
 # (b) a `nice`/`ionice` niceness bump so a mid-run pass doesn't fight interactive

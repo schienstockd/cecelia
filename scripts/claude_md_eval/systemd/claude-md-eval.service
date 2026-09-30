@@ -16,8 +16,8 @@ Environment=REPO=%h/cc-workspace/cecelia/cecelia-feijoa
 # claude-md-eval.service` if either binary lives elsewhere.
 Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/claude_md_eval/cron_pass.sh"'
-# One-shot pass caps at 30 min — 3 runs × 10 prompts × ~30s = ~15 min at N=3,
-# so this buys 2× headroom. A hung run gets killed rather than wedging the timer.
+# One-shot pass caps at 30 min — measured 22 min for 12 prompts × N=3 (2026-09-29). A hung
+# run gets killed rather than wedging the timer.
 TimeoutStartSec=30min
 StandardOutput=journal
 StandardError=journal

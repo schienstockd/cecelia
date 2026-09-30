@@ -106,33 +106,62 @@ def _latest_rule_per_prompt(events: _t.Sequence[dict]) -> dict[str, str]:
     return {pid: r for pid, (_, r) in rules.items()}
 
 
-def _latest_suite(events: _t.Sequence[dict], arm: str | None = None) -> dict | None:
-    """Return the most-recent `_suite` row, optionally filtered by arm.
+# Suite rows written before `full_catalog` was recorded (2026-09-30): the two genuine full
+# passes then ran 9 and 12 prompts; every `--only` / ablation subset ran ≤4. Legacy-only.
+_LEGACY_FULL_MIN_PROMPTS = 9
 
-    `arm` filter uses the payload's `arm` field; rows written before the ablation
-    additions (pre-2026-09-28) don't carry `arm` and are treated as `with` — that
-    matches how the runner shipped historically.
+
+# A full pass also needs N≥3 — a `--runs 1` sweep of the whole catalog is a smoke check,
+# and a 1/1 must not count toward a retirement streak.
+_FULL_MIN_RUNS = 3
+
+
+def _is_full_pass(row: dict) -> bool:
+    """True when a suite/ablation row covers the whole catalog (no `--only` / `--exclude`) at N≥3."""
+    p = row.get("payload", {}) or {}
+    runs = p.get("runs_per_prompt") or p.get("runs_per_arm") or 0
+    if runs < _FULL_MIN_RUNS:
+        return False
+    if "full_catalog" in p:
+        return bool(p["full_catalog"])
+    return len(p.get("prompt_ids") or []) >= _LEGACY_FULL_MIN_PROMPTS
+
+
+def _suite_arm(suite: dict) -> str:
+    # Rows written before the ablation additions (pre-2026-09-28) carry no `arm` and ran
+    # with CLAUDE.md — that matches how the runner shipped historically.
+    return (suite.get("payload", {}) or {}).get("arm", "with")
+
+
+def _suites(events: _t.Sequence[dict]) -> list[dict]:
+    """Every `_suite` row, newest first."""
+    return sorted((e for e in events if e.get("event") == "claude_md_eval_suite"),
+                  key=lambda e: e.get("ts", ""), reverse=True)
+
+
+def _latest_suite(events: _t.Sequence[dict]) -> dict | None:
+    """The row the page leads with: newest full-catalog WITH-arm pass.
+
+    A `--only` spot-check or an ablation's WITHOUT arm is not the state of the setup —
+    rendering it as "Latest suite" is how a 1-prompt N=1 check and an errored WITHOUT
+    arm each replaced the full-pass table on 2026-09-29. Falls back to the newest
+    WITH-arm row, then the newest row, so a log with no full pass still renders.
     """
-    latest = None
-    for e in events:
-        if e.get("event") != "claude_md_eval_suite":
-            continue
-        row_arm = e.get("payload", {}).get("arm", "with")
-        if arm is not None and row_arm != arm:
-            continue
-        if latest is None or e.get("ts", "") > latest.get("ts", ""):
-            latest = e
-    return latest
+    suites = _suites(events)
+    for pick in (lambda s: _suite_arm(s) == "with" and _is_full_pass(s),
+                 lambda s: _suite_arm(s) == "with",
+                 lambda s: True):
+        for s in suites:
+            if pick(s):
+                return s
+    return None
 
 
 def _latest_ablation(events: _t.Sequence[dict]) -> dict | None:
-    latest = None
-    for e in events:
-        if e.get("event") != "claude_md_eval_ablation":
-            continue
-        if latest is None or e.get("ts", "") > latest.get("ts", ""):
-            latest = e
-    return latest
+    """Newest full-catalog ablation, else the newest ablation — same scoping as `_latest_suite`."""
+    rows = sorted((e for e in events if e.get("event") == "claude_md_eval_ablation"),
+                  key=lambda e: e.get("ts", ""), reverse=True)
+    return next((r for r in rows if _is_full_pass(r)), rows[0] if rows else None)
 
 
 def _suite_section(suite: dict, rules: dict[str, str]) -> str:
@@ -152,6 +181,7 @@ def _suite_section(suite: dict, rules: dict[str, str]) -> str:
         f"- **When:** {ts} UTC",
         f"- **CLAUDE.md blob:** `{sha}`",
         f"- **Arm:** `{arm}` · **Runs per prompt:** {runs}",
+        f"- **Scope:** {'full catalog' if _is_full_pass(suite) else 'partial (`--only` / ablation subset) — no full pass logged yet'}",
     ]
     if total_cost is not None:
         lines.append(f"- **Total spend:** ${total_cost:.2f}")
@@ -264,6 +294,28 @@ def _ablation_section(ablation: dict) -> str:
     return "\n".join(lines)
 
 
+def _adhoc_section(events: _t.Sequence[dict], suite: dict) -> str:
+    """Suite rows newer than the one the page leads with — spot-checks, ablation arms."""
+    newer = [s for s in _suites(events) if s.get("ts", "") > suite.get("ts", "")]
+    if not newer:
+        return ""
+    lines = ["## Ad-hoc runs since", "",
+             "_Subsets and ablation arms — not the state of the setup; shown so a spot-check "
+             "after an intervention is visible before the next full pass._", "",
+             "| When (UTC) | Arm | N | Prompts | Compliant / Total |",
+             "|---|---|---:|---|---:|"]
+    for s in newer:
+        p = s.get("payload", {}) or {}
+        t = p.get("totals") or {}
+        c = t.get("compliant", 0)
+        total = c + t.get("noncompliant", 0) + t.get("error", 0)
+        pids = ", ".join(f"`{pid}`" for pid in p.get("prompt_ids") or [])
+        lines.append(f"| {_fmt_ts(s.get('ts', ''))} | {_suite_arm(s)} | "
+                     f"{p.get('runs_per_prompt') or 0} | {pids} | {c}/{total} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _failing_section(suite: dict, rules: dict[str, str]) -> str:
     """Any prompt with <100% compliance in the latest pass gets a paragraph.
 
@@ -282,7 +334,10 @@ def _failing_section(suite: dict, rules: dict[str, str]) -> str:
             failing.append((pid, c, total))
     if not failing:
         return ""
-    lines = ["## Failing rules (latest suite)", ""]
+    lines = ["## Failing rules (latest suite)", "",
+             "_Each run's diff + tool log is kept under "
+             "`~/.cecelia-effectiveness/traces/<ts>-<prompt>-<arm>-r<n>/` — read the trace "
+             "for *why* before changing anything, and fix the dev setup, not the probe._", ""]
     for pid, c, total in failing:
         rule = rules.get(pid, "").strip()
         lines.append(f"### `{pid}` — {c}/{total} compliant")
@@ -293,16 +348,14 @@ def _failing_section(suite: dict, rules: dict[str, str]) -> str:
 
 
 def _trend_section(events: _t.Sequence[dict], *, max_rows: int = 8) -> str:
-    """One row per suite pass, most recent first. Blob-SHA changes are marked.
+    """One row per full pass, most recent first. Blob-SHA changes are marked.
 
     Columns are the union of prompt ids seen across the recent passes — a prompt added
     later shows `—` on older rows, which is honest (that prompt didn't run then).
     """
-    suites = sorted(
-        (e for e in events if e.get("event") == "claude_md_eval_suite"),
-        key=lambda e: e.get("ts", ""),
-        reverse=True,
-    )
+    # Full WITH-arm passes only — subsets would read as regressions in the columns they
+    # skipped, and WITHOUT arms belong to the ablation section.
+    suites = [s for s in _suites(events) if _suite_arm(s) == "with" and _is_full_pass(s)]
     if len(suites) < 2:
         # A single-row trend is just the latest-suite table restated. Suppress until
         # we have at least two passes.
@@ -366,6 +419,9 @@ def render_eval_rollup(events: _t.Iterable[dict],
              _suite_section(suite, rules)]
     if ablation:
         parts.append(_ablation_section(ablation))
+    adhoc = _adhoc_section(events, suite)
+    if adhoc:
+        parts.append(adhoc)
     failing = _failing_section(suite, rules)
     if failing:
         parts.append(failing)

@@ -8,7 +8,7 @@ via #1273). **P2.5 rollup SHIPPED** (2026-09-28, #1273) — renders
 + on demand via `pixi run claude-md-eval-rollup`. **Indirect tier on
 `feat/indirect-eval-tier`** (2026-09-28, PR #1274): additions-only regex scoring, synthetic
 session id, widened `tool_order` matcher (lists), reworked `discovery-first` prompt, one
-indirect pilot (`crop-failure`), weekly Wednesday 00:00 systemd user timer — see
+indirect pilot (`crop-failure`), weekly Monday 23:59 systemd user timer — see
 *Indirect tier (2026-09-28)* + *Cadence* below.
 
 ## Sonnet 2026-09-28 discipline additions
@@ -208,8 +208,10 @@ signal.
    `cecelia.effectiveness.append_event`. Payload: `{"prompt_id", "rule", "outcome",
    "compliant_hits", "anti_hits", "worktree_sha", "model", "duration_s"}`. `outcome` is one of
    the closed vocabulary: `compliant` / `noncompliant` / `error`.
-7. Clean up the eval worktrees (`git worktree remove`) unless `--keep-worktrees` is passed for
-   debugging.
+7. Save the run's trace (diff, stream-json tool log, stderr, verdict) to
+   `~/.cecelia-effectiveness/traces/<ts>-<prompt>-<arm>-r<n>/` and link it from the row's
+   `trace_dir` — a failing verdict is read from its trace. Then clean up the eval worktree
+   (`git worktree remove`) unless `--keep-worktrees` is passed for debugging.
 
 Failure recovery: if a spawn times out or the diff doesn't apply cleanly, emit an `error` row
 with the reason. Don't crash the run — one bad prompt shouldn't kill the whole pass.
@@ -304,7 +306,7 @@ needs longer output (e.g. a whole new module), bump `max_tokens` on that prompt 
   `pixi run claude-md-eval` pass; standalone regen via `pixi run claude-md-eval-rollup`.
   Not auto-committed — user reviews the diff.
 - **P3 SHIPPED** (2026-09-28, this branch) — systemd user timer fires
-  `pixi run claude-md-eval` Wednesday 00:00 local time; see *Cadence* below +
+  `pixi run claude-md-eval` Monday 23:59 local time; see *Cadence* below +
   [`scripts/claude_md_eval/systemd/README.md`](../../scripts/claude_md_eval/systemd/README.md)
   for the install steps. Suite only; ablation stays manual.
 

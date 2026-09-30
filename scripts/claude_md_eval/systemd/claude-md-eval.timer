@@ -5,8 +5,8 @@ Documentation=file://%h/cc-workspace/cecelia/cecelia-feijoa/docs/todo/CLAUDE_MD_
 [Timer]
 # 23:59 Monday local time — "Monday midnight" in colloquial speak. Chosen over
 # `Mon 00:00` (start of Monday) so the timer, when installed on a Monday
-# afternoon, fires tonight rather than next week. Pass takes ~15 min so
-# writes straddle into early Tuesday; timestamps land honestly per row.
+# afternoon, fires tonight rather than next week. Pass takes ~22 min (measured
+# 2026-09-29, 12 prompts × N=3) so writes straddle into early Tuesday; timestamps land honestly per row.
 OnCalendar=Mon *-*-* 23:59:00
 # Deliberately NOT Persistent=true — a machine that was off at the scheduled
 # hour must NOT fire on next boot. Otherwise powering on an old laptop weeks
