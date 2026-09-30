@@ -328,15 +328,17 @@ keeps a result and must discard the stale one, a paint has no result at all, and
 but does have a restore to defend against. **Do not hand-roll a fourth** `setTimeout` + sequence-token
 pair — that is what these were extracted from.
 
-**Put the coalescing at the SINK, not at each call site.** There is one browser viewer, so
-`utils/napariOverlays.ts` owns one scheduler per live endpoint (`pushZView`, `pushLabelContour`) and a
-second call site cannot reintroduce the spam. Same reflex as every other cross-cutting helper here: one
+**Put the coalescing at the SINK, not at each call site.** The case that taught it: the napari bridge's
+live pushes (`pushZView`, `pushLabelContour`), each with one scheduler at the one module that POSTed them,
+so a second call site could not reintroduce the spam. Those pushes went with napari; the rule holds for
+the next live endpoint. Same reflex as every other cross-cutting helper here: one
 way to do it, and the second way is the bug. A slider three components away from the sink can't be
 audited by reading either file — only the sink can hold the guarantee.
 
 Enforced by `utils/continuousControls.test.ts`: it scans every SFC for range inputs, and a handler that
 *calls* something (rather than writing a value or emitting) must name where its effect lands. It also
-pins the live napari endpoints to their one owner. It cannot follow an `emit` into the parent — which is
+pins the live viewer endpoints (`set-z-view`, `apply-view-state`) to one owner — neither is called
+anywhere today, so that half passes vacuously until a live endpoint returns. It cannot follow an `emit` into the parent — which is
 exactly how the z-slider bug got in — so the sink-side rule above is the part that actually holds.
 
 **A `ResizeObserver` callback may MEASURE, never write layout.** Same rule, structural version: a

@@ -253,8 +253,9 @@ tasks/<name>/
   translate.jl  # params-for-python, param-shape adapters
 ```
 
-**Example:** `app/src/tasks/cleanupImages/af_correct.jl` (243 lines) already carries all three.
-Cleaner seams: `af/run.jl`, `af/qc.jl`, `af/translate.jl`.
+**Example:** `app/src/tasks/cleanupImages/af_correct.jl` — once one 243-line file carrying all three,
+now a 20-line aggregator that includes `af_correct/translate.jl`, `af_correct/qc.jl` and
+`af_correct/run.jl`. Copy that shape.
 
 ### Splitting a lock-owned monolith needs invariant proof
 

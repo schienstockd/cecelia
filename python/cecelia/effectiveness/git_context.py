@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -121,3 +122,19 @@ def current_head_sha() -> str | None:
         return None
     sha = (result.stdout or "").strip()
     return sha if _SHA_RE.match(sha) else None
+
+
+def repo_root() -> Path:
+    """`git rev-parse --show-toplevel`, or cwd as a last resort (not a repo, `git` missing)."""
+    git = shutil.which("git")
+    if git is not None:
+        try:
+            result = subprocess.run(
+                [git, "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8",
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            result = None
+        if result is not None and result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip())
+    return Path.cwd()
