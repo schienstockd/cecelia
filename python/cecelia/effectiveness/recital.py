@@ -74,8 +74,29 @@ _LEAD_LOCATION_RE = re.compile(
 _ANY_LOCATION_RE = re.compile(r"`?([^\s*:`(),]+\.[A-Za-z0-9]+):(\d+)")
 
 
-def _marker_tag(marker: str) -> str:
-    return f"[**{marker}**]"
+def _marker_tag_re(marker: str) -> re.Pattern:
+    """The bracketed marker tag, tolerating trailing text inside the brackets — reviewers write
+    `[**confirmed**]` but also `[**confirmed**, no action]` (session 290e2f6e, 2026-09-30: the
+    exact-match parser dropped it, no slug, no log row, no warning)."""
+    return re.compile(rf"\[\*\*{re.escape(marker)}\*\*[^\]\n]*\]")
+
+
+#: Inline code span. A marker QUOTED in backticks is prose about the grammar, not a verdict — a
+#: reviewer writing "counts `[**confirmed**, …]` the same way" became a finding (2026-09-30).
+_CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
+
+
+def outside_code(text: str) -> str:
+    """`text` with inline code spans blanked to spaces — same length, so match offsets still
+    index the original. Public: the commit hook counts markers the same way (a marker quoted in
+    backticks is prose, not a verdict, in a commit message too)."""
+    return _CODE_SPAN_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
+def _marker_bold_re(marker: str) -> re.Pattern:
+    """Any bold marker, bracketed or not — the tripwire's count, so an unforeseen shape still
+    surfaces as a PARSE WARNING instead of vanishing."""
+    return re.compile(rf"\*\*{re.escape(marker)}\*\*")
 
 
 class Finding(_t.NamedTuple):
@@ -108,10 +129,14 @@ def _slug(mechanism: str, file: str, line: int, marker: str, desc: str = "") -> 
 
 def _parse_bullet(body: str, mechanism: str, marker: str) -> Finding | None:
     """Parse one bullet body (text after `- `); None if it doesn't carry `marker`."""
-    tag = _marker_tag(marker)
-    if tag not in body:
+    tag_re = _marker_tag_re(marker)
+    tags = list(tag_re.finditer(outside_code(body)))
+    if not tags:
         return None
-    text = body.replace(tag, " ").strip()
+    text = body
+    for t in reversed(tags):  # cut only the real tags; a quoted one stays in the description
+        text = text[:t.start()] + " " + text[t.end():]
+    text = text.strip()
     m = _LEAD_LOCATION_RE.match(text)
     if m:
         file, line, desc = m.group(1), int(m.group(2)), m.group(3).strip()
@@ -154,10 +179,11 @@ def _inject_slugs(output: str, mechanism: str) -> str:
 
 
 def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding], mechanism: str) -> int:
-    """Marker occurrences that did NOT become a finding — i.e. not on a bullet line. Tripwire
-    for the next grammar drift: surfaced in the recital body instead of dropping silently."""
+    """Bold marker occurrences that did NOT become a finding — off a bullet line, or in a shape
+    the tag pattern doesn't know. Tripwire for the next grammar drift: surfaced in the recital
+    body instead of dropping silently."""
     marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
-    return output.count(_marker_tag(marker)) - len(findings)
+    return len(_marker_bold_re(marker).findall(outside_code(output))) - len(findings)
 
 
 from .git_context import current_branch as _current_branch  # noqa: E402
@@ -309,8 +335,8 @@ def _run_reviewer(
     unparsed = _unparsed_marker_count(stripped, findings, mechanism)
     if unparsed > 0:
         cleaned += (
-            f"\n\n> **RECITAL PARSE WARNING** — {unparsed} finding marker(s) are not on a "
-            "`- ` bullet line, so they got no slug and no log row. Tag each with the legacy "
+            f"\n\n> **RECITAL PARSE WARNING** — {unparsed} finding marker(s) are not in a "
+            "`- …[**marker**]` bullet the parser knows, so they got no slug and no log row. Tag each with the legacy "
             "bare form in the commit message, and report the reviewer output shape."
         )
 

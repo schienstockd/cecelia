@@ -71,6 +71,7 @@ import sys
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
+from cecelia.effectiveness.recital import outside_code  # noqa: E402
 from cecelia.effectiveness.git_context import (  # noqa: E402
     current_branch as _current_branch,
     current_head_sha as _current_head_sha,
@@ -201,7 +202,8 @@ def check(command: str) -> str | None:
     Gates 2 and 3 are skipped when HEAD SHA cannot be captured (not a repo, git missing) — degrade
     to allow rather than block on our own failure.
     """
-    findings = _FINDING_MARKERS.findall(command)
+    # Same rule as the recital parser: a marker quoted in backticks is prose, not a finding.
+    findings = _FINDING_MARKERS.findall(outside_code(command))
     # Strip slug pairs first: the outcome word inside `[fanout-…: fixed_pre_commit]` also
     # matches the bare pattern, which made every slug-tagged commit look bare-tagged.
     bare_outcomes = _BARE_OUTCOME_TAGS.findall(_SLUG_PAIR.sub(" ", command))

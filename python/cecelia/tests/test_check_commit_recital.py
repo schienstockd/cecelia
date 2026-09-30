@@ -55,6 +55,11 @@ class CheckTest(unittest.TestCase):
         self.assertIsNone(self._check("python -m unittest"))
         self.assertIsNone(self._check("git status"))
 
+    def test_marker_quoted_in_backticks_needs_no_tag(self):
+        # Same rule as the recital parser: a quoted marker is prose about the grammar.
+        self.assertIsNone(self._check(
+            "fix: parser accepts `[**confirmed**, no action]` and `[**should reuse**]`"))
+
     def test_git_commit_with_no_findings_passes(self):
         self.assertIsNone(self._check("git commit -m 'small fix'"))
 
