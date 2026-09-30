@@ -73,7 +73,7 @@ import {
   playHealthSummary, trimSamples, type PlayHealthSample,
 } from '../utils/playHealth'
 import { toHex } from '../utils/colour'
-import { CHANNEL_COLORMAP_OPTIONS } from '../utils/viewerColormap'
+import { CHANNEL_COLORMAP_OPTIONS, distinctChannelHexes } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
@@ -93,8 +93,7 @@ import {
   type GpuFrameSample,
 } from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
-import { PALETTES, distinctColors } from '../plots/plot'
-import { hslCssToRgb } from '../utils/viewerLabels'
+import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import LandscapeOverlay from '../components/LandscapeOverlay.vue'
@@ -569,8 +568,8 @@ const initialContrast = ref<{ lo: number; hi: number }[]>([])
  *  `channels[c].lut` in place. */
 const initialLUTs = ref<number[][][]>([])
 /**
- * Assign each channel a hue from `distinctColors` — the house "N visually distinct colours"
- *  helper (`plots/plot.ts`, golden-angle rotation). Same idiom as `randomcoloR::distinctColorPalette`
+ * Assign each channel its `distinctChannelHexes` hue (utils/viewerColormap.ts — the house `distinctColors`
+ *  golden-angle helper, as hex; the movie picker reads the same list). Same idiom as `randomcoloR::distinctColorPalette`
  *  in the old R viewer. Toggle off restores the server-shipped colours.
  */
 const distinctChannelColours = ref(false)
@@ -579,10 +578,7 @@ watch(distinctChannelColours, on => {
   if (!m) return
   if (on) {
     const nch = Math.min(m.nC, MAX_CHANNELS)
-    distinctColors(nch).forEach((hsl, c) => {
-      const [r, g, b] = hslCssToRgb(hsl)
-      m.channels[c].lut = lutFromHex(toHex([r, g, b]))
-    })
+    distinctChannelHexes(nch).forEach((hex, c) => { m.channels[c].lut = lutFromHex(hex) })
   } else {
     m.channels.forEach((ch, c) => {
       const init = initialLUTs.value[c]

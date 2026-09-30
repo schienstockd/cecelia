@@ -3,6 +3,10 @@
 // Covers the single-hue channel colormaps used for image channels (red/green/blue/…, the viewer's `bop`
 // set, and a few single-colour extras). Continuous maps (viridis/turbo/magma/…) and unknown names
 // return null — they aren't a channel tint, so the channel legend skips them. Pure + unit-tested.
+import { hslCssToRgb } from './viewerLabels'
+import { distinctColors } from '../plots/plot'
+import { toHex } from './colour'
+
 const NAPARI_COLORMAP_HEX: Record<string, string> = {
   red: '#ff0000', green: '#00ff00', blue: '#0000ff',
   magenta: '#ff00ff', cyan: '#00ffff', yellow: '#ffff00',
@@ -60,4 +64,17 @@ const HEX_TO_NAPARI_COLORMAP: Record<string, string> = (() => {
 export function viewerColormapForHex(hex: string | null | undefined): string | null {
   if (!hex) return null
   return HEX_TO_NAPARI_COLORMAP[hex.toLowerCase()] ?? null
+}
+
+/** Hex for channel `i` under the viewer's "Distinct" toggle — `distinctColors` (golden-angle hues) →
+ *  hex. Per-index, independent of the channel count, so a movie recorded with Distinct on names the
+ *  same colours whatever else changed. The viewer toggle and the movie picker both read this, so a
+ *  restored Distinct look shows as "distinct N" rather than an unnamed hex. */
+export function distinctChannelHexes(n: number): string[] {
+  return distinctColors(n).map(hsl => toHex(hslCssToRgb(hsl)))
+}
+
+/** The Distinct colours as picker options, `distinct 1` … `distinct n`. */
+export function distinctChannelOptions(n: number): ColormapOption[] {
+  return distinctChannelHexes(n).map((hex, i) => ({ value: hex, label: `distinct ${i + 1}`, hex }))
 }

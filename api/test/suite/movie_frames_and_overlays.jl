@@ -298,6 +298,14 @@ end
     draw_mask_outline!(mfr, mask, id_col; contour_px = 1)
     @test mfr[10, 10] == RGB{N0f8}(1, 0, 0)
     @test mfr[11, 11] == RGB{N0f8}(1, 0, 0)
+    # contour 0 FILLS (browser parity, "0 fills the mask") — it used to draw nothing. The interior of a
+    # big cell is blended at MASK_FILL_OPACITY over the frame; background and unmapped ids untouched.
+    blk = zeros(Int, 20, 20); blk[5:14, 5:14] .= 1; blk[2, 2] = 9
+    ffr = fill(RGB{N0f8}(0, 0, 1), 20, 20)
+    draw_mask_outline!(ffr, blk, id_col; contour_px = 0)
+    @test ffr[9, 9] == RGB{N0f8}(0.7, 0, 0.3)          # interior, not just the rim
+    @test ffr[1, 1] == RGB{N0f8}(0, 0, 1)              # background
+    @test ffr[2, 2] == RGB{N0f8}(0, 0, 1)              # id 9 has no colour → skipped
     @test mfr[10, 9]  == RGB{N0f8}(0, 0, 0)                    # background stays untouched
     @test mfr[12, 12] == RGB{N0f8}(0, 0, 0)
 
@@ -361,9 +369,27 @@ end
     @test_throws ArgumentError draw_mask_outline!(black, zeros(Int, 10, 10),
         Dict{Int,RGB{N0f8}}(); contour_px = 1)
 
-    # contour_px <= 0 draws nothing rather than throwing — same policy as size_px / width_px on the
-    # other primitives.
+    # A NEGATIVE contour draws nothing rather than throwing — same policy as size_px / width_px on the
+    # other primitives. 0 is not "nothing": it fills (pinned above).
     ncr = copy(black)
-    draw_mask_outline!(ncr, big, id_big; contour_px = 0)
+    draw_mask_outline!(ncr, big, id_big; contour_px = -1)
     @test ncr == black
+end
+
+@testset "API: label_geometry_mismatch — a mask from another image version is not drawn" begin
+    # Zarr.jl presents C-order axes reversed, so a ["t","c","z","y","x"] store is (x, y, z, c, t) here.
+    img5  = zeros(UInt8, 12, 10, 3, 2, 2);  img_ax = ["t", "c", "z", "y", "x"]
+    lab4  = zeros(UInt16, 12, 10, 3, 2);    lab_ax = ["t", "z", "y", "x"]
+    @test label_geometry_mismatch(img5, img_ax, lab4, lab_ax) === nothing
+    # drift correction padded the frame by a few pixels — the zolIMa case (420×441 mask, 427×448 frame)
+    padded = zeros(UInt8, 14, 11, 3, 2, 2)
+    @test label_geometry_mismatch(padded, img_ax, lab4, lab_ax) == "3×10×12 vs 3×11×14"
+    # SMALLER frame (a crop) used to pass the old size check silently and draw the mask misaligned
+    cropped = zeros(UInt8, 11, 9, 3, 2, 2)
+    @test label_geometry_mismatch(cropped, img_ax, lab4, lab_ax) !== nothing
+    # a Z-extent difference alone is a mismatch too (a 32-plane mask on a 31-plane version)
+    @test label_geometry_mismatch(zeros(UInt8, 12, 10, 2, 2, 2), img_ax, lab4, lab_ax) !== nothing
+    # 2D store without Z compares Y/X only
+    @test label_geometry_mismatch(zeros(UInt8, 12, 10, 2, 2), ["t", "c", "y", "x"],
+                                  zeros(UInt16, 12, 10, 2), ["t", "y", "x"]) === nothing
 end

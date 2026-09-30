@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd } from './batchMovie'
+import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd, withCustomColours } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -330,5 +330,23 @@ describe('movieFilename — uid vs image name', () => {
   it('rides the request config, off by default', () => {
     expect(buildBatchMovieConfig({}, [], {}).nameByImage).toBe(false)
     expect(buildBatchMovieConfig({ nameByImage: true }, [], {}).nameByImage).toBe(true)
+  })
+})
+
+describe('withCustomColours', () => {
+  const base = [{ value: '', label: '— hidden —', hex: null }, { value: 'green', label: 'green', hex: '#00ff00' }]
+  it('adds one "custom" option per unnamed hex in use, so the picker can show it', () => {
+    // the zolIMa restore: viewer colours no palette entry names
+    const out = withCustomColours(base, ['#3ce26e', '#a862da', '#3CE26E', 'green'])
+    expect(out.slice(2)).toEqual([
+      { value: '#3ce26e', label: 'custom', hex: '#3ce26e' },
+      { value: '#a862da', label: 'custom', hex: '#a862da' },
+    ])
+  })
+  it('a used hex the palette holds keeps its palette name as the label', () => {
+    expect(withCustomColours(base, ['#00ff00'])[2]).toEqual({ value: '#00ff00', label: 'green', hex: '#00ff00' })
+  })
+  it('leaves palette names and non-hex values alone', () => {
+    expect(withCustomColours(base, ['green', 'bop orange', ''])).toEqual(base)
   })
 })

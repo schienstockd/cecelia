@@ -44,6 +44,12 @@
     @test ov_mask["showMask"] === true
     @test ov_mask["maskContourPx"] == 3
     @test ov_mask["allCells"] === true
+    # The single record's outline width comes from the REQUEST, merged over the viewer's `look` (which
+    # never carries it) — it used to fall back to 1 px whatever the viewer said.
+    look = Dict{Symbol,Any}(:showPopulations => false)
+    @test _overlays_raw_from_config(_single_record_look(look, 0), true)["maskContourPx"] == 0
+    @test _overlays_raw_from_config(_single_record_look(look, 4), true)["maskContourPx"] == 4
+    @test _single_record_look(nothing, 4) === nothing
     # Gated tracks ON → the mask filters by those pops rather than showing every cell.
     ov_gated = _overlays_raw_from_config(Dict{String,Any}("showGatedTracks" => true), true)
     @test ov_gated["includeTracks"] === true

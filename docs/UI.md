@@ -1828,6 +1828,11 @@ existed for adopted rows. Toggle: **History** in the toolbar (`settings.tasksSho
 different questions (*what is happening* vs *what has been done*) and the session view is the one
 you want while you are running things, so the manager keeps the meaning it has always had.
 
+A history row's id is its run's `taskId` only for the **first** entry carrying it — a set-level run
+writes one id into every image it touched, and the id is the table's row key (duplicate keys cloned
+rows on re-sort and left them behind when History went off). With history the list is long, so the
+toolbar has a **Search** box (image name/uid, task, fun, module; every word must match).
+
 They are kept distinguishable by `TaskEntry.history`, and that flag is doing real work in four places:
 
 - **`forModule()` excludes them** — the ONE chokepoint for both the per-module task sidebar and the
