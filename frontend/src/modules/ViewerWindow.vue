@@ -61,7 +61,7 @@ import { MAX_ATLASES } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   shouldUseBricks, CACHE_BUDGET_BYTES, labelDimsMismatch,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
@@ -237,7 +237,9 @@ const bricksEnabled = computed<boolean>(() => {
   // Symptom on ldYr8J-plane (1.75 GB, sitting between floor 1.5 GB and Auto 2 GB): no renderer
   // ever stabilised, `Frames 0`, "Loading timepoint N" forever.
   const budget = stableAdapterReport.value !== null ? effectiveCacheBytes.value : CACHE_BUDGET_BYTES
-  return shouldUseBricks(m, mode.value, budget)
+  // 2D ±n window: the FULL `2n+1`, not the edge-clipped `zDepth` — so scrubbing the Plane slider
+  // to the end of the stack never flips the renderer mid-drag.
+  return shouldUseBricks(m, mode.value, budget, zWindowActive.value ? 2 * zWindowHalf.value + 1 : 1)
 })
 /**
  * Brick LOD tuning knobs — URL params for interactive feel-testing. Applied ONCE at mount to
@@ -1034,8 +1036,32 @@ const nT = computed(() => meta.value?.nT ?? 0)
  * narrowing it would change what the view MEANS to make it fast.
  */
 const zRange = ref<[number, number]>([0, 0])
-const zDepth = computed(() =>
-  mode.value === 'plane' ? 1 : Math.max(1, zRange.value[1] - zRange.value[0] + 1))
+/** Depth slider at the whole stack — nothing to reset. */
+const zRangeFull = computed(() =>
+  zRange.value[0] <= 0 && zRange.value[1] >= Math.max((meta.value?.nZ ?? 1) - 1, 0))
+/**
+ * The ±n WINDOW around `zPlane` — in 2D a top-down MIP of the planes either side of the one you are
+ * on, in 3D the same box rotatable, with the Plane slider moving it through the stack. Replaces the
+ * Depth range while on. `half` survives the toggle so switching it back on restores the width. Off on
+ * the 2D tile path: a whole-slide plane is already past what one texture holds, so `2n+1` of them
+ * cannot be the answer there.
+ */
+const zWindowOn = ref(false)
+const zWindowHalf = ref(2)
+/** The ± slider's value under the pointer — committed to `zWindowHalf` on release (`commitZWindow`). */
+const zWindowDraft = ref(2)
+const zWindowActive = computed(() => {
+  const m = meta.value
+  return zWindowOn.value && !!m && m.nZ > 1 && (mode.value === 'volume' || !needsTiling.value)
+})
+/** The planes actually LOADED, `[lo, hi]` inclusive — every fetch, texture origin and overlay z-cut
+ *  reads this, never `zPlane`/`zRange` directly. See `loadedPlanes`. */
+const zLoaded = computed<[number, number]>(() => loadedPlanes(
+  mode.value, zPlane.value, zRange.value,
+  zWindowActive.value ? zWindowHalf.value : 0, meta.value?.nZ ?? 1))
+const zDepth = computed(() => zLoaded.value[1] - zLoaded.value[0] + 1)
+/** A single plane on screen — the 2D view without a window. Steps = 1, fast plane switch, no MIP. */
+const singlePlane = computed(() => mode.value === 'plane' && !zWindowActive.value)
 /**
  * L0 image pixels per DEVICE pixel — the zoom the LOD picker takes. Derived from `cam.dist`: the
  * plane view is orthographic with visible height = `2 · dist · VIEW_HALF_ANGLE` µm at every depth
@@ -1392,15 +1418,14 @@ const frame = usePlotResize(canvas, () => {
   // a watcher that could disagree with what is on screen.
   seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
   r.setCamera(cam.value)
-  r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
+  r.setSteps(singlePlane.value ? 1 : settings.viewerSteps)
   // The overlay slice for the frame ACTUALLY on screen, not the one asked for — same rule as the
   // timestamp. A range of `null` means nothing is drawn at this timepoint, which is not an error.
   const range = shownT.value >= 0 ? timepointRange(points, shownT.value) : null
-  // The planes actually LOADED: one in the 2D view, the crop range in 3D. Not "-1 for 3D" — a view
-  // cropped to eight planes would then draw the whole stack's cells against a box holding eight.
-  const [pLo, pHi] = mode.value === 'plane'
-    ? [zPlane.value, zPlane.value]
-    : [zRange.value[0], zRange.value[1]]
+  // The planes actually LOADED: one in the 2D view, the crop range or ±n window otherwise. Not "-1
+  // for 3D" — a view cropped to eight planes would then draw the whole stack's cells against a box
+  // holding eight.
+  const [pLo, pHi] = zLoaded.value
   // Widened by the z tolerance: a cell spans several planes, so drawing a marker only on the plane its
   // CENTROID falls on shows a handful of points against a mask layer full of cells — which reads as the
   // points being random rather than as a strict slice. 0 is the strict reading and
@@ -1472,7 +1497,8 @@ const frame = usePlotResize(canvas, () => {
     announce.value = false
     vlog('info',
          `Viewer drawing ${meta.value?.nX}×${meta.value?.nY}×${meta.value?.nZ}, ` +
-         `${st.nch} ch, ${mode.value === 'plane' ? 'plane ' + zPlane.value : '3D'}`,
+         `${st.nch} ch, ${singlePlane.value ? 'plane ' + zPlane.value
+           : mode.value === 'plane' ? `planes ${zLoaded.value[0]}–${zLoaded.value[1]}` : '3D'}`,
          `box ${st.ext.map(v => v.toFixed(1)).join(' × ')} µm · camera ${st.dist.toFixed(0)} µm · ` +
          `pan ${st.pan[0].toFixed(0)},${st.pan[1].toFixed(0)} · ${st.steps} step(s) · ` +
          (st.ortho ? 'orthographic' : 'perspective') +
@@ -1922,7 +1948,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // not holding — see `slabZ`. The view mode authors that depth (via `reallocate`); it does not get a
     // second say in what is fetched.
     const zd = r.cache.zDepth
-    const zq = slabZ(zd, m.nZ, zPlane.value, zRange.value[0])
+    const zq = slabZ(zd, m.nZ, zPlane.value, zLoaded.value[0])
     const lvl = slabLevel.value
     const expectNX = renderNX.value, expectNY = renderNY.value
     // The MASK goes with the channels, in the same round trip and into the same texture slot. Fetching
@@ -2396,9 +2422,9 @@ const brickMapGrid = computed(() => {
   if (!bricksEnabled.value || useTiles.value || !m || lvl === undefined) return null
   const [bx, by, bz] = brickSizeVox.value
   const scale = Math.pow(2, lvl)
-  // Plane mode fetches a single z-brick per t (brickZ collapses to 1 in the renderer); volume
-  // mode spans the full zDepth.
-  const zd = mode.value === 'plane' ? 1 : zDepth.value
+  // A single plane fetches one z-brick per t (brickZ collapses to 1 in the renderer); 3D and the
+  // ±n window span the loaded depth.
+  const zd = zDepth.value
   const nBx = Math.max(1, Math.ceil(m.nX / (bx * scale)))
   const nBy = Math.max(1, Math.ceil(m.nY / (by * scale)))
   const nBz = Math.max(1, Math.ceil(zd / (bz * scale)))
@@ -2947,7 +2973,7 @@ const zPump = debouncedLatest<number>(async (zp) => {
   // slot stamped with the NEW planeVersion, leaving wrong bytes on a "fresh" slot. Volume
   // mode and useTiles have different geometry / cache shapes → fall through to reallocate.
   const r = renderer.value
-  if (r?.setZPlane && !useTiles.value && mode.value === 'plane') {
+  if (r?.setZPlane && !useTiles.value && singlePlane.value) {
     for (const ac of aborts.values()) ac.abort()
     aborts.clear()
     inflight.clear()
@@ -2963,6 +2989,27 @@ function stepZ(next: number) {
   if (next === zPlane.value) return
   zPlane.value = next
   zPump.schedule(next)
+}
+/** The ±n window can't run on the 2D tile path (see `zWindowActive`). */
+const zWindowBlocked = computed(() => mode.value === 'plane' && needsTiling.value)
+/** ±half the stack from the middle already covers all of it. */
+const zWindowMax = computed(() => Math.max(1, Math.floor((meta.value?.nZ ?? 1) / 2)))
+/**
+ * Apply a window change and reallocate ONCE. The window's width feeds `bricksEnabled`, whose own
+ * watcher reallocates when it flips — a second reallocate on top would rebuild the atlas the first
+ * just allocated (the OOM shape documented at `loadVersion`). So reallocate here only when it did not.
+ */
+function commitZWindow(apply: () => void) {
+  const before = bricksEnabled.value
+  apply()
+  zWindowHalf.value = Math.max(1, Math.min(zWindowMax.value, zWindowHalf.value))
+  zWindowDraft.value = zWindowHalf.value
+  if (bricksEnabled.value === before) void reallocate()
+}
+const setZWindow = (on: boolean) => commitZWindow(() => { zWindowOn.value = on })
+function resetZRange() {
+  zRange.value = [0, Math.max((meta.value?.nZ ?? 1) - 1, 0)]
+  void reallocate()
 }
 /**
  * 2D pyramid LOD swap on zoom. A wheel gesture crossing a `floor(log2(zoom))` threshold changes the
@@ -2999,7 +3046,7 @@ watch(slabLevel, (newLvl) => {
 function onWheel(e: WheelEvent) {
   e.preventDefault()
   const m = meta.value
-  if (e.shiftKey && mode.value === 'plane' && m && m.nZ > 1) {
+  if (e.shiftKey && (mode.value === 'plane' || zWindowActive.value) && m && m.nZ > 1) {
     const step = e.deltaY > 0 ? 1 : -1
     stepZ(Math.max(0, Math.min(m.nZ - 1, zPlane.value + step)))
     return
@@ -3656,7 +3703,7 @@ async function reallocate(refit = false) {
     // different image or a different mode swap and would poison the summary.
     if (benchEnabled.value) benchReset()
     r.setImage(m, effectiveCacheBytes.value, zDepth.value,
-               mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
+               zLoaded.value[0], wantLabels,
                renderNX.value, renderNY.value)
     // Channels/LUT: the renderer is freshly built (or its LUT texture was reset by a preceding
     // destroy). Without this, a mode-toggle swap (e.g. 2D→3D flat→brick) leaves the new
@@ -3687,7 +3734,7 @@ async function reallocate(refit = false) {
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane' || settings.viewerVolumeProjection === 'ortho')
-    r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
+    r.setSteps(singlePlane.value ? 1 : settings.viewerSteps)
     syncCacheState()
     gotoT(t.value)
   }
@@ -3794,6 +3841,7 @@ const propsSink = debouncedSave(async () => {
   const vs = captureViewState({
     meta: m, channels: m.channels, cam: cam.value,
     mode: mode.value, zPlane: zPlane.value, zRange: zRange.value,
+    zWindow: { on: zWindowOn.value, half: zWindowHalf.value },
     t: t.value, valueName: valueName.value,
   })
   await saveViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined }, vs)
@@ -3840,6 +3888,7 @@ async function loadVersion(refit: boolean) {
   if (setUid.value && settings.getShow3D(setUid.value)) mode.value = 'volume'
   zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
   zRange.value = [0, Math.max(m.nZ - 1, 0)]
+  zWindowOn.value = false
   autoWin.value = []                     // a different version has its own distribution
   seenMax.value = []
   hiCeiling.value = []                   // sibling of seenMax — a new image starts a fresh ceiling
@@ -3874,6 +3923,10 @@ async function loadVersion(refit: boolean) {
           const maxZ = Math.max(m.nZ - 1, 0)
           zPlane.value = Math.max(0, Math.min(zp, maxZ))
           zRange.value = [Math.max(0, Math.min(zr[0], maxZ)), Math.max(0, Math.min(zr[1], maxZ))]
+        },
+        applyZWindow: (on, half) => {
+          zWindowOn.value = on
+          zWindowHalf.value = zWindowDraft.value = Math.max(1, Math.min(half, Math.floor(m.nZ / 2) || 1))
         },
         applyT:       () => { /* deferred — T is post-alloc, no pipeline effect */ },
       })
@@ -3930,6 +3983,7 @@ watch(cam,       () => propsSink.schedule(), { deep: true })
 watch(mode,      () => propsSink.schedule())
 watch(zPlane,    () => propsSink.schedule())
 watch(zRange,    () => propsSink.schedule())
+watch([zWindowOn, zWindowHalf], () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
 
@@ -4009,7 +4063,8 @@ const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
     panY: -cam.value.panY / umPerL0Y,     // screen-up is negative image-Y (see panDrag)
     zoom, canvasW, canvasH,
     imageW: m.nX, imageH: m.nY,
-    currentZ: mode.value === 'plane' ? zPlane.value : Math.floor((m.nZ - 1) / 2),
+    // The ±n window's centre in 3D too — it IS where the user is looking, unlike mid-stack.
+    currentZ: mode.value === 'plane' || zWindowActive.value ? zPlane.value : Math.floor((m.nZ - 1) / 2),
     currentT: t.value,
     ndisplay: mode.value === 'plane' ? 2 : 3,
   })
@@ -4017,7 +4072,7 @@ const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
 }, { wait: 100 })
 
 watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
-       zPlane, t, mode, meta],
+       zPlane, t, mode, meta, zWindowActive],
       () => publishRegionSink.schedule(undefined))
 
 // ── Publish a viewState alongside the visibleRegion ──────────────────────────
@@ -4713,16 +4768,16 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
         //   plane  → z ± 1 tolerance (a centroid at z=8.6 belongs to slice 9; ± 1 catches
         //            neighbouring-plane cells the same way the gating page's pick-rect scope
         //            defaults to). Channels still read the single plane at `z`.
-        //   volume → the slab-slider `zRange` bounds — channels MIP over the slab and counts
-        //            filter to it, so both match what the volume view actually paints.
+        //   volume → the loaded planes (Depth range or ±n window) — channels MIP over them and
+        //            counts filter to them, so both match what the volume view actually paints.
+        //            A 2D ±n window is a MIP too, so it asks as `volume` over the same planes.
         // A 2D image has `meta.nZ == 1` and `mode.value === 'plane'` at all times, so
         // zLo == zHi == 0 and the backend's z-filter is a no-op — zero behaviour change.
         const nZ = Math.max(1, meta.value?.nZ ?? 1)
         const maxZ = nZ - 1
-        const rm: 'plane' | 'volume' = mode.value === 'volume' ? 'volume' : 'plane'
+        const rm: 'plane' | 'volume' = singlePlane.value ? 'plane' : 'volume'
         const [zLo, zHi] = rm === 'volume'
-          ? [Math.max(0, Math.min(maxZ, zRange.value[0])),
-             Math.max(0, Math.min(maxZ, zRange.value[1]))]
+          ? zLoaded.value
           : [Math.max(0, zPlane.value - 1), Math.min(maxZ, zPlane.value + 1)]
         try {
           const cRes = await fetch('/api/viewer/landscape/compute', {
@@ -5183,22 +5238,62 @@ onUnmounted(() => {
             <i class="pi pi-question-circle" />
           </button>
         </div>
-        <!-- The 3D view's own depth control. Caption row (label + readout) above; slider on its
-             own row so it can span the sidebar (: "they should take the whole
-             width"). `@change`, not `@update:*`: the range reallocates every cached texture, so
-             it commits on release rather than per pointer move. -->
-        <template v-if="mode === 'volume' && meta.nZ > 1">
-          <div class="vw-cap">
-            <span class="cc-muted cc-fs-2xs">Depth</span>
-            <span class="cc-readout cc-fs-2xs">{{ zRange[0] }}–{{ zRange[1] }}</span>
+        <!-- Z controls, one block for both views. 3D: the Depth range (whole stack by default), or —
+             with the ±n window on — a Plane slider that moves a 2n+1 box through the stack. 2D: the
+             Plane slider, and with the window on a top-down MIP of the planes around it. Caption row
+             (label + readout) above; sliders on their own rows so they span the sidebar.
+             Depth and ± commit on `@change`, not per pointer move: each reallocates every cached
+             texture. -->
+        <template v-if="meta.nZ > 1">
+          <template v-if="mode === 'volume' && !zWindowActive">
+            <div class="vw-cap">
+              <span class="cc-muted cc-fs-2xs">Depth</span>
+              <span class="vw-cap-end">
+                <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                        v-tooltip.left="'Back to the whole stack'" aria-label="Reset depth"
+                        @click="resetZRange"><i class="pi pi-undo" /></button>
+                <span class="cc-readout cc-fs-2xs">{{ zRange[0] }}–{{ zRange[1] }}</span>
+              </span>
+            </div>
+            <RangeSlider
+              v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
+              :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
+              @update:lo="v => (zRange = [v, zRange[1]])"
+              @update:hi="v => (zRange = [zRange[0], v])"
+              @change="reallocate()"
+            />
+          </template>
+          <template v-else>
+            <div class="vw-cap">
+              <span class="cc-muted cc-fs-2xs">Plane</span>
+              <span class="cc-readout cc-fs-2xs">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
+            </div>
+            <input
+              type="range" class="vw-grow" :min="0" :max="meta.nZ - 1" :step="1"
+              :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
+              v-tooltip.bottom="zWindowActive
+                ? 'Centre plane of the window — changing it reloads the timecourse'
+                : 'Which z plane to show — changing it reloads the timecourse'"
+            >
+          </template>
+          <!-- Toggle, width slider and readout on ONE row — the slider only while the window is on. -->
+          <div class="cc-row cc-row-tight">
+            <CcToggle :model-value="zWindowOn" :disabled="zWindowBlocked"
+                      v-tooltip.top="zWindowBlocked
+                        ? 'Not available on a whole-slide plane'
+                        : 'Show the planes either side of the current one'"
+                      @update:model-value="setZWindow">
+              <span class="cc-muted cc-fs-2xs">± planes</span>
+            </CcToggle>
+            <input
+              v-if="zWindowActive"
+              type="range" class="vw-grow" :min="1" :max="zWindowMax" :step="1"
+              :value="zWindowDraft" @input="zWindowDraft = Number(($event.target as HTMLInputElement).value)"
+              @change="commitZWindow(() => { zWindowHalf = zWindowDraft })"
+              v-tooltip.bottom="'Planes either side — more is slower, in proportion'"
+            >
+            <span v-if="zWindowActive" class="cc-readout cc-fs-2xs">±{{ zWindowDraft }} · {{ zLoaded[0] }}–{{ zLoaded[1] }}</span>
           </div>
-          <RangeSlider
-            v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
-            :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
-            @update:lo="v => (zRange = [v, zRange[1]])"
-            @update:hi="v => (zRange = [zRange[0], v])"
-            @change="reallocate()"
-          />
         </template>
         <!-- 3D pyramid level. The volume viewer picks the coarsest resolution by default, and a full-res volume
              of a wide-XY image exceeds the WebGPU max buffer (`f8gzA2` → 1.28 GB against a 256 MB cap).
@@ -5237,17 +5332,6 @@ onUnmounted(() => {
             </option>
           </select>
         </div>
-        <template v-if="mode === 'plane' && meta.nZ > 1">
-          <div class="vw-cap">
-            <span class="cc-muted cc-fs-2xs">Plane</span>
-            <span class="cc-readout cc-fs-2xs">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
-          </div>
-          <input
-            type="range" class="vw-grow" :min="0" :max="meta.nZ - 1" :step="1"
-            :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
-            v-tooltip.bottom="'Which z plane to show — changing it reloads the timecourse'"
-          >
-        </template>
 
         <!-- No time = no time controls. A still image has nothing to scrub, buffer or loop, and an
              `nT == 1` slider stuck at "0 / 0" looks broken. -->
@@ -5607,8 +5691,8 @@ onUnmounted(() => {
               >
               <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
             </div>
-            <div v-if="mode === 'volume'" class="cc-muted cc-fs-3xs">
-              3D shows the nearest mask surface
+            <div v-if="!singlePlane" class="cc-muted cc-fs-3xs">
+              {{ mode === 'volume' ? '3D' : 'The ± window' }} shows the nearest mask surface
             </div>
           </template>
           <div v-else class="cc-empty-inline cc-fs-2xs">
@@ -5702,7 +5786,8 @@ onUnmounted(() => {
                 <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
                 {{ pointCount }} drawn · {{ summary.cells }} cells
                 <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
-                <template v-if="mode === 'plane'">· this plane only</template>
+                <template v-if="singlePlane">· this plane only</template>
+                <template v-else-if="mode === 'plane'">· planes {{ zLoaded[0] }}–{{ zLoaded[1] }}</template>
               </div>
             </template>
           </template>
@@ -6014,6 +6099,7 @@ onUnmounted(() => {
 /* Caption row above a full-width slider — label on left, readout on right. Compact so it
    reads as a slider title, not another row of controls. */
 .vw-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
+.vw-cap-end { display: inline-flex; align-items: center; gap: 0.25rem; }
 /* Resolved-value caption under a control in the Advanced popover: sits just under the chip, one
    line, "Using: X" — : an Auto option must show what was picked. */
 .vw-adv-using { margin: -0.15rem 0 0.15rem calc(var(--cc-lbl-col) + 0.4rem); }

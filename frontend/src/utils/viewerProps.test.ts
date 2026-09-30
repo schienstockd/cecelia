@@ -99,6 +99,24 @@ describe('applyViewState', () => {
     expect(calls.t).toBe(5)
   })
 
+  it('round-trips the ±n z window; an older snapshot without one leaves it alone', () => {
+    const vs = captureViewState({
+      meta, channels: ch, cam: CAM, mode: 'plane', zPlane: 3, zRange: [0, 4],
+      zWindow: { on: true, half: 2 }, t: 0, valueName: '',
+    })
+    let got: [boolean, number] | null = null
+    const { target } = mkTarget()
+    applyViewState(vs, meta, { ...target, applyZWindow: (on, half) => { got = [on, half] } })
+    expect(got).toEqual([true, 2])
+    const old = captureViewState({
+      meta, channels: ch, cam: CAM, mode: 'plane', zPlane: 3, zRange: [0, 4], t: 0, valueName: '',
+    })
+    expect(old.webgpu?.zWindow).toBeUndefined()
+    got = null
+    applyViewState(old, meta, { ...target, applyZWindow: (on, half) => { got = [on, half] } })
+    expect(got).toBeNull()
+  })
+
   it('falls back to viewer layers matched by channel name', () => {
     const vs: ViewerViewState = {
       layers: {

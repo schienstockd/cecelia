@@ -44,9 +44,13 @@ export interface WebgpuBlock {
   mode: 'plane' | 'volume'
   zPlane: number
   zRange: [number, number]
+  /** The ±n window around `zPlane` (ViewerWindow → `zWindowActive`). Absent in older snapshots = off. */
+  zWindow?: ZWindow
   t: number
   valueName: string
 }
+
+export interface ZWindow { on: boolean; half: number }
 
 export interface ViewerLayerProps {
   colormap?: string
@@ -68,13 +72,14 @@ export interface CaptureInput {
   mode: 'plane' | 'volume'
   zPlane: number
   zRange: [number, number]
+  zWindow?: ZWindow
   t: number
   valueName: string
 }
 
 /** Build the JSON to write. Never throws. */
 export function captureViewState(input: CaptureInput): ViewerViewState {
-  const { meta, channels, cam, mode, zPlane, zRange, t, valueName } = input
+  const { meta, channels, cam, mode, zPlane, zRange, zWindow, t, valueName } = input
   const webgpu: WebgpuBlock = {
     channels: channels.map(ch => ({
       hex: channelHexFrom(ch.lut),
@@ -84,6 +89,7 @@ export function captureViewState(input: CaptureInput): ViewerViewState {
     mode,
     zPlane,
     zRange: [zRange[0], zRange[1]],
+    ...(zWindow ? { zWindow: { on: !!zWindow.on, half: zWindow.half } } : {}),
     t,
     valueName,
   }
@@ -111,6 +117,8 @@ export interface ApplyTarget {
   applyCamera(cam: OrbitCamera): void
   applyMode(mode: 'plane' | 'volume'): void
   applyZ(zPlane: number, zRange: [number, number]): void
+  /** Optional — only the viewer that owns the window control restores it. */
+  applyZWindow?(on: boolean, half: number): void
   applyT(t: number): void
 }
 
@@ -135,6 +143,8 @@ export function applyViewState(
     if (Number.isFinite(w.zPlane) && Array.isArray(w.zRange) && w.zRange.length === 2) {
       target.applyZ(w.zPlane, [w.zRange[0], w.zRange[1]])
     }
+    const zw = w.zWindow
+    if (zw && Number.isFinite(zw.half) && zw.half >= 1) target.applyZWindow?.(!!zw.on, Math.round(zw.half))
     if (Number.isFinite(w.t)) target.applyT(w.t)
     return
   }

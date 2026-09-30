@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch,
+  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -433,6 +433,26 @@ describe('the request is sized by the TEXTURE, not the view mode', () => {
   })
 })
 
+describe('loadedPlanes — which planes the viewer loads', () => {
+  it('is the single plane in 2D and the Depth range in 3D when no window is set', () => {
+    expect(loadedPlanes('plane', 13, [2, 30], 0, 41)).toEqual([13, 13])
+    expect(loadedPlanes('volume', 13, [2, 30], 0, 41)).toEqual([2, 30])
+  })
+  it('is zPlane ± n in EITHER mode when a window is set — the Depth range is ignored', () => {
+    expect(loadedPlanes('plane', 13, [2, 30], 3, 41)).toEqual([10, 16])
+    expect(loadedPlanes('volume', 13, [2, 30], 3, 41)).toEqual([10, 16])
+  })
+  it('clips the window at the stack ends rather than sliding it off the centre plane', () => {
+    expect(loadedPlanes('plane', 0, [0, 40], 2, 41)).toEqual([0, 2])
+    expect(loadedPlanes('volume', 40, [0, 40], 2, 41)).toEqual([38, 40])
+  })
+  it('clamps stale state from a deeper stack so the depth is never < 1', () => {
+    expect(loadedPlanes('volume', 0, [50, 60], 0, 41)).toEqual([40, 40])
+    expect(loadedPlanes('plane', 99, [0, 0], 0, 41)).toEqual([40, 40])
+    expect(loadedPlanes('volume', 0, [30, 10], 0, 41)).toEqual([10, 30])
+  })
+})
+
 describe('spatial audit — slab URL carries level/x/y, guard is level-aware', () => {
   it('omits level=0, x/y — a timecourse caller produces byte-identical URLs to before the tile route', () => {
     const before = slabUrl({ projectUid: 'P', imageUid: 'I', t: 3, c: 1 })
@@ -612,6 +632,8 @@ describe('shouldUseBricks — 3D renderer auto-select from ViewerMeta', () => {
     const runtime = 2_500_000_000    // ~AUTO_CACHE on Chromium (maxBufferSize 4 GB × 0.7 ≈ 2.8)
     expect(shouldUseBricks(dml3rg, 'plane', runtime)).toBe(false)
     expect(shouldUseBricks(dml3rg, 'volume', runtime)).toBe(true)
+    // A ±2 window loads 5 planes per t in 2D — 8 GB for the movie, so the 2D view flips to bricks.
+    expect(shouldUseBricks(dml3rg, 'plane', runtime, 5)).toBe(true)
     // fXgbTl already fits in 3D → still flat in 2D (both modes are under the budget).
     const fxgbTl = meta({ nT: 31, nC: 4, nZ: 32, nY: 420, nX: 441, bytesPerVoxel: 2 })
     expect(shouldUseBricks(fxgbTl, 'plane', runtime)).toBe(false)
