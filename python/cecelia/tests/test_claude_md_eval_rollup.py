@@ -39,7 +39,8 @@ def _load_rollup():
 
 
 def _suite_row(*, ts: str, commit: str = "a" * 40, arm: str = "with",
-               runs: int = 3, per_prompt: dict, cost_total: float = 0.0) -> dict:
+               runs: int = 3, per_prompt: dict, cost_total: float = 0.0,
+               full_catalog: bool = True) -> dict:
     totals = {
         "compliant": sum(p.get("compliant", 0) for p in per_prompt.values()),
         "noncompliant": sum(p.get("noncompliant", 0) for p in per_prompt.values()),
@@ -53,6 +54,7 @@ def _suite_row(*, ts: str, commit: str = "a" * 40, arm: str = "with",
         "branch": "main",
         "payload": {
             "prompt_ids": sorted(per_prompt.keys()),
+            "full_catalog": full_catalog,
             "runs_per_prompt": runs,
             "arm": arm,
             "per_prompt": per_prompt,
@@ -153,9 +155,9 @@ class SuiteSectionTest(unittest.TestCase):
         self.assertIn("$0.55", md)  # totals row
         self.assertIn("$0.240", md)  # per-prompt row
 
-    def test_two_arms_latest_row_is_chosen(self):
-        # A `without` pass came after a `with` pass; latest-suite section renders
-        # the newest row regardless of arm.
+    def test_without_arm_does_not_replace_the_with_pass(self):
+        # 2026-09-29: an ablation's errored WITHOUT arm rendered as "Latest suite" (0/12).
+        # The page leads with the WITH pass; the WITHOUT row is listed as ad-hoc.
         events = [
             _suite_row(ts="2026-09-28T09:00:00Z", arm="with",
                        per_prompt={"a": {"compliant": 3}}),
@@ -163,8 +165,63 @@ class SuiteSectionTest(unittest.TestCase):
                        per_prompt={"a": {"compliant": 1, "noncompliant": 2}}),
         ]
         md = self.rollup.render_eval_rollup(events, rendered_ts="2026-09-28T12:00:00Z")
-        self.assertIn("**Arm:** `without`", md)
-        self.assertIn("1/3", md)
+        lead = md.split("## Ad-hoc runs since")[0]
+        self.assertIn("**Arm:** `with`", lead)
+        self.assertIn("| `a` | 3/3 |", lead)
+        self.assertIn("## Ad-hoc runs since", md)
+        self.assertIn("| without | 3 | `a` | 1/3 |", md)
+
+    def test_partial_spot_check_does_not_replace_the_full_pass(self):
+        # 2026-09-29: a 1-prompt N=1 `--only` run replaced the 12-prompt table.
+        events = [
+            _suite_row(ts="2026-09-28T09:00:00Z",
+                       per_prompt={"a": {"compliant": 3}, "b": {"noncompliant": 3}}),
+            _suite_row(ts="2026-09-29T09:00:00Z", runs=1, full_catalog=False,
+                       per_prompt={"c": {"compliant": 1}}),
+        ]
+        md = self.rollup.render_eval_rollup(events, rendered_ts="2026-09-29T12:00:00Z")
+        lead = md.split("## Ad-hoc runs since")[0]
+        self.assertIn("**Scope:** full catalog", lead)
+        self.assertIn("| `b` | 0/3 |", lead)
+        self.assertNotIn("`c`", lead)
+        self.assertIn("| with | 1 | `c` | 1/1 |", md)
+        # Failing section still reads from the full pass.
+        self.assertIn("### `b` — 0/3 compliant", md)
+
+    def test_only_partial_rows_render_with_partial_scope(self):
+        events = [_suite_row(ts="2026-09-29T09:00:00Z", runs=1, full_catalog=False,
+                             per_prompt={"c": {"compliant": 1}})]
+        md = self.rollup.render_eval_rollup(events, rendered_ts="2026-09-29T12:00:00Z")
+        self.assertIn("**Scope:** partial", md)
+        self.assertNotIn("## Ad-hoc runs since", md)
+
+    def test_one_run_catalog_sweep_is_not_a_full_pass(self):
+        # `--runs 1` over the whole catalog is a smoke check, not a pass to lead with.
+        events = [
+            _suite_row(ts="2026-09-28T09:00:00Z", per_prompt={"a": {"noncompliant": 3}}),
+            _suite_row(ts="2026-09-29T09:00:00Z", runs=1, per_prompt={"a": {"compliant": 1}}),
+        ]
+        md = self.rollup.render_eval_rollup(events, rendered_ts="2026-09-29T12:00:00Z")
+        self.assertIn("| `a` | 0/3 |", md.split("## Ad-hoc runs since")[0])
+
+    def test_full_ablation_leads_over_newer_subset_ablation(self):
+        full = _ablation_row(ts="2026-09-28T09:00:00Z", per_prompt={
+            "a": {"with_compliant": 3, "without_compliant": 1, "delta_compliant": 2}})
+        full["payload"]["full_catalog"] = True
+        sub = _ablation_row(ts="2026-09-29T09:00:00Z", per_prompt={
+            "b": {"with_compliant": 0, "without_compliant": 0, "delta_compliant": 0}})
+        sub["payload"]["full_catalog"] = False
+        self.assertIs(self.rollup._latest_ablation([full, sub]), full)
+        self.assertIs(self.rollup._latest_ablation([sub]), sub)
+
+    def test_legacy_row_without_flag_is_full_by_prompt_count(self):
+        rollup = self.rollup
+        big = _suite_row(ts="t", per_prompt={f"p{i}": {"compliant": 3} for i in range(9)})
+        small = _suite_row(ts="t", per_prompt={"a": {"compliant": 3}})
+        for row in (big, small):
+            del row["payload"]["full_catalog"]
+        self.assertTrue(rollup._is_full_pass(big))
+        self.assertFalse(rollup._is_full_pass(small))
 
     def test_legacy_suite_without_arm_or_cost_renders(self):
         # Pre-2026-09-28 rows lack `arm` and `cost_usd`. Rollup treats missing arm as

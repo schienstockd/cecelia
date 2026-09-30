@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import os
 import pathlib
 import re
@@ -41,6 +42,8 @@ _DEFAULT_RUNS = 3
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import append_event  # noqa: E402
+from cecelia.effectiveness.log import default_log_path  # noqa: E402
+from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 from cecelia.effectiveness.git_context import current_branch as _current_branch  # noqa: E402
 
 # Sibling module — parses `claude -p --output-format=stream-json --verbose` stdout for
@@ -293,7 +296,7 @@ def _capture_diff(worktree: pathlib.Path) -> str:
     module (typical — most rules-under-test involve a new helper somewhere) would score zero
     even when the agent wrote a perfect file. Stage first (`git add -A`), then diff the index
     against HEAD, which captures new file content the same as modifications. Safe because the
-    worktree is thrown away right after this call.
+    worktree is thrown away right after this call (the diff itself is kept in the run's trace).
 
     `**/CLAUDE.md` is excluded via pathspec: in arm=without runs, `_make_detached_worktree`
     strips every CLAUDE.md before the spawn, so `git diff --cached HEAD` would include those
@@ -358,6 +361,39 @@ def _remove_worktree(primary_repo: pathlib.Path, dest: pathlib.Path) -> None:
         shutil.rmtree(str(dest), ignore_errors=True)
 
 
+def trace_root() -> pathlib.Path:
+    """`traces/` beside the effectiveness log — follows `CECELIA_EFFECTIVENESS_LOG` in tests."""
+    return default_log_path().parent / "traces"
+
+
+def _save_trace(prompt_id: str, run_number: int, arm: str, *, body: str, diff: str,
+                proc: subprocess.CompletedProcess | None, verdict: str, details: dict,
+                error: str | None) -> pathlib.Path | None:
+    """Persist what the agent actually did — diff, stream-json tool log, stderr, verdict.
+
+    The eval is a diagnostic: a failing probe asks *why* a fresh Claude struggled, and the
+    answer is in the trace, not the hit counts on the log row. Worktrees are still removed
+    (~28 MB each + a `git worktree list` entry); this keeps the few-KB record of the run.
+    Best-effort — a disk error must not turn a scored run into an `error` row.
+    """
+    ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dest = trace_root() / f"{ts}-{prompt_id}-{arm}-r{run_number}"
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "prompt.md").write_text(body, encoding="utf-8")
+        (dest / "diff.patch").write_text(diff, encoding="utf-8")
+        if proc is not None:
+            (dest / "stream.jsonl").write_text(proc.stdout or "", encoding="utf-8")
+            (dest / "stderr.txt").write_text(proc.stderr or "", encoding="utf-8")
+        meta = {"prompt_id": prompt_id, "run_number": run_number, "arm": arm,
+                "verdict": verdict, "error": error, **details}
+        write_json_atomic(dest / "meta.json", meta, indent=2)
+    except OSError as e:
+        print(f"    trace not saved ({type(e).__name__}: {e})", file=sys.stderr, flush=True)
+        return None
+    return dest
+
+
 def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str | None,
                    worktree_root: pathlib.Path, keep_worktrees: bool, arm: str = "with",
                    claude_runner: _t.Callable[..., subprocess.CompletedProcess] | None = None,
@@ -383,6 +419,7 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
         diff = ""
         signals = TranscriptSignals()
         error: str | None = None
+        proc: subprocess.CompletedProcess | None = None
         try:
             proc = claude_runner(worktree, body, timeout=timeout, claude_path=claude_path)
             if proc.returncode != 0:
@@ -402,6 +439,8 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
             details = {"compliant_hits": 0, "anti_hits": 0, "tool_order_passed": None}
         else:
             verdict, details = score_all(diff, signals, meta)
+        trace_dir = _save_trace(prompt_id, run_number, arm, body=body, diff=diff, proc=proc,
+                                verdict=verdict, details=details, error=error)
 
         payload: dict = {
             "prompt_id": prompt_id,
@@ -423,6 +462,8 @@ def run_one_prompt(prompt_id: str, *, runs: int, timeout: int, claude_path: str 
         }
         if error is not None:
             payload["error"] = error
+        if trace_dir is not None:
+            payload["trace_dir"] = str(trace_dir)
         row = append_event("claude_md_eval_run", payload, commit=blob_sha, branch=branch)
         rows.append(row)
         tool_bit = ""

@@ -90,6 +90,7 @@ def run_ablation(*, runs: int, timeout: int, claude_path: str,
     }
     payload = {
         "prompt_ids": prompt_ids,
+        "full_catalog": only is None and exclude is None,
         "runs_per_arm": runs,
         "per_prompt": per_prompt,
         "totals": totals,

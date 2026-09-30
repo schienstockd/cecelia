@@ -7,8 +7,8 @@ per full invocation, plus the per-run + per-pass rows the P1 code already writes
 aggregate summary table at the end so a caller sees results without reading the log.
 
 Sequential by design — parallel spawns would race for gh + git, and rate-limit friendliness
-matters when we're standing up ~10 fresh `claude -p` invocations per prompt. Wall clock at
-N=3 runs × 10 prompts × ~25s = ~13 minutes; deliberately budgeted for.
+matters when we're standing up fresh `claude -p` invocations back to back. Wall clock at
+N=3 runs per prompt — measured 22 min for 12 prompts (2026-09-29); deliberately budgeted for.
 
 Usage:
     pixi run claude-md-eval                                        # full catalog, 3 runs each
@@ -119,6 +119,9 @@ def run_suite(
     }
     summary_payload = {
         "prompt_ids": ids,
+        # The rollup leads with the newest full pass — a `--only` spot-check must not
+        # stand in for the state of the setup.
+        "full_catalog": only is None and exclude is None,
         "runs_per_prompt": runs,
         "arm": arm,
         "per_prompt": per_prompt,

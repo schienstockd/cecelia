@@ -15,6 +15,7 @@ the worktree-creation seams. That lets us pin the two invariants an eval readout
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import pathlib
 import subprocess
@@ -278,6 +279,31 @@ class RunOnePromptTest(unittest.TestCase):
         self.assertEqual(pass_row["payload"]["error"], 0)
         # Returned rows are the run rows only (not the summary).
         self.assertEqual(len(rows), 1)
+
+    def test_every_run_keeps_a_trace_beside_the_log(self):
+        # The eval is diagnostic — a failing probe is read from its trace (diff + tool log),
+        # so the record must survive worktree removal and be linked from the run row.
+        self._write_default_prompt()
+        def anti_runner(worktree, prompt_body, *, timeout, claude_path, sandbox_log=None):
+            return subprocess.CompletedProcess(args=[], returncode=0,
+                                               stdout='{"type":"result"}\n', stderr="warn")
+        with mock.patch.object(self.runner, "_capture_diff",
+                               return_value="+ adata = anndata.read_h5ad(path)\n"):
+            self.runner.run_one_prompt(
+                "h5ad-read", runs=1, timeout=60, claude_path="claude-fake",
+                worktree_root=self.tmpdir, keep_worktrees=False,
+                claude_runner=anti_runner, primary_repo=self.tmpdir,
+            )
+        run_row = next(e for e in self._events() if e["event"] == "claude_md_eval_run")
+        trace = pathlib.Path(run_row["payload"]["trace_dir"])
+        self.assertEqual(trace.parent, self.tmpdir / "traces")
+        self.assertIn("read_h5ad", (trace / "diff.patch").read_text(encoding="utf-8"))
+        self.assertEqual((trace / "stream.jsonl").read_text(encoding="utf-8"), '{"type":"result"}\n')
+        self.assertEqual((trace / "stderr.txt").read_text(encoding="utf-8"), "warn")
+        self.assertEqual((trace / "prompt.md").read_text(encoding="utf-8").strip(), "do it")
+        meta = json.loads((trace / "meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["verdict"], "noncompliant")
+        self.assertEqual(meta["anti_hits"], 1)
 
     def test_noncompliant_run_is_scored_noncompliant(self):
         self._write_default_prompt()

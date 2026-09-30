@@ -341,6 +341,11 @@ claude-md-eval-ablation = "python scripts/claude_md_eval/run_ablation.py"
 # existing rows (e.g. after backfilling a `_suite` row by hand). Not auto-committed.
 claude-md-eval-rollup = "python scripts/claude_md_eval/render_rollup.py"
 
+# Diagnostic read of the eval log — per prompt: streak across full passes (closed / passing /
+# drift / failing / errored / new) + the trace dirs of the latest pass's failing runs, plus
+# cron status. Spawns no agents. `pixi run claude-md-eval-analyse`.
+claude-md-eval-analyse = "python scripts/claude_md_eval/analyse.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the

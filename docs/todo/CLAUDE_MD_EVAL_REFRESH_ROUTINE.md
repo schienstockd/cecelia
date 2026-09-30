@@ -18,10 +18,14 @@ frame — the compliance-suite reading that had crept in gets called out and rev
 
 - **Every prompt is a hypothesis about a specific weakness.** Not "a helper to enforce"
   but "I suspect a fresh Claude, given only CLAUDE.md, does not reach for X."
-- **Every prompt has an exit condition.** Stable 3/3 for N weeks = weakness cleaned up
-  (or never was) → **retire**. Stable 0/3 across two well-formed interventions =
-  weakness isn't fixable at this layer → **escalate** to a different intervention layer
-  (ratchet, doc restructure, workflow change) and retire from the eval.
+- **Every prompt has an exit condition: green.** A failing probe asks *why* a fresh
+  Claude struggles here; read its traces (`pixi run claude-md-eval-analyse`), then change
+  the **dev setup** — CLAUDE.md section, inventory, helper, hook, ratchet, workflow — until
+  it passes. Stable 3/3 for 3 full passes = weakness cleaned up → **retire**. Stable 0/3
+  across two rule rewrites = the fix isn't in the rule text → **escalate** to a different
+  setup layer, and keep the probe as the measure of whether that layer worked. Never
+  rewrite the probe to go green, and never retire a failing probe to save spend.
+  (Dominik, 2026-09-30.)
 - **The suite SHRINKS as weaknesses close.** New probes cycle in as new drift is
   spotted; old ones cycle out. Growing headcount is compliance thinking — the
   ~$17/week baseline should be a peak, not a floor.
@@ -41,7 +45,8 @@ frame — the compliance-suite reading that had crept in gets called out and rev
   utf-8-json-write, spawn-python, crop-failure) are **retirement candidates**, not
   vindicated fixtures. See *Findings* §.
 - `cite-algorithm` + `discovery-first` at 0/3 across two rewrites is a signal the rule
-  is not teachable at the current layer, not a signal to try a third rewrite. Escalate.
+  text is not the layer that fixes it, not a signal to try a third rewrite. Read the
+  traces, then escalate the setup change; the probes stay until green.
 - `canary` is infrastructure (pre-flight for the eval itself), not a weakness probe —
   it stays regardless of the exit-condition rules.
 
@@ -650,12 +655,12 @@ next ablation can quote a real Δ.
     but the regex fragility on `debouncedLatest<T>(` dropped the signal-per-dollar).
     If both hold 3/3 next Monday and no drift-mining pass surfaces them, retire.
 - **Escalations to execute now:**
-  - `cite-algorithm`: choose one of (a) redesign the CLAUDE.md rule section (not the
-    prompt) after inspecting one `--keep-worktrees` trace, (b) add a ratchet on the
-    anti-pattern if one is expressible, (c) accept + retire. Do NOT rewrite the
-    prompt a third time.
-  - `discovery-first`: same three-choice escalation. tool_order FAIL 3/3 across two
-    prompt rewrites is a strong signal (b) or (c) is where the fix lives.
+  - `cite-algorithm`: read the kept traces from the next full pass, then change the
+    setup at the layer they point to — (a) redesign the CLAUDE.md rule section, (b) a
+    ratchet on the anti-pattern if one is expressible, (c) a hook / workflow change.
+    The probe stays until green. Do NOT rewrite the prompt a third time.
+  - `discovery-first`: same escalation. tool_order FAIL 3/3 across two prompt rewrites
+    says the rule text isn't the layer — (b) or (c) is where the fix likely lives.
 - **New probes cycle in from PR-history mining, not from imagination.** First
   candidate `hand-rolled-debounce` (indirect probe on `debouncedLatest`, cluster
   #1 from the 2026-09-29 mining pass). Task shape mirrors `frontend-copy-canonical`.

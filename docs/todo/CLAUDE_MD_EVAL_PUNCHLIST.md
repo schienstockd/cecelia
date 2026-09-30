@@ -70,12 +70,17 @@ these two rules stay in the catalog or get retired.
 did not move the score. A third rewrite of the same shape is diagnostic-mode churn. Next
 action is to pick an intervention layer that isn't "the prompt":
 
-- [ ] Read the actual scored diffs for one WITH-arm run of each (needs `--keep-worktrees`
-      re-fire, ~$0.60 each) — is the agent citing the wrong way, or not citing at all?
-- [ ] Choose one for each rule: (a) redesign the CLAUDE.md rule *section* (not the prompt),
-      (b) add a ratchet that enforces the anti-pattern deterministically, (c) accept the rule
-      isn't teachable at this layer, document, and retire the probe.
-      **Do not rewrite the prompt again** — the mechanism is upstream of the prompt.
+- [x] Keep every run's trace (2026-09-30): diff + stream-json tool log + stderr + verdict
+      under `~/.cecelia-effectiveness/traces/`, linked from the run row's `trace_dir`. Worktrees
+      were being discarded, so both rewrites above were made without reading a failing run.
+- [ ] Read the traces from the next full pass (`pixi run claude-md-eval-analyse` lists them) —
+      is the agent citing the wrong way (e.g. in the docstring), or not citing at all? Did it
+      look for `slice_utils` some other way than `docs/inventory`, or not look?
+- [ ] Fix the **dev setup** so a fresh Claude gets there — the goal is green, reached by
+      changing CLAUDE.md sections / inventory / helpers / hooks / ratchets, not the probe.
+      Only touch the scorer if a trace shows it misread correct behaviour (a measurement
+      bug, not the fix). **Do not rewrite the prompt again, and don't retire a failing probe
+      to save spend.**
 
 ### P2 — First paired ablation on the 4 failing prompts
 
