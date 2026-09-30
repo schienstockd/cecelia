@@ -62,8 +62,10 @@ You have full read access to the repo (do not modify). `git diff --staged` follo
 - **file:line** — symbol, shape, why potentially affected [**confirmed** | **plausible**]
 ```
 
-- **confirmed** — you read the site; it matches.
+- **confirmed** — you read the site; it matches, and it needs a fix.
 - **plausible** — same symbol, fit unverified or ambiguous (say what would confirm).
+
+The marker tag ends the line, exactly `[**confirmed**]` or `[**plausible**]` — nothing else inside the brackets. A site you checked and found **not affected** is not a finding: no bullet, no marker (mention it in the evidence as checked-and-clear). Every `confirmed` gets a slug the commit must resolve, so "confirmed, no action" makes work out of a clean site.
 
 If >8 findings: top 8 + `N more not listed`.
 

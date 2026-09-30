@@ -357,7 +357,9 @@ checks for a matching outcome tag per finding, blocks the commit if any are miss
 any slug is duplicated (the same finding can't have two outcomes), and writes resolution rows
 for each slug-paired outcome. **Activate once per clone: `pixi run install-git-hooks`** — the
 Claude Code Bash guard (`.claude/settings.json` PreToolUse) blocks `git commit` until it's set,
-and blocks `--no-verify` / `-n`. It doesn't validate the
+and blocks `--no-verify` / `-n`. **An agent's commit (`CLAUDECODE=1`, set by Claude Code) is
+blocked unless recital actually ran for this change** — findings or not; never copy another
+commit's check trailer. A throwaway WIP commit uses `CECELIA_SKIP_RECITAL_CHECK=1`. It doesn't validate the
 outcome itself — a bad-faith `false_positive` still passes — but the disclosure step can't be
 silently skipped. That's what turns advisory into "advisory-with-teeth" for autonomous mode:
 findings in the log become gradeable later (did shipped-anyway correlate with real bugs?)

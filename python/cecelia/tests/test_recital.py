@@ -368,6 +368,42 @@ class FindingsEmissionTest(unittest.TestCase):
         self.assertEqual({r["file"] for r in rows}, {"?"})
         self.assertNotEqual(rows[0]["slug"], rows[1]["slug"])
 
+    def test_marker_with_trailing_text_in_brackets_emits(self):
+        # Session 290e2f6e: `[**confirmed**, no action]` — exact-match parsing dropped it.
+        def fake(prompt: str) -> str:
+            if "FANOUT" in prompt:
+                return ("- **frontend/src/modules/cluster/ClusterHeatmapPanel.vue:54,143**: "
+                        "`plotDataToCsv` called without meta. [**confirmed**, no action]")
+            return "no convention check needed"
+
+        recital = run_recital("d", claude_runner=fake)
+        rows = [e["payload"] for e in self._events() if e["event"] == "fanout_audit_finding"]
+        self.assertEqual([(r["file"], r["line"]) for r in rows],
+                         [("frontend/src/modules/cluster/ClusterHeatmapPanel.vue", 54)])
+        self.assertIn(f"- [{rows[0]['slug']}] **", recital)
+        self.assertNotIn("PARSE WARNING", recital)
+
+    def test_marker_quoted_in_backticks_is_not_a_finding(self):
+        # 2026-09-30: a "checked and clear" bullet quoting the tag shape became a finding.
+        def fake(prompt: str) -> str:
+            if "FANOUT" in prompt:
+                return ("- **Checked and clear:** `hook.py:82` counts `[**confirmed**, …]` the "
+                        "same way the new parser does.")
+            return "no convention check needed"
+
+        recital = run_recital("d", claude_runner=fake)
+        self.assertEqual([e for e in self._events() if e["event"] == "fanout_audit_finding"], [])
+        self.assertNotIn("PARSE WARNING", recital)
+
+    def test_unknown_bold_marker_shape_surfaces_parse_warning(self):
+        # Any bold marker that didn't become a finding trips the warning, not just `[**x**]`.
+        def fake(prompt: str) -> str:
+            if "FANOUT" in prompt:
+                return "- **foo.jl:3** — shape (**confirmed**)"
+            return "no convention check needed"
+
+        self.assertIn("RECITAL PARSE WARNING", run_recital("d", claude_runner=fake))
+
     def test_marker_off_bullet_surfaces_parse_warning(self):
         # Tripwire for the next drift: a marker that isn't on a bullet line can't be slugged,
         # so the recital says so instead of dropping it.

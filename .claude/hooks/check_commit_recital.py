@@ -71,6 +71,7 @@ import sys
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
+from cecelia.effectiveness.recital import outside_code  # noqa: E402
 from cecelia.effectiveness.git_context import (  # noqa: E402
     current_branch as _current_branch,
     current_head_sha as _current_head_sha,
@@ -201,7 +202,8 @@ def check(command: str) -> str | None:
     Gates 2 and 3 are skipped when HEAD SHA cannot be captured (not a repo, git missing) — degrade
     to allow rather than block on our own failure.
     """
-    findings = _FINDING_MARKERS.findall(command)
+    # Same rule as the recital parser: a marker quoted in backticks is prose, not a finding.
+    findings = _FINDING_MARKERS.findall(outside_code(command))
     # Strip slug pairs first: the outcome word inside `[fanout-…: fixed_pre_commit]` also
     # matches the bare pattern, which made every slug-tagged commit look bare-tagged.
     bare_outcomes = _BARE_OUTCOME_TAGS.findall(_SLUG_PAIR.sub(" ", command))
@@ -379,6 +381,27 @@ def _in_sequencer_commit() -> bool:
     return any(_git("rev-parse", "-q", "--verify", ref) for ref in _SEQUENCER_STATE)
 
 
+def agent_recital_gate() -> str | None:
+    """An AGENT's commit needs a real recital run for this change, findings or not.
+
+    Gate 2 in `check` only fires when the message carries finding markers, so a commit with no
+    findings needed no recital at all — and on 2026-09-30 a session copied the previous commit's
+    `Convention check: … Inventory check: run` trailer without running recital, and it went
+    through. Claude Code sets `CLAUDECODE=1` in every Bash command it runs and git passes the
+    environment to hooks, so this applies to agent commits only; a human's commit is unaffected.
+    Degrades to allow when the SHA can't be read.
+    """
+    if os.environ.get("CLAUDECODE") != "1":
+        return None
+    head_sha, branch = _current_head_sha(), _current_branch()
+    if head_sha is None or _has_matching_run(head_sha, branch):
+        return None
+    return (f"no recital run is logged for this change (HEAD {head_sha[:8]}, branch "
+            f"{branch or '?'}). Run `pixi run recital` on the staged diff and append its output "
+            "— never copy another commit's check trailer. For a throwaway commit (a WIP to "
+            "rebase), `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
+
+
 def commit_msg_main(message_path: str) -> int:
     """git `commit-msg` hook: run the gates on the real message, then write resolutions.
 
@@ -389,7 +412,7 @@ def commit_msg_main(message_path: str) -> int:
     if os.environ.get("CECELIA_SKIP_RECITAL_CHECK") == "1" or _in_sequencer_commit():
         return _EXIT_ALLOW
     message = _read_message(message_path)
-    reason = check(message)
+    reason = agent_recital_gate() or check(message)
     if reason is not None:
         print(f"check_commit_recital: BLOCKED — {reason}", file=sys.stderr)
         return 1
