@@ -30,6 +30,7 @@ Not built here (deferred to later phases of FINDINGS_EMISSION_PLAN.md):
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -211,10 +212,15 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
     Windows. A 2026-09-30 inventory backfill (long markdown lines) died with `E2BIG` here.
     """
     claude_bin = _resolve_claude_bin()
+    # Reviewer turns load the user's MCP servers; `CECELIA_OBSERVER_NO_PAIR` (read by
+    # `mcp/cecelia_mcp/client.py`, inherited by MCP children) stops a throwaway turn re-pairing
+    # the user's project. Sibling: `scripts/claude_md_eval/run_prompt.py` → `default_claude_runner`.
+    env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"}
     try:
         result = subprocess.run(
             [claude_bin, "-p"],
             input=prompt,
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout,

@@ -380,6 +380,16 @@ class RunOnePromptTest(unittest.TestCase):
         self.assertEqual(summary["runs_total"], 3)
 
 
+class ClaudeRunnerEnvTest(unittest.TestCase):
+    def test_spawn_disables_observer_pairing(self):
+        # A throwaway eval agent must not re-pair the user's project (observer MCP inherits env).
+        runner = _load_runner()
+        with mock.patch.object(runner.subprocess, "run") as run:
+            runner.default_claude_runner(pathlib.Path("/wt"), "body", timeout=5,
+                                         claude_path="/bin/claude")
+        self.assertEqual(run.call_args.kwargs["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
+
+
 class EnsureEvalSessionTest(unittest.TestCase):
     """`_ensure_eval_session` writes a synthetic session id when the env is bare.
 
@@ -529,6 +539,42 @@ class ToolOrderWidenedMatcherTest(unittest.TestCase):
         ])
         self.assertFalse(s.tool_order_passes(
             ["Grep", "Read", "Glob"], "inventory", ["Write", "Edit"]))
+
+
+    # claude 2.1.285 ships no Grep/Glob tools — discovery arrives as Bash `cat`/`grep`.
+    def test_bash_cat_of_inventory_counts_as_discovery(self):
+        s = self._sig([
+            {"tool": "Bash", "input": {"command": "cd /wt; cat frontend/CLAUDE.md; wc -c docs/ui/COPY.md"}},
+            {"tool": "Write", "input": {"file_path": "x.vue"}},
+        ])
+        self.assertTrue(s.tool_order_passes(
+            ["Grep", "Read", "Glob"], r"frontend/CLAUDE\.md", ["Write", "Edit"]))
+
+    def test_bash_heredoc_write_before_discovery_fails(self):
+        s = self._sig([
+            {"tool": "Bash", "input": {"command": "cat > x.py <<'EOF'\nif a > b:\n    pass\nEOF"}},
+            {"tool": "Bash", "input": {"command": "grep -n tile docs/inventory/PYTHON.md"}},
+            {"tool": "Write", "input": {"file_path": "y.py"}},
+        ])
+        self.assertFalse(s.tool_order_passes(
+            ["Grep", "Read", "Glob"], "docs/inventory", ["Write", "Edit"]))
+
+    def test_heredoc_body_comparison_is_not_a_write(self):
+        s = self._sig([
+            {"tool": "Bash", "input": {"command": "python3 - <<'EOF'\nif a > b: pass\nEOF"}},
+            {"tool": "Bash", "input": {"command": "grep -n tile docs/inventory/PYTHON.md 2>/dev/null"}},
+            {"tool": "Write", "input": {"file_path": "y.py"}},
+        ])
+        self.assertTrue(s.tool_order_passes(
+            ["Grep", "Read", "Glob"], "docs/inventory", ["Write", "Edit"]))
+
+    def test_bash_non_read_verb_is_not_discovery(self):
+        s = self._sig([
+            {"tool": "Bash", "input": {"command": "echo docs/inventory"}},
+            {"tool": "Write", "input": {"file_path": "y.py"}},
+        ])
+        self.assertFalse(s.tool_order_passes(
+            ["Grep", "Read", "Glob"], "docs/inventory", ["Write", "Edit"]))
 
 
 if __name__ == "__main__":

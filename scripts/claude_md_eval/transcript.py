@@ -41,6 +41,24 @@ class TranscriptSignals:
         self.final_message = final_message
         self.parse_errors = parse_errors
 
+    def effective_calls(self) -> list[dict]:
+        """`tool_calls` with each Bash call expanded into the Read/Write it performs.
+
+        claude 2.1.285 ships no Grep/Glob tools — a fresh agent searches with `grep`/`cat`/
+        `sed -n` through Bash (2026-09-30 pass: 142 Bash calls, 1 Read, 0 Grep/Glob across
+        26 runs). Without this, a perfect `cat frontend/CLAUDE.md` discovery step scored
+        tool_order=FAIL. Each shell segment becomes a pseudo-call (`via: "Bash"`): a
+        read-shaped verb → `Read`, a file redirect / `tee` / `sed -i` → `Write`. Heredoc
+        bodies are dropped first, so `x > 3` inside an inline Python script isn't a write.
+        """
+        out: list[dict] = []
+        for c in self.tool_calls:
+            if c["tool"] != "Bash":
+                out.append(c)
+                continue
+            out.extend(_bash_pseudo_calls(str((c.get("input") or {}).get("command", ""))))
+        return out
+
     def tool_order_passes(self, before_tool: "str | list[str]",
                           before_arg_match: str,
                           after_tool: "str | list[str]") -> bool:
@@ -64,14 +82,15 @@ class TranscriptSignals:
         """
         before_set = {before_tool} if isinstance(before_tool, str) else set(before_tool)
         after_set = {after_tool} if isinstance(after_tool, str) else set(after_tool)
+        calls = self.effective_calls()
         after_idx = next(
-            (i for i, c in enumerate(self.tool_calls) if c["tool"] in after_set),
+            (i for i, c in enumerate(calls) if c["tool"] in after_set),
             None,
         )
         if after_idx is None:
             return False
         pat = re.compile(before_arg_match) if before_arg_match else None
-        for c in self.tool_calls[:after_idx]:
+        for c in calls[:after_idx]:
             if c["tool"] not in before_set:
                 continue
             if pat is None:
@@ -79,6 +98,32 @@ class TranscriptSignals:
             if pat.search(json.dumps(c.get("input", {}))):
                 return True
         return False
+
+
+_HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\b", re.DOTALL)
+_SEGMENT_SPLIT_RE = re.compile(r"\s*(?:;|&&|\|\||\n)\s*")
+_READ_VERBS = {"grep", "egrep", "fgrep", "rg", "ag", "cat", "sed", "head", "tail", "less",
+               "more", "find", "fd", "ls", "tree", "awk", "wc"}
+# `> file` / `>> file`, not `2>`, `&>`, `>&2` or `> /dev/null`.
+_REDIRECT_RE = re.compile(r"(?<![\d&>])>>?\s*(?!&|/dev/null)[^\s|;&]")
+_INPLACE_RE = re.compile(r"(?:^|\s)(?:tee|sed\s+(?:-\w*\s+)*-i|perl\s+-\w*i)\b")
+
+
+def _bash_pseudo_calls(command: str) -> list[dict]:
+    """Split a Bash command into the Read / Write calls it amounts to (see `effective_calls`)."""
+    out: list[dict] = []
+    # Keep the heredoc's opening line (`cat > f.py <<EOF` is a write); drop its body.
+    stripped = _HEREDOC_RE.sub(lambda m: m.group(0).split("\n", 1)[0], command)
+    for seg in _SEGMENT_SPLIT_RE.split(stripped):
+        words = seg.split()
+        if not words:
+            continue
+        verb = words[1] if words[0] == "git" and len(words) > 1 else words[0]
+        if _REDIRECT_RE.search(seg) or _INPLACE_RE.search(seg):
+            out.append({"tool": "Write", "input": {"command": seg}, "via": "Bash"})
+        elif verb in _READ_VERBS or (words[0] == "git" and verb in {"grep", "show"}):
+            out.append({"tool": "Read", "input": {"command": seg}, "via": "Bash"})
+    return out
 
 
 def parse_stream_json(stdout: str) -> TranscriptSignals:
