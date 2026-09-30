@@ -500,6 +500,26 @@ class DashboardTest(unittest.TestCase):
                                  width=120, use_colour=False).splitlines()[1]
         self.assertEqual(plain, "2 runs (1 errored) · 4 findings · 4 resolved")
 
+    def test_mechanism_row_is_compact(self):
+        # Markers carry the finding count, `→` short outcome words; no `N findings` total and
+        # no full vocabulary names (the fnut row ran past 120 columns with them).
+        row = {"pr": None, "branch": None, "commit": None, "session": "s", "source": "live",
+               "schema_version": 1, "ts": "2026-09-27T10:00:00Z"}
+        events = [dict(row, event="fanout_audit_run", payload={"duration_s": 1.0}),
+                  dict(row, event="fanout_audit_run", payload={"duration_s": 1.0, "error": "x"})]
+        for i, outcome in enumerate(["fixed_pre_commit", "fixed_pre_commit", "false_positive",
+                                     "false_positive", "dropped_no_action"]):
+            slug = f"fanout-0000000{i}"
+            events.append(dict(row, event="fanout_audit_finding", payload={
+                "slug": slug, "file": "a.jl", "line": i, "desc": "d", "marker": "confirmed"}))
+            events.append(dict(row, event="fanout_audit_finding_resolved",
+                               payload={"slug": slug, "outcome": outcome}))
+        out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                               width=120, use_colour=False)
+        fnut = next(l for l in out.splitlines() if l.strip().startswith("fnut"))
+        self.assertEqual(fnut.strip(),
+                         "fnut  2 runs (1 errored) · 5 confirmed → 2 fixed · 2 false pos · 1 dropped")
+
     def test_empty_state_renders_placeholder(self):
         # A freshly-installed log with no events yet: dashboard still paints, tells the user
         # nothing has landed. A blank screen would look like a broken tool.

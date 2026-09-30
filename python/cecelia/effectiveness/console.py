@@ -131,6 +131,17 @@ _OUTCOME_COLOUR: dict[str, str] = {
     "dropped_no_action": _GREY,
     "unresolved": _RED,
 }
+#: Short outcome words for the by-mechanism rows — the full vocabulary names
+#: (`dropped_no_action`) ran one row past 120 columns once a mechanism had three outcomes.
+#: The full names stay on the activity pane's RSLV rows, which the eye reads one at a time.
+_OUTCOME_SHORT: dict[str, str] = {
+    "fixed_pre_commit": "fixed",
+    "shipped_with_finding": "shipped",
+    "false_positive": "false pos",
+    "dropped_no_action": "dropped",
+    "unresolved": "unresolved",
+    "no_outcome": "no outcome",
+}
 
 
 def _fmt_hms(ts: str) -> str:
@@ -290,18 +301,27 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
         if errored:
             run_txt += _col(_RED, f" ({errored} errored)", use_colour=use_colour)
         parts.append(run_txt)
+    # `5 confirmed → 2 fixed · 2 false pos · 1 dropped`: markers name the findings (no
+    # separate `N findings` total — it's the sum of the markers), `→` leads to what was done.
     fnd = tally.findings.get(mech, {})
-    total_findings = sum(fnd.values())
-    if total_findings:
-        breakdown = ", ".join(f"{n} {marker}" for marker, n in sorted(fnd.items(), key=lambda x: -x[1]))
-        noun = "findings" if total_findings != 1 else "finding"
-        marker_col = _ORANGE if "confirmed" in fnd else _YELLOW
-        parts.append(_col(marker_col, f"{total_findings} {noun}", use_colour=use_colour) + f" ({breakdown})")
-    res = tally.resolved.get(mech, {})
-    if res:
-        for outcome, n in sorted(res.items(), key=lambda x: -x[1]):
-            parts.append(_col(_OUTCOME_COLOUR.get(outcome, _GREY),
-                              f"{n} {outcome}", use_colour=use_colour))
+    if fnd:
+        markers = ", ".join(
+            _col(_MARKER_COLOUR.get(marker, _YELLOW), f"{n} {marker}", use_colour=use_colour)
+            for marker, n in sorted(fnd.items(), key=lambda x: -x[1]))
+        res = tally.resolved.get(mech, {})
+        outcomes = " · ".join(
+            _col(_OUTCOME_COLOUR.get(o, _GREY), f"{res[o]} {_OUTCOME_SHORT.get(o, o)}",
+                 use_colour=use_colour)
+            for o in (*OUTCOME_DISPLAY_ORDER, *sorted(set(res) - set(OUTCOME_DISPLAY_ORDER)))
+            if res.get(o))
+        parts.append(markers + (_col(_DIM, " → ", use_colour=use_colour) + outcomes
+                                if outcomes else ""))
+    elif tally.resolved.get(mech):
+        # Resolutions whose findings fell outside the seeded window — still worth a count.
+        res = tally.resolved[mech]
+        parts.append(" · ".join(
+            _col(_OUTCOME_COLOUR.get(o, _GREY), f"{n} {_OUTCOME_SHORT.get(o, o)}",
+                 use_colour=use_colour) for o, n in res.items()))
     return f"{tag}  " + _col(_DIM, " · ", use_colour=use_colour).join(parts)
 
 

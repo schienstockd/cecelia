@@ -351,23 +351,26 @@ can join it back to the pending `_finding` row and render evidence rather than j
 Legacy bare `[fixed_pre_commit]` / `[<outcome>: <reason>]` still accepted for un-slugged
 findings.
 
-The hook (`.claude/hooks/check_commit_recital.py`, wired via `.claude/settings.json` PreToolUse
-on Bash) grep-checks the commit message for a matching outcome tag per finding, blocks the
-commit if any are missing, blocks if any slug is duplicated (the same finding can't have two
-outcomes), and writes resolution rows for each slug-paired outcome. It doesn't validate the
+The hook is a **git `commit-msg` hook** (`.githooks/commit-msg` → `.claude/hooks/check_commit_recital.py`),
+so it reads the real message — `-m`, `-F`, editor — in the worktree actually committed to. It
+checks for a matching outcome tag per finding, blocks the commit if any are missing, blocks if
+any slug is duplicated (the same finding can't have two outcomes), and writes resolution rows
+for each slug-paired outcome. **Activate once per clone: `pixi run install-git-hooks`** — the
+Claude Code Bash guard (`.claude/settings.json` PreToolUse) blocks `git commit` until it's set,
+and blocks `--no-verify` / `-n`. It doesn't validate the
 outcome itself — a bad-faith `false_positive` still passes — but the disclosure step can't be
 silently skipped. That's what turns advisory into "advisory-with-teeth" for autonomous mode:
 findings in the log become gradeable later (did shipped-anyway correlate with real bugs?)
 rather than just noise in a text output the reader may not see.
 
 **Silent-drop guard.** After writing your slug-paired resolutions, the hook also sweeps for
-orphan slugs: any `_finding` row on the current HEAD (recital was run against this parent SHA)
-whose slug you neither tagged in this commit nor previously resolved gets an auto-emitted
+orphan slugs: any `_finding` row for this change (same parent SHA **and** branch — parallel
+worktrees share a base SHA) whose slug you neither tagged in this commit nor previously resolved gets an auto-emitted
 `[dropped_no_action]` resolution. The commit isn't blocked — the goal is to make silent drops
 visible in the rollup, not to force a tag. Trimming a finding line out of the commit body is
 still a valid choice; the log just records that you made it.
 
-Bypass with `CECELIA_SKIP_RECITAL_CHECK=1` for real emergencies.
+Bypass with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …` for real emergencies.
 
 ---
 
