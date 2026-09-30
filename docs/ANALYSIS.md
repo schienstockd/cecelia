@@ -400,7 +400,8 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
   is dropped — so the CSV never carries dead/empty columns. With `settings.csvIncludeAttrs` on, the
   panel passes a `CsvImageMeta` (`projectStore.imageByUid`; the panel's image stands in for a
   single-image plot's empty `uID`) and `plotDataToCsv` inserts `image` + one column per attribute
-  (union across the rows' images; a name clashing with an identity column becomes `attr_<name>`) —
+  (union across the rows' images, headed by `attrCsvHeaders` — the rule every CSV export shares: the
+  bare name, `attr_<name>` only on a case-insensitive clash with the CSV's own columns) —
   joined client-side, so the backend payload is unchanged. `getCsv()` is therefore **async** (`collectCsvs()`
   and `capturePage()` await it); non-finite values are dropped to mirror the plotted distribution;
   heatmaps have no per-datapoint form and export their grid. The standalone CSV

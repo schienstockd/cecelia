@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { attrKeysOf, attrValueMap, attrChipOptions, emptyAttrFilter, attrFilterActive,
+import { attrCsvHeaders, attrKeysOf, attrValueMap, attrChipOptions, emptyAttrFilter, attrFilterActive,
          attrFilterDrafted, applyAttrFilter, matchesAttrFilter, pruneAttrFilter,
          type AttrBearing, type AttrFilterState } from './attrFilter'
 
@@ -10,6 +10,16 @@ const rows: AttrBearing[] = [
   { attr: { Treatment: '' } },              // never annotated
   { },                                      // no attr bag at all
 ]
+
+describe('attrCsvHeaders', () => {
+  it('uses the bare name, attr_ only on a case-insensitive clash with the CSV\'s own columns', () => {
+    expect(attrCsvHeaders(['Treatment', 'name', 'POP'], ['Name', 'uID', 'pop']))
+      .toEqual(['Treatment', 'attr_name', 'attr_POP'])
+  })
+  it('no attributes → no headers', () => {
+    expect(attrCsvHeaders([], ['Name'])).toEqual([])
+  })
+})
 
 describe('attrKeysOf', () => {
   it('is the union across rows, sorted', () => {

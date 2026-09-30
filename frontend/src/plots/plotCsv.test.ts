@@ -200,6 +200,16 @@ describe('plotDataToCsv — image name + attributes (CsvImageMeta)', () => {
     expect(plotDataToCsv(r, meta).split('\n')[0]).toBe('uID,image,attr_pop,value_name,pop,m')
   })
 
+  it('an attribute named like a value column is prefixed too (aggregate + raw)', () => {
+    const m: CsvImageMeta = { lookup: uid => uid === 'v' ? { name: 'V', attr: { Count: 'x', m: 'y' } } : null }
+    const agg = { chartType: 'count', granularity: 'cell',
+                  series: [{ uID: 'v', value_name: 'A', pop: '/p', value: 3 }] } as PlotDataResponse
+    expect(plotDataToCsv(agg, m).split('\n')[0]).toBe('uID,image,attr_Count,m,value_name,pop,count')
+    const raw: PlotDataResponse = { chartType: 'raw', measure: 'm', granularity: 'cell', series: [],
+                                    rows: [{ uID: 'v', value_name: 'A', pop: '/p', value: 1 }] }
+    expect(plotDataToCsv(raw, m).split('\n')[0]).toBe('uID,image,Count,attr_m,value_name,pop,m')
+  })
+
   it('aggregated charts carry the same block per series', () => {
     const r = {
       chartType: 'count', granularity: 'cell',

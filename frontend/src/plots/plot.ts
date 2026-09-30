@@ -18,7 +18,7 @@
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
 import { frameAxisLabel } from '../utils/timeAxis'
-import { attrKeysOf } from '../utils/attrFilter'
+import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
@@ -1516,8 +1516,8 @@ export type CsvImageMeta = {
 }
 
 // The `image` + one-column-per-attribute block for the given uIDs: the attribute keys across the
-// resolved images (`attrKeysOf` — the attribute filter's sorted union); an attribute colliding with an
-// existing header is prefixed `attr_`. Empty when no uID resolves to a known image (dead columns).
+// resolved images (`attrKeysOf` — the attribute filter's sorted union), headed by `attrCsvHeaders` —
+// the rule every CSV export shares (bare name, `attr_` on a case-insensitive clash). Empty when no uID resolves to a known image (dead columns).
 function csvImageCols(uids: string[], meta: CsvImageMeta | undefined, taken: string[]):
     { header: string[]; cells: (uid: string) => unknown[] } {
   const none = { header: [], cells: () => [] }
@@ -1526,7 +1526,7 @@ function csvImageCols(uids: string[], meta: CsvImageMeta | undefined, taken: str
   const found = [...new Set(uids)].map(resolve).filter(im => im != null)
   if (!found.length) return none
   const attrs = attrKeysOf(found)
-  const header = ['image', ...attrs.map(k => taken.includes(k) || k === 'image' ? `attr_${k}` : k)]
+  const header = ['image', ...attrCsvHeaders(attrs, [...taken, 'image'])]
   return {
     header,
     cells: uid => { const im = resolve(uid); return [im?.name ?? '', ...attrs.map(k => im?.attr?.[k] ?? '')] },
@@ -1534,40 +1534,52 @@ function csvImageCols(uids: string[], meta: CsvImageMeta | undefined, taken: str
 }
 
 // ── export the SHOWN data as CSV (one tidy table per chart type) ──────────────────
+// Value columns per aggregate chart type, in the order `plotDataToCsv` writes them (`matrix` and `raw`
+// build their own headers).
+const CSV_VALUE_COLUMNS: Record<string, string[]> = {
+  histogram: ['x0', 'x1', 'count'],
+  frequency: ['category', 'count', 'value'],
+  bar: ['mean', 'sd', 'sem', 'ci95', 'n'],
+  count: ['count'],
+  percent: ['percent', 'ci95_lower', 'ci95_upper', 'n_positive', 'n'],
+  boxplot: ['q1', 'median', 'q3', 'lower', 'upper', 'mean', 'n'],
+  points: ['value'],
+}
+
 // `meta` (optional) adds each row's image name + attributes after `uID`; see `CsvImageMeta`.
 export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string {
   const esc = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
   const tbl = (header: string[], body: unknown[][]) => [header, ...body].map(row => row.map(esc).join(',')).join('\n')
-  const img = csvImageCols(r.series.map(s => s.uID ?? ''), meta, ['uID', 'value_name', 'pop'])
+  // Each aggregate table's value columns — ONE list per chart, used for its header AND as the clash
+  // set for attribute headers, so an attribute named `count` / `mean` / `value` can't duplicate one.
+  const tail = CSV_VALUE_COLUMNS[r.chartType] ?? []
+  const img = csvImageCols(r.series.map(s => s.uID ?? ''), meta, ['uID', 'value_name', 'pop', ...tail])
   const id = (s: PlotSeries): unknown[] => [s.uID ?? '', ...img.cells(s.uID ?? ''), s.value_name, s.pop]
-  const idH = ['uID', ...img.header, 'value_name', 'pop']
+  const idH = ['uID', ...img.header, 'value_name', 'pop', ...tail]
   switch (r.chartType) {
     case 'histogram': {
       const e = r.binEdges ?? [], body: unknown[][] = []
       for (const s of r.series) (s.counts ?? []).forEach((c, i) => body.push([...id(s), e[i], e[i + 1], c]))
-      return tbl([...idH, 'x0', 'x1', 'count'], body)
+      return tbl(idH, body)
     }
     case 'frequency': {
       const cats = r.categories ?? [], body: unknown[][] = []
       for (const s of r.series) cats.forEach((c, i) => body.push([...id(s), c, (s.counts ?? [])[i], (s.values ?? [])[i]]))
-      return tbl([...idH, 'category', 'count', 'value'], body)
+      return tbl(idH, body)
     }
     case 'bar':
-      return tbl([...idH, 'mean', 'sd', 'sem', 'ci95', 'n'],
-                 r.series.map(s => [...id(s), s.value, s.sd, s.sem, s.ci95, s.n]))
+      return tbl(idH, r.series.map(s => [...id(s), s.value, s.sd, s.sem, s.ci95, s.n]))
     case 'count':
-      return tbl([...idH, 'count'], r.series.map(s => [...id(s), s.value]))
+      return tbl(idH, r.series.map(s => [...id(s), s.value]))
     case 'percent':
       // both Wilson bounds, not just the half-width — they are asymmetric about the estimate
-      return tbl([...idH, 'percent', 'ci95_lower', 'ci95_upper', 'n_positive', 'n'],
-                 r.series.map(s => [...id(s), s.value, s.lower, s.upper, s.nPositive, s.n]))
+      return tbl(idH, r.series.map(s => [...id(s), s.value, s.lower, s.upper, s.nPositive, s.n]))
     case 'boxplot':
-      return tbl([...idH, 'q1', 'median', 'q3', 'lower', 'upper', 'mean', 'n'],
-                 r.series.map(s => [...id(s), s.q1, s.median, s.q3, s.lower, s.upper, s.mean, s.n]))
+      return tbl(idH, r.series.map(s => [...id(s), s.q1, s.median, s.q3, s.lower, s.upper, s.mean, s.n]))
     case 'points': {
       const body: unknown[][] = []
       for (const s of r.series) for (const v of (s.points ?? [])) body.push([...id(s), v])
-      return tbl([...idH, 'value'], body)
+      return tbl(idH, body)
     }
     case 'matrix': {
       const cells = r.cells ?? []
@@ -1595,7 +1607,8 @@ export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string 
       ]
       if (gb) candidates.push({ key: 'group', header: gb })
       const idCols = candidates.filter(c => rows.some(x => { const v = x[c.key]; return v != null && v !== '' }))
-      const rawImg = csvImageCols(rows.map(x => x.uID ?? ''), meta, candidates.map(c => c.header))
+      const rawImg = csvImageCols(rows.map(x => x.uID ?? ''), meta,
+                                  [...candidates.map(c => c.header), r.measure || 'value'])
       // the image block sits right after uID (or first, when a single-image plot dropped uID)
       const at = idCols[0]?.key === 'uID' ? 1 : 0
       const header = [...idCols.slice(0, at).map(c => c.header), ...rawImg.header,
