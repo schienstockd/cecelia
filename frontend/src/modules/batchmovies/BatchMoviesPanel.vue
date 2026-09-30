@@ -22,7 +22,7 @@ import { useTaskStore } from '../../stores/tasks'
 import { useViewerStore } from '../../stores/viewer'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
-import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/viewerColormap'
+import { CHANNEL_COLORMAP_OPTIONS, distinctChannelOptions } from '../../utils/viewerColormap'
 import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, withCustomColours, type BatchMovieCfg, type TitleCardCfg, type ViewStateLike } from '../../utils/batchMovie'
 import { versionsFromConfig, compareSuffix, compareActionTip,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
@@ -184,8 +184,10 @@ const titleCardModel = computed<TitleCardCfg>({
 // channel-colormap picker options: a leading "hidden" (no colour) + the standard swatch palette +
 // any custom hex the config already carries (a viewer colour the palette doesn't name)
 const channels = computed<Record<string, string>>(() => cfg.value.channels ?? {})
+// + the viewer's Distinct colours (one per channel, so a Distinct look restores by name)
 const colormapOpts = computed<SwatchOption[]>(() => withCustomColours<SwatchOption>(
-  [{ value: '', label: '— hidden —', hex: null }, ...CHANNEL_COLORMAP_OPTIONS],
+  [{ value: '', label: '— hidden —', hex: null }, ...CHANNEL_COLORMAP_OPTIONS,
+   ...distinctChannelOptions(channelList.value.length)],
   Object.values(channels.value)))
 function setChannel(ch: string, cmap: string) {
   const next = { ...channels.value }

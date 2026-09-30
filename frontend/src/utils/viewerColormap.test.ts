@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { viewerColormapHex, viewerColormapForHex, CHANNEL_COLORMAP_OPTIONS } from './viewerColormap'
+import { viewerColormapHex, viewerColormapForHex, CHANNEL_COLORMAP_OPTIONS, distinctChannelHexes, distinctChannelOptions } from './viewerColormap'
 
 describe('viewerColormapHex', () => {
   it('maps single-hue channel colormaps', () => {
@@ -64,5 +64,19 @@ describe('CHANNEL_COLORMAP_OPTIONS (batch-movie swatch palette)', () => {
       expect(o.hex).toMatch(/^#[0-9a-f]{6}$/i)
       expect(o.hex).toBe(viewerColormapHex(o.value))   // derived from NAPARI_COLORMAP_HEX, not a copy
     }
+  })
+})
+
+describe('distinctChannelHexes', () => {
+  it('matches the colours the viewer Distinct toggle wrote into a real movie config', () => {
+    // zolIMa fXgbTl "smoothed-with-pops": SHG hidden, channels 2-4 recorded with Distinct on
+    const [, nuc, mem, kat] = distinctChannelHexes(4)
+    expect([nuc, mem, kat]).toEqual(['#3ce26e', '#a862da', '#dec821'])
+  })
+  it('is per-index, so the channel count does not move a channel\'s colour', () => {
+    expect(distinctChannelHexes(6).slice(0, 4)).toEqual(distinctChannelHexes(4))
+  })
+  it('labels them distinct 1..n for the movie picker', () => {
+    expect(distinctChannelOptions(2).map(o => o.label)).toEqual(['distinct 1', 'distinct 2'])
   })
 })
