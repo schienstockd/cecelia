@@ -168,7 +168,9 @@ function enforceSquare() {
   if (Math.abs(root.value.offsetHeight - target) > 1) root.value.style.height = target + 'px'
 }
 function persist() {
-  if (!props.persistKey || !root.value) return
+  // detached = its page is hidden under <KeepAlive> (composables/useKeepAlive.ts) and measures 0×0 —
+  // saving that would collapse the panel on the next mount
+  if (!props.persistKey || !root.value || !root.value.isConnected) return
   if (collapsed.value) return   // collapsed height is transient — don't overwrite the saved size
   store.setGeom(props.persistKey, { x: pos.value.x, y: pos.value.y, w: root.value.offsetWidth, h: root.value.offsetHeight })
 }
@@ -183,7 +185,7 @@ onMounted(() => {
     // schedule, don't write: the callback must leave layout alone (see `enforceSquare`). rAF puts the
     // write in the next frame, so the resize it causes is delivered as a fresh cycle — the same
     // medicine `usePlotResize` applies to plots, and `persist` rides along a frame later for free.
-    ro = new ResizeObserver(() => squareFrame.schedule()); ro.observe(root.value)   // covers manual resize
+    ro = new ResizeObserver(() => { if (root.value?.isConnected) squareFrame.schedule() }); ro.observe(root.value)   // covers manual resize
   }
 })
 onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })

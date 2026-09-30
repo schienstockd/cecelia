@@ -23,7 +23,7 @@ import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.v
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import { useProjectStore } from '../../stores/project'
-import { useGatingStore } from '../../stores/gating'
+import { provideGatingStore } from '../../stores/gating'
 import type { CanvasItem } from '../../composables/useCanvasPanels'
 import { useFloatingCanvas } from '../../composables/useFloatingCanvas'
 import FloatingCanvasHost from '../../components/canvas/FloatingCanvasHost.vue'
@@ -54,7 +54,8 @@ const props = defineProps<{
 }>()
 const meta = useProjectMetaStore()
 const project = useProjectStore()
-const g = useGatingStore()
+// this page's own gating store (the cluster pop tree) — see provideGatingStore
+const g = provideGatingStore(props.popType)
 const projectUid = computed(() => meta.current?.uid ?? '')
 const setUid = computed(() => project.activeSetUid)
 
@@ -99,7 +100,7 @@ const {
   runMembers, validUids, strayUids, missingUids, shownPopsFor,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
-  popType: computed(() => props.popType), suffix,
+  popType: computed(() => props.popType), suffix, g,
 })
 
 // Manual-apply staging — the same "wait for population selection to update plots" toggle the

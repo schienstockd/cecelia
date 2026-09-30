@@ -375,7 +375,7 @@ Design record: `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` (P1+P2) and
 Draw a region on the viewer's cell-selection layer
   → viewer POSTs /api/viewer/pick-rect {labels:[…], zLo, zHi, …}
   → Julia stores as transient "Viewer selection" pop; broadcast_ws gating:popmap
-  → frontend ws.ts → gating store: tree gains the transient pop → flow plots highlight those cells
+  → frontend ws.ts → every gating store on that document: tree gains the transient pop → flow plots highlight those cells
 ```
 
 Julia stays the sole gate evaluator; the viewer only draws regions and displays membership.

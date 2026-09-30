@@ -1,6 +1,7 @@
 import { ref, shallowRef, computed, watch, onMounted, onUnmounted, type Ref } from 'vue'
 import { useWsStore } from '../stores/ws'
 import { useDataRefresh } from './useDataRefresh'
+import { useWhenVisible } from './useKeepAlive'
 import { useViewState } from './useViewState'
 import { tkey, parseTkey } from '../plots/series'
 import { resolvePopType, granularityFor, popTypeOptions, type PopTypeSpecLike } from '../plots/popTypes'
@@ -178,10 +179,14 @@ export function useSummaryData(opts: {
   // live updates: the server broadcasts gating:popmap after any gate mutation — refetch pops + bump a
   // token so panels re-pull data (membership may change with no prop change). Prune vanished selections.
   const reloadToken = ref(0)
+  // a WS handler is not a watcher, so the kept-alive pause doesn't reach it — defer by hand, so a
+  // hidden page doesn't refetch on every gate edit made elsewhere (composables/useKeepAlive.ts)
+  const whenVisible = useWhenVisible()
+  const reloadFromPopmap = () => { loadPops(); reloadToken.value++ }
   function onPopmap(d: unknown) {
     const m = d as { imageUid?: string }
     if (m.imageUid && imageUids.value.length && !imageUids.value.includes(m.imageUid)) return
-    loadPops(); reloadToken.value++
+    whenVisible(reloadFromPopmap)
   }
   // a task finishing on one of THESE images → refetch (pop list may have new pops; data may have
   // changed in place). Same mechanism as the gate popmap above; targeted per-image via useDataRefresh.

@@ -23,6 +23,7 @@ import { useSettingsStore } from '../stores/settings'
 import { vaultManifestParams } from '../utils/vaultManifest'
 import { syncGroupOrder } from '../utils/chipSelect'
 import { usePaneExpand } from '../composables/usePaneExpand'
+import { useActiveInterval } from '../composables/useKeepAlive'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import { useParamHandoffStore } from '../stores/paramHandoff'
@@ -491,9 +492,8 @@ async function pollRunner() {
     runnerDown.value = d?.enabled === true && d?.running !== true
   } catch { runnerDown.value = false }   // can't ask → don't cry wolf
 }
-let runnerTimer: number | undefined
-onMounted(() => { pollRunner(); runnerTimer = window.setInterval(pollRunner, 20000) })
-onUnmounted(() => { if (runnerTimer) window.clearInterval(runnerTimer) })
+// only while the page is visible — every kept-alive module page has one of these
+useActiveInterval(pollRunner, 20000)
 
 async function startRunner() {
   runnerDown.value = false                       // optimistic: the row shows the truth in a moment

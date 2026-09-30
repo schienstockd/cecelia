@@ -59,7 +59,8 @@ export function usePlotResize(
 
   onMounted(() => {
     if (!host.value || typeof ResizeObserver === 'undefined') return
-    ro = new ResizeObserver(() => frame.schedule(false))
+    // detached = a hidden kept-alive page (see observeBoxChanges); its 0×0 is not a size to render at
+    ro = new ResizeObserver(() => { if (host.value?.isConnected) frame.schedule(false) })
     ro.observe(host.value)
   })
   onBeforeUnmount(() => { frame.cancel(); ro?.disconnect(); ro = null })
@@ -69,4 +70,26 @@ export function usePlotResize(
     redraw() { lastW = -1; lastH = -1; frame.schedule(true) },
     schedule() { frame.schedule(false) },
   }
+}
+
+/**
+ * A ResizeObserver that reports only a REAL box change of a CONNECTED element — for views that paint
+ * straight from the callback (a <canvas> redraw, an rAF-coalesced render) and so aren't on
+ * `usePlotResize`. It drops two non-changes, both produced by a module page kept under App.vue's
+ * <KeepAlive> (composables/useKeepAlive.ts):
+ *  - detached: the hidden page is moved out of the document and the observer reports 0×0. Drawing
+ *    then blanks the plot, and persisting a size then saves 0×0;
+ *  - unchanged: on return it is re-attached at the size it had, and the observer fires again. The
+ *    last paint is still on screen, so a redraw would be pure cost (a board holds up to 36 plots).
+ */
+export function observeBoxChanges(el: HTMLElement, onChange: () => void): ResizeObserver {
+  let w = -1, h = -1
+  const ro = new ResizeObserver(() => {
+    if (!el.isConnected) return
+    if (el.clientWidth === w && el.clientHeight === h) return
+    w = el.clientWidth; h = el.clientHeight
+    onChange()
+  })
+  ro.observe(el)
+  return ro
 }

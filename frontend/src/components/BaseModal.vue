@@ -12,7 +12,8 @@
           body), #footer (fixed action row). Props size the box; body scrolls, header/footer are pinned.
 -->
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, computed } from 'vue'
+import { computed } from 'vue'
+import { useWindowListener } from '../composables/useKeepAlive'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -34,8 +35,7 @@ function onOverlayClick() { if (pressedOnOverlay) emit('close'); pressedOnOverla
 
 // preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it
 function onKey(e: KeyboardEvent) { if (e.key === 'Escape') { emit('close'); e.preventDefault() } }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+useWindowListener('keydown', onKey)
 </script>
 
 <template>

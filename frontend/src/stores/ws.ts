@@ -36,6 +36,10 @@ export { wsClientId } from '../utils/clientId'
 
 export const useWsStore = defineStore('ws', () => {
   const status = ref<WsStatus>('disconnected')
+  // Successful connections so far (1 = the first). A reconnect is `connects > 1` — watch THIS, not
+  // `status`, when you need to know one happened: a paused watcher (a page hidden under <KeepAlive>)
+  // sees only the latest value, and connected→disconnected→connected reads as no change.
+  const connects = ref(0)
   const lastPong = ref<string | null>(null)
 
   let socket: WebSocket | null = null
@@ -88,6 +92,7 @@ export const useWsStore = defineStore('ws', () => {
     socket.onopen = () => {
       if (connectTimeoutTimer) { clearTimeout(connectTimeoutTimer); connectTimeoutTimer = null }
       status.value = 'connected'
+      connects.value++
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
       useLogStore().info('Connected to Julia backend', { source: 'ws' })
       // A reconnect means the backend may have restarted, so its outcome ring is a different one —
@@ -741,7 +746,7 @@ export const useWsStore = defineStore('ws', () => {
     if (list) handlers.set(type, list.filter(h => h !== handler))
   }
 
-  return { status, lastPong, connect, send, ping, on, off }
+  return { status, connects, lastPong, connect, send, ping, on, off }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

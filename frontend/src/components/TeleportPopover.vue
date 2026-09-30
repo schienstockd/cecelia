@@ -18,7 +18,7 @@
   popover that will clip.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onDeactivated, nextTick } from 'vue'
 import { placeBox } from '../utils/anchorPosition'
 import { rafCoalesce } from '../utils/rafCoalesce'
 
@@ -109,6 +109,9 @@ watch(() => props.modelValue, async (open) => {
     window.removeEventListener('resize', reposition)
   }
 })
+// Its page was hidden under <KeepAlive>: teleported content is NOT moved out with the page — left open,
+// the popover would float over whichever page comes next. Close it (composables/useKeepAlive.ts).
+onDeactivated(() => { if (props.modelValue) emit('update:modelValue', false) })
 onBeforeUnmount(() => {
   unobserveBox()
   document.removeEventListener('pointerdown', onDocPointer, true)

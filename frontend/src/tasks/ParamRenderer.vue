@@ -4,7 +4,7 @@
   Supports nested section (collapsible box) with recursive rendering.
 -->
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted, onDeactivated } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
 import { SEVERITY } from '../lib/severity'
@@ -89,6 +89,8 @@ const sectionOpen = ref(!props.param.collapsed)
 // dirPath: the folder picker modal. Opened per param row, so each destination field owns its own.
 const showDirBrowser = ref(false)
 const showFileBrowser = ref(false)
+// teleported to <body> (below), so it would outlive a page hidden under <KeepAlive> — close it
+onDeactivated(() => { showDirBrowser.value = false; showFileBrowser.value = false })
 
 
 const val = computed({

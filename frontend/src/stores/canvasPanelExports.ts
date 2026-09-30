@@ -25,8 +25,13 @@ export const useCanvasPanelExportsStore = defineStore('canvasPanelExports', () =
   const exporters = ref<Record<string, PanelExporter>>({})
 
   function register(key: string, exporter: PanelExporter) { exporters.value[key] = exporter }
-  function unregister(key: string) {
-    if (key in exporters.value) delete exporters.value[key]
+  // `owner`: remove only if the entry is still that exporter. Two mounted canvases can share a key (the
+  // Whiteboard's QC canvas and the Segment page are both `summary:segment:<set>`, and both are kept
+  // alive) — the one unmounting must not take the other's registration with it.
+  function unregister(key: string, owner?: PanelExporter) {
+    if (!(key in exporters.value)) return
+    if (owner && exporters.value[key] !== owner) return
+    delete exporters.value[key]
   }
   function get(key: string): PanelExporter | undefined { return exporters.value[key] }
 
@@ -42,7 +47,7 @@ export function usePanelExport(key: () => string, exporter: PanelExporter): void
   // The key is expected to be stable for the lifetime of the panel (panel id + canvas key don't
   // change under a mounted CanvasPanel), so a watch is overkill; refresh only if the caller opts
   // to re-invoke this composable, and clean the previous entry.
-  onScopeDispose(() => store.unregister(lastKey))
+  onScopeDispose(() => store.unregister(lastKey, exporter))
   // Return void — the caller doesn't need the store. Kept as a bare function on purpose.
   void lastKey
 }
