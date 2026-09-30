@@ -1436,7 +1436,10 @@ runnable (included) subset (`includedUids`).
 `utils/imageTable.ts → imageTableCsvRows` (pure, tested) → `rowsToCsv`/`downloadBlob`
 (`plots/export.ts`). It exports **every** image including excluded ones (flagged `Excluded` + the
 `Exclusion note`), one aligned column per channel (`Channel 1…N`, value = the channel name) plus
-Z/frames/duration/pixel-size and one column per attr.
+Z/frames/duration/pixel-size and one column per attr, headed by `attrCsvHeaders` (`utils/attrFilter.ts`)
+— the rule every CSV export shares with the summary-plot CSV: the bare attribute name, `attr_<name>` only
+where it clashes case-insensitively with one of the table's own columns (`name` vs `Name`). Until
+2026-09-30 every attribute column here was `attr:<name>`.
 
 **QC badge.** Separate from the metadata warning (which is import-metadata-specific), a row shows a
 `pi-flag` **QC** badge when `qcSummary(img)` (`frontend/src/lib/qc.ts`) finds any QC finding on the

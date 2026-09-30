@@ -34,6 +34,16 @@ export function attrKeysOf(rows: readonly AttrBearing[]): string[] {
   return [...keys].sort()
 }
 
+/** Header for each attribute column in a CSV export — ONE rule for every CSV writer (the image table,
+ *  the summary-plot CSV). The bare attribute name: what the user typed, and what a pivot in R /
+ *  pandas / a spreadsheet wants. Prefixed `attr_` only where it collides, case-insensitively, with
+ *  one of that CSV's own columns (`taken`) — `name` beside the image table's `Name` reads as the same
+ *  column to a spreadsheet user. `attr_`, not `attr:`: a colon has to be quoted in R and pandas. */
+export function attrCsvHeaders(attrKeys: readonly string[], taken: readonly string[]): string[] {
+  const clash = new Set(taken.map(t => t.toLowerCase()))
+  return attrKeys.map(k => clash.has(k.toLowerCase()) ? `attr_${k}` : k)
+}
+
 /** Key → the distinct values in use, sorted. The chips a user can pick from, and nothing beyond them. */
 export function attrValueMap(rows: readonly AttrBearing[]): Record<string, string[]> {
   const map: Record<string, Set<string>> = {}

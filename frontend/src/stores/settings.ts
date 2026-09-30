@@ -18,7 +18,7 @@ import { fetchProfileSettings, patchProfileSettings,
 const PROFILE_KEYS = [
   // Working preferences
   'taskListAutoFollow', 'tasksThisProjectOnly', 'tasksShowHistory',
-  'autoRefreshOnTask', 'viewerAutoUpdate', 'preferDevChannel',
+  'autoRefreshOnTask', 'viewerAutoUpdate', 'preferDevChannel', 'csvIncludeAttrs',
   'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps',
   // Overlay preferences
   'viewerScaleBar', 'viewerTimestamp', 'viewerGrid', 'viewerGridDensity',
@@ -72,6 +72,13 @@ export const useSettingsStore = defineStore('settings', () => {
   // the pop-out task window) has no session to show for a project with hundreds of runs in it.
   const tasksShowHistory = ref(
     localStorage.getItem('cc.tasksShowHistory') === 'true'   // default false
+  )
+
+  // Whether a plot's CSV export carries each image's name + attributes (Treatment, Mouse, …) next to
+  // its uID. ON by default: a uID alone doesn't say which condition a row belongs to. Off gives the
+  // lean identity-only table. One switch for every summary-plot CSV (panel export, board zip, PDF attachment).
+  const csvIncludeAttrs = ref(
+    localStorage.getItem('cc.csvIncludeAttrs') !== 'false'  // default true
   )
 
   // Auto-refresh plots + pop lists when a task finishes successfully (the per-image task-refresh; see
@@ -666,6 +673,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
   watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
+  watch(csvIncludeAttrs,          v => localStorage.setItem('cc.csvIncludeAttrs',          String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch([pickZMode, pickZWindow], ([mode, w]) => localStorage.setItem('cc.pickZScope',
     JSON.stringify({ mode, window: Math.max(0, Math.floor(Number(w) || 0)) })))
@@ -777,7 +785,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const _profileRefs: Record<ProfileKey, Ref<ProfileSettingsValue>> = {
     taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory,
-    autoRefreshOnTask, viewerAutoUpdate, preferDevChannel,
+    autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, csvIncludeAttrs,
     importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps,
     viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity,
     viewerLandscape, viewerLandscapeLabels,
@@ -861,7 +869,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

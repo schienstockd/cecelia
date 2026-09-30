@@ -74,13 +74,20 @@ describe('imageTableCsvRows', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({
       Name: 'incl', Channels: 2, 'Channel 1': 'CD4', 'Channel 2': 'CD8', 'Z slices': 5, Frames: 10,
-      Duration: '4m 30s', 'attr:Treatment': 'X', Excluded: 'no', 'Exclusion note': '',
+      Duration: '4m 30s', Treatment: 'X', Excluded: 'no', 'Exclusion note': '',
     })
     // both rows carry the SAME channel columns (max across the set), so the CSV columns line up
     expect(rows[1]).toMatchObject({
       Name: 'excl', Channels: 1, 'Channel 1': 'DAPI', 'Channel 2': '',   // fewer channels → blank, column present
-      Excluded: 'yes', 'Exclusion note': 'blurry', 'attr:Treatment': '',
+      Excluded: 'yes', 'Exclusion note': 'blurry', Treatment: '',
     })
     expect(Object.keys(rows[0])).toEqual(Object.keys(rows[1]))          // identical key set → aligned
+  })
+
+  it('heads attribute columns with the shared rule: bare name, attr_ on a clash with a fixed column', () => {
+    const [row] = imageTableCsvRows([img({ uid: 'a', name: 'n', attr: { name: 'mouse 1', Treatment: 'X' } })],
+                                    ['Treatment', 'name'])
+    expect(row).toMatchObject({ Name: 'n', attr_name: 'mouse 1', Treatment: 'X' })
+    expect(Object.keys(row).some(k => k.startsWith('attr:'))).toBe(false)
   })
 })

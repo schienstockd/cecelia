@@ -2,6 +2,7 @@
 // unit-tested): the timelapse-duration formatter and the CSV-export row builder. Kept out of the SFCs
 // per the "testable logic lives in src/utils/*" convention (docs/DEV.md → Tests).
 import type { CciaImage } from '../stores/project'
+import { attrCsvHeaders } from './attrFilter'
 import { isExcluded, isBlocked } from './inclusion'
 import { sortRows, type SortDir } from './sortRows'
 import { toSeconds } from './timeAxis'      // ONE time-unit conversion, shared with the time axis
@@ -70,10 +71,14 @@ function formatSeconds(sec: number): string {
 // whether it's excluded and the exclusion note (the "why"). Channels are ONE COLUMN PER CHANNEL
 // (`Channel 1`…`Channel N`, N = the max across the set, value = that channel's name) so the columns
 // line up across images exactly like the table — not a single joined field. One column per attr key
-// (union). Values are plain (rowsToCsv in plots/export.ts handles quoting); missing values become ''.
+// (union), headed by `attrCsvHeaders` — the rule every CSV export shares (bare name, `attr_` on a
+// clash with the columns below). Values are plain (rowsToCsv in plots/export.ts handles quoting);
+// missing values become ''.
 export function imageTableCsvRows(images: CciaImage[], attrKeys: string[]): Record<string, unknown>[] {
   const maxCh = images.reduce((m, i) => Math.max(m, i.channelNames?.length ?? i.sizeC ?? 0), 0)
-  return images.map(img => {
+  // The table's own columns, split around where the attribute block goes. The attribute headers' clash
+  // set is read off these same objects, so a column added here can never slip past the clash check.
+  const head = (img: CciaImage): Record<string, unknown> => {
     const row: Record<string, unknown> = { Name: img.name, Channels: img.sizeC ?? '' }
     for (let c = 0; c < maxCh; c++) row[`Channel ${c + 1}`] = img.channelNames?.[c] ?? ''
     row['Z slices'] = img.sizeZ ?? ''
@@ -88,9 +93,19 @@ export function imageTableCsvRows(images: CciaImage[], attrKeys: string[]): Reco
     // Exported because "which of these can I actually analyse" is a question people answer in a
     // spreadsheet, and it is not derivable from the columns above without knowing the gate's rule.
     row.Blocked = isBlocked(img) ? 'yes' : 'no'
-    for (const k of attrKeys) row[`attr:${k}`] = img.attr?.[k] ?? ''
-    row.Excluded = isExcluded(img) ? 'yes' : 'no'
-    row['Exclusion note'] = isExcluded(img) ? (img.note ?? '') : ''
     return row
+  }
+  const tail = (img: CciaImage): Record<string, unknown> => ({
+    Excluded: isExcluded(img) ? 'yes' : 'no',
+    'Exclusion note': isExcluded(img) ? (img.note ?? '') : '',
   })
+  const sample = images[0]
+  const attrHeaders = sample
+    ? attrCsvHeaders(attrKeys, [...Object.keys(head(sample)), ...Object.keys(tail(sample))])
+    : attrKeys
+  return images.map(img => ({
+    ...head(img),
+    ...Object.fromEntries(attrKeys.map((k, i) => [attrHeaders[i], img.attr?.[k] ?? ''])),
+    ...tail(img),
+  }))
 }

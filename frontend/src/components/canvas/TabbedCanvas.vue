@@ -20,8 +20,10 @@ import { zipTextFiles } from '../../utils/zip'
 import { waitForPlotsIdle } from '../../utils/plotReady'
 import { walkAssetRefs, collectAssetIds } from '../../utils/boardAssets'
 import { useLogStore } from '../../stores/log'
+import { useSettingsStore } from '../../stores/settings'
 import LayoutCanvas from './LayoutCanvas.vue'
 import ConfirmButton from '../ConfirmButton.vue'
+import CcToggle from '../CcToggle.vue'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null }>()
 
@@ -29,6 +31,7 @@ const meta = useProjectMetaStore()
 const tabsStore = useAnalysisTabsStore()
 const layoutStore = useAnalysisLayoutStore()
 const log = useLogStore()
+const settings = useSettingsStore()
 
 const projectUid = computed(() => meta.current?.uid ?? '')
 const groupKey = `analysis:${projectUid.value}`
@@ -221,6 +224,8 @@ function exportBoard(kind: string) {
         <i class="pi pi-plus" />
       </button>
       <!-- one export control: figure (PDF/SVG), data (CSV), or both in a single pass -->
+      <CcToggle v-model="settings.csvIncludeAttrs" label="Attributes" class="tab-attrs cc-fs-xs"
+                v-tooltip.bottom="'Add image name + attributes to plot CSVs'" />
       <select class="tab-pdf" data-guide="board.export" :disabled="exporting" v-tooltip.bottom="'Export each board — figure, data, or both'"
               @change="exportBoard(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">{{ exporting ? '⋯ exporting…' : '⤓ Export' }}</option>
@@ -267,7 +272,9 @@ function exportBoard(kind: string) {
   cursor: pointer; font-size: var(--cc-fs-sm); margin-left: 2px;
 }
 .tab-add:hover { color: var(--cc-text); }
-.tab-pdf { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; margin-bottom: 2px;
+/* CSV attribute toggle: pushed right with the export control it modifies */
+.tab-attrs { margin-left: auto; margin-bottom: 2px; margin-right: 8px; color: var(--cc-text-dim); }
+.tab-pdf { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 2px;
   padding: 3px 10px; font-size: var(--cc-fs-xs); border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1); color: var(--cc-text-dim); cursor: pointer; }
 .tab-pdf:hover:not(:disabled) { border-color: var(--cc-accent-strong); }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { plotDataToCsv, plotStatsToCsv } from './plot'
+import { plotDataToCsv, plotStatsToCsv, type CsvImageMeta } from './plot'
 import type { PlotDataResponse, ComparisonsResult } from './types'
 
 describe('plotDataToCsv — raw datapoint export', () => {
@@ -141,5 +141,82 @@ describe('plotStatsToCsv — between-group hypothesis test sidecar', () => {
     const csv = plotStatsToCsv(r)
     // statistic missing → blank column, still comma-separated
     expect(csv).toContain('# Omnibus\nstatistic,p_value,significance\n,0.5,ns')
+  })
+})
+
+describe('plotDataToCsv — image name + attributes (CsvImageMeta)', () => {
+  const images: Record<string, { name: string; attr?: Record<string, string> }> = {
+    a: { name: 'M1_WT', attr: { Treatment: 'WT', Mouse: '1' } },
+    b: { name: 'M2_KO', attr: { Treatment: 'KO', Day: '3' } },
+    c: { name: 'Clash', attr: { pop: 'x' } },
+  }
+  const meta: CsvImageMeta = { lookup: uid => images[uid] }
+
+  it('raw: puts image + the sorted union of attributes right after uID; missing values blank', () => {
+    const r: PlotDataResponse = {
+      chartType: 'raw', measure: 'm', granularity: 'cell', series: [],
+      rows: [
+        { uID: 'a', label: '1', value_name: 'A', pop: '/p', value: 1 },
+        { uID: 'b', label: '2', value_name: 'A', pop: '/p', value: 2 },
+      ],
+    }
+    const lines = plotDataToCsv(r, meta).split('\n')
+    expect(lines[0]).toBe('uID,image,Day,Mouse,Treatment,label,value_name,pop,m')
+    expect(lines[1]).toBe('a,M1_WT,,1,WT,1,A,/p,1')
+    expect(lines[2]).toBe('b,M2_KO,3,,KO,2,A,/p,2')
+  })
+
+  it('without meta the table is unchanged (the toggle off)', () => {
+    const r: PlotDataResponse = {
+      chartType: 'raw', measure: 'm', granularity: 'cell', series: [],
+      rows: [{ uID: 'a', label: '1', value_name: 'A', pop: '/p', value: 1 }],
+    }
+    expect(plotDataToCsv(r).split('\n')[0]).toBe('uID,label,value_name,pop,m')
+  })
+
+  it('single image: rows without uID resolve via defaultUid, image block leads', () => {
+    const r: PlotDataResponse = {
+      chartType: 'raw', measure: 'm', granularity: 'track', series: [],
+      rows: [{ uID: '', track_id: '4', value_name: 'A', pop: '/t', value: 9 }],
+    }
+    const lines = plotDataToCsv(r, { ...meta, defaultUid: 'a' }).split('\n')
+    expect(lines[0]).toBe('image,Mouse,Treatment,track_id,value_name,pop,m')
+    expect(lines[1]).toBe('M1_WT,1,WT,4,A,/t,9')
+  })
+
+  it('no uID resolves → no dead image columns', () => {
+    const r: PlotDataResponse = {
+      chartType: 'raw', measure: 'm', granularity: 'cell', series: [],
+      rows: [{ uID: 'zzz', value_name: 'A', pop: '/p', value: 1 }],
+    }
+    expect(plotDataToCsv(r, meta).split('\n')[0]).toBe('uID,value_name,pop,m')
+  })
+
+  it('an attribute named like an identity column is prefixed attr_', () => {
+    const r: PlotDataResponse = {
+      chartType: 'raw', measure: 'm', granularity: 'cell', series: [],
+      rows: [{ uID: 'c', value_name: 'A', pop: '/p', value: 1 }],
+    }
+    expect(plotDataToCsv(r, meta).split('\n')[0]).toBe('uID,image,attr_pop,value_name,pop,m')
+  })
+
+  it('an attribute named like a value column is prefixed too (aggregate + raw)', () => {
+    const m: CsvImageMeta = { lookup: uid => uid === 'v' ? { name: 'V', attr: { Count: 'x', m: 'y' } } : null }
+    const agg = { chartType: 'count', granularity: 'cell',
+                  series: [{ uID: 'v', value_name: 'A', pop: '/p', value: 3 }] } as PlotDataResponse
+    expect(plotDataToCsv(agg, m).split('\n')[0]).toBe('uID,image,attr_Count,m,value_name,pop,count')
+    const raw: PlotDataResponse = { chartType: 'raw', measure: 'm', granularity: 'cell', series: [],
+                                    rows: [{ uID: 'v', value_name: 'A', pop: '/p', value: 1 }] }
+    expect(plotDataToCsv(raw, m).split('\n')[0]).toBe('uID,image,Count,attr_m,value_name,pop,m')
+  })
+
+  it('aggregated charts carry the same block per series', () => {
+    const r = {
+      chartType: 'count', granularity: 'cell',
+      series: [{ uID: 'a', value_name: 'A', pop: '/p', value: 5 }, { uID: 'b', value_name: 'A', pop: '/p', value: 7 }],
+    } as unknown as PlotDataResponse
+    const lines = plotDataToCsv(r, meta).split('\n')
+    expect(lines[0]).toBe('uID,image,Day,Mouse,Treatment,value_name,pop,count')
+    expect(lines[2]).toBe('b,M2_KO,3,,KO,A,/p,7')
   })
 })
