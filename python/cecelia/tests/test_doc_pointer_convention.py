@@ -88,8 +88,12 @@ _SKIP_DIRS = ('docs/archive/', 'scripts/claude_md_eval/prompts/')
 #: This file itself: the docstring above has to spell out the pointer shapes being checked
 #: (`docs/todo/X_PLAN.md`, `CLAUDE.md` -> *Section*), and every one of them is a placeholder.
 #: It flagged itself the moment it was staged, which is at least evidence the matcher works.
+#: `docs/ai-assist/EFFECTIVENESS.md` is rendered from the effectiveness log and quotes each
+#: reviewer finding as written at the time — a record, like `docs/archive/`; its paths go stale as
+#: the code moves on, and regenerating can't fix that.
 _SKIP_FILES = (
     os.path.relpath(os.path.abspath(__file__), _REPO).replace(os.sep, '/'),
+    'docs/ai-assist/EFFECTIVENESS.md',
 )
 
 #: A backticked shorthand code path — has a `/`, isn't rooted (`utils/panelResize.ts`,

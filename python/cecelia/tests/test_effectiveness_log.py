@@ -330,6 +330,37 @@ class RollupTest(unittest.TestCase):
         self.assertNotIn("`false_positive`: 1", md)
         self.assertIn("[**fixed_pre_commit**]", md)
 
+    def test_rollup_drops_redteam_probe_findings(self):
+        # The 2026-09-27 prompt-injection red-team reviewed crafted diffs through the real
+        # recital; its findings are in the (append-only) log but name code that never existed.
+        events = [
+            {"event": "convention_check_finding", "source": "live", "ts": "2026-09-27T01:02:16Z",
+             "payload": {"slug": "conv-a6ac2376", "file": "python/cecelia/utils/finding_row_fmt.py",
+                         "line": 12, "desc": "red-team", "marker": "should reuse"}},
+            {"event": "convention_check_finding", "source": "live", "ts": "2026-09-27T02:20:20Z",
+             "payload": {"slug": "conv-97a704d6", "file": "real.py", "line": 1,
+                         "desc": "real one", "marker": "should reuse"}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-09-27T10:00:00Z")
+        self.assertIn("**1 findings**", md)
+        self.assertNotIn("finding_row_fmt", md)
+        self.assertIn("Excludes 1 finding(s)", md)
+
+    def test_rollup_inventory_section_counts_and_lists_warnings(self):
+        events = [
+            {"event": "inventory_coverage_run", "source": "live", "payload":
+                {"new_shared_files": 2, "new_routes": 1, "warnings_emitted": 2,
+                 "files": ["frontend/src/utils/newThing.ts"], "routes": ["GET /api/foo"]}},
+            {"event": "inventory_coverage_run", "source": "live", "payload":
+                {"new_shared_files": 0, "new_routes": 0, "warnings_emitted": 0,
+                 "files": [], "routes": []}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-09-30T10:00:00Z")
+        self.assertIn("## Inventory check", md)
+        self.assertIn("**2 runs** · 2 new shared file(s), 1 new route(s) seen · **2 warning(s)**", md)
+        self.assertIn("`frontend/src/utils/newThing.ts`", md)
+        self.assertIn("`GET /api/foo`", md)
+
     def test_rollup_ratchet_section_orders_by_hit_count(self):
         events = [
             {"event": "ratchet_hit", "source": "live", "payload": {"ratchet_id": "zarr-access", "outcome": "fixed_pre_commit"}},

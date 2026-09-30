@@ -171,6 +171,16 @@ cells being analysed — the metric had been optimising something other than the
 The final choice was made on the images, not on the number. Per-subsystem validation record:
 [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
+**Claude checks its own drift.** Dominik can't review every change, so the setup tries to let
+Claude catch its own mistakes. Before each commit, `pixi run recital` has two fresh reviewer agents
+read the diff: one looks for a fix that missed its sibling call sites, the other for new code that
+duplicates an existing helper. A mechanical check also flags new files or routes the docs don't
+list. Each finding must be resolved in the commit message (fixed, shipped anyway, or false
+positive), and a git hook blocks the commit otherwise. Outcomes are logged
+(`pixi run recital-console`). Separately, a weekly eval gives fresh agents canned tasks and scores
+whether they follow `CLAUDE.md`; a failing probe means the dev setup gets fixed, not the prompt.
+This is recent and still being measured: [`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
+
 **Attribution.** Claude wrote the code. Dominik directed it, reviewed as much as was practical, and
 made every scientific and design decision. Neither is the sole author in the sense the word meant a
 few years ago. Every public disclosure the field has landed on so far agrees on one thing: AI isn't

@@ -11,8 +11,8 @@ future reader touching one may want to check the other.
 
 v1 renders:
 - Header (run date, N events, date range, retrospective vs live split).
-- Per-mechanism sections (sibling-audit, convention-check, ratchets) — count + outcome
-  breakdown.
+- Per-mechanism sections (fanout audit, convention check, inventory check, ratchets) — count +
+  outcome breakdown.
 - Miss-visibility section (retrospective_miss rows).
 - Ceiling section — the honest "cannot measure" list, held here as a stable epilogue so
   external readers see it in the same file, not one link away.
@@ -57,6 +57,17 @@ _CEILING = """
 - **Selection bias in retrospective rows.** Merged-PR samples miss the ones that got closed unreviewed.
 - **Novelty decay.** Ratchets productive at N=0 may become noise at N=100 as the codebase adapts around them. Rising FP rate over time is a signal to read, not to aggregate.
 """
+
+
+#: Findings from the crafted diffs of the 2026-09-27 prompt-injection red-team
+#: (`docs/archive/governance_layer_audit.md` → *Item 3*). They went through the real recital, so
+#: they're in the log, but they review code that never existed — the log is append-only, so they
+#: are dropped here rather than there.
+_REDTEAM_SLUGS = frozenset({"fanout-c8482224", "conv-a6ac2376", "conv-f6f0a6e5"})
+_REDTEAM_NOTE = (
+    "_Excludes {n} finding(s) from the 2026-09-27 prompt-injection red-team diffs "
+    "([audit](../archive/governance_layer_audit.md))._"
+)
 
 
 def _fmt_ts(ts: str) -> str:
@@ -129,6 +140,9 @@ def _mechanism_section(
     resolved_events = (resolved_event,) if isinstance(resolved_event, str) else resolved_event
     runs = [e for e in events if e.get("event") in run_events]
     findings = [e for e in events if e.get("event") in finding_events]
+    redteam = {f["payload"]["slug"] for f in findings
+               if f.get("payload", {}).get("slug") in _REDTEAM_SLUGS}
+    findings = [f for f in findings if f.get("payload", {}).get("slug") not in _REDTEAM_SLUGS]
     if not runs and not findings:
         return ""
 
@@ -194,6 +208,30 @@ def _mechanism_section(
         _render_finding_rows(lines, findings_by_slug, resolutions_by_slug, slugless_findings,
                              pr_lookup=pr_lookup)
         lines.append("</details>")
+    if redteam:
+        lines += ["", _REDTEAM_NOTE.format(n=len(redteam))]
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _inventory_section(events: _t.Sequence[dict]) -> str:
+    """The mechanical inventory check (`inventory_coverage.py`) — no findings or outcomes, just
+    what each run saw and what it warned about."""
+    runs = [e for e in events if e.get("event") == "inventory_coverage_run"]
+    if not runs:
+        return ""
+    payloads = [r.get("payload", {}) for r in runs]
+    n_files = sum(p.get("new_shared_files", 0) for p in payloads)
+    n_routes = sum(p.get("new_routes", 0) for p in payloads)
+    n_warn = sum(p.get("warnings_emitted", 0) for p in payloads)
+    lines = [
+        "## Inventory check", "",
+        f"- **{len(runs)} runs** · {n_files} new shared file(s), {n_routes} new route(s) seen"
+        f" · **{n_warn} warning(s)**",
+    ]
+    flagged = sorted({x for p in payloads for x in (p.get("files") or []) + (p.get("routes") or [])})
+    for x in flagged:
+        lines.append(f"  - `{x}`")
     lines.append("")
     return "\n".join(lines)
 
@@ -364,6 +402,7 @@ def render_rollup(
             resolved_event="convention_check_finding_resolved",
             pr_lookup=pr_lookup,
         ),
+        _inventory_section(events),
         _ratchets_section(events),
         _misses_section(events),
     ):
