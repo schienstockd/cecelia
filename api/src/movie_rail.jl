@@ -212,6 +212,15 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     out
 end
 
+# The single record's overlay config: the viewer's `look` plus the request's `labelContour`. The outline
+# width rides the request, not `look` (`seedConfigFromViewState` never writes it), so without this every
+# single record drew a 1-px outline whatever the viewer was set to. Same move the compare grid makes
+# (`compare_cfg[:labelContour]` in sockets.jl). No `look` stays `nothing` — an old client's record
+# keeps drawing no overlays, as it always did.
+_single_record_look(look_cfg, label_contour::Int) =
+    look_cfg isa AbstractDict ?
+        merge(_to_str_dict(look_cfg), Dict{String,Any}("labelContour" => label_contour)) : nothing
+
 # ── Single record — the viewer's Record button, timelapse only ────────────────────
 #
 # Emits the same task:* frames `run_single_movie` did, so the frontend task list, cancel button and
@@ -293,7 +302,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     effective_overlays = if overlays_raw isa AbstractDict
         overlays_raw
     else
-        _overlays_raw_from_config(look_cfg, has_mask)
+        _overlays_raw_from_config(_single_record_look(look_cfg, label_contour), has_mask)
     end
     vnn = isempty(value_name) ? nothing : String(value_name)
     # Apply the batch/`look` channel picks on top of the props-derived specs — same override the
@@ -410,7 +419,6 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
     else
         nothing
     end
-    label_contour  = Int(get(config, :labelContour, 1))
     z_slice        = get(config, :zSlice, nothing) === nothing ? nothing : Int(get(config, :zSlice, 0))
     overlays_raw   = get(config, :overlays, nothing)
     # Compare grid: 2+ versions and/or 2+ masks per image. When true, each image renders through
