@@ -19,14 +19,14 @@ inventory.
 | Area you're touching | Open | Size |
 |---|---|---|
 | Anything cross-cutting — shutdown, update, the WS rails, the log rail, image selection, task gating | [`docs/inventory/FLOWS.md`](docs/inventory/FLOWS.md) | 4 KB |
-| Reading/writing cell data, images, label stores, populations | [`docs/inventory/DATA_ACCESS.md`](docs/inventory/DATA_ACCESS.md) | 19 KB |
-| `frontend/src/` — Vue components, stores, utils | [`docs/inventory/FRONTEND.md`](docs/inventory/FRONTEND.md) | 68 KB |
-| `app/src/` — the Julia package: model, scheduler, gating, tasks | [`docs/inventory/JULIA_APP.md`](docs/inventory/JULIA_APP.md) | 37 KB |
-| `api/src/` — HTTP/WS handlers | [`docs/inventory/JULIA_API.md`](docs/inventory/JULIA_API.md) | 8 KB |
-| `python/cecelia/` — utils, writers, task runners | [`docs/inventory/PYTHON.md`](docs/inventory/PYTHON.md) | 8 KB |
-| `mcp/` — the read-only observer server | [`docs/inventory/MCP.md`](docs/inventory/MCP.md) | 9 KB |
+| Reading/writing cell data, images, label stores, populations | [`docs/inventory/DATA_ACCESS.md`](docs/inventory/DATA_ACCESS.md) | 25 KB |
+| `frontend/src/` — Vue components, stores, utils | [`docs/inventory/FRONTEND.md`](docs/inventory/FRONTEND.md) | 151 KB |
+| `app/src/` — the Julia package: model, scheduler, gating, tasks | [`docs/inventory/JULIA_APP.md`](docs/inventory/JULIA_APP.md) | 47 KB |
+| `api/src/` — HTTP/WS handlers | [`docs/inventory/JULIA_API.md`](docs/inventory/JULIA_API.md) | 14 KB |
+| `python/cecelia/` — utils, writers, task runners | [`docs/inventory/PYTHON.md`](docs/inventory/PYTHON.md) | 13 KB |
+| `mcp/` — the read-only observer server | [`docs/inventory/MCP.md`](docs/inventory/MCP.md) | 21 KB |
 | Plots + analysis-board panels (`INTERACTIVE_VIEWS` / `CLUSTER_PANELS`) | [`docs/inventory/PLOTS.md`](docs/inventory/PLOTS.md) | 1 KB |
-| Blackboard fingerprint extractors — stain / modality / tissue | [`docs/inventory/fingerprint_extractors.md`](docs/inventory/fingerprint_extractors.md) | 6 KB |
+| Blackboard fingerprint extractors — stain / modality / tissue | [`docs/inventory/fingerprint_extractors.md`](docs/inventory/fingerprint_extractors.md) | 7 KB |
 
 **FRONTEND.md and JULIA_APP.md are still big — slice them.** `grep -n -i '<thing>' docs/inventory/FRONTEND.md`
 finds the entry directly; the file is a flat bullet list, so one grep hit is the whole answer and you

@@ -234,16 +234,3 @@ export async function fetchCaptureFrame(
   }
 }
 
-/** Relative "how long ago" — `just now` / `5m` / `2h` / `3d`. Not localized; a glance row is
- *  meant to be short. `createdAt` is ISO-ish; anything unparseable ⇒ empty (the row still shows,
- *  just without a timestamp — better than hiding the capture). */
-export function formatWhen(createdAt: string, now: Date = new Date()): string {
-  if (!createdAt) return ''
-  const then = new Date(createdAt)
-  const ms = now.getTime() - then.getTime()
-  if (!Number.isFinite(ms) || ms < 0) return ''
-  if (ms < 60_000)         return 'just now'
-  if (ms < 60 * 60_000)    return `${Math.floor(ms / 60_000)}m`
-  if (ms < 24 * 3_600_000) return `${Math.floor(ms / 3_600_000)}h`
-  return `${Math.floor(ms / 86_400_000)}d`
-}
