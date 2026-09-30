@@ -1,6 +1,11 @@
 # Viewer parity — one decision, two renderers
 
-**Status:** Phases 1 + 2 BUILT on `feat/viewer-parity-palette-json` (2026-08-27); Phases 3–5 next
+**Status:** Phases 1 + 2 BUILT on `feat/viewer-parity-palette-json` (2026-08-27). **Decision 1 and the
+"shared drawing library" non-goal are SUPERSEDED (2026-10-01) by
+[`SHARED_RENDERER_PLAN.md`](SHARED_RENDERER_PLAN.md)** — run the viewer's WGSL on a server-side WebGPU
+host instead of keeping two renderers. Phases 3–5 here remain open but on hold until that plan's Phase 0 spike
+decides; if the spike fails, this plan resumes as written. The shared JSON assets (Phases 1–2) stay
+either way.
 
 ## Goal
 
@@ -49,7 +54,10 @@ a movie whose track colours look nothing like the live viewer.
 
 ## Locked decisions
 
-**1. Duplication is the price, enforcement is the answer.** We are not going to run WebGPU on the
+**1. Duplication is the price, enforcement is the answer.** *(Superseded 2026-10-01 — see
+[`SHARED_RENDERER_PLAN.md`](SHARED_RENDERER_PLAN.md) → "Why reopen Viewer Parity Decision 1": the
+offline 3D path became a GPU ray-caster, WebGPU runs without a browser via `wgpu-py`, and the drift that
+shipped was in the re-implemented primitives, which this decision's test could not see.)* We are not going to run WebGPU on the
 server. We are not going to keep a browser open for every batch clip. The two renderers stay. What
 we add is enforcement that they agree on what to draw.
 
@@ -124,7 +132,9 @@ this then. Parked until the test says so.
 ## Non-goals
 
 - **A shared drawing library across GPU + CPU.** Doesn't exist in Julia; writing one is a plan of
-  its own and this one exists to avoid that.
+  its own and this one exists to avoid that. *(Superseded — that plan is
+  [`SHARED_RENDERER_PLAN.md`](SHARED_RENDERER_PLAN.md): not a Julia library, the viewer's own shaders
+  on a server WebGPU host.)*
 - **Pixel-diffing the browser vs Julia frames.** Different rasterisers, different antialiasing;
   the diff is noise. Phase 3's decision-level test is what buys the parity claim.
 - **Serving movies through a headless browser.** Sold and rejected in the audit
