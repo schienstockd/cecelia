@@ -281,10 +281,16 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
     # `total_cost_usd` + `num_turns`. Parsed by `transcript.parse_stream_json` for the
     # tool_order grader + cost/turns emission. Was `--output-format=text` before the
     # 2026-09-28 additions — the text mode discarded tool_use structure.
+    # The eval agent loads the user's MCP servers, cecelia-observer included, and MCP children
+    # inherit this env. `CECELIA_OBSERVER_NO_PAIR` (read by `mcp/cecelia_mcp/client.py`) stops a
+    # throwaway run re-pairing Dominik's project to a session that exits seconds later — the
+    # headless guard `observer_mcp_config(...; headless = true)` gives app-spawned turns. Sibling:
+    # `python/cecelia/effectiveness/recital.py` → `_default_runner`.
+    env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"}
     return subprocess.run(
         [claude_path, "-p", "--dangerously-skip-permissions",
          "--output-format", "stream-json", "--verbose"],
-        input=prompt_body, cwd=str(worktree),
+        input=prompt_body, cwd=str(worktree), env=env,
         capture_output=True, text=True, timeout=timeout, check=False, encoding="utf-8",
     )
 

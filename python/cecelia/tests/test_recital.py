@@ -512,6 +512,17 @@ class FindingsEmissionTest(unittest.TestCase):
             self.assertIsNone(e["commit"])
 
 
+class DefaultRunnerEnvTest(unittest.TestCase):
+    def test_reviewer_spawn_disables_observer_pairing(self):
+        # A reviewer turn must not re-pair the user's project (observer MCP inherits env).
+        from cecelia.effectiveness import recital
+        done = mock.Mock(returncode=0, stdout="ok", stderr="")
+        with mock.patch.object(recital, "_resolve_claude_bin", return_value="/bin/claude"), \
+             mock.patch.object(recital.subprocess, "run", return_value=done) as run:
+            recital._default_runner("prompt", timeout=5)
+        self.assertEqual(run.call_args.kwargs["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
+
+
 if __name__ == "__main__":
     unittest.main()
 
