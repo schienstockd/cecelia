@@ -15,6 +15,60 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.9] — 2026-10-01
+
+Patch release: Record now exports what the viewer shows, with real 3D movies, and summary-plot CSVs
+carry condition columns (both user requests), plus a round of viewer, movie, task-manager and plot-page
+fixes.
+
+### Changed
+
+- **Record exports what the viewer shows.** A new **Match viewer** toggle in the Movie row (per set, on
+  by default) takes the version, mask, populations, tracks, z/3D, contrast and camera from the live
+  viewer; the popover keeps only output settings (fps, size, name, frame range, title card, timestamp,
+  scale bar). Turn it off to pick version and segmentation by hand as before. (#1313)
+- **3D movies are real 3D.** 3D in Record and Batch was a flat all-Z projection since napari was
+  retired; it now renders a volume as one fixed view swept over time, and **Fill from view** captures the
+  viewer's 3D camera. The "detail" slider is replaced by render quality (draft / standard / high). No
+  masks in 3D yet; a 3D comparison grid is still a flat projection. (#1313)
+- **Image-table CSV attribute headers lose their `attr:` prefix** (`attr:genotype` → `genotype`). An
+  attribute now gets an `attr_` prefix only when its name clashes (ignoring case) with one of that CSV's
+  own columns. **If you have a script that reads these CSVs by the `attr:` header, update it.** (#1309)
+- **Plot pages stay alive across navigation.** Switching module pages no longer throws plots away and
+  refetches them on return; up to 10 pages are kept per project.
+
+### Added
+
+- **Summary-plot CSVs carry the image name and its attributes** after `uID`, so a row can be tied to
+  its condition. An **Attributes** toggle beside Export (on by default, per profile) covers the board
+  zip, the PDF attachment and the per-panel CSV. Gating, UMAP, track and HMM CSVs are not covered. (#1309)
+- **Viewer — `± planes` window** in 2D and 3D: loads the current plane ± n (2D shows it as a MIP). The
+  Depth range gets a reset icon.
+- **Maximise the plot canvas** — a **Max** button on every module page fills the window with the image
+  panel and plots; Esc restores.
+- **Behaviour cards — show another example.** Swap a card's medoid for another representative, per
+  card or all at once; Reload never serves stale cards.
+- **Task Manager — search box** (image, task, function, module).
+- **Movies — the channel picker names the viewer's Distinct colours**, so a batch movie can use them.
+
+### Fixed
+
+- **Movies and animations — colours and framing match the viewer.** Hex channel colours rendered white
+  in 3D, and the zoom was about 5× off; animation overlays now use the right segmentation. (#1313)
+- **Movies — masks from another image version no longer crash the recording.** A mask whose grid
+  doesn't match the recorded version is skipped with a warning in the task log. The single Record now
+  honours the outline width, an outline of 0 fills, and custom channel colours are kept.
+- **Viewer — first frame could stay blank until the time slider moved.**
+- **Populations — rename keeps highlights and hidden track populations** on cluster, gate and summary
+  canvases and in batch movies; the "wait for pop selection" toggle shows on cluster/gate pages.
+- **Plots — series axis is sorted by category** (e.g. `MerTK.M2` → `WT.M1` → `WT.M3`), not in image
+  order.
+- **Task Manager — History rows no longer duplicate** when sorting or toggling History; the list
+  scrollbar can be grabbed again.
+- **Console — long task log lines wrap** instead of spilling into what looked like new entries.
+- **Optical flow — the preview worker no longer spawns duplicates** (`EADDRINUSE`) on every inspect poll.
+- **Denoise model details — per-channel models show a Mode row** instead of `[object Object]`.
+
 ## [0.2.8] — 2026-09-28
 
 Identity becomes an app-wide primitive (USER_PROFILE_PLAN P1–P6); Kiwi becomes a working cockpit
@@ -1110,7 +1164,9 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/schienstockd/cecelia/compare/v0.2.8...v0.2.9
+[0.2.8]: https://github.com/schienstockd/cecelia/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/schienstockd/cecelia/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/schienstockd/cecelia/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/schienstockd/cecelia/compare/v0.2.4...v0.2.5
