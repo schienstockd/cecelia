@@ -53,6 +53,24 @@ describe('taskHistoryEntries', () => {
     expect(rows.map(r => r.id)).toEqual(['OLD'])
   })
 
+  it('gives every row a unique id when a taskId repeats — across images and within one', () => {
+    // a set-level run writes its one id into every image it touched; the id is the table's row key
+    const rows = taskHistoryEntries([
+      img('i1', 'A', [
+        { fun: 'train.denoise', at: '2026-08-20T10:00:00', taskId: 'SET' },
+        { fun: 'train.denoise', at: '2026-08-20T11:00:00', taskId: 'SET' },
+      ]),
+      img('i2', 'B', [{ fun: 'train.denoise', at: '2026-08-20T10:00:00', taskId: 'SET' }]),
+    ], CTX)
+    const ids = rows.map(r => r.id)
+    expect(new Set(ids).size).toBe(3)
+    expect(ids).toContain('SET')                  // the first claimant still dedups against a live row
+    // …and a live row still drops EVERY copy of its run
+    expect(taskHistoryEntries([img('i1', 'A', [{ fun: 'f.g', at: '2026-08-20T10:00:00', taskId: 'SET' }]),
+                               img('i2', 'B', [{ fun: 'f.g', at: '2026-08-20T10:00:00', taskId: 'SET' }])],
+                              { ...CTX, hasId: id => id === 'SET' })).toEqual([])
+  })
+
   it('skips an entry with no fun — there would be no module, label or log to show', () => {
     expect(taskHistoryEntries([img('i1', 'A', [{ fun: '', at: '2026-08-20T10:00:00' }])], CTX)).toEqual([])
   })
