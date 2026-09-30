@@ -366,6 +366,60 @@ class SHAAnchoredCheckTest(unittest.TestCase):
         self.assertIsNotNone(self.hook.check(self._msg_with_finding()))
 
 
+class SlugFormGateTest(unittest.TestCase):
+    """Bare tags write nothing to the log. When recital slugged findings for HEAD, a
+    bare-tagged commit (session 94ccd376's shape) would leave them to the orphan sweep and
+    log a fixed finding as `dropped_no_action` — so the hook requires the slug form."""
+
+    def setUp(self):
+        self.hook = _load_hook()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.log_path = pathlib.Path(self._tmp.name) / "events.jsonl"
+        self._env_patch = mock.patch.dict(
+            os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)},
+        )
+        self._env_patch.start()
+        self.addCleanup(self._env_patch.stop)
+        self.head = "e" * 40
+        p = mock.patch.object(self.hook, "_current_head_sha", return_value=self.head)
+        p.start()
+        self.addCleanup(p.stop)
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head)
+
+    def _emit_finding(self, slug: str, commit: str | None = None):
+        append_event(
+            "fanout_audit_finding",
+            {"slug": slug, "file": "x.py", "line": 1, "desc": "d", "marker": "confirmed"},
+            commit=commit or self.head,
+        )
+
+    def test_bare_tag_with_logged_slug_blocks_and_names_it(self):
+        self._emit_finding("fanout-11111111")
+        reason = self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'")
+        self.assertIsNotNone(reason)
+        self.assertIn("fanout-11111111", reason)
+
+    def test_slug_form_passes(self):
+        self._emit_finding("fanout-11111111")
+        self.assertIsNone(self.hook.check(
+            "git commit -m 'x [**confirmed**] [fanout-11111111: fixed_pre_commit]'"))
+
+    def test_bare_tag_without_logged_slugs_passes(self):
+        # Legacy path: recital logged no findings for HEAD, so bare tags are all there is.
+        self.assertIsNone(self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'"))
+
+    def test_already_resolved_slug_does_not_block_bare_tag(self):
+        self._emit_finding("fanout-11111111")
+        append_event("fanout_audit_finding_resolved",
+                     {"slug": "fanout-11111111", "outcome": "fixed_pre_commit"}, commit=self.head)
+        self.assertIsNone(self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'"))
+
+    def test_slug_on_other_head_does_not_block(self):
+        self._emit_finding("fanout-11111111", commit="f" * 40)
+        self.assertIsNone(self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'"))
+
+
 class OrphanSlugDropTest(unittest.TestCase):
     """Auto-drop sweep for slugs the recital emitted against the current HEAD that this
     commit neither tagged nor previously resolved.

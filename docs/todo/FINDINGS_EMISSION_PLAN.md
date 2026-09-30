@@ -35,7 +35,7 @@ Existing convention in `FANOUT_AUDIT.md` / `CONVENTION_CHECK.md` prompts already
 
 where `marker` is `should reuse` / `sibling not updated` / `framework skip` / etc. Recital parses this line shape.
 
-**Non-matching bullets are ignored** (belt-and-braces: reviewer might add commentary bullets; parser tolerates by matching a strict regex, not lenient).
+**Amended 2026-09-30 — the parser is tolerant, not strict.** Reviewers drift from the shape (line ranges `:245-246`, lists `:11, :309`, backtick paths, `**:` for `** —`), and the strict regex silently dropped 11 of 29 findings — none reached the log after 2026-09-28. Now any bullet carrying the marker is a finding; location is best-effort (first `file:LINE`, so a range slugs the same as its first line). Bullets without the marker are still ignored. A marker that isn't on a bullet line surfaces as a `RECITAL PARSE WARNING` in the recital body. The hook blocks bare tags when the log holds untagged slugs for HEAD, since bare tags write no resolution row.
 
 ### Decision 2 — Findings written pre-commit as "pending", resolved separately
 
@@ -49,7 +49,7 @@ Why append-only vs edit-in-place: (a) matches the log's file format contract (js
 
 ### Decision 3 — Slug = hash of (event_type, file, line, marker)
 
-Deterministic — the same finding on the same line produces the same slug across runs. Short (8 hex chars). Prefixed with mechanism (`fanout-` / `conv-`) for human readability in commit messages.
+Deterministic — the same finding on the same line produces the same slug across runs. `line` is the first line of any range/list. When no location parses (`line == 0`), `desc` joins the key so location-less findings don't collide. Short (8 hex chars). Prefixed with mechanism (`fanout-` / `conv-`) for human readability in commit messages.
 
 Example: `fanout-42a7b13c`.
 
@@ -100,7 +100,7 @@ Existing count summary stays as the header line of each section.
 - PR capture via `gh pr view` (best-effort, `None` on failure).
 - Tests:
   - Parse matches the canonical bullet shape from the prompts
-  - Non-matching bullets skipped
+  - Bullets without the marker skipped
   - Slug is stable across runs for same (file, line, marker)
   - `_finding` rows land in the log with pending outcome
   - `gh pr view` failure is non-fatal
