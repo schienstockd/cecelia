@@ -59,10 +59,14 @@ EVENT_TYPES = frozenset({
     #: no emitter yet — target: post-2026-10-24 when four weeks of _finding_resolved data
     #: have accumulated and the burden trend becomes readable.
     "attention_tick",
-    #: Citation-currency check — mechanical (not a reviewer subagent) third recital step
-    #: that greps governance docs for `Enforced by \`path\`` claims, cross-refs against the
-    #: staged diff, and warns when a cited file is touched but the citing doc is not. See
-    #: `python/cecelia/effectiveness/citation_currency.py`.
+    #: Inventory check — mechanical (not a reviewer subagent) third recital step: warns when
+    #: the staged diff adds a shared file no `docs/inventory/*.md` names, or a route missing
+    #: from `docs/API.md`. Payload: `new_shared_files`, `new_routes`, `warnings_emitted`,
+    #: `files` + `routes` (what was warned), `duration_s`. See
+    #: `python/cecelia/effectiveness/inventory_coverage.py`.
+    "inventory_coverage_run",
+    #: Retired 2026-09-30 (replaced by `inventory_coverage_run`); no emitter. Kept so the rows
+    #: already in the log stay valid members of the closed taxonomy.
     "citation_currency_run",
     # `claude_md_eval_*` — behavioural compliance eval, one row per (prompt, run) + one pass
     # summary per prompt + one suite summary per full-catalog run. See

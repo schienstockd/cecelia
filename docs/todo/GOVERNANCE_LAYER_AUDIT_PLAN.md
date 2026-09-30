@@ -82,6 +82,10 @@ fanout or convention-check subagent?
 
 ### Item 4 — Doc-citation currency, narrowly scoped (gated by item 2)
 
+> **Outcome (2026-09-30): built, then retired.** Replayed over 150 merged PRs it fired 8 times
+> with 0 stale docs; its dangling-path half is covered in CI by `test_doc_pointer_convention.py`.
+> Replaced in the recital by the inventory check (`python/cecelia/effectiveness/inventory_coverage.py`).
+
 **Question:** When code changes touch a file that a governance doc explicitly cites as its
 enforcement mechanism (canonical example: the zarr section citing `test_zarr_access_convention.py`),
 should the change flag the citing doc for review?

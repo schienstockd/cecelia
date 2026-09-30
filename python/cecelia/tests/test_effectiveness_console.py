@@ -138,16 +138,15 @@ class FormatEventTest(unittest.TestCase):
         line = format_event(event, use_colour=False)
         self.assertIn("ERR", line)
 
-    def test_errored_citation_currency_run_still_renders(self):
-        # Quiet citation-currency runs are normally dropped (no warnings, no staged files),
+    def test_errored_inventory_check_run_still_renders(self):
+        # Quiet inventory-check runs are normally dropped (no warnings, no new shared files),
         # but if the mechanism ERRORED that IS the signal — must not be silently swallowed.
         event = {
-            "event": "citation_currency_run", "ts": "2026-09-27T10:00:00Z",
+            "event": "inventory_coverage_run", "ts": "2026-09-27T10:00:00Z",
             "pr": None, "branch": None, "commit": None,
             "session": "s", "source": "live", "schema_version": 1,
-            "payload": {"duration_s": 0.05, "citations_indexed": 26,
-                        "staged_files_checked": 0, "warnings_emitted": 0,
-                        "error": "citation-currency crashed"},
+            "payload": {"duration_s": 0.05, "new_shared_files": 0, "warnings_emitted": 0,
+                        "files": [], "error": "inventory check crashed"},
         }
         line = format_event(event, use_colour=False)
         self.assertIsNotNone(line)
@@ -180,22 +179,36 @@ class FormatEventTest(unittest.TestCase):
         line = format_event(ev, use_colour=False)
         self.assertIn(expected_hms, line)
 
-    def test_citation_currency_quiet_run_is_dropped(self):
-        # A citation-currency run with no warnings and no staged files carries no reader
+    def test_inventory_check_quiet_run_is_dropped(self):
+        # An inventory-check run with no warnings and no new shared files carries no reader
         # signal — same reason `plan_logged` is dropped. Every recital emits one; showing
         # them all is the noise the console exists to remove.
         event = {
-            "event": "citation_currency_run", "ts": "2026-09-27T10:02:00Z",
+            "event": "inventory_coverage_run", "ts": "2026-09-27T10:02:00Z",
             "pr": None, "branch": None, "commit": None,
             "session": "s", "source": "live", "schema_version": 1,
-            "payload": {"duration_s": 0.075, "citations_indexed": 26,
-                        "staged_files_checked": 0, "warnings_emitted": 0},
+            "payload": {"duration_s": 0.02, "new_shared_files": 0, "warnings_emitted": 0,
+                        "files": []},
         }
         self.assertIsNone(format_event(event, use_colour=False))
 
-    def test_citation_currency_signal_run_renders(self):
-        # A run with warnings OR staged files renders — the counts are the whole signal for
-        # this mechanism. Constant fields (`citations_indexed`) don't appear.
+    def test_inventory_check_signal_run_renders(self):
+        # A run with warnings OR new shared files renders — the counts are the signal.
+        event = {
+            "event": "inventory_coverage_run", "ts": "2026-09-27T10:02:00Z",
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+            "payload": {"duration_s": 0.02, "new_shared_files": 3, "warnings_emitted": 1,
+                        "files": ["frontend/src/utils/x.ts"]},
+        }
+        line = format_event(event, use_colour=False)
+        self.assertIsNotNone(line)
+        self.assertIn("invt", line)
+        self.assertIn("1 warn", line)
+        self.assertIn("3 new", line)
+
+    def test_retired_citation_currency_rows_still_render(self):
+        # The check is retired but its rows stay in the log — history must keep rendering.
         event = {
             "event": "citation_currency_run", "ts": "2026-09-27T10:02:00Z",
             "pr": None, "branch": None, "commit": None,
@@ -204,7 +217,7 @@ class FormatEventTest(unittest.TestCase):
                         "staged_files_checked": 13, "warnings_emitted": 1},
         }
         line = format_event(event, use_colour=False)
-        self.assertIsNotNone(line)
+        self.assertIn("cite", line)
         self.assertIn("1 warn", line)
         self.assertIn("13 staged", line)
         self.assertNotIn("26", line)  # citations_indexed is constant — never shown

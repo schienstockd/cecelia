@@ -1197,7 +1197,7 @@ What makes it discoverable is the task, not the image: `ccid.json` registers a l
 run **succeeds**, so mid-run there is no `labels` entry to put in a picker. Instead the task declares
 its in-flight output via the `live_outputs` trait (`app/src/tasks/task.jl`), the scheduler records that
 on the `TaskRecord` at submit time, and `GET /api/tasks` publishes it. The frontend reads that
-snapshot on every task lifecycle event (`liveLabelPreviews` in `utils/napariAutoShow.ts`) and offers a
+snapshot on every task lifecycle event (`liveLabelPreviews` in `utils/overlayAutoShow.ts`) and offers a
 ⚡ toggle per in-flight store in the ViewerPanel segmentations list.
 
 Declaring it is opt-in per task, because writing-as-you-go is a property of the backend:

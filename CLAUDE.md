@@ -316,6 +316,7 @@ reservations?".
 
 - **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
 - **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework.
+- **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
 
 _Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
 
@@ -323,15 +324,17 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
   `_no fanout audit needed_`)
 - `_Convention check: run_` (or `_skipped — docs-only diff_` / `_skipped — no additions_` /
   `_skipped — tests-only_` / `_no convention check needed_`)
-- `_Citation-currency check: run_` (or `_run — no stale citations_` / `_skipped — no code changes_` /
-  `_skipped — no citations indexed_`) — mechanical, not a reviewer subagent; warns when a
-  governance doc cites a code file that changed but the citing doc didn't. See
-  `python/cecelia/effectiveness/citation_currency.py`.
+- `_Inventory check: run_` (or `_run — every new shared file and route is documented_` /
+  `_skipped — no new shared files or routes_`) — mechanical, not a reviewer subagent; warns when the
+  diff adds a shared util/component/handler file that no `docs/inventory/*.md` names, or a route
+  `docs/API.md` → *Route index* doesn't list. A genuine one-off file opts out with an
+  `INVENTORY-EXEMPT: <reason>` comment. See
+  `python/cecelia/effectiveness/inventory_coverage.py`.
 
 Missing any of the three tails = that mechanism went dark. Don't reassure or wait to be asked "any
 reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
-(a new helper/component/endpoint that duplicates an existing canonical); citation-currency catches
-doc↔code drift (an "Enforced by ..." claim whose subject moved without the doc noticing). See
+(a new helper/component/endpoint that duplicates an existing canonical); the inventory check
+catches a new shared file or route the next session's discovery grep won't find. See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
 **Convention-check is advisory for now**: findings land in the reservations recital and the

@@ -36,7 +36,7 @@ import subprocess
 import time
 import typing as _t
 
-from .citation_currency import run_citation_check
+from .inventory_coverage import run_inventory_check
 from .log import append_event
 
 #: Path to each reviewer's spec doc. `claude -p` reads it itself — the reviewer prompt is
@@ -359,6 +359,6 @@ def run_recital(
         commit=commit,
         branch=branch,
     )
-    citation_section = run_citation_check(diff, pr=pr, commit=commit, branch=branch)
+    inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
 
-    return f"{fanout_section}\n\n{convention_section}\n\n{citation_section}"
+    return f"{fanout_section}\n\n{convention_section}\n\n{inventory_section}"

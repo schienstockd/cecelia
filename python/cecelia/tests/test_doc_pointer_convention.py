@@ -64,12 +64,8 @@ _STATED_KB = re.compile(r'(\d+)\s*KB')
 #: Repo-relative path prefixes that mean "this token is a real repo path, not a documentation
 #: shorthand". Inventory files write informal shorthand a lot (`tasks/task.jl` meaning
 #: `app/src/tasks/task.jl`), and there is no way to tell the two apart without knowing the base
-#: directory the doc is walking from. So only check backticked paths that ARE rooted; the
-#: shorthand ones are trusted, on the grounds that a stale one there is caught the moment the
-#: reader clicks through and fails to find it. The complementary check for the load-bearing docs
-#: (docs/inventory/*.md, docs/ui/PRIMITIVES.md, COPY.md, docs/PLOTS.md, module CLAUDE.md files)
-#: is that they cite the same paths from BOTH the shorthand and the rooted forms, so a rename
-#: that misses one form typically also breaks the other.
+#: directory the doc is walking from. So this check takes only backticked paths that ARE rooted;
+#: shorthand gets its own, looser check (`test_shorthand_code_paths_in_docs_resolve`).
 _ROOTED_PATH_PREFIXES = (
     'api/', 'app/', 'docs/', 'frontend/', 'mcp/', 'notebooks/', 'pluto/',
     'preview/', 'python/', 'scripts/', 'test-data/',
@@ -92,14 +88,17 @@ _SKIP_DIRS = ('docs/archive/', 'scripts/claude_md_eval/prompts/')
 #: This file itself: the docstring above has to spell out the pointer shapes being checked
 #: (`docs/todo/X_PLAN.md`, `CLAUDE.md` -> *Section*), and every one of them is a placeholder.
 #: It flagged itself the moment it was staged, which is at least evidence the matcher works.
-#: `test_citation_currency.py` has the same shape at scale: it writes fake `docs/A.md` /
-#: `docs/todo/PLAN.md` fixtures into temp dirs to exercise the citation-currency scanner
-#: against its real hard-coded `docs/` scan root; every path in that file is a fixture, not a
-#: real doc claim.
 _SKIP_FILES = (
     os.path.relpath(os.path.abspath(__file__), _REPO).replace(os.sep, '/'),
-    'python/cecelia/tests/test_citation_currency.py',
 )
+
+#: A backticked shorthand code path — has a `/`, isn't rooted (`utils/panelResize.ts`,
+#: `af_correct/run.jl`). Resolved by suffix against the tracked files. Code files only: `settings/x.json`
+#: and `gating/A.json` name runtime data on the user's disk, not repo files.
+_BACKTICK_SHORTHAND_PATH = re.compile(r'`([\w.-]+/[\w./-]+\.(?:py|jl|ts|tsx|js|mjs|vue))(?::(\d+))?`')
+#: Shorthand into OTHER repos, which no suffix match here can resolve: PrimeVue's source, the
+#: feijoa sketch repo (`src/sketches/`), Pluto's (`src/webserver/`).
+_EXTERNAL_SHORTHAND = ('primevue/', 'sketches/', 'src/sketches/', 'src/webserver/')
 
 
 def _git_ls(*globs):
@@ -189,6 +188,38 @@ class DocPointerConventionTest(unittest.TestCase):
         self.assertEqual([], bad,
                          'backticked repo paths in docs that no longer resolve (renamed / moved / '
                          'shrunk past the cited line):\n  ' + '\n  '.join(bad))
+
+    def test_shorthand_code_paths_in_docs_resolve(self):
+        """`` `utils/napariAutoShow.ts` `` in a doc, after the file was renamed to `overlayAutoShow.ts`,
+        names nothing. Shorthand can't be joined to a base dir, but it can be SUFFIX-matched against
+        the tracked files: no match = stale. Several matches = ambiguous, not checkable, skipped (none
+        today). Same `docs/todo/` exemption as the rooted check."""
+        tracked = subprocess.check_output(['git', 'ls-files'], cwd=_REPO).decode().split()
+        bad = []
+        for rel in _git_ls('*.md'):
+            if rel.startswith('docs/todo/'):
+                continue
+            for line_no, line in enumerate(_read(rel).split('\n'), 1):
+                for match in _BACKTICK_SHORTHAND_PATH.finditer(line):
+                    path, line_ref = match.group(1), match.group(2)
+                    if path.startswith(_ROOTED_PATH_PREFIXES + _EXTERNAL_SHORTHAND) or \
+                            path.startswith(('./', '../')):
+                        continue
+                    hits = [f for f in tracked if f == path or f.endswith('/' + path)]
+                    if len(hits) > 1:
+                        continue
+                    if not hits:
+                        bad.append(f'{rel}:{line_no} -> `{path}` (no tracked file ends with it)')
+                        continue
+                    if line_ref is not None:
+                        with open(os.path.join(_REPO, hits[0]), 'rb') as fh:
+                            actual = sum(1 for _ in fh)
+                        if int(line_ref) > actual:
+                            bad.append(f'{rel}:{line_no} -> `{path}:{line_ref}` '
+                                       f'({hits[0]} has {actual} lines)')
+        self.assertEqual([], bad,
+                         'shorthand code paths in docs that match no tracked file (renamed / moved / '
+                         'deleted):\n  ' + '\n  '.join(bad))
 
     def test_doc_paths_cited_from_code_resolve(self):
         bad = []
