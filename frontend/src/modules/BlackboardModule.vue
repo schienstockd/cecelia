@@ -27,7 +27,7 @@ import {
   listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
   setBlackboardStatus, setBlackboardOutcome,
-  formatWhen, type BlackboardEntrySummary, type BlackboardEntry,
+  type BlackboardEntrySummary, type BlackboardEntry,
   type BlackboardStatus, type BlackboardVerdict,
 } from '../utils/blackboardApi'
 import {
@@ -35,6 +35,7 @@ import {
   type StatusChoice, type OutcomeChoice,
 } from '../utils/blackboardFilters'
 import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
+import { formatAgo } from '../utils/formatAgo'
 import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
 import { useRoute } from 'vue-router'
 import { useCaptureFocus } from '../composables/useCaptureFocus'
@@ -543,7 +544,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
               </span>
             </template>
             <template #cell-updatedAt="{ row: e }">
-              <span class="cc-muted cc-fs-2xs">{{ formatWhen(e.updatedAt) }}</span>
+              <span class="cc-muted cc-fs-2xs">{{ formatAgo(e.updatedAt) }}</span>
             </template>
             <template #cell-current="{ row: e }">
               <span class="cc-muted cc-fs-2xs">{{ e.current > 0 ? `v${e.current}` : '—' }}</span>
@@ -606,7 +607,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
                  v-tooltip.top="'Project profile'" />
               <span class="bb-pane-title">{{ selected.title }}</span>
               <span class="bb-pane-sub cc-fs-2xs cc-muted">
-                updated {{ formatWhen(selected.updatedAt) }}
+                updated {{ formatAgo(selected.updatedAt) }}
                 <template v-if="selected.current > 0"> · v{{ selected.current }}</template>
               </span>
               <span class="bb-bar-spacer" />

@@ -220,15 +220,3 @@ export async function setBlackboardOutcome(
   return r ? (parseOutcome(r.outcome) ?? null) : null
 }
 
-/** Relative "how long ago" — matches `kiwiCaptures.formatWhen` (kept local to avoid a cross-util
- *  dependency in case the two evolve). */
-export function formatWhen(iso: string, now: Date = new Date()): string {
-  if (!iso) return ''
-  const then = new Date(iso)
-  const ms = now.getTime() - then.getTime()
-  if (!Number.isFinite(ms) || ms < 0) return ''
-  if (ms < 60_000)         return 'just now'
-  if (ms < 60 * 60_000)    return `${Math.floor(ms / 60_000)}m`
-  if (ms < 24 * 3_600_000) return `${Math.floor(ms / 3_600_000)}h`
-  return `${Math.floor(ms / 86_400_000)}d`
-}

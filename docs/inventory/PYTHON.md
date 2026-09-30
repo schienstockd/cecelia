@@ -20,11 +20,17 @@
 - **script_utils**: subprocess plumbing — `StdoutLogger` (`[PROGRESS] n/total`), `script_params`, `get_param`.
 - **math_helpers**: `round_up`/`round_down` to a multiple.
 - **rechunk_zarr**: standalone CLI — rewrites flat stores to per-plane chunks (low-level surgery; reuses `plane_chunks`).
+- **centroid_migrate**: `normalise_centroids(adata)` — THE converter from any prior centroid layout (skimage `centroid-0..N`, old-R flat columns) to explicit-obsm `centroid_x/_y/_z` + `centroid_t`; idempotent; the remedy the `label_props_utils` read guard points at.
+- **legacy_migrate**: old R/Shiny project → Feijoa (images, segmentation, tracking only) — `scan_project`, `migrate_image`, `migrate_h5ad`, `read_rds` (base-R helper), `read_ome_meta`. Entry points `scan_legacy_run.py`/`migrate_legacy_run.py` (`importImages.migrateLegacy`).
+- **mesh_utils**: the spatial MESH route — `build_label_meshes` (marching cubes per label, on the fly, never persisted), `nearest_surface`, `mesh_proximity_edges`, `mesh_aggregates`; used by the `spatialAnalysis` mesh contact/aggregate runners.
+- **flow_probe**: numeric check that the optical-flow engine still produces what a model was fitted on — `fingerprint()` (a fixed synthetic window through `coastal.flow.flow_metrics_for_frame`) + `compare(recorded, current)`, `VERSION`. Recorded by `opticalFlow.train`, checked in `coastal_utils`.
+- **plane_render**: one COMPUTED 2D plane (flow metric map, probability head) → PNG — `plane_png`, `stretch_to_uint8`, `colormap_lut` (baked viridis/magma LUTs, no matplotlib). Stored images render via `api/src/image_render.jl`; consumer is `preview/preview_worker.py`.
 
 ## Python tasks & writers
 
 - **Task runners**: `app/src/tasks/<category>/<name>_run.py` — thin subprocess entry points co-located with their `.jl`/`.json` (segment, cleanupImages, tracking, editImages, importImages, clustPops, clustTracks). Run by path via `run_py`; reusable logic lives in `python/cecelia/utils/`, not the runners. (`python/cecelia/` is the IO library only — no task runners.)
 - **Data-layer writers**: `python/cecelia/writers/*_run.py` — e.g. `write_categorical_obs_run` (delegates to `obs_utils`).
+- **Movie writers (offline renderer)**: `writers/encode_movie_run.py` (raw RGB24 frames from `movie_render.jl` → mp4 via `movie_io.encode_raw_frames`, + timestamp/scale-bar overlays), `writers/stitch_movies_run.py` (compare-grid compose via `movie_io.stitch_movies`), `writers/render_animation_run.py` (3D keyframe animations — torch `grid_sample` MIP, GPU with CPU fallback; 2D stays in Julia).
 
 ## AI-assist effectiveness (`python/cecelia/effectiveness/`)
 

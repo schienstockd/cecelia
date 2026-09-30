@@ -41,7 +41,7 @@ import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
 import { terminalCta, terminalSetupTooltip } from '../../utils/observerSetup'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
-import { fetchRecentCaptures, formatAddress, formatWhen, fetchCaptureEnvelope, type CaptureEnvelope,
+import { fetchRecentCaptures, formatAddress, fetchCaptureEnvelope, type CaptureEnvelope,
          deleteCapture, clearAllCaptures,
          type CaptureRow } from '../../utils/kiwiCaptures'
 import { useShareTargetStore, type BeginShareResult } from '../../stores/shareTarget'
@@ -57,6 +57,7 @@ import AddToKiwiButton from './AddToKiwiButton.vue'
 // outside `kiwi/` and is free to name its provider; the local alias below keeps the ratchet happy.
 import AssistantOverviewDialog from '../ClaudeOverviewDialog.vue'
 import { useSingleOpenSection } from '../../composables/useSingleOpenSection'
+import { formatAgo } from '../../utils/formatAgo'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -224,7 +225,7 @@ const nowTick = ref(Date.now())
 let nowTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => { nowTimer = setInterval(() => { nowTick.value = Date.now() }, 30_000) })
 onUnmounted(() => { if (nowTimer) { clearInterval(nowTimer); nowTimer = null } })
-function whenLabel(iso: string): string { return formatWhen(iso, new Date(nowTick.value)) }
+function whenLabel(iso: string): string { return formatAgo(iso, new Date(nowTick.value)) }
 
 // ── Session identity (paired-session details + clear button) ─────────────────
 const clearing = ref(false)
