@@ -179,19 +179,6 @@ class FormatEventTest(unittest.TestCase):
         line = format_event(ev, use_colour=False)
         self.assertIn(expected_hms, line)
 
-    def test_inventory_check_quiet_run_is_dropped(self):
-        # An inventory-check run with no warnings and no new shared files carries no reader
-        # signal — same reason `plan_logged` is dropped. Every recital emits one; showing
-        # them all is the noise the console exists to remove.
-        event = {
-            "event": "inventory_coverage_run", "ts": "2026-09-27T10:02:00Z",
-            "pr": None, "branch": None, "commit": None,
-            "session": "s", "source": "live", "schema_version": 1,
-            "payload": {"duration_s": 0.02, "new_shared_files": 0, "warnings_emitted": 0,
-                        "files": []},
-        }
-        self.assertIsNone(format_event(event, use_colour=False))
-
     def test_inventory_check_signal_run_renders(self):
         # A run with warnings OR new shared files renders — the counts are the signal.
         event = {
@@ -660,6 +647,27 @@ class DashboardTest(unittest.TestCase):
         # Newest survives, oldest evicted.
         self.assertIn("finding 19", out)
         self.assertNotIn("finding 0 ", out)
+
+
+class InventoryRunVisibilityTest(unittest.TestCase):
+    def _row(self, event, payload):
+        return {"event": event, "ts": "2026-09-30T02:33:21Z", "payload": payload, "pr": None,
+                "branch": "b", "commit": "d6257c9b", "session": "s", "source": "live",
+                "schema_version": 1}
+
+    def test_quiet_inventory_run_still_renders(self):
+        # 0 new files, 0 warnings — the usual case; hiding it hid that the check ran at all.
+        line = format_event(self._row("inventory_coverage_run",
+                                      {"duration_s": 0.005, "new_shared_files": 0,
+                                       "warnings_emitted": 0}), use_colour=False)
+        self.assertIsNotNone(line)
+        self.assertIn("invt RUN", line)
+        self.assertIn("0 new", line)
+
+    def test_quiet_citation_run_still_dropped(self):
+        self.assertIsNone(format_event(self._row("citation_currency_run",
+                                                 {"duration_s": 0.1, "staged_files_checked": 0,
+                                                  "warnings_emitted": 0}), use_colour=False))
 
 
 if __name__ == "__main__":

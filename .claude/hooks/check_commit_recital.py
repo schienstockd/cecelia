@@ -379,6 +379,27 @@ def _in_sequencer_commit() -> bool:
     return any(_git("rev-parse", "-q", "--verify", ref) for ref in _SEQUENCER_STATE)
 
 
+def agent_recital_gate() -> str | None:
+    """An AGENT's commit needs a real recital run for this change, findings or not.
+
+    Gate 2 in `check` only fires when the message carries finding markers, so a commit with no
+    findings needed no recital at all — and on 2026-09-30 a session copied the previous commit's
+    `Convention check: … Inventory check: run` trailer without running recital, and it went
+    through. Claude Code sets `CLAUDECODE=1` in every Bash command it runs and git passes the
+    environment to hooks, so this applies to agent commits only; a human's commit is unaffected.
+    Degrades to allow when the SHA can't be read.
+    """
+    if os.environ.get("CLAUDECODE") != "1":
+        return None
+    head_sha, branch = _current_head_sha(), _current_branch()
+    if head_sha is None or _has_matching_run(head_sha, branch):
+        return None
+    return (f"no recital run is logged for this change (HEAD {head_sha[:8]}, branch "
+            f"{branch or '?'}). Run `pixi run recital` on the staged diff and append its output "
+            "— never copy another commit's check trailer. For a throwaway commit (a WIP to "
+            "rebase), `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
+
+
 def commit_msg_main(message_path: str) -> int:
     """git `commit-msg` hook: run the gates on the real message, then write resolutions.
 
@@ -389,7 +410,7 @@ def commit_msg_main(message_path: str) -> int:
     if os.environ.get("CECELIA_SKIP_RECITAL_CHECK") == "1" or _in_sequencer_commit():
         return _EXIT_ALLOW
     message = _read_message(message_path)
-    reason = check(message)
+    reason = agent_recital_gate() or check(message)
     if reason is not None:
         print(f"check_commit_recital: BLOCKED — {reason}", file=sys.stderr)
         return 1

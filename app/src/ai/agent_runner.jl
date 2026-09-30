@@ -187,6 +187,10 @@ function observer_mcp_config(mcp_dir::AbstractString, python_bin::AbstractString
 end
 
 # Build the `claude -p` command. PURE given its inputs → unit-tested without spawning anything.
+# The PROMPT is not an argument: `_run_agent_once` pipes it in on stdin. It carries the Kiwi context
+# pack (attached captures/plots + earlier turns' results), unbounded, and one argv string is capped at
+# 128 KB on Linux and the whole command line at 32 KB on Windows (the same E2BIG recital hit,
+# 2026-09-30). The system prompt (~5 KB) and schema stay flags — bounded.
 # --allowedTools mcp__cecelia-observer lets the agent call the observer tools non-interactively; the
 # MCP allow-list (read routes + lablog/append only) remains the hard no-mutation guarantee.
 #
@@ -194,7 +198,7 @@ end
 # passes: `replace_system_prompt` (its own prompt, not appended to Claude Code's), `json_schema` (the
 # reply schema), `allowed_tools` (a read-only allow-list, not the whole server), `strict_mcp` (ignore
 # the user's other MCP servers) and `builtin_tools = ""` (no Bash/Read/Edit — observer tools only).
-function _build_claude_cmd(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
+function _build_claude_cmd(a::ClaudeAgent, mcp_config_path::AbstractString;
                            session_id::AbstractString = "", system_prompt::AbstractString = "",
                            replace_system_prompt::Bool = false, json_schema::AbstractString = "",
                            allowed_tools::Union{Nothing,Vector{String}} = nothing,
@@ -203,7 +207,7 @@ function _build_claude_cmd(a::ClaudeAgent, prompt::AbstractString, mcp_config_pa
                            stream::Bool = false)::Cmd
     allowed = allowed_tools === nothing ? ["mcp__" * OBSERVER_MCP_NAME] : allowed_tools
     # `stream`: one JSON event per line, tool results included (`--verbose` is required for it)
-    args = String[a.bin, "-p", String(prompt),
+    args = String[a.bin, "-p",
                   "--output-format", stream ? "stream-json" : "json",
                   "--mcp-config", String(mcp_config_path),
                   "--allowedTools", join(allowed, ",")]
@@ -722,10 +726,27 @@ function _run_agent_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path
                          system_prompt::AbstractString, session_id::AbstractString,
                          timeout_s::Real, on_process::Function,
                          on_progress::Function = _ -> nothing, cmd_opts...)::AgentResult
-    cmd = _apply_claude_env(_agent_spawn_cmd(_build_claude_cmd(a, prompt, mcp_config_path;
+    cmd = _apply_claude_env(_agent_spawn_cmd(_build_claude_cmd(a, mcp_config_path;
                                               session_id, system_prompt, cmd_opts...)))
     out = Pipe()
-    proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
+    # Prompt on stdin (see `_build_claude_cmd`). A spawn failure is a failed turn, not a throw out of
+    # the request handler.
+    inp = Pipe()
+    proc = try
+        run(pipeline(cmd; stdin = inp, stdout = out, stderr = out); wait = false)
+    catch e
+        return AgentResult(false, "", 0, 0, "", "could not start the agent: $(sprint(showerror, e))")
+    end
+    close(inp.out)
+    # Written from a task so a large prompt can't deadlock against unread stdout. An agent that exits
+    # before reading (auth failure, bad flag) closes the pipe: EPIPE here is expected, and its exit
+    # status below is what reports the failure. (`stdin = IOBuffer(…)` logs a warning for it instead.)
+    @async try
+        write(inp, String(prompt))
+    catch
+    finally
+        close(inp)
+    end
     close(out.in)
     on_process(proc)
     timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)

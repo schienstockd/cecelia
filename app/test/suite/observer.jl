@@ -17,12 +17,36 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
 # ── AI observer (in-app assistant) — pure command/result pieces ─────────────
 # The live spawn (needs the agent CLI + a running API) isn't tested here; these pin the pure
 # builders/parsers that the runner + api route depend on. See docs/todo/OBSERVER_INTEGRATION_PLAN.md.
+# The prompt reaches the agent on STDIN, not argv — a 300 KB prompt would be E2BIG as an argument
+# (128 KB/arg Linux, 32 KB/command line Windows). Stub agent: echoes its stdin as the reply.
+Sys.iswindows() || @testset "agent prompt goes over stdin" begin
+    mktempdir() do d
+        stub = joinpath(d, "fake-claude")
+        write(stub, """#!/bin/sh
+        n=\$(wc -c | tr -d ' ')
+        printf '{"result":"got %s bytes","session_id":"s","usage":{"input_tokens":1,"output_tokens":1}}' "\$n"
+        """)
+        chmod(stub, 0o755)
+        big = "x"^300_000
+        r = Cecelia._run_agent_once(Cecelia.ClaudeAgent(bin = stub, model = ""), big, joinpath(d, "m.json");
+                                    system_prompt = "", session_id = "", timeout_s = 30,
+                                    on_process = _ -> nothing)
+        @test r.ok
+        @test r.text == "got 300000 bytes"
+        bad = Cecelia._run_agent_once(Cecelia.ClaudeAgent(bin = joinpath(d, "missing"), model = ""), "q",
+                                      joinpath(d, "m.json"); system_prompt = "", session_id = "",
+                                      timeout_s = 30, on_process = _ -> nothing)
+        @test !bad.ok && occursin("could not start the agent", bad.error)   # spawn failure → failed turn
+    end
+end
+
 @testset "AI observer agent runner (pure pieces)" begin
     a   = Cecelia.ClaudeAgent(bin = "claude", model = "")               # explicit empty → no flag
-    cmd = Cecelia._build_claude_cmd(a, "hello", "/tmp/mcp.json"; system_prompt = "be brief")
+    cmd = Cecelia._build_claude_cmd(a, "/tmp/mcp.json"; system_prompt = "be brief")
     argv = cmd.exec
     @test argv[1] == "claude"
-    @test "-p" in argv && "hello" in argv
+    @test "-p" in argv
+    @test argv[1:3] == ["claude", "-p", "--output-format"]            # prompt is NOT argv — stdin
     @test "--output-format" in argv && "json" in argv
     @test "--mcp-config" in argv && "/tmp/mcp.json" in argv
     @test "--allowedTools" in argv                                    # observer tools allowed
@@ -31,7 +55,7 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
     @test !("--model" in argv)                                        # empty model → no flag
 
     cmd2 = Cecelia._build_claude_cmd(Cecelia.ClaudeAgent(bin = "claude", model = "claude-opus-4-8"),
-                                     "hi", "/tmp/m.json"; session_id = "sess123")
+                                     "/tmp/m.json"; session_id = "sess123")
     @test "--resume" in cmd2.exec && "sess123" in cmd2.exec
     @test "--model" in cmd2.exec && "claude-opus-4-8" in cmd2.exec
 
@@ -342,7 +366,7 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     @test Cecelia.agent_capabilities(_EmptyAgent()).native_schema == false
 
     # Kiwi turn options on the Claude builder (the Phase 0 isolation flags)
-    argv = Cecelia._build_claude_cmd(c, "q", "/tmp/m.json"; system_prompt = "you are kiwi",
+    argv = Cecelia._build_claude_cmd(c, "/tmp/m.json"; system_prompt = "you are kiwi",
         replace_system_prompt = true, json_schema = "{\"type\":\"object\"}",
         allowed_tools = ["mcp__cecelia-observer__list_images", "mcp__cecelia-observer__list_plots"],
         strict_mcp = true, builtin_tools = "").exec
@@ -353,7 +377,7 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     @test "--strict-mcp-config" in argv
     @test argv[findfirst(==("--tools"), argv) + 1] == ""       # built-in tools off
     # the observer's defaults are untouched by the new options
-    obs = Cecelia._build_claude_cmd(c, "q", "/tmp/m.json").exec
+    obs = Cecelia._build_claude_cmd(c, "/tmp/m.json").exec
     @test !any(in(obs), ["--strict-mcp-config", "--tools", "--json-schema", "--system-prompt"])
     @test obs[findfirst(==("--allowedTools"), obs) + 1] == "mcp__cecelia-observer"
 
@@ -390,7 +414,7 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     nr = Cecelia._parse_claude_stream("""{"type":"user","message":{"content":[]}}""")
     @test !nr.ok && occursin("no result event", nr.error)
     # the stream flag reaches the argv (and --verbose, which stream-json requires)
-    sv = Cecelia._build_claude_cmd(c, "q", "/tmp/m.json"; stream = true).exec
+    sv = Cecelia._build_claude_cmd(c, "/tmp/m.json"; stream = true).exec
     @test sv[findfirst(==("--output-format"), sv) + 1] == "stream-json" && "--verbose" in sv
 end
 

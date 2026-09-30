@@ -539,6 +539,10 @@ _MECHANICAL_RUN_COUNT: dict[str, tuple[str, str]] = {
 }
 
 
+#: Mechanical checks whose quiet runs still render — see the exception in `format_event`.
+_ALWAYS_SHOWN_RUNS = frozenset({"inventory_coverage_run"})
+
+
 def format_event(event: dict, *, use_colour: bool = True,
                  width: int = _DEFAULT_WIDTH) -> str | None:
     """Render one event row as a printable console line, or return None to skip.
@@ -599,15 +603,20 @@ def format_event(event: dict, *, use_colour: bool = True,
             # empty convention / fanout runs: the `_finding` rows carry the signal, `_run`
             # says only "the reviewer ran" and matters chiefly when there are counts to
             # eyeball. Errored runs render regardless — an ERR row IS the signal.
+            #
+            # Exception: the inventory check always shows. It counts only NEW shared files, so
+            # nearly every run is "quiet" — dropping those hid that it ran at all, while the
+            # retired citation check (counting staged files) almost never looked quiet.
             count_key, count_word = _MECHANICAL_RUN_COUNT[name]
             warnings = payload.get("warnings_emitted", 0) or 0
             checked = payload.get(count_key, 0) or 0
-            if warnings == 0 and checked == 0 and not errored:
+            always = name in _ALWAYS_SHOWN_RUNS
+            if warnings == 0 and checked == 0 and not errored and not always:
                 return None
             extras = []
             if warnings:
                 extras.append(_col(_YELLOW, f"{warnings} warn", use_colour=use_colour))
-            if checked:
+            if checked or always:
                 extras.append(f"{checked} {count_word}")
             extras_str = "  " + "  ".join(extras) if extras else ""
             return f"{ts} {tag} {run_verb} {dur_str}{extras_str}{ctx_str}"

@@ -653,6 +653,8 @@ class CommitMsgHookTest(unittest.TestCase):
         env = mock.patch.dict(os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)})
         env.start()
         self.addCleanup(env.stop)
+        # These tests run inside Claude Code (CLAUDECODE=1); the agent gate has its own tests.
+        os.environ.pop("CLAUDECODE", None)
         self.head = "9" * 40
         for name, value in (("_current_head_sha", self.head), ("_current_branch", "feat/x"),
                             ("_current_pr", None), ("_in_sequencer_commit", False)):
@@ -699,6 +701,29 @@ class CommitMsgHookTest(unittest.TestCase):
             rc = self.hook.main(["--commit-msg", self._msg_file("Merge branch 'main'\n")])
         self.assertEqual(rc, 0)
         self.assertEqual(self._resolved(), [])  # no orphan auto-drop on a merge
+
+    def test_agent_commit_without_recital_run_blocks(self):
+        # Session 3658f232 (2026-09-30): no findings, copied check trailer, no recital — passed.
+        with mock.patch.dict(os.environ, {"CLAUDECODE": "1"}):
+            rc = self.hook.main(["--commit-msg", self._msg_file(
+                "fix: thing\n\nConvention check: no findings. Inventory check: run\n")])
+        self.assertEqual(rc, 1)
+
+    def test_agent_commit_with_recital_run_passes(self):
+        append_event("convention_check_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
+        with mock.patch.dict(os.environ, {"CLAUDECODE": "1"}):
+            rc = self.hook.main(["--commit-msg", self._msg_file("fix: thing\n")])
+        self.assertEqual(rc, 0)
+
+    def test_agent_gate_ignores_other_branch_run(self):
+        append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head, branch="other")
+        with mock.patch.dict(os.environ, {"CLAUDECODE": "1"}):
+            rc = self.hook.main(["--commit-msg", self._msg_file("fix: thing\n")])
+        self.assertEqual(rc, 1)
+
+    def test_human_commit_needs_no_recital(self):
+        rc = self.hook.main(["--commit-msg", self._msg_file("fix: thing\n")])
+        self.assertEqual(rc, 0)
 
     def test_skip_env_bypasses(self):
         with mock.patch.dict(os.environ, {"CECELIA_SKIP_RECITAL_CHECK": "1"}):
