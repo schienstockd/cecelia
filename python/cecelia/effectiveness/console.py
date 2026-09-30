@@ -411,25 +411,22 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     total_errored = sum(state.tally.errored_runs.values())
     total_findings = sum(sum(v.values()) for v in state.tally.findings.values())
     confirmed = sum(v.get("confirmed", 0) for v in state.tally.findings.values())
-    should_reuse = sum(v.get("should reuse", 0) for v in state.tally.findings.values())
+    total_resolved = sum(sum(v.values()) for v in state.tally.resolved.values())
+    # Totals only, three segments max — the per-marker / per-outcome breakdown lives in the
+    # by-mechanism rows, and spelling it out here ran the line off-screen as outcomes piled
+    # up. Run count is plain (the rows below colour it by mechanism); only `errored` is red.
     header_parts: list[str] = []
     if total_runs:
         run_txt = f"{total_runs} runs"
         if total_errored:
-            run_txt += f" ({total_errored} errored)"
-        header_parts.append(_col(_RED if total_errored else _CYAN, run_txt, use_colour=use_colour))
+            run_txt += _col(_RED, f" ({total_errored} errored)", use_colour=use_colour)
+        header_parts.append(run_txt)
     if total_findings:
         header_parts.append(_col(_ORANGE if confirmed else _YELLOW,
-                                 f"{total_findings} findings", use_colour=use_colour))
-    if confirmed:
-        header_parts.append(_col(_ORANGE, f"{confirmed} confirmed", use_colour=use_colour))
-    if should_reuse:
-        header_parts.append(_col(_YELLOW, f"{should_reuse} should reuse", use_colour=use_colour))
-    for outcome in OUTCOME_DISPLAY_ORDER:
-        n = sum(v.get(outcome, 0) for v in state.tally.resolved.values())
-        if n:
-            header_parts.append(_col(_OUTCOME_COLOUR.get(outcome, _GREY),
-                                     f"{n} {outcome}", use_colour=use_colour))
+                                 f"{total_findings} finding{'' if total_findings == 1 else 's'}",
+                                 use_colour=use_colour))
+    if total_resolved:
+        header_parts.append(_col(_GREEN, f"{total_resolved} resolved", use_colour=use_colour))
     chrome.append(_col(_DIM, " · ", use_colour=use_colour).join(header_parts) or
                   _col(_DIM, "no events yet", use_colour=use_colour))
     chrome.append("")

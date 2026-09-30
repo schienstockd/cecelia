@@ -464,6 +464,29 @@ class DashboardTest(unittest.TestCase):
             state.add(e)
         return state
 
+    def test_header_is_compact_totals_runs_plain_errored_red(self):
+        # Header carries three totals only; breakdowns live in the by-mechanism rows.
+        # Run count is uncoloured; only `(N errored)` is red.
+        from cecelia.effectiveness.palette import VERMILLION
+        row = {"pr": None, "branch": None, "commit": None, "session": "s", "source": "live",
+               "schema_version": 1, "ts": "2026-09-27T10:00:00Z"}
+        events = [dict(row, event="fanout_audit_run", payload={"duration_s": 1.0}),
+                  dict(row, event="fanout_audit_run", payload={"duration_s": 1.0, "error": "x"})]
+        for i, outcome in enumerate(["fixed_pre_commit", "shipped_with_finding",
+                                     "false_positive", "dropped_no_action"]):
+            slug = f"fanout-0000000{i}"
+            events.append(dict(row, event="fanout_audit_finding", payload={
+                "slug": slug, "file": "a.jl", "line": i, "desc": "d", "marker": "confirmed"}))
+            events.append(dict(row, event="fanout_audit_finding_resolved",
+                               payload={"slug": slug, "outcome": outcome}))
+        colour = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                                  width=120, use_colour=True).splitlines()[1]
+        self.assertTrue(colour.startswith("2 runs"))
+        self.assertIn(f"{VERMILLION} (1 errored)", colour)
+        plain = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                                 width=120, use_colour=False).splitlines()[1]
+        self.assertEqual(plain, "2 runs (1 errored) · 4 findings · 4 resolved")
+
     def test_empty_state_renders_placeholder(self):
         # A freshly-installed log with no events yet: dashboard still paints, tells the user
         # nothing has landed. A blank screen would look like a broken tool.
