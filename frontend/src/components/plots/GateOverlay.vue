@@ -438,7 +438,11 @@ function finishPolygon() {
   emit('draw', { kind: 'polygon', vertices: verts })
 }
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') { dragging = false; start = cur = null; polyPts.value = []; emit('cancel'); draw() }
+  if (e.key === 'Escape') {
+    // claim the key only while drawing, so an idle overlay does not block the maximised-layout Esc
+    if (props.mode !== 'off' || dragging || polyPts.value.length) e.preventDefault()
+    dragging = false; start = cur = null; polyPts.value = []; emit('cancel'); draw()
+  }
 }
 
 // drawing modes always capture; off mode toggles via proximity

@@ -46,6 +46,7 @@ function onKeydown(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
   clearSelection()
+  e.preventDefault()   // used — the maximised-layout Esc (usePlotFullscreen) yields to it
 }
 onMounted(() => { window.addEventListener('keydown', onKeydown) })
 onBeforeUnmount(() => {
