@@ -16,7 +16,10 @@ import { describe, it, expect } from 'vitest'
 const STORES = import.meta.glob('/src/stores/*.ts', {
   query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
-const sources = Object.entries(STORES).filter(([p]) => !p.endsWith('.test.ts'))
+// Pinia stores only — `gating.ts` is a per-canvas `reactive()` owned by its page (provideGatingStore), so
+// it has no store instance to hot-swap; a page remount rebuilds it.
+const sources = Object.entries(STORES)
+  .filter(([p, src]) => !p.endsWith('.test.ts') && /defineStore\(/.test(src))
 
 describe('store HMR', () => {
   it('found the stores (else this guard is watching nothing)', () => {

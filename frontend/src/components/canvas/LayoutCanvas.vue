@@ -27,6 +27,7 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAnalysisLayoutStore, type SlotContent } from '../../stores/analysisLayout'
 import { useSummaryData } from '../../composables/useSummaryData'
 import { useClusterContext } from '../../composables/useClusterContext'
+import { provideGatingStore } from '../../stores/gating'
 import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
@@ -342,7 +343,7 @@ const readouts = ref<Record<number, PlotReadout>>({})
 const activeReadout = computed<PlotReadout>(() => readouts.value[entry.value.activeIndex] ?? emptyReadout())
 
 // ── cluster context: ONE clustering run per board (board-level popType + suffix in the shared bag) so
-// the singleton gating store is driven unambiguously; only active when a cluster slot exists. ─────────
+// the board's gating store is driven unambiguously; only active when a cluster slot exists. ────────────
 const hasClusterSlot = computed(() => entry.value.contents.some(isClusterSlot))
 const clustPopType = computed<'clust' | 'trackclust'>({
   get: () => (entry.value.shared.clustPopType as 'clust' | 'trackclust') ?? 'clust',
@@ -354,7 +355,9 @@ const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustVa
         featureOptions: clustFeatureOptions, labelMap: clustNameMap,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
-                      popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot })
+                      popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot,
+                      // the board's own gating store (its cluster slots' pop tree + read-only manager)
+                      g: provideGatingStore(clustPopType.value) })
 
 // cluster HIGHLIGHT — global (shared, one run per board) or per-slot (local), same scope as summary
 const clustHl = computed<string[]>({ get: () => (entry.value.shared.clustHl as string[]) ?? [], set: v => (entry.value.shared.clustHl = v) })

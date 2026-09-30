@@ -79,6 +79,15 @@ watch(isWhatsNewOpen, (open) => {
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
 
+// Module pages kept alive across navigation (component names = SFC filenames): every page with plots,
+// plus the Whiteboard (unsaved canvas edits). What a hidden page must do to stay inert:
+// composables/useKeepAlive.ts.
+const KEPT_ALIVE_PAGES = [
+  'ChainModule', 'SegmentModule', 'GatingModule', 'PhenotypeModule', 'TrackingModule', 'BehaviourModule',
+  'ClusterCellsModule', 'ClusterTracksModule', 'RegionClusteringModule', 'SpatialAnalysisModule',
+  'AnalysisModule', 'ModelTrainingModule', 'CustomModule',
+]
+
 // The one cross-store invariant nothing else can see: the loaded SETS must belong to the project the
 // app says is open. It was reported broken — the image table listing a previous project's images
 // under the new project's name — and the load path cannot produce that on its own, so if it happens
@@ -182,7 +191,12 @@ const bare = computed(() => popout || route.meta.bare === true)
         <RouterView v-slot="{ Component, route }">
           <!-- key custom-category pages by path so /custom/:category remounts (fresh task defs)
                when the category changes; other pages keep default (keyless) reuse -->
-          <KeepAlive include="ChainModule">
+          <!-- Plot pages stay alive across page switches, so returning shows the plots as they were
+               instead of refetching every one. Hidden pages are paused — see
+               composables/useKeepAlive.ts for what that takes. Keyed by project: switching project
+               drops every kept page, so nothing survives from the previous project. `max` evicts
+               the least-recently-visited page (a normal unmount). -->
+          <KeepAlive :key="pm.current?.uid ?? ''" :include="KEPT_ALIVE_PAGES" :max="10">
             <component :is="Component" :key="route.meta?.customPage ? route.fullPath : undefined" />
           </KeepAlive>
         </RouterView>

@@ -1543,7 +1543,7 @@ a bespoke chart in it, and never hand-wrap the `#plots` canvas (ModuleLayout alr
 
 **Any UI option on a module page or canvas — chart type, scope toggle, compare mode, highlighted
 pops, slider values, etc. — MUST live in persisted view state, not a plain `ref()`.** A `ref()`
-silently resets when the user navigates away and back (the page remounts); options must survive that.
+silently resets when the page remounts (every navigation for most pages; for kept-alive plot pages, a project switch or an LRU eviction — `docs/UI.md` → *Kept-alive pages*); options must survive that.
 
 - **Canvas pages** (anything using `useCanvasPanels`): per-panel options go in the panel's `state`
   object; canvas-level options go in the per-canvas **`shared`** bag via **`useViewState(shared,

@@ -17,6 +17,8 @@
 -->
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { observeBoxChanges } from '../../composables/usePlotResize'
+import { useWindowListener } from '../../composables/useKeepAlive'
 import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc } from '../../plots/export'
@@ -444,6 +446,7 @@ function onKey(e: KeyboardEvent) {
     dragging = false; start = cur = null; polyPts.value = []; emit('cancel'); draw()
   }
 }
+useWindowListener('keydown', onKey)
 
 // drawing modes always capture; off mode toggles via proximity
 watch(() => props.mode, m => { pe.value = m === 'off' ? 'none' : 'auto'; cursor.value = m === 'off' ? 'default' : 'crosshair'; shiftEdit.value = false })
@@ -454,13 +457,11 @@ watch(() => [props.extents, props.viewTick, props.lineWidth, props.showLabels], 
 onMounted(() => {
   ctx = canvasEl.value!.getContext('2d')
   draw()
-  ro = new ResizeObserver(draw); ro.observe(canvasEl.value!)
-  window.addEventListener('keydown', onKey)
+  ro = observeBoxChanges(canvasEl.value!, draw)
   canvasEl.value!.parentElement?.addEventListener('mousemove', onParentMove)
 })
 onBeforeUnmount(() => {
   ro?.disconnect(); ro = null
-  window.removeEventListener('keydown', onKey)
   window.removeEventListener('mousemove', onEditMove); window.removeEventListener('mouseup', onEditUp)
   canvasEl.value?.parentElement?.removeEventListener('mousemove', onParentMove)
 })

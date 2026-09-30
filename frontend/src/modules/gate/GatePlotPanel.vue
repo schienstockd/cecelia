@@ -38,12 +38,6 @@ import { splitXYL, splitXYZL } from '../../plots/valueColour'
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
   gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean; dotSize: number
-  // The popType this panel was persisted under (`gate:{popType}:{img}:{vn}`). Guards axis-reset
-  // watches against a store whiplash: `useGatingStore` is a singleton, so a Tracking-page mount
-  // (popType='track') rewrites `g.columns` to track measures under a Gating-page panel authored
-  // with flow measures. Without this guard, `ensureChannels` sees `mean_intensity_1` isn't in the
-  // (transiently active) track column list and resets the panel to `live.track.speed`.
-  popType: string
   // persisted per-plot axis config (owned by GatingPlots' PlotState) — channels, transforms, render
   // mode. Read/written directly like the summary panels' `ui` bag so these survive navigation.
   ui: { x?: string; y?: string; xt?: 'linear' | 'log' | 'asinh' | 'logicle'
@@ -399,25 +393,10 @@ function ensureChannels() {
 // first appearance fetches whether the store became ready BEFORE this panel mounted (values already
 // set → fires now) or AFTER (fires again on change) — previously the plot stayed empty on first open
 // until the user nudged a dropdown.
-// Guard: only run when the singleton store's popType matches THIS panel's popType. Between the two
-// (Gating page = flow, Tracking page = track), the store is whichever page called `selectImage` last;
-// its `columns` are for THAT popType. Reacting to another popType's columns would reset a flow
-// panel's persisted `mean_intensity_1` to `live.track.speed` (see docs/POPULATION.md → *Language
-// boundaries* — the store is singleton, and both pages mount panels off it). When the popTypes
-// disagree, we skip; when this panel's popType becomes active again the columns change catches it.
-//
-// Watch on `columns/imageUid/valueName` — NOT `g.popType`. `selectImage(uid, vn, pt)` writes
-// `popType.value = pt` synchronously then AWAITS `fetchChannels()` to load the new columns. If
-// `g.popType` were a source, the watch would fire on that first sync write, at which point
-// `g.popType` already matches this panel (the guard passes) but `g.columns` are still the previous
-// popType's list — `ensureChannels` would then find the persisted axis missing from `valid` and
-// reset it. Dropping the popType source defers the fire until the awaited columns land, which
-// carries the matching popType by construction — the reset the guard was written to prevent.
+// The store is this canvas's own (provideGatingStore), so its columns are always for this panel's
+// pop type — no cross-page guard needed.
 watch([() => g.columns, () => g.imageUid, () => g.valueName],
-      () => {
-        if (g.popType !== props.popType) return
-        ensureChannels(); fetchPlot()
-      }, { immediate: true, flush: 'post' })
+      () => { ensureChannels(); fetchPlot() }, { immediate: true, flush: 'post' })
 // zChan/zt/colourOn are in here because the colour measure changes what the POINTS request returns
 // (triples vs pairs) and what plotmeta reports for the ramp — not just how the dots are painted.
 watch([xChan, yChan, xt, yt, zChan, zt, colourOn, parent, () => props.axisFromZero], fetchPlot)
@@ -441,18 +420,9 @@ watch(hlVersion, loadPopLayers)
 // a task finished on the image we show (e.g. tracking → track_id appears, so a track plot goes from
 // "not tracked" to populated) → full reload. Same universal mechanism every other plot uses; gated by
 // the global autoRefreshOnTask setting. Interactive gating was the one plot family not wired in.
-// Same popType guard as the store-readiness watch above: only refetch when the singleton store is on
-// this panel's popType — otherwise plotmeta would query the wrong popType's tree.
-useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => {
-  if (g.popType !== props.popType) return
-  fetchPlot()
-})
-// Manual reload from the canvas — bumped by GatingPlots on the reload button. Same guard as the
-// auto path so we don't fetch under the wrong popType; ungated by autoRefreshOnTask.
-watch(() => props.reloadToken, () => {
-  if (g.popType !== props.popType) return
-  fetchPlot()
-})
+useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), fetchPlot)
+// Manual reload from the canvas — bumped by GatingPlots on the reload button; ungated by autoRefreshOnTask.
+watch(() => props.reloadToken, fetchPlot)
 // initial load is handled by the { immediate: true } store-readiness watch above.
 </script>
 

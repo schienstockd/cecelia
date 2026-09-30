@@ -10,6 +10,7 @@
 -->
 <script setup lang="ts">
 import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { observeBoxChanges } from '../../composables/usePlotResize'
 import { buildPlotOptions, type BuildOpts, facetMode } from '../../plots/plot'
 import { svgToImageURL, svgOf } from '../../plots/export'
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
@@ -361,8 +362,7 @@ watch(() => [props.data, props.opts], scheduleRender, { deep: true })
 onMounted(() => {
   render()
   if (host.value && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(scheduleRender)
-    ro.observe(host.value)
+    ro = observeBoxChanges(host.value, scheduleRender)
   }
 })
 onBeforeUnmount(() => { frame.cancel(); ro?.disconnect(); ro = null; node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })

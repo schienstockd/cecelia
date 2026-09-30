@@ -1,6 +1,7 @@
 import { ref, inject, onMounted, onBeforeUnmount, type Ref, type InjectionKey } from 'vue'
 import { rafCoalesce } from '../utils/rafCoalesce'
 import { isTypingTarget } from '../utils/typingTarget'
+import { useWindowListener } from './useKeepAlive'
 
 // Generic VISUAL zoom for any plot canvas (the Analysis board's fixed grid AND the free-floating module
 // canvases). A CSS `transform: scale` on the content — purely visual, so it never resizes the plots'
@@ -68,7 +69,8 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
   // Keyboard/wheel shortcuts (mirrors Illustrator/Figma): shift+wheel over the canvas zooms; shift +/-
   // steps zoom, shift+0 resets. Bound here so every host (board + module canvases) gets them for free.
   // wheel listens on the viewport (passive:false so we can preventDefault the page scroll); keys listen
-  // on window but only one canvas host is mounted per route, and we ignore typing in inputs.
+  // on window — only while this page is visible (kept-alive pages hold their canvas host while hidden,
+  // useWindowListener detaches it) — and we ignore typing in inputs.
   const STEP = 1.1
   const onWheel = (e: WheelEvent) => {
     if (!e.shiftKey) return
@@ -84,11 +86,10 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
   }
   onMounted(() => {
     viewport.value?.addEventListener('wheel', onWheel, { passive: false })
-    window.addEventListener('keydown', onKey)
   })
+  useWindowListener('keydown', onKey)
   onBeforeUnmount(() => {
     viewport.value?.removeEventListener('wheel', onWheel)
-    window.removeEventListener('keydown', onKey)
     frame.cancel()
     if (idleTimer) clearTimeout(idleTimer)
   })

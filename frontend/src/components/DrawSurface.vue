@@ -20,7 +20,8 @@
       so the same 0..1 coords land on the pixels.
 -->
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useWindowListener } from '../composables/useKeepAlive'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import CcToggle from './CcToggle.vue'
 import TeleportPopover from './TeleportPopover.vue'
@@ -676,18 +677,10 @@ function onKey(ev: KeyboardEvent) {
 // `usePlotResize` — a size-guarded observer that only makes sense when you actually RENDER on
 // resize. We don't; we only recompute a coord frame, and a `resize` on the pop-out window is the
 // event that actually matters. Cheaper too — no observer, no rAF.
-onMounted(() => {
-  window.addEventListener('keydown', onKey)
-  window.addEventListener('keydown', onKeyDownGlobal)
-  window.addEventListener('keyup',   onKeyUpGlobal)
-  window.addEventListener('resize',  measureBox)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKey)
-  window.removeEventListener('keydown', onKeyDownGlobal)
-  window.removeEventListener('keyup',   onKeyUpGlobal)
-  window.removeEventListener('resize',  measureBox)
-})
+useWindowListener('keydown', onKey)
+useWindowListener('keydown', onKeyDownGlobal)
+useWindowListener('keyup',   onKeyUpGlobal)
+useWindowListener('resize',  measureBox)
 // Reset marks + measure on open.
 watch(() => props.visible, async (v) => {
   if (!v) return

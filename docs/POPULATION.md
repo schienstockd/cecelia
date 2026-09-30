@@ -574,8 +574,9 @@ mutation is added.
   currently **not** undoable.
 - `canUndo`/`canRedo` ride on every mutation response, the popmap GET and the broadcast, so the
   buttons settle in the same frame the edit lands in. Frontend: `useGatingStore().undo/redo`, the two
-  buttons in `PopulationManager`, and Ctrl/⌘+Z · Ctrl/⌘+Shift+Z (window-level, guarded by
-  `isTypingTarget` so it doesn't fire while you're renaming a population).
+  buttons in `PopulationManager`, and Ctrl/⌘+Z · Ctrl/⌘+Shift+Z (window-level while the page is
+  visible — `useWindowListener` — and guarded by `isTypingTarget` so it doesn't fire while you're
+  renaming a population).
 
 ## Gate↔track composition (replaces the old GatingSet-then-track hack)
 

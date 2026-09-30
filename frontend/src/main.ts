@@ -1,4 +1,5 @@
 import { createApp, watch } from 'vue'
+import { keepAlivePause } from './composables/useKeepAlive'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import PrimeVue from 'primevue/config'
@@ -123,6 +124,8 @@ router.beforeEach(async (to) => {
 const app = createApp(App)
 app.use(pinia)
 app.use(router)
+// module pages under App.vue's <KeepAlive> go inert while hidden — see composables/useKeepAlive.ts
+app.use(keepAlivePause)
 app.use(PrimeVue, {
   theme: {
     preset: Aura,

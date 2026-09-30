@@ -36,11 +36,6 @@ const MAX_CHANNELS = 8            // N×N tiles grow fast — cap the selection 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
   gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean; dotSize: number
-  // The popType this panel was persisted under (`gate:{popType}:{img}:{vn}`). Same guard as
-  // GatePlotPanel: `useGatingStore` is a singleton, so a Tracking-page mount rewrites `g.columns` to
-  // track measures under a Gating-page panel — `syncChannels` would then drop a valid flow channel
-  // because it isn't in the (transiently active) track column list.
-  popType: string
   // persisted per-plot config (owned by GatingPlots' PlotState): the channel list, the one shared
   // transform, and the render mode. Read/written directly so they survive navigation.
   ui: { channels?: string[]; xt?: Kind; renderMode?: RenderMode
@@ -94,14 +89,9 @@ const highlightPops = computed(() => (props.highlight ?? []).map(path =>
 // every other plot uses (gated by autoRefreshOnTask); interactive gating was the gap. Bumping this
 // token flows into reloadKey below, which GateMontage watches to refetch.
 const taskReload = ref(0)
-// Guard on the popType match, like the sync watch above — a task-done bump for the OTHER popType's
-// data should not force a tile refetch of this panel against a store transiently on the wrong popType.
-useDataRefresh(() => (g.imageUid ? [g.imageUid] : []),
-               () => { if (g.popType === props.popType) taskReload.value++ })
-// Manual reload from the canvas — bumped by GatingPlots on the reload button. Same popType guard;
-// ungated by autoRefreshOnTask.
-watch(() => props.reloadToken,
-      () => { if (g.popType === props.popType) taskReload.value++ })
+useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { taskReload.value++ })
+// Manual reload from the canvas — bumped by GatingPlots on the reload button; ungated by autoRefreshOnTask.
+watch(() => props.reloadToken, () => { taskReload.value++ })
 // force a point refresh when membership moves without the tiles changing (ancestor gate edit, viewer
 // selection re-evaluated) — the parent's / a highlighted pop's version bumps in the store.
 const reloadKey = computed(() =>
@@ -136,13 +126,9 @@ function syncChannels() {
   const changed = next.length !== channels.value.length || next.some((c, i) => c !== channels.value[i])
   if (changed) channels.value = next
 }
-// Watch sources omit `g.popType` on purpose: `selectImage` sets `popType.value` synchronously
-// before awaiting `fetchChannels()`, so a popType-only fire would run `syncChannels` with the
-// previous popType's columns still in `g.columns` — reconcile would then drop the persisted
-// selection as "no longer valid". Waiting for the columns change instead is race-free — the
-// matching popType is always in place by the time the new columns land.
-watch([() => g.columns, () => g.spatialAxes, () => g.imageUid, () => g.valueName],
-      () => { if (g.popType === props.popType) syncChannels() }, { immediate: true })
+// The store is this canvas's own (provideGatingStore), so its columns are always this panel's pop type's.
+watch([() => g.columns, () => g.spatialAxes, () => g.imageUid, () => g.valueName], syncChannels,
+      { immediate: true })
 
 // ── heavy-matrix warning ────────────────────────────────────────────────────────────────────────
 // N×N grows fast, and every off-diagonal pair fetches the population's cells. Warn (before loading)

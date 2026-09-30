@@ -13,11 +13,12 @@
   reverses both.
 -->
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated } from 'vue'
 import ModuleLayout from '../components/ModuleLayout.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
+import { useWindowListener } from '../composables/useKeepAlive'
 import { useLinkedSelectionStore } from '../stores/linkedSelection'
 import { useViewerStore } from '../stores/viewer'
 
@@ -37,8 +38,8 @@ function clearSelection() {
   viewer.setPickHighlight(null)
 }
 
-// Escape from anywhere on the page — global listener, added on mount, removed on unmount so a
-// dropped page doesn't intercept keystrokes for another module. Ignore Escape while the user is
+// Escape from anywhere on the page — global listener, attached only while the page is visible so a
+// hidden (kept-alive) page doesn't intercept keystrokes for another module. Ignore Escape while the user is
 // typing in an input/textarea/contenteditable so a form's own dismiss semantics still work.
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
@@ -48,12 +49,11 @@ function onKeydown(e: KeyboardEvent) {
   clearSelection()
   e.preventDefault()   // used — the maximised-layout Esc (usePlotFullscreen) yields to it
 }
-onMounted(() => { window.addEventListener('keydown', onKeydown) })
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
-  // Decision 8: selection is per-page; navigating away clears it. Same for the mirror.
-  clearSelection()
-})
+useWindowListener('keydown', onKeydown)
+// Decision 8: selection is per-page; navigating away clears it. Same for the mirror. The page is kept
+// alive, so "away" is deactivation, not unmount.
+onDeactivated(clearSelection)
+onBeforeUnmount(clearSelection)
 
 const badgeCount = computed(() => linkedSel.bag?.ids.length ?? 0)
 </script>

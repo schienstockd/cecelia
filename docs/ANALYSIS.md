@@ -237,7 +237,8 @@ future interactive view that grows free-floating-only chrome would take it via `
 
 ### Clustering — one run per board
 Cluster plots (UMAP + `CLUSTER_PANELS`) share **one clustering run per board**: board-level
-`clustPopType` + `clustSuffix` live in the tab's `shared` bag and drive the singleton gating store via
+`clustPopType` + `clustSuffix` live in the tab's `shared` bag and drive the board's own gating store
+(`provideGatingStore` in `LayoutCanvas`, `docs/UI.md` → *One gating store per canvas*) via
 `composables/useClusterContext.ts` (only when a cluster slot exists). The right rail swaps to a
 **read-only** `PopulationManager` (highlight/tick to colour, no add/delete/rename/recolour/reassign)
 that follows the active cluster slot with per-family global/local scope.
