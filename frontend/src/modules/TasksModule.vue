@@ -16,7 +16,7 @@ import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
-import { taskRows } from '../utils/taskRows'
+import { taskRows, taskMatchesQuery } from '../utils/taskRows'
 import { usePanelResize } from '../composables/usePanelResize'
 import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
@@ -70,7 +70,8 @@ const throttleOpen = ref(false)
 const selectedId   = ref<string | null>(null)
 const statusFilter = ref<'all' | 'active' | 'done' | 'failed' | 'cancelled'>('all')
 // free-text narrowing — with History on the list is hundreds of rows, and "that run on THIS image" is
-// the usual question. Matches image name/uid, task label, fun name and module; every word must hit.
+// the usual question. The rule is `taskMatchesQuery` (utils/taskRows.ts). Transient, like the status
+// chips beside it: a search is a lookup, not a setting to come back to.
 const query        = ref('')
 const logEl        = ref<HTMLElement | null>(null)
 // shared copy+flash helper (docs/ui/PRIMITIVES.md)
@@ -85,17 +86,10 @@ const selected = computed(() => tasks.tasks.find(t => t.id === selectedId.value)
 const inScope = (t: TaskEntry) =>
   taskInScope(t, projectMeta.current?.uid, settings.tasksThisProjectOnly)
 
-const queryWords = computed(() => query.value.toLowerCase().split(/\s+/).filter(Boolean))
-const matchesQuery = (t: TaskEntry) => {
-  if (!queryWords.value.length) return true
-  const hay = [t.imageName, t.imageUid, t.label, t.funName, t.module].join(' ').toLowerCase()
-  return queryWords.value.every(w => hay.includes(w))
-}
-
 const filtered = computed(() => {
   return tasks.tasks.filter(t => {
     if (!inScope(t)) return false
-    if (!matchesQuery(t)) return false
+    if (!taskMatchesQuery(t, query.value)) return false
     if (statusFilter.value === 'all')    return true
     if (statusFilter.value === 'active') return t.status === 'running' || t.status === 'queued'
     return t.status === statusFilter.value

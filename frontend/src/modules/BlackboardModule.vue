@@ -511,10 +511,6 @@ onUnmounted(() => { mermaidRenderSeq++ })
       <!-- Split: list left, entry right. Border-only divider, no floating panels. -->
       <div class="bb-split">
         <aside class="bb-list" :style="listWidthStyle">
-          <!-- drag the list/entry divider (persisted). Handle on the list's RIGHT edge; drag
-               right widens the list. Sits OUTSIDE the scroll wrapper so it can't scroll away. -->
-          <div class="bb-divider" @mousedown="onListResizeStart"
-               v-tooltip.top="'Drag to resize the list'" />
           <div class="bb-list-scroll">
           <SelectionTable class="bb-list-table" data-guide="blackboard.list"
                           selection-mode="single"
@@ -566,6 +562,11 @@ onUnmounted(() => { mermaidRenderSeq++ })
             </template>
           </SelectionTable>
           </div>
+          <!-- drag the list/entry divider (persisted). Handle on the list's RIGHT edge; drag
+               right widens the list. OUTSIDE the scroll wrapper so it can't scroll away, and BESIDE
+               it rather than overlaid, or it covers the scrollbar and swallows grabs of the thumb. -->
+          <div class="bb-divider" @mousedown="onListResizeStart"
+               v-tooltip.top="'Drag to resize the list'" />
         </aside>
 
         <section class="bb-pane">
@@ -775,20 +776,19 @@ onUnmounted(() => { mermaidRenderSeq++ })
 }
 
 /* ── entry list ─────────────────────────────────────────────────────────────── */
-/* Width is driven by `usePanelResize` — `flex-shrink: 0` so the flex parent doesn't fight it,
-   `position: relative` so the divider anchors to this pane's right edge. */
+/* Width is driven by `usePanelResize` — `flex-shrink: 0` so the flex parent doesn't fight it.
+   A ROW: the scroll wrapper, then the divider beside it. */
 .bb-list {
   flex-shrink: 0;
   border-right: 1px solid var(--cc-border);
-  display: flex; flex-direction: column;
+  display: flex;
   min-height: 0;
   overflow: hidden;
-  position: relative;
 }
 /* Scroll wrapper: takes the flex space so the TABLE itself sits at natural height at the top.
    Without this, `flex: 1` on the <table> stretches its rows to fill (one row => full-height row
    because table-layout distributes remaining space across cells). */
-.bb-list-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.bb-list-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
 .bb-list-table { width: 100%; }
 .bb-list-title { color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bb-list-title-profile { font-weight: 600; }
@@ -818,13 +818,11 @@ onUnmounted(() => { mermaidRenderSeq++ })
    Colour is not the sole cue — thumbs-up / thumbs-down icons carry the semantic redundantly. */
 .bb-chip-outcome-good { background: rgba(86, 180, 233, 0.18); color: rgb(147, 197, 233); border-color: rgba(86, 180, 233, 0.5); }
 .bb-chip-outcome-bad  { background: rgba(213, 94, 0, 0.18);   color: rgb(240, 148, 68);   border-color: rgba(213, 94, 0, 0.5); }
-/* The divider: a grab strip on the pane's right edge, over the border it sits on. Same shape
+/* The divider: a grab strip on the pane's right edge, right of the scrollbar. Same shape
    TasksModule uses — 5px wide, `col-resize` cursor, transient accent on hover. */
 .bb-divider {
-  position: absolute; top: 0; right: 0; bottom: 0;
-  width: 5px;
+  flex: 0 0 5px;
   cursor: col-resize;
-  z-index: 4;
 }
 .bb-divider:hover { background: var(--cc-accent); opacity: 0.35; }
 

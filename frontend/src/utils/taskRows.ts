@@ -117,3 +117,15 @@ function elapsedMs(t: TaskEntry, now: number): number | undefined {
   return (t.finishedAt?.getTime() ?? now) - t.startedAt.getTime()
 }
 
+
+/**
+ * The Task Manager's search box: does `t` match free-text `query`? Case-insensitive; the query splits
+ * on whitespace and EVERY word must hit one of image name/uid, task label, fun name or module, so
+ * `M1a flow` narrows to flow runs on that image. An empty query matches everything.
+ */
+export function taskMatchesQuery(t: TaskEntry, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return true
+  const hay = [t.imageName, t.imageUid, t.label, t.funName, t.module].join(' ').toLowerCase()
+  return words.every(w => hay.includes(w))
+}

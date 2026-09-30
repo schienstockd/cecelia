@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { taskRow, taskRows, type TaskRowContext } from './taskRows'
+import { taskRow, taskRows, taskMatchesQuery, type TaskRowContext } from './taskRows'
 import { sortRows } from './sortRows'
 import type { TaskEntry } from '../stores/tasks'
 
@@ -127,5 +127,16 @@ describe('taskRows', () => {
   it('keeps the source entry on the row so an action need not look it up', () => {
     const e = entry()
     expect(taskRow(e, ctx()).entry).toBe(e)
+  })
+})
+
+describe('taskMatchesQuery', () => {
+  const t = { imageName: 'M1a-MER', imageUid: 'VJy1Nx', label: 'Train flow model',
+              funName: 'opticalFlow.train_flow', module: 'opticalflow' } as TaskEntry
+  it('matches everything on an empty query', () => expect(taskMatchesQuery(t, '  ')).toBe(true))
+  it('needs every word, across fields, case-insensitive', () => {
+    expect(taskMatchesQuery(t, 'm1a FLOW')).toBe(true)
+    expect(taskMatchesQuery(t, 'vjy1nx train')).toBe(true)
+    expect(taskMatchesQuery(t, 'm1a denoise')).toBe(false)
   })
 })
