@@ -5,9 +5,20 @@
 //  - movieFilename: the output filename preview, mirroring the backend `_movie_basename`
 //    (<attr1>_<attr2>_..._<uid|image name>.mp4; blanks dropped, unsafe chars → '_').
 
-import { viewerColormapForHex } from './viewerColormap'
+import { viewerColormapForHex, channelsForRender } from './viewerColormap'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
+
+// 3D render quality — the keyframe renderer's samples-per-ray multiplier (`render_animation_run.py`:
+// draft 0.5x, standard 1x, high 2x). The only 3D knob it has: it always reads the full-res volume.
+export const RENDER_QUALITIES = ['draft', 'standard', 'high'] as const
+export type RenderQuality = typeof RENDER_QUALITIES[number]
+export const RENDER_QUALITY_DEFAULT: RenderQuality = 'standard'
+
+// The 3D camera a batch renders every image from — the viewer's angle + zoom, captured by Fill from
+// view, with the canvas the zoom was measured against (the default output size). The CENTRE is
+// deliberately not stored: each image rotates about its own volume centre.
+export interface Camera3D { angles: [number, number, number]; zoom: number; width?: number; height?: number }
 
 // Title-card options — a description slide prepended to each recorded movie.
 export interface TitleCardCfg {
@@ -42,8 +53,8 @@ export interface BatchMovieCfg {
   // before the setting existed. One switch for both layer kinds — image and mask.
   show3D?: boolean
   zSlice?: number | null
-  // 3D multiscale detail: level index (0 = full resolution, higher = coarser), null = renderer default
-  detail3d?: number | null
+  renderQuality?: RenderQuality
+  camera3d?: Camera3D
   compareLayout?: CompareLayout
   compareContrast?: CompareContrast
   valueName?: string
@@ -74,6 +85,13 @@ export interface BatchMovieCfg {
   trackSources?: Record<string, { visible: boolean; colour: string }>
   colourLabels?: boolean
   tailWidth?: number
+  // Track tail length in frames, and how ribbons are coloured ('track' | 'speed' | 'solid' | 'pop').
+  // Absent = the recorder's defaults (30, 'track'); the viewer's own values arrive via `viewerLook`.
+  tailLength?: number
+  trackColourMode?: string
+  // value → hex recolourings of `colourBy`. The Batch page sends the set's overrides alongside the
+  // config instead; a look read off the viewer carries them, so a recorded look keeps its colours.
+  colourOverrides?: Record<string, string>
   pointsSize?: number
   titleCard?: TitleCardCfg
   // Which stretch of the timelapse each movie sweeps, as FRAME INDICES; `tEnd` null/absent = the last
@@ -100,7 +118,8 @@ export interface BatchMovieRequestConfig {
   labelContour: number
   show3D: boolean
   zSlice: number | null
-  detail3d: number | null
+  renderQuality: RenderQuality
+  camera3d: Camera3D | null
   compareLayout: CompareLayout
   compareContrast: CompareContrast
   tStart: number
@@ -111,6 +130,8 @@ export interface BatchMovieRequestConfig {
   showTracks: boolean
   trackValueNames: string[]
   tailWidth: number
+  tailLength: number
+  trackColourMode: string
   showGatedTracks: boolean
   showTrackclust: boolean
   showPopulations: boolean
@@ -156,9 +177,9 @@ export function buildBatchMovieConfig(
     // a z index alongside show3D is a leftover from the last time 2D was picked — Julia ignores it
     // (`_z_slice`), and sending null rather than dropping the key keeps the two ends reading alike
     zSlice: cfg.show3D ? null : (cfg.zSlice ?? null),
-    // only meaningful in 3D; sent as 0 (full resolution) by default, because a coarser level erases a
-    // strided label pyramid
-    detail3d: cfg.show3D ? (cfg.detail3d ?? 0) : null,
+    // only read in 3D: the ray-cast density and the camera every image is rendered from
+    renderQuality: cfg.renderQuality ?? RENDER_QUALITY_DEFAULT,
+    camera3d: cfg.show3D ? (cfg.camera3d ?? null) : null,
     compareLayout: cfg.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: cfg.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
     // The frame range, always sent — `null` for the end MEANS "to the last frame", and keeps meaning it
@@ -167,11 +188,14 @@ export function buildBatchMovieConfig(
     tEnd: cfg.tEnd === undefined || cfg.tEnd === null ? null : Math.max(0, Math.round(cfg.tEnd)),
     // read by `run_batch_movies` → `_movie_out_path`; the FILENAME is the only thing it changes
     nameByImage: !!cfg.nameByImage,
-    channels: cfg.channels ?? {},
+    // the hex the picker shows, not its name — the renderer's name table disagrees
+    channels: channelsForRender(cfg.channels),
     colourBy: cfg.colourBy ?? '',
     showTracks: !!cfg.showTracks,
     trackValueNames: cfg.showTracks ? segNames : [],
     tailWidth: cfg.tailWidth ?? 4,
+    tailLength: cfg.tailLength ?? 30,
+    trackColourMode: cfg.trackColourMode ?? 'track',
     showGatedTracks: !!cfg.showGatedTracks,
     showTrackclust: !!cfg.showTrackclust,
     showPopulations: !!cfg.showPopulations,

@@ -16,6 +16,7 @@ import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
 import { useFieldDraft } from '../composables/useFieldDraft'
 import SuggestInput from './SuggestInput.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import { RENDER_QUALITIES, type RenderQuality } from '../utils/batchMovie'
 
 const props = withDefaults(defineProps<{
   fps: number
@@ -50,10 +51,9 @@ const props = withDefaults(defineProps<{
   // the form shows the plane the user is already looking at rather than plane 0. Null = no fallback
   // (batch surface has no single viewer to inherit from).
   defaultZ?: number | null
-  // multiscale levels the open image has. >1 makes the 3D detail control meaningful (and visible);
-  // omit it, or pass 0/1, and the row is exactly what it was.
-  levels?: number | null
-  detail3d?: number | null
+  // 3D ray-cast sample density (the 3D renderer's one quality knob — it always reads the full-res
+  // volume). Pass it and the row appears while 3D is picked; omit it and the row is absent.
+  renderQuality?: RenderQuality | null
 // `null` defaults for the two overlay props: a union alone does NOT suppress Vue's Boolean cast — the
 // cast-to-false branch fires whenever the prop is absent and has no `default`, whatever the union says.
 // Verified against Vue's own prop resolution rather than read off the docs.
@@ -67,7 +67,7 @@ const emit = defineEmits<{
   (e: 'update:scaleBar', v: boolean): void
   (e: 'update:show3D', v: boolean): void
   (e: 'update:zSlice', v: number): void
-  (e: 'update:detail3d', v: number): void
+  (e: 'update:renderQuality', v: RenderQuality): void
 }>()
 
 const hasOverlays = computed(() => props.timestamp !== null || props.scaleBar !== null)
@@ -103,11 +103,9 @@ const suffixDraft = useFieldDraft(() => props.suffix)
 const sizeXDraft  = useFieldDraft(() => props.sizeX)
 const sizeYDraft  = useFieldDraft(() => props.sizeY)
 
-// The 3D detail row: only when 3D is selected AND there is more than one level to choose between.
-const hasDetail = computed(() => props.show3D === true && (props.levels ?? 0) > 1)
-// what a level actually costs you, in the terms you can see: levels halve X and Y (never Z), so level
-// n is 1/2^n of the image's width. Said as a fraction rather than an index, because "2" means nothing.
-const detailLabel = (lv: number) => (lv <= 0 ? 'full' : `1/${2 ** lv}`)
+// The 3D quality row: only while 3D is picked, and only on a surface that passes the prop.
+const hasQuality = computed(() => props.show3D === true && props.renderQuality != null)
+const QUALITY_OPTIONS: ChipOption[] = RENDER_QUALITIES.map(q => ({ value: q, label: q }))
 
 const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
   emit(`update:${axis}` as 'update:sizeX', parseMovieAxis(raw))
@@ -168,16 +166,13 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
       </template>
     </span>
 
-    <!-- How much detail the 3D render uses. The renderer's default in 3D is a coarse pyramid level,
-         which erases a segmentation; full resolution costs memory on a big volume. Only the person
-         looking at the image can weigh that, so it is a control. -->
-    <span v-if="hasDetail" class="cc-row-group">
-      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'3D render detail'">detail</span>
-      <input type="range" min="0" :max="(levels ?? 1) - 1" step="1" class="mo-range"
-             :value="detail3d ?? 0"
-             v-tooltip.bottom="'Full resolution is sharpest and heaviest; coarser is faster'"
-             @input="$emit('update:detail3d', ($event.target as HTMLInputElement).valueAsNumber)" />
-      <span class="mo-val cc-readout">{{ detailLabel(detail3d ?? 0) }}</span>
+    <!-- How densely the 3D render samples each ray: draft is fast and grainy, high is smooth and slow. -->
+    <span v-if="hasQuality" class="cc-row-group">
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">quality</span>
+      <ChipSelect variant="segmented" :options="QUALITY_OPTIONS" :model-value="renderQuality ?? 'standard'"
+                  aria-label="3D render quality"
+                  v-tooltip.bottom="'3D render quality: draft is faster, high is smoother'"
+                  @update:model-value="$emit('update:renderQuality', $event as RenderQuality)" />
     </span>
 
     <span v-if="hasOverlays" class="cc-row-group mo-own-row">

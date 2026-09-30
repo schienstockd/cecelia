@@ -114,6 +114,58 @@ function _apply_channel_picks(specs, cfg, img, vnn::Union{Nothing,AbstractString
      end for i in eachindex(specs)]
 end
 
+# The viewer's LIVE channel specs (contrast, colour, visibility) from a view-state snapshot, in the
+# shape this renderer takes (`resolved_display_specs`' named `(lo, hi, lut, visible)`). Channels the
+# snapshot doesn't name keep `specs`. `viewstate_to_render_args` is the one snapshot reader; it yields
+# the keyframe renderer's `(lo, hi, colour, visible)` tuples, hence the rewrap.
+function _live_specs(view_state::AbstractDict, chans::AbstractVector{<:AbstractString}, specs,
+                     native_h::Int, native_w::Int)
+    [(; lo = Float64(s[1]), hi = Float64(s[2]),
+        lut = _as_lut(s[3] isa AbstractString ? String(s[3]) : s[3]), visible = Bool(s[4]))
+     for s in viewstate_to_render_args(_kf_dict(view_state), chans, specs, native_h, native_w).specs]
+end
+
+# ── A 3D timelapse from an authored config ──────────────────────────────────────
+#
+# The only renderer that draws a VOLUME is the keyframe one (`record_keyframes_view_movie`), so a 3D
+# batch movie is a one-view "animation": two keyframes identical but for t, `t0` → `t1`, one frame
+# per timepoint (the frontend's `timelapseKeyframes` does the same for the viewer's Record). The
+# camera is the authored `camera3d` — the viewer's angle + zoom, captured by Fill from view — else
+# straight on. No `center` (each image rotates about its own volume midpoint) and no `layers` (the
+# caller passes the channel picks as `default_specs`).
+# `_cfg_get` with a missing-is-`nothing` default and a non-Dict guard — `_cfg_get` itself needs a
+# Dict and a non-`nothing` default (its `something` throws on two `nothing`s).
+_cfg_maybe(d, k) = d isa AbstractDict ? get(d, Symbol(k), get(d, String(k), nothing)) : nothing
+
+function _config_3d_keyframes(config, t0::Int, t1::Int)
+    cam = _cfg_maybe(config, "camera3d")
+    ang_raw = _cfg_maybe(cam, "angles")
+    angles = ang_raw isa AbstractVector && length(ang_raw) >= 3 && all(a -> a isa Real, ang_raw[1:3]) ?
+        Float64[Float64(a) for a in ang_raw[1:3]] : Float64[0.0, 0.0, 0.0]
+    z_raw = _cfg_maybe(cam, "zoom")
+    zoom = z_raw isa Real && Float64(z_raw) > 0 ? Float64(z_raw) : 1.0
+    t1 = max(t0, t1)
+    # the viewer canvas the zoom was measured against — `_renderer_zoom_3d` converts with it
+    cdim(k) = (v = _cfg_maybe(cam, k); v isa Real && v > 0 ? Float64(v) : nothing)
+    cw, ch = cdim("width"), cdim("height")
+    function state(t)
+        st = Dict{String,Any}("camera" => Dict{String,Any}("angles" => angles, "zoom" => zoom),
+                              "dims"   => Dict{String,Any}("ndisplay" => 3, "current_step" => [t, 0]))
+        (cw === nothing || ch === nothing) || (st["canvas"] = Dict{String,Any}("width" => cw, "height" => ch))
+        st
+    end
+    Any[Dict{String,Any}("viewState" => state(t0), "steps" => 1),
+        Dict{String,Any}("viewState" => state(t1), "steps" => max(1, t1 - t0))]
+end
+
+# The canvas a 3D batch movie renders at: the typed size, else the viewer canvas the camera was
+# captured against (the zoom only means something relative to it), else the renderer's 512.
+function _config_3d_canvas(config, size_x, size_y)
+    cam = _cfg_maybe(config, "camera3d")
+    dim(k) = (v = _cfg_maybe(cam, k); v isa Real && v > 0 ? Int(round(Float64(v))) : nothing)
+    (something(size_x, dim("width"), 512), something(size_y, dim("height"), 512))
+end
+
 # ── Config → `overlays_raw` translator (batch config + viewer `look`) ─────────────
 #
 # The record request the frontend sends today does not carry the smoke-route-shaped `overlays: {popType,
@@ -150,8 +202,11 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # so the all-seg override no longer matches intent; yield to the pops branch (which still gets
         # ribbons for its own cells via `include_tracks` above).
         "allTracks"        => show_tracks && !show_pops,
-        "tailLength"       => 30,               # legacy default; the batch config doesn't author it
-        "trackColorMode"   => "track",
+        # Absent → the legacy defaults. A look read off the viewer carries the viewer's own values
+        # (`frontend/src/utils/viewer/viewerLook.ts`); both spellings of the colour-mode key are read,
+        # since the config is British and the overlay reader (`_ov(:trackColorMode)`) is not.
+        "tailLength"       => _cfg_int(cfg, "tailLength", 30),
+        "trackColorMode"   => _cfg_str(cfg, "trackColourMode", _cfg_str(cfg, "trackColorMode", "track")),
         "pointSizePx"      => _cfg_int(cfg, "pointsSize", 6),
         "segmentWidthPx"   => _cfg_int(cfg, "tailWidth", 2),
     )
@@ -249,6 +304,10 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             # snapshots without a camera + canvas return `nothing`, which falls
                             # through to the previous behaviour.
                             view_state::Union{Nothing,AbstractDict} = nothing,
+                            # "Match viewer": take each channel's contrast / colour / visibility from
+                            # `view_state` (what is on screen) instead of the autosaved viewer props,
+                            # which lag the live view whenever autosave is off.
+                            match_viewer::Bool = false,
                             movie_config::Union{Nothing,MovieRecordConfig} = nothing)
     fun = "movie:record"
     img, ierr = _gating_image(project_uid, image_uid)
@@ -307,6 +366,10 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     vnn = isempty(value_name) ? nothing : String(value_name)
     # Apply the batch/`look` channel picks on top of the props-derived specs — same override the
     # compare grid uses (see `_apply_channel_picks`).
+    if match_viewer && view_state !== nothing && native_h > 0 && native_w > 0
+        specs = _live_specs(view_state, something(channel_names(img; value_name = vnn), String[]),
+                            specs, Int(native_h), Int(native_w))
+    end
     specs = _apply_channel_picks(specs, look_cfg, img, vnn)
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                        label_value_name === nothing ? vnn : String(label_value_name);
@@ -429,6 +492,10 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
     is_compare     = length(versions_cfg) > 1 || length(masks_cfg) > 1
     grid_layout    = String(get(config, :compareLayout, "row"))
     grid_share     = _share_contrast(get(config, :compareContrast, ""))
+    # 3D: rendered as a volume through the keyframe renderer (`_config_3d_keyframes`). The compare
+    # grid has no 3D renderer — a 3D compare stays the all-Z projection it was.
+    batch_3d       = _show_3d(config) && !is_compare
+    render_quality = _render_quality(config)
 
     start_job!(task_id)
     done = 0; errors = String[]
@@ -472,6 +539,14 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                                                  pixel_size_um  = pixel_size_um_g,
                                                  time_step_min  = time_step_min_g)
                     cancelled_here = gres.cancelled
+                elseif batch_3d
+                    cancelled_here = _render_batch_3d(task_id, project_uid, uid, img, config,
+                                                      value_name, label_vn, out_path;
+                                                      fps = fps, size_x = size_x, size_y = size_y,
+                                                      t_start = t_start, t_end = t_end,
+                                                      title_card = tcard, render_quality = render_quality,
+                                                      show_timestamp = show_ts, show_scale_bar = show_sb)
+                    cancelled_here === nothing && (push!(errors, uid); ws_progress(nothing, task_id, i, n); continue)
                 else
                     frame = _resolve_frame_for_record(project_uid, uid, value_name)
                     if frame[5] !== nothing
@@ -554,6 +629,45 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
     ws_status(nothing, task_id, status, rep; image_uids = image_uids,
               fun = "movie:batch", pool = "job")
     nothing
+end
+
+# One image of a 3D batch: the image's frame + the batch's channel picks, rendered as a volume from the
+# authored camera. Returns `cancelled::Bool`, or `nothing` when the image can't be recorded (already
+# logged). Masks are not drawn — the 3D renderer has no mask pass.
+function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
+                          value_name::String, label_vn, out_path::AbstractString;
+                          fps, size_x, size_y, t_start, t_end, title_card, render_quality::Symbol,
+                          show_timestamp::Bool, show_scale_bar::Bool)
+    frame = _resolve_frame_for_record(pu, uid, value_name)
+    if frame[5] !== nothing
+        ws_log(nothing, task_id, "[ERROR] $uid: " * String(frame[5])); return nothing
+    end
+    zp, arr, caxes, specs, _ = frame
+    ts = _record_ts_range(arr, caxes, t_start, t_end)
+    if isempty(ts)
+        ws_log(nothing, task_id, "[WARN] $uid: no timepoints in range — skipping"); return nothing
+    end
+    vnn = isempty(value_name) ? nothing : value_name
+    chans = something(channel_names(img; value_name = vnn), String[])
+    specs = _apply_channel_picks(specs, config, img, vnn)
+    ovs = _overlays_raw_from_config(config, false)
+    ovs === nothing || (ovs["valueName"] = _ov_look_seg(config, label_vn === nothing ? "" : String(label_vn)))
+    cw, ch = _config_3d_canvas(config, size_x, size_y)
+    pxsz, ts_min = img_physical_sizes(img)
+    z_aniso = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[1] / pxsz[3] : 1.0
+    res = record_keyframes_view_movie(zp, out_path, _config_3d_keyframes(config, first(ts), last(ts)), chans;
+                                      fps = fps, default_specs = specs,
+                                      canvas_h = ch, canvas_w = cw, z_aniso = z_aniso,
+                                      render_quality = render_quality,
+                                      show_timestamp = show_timestamp, show_scale_bar = show_scale_bar,
+                                      pixel_size_um = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[3] : nothing,
+                                      time_step_min = ts_min > 0 ? ts_min : nothing,
+                                      title_card = title_card, img = img, overlays_config = ovs,
+                                      on_log      = line -> ws_log(nothing, task_id, line),
+                                      on_progress = (_a, _b) -> nothing,
+                                      on_process  = p -> track_job!(task_id, p),
+                                      cancelled   = () -> job_cancelled(task_id))
+    res.cancelled
 end
 
 # ── Compare grid — versions × masks, composed into one file ──────────────────────
@@ -904,6 +1018,9 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
                                        # (`_overlays_raw_from_config` shape + `valueName` +
                                        # `popType`). See `record_keyframes_view_movie`.
                                        overlays_config::Union{Nothing,AbstractDict} = nothing,
+                                       # the viewer panel's match-viewer record of a 3D view: a
+                                       # timelapse, named and banked like any viewer recording
+                                       from_viewer::Bool = false,
                                        movie_config::Union{Nothing,MovieRecordConfig} = nothing)
     fun = "movie:animation"
     img, ierr = _gating_image(project_uid, image_uid)
@@ -924,7 +1041,7 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
     # `_movie_named_path` names by the IMAGE; animations end with `_animation` so timelapse recordings
     # and animations of one image sort together but never collide.
     out_path = _movie_named_path(img, image_uid;
-                                  suffix = _movie_suffix(suffix) * "_animation")
+                                  suffix = _movie_suffix(suffix) * (from_viewer ? "" : "_animation"))
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
     ws_log(nothing, task_id, "Recording animation → $(basename(out_path))")
 
@@ -964,7 +1081,7 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
             # keyframes, so no single channel list describes the whole movie. `register_movie!` leaves
             # the field alone rather than banking a snapshot of only frame 0.
             register_movie!(project_uid, basename(out_path);
-                            produced_by = "animation", image_uid = image_uid,
+                            produced_by = from_viewer ? "viewer" : "animation", image_uid = image_uid,
                             suffix = suffix,
                             config = movie_config, config_kind = "keyframes")
             ws_log(nothing, task_id, "Recorded $frames frames at $(result.width)x$(result.height) → $(basename(out_path))")

@@ -297,3 +297,56 @@ end
     @test length(frames) == 6              # 1 + 5
     @test frames[end]["dims"]["current_step"][1] == 10
 end
+
+@testset "API: movie rail — a viewer look carries its track style and overlay segmentation" begin
+    # `viewerLook` (frontend/src/utils/viewer/viewerLook.ts) sends the viewer's own tail length and
+    # track colour mode; both used to be hardcoded (30, "track") whatever the viewer drew.
+    ov = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true, "tailLength" => 12,
+                                                     "trackColourMode" => "speed"), false)
+    @test ov["tailLength"] == 12
+    @test ov["trackColorMode"] == "speed"
+    # absent → the legacy defaults, so a batch config that never authored them is unchanged
+    ov0 = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
+    @test ov0["tailLength"] == 30
+    @test ov0["trackColorMode"] == "track"
+    # the American spelling (what the overlay reader itself uses) is read too
+    @test _overlays_raw_from_config(Dict{String,Any}("showTracks" => true,
+                                                     "trackColorMode" => "solid"), false)["trackColorMode"] == "solid"
+
+    # An animation's overlay segmentation: `popValueName` (the look's name for it) wins over the
+    # legacy `valueName`, which is an IMAGE version on every look that carries both.
+    @test _ov_look_seg(Dict{String,Any}("popValueName" => "cpSAM", "valueName" => "default"), "x") == "cpSAM"
+    @test _ov_look_seg(Dict{String,Any}("valueName" => "flowTom"), "x") == "flowTom"
+    @test _ov_look_seg(Dict{String,Any}("popValueName" => ""), "fallback") == "fallback"
+    @test _ov_look_seg(nothing, "fallback") == "fallback"
+end
+
+@testset "API: movie rail — a recording renders the viewer's colours and framing" begin
+    # Match-viewer 2D: the live contrast / colour / visibility, in the plain renderer's spec shape.
+    base = [(; lo = 0.0, hi = 1.0, lut = _as_lut("red"), visible = true),
+            (; lo = 5.0, hi = 9.0, lut = _as_lut("green"), visible = true)]
+    vs = Dict{String,Any}("layers" => Dict{String,Any}(
+        "A" => Dict{String,Any}("visible" => true, "contrast_limits" => [10, 120], "colormap" => "#3ce26e"),
+        "B" => Dict{String,Any}("visible" => false, "contrast_limits" => [0, 50], "colormap" => "bop orange")))
+    sp = _live_specs(vs, ["A", "B"], base, 100, 100)
+    @test (sp[1].lo, sp[1].hi, sp[1].visible) == (10.0, 120.0, true)
+    @test sp[1].lut[end] == _as_lut("#3ce26e")[end]          # hex, not a name lookup
+    @test sp[2].visible === false
+    # a channel the snapshot doesn't name keeps its saved spec
+    sp2 = _live_specs(Dict{String,Any}("layers" => Dict{String,Any}()), ["A", "B"], base, 100, 100)
+    @test (sp2[2].lo, sp2[2].hi) == (5.0, 9.0)
+
+    # 3D: the viewer's zoom (canvas_h / visible image height, on ITS canvas) → the ray-caster's
+    # (1 = max(W, H) across the output width). Reported: zoom 2.33 on a 999-px canvas rendered ~5x
+    # too tight. The output must show the same image height the viewer did.
+    st = Dict{String,Any}("canvas" => Dict{String,Any}("width" => 1186, "height" => 999))
+    zr = _renderer_zoom_3d(2.3319, st, 441, 420, 999, 1186)
+    wpp = max(441, 420) / (zr * 1186)                        # render_animation_run.py world_per_px
+    @test wpp * 999 ≈ 999 / 2.3319
+    # a square output shows the same height, cropped in width
+    zs = _renderer_zoom_3d(2.3319, st, 441, 420, 512, 512)
+    @test (max(441, 420) / (zs * 512)) * 512 ≈ 999 / 2.3319
+    # no canvas on the state → the renderer's own convention, unchanged
+    @test _renderer_zoom_3d(2.0, Dict{String,Any}(), 441, 420, 512, 512) == 2.0
+    @test _renderer_zoom_3d(nothing, st, 441, 420, 512, 512) > 0
+end

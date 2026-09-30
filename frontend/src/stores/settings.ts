@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch, type Ref } from 'vue'
-import { TITLE_CARD_DEFAULT, type TitleCardCfg, type BatchMovieCfg } from '../utils/batchMovie'
+import { TITLE_CARD_DEFAULT, RENDER_QUALITY_DEFAULT, type TitleCardCfg, type BatchMovieCfg, type RenderQuality } from '../utils/batchMovie'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
@@ -532,11 +532,13 @@ export const useSettingsStore = defineStore('settings', () => {
               // last frame, which is what every recording did before the control existed. Deliberately
               // NOT the `cropT` pair above: that one is a 0-100 % crop range for making a new image.
               tStart?: number; tEnd?: number | null
-              // 3D multiscale detail: level index (0 = full resolution, higher = coarser), or null for
-              // the viewer's default (its coarsest level). Per set, like the other viewer prefs.
-              detail3d?: number | null
+              // 3D ray-cast quality (draft / standard / high). Per set, like the other viewer prefs.
+              renderQuality?: RenderQuality
               compareLayout?: CompareLayout; compareContrast?: CompareContrast
-              showTimestamp?: boolean; showScaleBar?: boolean }
+              showTimestamp?: boolean; showScaleBar?: boolean
+              // Record what the viewer shows (version, mask, overlays, 3D camera) instead of the
+              // version/segmentation picks and the z / 3D options
+              matchViewer?: boolean }
     // 3D-crop z-range and t-range as 0–100 % (per set — the XY crop box itself is per-session, drawn in
     // the viewer each time since a region is image-specific). Only the ranges persist, like other prefs.
     cropZ?: { lo?: number; hi?: number }
@@ -598,10 +600,11 @@ export const useSettingsStore = defineStore('settings', () => {
     fps: number; sizeX: number | null; sizeY: number | null; suffix: string | null; titleCard: TitleCardCfg
     compareVersions: string[]; compareSegmentations: string[]; labelContour: number
     zSlice: number | null
-    detail3d: number | null
+    renderQuality: RenderQuality
     compareLayout: CompareLayout; compareContrast: CompareContrast
     showTimestamp: boolean; showScaleBar: boolean
     tStart: number; tEnd: number | null
+    matchViewer: boolean
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
     sizeX: _setPrefs.value[setUid]?.movie?.sizeX ?? null,
@@ -618,9 +621,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // The 3D half is the EXISTING per-set `show3D` pref — one stored value, so the viewer's 3D button
     // and the movie's z control cannot disagree.
     zSlice: _setPrefs.value[setUid]?.movie?.zSlice ?? null,
-    // 0 = full resolution. The default is full because the coarsest level erases a strided label
-    // pyramid — the cost is a visible control.
-    detail3d: _setPrefs.value[setUid]?.movie?.detail3d ?? 0,
+    renderQuality: _setPrefs.value[setUid]?.movie?.renderQuality ?? RENDER_QUALITY_DEFAULT,
     compareLayout: _setPrefs.value[setUid]?.movie?.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: _setPrefs.value[setUid]?.movie?.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
     // default ON — what every movie was before the toggles existed
@@ -629,17 +630,20 @@ export const useSettingsStore = defineStore('settings', () => {
     // the whole timelapse — 0 to the last frame, `null` meaning "however long this image is"
     tStart: _setPrefs.value[setUid]?.movie?.tStart ?? 0,
     tEnd: _setPrefs.value[setUid]?.movie?.tEnd ?? null,
+    // default ON — "record" means record what is on screen
+    matchViewer: _setPrefs.value[setUid]?.movie?.matchViewer ?? true,
   })
   function setMovieConfig(setUid: string,
                           patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
                                    suffix?: string | null; titleCard?: TitleCardCfg
                                    compareVersions?: string[]; compareSegmentations?: string[]
                                    labelContour?: number; zSlice?: number | null
-                                   detail3d?: number | null
+                                   renderQuality?: RenderQuality
                                    compareLayout?: CompareLayout
                                    compareContrast?: CompareContrast
                                    showTimestamp?: boolean; showScaleBar?: boolean
-                                   tStart?: number; tEnd?: number | null }) {
+                                   tStart?: number; tEnd?: number | null
+                                   matchViewer?: boolean }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
   // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)

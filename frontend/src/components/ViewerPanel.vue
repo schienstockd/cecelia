@@ -24,8 +24,12 @@ import MovieTimeRange from './MovieTimeRange.vue'
 import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
 import InlineNote from './InlineNote.vue'
+import CcToggle from './CcToggle.vue'
+import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
+import type { ViewerViewState } from '../utils/viewer/viewState'
 import { movieSizeParams } from '../utils/movieSize'
-import { clampContour, seedConfigFromViewState, type ViewStateLike } from '../utils/batchMovie'
+import { clampContour, seedConfigFromViewState, RENDER_QUALITY_DEFAULT,
+         type ViewStateLike, type RenderQuality } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
@@ -214,7 +218,7 @@ const movieSizeY = computed<number | null>({
 // A comparison names itself after the versions it shows, so it can't overwrite either single-version
 // recording; a plain record still falls back to the version shown in the viewer.
 const movieSuffixDefault = computed(() =>
-  (compareVersions.value.length || compareSegmentations.value.length)
+  (!matchViewer.value && (compareVersions.value.length || compareSegmentations.value.length))
     ? compareSuffix(compareVersions.value, compareSegmentations.value)
     : (selectedValueName.value && selectedValueName.value !== 'default' ? selectedValueName.value : ''))
 const movieSuffix = computed<string>({
@@ -223,14 +227,19 @@ const movieSuffix = computed<string>({
     return stored ?? movieSuffixDefault.value
   },
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { suffix: v }) } })
-// How much detail the 3D render uses — a multiscale LEVEL index (0 = full resolution, higher =
-// coarser). The WebGPU viewer picks its own detail level (`pickVolumeLevel`); persisted here as a
-// per-set MOVIE parameter, not a live-viewer knob.
-const detail3d = computed<number>({
-  get: () => currentSetUid.value ? (settings.getMovieConfig(currentSetUid.value).detail3d ?? 0) : 0,
-  set: v => {
-    if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { detail3d: v })
-  } })
+// 3D ray-cast quality for a 3D recording (the keyframe renderer's `renderQuality`). Per set.
+const renderQuality = computed<RenderQuality>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).renderQuality : RENDER_QUALITY_DEFAULT,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { renderQuality: v }) } })
+
+// "Match viewer": Record takes the version, mask, overlays, z / 3D and camera from the live viewer
+// (`readViewerLook`) and ignores the version / segmentation picks and the z / 3D options below — the
+// popover keeps only the OUTPUT options (fps, size, name, frame range, title card, baked overlays).
+// Off = the comparison recorder those picks drive. Per set, default on.
+const matchViewer = computed<boolean>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).matchViewer : true,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { matchViewer: v }) } })
+const recordNote = ref<{ severity: 'warn' | 'fail'; short: string; detail?: string } | null>(null)
 
 // Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The selection IS the mode: none
 // records what's on screen (unchanged), two or more record a column per version into one movie.
@@ -398,6 +407,8 @@ async function recordTimelapse() {
   const uid        = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid || recording.value || recordingTask.value) return
+  recordNote.value = null
+  if (matchViewer.value) { await recordViewerMatch(uid, projectUid); return }
   recording.value = true
   try {
     // The live view state, read ONCE and used for two things: the title card's non-channel sections,
@@ -429,10 +440,39 @@ async function recordTimelapse() {
     // on the page built to edit looks. `seedConfigFromViewState` is the existing live-view → config
     // reader ("fill from view" on that page); the colour-by is not in the layer names, so it rides
     // along from the per-set setting the overlays were actually drawn with.
-    const look = { ...seedConfigFromViewState(snapshot, openedImage.value?.channelNames ?? []),
+    //
+    // The overlay half (pops, tracks, their segmentation, sizes) is the viewer's, read by the shared
+    // `readViewerLook` — this recorder has no picker for them, so "what is shown" is the only answer.
+    const live = openedImage.value
+      ? readViewerLook(openedImage.value, currentSetUid.value ?? '', { requireOpen: false }) : null
+    const look = { ...(live ?? {}),
+                   ...seedConfigFromViewState(snapshot, openedImage.value?.channelNames ?? []),
                    ...(colourBy ? { colourBy } : {}) }
-    const versions = compareVersions.value
+    // No version picked = the version SHOWN (the panel's picker), not the image's active one.
+    const versions = compareVersions.value.length ? compareVersions.value
+      : (selectedValueName.value ? [selectedValueName.value] : [])
     const shape    = compareShapeNow.value
+    // 3D and not a comparison → a volume render through the keyframe renderer (the compare grid
+    // has no 3D renderer and stays an all-Z projection).
+    if (show3D.value && shape.cells <= 1 && openedImage.value) {
+      const vs3 = volumeViewState(snapshot as unknown as ViewerViewState | null)
+      const lastT = Math.max(0, (openedImage.value.sizeT ?? 1) - 1)
+      const t = taskStore.add({
+        module: 'viewer', label: `Record ${openedImage.value.name ?? 'movie'}`,
+        imageUid: uid, imageName: openedImage.value.name ?? '', status: 'queued',
+        taskName: 'movie.record', funName: 'movie.record', params: {}, projectUid,
+      })
+      ws.send({
+        type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
+        suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin, source: 'viewer',
+        valueNames: versions, look: lookForRender(look), renderQuality: renderQuality.value,
+        showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
+        keyframes: timelapseKeyframes(hexViewState(vs3), movieTStart.value, Math.min(movieTEnd.value ?? lastT, lastT)),
+        ...movieSizeParams(movieSizeX.value ?? (vs3.canvas.width || null),
+                           movieSizeY.value ?? (vs3.canvas.height || null)),
+      })
+      return
+    }
     const t = taskStore.add({
       module: 'viewer',
       label: shape.cells > 1
@@ -458,19 +498,81 @@ async function recordTimelapse() {
       showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
       // banked with the movie, not acted on by the recorder — it already records this look by
       // recording the screen (MOVIE_MANAGEMENT_PLAN.md Phase 4)
-      look,
+      look: lookForRender(look),
       // The full viewer-shape snapshot rides alongside `look`. `look` covers the channel picks +
       // overlay flags; the snapshot's `camera` + `canvas` are what the offline record needs to
       // reproduce the visible rectangle — a viewer zoomed into a corner would otherwise record
       // the whole image at native aspect (bug reported 2026-08-29, the movie/viewer side-by-side).
       // Absent when no snapshot was published.
-      ...(snapshot ? { viewState: snapshot } : {}),
+      ...(snapshot ? { viewState: hexViewState(snapshot) } : {}),
+      // one version, the one on screen → its live contrast too, not the autosaved props
+      liveSpecs: shape.cells <= 1 && versions.length === 1 && versions[0] === viewerStore.openImage?.valueName,
       ...movieSizeParams(movieSizeX.value, movieSizeY.value),
     })
   } catch (e) {
     log.error(`Record timelapse failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'viewer' })
   } finally {
     // the RENDER is the task's business now; this flag only covers assembling the request
+    recording.value = false
+  }
+}
+
+// Record exactly what the browser viewer shows. The look (version, mask, overlays, channels, z / 3D)
+// is read off the viewer by `readViewerLook`, the SAME reader Batch's Fill from view uses. A 2D view
+// goes down the plain recorder with `matchViewer` (live contrast, crop and z from the snapshot); a 3D
+// view goes down the keyframe renderer as a one-view timelapse (`timelapseKeyframes`), because that
+// is the only one that renders a volume with the viewer's camera.
+async function recordViewerMatch(uid: string, projectUid: string) {
+  const img = openedImage.value
+  const snapshot = viewerStore.viewState as unknown as ViewerViewState | null
+  const look = img ? readViewerLook(img, currentSetUid.value ?? '') : null
+  if (!img || !snapshot || !look) {
+    recordNote.value = { severity: 'warn', short: 'Open the image in the viewer first',
+      detail: 'Match viewer records what the viewer shows. Turn it off to record without one.' }
+    return
+  }
+  recording.value = true
+  try {
+    const colourBy = look.colourBy ?? ''
+    const titleCard = movieTitleCard.value.enabled
+      ? await buildTitleCard(projectUid, uid, snapshot as unknown as ViewStateLike, img,
+          { note: movieTitleCard.value.note, durationSec: movieTitleCard.value.durationSec, colourBy,
+            colourOverrides: look.colourOverrides ?? {} })
+      : undefined
+    const lastT = Math.max(0, (img.sizeT ?? 1) - 1)
+    const tEnd = Math.min(movieTEnd.value ?? lastT, lastT)
+    const t = taskStore.add({
+      module: 'viewer', label: `Record ${img.name ?? 'movie'}`,
+      imageUid: uid, imageName: img.name ?? '', status: 'queued',
+      taskName: 'movie.record', funName: 'movie.record', params: {}, projectUid,
+    })
+    const common = {
+      type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
+      suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin, matchViewer: true,
+      valueNames: look.valueNames ?? [], look: lookForRender(look),
+      showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
+    }
+    if (look.show3D) {
+      // A blank size is the viewer's canvas — the 3D renderer otherwise falls back to 512 square.
+      ws.send({ ...common, renderQuality: renderQuality.value,
+        keyframes: timelapseKeyframes(hexViewState(snapshot), movieTStart.value, tEnd),
+        ...movieSizeParams(movieSizeX.value ?? snapshot.canvas?.width ?? null,
+                           movieSizeY.value ?? snapshot.canvas?.height ?? null) })
+    } else {
+      ws.send({ ...common,
+        // explicit lists: the mask the viewer draws (or none), at most one skeleton set — more
+        // than one of either would turn the record into a comparison grid
+        labelValueNames: look.labelValueNames ?? [],
+        branchValueNames: movieBranchValueNames.value.slice(0, 1),
+        labelContour: look.labelContour ?? 0,
+        show3D: false, zSlice: look.zSlice ?? null,
+        tStart: movieTStart.value, tEnd: movieTEnd.value,
+        viewState: hexViewState(snapshot),
+        ...movieSizeParams(movieSizeX.value, movieSizeY.value) })
+    }
+  } catch (e) {
+    log.error(`Record failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'viewer' })
+  } finally {
     recording.value = false
   }
 }
@@ -770,7 +872,7 @@ watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 // Placeholder defaults for the movie size fields + level range for the 3D detail control. Sourced
 // from the browser volume viewer's own published state (see useViewerMovieDefaults) — the canvas is
 // what a movie records at when no size is asked for.
-const { canvasSizeX, canvasSizeY, multiscaleLevels, viewerZ } = useViewerMovieDefaults()
+const { canvasSizeX, canvasSizeY, viewerZ } = useViewerMovieDefaults()
 
 onMounted(() => {
   ws.on('task:status', onTaskStatus)
@@ -1003,20 +1105,24 @@ onUnmounted(() => {
       <div class="viewer-section" data-guide="viewer.movieSection">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
-          <MovieCompareControls class="movie-versions" :available="valueNames"
-                                :available-segmentations="labelNames"
-                                v-model:versions="compareVersions"
-                                v-model:segmentations="compareSegmentations"
-                                v-model:contour="labelContour"
-                                v-model:layout="compareLayout"
-                                v-model:contrast="compareContrast" />
+          <div class="movie-versions">
+            <CcToggle v-model="matchViewer" label="Match viewer" class="cc-fs-xs"
+                      v-tooltip.bottom="'Record exactly what the viewer shows'" />
+            <MovieCompareControls v-if="!matchViewer" :available="valueNames"
+                                  :available-segmentations="labelNames"
+                                  v-model:versions="compareVersions"
+                                  v-model:segmentations="compareSegmentations"
+                                  v-model:contour="labelContour"
+                                  v-model:layout="compareLayout"
+                                  v-model:contrast="compareContrast" />
+          </div>
           <MovieOptionsButton class="opt-btn">
             <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
                                  v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
-                                 :size-z="openedImage?.sizeZ" v-model:show3D="show3D"
+                                 :size-z="matchViewer ? 1 : openedImage?.sizeZ" v-model:show3D="show3D"
                                  v-model:zSlice="zSlice" :default-z="viewerZ"
-                                 :levels="multiscaleLevels" v-model:detail3d="detail3d" />
+                                 v-model:renderQuality="renderQuality" />
             <!-- Only for an actual timelapse — nothing to trim on a single frame -->
             <MovieTimeRange v-if="(openedImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
                             v-model:tEnd="movieTEnd" :frames="openedImage?.sizeT ?? 1" />
@@ -1025,11 +1131,14 @@ onUnmounted(() => {
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" data-guide="viewer.record"
                   :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"
                   @click="recordTimelapse"
-                  v-tooltip.bottom="compareActionTip(compareShapeNow,
+                  v-tooltip.bottom="matchViewer ? 'Record the viewer over time → mp4 in movies/'
+                    : compareActionTip(compareShapeNow,
                     'Record the current view over the time axis → mp4 in the project\'s movies/ folder')">
             <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />
           </button>
         </div>
+        <InlineNote v-if="recordNote" :severity="recordNote.severity"
+                    :short="recordNote.short" :detail="recordNote.detail" />
       </div>
     </template>
     <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open.</span></div>
@@ -1095,7 +1204,7 @@ onUnmounted(() => {
    which is why they don't just share the wrapping row directly. Top-aligned so they stay on the FIRST
    line when the chips (or the comparison's layout/contrast row) run to several. */
 .movie-row { display: flex; align-items: flex-start; gap: 0.3rem; }
-.movie-versions { flex: 1; min-width: 0; }
+.movie-versions { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .movie-rec { margin-left: 0.1rem; }
 /* the popover is free of the panel's width, so give the controls room to lay out on one line each */
 /* .movie-lbl/-range/-val/-controls were left behind when MovieOutputControls was extracted — the

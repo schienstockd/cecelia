@@ -23,7 +23,8 @@ import { useViewerStore } from '../../stores/viewer'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS, distinctChannelOptions } from '../../utils/viewerColormap'
-import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, withCustomColours, type BatchMovieCfg, type TitleCardCfg, type ViewStateLike } from '../../utils/batchMovie'
+import { readViewerLook } from '../../utils/viewer/viewerLook'
+import { buildBatchMovieConfig, movieFilename, RENDER_QUALITY_DEFAULT, type RenderQuality, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, withCustomColours, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
 import { versionsFromConfig, compareSuffix, compareActionTip,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          segmentationsFromConfig, compareShape,
@@ -64,7 +65,7 @@ const tasks       = useTaskStore()
 const viewer      = useViewerStore()
 const ws          = useWsStore()
 // the browser viewer's canvas size, for the size fields' placeholder (see useViewerMovieDefaults)
-const { canvasSizeX, canvasSizeY, multiscaleLevels } = useViewerMovieDefaults()
+const { canvasSizeX, canvasSizeY } = useViewerMovieDefaults()
 const log         = useLogStore()
 
 const uniq = (xs: string[]) => [...new Set(xs)]
@@ -118,11 +119,10 @@ const labelContour = computed<number>({
 // Whole z stack (3D) or one slice. Authored per SET here rather than read from the live viewer — the
 // batch opens each image itself, so there is no "what is on screen" to inherit.
 const show3D = computed<boolean>({ get: () => !!cfg.value.show3D, set: v => patch({ show3D: v }) })
-// 3D detail (multiscale level, 0 = full resolution). Stored in the batch config and applied per image
-// by the recorder; the RANGE comes from the image currently open in the viewer, so the control only
-// offers itself when there is something on screen to judge it against.
-const detail3d = computed<number>({
-  get: () => (cfg.value.detail3d as number | undefined) ?? 0, set: v => patch({ detail3d: v }) })
+// 3D ray-cast quality. The 3D CAMERA every image is rendered from (`camera3d`) is not a control: Fill
+// from view captures the viewer's angle + zoom, the way it captures the channel colours.
+const renderQuality = computed<RenderQuality>({
+  get: () => cfg.value.renderQuality ?? RENDER_QUALITY_DEFAULT, set: v => patch({ renderQuality: v }) })
 const zSlice = computed<number | null>({
   get: () => cfg.value.zSlice ?? null, set: v => patch({ zSlice: v }) })
 // the shallowest stack in the selection — a slice index deeper than that would not exist on every image
@@ -380,9 +380,14 @@ async function fillFromView(force = false) {
   // is the first selected one; forced (button click) reads whatever the browser viewer currently
   // has. If the browser viewer isn't open yet, `seed` stays empty and the palette default below
   // kicks in.
+  //
+  // The whole look, not just channels: `readViewerLook` (shared with the viewer's Record and the
+  // Animation page) also reads the version, mask, pops, tracks, z / 3D and overlay sizes the viewer is
+  // drawing with. A forced fill with the viewer on a different image still reads its overlay
+  // settings for THIS image — those are per image, and exist whether or not it is open.
   const browserOpenUid = viewer.openImage?.imageUid
   if (viewer.viewState && (force || browserOpenUid === first)) {
-    seed = seedConfigFromViewState(viewer.viewState as unknown as ViewStateLike, rep.channelNames ?? [])
+    seed = readViewerLook(rep, setUid.value, { requireOpen: false }) ?? {}
   } else if (force) {
     // User pressed the button expecting a fill — tell them why nothing changed rather than
     // silently defaulting.
@@ -678,7 +683,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
                              v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                              v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                              :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice"
-                             :levels="multiscaleLevels" v-model:detail3d="detail3d" />
+                             v-model:renderQuality="renderQuality" />
         <!-- Only when there is a timelapse to trim. The bound is the LONGEST in the selection — the
              backend clamps each image to its own length, so a shorter one records to its end. -->
         <MovieTimeRange v-if="tFrames > 1" v-model:tStart="tStart" v-model:tEnd="tEnd" :frames="tFrames" />

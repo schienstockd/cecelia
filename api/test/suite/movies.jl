@@ -3,7 +3,7 @@
 # Six testsets covering the movies API surface:
 #  - `API: batch-movie output naming`
 #  - `API: single-image movie naming`
-#  - `API: 3D detail level from a movie config`
+#  - `API: 3D render quality + batch 3D keyframes`
 #  - `API: filename fragments are sanitised one way`
 #  - `API: movie version comparison`
 #  - `API: movie comparison grid`
@@ -75,16 +75,37 @@ end
 # ONE sanitiser behind the image name, the user's suffix and the attr-composed basename — they used to
 # be three near-copies and only one of them stripped edge separators. Mirrored in the frontend by
 # `safeNamePart` (frontend/src/utils/batchMovie.ts), whose testset asserts the same cases.
-# The 3D detail level an authored/batch movie config asks for. Absent means FULL RESOLUTION, not
-# napari's automatic choice: napari picks the coarsest level in 3D, which erases a strided label
-# pyramid, and a config written before this control existed still wants visible masks.
-@testset "API: 3D detail level from a movie config" begin
-    @test _detail_3d(Dict(:detail3d => 0)) == 0
-    @test _detail_3d(Dict(:detail3d => 2)) == 2
-    @test _detail_3d(Dict(:detail3d => "3")) == 3          # JSON numbers may arrive as strings
-    @test _detail_3d(Dict{Symbol,Any}()) == 0              # absent → full resolution
-    @test _detail_3d(Dict(:detail3d => nothing)) === nothing   # explicit null → leave it to napari
-    @test _detail_3d(Dict(:detail3d => -1)) == 0           # never a negative index
+# A 3D movie renders through the keyframe renderer; its one quality knob is `render_quality`, and a
+# batch renders every image from the authored camera as a one-view timelapse.
+@testset "API: 3D render quality + batch 3D keyframes" begin
+    @test _render_quality(Dict(:renderQuality => "draft")) === :draft
+    @test _render_quality(Dict("renderQuality" => "high")) === :high
+    @test _render_quality(Dict{Symbol,Any}()) === :standard
+    @test _render_quality(Dict(:renderQuality => "bogus")) === :standard
+
+    cfg = Dict{Symbol,Any}(:camera3d => Dict{Symbol,Any}(:angles => [30, 45, 0], :zoom => 1.5,
+                                                         :width => 800, :height => 600))
+    kfs = _config_3d_keyframes(cfg, 2, 10)
+    @test length(kfs) == 2
+    @test kfs[1]["viewState"]["dims"]["current_step"] == [2, 0]
+    @test kfs[2]["viewState"]["dims"]["current_step"] == [10, 0]
+    @test kfs[2]["steps"] == 8                       # + the first keyframe = one frame per t, 2..10
+    @test kfs[1]["viewState"]["dims"]["ndisplay"] == 3
+    @test kfs[1]["viewState"]["camera"]["angles"] == [30.0, 45.0, 0.0]
+    @test kfs[1]["viewState"]["camera"]["zoom"] == 1.5
+    @test !haskey(kfs[1]["viewState"]["camera"], "center")    # each image rotates about its own middle
+    # the states interpolate to one frame per timepoint, camera held
+    states = interpolate_keyframes(kfs)
+    @test length(states) == 9
+    @test [st["dims"]["current_step"][1] for st in states] == collect(2:10)
+    # no camera → straight on, zoom 1
+    k0 = _config_3d_keyframes(Dict{Symbol,Any}(), 0, 0)
+    @test k0[1]["viewState"]["camera"]["angles"] == [0.0, 0.0, 0.0]
+    @test k0[2]["steps"] == 1
+    # canvas: typed size wins, else the captured viewer canvas, else 512
+    @test _config_3d_canvas(cfg, nothing, nothing) == (800, 600)
+    @test _config_3d_canvas(cfg, 400, nothing) == (400, 600)
+    @test _config_3d_canvas(Dict{Symbol,Any}(), nothing, nothing) == (512, 512)
 end
 
 @testset "API: filename fragments are sanitised one way" begin
