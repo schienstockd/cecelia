@@ -9,7 +9,14 @@
  * on the base — not part of the config.
  */
 
-import type { CardFamily } from './cardsPanel'
+import type { CardFamily, CardFamilyContext } from './cardsPanel'
+
+// Motif / HMM request shape for "show another example": `seeds: {cardPath: n}` (only non-zero
+// entries; cell cards carry theirs per pop instead). Absent = every card on its medoid.
+function seedsBody(ctx: CardFamilyContext): { seeds?: Record<string, number> } {
+  const s = Object.fromEntries(Object.entries(ctx.seeds ?? {}).filter(([, v]) => v > 0))
+  return Object.keys(s).length ? { seeds: s } : {}
+}
 
 // Cell cards — one card per trackclust pop the manager ticks. `valueName` is omitted so the server
 // derives it from `co_clustered_value_names(suffix)` (established in cell_cards_api.jl — a Phase 2
@@ -23,7 +30,8 @@ export const cellFamily: CardFamily = {
     projectUid: ctx.projectUid,
     rootUid: ctx.rootUid,
     suffix: ctx.suffix,
-    pops: ctx.shownPops.map(p => ({ path: p.path, clusterIds: p.clusterIds })),
+    pops: ctx.shownPops.map(p => ({ path: p.path, clusterIds: p.clusterIds,
+                                    ...(ctx.seeds?.[p.path] ? { seed: ctx.seeds[p.path] } : {}) })),
     maxPx: ctx.maxPx,
     padPx: ctx.padPx,
   }),
@@ -31,6 +39,7 @@ export const cellFamily: CardFamily = {
   emptyNoSuffix: 'No clustering run in context.',
   emptyNoShownPops: 'Tick one or more track clusters in the panel on the right.',
   footerStatLabel: name => name.replace(/^live\.track\./, ''),
+  reshuffle: true,
 }
 
 // Motif cards — one card per motif class discovered server-side in the image's cells h5ad. No rail
@@ -50,11 +59,13 @@ export const motifFamily: CardFamily = {
     projectUid: ctx.projectUid,
     rootUid: ctx.rootUid,
     ...(ctx.valueName ? { valueName: ctx.valueName } : {}),
+    ...seedsBody(ctx),
     maxPx: ctx.maxPx,
     padPx: ctx.padPx,
   }),
   emptyNoRoot: 'Select an image.',
   footerStatLabel: name => name.replace(/^live\.cell\./, ''),
+  reshuffle: true,
 }
 
 // HMM state cards — one card per HMM state value on a chosen `live.cell.hmm.state.<measure>`
@@ -72,6 +83,7 @@ export const hmmStateFamily: CardFamily = {
     rootUid: ctx.rootUid,
     ...(ctx.valueName ? { valueName: ctx.valueName } : {}),
     ...(ctx.hmmCol   ? { hmmCol:    ctx.hmmCol   } : {}),
+    ...seedsBody(ctx),
     maxPx: ctx.maxPx,
     padPx: ctx.padPx,
   }),
@@ -79,6 +91,7 @@ export const hmmStateFamily: CardFamily = {
   // Strip the well-known prefix so a compact footer row reads "speed" / "angle" — mirroring the
   // motif family's transform.
   footerStatLabel: name => name.replace(/^live\.cell\./, ''),
+  reshuffle: true,
 }
 
 /** Every registered family, keyed by id. `CARD_FAMILIES.cell === cellFamily`. */

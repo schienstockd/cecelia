@@ -22,7 +22,9 @@
 #
 # Request:
 #   POST /api/motif_cards
-#   { projectUid, rootUid, valueName?, maxPx?=320, padPx?=8 }
+#   { projectUid, rootUid, valueName?, maxPx?=320, padPx?=8, seeds?: {className: n} }
+#   `seeds[class]` > 0 swaps that card's medoid instance for another low-distance one
+#   (`pick_card_example`). Cache: `stamp` + per-card `renderKeys` (behaviour_cards.jl).
 # Response (same shape as /api/cell_cards):
 #   { pool: [{uid, value_name}], cards: [ Card ], statScales: {name: [min, max]} }
 
@@ -39,33 +41,24 @@ function _motif_h5ad_mtime(img::CciaImage, value_name::String)::Float64
     isfile(p) ? mtime(p) : 0.0
 end
 
-const _MOTIF_CARDS_SHAPE_VERSION = 1
-
-function _motif_cards_cache_fresh(sidecar_path::String, mtime_now::Float64,
-                                   class_names_now::Vector{String})::Union{Nothing,Dict{String,Any}}
-    isfile(sidecar_path) || return nothing
-    doc = try JSON3.read(read(sidecar_path, String), Dict{String,Any}); catch; return nothing end
-    get(doc, "shapeVersion", 0) == _MOTIF_CARDS_SHAPE_VERSION || return nothing
-    got_mt = get(doc, "h5adMtime", nothing)
-    got_mt isa Number && Float64(got_mt) == mtime_now || return nothing
-    got_classes = try
-        sort!(String[String(x) for x in get(doc, "classes", Any[])])
-    catch; return nothing end
-    got_classes == sort(class_names_now) || return nothing
-    doc
-end
+const _MOTIF_CARDS_SHAPE_VERSION = 2   # v2: stamp (h5ad/specs/classes+colours/seeds/size) + renderKeys
 
 function _write_motif_cards_sidecar(sidecar_path::String, pool, cards_json, stat_scales,
-                                    class_names, mtime_now)
+                                    stamp, render_keys)
     mkpath(dirname(sidecar_path))
     write_json_atomic(sidecar_path, Dict{String,Any}(
         "shapeVersion" => _MOTIF_CARDS_SHAPE_VERSION,
         "pool"         => [Dict("uid" => pm.uid, "value_name" => pm.value_name) for pm in pool],
         "cards"        => cards_json,
         "statScales"   => stat_scales,
-        "classes"      => class_names,
-        "h5adMtime"    => mtime_now))
+        "stamp"        => stamp,
+        "renderKeys"   => render_keys))
 end
+
+# Instances best-first for `pick_card_example`: lowest mean `motif.distance`, ties by instance id
+# (deterministic — a Dict's argmin would break ties by hash order).
+_motif_ranked_instances(dists_by_inst::AbstractDict{Int,Float64})::Vector{Int} =
+    sort!(collect(keys(dists_by_inst)); by = iid -> (dists_by_inst[iid], iid))
 
 # Numeric feature columns whose median enters the card footer. `live.cell.hmm.state.movement` is
 # also a motif feature (see `MotifDiscoveryParams.featureCols`) but it's categorical, so its 5-num
@@ -99,14 +92,16 @@ function _five_num_from_vec(v::Vector{Float64})
      max    = v[end])
 end
 
-# Pull `col` values at `rows` from `df` into a `Vector{Float64}`, dropping missings/non-reals.
+# Pull `col` values at `rows` from `df` into a `Vector{Float64}`, dropping missings/NaN/non-reals.
 function _col_f64_at(df, col::Symbol, rows::AbstractVector{Int})::Vector{Float64}
     col in propertynames(df) || return Float64[]
     colv = getproperty(df, col)
     out = Float64[]
     for r in rows
         v = colv[r]; ismissing(v) && continue
-        v isa Real || continue
+        # NaN too, not just missing: speed/angle are NaN on a track's first cells, and one NaN
+        # makes the 5-number max NaN — which JSON3 refuses to write (the whole response 500s).
+        (v isa Real && isfinite(v)) || continue
         push!(out, Float64(v))
     end
     out
@@ -114,11 +109,13 @@ end
 
 # For one motif class:
 #   • medoid instance  = the instance whose cells have the LOWEST mean `motif.distance`
+#                        (`seed` > 0: another low-distance instance, `pick_card_example`)
 #   • trace_history    = (t, x, y) of the medoid instance's cells, native pixels
 #   • frames_ts        = [t0, mid, t1] of the instance's frame span (same three-frame rule as cellCards)
 #   • stats            = 5-number summary of numeric motif features + motif.distance, over ALL cells
 #                        of this class (not just the medoid — the footer summarises the CLASS)
-function _motif_class_card(df, class_indices::Vector{Int}, class_name::String, colour::String)
+function _motif_class_card(df, class_indices::Vector{Int}, class_name::String, colour::String;
+                           seed::Int=0)
     # DataFrame column names are the RAW h5ad obs names — `as_df` does not rename dots to
     # underscores, so it is `Symbol("motif.instance_id")`, not `:motif_instance_id`.
     Symbol("motif.instance_id") in propertynames(df) ||
@@ -150,7 +147,7 @@ function _motif_class_card(df, class_indices::Vector{Int}, class_name::String, c
         end
         dists_by_inst[iid] = isempty(ds) ? Inf : _mean_f64(ds)
     end
-    medoid_iid = argmin(dists_by_inst)   # returns the Dict KEY (Int)
+    medoid_iid = pick_card_example(_motif_ranked_instances(dists_by_inst), seed)
     inst_rows  = inst_rows_by_id[medoid_iid]
 
     # track_id: first non-missing in the medoid instance (all cells of one instance share a track).
@@ -215,6 +212,7 @@ function api_motif_cards(body_bytes::Vector{UInt8})
 
     max_px = Int(round(Float64(get(data, :maxPx, get(data, :max_px, 320)))))
     pad_px = Int(round(Float64(get(data, :padPx, get(data, :pad_px, 8)))))
+    seeds  = parse_card_seeds(data)
 
     img, gerr = _gating_image(pu, root_uid)
     gerr === nothing || return gerr[1], gerr[2]["body"]
@@ -274,25 +272,30 @@ function api_motif_cards(body_bytes::Vector{UInt8})
         return 404, JSON3.write((; error = "no motif classes assigned in $(vn) — motif discovery ran but assigned nothing",
                                     availableValueNames = available_vns))
 
-    # Cache check on the cells h5ad's mtime + the discovered class set.
-    sidecar = _motif_cards_sidecar(img._dir, String(vn))
-    mtime_now = _motif_h5ad_mtime(img, String(vn))
-    cached = _motif_cards_cache_fresh(sidecar, mtime_now, class_names)
-    if cached !== nothing
-        return 200, JSON3.write(Dict{String,Any}(
-            "pool"                => get(cached, "pool", Any[]),
-            "cards"               => get(cached, "cards", Any[]),
-            "statScales"          => get(cached, "statScales", Dict{String,Any}()),
-            "availableValueNames" => available_vns,
-            "valueName"           => String(vn)))
-    end
-
     # Colours: the canonical categorical-colour helper. `load_pop_map` (live pop map for this vn) may
     # define user-filtered pops on motif.class one day; today it doesn't, so every class falls
     # through to `default_palette = OKABE_ITO`. Parity with any future pop-manager overrides is
-    # automatic — one rule, one source of truth (`clustering_colour.jl`).
+    # automatic — one rule, one source of truth (`clustering_colour.jl`). Resolved BEFORE the cache
+    # check: the colour is baked into the trace, so it's part of the stamp.
     pop_map = load_pop_map(img._dir, String(vn); pop_type = "live")
     colours_by_class = colour_by_palette(pop_map, "motif.class", class_names)
+
+    # Cache check — the stamp is everything the cards depend on (behaviour_cards.jl).
+    sidecar = _motif_cards_sidecar(img._dir, String(vn))
+    specs_mt = cards_specs_mtime(img)
+    stamp = Dict{String,Any}(
+        "h5adMtime" => _motif_h5ad_mtime(img, String(vn)), "specsMtime" => specs_mt,
+        "classes"   => [Any[cn, get(colours_by_class, cn, "#888888"), get(seeds, cn, 0)] for cn in class_names],
+        "maxPx" => max_px, "padPx" => pad_px)
+    prev = read_cards_sidecar(sidecar)
+    if cards_stamp_fresh(prev, _MOTIF_CARDS_SHAPE_VERSION, stamp)
+        return 200, JSON3.write(Dict{String,Any}(
+            "pool"                => get(prev, "pool", Any[]),
+            "cards"               => get(prev, "cards", Any[]),
+            "statScales"          => get(prev, "statScales", Dict{String,Any}()),
+            "availableValueNames" => available_vns,
+            "valueName"           => String(vn)))
+    end
 
     # Per-class computations. Uniform crop side across the response so cards are visually comparable
     # (same rule as cellCards): first pass computes each medoid's bbox for the side, second pass
@@ -308,7 +311,7 @@ function api_motif_cards(body_bytes::Vector{UInt8})
         isempty(rows) && continue   # class listed but no rows (rare — categorical stub with no cells)
         col = get(colours_by_class, cn, "#888888")
         card = try
-            _motif_class_card(df, rows, cn, col)
+            _motif_class_card(df, rows, cn, col; seed = get(seeds, cn, 0))
         catch e
             return 500, JSON3.write((; error = "medoid resolution failed for class $(cn): $(sprint(showerror, e))"))
         end
@@ -350,15 +353,23 @@ function api_motif_cards(body_bytes::Vector{UInt8})
         :T in img_scale_axes(img) ? Float64(img_physical_sizes(img)[2]) * 60.0 : nothing
     catch; nothing end
 
+    # Per-card memo — a recolour or one card's reshuffle re-renders that card only (unless the new
+    # instance changes the shared `uniform_side`, which is in every key).
+    memo = CardMemo(prev, _MOTIF_CARDS_SHAPE_VERSION)
     cards_json = Any[]
     for (ci, c) in enumerate(cards_meta)
-        filmstrip = render_medoid_filmstrip(img, String(vn), c.medoid.track_id, c.frames_ts, pu;
-                                            trace_history = c.trace_history,
-                                            trace_colour  = hex_to_rgb(c.colour),
-                                            max_px = max_px, pad_px = pad_px,
-                                            crop_side = uniform_side,
-                                            bbox_override = instance_bboxes[ci],
-                                            interval_s = interval_s)
+        rkey = JSON3.write(Any[c.medoid.track_id, c.medoid.instance_id, c.frames_ts,
+                               string(hash(c.trace_history)), c.colour, uniform_side,
+                               max_px, pad_px, specs_mt, interval_s])
+        filmstrip = card_filmstrip!(memo, c.name, rkey) do
+            render_medoid_filmstrip(img, String(vn), c.medoid.track_id, c.frames_ts, pu;
+                                    trace_history = c.trace_history,
+                                    trace_colour  = hex_to_rgb(c.colour),
+                                    max_px = max_px, pad_px = pad_px,
+                                    crop_side = uniform_side,
+                                    bbox_override = instance_bboxes[ci],
+                                    interval_s = interval_s)
+        end
         push!(cards_json, Dict{String,Any}(
             # `path` on the frontend Card is the identity key — for motif cards it is the class name
             # (there is no pop tree path today).
@@ -386,7 +397,7 @@ function api_motif_cards(body_bytes::Vector{UInt8})
     end
 
     pool = [(uid = img.uid, value_name = String(vn))]
-    _write_motif_cards_sidecar(sidecar, pool, cards_json, stat_scales, class_names, mtime_now)
+    _write_motif_cards_sidecar(sidecar, pool, cards_json, stat_scales, stamp, memo.keys)
 
     200, JSON3.write(Dict{String,Any}(
         "pool"                => [Dict("uid" => pm.uid, "value_name" => pm.value_name) for pm in pool],

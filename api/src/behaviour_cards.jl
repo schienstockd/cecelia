@@ -197,3 +197,76 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
     end
     out
 end
+
+# ── Shared sidecar cache discipline (every family) ────────────────────────────────────────────
+#
+# A family's sidecar is served only while its `stamp` — everything outside the request that decides
+# what the cards show, plus the request's own knobs — matches exactly. Each family builds its stamp
+# from its own sources (cluster output / h5ad mtime, class set, colours, seeds, render size) plus
+# `cards_specs_mtime` for the saved viewer display. On a miss, `CardMemo` lets every card whose
+# render key is unchanged reuse its frames, so a recolour or one reshuffle re-renders one card.
+
+"""
+    cards_specs_mtime(img) -> Float64
+
+mtime of the image's saved viewer display file (channels/LUT/contrast) — the file
+`render_medoid_filmstrip` reads specs from. 0.0 when never saved (sampled defaults).
+"""
+function cards_specs_mtime(img::CciaImage)::Float64
+    zp = img_filepath(img)
+    zp === nothing && return 0.0
+    p = _props_path(img._dir, zp)
+    isfile(p) ? mtime(p) : 0.0
+end
+
+"""
+    parse_card_seeds(data) -> Dict{String,Int}
+
+The request's `seeds: {cardPath: n}` map (motif / HMM cards), non-positive / malformed entries
+dropped. `0` = the medoid, so an absent key and a 0 mean the same thing.
+"""
+function parse_card_seeds(data)::Dict{String,Int}
+    raw = get(data, :seeds, nothing)
+    out = Dict{String,Int}()
+    raw isa AbstractDict || return out
+    for (k, v) in raw
+        (v isa Real && isfinite(v)) || continue
+        n = Int(round(Float64(v))); n > 0 && (out[String(k)] = n)
+    end
+    out
+end
+
+read_cards_sidecar(path::String) =
+    isfile(path) ? (try JSON3.read(read(path, String), Dict{String,Any}); catch; nothing end) : nothing
+
+# Round-trip through JSON so number/array types compare like-for-like with the stored stamp.
+cards_stamp_fresh(doc, shape_version::Int, stamp) =
+    doc !== nothing && get(doc, "shapeVersion", 0) == shape_version &&
+    JSON3.read(JSON3.write(stamp), Dict{String,Any}) == get(doc, "stamp", nothing)
+
+"""
+    CardMemo(prev_doc, shape_version)
+
+Per-card filmstrip memo over the previous sidecar (any stamp — that's the point). `card_filmstrip!`
+returns the previous frames when the card's `rkey` matches, else calls `render()`; `memo.keys` is
+what to write back as the sidecar's `renderKeys`. The key must hold everything the pixels depend on
+(track, frames, trace, colour, crop, size, `cards_specs_mtime`).
+"""
+struct CardMemo
+    prev_keys::Dict{String,Any}
+    prev_strips::Dict{String,Any}
+    keys::Dict{String,Any}
+end
+function CardMemo(prev, shape_version::Int)
+    ok = prev !== nothing && get(prev, "shapeVersion", 0) == shape_version
+    pk = ok ? Dict{String,Any}(String(k) => v for (k, v) in get(prev, "renderKeys", Dict{String,Any}())) :
+              Dict{String,Any}()
+    ps = Dict{String,Any}()
+    ok && for pc in get(prev, "cards", Any[]); ps[String(pc["path"])] = pc["filmstrip"]; end
+    CardMemo(pk, ps, Dict{String,Any}())
+end
+function card_filmstrip!(render::Function, m::CardMemo, path::String, rkey::String)
+    m.keys[path] = rkey
+    get(m.prev_keys, path, nothing) == rkey && haskey(m.prev_strips, path) && return m.prev_strips[path]
+    render()
+end

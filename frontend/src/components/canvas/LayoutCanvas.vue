@@ -427,6 +427,8 @@ function clusterPanelProps(i: number) {
     popType: clustPopType.value, suffix: clustSuffix.value,
     shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c), state: c.state,
     persistKey: `${props.canvasKey}:slot:${i}`,
+    // the rail's Reload plots button — cluster panels refetch on it, same as ClusterPlots' bag
+    reloadToken: reloadToken.value,
     ...(CLUSTER_PANELS[c.ref].props?.(ctx) ?? {}),
   }
 }

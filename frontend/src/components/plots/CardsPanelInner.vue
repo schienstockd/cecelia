@@ -27,7 +27,8 @@ const props = defineProps<{
   projectUid: string; imageUids: string[]
   suffix?: string
   shownPops?: ShownPop[]
-  state: { maxPx?: number; padPx?: number; valueName?: string; hmmCol?: string }
+  state: { maxPx?: number; padPx?: number; valueName?: string; hmmCol?: string
+           seeds?: Record<string, number> }
   family: CardFamily
   // BIDIR PR #4b — the parent's point-out family (`cell-cards` or `motif-cards`) + the panel's
   // persistKey. Each StripCell filters by (family, plotId, cell=<card.path>). Absent → no
@@ -42,6 +43,8 @@ const props = defineProps<{
   valueName?: string
   /** hmmCards-only: the picked HMM state column, forwarded into `family.buildRequestBody`. */
   hmmCol?: string
+  /** Bumped by the host's "Reload plots" button — refetch. The server re-renders only what changed. */
+  reloadToken?: number
 }>()
 const emit = defineEmits<{
   cardSelect: [Card]
@@ -102,15 +105,37 @@ const rootUid = computed(() => props.imageUids[0] ?? '')
 const needSuffix    = computed(() => props.family.requireSuffix    !== false)
 const needShownPops = computed(() => props.family.requireShownPops !== false)
 
+// Per-card example seeds (`family.reshuffle`), persisted in the panel state so a saved board keeps
+// the examples it was showing. 0 / absent = the medoid.
+const seeds = computed(() => props.state.seeds ?? {})
+const shuffled = computed(() => Object.values(seeds.value).some(v => v > 0))
+function reshuffle(path: string) {
+  props.state.seeds = { ...seeds.value, [path]: (seeds.value[path] ?? 0) + 1 }
+}
+function reshuffleAll() {
+  const next: Record<string, number> = { ...seeds.value }
+  for (const c of cards.value) next[c.path] = (next[c.path] ?? 0) + 1
+  props.state.seeds = next
+}
+function resetShuffle() { props.state.seeds = {} }
+
+// The panel's own Reload — motif / HMM cards sit on rail-less boards, so there is no rail
+// "Reload plots" to reach them. The server serves its cache only while nothing changed.
+const reloadTick = ref(0)
+
+// Monotonic request id — a reshuffle click while a render is in flight must not let the older
+// response land last and overwrite the newer cards.
+let fetchSeq = 0
 async function fetchCards() {
-  cards.value = []
-  pool.value = []
-  statScales.value = {}
+  const seq = ++fetchSeq
   err.value = ''
   const shownPops = props.shownPops ?? []
-  if (!rootUid.value) return
-  if (needSuffix.value && !props.suffix) return
-  if (needShownPops.value && !shownPops.length) return
+  const clear = () => { cards.value = []; pool.value = []; statScales.value = {} }
+  if (!rootUid.value) return clear()
+  if (needSuffix.value && !props.suffix) return clear()
+  if (needShownPops.value && !shownPops.length) return clear()
+  // Previous cards stay up under the spinner while the next set renders — a single-card reshuffle
+  // or a recolour shouldn't blank the whole sheet.
   loading.value = true
   try {
     const body = props.family.buildRequestBody({
@@ -122,12 +147,15 @@ async function fetchCards() {
       padPx: padPx.value,
       valueName: props.valueName,
       hmmCol:    props.hmmCol,
+      seeds:     props.family.reshuffle ? seeds.value : undefined,
     })
     const res = await fetch(props.family.endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
+    if (seq !== fetchSeq) return
     if (!res.ok) {
+      clear()
       // 404 with an `availableValueNames` / `availableHmmCols` payload is how the server tells
       // the picker "the vn/col you asked for is stale, here are the eligible ones" — surface both
       // to the wrapper (whichever it owns).
@@ -145,6 +173,7 @@ async function fetchCards() {
       return
     }
     const data = (await res.json()) as CardsResponse
+    if (seq !== fetchSeq) return
     pool.value  = data.pool ?? []
     cards.value = data.cards ?? []
     statScales.value = data.statScales ?? {}
@@ -153,12 +182,18 @@ async function fetchCards() {
         availableValueNames: data.availableValueNames, valueName: data.valueName,
         availableHmmCols:    data.availableHmmCols,    hmmCol:    data.hmmCol,
       })
-  } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
-  finally { loading.value = false }
+  } catch (e) {
+    if (seq !== fetchSeq) return
+    clear(); err.value = e instanceof Error ? e.message : String(e)
+  } finally { if (seq === fetchSeq) loading.value = false }
 }
 
+// Name + colour are in the key: the server bakes the pop colour into the trace, so a recolour on the
+// rail refetches (and re-renders just that card). Channel contrast lives in the viewer's saved
+// display file, which this panel can't watch — that's what the host's Reload plots button is for.
 watch([rootUid, () => props.suffix, () => props.valueName, () => props.hmmCol,
-       () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds]))],
+       () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds, p.name, p.colour])),
+       () => JSON.stringify(seeds.value), () => props.reloadToken, reloadTick],
       fetchCards, { immediate: true })
 
 const cardSrc = (c: Card, i: number): string | undefined => {
@@ -286,11 +321,18 @@ useVisualPanel(
                      @click="emit('cardSelect', c)" />
           <span v-if="claudeCardPaths.has(c.path)" class="ccv-claude-badge"
                 v-tooltip.top="'Claude pointed at this card'">C</span>
+          <button v-if="family.reshuffle && !capturing"
+                  class="ccv-shuffle cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button"
+                  :disabled="loading" v-tooltip.top="'Show another example'"
+                  @click.stop="reshuffle(c.path)">
+            <i class="pi pi-step-forward" />
+          </button>
         </div>
         <div class="ccv-foot">
           <div class="ccv-head">
             <span class="ccv-name" :style="{ color: c.colour }">{{ c.name }}</span>
             <span class="cc-muted cc-fs-2xs ccv-meta">
+              <template v-if="seeds[c.path]">example {{ seeds[c.path] }} ·&nbsp;</template>
               <template v-if="timeLabelFor(c)">{{ timeLabelFor(c) }} ·&nbsp;</template>n={{ c.n }}
             </span>
           </div>
@@ -302,6 +344,25 @@ useVisualPanel(
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- Sheet-level controls, bottom auto-hide strip (docs/UI.md → "Auto-hide panel controls") so it
+         never collides with a wrapper's top picker strip (motif / HMM). -->
+    <div v-if="rootUid && !capturing" class="ccv-ctrl cc-panel-controls bottom">
+      <template v-if="family.reshuffle && cards.length">
+        <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" :disabled="loading"
+                v-tooltip.top="'Show another example on every card'" @click="reshuffleAll">
+          <i class="pi pi-step-forward" />
+        </button>
+        <button v-if="shuffled" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button"
+                :disabled="loading" v-tooltip.top="'Back to the medoids'" @click="resetShuffle">
+          <i class="pi pi-undo" />
+        </button>
+      </template>
+      <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" :disabled="loading"
+              v-tooltip.top="'Reload — picks up viewer contrast changes'" @click="reloadTick++">
+        <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
+      </button>
     </div>
 
     <PlotSpinner v-if="loading" label="Rendering cards…" />
@@ -330,6 +391,11 @@ useVisualPanel(
   color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1;
   pointer-events: auto; }
 .ccv-cell { flex: 1; min-height: 0; cursor: pointer; }
+.ccv-ctrl { display: flex; justify-content: flex-end; gap: 4px; padding: 4px 6px; }
+/* Per-card reshuffle — top-right, revealed on card hover (the Claude badge owns top-left). */
+.ccv-shuffle { position: absolute; top: 4px; right: 4px; z-index: 9; opacity: 0;
+  background: var(--cc-surface-2); transition: opacity 0.12s; }
+.ccv-card:hover .ccv-shuffle, .ccv-shuffle:focus-visible { opacity: 1; }
 .ccv-frame :deep(.strip-cell) { min-height: 0; }
 .ccv-foot { flex: none; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px;
   min-height: 0; }
