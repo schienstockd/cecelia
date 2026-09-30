@@ -464,6 +464,18 @@ class DashboardTest(unittest.TestCase):
             state.add(e)
         return state
 
+    def test_header_runs_grey_errored_suffix_red(self):
+        # Run volume is context (grey); only `(N errored)` is red, not the whole count.
+        from cecelia.effectiveness.palette import GREY, VERMILLION
+        row = {"pr": None, "branch": None, "commit": None, "session": "s", "source": "live",
+               "schema_version": 1, "ts": "2026-09-27T10:00:00Z", "event": "fanout_audit_run"}
+        events = [dict(row, payload={"duration_s": 1.0}),
+                  dict(row, payload={"duration_s": 1.0, "error": "timeout"})]
+        header = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                                  width=120, use_colour=True).splitlines()[1]
+        self.assertIn(f"{GREY}2 runs", header)
+        self.assertIn(f"{VERMILLION} (1 errored)", header)
+
     def test_empty_state_renders_placeholder(self):
         # A freshly-installed log with no events yet: dashboard still paints, tells the user
         # nothing has landed. A blank screen would look like a broken tool.

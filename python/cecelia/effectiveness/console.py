@@ -413,11 +413,13 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     confirmed = sum(v.get("confirmed", 0) for v in state.tally.findings.values())
     should_reuse = sum(v.get("should reuse", 0) for v in state.tally.findings.values())
     header_parts: list[str] = []
+    # Run volume is context, not signal — grey. Only the errored suffix is red, so one
+    # failed spawn in 40 doesn't paint the whole count.
     if total_runs:
-        run_txt = f"{total_runs} runs"
+        run_txt = _col(_GREY, f"{total_runs} runs", use_colour=use_colour)
         if total_errored:
-            run_txt += f" ({total_errored} errored)"
-        header_parts.append(_col(_RED if total_errored else _CYAN, run_txt, use_colour=use_colour))
+            run_txt += _col(_RED, f" ({total_errored} errored)", use_colour=use_colour)
+        header_parts.append(run_txt)
     if total_findings:
         header_parts.append(_col(_ORANGE if confirmed else _YELLOW,
                                  f"{total_findings} findings", use_colour=use_colour))
