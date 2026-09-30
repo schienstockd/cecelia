@@ -93,6 +93,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-undo', means: 'Undo — leave things as they were; mirrored, redo' },
       { icon: 'pi-refresh', means: 'Reload, or restart a service' },
       { icon: 'pi-sync', means: 'Re-read from the file, or the model-training page' },
+      { icon: 'pi-step-forward', means: 'Show another example — a different representative cell' },
       { icon: 'pi-trash', means: 'Delete' },
       { icon: 'pi-eraser', means: 'Delete what was derived, keep the original' },
       { icon: 'pi-plus', means: 'Add' },
@@ -254,7 +255,7 @@ export const ICON_LEGEND: IconFamily[] = [
 //
 // Media / playback — for a proper transport bar the movie player will grow into:
 //   pi-backward  pi-fast-backward  pi-fast-forward
-//   pi-step-backward  pi-step-forward  pi-step-backward-alt  pi-step-forward-alt
+//   pi-step-backward  pi-step-backward-alt  pi-step-forward-alt
 //   pi-volume-up  pi-volume-down  pi-volume-off  pi-headphones  pi-microphone
 //
 // Time and calendar — anything a schedule / planner surface might want:

@@ -5,18 +5,20 @@
 #   2. render_view_frame per chosen `t` — crop = medoid track's bbox, track colour baked in via
 #      `overlay_author.build_overlays_for(track_color_mode="pop", pops_filter=[pop_path])`
 #   3. PNG-encode + save each frame as a board-asset (`settings/board-assets/<id>.png`)
-#   4. Sidecar payload cache under `analysis/cell_cards/{value_name}__{suffix}.json`
-#      (rebuilds when the run's `clusters.{suffix}` mtime is newer — the cheap staleness rule per
-#      `CELL_CARDS_PLAN` Decision 8).
+#   4. Sidecar payload cache under `analysis/cell_cards/{value_name}__{suffix}.json`. Served as-is
+#      while its `stamp` matches (see `_cell_cards_stamp`: cluster output, saved viewer display,
+#      pop name/colour, render size) — so a plain refetch after a contrast or colour change is
+#      never stale. On a miss, cards whose pixels can't have changed reuse their frames (`renderKeys`)
+#      — a colour change or one card's reshuffle re-renders that card only.
 #
-# Rendering is DELIBERATELY plain here — no viewer view-state resolution yet. Channels default to
-# all, specs default to the props path's `resolved_display_specs`. Adding view-state provenance
-# comes with the frontend card view in Phase 2, so cards can match "what the viewer is showing".
+# Channels are all of them; specs are the saved viewer JSON's `resolved_display_specs` (what the
+# viewer shows), sampled-contrast defaults on a never-opened image.
 #
 # Request:
 #   POST /api/cell_cards
-#   { projectUid, rootUid, valueName, suffix, pops: [{path, clusterIds:[int]}],
-#     framesPerCard?=3, maxPx?=320, padPx?=8, viewState? }
+#   { projectUid, rootUid, valueName, suffix, pops: [{path, clusterIds:[int], seed?:int}],
+#     maxPx?=320, padPx?=8 }
+#   `seed` > 0 swaps that card's medoid for another representative track (`medoid_track`).
 # Response:
 #   { pool: [{uid, value_name}], cards: [ Card ] }   — matches CardsResponse.
 
@@ -35,47 +37,39 @@ function _cluster_mtime(img::CciaImage, value_name::String)::Float64
     isfile(p) ? mtime(p) : 0.0
 end
 
-# Cache is fresh iff every pool member's cluster mtime matches the sidecar's recorded value AND the
-# pop set + pops' cluster-id sets match. Any drift → rebuild. The sidecar itself is written by
-# `_write_cell_cards_sidecar` after a fresh render.
-const _CELL_CARDS_SHAPE_VERSION = 7   # v7: specs sourced from saved viewer JSON (channels/LUT/contrast)
-function _cell_cards_cache_fresh(sidecar_path::String, pool, pops)::Union{Nothing,Dict{String,Any}}
-    isfile(sidecar_path) || return nothing
-    doc = try JSON3.read(read(sidecar_path, String), Dict{String,Any}); catch; return nothing end
-    # Reject older cached shapes rather than serving cards missing new fields (e.g. shape=1 had no
-    # min/max on stats + no statScales — the FE mini-boxplots would draw a zero-height whisker).
-    get(doc, "shapeVersion", 1) == _CELL_CARDS_SHAPE_VERSION || return nothing
-    # Check pop identity (path + cluster_ids), order-insensitive.
-    pop_key(p) = (String(p.path), sort(collect(Int, p.cluster_ids)))
-    want = sort([pop_key(p) for p in pops])
-    got_pops = get(doc, "pops", Any[])
-    got = try
-        sort([(String(x["path"]), sort(collect(Int, x["clusterIds"]))) for x in got_pops])
-    catch; return nothing end
-    got == want || return nothing
-    # Check every pool member's cluster mtime matches.
-    got_mt = get(doc, "clusterMtime", Dict{String,Any}())
-    got_mt isa AbstractDict || return nothing
-    for pm in pool
-        key = "$(pm.uid)/$(pm.value_name)"
-        haskey(got_mt, key) || return nothing
-        # Reload the image just to mtime-check the tracks h5ad — cheap.
-        # (We take the mtime from the sidecar's own record — the caller re-derives the fresh set below
-        # and passes them in for comparison.)
+# Everything that decides what the sheet shows, per pool member: the tracks h5ad the cluster column
+# lives in and the saved viewer display (`cards_specs_mtime`); per requested pop: cluster ids, seed,
+# and name + colour (baked into the trace); plus the render size. Served only while this matches
+# exactly (`cards_stamp_fresh`).
+function _cell_cards_stamp(pu::String, img::CciaImage, pool_uids::Vector{String},
+                           value_name::String, pops, max_px::Int, pad_px::Int)::Dict{String,Any}
+    cluster_mt = Dict{String,Any}(); specs_mt = Dict{String,Any}()
+    for u in pool_uids
+        pm_img = u == img.uid ? img : init_object(pu, u)
+        cluster_mt["$(u)/$(value_name)"] = _cluster_mtime(pm_img, value_name)
+        specs_mt[u] = cards_specs_mtime(pm_img)
     end
-    doc
+    m = load_pop_map(img._dir, value_name; pop_type="trackclust")
+    # Order-insensitive: sorted by path, ids sorted.
+    pop_rows = sort([Any[p.path, sort(p.cluster_ids), p.seed,
+                         haskey(m.pops, p.path) ? m.pops[p.path].name : nothing,
+                         haskey(m.pops, p.path) ? m.pops[p.path].colour : nothing] for p in pops];
+                    by = first)
+    Dict{String,Any}("clusterMtime" => cluster_mt, "specsMtime" => specs_mt,
+                     "pops" => pop_rows, "maxPx" => max_px, "padPx" => pad_px)
 end
 
-function _write_cell_cards_sidecar(sidecar_path::String, payload, pops, pool_mtimes)
+const _CELL_CARDS_SHAPE_VERSION = 8   # v8: stamp (pops/seeds/specs/labels/size) + renderKeys
+
+function _write_cell_cards_sidecar(sidecar_path::String, payload, stamp, render_keys)
     mkpath(dirname(sidecar_path))
     doc = Dict{String,Any}(
         "shapeVersion" => _CELL_CARDS_SHAPE_VERSION,
         "pool" => [Dict("uid" => pm.uid, "value_name" => pm.value_name) for pm in payload.pool],
         "cards" => payload.cards_json,
         "statScales" => payload.stat_scales,
-        "pops" => [Dict("path" => String(p.path),
-                        "clusterIds" => collect(Int, p.cluster_ids)) for p in pops],
-        "clusterMtime" => pool_mtimes)
+        "stamp" => stamp,
+        "renderKeys" => render_keys)
     write_json_atomic(sidecar_path, doc)
 end
 
@@ -118,13 +112,15 @@ function api_cell_cards(body_bytes::Vector{UInt8})
     pops_raw = get(data, :pops, nothing)
     pops_raw isa AbstractVector ||
         return 400, JSON3.write((; error = "pops (array) required"))
-    pops = @NamedTuple{path::String, cluster_ids::Vector{Int}}[]
+    pops = @NamedTuple{path::String, cluster_ids::Vector{Int}, seed::Int}[]
     for p in pops_raw
         path = String(get(p, :path, ""))
         ids_raw = get(p, :clusterIds, get(p, :cluster_ids, Any[]))
         ids = Int[Int(round(Float64(x))) for x in ids_raw]
         (isempty(path) || isempty(ids)) && continue
-        push!(pops, (path=path, cluster_ids=ids))
+        seed = get(p, :seed, 0)
+        seed = seed isa Real && isfinite(seed) ? max(0, Int(round(Float64(seed)))) : 0
+        push!(pops, (path=path, cluster_ids=ids, seed=seed))
     end
     isempty(pops) && return 400, JSON3.write((; error = "no valid pops in request"))
 
@@ -145,32 +141,28 @@ function api_cell_cards(body_bytes::Vector{UInt8})
         vn = String(vns[1])
     end
 
-    # Cache freshness check — cheapest path. Sidecar sits under the ROOT image's analysis/ dir (the
-    # Decision 8 mirror-per-pool-member behaviour lands in Phase 1f; single-image runs land it at
-    # the root, which is the only member).
+    # Cache freshness check — cheapest path. Sidecar sits under the ROOT image's analysis/ dir and is
+    # mirrored to every pool member (Decision 8). The stamp's pool is `partOf` (the run's images);
+    # the metadata pass below returns the full (uid, vn) pool.
     sidecar = _cell_cards_sidecar(img._dir, vn, suffix)
-    doc, pool = try
-        (pool0,) = try
-            entry = Cecelia._clustfeatures_entry(img_track_props_path(img, vn), suffix; family="clusters")
-            entry === nothing && error("no clustfeatures entry")
-            part_of = String[string(x) for x in get(entry, "partOf", get(entry, :partOf, String[]))]
-            isempty(part_of) && (part_of = [img.uid])
-            (part_of,)
-        catch e; return 404, JSON3.write((; error = "clustering run '$suffix' not found: $(sprint(showerror, e))")) end
-        (_cell_cards_cache_fresh(sidecar, [(uid=u, value_name=vn) for u in pool0], pops), nothing)
-    catch; (nothing, nothing) end
-    # NB: the freshness check uses a coarse pool built from partOf only — the metadata pass below
-    # returns the full (uid, vn) pool. If a rebuild is needed, we get the accurate pool from the
-    # rebuild's own call.
+    pool_uids = try
+        entry = Cecelia._clustfeatures_entry(img_track_props_path(img, vn), suffix; family="clusters")
+        entry === nothing && error("no clustfeatures entry")
+        part_of = String[string(x) for x in get(entry, "partOf", get(entry, :partOf, String[]))]
+        isempty(part_of) ? [img.uid] : part_of
+    catch e
+        return 404, JSON3.write((; error = "clustering run '$suffix' not found: $(sprint(showerror, e))"))
+    end
+    stamp = try _cell_cards_stamp(pu, img, pool_uids, vn, pops, max_px, pad_px); catch; nothing end
+    prev = read_cards_sidecar(sidecar)
 
-    if doc !== nothing
-        # Cache hit — return ONLY the wire fields (`pool`, `cards`, `statScales`); `pops`/`clusterMtime`
-        # /`shapeVersion` live in the sidecar for freshness accounting and are not part of the response
-        # contract.
+    if stamp !== nothing && cards_stamp_fresh(prev, _CELL_CARDS_SHAPE_VERSION, stamp)
+        # Cache hit — return ONLY the wire fields (`pool`, `cards`, `statScales`); the rest lives in
+        # the sidecar for freshness accounting and is not part of the response contract.
         return 200, JSON3.write(Dict{String,Any}(
-            "pool"       => get(doc, "pool", Any[]),
-            "cards"      => get(doc, "cards", Any[]),
-            "statScales" => get(doc, "statScales", Dict{String,Any}())))
+            "pool"       => get(prev, "pool", Any[]),
+            "cards"      => get(prev, "cards", Any[]),
+            "statScales" => get(prev, "statScales", Dict{String,Any}())))
     end
 
     # Cold path — compute metadata, render frames, cache.
@@ -206,18 +198,28 @@ function api_cell_cards(body_bytes::Vector{UInt8})
         :T in img_scale_axes(img) ? Float64(img_physical_sizes(img)[2]) * 60.0 : nothing
     catch; nothing end
 
+    # Per-card memo (`CardMemo`): a colour change or one card's reshuffle re-renders that card only
+    # — unless the reshuffled track's bbox changes the shared `uniform_side`, which is in every key.
+    specs_mt = stamp === nothing ? Dict{String,Any}() : stamp["specsMtime"]
+    memo = CardMemo(prev, _CELL_CARDS_SHAPE_VERSION)
+
     cards_json = Any[]
     for c in cards_meta
         med_img = c.medoid.uid == img.uid ? img : get!(med_imgs, c.medoid.uid) do
             init_object(pu, c.medoid.uid)
         end
-        trace_history = _cell_trace_history(med_img, c.medoid.value_name, c.path, Int(c.medoid.track_id))
-        filmstrip = render_medoid_filmstrip(med_img, c.medoid.value_name, c.medoid.track_id,
-                                            c.frames_ts, pu;
-                                            trace_history=trace_history,
-                                            trace_colour=hex_to_rgb(c.colour),
-                                            max_px=max_px, pad_px=pad_px,
-                                            crop_side=uniform_side, interval_s=interval_s)
+        rkey = JSON3.write(Any[c.medoid.uid, c.medoid.value_name, c.medoid.track_id, c.frames_ts,
+                               c.colour, uniform_side, max_px, pad_px,
+                               get(specs_mt, c.medoid.uid, nothing), interval_s])
+        filmstrip = card_filmstrip!(memo, c.path, rkey) do
+            trace_history = _cell_trace_history(med_img, c.medoid.value_name, c.path, Int(c.medoid.track_id))
+            render_medoid_filmstrip(med_img, c.medoid.value_name, c.medoid.track_id,
+                                    c.frames_ts, pu;
+                                    trace_history=trace_history,
+                                    trace_colour=hex_to_rgb(c.colour),
+                                    max_px=max_px, pad_px=pad_px,
+                                    crop_side=uniform_side, interval_s=interval_s)
+        end
         push!(cards_json, Dict{String,Any}(
             "path"      => c.path,
             "name"      => c.name,
@@ -244,12 +246,10 @@ function api_cell_cards(body_bytes::Vector{UInt8})
                               Float64[min(cur[1], s.min), max(cur[2], s.max)]
     end
 
-    pool_mtimes = Dict{String,Any}()
     pool_img_dirs = Dict{String,String}()
     for pm in pool
-        pm_img = pm.uid == img.uid ? img : init_object(pu, pm.uid)
-        pool_mtimes["$(pm.uid)/$(pm.value_name)"] = _cluster_mtime(pm_img, pm.value_name)
-        pool_img_dirs[pm.uid] = pm_img._dir
+        haskey(pool_img_dirs, pm.uid) && continue
+        pool_img_dirs[pm.uid] = (pm.uid == img.uid ? img : get!(() -> init_object(pu, pm.uid), med_imgs, pm.uid))._dir
     end
 
     # Mirror the sidecar to EVERY pool member per Decision 8 — a cell-cards view opened on any pool
@@ -260,7 +260,9 @@ function api_cell_cards(body_bytes::Vector{UInt8})
         d = get(pool_img_dirs, pm.uid, nothing); d === nothing && continue
         d in seen_dirs && continue   # multi-vn on the same image → one sidecar per image, not per (uid, vn)
         push!(seen_dirs, d)
-        _write_cell_cards_sidecar(_cell_cards_sidecar(d, vn, suffix), payload, pops, pool_mtimes)
+        # No stamp (couldn't read the pop map / an image) → write none, so the next call re-checks.
+        _write_cell_cards_sidecar(_cell_cards_sidecar(d, vn, suffix), payload,
+                                  something(stamp, Dict{String,Any}()), memo.keys)
     end
 
     doc_out = Dict{String,Any}(

@@ -22,11 +22,12 @@ const props = defineProps<{
   projectUid: string; setUid: string | null; imageUids: string[]
   popType: 'clust' | 'trackclust' | 'region'; suffix: string
   shownPops?: ShownPop[]
-  state: { maxPx?: number; padPx?: number }
+  state: { maxPx?: number; padPx?: number; seeds?: Record<string, number> }
   docked?: boolean
   family: CardFamily
   // BIDIR PR #4b — forwarded to CardsPanelInner so its StripCells render point-out marks.
   pointOutFamily?: string
+  reloadToken?: number
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; cardSelect: [Card] }>()
 
@@ -51,6 +52,7 @@ defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
                      :project-uid="projectUid" :image-uids="imageUids"
                      :suffix="suffix" :shown-pops="shownPops" :state="state"
                      :point-out-family="pointOutFamily" :plot-id="persistKey"
+                     :reload-token="reloadToken"
                      @card-select="emit('cardSelect', $event)">
       <template #detail="{ cards, statScales }">
         <slot name="detail" :cards="cards" :stat-scales="statScales" />
