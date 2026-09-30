@@ -192,12 +192,12 @@ _label_contour(src)::Int = clamp(_to_int(get(src, :labelContour, 0)), 0, LABEL_C
 # it silently would be worse than ignoring it. `nothing` for the slice means "whatever is showing",
 # which is what every recording did before the setting existed.
 _show_3d(src)::Bool = Bool(get(src, :show3D, false))
-# 3D detail level from an authored config: a multiscale LEVEL index (0 = full resolution, higher =
-# coarser), or `nothing` for the legacy viewer's own choice. Absent means 0, not "auto" — a config written before
-# the control existed still wants visible masks.
-function _detail_3d(src)::Union{Int,Nothing}
-    raw = get(src, :detail3d, 0)
-    raw === nothing ? nothing : max(0, _to_int(raw))
+# 3D ray-cast quality from a request / authored config — the keyframe renderer's `render_quality`
+# (samples per ray: draft 0.5x, standard 1x, high 2x). Anything else is `:standard`.
+function _render_quality(src)::Symbol
+    raw = _cfg_get(src, "renderQuality", "standard")
+    q = raw isa AbstractString ? String(raw) : "standard"
+    q == "draft" ? :draft : q == "high" ? :high : :standard
 end
 
 function _z_slice(src)::Union{Int,Nothing}

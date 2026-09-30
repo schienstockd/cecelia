@@ -19,6 +19,7 @@ import { useLogStore } from '../../stores/log'
 import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../../utils/titleCard'
 import { framesFor, activeAnimationUid } from '../../utils/animationTimeline'
 import { movieSizeParams } from '../../utils/movieSize'
+import { readViewerLook, hexViewState, lookForRender } from '../../utils/viewer/viewerLook'
 import { seedConfigFromViewState, type ViewStateLike } from '../../utils/batchMovie'
 import { useViewerStore } from '../../stores/viewer'
 import type { ViewerViewState } from '../../utils/viewer/viewState'
@@ -195,7 +196,8 @@ async function render() {
   log.info('Rendering animation… (this can take a moment)', { source: 'movies' })
   try {
     const keyframes = frames.value.map(f => ({
-      viewState: f.snapshot,
+      // colours as the hex the viewer shows — the renderer's name table disagrees (`colourForRender`)
+      viewState: f.snapshot ? hexViewState(f.snapshot) : f.snapshot,
       steps: Math.max(1, Math.round((f.duration ?? 1) * anim.fps)),
     }))
     // What the EDITOR needs back and the recorder does not (Phase 6, utils/movieRestore.ts): the
@@ -225,11 +227,16 @@ async function render() {
     // union's `layers` bag (channel colormaps + which overlays are present); colour-by rides along
     // from per-set settings because it isn't in the snapshot. The overlay author's `valueName` needs
     // the active segmentation — animations run against one segmentation at a time.
+    // The overlay half (pops, tracks, their segmentation, point size, tails) is read off the viewer's
+    // settings by the shared `readViewerLook` — the snapshot carries only channel layers, so building
+    // the look from it alone recorded no pops or tracks. Channels stay the keyframes' union.
+    const live = activeImage.value
+      ? readViewerLook(activeImage.value, setUid, { requireOpen: false }) : null
     const look = {
+      ...(live ?? {}),
       ...seedConfigFromViewState(union as ViewStateLike, activeImage.value?.channelNames ?? []),
       ...(colourBy ? { colourBy } : {}),
       ...(Object.keys(overrides).length ? { colourOverrides: overrides } : {}),
-      valueName: activeImage.value?.activeValueName ?? '',
     }
 
     // Over the task rail (`movie:record` with keyframes), like the viewer's Record and the batch: the
@@ -242,7 +249,7 @@ async function render() {
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid: projectUid.value, imageUid: uid,
       keyframes, keyframeMeta, fps: anim.fps, suffix: anim.suffix, titleCard,
-      apiUrl: window.location.origin, look,
+      apiUrl: window.location.origin, look: lookForRender(look),
       ...movieSizeParams(anim.sizeX, anim.sizeY),
     })
   } catch (e) {

@@ -26,7 +26,8 @@ describe('buildBatchMovieConfig', () => {
       colourBy: 'live.cell.track.clusters.movement',
       showTrackclust: true, colourLabels: true, popType: 'clust', pointsSize: 10, tailWidth: 8,
     }, [], { '2': '#ff1493' })
-    expect(c.channels).toEqual({ Tcells: 'green', SHG: 'bop purple' })
+    // sent as the hex the picker shows — the renderer's name table disagrees
+    expect(c.channels).toEqual({ Tcells: '#00ff00', SHG: '#9b30ff' })
     expect(c.colourBy).toBe('live.cell.track.clusters.movement')
     expect(c.showTrackclust).toBe(true)
     expect(c.colourLabels).toBe(true)
@@ -190,19 +191,20 @@ describe('clampContour / labelContour', () => {
 
 // Mirrors the Julia `_safe_name_part` testset (api/test/runtests.jl) — the two sanitisers must agree,
 // or the filename the batch panel PREVIEWS is not the one the recorder writes.
-// The coarsest pyramid level erases a strided label pyramid — so an authored batch config says
-// "full resolution" rather than leaving it unsaid.
-describe('buildBatchMovieConfig 3D detail', () => {
+describe('buildBatchMovieConfig 3D', () => {
   const build = (cfg: Record<string, unknown>) =>
     buildBatchMovieConfig(cfg, ['segA'], {})
-  it('sends full resolution by default in 3D', () => {
-    expect(build({ show3D: true }).detail3d).toBe(0)
+  it('sends standard quality by default', () => {
+    expect(build({ show3D: true }).renderQuality).toBe('standard')
   })
-  it('carries an explicitly chosen level', () => {
-    expect(build({ show3D: true, detail3d: 2 }).detail3d).toBe(2)
+  it('carries an explicitly chosen quality', () => {
+    expect(build({ show3D: true, renderQuality: 'high' }).renderQuality).toBe('high')
   })
-  it('sends nothing in 2D — the level only applies to a volumetric render', () => {
-    expect(build({ show3D: false, detail3d: 2 }).detail3d).toBeNull()
+  it('sends the captured camera in 3D only', () => {
+    const cam = { angles: [30, 45, 0], zoom: 1.5 }
+    expect(build({ show3D: true, camera3d: cam }).camera3d).toEqual(cam)
+    expect(build({ show3D: true }).camera3d).toBeNull()
+    expect(build({ show3D: false, camera3d: cam }).camera3d).toBeNull()
   })
 })
 

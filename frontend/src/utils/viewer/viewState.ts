@@ -58,6 +58,14 @@ export interface ViewerViewState {
   canvas: { width: number; height: number }
 }
 
+/** The z plane a 2D view shows (rounded, ≥ 0), or null for a 3D view / a state without one. The one
+ *  reader of `current_step[1]` as "the viewer's z" — movie z defaults and the viewer look share it. */
+export function viewPlaneZ(vs: { dims?: { ndisplay?: number; current_step?: number[] } } | null | undefined): number | null {
+  if (!vs || vs.dims?.ndisplay === 3) return null
+  const z = vs.dims?.current_step?.[1]
+  return typeof z === 'number' && Number.isFinite(z) ? Math.max(0, Math.round(z)) : null
+}
+
 /** Empty state so subscribers can read a stable shape before the viewer publishes anything. Never
  *  emitted by the viewer itself — it goes straight from `null` to a populated snapshot. */
 export const EMPTY_VIEW_STATE: ViewerViewState = {

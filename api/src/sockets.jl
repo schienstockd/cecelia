@@ -108,6 +108,16 @@ _ov_look_int(cfg, k::AbstractString, dflt::Int) = begin
     v isa Real ? Int(round(Float64(v))) : dflt
 end
 
+# Which segmentation an animation's overlays come from: the look's `popValueName`, else its legacy
+# `valueName`, else `dflt`. Empty strings fall through.
+function _ov_look_seg(cfg, dflt::AbstractString)
+    for k in ("popValueName", "valueName")
+        v = _ov_look_str(cfg, k, "")
+        isempty(v) || return v
+    end
+    String(dflt)
+end
+
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
                    started_at="", finished_at="")
     if string(status) == "running"
@@ -368,6 +378,13 @@ function handle_movie_record(ws, data)
     # Baked overlays, burnt into every frame. Default true = what every movie was.
     show_ts     = Bool(get(data, :showTimestamp, true))
     show_sb     = Bool(get(data, :showScaleBar, true))
+    # The viewer panel's "Match viewer" record: the request describes the live view (version, mask,
+    # overlays, camera) rather than the recorder's own options. A 3D view arrives as keyframes (the
+    # only renderer that draws a volume); a 2D one takes the plain path with the view's own contrast.
+    match_viewer = Bool(get(data, :matchViewer, false))
+    # A keyframe request from the viewer panel (match-viewer, or Record set to 3D) is a timelapse:
+    # named and banked as a viewer recording, not an animation.
+    from_viewer  = match_viewer || _wstr(data, :source) == "viewer"
     if isempty(image_uid)
         ws_log(ws, task_id, "[ERROR] no image to record")
         ws_status(ws, task_id, "failed", ""; fun=fun, pool="viewer")
@@ -417,8 +434,7 @@ function handle_movie_record(ws, data)
         first_vn  = isempty(value_names) ? "" : String(first(value_names))
         # `renderQuality` picks the 3D ray-cast sample density: draft (0.5×) | standard (1×) | high
         # (2×). Meaningless for 2D keyframes — `render_view_frame` ignores it — but harmless to thread.
-        rq_raw = String(_wstr(data, :renderQuality, "standard"))
-        rq_sym = rq_raw == "draft" ? :draft : rq_raw == "high" ? :high : :standard
+        rq_sym = _render_quality(data)
         # Overlays for the animation — the frontend's per-set settings (colourBy, pointsSize,
         # tailWidth, showPopulations, showTracks, showGatedTracks, popType, popsFilter, etc.) ride
         # inside `look`, seeded once from the viewer state the title card already reads. Absent
@@ -429,7 +445,9 @@ function handle_movie_record(ws, data)
         # the request's first valueName. Same for `pointsSize`, `tailWidth`, `tailLength`, `popType`
         # — the author reads them all from `overlays_config`, so seed it here from `look`.
         if ovs_cfg !== nothing
-            ovs_cfg["valueName"] = _ov_look_str(look_cfg, "valueName", first_vn)
+            # The SEGMENTATION the overlays come from. `popValueName` is the look's name for it (what
+            # `viewerLook` writes); a bare `valueName` is what older animation looks carried.
+            ovs_cfg["valueName"] = _ov_look_seg(look_cfg, first_vn)
             # `look` carries the resolved per-set settings; a missing tailLength defaults to 30
             # (matches `_overlays_raw_from_config`).
             ovs_cfg["tailLength"] = _ov_look_int(look_cfg, "tailLength", 30)
@@ -454,6 +472,7 @@ function handle_movie_record(ws, data)
                                           render_quality = rq_sym,
                                           show_timestamp = show_ts, show_scale_bar = show_sb,
                                           overlays_config = ovs_cfg,
+                                          from_viewer = from_viewer,
                                           movie_config = movie_config)
         catch e
             @warn "offline animation crashed" exception = e
@@ -510,6 +529,7 @@ function handle_movie_record(ws, data)
                            show_timestamp = show_ts, show_scale_bar = show_sb,
                            overlays_raw = overlays_raw,
                            view_state = view_state,
+                           match_viewer = match_viewer || Bool(get(data, :liveSpecs, false)),
                            movie_config = movie_config)
     catch e
         @warn "offline record crashed" exception = e

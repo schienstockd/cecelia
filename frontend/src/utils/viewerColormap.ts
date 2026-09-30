@@ -17,6 +17,16 @@ const NAPARI_COLORMAP_HEX: Record<string, string> = {
   'i blue': '#0000ff', 'i green': '#00ff00', 'i red': '#ff0000',
 }
 
+/** A channel colour as the renderer should get it: a known NAME as the hex the viewer and the pickers
+ *  show, anything else (a hex, an unknown name) unchanged. The renderer resolves names through its own
+ *  napari-era table (`CMAP_RGB`, api/src/image_render.jl), which disagrees — gray is white there,
+ *  'bop orange' another orange — so a request carries the hex the user saw. Stored configs keep names. */
+export const colourForRender = (c: string): string => viewerColormapHex(c) ?? c
+
+/** `{channel → colour}` through `colourForRender`. */
+export const channelsForRender = (channels: Record<string, string> | undefined): Record<string, string> =>
+  Object.fromEntries(Object.entries(channels ?? {}).map(([ch, c]) => [ch, colourForRender(c)]))
+
 /** Hex for a viewer colormap name (case-insensitive), or null if it isn't a single-hue channel colour. */
 export function viewerColormapHex(name: string | null | undefined): string | null {
   if (!name) return null

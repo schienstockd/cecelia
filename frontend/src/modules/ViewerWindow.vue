@@ -34,6 +34,7 @@ import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
+import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { usePlotResize } from '../composables/usePlotResize'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { debouncedLatest } from '../utils/debouncedLatest'
@@ -749,15 +750,7 @@ function setTrackSourceColour(vn: string, hex: string) {
  * "why do you have flowtom as the only pop source for fXgbTl. it should
  * switch depending on the pop manager not depending on the segmentation being shown on the image".
  */
-function readGatingCurrent(): { valueName: string; popType: string } {
-  if (typeof localStorage === 'undefined' || !imageUid) return { valueName: '', popType: '' }
-  try {
-    const bag = JSON.parse(localStorage.getItem('cc.gatingCurrent') ?? '{}') as
-                Record<string, { valueName?: string; popType?: string }>
-    const e = bag[imageUid] ?? {}
-    return { valueName: String(e.valueName ?? ''), popType: String(e.popType ?? '') }
-  } catch { return { valueName: '', popType: '' } }
-}
+const readGatingCurrent = () => readGatingCurrentFor(imageUid ?? '')
 const gatingCurrent = ref(readGatingCurrent())
 
 /**

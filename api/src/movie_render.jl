@@ -559,7 +559,9 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
         (show_mask = false)
     pt   = _ov_str(overlays_config, "popType", "flow")
     tail = _ov_int(overlays_config, "tailLength", 30)
-    tcm  = _ov_str(overlays_config, "trackColourMode", "track")
+    # both spellings: `_overlays_raw_from_config` (the translator every caller goes through) writes
+    # `trackColorMode`, which is the key the 2D overlay reader uses — reading only this one dropped it
+    tcm  = _ov_str(overlays_config, "trackColourMode", _ov_str(overlays_config, "trackColorMode", "track"))
     pops_filter = _ov_strvec(overlays_config, "popsFilter")
     # `include_tracks` gates the track-history build. Whole-seg ribbons (`showTracks = true`) need
     # it too — dropping this was a latent bug that shipped only dots when `showTracks` was on
@@ -621,6 +623,21 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
         end
     end
     (_build2d, per_t3d, _build_mask)
+end
+
+# The browser viewer's zoom → the 3D renderer's. They mean different things: the viewer writes
+# `canvas_h / visible image height` against ITS canvas (`viewState.ts` `buildViewState`), while the
+# ray-caster's zoom 1 fits `max(W, H)` across the OUTPUT width (`_world_per_px_3d`). Taken raw, a
+# viewer at zoom 2.3 on a 999-px canvas rendered ~5x tighter than the screen. Converted so the output
+# shows the same image height the viewer did: `wpp * out_h == snap_h / zoom_v`. A state without its
+# canvas (an older snapshot, a batch camera) keeps the raw value — the renderer's own convention.
+function _renderer_zoom_3d(zoom_v, state, native_w::Integer, native_h::Integer,
+                           out_h::Integer, out_w::Integer)::Float64
+    z = zoom_v isa Real && zoom_v > 0 ? Float64(zoom_v) : 1.0
+    canv = state isa AbstractDict ? get(state, "canvas", nothing) : nothing
+    snap_h = canv isa AbstractDict ? get(canv, "height", nothing) : nothing
+    (snap_h isa Real && snap_h > 0 && out_w > 0) || return z
+    Float64(max(native_w, native_h)) * Float64(out_h) * z / (Float64(out_w) * Float64(snap_h))
 end
 
 # Compute the same `world_per_px` scale the volume raycast uses so overlays project onto the same
@@ -807,33 +824,30 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
             specs_out = Vector{Dict{String,Any}}(undef, length(a.specs))
             for (k, s) in enumerate(a.specs)
                 lo, hi, colour, vis = s
-                # `colour` is the resolved LUT (Vector of RGB triplets) OR the colormap name; expand a
-                # name into the same 2-stop black→base ramp the CPU kernel uses so the GPU has a LUT.
-                lut_stops = if colour isa AbstractVector
-                    Vector{Float64}[Float64[Float64(rgb[1]), Float64(rgb[2]), Float64(rgb[3])]
-                                     for rgb in colour]
-                else
-                    base = get(CMAP_RGB, lowercase(String(colour)), (1f0, 1f0, 1f0))
-                    Vector{Float64}[Float64[0.0, 0.0, 0.0],
-                                     Float64[Float64(base[1]), Float64(base[2]), Float64(base[3])]]
-                end
+                # `colour` is the resolved LUT (Vector of RGB triplets), a colormap NAME, or a
+                # `#rrggbb` hex — the browser viewer sends hex for any colour not in the picker's
+                # palette. `_as_lut` is the one resolver for all three (the CPU kernel's too); a
+                # name-only lookup here rendered every hex channel WHITE.
+                lut = _as_lut(colour isa AbstractString ? String(colour) : colour)
+                lut_stops = Vector{Float64}[Float64[Float64(rgb[1]), Float64(rgb[2]), Float64(rgb[3])]
+                                            for rgb in lut]
                 specs_out[k] = Dict{String,Any}("lo" => Float64(lo), "hi" => Float64(hi),
                                                  "lut" => lut_stops, "visible" => Bool(vis))
             end
+            zoom_r = _renderer_zoom_3d(a.zoom, states[i], native_w, native_h, canvas3_h, canvas3_w)
             py_states[i] = Dict{String,Any}(
                 "t"      => t_clamped,
                 "angles" => Float64[Float64(a.angles[1]), Float64(a.angles[2]), Float64(a.angles[3])],
                 "center" => centre,
-                "zoom"   => a.zoom === nothing ? 1.0 : Float64(a.zoom),
+                "zoom"   => zoom_r,
                 "specs"  => specs_out)
             # Julia projects for both dimensionalities — Python only rasterises. The projection
             # math NEVER leaves Julia, so a bug in the ray-cast matrix and a bug in the overlay
             # matrix are the same bug (they can't disagree by construction). Emits `overlays2d`
             # (drawn pixel coords + per-segment alpha) — the same shape the 2D encoder will read.
             nZ = haskey(dims, "z") ? size(arr, dims["z"]) : 1
-            zoom_val = a.zoom === nothing ? 1.0 : Float64(a.zoom)
             ov2d = _overlays2d_state(per_t3d, t_clamped, a.angles, a.center3d,
-                                       zoom_val, native_w, native_h, nZ, z_aniso,
+                                       zoom_r, native_w, native_h, nZ, z_aniso,
                                        canvas3_h, canvas3_w,
                                        ov_tail, ov_psz, ov_sw)
             ov2d === nothing || (py_states[i]["overlays2d"] = ov2d)
@@ -854,7 +868,8 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
         # so the first state's zoom is representative.
         if show_timestamp || show_scale_bar
             per_frame_ts = Int[clamp(Int(a.t), 0, nT - 1) for a in args_per_frame]
-            first_zoom = args_per_frame[1].zoom === nothing ? 1.0 : Float64(args_per_frame[1].zoom)
+            first_zoom = _renderer_zoom_3d(args_per_frame[1].zoom, states[1], native_w, native_h,
+                                           canvas3_h, canvas3_w)
             nZ = haskey(dims, "z") ? size(arr, dims["z"]) : 1
             eff_um = pixel_size_um === nothing ? 1.0 :
                      Float64(pixel_size_um) *
@@ -888,7 +903,8 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                                           specs = args.specs,
                                           angles = args.angles,
                                           center = args.center3d,
-                                          zoom = args.zoom === nothing ? 1.0 : args.zoom,
+                                          zoom = _renderer_zoom_3d(args.zoom, st, native_w, native_h,
+                                                                   canvas3_h, canvas3_w),
                                           canvas_h = canvas3_h, canvas_w = canvas3_w,
                                           z_aniso = z_aniso,
                                           render_quality = render_quality,
@@ -957,9 +973,12 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                                                     native_h, native_w;
                                                     canvas_h = canvas_h, canvas_w = canvas_w)
             first_zoom = first_args.zoom === nothing ? 1.0 : Float64(first_args.zoom)
+            # a 3D frame was rendered at the CONVERTED zoom (`_renderer_zoom_3d`) — size the bar to it
+            first_zoom3 = _renderer_zoom_3d(first_args.zoom, states[1], native_w, native_h,
+                                            canvas3_h, canvas3_w)
             eff_um = pixel_size_um === nothing ? 1.0 :
                      first_args.ndisplay == 3 ?
-                        Float64(pixel_size_um) * max(Float64(native_w), Float64(size(arr, get(dims, "z", ndims(arr)))) * Float64(z_aniso)) / (first_zoom * Float64(W)) :
+                        Float64(pixel_size_um) * max(Float64(native_w), Float64(size(arr, get(dims, "z", ndims(arr)))) * Float64(z_aniso)) / (first_zoom3 * Float64(W)) :
                         Float64(pixel_size_um) / first_zoom
             params["overlays"] = _build_timelapse_overlays(per_frame_ts, eff_um, W, time_step_min;
                                                             show_timestamp = show_timestamp,
