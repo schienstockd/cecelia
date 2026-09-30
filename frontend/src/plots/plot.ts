@@ -18,6 +18,7 @@
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
 import { frameAxisLabel } from '../utils/timeAxis'
+import { attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
@@ -1506,12 +1507,40 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
 }
 
+// Image metadata a plot CSV can carry next to each row's uID — the image's name and its attributes, so
+// a row says WHICH condition it is (a uID alone doesn't). `defaultUid` stands in for rows with no uID
+// (a single-image plot sends none).
+export type CsvImageMeta = {
+  lookup: (uid: string) => { name?: string; attr?: Record<string, string> } | null | undefined
+  defaultUid?: string | null
+}
+
+// The `image` + one-column-per-attribute block for the given uIDs: the attribute keys across the
+// resolved images (`attrKeysOf` — the attribute filter's sorted union); an attribute colliding with an
+// existing header is prefixed `attr_`. Empty when no uID resolves to a known image (dead columns).
+function csvImageCols(uids: string[], meta: CsvImageMeta | undefined, taken: string[]):
+    { header: string[]; cells: (uid: string) => unknown[] } {
+  const none = { header: [], cells: () => [] }
+  if (!meta) return none
+  const resolve = (uid: string) => meta.lookup(uid || meta.defaultUid || '') ?? null
+  const found = [...new Set(uids)].map(resolve).filter(im => im != null)
+  if (!found.length) return none
+  const attrs = attrKeysOf(found)
+  const header = ['image', ...attrs.map(k => taken.includes(k) || k === 'image' ? `attr_${k}` : k)]
+  return {
+    header,
+    cells: uid => { const im = resolve(uid); return [im?.name ?? '', ...attrs.map(k => im?.attr?.[k] ?? '')] },
+  }
+}
+
 // ── export the SHOWN data as CSV (one tidy table per chart type) ──────────────────
-export function plotDataToCsv(r: PlotDataResponse): string {
+// `meta` (optional) adds each row's image name + attributes after `uID`; see `CsvImageMeta`.
+export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string {
   const esc = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
   const tbl = (header: string[], body: unknown[][]) => [header, ...body].map(row => row.map(esc).join(',')).join('\n')
-  const id = (s: PlotSeries): unknown[] => [s.uID ?? '', s.value_name, s.pop]
-  const idH = ['uID', 'value_name', 'pop']
+  const img = csvImageCols(r.series.map(s => s.uID ?? ''), meta, ['uID', 'value_name', 'pop'])
+  const id = (s: PlotSeries): unknown[] => [s.uID ?? '', ...img.cells(s.uID ?? ''), s.value_name, s.pop]
+  const idH = ['uID', ...img.header, 'value_name', 'pop']
   switch (r.chartType) {
     case 'histogram': {
       const e = r.binEdges ?? [], body: unknown[][] = []
@@ -1566,8 +1595,13 @@ export function plotDataToCsv(r: PlotDataResponse): string {
       ]
       if (gb) candidates.push({ key: 'group', header: gb })
       const idCols = candidates.filter(c => rows.some(x => { const v = x[c.key]; return v != null && v !== '' }))
-      const header = [...idCols.map(c => c.header), r.measure || 'value']
-      return tbl(header, rows.map(x => [...idCols.map(c => x[c.key] ?? ''), x.value]))
+      const rawImg = csvImageCols(rows.map(x => x.uID ?? ''), meta, candidates.map(c => c.header))
+      // the image block sits right after uID (or first, when a single-image plot dropped uID)
+      const at = idCols[0]?.key === 'uID' ? 1 : 0
+      const header = [...idCols.slice(0, at).map(c => c.header), ...rawImg.header,
+                      ...idCols.slice(at).map(c => c.header), r.measure || 'value']
+      return tbl(header, rows.map(x => [...idCols.slice(0, at).map(c => x[c.key] ?? ''), ...rawImg.cells(x.uID ?? ''),
+                                        ...idCols.slice(at).map(c => x[c.key] ?? ''), x.value]))
     }
     default: return ''
   }

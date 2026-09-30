@@ -347,6 +347,10 @@ two exports can't interleave over the shared active-tab slot (only the active bo
   overlay legends, no clean vector form) embed as a raster `<image>`.
 - **CSV** — one CSV per summary plot across all boards, zipped (`analysis_csvs.zip`), ready to re-plot
   in Prism. Available alone or bundled with a figure.
+  The **Attributes** toggle beside the dropdown (also on a floating plot's own Export) adds each row's
+  image name + attributes after `uID` — on by default; one setting (`settings.csvIncludeAttrs`) for
+  every summary-plot CSV (the zip, the PDF attachment, a floating plot's Export). The per-view CSVs
+  (gating, UMAP, track plots, HMM panels) carry no image uID and are unaffected.
 
 An **info icon** by the dropdown says which slot types stay raster and that a huge point cloud warns —
 no silent surprise.
@@ -393,7 +397,11 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
   count/proportion plot exports per-image counts. **Only useful columns are emitted** — `label` is
   cell-table only (it duplicates `track_id` on the track table), `group` only when the groupBy was
   actually applied, and any column left empty for every row (single-image `uID`, a summary's `label`)
-  is dropped — so the CSV never carries dead/empty columns. `getCsv()` is therefore **async** (`collectCsvs()`
+  is dropped — so the CSV never carries dead/empty columns. With `settings.csvIncludeAttrs` on, the
+  panel passes a `CsvImageMeta` (`projectStore.imageByUid`; the panel's image stands in for a
+  single-image plot's empty `uID`) and `plotDataToCsv` inserts `image` + one column per attribute
+  (union across the rows' images; a name clashing with an identity column becomes `attr_<name>`) —
+  joined client-side, so the backend payload is unchanged. `getCsv()` is therefore **async** (`collectCsvs()`
   and `capturePage()` await it); non-finite values are dropped to mirror the plotted distribution;
   heatmaps have no per-datapoint form and export their grid. The standalone CSV
   button collects them across ALL boards into ONE `analysis_csvs.zip` (one CSV per plot, → Prism) via

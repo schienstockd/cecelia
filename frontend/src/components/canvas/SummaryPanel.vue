@@ -18,11 +18,12 @@ import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
+import { backendChart, chartsForMeasure, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
 import { centroidLabel } from '../../utils/gatingAxes'
 import { useProjectStore } from '../../stores/project'
+import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
@@ -73,6 +74,7 @@ const plotRef = useTemplateRef<{
   toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null>
   axisRect(): FrameRect | null
 }>('plotRef')
+const settings = useSettingsStore()
 const projectStore = useProjectStore()   // image metadata (the per-image frame interval for the time axis)
 // Linked-brushing store instance — declared early because `buildOpts` (a few hundred lines down)
 // references it to compute the subscribe-side dim. A later declaration would trip the temporal
@@ -712,7 +714,7 @@ function exportAs(kind: string) {
 async function fetchRawCsv(): Promise<string | null> {
   if (!ownSeries.value.length) return null
   if (!crossImage.value && !props.imageUid) return null
-  if (chartType.value === 'heatmap') return result.value ? plotDataToCsv(result.value) : null
+  if (chartType.value === 'heatmap') return result.value ? plotDataToCsv(result.value, csvMeta()) : null
   const byType = new Map<string, SeriesTarget[]>()
   for (const t of ownSeries.value) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
   const requests = [...byType.entries()].map(async ([pt, targets]) => {
@@ -735,7 +737,12 @@ async function fetchRawCsv(): Promise<string | null> {
     return await res.json() as PlotDataResponse
   })
   const parts = await Promise.all(requests)
-  return plotDataToCsv({ ...parts[0], rows: parts.flatMap(p => p.rows ?? []) })
+  return plotDataToCsv({ ...parts[0], rows: parts.flatMap(p => p.rows ?? []) }, csvMeta())
+}
+// each row's image name + attributes ride along unless the user switched that off (settings.csvIncludeAttrs)
+function csvMeta(): CsvImageMeta | undefined {
+  if (!settings.csvIncludeAttrs) return undefined
+  return { lookup: uid => projectStore.imageByUid(uid), defaultUid: crossImage.value ? null : props.imageUid }
 }
 // raw per-datapoint CSV string — for the board zip export and the PDF attachment (data → Prism)
 function getCsv(): Promise<string | null> { return fetchRawCsv() }
@@ -1264,6 +1271,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
+      <CcToggle v-if="!docked" v-model="settings.csvIncludeAttrs" label="Attributes" class="sp-attrs cc-fs-xs"
+                v-tooltip.top="'Add image name + attributes to the CSV'" />
       <select v-if="!docked" class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result || exporting"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">{{ exporting ? '⋯ exporting…' : '⤓ Export' }}</option>
@@ -1315,6 +1324,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 .sp-measure { max-width: 12rem; }
 .sp-chart { font-size: var(--cc-fs-sm); max-width: 8rem; }
 .sp-export { max-width: 7rem; }
+.sp-attrs { color: var(--cc-text-dim); }
 /* footer notices sit in the panel CHROME, never in `.sp-body`: the chart is height:100% there and the
    body is overflow:hidden, so a sibling after it is pushed out of view (which is why the first version
    of these notes was emitted correctly and never seen). */
