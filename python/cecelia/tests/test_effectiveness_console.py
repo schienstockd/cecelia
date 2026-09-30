@@ -649,20 +649,24 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("finding 0 ", out)
 
 
-class InventoryRunVisibilityTest(unittest.TestCase):
+class MechanicalRunVisibilityTest(unittest.TestCase):
     def _row(self, event, payload):
         return {"event": event, "ts": "2026-09-30T02:33:21Z", "payload": payload, "pr": None,
                 "branch": "b", "commit": "d6257c9b", "session": "s", "source": "live",
                 "schema_version": 1}
 
-    def test_quiet_inventory_run_still_renders(self):
-        # 0 new files, 0 warnings — the usual case; hiding it hid that the check ran at all.
+    def test_quiet_inventory_run_is_dropped(self):
+        # 0 new files, 0 warnings — no reader signal; the `invt N runs` tally row says it ran.
+        self.assertIsNone(format_event(self._row("inventory_coverage_run",
+                                                 {"duration_s": 0.005, "new_shared_files": 0,
+                                                  "warnings_emitted": 0}), use_colour=False))
+
+    def test_inventory_run_with_new_files_renders(self):
         line = format_event(self._row("inventory_coverage_run",
-                                      {"duration_s": 0.005, "new_shared_files": 0,
-                                       "warnings_emitted": 0}), use_colour=False)
-        self.assertIsNotNone(line)
+                                      {"duration_s": 0.005, "new_shared_files": 2,
+                                       "warnings_emitted": 1}), use_colour=False)
         self.assertIn("invt RUN", line)
-        self.assertIn("0 new", line)
+        self.assertIn("2 new", line)
 
     def test_quiet_citation_run_still_dropped(self):
         self.assertIsNone(format_event(self._row("citation_currency_run",
