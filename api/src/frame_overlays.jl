@@ -156,6 +156,25 @@ function _bresenham_blend!(frame::AbstractMatrix{<:RGB}, x0::Int, y0::Int, x1::I
     frame
 end
 
+#: Fill opacity for `contour_px = 0` — the browser's `viewerLabelOpacity` default (settings.ts).
+const MASK_FILL_OPACITY = 0.7f0
+
+function _fill_mask!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Integer},
+                     id_colours::AbstractDict)
+    a = MASK_FILL_OPACITY
+    @inbounds for j in axes(frame, 2), i in axes(frame, 1)
+        id = mask[i, j]
+        id == 0 && continue
+        col = get(id_colours, id, nothing)
+        col === nothing && continue
+        f = frame[i, j]; c = convert(RGB{Float32}, col)
+        frame[i, j] = eltype(frame)((1 - a) * Float32(f.r) + a * c.r,
+                                    (1 - a) * Float32(f.g) + a * c.g,
+                                    (1 - a) * Float32(f.b) + a * c.b)
+    end
+    frame
+end
+
 """
     draw_mask_outline!(frame, mask, id_colours; contour_px = 1) -> frame
 
@@ -174,15 +193,18 @@ Two-pass detect-then-stamp: writing paint into the same array we're neighbour-te
 just-painted colours into the interior of a large cell (the outline walks sideways as a filled band
 rather than a border). We compute boundary hits into a local list first, then stamp.
 
-Note: this draws OUTLINES only, not the 0.7-opacity fill napari uses when `contour = 0`. Outlines
-are what "contour = N" (the legacy viewer's setting) means, and what most gating movies want; the fill mode is
-a separate primitive.
+`contour_px = 0` FILLS instead: every labelled pixel blends its colour over the frame at
+`MASK_FILL_OPACITY` — the browser viewer's rule (`labEdge` treats width 0 as "every voxel is edge",
+mixed at `viewerLabelOpacity`, default 0.7), and what the movie panel's outline slider promises
+("0 fills the mask"). Offline used to return here without drawing, so a movie recorded at the default
+0 had no mask at all.
 """
 function draw_mask_outline!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Integer},
                             id_colours::AbstractDict; contour_px::Int = 1)
     size(frame) == size(mask) ||
         throw(ArgumentError("draw_mask_outline!: mask $(size(mask)) differs from frame $(size(frame))"))
-    contour_px <= 0 && return frame
+    contour_px < 0 && return frame
+    contour_px == 0 && return _fill_mask!(frame, mask, id_colours)
     H, W = size(frame)
     half = max(0, contour_px ÷ 2)
     hits = Tuple{Int,Int,RGB{N0f8}}[]

@@ -1042,7 +1042,8 @@ end
 function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                                       z::Union{Int,Nothing} = nothing,
                                       crop = nothing, max_px::Int = 0,
-                                      tally::Bool = false)
+                                      tally::Bool = false,
+                                      on_log::Union{Nothing,Function} = nothing)
     ov_diag = Dict{String,Any}("requested" => ov_raw !== nothing, "reason" => "")
     mask_diag = Dict{String,Any}("requested" => false, "reason" => "")
     overlays_for = nothing
@@ -1222,6 +1223,13 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
             # ── Optional P4 mask outlines. Same transform, same pops_filter, same
             # `allTracks/allCells` split (`allCells` is the mask counterpart). `showMask`
             # is the gate — off by default because it costs one label-store read per frame.
+            # A segmentation made on another version of this image (different pixel grid) can't be
+            # drawn over this one — skip the mask, keep recording, say why. See
+            # `label_geometry_mismatch`.
+            if show_mask && !mask_fits_frame(img, ov_vn, arr, caxes; on_log = on_log)
+                show_mask = false
+                mask_diag["reason"] = "segmented on another version of this image (geometry mismatch)"
+            end
             if show_mask
                 all_cells_col = String(_ov(ov_raw, :allCellsColour, "#9ca3af"))
                 mask_contour_px = Int(_ov(ov_raw, :maskContourPx, mask_contour_px))

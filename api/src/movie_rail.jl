@@ -310,7 +310,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     specs = _apply_channel_picks(specs, look_cfg, img, vnn)
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                        label_value_name === nothing ? vnn : String(label_value_name);
-                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false)
+                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false,
+                                       on_log = line -> ws_log(nothing, task_id, line))
 
     out_path = _movie_named_path(img, image_uid; suffix = _movie_suffix(suffix))
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
@@ -497,7 +498,8 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                                        label_vn === nothing ? vnn : label_vn;
                                                        z = z_slice, crop = nothing, max_px = max_px,
-                                                       tally = false)
+                                                       tally = false,
+                                                       on_log = line -> ws_log(nothing, task_id, line))
                     # Apply the batch config's channel picks on top of the props-derived specs —
                     # same override the compare grid + single record use.
                     specs = _apply_channel_picks(specs, config, img, vnn)
@@ -589,7 +591,8 @@ end
 function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
                             first_specs = nothing, share_contrast::Bool = true,
                             max_px::Int = 0,
-                            view_state::Union{Nothing,AbstractDict} = nothing)
+                            view_state::Union{Nothing,AbstractDict} = nothing,
+                            on_log::Union{Nothing,Function} = nothing)
     vn = String(get(cfg, :valueName, ""))
     frame = _resolve_frame_for_record(pu, iu, isempty(vn) ? nothing : vn)
     frame[5] === nothing || throw(ArgumentError(String(frame[5])))
@@ -636,7 +639,8 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     end
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, overlays_dict,
                                        label_vn === nothing ? vnn : label_vn;
-                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false)
+                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false,
+                                       on_log = on_log)
     (; zp, arr, caxes, specs = effective_specs, ov, z_slice, nc, view_crop,
        banked_specs = picked_specs)
 end
@@ -697,7 +701,9 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                           first_specs = banked_specs,
                                           share_contrast = share_contrast,
                                           max_px = max_px,
-                                          view_state = view_state)
+                                          view_state = view_state,
+                                          on_log = line -> ws_log(nothing, task_id,
+                                                                  "[$(col.label)] " * line))
                 banked_specs === nothing && (banked_specs = cell.banked_specs)
                 ts = _record_ts_range(cell.arr, cell.caxes, t_start, t_end)
                 if isempty(ts)

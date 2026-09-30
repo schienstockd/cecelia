@@ -77,6 +77,11 @@ end
     b2d2, b3d2 = _resolve_keyframe_overlay_builders(nothing,
         Dict{String,Any}("valueName" => "B", "popType" => "flow"))
     @test b2d2 === nothing && b3d2 === nothing
+    # A mask asked for with no segmentation named → still the THREE-slot shape the recorder unpacks
+    # (it returned two, so `build2d, per_t3d, build_mask = …` threw instead of recording channels-only).
+    # `img` is never touched on this path, so any non-nothing stand-in works.
+    @test _resolve_keyframe_overlay_builders(:img, Dict{String,Any}("showMask" => true)) ===
+          (nothing, nothing, nothing)
     # Serialisation: a `nothing` closure → nothing, so the state dict stays terse.
     @test _overlays2d_state(nothing, 0, (0.0, 0.0, 0.0), nothing, 1.0,
                               100, 100, 10, 1.0, 100, 100, 30, 6, 2) === nothing
