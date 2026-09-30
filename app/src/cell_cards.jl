@@ -13,6 +13,7 @@
 using DataFrames
 using Statistics: median, quantile
 using LinearAlgebra: norm
+using Random: Xoshiro, shuffle
 
 # The ten canonical per-track measures the card's stats footer summarises. Fixed list, independent of
 # which columns clustering happened to consume — so a run over motility + HMM still shows motility
@@ -97,18 +98,23 @@ function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
 end
 
 """
-    medoid_track(df, cluster_id; features, cluster_col) -> (uid, value_name, track_id)
+    medoid_track(df, cluster_id; features, cluster_col, seed=0, example_frac=0.25)
+        -> (uid, value_name, track_id)
 
 The row (over the pooled `df`) whose feature vector has the smallest euclidean distance to the pool's
 per-cluster mean. Ties are broken by preferring longer tracks (higher `live.track.duration`, when the
 column is present in `df`) — otherwise by row order. Returns a `(uid, value_name, track_id)` triple.
+
+`seed > 0` is the card's "show another example": `pick_card_example` over the cluster's tracks
+ranked by distance to its centre, so the example is still representative. `seed == 0` is the medoid.
 
 Errors if the cluster has no rows in the pool, so a caller cannot silently render "the closest thing
 to an empty cluster".
 """
 function medoid_track(df::DataFrame, cluster_id::Real;
                       features::AbstractVector{<:AbstractString},
-                      cluster_col::AbstractString)::@NamedTuple{uid::String, value_name::String, track_id::Int}
+                      cluster_col::AbstractString,
+                      seed::Integer=0, example_frac::Real=0.25)::@NamedTuple{uid::String, value_name::String, track_id::Int}
     Symbol(cluster_col) in propertynames(df) ||
         error("medoid_track: cluster column '$cluster_col' not in df")
     sub = subset(df, Symbol(cluster_col) => x -> .!ismissing.(x) .& (Float64.(x) .== Float64(cluster_id)))
@@ -142,8 +148,26 @@ function medoid_track(df::DataFrame, cluster_id::Real;
     else
         i = argmin(dists)
     end
+    seed > 0 && (i = pick_card_example([i; filter(!=(i), sortperm(dists))], seed; frac=example_frac))
     (uid = String(sub[i, :_uid]), value_name = String(sub[i, :_value_name]),
      track_id = Int(sub[i, :_track_id]))
+end
+
+"""
+    pick_card_example(ranked, seed; frac=0.25) -> element of `ranked`
+
+A behaviour card's "show another example", shared by every card family. `ranked` is the family's
+candidates best-first — `ranked[1]` is the medoid. `seed == 0` returns the medoid; `seed > 0` picks
+from the top `frac` of `ranked` (at least 3, so a tiny group still has alternatives), medoid
+excluded, walking them in a FIXED shuffled order — seeds 1, 2, 3… are distinct until the set is
+exhausted, then wrap. Fixed RNG (not `seed`) is what makes consecutive seeds never repeat.
+"""
+function pick_card_example(ranked::AbstractVector, seed::Integer; frac::Real=0.25)
+    isempty(ranked) && error("pick_card_example: no candidates")
+    (seed <= 0 || length(ranked) == 1) && return ranked[1]
+    k = min(max(ceil(Int, frac * length(ranked)), 3), length(ranked))
+    cand = ranked[2:k]
+    shuffle(Xoshiro(0x5eed), cand)[mod1(Int(seed), length(cand))]
 end
 
 """
@@ -193,7 +217,8 @@ stats footer, without touching a zarr. Returns `(pool, cards)` where each card i
 triple, `frames_ts` is the three chosen filmstrip timepoints, `stats` is the `card_stats` vector.
 
 `pops` is `Vector{@NamedTuple{path::String, cluster_ids::Vector{Int}}}` — one entry per pop, each
-naming one or more cluster codes (usually one) whose union defines that pop.
+naming one or more cluster codes (usually one) whose union defines that pop. An optional `seed::Int`
+field picks another example instead of the medoid (see `medoid_track`); absent = 0 = the medoid.
 
 Frame selection: first, mid, last of the medoid track's frame span — see Decision 4 in
 `docs/todo/CELL_CARDS_PLAN.md`. "Max instantaneous speed" is deferred until per-frame speed is a
@@ -245,7 +270,8 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
         # Treat the union as one virtual cluster (id 0 arbitrarily) — medoid_track only filters by
         # cluster_col, so overwrite it.
         sub_df = deepcopy(sub_df); sub_df[!, Symbol(cluster_col)] .= 0.0
-        medoid = medoid_track(sub_df, 0.0; features=feats, cluster_col=cluster_col)
+        seed = hasproperty(p, :seed) ? Int(p.seed) : 0
+        medoid = medoid_track(sub_df, 0.0; features=feats, cluster_col=cluster_col, seed=seed)
 
         # Resolve the medoid's image + bbox + frame span. The `img` we have IS the root; a medoid on
         # a sibling requires init_object under `proj_uid`.

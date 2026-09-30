@@ -91,7 +91,7 @@ class RecitalTest(unittest.TestCase):
 
         recital = run_recital("some diff", claude_runner=fake_that_fails)
 
-        # Failure recording covers the reviewers; the mechanical citation-currency check
+        # Failure recording covers the reviewers; the mechanical inventory check
         # can't fail via a runner (it's a local grep) so it's out of scope for this test.
         reviewer_events = [
             e for e in self._events()
@@ -253,7 +253,7 @@ class FindingsEmissionTest(unittest.TestCase):
         finding_events = [e for e in self._events() if e["event"].endswith("_finding")]
         self.assertEqual(finding_events, [])
         # But reviewer _run events still fire — both reviewers ran. (The mechanical
-        # citation-currency check also runs, but is scoped separately.)
+        # inventory check also runs, but is scoped separately.)
         reviewer_run_events = [
             e for e in self._events()
             if e["event"] in {"fanout_audit_run", "convention_check_run"}
@@ -408,9 +408,8 @@ class FindingsEmissionTest(unittest.TestCase):
         # When `git rev-parse HEAD` returns a SHA, both `_run` and `_finding` rows carry it in
         # the row-level `commit` field. That is what the SHA-anchored gate in
         # `.claude/hooks/check_commit_recital.py` matches against.
-        # Scoped to fanout+convention events — `citation_currency_run` is emitted by a separate
-        # helper (`citation_currency.run_citation_check`) whose own `commit=` threading is the
-        # subject of a different PR (#1265, branch-capture).
+        # Scoped to fanout+convention events — `inventory_coverage_run` is emitted by a separate
+        # helper (`inventory_coverage.run_inventory_check`), pinned in its own test file.
         head = "a" * 40
         reviewer_events = {"fanout_audit_run", "convention_check_run",
                            "fanout_audit_finding", "convention_check_finding"}
@@ -479,3 +478,26 @@ class FindingsEmissionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DefaultRunnerTest(unittest.TestCase):
+    """`_default_runner` passes the prompt on stdin and turns a spawn failure into
+    `RecitalError`, so `_run_reviewer` logs an errored `_run` row instead of crashing."""
+
+    def test_prompt_goes_over_stdin_not_argv(self):
+        from cecelia.effectiveness import recital as r
+        big = "x" * 300_000  # > Linux MAX_ARG_STRLEN (128 KB) — E2BIG if it were argv
+        done = mock.Mock(returncode=0, stdout="ok\n", stderr="")
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", return_value=done) as run:
+            self.assertEqual(r._default_runner(big), "ok")
+        argv, kwargs = run.call_args.args[0], run.call_args.kwargs
+        self.assertEqual(argv, ["/bin/claude", "-p"])
+        self.assertEqual(kwargs["input"], big)
+
+    def test_spawn_oserror_becomes_recital_error(self):
+        from cecelia.effectiveness import recital as r
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", side_effect=OSError(7, "Argument list too long")):
+            with self.assertRaises(RecitalError):
+                r._default_runner("p")

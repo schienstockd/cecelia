@@ -392,7 +392,8 @@ one per host plus `chipSelect`; single-select would have been a sixth that disag
 gating canvas's `shared` bag (`useViewState`, the same mechanism as the highlighted populations), so
 selecting lanes in the timeline is the same act as choosing what the **Tracks** x/y panel draws — it
 re-requests with `ids=`, which bypasses the endpoint's cap, so a selected track outside the top-N is
-still drawn. `lib/viewerLink.ts` sends the viewer to a selected track. The link is offered through the
+still drawn. The timeline does not open the viewer itself — the "act on the viewer" verbs moved to
+the correction cockpit (note in `TrackSchemeView.vue`). The link is offered through the
 view context (`selTracks` + `setSelTracks`) rather than an event on `InteractivePanel`, which is
 generic infrastructure and must not learn what a track is; a host that provides neither still gets a
 working panel that simply talks to nobody.

@@ -22,7 +22,8 @@
   the same wrapper, so it grows with the workspace (a wider zoom-out doesn't leave a bare corner).
 -->
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useWindowListener } from '../../composables/useKeepAlive'
 import type { PanelGeom } from '../../stores/canvasPanels'
 import type { useCanvasShareSelection } from '../../composables/useCanvasShareSelection'
 import { panelAt, selectedByDrag, type PanelHit } from '../../utils/panelSelectionHit'
@@ -65,8 +66,8 @@ function measureBox() {
   boxW.value = r.width
   boxH.value = r.height
 }
-onMounted(() => { measureBox(); window.addEventListener('resize', measureBox) })
-onBeforeUnmount(() => window.removeEventListener('resize', measureBox))
+onMounted(measureBox)
+useWindowListener('resize', measureBox)
 const dragStart = ref<[number, number] | null>(null)
 const dragCur = ref<[number, number] | null>(null)
 
@@ -125,8 +126,7 @@ function onKey(ev: KeyboardEvent) {
     ev.preventDefault()
   }
 }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+useWindowListener('keydown', onKey)
 </script>
 
 <template>

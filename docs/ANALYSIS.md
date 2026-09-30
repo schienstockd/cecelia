@@ -237,7 +237,8 @@ future interactive view that grows free-floating-only chrome would take it via `
 
 ### Clustering — one run per board
 Cluster plots (UMAP + `CLUSTER_PANELS`) share **one clustering run per board**: board-level
-`clustPopType` + `clustSuffix` live in the tab's `shared` bag and drive the singleton gating store via
+`clustPopType` + `clustSuffix` live in the tab's `shared` bag and drive the board's own gating store
+(`provideGatingStore` in `LayoutCanvas`, `docs/UI.md` → *One gating store per canvas*) via
 `composables/useClusterContext.ts` (only when a cluster slot exists). The right rail swaps to a
 **read-only** `PopulationManager` (highlight/tick to colour, no add/delete/rename/recolour/reassign)
 that follows the active cluster slot with per-family global/local scope.
@@ -270,8 +271,24 @@ TrackDiagnostics / TrackScheme / FlowMetrics — one rule for `wanted → active
 Crop is centred on the medoid's INSTANCE bbox (not the track's lifetime) with a `max_px ÷ 3`
 floor, so a short-lived motif or state-run reads as more than a smudge inside a mostly-empty frame.
 
-Sidecar cache per family: `analysis/{cell,motif,hmm_state}_cards/…json`, keyed on the source
-h5ad's mtime + the discovered class/state set. Full plan (now archived / DONE):
+**Another example + freshness (all three families).** Each card has a hover `pi-step-forward`
+button ("Show another example"); a bottom auto-hide strip in `CardsPanelInner` has the same for
+every card, `pi-undo` back to the medoids, and a `pi-refresh` Reload. The panel keeps a per-card
+`seeds` map in its state (persisted with the board). Every family ranks its candidates best-first
+(cell: distance to the cluster centre; motif: mean `motif.distance`; HMM: in-state fraction, then
+longest run) and `pick_card_example` (`app/src/cell_cards.jl`) turns seed *n* > 0 into the *n*-th
+pick from the top quartile (at least 3), medoid excluded, in a fixed shuffled order — repeated
+clicks walk distinct representative examples. A **recolour/rename** refetches automatically
+(colour is baked into the trace); a **viewer contrast/LUT** change is picked up by Reload (the
+panel's own, or the rail's **Reload plots** on cluster boards) — the panel can't see the viewer's
+saved display file change, and re-rendering on every contrast drag would be wasted work. The server
+makes both cheap (`api/src/behaviour_cards.jl`): a sidecar is served only while its `stamp` (source
+h5ad/cluster mtime, `cards_specs_mtime`, names/colours, seeds, render size) matches exactly, and on
+a miss `CardMemo` lets unchanged cards reuse their frames — a recolour or one reshuffle re-renders
+that card only.
+
+Sidecar cache per family: `analysis/{cell,motif,hmm_state}_cards/…json`, keyed on the `stamp` above.
+Full plan (now archived / DONE):
 [`docs/todo/BEHAVIOUR_CARDS_PLAN.md`](todo/BEHAVIOUR_CARDS_PLAN.md).
 
 ### Gating strategy (read-only)

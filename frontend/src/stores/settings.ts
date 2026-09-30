@@ -81,6 +81,17 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.autoRefreshOnTask') !== 'false'   // default true
   )
 
+  // Cell-selection Z scope for the WebGPU viewer's rectangle picker: 'stack' = the whole z-stack,
+  // 'slice' = ±`pickZWindow` planes around the viewer's live z. A preference on the workflow, not part
+  // of any one population document — so it lives here, not in the (per-canvas) gating store. Stored
+  // as the ONE key the popup viewer reads (`ViewerWindow.vue` → `pickRectAt`): `cc.pickZScope`.
+  const _pickZ = (() => {
+    try { return JSON.parse(localStorage.getItem('cc.pickZScope') ?? '{}') as { mode?: string; window?: number } }
+    catch { return {} }
+  })()
+  const pickZMode = ref<'stack' | 'slice'>(_pickZ.mode === 'slice' ? 'slice' : 'stack')
+  const pickZWindow = ref<number>(Math.max(0, Math.floor(Number(_pickZ.window) || 0)))
+
   // Auto-refresh the viewer when a task finishes for the open image (labels + overlays re-read
   // from disk). Off by default — heavy on large images (we have 20k+ frame timelapses).
   const viewerAutoUpdate = ref(
@@ -656,6 +667,8 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
   watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
+  watch([pickZMode, pickZWindow], ([mode, w]) => localStorage.setItem('cc.pickZScope',
+    JSON.stringify({ mode, window: Math.max(0, Math.floor(Number(w) || 0)) })))
   watch(viewerAutoUpdate,         v => localStorage.setItem('cc.viewerAutoUpdate',         String(v)))
   watch(preferDevChannel,         v => localStorage.setItem('cc.preferDevChannel',         String(v)))
   watch(importPyramidAdvisor,     v => localStorage.setItem('cc.importPyramidAdvisor',     String(v)))
@@ -848,7 +861,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

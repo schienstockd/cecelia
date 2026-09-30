@@ -17,6 +17,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
+import { observeBoxChanges } from '../../composables/usePlotResize'
 import { letterboxFrame, type Frame, type FrameCell, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from './PlotPointOutMark.vue'
@@ -507,7 +508,7 @@ onMounted(() => {
   load()
   // observe the STABLE square box (present from mount) so a panel resize always repaints + repositions
   // the HTML labels/titles (which read boxW/boxH set in redraw)
-  if (plotBoxEl.value) { dro = new ResizeObserver(() => redraw()); dro.observe(plotBoxEl.value) }
+  if (plotBoxEl.value) dro = observeBoxChanges(plotBoxEl.value, redraw)
   nextTick(redraw)
 })
 onBeforeUnmount(() => { dro?.disconnect(); dro = null })

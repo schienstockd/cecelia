@@ -20,7 +20,8 @@ import type { Frame } from '../../plots/frame'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  state: { maxPx?: number; padPx?: number; valueName?: string; hmmCol?: string }
+  state: { maxPx?: number; padPx?: number; valueName?: string; hmmCol?: string
+           seeds?: Record<string, number> }
   // BIDIR PR #4b — panel's persistKey forwarded by InteractivePanel; forwarded to CardsPanelInner
   // so per-card StripCells filter `(family='hmm-state-cards', plotId=<this>, cell=<state.path>)`.
   plotId?: string

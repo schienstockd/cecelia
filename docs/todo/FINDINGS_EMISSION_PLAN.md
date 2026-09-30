@@ -37,11 +37,13 @@ where `marker` is `should reuse` / `sibling not updated` / `framework skip` / et
 
 **Amended 2026-09-30 — the parser is tolerant, not strict.** Reviewers drift from the shape (line ranges `:245-246`, lists `:11, :309`, backtick paths, `**:` for `** —`), and the strict regex silently dropped 11 of 29 findings — none reached the log after 2026-09-28. Now any bullet carrying the marker is a finding; location is best-effort (first `file:LINE`, so a range slugs the same as its first line). Bullets without the marker are still ignored. A marker that isn't on a bullet line surfaces as a `RECITAL PARSE WARNING` in the recital body. The hook blocks bare tags when the log holds untagged slugs for HEAD, since bare tags write no resolution row.
 
+**Amended 2026-09-30 — the hook is a git `commit-msg` hook, and joins on SHA + branch.** The PreToolUse version text-matched the Bash command: it wrote fake resolution rows from test heredocs that merely contained `git commit` + a slug pair, never saw `git commit -F` messages, and read branch/SHA from the session's cwd. `.githooks/commit-msg` gets the real message in the committed worktree (activate with `pixi run install-git-hooks`); the PreToolUse hook is now only a guard that the git hook can't be skipped. Every log join (real-review gate, slug-form gate, orphan sweep) matches parent SHA **and** branch — parallel worktrees share a base SHA, and a SHA-only sweep auto-dropped another worktree's finding.
+
 ### Decision 2 — Findings written pre-commit as "pending", resolved separately
 
 At recital time (before commit), outcome is not knowable. Recital writes each parsed finding as a `_finding` row with `outcome: null` and a **stable slug** identifying it.
 
-At commit time, the existing PreToolUse hook parses outcome tags from the commit message and writes a **separate `_finding_resolved` row** carrying `{slug, outcome, commit}`.
+At commit time, the commit hook parses outcome tags from the commit message and writes a **separate `_finding_resolved` row** carrying `{slug, outcome, commit}`.
 
 The log stays append-only. The rollup joins pending + resolutions by slug at render time; the latest resolution wins.
 

@@ -312,7 +312,8 @@ end
                                      "B__movement.json")
             @test isfile(sidecar_path)
             side = JSON3.read(read(sidecar_path, String), Dict{String,Any})
-            @test haskey(side, "pool") && haskey(side, "cards") && haskey(side, "clusterMtime")
+            @test haskey(side, "pool") && haskey(side, "cards") && haskey(side, "stamp")
+            @test haskey(side["stamp"], "clusterMtime") && haskey(side["stamp"], "specsMtime")
             @test length(side["cards"]) == 3
 
             # valueName omitted → server derives from co_clustered_value_names(suffix). Same medoid
@@ -340,6 +341,46 @@ end
             @test [Int(c.medoid.track_id) for c in r1.cards] ==
                   [Int(c.medoid.track_id) for c in r2.cards]
 
+            # Reshuffle — `seed` > 0 on ONE pop swaps that card to another near-centre track and
+            # leaves the others on their medoid. Consecutive seeds never repeat (fixed walk order).
+            medoid_tids = [Int(c.medoid.track_id) for c in r1.cards]
+            seeded(sd) = merge(req, Dict{String,Any}("pops" => [
+                Dict("path"=>"/Scanning", "clusterIds"=>[0]),
+                Dict("path"=>"/Directed", "clusterIds"=>[1], "seed"=>sd),
+                Dict("path"=>"/Meandering", "clusterIds"=>[2])]))
+            st_s1, body_s1 = call(seeded(1)); rs1 = JSON3.read(body_s1)
+            @test st_s1 == 200
+            s1_tids = [Int(c.medoid.track_id) for c in rs1.cards]
+            @test s1_tids[2] != medoid_tids[2]
+            @test s1_tids[[1, 3]] == medoid_tids[[1, 3]]
+            side_s1 = JSON3.read(read(sidecar_path, String), Dict{String,Any})
+            # stamp.pops rows are [path, ids, seed, name, colour], sorted by path.
+            @test [(String(r[1]), Int(r[3])) for r in side_s1["stamp"]["pops"]] ==
+                  [("/Directed", 1), ("/Meandering", 0), ("/Scanning", 0)]
+            n_dir = Int(rs1.cards[2].n)
+            if n_dir >= 3   # candidate floor of 3 → ≥2 non-medoid tracks → seed 2 is a third track
+                s2_tid = Int(JSON3.read(call(seeded(2))[2]).cards[2].medoid.track_id)
+                @test s2_tid ∉ (medoid_tids[2], s1_tids[2])
+            end
+            # Seed 0 again = back to the medoid (re-rendered, not a stale seeded sidecar).
+            @test [Int(c.medoid.track_id) for c in JSON3.read(call(req)[2]).cards] == medoid_tids
+
+            # Stamp: a pop recolour on disk invalidates the sidecar — a refetch must not serve the old
+            # colour. The per-card memo keeps unchanged cards' render keys identical.
+            keys_before = JSON3.read(read(sidecar_path, String), Dict{String,Any})["renderKeys"]
+            gate_path = joinpath(dir, "testpr", "1", "KDIeEm", "gating", "B__trackclust.json")
+            gdoc = JSON3.read(read(gate_path, String), Dict{String,Any})
+            for gp in gdoc["populations"]
+                gp["name"] == "Directed" && (gp["colour"] = "#123456")
+            end
+            write(gate_path, JSON3.write(gdoc))
+            st_c, body_c = call(req)
+            @test st_c == 200
+            @test [String(c.colour) for c in JSON3.read(body_c).cards] == ["#4c78a8", "#123456", "#54a24b"]
+            keys_after = JSON3.read(read(sidecar_path, String), Dict{String,Any})["renderKeys"]
+            @test keys_after["/Scanning"] == keys_before["/Scanning"]
+            @test keys_after["/Directed"] != keys_before["/Directed"]
+
             # Bad body → 400.
             st3, _ = api_cell_cards(Vector{UInt8}("{not json"))
             @test st3 == 400
@@ -352,6 +393,34 @@ end
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
     end
+end
+
+# ── Behaviour cards: "show another example" ranking (all three families) ──────────────────────
+# No committed fixture carries motif.class / live.cell.hmm.state.*, so the motif + HMM handlers are
+# pinned at their pure ranking pieces; the cell-cards testset above covers the handler round-trip.
+@testset "Behaviour cards: pick_card_example + motif/HMM example ranking" begin
+    # Shared picker: seed 0 = medoid; seeds walk the top quartile (≥3) without repeats, then wrap.
+    ranked = collect(1:20)                      # quartile = 5 → 4 non-medoid candidates
+    @test pick_card_example(ranked, 0) == 1
+    walk = [pick_card_example(ranked, sd) for sd in 1:4]
+    @test sort(walk) == [2, 3, 4, 5]            # all distinct, all near the top, medoid excluded
+    @test pick_card_example(ranked, 5) == walk[1]
+    @test pick_card_example([7, 8], 1) == 8     # floor of 3 → a 2-member group still has an alternative
+    @test pick_card_example([7], 3) == 7        # nothing else to show → the medoid
+
+    # Motif: instances by mean distance, ties by id — medoid first, deterministic.
+    @test _motif_ranked_instances(Dict(10 => 0.5, 11 => 0.2, 12 => 0.2, 13 => 0.9)) == [11, 12, 10, 13]
+
+    # HMM: tracks by in-state fraction, then longest run. Track 1: 4/4 in state; track 2: 3/4 with
+    # a 3-long run; track 3: 3/4 split into runs of 2+1; track 4: never in state (excluded).
+    st  = Float64[1,1,1,1,  1,1,1,0,  1,0,1,1,  0,0,0,0]
+    tid = Float64[1,1,1,1,  2,2,2,2,  3,3,3,3,  4,4,4,4]
+    ts  = Float64[0,1,2,3,  0,1,2,3,  0,1,2,3,  0,1,2,3]
+    m0 = _medoid_state_run(st, tid, ts, 1.0)
+    @test m0.track_id == 1 && length(m0.run_rows) == 4
+    alts = Set(_medoid_state_run(st, tid, ts, 1.0; seed = sd).track_id for sd in 1:2)
+    @test alts == Set([2, 3])                   # the two other in-state tracks, never track 4
+    @test length(_medoid_state_run(st, tid, ts, 1.0; seed = 1).run_rows) in (2, 3)
 end
 
 # gating_api._require_ids — audit task #33. Sites that used to hand-roll `body["projectUid"]`

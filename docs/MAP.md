@@ -85,8 +85,6 @@ proposed seams: [`docs/archive/comment-audit-findings.md`](archive/comment-audit
 **Worthwhile (Tier 2):**
 
 **Anchor (Tier 3):**
-- `app/src/tasks/cleanupImages/af_correct.jl` — run + QC + param translation. Cleaner
-  seams: `af/run.jl`, `af/qc.jl`, `af/translate.jl`.
 - `app/src/tasks/scheduler.jl` — 733 lines, five responsibilities. Splitting requires explicit
   lock-ordering-invariant proof; not a routine cleanup.
 

@@ -19,11 +19,10 @@ import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import CellSelectionTools from '../../components/CellSelectionTools.vue'
-import { useGatingStore } from '../../stores/gating'
-import { useWsStore } from '../../stores/ws'
+import { provideGatingStore } from '../../stores/gating'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { openViewerWindow } from '../../utils/viewerWindow'
@@ -63,8 +62,8 @@ const props = withDefaults(defineProps<{
   selectUids?: (uids: string[]) => void          // drive the table selection (ModuleLayout)
 }>(), { popType: 'flow', orderedUids: () => [] })
 const isTrack = computed(() => props.popType === 'track')
-const g = useGatingStore()
-const ws = useWsStore()
+// this page's own gating store (Gate: flow, Track: track) — see provideGatingStore
+const g = provideGatingStore(props.popType)
 const project = useProjectStore()
 
 // ── Scope ─────────────────────────────────────────────────────────────────────
@@ -86,14 +85,11 @@ interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: 
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
 // (g.valueName) changes.
-// Page-local vn — the source of truth for THIS page's ckey, toolbar, and load().
-// DECOUPLED from `g.valueName` (the singleton gating store, which other pages mutate
-// on task-done: `useClusterContext.ts:105` calls `g.selectImage(uid, resolvedVn, 'clust')`
-// via `useDataRefresh`, flipping `g.valueName` under us — that's the axis-reset bug
-// [GATE-DIAG] confirmed on fXgbTl 2026-09-08). `pageVn` only changes on:
+// Page-local vn — the segmentation this page ASKS for: the source of truth for its ckey, toolbar and
+// load(). Seeded from the per-(popType, image) memory below, so a (re)mount opens the canvas you left
+// straight away, before the server has answered. `pageVn` only changes on:
 //   1) user pick from the toolbar
-//   2) server-resolved fallback from OUR OWN `load()` call
-// so a cluster/trackclust page's selectImage on the singleton can't rebind our ckey.
+//   2) the server-resolved fallback from `load()` (an unknown vn falls back to the active one)
 const pageVn = ref<string>(
   (props.imageUid && typeof localStorage !== 'undefined')
     ? (localStorage.getItem(`cc.gate.lastVn.${props.popType}.${props.imageUid}`) || g.valueName)
@@ -390,10 +386,9 @@ function showDefiningPlot(pop: FlatPop) {
 }
 
 // Remember the segmentation this page was last on, per (popType, image). The canvas key includes
-// value_name (gates are per-segmentation), so a shared `g.valueName` changed by another page —
-// the cluster page's `g.selectImage(uid, resolvedVn, 'clust')` runs on every remount — would send
-// us to a different (empty) canvas entry on return, silently seeding two fresh plots. Restoring
-// the gating page's own last pick before selectImage keeps the panels the user left.
+// value_name (gates are per-segmentation), so opening on any other vn would land on a different
+// (empty) canvas entry and silently seed two fresh plots. Restoring the page's own last pick before
+// selectImage keeps the panels the user left.
 const _lastVnKey = (uid: string) => `cc.gate.lastVn.${props.popType}.${uid}`
 const _readLastVn = (): string | null =>
   props.imageUid ? localStorage.getItem(_lastVnKey(props.imageUid)) : null
@@ -407,19 +402,11 @@ async function load() {
   if (!pageVn.value) pageVn.value = _readLastVn() || g.valueName
   await g.selectImage(props.imageUid, pageVn.value, props.popType)
   // Adopt the server-resolved vn back into `pageVn` (fetchChannels may reassign valueName when
-  // the client requested an unknown one and the server fell back). Guard on popType so a
-  // concurrent cluster-context selectImage (which flips g.popType/valueName mid-fetch) can't
-  // slip a foreign vn into our page state.
-  if (g.popType === props.popType && g.valueName && g.valueName !== pageVn.value) {
-    pageVn.value = g.valueName
-  }
+  // the client requested an unknown one and the server fell back).
+  if (g.valueName && g.valueName !== pageVn.value) pageVn.value = g.valueName
 }
-// Persist on pageVn change (user pick, or server-resolved adoption above). Watching g.valueName
-// directly was the poisoning path — a cluster-page task-refresh flipped g.valueName to a foreign
-// vn ('flowKat' when the user was on 'flowTom') and the watcher persisted it, so the next mount
-// of the /gating page loaded the wrong vn ("axis reset" from the user's POV).
+// Persist on pageVn change (user pick, or server-resolved adoption above).
 watch(pageVn, vn => _writeLastVn(vn))
-function onBroadcast(d: unknown) { g.applyBroadcast(d as any) }
 
 // imageUid change → re-read pageVn from the new image's _lastVn (each image has its own
 // preferred segmentation), then load. Without this reset the pageVn stays pinned to the
@@ -440,11 +427,6 @@ watch(() => g.transientPaths, (paths) => {
 // (grey) instead of reverting to pseudocolour/contour.
 let _prevFlatGate: PopIdent[] = g.flat.map(p => ({ key: p.path, uid: p.uid }))
 watch(() => g.flat.map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
-  // Same singleton-store guard as the panel watches: `g.flat` is whichever popType is active in the
-  // store. If the Tracking page loaded (`g.popType = 'track'`), a flow page's flat is track pops —
-  // none of which contain `/qc/CD169-`, so a flow panel's `state.parent` would reset to root even
-  // though its own tree still has the pop. Only prune when the store's popType matches this page's.
-  if (g.popType !== props.popType) return
   const next: PopIdent[] = g.flat.map(p => ({ key: p.path, uid: p.uid }))
   const remap = makePopPathRemap(_prevFlatGate, next)
   gHL.value = remapPopKeys(gHL.value, remap)
@@ -460,33 +442,20 @@ watch(() => g.flat.map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
   remapStaged(remap)
   _prevFlatGate = next
 })
-// WS (re)connect resync: the transient viewer-selection pop lives ONLY in the server's in-memory
-// registry (never persisted — see docs/POPULATION.md), so a backend restart wipes it. But the client's
-// tree (and the persisted highlight referencing it) survive, so without a resync the stale selection
-// keeps a plot greyed on the same image. On a RECONNECT (not the first connect — onMounted already
-// loaded) refetch the popmap; the fresh tree drops the transient pop and the prune watch above clears
-// the dangling highlight. `everConnected` seeded from the current status so a reconnect is detected even
-// when the page mounts already-connected.
-let everConnected = ws.status === 'connected'
-watch(() => ws.status, (s) => {
-  if (s !== 'connected') return
-  if (everConnected && props.imageUid) load()
-  everConnected = true
-})
-onMounted(() => { ws.on('gating:popmap', onBroadcast); load() })
+// Live pushes (`gating:popmap`) and the WS-reconnect resync — which drops a transient viewer
+// selection a backend restart wiped, so the prune watch above clears its dangling highlight — are
+// the store's own (stores/gating.ts), like every other owner's.
+onMounted(load)
 // Seed two starter plots for any (image, segmentation) that has none yet — on first bind AND after an
 // image/segmentation switch (the reactive key rebinds to a fresh entry; the component doesn't remount).
 // Gated on valueNames being loaded so we don't seed a transient placeholder key, and skipped for
 // restored canvases (they come back non-empty). Persisted per (image, value_name), so no 2→4→6 stacking.
 watch([ckey, () => g.valueNames.length], () => {
-  // Guard on `pageVn` (this page's own vn), not `g.valueName` — the singleton flips under us
-  // on cluster/trackclust task-refresh and we do NOT want to seed a fresh pair into someone
-  // else's bag. See the pageVn declaration above for the full mechanism.
+  // `pageVn`, not `g.valueName`: the canvas key follows pageVn, and seeding must target that entry.
   if (props.imageUid && pageVn.value && g.valueNames.includes(pageVn.value) && panels.value.length === 0) {
     add(); add()
   }
 }, { immediate: true })
-onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 
 // ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
 // Same shape as SummaryCanvas + ClusterPlots. Composable owns the flow; this host provides the
@@ -651,14 +620,14 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                           :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
-                          :dot-size="panelDotSize(p.state)" :pop-type="props.popType"
+                          :dot-size="panelDotSize(p.state)"
                           :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                           :reload-token="reloadTokenLocal"
                           @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
           <GatePlotPanel v-else :index="i" :arrange="p.arrange"
                          :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                          :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
-                         :dot-size="panelDotSize(p.state)" :pop-type="props.popType"
+                         :dot-size="panelDotSize(p.state)"
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                          :reload-token="reloadTokenLocal"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />

@@ -4,8 +4,9 @@
   count + %parent, an EYE that toggles whether the pop is colour-highlighted on the plots, viewer
   visibility, and delete. Clicking a row sets it as the displayed parent on the active plot.
 
-  Population SOURCE is the gating store, which is pop_type-agnostic (`g.popType` = flow / live /
-  clust) — the manager renders whatever populations the store holds, so it is NOT flow-only. The
+  Population SOURCE is its canvas's gating store (`useGatingStore()`), which is pop_type-agnostic
+  (`g.popType` = flow / live / clust) — the manager renders whatever populations the store holds,
+  so it is NOT flow-only. The
   plot-options (gate labels, line width, axis) are passed in as props by the host canvas, since
   they belong to the plot panels, not the manager.
 
@@ -14,7 +15,7 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
 import { useKiwiStore } from '../../stores/kiwi'
 import { useLogStore } from '../../stores/log'
@@ -30,6 +31,7 @@ import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
          type BooleanTerm } from '../../utils/booleanPopForm'
 import { popNameError, popPath, isInSubtree } from '../../utils/popName'
 import { useInlineEdit } from '../../composables/useInlineEdit'
+import { useWindowListener } from '../../composables/useKeepAlive'
 // `PALETTES` is gone from here on purpose: the swatch is `ColourPicker` now, which owns the default
 // palette. Only `DOT_R` is still needed, for the gate colour-by legend main added.
 import { type VisProps } from '../../plots/plot'
@@ -147,8 +149,8 @@ function onKey(e: KeyboardEvent) {
   if (e.shiftKey) { if (g.canRedo) g.redo() }
   else if (g.canUndo) g.undo()
 }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+// only while the page is visible: a hidden kept-alive page would undo on a tree you can't see
+useWindowListener('keydown', onKey)
 
 // ── Change a gate's SHAPE in place: rectangle ⇄ polygon ───────────────────────────────────────
 // The POPULATION survives — same name, colour, children, place in the tree; only the geometry is

@@ -108,8 +108,10 @@ onBeforeUnmount(onRevealPlots(() => {
 }))
 
 // Plot-canvas fullscreen — one app-wide flag (per-profile), reachable from every module page's
-// action bar. When maximised, the plots CollapsibleSection covers the viewport; force it open
-// on maximise (and on mount) so switching pages while maximised does not land in a closed section.
+// action bar. When maximised, the whole image panel (action bar + filters + Images + plots) covers
+// the viewport — the image table stays so images can still be selected and filtered; only the app
+// shell, SetBar and right panel go. Force the plots open on maximise (and on mount) so switching
+// pages while maximised does not land in a closed section.
 const { maximised: plotsMaximised, toggle: togglePlotsMaximised } = usePlotFullscreen()
 watch(plotsMaximised, (v) => { if (v) setSectionOpen(plotsOpenKey.value, true) }, { immediate: true })
 
@@ -274,7 +276,9 @@ const visibleUids = computed<string[]>(() =>
       <!-- no #right panel (e.g. the Analysis page) → the panel runs flush to the viewport edge, jamming
            the right-aligned controls (filter toggle, board export, pop picker) + their tooltips against
            it. `no-right` adds a small right gutter so they have room. -->
-      <div class="image-panel" :class="{ 'no-right': !$slots.right }">
+      <!-- `is-plots-maximised` pins the panel to the viewport (see the CSS) -->
+      <div class="image-panel"
+        :class="{ 'no-right': !$slots.right, 'is-plots-maximised': plotsMaximised && $slots.plots && activeSet }">
 
         <!-- first-use hint (dismissed permanently per hintKey) -->
         <HintCallout v-if="hint && hintKey" :hint-key="hintKey" :text="hint" />
@@ -344,15 +348,15 @@ const visibleUids = computed<string[]>(() =>
               <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
             </button>
 
-            <!-- Maximise the plot canvas to the whole browser window (covers AppHeader, AppSidebar,
-                 SetBar, image table, right panel and floating panels). When on, the button repositions
-                 to top-right of the viewport so it stays reachable; Esc also restores. Icon + label
-                 wording mirrors FloatingPanel's per-panel maximise. -->
+            <!-- Maximise the image panel (this bar, filters, Images, plots) to the whole browser
+                 window (covers AppHeader, AppSidebar, SetBar, right panel and floating panels). The
+                 button rides along inside the panel, so restore stays where it was; Esc also
+                 restores. Icon + label wording mirrors FloatingPanel's per-panel maximise. -->
             <button v-if="$slots.plots && activeSet"
-              class="filter-toggle plots-max" :class="{ 'is-max': plotsMaximised }"
+              class="filter-toggle" :class="{ active: plotsMaximised }"
               @click="togglePlotsMaximised"
-              v-tooltip.left="plotsMaximised ? 'Restore plot canvas (Esc)' : 'Maximise plot canvas'"
-              :aria-label="plotsMaximised ? 'Restore plot canvas' : 'Maximise plot canvas'">
+              v-tooltip.left="plotsMaximised ? 'Restore layout (Esc)' : 'Maximise images + plots'"
+              :aria-label="plotsMaximised ? 'Restore layout' : 'Maximise images and plots'">
               <i class="pi" :class="plotsMaximised ? 'pi-window-minimize' : 'pi-window-maximize'" />
               <span class="filter-label">{{ plotsMaximised ? 'Restore' : 'Max' }}</span>
             </button>
@@ -388,7 +392,8 @@ const visibleUids = computed<string[]>(() =>
 
         <!-- scrollable body: image table + below-table content -->
         <div class="panel-scroll">
-          <CollapsibleSection label="Images" max-height="none"
+          <!-- maximised: the table scrolls in its own capped box so the plots keep the viewport -->
+          <CollapsibleSection label="Images" :max-height="plotsMaximised ? '35vh' : 'none'"
             :storage-key="imagesOpenKey">
             <div v-if="!activeSet" class="no-set cc-empty">
               <i class="pi pi-folder-open" style="font-size:2rem; opacity:0.2" />
@@ -409,12 +414,10 @@ const visibleUids = computed<string[]>(() =>
 
           <!-- Plot canvas — ONE consistent, collapse-persisted section for every module page.
                ModuleLayout owns the wrapper so no module can forget it or diverge.
-               `is-plots-maximised` fixes the section to inset:0 z:9999, covering the app shell —
-               the class rides Vue's fallthrough onto the child's root, so the scoped rule below
-               reaches it without touching the CollapsibleSection primitive. -->
+               `plots-section` rides Vue's fallthrough onto the child's root, so the maximised rule
+               below reaches it without touching the CollapsibleSection primitive. -->
           <CollapsibleSection v-if="$slots.plots && activeSet"
-            data-guide="layout.plotsSection"
-            :class="{ 'is-plots-maximised': plotsMaximised }"
+            data-guide="layout.plotsSection" class="plots-section"
             :label="plotsLabel" max-height="none"
             :storage-key="plotsOpenKey">
             <slot name="plots"
@@ -574,30 +577,27 @@ const visibleUids = computed<string[]>(() =>
 .no-set p { margin: 0; }
 
 /* ── Plot canvas maximise ─────────────────────────────────────────────────
-   The plots CollapsibleSection covers the viewport when maximised. z: 9999 sits above the
-   floating-panel stack (PANEL_Z_BASE = 60) and AppHeader (z: 100). Layout is column-flex so the
-   section header stays a natural-height strip and the body takes the remainder — plots that ask
-   for `height: 100%` (TabbedCanvas, SummaryCanvas) then fill the browser window. */
-.is-plots-maximised {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 9999;
+   The whole image panel covers the viewport when maximised, so the image table (select, filter)
+   comes along. z: 200 sits above AppHeader (100) and the floating-panel stack (PANEL_Z_BASE = 60
+   + open count) but BELOW BaseModal (500), TeleportPopover (1000) and the guide bubbles (1500) —
+   a modal or popover opened from inside the maximised panel must still paint on top of it.
+   The plots section takes the space left under the (capped) Images section; flex-basis 0 in a
+   definite-height column gives it a definite height, so plots that ask for `height: 100%`
+   (TabbedCanvas, SummaryCanvas) fill it. The min-height keeps them usable on a short screen with
+   Images open — .panel-scroll scrolls instead. */
+.image-panel.is-plots-maximised {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
   background: var(--cc-bg);
-  display: flex;
-  flex-direction: column;
 }
-.is-plots-maximised :deep(.cs-body) {
+.is-plots-maximised .plots-section {
+  flex: 1 1 0;
+  min-height: 50vh;
+}
+.is-plots-maximised .plots-section :deep(.cs-body) {
   flex: 1;
   min-height: 0;
   max-height: none !important;
-}
-
-/* Maximise toggle — normal filter-toggle button; when maximised, breaks out to top-right of the
-   viewport (above the fixed plots section) so restore is always reachable. */
-.filter-toggle.plots-max.is-max {
-  position: fixed;
-  top: 6px;
-  right: 8px;
-  z-index: 10000;
 }
 </style>

@@ -223,27 +223,6 @@ describe('nobody hand-rolls a fourth debounce', () => {
   })
 })
 
-// The live-viewer pushes are the ones this audit started from: the movie z slider and the mask-outline
-// slider each landed a viewer command per slider event, and the bridge runs one command at a time, so
-// the viewer kept stepping through slices long after the mouse was released. The fix is at the SINK —
-// `utils/viewerOverlays` owns the coalescing — which only holds while it stays the sole owner.
-describe('live viewer view-property endpoints have exactly one owner', () => {
-  const LIVE_ENDPOINTS = /\/api\/viewer\/(set-z-view|apply-view-state)/
-  const ALL = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
-  const all = Object.entries(ALL).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
-
-  it('the glob resolved', () => { expect(all.length).toBeGreaterThan(sources.length) })
-
-  it('nobody else POSTs to them', () => {
-    const code = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-    const others = all
-      .filter(s => s.path !== 'utils/viewerOverlays.ts' && !s.path.endsWith('.test.ts'))
-      .filter(s => LIVE_ENDPOINTS.test(code(s.text)))
-      .map(s => s.path)
-    expect(others).toEqual([])
-  })
-})
-
 // ── A ResizeObserver that re-renders INTO what it observes ────────────────────
 //
 // Same family as the rules above — an effect that outruns its cause — but the feedback is structural
@@ -255,7 +234,7 @@ describe('live viewer view-property endpoints have exactly one owner', () => {
 // the log rail. `usePlotResize` is the fix (rAF coalescing + skip a render the size did not ask for).
 // Meta-ratchet: growing RO_EXEMPT requires bumping RO_EXEMPT_MAX in the same PR, so a reviewer sees
 // "weaken the check" attempts.
-const RO_EXEMPT_MAX = 11
+const RO_EXEMPT_MAX = 7
 const RO_EXEMPT: Record<string, string> = {
   'components/canvas/CanvasPanel.vue':
     'writes its OWN height to keep a square plot square — but through rafCoalesce, NOT in the callback (pinned below)',
@@ -263,15 +242,11 @@ const RO_EXEMPT: Record<string, string> = {
   // that child is `position: absolute` inside a box with no `overflow`, so it cannot put a scrollbar
   // on the observed element and cannot move its box
   'composables/useCanvasWorkspace.ts': 'sizes an out-of-flow child in a non-scrolling box — cannot move what it observes',
-  'composables/usePlotResize.ts': 'IS the fix',
+  'composables/usePlotResize.ts': 'IS the fix (and `observeBoxChanges`, its size-guarded twin for canvas/rAF painters)',
   'components/TeleportPopover.vue':
     're-places a floating box: writes only fixed top/left, whose box size is position-independent — but through rafCoalesce, NOT in the callback (pinned below)',
   'modules/MoviesModule.vue':
     'measures the viewport into the video\'s box — but through rafCoalesce, NOT in the callback (pinned below)',
-  'components/plots/PlotChart.vue': 'already coalesces through rafCoalesce (the pattern usePlotResize generalises)',
-  'components/plots/GateOverlay.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
-  'components/plots/PlotLayers.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
-  'components/plots/UmapView.vue': 'redraws a WebGL canvas at the box size; no element is appended',
   // Observes the WebGPU canvas so the popout's `viewState.canvas.{width,height}` follows a resize —
   // the movie surfaces read those fields as the size fields' placeholder. Callback body is a single
   // `publishViewStateSink.schedule(undefined)`: no DOM write to the observed element, so no

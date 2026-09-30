@@ -1,6 +1,7 @@
-import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive, provide, inject, onActivated, onScopeDispose,
+         type InjectionKey, type Reactive } from 'vue'
 import { useLogStore } from './log'
+import { useWsStore } from './ws'
 import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
 import { clusterMeasure } from '../utils/clusterMeasure'
@@ -92,27 +93,36 @@ function gateSignatures(tree: PopTree): Map<string, string> {
   return m
 }
 
-export const useGatingStore = defineStore('gating', () => {
+// ── The gating store: ONE PER CANVAS, owned by it ──────────────────────────────────────────────────
+// Each canvas that works on a population tree — GatingPlots (the Gate + Track pages), ClusterPlots
+// (the three cluster pages) and LayoutCanvas (the Analysis board's cluster slots) — creates its OWN
+// store with `provideGatingStore(popType)` and passes it to its own composables; everything below it
+// reads it with `useGatingStore()`. It used to be one app-wide Pinia store that every page rebound to
+// its own (image, segmentation, pop type) — so a page came back to a store another page had moved,
+// and every one of them carried guards against that ("the singleton flips under us"). Owning it:
+//  - no page can move another's document, so returning to a page is instant (App.vue keeps pages
+//    alive) and there is nothing to guard;
+//  - the store lives and pauses with its page (composables/useKeepAlive.ts) — a hidden page's store
+//    does not publish to the viewer or refetch;
+//  - two canvases on the SAME document (a cluster page and the board) stay in step through the
+//    server's `gating:popmap` push, which every store subscribes to for its own document.
+// Enforced by `utils/gatingStoreOwnership.test.ts`.
+// Exported for its unit test only; a component calls provideGatingStore.
+export function createGatingStore(initialPopType: string) {
   const log = useLogStore()
+  const ws = useWsStore()
   const meta = useProjectMetaStore()
   const projStore = useProjectStore()
 
   const imageUid  = ref<string | null>(null)
   const valueName = ref<string>('default')
-  const popType   = ref<string>('flow')
+  const popType   = ref<string>(initialPopType)
 
   // Set-wide cluster pops: `imageUid` is the primary image (drives the displayed tree/stats), and
   // `mirrorUids` are the OTHER clustered images the same pop mutation is replayed to, so a cluster
   // pop (a filter on `clusters.{suffix}`, which is image-independent) lands identically on every
   // image in the run. Empty for ordinary single-image gating. Set by the cluster page.
   const mirrorUids = ref<string[]>([])
-
-  // Cell-selection Z scope for the WebGPU viewer's rectangle picker: 'stack' = read the whole
-  // z-stack (the viewer's original semantics; ignores the viewer's z-plane), 'slice' = read only ±N
-  // planes around the viewer's live z. Written by `CellSelectionTools.vue`; read by
-  // `ViewerWindow.vue`'s `pickRectAt` which passes `zLo`/`zHi` to `/api/viewer/pick-rect`.
-  const pickZMode   = ref<'stack' | 'slice'>('stack')
-  const pickZWindow = ref<number>(0)
 
   const tree      = ref<PopTree>({ value_name: 'default', pop_type: 'flow', populations: [] })
   const columns   = ref<string[]>([])           // gateable feature columns (raw var names)
@@ -421,16 +431,6 @@ export const useGatingStore = defineStore('gating', () => {
   }
   watch([imageUid, valueName, popType], _publishGatingCurrent, { immediate: true })
 
-  // Publish the cell-selection Z scope so the popup viewer's `pickRectAt` can read it (a
-  // localStorage bag is the cross-window channel — the popup has its own Pinia instance). Global,
-  // not per-image: the pop manager naturally follows what the user is gating, and the scope is a
-  // preference on the workflow.
-  const _publishPickZScope = () => {
-    if (typeof localStorage === 'undefined') return
-    const window = Math.max(0, Math.floor(Number(pickZWindow.value) || 0))
-    localStorage.setItem('cc.pickZScope', JSON.stringify({ mode: pickZMode.value, window }))
-  }
-  watch([pickZMode, pickZWindow], _publishPickZScope, { immediate: true })
   // A change in the pop manager's (imageUid, valueName, popType) with no other mutation still
   // means the viewer should redraw — the other ping-firing sites (`_post`, `refreshPops`,
   // `refreshOverlays`) only fire on pop mutations or explicit refresh, not on tab switches.
@@ -439,6 +439,19 @@ export const useGatingStore = defineStore('gating', () => {
     if (typeof localStorage !== 'undefined' && imageUid.value) {
       localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
     }
+  })
+
+  // Live updates for THIS store's document (another page's store on the same document, another tab,
+  // the viewer's picker, an MCP edit): the server pushes the new tree to every client after any
+  // mutation. Subscribed here, not in each canvas, so every owner gets it and none can forget it.
+  const onPopmapPush = (d: unknown) => applyBroadcast(d as Parameters<typeof applyBroadcast>[0])
+  ws.on('gating:popmap', onPopmapPush)
+  onScopeDispose(() => ws.off('gating:popmap', onPopmapPush))
+  // WS reconnect: the backend may have restarted, and the transient viewer-selection pop lived only in
+  // its memory (docs/POPULATION.md) — refetch so a stale selection stops greying the plots. The COUNT,
+  // not `status`: while the page is hidden this watcher is paused and sees only the latest value.
+  watch(() => ws.connects, (n) => {
+    if (n > 1 && imageUid.value) void fetchChannels().then(fetchPopmap)
   })
 
   // Ping the browser volume viewer via localStorage — /viewer-window is a popup with its own store
@@ -486,17 +499,38 @@ export const useGatingStore = defineStore('gating', () => {
     imageUid, valueName, popType, mirrorUids, tree, columns, obsColumns, channels, channelNames, valueNames,
     spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, defaultTransformFor,
     cellMeasures, trackAggregates, stats, popVersion, flat,
-    transientPaths, pickZMode, pickZWindow,
+    transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
     addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, applyBroadcast,
     canUndo, canRedo, undo, redo,
-    refreshPops, refreshOverlays, clearSelection,
+    refreshPops, refreshOverlays, clearSelection, pingViewer: _pingViewer,
     // P3b — labels-version pin
     authoredLabelsVersion, currentLatestLabelsVersion, labelsVersionPin, driftDetected,
     pinToAuthored, clearLabelsVersionPin,
   }
-})
+}
 
-// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
-if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useGatingStore, import.meta.hot))
+export type GatingStore = Reactive<ReturnType<typeof createGatingStore>>
+const GATING_STORE: InjectionKey<GatingStore> = Symbol('gatingStore')
+
+/**
+ * Create THIS canvas's gating store and hand it to everything below it. Call once, in the canvas that
+ * owns the population tree (see the block comment on `createGatingStore`), and use the returned store
+ * directly there — `inject` cannot see a `provide` made by the same component.
+ */
+export function provideGatingStore(popType: string): GatingStore {
+  const g = reactive(createGatingStore(popType))
+  provide(GATING_STORE, g)
+  // Back on screen: the viewer follows the VISIBLE pop manager — tell it which document that is
+  // (the publish watchers above were paused while the page was hidden).
+  onActivated(() => g.pingViewer())
+  return g
+}
+
+/** The gating store of the canvas this component sits in. */
+export function useGatingStore(): GatingStore {
+  const g = inject(GATING_STORE, null)
+  if (!g) throw new Error('useGatingStore(): no gating store above this component — its canvas must call provideGatingStore()')
+  return g
+}

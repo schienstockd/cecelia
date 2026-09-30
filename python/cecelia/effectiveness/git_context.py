@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -105,7 +106,8 @@ def current_head_sha() -> str | None:
     `git` not installed, timeout. Used to anchor recital `_run` rows to the tree the review
     ran against; the commit hook enforces that findings-carrying commits have a matching
     `_run` row with `commit == HEAD-at-hook-time` (i.e. the parent SHA of the commit being
-    made).
+    made) AND the same branch — parallel worktrees share a base SHA, so SHA alone isn't an
+    identity (see the hook's `_same_change`).
     """
     git = shutil.which("git")
     if git is None:
@@ -121,3 +123,37 @@ def current_head_sha() -> str | None:
         return None
     sha = (result.stdout or "").strip()
     return sha if _SHA_RE.match(sha) else None
+
+
+def repo_root() -> Path:
+    """`git rev-parse --show-toplevel`, or cwd as a last resort (not a repo, `git` missing)."""
+    git = shutil.which("git")
+    if git is not None:
+        try:
+            result = subprocess.run(
+                [git, "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8",
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            result = None
+        if result is not None and result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip())
+    return Path.cwd()
+
+
+def git_output(*args: str, cwd: str | None = None) -> str | None:
+    """`git <args>` stdout (stripped), or None on any failure — not a repo, `git` missing, non-zero
+    exit, timeout. For one-off git-state questions (the commit hook's `core.hooksPath` /
+    in-progress-merge checks) so they don't grow a second subprocess wrapper. `cwd` defaults to
+    the process cwd."""
+    git = shutil.which("git")
+    if git is None:
+        return None
+    try:
+        result = subprocess.run(
+            [git, *args], capture_output=True, text=True, timeout=10.0, check=False,
+            encoding="utf-8", cwd=cwd,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None

@@ -36,7 +36,7 @@ import subprocess
 import time
 import typing as _t
 
-from .citation_currency import run_citation_check
+from .inventory_coverage import run_inventory_check
 from .log import append_event
 
 #: Path to each reviewer's spec doc. `claude -p` reads it itself — the reviewer prompt is
@@ -178,11 +178,17 @@ def _resolve_claude_bin() -> str:
 
 
 def _default_runner(prompt: str, timeout: float = 180.0) -> str:
-    """Spawn `claude -p <prompt>` and return stdout. Raises `RecitalError` on failure."""
+    """Spawn `claude -p`, prompt on stdin, and return stdout. Raises `RecitalError` on failure.
+
+    The prompt embeds the whole staged diff, so it goes over stdin, not argv: one argv string
+    is capped at 128 KB on Linux (`MAX_ARG_STRLEN`) and the whole command line at 32 KB on
+    Windows. A 2026-09-30 inventory backfill (long markdown lines) died with `E2BIG` here.
+    """
     claude_bin = _resolve_claude_bin()
     try:
         result = subprocess.run(
-            [claude_bin, "-p", prompt],
+            [claude_bin, "-p"],
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -191,6 +197,10 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
         )
     except subprocess.TimeoutExpired as e:
         raise RecitalError(f"claude timed out after {timeout}s") from e
+    except OSError as e:
+        # Spawn failure (E2BIG, ENOENT, permissions) → an errored `_run` row, not a traceback
+        # that leaves the log with no trace of the attempt.
+        raise RecitalError(f"claude could not be spawned: {e}") from e
 
     if result.returncode != 0:
         raise RecitalError(
@@ -359,6 +369,6 @@ def run_recital(
         commit=commit,
         branch=branch,
     )
-    citation_section = run_citation_check(diff, pr=pr, commit=commit, branch=branch)
+    inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
 
-    return f"{fanout_section}\n\n{convention_section}\n\n{citation_section}"
+    return f"{fanout_section}\n\n{convention_section}\n\n{inventory_section}"

@@ -163,6 +163,7 @@ function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   if (document.querySelector('.cc-modal-overlay')) return
   guide.exit()
+  e.preventDefault()   // used — the maximised-layout Esc (usePlotFullscreen) yields to it
 }
 
 // ── the parked-task footer ──────────────────────────────────────────────────────────────────────

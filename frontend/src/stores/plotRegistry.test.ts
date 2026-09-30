@@ -206,4 +206,20 @@ describe('usePlotRegistry', () => {
     await nextTick()
     expect(s.getLast('panel:7')).toBeUndefined()
   })
+
+  it('two live panels on ONE key: the first to unmount does not deregister the other', async () => {
+    // the Whiteboard QC canvas and the Segment page share `summary:segment:<set>`, both kept alive
+    const meta = () => ({ family: 'summary', title: 'Counts', route: '/segment' })
+    const a = effectScope(), b = effectScope()
+    a.run(() => usePlotRegistry(() => 'summary:segment:S1:1', meta))
+    b.run(() => usePlotRegistry(() => 'summary:segment:S1:1', meta))
+    await nextTick()
+    a.stop()
+    await nextTick()
+    expect(calls.filter(c => c.url.endsWith('/deregister')).length).toBe(0)
+    expect(usePlotRegistryStore().getLast('summary:segment:S1:1')).toBeDefined()
+    b.stop()
+    await nextTick()
+    expect(calls.filter(c => c.url.endsWith('/deregister')).length).toBe(1)
+  })
 })

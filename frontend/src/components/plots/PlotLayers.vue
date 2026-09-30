@@ -18,6 +18,7 @@
 -->
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { observeBoxChanges } from '../../composables/usePlotResize'
 import { densityGrid, pointDensities, outlierPoints, valueGrid, DENSITY_GRID, CONTOUR_LEVELS, DOT_R,
          VALUE_GRID, type Ext } from '../../plots/density'
 import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
@@ -399,7 +400,7 @@ watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLay
 onMounted(() => {
   ctx = canvasEl.value!.getContext('2d')
   draw()
-  ro = new ResizeObserver(draw); ro.observe(canvasEl.value!)
+  ro = observeBoxChanges(canvasEl.value!, draw)
 })
 onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 </script>

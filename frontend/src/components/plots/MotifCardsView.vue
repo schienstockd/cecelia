@@ -22,7 +22,7 @@ import type { Frame } from '../../plots/frame'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  state: { maxPx?: number; padPx?: number; valueName?: string }
+  state: { maxPx?: number; padPx?: number; valueName?: string; seeds?: Record<string, number> }
   // BIDIR PR #4b — panel's persistKey forwarded by InteractivePanel; forwarded to CardsPanelInner
   // so per-card StripCells filter `(family='motif-cards', plotId=<this>, cell=<motif.path>)`.
   plotId?: string

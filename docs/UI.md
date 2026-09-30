@@ -328,15 +328,16 @@ keeps a result and must discard the stale one, a paint has no result at all, and
 but does have a restore to defend against. **Do not hand-roll a fourth** `setTimeout` + sequence-token
 pair — that is what these were extracted from.
 
-**Put the coalescing at the SINK, not at each call site.** There is one browser viewer, so
-`utils/napariOverlays.ts` owns one scheduler per live endpoint (`pushZView`, `pushLabelContour`) and a
-second call site cannot reintroduce the spam. Same reflex as every other cross-cutting helper here: one
+**Put the coalescing at the SINK, not at each call site.** The case that taught it: the napari bridge's
+live pushes (`pushZView`, `pushLabelContour`), each with one scheduler at the one module that POSTed them,
+so a second call site could not reintroduce the spam. Those pushes went with napari; the rule holds for
+the next live endpoint. Same reflex as every other cross-cutting helper here: one
 way to do it, and the second way is the bug. A slider three components away from the sink can't be
 audited by reading either file — only the sink can hold the guarantee.
 
 Enforced by `utils/continuousControls.test.ts`: it scans every SFC for range inputs, and a handler that
-*calls* something (rather than writing a value or emitting) must name where its effect lands. It also
-pins the live napari endpoints to their one owner. It cannot follow an `emit` into the parent — which is
+*calls* something (rather than writing a value or emitting) must name where its effect lands. (It also pinned the napari
+live endpoints to their one owner; that check went when the endpoints did.) It cannot follow an `emit` into the parent — which is
 exactly how the z-slider bug got in — so the sink-side rule above is the part that actually holds.
 
 **A `ResizeObserver` callback may MEASURE, never write layout.** Same rule, structural version: a
@@ -843,6 +844,34 @@ Same rule for a **heavy library used on one screen**: dynamic-import it at the c
 module top, so it splits into its own on-demand chunk. Precedents: `@observablehq/plot`
 (`await import('@observablehq/plot')` in `PlotChart`/cluster panels) and `pdf-lib`
 (`await import('pdf-lib')` inside `plots/pdf.ts`'s export function — loads only when the user exports).
+
+### Kept-alive pages — a page with plots goes in `KEPT_ALIVE_PAGES`
+
+Every page with plots is kept alive across navigation (`App.vue` → `KEPT_ALIVE_PAGES`, a `<KeepAlive
+include>` by SFC name). Leaving the page and coming back shows its plots as they were, with no refetch.
+Before this, every page switch unmounted every plot and refetched it. The cache is keyed by project, so
+switching project drops every kept page, and `max` evicts the least-recently-visited page. **A new
+page with plots goes in the list.**
+
+A kept page is hidden, not unmounted. `composables/useKeepAlive.ts` is what keeps a hidden page
+inert. Most of it is automatic; three things are yours:
+
+- **Reactive work is paused automatically.** One app-wide mixin (`keepAlivePause`) pauses each
+  hidden component's effect scope. A watcher whose source changed while the page was hidden runs
+  **once** on return, with the latest value. That is what stops a hidden page refetching on every
+  image click, task finish or gate edit. The catch: intermediate values are dropped. A watcher that
+  must see a *transition* (a→b→a) watches a monotonic counter instead, like `ws.connects`.
+- **Window listeners go through `useWindowListener`.** A raw listener added in `onMounted` keeps
+  firing while the page is hidden. Ctrl+Z in a hidden page's population manager would undo on a
+  tree you are not looking at. Ratcheted by `utils/keepAlive.test.ts`.
+- **Timers go through `useActiveInterval`; ResizeObservers skip a detached element**
+  (`observeBoxChanges`, or `usePlotResize`, which already guards). A hidden page reads 0×0.
+  Drawing then blanks the plot, and persisting a size then saves 0×0.
+- **Non-reactive callbacks** (a WS handler) defer with `useWhenVisible`. **Teleported content** is
+  not moved out with its page, so close it in `onDeactivated` (`TeleportPopover` does this itself).
+- **Each canvas owns its gating store** (`provideGatingStore` — see *Gating canvas* below), so no
+  page can move another's population tree while it is hidden. Returning to Gate, Track or a cluster
+  page is as instant as any other.
 
 ### 3 — Add the sidebar entry
 
@@ -2285,7 +2314,7 @@ button, plots auto-refresh off a **targeted, per-image version signal**:
   watch in a new plot — call `useDataRefresh`.
 - Gated by the global **`autoRefreshOnTask`** setting (Settings → Interface, on by default). Because
   `useDataRefresh` is the single chokepoint, that one toggle governs every plot; off → plots refresh on
-  the next navigation / input change instead.
+  the next input change, or on returning to the page (activation of a kept-alive page).
 
 This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old R app's success-time
 `retrieveState`. The **image viewer** refresh is a separate, data-vs-image path.
@@ -2439,7 +2468,7 @@ The action row is **two `.cc-btn-group` strips** — chain-file actions (New / R
 
 **A model this chain will train.** A `model` select is enumerated from the global vault server-side (`_inject_dynamic_options!` → `list_coastal_models`), which is right everywhere except inside a chain that trains the model it then segments with: at author time the vault has nothing to offer, so the wiring could not be expressed at all — the user picked "None" and the run failed at the segment step with *"No optical-flow model selected"*. `withChainProducedModels` (`utils/chainModelOptions.ts`) extends any select declaring `field: "models"` with what an **upstream** node produces, labelled *"(trained in this chain)"* so a name with no file behind it does not read as an available model. Appended, never replacing, and never duplicating a real vault entry. Ancestors only — a model trained later, or on a branch that has not joined, would wire a run that cannot work. The server accepts the same forward reference (`_chain_produced_names`, `docs/SCHEDULER.md`); **neither half is any use alone** — validation must accept it and the picker must offer it.
 
-`ChainModule` is wrapped in `<KeepAlive>` in `App.vue` so navigating to other pages and back does **not** reset unsaved edits. Edits only clear on an explicit reload (↻ button) or chain switch.
+`ChainModule` is kept alive (`App.vue` → `KEPT_ALIVE_PAGES`, see *Kept-alive pages*), so navigating to other pages and back does **not** reset unsaved edits. Edits clear only on an explicit reload (↻ button), a chain switch, or a project switch.
 
 ### Layout — Edit tab
 
@@ -2711,9 +2740,24 @@ plus the floating `components/canvas/PopulationManager.vue`. Arrange works by pu
 command (`{x,y,w,h,seq}`) to each panel — position is otherwise drag-controlled and size
 resize-controlled, so the command sets both imperatively (the `seq` bump forces re-apply). Plots
 are an array keyed by stable id (no fixed count); per-plot state (displayed parent, local
-highlight) lives in `GatingPlots` keyed by id. State otherwise lives in `stores/gating.ts` (tree,
-columns, stats, CRUD, `applyBroadcast` for the `gating:popmap` WS push; `valueName` self-heals to a
-real segmentation). API: `docs/API.md` gating routes.
+highlight) lives in `GatingPlots` keyed by id. State otherwise lives in the canvas's gating store,
+`stores/gating.ts` (tree, columns, stats, CRUD, the `gating:popmap` WS push and the reconnect resync;
+`valueName` self-heals to a real segmentation). API: `docs/API.md` gating routes.
+
+**One gating store per canvas, owned by it.** The three canvases that work on a population tree —
+`GatingPlots` (Gate + Track pages), `ClusterPlots` (the three cluster pages) and `LayoutCanvas` (the
+Analysis board's cluster slots) — each call `provideGatingStore(popType)` and use the returned store
+directly. That includes their own composables: `useClusterContext` takes it as `g`, because `inject`
+cannot see a `provide` made by the same component. Everything below them calls `useGatingStore()`.
+The store is a page-owned `reactive()`, not a Pinia store, so it pauses and is disposed with its
+page (*Kept-alive pages*). Every store subscribes to the `gating:popmap` push for its own document,
+so two canvases on the same document (a cluster page and the board) stay in step through the
+server — milliseconds, and never both on screen. It used to be one app-wide store that each page
+rebound to its own document. That made returning to a page a full reload, and every page carried
+guards against the store "flipping under us". **Never re-share it; never add a pop-type guard.** A
+new canvas on a population tree is a fourth owner. Enforced by
+`utils/gatingStoreOwnership.test.ts`. The z-slice picker scope is a preference, not a document, and
+lives in the settings store (`pickZMode` / `pickZWindow`).
 
 **Dot size lives with the other plot options, not on the plot.** The manager's Options box gained a
 **Dot size** slider beside *Line width* — the plot twin of its *Viewer dots* slider, scoped global/local

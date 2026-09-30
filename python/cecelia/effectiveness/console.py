@@ -2,7 +2,7 @@
 
 `pixi run console` (`api/task_console.jl`) is the read-only live view of scheduler tasks over the
 API WebSocket. This is the same shape one level up: a read-only live view of the reviewer
-agents (fanout audit + convention check + citation-currency) as they emit `_run` / `_finding` /
+agents (fanout audit + convention check + inventory check) as they emit `_run` / `_finding` /
 `_finding_resolved` rows to `~/.cecelia-effectiveness/events.jsonl`. Same conventions as the task
 console: default is a TTY-friendly colour stream, `--stream` (auto-set when stdout isn't a TTY)
 falls back to plain text so `pixi run recital-console | tee out.log` gives a clean file.
@@ -80,7 +80,8 @@ _MECHANISM_STYLE: dict[str, tuple[str, str]] = {
     "fanout_audit": ("fnut", _BLUE),
     "sibling_audit": ("fnut", _BLUE),  # pre-rename rows fold under the same header (see rollup.py)
     "convention_check": ("conv", _MAGENTA),
-    "citation_currency": ("cite", _CYAN),
+    "inventory_coverage": ("invt", _CYAN),
+    "citation_currency": ("cite", _CYAN),  # retired check — old log rows still render
     "ratchet_hit": ("ratc", _YELLOW),
     "claude_md_eval": ("cmd ", _GREY),
     "human_override": ("ovrd", _GREY),
@@ -102,7 +103,7 @@ def _mechanism_of(event: str) -> tuple[str, str]:
 #: Reverse index: short label (`fnut`/`conv`/…) → colour. Built at import so a tally row (which
 #: knows only the label, not the source event name) can pick the same colour the event stream
 #: used. Kept as a mapping instead of a second `_mechanism_of("cite_run")` walk — that lookup
-#: would fail, because the event prefix is `citation_currency` and the label is `cite`.
+#: would fail, because the event prefix is `inventory_coverage` and the label is `invt`.
 _LABEL_COLOUR: dict[str, str] = {label.strip(): colour for label, colour in _MECHANISM_STYLE.values()}
 
 
@@ -129,6 +130,17 @@ _OUTCOME_COLOUR: dict[str, str] = {
     "false_positive": _GREY,
     "dropped_no_action": _GREY,
     "unresolved": _RED,
+}
+#: Short outcome words for the by-mechanism rows — the full vocabulary names
+#: (`dropped_no_action`) ran one row past 120 columns once a mechanism had three outcomes.
+#: The full names stay on the activity pane's RSLV rows, which the eye reads one at a time.
+_OUTCOME_SHORT: dict[str, str] = {
+    "fixed_pre_commit": "fixed",
+    "shipped_with_finding": "shipped",
+    "false_positive": "false pos",
+    "dropped_no_action": "dropped",
+    "unresolved": "unresolved",
+    "no_outcome": "no outcome",
 }
 
 
@@ -289,18 +301,27 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
         if errored:
             run_txt += _col(_RED, f" ({errored} errored)", use_colour=use_colour)
         parts.append(run_txt)
+    # `5 confirmed → 2 fixed · 2 false pos · 1 dropped`: markers name the findings (no
+    # separate `N findings` total — it's the sum of the markers), `→` leads to what was done.
     fnd = tally.findings.get(mech, {})
-    total_findings = sum(fnd.values())
-    if total_findings:
-        breakdown = ", ".join(f"{n} {marker}" for marker, n in sorted(fnd.items(), key=lambda x: -x[1]))
-        noun = "findings" if total_findings != 1 else "finding"
-        marker_col = _ORANGE if "confirmed" in fnd else _YELLOW
-        parts.append(_col(marker_col, f"{total_findings} {noun}", use_colour=use_colour) + f" ({breakdown})")
-    res = tally.resolved.get(mech, {})
-    if res:
-        for outcome, n in sorted(res.items(), key=lambda x: -x[1]):
-            parts.append(_col(_OUTCOME_COLOUR.get(outcome, _GREY),
-                              f"{n} {outcome}", use_colour=use_colour))
+    if fnd:
+        markers = ", ".join(
+            _col(_MARKER_COLOUR.get(marker, _YELLOW), f"{n} {marker}", use_colour=use_colour)
+            for marker, n in sorted(fnd.items(), key=lambda x: -x[1]))
+        res = tally.resolved.get(mech, {})
+        outcomes = " · ".join(
+            _col(_OUTCOME_COLOUR.get(o, _GREY), f"{res[o]} {_OUTCOME_SHORT.get(o, o)}",
+                 use_colour=use_colour)
+            for o in (*OUTCOME_DISPLAY_ORDER, *sorted(set(res) - set(OUTCOME_DISPLAY_ORDER)))
+            if res.get(o))
+        parts.append(markers + (_col(_DIM, " → ", use_colour=use_colour) + outcomes
+                                if outcomes else ""))
+    elif tally.resolved.get(mech):
+        # Resolutions whose findings fell outside the seeded window — still worth a count.
+        res = tally.resolved[mech]
+        parts.append(" · ".join(
+            _col(_OUTCOME_COLOUR.get(o, _GREY), f"{n} {_OUTCOME_SHORT.get(o, o)}",
+                 use_colour=use_colour) for o, n in res.items()))
     return f"{tag}  " + _col(_DIM, " · ", use_colour=use_colour).join(parts)
 
 
@@ -510,12 +531,20 @@ def _wrap_desc(desc: str, *, width: int, indent: str, first_prefix: str) -> str:
     )
 
 
+#: Mechanical (non-reviewer) recital checks → (payload key counting what was checked, its word
+#: on the console row). `citation_currency_run` is the retired check — kept so old rows render.
+_MECHANICAL_RUN_COUNT: dict[str, tuple[str, str]] = {
+    "inventory_coverage_run": ("new_shared_files", "new"),
+    "citation_currency_run": ("staged_files_checked", "staged"),
+}
+
+
 def format_event(event: dict, *, use_colour: bool = True,
                  width: int = _DEFAULT_WIDTH) -> str | None:
     """Render one event row as a printable console line, or return None to skip.
 
     Return contract — None means "don't print this row". Rows carrying no reviewer signal
-    (`plan_logged`/`prompt_logged`, quiet citation-currency runs) are dropped rather than
+    (`plan_logged`/`prompt_logged`, quiet mechanical-check runs) are dropped rather than
     padded with placeholder text, on the same principle that motivates the console over
     `tail | jq`: less noise, not more.
     """
@@ -564,21 +593,22 @@ def format_event(event: dict, *, use_colour: bool = True,
         errored = is_errored_run(payload)
         run_verb = _col(_RED, "ERR ", use_colour=use_colour) if errored \
             else _verb("RUN")
-        if name == "citation_currency_run":
-            # Signal-only extras — a quiet citation-currency run (0 warnings, 0 staged files)
+        if name in _MECHANICAL_RUN_COUNT:
+            # Signal-only extras — a quiet mechanical-check run (0 warnings, 0 files checked)
             # has nothing for a reader to act on, so drop the whole row. Same principle for
             # empty convention / fanout runs: the `_finding` rows carry the signal, `_run`
             # says only "the reviewer ran" and matters chiefly when there are counts to
             # eyeball. Errored runs render regardless — an ERR row IS the signal.
+            count_key, count_word = _MECHANICAL_RUN_COUNT[name]
             warnings = payload.get("warnings_emitted", 0) or 0
-            staged = payload.get("staged_files_checked", 0) or 0
-            if warnings == 0 and staged == 0 and not errored:
+            checked = payload.get(count_key, 0) or 0
+            if warnings == 0 and checked == 0 and not errored:
                 return None
             extras = []
             if warnings:
                 extras.append(_col(_YELLOW, f"{warnings} warn", use_colour=use_colour))
-            if staged:
-                extras.append(f"{staged} staged")
+            if checked:
+                extras.append(f"{checked} {count_word}")
             extras_str = "  " + "  ".join(extras) if extras else ""
             return f"{ts} {tag} {run_verb} {dur_str}{extras_str}{ctx_str}"
         # For fanout/convention runs the timing is the whole `_run` payload — findings render

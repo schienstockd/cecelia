@@ -1,0 +1,5 @@
+#!/bin/sh
+# Recital outcome-tag gates + effectiveness-log resolution rows, on the real commit message.
+# Logic: .claude/hooks/check_commit_recital.py (--commit-msg). Activate once per clone with
+# `pixi run install-git-hooks`. Git runs this at the worktree top level.
+exec python3 "$(git rev-parse --show-toplevel)/.claude/hooks/check_commit_recital.py" --commit-msg "$1"

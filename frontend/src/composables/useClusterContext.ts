@@ -4,11 +4,12 @@
 // re-implementation (feedback_use_existing_framework). Both callers own the `suffix` ref (page-level on
 // the cluster module; board-level on the analysis board — one run per board) and pass it in.
 //
-// NB: cluster pops live in the SINGLETON useGatingStore (loaded via g.selectImage(uid, vn, popType)); it
-// holds one (popType, suffix) at a time. That's why the analysis board enforces ONE cluster run per
-// board — so this context drives the store once, unambiguously.
+// NB: cluster pops live in the caller's gating store (`provideGatingStore` in ClusterPlots /
+// LayoutCanvas, passed in as `g`; loaded via g.selectImage(uid, vn, popType)). A store holds one
+// (popType, suffix) at a time — that's why the analysis board enforces ONE cluster run per board, so
+// this context drives its store once, unambiguously.
 import { ref, computed, watch, type Ref } from 'vue'
-import { useGatingStore } from '../stores/gating'
+import type { GatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
 import { useDataRefresh } from './useDataRefresh'
 import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
@@ -20,11 +21,13 @@ export function useClusterContext(opts: {
   imageUids: Ref<string[]>
   popType: Ref<ClusterPopType>
   suffix: Ref<string>
-  // gate the singleton-store drive + feature load (the Analysis board only wants this when a cluster
-  // slot exists; the cluster module leaves it on). Defaults to always-on.
+  // gate the store drive + feature load (the Analysis board only wants this when a cluster slot
+  // exists; the cluster module leaves it on). Defaults to always-on.
   enabled?: Ref<boolean>
+  // the caller's own gating store — it calls provideGatingStore(), so it cannot inject it
+  g: GatingStore
 }) {
-  const g = useGatingStore()
+  const g = opts.g
   const log = useLogStore()
   const { projectUid, imageUids, popType, suffix } = opts
   const enabled = opts.enabled ?? computed(() => true)
@@ -96,16 +99,17 @@ export function useClusterContext(opts: {
     .map(p => ({ path: p.path, name: p.name, colour: p.colour,
                  clusterIds: Array.isArray(p.filter?.values) ? (p.filter!.values as unknown[]).map(Number) : [] }))
 
-  // drive the (shared, pop_type-agnostic) gating store for the pop tree: primary = first valid image,
+  // drive the caller's gating store for the pop tree: primary = first valid image,
   // the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.
   // `resolvedVn` is a dependency (not just read): loadFeatures resolves it asynchronously, so without it
   // the tree could stay pinned to the initial 'default' after the real segmentation value_name lands.
-  watch([validUids, suffix, popType, projectUid, enabled, resolvedVn], () => {
+  const bindStore = () => {
     if (!enabled.value || !projectUid.value || !validUids.value.length) return
     g.selectImage(validUids.value[0], resolvedVn.value, popType.value).then(() => {
       g.mirrorUids = validUids.value.slice(1)
     })
-  }, { immediate: true })
+  }
+  watch([validUids, suffix, popType, projectUid, enabled, resolvedVn], bindStore, { immediate: true })
   // reload the run/feature metadata when the image set / project / popType changes (or on enable)
   watch([projectUid, () => imageUids.value.join(','), popType, enabled], loadFeatures, { immediate: true })
   // A task finishing on one of THESE images must also reload the run METADATA, not just the panels'

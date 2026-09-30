@@ -56,8 +56,18 @@ export const usePlotRegistryStore = defineStore('plotRegistry', () => {
     if (key in lastSent.value) delete lastSent.value[key]
   }
   function getLast(key: string) { return lastSent.value[key] }
+  // How many live panels hold each key. Two can: the Whiteboard's QC canvas and the Segment page are
+  // both `summary:segment:<set>`, and both are kept alive (App.vue) — the one that unmounts must not
+  // deregister the plot the other still shows. `release` is true when the LAST holder lets go.
+  const holders = new Map<string, number>()
+  function hold(key: string) { holders.set(key, (holders.get(key) ?? 0) + 1) }
+  function release(key: string): boolean {
+    const n = (holders.get(key) ?? 1) - 1
+    if (n > 0) { holders.set(key, n); return false }
+    holders.delete(key); return true
+  }
 
-  return { lastSent, noteSent, forget, getLast }
+  return { lastSent, noteSent, forget, getLast, hold, release }
 })
 
 // Fire-and-forget POST — swallows every failure. A dev restart makes the backend unreachable
@@ -107,6 +117,18 @@ export function usePlotRegistry(key: () => string, meta: () => PlotMeta): void {
 
   let lastKey = ''
 
+  // Let go of a key; deregister on the server only if no other live panel still holds it.
+  function drop(k: string) {
+    if (!store.release(k)) return
+    const prev = store.getLast(k)
+    if (prev) {
+      _post('/api/viewer/plots/deregister', {
+        clientId: prev.clientId, projectUid: prev.projectUid, plotId: k,
+      })
+      store.forget(k)
+    }
+  }
+
   function doRegister() {
     const k = key()
     const projectUid = projectMeta.current?.uid ?? ''
@@ -114,38 +136,22 @@ export function usePlotRegistry(key: () => string, meta: () => PlotMeta): void {
       // If we had previously registered under a now-empty key, drop it. This is the "the panel
       // still exists but its persistKey rebound to empty" edge case; the server-side entry would
       // otherwise linger until WS disconnect.
-      if (lastKey) {
-        const prev = store.getLast(lastKey)
-        if (prev) {
-          _post('/api/viewer/plots/deregister', {
-            clientId: prev.clientId, projectUid: prev.projectUid, plotId: lastKey,
-          })
-          store.forget(lastKey)
-        }
-        lastKey = ''
-      }
+      if (lastKey) { drop(lastKey); lastKey = '' }
       return
     }
 
     const m = meta()
     // Rebound key: deregister the old entry before registering the new one — a fresh POST under a
     // new plotId is not itself a signal to drop the old id on the server.
-    if (lastKey && lastKey !== k) {
-      const prev = store.getLast(lastKey)
-      if (prev) {
-        _post('/api/viewer/plots/deregister', {
-          clientId: prev.clientId, projectUid: prev.projectUid, plotId: lastKey,
-        })
-        store.forget(lastKey)
-      }
+    if (k !== lastKey) {
+      if (lastKey) drop(lastKey)
+      store.hold(k)
+      lastKey = k
     }
 
     // Dedupe: nothing changed → no POST. Compares against the last-sent snapshot for THIS key.
     const prev = store.getLast(k)
-    if (prev && prev.projectUid === projectUid && _metaEq(prev.meta, m)) {
-      lastKey = k
-      return
-    }
+    if (prev && prev.projectUid === projectUid && _metaEq(prev.meta, m)) return
 
     const payload: Record<string, unknown> = {
       clientId: wsClientId,
@@ -161,7 +167,6 @@ export function usePlotRegistry(key: () => string, meta: () => PlotMeta): void {
     if (m.summary) payload.summary = m.summary
     _post('/api/viewer/plots/register', payload)
     store.noteSent(k, { clientId: wsClientId, meta: { ...m }, projectUid })
-    lastKey = k
   }
 
   // Initial register at setup; re-fire on either the key OR the meta changing. `deep` on meta so
@@ -170,16 +175,7 @@ export function usePlotRegistry(key: () => string, meta: () => PlotMeta): void {
   doRegister()
   watch([key, meta, () => projectMeta.current?.uid], () => doRegister(), { deep: true })
 
-  onScopeDispose(() => {
-    if (!lastKey) return
-    const prev = store.getLast(lastKey)
-    if (prev) {
-      _post('/api/viewer/plots/deregister', {
-        clientId: prev.clientId, projectUid: prev.projectUid, plotId: lastKey,
-      })
-      store.forget(lastKey)
-    }
-  })
+  onScopeDispose(() => { if (lastKey) drop(lastKey) })
 }
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(usePlotRegistryStore, import.meta.hot))

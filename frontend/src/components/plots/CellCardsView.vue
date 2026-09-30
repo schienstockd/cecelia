@@ -19,8 +19,9 @@ const props = defineProps<{
   projectUid: string; setUid: string | null; imageUids: string[]
   popType: 'clust' | 'trackclust' | 'region'; suffix: string
   shownPops?: ShownPop[]
-  state: { maxPx?: number; padPx?: number }
+  state: { maxPx?: number; padPx?: number; seeds?: Record<string, number> }
   docked?: boolean
+  reloadToken?: number
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 
@@ -45,7 +46,7 @@ defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
                   :index="index" :active="active" :arrange="arrange" :persist-key="persistKey"
                   :project-uid="projectUid" :set-uid="setUid" :image-uids="imageUids"
                   :pop-type="popType" :suffix="suffix" :shown-pops="shownPops"
-                  :state="state" :docked="docked"
+                  :state="state" :docked="docked" :reload-token="reloadToken"
                   point-out-family="cell-cards"
                   @activate="emit('activate', $event)" @remove="emit('remove')"
                   @duplicate="emit('duplicate')" @card-select="detailCard = $event">

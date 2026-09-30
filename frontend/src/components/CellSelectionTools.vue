@@ -46,16 +46,16 @@ const g = useGatingStore()
             v-tooltip.bottom="'Clear the current cell selection'"
             @click="g.clearSelection"><i class="pi pi-times" /></button>
     <button class="cc-btn cc-btn-bare"
-            :class="{ 'cc-btn-on cc-btn-on-tint': g.pickZMode === 'slice' }"
-            v-tooltip.bottom="g.pickZMode === 'slice'
-              ? `Selecting cells from the current z-slice ±${g.pickZWindow} — click for the whole stack`
+            :class="{ 'cc-btn-on cc-btn-on-tint': settings.pickZMode === 'slice' }"
+            v-tooltip.bottom="settings.pickZMode === 'slice'
+              ? `Selecting cells from the current z-slice ±${settings.pickZWindow} — click for the whole stack`
               : 'Selecting cells across the whole z-stack — click to restrict to the current z-slice'"
-            @click="g.pickZMode = g.pickZMode === 'slice' ? 'stack' : 'slice'">
+            @click="settings.pickZMode = settings.pickZMode === 'slice' ? 'stack' : 'slice'">
       <i class="pi pi-clone" /> Z
     </button>
   </div>
-  <label v-if="(show ?? true) && g.pickZMode === 'slice'" class="zwin"
+  <label v-if="(show ?? true) && settings.pickZMode === 'slice'" class="zwin"
          v-tooltip.bottom="'Include cells within ± this many z-slices (0 = current only)'">
-    ±<input type="number" min="0" max="50" step="1" v-model.number="g.pickZWindow" />
+    ±<input type="number" min="0" max="50" step="1" v-model.number="settings.pickZWindow" />
   </label>
 </template>

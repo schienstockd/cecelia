@@ -143,6 +143,11 @@ export interface CardFamilyContext {
    * discovery + echo dance as `valueName`.
    */
   hmmCol?: string
+  /**
+   * Reshuffle families only: per-card example seed, keyed by card `path`. 0 / absent = the medoid;
+   * n > 0 = the n-th other near-centre example (`medoid_track` in app/src/cell_cards.jl).
+   */
+  seeds?: Record<string, number>
 }
 
 /** One card family's configuration. The base panel knows *nothing* family-specific. */
@@ -176,4 +181,9 @@ export interface CardFamily {
    * mini-boxplot table on each card). Defaults to identity. cellCards strips `live.track.`.
    */
   footerStatLabel?: (name: string) => string
+  /**
+   * When true, cards offer "show another example": the panel keeps a per-card seed in its state and
+   * `buildRequestBody` forwards it (`ctx.seeds`). Only families whose endpoint honours a seed.
+   */
+  reshuffle?: boolean
 }

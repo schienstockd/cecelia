@@ -46,7 +46,8 @@ export function useCanvasWorkspace(
   let ro: ResizeObserver | null = null
   const measure = () => {
     const el = viewport.value
-    if (el) { vpW.value = el.clientWidth; vpH.value = el.clientHeight }
+    // a detached viewport (hidden kept-alive page) reads 0×0 — not a size to lay out for
+    if (el?.isConnected) { vpW.value = el.clientWidth; vpH.value = el.clientHeight }
   }
   // (Re-)attach the observer to whatever element `viewport` currently points at. Hosts often mount
   // the workspace inside a `v-else` that only renders once an image is selected — the ref is still
