@@ -19,6 +19,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -388,6 +389,25 @@ class ClaudeRunnerEnvTest(unittest.TestCase):
             runner.default_claude_runner(pathlib.Path("/wt"), "body", timeout=5,
                                          claude_path="/bin/claude")
         self.assertEqual(run.call_args.kwargs["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
+
+    def test_spawn_is_sandboxed(self):
+        # The agent runs with --dangerously-skip-permissions; the sandbox + denies are its only fence.
+        runner = _load_runner()
+        with mock.patch.object(runner.subprocess, "run") as run:
+            runner.default_claude_runner(pathlib.Path("/wt"), "body", timeout=5,
+                                         claude_path="/bin/claude")
+        argv = run.call_args.args[0]
+        settings = json.loads(argv[argv.index("--settings") + 1])
+        self.assertTrue(settings["sandbox"]["enabled"])
+        self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
+        self.assertIn("Write(~/**)", settings["permissions"]["deny"])
+
+    # Windows keeps its temp dir under the profile, and the Claude Code sandbox is Linux/macOS only.
+    @unittest.skipIf(sys.platform == "win32", "eval runs on Linux/macOS")
+    def test_worktree_root_is_outside_home(self):
+        # A `~/**` write deny would otherwise block the agent's own worktree.
+        root = _load_runner()._WORKTREE_ROOT_DEFAULT.resolve()
+        self.assertFalse(root.is_relative_to(pathlib.Path.home().resolve()))
 
 
 class EnsureEvalSessionTest(unittest.TestCase):

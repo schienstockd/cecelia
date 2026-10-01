@@ -179,8 +179,8 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=300, help="Per-spawn timeout in seconds (default 300)")
     ap.add_argument("--claude-path", default=shutil.which("claude"),
                     help="Path to the `claude` binary (defaults to `which claude`).")
-    ap.add_argument("--worktree-root", type=pathlib.Path, default=_REPO.parent,
-                    help="Parent dir for throwaway worktrees (default: sibling of repo)")
+    ap.add_argument("--worktree-root", type=pathlib.Path, default=_run_prompt._WORKTREE_ROOT_DEFAULT,
+                    help=f"Parent dir for throwaway worktrees (default {_run_prompt._WORKTREE_ROOT_DEFAULT})")
     ap.add_argument("--keep-worktrees", action="store_true",
                     help="Don't remove worktrees after each run (debugging).")
     ap.add_argument("--arm", choices=("with", "without"), default="with",
