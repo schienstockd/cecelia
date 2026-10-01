@@ -75,6 +75,8 @@ websockets   = ">=16.0"
 # → napari-animation until P9; declared here now that napari is gone. Tests in test_movie_io.py
 # encode short mp4s for real, so this needs to be present, not optional.
 imageio-ffmpeg = ">=0.4"
+# SPIKE (SHARED_RENDERER_PLAN Phase 0): run the viewer's WGSL headlessly.
+wgpu         = ">=0.20"
 # Cellpose lives in [feature.cellpose-v4] / [feature.cellpose-v3] below (two mutually-exclusive envs
 # — same package name, incompatible major versions). Default env carries v4; the v3 env is an opt-in
 # Mac-only sidecar for MPS speed. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.

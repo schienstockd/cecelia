@@ -1,9 +1,23 @@
 # Shared renderer — the viewer's shaders draw the movies too
 
-**Status:** parked (2026-10-01) — planning, nothing built. Supersedes
-[`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay") and its
-"shared drawing library" non-goal; that plan's shared-JSON work (Phases 1–2, built) stands. Next step
-is the Phase 0 spike, which decides whether anything after it happens.
+**Status:** parked (2026-10-01).
+- **Phase 0 passed on Linux** (see Phase 0 → Result). **Phase 1 is next.**
+- **Committed scope is Phases 1–2.** Phases 3–5 are decided only after Phase 2 ships (see *Scope*).
+
+Supersedes [`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay")
+and its "shared drawing library" non-goal. That plan's shared-JSON work (Phases 1–2, built) stands.
+
+## Scope (locked 2026-10-01)
+
+- **Build Phases 1 and 2.** 3D movies are where the payoff is:
+  - The torch ray-caster is the renderer with no parity test.
+  - It has no masks.
+  - It is CUDA-only: it runs on the CPU on Macs and on AMD/Intel GPUs.
+- **Phase 3 (2D) and later wait for a review after Phase 2.** The Julia 2D path already
+  sRGB-encodes and matches the viewer, so there is less to gain there.
+- **HPC is out of scope.** No Vulkan-loader or headless-node work.
+- **The torch sRGB bug is fixed separately** on `fix/torch-3d-srgb` and doesn't wait for this plan.
+  Measured against the viewer screenshot: mean |Δ| 48.5 → 4.5/255.
 
 ## Goal
 
@@ -89,12 +103,41 @@ renderer stays for that platform until one exists — Phase 0 finds out.
 - **Gate:** the frame matches the viewer by eye and within a small numeric tolerance, and the install
   works on all three OSes. Fail → record why here and in `docs/FUTURE.md`, and stay on Viewer Parity.
 
+**Result (2026-10-01): the frame passes; the install is verified on Linux only.** Scripts are in
+`docs/todo/spike/shared-renderer/`: `export_inputs.test.ts` runs the viewer's own TS to get the WGSL,
+the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgpu-py.
+
+- **Pixels.** The comparison is against the viewer screenshot of this state
+  (`~/Downloads/TMP/fXgbTl_viewer_screenshot_t3.png` on the dev machine), registered to the
+  render (the capture is scaled). Shared shader with an `rgba8unorm-srgb` target: mean |Δ| 3.0/255,
+  median 2, fit `viewer ≈ 1.001·x − 0.0`, which is resampling noise from the capture.
+- **Torch ray-caster on main:** mean |Δ| 48.5, fit `viewer ≈ 1.10·x + 43`. It writes linear values
+  and never sRGB-encodes, so 3D movies come out about 2x darker in mid-tones than the viewer.
+  `fix/torch-3d-srgb` brings it to 4.5/255 (the residual is mostly mp4 compression).
+- **Speed at 1186x999, 256 steps, 4 channels, including readback.**
+  - RTX 2000 Ada (Vulkan): 10.6 ms/frame, shader compile ~150 ms.
+  - llvmpipe (software Vulkan): 483 ms/frame, which is usable for batch.
+  - The two adapters' outputs differ by at most 1/255.
+- **Install.** `wgpu = ">=0.20"` in `[pypi-dependencies]` resolved to 0.32.0, with wheels locked for
+  `linux-64`, `osx-arm64` and `win-64`. It installs and runs on Linux. macOS and Windows resolve
+  but have not been run; CI on those OSes is the remaining check.
+- **Uniform packing is still hand-mirrored** in `export_inputs.test.ts`. The slot writes are spread
+  through `volumeRenderer.ts`, which confirms Decision 3 is the main work.
+
 ### Phase 1 — WGSL out of the template strings
 
 - Move `mipShader`, `tileShader` and `brickShader` sources to `.wgsl` files, with one substitution
   helper used by both hosts. The browser behaviour must not change (existing shader tests + a visual
   check).
 - Uniform layout as data + the pack-both-sides byte test (Decision 3).
+- **Starting point.** The spike branch `spike/shared-renderer` (worktree
+  `cecelia-shared-renderer-spike`) carries:
+  - `wgpu` in `pixi.toml` and the lockfile;
+  - `docs/todo/spike/shared-renderer/` (the TS exporter and the Python host).
+
+  The exporter's hand-mirrored slot writes are the list Decision 3's field table replaces.
+- **Close the install gate.** Run the `wgpu` install and a one-frame render in CI on macOS (Metal)
+  and Windows (DX12/Vulkan).
 
 ### Phase 2 — 3D movies on the shared shader
 
@@ -106,6 +149,10 @@ renderer stays for that platform until one exists — Phase 0 finds out.
   Where the viewer builds them (pop / colour-by colours) is not traced yet — find it, and serve the rows
   from one place both hosts read rather than rebuilding them in Julia.
 - Pixel test: viewer frame vs movie frame, per fixture.
+  - **The viewer side needs a durable capture.** Take a `canvas.toDataURL()` of the viewer at a
+    fixed view state on a committed fixture. Phase 0's screenshot was a scaled screen capture,
+    registered by hand.
+- **Time torch against wgpu on the same frame before deleting torch.** Not measured in Phase 0.
 - Delete the torch ray-caster.
 
 ### Phase 3 — 2D movies on the shared shader
@@ -126,13 +173,15 @@ renderer stays for that platform until one exists — Phase 0 finds out.
 - `brickShader` for volumes that don't fit one texture (the viewer's brick path; the torch renderer
   reads full resolution today). Only once a real movie needs it.
 
-## Open questions (Phase 0 should answer the first three)
+## Open questions
 
-- Does `wgpu-native` behave the same as Chromium's Dawn on the features the shaders use (`r32uint`
-  label textures, 3D texture limits — cf. `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md`)?
-- Software-adapter speed: is a batch of long timelapses usable on a machine with no GPU?
-- Packaging: `wgpu-py` wheels + a Vulkan loader across the three OSes and HPC nodes.
-- Does the brick streaming path matter for movies, or can movies always upload the whole timepoint?
+- **wgpu-native vs Dawn:** answered for `r16uint` volumes and the MIP pass (Phase 0). Still open:
+  `r32uint` label textures and the 3D texture limits (cf. `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md`).
+  Phase 2 is the first to bind real labels.
+- **Software-adapter speed:** answered. llvmpipe takes 483 ms/frame at 1186x999, which is usable
+  for batch.
+- **Packaging:** Linux is answered. macOS and Windows are a Phase 1 CI check. HPC is out of scope.
+- **Brick streaming:** does it matter for movies, or can a movie always upload the whole timepoint?
 
 ## Non-goals
 
