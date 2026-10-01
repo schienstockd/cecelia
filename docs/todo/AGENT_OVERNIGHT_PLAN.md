@@ -1,6 +1,6 @@
 # Agent overnight run — "track everything, give me the behaviours, I'm back tomorrow"
 
-**Status:** planning (2026-10-01) — P0 on `docs/agent-sandbox-audit`; P1–P5 open.
+**Status:** in progress (2026-10-02) — P0 shipped (#1335, #1346); P1–P3 built on `feat/agent-eval-fixtures` (harness verified end to end with a scripted stand-in, no agent run yet); P4–P5 open.
 **Audit this builds on:** [`docs/audit/agent-sandbox-value-name.md`](../audit/agent-sandbox-value-name.md).
 
 ## Goal
@@ -73,31 +73,77 @@ interfaces or QC, and the fix goes into the framework.
 
 ## Phases
 
-### P0 — audit + latent-bug fix + this plan *(this branch)*
-Audit doc; a versioning-aware overwrite (now `versioned_set_field!`) replaces the flattening rebuilds in `register_label_files!`
-and measureLabels (audit B1), with tests.
+### P0 — audit + latent-bug fix + this plan — **shipped**
+Audit doc; a versioning-aware overwrite (now `versioned_set_field!`) replaces the flattening rebuilds in
+`register_label_files!` and measureLabels (audit B1, #1335); the `filepath` side (B2, #1346).
 
-### P1 — fixture generator + ground truth + scorer
-- `scripts/agent_eval/fixture.py` (or under `python/cecelia/` if it earns reuse): seeded, writes OME-Zarr
-  through `zarr_utils` only; per image ~128×128, 1–2 channels, 30–40 frames, 15–30 cells, two motility
-  regimes; writes `ground_truth.json` (per-frame centroid + label + state) beside the project.
-- Scorer: segmentation (per-frame matched count + mean IoU via `_compute_iou_matrix`); tracking
-  (per-GT-track majority-overlap match → fraction of correct links, split/merge counts); behaviour
-  (per-cell-frame state agreement, best over label permutation); canary (D3).
-- **Checkpoint:** scorer gives 1.0 on GT-as-prediction and drops monotonically on a perturbed copy
-  (dropped links, swapped states) — tested.
+## How to run it (built)
 
-### P2 — human ceiling + end-to-end isolation check
-Run segment → measure → track → track measures → HMM ourselves via REPL into a fresh value_name.
-Records the ceiling score and wall-clock, and confirms (or refutes) the audit's "traced, not run"
-isolation claim. **Checkpoint:** ceiling score recorded; canary intact.
+```bash
+pixi run agent-eval-run --root /tmp/agent-night-1 --dry-run             # build only, show the prompt
+pixi run agent-eval-run --root /tmp/agent-night-1 --scripted-ceiling    # harness check, $0
+pixi run agent-eval-run --root /tmp/agent-night-2 --brief vague         # ONE real agent, ≤ $10
+pixi run agent-eval-run --root /tmp/agent-night-3 --brief guided
+pixi run agent-eval-crop --project-dir ~/cecelia-feijoa/projects/zolIMa --image fXgbTl \
+    --reference-vn flowTom --out /tmp/agent-crop                         # real-data tier source
+pixi run agent-eval-run --root /tmp/agent-night-4 --fixture /tmp/agent-crop
+```
 
-### P3 — agent runner, by hand
-`scripts/agent_eval/run_overnight.py`: build fixture → spawn one sandboxed `claude -p` with a brief
-(reusing `run_prompt.py` settings + trace layout) → score → write a record. Navigation metrics from
-the trace: turns, cost, tool errors, tasks attempted, value_names written, docs read. Dominik starts
-it (auto-mode blocks assistant-side `claude -p` spawns, as in #1264). **Checkpoint:** one vague + one
-guided run, N=1 each, spend shown, findings written.
+Each root gets `record.md` / `record.json` (scores, canary, cost, turns, tool errors, tasks run, the
+agent's final message) and `trace/` (prompt, command, stream.jsonl, stderr). `--root` must be fresh
+and outside `~` (the sandbox write-denies home). The agent works in a detached checkout at HEAD
+(CLAUDE.md loads as usual), with `CECELIA_DEV_DIR` = the fixture's isolated dev dir, **no MCP servers**
+(`--strict-mcp-config`: the observer would point it at the real app), network off, and a
+`--max-budget-usd` cap.
+
+### P1 — fixture generator + ground truth + scorer — **built**
+- `scripts/agent_eval/fixture.py`: seeded 2D+t, 192×192 px at 0.8 µm/px, 40 frames at 30 s, 18 cells,
+  1 channel (`cells`), two regimes (migrating 5 µm/min persistent / arrested 0.3 µm/min), ≥ 8 frames
+  per regime. Writes an **OME-TIFF** (not a zarr): the fixture goes through the real import task.
+  ~3 MB per image.
+- `setup.py` + `setup_project.jl`: isolated dev dir (projects, bioformats2raw copied read-only from the
+  dev config, `python` pinned to the analysis env), import, optional **prior work** = a real
+  `segment.cellposeMeasure` into `default`, then the canary snapshot.
+- `crop.py`: **real-data tier** — a window of an analysed image (default 128×128 px × 12 z × 20 frames,
+  all channels) placed where the user's tracks are densest; the user's tracked rows are the
+  *reference*. `fXgbTl` / `flowTom`: 31.5 MB, 220 reference cell-frames, 23 tracks; reference centroids
+  are ~3× brighter than random points in nuc-GFP / mem-TOM (offsets verified).
+- `score.py`: Hungarian centroid matching per frame (3D when `z_scale` is set) → detection P/R/F1,
+  link recall / precision, state accuracy under the best state mapping; canary = file hashes +
+  `_active` pointers. Mask IoU deliberately not used — centroids answer the question and need no
+  label-store reads. Against a reference, read recall: precision counts untracked cells.
+- **Checkpoint met:** 1.0 on ground truth, drops on dropped detections / split / swapped tracks /
+  scrambled states (`python/cecelia/tests/test_agent_eval.py`, 16 tests).
+
+### P2 — human ceiling + end-to-end isolation check — **done**
+`ceiling.jl`: cellpose (`cpsam_v2`, diameter 10) → measure → btrack (search 15 px, lost 2) → track
+measures → 2-state HMM on speed + angle, into a fresh value_name, through `run_task`.
+
+- **Ceiling (synthetic, 2 images, seed 0):** segmentation F1 1.000, link recall / precision
+  1.000 / 1.000, state accuracy 0.958 — 3.1 min wall-clock for 2 images on the laptop GPU.
+  The fixture is easy for segmentation (open question below) but the behaviour layer is not trivial.
+- **Isolation claim confirmed with one exception, and that exception is L1:** no pre-existing file
+  changed, but every image's `label_props._active` moved from `default` to the run's value_name —
+  the canary reports it.
+- **Found on the way and fixed:** `add_image!` / `delete_image!` / `add_set!` / `delete_set!` /
+  `move_image!` persisted with a cascading `save!` that wrote back stale siblings — importing image 1
+  then adding image 2 wiped image 1's `ccid.json` (#1348; also live in the GUI via the edit tasks);
+  and `TaskApplicabilityError` carried an empty message for a scale-only refusal (#1348).
+
+### P3 — agent runner, by hand — **built, not yet run with an agent**
+`run_overnight.py` (`pixi run agent-eval-run`): setup → detached checkout → one sandboxed `claude -p`
+(the CLAUDE.md eval's `_SANDBOX_SETTINGS` + write access to the run root, `--strict-mcp-config`,
+`--max-budget-usd`) with `briefs/vague.md` or `briefs/guided.md` → score every new label set (the one
+named in the agent's `RESULT {…}` line is the headline) → canary → `record.md` / `record.json`.
+Navigation: cost, turns, tool calls, tool errors, tasks run (`runlog.json`), new value_names.
+`--scripted-ceiling` runs `ceiling.jl` as the "agent": the full record path verified at $0 (scores as
+P2, canary flags L1). Dominik starts the real runs (auto mode blocks assistant-side `claude -p`
+spawns, as in #1264). **Checkpoint (open):** one vague + one guided run, N=1 each, spend shown,
+findings written.
+
+Known unknowns for the first real run: whether the GPU is visible inside the bwrap sandbox (cellpose
+falls back to CPU — slower, still fine at this size); whether `julia --project=app` precompiles in the
+fresh checkout within the timeout (the depot is shared, caches are writable).
 
 ### P4 — midnight timer + run record
 Own timer (not Monday), shared flock with the CLAUDE.md eval, `ConditionACPower`. Record reuses
@@ -123,3 +169,5 @@ shows the outer axis isolates).
 - How synthetic is too synthetic — blobs on a flat background may be trivially segmentable; add
   noise / touching cells / intensity drift once the baseline works.
 - Run cost and duration are unknown until P3; the nightly cap is set from that, not guessed.
+- The real-data tier has no behaviour ground truth; once the agent writes states there, compare them
+  to the user's own HMM / motif columns rather than score them.
