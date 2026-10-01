@@ -33,24 +33,65 @@
 
 # ── 1. Kill primitives ────────────────────────────────────────────────────────
 
-function _kill_tree(pid::Int)
+# `grace_sec > 0` asks first: SIGTERM the whole tree (`taskkill` without `/F` on Windows), wait up to
+# `grace_sec` for it to exit, then force-kill whatever is left. The default (0) force-kills at once,
+# which is what every caller wants on Quit or cancel. Ask first when the process has state to flush —
+# but always with a deadline: a SIGTERM does not stop a Julia process mid-compile.
+#
+# Unix: the tree is snapshotted BEFORE any signal. A parent that exits on SIGTERM reparents its
+# children, and a later `pgrep -P` would no longer find them. Killed leaves first, as before.
+# Windows: `/T` finds the tree from the root, so once the root has exited the force pass can't see
+# children it left; the graceful pass covers the common case, a whole console tree closing together.
+function _kill_tree(pid::Int; grace_sec::Real = 0)
     if Sys.iswindows()
+        if grace_sec > 0
+            try; run(pipeline(ignorestatus(`taskkill /T /PID $pid`); stdout = devnull, stderr = devnull)); catch; end
+            _wait_gone([pid], grace_sec)
+        end
         try; run(ignorestatus(`taskkill /F /T /PID $pid`)); catch; end
     else
-        try
-            for line in split(readchomp(`pgrep -P $pid`), '\n'; keepempty=false)
-                child = tryparse(Int, strip(line))
-                isnothing(child) || _kill_tree(child)
-            end
-        catch; end
+        pids = _tree_pids(pid)
+        if grace_sec > 0
+            _signal_pids(pids, "TERM")
+            pids = _wait_gone(pids, grace_sec)
+        end
         # stderr to devnull, not just `ignorestatus`. A process tree is enumerated and then killed,
         # and killing one member routinely takes its siblings with it — a torch DataLoader's workers
         # all exit when their parent does. Every already-gone pid then makes `kill` print
         # "No such process", so cancelling one training run wrote seventeen error lines for what is
         # the SUCCESS case: the point of this function is that the process is dead, and it is.
         # `ignorestatus` only stops Julia raising on the exit code; the message is on stderr.
-        try; run(pipeline(ignorestatus(`kill -9 $pid`); stderr = devnull)); catch; end
+        _signal_pids(reverse(pids), "KILL")
     end
+end
+
+# `pid` and every descendant, parents before children (Unix).
+function _tree_pids(pid::Int)
+    out = [pid]
+    try
+        for line in split(readchomp(`pgrep -P $pid`), '\n'; keepempty=false)
+            child = tryparse(Int, strip(line))
+            isnothing(child) || append!(out, _tree_pids(child))
+        end
+    catch; end
+    out
+end
+
+function _signal_pids(pids::Vector{Int}, sig::String)
+    isempty(pids) && return
+    try; run(pipeline(ignorestatus(`kill -$sig $pids`); stderr = devnull)); catch; end
+end
+
+# Poll until every pid has exited or `grace_sec` passes; returns the ones still alive. Liveness is
+# `_pid_alive` (`single_instance.jl`), the one cross-platform check.
+function _wait_gone(pids::Vector{Int}, grace_sec::Real)
+    deadline = time() + grace_sec
+    alive = filter(_pid_alive, pids)
+    while !isempty(alive) && time() < deadline
+        sleep(0.05)
+        alive = filter(_pid_alive, alive)
+    end
+    alive
 end
 
 # Kill a live process AND its child tree, given the Julia Process handle. `Base.Process` has no
