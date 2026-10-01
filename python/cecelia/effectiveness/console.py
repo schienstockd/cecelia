@@ -360,18 +360,20 @@ def _hr(label: str, width: int, *, use_colour: bool) -> str:
     return _col(_DIM, f"── {label} " + "─" * dash_count, use_colour=use_colour)
 
 
-def _finding_head_line(event: dict, *, use_colour: bool) -> str:
+def _finding_head_line(event: dict, *, use_colour: bool, with_context: bool = True) -> str:
     """Head-line rendering of a `_finding` event — no description, for the activity pane.
 
     Extracted because both the activity pane (head only) and the findings pane (head + desc)
     render it, and keeping the ordering/spacing in one place stops the two panes from
-    drifting apart visually.
+    drifting apart visually. `with_context=False` drops the trailing branch/commit anchor —
+    the findings pane gives it its own row, since `file:line` + a branch name overran the
+    terminal width and the head line wrapped mid-word.
     """
     label, colour = _mechanism_of(event.get("event", ""))
     payload = event.get("payload", {}) or {}
     marker = payload.get("marker", "?")
     marker_col = _MARKER_COLOUR.get(marker, _YELLOW)
-    ctx = _fmt_context(event)
+    ctx = _fmt_context(event) if with_context else ""
     ctx_str = "  " + _col(_DIM, ctx, use_colour=use_colour) if ctx else ""
     return (f"{_col(_GREY, _fmt_hms(event.get('ts', '')), use_colour=use_colour)} "
             f"{_col(colour, label, use_colour=use_colour)} "
@@ -388,13 +390,17 @@ def _render_finding_block(event: dict, *, width: int, use_colour: bool,
     `desc_line_cap` bounds how many wrapped lines a single description contributes; anything
     beyond that is elided with `…`. Without a per-finding cap one long description eats the
     whole pane and pushes the counters off-screen — the failure this whole refactor exists
-    to fix.
+    to fix. The branch/commit anchor sits on its own row under the head, aligned with the
+    description text — it doesn't count against `desc_line_cap`.
     """
-    out = [_finding_head_line(event, use_colour=use_colour)]
+    out = [_finding_head_line(event, use_colour=use_colour, with_context=False)]
+    indent = " " * _DESC_INDENT
+    ctx = _fmt_context(event)
+    if ctx:
+        out.append(indent + "  " + _col(_DIM, ctx, use_colour=use_colour))
     desc = ((event.get("payload") or {}).get("desc") or "").strip()
     if not desc or desc_line_cap <= 0:
         return out
-    indent = " " * _DESC_INDENT
     first = indent + _col(_DIM, "↳ ", use_colour=use_colour)
     wrapped = _wrap_desc(" ".join(desc.split()), width=width - 2,
                          indent=indent + "  ", first_prefix=first).splitlines()
@@ -476,7 +482,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
         # collapses to zero if there are findings to show.
         findings_budget = max(2, (budget * 2) // 3)
         # Per-finding cap keeps one long description from starving other findings.
-        per_finding_cap = 4  # head + up to 3 desc lines with `…` if longer
+        per_finding_cap = 4  # head + up to 3 desc lines with `…` if longer (+ the ref row)
         # Newest first, so a fresh flag appears at the top of the pane.
         for f in reversed(state.findings):
             block = _render_finding_block(f, width=width, use_colour=use_colour,

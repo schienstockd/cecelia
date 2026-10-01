@@ -599,6 +599,24 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("log.py:121", out)
         self.assertIn("#1263", out)
 
+    def test_findings_pane_puts_ref_on_its_own_row(self):
+        # `file:line` + `branch@commit` overran the terminal and wrapped mid-word; the ref
+        # moves under the head line, ahead of the description.
+        events = [
+            {"event": "convention_audit_finding", "ts": "2026-09-27T10:00:00Z",
+             "payload": {"slug": "c1", "file": "python/cecelia/effectiveness/console.py",
+                         "line": 79, "desc": "no entry here", "marker": "wrong home"},
+             "pr": None, "branch": "feat/maintainability-lint", "commit": "d1d7119abc",
+             "session": "s", "source": "live", "schema_version": 1},
+        ]
+        out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                               width=100, use_colour=False)
+        lines = out.splitlines()
+        head = next(i for i, ln in enumerate(lines) if "console.py:79" in ln)
+        self.assertNotIn("maintainability-lint", lines[head])
+        self.assertEqual(lines[head + 1].strip(), "maintainability-lint@d1d7119")
+        self.assertIn("↳ no entry here", lines[head + 2])
+
     def test_frame_fits_declared_height(self):
         # The whole reason `height` exists: the frame must fit the viewport, or the top of
         # the dashboard scrolls off-screen and the counters are invisible. Pack in a mix of
