@@ -367,6 +367,10 @@ update = "pixi update"
 # notebooks-instantiate); a no-op when already consistent.
 julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'"
 
+# `Pkg.update()` the app, api and pluto envs together, within [compat], and print a markdown table of
+# what moved. The Julia half of .github/workflows/update-deps.yml. See docs/todo/DEPS_UPDATES_PLAN.md.
+update-julia = "julia --startup-file=no scripts/update_julia_envs.jl"
+
 # Fresh-clone / new-worktree audit — dispatcher over existing checks (Design pattern adapted from
 # spaCR — see THIRD_PARTY.md → Design patterns adopted). Auto-fixes cheap things (npm ci, etc.);
 # pass `--check` for report-only. Non-zero exit on any red row so CI/install wrappers can gate.
