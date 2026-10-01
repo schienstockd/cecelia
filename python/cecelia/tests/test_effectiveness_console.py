@@ -30,7 +30,7 @@ import threading
 import time
 import unittest
 
-from cecelia.effectiveness import append_event
+from cecelia.effectiveness import append_event, console
 from cecelia.effectiveness.console import (
     DashboardState,
     _parse_since,
@@ -660,11 +660,43 @@ class DashboardTest(unittest.TestCase):
             })
         state = self._state_with(events)
         # The state itself bounds — the render just walks whatever's in the deque.
-        self.assertLessEqual(len(state.findings), 6)
+        self.assertLessEqual(len(state.findings), console._MAX_FINDINGS)
         out = render_dashboard(state, pathlib.Path("/tmp/x"), width=120, use_colour=False)
         # Newest survives, oldest evicted.
         self.assertIn("finding 19", out)
         self.assertNotIn("finding 0 ", out)
+
+    def test_extra_height_goes_to_findings_not_activity(self):
+        # A taller terminal unfolds the findings' descriptions; the activity pane stays at
+        # `_ACTIVITY_ROWS` instead of soaking up the extra rows.
+        events = [{
+            "event": "fanout_audit_run", "ts": f"2026-09-27T10:{i:02d}:00Z",
+            "payload": {"duration_s": 1.0}, "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+        } for i in range(30)]
+        events += [{
+            "event": "fanout_audit_finding", "ts": f"2026-09-27T11:0{i}:00Z",
+            "payload": {"slug": f"f{i}", "file": "x.py", "line": i,
+                        "desc": " ".join(f"word{j}" for j in range(200)) + f" END{i}",
+                        "marker": "confirmed"},
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+        } for i in range(2)]
+        state = self._state_with(events)
+
+        def panes(h):
+            lines = render_dashboard(state, pathlib.Path("/tmp/x"), width=100, height=h,
+                                     use_colour=False).splitlines()
+            act = next(i for i, ln in enumerate(lines) if ln.startswith("── activity"))
+            return "\n".join(lines[:act]), lines[act + 1:]
+
+        short_findings, short_activity = panes(40)
+        tall_findings, tall_activity = panes(70)
+        self.assertEqual(len(short_activity), console._ACTIVITY_ROWS)
+        self.assertEqual(len(tall_activity), console._ACTIVITY_ROWS)
+        self.assertNotIn("END1", short_findings)  # capped with `…` at 40 rows
+        self.assertIn("END0", tall_findings)       # both descriptions in full at 70
+        self.assertIn("END1", tall_findings)
 
 
 class MechanicalRunVisibilityTest(unittest.TestCase):

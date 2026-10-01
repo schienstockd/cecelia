@@ -237,7 +237,14 @@ _REFRESH_TICK = 0.5
 #: How many recent events / findings the dashboard panes hold. `pixi run console` bounds its
 #: EVENTS at 200 and LOGS at 400; recital is much lower-volume, so smaller caps suffice.
 _MAX_EVENTS = 40
-_MAX_FINDINGS = 6
+_MAX_FINDINGS = 12
+
+#: Activity pane height — fixed, not a share of the terminal. The run stream is context;
+#: the findings pane is what the console is for, so extra rows go there.
+_ACTIVITY_ROWS = 10
+
+#: Description lines a finding starts with; raised while every held finding still fits.
+_FINDING_DESC_LINES = 3
 
 
 class _Tally:
@@ -422,10 +429,11 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
       - `── activity ──` pane: newest M event lines
 
     Height budgeting — the same problem the task console solves: fixed chrome (title + counter
-    line + section headers + blanks) is subtracted first, then the remainder is split between
-    the findings pane (priority — the "what was flagged" the cockpit exists for) and the
-    activity pane. If the terminal is genuinely tiny (< ~15 rows) the activity pane collapses
-    to zero and the findings pane keeps one finding; below that only the counters remain.
+    line + section headers + blanks) is subtracted first. The activity pane gets a fixed
+    `_ACTIVITY_ROWS` (a third of the remainder on a short terminal); the findings pane — the
+    "what was flagged" the cockpit exists for — takes every other row, unfolding descriptions
+    as height allows. On a tiny terminal the activity pane collapses to zero and the findings
+    pane keeps one finding; below that only the counters remain.
     """
     # Local time — matches per-event rows (`_fmt_hms`), so the reader compares like-for-like.
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -470,33 +478,39 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
         chrome.append("")
 
     # ── Budgeted panes ────────────────────────────────────────────────────────────────────
-    # Reserve one line per pane header + one trailing newline slot.
-    # `budget` = rows left after chrome and pane headers.
+    # `budget` = rows left after chrome and the two pane headers.
     have_findings = bool(state.findings)
     header_rows = (1 if have_findings else 0) + 1  # findings header + activity header
     budget = max(0, height - len(chrome) - header_rows)
+    # Activity is fixed at `_ACTIVITY_ROWS`, shrinking to a third on a short terminal so the
+    # findings pane keeps priority; findings take everything else.
+    activity_budget = min(_ACTIVITY_ROWS, budget // 3 if have_findings else budget)
 
     findings_block: list[str] = []
-    if have_findings and budget > 0:
-        # Findings pane gets roughly two-thirds of the pane budget, with a floor so it never
-        # collapses to zero if there are findings to show.
-        findings_budget = max(2, (budget * 2) // 3)
-        # Per-finding cap keeps one long description from starving other findings.
-        per_finding_cap = 4  # head + up to 3 desc lines with `…` if longer (+ the ref row)
-        # Newest first, so a fresh flag appears at the top of the pane.
-        for f in reversed(state.findings):
-            block = _render_finding_block(f, width=width, use_colour=use_colour,
-                                          desc_line_cap=per_finding_cap - 1)
+    if have_findings and budget > activity_budget:
+        findings_budget = budget - activity_budget
+        newest = list(reversed(state.findings))  # newest first — a fresh flag lands on top
+
+        def _blocks(cap: int) -> list[list[str]]:
+            return [_render_finding_block(f, width=width, use_colour=use_colour,
+                                          desc_line_cap=cap) for f in newest]
+
+        # Uncap descriptions one line at a time while every held finding still fits, so a
+        # tall terminal shows full text instead of `…`; stop once nothing more unfolds.
+        cap, blocks = _FINDING_DESC_LINES, _blocks(_FINDING_DESC_LINES)
+        while True:
+            wider = _blocks(cap + 1)
+            if wider == blocks or sum(map(len, wider)) > findings_budget:
+                break
+            cap, blocks = cap + 1, wider
+        for block in blocks:
             if len(findings_block) + len(block) > findings_budget:
                 # Room for at least the head line? Show it truncated; otherwise stop.
-                room = findings_budget - len(findings_block)
-                if room >= 1:
-                    findings_block.extend(block[:room])
+                findings_block.extend(block[:findings_budget - len(findings_block)])
                 break
             findings_block.extend(block)
         findings_block.insert(0, _hr("recent findings", width, use_colour=use_colour))
 
-    activity_budget = max(0, height - len(chrome) - len(findings_block) - 1)  # -1 for activity hdr
     activity_block: list[str] = [_hr("activity", width, use_colour=use_colour)]
     if activity_budget <= 0:
         activity_block = []  # terminal too small for both panes; drop activity entirely
