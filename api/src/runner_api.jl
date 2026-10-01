@@ -61,6 +61,7 @@ function _relay_runner_frame(f::Dict{String,Any})
                                  t == "chain:node:done" ? "done" : String(get(f, "status", "failed"));
                                  image_uid   = String(get(f, "imageUid", "")),
                                  fun         = String(get(f, "fn", "")),
+                                 pool        = String(get(f, "pool", "")),
                                  started_at  = String(get(f, "startedAt", "")),
                                  finished_at = String(get(f, "finishedAt", "")))
         end
@@ -70,6 +71,7 @@ function _relay_runner_frame(f::Dict{String,Any})
         ws_status(nothing, id, String(get(f, "status", "")), String(get(f, "imageUid", ""));
                   image_uids  = String[String(u) for u in get(f, "imageUids", String[])],
                   fun         = String(get(f, "fun", "")),
+                  pool        = String(get(f, "pool", "")),
                   started_at  = String(get(f, "startedAt", "")),
                   finished_at = String(get(f, "finishedAt", "")))
     end

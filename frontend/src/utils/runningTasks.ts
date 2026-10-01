@@ -70,6 +70,8 @@ export interface AdoptedTask {
   projectUid: string
   status: 'queued' | 'running'
   startedAt?: Date
+  /** the pool the scheduler queued it in; absent when the snapshot named none */
+  pool?: string
   chainRunId?: string
   chainNodeId?: string
   /** the scheduler's id — how a later frame or a recovered outcome matches this row */
@@ -144,6 +146,7 @@ export function adoptableTasks(
       // The scheduler's own start, so the elapsed is right from the first render rather than counting
       // from when this tab noticed. `''`/absent = queued, or a backend too old to send it.
       startedAt:  r.started_at ? new Date(r.started_at) : undefined,
+      ...(r.pool_name ? { pool: String(r.pool_name) } : {}),
       // Only a real object counts. Left `undefined` otherwise, which is what withholds Re-run — an
       // older backend sends nothing, and defaulting to `{}` would present "no params" as the answer.
       ...(r.params && typeof r.params === 'object' && !Array.isArray(r.params)
@@ -159,6 +162,8 @@ export interface StatusRepair {
   status: 'running'
   /** the scheduler's own start — the row has none, since it never saw the transition */
   startedAt?: Date
+  /** the EFFECTIVE pool — replaces the requested one the dispatch stamped, which no frame corrected */
+  pool?: string
 }
 
 /**
@@ -190,7 +195,8 @@ export function staleInFlightStatuses(
     const row = resolve(id)
     if (!row || row.status !== 'queued') continue
     out.push({ id: row.id, status: 'running',
-               ...(r.started_at ? { startedAt: new Date(r.started_at) } : {}) })
+               ...(r.started_at ? { startedAt: new Date(r.started_at) } : {}),
+               ...(r.pool_name ? { pool: String(r.pool_name) } : {}) })
   }
   return out
 }

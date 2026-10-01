@@ -5,7 +5,7 @@ import { TASK_STATUS } from '../lib/taskStatus'
 import { openPopoutWindow } from '../lib/popout'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore, TASK_VIEW_DEFAULTS } from '../stores/settings'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
@@ -16,7 +16,7 @@ import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
-import { taskRows, taskMatchesQuery } from '../utils/taskRows'
+import { taskRows, taskMatchesQuery, taskPoolOptions } from '../utils/taskRows'
 import { usePanelResize } from '../composables/usePanelResize'
 import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
@@ -66,9 +66,14 @@ watch([() => projectMeta.current?.uid, () => settings.tasksShowHistory, () => pr
 // live scheduler throttle — a quick popover off the toolbar (not buried in Settings)
 const throttleBtn  = ref<HTMLElement | null>(null)
 const throttleOpen = ref(false)
+// the view-preferences popover (History / This project / Auto-follow)
+const viewBtn  = ref<HTMLElement | null>(null)
+const viewOpen = ref(false)
 
 const selectedId   = ref<string | null>(null)
 const statusFilter = ref<'all' | 'active' | 'done' | 'failed' | 'cancelled'>('all')
+// '' = every pool. Transient like the status chips: a filter is a lookup, not a setting.
+const poolFilter   = ref('')
 // free-text narrowing — with History on the list is hundreds of rows, and "that run on THIS image" is
 // the usual question. The rule is `taskMatchesQuery` (utils/taskRows.ts). Transient, like the status
 // chips beside it: a search is a lookup, not a setting to come back to.
@@ -86,10 +91,21 @@ const selected = computed(() => tasks.tasks.find(t => t.id === selectedId.value)
 const inScope = (t: TaskEntry) =>
   taskInScope(t, projectMeta.current?.uid, settings.tasksThisProjectOnly)
 
+// Offered from what is in scope (before the status/pool/search narrowing), so picking a status never
+// makes a pool chip vanish. Shown as soon as ONE pool is known: even a single chip filters, because
+// run-log rows written before pools were recorded have none, and picking the pool hides them.
+const poolOptions = computed<ChipOption[]>(() => {
+  const pools = taskPoolOptions(tasks.tasks.filter(inScope))
+  return pools.length ? [{ value: '', label: 'All' }, ...pools.map(p => ({ value: p, label: p }))] : []
+})
+// a chosen pool whose last task left the list (dismissed, project switch) must not keep hiding everything
+watch(poolOptions, opts => { if (poolFilter.value && !opts.some(o => o.value === poolFilter.value)) poolFilter.value = '' })
+
 const filtered = computed(() => {
   return tasks.tasks.filter(t => {
     if (!inScope(t)) return false
     if (!taskMatchesQuery(t, query.value)) return false
+    if (poolFilter.value && t.pool !== poolFilter.value) return false
     if (statusFilter.value === 'all')    return true
     if (statusFilter.value === 'active') return t.status === 'running' || t.status === 'queued'
     return t.status === statusFilter.value
@@ -119,6 +135,11 @@ const rows = computed(() => taskRows(filtered.value, {
 const { widthStyle: listWidthStyle, onResizeStart: onListResizeStart } =
   usePanelResize({ min: 280, max: 760, default: 440, storageKey: 'cc-tasks-list-width', edge: 'right' })
 
+// Any view preference off its default? Lights the View button.
+const viewChanged = computed(() =>
+  (Object.keys(TASK_VIEW_DEFAULTS) as (keyof typeof TASK_VIEW_DEFAULTS)[])
+    .some(k => settings[k] !== TASK_VIEW_DEFAULTS[k]))
+
 // The Date column only appears with History on: a session-only list is already in start order, and
 // its rows are seconds apart — a per-row timestamp is noise. Once history is folded in, the same
 // list spans weeks and the run's date IS the thing you want to see, hence conditional.
@@ -127,6 +148,8 @@ const TM_COLUMNS = computed<SelectionColumn[]>(() => [
   { key: 'status',   label: '',       fixed: true, width: 24 },
   { key: 'module',   label: 'Module', sortable: true, ellipsis: true, width: 70 },
   { key: 'task',     label: 'Task',   sortable: true, ellipsis: true, width: 130 },
+  // where it ran — so "what's on the GPU" is a sort away. Blank for an older run-log row with no pool.
+  { key: 'pool',     label: 'Pool',   sortable: true, ellipsis: true, width: 52 },
   { key: 'image',    label: 'Image',  sortable: true, ellipsis: true, width: 100 },
   { key: 'progress', label: '',       fixed: true, width: 36 },
   // `elapsed` is `4m 12s`, which sorts BEFORE `59s` as text — hence the raw-ms sort key
@@ -254,26 +277,31 @@ const FILTERS: ChipOption[] = [
       <span class="tm-title">Task Manager<template v-if="props.standalone && projectMeta.current">
         <span class="tm-title-proj cc-muted"> · {{ projectMeta.current.name }}</span></template></span>
 
-      <ChipSelect
-        class="filter-chips" :options="FILTERS" :model-value="statusFilter"
-        aria-label="Filter tasks by status"
-        v-tooltip.bottom="'Show only tasks in this state'"
-        @update:model-value="v => statusFilter = v as typeof statusFilter" />
-
       <input v-model="query" class="tm-search cc-input-xs" type="search" placeholder="Search"
         aria-label="Search tasks"
-        v-tooltip.bottom="'Filter by image, task or module'" />
+        v-tooltip.bottom="'Filter by image, task, module or pool'" />
 
-      <CcToggle class="follow-toggle" v-model="settings.tasksShowHistory" label="History"
-        v-tooltip.bottom="'Include runs recorded before this session'" />
+      <!-- The three VIEW preferences live behind one button: they are persisted settings you set once,
+           unlike the filters below, which are per-lookup and so stay in sight. Lit while any is off its
+           default, so a list narrowed by "This project" or widened by History never looks unexplained. -->
+      <button ref="viewBtn" class="tm-icon cc-btn cc-btn-bare cc-btn-icon"
+        :class="{ 'cc-btn-on cc-btn-on-solid': viewOpen, 'tm-icon-set': viewChanged }"
+        @click="viewOpen = !viewOpen"
+        v-tooltip.left="'View: history, project scope, auto-follow'">
+        <i class="pi pi-eye" />
+      </button>
+      <TeleportPopover v-model="viewOpen" :anchor="viewBtn" placement="bottom-end">
+        <div class="tm-view">
+          <CcToggle v-model="settings.tasksShowHistory" label="History"
+            v-tooltip.bottom="'Include runs recorded before this session'" />
+          <CcToggle v-model="settings.tasksThisProjectOnly" label="This project"
+            v-tooltip.bottom="'Hide tasks from other projects'" />
+          <CcToggle v-model="settings.taskListAutoFollow" label="Auto-follow"
+            v-tooltip.bottom="'Automatically select the newest running task'" />
+        </div>
+      </TeleportPopover>
 
-      <CcToggle class="follow-toggle" v-model="settings.tasksThisProjectOnly" label="This project"
-        v-tooltip.bottom="'Hide tasks from other projects'" />
-
-      <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"
-        v-tooltip.bottom="'Automatically select the newest running task'" />
-
-      <button ref="throttleBtn" class="tm-throttle cc-btn cc-btn-bare cc-btn-icon"
+      <button ref="throttleBtn" class="tm-icon cc-btn cc-btn-bare cc-btn-icon"
         :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
         @click="throttleOpen = !throttleOpen"
         v-tooltip.left="'Throttle — how many tasks run at once, and how wide each may go'">
@@ -283,11 +311,29 @@ const FILTERS: ChipOption[] = [
         <PoolThrottle />
       </TeleportPopover>
 
-      <button v-if="!props.standalone" class="tm-window cc-btn cc-btn-bare cc-btn-icon"
+      <button v-if="!props.standalone" class="tm-icon cc-btn cc-btn-bare cc-btn-icon"
         @click="openTaskWindow"
         v-tooltip.left="'Open the Task Manager in a separate window'">
         <i class="pi pi-external-link" />
       </button>
+    </div>
+
+    <!-- ── Filters — status and pool, two groups so they combine (failed AND gpu) ── -->
+    <div class="tm-filters cc-row cc-row-loose">
+      <ChipSelect variant="segmented"
+        :options="FILTERS" :model-value="statusFilter"
+        aria-label="Filter tasks by status"
+        v-tooltip.bottom="'Show only tasks in this state'"
+        @update:model-value="v => statusFilter = v as typeof statusFilter" />
+      <!-- a wrap unit: the label must not end a line with its chips on the next -->
+      <span v-if="poolOptions.length" class="cc-row-group">
+        <span class="cc-eyebrow cc-fs-2xs">Pool</span>
+        <ChipSelect variant="segmented"
+          :options="poolOptions" :model-value="poolFilter"
+          aria-label="Filter tasks by resource pool"
+          v-tooltip.bottom="'Show only tasks run in this pool'"
+          @update:model-value="v => poolFilter = String(v)" />
+      </span>
     </div>
 
     <!-- ── Body ───────────────────────────────────────────────────────── -->
@@ -329,6 +375,11 @@ const FILTERS: ChipOption[] = [
               <i class="pi pi-sitemap" />{{ r.chainLabel }}
             </span>
             {{ r.task }}
+          </template>
+
+          <template #cell-pool="{ row: r }">
+            <!-- name only: the column header already says what it is, the icon would just crowd it -->
+            <span v-if="r.pool" class="cc-pool-tag" v-tooltip.right="`Resource pool: ${r.pool}`">{{ r.pool }}</span>
           </template>
 
           <template #cell-image="{ row: r }">
@@ -452,9 +503,8 @@ const FILTERS: ChipOption[] = [
 .tm-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--cc-border);
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
   flex-shrink: 0;
   background: var(--cc-surface-1);
 }
@@ -464,30 +514,24 @@ const FILTERS: ChipOption[] = [
   font-weight: 600;
   color: var(--cc-text);
   flex-shrink: 0;
-}
-.filter-chips {
-  flex: 1;
+  margin-right: auto;       /* everything else sits right: search, then the icon buttons */
 }
 .tm-search { width: 12rem; flex-shrink: 1; min-width: 6rem; }
 
-.follow-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  cursor: pointer;
+/* the filter row — only things that narrow the list */
+.tm-filters {              /* + cc-row cc-row-loose — this site's own half: the bar chrome */
+  padding: 0 0.75rem 0.4rem;
+  border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
-  user-select: none;
+  background: var(--cc-surface-1);
 }
-.follow-toggle input { accent-color: var(--cc-accent); cursor: pointer; }
 
-.tm-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
-.tm-throttle:hover  { background: var(--cc-surface-2); color: var(--cc-text); }
+.tm-view { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.5rem 0.65rem; }
 
-/* the pop-out (↗) — same bare-icon treatment as the throttle beside it */
-.tm-window { transition: background 0.1s, color 0.1s; }
-.tm-window:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+/* view / throttle / pop-out — one bare-icon treatment */
+.tm-icon { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
+.tm-icon:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+.tm-icon-set { color: var(--cc-accent); }               /* a view preference is off its default */
 
 /* ── Body ─────────────────────────────────────────────────────────────── */
 .tm-body {

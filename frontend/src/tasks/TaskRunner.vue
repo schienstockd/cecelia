@@ -561,6 +561,7 @@ function run() {
       module: props.module, label, imageUid: rep, imageName: repName,
       status: 'queued', taskName: def.task, funName: def.fun_name,
       params: params as Record<string, unknown>, projectUid: projectUid.value,
+      pool: selectedPool.value,
     })
     ws.send({
       type: 'task:run', taskId: t.id, funName: def.fun_name, params,
@@ -584,6 +585,9 @@ function run() {
       funName:    def.fun_name,
       params:     params as Record<string, unknown>,
       projectUid: projectUid.value,
+      // what was ASKED for, shown while it waits; the first `task:status` replaces it with the pool
+      // the scheduler actually queued it in (an unconfigured name falls back to cpu)
+      pool:       selectedPool.value,
     })
 
     ws.send({

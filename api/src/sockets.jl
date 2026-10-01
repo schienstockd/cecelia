@@ -737,8 +737,8 @@ function handle_task_run(ws, data)
     run_in_process() = execute_task(req;
         on_log      = line -> ws_log(ws, task_id, line),
         on_progress = (n, t) -> ws_progress(ws, task_id, n, t),
-        on_status   = (status, uid, uids) ->
-                          ws_status(ws, task_id, status, uid; image_uids=uids, fun=fun_name),
+        on_status   = (status, uid, uids, pool) ->
+                          ws_status(ws, task_id, status, uid; image_uids=uids, fun=fun_name, pool),
         on_result   = (uid, meta) -> ws_result(ws, task_id, uid, meta))
 
     # Hand it to the detached runner if there is one — then this server can restart without taking the

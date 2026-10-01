@@ -31,9 +31,8 @@ defineProps<{
       <span class="policy-label">barrier:</span>
       <span class="policy-val">{{ data.barrier_policy }}</span>
     </div>
-    <div v-if="data.resource_pool" class="node-pool">
-      <i class="pi pi-server" style="font-size:var(--cc-fs-2xs)" />
-      {{ data.resource_pool }}
+    <div v-if="data.resource_pool" class="node-pool cc-pool-tag">
+      <i class="pi pi-server" />{{ data.resource_pool }}
     </div>
 
     <Handle type="source" :position="Position.Right" class="node-handle" />
@@ -110,10 +109,8 @@ defineProps<{
   color: var(--cc-warn);
   font-family: var(--cc-mono);
 }
-.node-pool {
+.node-pool {           /* + .cc-pool-tag — this site's own half: the orange, the block, the spacing */
   display: flex;
-  align-items: center;
-  gap: 3px;
   font-size: var(--cc-fs-3xs);
   color: #f97316;
   margin-top: 3px;
