@@ -3,51 +3,285 @@
   "expand": [
     {
       "name": "include with a variable argument, then a constant",
-      "files": { "main.wgsl": "#include \"inc.wgsl\" B=MAX_CHANNELS\nlet a = ${A};\n", "inc.wgsl": "// inc\nlet b = ${B};\n" },
-      "vars": { "A": 0.45, "MAX_CHANNELS": 32 },
+      "files": {
+        "main.wgsl": "#include \"inc.wgsl\" B=MAX_CHANNELS\nlet a = ${A};\n",
+        "inc.wgsl": "// inc\nlet b = ${B};\n"
+      },
+      "vars": {
+        "A": 0.45,
+        "MAX_CHANNELS": 32
+      },
       "out": "// inc\nlet b = 32;\nlet a = 0.45;\n"
     },
     {
       "name": "include with a literal argument, indented",
-      "files": { "main.wgsl": "fn f() {\n  #include \"inc.wgsl\" B=7\n}\n", "inc.wgsl": "let b = ${B};\n" },
+      "files": {
+        "main.wgsl": "fn f() {\n  #include \"inc.wgsl\" B=7\n}\n",
+        "inc.wgsl": "let b = ${B};\n"
+      },
       "vars": {},
       "out": "fn f() {\nlet b = 7;\n}\n"
     },
     {
       "name": "the includer's variables reach the included file",
-      "files": { "main.wgsl": "#include \"inc.wgsl\"\n", "inc.wgsl": "@binding(${PICK_BINDING}) ${N}u\n" },
-      "vars": { "PICK_BINDING": 5, "N": 65536 },
+      "files": {
+        "main.wgsl": "#include \"inc.wgsl\"\n",
+        "inc.wgsl": "@binding(${PICK_BINDING}) ${N}u\n"
+      },
+      "vars": {
+        "PICK_BINDING": 5,
+        "N": 65536
+      },
       "out": "@binding(5) 65536u\n"
     },
     {
       "name": "an integral float prints without its .0; a fraction prints shortest",
-      "files": { "main.wgsl": "${X} ${Y} ${Z}\n" },
-      "vars": { "X": 2.0, "Y": 0.0001, "Z": 1.5 },
+      "files": {
+        "main.wgsl": "${X} ${Y} ${Z}\n"
+      },
+      "vars": {
+        "X": 2.0,
+        "Y": 0.0001,
+        "Z": 1.5
+      },
       "out": "2 0.0001 1.5\n"
     },
     {
       "name": "a string variable is inserted verbatim (generated code)",
-      "files": { "main.wgsl": "switch i {\n${ARMS}\n}\n" },
-      "vars": { "ARMS": "    case 0u: { return 1u; }\n    default: { return 2u; }" },
+      "files": {
+        "main.wgsl": "switch i {\n${ARMS}\n}\n"
+      },
+      "vars": {
+        "ARMS": "    case 0u: { return 1u; }\n    default: { return 2u; }"
+      },
       "out": "switch i {\n    case 0u: { return 1u; }\n    default: { return 2u; }\n}\n"
     },
     {
       "name": "an undefined variable is an error",
-      "files": { "main.wgsl": "let a = ${NOPE};\n" },
+      "files": {
+        "main.wgsl": "let a = ${NOPE};\n"
+      },
       "vars": {},
       "error": true
     },
     {
       "name": "an include cycle is an error",
-      "files": { "main.wgsl": "#include \"inc.wgsl\"\n", "inc.wgsl": "#include \"main.wgsl\"\n" },
+      "files": {
+        "main.wgsl": "#include \"inc.wgsl\"\n",
+        "inc.wgsl": "#include \"main.wgsl\"\n"
+      },
       "vars": {},
       "error": true
     }
   ],
   "layout": {
-    "mip":   { "floats": 156, "slots": { "cam.dist": 2, "vp.ortho": 7, "dims.zPerChannel": 15, "lab.paletteRows": 22, "pan.ribbonHi": 27, "ch[0].lo": 28, "ch[3].hi": 41, "ch[31].visible": 154 } },
-    "tile":  { "floats": 144, "slots": { "cam.aspect": 3, "vp.canvasH": 6, "slot.channelsPerSlot": 12, "ch[1].lo": 20 } },
-    "brick": { "floats": 176, "slots": { "atlas.slotsX": 23, "lab.opacity": 36, "prevGrid.valid": 43, "ch[2].visible": 58 } }
+    "mip": {
+      "floats": 156,
+      "slots": {
+        "cam.dist": 2,
+        "vp.ortho": 7,
+        "dims.zPerChannel": 15,
+        "lab.paletteRows": 22,
+        "pan.ribbonHi": 27,
+        "ch[0].lo": 28,
+        "ch[3].hi": 41,
+        "ch[31].visible": 154
+      }
+    },
+    "tile": {
+      "floats": 144,
+      "slots": {
+        "cam.aspect": 3,
+        "vp.canvasH": 6,
+        "slot.channelsPerSlot": 12,
+        "ch[1].lo": 20
+      }
+    },
+    "brick": {
+      "floats": 176,
+      "slots": {
+        "atlas.slotsX": 23,
+        "lab.opacity": 36,
+        "prevGrid.valid": 43,
+        "ch[2].visible": 58
+      }
+    }
   },
-  "badLanes": { "mip": ["ch[32].lo", "cam[1].dist", "cam.nope", "nope.x", "cam"] }
+  "badLanes": {
+    "mip": [
+      "ch[32].lo",
+      "cam[1].dist",
+      "cam.nope",
+      "nope.x",
+      "cam"
+    ]
+  },
+  "viewCamera": [
+    {
+      "name": "zoom against the snapshot canvas, panned, rotated",
+      "camera": {
+        "zoom": 2,
+        "center": [
+          5,
+          30,
+          60
+        ],
+        "angles": [
+          20,
+          45,
+          0
+        ]
+      },
+      "snapH": 500,
+      "canvasH": 300,
+      "nX": 100,
+      "nY": 80,
+      "voxelUm": [
+        0.5,
+        0.5,
+        2
+      ],
+      "halfAngle": 0.45,
+      "want": {
+        "dist": 138.88888888888889,
+        "panX": 5,
+        "panY": 5,
+        "yaw": 0.7853981633974483,
+        "pitch": 0.3490658503988659
+      }
+    },
+    {
+      "name": "no snapshot canvas: the target canvas is the reference; centred, straight on",
+      "camera": {
+        "zoom": 1,
+        "center": [
+          0,
+          40,
+          50
+        ],
+        "angles": [
+          0,
+          0,
+          0
+        ]
+      },
+      "snapH": null,
+      "canvasH": 400,
+      "nX": 100,
+      "nY": 80,
+      "voxelUm": [
+        1,
+        1,
+        1
+      ],
+      "halfAngle": 0.45,
+      "want": {
+        "dist": 444.44444444444446,
+        "panX": 0,
+        "panY": 0,
+        "yaw": 0,
+        "pitch": 0
+      }
+    }
+  ],
+  "lut": {
+    "_about": "lutTextureBytes(): channel c's stops resampled to LUT_STOPS by linear interpolation, then Math.round(v * 255). A channel with no stops stays all-zero (alpha too).",
+    "luts": [
+      [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          1
+        ]
+      ],
+      [],
+      [
+        [
+          0.2,
+          0.4,
+          0.6
+        ]
+      ]
+    ],
+    "rows": {
+      "0": {
+        "0": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "21": [
+          0,
+          0,
+          170,
+          255
+        ],
+        "31": [
+          0,
+          0,
+          251,
+          255
+        ],
+        "32": [
+          4,
+          4,
+          255,
+          255
+        ],
+        "63": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "1": {
+        "0": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "63": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "2": {
+        "0": [
+          51,
+          102,
+          153,
+          255
+        ],
+        "40": [
+          51,
+          102,
+          153,
+          255
+        ]
+      },
+      "3": {
+        "5": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  }
 }

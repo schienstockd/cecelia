@@ -1,319 +1,240 @@
-"""GPU-accelerated 3D animation renderer for the offline movie rail.
+"""3D movie renderer for the offline movie rail — the browser viewer's own MIP shader, run headlessly.
 
-Called via ``run_py`` from ``record_keyframes_view_movie`` (``api/src/movie_render.jl``) when a
-keyframe animation has any 3D-view frame (``dims.ndisplay == 3``). Ray-cast MIP + LUT composite via
-``torch.nn.functional.grid_sample`` — the same trilinear interpolation the Julia CPU kernel does
-(``render_view_frame_3d``), but batched into ONE call per frame on GPU. Two orders of magnitude
-faster: measured 13 min → ~5s on fXgbTl (60 frames, 256², CUDA).
+Called via ``run_py`` from ``record_keyframes_view_movie`` (``api/src/movie_render.jl``) for every
+movie with a 3D-view frame (``dims.ndisplay == 3``): keyframe animations, the viewer's Record in 3D,
+and batch 3D. Each frame is drawn by ``shaders/mip.wgsl`` plus its point and track-tail passes on a
+``wgpu`` device (``cecelia.utils.wgpu_host``), so a movie frame is the viewer's frame by
+construction — camera, contrast, colours, masks and overlays (``docs/todo/SHARED_RENDERER_PLAN.md``
+Phase 2). It needs no CUDA: any GPU through Vulkan / Metal / DX12, else a software adapter.
 
-Falls back to CPU torch if CUDA is unavailable — still much faster than the Julia loop because torch's
-CPU grid_sample is vectorised.
-
-**2D animations still render in Julia.** This entry is 3D-only; the Julia caller filters to 3D-only
-states before spawning this. That keeps 2D animations off the GPU dependency and skips a subprocess
-they don't need.
+**2D animations still render in Julia.** This entry is 3D-only; the Julia caller routes here only
+when a state is 3D.
 
 **Contract with Julia** — params dict:
-    ``zarrPath``       : store path (a bioformats2raw ``0/`` or a flat ``.zarr``)
+    ``zarrPath``       : image store (a bioformats2raw ``0/`` or a flat ``.zarr``)
     ``outPath``        : mp4 to write
-    ``states``         : list, one per frame: ``{t, angles: [rx, ry, rz], center: [cz, cy, cx],
-                                                  zoom, specs: [{lo, hi, lut, visible}, …]}``
-    ``canvasH``/``canvasW``   : output frame size
-    ``zAniso``         : physical_z / physical_x (isotropy correction; ``read_scale`` result)
-    ``renderQuality``  : ``draft`` | ``standard`` | ``high`` — samples-per-ray multiplier
+    ``states``         : one per frame:
+        ``t``          : timepoint
+        ``camera``     : the view state's camera, as the viewer stored it —
+                         ``{angles: [rx°, ry°, rz°], center?: [cz, cy, cx], zoom, perspective?}``
+        ``snapH``      : height of the canvas the zoom was measured on (the view state's ``canvas``),
+                         or absent
+        ``specs``      : per channel ``{lo, hi, lut: [[r, g, b], …], visible}`` (``_as_lut`` stops)
+        ``overlays3d`` : optional ``{points: {x, y, z, colour}, segments: {x0, y0, z0, x1, y1, z1,
+                         colour}}`` in native voxel coordinates, colours as ``[r, g, b]`` in 0..1
+    ``canvasH``/``canvasW`` : output frame size
+    ``zAniso``         : physical_z / physical_x
+    ``renderQuality``  : ``draft`` | ``standard`` | ``high`` — 128 / 256 / 512 ray steps; the viewer's
+                         default is 256
     ``fps``            : encoder frame rate
+    ``labelsPath``     : optional label store drawn as the viewer's 3D mask (nearest id along the
+                         ray, ``label_palette``), with ``labelOpacity`` (default the viewer's
+                         ``LABEL_OPACITY``) / ``labelContourPx``
+    ``pointSizePx`` / ``pointBorderPx`` / ``segmentWidthPx`` : overlay style, in output pixels
     ``titleCard``      : optional; prepended after the render (same rule as ``encode_movie_run.py``)
-    ``overlays``       : optional per-frame ``[{timestamp?, scaleBar?}]``; same shape ``encode_movie_
-                          run.py`` reads. Drawn onto the composed frame before it hits the encoder.
-
-Each state may also carry ``overlays2d`` — a dict with ``points`` and/or ``segments`` in DRAWN
-PIXEL coordinates plus style knobs (``pointSize``, ``segmentWidth``). Julia already projected
-(x, y, z) through the same rotation matrix used for the volume MIP, so the projection math never
-leaves Julia. This script only rasterises: ``ellipse`` for dots, ``line`` for ribbons with
-per-segment ``alpha`` (already computed for the tail fade). One shape, one draw pass — no matter
-whether the animation started as a 2D crop path or a 3D rotation.
+    ``overlays``       : optional per-frame ``[{timestamp?, scaleBar?}]`` — drawn onto the encoded
+                         frame, as ``encode_movie_run.py`` does
 """
-import cecelia.utils.script_utils as script_utils
-from cecelia.utils.movie_io import movie_writer, crop_to_even
-from cecelia.utils.zarr_utils import open_as_zarr, fortify
+import os
+
 import numpy as np
 
+import cecelia.utils.script_utils as script_utils
+from cecelia.utils import wgpu_host, wgsl_utils
+from cecelia.utils.movie_io import movie_writer, crop_to_even
+from cecelia.utils.zarr_utils import open_as_zarr, read_axes, fortify
 
-_QUALITY_MULT = {'draft': 0.5, 'standard': 1.0, 'high': 2.0}
-
-# Linear byte → sRGB byte (IEC 61966-2-1), the same per-byte transfer as `image_render.jl`
-# `_linear_to_srgb`. Without it the movie plays ~2x darker in the mid-tones than the viewer, whose
-# canvas encodes through an sRGB view (`frontend/src/lib/webgpu/canvasFormat.ts`).
-_x = np.arange(256, dtype=np.float64) / 255
-_SRGB_LUT = np.round(255 * np.where(_x <= 0.0031308, 12.92 * _x,
-                                    1.055 * _x ** (1 / 2.4) - 0.055)).astype(np.uint8)
+_QUALITY_STEPS = {'draft': 128, 'standard': 256, 'high': 512}
 
 
-def _draw_overlays2d(frame_np, overlays2d, canvas_h, canvas_w):
-    """Rasterise per-frame overlay dots + track ribbons that Julia has ALREADY projected.
-
-    ``overlays2d`` is the JSON dict Julia emits — `(u, v, colour)` for points and
-    `(u0, v0, u1, v1, colour, alpha)` for segments. All coords are already in drawn-pixel space
-    (matching this canvas), so no projection math lives here — the ray-cast R matrix and the
-    overlay R matrix cannot disagree because there IS only one, and it's in Julia. Draw order
-    matches the browser overlay stack: ribbons below, dots on top.
-    """
-    if not overlays2d:
-        return frame_np
-    from PIL import Image, ImageDraw
-    pts = overlays2d.get('points')
-    segs = overlays2d.get('segments')
-    if pts is None and segs is None:
-        return frame_np
-    point_r = max(1, int(overlays2d.get('pointSize', 6) // 2))
-    seg_w   = max(1, int(overlays2d.get('segmentWidth', 2)))
-
-    img = Image.fromarray(frame_np, mode='RGB').convert('RGBA')
-    draw = ImageDraw.Draw(img)
-
-    if segs is not None:
-        u0 = segs['u0']; v0 = segs['v0']; u1 = segs['u1']; v1 = segs['v1']
-        cols = segs.get('colour') or []
-        alphas = segs.get('alpha') or [1.0] * len(cols)
-        for i in range(len(cols)):
-            r, g, b = cols[i]
-            a = int(round(255 * float(alphas[i])))
-            # PIL's line() clips its own; skip only when BOTH endpoints are far off-canvas to save
-            # the draw call.
-            if (max(u0[i], u1[i]) < 0 or min(u0[i], u1[i]) > canvas_w - 1 or
-                max(v0[i], v1[i]) < 0 or min(v0[i], v1[i]) > canvas_h - 1):
-                continue
-            draw.line([(u0[i], v0[i]), (u1[i], v1[i])],
-                      fill=(int(r * 255), int(g * 255), int(b * 255), a),
-                      width=seg_w)
-
-    if pts is not None:
-        us = pts['u']; vs = pts['v']
-        cols = pts.get('colour') or []
-        for i, (r, g, b) in enumerate(cols):
-            uu, vv = us[i], vs[i]
-            if not (-point_r <= uu <= canvas_w - 1 + point_r and
-                    -point_r <= vv <= canvas_h - 1 + point_r):
-                continue
-            draw.ellipse([uu - point_r, vv - point_r, uu + point_r, vv + point_r],
-                          fill=(int(r * 255), int(g * 255), int(b * 255), 255))
-
-    return np.asarray(img.convert('RGB'), dtype=np.uint8)
-
-
-def _rotation_matrix(angles, device, dtype):
-    """Composed rotation R = Rz * Ry * Rx (vispy Base3DRotationCamera convention). Matches the Julia
-    kernel byte-for-byte so a switch from the Julia CPU fallback doesn't change the rendered pixels."""
-    import torch
-    rx, ry, rz = [float(np.deg2rad(float(a))) for a in angles]
-    sx, cx = np.sin(rx), np.cos(rx)
-    sy, cy = np.sin(ry), np.cos(ry)
-    sz, cz = np.sin(rz), np.cos(rz)
-    R = np.array([
-        [cz * cy,  cz * sy * sx - sz * cx,  cz * sy * cx + sz * sx],
-        [sz * cy,  sz * sy * sx + cz * cx,  sz * sy * cx - cz * sx],
-        [-sy,      cy * sx,                  cy * cx],
-    ], dtype=np.float64)
-    return torch.tensor(R, device=device, dtype=dtype)
-
-
-def _load_volume_at_t(arr, t_idx, axes):
-    """Load a (C, Z, Y, X) float32 numpy volume at timepoint ``t_idx`` from ``arr`` (level-0 zarr array)
-    honoring the store's axis order (`read_axes`). The store is (T, C, Z, Y, X) in the common OME-ZARR
-    layout; but if the store is missing an axis (2D, no C, …) we broadcast the missing dims to 1."""
-    # Find each axis position; missing dims are treated as size-1 broadcasts.
+def _load_at_t(arr, t_idx, axes, want=('c', 'z', 'y', 'x')):
+    """``arr`` (one level) at timepoint ``t_idx`` as the axes in ``want``, honouring the store's own
+    order (``read_axes``). A missing axis becomes a leading size-1 dim."""
     ax = [a.lower() for a in (axes or [])]
-    def pos(name): return ax.index(name) if name in ax else None
-    pt, pc, pz, py, px = pos('t'), pos('c'), pos('z'), pos('y'), pos('x')
     idx = [slice(None)] * arr.ndim
-    pt is None or (idx.__setitem__(pt, int(t_idx)))
+    if 't' in ax:
+        idx[ax.index('t')] = int(t_idx)
     vol = np.asarray(fortify(arr[tuple(idx)]))
-    # Now vol has shape according to whatever axes remain (t dropped). Move to (C, Z, Y, X); a missing
-    # C or Z becomes a leading 1.
-    remaining_axes = [a for i, a in enumerate(ax) if i != pt]
-    def move_to(target_order):
-        order = []
-        shape = list(vol.shape)
-        for tname in target_order:
-            if tname in remaining_axes:
-                order.append(remaining_axes.index(tname))
-        transposed = np.transpose(vol, order) if order else vol
-        return transposed
-    v = move_to(['c', 'z', 'y', 'x'])
-    # Add leading unit dims for any missing axis, in (C, Z, Y, X) order.
-    for tname, ax_pos in (('c', 0), ('z', 1)):
-        if tname not in remaining_axes:
-            v = np.expand_dims(v, axis=ax_pos)
-    return v.astype(np.float32, copy=False)
+    remaining = [a for a in ax if a != 't']
+    vol = np.transpose(vol, [remaining.index(a) for a in want if a in remaining])
+    for i, a in enumerate(want):
+        if a not in remaining:
+            vol = np.expand_dims(vol, axis=i)
+    return vol
 
 
-def _render_frame(vol, state, canvas_h, canvas_w, z_aniso, q_mult, device, dtype):
-    """One GPU frame: ray-cast MIP through the rotated volume, composite with per-channel LUTs.
+def _as_u16(vol):
+    """The viewer's ``r16uint``. A u8 store widens exactly (the shader reads integer values); anything
+    else is clipped into range."""
+    if vol.dtype == np.uint16:
+        return np.ascontiguousarray(vol)
+    if vol.dtype == np.uint8:
+        return vol.astype(np.uint16)
+    return np.clip(vol, 0, 65535).astype(np.uint16)
 
-    ``vol`` is a (C, Z, Y, X) float32 tensor already on ``device``. Returns a (H, W, 3) uint8 numpy.
-    Same math as ``render_view_frame_3d`` in Julia — this is that kernel batched into one
-    ``grid_sample`` call. Trilinear interp, MIP over view-Z, additive per-channel composite."""
-    import torch
-    import torch.nn.functional as F
-    C, Z, Y, X = vol.shape
-    # Rotation centre. State's `center` is (cz, cy, cx) in native voxels; default = volume midpoint.
-    center = state.get('center')
-    if center is None:
-        cz, cy, cx = (Z - 1) / 2, (Y - 1) / 2, (X - 1) / 2
-    else:
-        cz, cy, cx = float(center[0]), float(center[1]), float(center[2])
-    R = _rotation_matrix(state.get('angles', [0, 0, 0]), device, dtype)
-    zoom = float(state.get('zoom', 1.0)) or 1.0
 
-    # Isotropic world extents. xy in native px, z stretched by anisotropy.
-    ext_y, ext_x = float(Y), float(X)
-    ext_z = float(Z) * float(z_aniso)
-    canvas_span = max(ext_x, ext_y)
-    world_per_px = canvas_span / (zoom * canvas_w)
-    diag = float(np.sqrt(ext_x ** 2 + ext_z ** 2))
-    n_samples = max(4, int(np.ceil(diag * q_mult)))
-    step_v = diag / n_samples
+def _pick_level(levels, host, axes):
+    """Level 0 when it fits one 3D texture on this device, else the first coarser level that does.
+    The movie wants full resolution; the device limit is the only reason to give it up."""
+    ax = [a.lower() for a in axes]
+    for li, lvl in enumerate(levels):
+        shape = dict(zip(ax, lvl.shape))
+        czyx = [shape.get(a, 1) for a in ('c', 'z', 'y', 'x')]
+        if host.fits(czyx):
+            return li
+    raise RuntimeError('render_animation_run: no level of this image fits a 3D texture '
+                       f'(max {host.max_texture_3d} per side)')
 
-    # View-space sample coords → world → volume voxels. The X / Y grids are ONCE per frame; the
-    # Z grid is chunked so the (1, C, S, H, W) `grid_sample` temporary stays under a memory budget.
-    # `SAMPLE_CHUNK` is picked so the peak allocation is ≤ ~256 MiB at fp32 across (C, H, W):
-    # `C * chunk * H * W * 4 B ≤ 256 MiB`  →  `chunk ≤ 256 MiB / (C * H * W * 4)`. This chunking is
-    # the difference between a 512² render running and OOMing at 1.85 GiB on an 8 GiB card. Old
-    # path used ONE big grid and blew the budget by 7× on large canvases.
-    js = (torch.arange(canvas_w, device=device, dtype=dtype) - (canvas_w + 1) / 2) * world_per_px
-    is_ = (torch.arange(canvas_h, device=device, dtype=dtype) - (canvas_h + 1) / 2) * world_per_px
-    ss_all = (torch.arange(n_samples, device=device, dtype=dtype) - (n_samples + 1) / 2) * step_v
 
-    C = vol.shape[0]
-    # 256 MiB / bytes_per_slice — round down, cap at 128 so we don't collapse to 1 unnecessarily on
-    # tiny canvases.
-    bytes_per_slice = int(C) * int(canvas_h) * int(canvas_w) * 4
-    max_chunk = max(1, min(128, (256 * 1024 * 1024) // max(bytes_per_slice, 1)))
-    sample_chunk = min(int(n_samples), int(max_chunk))
+def _point_instances(pts, voxel_um):
+    """Julia's per-frame points → ``POINT_STRIDE`` rows: centre in image µm, rgb, z plane — what
+    ``buildPointBuffer`` uploads (a centroid's µm is ``pixel × voxel size``)."""
+    if not pts or not pts.get('x'):
+        return None
+    vx, vy, vz = voxel_um
+    z = np.asarray(pts.get('z') or [0.0] * len(pts['x']), np.float64)
+    out = np.empty((len(pts['x']), wgpu_host.POINT_STRIDE), np.float32)
+    out[:, 0] = np.asarray(pts['x']) * vx
+    out[:, 1] = np.asarray(pts['y']) * vy
+    out[:, 2] = z * vz
+    out[:, 3:6] = np.asarray(pts['colour'], np.float64).reshape(-1, 3)
+    out[:, 6] = np.floor(z)
+    return out
 
-    chw = None
-    z_denom = max(1, Z - 1)
-    for s0 in range(0, n_samples, sample_chunk):
-        s1 = min(s0 + sample_chunk, n_samples)
-        S = s1 - s0
-        ss = ss_all[s0:s1]
-        XV = js.view(1, 1, -1).expand(S, canvas_h, canvas_w)
-        YV = is_.view(1, -1, 1).expand(S, canvas_h, canvas_w)
-        ZV = ss.view(-1, 1, 1).expand(S, canvas_h, canvas_w)
-        xw = R[0, 0] * XV + R[0, 1] * YV + R[0, 2] * ZV
-        yw = R[1, 0] * XV + R[1, 1] * YV + R[1, 2] * ZV
-        zw = R[2, 0] * XV + R[2, 1] * YV + R[2, 2] * ZV
-        vy = yw + cy
-        vx = xw + cx
-        vz = zw / float(z_aniso) + cz
-        gx = 2 * vx / max(1, X - 1) - 1
-        gy = 2 * vy / max(1, Y - 1) - 1
-        gz = 2 * vz / z_denom - 1
-        grid = torch.stack([gx, gy, gz], dim=-1).unsqueeze(0)     # (1, S, H, W, 3)
-        sampled = F.grid_sample(vol.unsqueeze(0), grid, mode='bilinear',
-                                 padding_mode='zeros', align_corners=True)   # (1, C, S, H, W)
-        # Running MIP across chunks — a per-chunk `.max(dim=2)` keeps the memory bounded and gives
-        # bit-identical output to the one-shot path (max is associative).
-        chunk_mip = sampled.max(dim=2).values.squeeze(0)          # (C, H, W)
-        chw = chunk_mip if chw is None else torch.maximum(chw, chunk_mip)
-        del sampled, grid, XV, YV, ZV, xw, yw, zw, vx, vy, vz, gx, gy, gz, chunk_mip
 
-    # Composite: per-channel clip+normalise + LUT LINEAR interp + additive blend. Linear (not nearest)
-    # is what the Julia `_lut_at` does — a 2-stop black→base ramp reduces to `n * base`, exactly the
-    # additive-primary contract the composite needs. Nearest-neighbour turned the ramp into a hard
-    # threshold at n=0.5 (contrast looked "wrong": everything either black or fully saturated).
-    acc = torch.zeros((canvas_h, canvas_w, 3), device=device, dtype=dtype)
-    for c, spec in enumerate(state['specs']):
-        if c >= chw.shape[0] or not bool(spec.get('visible', True)):
-            continue
-        lo, hi = float(spec['lo']), float(spec['hi'])
-        rng = (hi - lo) if abs(hi - lo) > 1e-6 else 1.0
-        n = ((chw[c] - lo) / rng).clamp(0, 1)                          # (H, W)
-        lut = torch.as_tensor(np.asarray(spec['lut'], dtype=np.float32),
-                               device=device, dtype=dtype)              # (K, 3)
-        K = lut.shape[0]
-        if K == 0:
-            continue
-        if K == 1:
-            acc = acc + lut[0].view(1, 1, 3)
-            continue
-        p = n * (K - 1)                                                # (H, W)
-        i0 = p.floor().long().clamp(0, K - 2)                          # (H, W)
-        f = (p - i0.to(dtype)).unsqueeze(-1)                           # (H, W, 1)
-        a = lut[i0]                                                    # (H, W, 3)
-        b = lut[i0 + 1]                                                # (H, W, 3)
-        acc = acc + a + f * (b - a)
-    acc = acc.clamp(0, 1)
-    return (acc * 255).round().byte().cpu().numpy()       # LINEAR — `run` encodes after overlays
+def _segment_instances(segs, voxel_um):
+    """Julia's per-frame tail segments → ``SEG_STRIDE`` rows: from, to (image µm), rgb, end plane."""
+    if not segs or not segs.get('x0'):
+        return None
+    vx, vy, vz = voxel_um
+    out = np.empty((len(segs['x0']), wgpu_host.SEG_STRIDE), np.float32)
+    for k, (a, s) in enumerate((('x0', vx), ('y0', vy), ('z0', vz), ('x1', vx), ('y1', vy), ('z1', vz))):
+        out[:, k] = np.asarray(segs[a]) * s
+    out[:, 6:9] = np.asarray(segs['colour'], np.float64).reshape(-1, 3)
+    out[:, 9] = np.floor(np.asarray(segs['z1'], np.float64))
+    return out
+
+
+def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_style, overlay_style):
+    """The uniform lanes for one frame — the same lanes ``volumeRenderer.ts`` writes.
+
+    ``dims_czyx`` is the texture actually uploaded; ``l0_zyx`` and ``voxel_um`` are level 0's, which
+    is what the camera, the extents and the overlays are measured in (``meta.nX`` / ``voxelUm`` in
+    the viewer). A coarser level covers the same µm with fewer voxels, so only ``dims`` changes."""
+    nc, nz, ny, nx = dims_czyx
+    nz0, ny0, nx0 = l0_zyx
+    vx, vy, vz = voxel_um
+    cam = wgpu_host.view_camera(state.get('camera') or {}, state.get('snapH'), nx0, ny0, voxel_um, canvas_h)
+    perspective = float((state.get('camera') or {}).get('perspective') or 0) > 0
+    u = {'cam.yaw': cam['yaw'], 'cam.pitch': cam['pitch'], 'cam.dist': cam['dist'], 'cam.steps': steps,
+         'vp.nch': nc, 'vp.ortho': 0 if perspective else 1,
+         'ext.x': nx0 * vx, 'ext.y': ny0 * vy, 'ext.z': nz0 * vz, 'ext.zOriginUm': 0,
+         'dims.nx': nx, 'dims.ny': ny, 'dims.nz': nz, 'dims.zPerChannel': nz,
+         'pan.x': cam['panX'], 'pan.y': cam['panY'],
+         # The whole stack is loaded, so no plane filter on either overlay pass (-1 = off).
+         'ov.planeLo': -1, 'ov.planeHi': -1, 'pan.ribbonLo': -1, 'pan.ribbonHi': -1,
+         'ov.pointPx': max(1, overlay_style['pointPx']), 'ov.tailPx': max(1, overlay_style['tailPx']),
+         'lab.pointBorderPx': max(0, overlay_style['borderPx'])}
+    if label_style is not None:
+        u['lab.opacity'] = label_style['opacity']
+        u['lab.contourPx'] = label_style['contourPx']
+        u['lab.paletteRows'] = label_style['rows']
+    # The shader composites the first MAX_CHANNELS; the viewer shows the same subset.
+    shown = min(nc, int(wgsl_utils.shader_constants()['MAX_CHANNELS']))
+    for c, spec in enumerate(state.get('specs') or []):
+        if c >= shown:
+            break
+        u[f'ch[{c}].lo'] = float(spec['lo'])
+        u[f'ch[{c}].hi'] = float(spec['hi'])
+        u[f'ch[{c}].visible'] = 1 if spec.get('visible', True) else 0
+    return u
 
 
 def run(params):
-    import torch
     log = script_utils.get_logfile_utils(params)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    dtype = torch.float32
-    log.log(f'[INFO] render_animation_run: device = {device}')
+    host = wgpu_host.MipHost()
+    info = host.adapter_info
+    log.log(f"[INFO] render_animation_run: {info.get('device')} ({info.get('backend_type')}, "
+            f"{info.get('adapter_type')})")
 
-    zarr_path = params['zarrPath']
-    out_path = params['outPath']
     states = params['states']
     canvas_h = int(params.get('canvasH', 512))
     canvas_w = int(params.get('canvasW', 512))
-    z_aniso = float(params.get('zAniso', 1.0))
-    q_mult = _QUALITY_MULT.get(params.get('renderQuality', 'standard'), 1.0)
+    # x-voxel units: the shader only needs the three extents, the camera and the overlays in ONE
+    # unit, and the voxel's x size is the one every other length is already relative to.
+    voxel_um = (1.0, 1.0, float(params.get('zAniso', 1.0)))
+    steps = _QUALITY_STEPS.get(params.get('renderQuality', 'standard'), 256)
     fps = float(params.get('fps', 15))
     overlays = params.get('overlays') if isinstance(params.get('overlays'), list) else None
+    overlay_style = {'pointPx': float(params.get('pointSizePx', 6)),
+                     'borderPx': float(params.get('pointBorderPx', 0)),
+                     'tailPx': float(params.get('segmentWidthPx', 2))}
 
-    # Level 0 of the store. axes tells us the (T, C, Z, Y, X) ordering — read once.
-    from cecelia.utils.zarr_utils import read_axes
-    zarr_data, _ = open_as_zarr(zarr_path)
-    arr0 = zarr_data[0]
+    zarr_path = params['zarrPath']
+    levels, _ = open_as_zarr(zarr_path)
     axes = read_axes(zarr_path)
+    level = _pick_level(levels, host, axes)
+    arr = levels[level]
+    ax = [a.lower() for a in axes]
+    shape0 = dict(zip(ax, levels[0].shape))
+    l0_zyx = (shape0.get('z', 1), shape0.get('y', 1), shape0.get('x', 1))
+    if level:
+        log.log(f'[INFO] level 0 does not fit a 3D texture on this device; rendering level {level}')
 
-    # Cache the volume for the last-seen t (rotation animations hold t constant across all frames, so
-    # this hits N-1 times). Load-per-frame is fine for T-varying animations too — the load isn't the
-    # bottleneck, grid_sample is.
+    palette = wgpu_host.label_palette()
+    host.set_palette(palette)
+    labels_arr = label_style = None
+    if params.get('labelsPath'):
+        # The mask goes on the same grid as the image level, or not at all — a mismatched texture
+        # would outline the wrong voxels (Julia's `mask_fits_frame` already checked level 0).
+        lab_levels, _ = open_as_zarr(params['labelsPath'])
+        if level < len(lab_levels):
+            labels_arr, lab_axes = lab_levels[level], read_axes(params['labelsPath'])
+            opacity = params.get('labelOpacity', wgsl_utils.shader_constants()['LABEL_OPACITY'])
+            label_style = {'opacity': float(opacity),
+                           'contourPx': max(0, int(round(float(params.get('labelContourPx', 0))))),
+                           'rows': len(palette)}
+        else:
+            log.log(f'[WARN] mask skipped — its store has no level {level} to match the image')
+
     cached_t = None
-    vol_gpu = None
-
+    dims = None
     written = 0
+    out_path = params['outPath']
     staging = f"{out_path}.tmp.mp4"
     try:
         with movie_writer(staging, fps) as writer:
             for i, state in enumerate(states):
                 t_idx = int(state['t'])
                 if cached_t != t_idx:
-                    vol_np = _load_volume_at_t(arr0, t_idx, axes)
-                    vol_gpu = torch.from_numpy(vol_np).to(device, dtype=dtype)
+                    vol = _as_u16(_load_at_t(arr, t_idx, axes))
+                    host.set_volume(vol)
+                    dims = vol.shape
+                    if labels_arr is not None:
+                        lab = _load_at_t(labels_arr, t_idx, lab_axes, want=('z', 'y', 'x'))
+                        host.set_labels(np.ascontiguousarray(lab, dtype=np.uint32))
                     cached_t = t_idx
-                frame = _render_frame(vol_gpu, state, canvas_h, canvas_w, z_aniso,
-                                       q_mult, device, dtype)
-                # Overlays draw BEFORE the even-crop so the drawn coords Julia computed for THIS
-                # canvas size land exactly. The crop trims one row/col AT MOST (canvas_h/w are
-                # already even in typical use).
-                ov2d = state.get('overlays2d')
-                if ov2d:
-                    frame = _draw_overlays2d(frame, ov2d, canvas_h, canvas_w)
-                # Encode AFTER the overlays, as `render_view_frame` does, so tracks and points share
-                # the pixels' colour space. The timestamp / scale bar below are drawn already-sRGB.
-                frame = _SRGB_LUT[frame]
-                frame = crop_to_even(frame)
-                # Optional per-frame overlay (timestamp + scale bar). Same helper the CPU encoder uses.
+                host.set_lut(wgpu_host.lut_rows([s.get('lut') or [] for s in state.get('specs') or []]))
+                ov = state.get('overlays3d') or {}
+                host.set_points(_point_instances(ov.get('points'), voxel_um))
+                host.set_segments(_segment_instances(ov.get('segments'), voxel_um))
+                lanes = frame_uniforms(state, dims, l0_zyx, voxel_um, canvas_h, steps,
+                                       label_style, overlay_style)
+                frame = host.render(canvas_w, canvas_h, lanes)[..., :3]
+                frame = crop_to_even(np.ascontiguousarray(frame))
+                # Timestamp / scale bar go onto the ENCODED frame, already sRGB — the same helper
+                # and order as the 2D encoder.
                 if overlays is not None and i < len(overlays):
                     item = overlays[i] or {}
                     from cecelia.utils.title_card import draw_frame_overlays
-                    frame = draw_frame_overlays(frame,
-                                                 timestamp=item.get('timestamp'),
-                                                 scale_bar=item.get('scaleBar'))
+                    frame = draw_frame_overlays(frame, timestamp=item.get('timestamp'),
+                                                scale_bar=item.get('scaleBar'))
                 writer.append_data(frame)
                 written += 1
                 if (i + 1) % 20 == 0:
                     log.log(f'[PROGRESS] {i + 1}/{len(states)}')
-        # Promote staging → final path only on complete success.
-        import os
         os.replace(staging, out_path)
     except BaseException:
-        import os
         try:
             os.remove(staging)
         except OSError:

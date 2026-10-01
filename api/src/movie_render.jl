@@ -553,9 +553,12 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     (show_pops || show_tracks || show_gated || show_mask) || return (nothing, nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
-    isempty(vn) && return (nothing, nothing, nothing)
+    # The mask's segmentation, when the caller names it apart from the overlays' (`maskValueName`).
+    mask_vn = _ov_str(overlays_config, "maskValueName", vn)
+    isempty(vn) && isempty(mask_vn) && return (nothing, nothing, nothing)
+    isempty(vn) && (vn = mask_vn)
     # `frame` = the recorded version's `(arr, caxes)` — a mask from another version's grid is skipped.
-    show_mask && frame !== nothing && !mask_fits_frame(img, vn, frame...; on_log = on_log) &&
+    show_mask && frame !== nothing && !mask_fits_frame(img, mask_vn, frame...; on_log = on_log) &&
         (show_mask = false)
     pt   = _ov_str(overlays_config, "popType", "flow")
     tail = _ov_int(overlays_config, "tailLength", 30)
@@ -610,7 +613,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
         _build_mask = (native_h, native_w, crop, max_px, z) -> begin
             tf = pixel_transform(native_h, native_w; crop = crop, max_px = max_px)
             try
-                build_mask_for(img; value_name = vn, pop_type = pt, transform = tf,
+                build_mask_for(img; value_name = mask_vn, pop_type = pt, transform = tf,
                                 pops_filter = pops_filter, z = z,
                                 all_cells = all_cells,
                                 all_cells_colour = all_cells_col,
@@ -625,88 +628,52 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     (_build2d, per_t3d, _build_mask)
 end
 
-# The browser viewer's zoom → the 3D renderer's. They mean different things: the viewer writes
-# `canvas_h / visible image height` against ITS canvas (`viewState.ts` `buildViewState`), while the
-# ray-caster's zoom 1 fits `max(W, H)` across the OUTPUT width (`_world_per_px_3d`). Taken raw, a
-# viewer at zoom 2.3 on a 999-px canvas rendered ~5x tighter than the screen. Converted so the output
-# shows the same image height the viewer did: `wpp * out_h == snap_h / zoom_v`. A state without its
-# canvas (an older snapshot, a batch camera) keeps the raw value — the renderer's own convention.
-function _renderer_zoom_3d(zoom_v, state, native_w::Integer, native_h::Integer,
-                           out_h::Integer, out_w::Integer)::Float64
-    z = zoom_v isa Real && zoom_v > 0 ? Float64(zoom_v) : 1.0
+# A 3D state's camera as the browser viewer stored it, for the movie host to apply exactly as the
+# viewer does (`wgpu_host.view_camera` ≡ `applyViewStateToBrowser`). Julia does not convert it: the
+# zoom only means something against the canvas it was measured on, so that height rides along too.
+function _camera3d_payload(a, state)
+    cam = Dict{String,Any}(
+        "angles" => Float64[Float64(a.angles[1]), Float64(a.angles[2]), Float64(a.angles[3])],
+        "zoom"   => a.zoom isa Real && a.zoom > 0 ? Float64(a.zoom) : 1.0)
+    a.center3d === nothing ||
+        (cam["center"] = Float64[Float64(a.center3d[1]), Float64(a.center3d[2]), Float64(a.center3d[3])])
+    vcam = state isa AbstractDict ? get(state, "camera", nothing) : nothing
+    persp = vcam isa AbstractDict ? get(vcam, "perspective", 0) : 0
+    persp isa Real && (cam["perspective"] = Float64(persp))
+    cam
+end
+
+# The height of the canvas a state's zoom was measured on, or `nothing` (a batch camera, an older
+# snapshot) — then the movie's own canvas is the reference, as in the viewer.
+function _snapshot_canvas_h(state)
     canv = state isa AbstractDict ? get(state, "canvas", nothing) : nothing
-    snap_h = canv isa AbstractDict ? get(canv, "height", nothing) : nothing
-    (snap_h isa Real && snap_h > 0 && out_w > 0) || return z
-    Float64(max(native_w, native_h)) * Float64(out_h) * z / (Float64(out_w) * Float64(snap_h))
+    h = canv isa AbstractDict ? get(canv, "height", nothing) : nothing
+    h isa Real && h > 0 ? Float64(h) : nothing
 end
 
-# Compute the same `world_per_px` scale the volume raycast uses so overlays project onto the same
-# canvas. Matches `_render_frame` in `render_animation_run.py` exactly.
-function _world_per_px_3d(native_w::Int, native_h::Int, nZ::Int, z_aniso::Float64,
-                           zoom::Float64, canvas_w::Int)
-    ext_x = Float64(native_w)
-    ext_y = Float64(native_h)
-    ext_z = Float64(nZ) * z_aniso
-    canvas_span = max(ext_x, ext_y)
-    canvas_span / (max(zoom, 1e-6) * Float64(canvas_w))
+# µm per output pixel of a 3D frame: the viewer shows `captured_h / zoom` image rows across the
+# canvas height (`applyViewStateToBrowser`), orthographic, whatever the canvas.
+function _um_per_px_3d(a, state, pixel_size_um::Real, out_h::Integer)
+    zoom = a.zoom isa Real && a.zoom > 0 ? Float64(a.zoom) : 1.0
+    captured_h = something(_snapshot_canvas_h(state), Float64(out_h))
+    Float64(pixel_size_um) * (captured_h / zoom) / Float64(out_h)
 end
 
-# Project a state through Julia — one code path for the projection math, then Python just draws.
-# Serialises to `overlays2d` (drawn pixel coords) — Python receives `(u, v, colour, alpha)` shape
-# and rasterises with PIL. If either arm becomes empty (no visible points/segments this frame) we
-# emit `nothing` so the frame's overlay pass is a no-op.
-function _overlays2d_state(per_t3d, t_native::Int,
-                            angles, centre, zoom_val::Real,
-                            native_w::Int, native_h::Int, nZ::Int, z_aniso::Real,
-                            canvas_h::Int, canvas_w::Int,
-                            tail_length::Int,
-                            point_size_px::Int, segment_width_px::Int)
+# One frame's overlays for the shader passes, in native voxel coordinates (`build_overlays3d_for`).
+# `nothing` when the frame has neither points nor tail segments.
+function _overlays3d_state(per_t3d, t::Int)
     per_t3d === nothing && return nothing
-    R = rotation_matrix_from_angles(angles)
-    # Fall back to the volume midpoint when the snapshot didn't specify one — same rule as the ray
-    # builder.
-    if centre === nothing
-        cz = Float64(nZ - 1) / 2.0
-        cy = Float64(native_h - 1) / 2.0
-        cx = Float64(native_w - 1) / 2.0
-    else
-        cz = Float64(centre[1]); cy = Float64(centre[2]); cx = Float64(centre[3])
-    end
-    wpp = _world_per_px_3d(native_w, native_h, nZ, Float64(z_aniso), Float64(zoom_val), canvas_w)
-    pts, segs = per_t3d(t_native, R, cx, cy, cz, wpp, canvas_h, canvas_w, Float64(z_aniso))
-    (pts === nothing || isempty(pts.u)) && (pts = nothing)
-    (segs === nothing || isempty(segs.u0)) && (segs = nothing)
+    pts, segs = per_t3d(t)
     (pts === nothing && segs === nothing) && return nothing
-    out = Dict{String,Any}(
-        "pointSize"     => Int(point_size_px),
-        "segmentWidth"  => Int(segment_width_px),
-        "tailLength"    => Int(tail_length),
-    )
-    if pts !== nothing
-        colours = Vector{Vector{Float64}}(undef, length(pts.u))
-        @inbounds for i in eachindex(pts.u)
-            c = pts.colour[i]
-            colours[i] = Float64[Float64(c.r), Float64(c.g), Float64(c.b)]
-        end
-        out["points"] = Dict{String,Any}(
-            "u" => Float64.(pts.u),
-            "v" => Float64.(pts.v),
-            "colour" => colours,
-        )
-    end
-    if segs !== nothing
-        colours = Vector{Vector{Float64}}(undef, length(segs.u0))
-        @inbounds for i in eachindex(segs.u0)
-            c = segs.colour[i]
-            colours[i] = Float64[Float64(c.r), Float64(c.g), Float64(c.b)]
-        end
-        out["segments"] = Dict{String,Any}(
-            "u0" => Float64.(segs.u0), "v0" => Float64.(segs.v0),
-            "u1" => Float64.(segs.u1), "v1" => Float64.(segs.v1),
-            "colour" => colours,
-            "alpha" => Float64.(segs.alpha),
-        )
-    end
+    rgb(c) = Float64[Float64(c.r), Float64(c.g), Float64(c.b)]
+    out = Dict{String,Any}()
+    pts === nothing || (out["points"] = Dict{String,Any}(
+        "x" => Float64.(pts.x), "y" => Float64.(pts.y), "z" => Float64.(pts.z),
+        "colour" => [rgb(c) for c in pts.colour]))
+    segs === nothing || (out["segments"] = Dict{String,Any}(
+        "x0" => Float64.(segs.x0), "y0" => Float64.(segs.y0), "z0" => Float64.(segs.z0),
+        "x1" => Float64.(segs.x1), "y1" => Float64.(segs.y1), "z1" => Float64.(segs.z1),
+        "colour" => [rgb(c) for c in segs.colour]))
     out
 end
 
@@ -780,11 +747,9 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     native_w = haskey(dims, "x") ? size(arr, dims["x"]) : 0
     (native_h == 0 || native_w == 0) &&
         throw(ArgumentError("record_keyframes_view_movie: image has no y/x axes"))
-    # 3D canvas defaults to 512×512 if not asked. Memoise volumes on (t, chans) so consecutive same-t
-    # frames (typical rotation animation) reuse the load — the 3D renderer takes this as a Ref{Any}.
+    # 3D canvas defaults to 512×512 if not asked.
     canvas3_h = something(canvas_h, 512)
     canvas3_w = something(canvas_w, 512)
-    vcache = Ref{Any}(nothing)
 
     # Resolve every state's render args upfront: overlays need it for per-frame t indices, and it lets
     # us decide 2D vs 3D dispatch from ONE inspection of the interpolated states (a mid-animation
@@ -798,8 +763,9 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
 
     # Overlay authors — one build per animation (not per frame). `build2d` needs the per-frame
     # crop/max_px, so we curry it here and pass the crop into every 2D frame; `per_t3d` is one
-    # closure the 3D emitter calls with each frame's t. `build_mask` is the 2D-only mask factory
-    # (labels contour on the CPU per-frame path) — 3D animations skip it.
+    # closure the 3D emitter calls with each frame's t. `build_mask` is the 2D mask factory; it is
+    # non-`nothing` only when a mask was asked for AND fits this image version, which is also the 3D
+    # renderer's cue to draw the label store.
     build2d, per_t3d, build_mask = _resolve_keyframe_overlay_builders(img, overlays_config;
                                                                       frame = (arr, caxes),
                                                                       on_log = on_log)
@@ -808,73 +774,63 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     ov_sw   = overlays_config === nothing ? 2  : _ov_int(overlays_config, "segmentWidthPx", 2)
     ov_mcw  = overlays_config === nothing ? 1  : _ov_int(overlays_config, "maskContourPx", 1)
 
-    # ── GPU 3D path — hand off the whole animation to `writers/render_animation_run.py` ──
+    # ── 3D path — the viewer's own shaders, headless (`writers/render_animation_run.py`) ──
     if is_3d
         cancelled() && return (; path = out_path, frames = 0, width = canvas3_w, height = canvas3_h,
                                  cancelled = true)
-        # Serialise each state: t, angles, center, zoom, and the per-channel LUT/specs. The Python
-        # entry expects specs as JSON-safe scalars, so a `Vector{NTuple{3,Float32}}` LUT is spelt out
-        # as `Vector{Vector{Float64}}`. `default_specs` is a `resolved_display_specs` output — its
-        # `.lut` is already the LUT that would go on the GPU.
+        # Per state: t, the camera as the viewer stored it, the canvas its zoom was measured on, the
+        # per-channel specs, and the overlays as positions. The host applies the camera exactly as
+        # the viewer does and projects the overlays with the raycast's own camera.
         py_states = Vector{Dict{String,Any}}(undef, length(args_per_frame))
         for (i, a) in enumerate(args_per_frame)
             t_clamped = clamp(Int(a.t), 0, nT - 1)
-            centre = a.center3d === nothing ? nothing :
-                     Float64[Float64(a.center3d[1]), Float64(a.center3d[2]), Float64(a.center3d[3])]
             specs_out = Vector{Dict{String,Any}}(undef, length(a.specs))
             for (k, s) in enumerate(a.specs)
                 lo, hi, colour, vis = s
                 # `colour` is the resolved LUT (Vector of RGB triplets), a colormap NAME, or a
                 # `#rrggbb` hex — the browser viewer sends hex for any colour not in the picker's
-                # palette. `_as_lut` is the one resolver for all three (the CPU kernel's too); a
-                # name-only lookup here rendered every hex channel WHITE.
+                # palette. `_as_lut` is the one resolver for all three; a name-only lookup here
+                # rendered every hex channel WHITE.
                 lut = _as_lut(colour isa AbstractString ? String(colour) : colour)
                 lut_stops = Vector{Float64}[Float64[Float64(rgb[1]), Float64(rgb[2]), Float64(rgb[3])]
                                             for rgb in lut]
                 specs_out[k] = Dict{String,Any}("lo" => Float64(lo), "hi" => Float64(hi),
                                                  "lut" => lut_stops, "visible" => Bool(vis))
             end
-            zoom_r = _renderer_zoom_3d(a.zoom, states[i], native_w, native_h, canvas3_h, canvas3_w)
             py_states[i] = Dict{String,Any}(
                 "t"      => t_clamped,
-                "angles" => Float64[Float64(a.angles[1]), Float64(a.angles[2]), Float64(a.angles[3])],
-                "center" => centre,
-                "zoom"   => zoom_r,
+                "camera" => _camera3d_payload(a, states[i]),
                 "specs"  => specs_out)
-            # Julia projects for both dimensionalities — Python only rasterises. The projection
-            # math NEVER leaves Julia, so a bug in the ray-cast matrix and a bug in the overlay
-            # matrix are the same bug (they can't disagree by construction). Emits `overlays2d`
-            # (drawn pixel coords + per-segment alpha) — the same shape the 2D encoder will read.
-            nZ = haskey(dims, "z") ? size(arr, dims["z"]) : 1
-            ov2d = _overlays2d_state(per_t3d, t_clamped, a.angles, a.center3d,
-                                       zoom_r, native_w, native_h, nZ, z_aniso,
-                                       canvas3_h, canvas3_w,
-                                       ov_tail, ov_psz, ov_sw)
-            ov2d === nothing || (py_states[i]["overlays2d"] = ov2d)
+            snap_h = _snapshot_canvas_h(states[i])
+            snap_h === nothing || (py_states[i]["snapH"] = snap_h)
+            ov3d = _overlays3d_state(per_t3d, t_clamped)
+            ov3d === nothing || (py_states[i]["overlays3d"] = ov3d)
         end
         params = Dict{String,Any}(
-            "zarrPath"      => String(zarr_path),
-            "outPath"       => String(out_path),
-            "states"        => py_states,
-            "canvasH"       => canvas3_h, "canvasW" => canvas3_w,
-            "zAniso"        => Float64(z_aniso),
-            "renderQuality" => String(render_quality),
-            "fps"           => Float64(fps),
+            "zarrPath"       => String(zarr_path),
+            "outPath"        => String(out_path),
+            "states"         => py_states,
+            "canvasH"        => canvas3_h, "canvasW" => canvas3_w,
+            "zAniso"         => Float64(z_aniso),
+            "renderQuality"  => String(render_quality),
+            "fps"            => Float64(fps),
+            "pointSizePx"    => ov_psz,
+            "segmentWidthPx" => ov_sw,
         )
+        if build_mask !== nothing
+            # The whole label store, as the viewer's 3D view draws it (nearest id along the ray,
+            # palette colours) — not the 2D path's pop-filtered outline.
+            lp = img_labels_path(img, _ov_str(overlays_config, "maskValueName",
+                                              _ov_str(overlays_config, "valueName", "")))
+            isdir(lp) && (params["labelsPath"] = String(lp); params["labelContourPx"] = ov_mcw)
+        end
         title_card === nothing || (params["titleCard"] = title_card)
-        # Per-frame overlays for the GPU path — same shape the CPU encoder reads (the GPU script uses
-        # the same `title_card.draw_frame_overlays` helper). For 3D the effective µm/pixel is the
-        # world-span divided by the encoded width; a rotation animation typically holds zoom constant,
-        # so the first state's zoom is representative.
+        # Timestamp + scale bar, same shape the CPU encoder reads. The bar is sized to the first
+        # state's view; an animation that zooms keeps one bar length rather than a flickering one.
         if show_timestamp || show_scale_bar
             per_frame_ts = Int[clamp(Int(a.t), 0, nT - 1) for a in args_per_frame]
-            first_zoom = _renderer_zoom_3d(args_per_frame[1].zoom, states[1], native_w, native_h,
-                                           canvas3_h, canvas3_w)
-            nZ = haskey(dims, "z") ? size(arr, dims["z"]) : 1
             eff_um = pixel_size_um === nothing ? 1.0 :
-                     Float64(pixel_size_um) *
-                        max(Float64(native_w), Float64(nZ) * Float64(z_aniso)) /
-                        (first_zoom * Float64(canvas3_w))
+                     _um_per_px_3d(args_per_frame[1], states[1], pixel_size_um, canvas3_h)
             params["overlays"] = _build_timelapse_overlays(per_frame_ts, eff_um, canvas3_w,
                                                             time_step_min;
                                                             show_timestamp = show_timestamp,
@@ -882,7 +838,7 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
         end
         ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
                              on_log = on_log, on_process = on_process)
-        ok || error("record_keyframes_view_movie: the GPU 3D renderer failed — see the log above")
+        ok || error("record_keyframes_view_movie: the 3D renderer failed — see the log above")
         return (; path = out_path, frames = length(py_states),
                   width = canvas3_w, height = canvas3_h, cancelled = false)
     end
@@ -898,40 +854,27 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                                                  native_h, native_w;
                                                  canvas_h = canvas_h, canvas_w = canvas_w)
                 t_clamped = clamp(args.t, 0, nT - 1)
-                img = if args.ndisplay == 3
-                    render_view_frame_3d(arr, caxes, Int(t_clamped);
-                                          specs = args.specs,
-                                          angles = args.angles,
-                                          center = args.center3d,
-                                          zoom = _renderer_zoom_3d(args.zoom, st, native_w, native_h,
-                                                                   canvas3_h, canvas3_w),
-                                          canvas_h = canvas3_h, canvas_w = canvas3_w,
-                                          z_aniso = z_aniso,
-                                          render_quality = render_quality,
-                                          volume_cache = vcache)
-                else
-                    # 2D per-frame overlay: build a fresh author bound to THIS frame's crop (a
-                    # camera pan changes the crop from frame to frame). No overlays_config → the
-                    # closure is `nothing` and `render_view_frame`'s `points`/`segments` kwargs
-                    # stay unset, matching the pre-overlay behaviour. Same story for the mask
-                    # closure — off unless `showMask` was in the config.
-                    pts_2d = nothing; segs_2d = nothing
-                    if build2d !== nothing
-                        per_t2d = build2d(native_h, native_w, args.crop, 0)
-                        pts_2d, segs_2d = per_t2d(Int(t_clamped))
-                    end
-                    mask_2d = nothing; mask_cols = nothing
-                    if build_mask !== nothing
-                        per_t_mask = build_mask(native_h, native_w, args.crop, 0, args.z)
-                        per_t_mask === nothing || ((mask_2d, mask_cols) = per_t_mask(Int(t_clamped)))
-                    end
-                    render_view_frame(arr, caxes, Int(t_clamped);
-                                       z = args.z, specs = args.specs, crop = args.crop,
-                                       points = pts_2d, point_size_px = ov_psz,
-                                       segments = segs_2d, segment_width_px = ov_sw,
-                                       mask = mask_2d, mask_colours = mask_cols,
-                                       mask_contour_px = ov_mcw)
+                # 2D per-frame overlay: build a fresh author bound to THIS frame's crop (a
+                # camera pan changes the crop from frame to frame). No overlays_config → the
+                # closure is `nothing` and `render_view_frame`'s `points`/`segments` kwargs
+                # stay unset, matching the pre-overlay behaviour. Same story for the mask
+                # closure — off unless `showMask` was in the config.
+                pts_2d = nothing; segs_2d = nothing
+                if build2d !== nothing
+                    per_t2d = build2d(native_h, native_w, args.crop, 0)
+                    pts_2d, segs_2d = per_t2d(Int(t_clamped))
                 end
+                mask_2d = nothing; mask_cols = nothing
+                if build_mask !== nothing
+                    per_t_mask = build_mask(native_h, native_w, args.crop, 0, args.z)
+                    per_t_mask === nothing || ((mask_2d, mask_cols) = per_t_mask(Int(t_clamped)))
+                end
+                img = render_view_frame(arr, caxes, Int(t_clamped);
+                                         z = args.z, specs = args.specs, crop = args.crop,
+                                         points = pts_2d, point_size_px = ov_psz,
+                                         segments = segs_2d, segment_width_px = ov_sw,
+                                         mask = mask_2d, mask_colours = mask_cols,
+                                         mask_contour_px = ov_mcw)
                 h, w = size(img)
                 img = img[1:(h - h % 2), 1:(w - w % 2)]
                 if i == 1
@@ -956,11 +899,9 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                                    "frames" => written, "fps" => Float64(fps))
         title_card === nothing || (params["titleCard"] = title_card)
         # Per-frame overlays: an animation's t varies per frame (from viewState), so build the ts list
-        # from the interpolated states, not from a fixed range. Scale bar: for a 2D animation the
-        # encoded µm/px is `pixel_size_um / (zoom or 1.0)`; for 3D, the canvas maps `canvas_w` pixels
-        # onto the volume's `max(x, z*z_aniso)` extent scaled by zoom — take the first state's zoom as
-        # representative (a keyframe animation typically doesn't scrub zoom aggressively frame-to-
-        # frame; the alternative would be a length-varying bar that reads as flicker).
+        # from the interpolated states, not from a fixed range. Scale bar: frames render their crop at
+        # native resolution, so the encoded µm/px is the first frame's crop over the encoded width
+        # (`_encoded_scale`, as `record_view_movie` does) — one bar length, not a flickering one.
         if show_timestamp || show_scale_bar
             per_frame_ts = Int[]
             for st in states[1:written]
@@ -972,14 +913,8 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
             first_args = viewstate_to_render_args(states[1], channel_names, default_specs,
                                                     native_h, native_w;
                                                     canvas_h = canvas_h, canvas_w = canvas_w)
-            first_zoom = first_args.zoom === nothing ? 1.0 : Float64(first_args.zoom)
-            # a 3D frame was rendered at the CONVERTED zoom (`_renderer_zoom_3d`) — size the bar to it
-            first_zoom3 = _renderer_zoom_3d(first_args.zoom, states[1], native_w, native_h,
-                                            canvas3_h, canvas3_w)
-            eff_um = pixel_size_um === nothing ? 1.0 :
-                     first_args.ndisplay == 3 ?
-                        Float64(pixel_size_um) * max(Float64(native_w), Float64(size(arr, get(dims, "z", ndims(arr)))) * Float64(z_aniso)) / (first_zoom3 * Float64(W)) :
-                        Float64(pixel_size_um) / first_zoom
+            eff_um = (pixel_size_um === nothing ? 1.0 : Float64(pixel_size_um)) *
+                     _encoded_scale(W, arr, caxes, first_args.crop, 0)
             params["overlays"] = _build_timelapse_overlays(per_frame_ts, eff_um, W, time_step_min;
                                                             show_timestamp = show_timestamp,
                                                             show_scale_bar = show_scale_bar)

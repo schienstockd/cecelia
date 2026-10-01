@@ -145,7 +145,7 @@ function _config_3d_keyframes(config, t0::Int, t1::Int)
     z_raw = _cfg_maybe(cam, "zoom")
     zoom = z_raw isa Real && Float64(z_raw) > 0 ? Float64(z_raw) : 1.0
     t1 = max(t0, t1)
-    # the viewer canvas the zoom was measured against — `_renderer_zoom_3d` converts with it
+    # the viewer canvas the zoom was measured against — the movie host applies the zoom against it
     cdim(k) = (v = _cfg_maybe(cam, k); v isa Real && v > 0 ? Float64(v) : nothing)
     cw, ch = cdim("width"), cdim("height")
     function state(t)
@@ -633,7 +633,7 @@ end
 
 # One image of a 3D batch: the image's frame + the batch's channel picks, rendered as a volume from the
 # authored camera. Returns `cancelled::Bool`, or `nothing` when the image can't be recorded (already
-# logged). Masks are not drawn — the 3D renderer has no mask pass.
+# logged). A mask is drawn the way the viewer's 3D view draws one (every label, its palette).
 function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
                           value_name::String, label_vn, out_path::AbstractString;
                           fps, size_x, size_y, t_start, t_end, title_card, render_quality::Symbol,
@@ -650,8 +650,9 @@ function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
     vnn = isempty(value_name) ? nothing : value_name
     chans = something(channel_names(img; value_name = vnn), String[])
     specs = _apply_channel_picks(specs, config, img, vnn)
-    ovs = _overlays_raw_from_config(config, false)
+    ovs = _overlays_raw_from_config(config, label_vn !== nothing)
     ovs === nothing || (ovs["valueName"] = _ov_look_seg(config, label_vn === nothing ? "" : String(label_vn)))
+    (ovs === nothing || label_vn === nothing) || (ovs["maskValueName"] = String(label_vn))
     cw, ch = _config_3d_canvas(config, size_x, size_y)
     pxsz, ts_min = img_physical_sizes(img)
     z_aniso = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[1] / pxsz[3] : 1.0

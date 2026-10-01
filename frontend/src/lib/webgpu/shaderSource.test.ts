@@ -6,7 +6,10 @@ import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL } from './mipShader'
 import { TILE_WGSL } from './tileShader'
 import { BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL, makeBrickShader } from './brickShader'
 import { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
-import { PICK_BITSET_CAPACITY, PICK_BITSET_WORDS } from '../../utils/viewerLabels'
+import { PICK_BITSET_CAPACITY, PICK_BITSET_WORDS, labelPaletteBytes, LABEL_PALETTE_N } from '../../utils/viewerLabels'
+import { lutTextureBytes, type ViewerChannel, type ViewerMeta } from '../../utils/volumeViewer'
+import { applyViewStateToBrowser, type ViewerViewState } from '../../utils/viewer/viewState'
+import LABEL_PALETTE from './shaders/label_palette.json'
 
 interface ExpandCase { name: string; files: Record<string, string>; vars: WgslVars; out?: string; error?: boolean }
 
@@ -97,5 +100,45 @@ describe('the shaders the renderers compile', () => {
       expect(typeof v).toBe('number')
       expect(String(v)).toMatch(/^\d+(\.\d+)?$/)
     }
+  })
+})
+
+// What the movie host (`python/cecelia/utils/wgpu_host.py`) must compute the same way the viewer does:
+// the camera a view state applies to, the LUT rows, the label palette. Same golden, both sides.
+interface CameraCase {
+  name: string; camera: { zoom: number; center: number[]; angles: number[] }; snapH: number | null
+  canvasH: number; nX: number; nY: number; voxelUm: number[]; halfAngle: number
+  want: { dist: number; panX: number; panY: number; yaw: number; pitch: number }
+}
+
+describe('the host-side inputs — the shared golden', () => {
+  for (const c of GOLDEN.viewCamera as unknown as CameraCase[]) {
+    it(`camera: ${c.name}`, () => {
+      const vs = { camera: { ...c.camera, perspective: 0 }, dims: { ndisplay: 3, current_step: [0, 0] }, layers: {},
+                   ...(c.snapH ? { canvas: { width: 1, height: c.snapH } } : {}) } as unknown as ViewerViewState
+      const meta = { nX: c.nX, nY: c.nY, nZ: 1, voxelUm: c.voxelUm, channels: [] } as unknown as ViewerMeta
+      const { cam } = applyViewStateToBrowser({
+        vs, meta, currentCam: { yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 },
+        canvasH: c.canvasH, viewHalfAngle: c.halfAngle,
+      })
+      for (const k of ['dist', 'panX', 'panY', 'yaw', 'pitch'] as const) expect(cam[k]).toBeCloseTo(c.want[k], 9)
+    })
+  }
+
+  it('LUT rows', () => {
+    const channels = GOLDEN.lut.luts.map(lut => ({ lut }) as unknown as ViewerChannel)
+    const bytes = lutTextureBytes(channels)
+    for (const [c, stops] of Object.entries(GOLDEN.lut.rows)) {
+      for (const [i, want] of Object.entries(stops as Record<string, number[]>)) {
+        const o = (Number(c) * LUT_STOPS + Number(i)) * 4
+        expect(Array.from(bytes.slice(o, o + 4))).toEqual(want)
+      }
+    }
+  })
+
+  it('label palette = shaders/label_palette.json', () => {
+    const bytes = labelPaletteBytes()
+    expect(LABEL_PALETTE.rgb.length).toBe(LABEL_PALETTE_N)
+    LABEL_PALETTE.rgb.forEach((rgb, i) => expect(Array.from(bytes.slice(i * 4, i * 4 + 4))).toEqual([...rgb, 255]))
   })
 })

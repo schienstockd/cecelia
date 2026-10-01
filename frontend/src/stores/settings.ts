@@ -5,6 +5,7 @@ import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
 import { decodeViewerBagEvent } from '../utils/viewerBagChannel'
+import { LABEL_OPACITY } from '../utils/viewerLabels'
 import { debouncedSave } from '../utils/debouncedSave'
 import { fetchProfileSettings, patchProfileSettings,
          type ProfileSettingsValue } from '../utils/profileSettingsApi'
@@ -194,8 +195,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // Segmentation mask overlay (P4). `viewerLabelOpacity` is the fill opacity (default 0.7) and
   // `viewerLabelContour` is the outline width in voxels — an outline that many voxels thick instead of
   // a filled region, which is what lets the channel signal under the mask stay readable. 0 = filled.
-  // Not `|| 0.7`: a deliberate 0 is a valid opacity and would otherwise spring back.
-  const viewerLabelOpacity = ref(Number(localStorage.getItem('cc.viewerLabelOpacity') ?? '0.7'))
+  // Not `|| LABEL_OPACITY`: a deliberate 0 is a valid opacity and would otherwise spring back. The
+  // default is the shared one a 3D movie also reads (`shaders/constants.json`).
+  const viewerLabelOpacity = ref(Number(localStorage.getItem('cc.viewerLabelOpacity') ?? String(LABEL_OPACITY)))
   const viewerLabelContour = ref(Number(localStorage.getItem('cc.viewerLabelContour') ?? '0') || 0)
   // How many z planes either side of the one on screen still draw their cell's marker.
   //

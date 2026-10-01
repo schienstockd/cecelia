@@ -440,7 +440,10 @@ function handle_movie_record(ws, data)
         # inside `look`, seeded once from the viewer state the title card already reads. Absent
         # `look` → nothing → channels-only movie (pre-P5.5 behaviour).
         look_cfg = get(data, :look, nothing)
-        ovs_cfg  = look_cfg isa AbstractDict ? _overlays_raw_from_config(look_cfg, false) : nothing
+        # One mask asked for (the viewer's 3D Record sends its mask; the animation page sends none)
+        # → the 3D renderer draws it the way the viewer's shader does.
+        kf_mask = n_lvns == 1 ? String(only(label_vns)) : nothing
+        ovs_cfg  = look_cfg isa AbstractDict ? _overlays_raw_from_config(look_cfg, kf_mask !== nothing) : nothing
         # `valueName` lives on `look` (populations + tracks belong to a segmentation), fall back to
         # the request's first valueName. Same for `pointsSize`, `tailWidth`, `tailLength`, `popType`
         # — the author reads them all from `overlays_config`, so seed it here from `look`.
@@ -463,6 +466,11 @@ function handle_movie_record(ws, data)
             co_raw = get(look_cfg, "colourOverrides", nothing)
             co_raw === nothing && (co_raw = get(look_cfg, :colourOverrides, nothing))
             co_raw isa AbstractDict && (ovs_cfg["colourOverrides"] = co_raw)
+            if kf_mask !== nothing
+                ovs_cfg["maskValueName"] = kf_mask
+                # the outline width rides the request, not `look` (`_single_record_look`)
+                ovs_cfg["maskContourPx"] = contour
+            end
         end
         @async try
             run_single_keyframes_offline(task_id, project_uid, image_uid; fps = fps,

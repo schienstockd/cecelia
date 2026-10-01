@@ -336,17 +336,4 @@ end
     sp2 = _live_specs(Dict{String,Any}("layers" => Dict{String,Any}()), ["A", "B"], base, 100, 100)
     @test (sp2[2].lo, sp2[2].hi) == (5.0, 9.0)
 
-    # 3D: the viewer's zoom (canvas_h / visible image height, on ITS canvas) → the ray-caster's
-    # (1 = max(W, H) across the output width). Reported: zoom 2.33 on a 999-px canvas rendered ~5x
-    # too tight. The output must show the same image height the viewer did.
-    st = Dict{String,Any}("canvas" => Dict{String,Any}("width" => 1186, "height" => 999))
-    zr = _renderer_zoom_3d(2.3319, st, 441, 420, 999, 1186)
-    wpp = max(441, 420) / (zr * 1186)                        # render_animation_run.py world_per_px
-    @test wpp * 999 ≈ 999 / 2.3319
-    # a square output shows the same height, cropped in width
-    zs = _renderer_zoom_3d(2.3319, st, 441, 420, 512, 512)
-    @test (max(441, 420) / (zs * 512)) * 512 ≈ 999 / 2.3319
-    # no canvas on the state → the renderer's own convention, unchanged
-    @test _renderer_zoom_3d(2.0, Dict{String,Any}(), 441, 420, 512, 512) == 2.0
-    @test _renderer_zoom_3d(nothing, st, 441, 420, 512, 512) > 0
 end
