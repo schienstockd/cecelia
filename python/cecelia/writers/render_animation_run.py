@@ -41,6 +41,13 @@ import numpy as np
 
 _QUALITY_MULT = {'draft': 0.5, 'standard': 1.0, 'high': 2.0}
 
+# Linear byte → sRGB byte (IEC 61966-2-1), the same per-byte transfer as `image_render.jl`
+# `_linear_to_srgb`. Without it the movie plays ~2x darker in the mid-tones than the viewer, whose
+# canvas encodes through an sRGB view (`frontend/src/lib/webgpu/canvasFormat.ts`).
+_x = np.arange(256, dtype=np.float64) / 255
+_SRGB_LUT = np.round(255 * np.where(_x <= 0.0031308, 12.92 * _x,
+                                    1.055 * _x ** (1 / 2.4) - 0.055)).astype(np.uint8)
+
 
 def _draw_overlays2d(frame_np, overlays2d, canvas_h, canvas_w):
     """Rasterise per-frame overlay dots + track ribbons that Julia has ALREADY projected.
@@ -237,7 +244,7 @@ def _render_frame(vol, state, canvas_h, canvas_w, z_aniso, q_mult, device, dtype
         b = lut[i0 + 1]                                                # (H, W, 3)
         acc = acc + a + f * (b - a)
     acc = acc.clamp(0, 1)
-    return (acc * 255).byte().cpu().numpy()
+    return (acc * 255).round().byte().cpu().numpy()       # LINEAR — `run` encodes after overlays
 
 
 def run(params):
@@ -287,6 +294,9 @@ def run(params):
                 ov2d = state.get('overlays2d')
                 if ov2d:
                     frame = _draw_overlays2d(frame, ov2d, canvas_h, canvas_w)
+                # Encode AFTER the overlays, as `render_view_frame` does, so tracks and points share
+                # the pixels' colour space. The timestamp / scale bar below are drawn already-sRGB.
+                frame = _SRGB_LUT[frame]
                 frame = crop_to_even(frame)
                 # Optional per-frame overlay (timestamp + scale bar). Same helper the CPU encoder uses.
                 if overlays is not None and i < len(overlays):
