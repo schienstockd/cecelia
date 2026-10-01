@@ -104,7 +104,7 @@ function add_set!(proj::CciaProject;
     save!(s)
     push!(proj.set_uids, s.uid)
     push!(proj._sets, s)
-    save!(proj)
+    _commit_member!(proj, "set_uids", s.uid)
     s
 end
 
@@ -172,8 +172,8 @@ function move_image!(proj::CciaProject, image_uid::String,
     # attach to destination (the image's own _dir is unchanged — no data moves)
     push!(to.image_uids, image_uid)
     img === nothing || push!(to._images, img)
-    save!(from)
-    save!(to)
+    _commit_member!(from, "image_uids", image_uid; remove = true)
+    _commit_member!(to,   "image_uids", image_uid)
     proj
 end
 
@@ -238,7 +238,7 @@ function delete_set!(proj::CciaProject, set_uid::String)::CciaProject
     isdir(s._dir) && rm(s._dir; recursive = true)
     deleteat!(proj._sets, idx)
     filter!(u -> u != set_uid, proj.set_uids)
-    save!(proj)
+    _commit_member!(proj, "set_uids", set_uid; remove = true)
     proj
 end
 
@@ -384,6 +384,22 @@ function commit_state!(f::Function, obj)
         f(raw)
         write_json_atomic(path, raw)
         raw
+    end
+end
+
+"""
+    _commit_member!(obj, key, uid; remove=false)
+
+Add (or remove) one uid in a manifest list — a set's `image_uids`, a project's `set_uids` — inside the
+object's transaction. Adders and removers use this instead of `save!(obj)`, because a full save also
+writes back every child the in-memory object holds: an image loaded before a task committed its output
+would be written back without it.
+"""
+function _commit_member!(obj, key::String, uid::String; remove::Bool = false)
+    commit_state!(obj) do raw
+        uids = String[string(u) for u in get(raw, key, String[])]
+        remove ? filter!(!=(uid), uids) : (uid in uids || push!(uids, uid))
+        raw[key] = uids
     end
 end
 

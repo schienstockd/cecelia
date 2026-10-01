@@ -84,7 +84,7 @@ function add_image!(s::CciaSet;
     save!(img)
     push!(s.image_uids, img.uid)
     push!(s._images, img)
-    save!(s)
+    _commit_member!(s, "image_uids", img.uid)
     img
 end
 
@@ -170,6 +170,6 @@ function delete_image!(s::CciaSet, image_uid::String)::CciaSet
     end
     filter!(u -> u != image_uid, s.image_uids)
     filter!(img -> img.uid != image_uid, s._images)
-    save!(s)
+    _commit_member!(s, "image_uids", image_uid; remove = true)
     s
 end
