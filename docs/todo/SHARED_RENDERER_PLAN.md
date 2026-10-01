@@ -173,9 +173,13 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
     it against a NumPy evaluation of the same maths: ≤ 1/255 on the RTX 2000 Ada and on llvmpipe. A
     vertically flipped frame is off by 73, so the check sees orientation. A second frame checks a
     filled label draws its palette row.
-- **Install gate.** CI's Python job sets `CECELIA_REQUIRE_WGPU=1`, so a missing adapter fails rather
-  than skips. Linux gets Mesa lavapipe, macOS uses Metal and Windows uses DX12/WARP. Results per OS:
-  see the PR (#TBD).
+- **Install gate: closed.** CI's Python job sets `CECELIA_REQUIRE_WGPU=1`, so a missing adapter
+  fails rather than skips. On PR #1345 the one-frame render passed (≤ 1/255 vs NumPy) on all three:
+  - Linux: llvmpipe (Vulkan), from Mesa's `mesa-vulkan-drivers`, which CI installs.
+  - macOS: Apple Paravirtual device (Metal).
+  - Windows: Microsoft Basic Render Driver (D3D12 WARP).
+
+  `wgpu` 0.32.0 installed from the lock on each.
 - **Still TS-only:** the LUT bytes (`lutTextureBytes`) and the label palette (`labelPaletteBytes`).
   Phase 2 has to serve both to the host, and already lists the palette.
 
@@ -220,7 +224,7 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
   Phase 2 is the first to bind real labels.
 - **Software-adapter speed:** answered. llvmpipe takes 483 ms/frame at 1186x999, which is usable
   for batch.
-- **Packaging:** Linux is answered. macOS and Windows are a Phase 1 CI check. HPC is out of scope.
+- **Packaging:** answered for Linux, macOS and Windows (Phase 1 CI). HPC is out of scope.
 - **Brick streaming:** does it matter for movies, or can a movie always upload the whole timepoint?
 
 ## Non-goals
