@@ -1,4 +1,5 @@
-"""Git-context helpers shared between recital and the commit hook.
+"""Git-context helpers shared between recital and the commit hook — PR / branch / SHA discovery,
+and the one unified-diff parser (`parse_diff`) the mechanical recital checks build on.
 
 Kept together so a fresh subagent looking for "how does this code discover the current PR"
 finds ONE canonical answer, rather than two copies that could drift on the next change (e.g.
@@ -10,6 +11,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -157,3 +159,71 @@ def git_output(*args: str, cwd: str | None = None) -> str | None:
     except (subprocess.TimeoutExpired, OSError):
         return None
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+#: `@@ -a,b +c,d @@` — only the new-side start matters; `,d` is absent for one-line hunks.
+_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+_FILE_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)$")
+
+
+@dataclass(frozen=True)
+class DiffLine:
+    """One body line of a hunk. `kind` is `+` / `-` / ` `; `lineno` is the new-side line number
+    (None for a removed line)."""
+    kind: str
+    text: str
+    lineno: int | None
+
+
+@dataclass
+class FileDiff:
+    """One file's slice of a unified diff: its path (new side), whether the diff creates or
+    deletes it, and its hunks as ordered line lists."""
+    path: str
+    is_new: bool = False
+    is_deleted: bool = False
+    hunks: list[list[DiffLine]] = field(default_factory=list)
+
+    @property
+    def added(self) -> list[DiffLine]:
+        return [ln for h in self.hunks for ln in h if ln.kind == "+"]
+
+    @property
+    def removed(self) -> list[DiffLine]:
+        return [ln for h in self.hunks for ln in h if ln.kind == "-"]
+
+
+def parse_diff(diff: str) -> list[FileDiff]:
+    """Split a `git diff` into per-file hunks. The one line-level diff parser in the package —
+    recital's mechanical checks build on it rather than regexing the raw text."""
+    files: list[FileDiff] = []
+    cur: FileDiff | None = None
+    new_no = 0
+    in_hunk = False
+    for raw in diff.splitlines():
+        if m := _FILE_HEADER.match(raw):
+            cur = FileDiff(path=m.group(2))
+            files.append(cur)
+            in_hunk = False
+            continue
+        if cur is None:
+            continue
+        if m := _HUNK_HEADER.match(raw):
+            cur.hunks.append([])
+            new_no = int(m.group(1))
+            in_hunk = True
+            continue
+        if not in_hunk:
+            if raw.startswith("new file mode"):
+                cur.is_new = True
+            elif raw.startswith("deleted file mode"):
+                cur.is_deleted = True
+            continue
+        kind, text = raw[:1], raw[1:]
+        if kind == "+" or kind == " ":
+            cur.hunks[-1].append(DiffLine(kind, text, new_no))
+            new_no += 1
+        elif kind == "-":
+            cur.hunks[-1].append(DiffLine(kind, text, None))
+        # `\ No newline at end of file` and anything else: not a body line.
+    return files

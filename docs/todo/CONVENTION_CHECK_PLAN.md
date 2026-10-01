@@ -4,6 +4,8 @@ Status: **DRAFT (2026-09-26)** — plan only, nothing built. Reviewer prompt is 
 
 **Prior-art scope search:** [`docs/ai-assist/DRIFT_DETECTION_PRIOR_ART.md`](../ai-assist/DRIFT_DETECTION_PRIOR_ART.md) — why we didn't adopt drift-analyzer / Revieko / Conclave / AgentSync and what we borrowed.
 
+**Extended 2026-10-01** by [`MAINTAINABILITY_ENFORCEMENT_PLAN.md`](MAINTAINABILITY_ENFORCEMENT_PLAN.md): `should reuse` also covers three type shapes (stringly state, untyped boundary dict, `Union{Nothing,T}` discriminant), and a third, outcome-tagged marker `wrong home` covers misplaced comment content. The live prompt in `docs/ai-assist/CONVENTION_CHECK.md` is current; this plan's copy of it is not.
+
 ## Goal
 
 Catch **convention drift** — when an implementing agent writes a new helper, component, or endpoint that already exists under another name, or a new implementation that skips an existing canonical framework (e.g. building bespoke gating logic instead of reusing `population_utils`, hand-rolling a button instead of using `AppButton`, adding a new zarr accessor instead of going through `zarr_utils`).

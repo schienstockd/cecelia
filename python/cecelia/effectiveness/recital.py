@@ -1,6 +1,7 @@
 """Recital orchestrator — the single entry point for pre-commit reviewer discipline.
 
-Spawns both reviewers (fanout audit + convention check) via `claude -p` subprocess, emits log
+Spawns both reviewers (fanout audit + convention check) via `claude -p` subprocess, runs the two
+mechanical checks (inventory coverage, maintainability lint), emits log
 events atomically with the runs, and produces formatted recital text ready to paste into the
 commit message. Replaces the manual "agent spawns subagents, agent formats, agent emits"
 protocol previously described in `CLAUDE.md` — by centralising the whole thing in code, none
@@ -37,6 +38,7 @@ import time
 import typing as _t
 
 from .inventory_coverage import run_inventory_check
+from .maintainability_lint import run_maintainability_lint
 from .log import append_event
 
 #: Path to each reviewer's spec doc. `claude -p` reads it itself — the reviewer prompt is
@@ -53,12 +55,14 @@ class RecitalError(RuntimeError):
     """
 
 
-#: The two outcome-tag-requiring markers per CLAUDE.md → Git & commits (only these produce
-#: `_finding` rows; `plausible` / `potential duplicate` are surfaced in the recital body but
-#: don't need outcome resolution, so they stay out of the log to keep the pending↔resolution
-#: contract 1:1 with the hook's tag-count check).
-_FANOUT_MARKER = "confirmed"
-_CONVENTION_MARKER = "should reuse"
+#: The outcome-tag-requiring markers per mechanism, per CLAUDE.md → Git & commits (only these
+#: produce `_finding` rows; `plausible` / `potential duplicate` are surfaced in the recital body
+#: but don't need outcome resolution, so they stay out of the log to keep the pending↔resolution
+#: contract 1:1 with the hook's tag-count check). The hook's `_FINDING_MARKERS` is built from this.
+MARKERS: dict[str, tuple[str, ...]] = {
+    "fanout": ("confirmed",),
+    "convention": ("should reuse", "wrong home"),
+}
 
 #: Bullet-line grammar the reviewer prompts ask for:
 #:   `- **file:LINE** — <prose> [**marker**]`
@@ -127,11 +131,14 @@ def _slug(mechanism: str, file: str, line: int, marker: str, desc: str = "") -> 
     return f"{prefix}-{digest}"
 
 
-def _parse_bullet(body: str, mechanism: str, marker: str) -> Finding | None:
-    """Parse one bullet body (text after `- `); None if it doesn't carry `marker`."""
-    tag_re = _marker_tag_re(marker)
-    tags = list(tag_re.finditer(outside_code(body)))
-    if not tags:
+def _parse_bullet(body: str, mechanism: str) -> Finding | None:
+    """Parse one bullet body (text after `- `); None if it carries none of the mechanism's
+    markers. A bullet names one verdict, so the first marker that tags it wins."""
+    for marker in MARKERS[mechanism]:
+        tags = list(_marker_tag_re(marker).finditer(outside_code(body)))
+        if tags:
+            break
+    else:
         return None
     text = body
     for t in reversed(tags):  # cut only the real tags; a quoted one stays in the description
@@ -156,10 +163,9 @@ def _parse_findings(output: str, mechanism: str) -> list[Finding]:
     Every bullet line carrying the mechanism's marker is one finding (see `_BULLET_RE`);
     plausibles, commentary, and short-circuits carry no marker and are ignored. Order-preserving.
     """
-    marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
     findings = []
     for m in _BULLET_RE.finditer(output):
-        f = _parse_bullet(m.group(1), mechanism, marker)
+        f = _parse_bullet(m.group(1), mechanism)
         if f is not None:
             findings.append(f)
     return findings
@@ -169,10 +175,8 @@ def _inject_slugs(output: str, mechanism: str) -> str:
     """Prefix each finding bullet with its slug, so the author can copy it verbatim into a
     `[slug: outcome]` pair. The reviewer's own text is kept as-is (ranges and all). Bullets
     already carrying a slug are skipped by `_BULLET_RE`."""
-    marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
-
     def _sub(m: re.Match) -> str:
-        f = _parse_bullet(m.group(1), mechanism, marker)
+        f = _parse_bullet(m.group(1), mechanism)
         return m.group(0) if f is None else f"- [{f.slug}] {m.group(1)}"
 
     return _BULLET_RE.sub(_sub, output)
@@ -182,8 +186,8 @@ def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding], mechanis
     """Bold marker occurrences that did NOT become a finding — off a bullet line, or in a shape
     the tag pattern doesn't know. Tripwire for the next grammar drift: surfaced in the recital
     body instead of dropping silently."""
-    marker = _FANOUT_MARKER if mechanism == "fanout" else _CONVENTION_MARKER
-    return len(_marker_bold_re(marker).findall(outside_code(output))) - len(findings)
+    bold = sum(len(_marker_bold_re(mk).findall(outside_code(output))) for mk in MARKERS[mechanism])
+    return bold - len(findings)
 
 
 from .git_context import current_branch as _current_branch  # noqa: E402
@@ -396,5 +400,6 @@ def run_recital(
         branch=branch,
     )
     inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
+    lint_section = run_maintainability_lint(diff, pr=pr, commit=commit, branch=branch)
 
-    return f"{fanout_section}\n\n{convention_section}\n\n{inventory_section}"
+    return f"{fanout_section}\n\n{convention_section}\n\n{inventory_section}\n\n{lint_section}"

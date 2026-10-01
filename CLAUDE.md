@@ -315,8 +315,9 @@ Then append the recital body to the commit message. Don't reassure or wait to be
 reservations?".
 
 - **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
-- **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework.
+- **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework, an untyped shape where an enum/struct exists, and comment content in the wrong home (`**wrong home**`, outcome-tagged like `**should reuse**`).
 - **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
+- **Maintainability lint** (mechanical) catches a task file pushed past 200 lines and incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments — `docs/MAINTAINABILITY.md`.
 
 _Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
 
@@ -330,11 +331,15 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
   `docs/API.md` → *Route index* doesn't list. A genuine one-off file opts out with an
   `INVENTORY-EXEMPT: <reason>` comment. See
   `python/cecelia/effectiveness/inventory_coverage.py`.
+- `_Maintainability lint: run_` (or `_run — nothing flagged_` / `_skipped — no source files_`) —
+  mechanical; a load-bearing line opts out with `MAINT-EXEMPT: <reason>`. See
+  `python/cecelia/effectiveness/maintainability_lint.py`.
 
-Missing any of the three tails = that mechanism went dark. Don't reassure or wait to be asked "any
+Missing any of the four tails = that mechanism went dark. Don't reassure or wait to be asked "any
 reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
 (a new helper/component/endpoint that duplicates an existing canonical); the inventory check
-catches a new shared file or route the next session's discovery grep won't find. See
+catches a new shared file or route the next session's discovery grep won't find; the maintainability
+lint catches the file-size and comment-history rules at write time. See
 [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
 **Convention-check is advisory for now**: findings land in the reservations recital and the
@@ -343,8 +348,8 @@ effectiveness log, but do not block a commit. Locked decision #4 in
 FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
 
 **Per-finding outcome tag — required, enforced by a pre-commit hook.** Every `**confirmed**`
-fanout finding and every `**should reuse**` convention finding in the recital must carry an
-outcome tag. Preferred form is the slug-paired `[<slug>: <outcome>]` — copy the slug printed by
+fanout finding and every `**should reuse**` / `**wrong home**` convention finding in the recital
+must carry an outcome tag. Preferred form is the slug-paired `[<slug>: <outcome>]` — copy the slug printed by
 `pixi run recital` verbatim; the hook parses each pair and writes a matching
 `_finding_resolved` row to `~/.cecelia-effectiveness/events.jsonl`, so the effectiveness rollup
 can join it back to the pending `_finding` row and render evidence rather than just counts.

@@ -28,9 +28,10 @@ silently commits over. Fanout audit is the same shape for its own findings.
 
 This hook enforces these gates on a commit whose message carries reviewer findings:
 
-1. **Outcome-tag presence.** For every `**confirmed**` fanout / `**should reuse**` convention
-   finding line, the message must carry an outcome tag from the closed vocabulary —
-   `fixed_pre_commit`, `shipped_with_finding: <reason>`, or `false_positive: <reason>`.
+1. **Outcome-tag presence.** For every `**confirmed**` fanout / `**should reuse**` or
+   `**wrong home**` convention finding line, the message must carry an outcome tag from the
+   closed vocabulary — `fixed_pre_commit`, `shipped_with_finding: <reason>`, or
+   `false_positive: <reason>`.
    Deliberately mechanical text-matching, not semantic judgment: an agent could still write
    `false_positive: reasons` untruthfully; only the disclosure step is checked.
 2. **SHA-anchored real-review.** A findings-carrying commit must have at least one recital
@@ -71,7 +72,7 @@ import sys
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
-from cecelia.effectiveness.recital import outside_code  # noqa: E402
+from cecelia.effectiveness.recital import MARKERS, outside_code  # noqa: E402
 from cecelia.effectiveness.git_context import (  # noqa: E402
     current_branch as _current_branch,
     current_head_sha as _current_head_sha,
@@ -79,8 +80,11 @@ from cecelia.effectiveness.git_context import (  # noqa: E402
     git_output as _git,
 )
 
-#: Every finding line in the recital carries one of these bold markers.
-_FINDING_MARKERS = re.compile(r"\*\*(?:confirmed|should reuse)\*\*")
+#: Every finding line in the recital carries one of these bold markers — built from recital's
+#: `MARKERS`, so a new outcome-tagged marker can't be emitted there and missed here.
+_FINDING_MARKERS = re.compile(
+    r"\*\*(?:" + "|".join(re.escape(m) for ms in MARKERS.values() for m in ms) + r")\*\*"
+)
 
 #: `fixed_pre_commit` stands alone (the fix is in the diff). Every other outcome needs a
 #: colon-prefixed reason, so a bare word appearing in prose or code doesn't count as a tag.
@@ -189,7 +193,7 @@ def check(command: str) -> str | None:
     """Return None if the commit message `command` is allowed; else a human-readable reason.
 
     Two gates:
-    1. **Outcome-tag presence** — every finding marker (`**confirmed**` / `**should reuse**`)
+    1. **Outcome-tag presence** — every finding marker (recital's `MARKERS`)
        needs a matching outcome tag (bare or slug-paired). Duplicate slugs are rejected.
     2. **SHA-anchored real-review** — a findings-carrying commit must have at least one
        recital `_run` row in the effectiveness log with `commit == HEAD-at-hook-time` (i.e.
@@ -225,7 +229,8 @@ def check(command: str) -> str | None:
     if len(findings) > total_outcomes:
         return (
             f"Recital carries {len(findings)} reviewer finding(s) marked "
-            f"**confirmed** / **should reuse** but only {total_outcomes} outcome tag(s). "
+            f"{' / '.join(f'**{m}**' for ms in MARKERS.values() for m in ms)} "
+            f"but only {total_outcomes} outcome tag(s). "
             "Every finding needs one:\n"
             f"{_outcome_help()}\n"
             "Add the outcome tag to each finding line, then retry. "

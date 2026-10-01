@@ -81,6 +81,7 @@ _MECHANISM_STYLE: dict[str, tuple[str, str]] = {
     "sibling_audit": ("fnut", _BLUE),  # pre-rename rows fold under the same header (see rollup.py)
     "convention_check": ("conv", _MAGENTA),
     "inventory_coverage": ("invt", _CYAN),
+    "maintainability_lint": ("mlnt", _CYAN),
     "citation_currency": ("cite", _CYAN),  # retired check — old log rows still render
     "ratchet_hit": ("ratc", _YELLOW),
     "claude_md_eval": ("cmd ", _GREY),
@@ -122,6 +123,7 @@ def _colour_for_label(label: str) -> str:
 _MARKER_COLOUR: dict[str, str] = {
     "confirmed": _ORANGE,              # warning semantic — reviewer confirms; act on it
     "should reuse": _YELLOW,           # attention semantic — reviewer suggests a better path
+    "wrong home": _YELLOW,             # attention semantic — content belongs in another doc
     "plausible": _YELLOW,              # sibling-audit legacy marker; keep tolerant
 }
 _OUTCOME_COLOUR: dict[str, str] = {
@@ -535,6 +537,7 @@ def _wrap_desc(desc: str, *, width: int, indent: str, first_prefix: str) -> str:
 #: on the console row). `citation_currency_run` is the retired check — kept so old rows render.
 _MECHANICAL_RUN_COUNT: dict[str, tuple[str, str]] = {
     "inventory_coverage_run": ("new_shared_files", "new"),
+    "maintainability_lint_run": ("files_checked", "checked"),
     "citation_currency_run": ("staged_files_checked", "staged"),
 }
 

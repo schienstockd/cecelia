@@ -26,6 +26,7 @@ import time
 import typing as _t
 from pathlib import Path
 
+from .git_context import parse_diff
 from .git_context import repo_root as _repo_root
 from .log import append_event
 
@@ -55,11 +56,8 @@ _NOT_SHARED = re.compile(r"(\.test\.|\.spec\.|\.d\.ts$|/tests?/|/test_[^/]*$|/__
 _INVENTORY_DOCS_GLOB = "docs/inventory/*.md"
 _EXTRA_INVENTORY_DOCS = ("INVENTORY.md", "docs/ui/PRIMITIVES.md")
 
-#: A file the diff adds: `diff --git a/X b/X` followed (before the next header) by `new file mode`.
-_NEW_FILE = re.compile(r"^diff --git a/\S+ b/(\S+)\n(?:(?!diff --git ).*\n)*?new file mode", re.MULTILINE)
-
-#: A route the diff ADDS to the router table: `+    "/api/x/y" => (req, body_bytes) -> …`.
-_NEW_ROUTE = re.compile(r'^\+\s*"(/api/[^"\s]+)"\s*=>', re.MULTILINE)
+#: A route an added line puts in the router table: `    "/api/x/y" => (req, body_bytes) -> …`.
+_NEW_ROUTE = re.compile(r'^\s*"(/api/[^"\s]+)"\s*=>')
 _ROUTE_DOC = "docs/API.md"
 
 #: Opt-out for a genuine one-off, same shape as `# COHORT-EXEMPT:` / `# DASK-OK:` elsewhere.
@@ -70,17 +68,13 @@ _TITLE = "Inventory check"
 
 def new_files_from_diff(diff: str) -> list[str]:
     """Repo-relative paths the diff creates, in diff order."""
-    return _NEW_FILE.findall(diff)
+    return [fd.path for fd in parse_diff(diff) if fd.is_new]
 
 
 def exempt_files_from_diff(diff: str) -> set[str]:
     """New files whose added lines carry an `INVENTORY-EXEMPT: <reason>` marker."""
-    exempt: set[str] = set()
-    for block in re.split(r"^(?=diff --git )", diff, flags=re.MULTILINE):
-        m = _NEW_FILE.match(block)
-        if m and any(_EXEMPT_MARKER.search(ln) for ln in block.splitlines() if ln.startswith("+")):
-            exempt.add(m.group(1))
-    return exempt
+    return {fd.path for fd in parse_diff(diff)
+            if fd.is_new and any(_EXEMPT_MARKER.search(ln.text) for ln in fd.added)}
 
 
 def area_doc_for(path: str) -> str | None:
@@ -120,7 +114,8 @@ def is_named(path: str, inventory_text: str) -> bool:
 def new_routes_from_diff(diff: str) -> list[str]:
     """Routes the diff adds to the router table, deduped, in diff order. A route moved within the
     table shows as `-` + `+` and still counts — harmless, because a documented one isn't flagged."""
-    return list(dict.fromkeys(_NEW_ROUTE.findall(diff)))
+    added = (_NEW_ROUTE.match(ln.text) for fd in parse_diff(diff) for ln in fd.added)
+    return list(dict.fromkeys(m.group(1) for m in added if m))
 
 
 #: A backticked path using brace shorthand for siblings: `` `/api/sets/{create,rename,delete}` ``.
