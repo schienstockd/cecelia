@@ -368,8 +368,8 @@ describe('brickViewportFromCamera', () => {
   })
 
   it('centreUm follows pan — the scheduler tracks what the shader draws', () => {
-    // brickShader.ts:87: c.ro = c.fwd * dist + c.right * panX + c.up * panY. With yaw=0 pitch=0
-    // basis, `c.up = cross(right, fwd) = (0, -1, 0)`. So the aim point shifts by (panX, -panY)
+    // shaders/brick_common.wgsl camera(): c.ro = c.fwd * dist + c.right * panX + c.up * panY. With
+    // yaw=0 pitch=0 basis, `c.up = cross(right, fwd) = (0, -1, 0)`. So the aim point shifts by (panX, -panY)
     // in world; in scheduler world (origin at (ex/2, ey/2, ez/2)) that lands at
     // (ex/2 + panX, ey/2 - panY, ez/2). The Y sign is what matters — first cut had `+ panY` and
     // the top half of the canvas fetched a mirrored y-region on pan (screenshot

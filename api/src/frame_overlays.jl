@@ -1,8 +1,8 @@
 # ── frame_overlays.jl — CPU-side overlay drawing for the offline renderer (WEB_VIEWER_PLAN.md → P5) ─
 #
 # Points, tracks and mask outlines rasterised onto an `RGB{N0f8}` frame. The browser draws these
-# through WebGPU (`viewerOverlays.ts`, `mipShader.ts`); a recorded movie has to draw the same content
-# with the same MEANING or a movie of a gated experiment plays as pixels only — the annotations that
+# through WebGPU (`viewerOverlays.ts`, `shaders/mip_points.wgsl`); a recorded movie has to draw the
+# same content with the same MEANING or a movie of a gated experiment plays as pixels only — the annotations that
 # make the pixels a result do not survive the recording.
 #
 # **These are drawing primitives, not overlay AUTHORS.** The caller resolves which cells belong to

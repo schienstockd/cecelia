@@ -250,7 +250,7 @@ export function brickViewportFromCamera(
   const [ex, ey, ez] = extentUm(meta, zDepth)
   const halfH = Math.max(1e-3, cam.dist * VIEW_HALF_ANGLE)
   const halfW = halfH * Math.max(aspect, 1e-3)
-  // Pan shifts the CENTRE of what the shader draws. `brickShader.ts` line 87:
+  // Pan shifts the CENTRE of what the shader draws. `shaders/brick_common.wgsl`, `camera()`:
   // `c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y`, and `c.up = cross(right, fwd)`
   // — for the default `yaw=0 pitch=0` basis (`fwd=(0,0,1)`, `right=(1,0,0)`) that resolves to
   // `up = (0, -1, 0)`. So `up * panY` shifts world by `-panY` in Y, not `+panY`. Aim point in

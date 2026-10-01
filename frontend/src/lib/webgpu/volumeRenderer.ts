@@ -26,7 +26,7 @@
 // 6x render cost, silently. WEB_VIEWER_PLAN.md decision 3. The check is shared with the Settings
 // diagnostic in `utils/webgpuProbe.ts` — one place, so a second consumer cannot forget the trap.
 
-import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL, MIP_PICK_BINDING } from './mipShader'
+import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL, MIP_PICK_BINDING, MIP_LAYOUT } from './mipShader'
 import { PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer } from '../../utils/viewerLabels'
 import {
   MAX_CHANNELS, LUT_STOPS, lutTextureBytes, extentUm,
@@ -40,14 +40,12 @@ import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
-const UNIFORM_BYTES = 7 * 16 + MAX_CHANNELS * 16
-/** Float index of channel slot 0 — seven vec4s in. Written out because getting it wrong shifts every
- *  channel's contrast window by one slot, which renders as the wrong channel being bright. */
-const CH0 = 28
-/** Float index of the labels vec4 (opacity, contourPx, LABEL_PALETTE_N). Named because the harness
- *  reads it — a NEW leading vec4 added AFTER this one shifts everything downstream and used to be
- *  silent (labels wrote into pan.x/pan.y and nothing drew). See `docs/todo/spike/webgpu/shader_check.mjs`. */
-const LAB0 = 20
+const UNIFORM_BYTES = MIP_LAYOUT.bytes
+/** f32 slot of every uniform lane, by name (`shaders/uniforms.json` → "mip"). Slots are never written
+ *  as numbers: a NEW leading vec4 shifts everything after it, and a hand-kept index then writes, say,
+ *  the labels into pan.x/pan.y and nothing draws. The layout test checks the names against the
+ *  shader's struct. */
+const U = MIP_LAYOUT.at
 /** Label ids are UInt32 on disk and `r32uint` on the GPU. Anything narrower is widened client-side
  *  (`utils/viewerLabels.ts`) rather than given a second texture format. */
 const LABEL_BPV = 4
@@ -718,10 +716,10 @@ export async function createVolumeRenderer(
     )
     for (let c = 0; c < MAX_CHANNELS; c++) {
       const ch = channels[c]
-      const o = CH0 + c * 4
-      u[o] = ch ? ch.lo : 0
-      u[o + 1] = ch ? ch.hi : 1
-      u[o + 2] = ch && ch.visible ? 1 : 0
+      const o = c * 4
+      u[U.ch.lo + o] = ch ? ch.lo : 0
+      u[U.ch.hi + o] = ch ? ch.hi : 1
+      u[U.ch.visible + o] = ch && ch.visible ? 1 : 0
     }
   }
 
@@ -771,15 +769,15 @@ export async function createVolumeRenderer(
       // Extent is the PHYSICAL box (µm), not the pixel grid — a coarser level is the SAME 3.3 mm image
       // at fewer voxels, so `extentUm` stays on `m.nX`/`m.nY`. Only the texture dimensions shrink.
       const [ex, ey, ez] = extentUm(m, depth)
-      u[8] = ex; u[9] = ey; u[10] = ez
+      u[U.ext.x] = ex; u[U.ext.y] = ey; u[U.ext.z] = ez
       // ext.w — where the loaded slab STARTS up the stack, in µm. Overlay coordinates are absolute, so
       // without this a cropped 3D view would draw them against a box that no longer begins at zero.
-      u[11] = Math.max(0, zLo) * (m.voxelUm[2] || 1)
+      u[U.ext.zOriginUm] = Math.max(0, zLo) * (m.voxelUm[2] || 1)
       // dims.z is ONE channel's own depth, not the stacked height: the ray marches one channel's box
       // and the shader offsets by `c * zpc` to reach the others. Using the stacked height here squashes
       // every channel into 1/nch of the volume — a render that looks like a thin slab of real data.
-      u[12] = renderNX; u[13] = renderNY; u[14] = depth; u[15] = depth
-      u[4] = nch
+      u[U.dims.nx] = renderNX; u[U.dims.ny] = renderNY; u[U.dims.nz] = depth; u[U.dims.zPerChannel] = depth
+      u[U.vp.nch] = nch
       setChannels(m.channels)
     },
 
@@ -926,10 +924,10 @@ export async function createVolumeRenderer(
     get cache() { return { capacity, bytesPerTimepoint, zDepth: depth } },
 
     setCamera(cam: OrbitCamera) {
-      u[0] = cam.yaw; u[1] = cam.pitch; u[2] = cam.dist
+      u[U.cam.yaw] = cam.yaw; u[U.cam.pitch] = cam.pitch; u[U.cam.dist] = cam.dist
       // The pan rides the camera rather than being a separate setter: it IS camera state, and a second
       // entry point is a second thing to forget on the frame path.
-      u[24] = cam.panX || 0; u[25] = cam.panY || 0
+      u[U.pan.x] = cam.panX || 0; u[U.pan.y] = cam.panY || 0
     },
 
     setChannels,
@@ -937,7 +935,7 @@ export async function createVolumeRenderer(
     // 2D wants exactly ONE step: with a one-plane box the single sample lands on the box midpoint,
     // which is that plane. So the floor is 1, not 16.
     setSteps(n: number) { steps = Math.max(1, Math.round(n)) },
-    setOrthographic(on: boolean) { u[7] = on ? 1 : 0 },
+    setOrthographic(on: boolean) { u[U.vp.ortho] = on ? 1 : 0 },
     setZPlane(zLo: number) {
       // Fast plane switch (2D plane view). `setImage` would `dropAll` every cached texture and
       // reallocate — measured 200+ ms of sync main-thread work on Dml3RG with Keep=all (181
@@ -948,7 +946,7 @@ export async function createVolumeRenderer(
       // textures age out lazily via `dropSlot` inside uploadFrame's re-upload path — no
       // upfront destroy loop.
       if (!meta || !usable()) return
-      u[11] = Math.max(0, zLo) * (meta.voxelUm[2] || 1)
+      u[U.ext.zOriginUm] = Math.max(0, zLo) * (meta.voxelUm[2] || 1)
       pushUniforms()
       planeVersion++
       // The currently-drawn slot is now stale — release the bind group so the next `draw` sees
@@ -977,12 +975,12 @@ export async function createVolumeRenderer(
                    planeLo: number, planeHi = planeLo, borderPx = 0) {
       pointFirst = Math.max(0, Math.floor(first))
       pointCount = Math.max(0, Math.floor(count))
-      u[16] = Math.max(1, sizePx)
-      u[17] = planeLo
-      u[19] = Math.max(planeLo, planeHi)
-      // Piggy-backs on the labels vec4's unused .w slot — see SHARED_WGSL in `mipShader.ts`. Zero
+      u[U.ov.pointPx] = Math.max(1, sizePx)
+      u[U.ov.planeLo] = planeLo
+      u[U.ov.planeHi] = Math.max(planeLo, planeHi)
+      // Piggy-backs on the labels vec4's unused .w slot — see `shaders/mip_common.wgsl`. Zero
       // keeps the point shader on its pre-border path (same fragment output as before).
-      u[LAB0 + 3] = Math.max(0, borderPx)
+      u[U.lab.pointBorderPx] = Math.max(0, borderPx)
     },
 
     setOverlaySegments(data: Float32Array) {
@@ -1002,18 +1000,18 @@ export async function createVolumeRenderer(
                           planeLo: number, planeHi = planeLo) {
       segFirst = Math.max(0, Math.floor(first))
       segCount = Math.max(0, Math.floor(count))
-      u[18] = Math.max(1, widthPx)
+      u[U.ov.tailPx] = Math.max(1, widthPx)
       // Segments' own plane bounds live in pan.z / pan.w — see SEGMENTS_WGSL. Points' bounds stay
       // on ov.y / ov.w so widening the tail's z-reach doesn't drag the points into planes they
       // don't belong on.
-      u[26] = planeLo
-      u[27] = Math.max(planeLo, planeHi)
+      u[U.pan.ribbonLo] = planeLo
+      u[U.pan.ribbonHi] = Math.max(planeLo, planeHi)
     },
 
     setLabelStyle(opacity: number, contourPx: number) {
-      u[LAB0] = Math.max(0, Math.min(1, opacity))
-      u[LAB0 + 1] = Math.max(0, Math.round(contourPx))
-      u[LAB0 + 2] = LABEL_PALETTE_N
+      u[U.lab.opacity] = Math.max(0, Math.min(1, opacity))
+      u[U.lab.contourPx] = Math.max(0, Math.round(contourPx))
+      u[U.lab.paletteRows] = LABEL_PALETTE_N
     },
 
     setPickSet(labels: readonly number[], focusId?: number, contourPx?: number) {
@@ -1039,8 +1037,8 @@ export async function createVolumeRenderer(
       const buf = device.createBuffer({ size: N * N * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
       // The probe is square, so tell the shader that — `aspect` comes from these two and a stretched
       // aspect would frame the volume differently from what is on screen.
-      const [w, h] = [u[5], u[6]]
-      u[5] = N; u[6] = N
+      const [w, h] = [u[U.vp.canvasW], u[U.vp.canvasH]]
+      u[U.vp.canvasW] = N; u[U.vp.canvasH] = N
       pushUniforms()
       const enc = device.createCommandEncoder()
       const pass = enc.beginRenderPass({
@@ -1054,7 +1052,7 @@ export async function createVolumeRenderer(
       enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: N * 4 }, [N, N])
       device.queue.submit([enc.finish()])
       // Put the real canvas size back before anything else draws.
-      u[5] = w; u[6] = h
+      u[U.vp.canvasW] = w; u[U.vp.canvasH] = h
       pushUniforms()
       try {
         await buf.mapAsync(GPUMapMode.READ)
@@ -1076,10 +1074,10 @@ export async function createVolumeRenderer(
 
     uniformState() {
       return {
-        dist: u[2], ext: [u[8], u[9], u[10]] as [number, number, number],
-        pan: [u[24], u[25]] as [number, number],
-        steps: u[3], ortho: u[7] > 0.5, nch: u[4],
-        canvas: [u[5], u[6]] as [number, number],
+        dist: u[U.cam.dist], ext: [u[U.ext.x], u[U.ext.y], u[U.ext.z]] as [number, number, number],
+        pan: [u[U.pan.x], u[U.pan.y]] as [number, number],
+        steps: u[U.cam.steps], ortho: u[U.vp.ortho] > 0.5, nch: u[U.vp.nch],
+        canvas: [u[U.vp.canvasW], u[U.vp.canvasH]] as [number, number],
       }
     },
 
@@ -1108,8 +1106,8 @@ export async function createVolumeRenderer(
 
     draw() {
       if (!usable() || !bindGroup) return
-      u[3] = steps
-      u[5] = canvas.width; u[6] = canvas.height
+      u[U.cam.steps] = steps
+      u[U.vp.canvasW] = canvas.width; u[U.vp.canvasH] = canvas.height
       pushUniforms()
       const enc = device.createCommandEncoder()
       const pass = enc.beginRenderPass({

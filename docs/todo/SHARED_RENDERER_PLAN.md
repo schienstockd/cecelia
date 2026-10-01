@@ -1,7 +1,8 @@
 # Shared renderer — the viewer's shaders draw the movies too
 
-**Status:** parked (2026-10-01).
-- **Phase 0 passed on Linux** (see Phase 0 → Result). **Phase 1 is next.**
+**Status:** in progress (2026-10-01).
+- **Phase 0 passed on Linux** (see Phase 0 → Result).
+- **Phase 1 built** on `feat/shared-renderer-p1` (see Phase 1 → Result). **Phase 2 is next.**
 - **Committed scope is Phases 1–2.** Phases 3–5 are decided only after Phase 2 ships (see *Scope*).
 
 Supersedes [`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay")
@@ -138,6 +139,45 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
   The exporter's hand-mirrored slot writes are the list Decision 3's field table replaces.
 - **Close the install gate.** Run the `wgpu` install and a one-frame render in CI on macOS (Metal)
   and Windows (DX12/Vulkan).
+
+**Result (2026-10-01): built.**
+
+- **The shaders are files.** `frontend/src/lib/webgpu/shaders/`: `mip.wgsl`, `mip_points.wgsl`,
+  `mip_segments.wgsl`, `mip_common.wgsl` (struct + camera), `tile.wgsl`, `brick.wgsl`,
+  `brick_multi.wgsl`, `brick_points.wgsl`, `brick_segments.wgsl`, `brick_common.wgsl`, `pick.wgsl`,
+  plus `constants.json`. The reasoning comments moved with the code; `mipShader.ts`, `tileShader.ts`
+  and `brickShader.ts` now only expand.
+- **One expander per language, two rules.** `#include "x.wgsl" [NAME=VALUE]` and `${NAME}`.
+  - TS: `wgslExpand.ts` (pure, Node can run it) behind `shaderSource.ts` (Vite `?raw`).
+  - Python: `python/cecelia/utils/wgsl_utils.py`.
+  - Both pass the same hand-derived cases in `shaders/golden.json`.
+- **Browser behaviour unchanged.** All 11 shader strings the renderers compile were snapshotted
+  before the move (MIP/points/segments, tile, brick N = 1–4 + its overlays). After it, the code is
+  identical with comments stripped and whitespace normalised; only
+  the header comments moved. Frontend suite green.
+- **Brick multi-atlas** keeps its generated parts in TS (`ATLAS_DECLS`, the switch arms, the shifted
+  bindings are passed as variables). Nothing server-side needs it before Phase 5.
+- **Uniform layout as data (Decision 3).** `shaders/uniforms.json` names every lane of the
+  `mip`, `tile` and `brick` blocks. `volumeRenderer.ts` and `tileRenderer.ts` write `u[U.cam.dist]`
+  and so on, with no numeric slots left. `BU` in `brickShader.ts` is derived from the same table.
+  - `shaderSource.test.ts` parses each struct out of its `.wgsl` and checks the fields, order and
+    types against the table. Swapping two fields fails it.
+  - The golden pins hand-derived slots, e.g. `ch[3].hi` = 41 and `prevGrid.valid` = 43, for both
+    languages.
+- **Python host.** `python/cecelia/utils/wgpu_host.py` (`MipHost`) uploads volume, LUT, palette and
+  labels in the viewer's formats and renders `mip.wgsl` to `rgba8unorm-srgb`.
+  - **Real data:** re-running Phase 0's fXgbTl frame through `MipHost` with lanes packed by name
+    reproduces the Phase 0 frame exactly (max |Δ| 0). The exporter now packs by name, and its
+    uniforms come out identical.
+  - **Synthetic (CI):** `test_wgsl_utils.py` renders a 16x12x6 two-channel volume face-on and checks
+    it against a NumPy evaluation of the same maths: ≤ 1/255 on the RTX 2000 Ada and on llvmpipe. A
+    vertically flipped frame is off by 73, so the check sees orientation. A second frame checks a
+    filled label draws its palette row.
+- **Install gate.** CI's Python job sets `CECELIA_REQUIRE_WGPU=1`, so a missing adapter fails rather
+  than skips. Linux gets Mesa lavapipe, macOS uses Metal and Windows uses DX12/WARP. Results per OS:
+  see the PR (#TBD).
+- **Still TS-only:** the LUT bytes (`lutTextureBytes`) and the label palette (`labelPaletteBytes`).
+  Phase 2 has to serve both to the host, and already lists the palette.
 
 ### Phase 2 — 3D movies on the shared shader
 

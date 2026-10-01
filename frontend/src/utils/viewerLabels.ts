@@ -13,6 +13,8 @@
 // surface along the ray rather than a maximum, which is the only reading of "the label you can see".
 
 import { distinctColors } from '../plots/plot'
+import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
+import { expandWgsl } from '../lib/webgpu/shaderSource'
 
 /** the viewer's `add_labels` default, kept so a mask reads the same in both viewers. */
 export const LABEL_OPACITY = 0.7
@@ -95,10 +97,10 @@ export function labelBpv(header: string | null): number {
 // two orders of magnitude of headroom at 8 KB. When (if) a real store exceeds this, resize the
 // buffer rather than raising — the renderer would rebind the whole layout.
 
-/** Maximum label id the pick bitset can carry. */
-export const PICK_BITSET_CAPACITY = 65_536
+/** Maximum label id the pick bitset can carry (`shaders/constants.json` — the shader reads it too). */
+export const PICK_BITSET_CAPACITY = SHADER_CONSTANTS.PICK_BITSET_CAPACITY
 /** UInt32 words in the pick bitset — `PICK_BITSET_CAPACITY / 32`. */
-export const PICK_BITSET_WORDS = PICK_BITSET_CAPACITY / 32
+export const PICK_BITSET_WORDS = SHADER_CONSTANTS.PICK_BITSET_WORDS
 /** Four-word header ahead of the bitset: `focusId, contourPx, reserved, reserved`. Standard
  *  scalar-layout for a storage-buffer struct; keeps the whole feature in ONE binding. */
 export const PICK_BUFFER_HEADER_WORDS = 4
@@ -154,29 +156,12 @@ export function pickBufferHas(buf: Uint32Array, id: number): boolean {
 export function pickBufferFocus(buf: Uint32Array): number { return buf[0] | 0 }
 
 /**
- * WGSL snippet declaring the pick storage buffer + `labInPick(id)` / `labIsFocus(id)` /
- * `labPickContourPx()` helpers. Included by BOTH the flat (`mipShader.ts`) and brick
- * (`brickShader.ts`) label passes. The caller supplies its own `@binding(N)` number — flat uses
+ * WGSL snippet (`shaders/pick.wgsl`) declaring the pick storage buffer + `labInPick(id)` /
+ * `labIsFocus(id)` / `labPickContourPx()` helpers. `#include`d by BOTH the flat (`mip.wgsl`) and
+ * brick (`brick*.wgsl`) label passes. The caller supplies its own `@binding(N)` number — flat uses
  * 5, brick uses 7. Nothing here reads from `p.*` — this is the ENTIRE pick-highlight surface, so
  * the two renderers' uniform structs stay untouched.
  */
 export function pickBufferWgsl(binding: number): string {
-  return `
-struct PickData {
-  focus:    u32,
-  contour:  u32,
-  reserved0: u32,
-  reserved1: u32,
-  bits:     array<u32, ${PICK_BITSET_WORDS}>,
-};
-@group(0) @binding(${binding}) var<storage, read> pick: PickData;
-
-fn labInPick(id: u32) -> bool {
-  if (id == 0u || id >= ${PICK_BITSET_CAPACITY}u) { return false; }
-  let w = pick.bits[id >> 5u];
-  return (w & (1u << (id & 31u))) != 0u;
-}
-fn labIsFocus(id: u32) -> bool { return id != 0u && id == pick.focus; }
-fn labPickContourPx() -> i32 { return i32(pick.contour); }
-`
+  return expandWgsl('pick.wgsl', { PICK_BINDING: binding })
 }

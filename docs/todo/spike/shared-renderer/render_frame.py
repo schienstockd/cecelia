@@ -1,5 +1,5 @@
 """SHARED_RENDERER_PLAN Phase 0: render ONE viewer frame headlessly with wgpu-py, running the viewer's
-own MIP shader (`mipShader.ts`) on the uniforms/LUT/palette that `export_inputs.test.ts` produces from
+own MIP shader (`shaders/mip.wgsl`, via `mipShader.ts`) on the uniforms/LUT/palette that `export_inputs.test.ts` produces from
 the viewer's own TS. Nothing here re-implements drawing; it only uploads.
 
     python render_frame.py prep   <project_dir> <image_uid> <movie_key> <t> <out_dir>

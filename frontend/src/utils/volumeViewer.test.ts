@@ -216,7 +216,7 @@ describe('orbit camera', () => {
   it('with a cursor anchor, keeps the world point under the pointer fixed (ImageJ)', () => {
     // World point at the cursor before the zoom must equal the world point at the same cursor
     // after — the pointer should feel glued to whatever it was over. Formula matches the SHADER
-    // (`tileShader.ts`): ndcX = (wx - panX) / halfW, ndcY = -(wy + panY) / halfH, so
+    // (`shaders/tile.wgsl`): ndcX = (wx - panX) / halfW, ndcY = -(wy + panY) / halfH, so
     //   wx = panX + ndcX*halfW,  wy = -panY - ndcY*halfH.
     // Panning both non-zero so the wrong sign would show — the first shipped version was
     // consistent with itself at panX = panY = 0 but mirrored the cursor across the origin

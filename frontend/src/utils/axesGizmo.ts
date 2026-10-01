@@ -2,8 +2,8 @@
 // SFC can draw a small "which way am I looking" triad in the canvas corner. Volume mode only:
 // the plane view already has north-up-image-as-shown, and does not need it.
 //
-// The basis is derived FROM `lib/webgpu/mipShader.ts`'s `camera()` fn, verbatim — same yaw/pitch
-// convention, same handedness (`up = cross(right, fwd)`, `fwd = (cp*sy, sp, cp*cy)`). Anything else
+// The basis is derived FROM `lib/webgpu/shaders/mip_common.wgsl`'s `camera()` fn, verbatim — same
+// yaw/pitch convention, same handedness (`up = cross(right, fwd)`, `fwd = (cp*sy, sp, cp*cy)`). Anything else
 // and the gizmo would disagree with the pixels: the user would rotate the volume and the arrows
 // would drift off. Golden values in the test are cross-checked against those two expressions.
 
