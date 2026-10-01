@@ -84,7 +84,9 @@ _BACKTICK_ROOTED_PATH = re.compile(
 #: backticked paths (e.g. `python/cecelia/analysis_scratch/read_track_speed.py`) are aspirational
 #: (where the agent SHOULD write the file), not existing pointers to resolve. See
 #: `docs/todo/CLAUDE_MD_EVAL_PLAN.md` for the runner and rationale.
-_SKIP_DIRS = ('docs/archive/', 'scripts/claude_md_eval/prompts/')
+#: `docs/ai-assist/eval-runs/` holds rendered eval run records: they quote agent diffs and traces as
+#: they were, so their paths go stale by design (`docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md`).
+_SKIP_DIRS = ('docs/archive/', 'scripts/claude_md_eval/prompts/', 'docs/ai-assist/eval-runs/')
 #: This file itself: the docstring above has to spell out the pointer shapes being checked
 #: (`docs/todo/X_PLAN.md`, `CLAUDE.md` -> *Section*), and every one of them is a placeholder.
 #: It flagged itself the moment it was staged, which is at least evidence the matcher works.

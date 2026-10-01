@@ -129,6 +129,12 @@ def _mechanism_of(event: str) -> tuple[str, str]:
 _LABEL_COLOUR: dict[str, str] = {label.strip(): colour for label, colour in _MECHANISM_STYLE.values()}
 
 
+def _is_finding(event: str) -> bool:
+    """A finding row — outcome-tagged `_finding` or advisory `_advisory` (plausible /
+    potential duplicate). Both render in the findings pane; only `_finding` carries a slug."""
+    return event.endswith(("_finding", "_advisory"))
+
+
 def _colour_for_label(label: str) -> str:
     return _LABEL_COLOUR.get(label.strip(), _GREY)
 
@@ -145,7 +151,8 @@ _MARKER_COLOUR: dict[str, str] = {
     "confirmed": _ORANGE,              # warning semantic — reviewer confirms; act on it
     "should reuse": _YELLOW,           # attention semantic — reviewer suggests a better path
     "wrong home": _YELLOW,             # attention semantic — content belongs in another doc
-    "plausible": _YELLOW,              # sibling-audit legacy marker; keep tolerant
+    "plausible": _YELLOW,              # advisory — fanout fit unverified
+    "potential duplicate": _YELLOW,    # advisory — convention fit unverified
 }
 _OUTCOME_COLOUR: dict[str, str] = {
     "fixed_pre_commit": _GREEN,
@@ -306,7 +313,7 @@ class _Tally:
         elif name.endswith("_finding_resolved"):
             outcome = payload.get("outcome", "unresolved")
             self.resolved.setdefault(key, {})[outcome] = self.resolved.get(key, {}).get(outcome, 0) + 1
-        elif name.endswith("_finding"):
+        elif _is_finding(name):
             marker = payload.get("marker", "?")
             self.findings.setdefault(key, {})[marker] = self.findings.get(key, {}).get(marker, 0) + 1
         elif name == "ratchet_hit":
@@ -376,7 +383,7 @@ class DashboardState:
         # Only push to the event pane if the event has a renderable line (i.e. not a meta row
         # `format_event` would drop). Otherwise the pane fills with invisible rows — the same
         # noise reduction reason `format_event` returns None on those.
-        if event.get("event", "").endswith("_finding"):
+        if _is_finding(event.get("event", "")):
             self.findings.append(event)
         self.events.append(event)
         self.last_event_ts = event.get("ts") or self.last_event_ts
@@ -540,7 +547,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
         for e in reversed(state.events):
             if shown >= activity_budget:
                 break
-            if e.get("event", "").endswith("_finding"):
+            if _is_finding(e.get("event", "")):
                 row = _finding_head_line(e, use_colour=use_colour)
             else:
                 rendered = format_event(e, use_colour=use_colour, width=width - 2)
@@ -603,7 +610,7 @@ def format_event(event: dict, *, use_colour: bool = True,
     def _verb(v: str) -> str:
         return _col(_BOLD, v.ljust(_VERB_WIDTH), use_colour=use_colour)
 
-    if name.endswith("_finding"):
+    if _is_finding(name):
         marker = payload.get("marker", "?")
         marker_col = _MARKER_COLOUR.get(marker, _YELLOW)
         marker_str = _col(marker_col, f"[{marker}]", use_colour=use_colour)
