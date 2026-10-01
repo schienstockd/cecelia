@@ -30,7 +30,7 @@ import threading
 import time
 import unittest
 
-from cecelia.effectiveness import append_event
+from cecelia.effectiveness import append_event, console
 from cecelia.effectiveness.console import (
     DashboardState,
     _parse_since,
@@ -678,11 +678,68 @@ class DashboardTest(unittest.TestCase):
             })
         state = self._state_with(events)
         # The state itself bounds — the render just walks whatever's in the deque.
-        self.assertLessEqual(len(state.findings), 6)
+        self.assertLessEqual(len(state.findings), console._MAX_FINDINGS)
         out = render_dashboard(state, pathlib.Path("/tmp/x"), width=120, use_colour=False)
         # Newest survives, oldest evicted.
         self.assertIn("finding 19", out)
         self.assertNotIn("finding 0 ", out)
+
+    def test_extra_height_goes_to_findings_not_activity(self):
+        # A taller terminal unfolds the findings' descriptions; the activity pane stays at
+        # `_ACTIVITY_ROWS` instead of soaking up the extra rows.
+        events = [{
+            "event": "fanout_audit_run", "ts": f"2026-09-27T10:{i:02d}:00Z",
+            "payload": {"duration_s": 1.0}, "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+        } for i in range(30)]
+        events += [{
+            "event": "fanout_audit_finding", "ts": f"2026-09-27T11:0{i}:00Z",
+            "payload": {"slug": f"f{i}", "file": "x.py", "line": i,
+                        "desc": " ".join(f"word{j}" for j in range(200)) + f" END{i}",
+                        "marker": "confirmed"},
+            "pr": None, "branch": None, "commit": None,
+            "session": "s", "source": "live", "schema_version": 1,
+        } for i in range(2)]
+        state = self._state_with(events)
+
+        def panes(h):
+            lines = render_dashboard(state, pathlib.Path("/tmp/x"), width=100, height=h,
+                                     use_colour=False).splitlines()
+            act = next(i for i, ln in enumerate(lines) if ln.startswith("── activity"))
+            return "\n".join(lines[:act]), lines[act + 1:]
+
+        short_findings, short_activity = panes(40)
+        tall_findings, tall_activity = panes(70)
+        self.assertEqual(len(short_activity), console._ACTIVITY_ROWS)
+        self.assertEqual(len(tall_activity), console._ACTIVITY_ROWS)
+        self.assertNotIn("END1", short_findings)  # capped with `…` at 40 rows
+        self.assertIn("END0", tall_findings)       # both descriptions in full at 70
+        self.assertIn("END1", tall_findings)
+
+    def test_single_row_lines_clip_instead_of_wrapping(self):
+        # A long `file:line` + branch ref used to wrap onto a second terminal row; activity
+        # rows and finding head lines are one line each, cut to the width with `…`.
+        events = [{
+            "event": "fanout_audit_finding", "ts": "2026-09-27T11:00:00Z",
+            "payload": {"slug": "f0", "file": "frontend/src/components/" + "x" * 60 + ".vue",
+                        "line": 21, "desc": "d", "marker": "confirmed"},
+            "pr": None, "branch": "eval-setup-findings", "commit": "9a05fa4",
+            "session": "s", "source": "live", "schema_version": 1,
+        }]
+        for use_colour in (False, True):
+            out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/" + "p" * 80),
+                                   width=80, use_colour=use_colour)
+            lines = out.splitlines()
+            self.assertTrue(all(len(console._ANSI_RE.sub("", ln)) <= 80 for ln in lines))
+            act = next(i for i, ln in enumerate(lines) if "── activity" in ln)
+            head = next(i for i, ln in enumerate(lines) if "── recent findings" in ln) + 1
+            for i in (act + 1, head):  # activity row + the findings pane's head line
+                row = console._ANSI_RE.sub("", lines[i])
+                self.assertEqual(len(row), 80)
+                self.assertTrue(row.endswith("…"))
+
+    def test_clip_leaves_short_lines_alone(self):
+        self.assertEqual(console._clip("\x1b[1mabc\x1b[0m", 10), "\x1b[1mabc\x1b[0m")
 
 
 class MechanicalRunVisibilityTest(unittest.TestCase):

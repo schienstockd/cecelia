@@ -72,6 +72,27 @@ def _col(code: str, s: str, *, use_colour: bool) -> str:
     return f"{code}{s}{_RESET}" if use_colour else s
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _clip(line: str, width: int) -> str:
+    """Cut `line` to `width` visible columns, ending in `…` — ANSI escapes don't count.
+
+    For one-row-per-event panes: a row that wraps pushes the pane past its budget.
+    """
+    visible = _ANSI_RE.sub("", line)
+    if len(visible) <= width:
+        return line
+    out, shown = [], 0
+    for tok in re.split(f"({_ANSI_RE.pattern})", line):
+        if _ANSI_RE.fullmatch(tok):
+            out.append(tok)
+        elif shown < width - 1:
+            out.append(tok[:width - 1 - shown])
+            shown += len(out[-1])
+    return "".join(out) + "…" + (_RESET if _ANSI_RE.search(line) else "")
+
+
 # ── Event → (short_label, colour) — leftmost fixed-width tag, so mechanisms line up as a
 # category column. Same grouping as rollup.py; four-letter labels keep the row tight enough
 # to fit description hints on the same line most of the time.
@@ -244,7 +265,14 @@ _REFRESH_TICK = 0.5
 #: How many recent events / findings the dashboard panes hold. `pixi run console` bounds its
 #: EVENTS at 200 and LOGS at 400; recital is much lower-volume, so smaller caps suffice.
 _MAX_EVENTS = 40
-_MAX_FINDINGS = 6
+_MAX_FINDINGS = 12
+
+#: Activity pane height — fixed, not a share of the terminal. The run stream is context;
+#: the findings pane is what the console is for, so extra rows go there.
+_ACTIVITY_ROWS = 10
+
+#: Description lines a finding starts with; raised while every held finding still fits.
+_FINDING_DESC_LINES = 3
 
 
 class _Tally:
@@ -400,11 +428,12 @@ def _render_finding_block(event: dict, *, width: int, use_colour: bool,
     to fix. The branch/commit anchor sits on its own row under the head, aligned with the
     description text — it doesn't count against `desc_line_cap`.
     """
-    out = [_finding_head_line(event, use_colour=use_colour, with_context=False)]
+    # Head and ref rows clip to the width like activity rows; only the description wraps.
+    out = [_clip(_finding_head_line(event, use_colour=use_colour, with_context=False), width)]
     indent = " " * _DESC_INDENT
     ctx = _fmt_context(event)
     if ctx:
-        out.append(indent + "  " + _col(_DIM, ctx, use_colour=use_colour))
+        out.append(_clip(indent + "  " + _col(_DIM, ctx, use_colour=use_colour), width))
     desc = ((event.get("payload") or {}).get("desc") or "").strip()
     if not desc or desc_line_cap <= 0:
         return out
@@ -429,10 +458,11 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
       - `── activity ──` pane: newest M event lines
 
     Height budgeting — the same problem the task console solves: fixed chrome (title + counter
-    line + section headers + blanks) is subtracted first, then the remainder is split between
-    the findings pane (priority — the "what was flagged" the cockpit exists for) and the
-    activity pane. If the terminal is genuinely tiny (< ~15 rows) the activity pane collapses
-    to zero and the findings pane keeps one finding; below that only the counters remain.
+    line + section headers + blanks) is subtracted first. The activity pane gets a fixed
+    `_ACTIVITY_ROWS` (a third of the remainder on a short terminal); the findings pane — the
+    "what was flagged" the cockpit exists for — takes every other row, unfolding descriptions
+    as height allows. On a tiny terminal the activity pane collapses to zero and the findings
+    pane keeps one finding; below that only the counters remain.
     """
     # Local time — matches per-event rows (`_fmt_hms`), so the reader compares like-for-like.
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -441,7 +471,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     title = _col(_BOLD, "Cecelia recital console", use_colour=use_colour)
     path_str = _col(_DIM, str(log_path), use_colour=use_colour)
     time_str = _col(_GREY, now, use_colour=use_colour)
-    chrome: list[str] = [f"{title}  {path_str}   {time_str}"]
+    chrome: list[str] = [_clip(f"{title}  {path_str}   {time_str}", width)]
 
     total_runs = sum(state.tally.runs.values())
     total_errored = sum(state.tally.errored_runs.values())
@@ -473,37 +503,43 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     if seen_mechs:
         chrome.append(_hr("by mechanism", width, use_colour=use_colour))
         for mech in seen_mechs:
-            chrome.append("  " + _tally_row(state.tally, mech, use_colour=use_colour))
+            chrome.append(_clip("  " + _tally_row(state.tally, mech, use_colour=use_colour), width))
         chrome.append("")
 
     # ── Budgeted panes ────────────────────────────────────────────────────────────────────
-    # Reserve one line per pane header + one trailing newline slot.
-    # `budget` = rows left after chrome and pane headers.
+    # `budget` = rows left after chrome and the two pane headers.
     have_findings = bool(state.findings)
     header_rows = (1 if have_findings else 0) + 1  # findings header + activity header
     budget = max(0, height - len(chrome) - header_rows)
+    # Activity is fixed at `_ACTIVITY_ROWS`, shrinking to a third on a short terminal so the
+    # findings pane keeps priority; findings take everything else.
+    activity_budget = min(_ACTIVITY_ROWS, budget // 3 if have_findings else budget)
 
     findings_block: list[str] = []
-    if have_findings and budget > 0:
-        # Findings pane gets roughly two-thirds of the pane budget, with a floor so it never
-        # collapses to zero if there are findings to show.
-        findings_budget = max(2, (budget * 2) // 3)
-        # Per-finding cap keeps one long description from starving other findings.
-        per_finding_cap = 4  # head + up to 3 desc lines with `…` if longer (+ the ref row)
-        # Newest first, so a fresh flag appears at the top of the pane.
-        for f in reversed(state.findings):
-            block = _render_finding_block(f, width=width, use_colour=use_colour,
-                                          desc_line_cap=per_finding_cap - 1)
+    if have_findings and budget > activity_budget:
+        findings_budget = budget - activity_budget
+        newest = list(reversed(state.findings))  # newest first — a fresh flag lands on top
+
+        def _blocks(cap: int) -> list[list[str]]:
+            return [_render_finding_block(f, width=width, use_colour=use_colour,
+                                          desc_line_cap=cap) for f in newest]
+
+        # Uncap descriptions one line at a time while every held finding still fits, so a
+        # tall terminal shows full text instead of `…`; stop once nothing more unfolds.
+        cap, blocks = _FINDING_DESC_LINES, _blocks(_FINDING_DESC_LINES)
+        while True:
+            wider = _blocks(cap + 1)
+            if wider == blocks or sum(map(len, wider)) > findings_budget:
+                break
+            cap, blocks = cap + 1, wider
+        for block in blocks:
             if len(findings_block) + len(block) > findings_budget:
                 # Room for at least the head line? Show it truncated; otherwise stop.
-                room = findings_budget - len(findings_block)
-                if room >= 1:
-                    findings_block.extend(block[:room])
+                findings_block.extend(block[:findings_budget - len(findings_block)])
                 break
             findings_block.extend(block)
         findings_block.insert(0, _hr("recent findings", width, use_colour=use_colour))
 
-    activity_budget = max(0, height - len(chrome) - len(findings_block) - 1)  # -1 for activity hdr
     activity_block: list[str] = [_hr("activity", width, use_colour=use_colour)]
     if activity_budget <= 0:
         activity_block = []  # terminal too small for both panes; drop activity entirely
@@ -513,15 +549,15 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
             if shown >= activity_budget:
                 break
             if _is_finding(e.get("event", "")):
-                activity_block.append(_finding_head_line(e, use_colour=use_colour))
+                row = _finding_head_line(e, use_colour=use_colour)
             else:
                 rendered = format_event(e, use_colour=use_colour, width=width - 2)
-                if rendered:
-                    # First line only — a finding block's second line is already covered
-                    # by the findings pane above.
-                    activity_block.append(rendered.splitlines()[0])
-                else:
+                if not rendered:
                     continue  # dropped meta event; don't count toward the cap
+                # First line only — a finding block's second line is already covered
+                # by the findings pane above.
+                row = rendered.splitlines()[0]
+            activity_block.append(_clip(row, width))
             shown += 1
         if not state.events:
             activity_block.append(_col(_DIM, "  waiting for events…", use_colour=use_colour))
