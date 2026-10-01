@@ -1,0 +1,14 @@
+[Unit]
+Description=Agent overnight run — nightly 00:30
+Documentation=file://%h/cc-workspace/cecelia/cecelia-feijoa/docs/todo/AGENT_OVERNIGHT_PLAN.md
+
+[Timer]
+# After midnight so it never races the Monday 23:59 CLAUDE.md eval to the shared lock; if that pass
+# is still running, tonight is skipped. NOT Persistent: a machine off at 00:30 must not fire a paid
+# run on next boot.
+OnCalendar=*-*-* 00:30:00
+RandomizedDelaySec=5min
+Unit=agent-eval-night.service
+
+[Install]
+WantedBy=timers.target
