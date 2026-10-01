@@ -278,8 +278,13 @@ def triage(failures: _t.Sequence[dict], *, judge: _t.Callable[[str], tuple[dict,
 
 def group_findings(judged: _t.Sequence[dict], *, date: str,
                    previous: dict | None = None) -> tuple[list[dict], list[dict]]:
-    """One finding per (prompt, class); recurring when the previous record had it too (Decision 12)."""
-    seen_before = {(f.get("slug"), f.get("class")) for f in (previous or {}).get("findings", [])}
+    """One finding per (prompt, class); recurring when the previous record had it too (Decision 12).
+
+    A finding the owner dropped doesn't count; one they resolved does, since its return means the
+    fix didn't hold.
+    """
+    seen_before = {(f.get("slug"), f.get("class")) for f in (previous or {}).get("findings", [])
+                   if f.get("status") != "dropped"}
     groups: dict[tuple[str, str], list[dict]] = {}
     for j in judged:
         groups.setdefault((j["prompt_id"], j["verdict"]["class"]), []).append(j)
@@ -375,10 +380,11 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
 def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path | None = None,
               session: str | None = None, date: str | None = None, judge_budget: float = JUDGE_TOTAL_USD,
               judge: _t.Callable | None = None, assign: _t.Callable | None = None,
-              sandboxed: bool | None = None,
+              sandboxed: bool | None = None, persist: bool = True,
               state: dict | None = None) -> dict:
     """Run (or, with `session`, re-triage) one pass; returns its record, unwritten.
 
+    `persist=False` (a dry run) leaves the earlier records in the store untouched.
     `state` is updated as it goes (`stage`, `sha`), so a crash can say where it stopped. Raises
     `SupervisorError`; `main` turns any exception into a failure record.
     """
@@ -413,20 +419,35 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
     # older pass re-triaged with `--session` shouldn't spend judge calls on a scorer bug since fixed
     failures = [t for t in draft["traces"] if t["trace"]
                 and (t["scores"]["rescored"] or t["scores"]["raw"]) != "compliant"]
+    # Decision 15: the owner's answers since the last pass go into the earlier records first, so
+    # recurrence, the delta and curation all see resolved findings and accepted proposals
+    state["stage"] = "reviews"
+    review = _load_sibling("review")
+    reviews = review.read_reviews()
+    history = []
+    for earlier in _record.pass_records(before=date):
+        applied = review.apply_reviews(earlier, reviews)
+        if persist and applied != earlier:
+            _record.write(applied, force=True)
+        history.append(applied)
+    previous = history[-1] if history else None
+
     state["stage"] = "triage"
     judged, spend = triage(failures, judge=judge, budget=judge_budget)
-    findings, actions = group_findings(judged, date=date, previous=_record.latest_before(date))
+    findings, actions = group_findings(judged, date=date, previous=previous)
     notes = {"findings": findings, "next_actions": actions, "retries": retries, "sha": sha,
              "supervisor": {**spend, "session": session}}
     record = _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)
     state["stage"] = "curate"
     curate = _load_sibling("curate")
-    proposals, cost = curate.propose(record, history=curate.history_before(date), events=events,
-                                     assign=assign)
+    proposals, cost = curate.propose(record, history=history, events=events, assign=assign)
     notes["proposals"] = proposals
     notes["supervisor"].update(curation_usd=round(cost, 4), cost_usd=round(spend["cost_usd"] + cost, 4))
-    return _record.with_delta(
-        _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite))
+    run_number = len(history) + 1
+    notes["spot_check"] = review.spot_check_sample(findings, run_number=run_number, seed=date)
+    notes["loop_review"] = review.loop_review(record, history, run_number=run_number, reviews=reviews)
+    record = _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)
+    return {**record, "delta": _record.delta(record, previous)}
 
 
 def _write_failure(date: str | None, stage: str, error: Exception, sha: str | None) -> dict | None:
@@ -475,7 +496,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         record = supervise(ref=args.ref, runs=args.runs, worktree=args.worktree, session=args.session,
                            date=args.date, judge_budget=args.max_judge_usd,
-                           sandboxed=args.sandboxed if args.session else None, state=state)
+                           sandboxed=args.sandboxed if args.session else None,
+                           persist=not args.dry_run, state=state)
         if args.dry_run:
             print(_record.render_markdown(record))
             return 0

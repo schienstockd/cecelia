@@ -55,6 +55,9 @@ FINDING_CLASSES = ("scorer_bug", "infra", "genuine", "decision")
 FINDING_STATUSES = ("open", "resolved", "dropped")
 RECURRENCE = ("recurring", "watch")
 PROPOSAL_KINDS = ("setup", "scorer", "retire", "add")
+QUEUE_KINDS = ("decision", "proposal", "spot_check", "loop_review")
+#: Decision 15: flag a setup metric that grew by more than this since the last record.
+SETUP_GROWTH_FLAG = 0.10
 VERDICTS = ("compliant", "noncompliant", "error")
 
 _HOW_TO_USE = (
@@ -218,12 +221,18 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
         "proposals": proposals,
         # Filled by `with_delta` against the previous record in the store.
         "delta": None,
-        "tracking": {"setup_size": setup_size(size_ref or "HEAD")},
+        "tracking": {"setup_size": setup_size(size_ref or "HEAD"),
+                     # owner-loop items the supervisor adds on every 4th / 8th run (Decision 15)
+                     "spot_check": notes.get("spot_check") or [],
+                     "loop_review": notes.get("loop_review"),
+                     **({"spot_check_labels": notes["spot_check_labels"]} if notes.get("spot_check_labels") else {})},
         "next_actions": notes.get("next_actions", []),
         # What the owner has to answer (Decision 3: a review queue, not a markdown edit).
         "queue": ([{"kind": "decision", "ref": f["id"]} for f in findings
                    if f.get("class") == "decision" and f.get("status") == "open"]
-                  + [{"kind": "proposal", "ref": p["id"]} for p in proposals]),
+                  + [{"kind": "proposal", "ref": p["id"]} for p in proposals]
+                  + [{"kind": "spot_check", "ref": fid} for fid in notes.get("spot_check") or []]
+                  + ([{"kind": "loop_review", "ref": "loop"}] if notes.get("loop_review") else [])),
     }
     return record
 
@@ -250,12 +259,6 @@ def pass_records(before: str | None = None) -> list[dict]:
         if record.get("kind", "pass") == "pass":
             out.append(record)
     return out
-
-
-def latest_before(date: str) -> dict | None:
-    """The newest valid pass record in the store dated before `date`; None if there isn't one."""
-    records = pass_records(before=date)
-    return records[-1] if records else None
 
 
 _HYPOTHESIS_RE = re.compile(r"expect\s+`?([\w-]+)`?\s+to\b")
@@ -296,13 +299,26 @@ def delta(record: dict, previous: dict | None) -> dict | None:
         "resolved": [f"{before[k]['id']} `{k[0]}` {k[1]}" for k in before if k not in now],
         "score": {"previous": _score(previous["results"]["raw"]), "now": _score(record["results"]["raw"])},
         "changed": changed,
+        "setup_growth": setup_growth(previous.get("tracking", {}).get("setup_size") or {},
+                                     record.get("tracking", {}).get("setup_size") or {}),
         "hypotheses": hypotheses,
     }
 
 
+def setup_growth(before: dict, now: dict) -> list[str]:
+    """The setup-size metrics that grew by more than `SETUP_GROWTH_FLAG`."""
+    out = []
+    for key, value in now.items():
+        old = before.get(key)
+        if isinstance(value, int) and isinstance(old, int) and old > 0 and (value - old) / old > SETUP_GROWTH_FLAG:
+            out.append(f"{key} {old} → {value}")
+    return out
+
+
 def with_delta(record: dict) -> dict:
-    """`record` with its delta against the newest earlier pass record in the store."""
-    return {**record, "delta": delta(record, latest_before(record["date"]))}
+    """`record` with its delta against the newest earlier pass record, owner answers applied."""
+    earlier = _load_sibling("review").applied_pass_records(before=record["date"])
+    return {**record, "delta": delta(record, earlier[-1] if earlier else None)}
 
 
 _REQUIRED = {
@@ -359,7 +375,12 @@ def validate(record: dict) -> list[str]:
             if v is not None and v not in VERDICTS:
                 errs.append(f"trace {t.get('trace')}: {stage} verdict {v!r}")
     for item in record.get("queue", []):
-        if item.get("ref") not in ids + [p.get("id") for p in record.get("proposals", [])]:
+        if item.get("kind") not in QUEUE_KINDS:
+            errs.append(f"queue: kind {item.get('kind')!r} not in {QUEUE_KINDS}")
+        elif item["kind"] == "loop_review":
+            if not record.get("tracking", {}).get("loop_review"):
+                errs.append("queue: a loop_review item with no tracking.loop_review")
+        elif item.get("ref") not in ids + [p.get("id") for p in record.get("proposals", [])]:
             errs.append(f"queue: {item.get('ref')!r} names no finding or proposal")
     return errs
 
@@ -378,7 +399,8 @@ def load(path: pathlib.Path) -> dict:
     return record
 
 
-_ANNOTATION_KEYS = ("findings", "proposals", "next_actions", "candidates", "retries", "sha", "supervisor")
+_ANNOTATION_KEYS = ("findings", "proposals", "next_actions", "candidates", "retries", "sha", "supervisor",
+                    "spot_check", "loop_review", "spot_check_labels")
 
 
 def carried_annotations(path: pathlib.Path) -> dict | None:
@@ -388,8 +410,9 @@ def carried_annotations(path: pathlib.Path) -> dict | None:
     record = load(path)
     if record.get("kind") == "failure":
         return None
-    return {k: (record["run"] if k in ("retries", "sha", "supervisor") else record["results"] if k == "candidates"
-                else record).get(k) for k in _ANNOTATION_KEYS}
+    home = {"retries": "run", "sha": "run", "supervisor": "run", "candidates": "results",
+            "spot_check": "tracking", "loop_review": "tracking", "spot_check_labels": "tracking"}
+    return {k: (record.get(home[k], {}) if k in home else record).get(k) for k in _ANNOTATION_KEYS}
 
 
 def _score(t: dict) -> str:
@@ -462,6 +485,21 @@ def render_markdown(record: dict) -> str:
     out += ["", "## Owner queue", ""]
     out += [f"- {q['kind']}: {q['ref']}" for q in record["queue"]] or ["Empty."]
 
+    tracking = record["tracking"]
+    if tracking.get("spot_check"):
+        labels = tracking.get("spot_check_labels", {})
+        out += ["", "## Spot check", "",
+                "Label each sampled finding `real` / `false` / `unclear` with `pixi run recital-review`.", ""]
+        out += [f"- {fid}: {labels.get(fid, 'unlabelled')}" for fid in tracking["spot_check"]]
+    loop = tracking.get("loop_review")
+    if loop:
+        out += ["", "## Loop review", "",
+                f"{loop['runs']} supervised runs. Decide: continue, retune or stop "
+                f"(`pixi run recital-review`){'; decided: **' + loop['decision'] + '**' if loop.get('decision') else ''}.", "",
+                f"- Scores: {' → '.join(loop.get('scores', []))}",
+                f"- Proposals accepted: {loop.get('accepted', 0)} of {loop.get('proposals', 0)}",
+                f"- Spot-check false-positive rate: {loop.get('false_positive_rate', 'n/a')}",
+                f"- Cost: ${loop.get('cost_usd', 0):.2f}"]
     size = record["tracking"]["setup_size"]
     out += ["", "## Since last run", ""]
     d = record.get("delta")
@@ -474,6 +512,8 @@ def render_markdown(record: dict) -> str:
                 f"- Opened: {', '.join(d['opened']) or 'none'}",
                 f"- Still open: {', '.join(d['still_open']) or 'none'}",
                 f"- Resolved: {', '.join(d['resolved']) or 'none'}"]
+        if d.get("setup_growth"):
+            out.append(f"- **Setup grew more than {SETUP_GROWTH_FLAG:.0%}:** {'; '.join(d['setup_growth'])}")
         for h in d["hypotheses"]:
             verdict = {True: "held", False: "did not hold", None: "untested (prompt not run)"}[h["held"]]
             out.append(f"- {h['proposal']} ({h['hypothesis']}): **{verdict}**"
