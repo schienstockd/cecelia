@@ -28,6 +28,7 @@
 -->
 <script setup lang="ts">
 import { ref, watch, onMounted, useTemplateRef } from 'vue'
+import { profileStorage } from '../../utils/profileStorage'
 import { useFloatingPanel } from '../../composables/useFloatingPanel'
 import { useResizeHandles } from '../../composables/useResizeHandles'
 import PlotOptions from './PlotOptions.vue'
@@ -44,7 +45,7 @@ const SCOPE_OPTIONS: ChipOption[] = [
 // The PlotOptions block gets crowded — the Layout/Points/Colours/Stats/Labels sections plus the pop
 // list on a small panel. This bottom-LEFT toggle folds the block away entirely (mirrors the bottom-
 // RIGHT scope chip so the two footer controls sit at the same tier). Persisted globally via
-// localStorage — same pattern as CollapsibleSection's `storageKey`, so the preference survives a
+// profileStorage — same pattern as CollapsibleSection's `storageKey`, so the preference survives a
 // remount and is shared across canvases (nobody wants to re-hide it per panel).
 const PLOT_OPTS_KEY = 'canvasSidePanel.plotOptionsVisible'
 
@@ -89,13 +90,13 @@ const emit = defineEmits<{
 
 const collapsed = ref(false)
 // PlotOptions visibility — defaults OFF (the block is crowded and rarely touched — surface it from
-// the footer toggle when it's wanted). Reads from localStorage so a user who turned it on stays on.
+// the footer toggle when it's wanted). Reads from profileStorage so a user who turned it on stays on.
 const plotOptionsVisible = ref((() => {
-  const v = typeof window !== 'undefined' ? window.localStorage.getItem(PLOT_OPTS_KEY) : null
+  const v = typeof window !== 'undefined' ? profileStorage.getItem(PLOT_OPTS_KEY) : null
   return v === null ? false : v === '1'
 })())
 watch(plotOptionsVisible, v => {
-  try { window.localStorage.setItem(PLOT_OPTS_KEY, v ? '1' : '0') } catch { /* ignore */ }
+  try { profileStorage.setItem(PLOT_OPTS_KEY, v ? '1' : '0') } catch { /* ignore */ }
 })
 // drag-to-move, clamped to the workspace; open at the top-right so it doesn't start on the plots.
 // (docked mode ignores all of this — it renders in-flow.)

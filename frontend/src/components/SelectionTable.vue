@@ -31,6 +31,7 @@
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
 import { computed, ref, watch, getCurrentInstance, useSlots, onMounted, onBeforeUnmount } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { sortRows, cycleSort, sortIconFor, parseSortState,
          type SortState, type SortValue } from '../utils/sortRows'
 import { useColumnResize } from '../composables/useColumnResize'
@@ -92,7 +93,7 @@ const props = withDefaults(defineProps<{
   rowTooltip?: (row: Row) => string
   /** header for the trailing `#actions` column; omit when the slot is unused */
   actionsLabel?: string
-  /** localStorage key for the chosen sort. Omit and the sort resets on remount. */
+  /** profileStorage key (per profile) for the chosen sort. Omit and the sort resets on remount. */
   sortStorageKey?: string
   /**
    * Drag-resizable columns, persisted under this localStorage key. Omit and the table sizes to its
@@ -276,7 +277,7 @@ function toggleAll() {
 // about blanks, numeric strings and stable ties.
 function loadSort(): SortState {
   if (!props.sortStorageKey) return null
-  return parseSortState(localStorage.getItem(props.sortStorageKey))
+  return parseSortState(profileStorage.getItem(props.sortStorageKey))
 }
 const ownSort = ref<SortState>(loadSort())
 // controlled when the caller passes `sort`, else the table's own persisted state
@@ -288,8 +289,8 @@ const sort = computed<SortState>({
 watch(sort, s => {
   if (!props.sortStorageKey || controlled.value) return
   try {
-    if (s) localStorage.setItem(props.sortStorageKey, JSON.stringify(s))
-    else localStorage.removeItem(props.sortStorageKey)
+    if (s) profileStorage.setItem(props.sortStorageKey, JSON.stringify(s))
+    else profileStorage.removeItem(props.sortStorageKey)
   } catch { /* ignore */ }
 })
 

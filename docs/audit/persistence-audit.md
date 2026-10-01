@@ -164,3 +164,22 @@ profile; **personal** = per-person state stored for everyone.
   `lastOpenedAt` matters most: `list_projects` "most recent first" is the *install's* most recent,
   not yours. Move to the profile, keyed by project uid; leave project.json's value as a fallback.
 - **I. Per-image viewer bags still in localStorage** (§2, carried over from 09-25).
+
+---
+
+## Status — fixed on this branch
+
+| Gap | Fix |
+|---|---|
+| **A** Kiwi draft/prompt | `stores/kiwi.ts` → `profileStorage` |
+| **F** new profile inherits the last user | `adoptProfileBag` (`utils/profileStorage.ts`): the mirror records its owner; a different profile clears it (settings-store mirror included) and reloads, so unset keys start from defaults. A browser with no owner yet keeps its values (migration). |
+| **G** per-person keys outside the bag | `utils/profileStorage.ts` — localStorage-shaped, mirrored to `ls:<key>` in settings.toml. Moved: Kiwi draft/prompt, guides, hints, `cc-fn:*`, ModuleLayout filters/panels, Movies + Blackboard filters, `cc.vw.*`, sidebar group, console groups, collapsible/accordion/plot-options/cleanup-plan open state, SelectionTable sort, `hiddenMcpAccounts`, `pickZScope`. Server PATCH is now lock-serialised. |
+| **C** (lab log) | `[User · <profile>]` stamped server-side (`lab_log_user_author`); `default` unchanged. Other unattributed content stays open. |
+| **D** cross-profile Kiwi follow-up | 409 *"that conversation was alice's — ask it fresh"* instead of a silent restart. |
+| **E** rename/delete/import owners | `rewrite_project_owners!` on rename (carried over) and delete (dropped → visible to all); import keeps only owners that exist here, else the importer (`import_owners`). |
+| **H** `lastOpenedAt`, lab-log hides | Per-profile `recent-projects.toml` orders the project list; lab-log dismissals keyed by profile (legacy flat list stays everyone's start). |
+
+**Still open:** B (install-wide active profile — the deferred `X-Kiwi-Profile` work); C for
+blackboard / notebooks / chains / correction journals / run log; push pairing (one per project);
+`labarchives.json syncedBy` (the MCP caller, not the active profile, is the honest author — needs
+the pairing to say who); I (per-image viewer bags → project).

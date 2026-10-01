@@ -301,6 +301,32 @@ function bundle_info(bundle::AbstractString)
 end
 
 """
+    import_owners(owners, is_profile, importer) -> Vector{String}
+
+Owners for an imported project. The bundle's owners are profile names from the EXPORTING install;
+keep the ones that exist here, and when none do, the importing profile owns it — otherwise the
+project would be hidden behind names nobody on this machine can pick. An empty list (pre-identity,
+visible to all) stays empty.
+"""
+function import_owners(owners::AbstractVector, is_profile::Function, importer::AbstractString)::Vector{String}
+    os = String[string(o) for o in owners if !isempty(string(o))]
+    isempty(os) && return String[]
+    here = filter(is_profile, os)
+    isempty(here) ? String[importer] : here
+end
+
+function _localise_owners!(pj::AbstractString)
+    isfile(pj) || return
+    d = read_ccid_raw(pj)
+    haskey(d, "owners") || return
+    is_profile(n) = n == "default" || isdir(profile_settings_dir(n))
+    new = import_owners(collect(d["owners"]), is_profile, active_profile_name())
+    new == collect(d["owners"]) && return
+    d["owners"] = new
+    write_json_atomic(pj, d)
+end
+
+"""
     import_project(bundle; mode, task_id, on_log, on_progress, concurrency) -> String
 
 Restore a `.ccbundle` into the projects dir (unpacking each `.zarr.tar`) and return the imported
@@ -377,6 +403,8 @@ function import_project(bundle::AbstractString;
             write_json_atomic(pj, d)
             _reidentify_files!(tmp, uid, dest_uid)
         end
+
+        _localise_owners!(joinpath(tmp, "project.json"))
 
         mkpath(projects_dir())
         mode == "replace" && ispath(target) && rm(target; recursive = true)   # overwrite in place

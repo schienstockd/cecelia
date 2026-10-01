@@ -1,17 +1,18 @@
 <script setup lang="ts">
-// One-line, first-use-only guidance. Dismissed permanently on click, per hint id, in localStorage
+// One-line, first-use-only guidance. Dismissed permanently on click, per hint id, per profile
 // (`cc.hint.<id>`). Not a tour, not a modal — an inline callout that disappears once acknowledged.
-// See docs/todo/ONBOARDING_PLAN.md (P4). Reuses the settings-store localStorage idiom.
+// See docs/todo/ONBOARDING_PLAN.md (P4). Persisted via utils/profileStorage.ts.
 import { ref } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 
 const props = defineProps<{ hintKey: string; text: string }>()
 
 const _key = `cc.hint.${props.hintKey}`
-const dismissed = ref(localStorage.getItem(_key) === '1')
+const dismissed = ref(profileStorage.getItem(_key) === '1')
 
 function dismiss() {
   dismissed.value = true
-  try { localStorage.setItem(_key, '1') } catch { /* private mode — just hide for this session */ }
+  try { profileStorage.setItem(_key, '1') } catch { /* private mode — just hide for this session */ }
 }
 </script>
 
