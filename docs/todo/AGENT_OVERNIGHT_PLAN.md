@@ -74,7 +74,7 @@ interfaces or QC, and the fix goes into the framework.
 ## Phases
 
 ### P0 — audit + latent-bug fix + this plan *(this branch)*
-Audit doc; `versioned_entry_overwrite!` replaces the flattening rebuilds in `register_label_files!`
+Audit doc; a versioning-aware overwrite (now `versioned_set_field!`) replaces the flattening rebuilds in `register_label_files!`
 and measureLabels (audit B1), with tests.
 
 ### P1 — fixture generator + ground truth + scorer

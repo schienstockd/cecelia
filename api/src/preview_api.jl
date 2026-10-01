@@ -249,7 +249,9 @@ function api_preview_run(body_bytes::Vector{UInt8})
     proj_dir  = joinpath(projects_dir(), project_uid)
     meta_file = state_file(proj_dir, image_uid)
     isfile(meta_file) || return 404, JSON3.write((; error = "Image metadata not found: $image_uid"))
-    filename = versioned_get_field(read_ccid_raw(meta_file), "filepath", in_value_name)
+    # the leaf the run reads: `_latest`, or the pinned `params.version`
+    filename = Cecelia.versioned_get_field_at(read_ccid_raw(meta_file), "filepath", in_value_name;
+                                              version = Cecelia.parse_version_pin(Cecelia.json_native(params)))
     isnothing(filename) &&
         return 404, JSON3.write((; error = "No filepath registered (valueName=$in_value_name). Run a conversion task first."))
     wanted = joinpath(proj_dir, "0", image_uid, string(filename))

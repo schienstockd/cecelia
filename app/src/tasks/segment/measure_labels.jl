@@ -121,8 +121,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     commit_state!(img) do raw
         # the segmentation just measured becomes the active label_props version, so gating (and any
         # value_name fallback) defaults to the most recently produced segmentation.
-        versioned_entry_overwrite!(raw, "label_props", p.outputValueName, h5ad_filename;
-                                   set_active = true)
+        versioned_set_field!(raw, "label_props", h5ad_filename, p.outputValueName)
     end
 
     Dict{String,Any}("outputValueName" => p.outputValueName,
