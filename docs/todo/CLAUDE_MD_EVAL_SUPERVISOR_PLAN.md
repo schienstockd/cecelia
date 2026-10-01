@@ -1,6 +1,6 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
-**Status:** in progress — phase 1 (record store) built 2026-10-01; phases 2–6 open. Consolidates the two briefs at
+**Status:** in progress — phases 1 (record store) and 2 (scorer F2) built 2026-10-01; phases 3–6 open. Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
 
@@ -141,9 +141,10 @@ Each phase is its own PR.
      scorer fix doesn't drop them.
    - Only *open* `decision` findings go on the owner queue, plus every proposal.
    - `delta` stays `null` until phase 4.
-2. **Scorer F2:** a per-prompt `anti_signal_ignore_comments` opt-in in `_regex_hits`
-   (`run_prompt.py`), enabled for `frontend-copy-canonical`. Checkpoint: rescoring the 09-30 traces
-   flips the HTML-comment run and changes nothing else.
+2. **Scorer F2 — built.** A per-prompt `anti_signal_ignore_comments` opt-in in `_regex_hits`
+   (`run_prompt.py`), enabled for `frontend-copy-canonical`. It strips `<!-- -->`, `/* */` and `//`
+   comments (not `://`) before the anti regex only. Checkpoint met: rescoring all 46 saved traces
+   flips `20260930T141134Z-frontend-copy-canonical-with-r2` and nothing else.
 3. **Supervisor:** `--ref` in `run_prompt.py`, persistent worktree, `supervise.py` with tool-less
    triage and retries, `cron_pass.sh` calling it by default (with `--no-supervise`), lock and
    `finally` cleanup. Checkpoint: a forced crash still writes a failure record.

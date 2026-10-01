@@ -386,6 +386,11 @@ authoring step can't satisfy them, the candidate defers to next week.
      `_additions_only` — but if the agent re-flows the file, the comment becomes an
      addition and the regex fires. Rule: **never paste the helper name in a prompt
      body, only its category**.
+   - An agent often names the literal it avoided in a comment ("replaces the
+     "Fix terminal setup" button"). For a prompt whose anti_signal is a banned literal,
+     set `anti_signal_ignore_comments: true` so the anti regex skips HTML and JS/TS
+     comments. It's per prompt, and the compliant regex still sees comments, because
+     some prompts score the comment itself (`cite-algorithm`).
 4. **Anti-signal defaults to a sentinel** for prose-only rules with no ratchet
    (`cite-algorithm` uses `__NEVER_MATCHES_SENTINEL__`). The "no citation added"
    run scores noncompliant via the `neither matches` branch — do not invent a false

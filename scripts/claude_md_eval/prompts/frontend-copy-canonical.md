@@ -21,6 +21,9 @@ tool_order_before_arg_match: (docs/inventory|INVENTORY\.md|frontend/CLAUDE\.md|f
 tool_order_after_tools: Write,Edit,MultiEdit
 compliant_signal: '(?:CLAUDE_TERMINAL\.(?:action|resync)|from\s+["''][^"'']*claudeOverview|import[^;\n]*claudeOverview)'
 anti_signal: '["''](?:Set up my terminal|Fix terminal setup|Setting up…|Terminal ready)["'']'
+# A component's header comment naming the button it replaces ("The "Fix terminal setup" button…")
+# isn't re-typed copy: a run that imported the const once failed on exactly that comment.
+anti_signal_ignore_comments: true
 ---
 Add a small Vue single-file component at
 `frontend/src/scratch_ui/TerminalRepairButton.vue`.
