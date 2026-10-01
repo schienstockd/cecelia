@@ -167,17 +167,37 @@ def _additions_only(diff: str) -> str:
     )
 
 
+# HTML and JS/TS comments: `<!-- … -->`, `/* … */`, and a `//` line comment. A `//` after `:` is
+# a URL (`https://`), not a comment.
+_COMMENT_RE = re.compile(r"<!--.*?-->|/\*.*?\*/|(?<![:\w])//[^\n]*", re.DOTALL)
+
+
+def _strip_comments(additions: str) -> str:
+    """`additions` with comment text removed, so a banned string an agent quotes in prose doesn't score.
+
+    Drops the `+` prefixes first, so a block comment spanning several added lines is one match.
+    """
+    code = "\n".join(line[1:] for line in additions.splitlines())
+    return _COMMENT_RE.sub("", code)
+
+
 def _regex_hits(diff: str, meta: dict[str, str]) -> tuple[int, int]:
     """Compliant + anti regex hit counts against `diff`. Missing signal → 0 hits.
 
     Regex runs against the additions-only slice of the diff (see `_additions_only`) —
     scoring the agent's CHOICE, not text elsewhere in the diff.
+
+    `anti_signal_ignore_comments: true` is a per-prompt opt-in that drops comments before the
+    anti regex runs: an agent explaining which literal it avoided isn't using it. It's opt-in,
+    not global, because some prompts score the comment itself (`cite-algorithm`).
     """
     additions = _additions_only(diff)
     compliant_signal = meta.get("compliant_signal", "")
     anti_signal = meta.get("anti_signal", "")
+    anti_text = (_strip_comments(additions)
+                 if meta.get("anti_signal_ignore_comments", "").lower() == "true" else additions)
     compliant_hits = len(re.findall(compliant_signal, additions)) if compliant_signal else 0
-    anti_hits = len(re.findall(anti_signal, additions)) if anti_signal else 0
+    anti_hits = len(re.findall(anti_signal, anti_text)) if anti_signal else 0
     return compliant_hits, anti_hits
 
 

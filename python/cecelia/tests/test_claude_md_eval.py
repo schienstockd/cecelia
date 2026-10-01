@@ -181,6 +181,43 @@ class ScoreDiffTest(unittest.TestCase):
         self.assertEqual((c, a), (0, 0))
 
 
+class AntiSignalIgnoreCommentsTest(unittest.TestCase):
+    """`anti_signal_ignore_comments` drops comment text before the anti regex, and nothing else."""
+
+    def setUp(self):
+        self.runner = _load_runner()
+        self.meta = {"compliant_signal": r"CLAUDE_TERMINAL", "anti_signal": r'"Fix terminal setup"',
+                     "anti_signal_ignore_comments": "true"}
+
+    def _hits(self, diff, **over):
+        return self.runner._regex_hits(diff, self.meta | over)
+
+    def test_banned_literal_in_a_multiline_html_comment_is_ignored(self):
+        diff = '+<!--\n+  The "Fix terminal setup" button, copy from CLAUDE_TERMINAL.\n+-->\n'
+        self.assertEqual(self._hits(diff), (1, 0))
+
+    def test_without_the_opt_in_the_comment_still_counts(self):
+        diff = '+<!-- The "Fix terminal setup" button -->\n'
+        self.assertEqual(self._hits(diff, anti_signal_ignore_comments="false"), (0, 1))
+
+    def test_js_block_and_line_comments_are_ignored(self):
+        diff = '+/* was "Fix terminal setup" */\n+// not "Fix terminal setup"\n'
+        self.assertEqual(self._hits(diff), (0, 0))
+
+    def test_the_literal_in_code_still_counts(self):
+        diff = '+<!-- header -->\n+const label = "Fix terminal setup" // re-typed\n'
+        self.assertEqual(self._hits(diff), (0, 1))
+
+    def test_a_url_is_not_a_line_comment(self):
+        diff = '+const u = "https://x.org"; const label = "Fix terminal setup"\n'
+        self.assertEqual(self._hits(diff), (0, 1))
+
+    def test_compliant_signal_still_sees_comments(self):
+        # the opt-in names the anti signal only; `cite-algorithm` scores a comment as compliance
+        diff = '+// see CLAUDE_TERMINAL\n'
+        self.assertEqual(self._hits(diff), (1, 0))
+
+
 class RunOnePromptTest(unittest.TestCase):
     """End-to-end with a fake `claude_runner` + stubbed worktree/diff seams.
 
