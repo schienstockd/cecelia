@@ -195,7 +195,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
     # Carry the REFERENCE image's napari-colours sidecar so the new image's first ref_C channels
     # keep their look. Colours for the moving-cycle channels stay defaulted — a 1:1 remap isn't
     # possible when their indices have been rewritten.
-    ref_filename = versioned_get_field(ref_raw, "filepath", VERSIONED_DEFAULT_VAL)
+    ref_filename = versioned_get_field_at(ref_raw, "filepath", VERSIONED_DEFAULT_VAL)   # `_latest` leaf
     if !isnothing(ref_filename)
         ref_sidecar = joinpath(ref_img._dir, "data", basename(string(ref_filename)) * ".json")
         if isfile(ref_sidecar)
