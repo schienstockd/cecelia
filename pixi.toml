@@ -346,6 +346,12 @@ claude-md-eval-rollup = "python scripts/claude_md_eval/render_rollup.py"
 # cron status. Spawns no agents. `pixi run claude-md-eval-analyse`.
 claude-md-eval-analyse = "python scripts/claude_md_eval/analyse.py"
 
+# Run records — one JSON per pass in ~/.cecelia-effectiveness/eval-runs/, rendered to markdown.
+# `replay --date D` builds one from a pass already in the log and rescores its traces; `--mirror`
+# also writes docs/ai-assist/eval-runs/. Spawns no agents. Design:
+# docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md.
+claude-md-eval-record = "python scripts/claude_md_eval/record.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the

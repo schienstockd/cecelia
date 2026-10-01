@@ -139,6 +139,30 @@ def _suites(events: _t.Sequence[dict]) -> list[dict]:
                   key=lambda e: e.get("ts", ""), reverse=True)
 
 
+def pass_runs(events: _t.Sequence[dict], suite: dict) -> list[dict]:
+    """The `_run` rows of one suite pass, oldest first.
+
+    Run rows share the suite row's session id (`_ensure_eval_session`) and land inside its
+    `duration_s` window — both, because a pass launched from an interactive Claude Code session
+    inherits that session's id, shared with any other pass or ad-hoc run from it.
+    """
+    def ts(e: dict) -> _dt.datetime:
+        try:
+            return _dt.datetime.fromisoformat(e.get("ts", "").replace("Z", "+00:00"))
+        except ValueError:
+            return _dt.datetime.min.replace(tzinfo=_dt.timezone.utc)
+
+    p = suite.get("payload", {}) or {}
+    end = ts(suite)
+    start = end - _dt.timedelta(seconds=p.get("duration_s", 0) + 60)
+    arm, ids = _suite_arm(suite), set(p.get("prompt_ids") or [])
+    return sorted((e for e in events if e.get("event") == "claude_md_eval_run"
+                   and e.get("session") == suite.get("session") and start <= ts(e) <= end
+                   and (e.get("payload", {}) or {}).get("arm", "with") == arm
+                   and (e.get("payload", {}) or {}).get("prompt_id") in ids),
+                  key=lambda e: e.get("ts", ""))
+
+
 def _latest_suite(events: _t.Sequence[dict]) -> dict | None:
     """The row the page leads with: newest full-catalog WITH-arm pass.
 

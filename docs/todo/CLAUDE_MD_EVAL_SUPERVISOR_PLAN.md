@@ -1,6 +1,6 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
-**Status:** planning (2026-10-01); nothing built. Consolidates the two briefs at
+**Status:** in progress — phase 1 (record store) built 2026-10-01; phases 2–6 open. Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
 
@@ -106,8 +106,10 @@ lost there.
 
 ## Seed record — 2026-09-30
 
-Source: `~/Downloads/TMP/eval-2026-10-01-findings.md` + #1314 (merged). Confirm each finding against
-its trace before writing it.
+Source: `~/Downloads/TMP/eval-2026-10-01-findings.md` + #1314 (merged). **Written** as
+[`docs/ai-assist/eval-runs/2026-09-30.md`](../ai-assist/eval-runs/2026-09-30.md), each finding
+checked against its trace and today's code. F3 and F6 are `recurring` (failing in consecutive full
+passes); the rest are `watch`. F7 is resolved by the sandbox.
 
 | Id | Slug | Class | Finding |
 |---|---|---|---|
@@ -125,9 +127,20 @@ Record and classify these only; the fixes are separate work.
 
 Each phase is its own PR.
 
-1. **Record store:** schema + test, md renderer, local store, PR mirror, `docs/ai-assist/eval-runs/`
-   added to `_SKIP_DIRS` in `test_doc_pointer_convention.py`, and the seed record. Checkpoint: a
-   replay over the 09-30 traces renders a record.
+1. **Record store — built.** `scripts/claude_md_eval/record.py` (`pixi run claude-md-eval-record`):
+   `build` / `validate` / `load` / `write` / `render_markdown`, tests in
+   `python/cecelia/tests/test_claude_md_eval_record.py`, and `docs/ai-assist/eval-runs/` in
+   `_SKIP_DIRS`. Checkpoint met: `replay --date 2026-09-30` rescores the saved traces 3/27 → 19/27,
+   the same as #1314's rescore. Choices made while building:
+   - A replay can't recover the pinned repo SHA: the log's `commit` is the CLAUDE.md blob. It
+     records `sha: null` and the blob. `--ref` says where setup size is measured (for 09-30,
+     `358df7f2`, whose CLAUDE.md blob matches the pass).
+   - `scored_at` is this checkout's HEAD, since rescoring reads its prompts and scorer.
+   - The validator is hand-written: `jsonschema` is only a transitive dependency.
+   - A replay without `--annotations` keeps the existing record's findings, so a rescore after a
+     scorer fix doesn't drop them.
+   - Only *open* `decision` findings go on the owner queue, plus every proposal.
+   - `delta` stays `null` until phase 4.
 2. **Scorer F2:** a per-prompt `anti_signal_ignore_comments` opt-in in `_regex_hits`
    (`run_prompt.py`), enabled for `frontend-copy-canonical`. Checkpoint: rescoring the 09-30 traces
    flips the HTML-comment run and changes nothing else.
