@@ -24,19 +24,23 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import json
 import os
 import pathlib
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import typing as _t
 import uuid
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 _PROMPTS_DIR = _REPO / "scripts" / "claude_md_eval" / "prompts"
-_WORKTREE_ROOT_DEFAULT = _REPO.parent  # sibling of the primary checkout, per project convention
+# Outside `~`: the `~/**` write denies in `_SANDBOX_SETTINGS` would otherwise block the agent's own
+# worktree (it used to be `_REPO.parent`, next to the user's checkouts).
+_WORKTREE_ROOT_DEFAULT = pathlib.Path(tempfile.gettempdir()) / "cecelia-eval"
 _DEFAULT_TIMEOUT_SEC = 300
 _DEFAULT_RUNS = 3
 
@@ -56,6 +60,29 @@ _transcript = _importlib_util.module_from_spec(_transcript_spec)
 _transcript_spec.loader.exec_module(_transcript)
 parse_stream_json = _transcript.parse_stream_json
 TranscriptSignals = _transcript.TranscriptSignals
+
+# Containment for the eval agent, which runs with `--dangerously-skip-permissions`. Probed on
+# 2026-10-01 — docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md → *Open questions* (F7). The sandbox
+# wraps Bash only (bubblewrap on Linux; needs an AppArmor profile for `bwrap` on Ubuntu 24.04);
+# `permissions.deny` covers the file tools, and still holds under skip-permissions. CLAUDE.md
+# still loads (canary passed).
+_SANDBOX_SETTINGS = {
+    "sandbox": {
+        "enabled": True,
+        "autoAllowBashIfSandboxed": True,
+        "allowUnsandboxedCommands": False,
+        "network": {"deniedDomains": ["*"]},  # `allowedDomains` is auto-approved under skip-permissions
+        # Julia's caches only, so `julia --project=app` can precompile; the installed packages
+        # (`environments`, `packages`, `registries`) stay read-only.
+        "filesystem": {"denyRead": ["~/.ssh", "~/.gnupg", "~/.config/gh", "~/.claude"],
+                       "allowWrite": ["~/.julia/compiled", "~/.julia/logs", "~/.julia/scratchspaces"]},
+    },
+    "permissions": {
+        "deny": ["Write(~/**)", "Edit(~/**)", "NotebookEdit(~/**)",
+                 "Read(~/.ssh/**)", "Read(~/.gnupg/**)", "Read(~/.config/gh/**)",
+                 "Read(~/.claude/**)", "WebFetch", "WebSearch"],
+    },
+}
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
@@ -289,6 +316,7 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
     env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"}
     return subprocess.run(
         [claude_path, "-p", "--dangerously-skip-permissions",
+         "--settings", json.dumps(_SANDBOX_SETTINGS),
          "--output-format", "stream-json", "--verbose"],
         input=prompt_body, cwd=str(worktree), env=env,
         capture_output=True, text=True, timeout=timeout, check=False, encoding="utf-8",
@@ -340,6 +368,7 @@ def _make_detached_worktree(primary_repo: pathlib.Path, worktree_root: pathlib.P
     just make it absent in the without-arm.
     """
     tag = uuid.uuid4().hex[:8]
+    worktree_root.mkdir(parents=True, exist_ok=True)
     dest = worktree_root / f"cecelia-eval-{prompt_id}-{tag}"
     subprocess.run(
         ["git", "worktree", "add", "--detach", str(dest), "HEAD"],
@@ -530,7 +559,7 @@ def main() -> int:
                          "None if not found — the runner raises a clear error rather than "
                          "silently falling back to a bare `claude` string)")
     ap.add_argument("--worktree-root", type=pathlib.Path, default=_WORKTREE_ROOT_DEFAULT,
-                    help="Parent directory for the throwaway worktrees (default: sibling of repo)")
+                    help=f"Parent directory for the throwaway worktrees (default {_WORKTREE_ROOT_DEFAULT})")
     ap.add_argument("--keep-worktrees", action="store_true",
                     help="Don't remove worktrees after each run (debugging).")
     ap.add_argument("--arm", choices=("with", "without"), default="with",
