@@ -47,6 +47,10 @@ class _SuperviseFixture(_Fixture):
             fh.writelines(json.dumps(e) + "\n" for e in self.events)
         self.calls = []
 
+    def assign(self, prompt):
+        # curation's finding→rule judge; injected so no test can ever reach a real `claude`
+        return {"assignments": []}, 0.0
+
     def judge(self, verdict=None, cost=0.1):
         def fn(prompt):
             self.calls.append(prompt)
@@ -126,7 +130,7 @@ class RetryTest(_SuperviseFixture):
 
 class SuperviseTest(_SuperviseFixture):
     def test_a_logged_pass_gets_a_valid_record_with_the_judge_spend_apart(self):
-        record = self.sup.supervise(session="eval-1", judge=self.judge())
+        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign)
         self.assertEqual(self.sup._record.validate(record), [])
         self.assertEqual(record["run"]["supervisor"]["judge_calls"], 1)
         self.assertEqual(record["run"]["cost_usd"], 0.3)   # the suite's, unchanged
@@ -170,7 +174,7 @@ class PublishTest(_SuperviseFixture):
         return run
 
     def _record(self):
-        return self.sup.supervise(session="eval-1", judge=self.judge())
+        return self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign)
 
     def test_commits_the_record_and_rollups_then_closes_the_older_run_pr(self):
         wt = self.tmp / "wt"

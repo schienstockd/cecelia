@@ -28,7 +28,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import typing as _t
 import uuid
 
@@ -36,7 +35,6 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
-from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
 from cecelia.effectiveness.log import default_log_path  # noqa: E402
 
@@ -49,6 +47,7 @@ def _load_sibling(name: str):
 
 
 _record = _load_sibling("record")
+_judge = _load_sibling("judge")
 _run_prompt = _record._run_prompt
 _rollup = _record._rollup
 
@@ -57,7 +56,6 @@ MAX_INFRA_RETRIES = 2
 #: really costs, and the real cap is set from that (Decision 4).
 JUDGE_CALL_USD = 0.75
 JUDGE_TOTAL_USD = 10.0
-JUDGE_TIMEOUT = 240
 _DIFF_CHARS = 12000
 _FINAL_CHARS = 1500
 _TOOL_CALLS = 40
@@ -242,26 +240,7 @@ def judge_input(trace_dir: pathlib.Path, prompt_id: str) -> str:
 
 
 def default_judge(prompt: str) -> tuple[dict, float]:
-    """One tool-less `claude -p` call, schema-validated; returns (verdict, cost)."""
-    claude = resolve_claude_bin()
-    if not claude:
-        raise SupervisorError("triage", "claude CLI not on PATH")
-    with tempfile.TemporaryDirectory() as cwd:   # no repo, no CLAUDE.md, nothing to read
-        proc = subprocess.run(
-            [claude, "-p", "--tools", "", "--safe-mode", "--strict-mcp-config", "--no-session-persistence",
-             "--output-format", "json", "--max-budget-usd", str(JUDGE_CALL_USD),
-             "--json-schema", json.dumps(JUDGE_SCHEMA)],
-            input=prompt, cwd=cwd, env={**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"},
-            capture_output=True, text=True, encoding="utf-8", timeout=JUDGE_TIMEOUT, check=False)
-    try:
-        out = json.loads(proc.stdout or "{}")
-    except ValueError:
-        out = {}
-    verdict = out.get("structured_output")
-    if proc.returncode != 0 or out.get("is_error") or not isinstance(verdict, dict):
-        raise SupervisorError("triage", f"judge failed (exit {proc.returncode}): "
-                                        f"{(proc.stderr or proc.stdout or '')[-400:]}")
-    return verdict, float(out.get("total_cost_usd") or 0.0)
+    return _judge.call_judge(prompt, JUDGE_SCHEMA, budget_usd=JUDGE_CALL_USD)
 
 
 def _norm(text: str) -> str:
@@ -286,7 +265,7 @@ def triage(failures: _t.Sequence[dict], *, judge: _t.Callable[[str], tuple[dict,
         data = judge_input(pathlib.Path(t["trace"]), t["prompt_id"])
         try:
             verdict, cost = judge(_JUDGE_BRIEF + data)
-        except SupervisorError:
+        except (_judge.JudgeError, SupervisorError):
             spend["failed"] += 1
             continue
         spend["judge_calls"] += 1
@@ -395,7 +374,8 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
 
 def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path | None = None,
               session: str | None = None, date: str | None = None, judge_budget: float = JUDGE_TOTAL_USD,
-              judge: _t.Callable | None = None, sandboxed: bool | None = None,
+              judge: _t.Callable | None = None, assign: _t.Callable | None = None,
+              sandboxed: bool | None = None,
               state: dict | None = None) -> dict:
     """Run (or, with `session`, re-triage) one pass; returns its record, unwritten.
 
@@ -438,6 +418,13 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
     findings, actions = group_findings(judged, date=date, previous=_record.latest_before(date))
     notes = {"findings": findings, "next_actions": actions, "retries": retries, "sha": sha,
              "supervisor": {**spend, "session": session}}
+    record = _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)
+    state["stage"] = "curate"
+    curate = _load_sibling("curate")
+    proposals, cost = curate.propose(record, history=curate.history_before(date), events=events,
+                                     assign=assign)
+    notes["proposals"] = proposals
+    notes["supervisor"].update(curation_usd=round(cost, 4), cost_usd=round(spend["cost_usd"] + cost, 4))
     return _record.with_delta(
         _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite))
 

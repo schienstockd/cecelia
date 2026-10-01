@@ -54,6 +54,7 @@ SCHEMA_VERSION = 1
 FINDING_CLASSES = ("scorer_bug", "infra", "genuine", "decision")
 FINDING_STATUSES = ("open", "resolved", "dropped")
 RECURRENCE = ("recurring", "watch")
+PROPOSAL_KINDS = ("setup", "scorer", "retire", "add")
 VERDICTS = ("compliant", "noncompliant", "error")
 
 _HOW_TO_USE = (
@@ -233,18 +234,28 @@ def failure_record(date: str, *, stage: str, error: str, sha: str | None = None)
             "run": {"stage": stage, "error": error, "sha": sha}}
 
 
-def latest_before(date: str) -> dict | None:
-    """The newest valid pass record in the store dated before `date`; None if there isn't one."""
-    for path in sorted(store_root().glob("*.json"), reverse=True):
-        if path.stem >= date:
+def pass_records(before: str | None = None) -> list[dict]:
+    """Every valid pass record in the store, oldest first; only those dated before `before` if given.
+
+    Failure records and anything that doesn't validate are skipped.
+    """
+    out = []
+    for path in sorted(store_root().glob("*.json")):
+        if before is not None and path.stem >= before:
             continue
         try:
             record = load(path)
         except RecordError:
             continue
         if record.get("kind", "pass") == "pass":
-            return record
-    return None
+            out.append(record)
+    return out
+
+
+def latest_before(date: str) -> dict | None:
+    """The newest valid pass record in the store dated before `date`; None if there isn't one."""
+    records = pass_records(before=date)
+    return records[-1] if records else None
 
 
 _HYPOTHESIS_RE = re.compile(r"expect\s+`?([\w-]+)`?\s+to\b")
@@ -301,6 +312,7 @@ _REQUIRED = {
     "results": ("raw", "rescored", "per_prompt", "candidates"),
     "finding": ("id", "slug", "class", "status", "recurrence", "evidence", "diagnosis", "proposed_fix"),
     "next_action": ("title", "files", "change", "verify"),
+    "proposal": ("id", "kind", "summary", "sources"),
     "failure": ("schema_version", "date", "kind", "run"),
     "failure_run": ("stage", "error", "sha"),
 }
@@ -335,6 +347,11 @@ def validate(record: dict) -> list[str]:
         for ev in f.get("evidence", []):
             if not ev.get("trace") or not ev.get("excerpt"):
                 errs.append(f"{where}: evidence needs a `trace` and an `excerpt`")
+    for p in record.get("proposals", []):
+        where = f"proposal {p.get('id', '?')}"
+        need(p, where, _REQUIRED["proposal"])
+        if "kind" in p and p["kind"] not in PROPOSAL_KINDS:
+            errs.append(f"{where}: kind {p['kind']!r} not in {PROPOSAL_KINDS}")
     for i, a in enumerate(record.get("next_actions", [])):
         need(a, f"next_action {i + 1}", _REQUIRED["next_action"])
     for t in record.get("traces", []):
