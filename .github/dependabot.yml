@@ -1,0 +1,23 @@
+# Dependabot version updates: npm + GitHub Actions only. Pixi and Julia are refreshed by
+# `.github/workflows/update-deps.yml` instead — Dependabot cannot read pixi.lock, and the three Julia
+# manifests path-source each other so they must resolve together. See docs/todo/DEPS_UPDATES_PLAN.md.
+#
+# Monthly + grouped because every PR runs the full 3-OS CI matrix (torch included). Minor + patch
+# land as one PR per ecosystem; majors stay individual so one breaking upgrade doesn't block the rest.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: monthly
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
