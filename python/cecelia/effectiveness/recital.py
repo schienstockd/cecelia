@@ -57,12 +57,18 @@ class RecitalError(RuntimeError):
 
 
 #: The outcome-tag-requiring markers per mechanism, per CLAUDE.md → Git & commits (only these
-#: produce `_finding` rows; `plausible` / `potential duplicate` are surfaced in the recital body
-#: but don't need outcome resolution, so they stay out of the log to keep the pending↔resolution
-#: contract 1:1 with the hook's tag-count check). The hook's `_FINDING_MARKERS` is built from this.
+#: produce `_finding` rows, keeping the pending↔resolution contract 1:1 with the hook's tag-count
+#: check). The hook's `_FINDING_MARKERS` is built from this.
 MARKERS: dict[str, tuple[str, ...]] = {
     "fanout": ("confirmed",),
     "convention": ("should reuse", "wrong home"),
+}
+
+#: Advisory markers — no outcome tag, so no slug and no `_finding` row, but still a finding the
+#: reader should see: each becomes an `_advisory` row the console lists.
+ADVISORY_MARKERS: dict[str, tuple[str, ...]] = {
+    "fanout": ("plausible",),
+    "convention": ("potential duplicate",),
 }
 
 #: Bullet-line grammar the reviewer prompts ask for:
@@ -132,10 +138,10 @@ def _slug(mechanism: str, file: str, line: int, marker: str, desc: str = "") -> 
     return f"{prefix}-{digest}"
 
 
-def _parse_bullet(body: str, mechanism: str) -> Finding | None:
-    """Parse one bullet body (text after `- `); None if it carries none of the mechanism's
-    markers. A bullet names one verdict, so the first marker that tags it wins."""
-    for marker in MARKERS[mechanism]:
+def _parse_bullet(body: str, mechanism: str, markers: _t.Sequence[str] | None = None) -> Finding | None:
+    """Parse one bullet body (text after `- `); None if it carries none of `markers` (default:
+    the mechanism's outcome markers). A bullet names one verdict, so the first marker wins."""
+    for marker in (MARKERS[mechanism] if markers is None else markers):
         tags = list(_marker_tag_re(marker).finditer(outside_code(body)))
         if tags:
             break
@@ -158,15 +164,17 @@ def _parse_bullet(body: str, mechanism: str) -> Finding | None:
     )
 
 
-def _parse_findings(output: str, mechanism: str) -> list[Finding]:
-    """Extract outcome-tag-requiring findings from a reviewer's raw output.
+def _parse_findings(output: str, mechanism: str,
+                    markers: _t.Sequence[str] | None = None) -> list[Finding]:
+    """Extract findings from a reviewer's raw output — outcome-tag-requiring ones by default,
+    or those tagged with `markers` (e.g. `ADVISORY_MARKERS[mechanism]`).
 
-    Every bullet line carrying the mechanism's marker is one finding (see `_BULLET_RE`);
-    plausibles, commentary, and short-circuits carry no marker and are ignored. Order-preserving.
+    Every bullet line carrying one of the markers is one finding (see `_BULLET_RE`);
+    commentary and short-circuits carry no marker and are ignored. Order-preserving.
     """
     findings = []
     for m in _BULLET_RE.finditer(output):
-        f = _parse_bullet(m.group(1), mechanism)
+        f = _parse_bullet(m.group(1), mechanism, markers)
         if f is not None:
             findings.append(f)
     return findings
@@ -183,11 +191,12 @@ def _inject_slugs(output: str, mechanism: str) -> str:
     return _BULLET_RE.sub(_sub, output)
 
 
-def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding], mechanism: str) -> int:
-    """Bold marker occurrences that did NOT become a finding — off a bullet line, or in a shape
-    the tag pattern doesn't know. Tripwire for the next grammar drift: surfaced in the recital
-    body instead of dropping silently."""
-    bold = sum(len(_marker_bold_re(mk).findall(outside_code(output))) for mk in MARKERS[mechanism])
+def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding],
+                           markers: _t.Sequence[str]) -> int:
+    """Bold `markers` occurrences that did NOT become a finding — off a bullet line, or in a
+    shape the tag pattern doesn't know. Tripwire for the next grammar drift: surfaced in the
+    recital body instead of dropping silently."""
+    bold = sum(len(_marker_bold_re(mk).findall(outside_code(output))) for mk in markers)
     return bold - len(findings)
 
 
@@ -270,6 +279,7 @@ def _run_reviewer(
     *,
     event_name: str,
     finding_event_name: str,
+    advisory_event_name: str,
     mechanism: str,
     title: str,
     tail_none: str,
@@ -331,6 +341,15 @@ def _run_reviewer(
             commit=commit,
             branch=branch,
         )
+    advisories = _parse_findings(stripped, mechanism, ADVISORY_MARKERS[mechanism])
+    for f in advisories:
+        append_event(
+            advisory_event_name,
+            {"file": f.file, "line": f.line, "desc": f.desc, "marker": f.marker},
+            pr=pr,
+            commit=commit,
+            branch=branch,
+        )
 
     # Inject slugs so the author can copy each into a `[slug: outcome]` pair in the commit
     # message. Only the outcome-tag-requiring findings get slugs; other bullets (plausible /
@@ -342,12 +361,19 @@ def _run_reviewer(
     # wrapper tail isn't a duplicate.
     cleaned = _STRIP_TRAILING_TAIL.sub("", slugged).rstrip()
 
-    unparsed = _unparsed_marker_count(stripped, findings, mechanism)
+    unparsed = _unparsed_marker_count(stripped, findings, MARKERS[mechanism])
     if unparsed > 0:
         cleaned += (
             f"\n\n> **RECITAL PARSE WARNING** — {unparsed} finding marker(s) are not in a "
             "`- …[**marker**]` bullet the parser knows, so they got no slug and no log row. Tag each with the legacy "
             "bare form in the commit message, and report the reviewer output shape."
+        )
+    unparsed_adv = _unparsed_marker_count(stripped, advisories, ADVISORY_MARKERS[mechanism])
+    if unparsed_adv > 0:
+        cleaned += (
+            f"\n\n> **RECITAL PARSE WARNING** — {unparsed_adv} advisory marker(s) are not in a "
+            "`- …[**marker**]` bullet the parser knows, so they got no log row and won't show on "
+            "the console. No tag needed; report the reviewer output shape."
         )
 
     return f"_{title} (evidence):_\n\n{cleaned}\n\n_{title}: run_"
@@ -382,6 +408,7 @@ def run_recital(
     fanout_section = _run_reviewer(
         event_name="fanout_audit_run",
         finding_event_name="fanout_audit_finding",
+        advisory_event_name="fanout_audit_advisory",
         mechanism="fanout",
         title="Fanout audit",
         tail_none="no fanout audit needed",
@@ -395,6 +422,7 @@ def run_recital(
     convention_section = _run_reviewer(
         event_name="convention_check_run",
         finding_event_name="convention_check_finding",
+        advisory_event_name="convention_check_advisory",
         mechanism="convention",
         title="Convention check",
         tail_none="no convention check needed",

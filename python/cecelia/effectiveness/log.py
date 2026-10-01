@@ -46,9 +46,13 @@ EVENT_TYPES = frozenset({
     "fanout_audit_run",
     "fanout_audit_finding",
     "fanout_audit_finding_resolved",
+    #: Advisory findings (`plausible` / `potential duplicate`) — logged so the console shows
+    #: them, but no slug and no resolution row: the commit hook only gates outcome markers.
+    "fanout_audit_advisory",
     "convention_check_run",
     "convention_check_finding",
     "convention_check_finding_resolved",
+    "convention_check_advisory",
     "ratchet_hit",
     "human_override",
     "retrospective_miss",
