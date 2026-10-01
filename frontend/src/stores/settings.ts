@@ -8,6 +8,8 @@ import { decodeViewerBagEvent } from '../utils/viewerBagChannel'
 import { debouncedSave } from '../utils/debouncedSave'
 import { fetchProfileSettings, patchProfileSettings,
          type ProfileSettingsValue } from '../utils/profileSettingsApi'
+import { profileStorage, adoptLiveProfileBag } from '../utils/profileStorage'
+import { useAppControlStore } from './appControl'
 
 // ── USER_PROFILE_PLAN Phase 4: per-profile setting manifest ────────────────────────
 // Keys in this list are hydrated from `<config_dir>/user-profiles/<name>/settings.toml` on
@@ -93,7 +95,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // of any one population document — so it lives here, not in the (per-canvas) gating store. Stored
   // as the ONE key the popup viewer reads (`ViewerWindow.vue` → `pickRectAt`): `cc.pickZScope`.
   const _pickZ = (() => {
-    try { return JSON.parse(localStorage.getItem('cc.pickZScope') ?? '{}') as { mode?: string; window?: number } }
+    try { return JSON.parse(profileStorage.getItem('cc.pickZScope') ?? '{}') as { mode?: string; window?: number } }
     catch { return {} }
   })()
   const pickZMode = ref<'stack' | 'slice'>(_pickZ.mode === 'slice' ? 'slice' : 'stack')
@@ -329,12 +331,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // Cockpit's wanted valueName — empty = "use the resolver's fallback". Persisted so a user picking
   // a specific segmentation doesn't get bumped back to the default on remount.
   const correctionCockpitValueName = ref<string>(localStorage.getItem('cc.correctionCockpitValueName') ?? '')
-  // Account-managed MCP connectors the user hid in Settings → MCP connections (by name). Machine-wide
+  // Account-managed MCP connectors the user hid in Settings → MCP connections (by name). Per profile
   // and permanent, not per project: these are claude.ai account connectors we cannot detect, and
   // plenty of institutes have none of them (LabArchives is site-hosted), so an undismissable row
   // would nag forever with nothing to act on. Generic by name — more connectors are coming.
   const hiddenMcpAccounts = ref<string[]>(
-    JSON.parse(localStorage.getItem('cc.hiddenMcpAccounts') || '[]') as string[])
+    JSON.parse(profileStorage.getItem('cc.hiddenMcpAccounts') || '[]') as string[])
   // auto-capture app activity digests ([Cecelia] entries) — on project open AND after tasks/chains
   // finish (stores/labCapture.ts). One toggle for all automatic capture; off ⇒ only the manual
   // "Capture" button fires. Default ON — Cecelia is the always-on activity reporter (local-only, no
@@ -679,7 +681,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
   watch(csvIncludeAttrs,          v => localStorage.setItem('cc.csvIncludeAttrs',          String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
-  watch([pickZMode, pickZWindow], ([mode, w]) => localStorage.setItem('cc.pickZScope',
+  watch([pickZMode, pickZWindow], ([mode, w]) => profileStorage.setItem('cc.pickZScope',
     JSON.stringify({ mode, window: Math.max(0, Math.floor(Number(w) || 0)) })))
   watch(viewerAutoUpdate,         v => localStorage.setItem('cc.viewerAutoUpdate',         String(v)))
   watch(preferDevChannel,         v => localStorage.setItem('cc.preferDevChannel',         String(v)))
@@ -736,7 +738,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(correctionCockpitMode,      v => localStorage.setItem('cc.correctionCockpitMode',      String(v)))
   watch(correctionCockpitValueName, v => localStorage.setItem('cc.correctionCockpitValueName', v))
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
-  watch(hiddenMcpAccounts, v => localStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
+  watch(hiddenMcpAccounts, v => profileStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
   watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
   watch(viewProfile,              v => localStorage.setItem('cc.viewProfile',              v))
   watch(tipsOnLaunch,             v => localStorage.setItem('cc.tipsOnLaunch',             String(v)))
@@ -845,6 +847,15 @@ export const useSettingsStore = defineStore('settings', () => {
     // restarted to pick up the /api/profile/settings routes (api/src/ is NOT Revise-tracked).
     try {
       const r = await fetchProfileSettings()
+      // Someone else used this browser last: their localStorage mirror is replaced with this
+      // profile's bag and the page reloads, so every ref starts from this profile's values — or the
+      // defaults, never the previous person's (utils/profileStorage.ts). Skipped when the fetch
+      // failed: the fallback's 'default' name is not a real answer to "who is this".
+      if (r.ok && adoptLiveProfileBag(r.profile, r.settings, PROFILE_KEYS.map(k => `cc.${k}`))) {
+        useAppControlStore().markProfileJustPicked(r.profile)
+        window.location.reload()
+        return
+      }
       // Bootstrap payload: keys missing from TOML take the current (localStorage-derived) value.
       const bootstrap: Record<string, ProfileSettingsValue> = {}
       for (const key of PROFILE_KEYS) {

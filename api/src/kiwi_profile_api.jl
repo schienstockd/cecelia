@@ -193,6 +193,10 @@ function api_kiwi_profiles_rename(body_bytes::Vector{UInt8})
     if active_profile_name() == old_name
         set_active_profile!(new_name)
     end
+    record_profile_rename!(old_name, new_name)   # turns + lab-log hides stamped `old_name` stay theirs
+    # Same person, new name: the projects they own stay theirs. (Kiwi turn stamps keep the old
+    # name on purpose — see the comment above this function.)
+    rewrite_project_owners!(os -> String[o == old_name ? new_name : o for o in os])
     200, JSON3.write((; ok = true, oldName = old_name, newName = new_name,
                         active = active_profile_name()))
 end
@@ -221,6 +225,9 @@ function api_kiwi_profiles_delete(body_bytes::Vector{UInt8})
         isdir(dir) && return 500, JSON3.write((; ok = false,
             error = "Failed to delete profile dir: " * sprint(showerror, e)))
     end
+    # Drop the deleted profile from every project's owners — a project only it owned becomes
+    # visible to all instead of hidden behind a name nobody can pick.
+    rewrite_project_owners!(os -> filter(!=(name), os))
     200, JSON3.write((; ok = true, name = name))
 end
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { useRoute } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
@@ -47,7 +48,7 @@ watch(() => projectMeta.current?.uid, uid => { if (uid) customModules.refresh() 
 // Accordion: ONE nav group open at a time (was: all can be open, but
 // the sidebar was getting too long). Same rule + composable as the viewer window's control
 // accordion. On first-ever load, pick the first shown group so the sidebar isn't empty; after
-// that localStorage takes over (including an intentional "all closed" state).
+// that profileStorage takes over (including an intentional "all closed" state).
 const { open: openGroup, isOpen, toggle: toggleGroup } = useSingleOpenSection('cc.sidebar.openGroup', '')
 
 // static pipeline groups + the dynamic custom-module group (when any new-category modules exist).
@@ -57,9 +58,9 @@ const allGroups = computed(() => allNavGroups(customModules.categories))
 
 // Open the first visible group on first-ever load — the accordion is empty otherwise, and a
 // blank sidebar reads as broken. A user who explicitly collapses everything ends up with '' in
-// localStorage, which is NOT null, so this only fires once (never overwriting a user's choice).
+// profileStorage, which is NOT null, so this only fires once (never overwriting a user's choice).
 watch(() => allGroups.value, gs => {
-  if (openGroup.value === '' && localStorage.getItem('cc.sidebar.openGroup') === null && gs.length) {
+  if (openGroup.value === '' && profileStorage.getItem('cc.sidebar.openGroup') === null && gs.length) {
     openGroup.value = gs[0].heading
   }
 }, { immediate: true })

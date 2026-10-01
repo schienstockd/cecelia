@@ -1,4 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
+import { profileStorage } from '../utils/profileStorage'
 import { ref, computed } from 'vue'
 import {
   DEFAULT_GROUPS, gapBefore, logGroup, restoreGroups, storeGroups,
@@ -26,7 +27,7 @@ const GROUPS_KEY = 'cc.consoleGroups'
 /** Read the persisted chip selection. A user-settable option must survive a reload (CLAUDE.md), and a
  *  chip added since the selection was saved must arrive ON — see `restoreGroups`. */
 function loadGroups(): LogGroup[] {
-  try { return restoreGroups(localStorage.getItem(GROUPS_KEY)) }
+  try { return restoreGroups(profileStorage.getItem(GROUPS_KEY)) }
   catch { return [...DEFAULT_GROUPS] }     // private mode
 }
 
@@ -157,7 +158,7 @@ export const useLogStore = defineStore('log', () => {
 
   function setGroups(next: LogGroup[]) {
     groups.value = next
-    try { localStorage.setItem(GROUPS_KEY, storeGroups(next)) } catch { /* private mode */ }
+    try { profileStorage.setItem(GROUPS_KEY, storeGroups(next)) } catch { /* private mode */ }
   }
 
   function toggleGroup(g: LogGroup) {

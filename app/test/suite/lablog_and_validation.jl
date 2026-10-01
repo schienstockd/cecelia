@@ -56,6 +56,17 @@ end
 # ROLLING DAILY block: one [Cecelia] block per day, regenerated from source and rewritten in place
 # as activity accrues (append-only preserved for human entries). Dates are pinned so day rollover is
 # deterministic; run-log `at` is stamped explicitly (the `at` kwarg) so a task lands on a given day.
+@testset "Lab log — user author carries the profile" begin
+    @test Cecelia.lab_log_user_author("User", "alice") == "User · alice"
+    @test Cecelia.lab_log_user_author("User — correction", "alice") == "User — correction · alice"
+    @test Cecelia.lab_log_user_author("User", "default") == "User"          # single-seat: no name
+    @test Cecelia.lab_log_user_author("Claude", "alice") == "Claude"
+    @test Cecelia.lab_log_user_author("Cecelia — Cohort check", "alice") == "Cecelia — Cohort check"
+    @test Cecelia.lab_log_user_author("User · bob", "alice") == "User · bob" # already stamped
+    proj_entries = Cecelia.parse_lab_log("## 2026-10-01 [User · alice]\n- a note\n")
+    @test proj_entries[1]["author"] == "User · alice"                      # header parser round-trips
+end
+
 @testset "Lab log context — rolling daily block" begin
     proj = create_project!(name="labctx-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="set-A")
@@ -262,6 +273,18 @@ end
     @test read_dismissed(proj) == ["b3c4"]
     @test read_dismissed(load_project(proj.uid)) == ["b3c4"]           # persists
     @test_throws ErrorException set_dismissed!(proj, "  ", true)       # empty id rejected
+
+    # per profile: alice's hide is alice's
+    set_dismissed!(proj, "a111", true, "alice")
+    @test read_dismissed(proj, "alice") == ["a111"]                    # not default's hides
+    @test "a111" ∉ read_dismissed(proj, "bob")
+    # a pre-profile flat array is everyone's start, and survives the first keyed write
+    Cecelia.write_json_atomic(Cecelia._dismissed_path(proj), ["old1"])
+    set_dismissed!(proj, "a222", true, "alice")
+    @test read_dismissed(proj, "alice") == ["a222", "old1"]
+    @test read_dismissed(proj, "bob") == ["old1"]
+    set_dismissed!(proj, "b999", true, "bob")
+    @test read_dismissed(proj, "carol") == ["old1"]                    # still there after two writes
 
     # hiding NEVER edits the log file (append-only): the entry text is still on disk
     append_lab_log!(proj, "Cecelia", ["a digest line to hide"])

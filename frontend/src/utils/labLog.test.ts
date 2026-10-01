@@ -17,6 +17,12 @@ describe('labLog.authorKind', () => {
     expect(authorKind('Cecelia')).toBe('cecelia')
     expect(authorKind('Someone else')).toBe('other')
   })
+  it('classifies on the tag, not the stamped profile name', () => {
+    expect(authorKind('User · alice')).toBe('user')
+    expect(authorKind('User — correction · alice')).toBe('correction')
+    expect(authorKind('User · claude-lab')).toBe('user')
+    expect(authorKind('User · cecelia')).toBe('user')
+  })
   it('is case/whitespace-insensitive', () => {
     expect(authorKind('  CLAUDE ')).toBe('claude')
     expect(authorKind('user')).toBe('user')

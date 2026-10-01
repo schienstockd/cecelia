@@ -17,6 +17,7 @@
 // touches vue-router — this one shouldn't be the first to require it).
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
+import { profileStorage } from '../utils/profileStorage'
 import { ref, computed, watch, nextTick, onScopeDispose } from 'vue'
 import { useAppControlStore } from './appControl'
 import { useProjectStore } from './project'
@@ -75,7 +76,7 @@ export const useGuideStore = defineStore('guide', () => {
   function loadCompleted() {
     const s = new Set<string>()
     for (const g of GUIDES) {
-      try { if (localStorage.getItem(doneKey(g.id)) === '1') s.add(g.id) } catch { /* private mode */ }
+      try { if (profileStorage.getItem(doneKey(g.id)) === '1') s.add(g.id) } catch { /* private mode */ }
     }
     completed.value = s
   }
@@ -83,10 +84,10 @@ export const useGuideStore = defineStore('guide', () => {
 
   function markDone(id: string) {
     completed.value = new Set(completed.value).add(id)
-    try { localStorage.setItem(doneKey(id), '1') } catch { /* private mode — this session only */ }
+    try { profileStorage.setItem(doneKey(id), '1') } catch { /* private mode — this session only */ }
   }
   function clearCompleted() {
-    for (const g of GUIDES) { try { localStorage.removeItem(doneKey(g.id)) } catch { /* ignore */ } }
+    for (const g of GUIDES) { try { profileStorage.removeItem(doneKey(g.id)) } catch { /* ignore */ } }
     completed.value = new Set()
   }
 

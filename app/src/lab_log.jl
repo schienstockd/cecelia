@@ -85,6 +85,21 @@ function append_lab_log!(proj::CciaProject, author::AbstractString, lines;
     block
 end
 
+"""
+    lab_log_user_author(author, profile) -> String
+
+Stamp a human-written author tag with the profile that wrote it: `"User"` → `"User · alice"`,
+`"User — correction"` → `"User — correction · alice"`. Every other tag (Claude, Cecelia, LabArchives)
+and the `default` profile pass through unchanged — a single-seat install has no name worth recording.
+The frontend classifies on the part before ` · ` (`authorKind` in `frontend/src/utils/labLog.ts`).
+"""
+function lab_log_user_author(author::AbstractString, profile::AbstractString)::String
+    a = strip(author)
+    (startswith(lowercase(a), "user") && !isempty(profile) && profile != "default" &&
+     !occursin(" · ", a)) || return String(a)
+    "$(a) · $(profile)"
+end
+
 # validate + normalise an (author, lines) pair into (tag, clean_lines); shared by append + upsert.
 function _ll_tag_and_lines(author::AbstractString, lines)::Tuple{String,Vector{String}}
     lines_vec = lines isa AbstractString ? [lines] : collect(lines)
@@ -168,31 +183,58 @@ end
 # id. The id is the same `entryId(raw)` the frontend computes for tuning.
 _dismissed_path(proj::CciaProject)::String = joinpath(proj.root, "settings", "lab-log-dismissed.json")
 
-# the dismissed entry ids; [] when none.
-function read_dismissed(proj::CciaProject)::Vector{String}
+# Hiding is a personal view choice, so the sidecar is keyed by profile: `{ "<profile>": [ids] }`. A
+# legacy flat array (written before profiles) is everyone's starting list until they change their own;
+# once the file is keyed it is kept under `"*"` (not a valid profile name).
+const _DISMISSED_LEGACY_KEY = "*"
+function _read_dismissed_doc(proj::CciaProject)::Tuple{Vector{String},Dict{String,Vector{String}}}
     p = _dismissed_path(proj)
-    isfile(p) || return String[]
+    isfile(p) || return (String[], Dict{String,Vector{String}}())
     try
-        String[String(x) for x in JSON3.read(read(p, String), Vector{Any})]
+        raw = JSON3.read(read(p, String))
+        raw isa AbstractVector && return (String[String(x) for x in raw], Dict{String,Vector{String}}())
+        by = Dict{String,Vector{String}}(String(k) => String[String(x) for x in v]
+                                         for (k, v) in pairs(raw) if v isa AbstractVector)
+        (pop!(by, _DISMISSED_LEGACY_KEY, String[]), by)
     catch
-        String[]
+        (String[], Dict{String,Vector{String}}())
     end
 end
 
+# the dismissed entry ids for `profile`; [] when none.
+function read_dismissed(proj::CciaProject, profile::AbstractString = active_profile_name())::Vector{String}
+    legacy, by = _read_dismissed_doc(proj)
+    _dismissed_for(by, legacy, profile)
+end
+
+# the profile's list — under its current name, else a former one (a rename), else the legacy start
+function _dismissed_for(by, legacy, profile::AbstractString)::Vector{String}
+    for n in profile_names(profile)
+        haskey(by, n) && return by[n]
+    end
+    legacy
+end
+
 """
-Hide (`dismissed=true`) or un-hide a lab-log entry by its id. Config sidecar only — the log file is
-never modified (append-only). Lock-guarded. Returns the updated id list.
+Hide (`dismissed=true`) or un-hide a lab-log entry by its id, for `profile` only. Config sidecar only —
+the log file is never modified (append-only). Lock-guarded. Returns the profile's updated id list.
 """
-function set_dismissed!(proj::CciaProject, entry_id::AbstractString, dismissed::Bool)::Vector{String}
+function set_dismissed!(proj::CciaProject, entry_id::AbstractString, dismissed::Bool,
+                        profile::AbstractString = active_profile_name())::Vector{String}
     id = strip(String(entry_id))
     isempty(id) && error("dismiss entry id required")
-    s = Set(read_dismissed(proj))
-    dismissed ? push!(s, id) : delete!(s, id)
-    out = sort(collect(s))
+    out = String[]
     with_transaction(proj) do
+        legacy, by = _read_dismissed_doc(proj)
+        s = Set(_dismissed_for(by, legacy, profile))
+        dismissed ? push!(s, id) : delete!(s, id)
+        out = sort(collect(s))
+        by[String(profile)] = out
+        # a legacy list stays as each other profile's starting point until they write their own
+        isempty(legacy) || (by[_DISMISSED_LEGACY_KEY] = legacy)
         p = _dismissed_path(proj)
         mkpath(dirname(p))
-        write_json_atomic(p, out)
+        write_json_atomic(p, by)
     end
     out
 end

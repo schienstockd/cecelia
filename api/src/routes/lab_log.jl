@@ -85,6 +85,7 @@ function api_lablog_append(body_bytes::Vector{UInt8})
             "No LabArchives notebook is linked to this project. Call set_labarchives_context first, " *
             "or append as [Claude]."))
     end
+    author = lab_log_user_author(author, active_profile_name())
     block = try
         append_lab_log!(proj, author, lines)
     catch e

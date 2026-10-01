@@ -32,6 +32,7 @@ describe('profileSettingsApi', () => {
       expect(r.settings.theme).toBe('dark')
       expect(r.settings.kiwiOpen).toBe(true)
       expect(r.settings.ribbonThickness).toBe(3)
+      expect(r.ok).toBe(true)
     })
 
     it('GETs /api/profile/settings with no-store cache', async () => {
@@ -54,13 +55,13 @@ describe('profileSettingsApi', () => {
     it('falls back to {default, {}} on network failure', async () => {
       fetchMock.mockRejectedValue(new Error('network'))
       const r = await fetchProfileSettings()
-      expect(r).toEqual({ profile: 'default', settings: {} })
+      expect(r).toEqual({ profile: 'default', settings: {}, ok: false })
     })
 
     it('falls back to {default, {}} on non-2xx', async () => {
       fetchMock.mockResolvedValue(jsonRes(503, { error: 'boot' }))
       const r = await fetchProfileSettings()
-      expect(r).toEqual({ profile: 'default', settings: {} })
+      expect(r).toEqual({ profile: 'default', settings: {}, ok: false })
     })
 
     it('tolerates a malformed body without throwing', async () => {
@@ -69,7 +70,7 @@ describe('profileSettingsApi', () => {
         json: async () => { throw new Error('bad json') },
       } as unknown as Response)
       const r = await fetchProfileSettings()
-      expect(r).toEqual({ profile: 'default', settings: {} })
+      expect(r).toEqual({ profile: 'default', settings: {}, ok: false })
     })
   })
 

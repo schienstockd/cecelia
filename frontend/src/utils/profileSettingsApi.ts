@@ -13,6 +13,9 @@ export type ProfileSettingsValue = string | number | boolean | null
 export interface ProfileSettingsResult {
   profile: string
   settings: Record<string, ProfileSettingsValue>
+  /** False when the fetch failed and `profile`/`settings` are the empty fallback — a caller that
+   *  compares `profile` against something must not act on the fallback's `'default'`. */
+  ok?: boolean
 }
 
 async function _json(res: Response): Promise<unknown> {
@@ -33,13 +36,11 @@ export async function fetchProfileSettings(apiBase = ''): Promise<ProfileSetting
       cache: 'no-store',
       signal: AbortSignal.timeout(5000),
     })
-    if (!res.ok) return { profile: 'default', settings: {} }
+    if (!res.ok) return { profile: 'default', settings: {}, ok: false }
     const body = await _json(res) as Partial<ProfileSettingsResult> | null
-    return {
-      profile: body?.profile ?? 'default',
-      settings: body?.settings ?? {},
-    }
-  } catch { return { profile: 'default', settings: {} } }
+    if (!body?.profile) return { profile: 'default', settings: {}, ok: false }
+    return { profile: body.profile, settings: body.settings ?? {}, ok: true }
+  } catch { return { profile: 'default', settings: {}, ok: false } }
 }
 
 /**

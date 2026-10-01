@@ -67,13 +67,15 @@ function api_projects_load(body_bytes::Vector{UInt8})
     project = projects[idx]
     proj_dir = string(project["path"])
 
-    # Update lastOpenedAt
+    # Update lastOpenedAt — the install-wide value (kept for a profile that never opened it) and
+    # the active profile's own.
     meta_file = joinpath(proj_dir, "project.json")
     try
         raw = read_ccid_raw(meta_file)
         raw["lastOpenedAt"] = string(now())
         write_json_atomic(meta_file, raw)
         project["lastOpenedAt"] = raw["lastOpenedAt"]
+        touch_profile_recent!(uid, raw["lastOpenedAt"])   # the profile's own "recent" order
     catch e
         @warn "Could not update lastOpenedAt" uid exception=e
     end
@@ -405,6 +407,32 @@ function api_projects_claim(body_bytes::Vector{UInt8})
     catch e
         return 500, JSON3.write((; error="Failed to update project owners: " * sprint(showerror, e)))
     end
+end
+
+# Apply `f(owners) -> owners` to every project's `owners` — the profile rename/delete routes keep
+# ownership pointing at a live profile (a rename carries it over; a delete drops it, and a project
+# left with no owner falls back to visible-to-all). Untouched files are not rewritten. Returns the
+# number of projects changed; a malformed project.json is skipped with a warning.
+function rewrite_project_owners!(f)::Int
+    isdir(projects_dir()) || return 0
+    n = 0
+    for entry in readdir(projects_dir(); join = true)
+        meta_file = joinpath(entry, "project.json")
+        isfile(meta_file) || continue
+        try
+            raw = read_ccid_raw(meta_file)
+            haskey(raw, "owners") || continue
+            old = String[string(x) for x in raw["owners"] if !isempty(string(x))]
+            new = unique(f(old))
+            new == old && continue
+            raw["owners"] = new
+            write_json_atomic(meta_file, raw)
+            n += 1
+        catch e
+            @warn "Could not rewrite project owners" dir = entry exception = e
+        end
+    end
+    n
 end
 
 # POST /api/projects/unclaim  { uid }  → { ok, owners }

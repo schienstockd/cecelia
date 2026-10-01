@@ -17,6 +17,7 @@
 // bug this fixes on the attachment strip.
 
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useBlackboardStore } from '../stores/blackboard'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
@@ -78,7 +79,7 @@ const LIST_COLUMNS: SelectionColumn[] = [
 ]
 
 // ── Filter chips — Decision 6 (from the P4 plan): status + outcome are filterable columns on the
-// list. Both persist across mounts via localStorage; the profile entry is always visible regardless
+// list. Both persist across mounts via profileStorage; the profile entry is always visible regardless
 // (see `filterEntries` in `utils/blackboardFilters.ts`).
 const STATUS_FILTER_OPTS = [
   { value: 'all',      label: 'All' },
@@ -96,7 +97,7 @@ const STATUS_FILTER_KEY  = 'cc.blackboard.statusFilter'
 const OUTCOME_FILTER_KEY = 'cc.blackboard.outcomeFilter'
 function loadPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
-    const v = localStorage.getItem(key)
+    const v = profileStorage.getItem(key)
     return v && (allowed as readonly string[]).includes(v) ? v as T : fallback
   } catch { return fallback }
 }
@@ -104,8 +105,8 @@ const statusFilter  = ref<StatusChoice>(loadPref<StatusChoice>(
   STATUS_FILTER_KEY, ['all', 'open', 'resolved', 'parked'], 'all'))
 const outcomeFilter = ref<OutcomeChoice>(loadPref<OutcomeChoice>(
   OUTCOME_FILTER_KEY, ['all', 'untagged', 'good', 'bad'], 'all'))
-watch(statusFilter,  v => { try { localStorage.setItem(STATUS_FILTER_KEY,  v) } catch { /* private mode */ } })
-watch(outcomeFilter, v => { try { localStorage.setItem(OUTCOME_FILTER_KEY, v) } catch { /* private mode */ } })
+watch(statusFilter,  v => { try { profileStorage.setItem(STATUS_FILTER_KEY,  v) } catch { /* private mode */ } })
+watch(outcomeFilter, v => { try { profileStorage.setItem(OUTCOME_FILTER_KEY, v) } catch { /* private mode */ } })
 
 // Filtered rows that actually feed the SelectionTable. `filterEntries` keeps the profile row
 // visible regardless of the filters (Decision 2 — it's the pinned "what is this project" record).

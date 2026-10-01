@@ -16,6 +16,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
 import { cachedPyramidRecommendation } from './pyramidPeek'
@@ -449,7 +450,7 @@ const optionRefetch = debouncedLatest<null>(async () => {
 onUnmounted(() => optionRefetch.cancel())
 
 watch(selectedTask, (task) => {
-  localStorage.setItem(`cc-fn:${props.module}`, task)   // remember last-used function per module
+  profileStorage.setItem(`cc-fn:${props.module}`, task)   // remember last-used function per module
 })
 
 // Populate the form from remembered funParams: on function change, and on project/set switch
@@ -471,7 +472,7 @@ watch(drivingImageUid, (uid) => { if (uid) initParams(taskDef.value) })
 watch(() => props.defs, (defs) => {
   if (!defs.length) return
   if (selectedTask.value && defs.some(d => d.task === selectedTask.value)) return
-  const saved = localStorage.getItem(`cc-fn:${props.module}`)
+  const saved = profileStorage.getItem(`cc-fn:${props.module}`)
   selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved : defs[0].task
 }, { immediate: true })
 
@@ -527,7 +528,7 @@ function run() {
   const params = flattenParams(def, paramValues.value)
 
   // params are persisted server-side on run (per image + set); just remember the last-used function
-  localStorage.setItem(`cc-fn:${props.module}`, def.task)
+  profileStorage.setItem(`cc-fn:${props.module}`, def.task)
   // KEEP the draft, as exactly what was submitted — do not clear it.
   //
   // THE "my params revert to default after I start a task" bug. Clearing it here assumed the

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import CorrectionPlanPanel from '../components/CorrectionPlanPanel.vue'
@@ -13,14 +14,14 @@ const { defs: cleanupDefs, reload: reloadDefs } = useTaskDefs('cleanupImages')
 // but scoped to the cleanup module because that's the only place the plan applies.
 const PLAN_OPEN_KEY = 'cc.correction-plan.open'
 const planOpen = ref<boolean>(false)
-try { planOpen.value = localStorage.getItem(PLAN_OPEN_KEY) === '1' } catch { /* first-run */ }
+try { planOpen.value = profileStorage.getItem(PLAN_OPEN_KEY) === '1' } catch { /* first-run */ }
 function togglePlan(): void {
   planOpen.value = !planOpen.value
-  try { localStorage.setItem(PLAN_OPEN_KEY, planOpen.value ? '1' : '0') } catch { /* ignore */ }
+  try { profileStorage.setItem(PLAN_OPEN_KEY, planOpen.value ? '1' : '0') } catch { /* ignore */ }
 }
 function closePlan(): void {
   planOpen.value = false
-  try { localStorage.setItem(PLAN_OPEN_KEY, '0') } catch { /* ignore */ }
+  try { profileStorage.setItem(PLAN_OPEN_KEY, '0') } catch { /* ignore */ }
 }
 </script>
 
