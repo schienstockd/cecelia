@@ -352,6 +352,12 @@ claude-md-eval-analyse = "python scripts/claude_md_eval/analyse.py"
 # docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md.
 claude-md-eval-record = "python scripts/claude_md_eval/record.py"
 
+# The supervised Monday pass: pin origin/main, reset the persistent worktree
+# (~/.cecelia-effectiveness/eval-worktree) to it, run the suite there, retry errored runs, judge
+# every failure with a tool-less `claude -p`, write the run record. `--session S` re-triages a pass
+# already in the log; `--dry-run` prints the record. Design: docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md.
+claude-md-eval-supervise = "python scripts/claude_md_eval/supervise.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the

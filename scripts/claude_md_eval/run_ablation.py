@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import shutil
 import sys
 import time
 
@@ -164,7 +163,7 @@ def main() -> int:
     ap.add_argument("--runs", type=int, default=3,
                     help="Fresh agents per prompt PER ARM (default 3 — so 6 total per prompt)")
     ap.add_argument("--timeout", type=int, default=300)
-    ap.add_argument("--claude-path", default=shutil.which("claude"))
+    ap.add_argument("--claude-path", default=_run_suite._run_prompt.resolve_claude_bin())
     ap.add_argument("--worktree-root", type=pathlib.Path,
                     default=_run_suite._run_prompt._WORKTREE_ROOT_DEFAULT)
     ap.add_argument("--keep-worktrees", action="store_true")

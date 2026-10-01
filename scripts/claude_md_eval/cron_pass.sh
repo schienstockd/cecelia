@@ -7,6 +7,10 @@
 #
 # Design: docs/todo/CLAUDE_MD_EVAL_PLAN.md → *Cadence* / *P3 cron*.
 #
+# By default the pass is supervised (`claude-md-eval-supervise`: pinned origin/main, failures
+# triaged, a run record written — docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md). `--no-supervise`
+# runs the bare suite from this checkout, as before.
+#
 # Installed as a systemd user timer via `scripts/claude_md_eval/systemd/*` — see
 # that dir's install instructions. Not run directly by the timer; the .service
 # unit calls this script.
@@ -15,6 +19,11 @@
 # claude-md-eval.service` shows a red bar the next time the user looks.
 
 set -euo pipefail
+
+TASK=claude-md-eval-supervise
+if [ "${1:-}" = "--no-supervise" ]; then
+    TASK=claude-md-eval
+fi
 
 # Repo root — this script lives at `<repo>/scripts/claude_md_eval/cron_pass.sh`.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,13 +43,14 @@ if ! flock -n 200; then
     exit 0
 fi
 
-# Runs `pixi run claude-md-eval` at the default N=3. Ablation stays manual — it
+# Runs `pixi run $TASK` at the default N=3. Ablation stays manual — it
 # needs trace inspection per D12 discipline, which cron can't do.
 {
     echo "=== cron pass started $(date -Is) ==="
     echo "repo: $REPO_ROOT"
     echo "pixi: $(command -v pixi || echo '(not found)')"
     cd "$REPO_ROOT"
-    nice -n 10 ionice -c 3 pixi run claude-md-eval
+    echo "task: $TASK"
+    nice -n 10 ionice -c 3 pixi run "$TASK"
     echo "=== cron pass finished $(date -Is) ==="
 } 2>&1 | tee -a "$LOG_FILE"

@@ -145,9 +145,29 @@ Each phase is its own PR.
    (`run_prompt.py`), enabled for `frontend-copy-canonical`. It strips `<!-- -->`, `/* */` and `//`
    comments (not `://`) before the anti regex only. Checkpoint met: rescoring all 46 saved traces
    flips `20260930T141134Z-frontend-copy-canonical-with-r2` and nothing else.
-3. **Supervisor:** `--ref` in `run_prompt.py`, persistent worktree, `supervise.py` with tool-less
-   triage and retries, `cron_pass.sh` calling it by default (with `--no-supervise`), lock and
-   `finally` cleanup. Checkpoint: a forced crash still writes a failure record.
+3. **Supervisor — built.** `scripts/claude_md_eval/supervise.py` (`pixi run claude-md-eval-supervise`),
+   tests in `python/cecelia/tests/test_claude_md_eval_supervise.py`. `cron_pass.sh` runs it by
+   default (`--no-supervise` for the bare suite). Checkpoint met: a crash at any stage writes a
+   `kind: failure` record (`record.failure_record`). Choices made while building:
+   - **No `--ref` in `run_prompt.py`.** The suite runs inside the persistent worktree, reset to the
+     pinned SHA and checked, so its eval worktrees already branch from that SHA.
+   - The worktree's `git clean -fdx` keeps `.pixi`, `.env` and `frontend/node_modules`; the first
+     run pays a full `pixi install` there.
+   - The suite runs under a session id the supervisor picks, so `rollup.pass_runs` finds exactly
+     its rows. `record.build(suite=…)` takes that row, not just the day's last pass.
+   - The judge call is `claude -p --tools "" --safe-mode --strict-mcp-config` in an empty temp
+     dir, with `--json-schema`. Its input has the rule, the task, the scorer frontmatter and score,
+     anti-signal matches, the first 40 tool calls, the final message and the diff (12 KB cap). A
+     quoted `evidence` line that isn't in that input is marked `verified: false`.
+   - Errored runs are `infra` without a judge call, and are retried (≤2) through
+     `claude-md-eval-one`.
+   - One finding per (prompt, class). `recurring` means the previous record in the store has the
+     same pair.
+   - A failure record never replaces a pass record of the same date.
+   - `--session S --dry-run` re-triages a logged pass. On the 09-30 pass that was 8 judge calls,
+     $0.58 (~$0.07 each), and the findings matched the hand-written seed.
+   - The judge budget is a high safety stop ($10, $0.75 per call), so the first real pass measures
+     the real cost. The cap gets set after that.
 4. **Close-out:** both rollups, delta section, single-open-PR rule, staleness guard. Checkpoint:
    the guard fires on an old store and is silent on a fresh one.
 5. **Curation:** candidates and proposals per Decision 8. Checkpoint: running it on the current log
