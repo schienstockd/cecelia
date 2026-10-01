@@ -32,7 +32,7 @@ describe('observerSetupReason', () => {
   })
 })
 
-describe('terminalCta — which terminal button the lab-log toolbar shows', () => {
+describe('terminalCta — which terminal button Kiwi\'s Terminal row shows', () => {
   it('offers setup until the terminal is registered', () => {
     expect(terminalCta(true, 'missing')).toBe('setup')
     expect(terminalCta(true, undefined)).toBe('setup')   // status not read yet → assume not set up

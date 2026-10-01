@@ -241,7 +241,7 @@ _build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user", dir::Abstr
 
 # ── Is the user's terminal already set up? ─────────────────────────────────────────────────────────
 #
-# The lab-log panel offers "Set up my terminal" INSTEAD of "Chat to Claude" until this says yes, so the
+# Kiwi's Terminal row offers "Set up" INSTEAD of "Chat to Claude" until this says yes, so the
 # setup isn't buried in an info dialog. Detection reads Claude Code's config file rather than shelling
 # out: `claude mcp get/list` health-check every server (spawning our own Python MCP process) which would
 # make opening the panel slow for a question we ask on every refresh.

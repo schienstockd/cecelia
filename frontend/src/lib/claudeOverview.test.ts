@@ -63,11 +63,8 @@ describe('claudeOverview content model', () => {
     expect(claudeChatCommand('')).toBe('')
   })
 
-  it('offers one-click terminal setup, not an instruction to register anything', () => {
-    expect(CLAUDE_TERMINAL.note).toMatch(/no setup/i)
-    expect(CLAUDE_TERMINAL.action.length).toBeLessThan(30)      // a button label, not a sentence
-    expect(CLAUDE_TERMINAL.done).toMatch(/claude/)             // tells them what to type next
-    for (const s of Object.values(CLAUDE_TERMINAL)) expect(s.length).toBeLessThan(140)
+  it('keeps the terminal-setup labels short enough for a compact button row', () => {
+    for (const s of Object.values(CLAUDE_TERMINAL)) expect(s.length).toBeLessThan(15)
   })
 })
 

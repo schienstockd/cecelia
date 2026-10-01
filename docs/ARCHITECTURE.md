@@ -129,7 +129,7 @@ its own. This is the mechanism that keeps the package runnable headless — a ta
 | File | Classification | Reason |
 |------|---------------|--------|
 | `app/src/config.jl` | PACKAGE | Config loading, path helpers — no HTTP |
-| `app/src/utils.jl` | PACKAGE | `gen_uid`, `_dir_bytes` — pure utilities |
+| `app/src/utils.jl` | PACKAGE | `gen_uid`, `_path_bytes` / `_dir_bytes` — pure utilities |
 | `app/src/helpers.jl` | PACKAGE | Versioned-dict helpers — pure |
 | `app/src/model/image.jl` | PACKAGE | CciaImage; round-trips every ccid.json field (status, attr, imChannelNames, filepath) |
 | `app/src/model/set.jl` | PACKAGE | CciaSet, `init_object`, `delete_image!` |

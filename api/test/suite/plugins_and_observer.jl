@@ -153,7 +153,7 @@ end
         let cfg = JSON3.read(read(String(s.mcpConfigPath), String))
             @test haskey(cfg.mcpServers, Symbol("cecelia-observer"))
         end
-        # terminal-setup detection: which button the lab-log toolbar shows (setup vs Chat to Claude).
+        # terminal-setup detection: which button Kiwi's Terminal row shows (setup vs Chat to Claude).
         # Don't assert WHICH state — it depends on the dev machine's ~/.claude.json — but `ready` must
         # mean exactly "current", since the UI treats a stale entry as not set up.
         @test String(s.terminal.state) in Set(["missing", "stale", "shadowed", "current"])

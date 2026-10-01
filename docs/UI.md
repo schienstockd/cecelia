@@ -518,7 +518,7 @@ Host it with `v-if`: `<MyDialog v-if="show" @close="show = false" />`. Put dialo
 child's scoped `<style>`; the shell (overlay/box/header/footer) is BaseModal's — don't restyle it.
 Working examples: `PackagesDialog.vue` (toolbar + body), `PhysicalSizeDialog.vue` (`#title` slot +
 footer), `FileBrowser.vue` (toolbar + footer), `ClaudeOverviewDialog.vue` (a static how-to — content
-from `lib/claudeOverview.ts`, opened by the `?` button in the lab-log toolbar), `ImageMetadataDialog.vue`
+from `lib/claudeOverview.ts`, opened by the `?` button in Kiwi), `ImageMetadataDialog.vue`
 (read-only "everything we know about this image" — original source file path + dimensions/calibration/
 channels/files/attrs, opened by the info icon on every `ImageTable` row). *(An in-canvas overlay
 like `GateOverlay` is a different thing — that's `position:absolute` inside a plot, not a modal.)*

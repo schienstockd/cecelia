@@ -1,6 +1,6 @@
 ---
 id: dir-size
-rule: Windows compatibility — `_dir_bytes` for directory size
+rule: Windows compatibility — `_path_bytes` for size on disk
 rule_section: CLAUDE.md → *Windows compatibility*
 # `_path_bytes` counts: docs/inventory/JULIA_APP.md names it "the one 'how big is this on
 # disk' answer … over `_dir_bytes`". All 3 runs on 2026-09-30 called it and scored 0/3 against
