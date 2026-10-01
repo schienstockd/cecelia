@@ -155,9 +155,12 @@ def find_suite(events: _t.Sequence[dict], date: str) -> dict:
 
 
 def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = None,
-          ref: str | None = None, sandboxed: bool = False) -> dict:
-    """Assemble the record for the pass on `date`. Pure apart from reading traces and git."""
-    suite = find_suite(events, date)
+          ref: str | None = None, sandboxed: bool = False, suite: dict | None = None) -> dict:
+    """Assemble the record for the pass on `date` (or for `suite`, when the caller knows its row).
+
+    Pure apart from reading traces and git.
+    """
+    suite = suite or find_suite(events, date)
     runs = _rollup.pass_runs(events, suite)
     traces, header = [], {}
     for row in sorted(runs, key=lambda e: e["ts"]):
@@ -185,6 +188,7 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
     proposals = notes.get("proposals", [])
     record = {
         "schema_version": SCHEMA_VERSION,
+        "kind": "pass",
         "date": date,
         "run": {
             "suite_ts": suite["ts"], "session": suite.get("session"), "branch": suite.get("branch"),
@@ -199,6 +203,8 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
             "claude_code_version": header.get("claude_code_version"), "model": header.get("model"),
             "cost_usd": suite["payload"].get("totals", {}).get("cost_usd"),
             "retries": notes.get("retries", []),
+            # The supervisor's own judge spend, kept apart from the suite's (Decision 4).
+            "supervisor": notes.get("supervisor"),
             "trace_root": str(_run_prompt.trace_root()),
         },
         "results": {"raw": _tally(t["scores"]["raw"] for t in traces),
@@ -219,6 +225,26 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
     return record
 
 
+def failure_record(date: str, *, stage: str, error: str, sha: str | None = None) -> dict:
+    """The minimal record a crashed run still leaves (Decision 13), so the gap is visible."""
+    return {"schema_version": SCHEMA_VERSION, "kind": "failure", "date": date,
+            "run": {"stage": stage, "error": error, "sha": sha}}
+
+
+def latest_before(date: str) -> dict | None:
+    """The newest valid pass record in the store dated before `date`; None if there isn't one."""
+    for path in sorted(store_root().glob("*.json"), reverse=True):
+        if path.stem >= date:
+            continue
+        try:
+            record = load(path)
+        except RecordError:
+            continue
+        if record.get("kind", "pass") == "pass":
+            return record
+    return None
+
+
 _REQUIRED = {
     "": ("schema_version", "date", "run", "results", "traces", "findings", "proposals", "delta",
          "tracking", "next_actions", "queue"),
@@ -226,6 +252,8 @@ _REQUIRED = {
     "results": ("raw", "rescored", "per_prompt", "candidates"),
     "finding": ("id", "slug", "class", "status", "recurrence", "evidence", "diagnosis", "proposed_fix"),
     "next_action": ("title", "files", "change", "verify"),
+    "failure": ("schema_version", "date", "kind", "run"),
+    "failure_run": ("stage", "error", "sha"),
 }
 
 
@@ -238,6 +266,10 @@ def validate(record: dict) -> list[str]:
 
     if record.get("schema_version") != SCHEMA_VERSION:
         return [f"schema_version {record.get('schema_version')!r}, this code reads {SCHEMA_VERSION}"]
+    if record.get("kind") == "failure":
+        need(record, "", _REQUIRED["failure"])
+        need(record.get("run", {}), "run", _REQUIRED["failure_run"])
+        return errs
     need(record, "", _REQUIRED[""])
     need(record.get("run", {}), "run", _REQUIRED["run"])
     need(record.get("results", {}), "results", _REQUIRED["results"])
@@ -280,7 +312,7 @@ def load(path: pathlib.Path) -> dict:
     return record
 
 
-_ANNOTATION_KEYS = ("findings", "proposals", "next_actions", "candidates", "retries", "sha")
+_ANNOTATION_KEYS = ("findings", "proposals", "next_actions", "candidates", "retries", "sha", "supervisor")
 
 
 def carried_annotations(path: pathlib.Path) -> dict | None:
@@ -288,8 +320,10 @@ def carried_annotations(path: pathlib.Path) -> dict | None:
     if not path.is_file():
         return None
     record = load(path)
-    return {k: (record["run"] if k in ("retries", "sha") else record["results"] if k == "candidates"
-                else record)[k] for k in _ANNOTATION_KEYS}
+    if record.get("kind") == "failure":
+        return None
+    return {k: (record["run"] if k in ("retries", "sha", "supervisor") else record["results"] if k == "candidates"
+                else record).get(k) for k in _ANNOTATION_KEYS}
 
 
 def _score(t: dict) -> str:
@@ -301,6 +335,14 @@ def _cell(text: _t.Any) -> str:
 
 
 def render_markdown(record: dict) -> str:
+    if record.get("kind") == "failure":
+        run = record["run"]
+        return (f"# CLAUDE.md eval run — {record['date']} — FAILED\n\n"
+                f"The supervised pass stopped at **{run['stage']}** and scored nothing.\n\n"
+                f"- Pinned SHA: {run['sha'] or 'not pinned yet'}\n"
+                f"- Error: `{_cell(run['error'])}`\n\n"
+                "Next action: read the cron log in `~/.cecelia-effectiveness/cron/`, fix the cause, "
+                "and rerun `pixi run claude-md-eval-supervise`.\n")
     run, res = record["run"], record["results"]
     out = [f"# CLAUDE.md eval run — {record['date']}", "",
            _HOW_TO_USE.format(json=f"{record['date']}.json"), "",
@@ -317,6 +359,11 @@ def render_markdown(record: dict) -> str:
         ("Claude Code", f"{run.get('claude_code_version')} · {run.get('model')}"),
         ("Cost", f"${run['cost_usd']:.2f}" if run["cost_usd"] is not None else None),
         ("Retries", len(run["retries"])),
+        ("Supervisor", (f"{run['supervisor'].get('judge_calls', 0)} judge call(s) · "
+                        f"${run['supervisor'].get('cost_usd', 0):.2f}"
+                        + (f" · {run['supervisor']['skipped']} unjudged (budget)"
+                           if run["supervisor"].get("skipped") else ""))
+         if run.get("supervisor") else "not supervised (replayed)"),
         ("Traces", f"`{run.get('trace_root')}`"),
     ]
     out += [f"| {k} | {_cell(v)} |" for k, v in meta]
@@ -425,9 +472,12 @@ def main(argv: list[str] | None = None) -> int:
     except RecordError as e:
         print(f"claude-md-eval-record: {e}", file=sys.stderr)
         return 1
-    res = record["results"]
-    print(f"{record['date']}: {_score(res['raw'])} logged → {_score(res['rescored'])} rescored, "
-          f"{len(record['findings'])} finding(s)")
+    if record.get("kind") == "failure":
+        print(f"{record['date']}: failure record (stopped at {record['run']['stage']})")
+    else:
+        res = record["results"]
+        print(f"{record['date']}: {_score(res['raw'])} logged → {_score(res['rescored'])} rescored, "
+              f"{len(record['findings'])} finding(s)")
     for p in paths:
         print(f"  wrote {p}")
     return 0

@@ -33,7 +33,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 import time
 import typing as _t
@@ -200,20 +199,17 @@ def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding],
     return bold - len(findings)
 
 
+from .claude_cli import resolve_claude_bin  # noqa: E402
 from .git_context import current_branch as _current_branch  # noqa: E402
 from .git_context import current_head_sha as _current_head_sha  # noqa: E402
 from .git_context import current_pr as _current_pr  # noqa: E402  (kept near use for clarity)
 
 
 def _resolve_claude_bin() -> str:
-    """Cross-platform resolution of the `claude` CLI. Named per `CLAUDE.md → Windows
-    compatibility` — a bare `subprocess.run(["claude", ...])` fails to find the npm-installed
-    `claude.cmd`/`.bat` shim on Windows. `shutil.which` walks `PATH` and PATHEXT, so it
-    resolves the wrapper the Python side never had a helper for (Julia has `agent_bin_path()`
-    in `app/src/ai/agent_runner.jl`; this is the stdlib equivalent, no new module needed)."""
-    resolved = shutil.which("claude")
+    """The `claude` CLI via the shared `claude_cli.resolve_claude_bin`, or `RecitalError`."""
+    resolved = resolve_claude_bin()
     if resolved is None:
-        raise RecitalError("claude CLI not on PATH (checked via shutil.which)")
+        raise RecitalError("claude CLI not on PATH")
     return resolved
 
 

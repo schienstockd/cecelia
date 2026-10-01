@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import shutil
 import sys
 import time
 import typing as _t
@@ -177,7 +176,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Run the whole CLAUDE.md compliance eval catalog.")
     ap.add_argument("--runs", type=int, default=3, help="Fresh agents per prompt (default 3)")
     ap.add_argument("--timeout", type=int, default=300, help="Per-spawn timeout in seconds (default 300)")
-    ap.add_argument("--claude-path", default=shutil.which("claude"),
+    ap.add_argument("--claude-path", default=_run_prompt.resolve_claude_bin(),
                     help="Path to the `claude` binary (defaults to `which claude`).")
     ap.add_argument("--worktree-root", type=pathlib.Path, default=_run_prompt._WORKTREE_ROOT_DEFAULT,
                     help=f"Parent dir for throwaway worktrees (default {_run_prompt._WORKTREE_ROOT_DEFAULT})")

@@ -46,6 +46,7 @@ _DEFAULT_RUNS = 3
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import append_event  # noqa: E402
+from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
 from cecelia.effectiveness.log import default_log_path  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 from cecelia.effectiveness.git_context import current_branch as _current_branch  # noqa: E402
@@ -310,9 +311,8 @@ def default_claude_runner(worktree: pathlib.Path, prompt_body: str, *,
     Deliberately raises `ClaudeSpawnError` with a clear message when `claude_path` is empty —
     silently falling back to a bare `"claude"` string (which then errors with the less legible
     `[Errno 2] No such file or directory: 'claude'`) is the Windows-compat pitfall documented
-    in `CLAUDE.md → Windows compatibility`. Recital's sibling `_resolve_claude_bin` raises for
-    the same reason; when a third `claude -p` caller lands, extract these into a shared
-    `resolve_claude_bin()` helper (finding conv-97a704d6 from this PR's convention check).
+    in `CLAUDE.md → Windows compatibility`. The default path comes from the shared
+    `cecelia.effectiveness.claude_cli.resolve_claude_bin`.
 
     Trailing `**_ignored` swallows kwargs that legacy call sites may still pass (e.g.
     the `sandbox_log` kwarg that briefly existed for the log-isolation mechanism before
@@ -574,7 +574,7 @@ def main() -> int:
                     help=f"How many fresh agents to spawn (default {_DEFAULT_RUNS})")
     ap.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT_SEC,
                     help=f"Per-spawn timeout in seconds (default {_DEFAULT_TIMEOUT_SEC})")
-    ap.add_argument("--claude-path", default=shutil.which("claude"),
+    ap.add_argument("--claude-path", default=resolve_claude_bin(),
                     help="Path to the `claude` binary (defaults to `which claude`; passes as "
                          "None if not found — the runner raises a clear error rather than "
                          "silently falling back to a bare `claude` string)")
