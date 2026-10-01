@@ -19,6 +19,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -401,6 +402,8 @@ class ClaudeRunnerEnvTest(unittest.TestCase):
         self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
         self.assertIn("Write(~/**)", settings["permissions"]["deny"])
 
+    # Windows keeps its temp dir under the profile, and the Claude Code sandbox is Linux/macOS only.
+    @unittest.skipIf(sys.platform == "win32", "eval runs on Linux/macOS")
     def test_worktree_root_is_outside_home(self):
         # A `~/**` write deny would otherwise block the agent's own worktree.
         root = _load_runner()._WORKTREE_ROOT_DEFAULT.resolve()
