@@ -84,11 +84,7 @@ file makes the WHOLE project fail to open, every other image intact but unreacha
 function register_label_files!(img::CciaImage, out_value_name::AbstractString,
                               label_files::Vector{String})
     commit_state!(img) do raw
-        labels_dict = Dict{String, Vector{String}}(
-            String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
-            for (k, v) in get(raw, "labels", Dict{String,Any}()))
-        labels_dict[String(out_value_name)] = label_files
-        raw["labels"] = labels_dict
+        versioned_entry_overwrite!(raw, "labels", out_value_name, label_files)
     end
     label_files
 end

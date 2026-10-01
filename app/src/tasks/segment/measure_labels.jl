@@ -58,6 +58,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
         on_log("[ERROR] No labels registered for outputValueName='$(p.outputValueName)'")
         return nothing
     end
+    label_entry = unversion_value(label_entry)   # a versioned entry → its `_latest` leaf
     label_files = label_entry isa AbstractVector ?
                   collect(String, label_entry) : [string(label_entry)]
     label_dir   = joinpath(task_dir, "labels")
@@ -118,13 +119,10 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     end
 
     commit_state!(img) do raw
-        lp = Dict{String,String}(String(k) => string(v)
-                                 for (k, v) in get(raw, "label_props", Dict{String,Any}()))
-        lp[p.outputValueName] = h5ad_filename
         # the segmentation just measured becomes the active label_props version, so gating (and any
         # value_name fallback) defaults to the most recently produced segmentation.
-        lp[VERSIONED_ACTIVE_KEY] = p.outputValueName
-        raw["label_props"] = lp
+        versioned_entry_overwrite!(raw, "label_props", p.outputValueName, h5ad_filename;
+                                   set_active = true)
     end
 
     Dict{String,Any}("outputValueName" => p.outputValueName,
