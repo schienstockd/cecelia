@@ -149,7 +149,7 @@ class SuperviseTest(_SuperviseFixture):
         self.assertEqual(self.sup._record.load(self.tmp / "eval-runs" / "2026-09-30.json")["kind"], "pass")
 
 
-@unittest.skipIf(sys.platform == "win32", "uses /bin/true for pixi")
+@unittest.skipIf(sys.platform == "win32", "stands `true` in for pixi")
 class WorktreeTest(_SuperviseFixture):
     def _git(self, *args, cwd):
         subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
@@ -164,7 +164,8 @@ class WorktreeTest(_SuperviseFixture):
         sha = self.sup.git_output("rev-parse", "HEAD", cwd=str(repo))
         wt = self.tmp / "wt"
         which = self.sup.shutil.which
-        pixi_is_true = lambda name: "/bin/true" if name == "pixi" else which(name)   # noqa: E731
+        true = which("true")   # /bin/true on Linux, /usr/bin/true on macOS
+        pixi_is_true = lambda name: true if name == "pixi" else which(name)   # noqa: E731
         with mock.patch.object(self.sup.shutil, "which", pixi_is_true):
             self.sup.prepare_worktree(wt, sha, repo)
             (wt / "f.txt").write_text("dirty\n", encoding="utf-8")
