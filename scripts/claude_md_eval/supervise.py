@@ -112,9 +112,9 @@ def default_worktree() -> pathlib.Path:
 # ── deterministic steps ────────────────────────────────────────────────────────────────────────
 
 def _run(cmd: list[str], *, cwd: pathlib.Path, stage: str, env: dict | None = None,
-         timeout: float | None = None) -> subprocess.CompletedProcess:
+         timeout: float | None = None, input: str | None = None) -> subprocess.CompletedProcess:
     try:
-        proc = subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True,
+        proc = subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True, input=input,
                               encoding="utf-8", timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise SupervisorError(stage, f"{cmd[0]} failed: {e}") from e
@@ -139,6 +139,9 @@ def prepare_worktree(path: pathlib.Path, sha: str, repo: pathlib.Path = _REPO) -
         path.parent.mkdir(parents=True, exist_ok=True)
         _run(["git", "worktree", "add", "--detach", str(path), sha], cwd=repo, stage="worktree")
     else:
+        # detach first: the last run left the worktree on its `eval-run/*` branch, and a reset
+        # there would move that branch
+        _run(["git", "checkout", "--quiet", "--detach"], cwd=path, stage="worktree")
         _run(["git", "reset", "--hard", "--quiet", sha], cwd=path, stage="worktree")
         # keep the env and deps; anything else an earlier run left behind goes
         _run(["git", "clean", "-fdx", "--quiet", "-e", ".pixi", "-e", ".env",
@@ -329,6 +332,65 @@ def group_findings(judged: _t.Sequence[dict], *, date: str,
     return findings, actions
 
 
+# ── publishing ────────────────────────────────────────────────────────────────────────────────
+
+_ATTRIBUTION = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+_PR_FOOTER = "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+
+
+def _pr_body(record: dict) -> str:
+    date = record["date"]
+    if record.get("kind") == "failure":
+        return (f"The supervised CLAUDE.md eval pass for {date} **failed** at "
+                f"`{record['run']['stage']}`: `{record['run']['error']}`.\n\n"
+                f"Record: `{_record.MIRROR_REL}/{date}.md`.\n\n{_PR_FOOTER}\n")
+    res, d = record["results"]["raw"], record.get("delta") or {}
+    lines = [f"Supervised CLAUDE.md eval pass, {date}: **{res['compliant']}/{res['total']}** compliant.",
+             "", f"Record: [`{_record.MIRROR_REL}/{date}.md`]({_record.MIRROR_REL}/{date}.md). "
+             "Point a session at it to work the next actions.", ""]
+    if d:
+        lines.append(f"Since {d['previous']}: {d['score']['previous']} → {d['score']['now']}"
+                     + (f" ({', '.join(d['changed'])} changed)" if d["changed"] else "") + ".")
+    lines += [f"- Findings: {len(record['findings'])}, owner queue: {len(record['queue'])}",
+              f"- Judge: {record['run']['supervisor']['judge_calls']} call(s), "
+              f"${record['run']['supervisor']['cost_usd']:.2f}", "", _PR_FOOTER]
+    return "\n".join(lines) + "\n"
+
+
+def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subprocess.CompletedProcess] = None) -> str:
+    """Commit the record + both rollups on `eval-run/<date>`, open its PR, close older ones.
+
+    Runs in the persistent worktree, which sits at the pinned SHA. One open PR at a time
+    (Decision 11): the record is already in the local store, so closing an unmerged one loses
+    nothing. Returns the new PR's URL.
+    """
+    run = run or (lambda cmd, **kw: _run(cmd, cwd=worktree, stage="publish", **kw))
+    pixi, gh = shutil.which("pixi") or "pixi", shutil.which("gh") or "gh"
+    date = record["date"]
+    branch = f"eval-run/{date}"
+    run(["git", "checkout", "--quiet", "-B", branch])
+    _record.write(record, mirror=True, force=True, mirror_dir=worktree / _record.MIRROR_REL)
+    if record.get("kind") != "failure":
+        run([pixi, "run", "claude-md-eval-rollup"])
+        run([pixi, "run", "audit-rollup"])
+    run(["git", "add", "docs/ai-assist"])
+    recital = run([pixi, "run", "recital"]).stdout   # docs-only: no reviewer spawns, but the tails
+    score = ("FAILED" if record.get("kind") == "failure"
+             else f"{record['results']['raw']['compliant']}/{record['results']['raw']['total']}")
+    message = f"eval: run record {date} ({score})\n\n{recital.strip()}\n\n{_ATTRIBUTION}\n"
+    run(["git", "commit", "--quiet", "-F", "-"], input=message)
+    run(["git", "push", "--quiet", "--force", "-u", "origin", branch])
+    existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,url"]).stdout)
+    mine = next((p["url"] for p in existing if p["headRefName"] == branch), None)
+    url = mine or run([gh, "pr", "create", "--base", "main", "--head", branch,
+                       "--title", f"eval: run record {date} ({score})", "--body-file", "-"],
+                      input=_pr_body(record)).stdout.strip()
+    for p in existing:
+        if p["headRefName"].startswith("eval-run/") and p["headRefName"] != branch:
+            run([gh, "pr", "close", str(p["number"]), "--comment", f"Superseded by {url}."])
+    return url
+
+
 # ── the pass ───────────────────────────────────────────────────────────────────────────────────
 
 def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path | None = None,
@@ -376,21 +438,24 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
     findings, actions = group_findings(judged, date=date, previous=_record.latest_before(date))
     notes = {"findings": findings, "next_actions": actions, "retries": retries, "sha": sha,
              "supervisor": {**spend, "session": session}}
-    return _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)
+    return _record.with_delta(
+        _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite))
 
 
-def _write_failure(date: str | None, stage: str, error: Exception, sha: str | None) -> None:
+def _write_failure(date: str | None, stage: str, error: Exception, sha: str | None) -> dict | None:
     """Write the failure record, unless that date already has a pass record: never replace data."""
     date = date or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
     dest = _record.store_root() / f"{date}.json"
     try:
         if dest.is_file() and _record.load(dest).get("kind", "pass") == "pass":
             print(f"  {dest} holds a pass record; the failure is in the cron log only", file=sys.stderr)
-            return
+            return None
         failed = _record.failure_record(date, stage=stage, error=f"{type(error).__name__}: {error}", sha=sha)
         print(f"  wrote {_record.write(failed, force=True)[0]}", file=sys.stderr)
+        return failed
     except (OSError, ValueError, _record.RecordError) as w:
         print(f"  failure record not written: {w}", file=sys.stderr)
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -406,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="with --session: the pass ran with today's _SANDBOX_SETTINGS")
     ap.add_argument("--force", action="store_true", help="replace an existing record for the date")
     ap.add_argument("--dry-run", action="store_true", help="print the record's markdown; write nothing")
+    ap.add_argument("--no-pr", action="store_true", help="write the record; don't commit, push or open a PR")
     args = ap.parse_args(argv)
 
     lock_path = state_dir() / "supervise.lock"
@@ -431,12 +497,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{record['date']}: {res['raw']['compliant']}/{res['raw']['total']} compliant, "
               f"{len(record['findings'])} finding(s), judge ${sup['cost_usd']:.2f} "
               f"over {sup['judge_calls']} call(s)\n  wrote {path}")
+        if not args.session and not args.no_pr:   # a re-triage stays local
+            state["stage"] = "publish"
+            print(f"  PR {publish(record, worktree=args.worktree or default_worktree())}")
         return 0
     except Exception as e:  # noqa: BLE001 — any crash still leaves a record (Decision 13)
         where = e.stage if isinstance(e, SupervisorError) else state["stage"]
         print(f"claude-md-eval-supervise: failed at {where}: {type(e).__name__}: {e}", file=sys.stderr)
         if not args.dry_run:
-            _write_failure(args.date, where, e, state["sha"])
+            failed = _write_failure(args.date, where, e, state["sha"])
+            # a failure gets its PR too, once there is a worktree at the pinned SHA to commit from
+            if failed and not args.session and not args.no_pr and where not in ("start", "pin", "worktree", "publish"):
+                try:
+                    print(f"  PR {publish(failed, worktree=args.worktree or default_worktree())}", file=sys.stderr)
+                except Exception as p:  # noqa: BLE001
+                    print(f"  failure PR not opened: {p}", file=sys.stderr)
         return 1
     finally:
         lock.close()

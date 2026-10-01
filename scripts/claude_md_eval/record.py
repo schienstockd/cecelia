@@ -25,16 +25,18 @@ import hashlib
 import importlib.util as _importlib_util
 import json
 import pathlib
+import re
 import sys
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
-_MIRROR_DIR = _REPO / "docs" / "ai-assist" / "eval-runs"
+MIRROR_REL = pathlib.PurePosixPath("docs/ai-assist/eval-runs")   # in any checkout of the repo
+_MIRROR_DIR = _REPO / MIRROR_REL
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
-from cecelia.effectiveness.log import default_log_path  # noqa: E402
+from cecelia.effectiveness.eval_staleness import eval_store  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
 
@@ -64,7 +66,7 @@ class RecordError(ValueError):
 
 
 def store_root() -> pathlib.Path:
-    return default_log_path().parent / "eval-runs"
+    return eval_store()
 
 
 def sandbox_hash(settings: dict | None = None) -> str:
@@ -213,7 +215,7 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
         "traces": traces,
         "findings": findings,
         "proposals": proposals,
-        # Phase 4 fills this from the previous record in the store.
+        # Filled by `with_delta` against the previous record in the store.
         "delta": None,
         "tracking": {"setup_size": setup_size(size_ref or "HEAD")},
         "next_actions": notes.get("next_actions", []),
@@ -243,6 +245,53 @@ def latest_before(date: str) -> dict | None:
         if record.get("kind", "pass") == "pass":
             return record
     return None
+
+
+_HYPOTHESIS_RE = re.compile(r"expect\s+`?([\w-]+)`?\s+to\b")
+
+
+def delta(record: dict, previous: dict | None) -> dict | None:
+    """What changed since `previous`: findings, score, versions, and whether each hypothesis held.
+
+    Findings match on (slug, class). A score is only comparable when the prompt set, sandbox and
+    CLAUDE.md are unchanged (Decision 1), so every change is named next to it.
+    """
+    if previous is None:
+        return None
+    key = lambda f: (f.get("slug"), f.get("class"))   # noqa: E731
+    before = {key(f): f for f in previous.get("findings", []) if f.get("status") == "open"}
+    now = {key(f): f for f in record.get("findings", [])}
+    prun, run = previous["run"], record["run"]
+    changed = [name for name, a, b in (
+        ("prompt set", prun["prompt_set"]["hash"], run["prompt_set"]["hash"]),
+        ("sandbox", prun.get("sandbox"), run.get("sandbox")),
+        ("CLAUDE.md", prun.get("claude_md_blob"), run.get("claude_md_blob")),
+        ("Claude Code", prun.get("claude_code_version"), run.get("claude_code_version"))) if a != b]
+    per_prompt = record["results"]["per_prompt"]
+    hypotheses = []
+    for prop in previous.get("proposals", []):
+        m = _HYPOTHESIS_RE.search(prop.get("hypothesis") or "")
+        if not m:
+            continue
+        pid = m.group(1)
+        tally = per_prompt.get(pid, {}).get("raw")
+        held = None if not tally or not tally["total"] else tally["compliant"] == tally["total"]
+        hypotheses.append({"proposal": prop["id"], "prompt": pid, "hypothesis": prop["hypothesis"],
+                           "held": held, "score": _score(tally) if tally else None})
+    return {
+        "previous": previous["date"],
+        "opened": [now[k]["id"] for k in now if k not in before],
+        "still_open": [now[k]["id"] for k in now if k in before],
+        "resolved": [f"{before[k]['id']} `{k[0]}` {k[1]}" for k in before if k not in now],
+        "score": {"previous": _score(previous["results"]["raw"]), "now": _score(record["results"]["raw"])},
+        "changed": changed,
+        "hypotheses": hypotheses,
+    }
+
+
+def with_delta(record: dict) -> dict:
+    """`record` with its delta against the newest earlier pass record in the store."""
+    return {**record, "delta": delta(record, latest_before(record["date"]))}
 
 
 _REQUIRED = {
@@ -397,6 +446,22 @@ def render_markdown(record: dict) -> str:
     out += [f"- {q['kind']}: {q['ref']}" for q in record["queue"]] or ["Empty."]
 
     size = record["tracking"]["setup_size"]
+    out += ["", "## Since last run", ""]
+    d = record.get("delta")
+    if not d:
+        out.append("First record; nothing to compare.")
+    else:
+        note = (f" — **not comparable directly:** {', '.join(d['changed'])} changed" if d["changed"]
+                else " — same prompt set, sandbox, CLAUDE.md and Claude Code")
+        out += [f"Against {d['previous']}: {d['score']['previous']} → {d['score']['now']}{note}.", "",
+                f"- Opened: {', '.join(d['opened']) or 'none'}",
+                f"- Still open: {', '.join(d['still_open']) or 'none'}",
+                f"- Resolved: {', '.join(d['resolved']) or 'none'}"]
+        for h in d["hypotheses"]:
+            verdict = {True: "held", False: "did not hold", None: "untested (prompt not run)"}[h["held"]]
+            out.append(f"- {h['proposal']} ({h['hypothesis']}): **{verdict}**"
+                       + (f", `{h['prompt']}` {h['score']}" if h["score"] else ""))
+
     out += ["", "## Setup size", "",
             f"At `{(size.get('ref') or '?')[:8]}`: CLAUDE.md {size.get('claude_md_lines')} lines, "
             f"`frontend/CLAUDE.md` {size.get('frontend_claude_md_lines')}, "
@@ -463,8 +528,8 @@ def main(argv: list[str] | None = None) -> int:
                 notes = json.loads(args.annotations.read_text(encoding="utf-8"))
             else:
                 notes = carried_annotations(store_root() / f"{args.date}.json")
-            record = build(list(read_events()), args.date, annotations=notes, ref=args.ref,
-                           sandboxed=args.sandboxed)
+            record = with_delta(build(list(read_events()), args.date, annotations=notes, ref=args.ref,
+                                      sandboxed=args.sandboxed))
             paths = write(record, mirror=args.mirror, force=args.force)
         else:
             record = load(store_root() / f"{args.date}.json")

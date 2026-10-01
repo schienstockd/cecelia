@@ -155,6 +155,43 @@ class ValidateTest(_Fixture):
         self.assertIn("queue: 'F9' names no finding or proposal", self.rec.validate(r))
 
 
+class DeltaTest(_Fixture):
+    def _previous(self, **run):
+        prev = self.rec.build(self.events, "2026-09-30", annotations={
+            "findings": [self._finding(id="F1"), self._finding(id="F2", slug="gone")],
+            "proposals": [{"id": "P1", "kind": "setup", "summary": "s",
+                           "hypothesis": "fixes F1; expect p1 to pass"},
+                          {"id": "P2", "kind": "setup", "summary": "s",
+                           "hypothesis": "expect `absent` to pass"}]})
+        prev["date"] = "2026-09-23"
+        prev["run"].update(run)
+        return prev
+
+    def test_findings_match_on_slug_and_class(self):
+        now = self.rec.build(self.events, "2026-09-30", annotations={"findings": [
+            self._finding(id="F1"), self._finding(id="F2", **{"class": "decision"})]})
+        d = self.rec.delta(now, self._previous())
+        self.assertEqual((d["opened"], d["still_open"], d["resolved"]), (["F2"], ["F1"], ["F2 `gone` genuine"]))
+        self.assertEqual(d["changed"], [])
+
+    def test_each_hypothesis_is_checked_against_this_run(self):
+        now = self.rec.build(self.events, "2026-09-30")
+        d = self.rec.delta(now, self._previous())
+        self.assertEqual([(h["proposal"], h["held"]) for h in d["hypotheses"]], [("P1", False), ("P2", None)])
+
+    def test_a_version_change_is_named_next_to_the_score(self):
+        now = self.rec.build(self.events, "2026-09-30", sandboxed=True)
+        d = self.rec.delta(now, self._previous())
+        self.assertEqual(d["changed"], ["sandbox"])
+        self.assertIn("not comparable directly:** sandbox changed", self.rec.render_markdown({**now, "delta": d}))
+
+    def test_with_delta_reads_the_previous_record_from_the_store(self):
+        self.rec.write(self._previous())
+        self.assertEqual(self.rec.with_delta(self.rec.build(self.events, "2026-09-30"))["delta"]["previous"],
+                         "2026-09-23")
+        self.assertIsNone(self.rec.delta(self.rec.build(self.events, "2026-09-30"), None))
+
+
 class StoreTest(_Fixture):
     def test_write_then_load_round_trips_and_mirrors_json_and_markdown(self):
         r = self.rec.build(self.events, "2026-09-30", annotations={"findings": [self._finding()]})
