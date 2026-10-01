@@ -123,7 +123,7 @@ def snapshot(project_dir: str | pathlib.Path) -> dict:
     files = {}
     for p in sorted(root.rglob("*")):
         if p.is_file():
-            files[str(p.relative_to(root))] = hashlib.sha256(p.read_bytes()).hexdigest()
+            files[p.relative_to(root).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()   # "/" on every OS
     active = {}
     for ccid in root.glob("1/*/ccid.json"):
         with open(ccid, encoding="utf-8") as f:
