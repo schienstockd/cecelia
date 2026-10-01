@@ -30,7 +30,6 @@ import sys
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
-_PROMPTS_DIR = _REPO / "scripts" / "claude_md_eval" / "prompts"
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
@@ -41,6 +40,10 @@ _spec = _importlib_util.spec_from_file_location(
     "claude_md_eval_rollup", _REPO / "scripts" / "claude_md_eval" / "rollup.py")
 _rollup = _importlib_util.module_from_spec(_spec)
 _spec.loader.exec_module(_rollup)
+_spec = _importlib_util.spec_from_file_location(
+    "_ce_run_prompt", pathlib.Path(__file__).parent / "run_prompt.py")
+_run_prompt = _importlib_util.module_from_spec(_spec)
+_spec.loader.exec_module(_run_prompt)
 
 RETIRE_STREAK = 3
 # Pre-flight for the eval itself (did CLAUDE.md load?) — not a weakness probe, never retires.
@@ -133,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     events = list(read_events())
-    catalog = sorted(p.stem for p in _PROMPTS_DIR.glob("*.md"))
+    catalog = _run_prompt.list_prompt_ids()
     full = [s for s in _rollup._suites(events)
             if _rollup._suite_arm(s) == "with" and _rollup._is_full_pass(s)]
 

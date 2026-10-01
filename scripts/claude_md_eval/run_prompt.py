@@ -88,6 +88,11 @@ _SANDBOX_SETTINGS = {
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
 
+def list_prompt_ids() -> list[str]:
+    """Every live prompt in the catalog (`retired/` is a subdir, so not matched), sorted."""
+    return sorted(p.stem for p in _PROMPTS_DIR.glob("*.md"))
+
+
 class PromptParseError(ValueError):
     pass
 

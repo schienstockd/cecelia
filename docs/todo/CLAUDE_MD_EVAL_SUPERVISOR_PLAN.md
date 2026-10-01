@@ -187,8 +187,26 @@ Each phase is its own PR.
    - Staleness: `cecelia.effectiveness.eval_staleness` puts one yellow line in the recital
      console's header (and at the start of `--stream`) when the newest record is older than
      7 + 2 days, or when it is a failure. A machine with no store stays silent.
-5. **Curation:** candidates and proposals per Decision 8. Checkpoint: running it on the current log
-   gives proposals with evidence, or none.
+5. **Curation — built.** `scripts/claude_md_eval/curate.py` (`pixi run claude-md-eval-curate`),
+   called by the supervised pass, which puts the proposals in the record and on the owner queue.
+   Checkpoint met: on the 2026-10-01 log it proposed one setup change (F3, recurring, so
+   `expect kill-process-tree to pass`) and no adds, for $0.19.
+   - **retire:** green in each of the last 3 full-catalog records with the same prompt-set hash and
+     sandbox, and no infra retry for that prompt in the window. `canary` never retires. Only
+     supervised records count, so the first retire proposals come after three of them.
+   - **add:** reviewer findings from the last 30 days, red-team slugs excluded. The finding rows
+     carry no rule (the routine's `payload.rule` doesn't exist), so one tool-less judge call maps
+     each finding onto a CLAUDE.md `##` section and the prompt covering it. Answers naming an
+     unknown rule or prompt are dropped. A rule with ≥3 uncovered findings is proposed with its
+     slugs (D-R4).
+   - **cap:** an add estimated at the mean prompt cost that pushes the week over $20 (D-R6) names a
+     paired removal: a retire candidate first, otherwise the prompt whose pass rate moved least
+     across the last 4 records.
+   - **setup / scorer:** one per open recurring `genuine` / `scorer_bug` finding, with the
+     `expect <prompt> to pass` hypothesis the next record's delta checks.
+   - Not built: authoring the added prompt, or running candidates unscored. The add proposal stops
+     at "which rule, which findings"; writing the prompt stays with whoever accepts it.
+   - `judge.py` holds the one tool-less `claude -p` call, shared by triage and curation.
 6. **Owner loop:**
    - A terminal review queue (e.g. `pixi run recital-review`) built on the `effectiveness/console.py`
      patterns. It's keyboard-driven: spot check `real`/`false`/`unclear`, finding status, proposal

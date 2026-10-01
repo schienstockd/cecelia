@@ -26,7 +26,6 @@ import time
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
-_PROMPTS_DIR = _REPO / "scripts" / "claude_md_eval" / "prompts"
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import append_event  # noqa: E402
@@ -44,7 +43,7 @@ _spec.loader.exec_module(_run_prompt)
 
 def _list_prompt_ids() -> list[str]:
     """Every `.md` prompt in the catalog, sorted for stable iteration + rollup."""
-    return sorted(p.stem for p in _PROMPTS_DIR.glob("*.md"))
+    return _run_prompt.list_prompt_ids()
 
 
 def _filter_ids(all_ids: list[str], only: str | None, exclude: str | None) -> list[str]:
