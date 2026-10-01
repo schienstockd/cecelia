@@ -88,8 +88,11 @@ Announcements, all optional:
 |---|---|---|
 | `on_log` | `line::String` | every log line, including the `[ERROR]` on any failure path |
 | `on_progress` | `(n::Int, total::Int)` | task-reported progress |
-| `on_status` | `(status::String, image_uid::String, image_uids::Vector{String})` | every transition |
+| `on_status` | `(status::String, image_uid::String, image_uids::Vector{String}, pool::String)` | every transition |
 | `on_result` | `(image_uid::String, meta)` | once, before the terminal status, if the task returned one |
+
+`pool` is where the task runs, resolved ONCE up front (`effective_pool_name`), so every frame names the
+pool the scheduler actually queued it in, including a fallback. `""` only when the `fun_name` is unknown.
 
 Two orderings are load-bearing and were both bugs once:
 
@@ -109,26 +112,29 @@ task: no `[ERROR]` line, no terminal frame, and anything keyed on the terminal f
 function execute_task(req::TaskRequest;
                       on_log::Function      = _ -> nothing,
                       on_progress::Function = (n, t) -> nothing,
-                      on_status::Function   = (status, uid, uids) -> nothing,
+                      on_status::Function   = (status, uid, uids, pool) -> nothing,
                       on_result::Function   = (uid, meta) -> nothing)::Symbol
 
     task_struct = try
         _task_from_fun_name(req.fun_name)
     catch
         on_log("[ERROR] Unknown task: $(req.fun_name)")
-        on_status("failed", req.image_uid, String[])
+        on_status("failed", req.image_uid, String[], "")
         return :failed
     end
 
+    # Bind the pool into every status call below, so neither path can announce a transition without it.
+    pool   = effective_pool_name(task_struct, req.pool_name)
+    status = (st, uid, uids) -> on_status(st, uid, uids, pool)
     if task_scope(task_struct) == "set"
-        return _execute_set_task(req, task_struct; on_log, on_progress, on_status, on_result)
+        return _execute_set_task(req, task_struct, pool; on_log, on_progress, on_status = status, on_result)
     end
-    _execute_image_task(req, task_struct; on_log, on_progress, on_status, on_result)
+    _execute_image_task(req, task_struct, pool; on_log, on_progress, on_status = status, on_result)
 end
 
 # Set-scope (e.g. behaviour.hmm): one run over the whole selected image vector. The frontend sends
 # `imageUids`; the representative (first) image owns the status record and the logfile.
-function _execute_set_task(req::TaskRequest, task_struct;
+function _execute_set_task(req::TaskRequest, task_struct, pool::String;
                            on_log, on_progress, on_status, on_result)::Symbol
     uids = isempty(req.image_uids) ? (isempty(req.image_uid) ? String[] : [req.image_uid]) : req.image_uids
     imgs = CciaImage[]
@@ -151,7 +157,7 @@ function _execute_set_task(req::TaskRequest, task_struct;
     try
         result = run_task(task_struct, imgs, req.params;
                           task_id          = req.task_id,
-                          pool_name        = req.pool_name,
+                          pool_name        = pool,
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
                           on_log           = on_log,
@@ -172,7 +178,7 @@ function _execute_set_task(req::TaskRequest, task_struct;
     Symbol(string(final_status[]))
 end
 
-function _execute_image_task(req::TaskRequest, task_struct;
+function _execute_image_task(req::TaskRequest, task_struct, pool::String;
                              on_log, on_progress, on_status, on_result)::Symbol
     img = try
         obj = init_object(req.project_uid, req.image_uid)
@@ -188,7 +194,7 @@ function _execute_image_task(req::TaskRequest, task_struct;
     try
         result = run_task(task_struct, img, req.params;
                           task_id          = req.task_id,
-                          pool_name        = req.pool_name,
+                          pool_name        = pool,
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
                           on_log           = on_log,

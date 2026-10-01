@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { taskRow, taskRows, taskMatchesQuery, type TaskRowContext } from './taskRows'
+import { taskRow, taskRows, taskMatchesQuery, taskPoolOptions, type TaskRowContext } from './taskRows'
 import { sortRows } from './sortRows'
 import type { TaskEntry } from '../stores/tasks'
 
@@ -52,6 +52,27 @@ describe('taskRow', () => {
     const r = taskRow(entry(), ctx())
     expect(r.chainLabel).toBe('')
     expect(r.chainTip).toBe('')
+  })
+})
+
+describe('taskRow — pool', () => {
+  it('carries the pool for the Pool column, and blank — not a guessed cpu — when none is known', () => {
+    expect(taskRow(entry({ pool: 'gpu' }), ctx()).pool).toBe('gpu')
+    expect(taskRow(entry(), ctx()).pool).toBe('')
+  })
+
+  it('is searchable, so `gpu` narrows the manager to GPU work', () => {
+    expect(taskMatchesQuery(entry({ pool: 'gpu' }), 'gpu')).toBe(true)
+    expect(taskMatchesQuery(entry({ pool: 'cpu' }), 'gpu')).toBe(false)
+    expect(taskMatchesQuery(entry(), 'gpu')).toBe(false)
+  })
+})
+
+describe('taskPoolOptions', () => {
+  it('offers each pool a listed task names, once, sorted, and never the unknown blank', () => {
+    const ts = [entry({ pool: 'gpu' }), entry({ pool: 'cpu' }), entry({ pool: 'gpu' }), entry()]
+    expect(taskPoolOptions(ts)).toEqual(['cpu', 'gpu'])
+    expect(taskPoolOptions([])).toEqual([])
   })
 })
 

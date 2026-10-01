@@ -167,3 +167,14 @@ function _task_pool_name(task::CciaTask)::String
     isnothing(spec) && return "cpu"
     string(get(spec, "resource_pool", "cpu"))
 end
+
+"""
+    effective_pool_name(task, requested = "") -> String
+
+The pool `task` will ACTUALLY run in: `requested`, else the spec's `resource_pool`, then through
+`_pool`'s fallback, so an unconfigured name reports `cpu` rather than the name nobody is rationing.
+This is what the task record, the run log and every `task:status` frame carry as the task's pool.
+Asking for the requested name instead would label a task "gpu" while it ran in the wide cpu pool.
+"""
+effective_pool_name(task::CciaTask, requested::AbstractString = "")::String =
+    _pool(isempty(requested) ? _task_pool_name(task) : String(requested)).name

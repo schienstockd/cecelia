@@ -64,6 +64,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
 | Reducing an image's SEVERAL runs to one status badge | `lib/taskStatus.ts` → `rollupTaskStatus` (live > terminal, then most recent) | `.find(t => t.imageUid === uid)` — that is store insertion order, which `adopt()` reshuffles |
 | Choosing an ICON for anything | `frontend/src/lib/iconLegend.ts` — find the meaning, use its glyph | a glyph that "looks right", or a second glyph for a meaning that already has one |
+| Naming the RESOURCE POOL a task runs / queues in | `.cc-pool-tag` in `style.css` (`<i class="pi pi-server" />` + name; the site keeps only its colour/spacing) | an inline `pi-server` + `font-size` style per site |
 | Badge / pill / tag naming WHICH MODULE OR TASK something came from | `.cc-module-tag` (+ `-mod` / `-fun` parts) in `style.css`, tinted by `utils/taskModule.ts` → `moduleTagStyle(module)` | a scoped `.x-badge`/`.x-pill`/`.x-tag` rule, or `moduleColor(m) + '33'` inline (guarded by a detector in `taskModule.test.ts`) |
 | Making an accent colour readable as text on its own tint | `utils/colour.ts` → `readableOn(colour, bg)` (+ `composite`/`contrastRatio`/`luminance`, WCAG 2.1) | swapping the accent for `--cc-text` (throws the identity away), or eyeballing a lighter hex |
 

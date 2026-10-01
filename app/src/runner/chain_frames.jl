@@ -51,6 +51,7 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
         "imageUid"   => p.image_uid,
         "nodeId"     => p.node_id,
         "fn"         => p.fn,
+        "pool"       => String(get(p, :pool, "")),
         "taskId"     => ev_task_id(p))
 
     # Per-node PROGRESS, shaped as a `task:progress` frame so it lands on the row the task snapshot
@@ -85,7 +86,8 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
     end
     done = function(p)
         started, finished = ev_times(record_task_outcome!(ev_task_id(p), "done";
-                                                          image_uid = p.image_uid, fun = p.fn))
+                                                          image_uid = p.image_uid, fun = p.fn,
+                                                          pool = String(get(p, :pool, ""))))
         f = base(p); f["type"] = "chain:node:done"; f["params"] = p.params; f["result"] = p.result
         f["startedAt"] = started; f["finishedAt"] = finished
         emit(f)
@@ -94,7 +96,8 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
         # `status` here may be "skipped" — a node that never ran, and not a terminal TASK status, so
         # `record_task_outcome!` ignores it and the frame simply goes out without timing.
         started, finished = ev_times(record_task_outcome!(ev_task_id(p), p.status;
-                                                          image_uid = p.image_uid, fun = p.fn))
+                                                          image_uid = p.image_uid, fun = p.fn,
+                                                          pool = String(get(p, :pool, ""))))
         f = base(p); f["type"] = "chain:node:failed"; f["status"] = p.status
         f["startedAt"] = started; f["finishedAt"] = finished
         emit(f)

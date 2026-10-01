@@ -150,6 +150,7 @@ export function taskHistoryEntries(images: HistoryImage[], ctx: HistoryContext):
         funName:     fun,
         params:      e.params ?? {},
         projectUid:  ctx.projectUid,
+        ...(e.pool ? { pool: e.pool } : {}),
         // `adopted` is what makes clicking the row fetch its real output from `{img}/logs/{fun}.log`
         // (TasksModule.select → fetchLogBackfill, sliced server-side by `startedAt`..`logSliceUntil`).
         // That machinery is the whole reason a history row is worth having, and it already exists.

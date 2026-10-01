@@ -1,8 +1,9 @@
 # Per-image RUN LOG — a record of which task functions ran on an image, with what params, and when, so
 # the UI can show a provenance history ("ran segment.cellpose on 2026-07-11", …) and the AI observer can
 # see the *tuning trail* — which param sets were tried across re-runs. Each entry is
-# {fun, valueName, status, params, at, taskId, finishedAt}; `params` is the sanitised task params
-# (internal `_…` keys and the redundant `valueName` dropped — see `_run_log_params`). Stored as a
+# {fun, valueName, status, params, at, taskId, pool, finishedAt}; `params` is the sanitised task params
+# (internal `_…` keys and the redundant `valueName` dropped — see `_run_log_params`); `pool` is the
+# resource pool it ran in (`effective_pool_name`; absent on entries written before it was recorded). Stored as a
 # sidecar `{1/uid}/runlog.json` (a JSON array), mirroring the QC sidecars. Capped to RUN_LOG_CAP.
 #
 # ── A run is written TWICE: opened when it starts, closed when it ends ─────────────────────────────
@@ -115,13 +116,13 @@ that is the whole reason the log is not append-on-finish (see the header). `task
 `close_run_log!` and `reap_run_log!` match on; pass the scheduler's job id.
 """
 function open_run_log!(img::CciaImage, fun_name::AbstractString, value_name::AbstractString = "",
-                       params = nothing; task_id::AbstractString = "",
+                       params = nothing; task_id::AbstractString = "", pool::AbstractString = "",
                        at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         push!(entries, Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name),
             "status" => RUN_LOG_RUNNING, "params" => _run_log_params(params),
-            "at" => String(at), "taskId" => string(task_id)))
+            "at" => String(at), "taskId" => string(task_id), "pool" => String(pool)))
         entries
     end
 end
@@ -139,7 +140,8 @@ convenience wrapper rather than a second storage path.
 """
 function close_run_log!(img::CciaImage, task_id::AbstractString, status::AbstractString;
                         fun_name::AbstractString = "", value_name::AbstractString = "",
-                        params = nothing, at::AbstractString = _run_log_now())
+                        params = nothing, pool::AbstractString = "",
+                        at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         # newest-first: a re-run of the same task id should close its own entry, not an older one
         i = findlast(e -> _rl_str(e, "taskId") == string(task_id) &&
@@ -148,7 +150,7 @@ function close_run_log!(img::CciaImage, task_id::AbstractString, status::Abstrac
             push!(entries, Dict{String,Any}(
                 "fun" => string(fun_name), "valueName" => string(value_name),
                 "status" => string(status), "params" => _run_log_params(params),
-                "at" => String(at), "taskId" => string(task_id)))
+                "at" => String(at), "taskId" => string(task_id), "pool" => String(pool)))
         else
             e = Dict{String,Any}(String(k) => v for (k, v) in pairs(entries[i]))
             e["status"] = string(status)

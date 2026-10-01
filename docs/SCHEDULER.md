@@ -105,6 +105,12 @@ exists so remote/HPC task runners have a lane to land in later.
 chain node in `ChainNode.resource_pool`. **A missing pool warns once** and falls back to `cpu` — a GPU
 task silently landing in the wide cpu pool was the original "all GPU tasks run at once" bug.
 
+**What a task reports as its pool is the one it RUNS in**: `effective_pool_name(task, requested)`, i.e.
+the request, else the spec, then through that fallback. The `TaskRecord`, the run-log entry (`pool`),
+every `task:status` frame (`execute_task` passes it as `on_status`'s 4th argument) and the
+`chain:node:*` frames (`_node_pool_name`) all carry it. That is what the Task Manager's Pool column and
+the task list's pool tag show. Reporting the *requested* name would label work "gpu" while it ran in cpu.
+
 ### Slot-acquire model — a resizable slot budget, not a worker count
 
 Each pool (`ResourcePool` in `_POOLS`) owns **one** persistent `Channel` of `TaskJob`s, **one**

@@ -28,6 +28,8 @@ export interface TaskRow {
   module: string
   /** the label — what the Task column displays and sorts by */
   task: string
+  /** the resource pool it ran in (`cpu`, `gpu`, …); `''` when no carrier named it (older run-log rows) */
+  pool: string
   /** the image NAME — what the Image column sorts by (the uid is chrome, not an ordering) */
   image: string
   imageUid: string
@@ -81,6 +83,7 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     status:  t.status,
     module:  t.module,
     task:    t.label,
+    pool:    t.pool ?? '',
     image:   t.imageName,
     imageUid: t.imageUid,
     projectLabel: taskProjectLabel(t, ctx.currentProjectUid, ctx.thisProjectOnly, ctx.nameOfProject),
@@ -119,13 +122,23 @@ function elapsedMs(t: TaskEntry, now: number): number | undefined {
 
 
 /**
+ * The pools the Task Manager's pool chips offer: every pool a listed task names, sorted, `''` (unknown)
+ * left out. Derived from the rows, not `/api/pools`, so a chip never filters to nothing — and the
+ * pseudo-pools background jobs report (`job`, `viewer`) appear only when such work is in the list.
+ */
+export function taskPoolOptions(tasks: TaskEntry[]): string[] {
+  return [...new Set(tasks.map(t => t.pool ?? '').filter(Boolean))].sort()
+}
+
+/**
  * The Task Manager's search box: does `t` match free-text `query`? Case-insensitive; the query splits
- * on whitespace and EVERY word must hit one of image name/uid, task label, fun name or module, so
- * `M1a flow` narrows to flow runs on that image. An empty query matches everything.
+ * on whitespace and EVERY word must hit one of image name/uid, task label, fun name, module or pool,
+ * so `M1a flow` narrows to flow runs on that image and `gpu` to GPU work. An empty query matches
+ * everything.
  */
 export function taskMatchesQuery(t: TaskEntry, query: string): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   if (!words.length) return true
-  const hay = [t.imageName, t.imageUid, t.label, t.funName, t.module].join(' ').toLowerCase()
+  const hay = [t.imageName, t.imageUid, t.label, t.funName, t.module, t.pool ?? ''].join(' ').toLowerCase()
   return words.every(w => hay.includes(w))
 }

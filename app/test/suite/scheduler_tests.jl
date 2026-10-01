@@ -430,12 +430,32 @@ end
 
 # Collect every announcement in call order, so ORDERING can be asserted and not just membership.
 function _collect_exec(req)
-    logs, sts, res = String[], Tuple{String,String,Vector{String}}[], Any[]
+    logs, sts, res, pools = String[], Tuple{String,String,Vector{String}}[], Any[], String[]
     final = execute_task(req;
         on_log      = l -> push!(logs, l),
-        on_status   = (s, uid, uids) -> push!(sts, (s, uid, uids)),
+        on_status   = (s, uid, uids, pool) -> (push!(sts, (s, uid, uids)); push!(pools, pool)),
         on_result   = (uid, meta) -> push!(res, (uid, meta)))
-    (; final, logs, statuses = sts, results = res)
+    (; final, logs, statuses = sts, results = res, pools)
+end
+
+@testset "execute_task — frames carry the EFFECTIVE pool" begin
+    t = Cecelia._task_from_fun_name("testTasks.image_task")
+    # an unconfigured name runs in cpu (`_pool`'s fallback), so that is what it must be labelled
+    @test Cecelia.effective_pool_name(t, "no_such_pool_$(rand(1000:9999))") == "cpu"
+    resize_pool!("label_pool", 1)
+    @test Cecelia.effective_pool_name(t, "label_pool") == "label_pool"
+
+    proj = create_project!(name="exec-pool-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    r = _collect_exec(TaskRequest(; task_id = "exec$(rand(1000:9999))",
+                                   fun_name = "testTasks.image_task", pool_name = "label_pool",
+                                   project_uid = proj.uid, image_uid = img.uid,
+                                   params = Dict{String,Any}("message" => "pool")))
+    @test r.final == :done
+    @test all(==("label_pool"), r.pools)
+    # …and the durable run log records it, so a history row can show it after the session ends
+    @test last(read_run_log(img))["pool"] == "label_pool"
+    rm(proj.root; recursive=true)
 end
 
 @testset "execute_task — image scope" begin
@@ -455,6 +475,10 @@ end
     # ORDERING: the result must precede the terminal status — the frontend keys off that, and
     # reversing them silently drops the result.
     @test r.statuses[end][1] == "done" && !isempty(r.results)
+    # every frame names the pool the task was queued in — the spec's, since the request named none
+    @test r.pools == fill(Cecelia.effective_pool_name(Cecelia._task_from_fun_name("testTasks.image_task")),
+                          length(r.statuses))
+    @test !isempty(first(r.pools))
     rm(proj.root; recursive=true)
 end
 

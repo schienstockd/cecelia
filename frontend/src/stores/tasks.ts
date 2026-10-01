@@ -21,6 +21,10 @@ export interface TaskEntry {
   funName: string         // canonical "category.task" identifier sent to backend
   params: Record<string, unknown>
   projectUid: string
+  // The resource pool it runs in (`cpu`, `gpu`, `io`, …) — the backend's EFFECTIVE pool, off its
+  // `task:status` / `chain:node:*` frames, the in-flight snapshot or the run log. Undefined when no
+  // carrier has named it yet (a run-log entry written before pools were recorded): unknown, not `cpu`.
+  pool?: string
   // Chain provenance — set when task originated from a chain run
   chainRunId?:   string
   chainNodeId?:  string
@@ -104,6 +108,7 @@ export const useTaskStore = defineStore('tasks', () => {
    * received the frame" is not when the task ran: a terminal frame recovered by polling arrives seconds
    * late, and a frame for a task that started before this tab connected has no local equivalent at all.
    * Falling back to `new Date()` keeps a producer whose start the backend never noted working as before.
+   * `at.pool` is the same kind of fact (the pool the scheduler queued it in) and is adopted whenever present.
    */
   /**
    * Replace a row's log wholesale — for backfilling an adopted row from the on-disk log
@@ -118,7 +123,8 @@ export const useTaskStore = defineStore('tasks', () => {
     t.logSynced = true
   }
 
-  function setStatus(id: string, status: TaskStatus, at: { startedAt?: Date; finishedAt?: Date } = {}) {
+  function setStatus(id: string, status: TaskStatus,
+                     at: { startedAt?: Date; finishedAt?: Date; pool?: string } = {}) {
     const t = tasks.value.find(t => t.id === id)
     if (!t) return
     // Terminal states set by the user (cancelled) are sticky — don't let a late
@@ -132,6 +138,8 @@ export const useTaskStore = defineStore('tasks', () => {
     // argument, which is the only way a silent exclusion should be relied on.
     if (t.history && (status === 'running' || status === 'queued')) t.history = false
     t.status = status
+    // the frame's pool is the scheduler's resolved one, so it overrides whatever the dispatch requested
+    if (at.pool) t.pool = at.pool
     // A backend start is adopted even if we already stamped one locally — it's the real instant, and it
     // only ever moves the number closer to the truth.
     if (at.startedAt) t.startedAt = at.startedAt
@@ -269,6 +277,7 @@ export const useTaskStore = defineStore('tasks', () => {
     status: TaskStatus
     projectUid: string
     taskId?: string
+    pool?: string
     startedAt?: Date
     finishedAt?: Date
   }) {
@@ -280,7 +289,8 @@ export const useTaskStore = defineStore('tasks', () => {
       if (opts.imageName && existing.imageName === opts.imageUid) existing.imageName = opts.imageName
       // …same for the scheduler task id: :queued may arrive before the node has one
       if (opts.taskId) existing.backendTaskId = opts.taskId
-      setStatus(syntheticId, opts.status, { startedAt: opts.startedAt, finishedAt: opts.finishedAt })
+      setStatus(syntheticId, opts.status,
+                { startedAt: opts.startedAt, finishedAt: opts.finishedAt, pool: opts.pool })
       return existing
     }
     // The shared derivation (`utils/taskModule`) — this was a third inline copy of the same rule.
@@ -304,6 +314,7 @@ export const useTaskStore = defineStore('tasks', () => {
       chainNodeId: opts.nodeId,
       chainName:   opts.chainName,
       backendTaskId: opts.taskId || undefined,
+      pool:        opts.pool || undefined,
     }
     tasks.value.unshift(entry)
     return entry

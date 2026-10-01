@@ -91,6 +91,14 @@ describe('taskHistoryEntries', () => {
     expect(noDefs.label).toBe('cellpose')
   })
 
+  it('carries the recorded pool, and leaves it unknown on an entry that predates it', () => {
+    const rows = taskHistoryEntries([img('i1', 'Image one', [
+      { fun: 'segment.cellpose', at: '2026-08-20T10:00:00', pool: 'gpu' },
+      { fun: 'segment.cellpose', at: '2026-08-19T10:00:00' },
+    ])], CTX)
+    expect(rows.map(r => r.pool)).toEqual(['gpu', undefined])
+  })
+
   it('is empty for an image with no run log at all', () => {
     expect(taskHistoryEntries([img('i1', 'A', undefined), img('i2', 'B', [])], CTX)).toEqual([])
   })

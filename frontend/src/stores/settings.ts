@@ -49,10 +49,20 @@ type ProfileKey = typeof PROFILE_KEYS[number]
 // (`utils/debouncedSave` is the canonical scheduler).
 const _PROFILE_PATCH_WAIT_MS = 400
 
+// The Task Manager's three VIEW preferences, as their defaults. Exported because the manager lights its
+// View button while any is off its default — reading them from here is what keeps the two from drifting.
+export const TASK_VIEW_DEFAULTS = {
+  taskListAutoFollow: true, tasksThisProjectOnly: true, tasksShowHistory: false,
+} as const
+
+/** A stored boolean, or `dflt` when absent/unparseable — the one reading of a `'true'`/`'false'` key. */
+const _storedBool = (key: string, dflt: boolean) => {
+  const v = localStorage.getItem(key)
+  return v === 'true' ? true : v === 'false' ? false : dflt
+}
+
 export const useSettingsStore = defineStore('settings', () => {
-  const taskListAutoFollow = ref(
-    localStorage.getItem('cc.taskListAutoFollow') !== 'false'  // default true
-  )
+  const taskListAutoFollow = ref(_storedBool('cc.taskListAutoFollow', TASK_VIEW_DEFAULTS.taskListAutoFollow))
 
   // Whether the Task Manager lists only the open project's tasks. ON by default: the store is not
   // cleared when a project is opened (a run keeps reporting into the tab that launched it), so after
@@ -60,9 +70,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // every other view of the same store already scopes itself (`forModule(module, projectUid)`).
   // A setting rather than a bare ref because the cross-project view is a real one — a project
   // export/import runs against a project that is NOT the open one — so it stays one click away.
-  const tasksThisProjectOnly = ref(
-    localStorage.getItem('cc.tasksThisProjectOnly') !== 'false'  // default true
-  )
+  const tasksThisProjectOnly = ref(_storedBool('cc.tasksThisProjectOnly', TASK_VIEW_DEFAULTS.tasksThisProjectOnly))
 
   // Whether the Task Manager also lists the project's DURABLE run history (each image's run log), not
   // just the runs this browser session watched. The two are different questions — "what is happening"
@@ -70,9 +78,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // so this is OFF by default and the manager keeps the meaning it has always had. Turn it on when the
   // list looks empty for a reason it shouldn't: a window opened after the work finished (a reload, or
   // the pop-out task window) has no session to show for a project with hundreds of runs in it.
-  const tasksShowHistory = ref(
-    localStorage.getItem('cc.tasksShowHistory') === 'true'   // default false
-  )
+  const tasksShowHistory = ref(_storedBool('cc.tasksShowHistory', TASK_VIEW_DEFAULTS.tasksShowHistory))
 
   // Whether a plot's CSV export carries each image's name + attributes (Treatment, Mouse, …) next to
   // its uID. ON by default: a uID alone doesn't say which condition a row belongs to. Off gives the

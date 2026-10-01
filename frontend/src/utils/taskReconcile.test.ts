@@ -74,6 +74,15 @@ describe('recoveredTaskFrames', () => {
     })
   })
 
+  it('carries the pool it ran in on both frame shapes, and omits it when the ring has none', () => {
+    const [plain] = recoveredTaskFrames([{ id: 't1' }], [out('t1', 'done', { pool_name: 'gpu' })])
+    expect(plain.pool).toBe('gpu')
+    const [chain] = recoveredTaskFrames([{ id: 'r::n::EaMaVq', backendTaskId: 't2', chainRunId: 'r',
+                                            chainNodeId: 'n' }], [out('t2', 'done', { pool_name: 'io' })])
+    expect(chain.pool).toBe('io')
+    expect('pool' in recoveredTaskFrames([{ id: 't1' }], [out('t1', 'done')])[0]).toBe(false)
+  })
+
   it('carries failed and cancelled through as themselves', () => {
     expect(recoveredTaskFrames([{ id: 'a' }], [out('a', 'failed')])[0].status).toBe('failed')
     expect(recoveredTaskFrames([{ id: 'b' }], [out('b', 'cancelled')])[0].status).toBe('cancelled')
