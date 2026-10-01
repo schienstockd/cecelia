@@ -1646,6 +1646,18 @@ row FIELDS — including the raw `elapsedMs` behind the formatted `elapsed`, sin
 prefixes the image with a foreign-project label, the sidebar shows a uid chip), never in a second copy
 of the derivation.
 
+**Where a task runs is shown on both surfaces**, as `.cc-pool-tag` (server icon + pool name, the same
+tag the chain board's nodes wear): a sortable **Pool** column in the manager, and a tag at the end of
+the title row in the sidebar. It is the scheduler's EFFECTIVE pool (`docs/SCHEDULER.md` → *Resource
+pools*), so a requested pool that isn't configured reads `cpu`, which is where it actually ran. Blank on
+history rows from run-log entries written before the pool was recorded: unknown, never a guessed `cpu`.
+The manager's toolbar is two rows: title, search and the icon buttons (View, throttle, pop-out) on top;
+the FILTERS under it, status then **pool** as two segmented groups (so they combine: failed AND gpu).
+History / This project / Auto-follow sit in the **View** popover: they are persisted preferences, not
+per-lookup filters, and the button lights while any is off its default. The options are the pools the in-scope rows name (`taskPoolOptions`), not `/api/pools`,
+so no chip filters to nothing. Hidden only when no row names a pool; a single pool still filters (it hides
+older history rows that recorded none).
+
 The per-module sidebar (`TaskList.vue`, also hosted by `BatchMoviesPanel` and `AnimationPanel`) is the
 same table in `none` mode — a row there isn't selected, the buttons act — with two differences that
 follow from the panel being ~280px wide:
@@ -1827,7 +1839,7 @@ already the source of truth for the image table's run tag and its per-image hist
 (`utils/runLog.ts`). **`utils/taskHistoryRows.ts`** turns those entries into the same `TaskEntry` rows
 the live half produces, so there is one list, one row mapper and one log pane — and clicking a run from
 three weeks ago fetches its real output from `{img}/logs/{fun}.log` through the backfill that already
-existed for adopted rows. Toggle: **History** in the toolbar (`settings.tasksShowHistory`), **off by default** — the two are
+existed for adopted rows. Toggle: **History** in the toolbar's View popover (`settings.tasksShowHistory`), **off by default** — the two are
 different questions (*what is happening* vs *what has been done*) and the session view is the one
 you want while you are running things, so the manager keeps the meaning it has always had.
 

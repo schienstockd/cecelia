@@ -35,9 +35,8 @@ const pinnedVersion = computed(() => {
     </div>
     <div class="node-label">{{ data.label || data.fn }}</div>
     <div class="node-fn cc-muted cc-fs-2xs">{{ data.fn }}</div>
-    <div v-if="data.resource_pool" class="node-pool">
-      <i class="pi pi-server" style="font-size:var(--cc-fs-2xs)" />
-      {{ data.resource_pool }}
+    <div v-if="data.resource_pool" class="node-pool cc-pool-tag">
+      <i class="pi pi-server" />{{ data.resource_pool }}
     </div>
     <div v-if="pinnedVersion" class="node-version"
          v-tooltip.bottom="`Input pinned to ${pinnedVersion} (won't follow _latest)`">
@@ -102,10 +101,8 @@ const pinnedVersion = computed(() => {
   text-overflow: ellipsis;
   max-width: 160px;
 }
-.node-pool {
+.node-pool {           /* + .cc-pool-tag — this site's own half: the orange, the block, the spacing */
   display: flex;
-  align-items: center;
-  gap: 3px;
   font-size: var(--cc-fs-3xs);
   color: #f97316;
   margin-top: 4px;

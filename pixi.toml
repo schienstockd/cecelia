@@ -75,6 +75,8 @@ websockets   = ">=16.0"
 # → napari-animation until P9; declared here now that napari is gone. Tests in test_movie_io.py
 # encode short mp4s for real, so this needs to be present, not optional.
 imageio-ffmpeg = ">=0.4"
+# SPIKE (SHARED_RENDERER_PLAN Phase 0): run the viewer's WGSL headlessly.
+wgpu         = ">=0.20"
 # Cellpose lives in [feature.cellpose-v4] / [feature.cellpose-v3] below (two mutually-exclusive envs
 # — same package name, incompatible major versions). Default env carries v4; the v3 env is an opt-in
 # Mac-only sidecar for MPS speed. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
@@ -352,6 +354,21 @@ claude-md-eval-analyse = "python scripts/claude_md_eval/analyse.py"
 # docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md.
 claude-md-eval-record = "python scripts/claude_md_eval/record.py"
 
+# The supervised Monday pass: pin origin/main, reset the persistent worktree
+# (~/.cecelia-effectiveness/eval-worktree) to it, run the suite there, retry errored runs, judge
+# every failure with a tool-less `claude -p`, write the run record. `--session S` re-triages a pass
+# already in the log; `--dry-run` prints the record. Design: docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md.
+claude-md-eval-supervise = "python scripts/claude_md_eval/supervise.py"
+
+# Curation proposals for the newest run record (retire / add / setup), printed as JSON; the
+# supervised pass already puts them in the record. Never applies anything.
+claude-md-eval-curate = "python scripts/claude_md_eval/curate.py"
+
+# The owner's review queue for the newest CLAUDE.md eval run record: decisions, proposals, spot
+# checks, the loop review. One key per answer; answers are append-only events in
+# ~/.cecelia-effectiveness/review.jsonl, applied by the next supervised pass. `--date D` for another.
+recital-review = "python scripts/claude_md_eval/review.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the
@@ -366,6 +383,10 @@ update = "pixi update"
 # Julia package deps. `resolve` first (self-heals a manifest that's missing a newly-added dep — see
 # notebooks-instantiate); a no-op when already consistent.
 julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'"
+
+# `Pkg.update()` the app, api and pluto envs together, within [compat], and print a markdown table of
+# what moved. The Julia half of .github/workflows/update-deps.yml. See docs/todo/DEPS_UPDATES_PLAN.md.
+update-julia = "julia --startup-file=no scripts/update_julia_envs.jl"
 
 # Fresh-clone / new-worktree audit — dispatcher over existing checks (Design pattern adapted from
 # spaCR — see THIRD_PARTY.md → Design patterns adopted). Auto-fixes cheap things (npm ci, etc.);

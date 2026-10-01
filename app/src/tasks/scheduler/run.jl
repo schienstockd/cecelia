@@ -70,7 +70,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     task_applies(task, img) ||
         throw(TaskApplicabilityError(task_applicability_reason(task, img)))
     fun_name  = _fun_name_from_task(task)
-    pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name
+    pool_name = effective_pool_name(task, pool_name)
     pool      = _pool(pool_name)
     rec       = _register_task!(task_id, fun_name, pool_name,
                                  img.uid, chain_run_id, on_status_change;
@@ -118,7 +118,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
             throw(TaskApplicabilityError(task_applicability_reason(task, img)))
     end
     fun_name  = _fun_name_from_task(task)
-    pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name
+    pool_name = effective_pool_name(task, pool_name)
     pool      = _pool(pool_name)
     rep       = first(imgs)
     rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;

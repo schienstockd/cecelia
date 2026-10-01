@@ -32,6 +32,8 @@ export interface RecentTaskOutcome {
   /** ISO-8601 UTC. Both may be absent against an older backend, or `started_at` `''` if it never ran. */
   started_at?: string
   finished_at?: string
+  /** the pool it ran in — `''`/absent when the producer named none */
+  pool_name?: string
 }
 
 /**
@@ -91,7 +93,8 @@ export function recoveredTaskFrames(
       ...(o.started_at  ? { startedAt:  o.started_at  } : {}),
       ...(o.finished_at ? { finishedAt: o.finished_at } : {}),
     }
-    const common = { recovered: true, recoveredFrom: backendId, ...times }
+    const common = { recovered: true, recoveredFrom: backendId, ...times,
+                     ...(o.pool_name ? { pool: o.pool_name } : {}) }
 
     if (t.chainRunId && t.chainNodeId) {
       // a chain node's outcome travels as chain:node:done / chain:node:failed, carrying WHICH terminal

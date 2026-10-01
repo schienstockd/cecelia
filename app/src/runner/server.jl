@@ -102,12 +102,12 @@ _emit_result(id, uid, m) = runner_emit(Dict{String,Any}("type" => "task:result",
 # only live carrier of the task's timing, and a client that times the row from when it SAW the frame is
 # timing from its own reconnect. `record_task_outcome!` returns the row it banked, so the live frame and
 # the replayed one cannot disagree about when the task ran.
-function _emit_status(id, status, uid, uids, fun)
+function _emit_status(id, status, uid, uids, fun, pool = "")
     string(status) == "running" && note_task_started!(id)
-    row = record_task_outcome!(id, status; image_uid = uid, image_uids = uids, fun = fun)
+    row = record_task_outcome!(id, status; image_uid = uid, image_uids = uids, fun = fun, pool = pool)
     runner_emit(Dict{String,Any}(
         "type" => "task:status", "taskId" => id, "status" => status,
-        "imageUid" => uid, "imageUids" => uids, "fun" => fun,
+        "imageUid" => uid, "imageUids" => uids, "fun" => fun, "pool" => pool,
         "startedAt"  => isnothing(row) ? iso_utc(task_started_at(id)) : row.started_at,
         "finishedAt" => isnothing(row) ? "" : row.finished_at))
 end
@@ -297,7 +297,8 @@ function _runner_submit(body_bytes::Vector{UInt8})
             execute_task(treq;
                 on_log      = line -> _emit_log(treq.task_id, line),
                 on_progress = (n, t) -> _emit_progress(treq.task_id, n, t),
-                on_status   = (st, uid, uids) -> _emit_status(treq.task_id, st, uid, uids, treq.fun_name),
+                on_status   = (st, uid, uids, pool) ->
+                                  _emit_status(treq.task_id, st, uid, uids, treq.fun_name, pool),
                 on_result   = (uid, meta) -> _emit_result(treq.task_id, uid, meta))
         catch e
             # execute_task already guarantees a terminal frame on every path it knows about. This is

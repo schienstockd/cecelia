@@ -167,7 +167,7 @@ export const useWsStore = defineStore('ws', () => {
     // …and repair the rows adoption skipped: one that started while the socket was down never got its
     // `running` frame and would sit at Queued for the rest of the run (utils/runningTasks.ts).
     for (const r of staleInFlightStatuses(rows, id => byBackendId.get(id)))
-      tasks.setStatus(r.id, r.status, { startedAt: r.startedAt })
+      tasks.setStatus(r.id, r.status, { startedAt: r.startedAt, pool: r.pool })
   }
 
   // A reload races: the socket usually opens BEFORE the project finishes loading, and until it has, a
@@ -450,6 +450,7 @@ export const useWsStore = defineStore('ws', () => {
         useTaskStore().setStatus(taskId, status as any, {
           startedAt:  parseRailTime(data.startedAt),
           finishedAt: parseRailTime(data.finishedAt),
+          pool:       String(data.pool ?? '') || undefined,
         })
         // An opt-in pixi env install (system_api.jl's `_run_env_install`) ends with a `done`/`failed`
         // task:status. Invalidate the systemEnvs cache so the next `getSystemEnvs()` — the advisor
@@ -560,6 +561,7 @@ export const useWsStore = defineStore('ws', () => {
         // the scheduler task this node ran as — "" / absent for a node with no task id yet (skipped
         // before submission, set-scope). Recorded so a dropped terminal frame can be recovered.
         taskId:     String(data.taskId ?? ''),
+        pool:       String(data.pool ?? '') || undefined,
         // the scheduler's own timing. A chain run emits no `task:status`, so these frames are the only
         // live carrier of it — without them a node's elapsed is timed from frame arrival.
         startedAt:  parseRailTime(data.startedAt),

@@ -503,6 +503,16 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* A RESOURCE POOL named inline (`<i class="pi pi-server" />gpu`) — where a task runs or will queue.
+   The chain nodes (task + picnic), the Task Manager's Pool column and the per-module task list each show one; the shared
+   half is the icon+name layout and size, and a site keeps only its colour (the chain node's orange) and
+   spacing. Dim by default: next to a task it is provenance, not the headline. */
+.cc-pool-tag {
+  display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
+  font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); white-space: nowrap;
+}
+.cc-pool-tag > .pi { font-size: var(--cc-fs-3xs); }
+
 /* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
    tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */
 .cc-eyebrow {

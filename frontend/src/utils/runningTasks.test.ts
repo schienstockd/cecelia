@@ -70,6 +70,11 @@ describe('adoptableTasks', () => {
     expect(t.startedAt?.toISOString()).toBe('2026-08-04T05:00:04.000Z')
   })
 
+  it('carries the pool the scheduler queued it in, and none when the snapshot names none', () => {
+    expect(adoptableTasks([row()], ctx, none)[0].pool).toBe('gpu')
+    expect(adoptableTasks([row({ pool_name: '' })], ctx, none)[0].pool).toBeUndefined()
+  })
+
   it('derives the module page from the fun category', () => {
     expect(adoptableTasks([row({ fun_name: 'importImages.omezarr' })], ctx, none)[0].module).toBe('manageImages')
     expect(adoptableTasks([row({ fun_name: 'segment.cellpose' })], ctx, none)[0].module).toBe('segment')
@@ -181,9 +186,15 @@ describe('staleInFlightStatuses', () => {
   const store = (rows: Array<{ id: string; status: string; backendTaskId?: string }>) =>
     (schedId: string) => rows.find(r => (r.backendTaskId ?? r.id) === schedId)
 
+  it('carries the snapshot\'s effective pool, so a repaired row drops the requested one', () => {
+    const [r] = staleInFlightStatuses([{ id: 's1', status: 'running', pool_name: 'cpu' }],
+                                      () => ({ id: 's1', status: 'queued' }))
+    expect(r.pool).toBe('cpu')
+  })
+
   it('promotes a row the tab still thinks is queued', () => {
     const out = staleInFlightStatuses([row()], store([{ id: 'sched1', status: 'queued' }]))
-    expect(out).toEqual([{ id: 'sched1', status: 'running',
+    expect(out).toEqual([{ id: 'sched1', status: 'running', pool: 'gpu',
                            startedAt: new Date('2026-08-04T05:00:04.000Z') }])
   })
 
@@ -209,7 +220,8 @@ describe('staleInFlightStatuses', () => {
   })
 
   it('promotes without a start time when the snapshot carries none', () => {
-    const out = staleInFlightStatuses([row({ started_at: '' })], store([{ id: 'sched1', status: 'queued' }]))
+    const out = staleInFlightStatuses([row({ started_at: '', pool_name: '' })],
+                                      store([{ id: 'sched1', status: 'queued' }]))
     expect(out).toEqual([{ id: 'sched1', status: 'running' }])
   })
 

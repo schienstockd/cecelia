@@ -25,16 +25,18 @@ import hashlib
 import importlib.util as _importlib_util
 import json
 import pathlib
+import re
 import sys
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
-_MIRROR_DIR = _REPO / "docs" / "ai-assist" / "eval-runs"
+MIRROR_REL = pathlib.PurePosixPath("docs/ai-assist/eval-runs")   # in any checkout of the repo
+_MIRROR_DIR = _REPO / MIRROR_REL
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
-from cecelia.effectiveness.log import default_log_path  # noqa: E402
+from cecelia.effectiveness.eval_staleness import eval_store  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
 
@@ -52,6 +54,10 @@ SCHEMA_VERSION = 1
 FINDING_CLASSES = ("scorer_bug", "infra", "genuine", "decision")
 FINDING_STATUSES = ("open", "resolved", "dropped")
 RECURRENCE = ("recurring", "watch")
+PROPOSAL_KINDS = ("setup", "scorer", "retire", "add")
+QUEUE_KINDS = ("decision", "proposal", "spot_check", "loop_review")
+#: Decision 15: flag a setup metric that grew by more than this since the last record.
+SETUP_GROWTH_FLAG = 0.10
 VERDICTS = ("compliant", "noncompliant", "error")
 
 _HOW_TO_USE = (
@@ -64,7 +70,7 @@ class RecordError(ValueError):
 
 
 def store_root() -> pathlib.Path:
-    return default_log_path().parent / "eval-runs"
+    return eval_store()
 
 
 def sandbox_hash(settings: dict | None = None) -> str:
@@ -155,9 +161,12 @@ def find_suite(events: _t.Sequence[dict], date: str) -> dict:
 
 
 def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = None,
-          ref: str | None = None, sandboxed: bool = False) -> dict:
-    """Assemble the record for the pass on `date`. Pure apart from reading traces and git."""
-    suite = find_suite(events, date)
+          ref: str | None = None, sandboxed: bool = False, suite: dict | None = None) -> dict:
+    """Assemble the record for the pass on `date` (or for `suite`, when the caller knows its row).
+
+    Pure apart from reading traces and git.
+    """
+    suite = suite or find_suite(events, date)
     runs = _rollup.pass_runs(events, suite)
     traces, header = [], {}
     for row in sorted(runs, key=lambda e: e["ts"]):
@@ -185,6 +194,7 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
     proposals = notes.get("proposals", [])
     record = {
         "schema_version": SCHEMA_VERSION,
+        "kind": "pass",
         "date": date,
         "run": {
             "suite_ts": suite["ts"], "session": suite.get("session"), "branch": suite.get("branch"),
@@ -199,6 +209,8 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
             "claude_code_version": header.get("claude_code_version"), "model": header.get("model"),
             "cost_usd": suite["payload"].get("totals", {}).get("cost_usd"),
             "retries": notes.get("retries", []),
+            # The supervisor's own judge spend, kept apart from the suite's (Decision 4).
+            "supervisor": notes.get("supervisor"),
             "trace_root": str(_run_prompt.trace_root()),
         },
         "results": {"raw": _tally(t["scores"]["raw"] for t in traces),
@@ -207,16 +219,106 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
         "traces": traces,
         "findings": findings,
         "proposals": proposals,
-        # Phase 4 fills this from the previous record in the store.
+        # Filled by `with_delta` against the previous record in the store.
         "delta": None,
-        "tracking": {"setup_size": setup_size(size_ref or "HEAD")},
+        "tracking": {"setup_size": setup_size(size_ref or "HEAD"),
+                     # owner-loop items the supervisor adds on every 4th / 8th run (Decision 15)
+                     "spot_check": notes.get("spot_check") or [],
+                     "loop_review": notes.get("loop_review"),
+                     **({"spot_check_labels": notes["spot_check_labels"]} if notes.get("spot_check_labels") else {})},
         "next_actions": notes.get("next_actions", []),
         # What the owner has to answer (Decision 3: a review queue, not a markdown edit).
         "queue": ([{"kind": "decision", "ref": f["id"]} for f in findings
                    if f.get("class") == "decision" and f.get("status") == "open"]
-                  + [{"kind": "proposal", "ref": p["id"]} for p in proposals]),
+                  + [{"kind": "proposal", "ref": p["id"]} for p in proposals]
+                  + [{"kind": "spot_check", "ref": fid} for fid in notes.get("spot_check") or []]
+                  + ([{"kind": "loop_review", "ref": "loop"}] if notes.get("loop_review") else [])),
     }
     return record
+
+
+def failure_record(date: str, *, stage: str, error: str, sha: str | None = None) -> dict:
+    """The minimal record a crashed run still leaves (Decision 13), so the gap is visible."""
+    return {"schema_version": SCHEMA_VERSION, "kind": "failure", "date": date,
+            "run": {"stage": stage, "error": error, "sha": sha}}
+
+
+def pass_records(before: str | None = None) -> list[dict]:
+    """Every valid pass record in the store, oldest first; only those dated before `before` if given.
+
+    Failure records and anything that doesn't validate are skipped.
+    """
+    out = []
+    for path in sorted(store_root().glob("*.json")):
+        if before is not None and path.stem >= before:
+            continue
+        try:
+            record = load(path)
+        except RecordError:
+            continue
+        if record.get("kind", "pass") == "pass":
+            out.append(record)
+    return out
+
+
+_HYPOTHESIS_RE = re.compile(r"expect\s+`?([\w-]+)`?\s+to\b")
+
+
+def delta(record: dict, previous: dict | None) -> dict | None:
+    """What changed since `previous`: findings, score, versions, and whether each hypothesis held.
+
+    Findings match on (slug, class). A score is only comparable when the prompt set, sandbox and
+    CLAUDE.md are unchanged (Decision 1), so every change is named next to it.
+    """
+    if previous is None:
+        return None
+    key = lambda f: (f.get("slug"), f.get("class"))   # noqa: E731
+    before = {key(f): f for f in previous.get("findings", []) if f.get("status") == "open"}
+    now = {key(f): f for f in record.get("findings", [])}
+    prun, run = previous["run"], record["run"]
+    changed = [name for name, a, b in (
+        ("prompt set", prun["prompt_set"]["hash"], run["prompt_set"]["hash"]),
+        ("sandbox", prun.get("sandbox"), run.get("sandbox")),
+        ("CLAUDE.md", prun.get("claude_md_blob"), run.get("claude_md_blob")),
+        ("Claude Code", prun.get("claude_code_version"), run.get("claude_code_version"))) if a != b]
+    per_prompt = record["results"]["per_prompt"]
+    hypotheses = []
+    for prop in previous.get("proposals", []):
+        m = _HYPOTHESIS_RE.search(prop.get("hypothesis") or "")
+        if not m:
+            continue
+        pid = m.group(1)
+        tally = per_prompt.get(pid, {}).get("raw")
+        held = None if not tally or not tally["total"] else tally["compliant"] == tally["total"]
+        hypotheses.append({"proposal": prop["id"], "prompt": pid, "hypothesis": prop["hypothesis"],
+                           "held": held, "score": _score(tally) if tally else None})
+    return {
+        "previous": previous["date"],
+        "opened": [now[k]["id"] for k in now if k not in before],
+        "still_open": [now[k]["id"] for k in now if k in before],
+        "resolved": [f"{before[k]['id']} `{k[0]}` {k[1]}" for k in before if k not in now],
+        "score": {"previous": _score(previous["results"]["raw"]), "now": _score(record["results"]["raw"])},
+        "changed": changed,
+        "setup_growth": setup_growth(previous.get("tracking", {}).get("setup_size") or {},
+                                     record.get("tracking", {}).get("setup_size") or {}),
+        "hypotheses": hypotheses,
+    }
+
+
+def setup_growth(before: dict, now: dict) -> list[str]:
+    """The setup-size metrics that grew by more than `SETUP_GROWTH_FLAG`."""
+    out = []
+    for key, value in now.items():
+        old = before.get(key)
+        if isinstance(value, int) and isinstance(old, int) and old > 0 and (value - old) / old > SETUP_GROWTH_FLAG:
+            out.append(f"{key} {old} → {value}")
+    return out
+
+
+def with_delta(record: dict) -> dict:
+    """`record` with its delta against the newest earlier pass record, owner answers applied."""
+    earlier = _load_sibling("review").applied_pass_records(before=record["date"])
+    return {**record, "delta": delta(record, earlier[-1] if earlier else None)}
 
 
 _REQUIRED = {
@@ -226,6 +328,9 @@ _REQUIRED = {
     "results": ("raw", "rescored", "per_prompt", "candidates"),
     "finding": ("id", "slug", "class", "status", "recurrence", "evidence", "diagnosis", "proposed_fix"),
     "next_action": ("title", "files", "change", "verify"),
+    "proposal": ("id", "kind", "summary", "sources"),
+    "failure": ("schema_version", "date", "kind", "run"),
+    "failure_run": ("stage", "error", "sha"),
 }
 
 
@@ -238,6 +343,10 @@ def validate(record: dict) -> list[str]:
 
     if record.get("schema_version") != SCHEMA_VERSION:
         return [f"schema_version {record.get('schema_version')!r}, this code reads {SCHEMA_VERSION}"]
+    if record.get("kind") == "failure":
+        need(record, "", _REQUIRED["failure"])
+        need(record.get("run", {}), "run", _REQUIRED["failure_run"])
+        return errs
     need(record, "", _REQUIRED[""])
     need(record.get("run", {}), "run", _REQUIRED["run"])
     need(record.get("results", {}), "results", _REQUIRED["results"])
@@ -254,6 +363,11 @@ def validate(record: dict) -> list[str]:
         for ev in f.get("evidence", []):
             if not ev.get("trace") or not ev.get("excerpt"):
                 errs.append(f"{where}: evidence needs a `trace` and an `excerpt`")
+    for p in record.get("proposals", []):
+        where = f"proposal {p.get('id', '?')}"
+        need(p, where, _REQUIRED["proposal"])
+        if "kind" in p and p["kind"] not in PROPOSAL_KINDS:
+            errs.append(f"{where}: kind {p['kind']!r} not in {PROPOSAL_KINDS}")
     for i, a in enumerate(record.get("next_actions", [])):
         need(a, f"next_action {i + 1}", _REQUIRED["next_action"])
     for t in record.get("traces", []):
@@ -261,7 +375,12 @@ def validate(record: dict) -> list[str]:
             if v is not None and v not in VERDICTS:
                 errs.append(f"trace {t.get('trace')}: {stage} verdict {v!r}")
     for item in record.get("queue", []):
-        if item.get("ref") not in ids + [p.get("id") for p in record.get("proposals", [])]:
+        if item.get("kind") not in QUEUE_KINDS:
+            errs.append(f"queue: kind {item.get('kind')!r} not in {QUEUE_KINDS}")
+        elif item["kind"] == "loop_review":
+            if not record.get("tracking", {}).get("loop_review"):
+                errs.append("queue: a loop_review item with no tracking.loop_review")
+        elif item.get("ref") not in ids + [p.get("id") for p in record.get("proposals", [])]:
             errs.append(f"queue: {item.get('ref')!r} names no finding or proposal")
     return errs
 
@@ -280,7 +399,8 @@ def load(path: pathlib.Path) -> dict:
     return record
 
 
-_ANNOTATION_KEYS = ("findings", "proposals", "next_actions", "candidates", "retries", "sha")
+_ANNOTATION_KEYS = ("findings", "proposals", "next_actions", "candidates", "retries", "sha", "supervisor",
+                    "spot_check", "loop_review", "spot_check_labels")
 
 
 def carried_annotations(path: pathlib.Path) -> dict | None:
@@ -288,8 +408,11 @@ def carried_annotations(path: pathlib.Path) -> dict | None:
     if not path.is_file():
         return None
     record = load(path)
-    return {k: (record["run"] if k in ("retries", "sha") else record["results"] if k == "candidates"
-                else record)[k] for k in _ANNOTATION_KEYS}
+    if record.get("kind") == "failure":
+        return None
+    home = {"retries": "run", "sha": "run", "supervisor": "run", "candidates": "results",
+            "spot_check": "tracking", "loop_review": "tracking", "spot_check_labels": "tracking"}
+    return {k: (record.get(home[k], {}) if k in home else record).get(k) for k in _ANNOTATION_KEYS}
 
 
 def _score(t: dict) -> str:
@@ -301,6 +424,14 @@ def _cell(text: _t.Any) -> str:
 
 
 def render_markdown(record: dict) -> str:
+    if record.get("kind") == "failure":
+        run = record["run"]
+        return (f"# CLAUDE.md eval run — {record['date']} — FAILED\n\n"
+                f"The supervised pass stopped at **{run['stage']}** and scored nothing.\n\n"
+                f"- Pinned SHA: {run['sha'] or 'not pinned yet'}\n"
+                f"- Error: `{_cell(run['error'])}`\n\n"
+                "Next action: read the cron log in `~/.cecelia-effectiveness/cron/`, fix the cause, "
+                "and rerun `pixi run claude-md-eval-supervise`.\n")
     run, res = record["run"], record["results"]
     out = [f"# CLAUDE.md eval run — {record['date']}", "",
            _HOW_TO_USE.format(json=f"{record['date']}.json"), "",
@@ -317,6 +448,11 @@ def render_markdown(record: dict) -> str:
         ("Claude Code", f"{run.get('claude_code_version')} · {run.get('model')}"),
         ("Cost", f"${run['cost_usd']:.2f}" if run["cost_usd"] is not None else None),
         ("Retries", len(run["retries"])),
+        ("Supervisor", (f"{run['supervisor'].get('judge_calls', 0)} judge call(s) · "
+                        f"${run['supervisor'].get('cost_usd', 0):.2f}"
+                        + (f" · {run['supervisor']['skipped']} unjudged (budget)"
+                           if run["supervisor"].get("skipped") else ""))
+         if run.get("supervisor") else "not supervised (replayed)"),
         ("Traces", f"`{run.get('trace_root')}`"),
     ]
     out += [f"| {k} | {_cell(v)} |" for k, v in meta]
@@ -349,7 +485,40 @@ def render_markdown(record: dict) -> str:
     out += ["", "## Owner queue", ""]
     out += [f"- {q['kind']}: {q['ref']}" for q in record["queue"]] or ["Empty."]
 
+    tracking = record["tracking"]
+    if tracking.get("spot_check"):
+        labels = tracking.get("spot_check_labels", {})
+        out += ["", "## Spot check", "",
+                "Label each sampled finding `real` / `false` / `unclear` with `pixi run recital-review`.", ""]
+        out += [f"- {fid}: {labels.get(fid, 'unlabelled')}" for fid in tracking["spot_check"]]
+    loop = tracking.get("loop_review")
+    if loop:
+        out += ["", "## Loop review", "",
+                f"{loop['runs']} supervised runs. Decide: continue, retune or stop "
+                f"(`pixi run recital-review`){'; decided: **' + loop['decision'] + '**' if loop.get('decision') else ''}.", "",
+                f"- Scores: {' → '.join(loop.get('scores', []))}",
+                f"- Proposals accepted: {loop.get('accepted', 0)} of {loop.get('proposals', 0)}",
+                f"- Spot-check false-positive rate: {loop.get('false_positive_rate', 'n/a')}",
+                f"- Cost: ${loop.get('cost_usd', 0):.2f}"]
     size = record["tracking"]["setup_size"]
+    out += ["", "## Since last run", ""]
+    d = record.get("delta")
+    if not d:
+        out.append("First record; nothing to compare.")
+    else:
+        note = (f" — **not comparable directly:** {', '.join(d['changed'])} changed" if d["changed"]
+                else " — same prompt set, sandbox, CLAUDE.md and Claude Code")
+        out += [f"Against {d['previous']}: {d['score']['previous']} → {d['score']['now']}{note}.", "",
+                f"- Opened: {', '.join(d['opened']) or 'none'}",
+                f"- Still open: {', '.join(d['still_open']) or 'none'}",
+                f"- Resolved: {', '.join(d['resolved']) or 'none'}"]
+        if d.get("setup_growth"):
+            out.append(f"- **Setup grew more than {SETUP_GROWTH_FLAG:.0%}:** {'; '.join(d['setup_growth'])}")
+        for h in d["hypotheses"]:
+            verdict = {True: "held", False: "did not hold", None: "untested (prompt not run)"}[h["held"]]
+            out.append(f"- {h['proposal']} ({h['hypothesis']}): **{verdict}**"
+                       + (f", `{h['prompt']}` {h['score']}" if h["score"] else ""))
+
     out += ["", "## Setup size", "",
             f"At `{(size.get('ref') or '?')[:8]}`: CLAUDE.md {size.get('claude_md_lines')} lines, "
             f"`frontend/CLAUDE.md` {size.get('frontend_claude_md_lines')}, "
@@ -416,8 +585,8 @@ def main(argv: list[str] | None = None) -> int:
                 notes = json.loads(args.annotations.read_text(encoding="utf-8"))
             else:
                 notes = carried_annotations(store_root() / f"{args.date}.json")
-            record = build(list(read_events()), args.date, annotations=notes, ref=args.ref,
-                           sandboxed=args.sandboxed)
+            record = with_delta(build(list(read_events()), args.date, annotations=notes, ref=args.ref,
+                                      sandboxed=args.sandboxed))
             paths = write(record, mirror=args.mirror, force=args.force)
         else:
             record = load(store_root() / f"{args.date}.json")
@@ -425,9 +594,12 @@ def main(argv: list[str] | None = None) -> int:
     except RecordError as e:
         print(f"claude-md-eval-record: {e}", file=sys.stderr)
         return 1
-    res = record["results"]
-    print(f"{record['date']}: {_score(res['raw'])} logged → {_score(res['rescored'])} rescored, "
-          f"{len(record['findings'])} finding(s)")
+    if record.get("kind") == "failure":
+        print(f"{record['date']}: failure record (stopped at {record['run']['stage']})")
+    else:
+        res = record["results"]
+        print(f"{record['date']}: {_score(res['raw'])} logged → {_score(res['rescored'])} rescored, "
+              f"{len(record['findings'])} finding(s)")
     for p in paths:
         print(f"  wrote {p}")
     return 0

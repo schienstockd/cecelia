@@ -1,6 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
-**Status:** in progress — phases 1 (record store) and 2 (scorer F2) built 2026-10-01; phases 3–6 open. Consolidates the two briefs at
+**Status:** in progress — phases 1–6 built 2026-10-01; open: the first supervised pass, which
+measures the judge's cost so the cap can be set (Decision 4), and owner decision F6. Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
 
@@ -145,20 +146,91 @@ Each phase is its own PR.
    (`run_prompt.py`), enabled for `frontend-copy-canonical`. It strips `<!-- -->`, `/* */` and `//`
    comments (not `://`) before the anti regex only. Checkpoint met: rescoring all 46 saved traces
    flips `20260930T141134Z-frontend-copy-canonical-with-r2` and nothing else.
-3. **Supervisor:** `--ref` in `run_prompt.py`, persistent worktree, `supervise.py` with tool-less
-   triage and retries, `cron_pass.sh` calling it by default (with `--no-supervise`), lock and
-   `finally` cleanup. Checkpoint: a forced crash still writes a failure record.
-4. **Close-out:** both rollups, delta section, single-open-PR rule, staleness guard. Checkpoint:
-   the guard fires on an old store and is silent on a fresh one.
-5. **Curation:** candidates and proposals per Decision 8. Checkpoint: running it on the current log
-   gives proposals with evidence, or none.
-6. **Owner loop:**
-   - A terminal review queue (e.g. `pixi run recital-review`) built on the `effectiveness/console.py`
-     patterns. It's keyboard-driven: spot check `real`/`false`/`unclear`, finding status, proposal
-     accept/reject/defer, undo as a correcting event, progress and an empty state.
-   - It appends `review.jsonl` events (Decision 15), so labelling works from run one.
-   - Also: ingest those events at run start, spot-check sampling, loop review, setup-size metrics.
-   - Checkpoint: a missing or mismatched-schema record gives a clear error.
+3. **Supervisor — built.** `scripts/claude_md_eval/supervise.py` (`pixi run claude-md-eval-supervise`),
+   tests in `python/cecelia/tests/test_claude_md_eval_supervise.py`. `cron_pass.sh` runs it by
+   default (`--no-supervise` for the bare suite). Checkpoint met: a crash at any stage writes a
+   `kind: failure` record (`record.failure_record`). Choices made while building:
+   - **No `--ref` in `run_prompt.py`.** The suite runs inside the persistent worktree, reset to the
+     pinned SHA and checked, so its eval worktrees already branch from that SHA.
+   - The worktree's `git clean -fdx` keeps `.pixi`, `.env` and `frontend/node_modules`; the first
+     run pays a full `pixi install` there.
+   - The suite runs under a session id the supervisor picks, so `rollup.pass_runs` finds exactly
+     its rows. `record.build(suite=…)` takes that row, not just the day's last pass.
+   - The judge call is `claude -p --tools "" --safe-mode --strict-mcp-config` in an empty temp
+     dir, with `--json-schema`. Its input has the rule, the task, the scorer frontmatter and score,
+     anti-signal matches, the first 40 tool calls, the final message and the diff (12 KB cap). A
+     quoted `evidence` line that isn't in that input is marked `verified: false`.
+   - Errored runs are `infra` without a judge call, and are retried (≤2) through
+     `claude-md-eval-one`.
+   - One finding per (prompt, class). `recurring` means the previous record in the store has the
+     same pair.
+   - A failure record never replaces a pass record of the same date.
+   - `--session S --dry-run` re-triages a logged pass. On the 09-30 pass that was 8 judge calls,
+     $0.58 (~$0.07 each), and the findings matched the hand-written seed.
+   - The judge budget is a high safety stop ($10, $0.75 per call), so the first real pass measures
+     the real cost. The cap gets set after that.
+4. **Close-out — built.** Checkpoint met: `test_eval_staleness.py` fires on an old store and is
+   silent on a fresh one.
+   - `record.delta` / `with_delta`: findings matched on (slug, class), so each is opened, still
+     open or resolved. The score is shown with every version that changed (prompt set, sandbox,
+     CLAUDE.md, Claude Code). Each earlier proposal's `expect <prompt> to …` hypothesis is checked
+     against this run.
+   - `supervise.publish`, in the persistent worktree:
+     - writes branch `eval-run/<date>` with the mirrored record and both rollups
+       (`claude-md-eval-rollup`, `audit-rollup`);
+     - commits with the `pixi run recital` output in the message, then pushes;
+     - opens the PR, or reuses it on a same-date rerun, and closes every other open `eval-run/*`
+       PR with a link to the new one.
+     A failure record gets a PR too, once the worktree exists. `--no-pr` skips publishing, and a
+     `--session` re-triage never publishes.
+   - `prepare_worktree` detaches before `reset --hard`, so last week's `eval-run/*` branch never
+     moves.
+   - Staleness: `cecelia.effectiveness.eval_staleness` puts one yellow line in the recital
+     console's header (and at the start of `--stream`) when the newest record is older than
+     7 + 2 days, or when it is a failure. A machine with no store stays silent.
+5. **Curation — built.** `scripts/claude_md_eval/curate.py` (`pixi run claude-md-eval-curate`),
+   called by the supervised pass, which puts the proposals in the record and on the owner queue.
+   Checkpoint met: on the 2026-10-01 log it proposed one setup change (F3, recurring, so
+   `expect kill-process-tree to pass`) and no adds, for $0.19.
+   - **retire:** green in each of the last 3 full-catalog records with the same prompt-set hash and
+     sandbox, and no infra retry for that prompt in the window. `canary` never retires. Only
+     supervised records count, so the first retire proposals come after three of them.
+   - **add:** reviewer findings from the last 30 days, red-team slugs excluded. The finding rows
+     carry no rule (the routine's `payload.rule` doesn't exist), so one tool-less judge call maps
+     each finding onto a CLAUDE.md `##` section and the prompt covering it. Answers naming an
+     unknown rule or prompt are dropped. A rule with ≥3 uncovered findings is proposed with its
+     slugs (D-R4).
+   - **cap:** an add estimated at the mean prompt cost that pushes the week over $20 (D-R6) names a
+     paired removal: a retire candidate first, otherwise the prompt whose pass rate moved least
+     across the last 4 records.
+   - **setup / scorer:** one per open recurring `genuine` / `scorer_bug` finding, with the
+     `expect <prompt> to pass` hypothesis the next record's delta checks.
+   - Not built: authoring the added prompt, or running candidates unscored. The add proposal stops
+     at "which rule, which findings"; writing the prompt stays with whoever accepts it.
+   - `judge.py` holds the one tool-less `claude -p` call, shared by triage and curation.
+6. **Owner loop — built.** `scripts/claude_md_eval/review.py` (`pixi run recital-review`), tests
+   in `python/cecelia/tests/test_claude_md_eval_review.py`. Checkpoint met: a missing record, an
+   other-schema record or an empty store each give a one-line error.
+   - **Queue.** It walks the record's queue items that have no live answer, one key each:
+     - decision: resolved / dropped / open (resolved asks for the answer as a note);
+     - proposal: accept / reject / defer;
+     - spot check: real / false / unclear;
+     - loop review: continue / retune / stop.
+     It also has skip, undo and quit keys, an `[n/total]` progress count, and an empty state. It
+     is line-based, not raw-key, so it runs anywhere `input()` does, scripted tests included.
+     Colours come from the shared console palette.
+   - **Events.** Answers go to `~/.cecelia-effectiveness/review.jsonl`: `finding_status`,
+     `proposal_decision`, `spot_check_label`, plus `loop_review_decision` for the loop review.
+     An undo is a new event with `value: null` and `corrects: <id>`. The latest event per
+     (record, event, ref) wins.
+   - **Applying.** At the start of a pass the supervisor folds the events into every earlier
+     record and rewrites it, unless it's a dry run. So recurrence, the delta and curation see the
+     owner's statuses and decisions.
+   - **Spot check.** On every 4th supervised run, 3–5 of that run's findings are sampled, seeded
+     by date so a rerun picks the same ones. They become `spot_check` queue items.
+   - **Loop review.** On every 8th run it shows scores per run, proposals accepted (of those
+     made), the spot-check false-positive rate and total cost. It becomes a `loop_review` item.
+   - **Setup size.** Growth over 10% in any setup-size metric is flagged in "Since last run".
 
 ## Open questions
 

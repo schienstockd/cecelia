@@ -24,6 +24,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
         _save_run!(run)
     end
     # Fire events outside the lock — handlers must not re-enter run._lock
+    pool = _node_pool_name(run, node_id, fn)
     if status == NODE_QUEUED
         _fire_chain_event!("node:queued", (
             run_id      = run.id,
@@ -34,6 +35,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             fn          = fn,
             params      = node_params,
             task_id     = captured_task_id[],
+            pool        = pool,
         ))
     elseif status == NODE_RUNNING
         _fire_chain_event!("node:running", (
@@ -45,6 +47,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             fn          = fn,
             params      = node_params,
             task_id     = captured_task_id[],
+            pool        = pool,
         ))
     elseif status == NODE_DONE
         _fire_chain_event!("node:done", (
@@ -57,6 +60,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             params      = node_params,
             result      = captured_result[],
             task_id     = captured_task_id[],
+            pool        = pool,
         ))
     elseif status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
         _fire_chain_event!("node:failed", (
@@ -68,7 +72,24 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             fn          = fn,
             status      = string(status),
             task_id     = captured_task_id[],
+            pool        = pool,
         ))
+    end
+end
+
+"""
+The pool a chain node runs in, for its `chain:node:*` frames — the same answer `run_task` gets from
+`effective_pool_name` given the node's `resource_pool`. `""` for a node not in the template or an
+unknown `fn` (an event must still go out, without a pool, rather than throw).
+"""
+function _node_pool_name(run::ChainRun, node_id::String, fn::String)::String
+    i = findfirst(n -> n.id == node_id, run.template_snapshot.nodes)
+    isnothing(i) && return ""
+    node = run.template_snapshot.nodes[i]
+    try
+        effective_pool_name(_task_from_fun_name(isempty(fn) ? node.fn : fn), node.resource_pool)
+    catch
+        ""
     end
 end
 
@@ -298,7 +319,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                 on_progress = (n, t) -> _fire_node_progress!(run, node, image_uid, tid, n, t),
                 # Only `running` is mirrored into node state: `queued` is already set above, and the
                 # terminal one is decided below (the chain's cancel check outranks the task's).
-                on_status   = (st, _uid, _uids) -> st == "running" &&
+                on_status   = (st, _uid, _uids, _pool) -> st == "running" &&
                     _update_node_state!(run, image_uid, node.id;
                                         status=NODE_RUNNING, fn=node.fn,
                                         node_params=effective_params),
@@ -468,7 +489,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
             on_progress = (n, t) -> _fire_node_progress!(run, node, first(imgs).uid, tid, n, t),
             # One task, N images: mirror the pool pick-up onto every participating image, so the whole
             # barrier row flips NODE_QUEUED → NODE_RUNNING together.
-            on_status   = (st, _uid, _uids) -> st == "running" && for uid in participating_uids
+            on_status   = (st, _uid, _uids, _pool) -> st == "running" && for uid in participating_uids
                 _update_node_state!(run, uid, node.id;
                                     status=NODE_RUNNING, fn=node.fn, node_params=effective_params)
             end,

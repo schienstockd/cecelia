@@ -10,6 +10,10 @@ primitive lands, not reconciled with. Builds directly on
 `<config_dir>/user-profiles/<name>/` machinery already exists and is what this plan promotes from
 a Kiwi-scoped mechanism to the app-wide identity anchor.
 
+**Follow-up audit (2026-10-01):** [`docs/audit/persistence-audit.md`](../audit/persistence-audit.md)
+— every persistence site after Phase 4 shipped, with ranked gaps: localStorage keys outside the profile bag,
+unattributed project content, install-wide active profile.
+
 ## Goal
 
 Give Cecelia **one** identity primitive, chosen at launch, that every above-project surface reads

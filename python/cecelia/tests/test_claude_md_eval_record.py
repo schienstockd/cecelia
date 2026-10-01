@@ -128,7 +128,7 @@ class BuildTest(_Fixture):
     def test_decision_findings_and_proposals_go_on_the_owner_queue(self):
         notes = {"findings": [self._finding(), self._finding(id="F2", **{"class": "decision"}),
                               self._finding(id="F3", status="resolved", **{"class": "decision"})],
-                 "proposals": [{"id": "P1", "kind": "setup", "summary": "s"}]}
+                 "proposals": [{"id": "P1", "kind": "setup", "summary": "s", "sources": []}]}
         r = self.rec.build(self.events, "2026-09-30", annotations=notes)
         self.assertEqual(r["queue"], [{"kind": "decision", "ref": "F2"}, {"kind": "proposal", "ref": "P1"}])
 
@@ -149,10 +149,53 @@ class ValidateTest(_Fixture):
         self.assertTrue(any("class 'bogus'" in e for e in errs), errs)
         self.assertTrue(any("needs a `trace` and an `excerpt`" in e for e in errs), errs)
 
+    def test_a_proposal_needs_its_fields_and_a_known_kind(self):
+        r = self.rec.build(self.events, "2026-09-30", annotations={"proposals": [{"id": "P1", "kind": "apply"}]})
+        errs = self.rec.validate(r)
+        self.assertIn("proposal P1: missing `summary`", errs)
+        self.assertTrue(any("kind 'apply'" in e for e in errs), errs)
+
     def test_queue_ref_must_name_a_finding_or_proposal(self):
         r = self.rec.build(self.events, "2026-09-30")
         r["queue"].append({"kind": "decision", "ref": "F9"})
         self.assertIn("queue: 'F9' names no finding or proposal", self.rec.validate(r))
+
+
+class DeltaTest(_Fixture):
+    def _previous(self, **run):
+        prev = self.rec.build(self.events, "2026-09-30", annotations={
+            "findings": [self._finding(id="F1"), self._finding(id="F2", slug="gone")],
+            "proposals": [{"id": "P1", "kind": "setup", "summary": "s", "sources": ["F1"],
+                           "hypothesis": "fixes F1; expect p1 to pass"},
+                          {"id": "P2", "kind": "setup", "summary": "s", "sources": [],
+                           "hypothesis": "expect `absent` to pass"}]})
+        prev["date"] = "2026-09-23"
+        prev["run"].update(run)
+        return prev
+
+    def test_findings_match_on_slug_and_class(self):
+        now = self.rec.build(self.events, "2026-09-30", annotations={"findings": [
+            self._finding(id="F1"), self._finding(id="F2", **{"class": "decision"})]})
+        d = self.rec.delta(now, self._previous())
+        self.assertEqual((d["opened"], d["still_open"], d["resolved"]), (["F2"], ["F1"], ["F2 `gone` genuine"]))
+        self.assertEqual(d["changed"], [])
+
+    def test_each_hypothesis_is_checked_against_this_run(self):
+        now = self.rec.build(self.events, "2026-09-30")
+        d = self.rec.delta(now, self._previous())
+        self.assertEqual([(h["proposal"], h["held"]) for h in d["hypotheses"]], [("P1", False), ("P2", None)])
+
+    def test_a_version_change_is_named_next_to_the_score(self):
+        now = self.rec.build(self.events, "2026-09-30", sandboxed=True)
+        d = self.rec.delta(now, self._previous())
+        self.assertEqual(d["changed"], ["sandbox"])
+        self.assertIn("not comparable directly:** sandbox changed", self.rec.render_markdown({**now, "delta": d}))
+
+    def test_with_delta_reads_the_previous_record_from_the_store(self):
+        self.rec.write(self._previous())
+        self.assertEqual(self.rec.with_delta(self.rec.build(self.events, "2026-09-30"))["delta"]["previous"],
+                         "2026-09-23")
+        self.assertIsNone(self.rec.delta(self.rec.build(self.events, "2026-09-30"), None))
 
 
 class StoreTest(_Fixture):

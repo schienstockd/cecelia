@@ -88,7 +88,7 @@ function _execute_job!(job::TaskJob)
         # no Julia code here ever runs again. See run_log.jl's header. Never fail a task over its log.
         try
             for tgt in log_targets
-                open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id)
+                open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id, pool = rec.pool_name)
             end
         catch e
             @warn "run-log open failed" task_id = job.id exception = e
@@ -138,7 +138,8 @@ function _execute_job!(job::TaskJob)
         try
             for tgt in log_targets
                 close_run_log!(tgt, job.id, string(final);
-                               fun_name = fun_name, value_name = value_name, params = job.params)
+                               fun_name = fun_name, value_name = value_name, params = job.params,
+                               pool = rec.pool_name)
             end
         catch e
             @warn "run-log close failed" task_id = job.id exception = e
@@ -160,7 +161,8 @@ function _execute_job!(job::TaskJob)
         try
             for tgt in log_targets
                 close_run_log!(tgt, job.id, "failed";
-                               fun_name = fun_name, value_name = value_name, params = job.params)
+                               fun_name = fun_name, value_name = value_name, params = job.params,
+                               pool = rec.pool_name)
             end
         catch; end
     finally

@@ -21,13 +21,11 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import shutil
 import sys
 import time
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
-_PROMPTS_DIR = _REPO / "scripts" / "claude_md_eval" / "prompts"
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import append_event  # noqa: E402
@@ -45,7 +43,7 @@ _spec.loader.exec_module(_run_prompt)
 
 def _list_prompt_ids() -> list[str]:
     """Every `.md` prompt in the catalog, sorted for stable iteration + rollup."""
-    return sorted(p.stem for p in _PROMPTS_DIR.glob("*.md"))
+    return _run_prompt.list_prompt_ids()
 
 
 def _filter_ids(all_ids: list[str], only: str | None, exclude: str | None) -> list[str]:
@@ -177,7 +175,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Run the whole CLAUDE.md compliance eval catalog.")
     ap.add_argument("--runs", type=int, default=3, help="Fresh agents per prompt (default 3)")
     ap.add_argument("--timeout", type=int, default=300, help="Per-spawn timeout in seconds (default 300)")
-    ap.add_argument("--claude-path", default=shutil.which("claude"),
+    ap.add_argument("--claude-path", default=_run_prompt.resolve_claude_bin(),
                     help="Path to the `claude` binary (defaults to `which claude`).")
     ap.add_argument("--worktree-root", type=pathlib.Path, default=_run_prompt._WORKTREE_ROOT_DEFAULT,
                     help=f"Parent dir for throwaway worktrees (default {_run_prompt._WORKTREE_ROOT_DEFAULT})")

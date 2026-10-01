@@ -288,6 +288,47 @@ budget note at the top of `ci.yml` before adding a cache or a fourth job.
 > a setup exception in the child component. (This cost hours on 2026-07-10; CI *had* caught both errors,
 > the PR was merged red.)
 
+### Dependency updates
+
+Two bots open monthly PRs. Both run the full CI matrix.
+
+| Surface | Bot | PR |
+|---|---|---|
+| npm (`frontend/`), GitHub Actions | Dependabot (`.github/dependabot.yml`) | one grouped minor+patch PR per ecosystem; majors individual |
+| `pixi.lock` + `app`/`api`/`pluto` `Manifest.toml` | `.github/workflows/update-deps.yml` | one `update-deps` PR, body = package diff |
+
+- **`update-deps` PRs need CI approved by hand.** A PR opened with `GITHUB_TOKEN` starts its runs in
+  an approval-required state. Click *Approve and run* on the PR banner.
+- **The lock refresh only moves versions inside the declared ranges.** Raising a floor or cap in
+  `pixi.toml`, the `coastal` `rev`, a Julia `[compat]` bound, or the pixi version pinned in `ci.yml`
+  (shared with `update-deps.yml`) is a manual edit.
+- To refresh Julia locally: `pixi run update-julia` (prints the markdown diff). For pixi, use
+  `pixi update --dry-run --json | pixi exec pixi-diff-to-markdown` to preview.
+
+**Majors come in on purpose.** Most `pixi.toml` specs are bare floors, so a refresh carries major
+upgrades too, and we keep it that way so we don't fall behind. The PR body puts the review items at
+the top: pixi majors, downgrades and 0.x minor bumps; Julia downgrades, semver-breaking bumps, and
+packages the three envs now carry at different versions; and everything still **held back** (pixi
+caps and pins, and Julia direct deps `[compat]` blocks).
+
+**Reviewing one.** Green CI proves the code runs. It does not prove the results are unchanged. For a
+major in a library that computes on cell data (pandas, anndata, scanpy, numpy, scikit-image, scipy),
+read its breaking-changes notes and run a real-data pipeline before merging (see *Real-data visual
+validation* in the root `CLAUDE.md`).
+
+**When CI goes red:**
+
+| What failed | What to do |
+|---|---|
+| The scheduled run itself (unsolvable, Pkg resolve error) | No PR is opened. GitHub emails whoever last edited the cron. Read the run log in the Actions tab. |
+| A major breaks the tests and you want to fix it now | **Don't push fixes to `update-deps`.** The next run rebuilds that branch from `main` and force-pushes, which drops them. Branch off it instead (`git switch -c deps/pandas-3 origin/update-deps`), fix, and PR that to `main`. It carries the lock too, so close the bot PR. |
+| A major breaks the tests and the fix can wait | Cap it in `pixi.toml` (`pandas = ">=2.3,<3"`) with a comment, **and** add a `docs/TODO.md` item to lift the cap. Re-run the workflow (*Run workflow*) so the rest of the refresh lands. The cap then appears in every month's *held back* list. **A cap without a TODO item is how we get stuck on an old version.** |
+| One OS only | Usually a missing wheel on that platform. Cap it under that `[target.<platform>…]` table, not globally. |
+
+The first CI run after a lock change is slower: every OS starts a fresh pixi cache.
+
+Design: [`docs/todo/DEPS_UPDATES_PLAN.md`](todo/DEPS_UPDATES_PLAN.md).
+
 ## Releases
 
 Cut **off `main`** after the relevant PRs have merged, by pushing a tag:

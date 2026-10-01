@@ -195,6 +195,8 @@ const TL_COLUMNS: SelectionColumn[] = [
               <span class="task-seq cc-muted cc-fs-2xs">#{{ r.seq }}</span>
               <i v-if="r.chainLabel" class="pi pi-sitemap chain-badge" v-tooltip.right="r.chainTip" />
               <span class="tl-label">{{ r.task }}</span>
+              <span v-if="r.pool" class="tl-pool cc-pool-tag"
+                v-tooltip.right="`Resource pool: ${r.pool}`"><i class="pi pi-server" />{{ r.pool }}</span>
             </span>
             <span class="tl-sub cc-muted cc-fs-2xs" v-tooltip.right="`UID: ${r.imageUid}`">
               <span class="cc-uid task-uid">{{ r.imageUid }}</span>{{ r.image }}
@@ -301,6 +303,8 @@ const TL_COLUMNS: SelectionColumn[] = [
    Each line clips itself, so the surrounding `td`'s `nowrap` never has to hold them apart. */
 .tl-entry { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; padding: 0.1rem 0; }
 .tl-title { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+/* + .cc-pool-tag — pushed to the row's end so the label keeps the space and the ellipsis */
+.tl-pool { margin-left: auto; padding-left: 0.25rem; }
 .tl-label {
   font-weight: 600;
   color: var(--cc-text);

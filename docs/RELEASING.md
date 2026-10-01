@@ -153,7 +153,9 @@ non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install c
 
 ## Cutting a release — the short checklist
 
-1. CI matrix green on `main` (all three OSes).
+1. CI matrix green on `main` (all three OSes). If an `update-deps` PR is open, either merge it
+   (green) before cutting or leave it for the next release. Don't fold a lock refresh into the
+   release commit: `pixi.lock` is what the release installs. See `docs/DEV.md` → *Dependency updates*.
 2. Decide the version (heartbeat patch vs substantial minor; `-rcN` if you'll soak before announcing).
 3. **Write the `CHANGELOG.md` section — this IS the release body, so it must land before the tag.**
    Rename `[Unreleased]` to the new version + date and write the notes in (see snippet below).
