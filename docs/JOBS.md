@@ -66,8 +66,10 @@ parallel export).
 | `finish_job!(task_id)` | drop the registry entry once the job has fully exited (call in a `finally`) |
 
 `jobs.jl` also owns the **OS process-kill primitives** (`_kill_tree`, `_kill_proc_tree`,
-`_kill_listeners_on_port`) — general process control used by the scheduler, napari, the AI agent
-runner, app shutdown, and `cancel_job!`. They live here (not `scheduler.jl`) because they were always
+`_kill_listeners_on_port`). `_kill_tree(pid; grace_sec)` with `grace_sec > 0` asks first — SIGTERM
+the tree (`taskkill` without `/F` on Windows), wait up to `grace_sec`, then force-kill survivors; the
+default force-kills at once. They are general process control, used by the scheduler, napari, the AI
+agent runner, app shutdown and `cancel_job!`. They live here (not `scheduler.jl`) because they were always
 general, not scheduler-specific.
 
 > **A process handle's pid comes from `Libc.getpid(proc)` — never a raw `uv_process_get_pid` ccall.**

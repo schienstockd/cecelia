@@ -2467,6 +2467,40 @@ end
     @test !process_running(live)
 end
 
+# `_kill_tree(pid; grace_sec)`: SIGTERM the tree, wait, then SIGKILL survivors. A shell that traps
+# TERM proves the polite signal comes first; one that ignores it proves the deadline holds; its
+# backgrounded `sleep` proves the snapshot reaches children the parent left behind.
+@testset "_kill_tree grace mode — TERM first, then force survivors" begin
+    if Sys.iswindows()
+        live = run(`$(Base.julia_cmd().exec[1]) --startup-file=no -e "sleep(30)"`; wait = false)
+        pid = Int(Libc.getpid(live))
+        Cecelia._kill_tree(pid; grace_sec = 1)
+        wait(live)
+        @test !process_running(live)
+    else
+        dir = mktempdir()
+        polite, kid = joinpath(dir, "polite"), joinpath(dir, "kid")
+        # exits cleanly on TERM, leaving its own `sleep` child running
+        p = run(`sh -c "trap 'echo bye > $polite; exit 0' TERM; sleep 30 & echo \$! > $kid; wait"`; wait = false)
+        for _ in 1:100; isfile(kid) && break; sleep(0.05); end
+        child = parse(Int, strip(read(kid, String)))
+        t = @elapsed Cecelia._kill_tree(Int(Libc.getpid(p)); grace_sec = 5)
+        wait(p)
+        @test read(polite, String) == "bye\n"          # asked first
+        @test t < 5                                     # and didn't sit out the whole grace
+        @test !Cecelia._pid_alive(child)               # the orphaned grandchild is gone too
+
+        # ignores TERM: the deadline holds and the force pass kills it
+        stubborn = run(`sh -c "trap '' TERM; sleep 30"`; wait = false)
+        sleep(0.2)
+        t = @elapsed Cecelia._kill_tree(Int(Libc.getpid(stubborn)); grace_sec = 0.5)
+        wait(stubborn)
+        @test !process_running(stubborn)
+        @test 0.4 < t < 3
+        rm(dir; recursive = true, force = true)
+    end
+end
+
 # Project export → import round-trip (project_io.jl / jobs.jl). Uses its own CECELIA_DEV_DIR +
 # temp projects dir so it never touches the real dev/prod config; restores afterwards. Verifies:
 # each .zarr store is packed to ONE .zarr.tar (no unpacked stores in the bundle), the lockfile is

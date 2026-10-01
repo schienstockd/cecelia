@@ -565,7 +565,8 @@ use the named helper, don't re-derive the platform branch inline:
   `ai/agent_runner.jl`. `Sys.which` only tries the bare name plus `.exe`/`.com` on Windows, so it
   never finds an npm-installed `claude.cmd`; and a `.cmd`/`.bat` can't be spawned directly at all —
   `CreateProcess` refuses batch files, they need `cmd /c`.
-- **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`, or `_kill_proc_tree(proc)` when you
+- **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl` (`grace_sec = n` to SIGTERM first and
+  force-kill after `n` s), or `_kill_proc_tree(proc)` when you
   hold a `Base.Process`; never write `kill`/`pgrep`/`taskkill` inline. `Base.Process` has no `.pid`
   field, and the pid must come from **`Libc.getpid(proc)`** — a raw
   `ccall(:uv_process_get_pid, …, proc.handle)` dereferences NULL for a process that has already exited
