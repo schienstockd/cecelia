@@ -123,6 +123,10 @@ end
     @test :XY ∈ Cecelia.task_requires_scale(cpm)
     @test !task_applies(cpm, img_static)
     @test  task_applies(cpm, img_static_cal)
+    # …and the refusal still SAYS why when the task needs no axis at all (only a scale) — it used to
+    # return an empty reason, so `run_task` raised a bare `TaskApplicabilityError: `.
+    @test isempty(Cecelia.task_requires_axes(cpm))
+    @test occursin("pixel size", Cecelia.task_applicability_reason(cpm, img_static))
 
     # run_task raises TaskApplicabilityError before scheduling on a static image
     proj = create_project!(name="axis-gate-$(rand(1000:9999))")

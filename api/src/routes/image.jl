@@ -236,7 +236,15 @@ function api_import_register_legacy(body_bytes::Vector{UInt8})
             existing.meta["legacySourceDir"] = abs_src
             existing.meta["legacySourceUid"] = uid
             isempty(rsc) || (existing.meta["legacyRscript"] = rsc)
-            save!(existing)
+            # only these meta keys — a full `save!` would write back the whole loaded image, dropping
+            # anything a task committed to it since the set was loaded
+            Cecelia.commit_state!(existing) do raw
+                m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+                for k in ("legacySourceDir", "legacySourceUid", "legacyRscript")
+                    haskey(existing.meta, k) && (m[k] = existing.meta[k])
+                end
+                raw["meta"] = m
+            end
             push!(registered, Dict{String,Any}(
                 "uid" => existing.uid, "name" => existing.name, "status" => "repaired"))
         else
