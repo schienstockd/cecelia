@@ -117,6 +117,67 @@ end
     rm(proj.root; recursive = true)
 end
 
+# The segmentation writers (`register_label_files!`, measureLabels) used to rebuild the whole field
+# with `string(v)` / `[string(v)]`, flattening any versioned entry they passed over into a string.
+@testset "versioned_entry_overwrite! — keeps every entry's shape" begin
+    v_lp  = Dict{String,Any}("v1" => "a.h5ad", "v2" => "a/v2/a.h5ad", LATEST_ACTIVE_KEY => "v2")
+    raw   = Dict{String,Any}("label_props" => Dict{String,Any}(
+                "default" => "default.h5ad", "a" => v_lp, VERSIONED_ACTIVE_KEY => "default"))
+
+    # another value_name: the versioned entry and `_active` are left alone
+    versioned_entry_overwrite!(raw, "label_props", "b", "b.h5ad")
+    lp = raw["label_props"]
+    @test lp["b"] == "b.h5ad"
+    @test lp["a"] == v_lp
+    @test lp["default"] == "default.h5ad"
+    @test lp[VERSIONED_ACTIVE_KEY] == "default"
+
+    # a versioned target: only its `_latest` leaf is replaced, earlier versions survive
+    versioned_entry_overwrite!(raw, "label_props", "a", "a2.h5ad"; set_active = true)
+    lp = raw["label_props"]
+    @test lp["a"]["v1"] == "a.h5ad"
+    @test lp["a"]["v2"] == "a2.h5ad"
+    @test lp["a"][LATEST_ACTIVE_KEY] == "v2"
+    @test lp[VERSIONED_ACTIVE_KEY] == "a"
+
+    # absent field, and a bare legacy scalar field
+    raw2 = Dict{String,Any}()
+    versioned_entry_overwrite!(raw2, "labels", "default", ["default.zarr"])
+    @test raw2["labels"] == Dict{String,Any}("default" => ["default.zarr"])
+    raw3 = Dict{String,Any}("label_props" => "old.h5ad")
+    versioned_entry_overwrite!(raw3, "label_props", "new", "new.h5ad")
+    @test raw3["label_props"]["default"] == "old.h5ad"
+    @test raw3["label_props"]["new"] == "new.h5ad"
+    @test raw3["label_props"][VERSIONED_ACTIVE_KEY] == VERSIONED_DEFAULT_VAL
+
+    # end to end through ccid.json: JSON3-parsed nested entries are normalised, not stringified
+    proj = create_project!(name = "entry-overwrite-$(rand(1000:9999))")
+    s    = add_set!(proj; name = "set")
+    img  = add_image!(s; name = "img")
+    Cecelia.commit_state!(img) do raw
+        raw["labels"] = Dict{String,Any}("default" => Dict{String,Any}(
+            "v1" => ["default.zarr"], "v2" => ["default/v2/default.zarr"], LATEST_ACTIVE_KEY => "v2"))
+    end
+    Cecelia.register_label_files!(img, "fresh", ["fresh.zarr"])
+    r = init_object(proj.uid, img.uid)
+    @test r.labels["fresh"] == ["fresh.zarr"]
+    @test r.labels["default"] isa AbstractDict
+    @test r.labels["default"]["v1"] == ["default.zarr"]
+    @test r.labels["default"]["v2"] == ["default/v2/default.zarr"]
+
+    # the measureLabels / SegmentCorrect readers unwrap the raw (JSON3) entry to its `_latest` leaf
+    raw_labels = Cecelia.read_ccid_raw(Cecelia.state_file(img))["labels"]
+    entry = get(raw_labels, "default", get(raw_labels, :default, nothing))
+    @test collect(String, Cecelia.unversion_value(entry)) == ["default/v2/default.zarr"]
+
+    # sizing / deleting a value_name walks every version's files, not just `_latest`
+    @test [collect(String, l) for l in Cecelia.version_leaves(entry)] |> sort ==
+          [["default.zarr"], ["default/v2/default.zarr"]]
+    @test Cecelia.version_leaves(["fresh.zarr"]) == Any[["fresh.zarr"]]
+
+    rm(proj.root; recursive = true)
+end
+
 @testset "_merge_zarr_meta_into_ccid! — as_new_version routing" begin
     prior_toggle = keep_previous_version()
     try

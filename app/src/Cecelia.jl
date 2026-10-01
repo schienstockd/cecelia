@@ -44,7 +44,7 @@ export versioned_active, versioned_get, versioned_set!
 export versioned_get_field, versioned_set_field!, versioned_keys, read_ccid_raw, read_state_json
 export version_latest, version_get, version_set!, version_keys, version_next, version_write!, parse_version_pin
 export versioned_get_field_at, is_versioned_entry, unversion_value, versioned_upgrade_entry!
-export plan_versioned_target, versioned_filepath_write!
+export plan_versioned_target, versioned_filepath_write!, versioned_entry_overwrite!
 export LATEST_ACTIVE_KEY, LATEST_DEFAULT_VAL
 export json_native
 export project_storage_summary, reclaim_inactive!, remove_image_version!, reclaimable_versions, image_storage

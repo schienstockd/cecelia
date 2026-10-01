@@ -107,7 +107,8 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
         entries = get(raw, field, Dict{String,Any}())
         entry   = get(entries, value_name, get(entries, Symbol(value_name), nothing))
         isnothing(entry) && continue
-        for fn in (entry isa AbstractVector ? entry : [string(entry)])
+        for leaf in Cecelia.version_leaves(entry),         # every vN's store, not just `_latest`
+            fn in (leaf isa AbstractVector ? leaf : [string(leaf)])
             p = joinpath(task_dir, subdir, string(fn))
             ispath(p) && rm(p; recursive = true)
         end

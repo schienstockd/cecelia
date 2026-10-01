@@ -482,7 +482,8 @@ function api_image_stores(req::HTTP.Request)
     if lbl isa AbstractDict
         for (k, v) in lbl
             isnothing(v) && continue
-            fns = v isa AbstractVector ? v : [v]
+            fns = [fn for leaf in Cecelia.version_leaves(v)   # every vN, not just `_latest`
+                   for fn in (leaf isa AbstractVector ? leaf : [leaf])]
             lout[String(k)] = Dict{String,Any}("bytes" => sum(
                 Cecelia._path_bytes(joinpath(proj_dir, "1", image_uid, "labels", string(fn)))
                 for fn in fns; init = 0))

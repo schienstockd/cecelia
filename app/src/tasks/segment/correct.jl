@@ -130,6 +130,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
         on_log("[ERROR] No labels registered for valueName='$(p.valueName)'")
         return nothing
     end
+    label_entry = unversion_value(label_entry)   # a versioned entry → its `_latest` leaf
     label_files = label_entry isa AbstractVector ?
                   collect(String, label_entry) : [string(label_entry)]
     isempty(label_files) && begin
