@@ -1,7 +1,7 @@
 # Maintainability enforcement — parked plan
 
-**Status:** **planning** (2026-10-01) — nothing built. Branch `docs/archive-fold-maintainability-prompt`
-carries only this plan + the archived brief.
+**Status:** **P0–P4 built** (2026-10-01) on `feat/maintainability-lint`. Open: watch the
+`[wrong home]` outcome tags and the lint's warnings for a few weeks, then revisit *Deferred*.
 
 **Related:**
 - Brief: [`../archive/fold_MAINTAINABILITY_into_convention_check_prompt.md`](../archive/fold_MAINTAINABILITY_into_convention_check_prompt.md) — the source prompt, archived. Its three-way split stands; its code pointers were stale (see *Corrections to the brief*).
@@ -49,37 +49,78 @@ most of it. Enforce the parts that can be enforced, through the two mechanisms r
    on what a touched file already is:
    - Size: the diff pushes a file under `app/src/tasks/**` past 200 lines, or adds ≥20 lines to a
      file already over 200.
-   - Protected trims: net loss of comment lines in any file whose own header, or whose aggregator's
-     header, carries the `concurrency-critical` note. Found by grep, never a named list.
+   - ~~Protected trims~~ — cut by P0 (see *Replay results*).
    - Incident history: only inside comment lines. Dataset IDs = six-character tokens with mixed case,
-     minus a known-words list. Plus dated authorship, phase codes and `commit <sha>`.
+     minus the word shapes the replay found. Plus dated authorship, phase codes and `commit <sha>`.
+     (Quoted user reports were cut by P0.)
 6. **One opt-out: `MAINT-EXEMPT: <reason>`,** the same shape as `INVENTORY-EXEMPT`/`COHORT-EXEMPT`/`DASK-OK`.
    Not one per sub-check. The provenance comment on a constant (`smoothVis.ts`) is covered by the
    "comment sits next to a numeric constant" heuristic, failing safe (don't flag). The marker is the fallback.
 7. **"For now … handles" is cut before it's built:** 0 hits in the repo. Revisit only if a real case turns up.
-8. **Prove each sub-check against old PRs before wiring it in**, as #1297 did: the same 150-PR window,
-   with the hit rate and flagged locations recorded in the module docstring. A sub-check that never
-   catches anything real is cut, and the plan says so.
-9. **One shared diff parser.** Move `new_files_from_diff` and its siblings into `git_context.py`
-   and have both checks import them from there. No second parser, and no check importing from a sibling check.
+8. **Prove each sub-check against old PRs before wiring it in**, as #1297 did, with the hit rate
+   recorded here (*Replay results*) and pointed to from the module docstring — not recited in it,
+   which is the narrative `wrong home` exists to catch (it caught exactly that on this PR). A sub-check that never catches anything real is cut, and the
+   plan says so. *Amended by P0:* 600 PRs, not 150 — the last 150 touched no task file.
+9. **One shared diff parser: `git_context.parse_diff`.** Both mechanical checks build on it; the
+   inventory check's `new_files_from_diff` / `exempt_files_from_diff` / `new_routes_from_diff` keep
+   their names but now call it instead of regexing the raw text. No check imports from a sibling check.
+
+## Replay results (P0, 2026-10-01)
+
+The last 150 merged PRs (#1162–#1315, two weeks) touched no task file, so size and protected trims
+couldn't fire there. The replay was widened to 600 PRs (#712–#1315, from 2026-08-31). "Later
+cleaned" = the flagged text or size no longer on main, i.e. someone fixed it by hand afterwards.
+
+| Sub-check | PRs flagged | Hits | Labelled | Later cleaned | Verdict |
+|---|---|---|---|---|---|
+| Dated authorship | 29 | 71 | all real | 63 | kept |
+| Dataset uid | 29 | 95 | all real after filter | 10 | kept |
+| Commit SHA | 4 | 7 | real | 5 | kept |
+| Phase code | 1 | 5 | real | 5 | kept |
+| Quoted user report | 3 | 4 | 1 real, 1 an error message, 2 deleted | — | **cut** |
+| Size (task files) | 16 | 24 | real under the rule; `af_correct`, `omezarr.jl` ×3 flagged before their hand splits | 4 | kept |
+| Protected-comment trim | 1 | 1 | the scheduler split (#1010) moving comments, not deleting them | — | **cut** |
+| "For now … handles" | — | — | 0 matches in the repo | — | **cut** (not built) |
+
+The uid filter was tightened on this same replay (it first let `GitHub`, `SetBar`, `UiMark`,
+`show3D`, `cpSAM2` through), so its precision here is optimistic. `test_maintainability_lint.py`
+pins all 18 real uids it found. The size check also excludes the framework dirs (`task/`, `chain/`,
+`scheduler/`, `testTasks/`), which added 13 hits of pure noise.
+
+## Reviewer checks (P1 + P2, 2026-10-01)
+
+The widened prompt, run through recital's own `claude -p` path against real diffs:
+
+- `db8275e5` (correction-plan engine): `source::Symbol` (5 values) and `validation_status::Symbol`
+  → `potential duplicate` pointing at `TaskStatus` / `ImageStatus`; `wizard_answers::Dict` crossing
+  API↔Julia → flagged; a rejected-alternative comment → `wrong home`. `exclusion_reason::Union{Nothing,String}`
+  was judged not a discriminant (included/excluded are separate vectors), which is correct.
+- `d24e18b9` (Kiwi refs): `Dict{String,Any}` result crossing API→frontend with a 4-value string field → flagged.
+- `de8149cd` (correction staleness): a rejected alternative in the header → `wrong home`. "Old R
+  shipped them without a peep" was judged design motivation, not a code citation. Defensible.
+- The reverse of `378ae2c9` (re-adding `TaskJob.imgs::Union{Nothing,Vector{CciaImage}}`) →
+  `should reuse` pointing at `TaskJobTarget`.
+- Negative control, `6346e818`'s `scheduler/run.jl`: no findings; moved code was not treated as new,
+  and the header's ordering contract was recognised as protected.
 
 ## Phases
 
-- **P0 — Replay (decides P3's scope).** A script over the 150 merged PRs for each item-3 sub-check,
+- **P0 — Replay (decides P3's scope). ✅** A script over the 150 merged PRs for each item-3 sub-check,
   using the Decision 5 triggers. Output per sub-check: PRs fired, locations flagged, a hand-labelled
   real-vs-noise sample. Checkpoint: Dominik sees the table before anything is wired.
-- **P1 — Type-shape reuse (prompt edit).** Three example additions in step 1 of `CONVENTION_CHECK.md`,
+- **P1 — Type-shape reuse (prompt edit). ✅** Three example additions in step 1 of `CONVENTION_CHECK.md`,
   three grep sets in step 4 (`@enum`, `struct .*Spec`, `Union{Nothing`). Check it against one real past
   diff per category, and record the result here.
-- **P2 — `[wrong home]`.** Prompt: marker definition with its exceptions (bridging code, protected
+- **P2 — `[wrong home]`. ✅** Prompt: marker definition with its exceptions (bridging code, protected
   comments, constant provenance) and the widened scope (Decision 4). Wiring: `recital.py` convention
   markers become a pair; add it to the hook's `_FINDING_MARKERS`; the console colour; the methodology
-  verdict enum. Tests: one fixture per exception, plus the hook counting a `[wrong home]` tag.
+  verdict enum. Tests: recital emitting a `[wrong home]` row, the hook requiring its tag. (The
+  exceptions are prompt judgment, checked by the reviewer runs above, not unit-testable.)
   Check it against one real past diff.
-- **P3 — `maintainability_lint.py`.** Only the sub-checks that survived P0. Pure diff → locations
+- **P3 — `maintainability_lint.py`. ✅** Only the sub-checks that survived P0. Pure diff → locations
   functions, `MAINT-EXEMPT`, `maintainability_lint_run` in `EVENT_TYPES` and `_MECHANICAL_RUN_COUNT`,
   a `_Maintainability lint: <verdict>_` tail line, and called from `recital.py` next to `run_inventory_check`.
-- **P4 — Docs.** `MAINTAINABILITY.md`: fix the stale scheduler and enum lines, and mark each rule
+- **P4 — Docs. ✅** `MAINTAINABILITY.md`: fix the stale scheduler and enum lines, and mark each rule
   *enforced by* (reviewer / lint / CI) or *reference only*. The intro line then describes what is
   actually enforced. Update `GOVERNANCE_INDEX.md` and `CONVENTION_CHECK_PLAN.md` in the same PR,
   plus an outcome note on the archived brief.

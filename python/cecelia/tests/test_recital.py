@@ -240,6 +240,25 @@ class FindingsEmissionTest(unittest.TestCase):
         self.assertEqual(row["payload"]["marker"], "should reuse")
         self.assertRegex(row["payload"]["slug"], r"^conv-[0-9a-f]{8}$")
 
+    def test_wrong_home_convention_finding_emits_one_finding_row(self):
+        def fake(prompt: str) -> str:
+            if "CONVENTION_CHECK" in prompt:
+                return (
+                    "- **app/src/tasks/x.jl:7** — comment recites a rejected alternative, belongs "
+                    "in X_PLAN.md → Locked decisions, not source [**wrong home**]\n"
+                    "- **app/src/y.jl:3** — added `foo`, closest canonical `bar` [**should reuse**]"
+                )
+            return "no sibling-call audit needed"
+
+        body = run_recital("some diff", claude_runner=fake)
+
+        rows = [e["payload"] for e in self._events() if e["event"] == "convention_check_finding"]
+        self.assertEqual([(r["file"], r["marker"]) for r in rows],
+                         [("app/src/tasks/x.jl", "wrong home"), ("app/src/y.jl", "should reuse")])
+        # Both got slugs, and neither tripped the unparsed-marker tripwire.
+        self.assertEqual(body.count("- [conv-"), 2)
+        self.assertNotIn("PARSE WARNING", body)
+
     def test_plausible_and_potential_duplicate_are_not_emitted(self):
         # Only outcome-tag-requiring markers produce `_finding` rows — the pending↔resolution
         # contract stays 1:1 with the hook's tag-count check.

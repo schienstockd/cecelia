@@ -60,6 +60,14 @@ class CheckTest(unittest.TestCase):
         self.assertIsNone(self._check(
             "fix: parser accepts `[**confirmed**, no action]` and `[**should reuse**]`"))
 
+    def test_wrong_home_finding_needs_a_tag(self):
+        # `[wrong home]` is outcome-tagged like `should reuse` — the hook's marker set comes from
+        # recital's `MARKERS`, so the new marker can't be emitted there and slip past here.
+        self.assertIsNotNone(self._check(
+            "git commit -m '- **a.jl:3** — rejected alternative in source [**wrong home**]'"))
+        self.assertIsNone(self._check(
+            "git commit -m '- **a.jl:3** — rejected alternative [**wrong home**] [fixed_pre_commit]'"))
+
     def test_git_commit_with_no_findings_passes(self):
         self.assertIsNone(self._check("git commit -m 'small fix'"))
 

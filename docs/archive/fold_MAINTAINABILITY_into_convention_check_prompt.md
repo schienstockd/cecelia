@@ -6,6 +6,11 @@
 > **Scoped 2026-10-01** into [`docs/todo/MAINTAINABILITY_ENFORCEMENT_PLAN.md`](../todo/MAINTAINABILITY_ENFORCEMENT_PLAN.md).
 > Several code pointers below were stale on arrival (scheduler split, enums already built, marker
 > enumerations misnamed) — the plan's *Corrections* section lists them.
+>
+> **Outcome (2026-10-01).** Items 1–3 shipped as the plan describes. Two item-3 sub-checks were cut
+> by the replay (quoted user reports; protected-comment trims), and "for now" was never built (0 hits).
+> The replay needed 600 PRs, not 150. `[wrong home]` is outcome-tagged. The design lives in
+> `docs/MAINTAINABILITY.md` (which says per rule what checks it) and `docs/ai-assist/CONVENTION_CHECK.md`.
 
 # Build: fold MAINTAINABILITY.md into convention-check + a new mechanical lint
 

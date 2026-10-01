@@ -661,6 +661,15 @@ class MechanicalRunVisibilityTest(unittest.TestCase):
                                                  {"duration_s": 0.005, "new_shared_files": 0,
                                                   "warnings_emitted": 0}), use_colour=False))
 
+    def test_maintainability_lint_run_renders_under_its_own_label(self):
+        # Its own cyan `mlnt` column, like the other mechanical check — not the grey fallback.
+        line = format_event(self._row("maintainability_lint_run",
+                                      {"duration_s": 0.005, "files_checked": 4,
+                                       "warnings_emitted": 1}), use_colour=False)
+        self.assertIn("mlnt RUN", line)
+        self.assertIn("4 checked", line)
+        self.assertIn("1 warn", line)
+
     def test_inventory_run_with_new_files_renders(self):
         line = format_event(self._row("inventory_coverage_run",
                                       {"duration_s": 0.005, "new_shared_files": 2,

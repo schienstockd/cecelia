@@ -11,8 +11,8 @@ future reader touching one may want to check the other.
 
 v1 renders:
 - Header (run date, N events, date range, retrospective vs live split).
-- Per-mechanism sections (fanout audit, convention check, inventory check, ratchets) — count +
-  outcome breakdown.
+- Per-mechanism sections (fanout audit, convention check, inventory check, maintainability lint,
+  ratchets) — count + outcome breakdown.
 - Miss-visibility section (retrospective_miss rows).
 - Ceiling section — the honest "cannot measure" list, held here as a stable epilogue so
   external readers see it in the same file, not one link away.
@@ -236,6 +236,29 @@ def _inventory_section(events: _t.Sequence[dict]) -> str:
     return "\n".join(lines)
 
 
+def _maintainability_section(events: _t.Sequence[dict]) -> str:
+    """The mechanical maintainability lint (`maintainability_lint.py`) — like the inventory
+    check, no outcomes: what each run checked and which locations it warned about."""
+    runs = [e for e in events if e.get("event") == "maintainability_lint_run"]
+    if not runs:
+        return ""
+    payloads = [r.get("payload", {}) for r in runs]
+    n_files = sum(p.get("files_checked", 0) for p in payloads)
+    n_warn = sum(p.get("warnings_emitted", 0) for p in payloads)
+    lines = [
+        "## Maintainability lint", "",
+        f"- **{len(runs)} runs** · {n_files} source file(s) checked · **{n_warn} warning(s)**",
+    ]
+    flagged = sorted({
+        f"{f.get('check')} — {f.get('path')}" + (f":{f['line']}" if f.get("line") else "")
+        for p in payloads for f in (p.get("findings") or [])
+    })
+    for x in flagged:
+        lines.append(f"  - `{x}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _pr_from_branch(branch: str, cache: dict[str, str | None]) -> str | None:
     """Cache wrapper around `git_context.pr_for_branch` — one gh call per unique branch per
     render pass. Mutates `cache` in place. A lookup failure caches None so it isn't retried."""
@@ -403,6 +426,7 @@ def render_rollup(
             pr_lookup=pr_lookup,
         ),
         _inventory_section(events),
+        _maintainability_section(events),
         _ratchets_section(events),
         _misses_section(events),
     ):

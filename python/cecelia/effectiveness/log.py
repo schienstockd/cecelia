@@ -65,6 +65,11 @@ EVENT_TYPES = frozenset({
     #: `files` + `routes` (what was warned), `duration_s`. See
     #: `python/cecelia/effectiveness/inventory_coverage.py`.
     "inventory_coverage_run",
+    #: Maintainability lint — mechanical fourth recital step: warns when the staged diff pushes a
+    #: task file past 200 lines or adds incident history to a source comment. Payload:
+    #: `files_checked`, `warnings_emitted`, `findings` (check / path / line / detail),
+    #: `duration_s`. See `python/cecelia/effectiveness/maintainability_lint.py`.
+    "maintainability_lint_run",
     #: Retired 2026-09-30 (replaced by `inventory_coverage_run`); no emitter. Kept so the rows
     #: already in the log stay valid members of the closed taxonomy.
     "citation_currency_run",

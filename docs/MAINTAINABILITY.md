@@ -4,6 +4,13 @@ The check that runs *before* new code lands — comment shape, cross-module cont
 responsibility. Applies equally to human- and agent-written code. Findings from every future audit
 update this file rather than spawning a new one.
 
+**What checks it.** Each rule below says which: the **convention-check** reviewer
+([`ai-assist/CONVENTION_CHECK.md`](ai-assist/CONVENTION_CHECK.md) — `should reuse` for type shapes,
+`wrong home` for misplaced comments), the **maintainability lint**
+(`python/cecelia/effectiveness/maintainability_lint.py`, mechanical), or a CI **ratchet**. All run at
+commit via `pixi run recital` or in CI. A rule marked *reference only* is for authors and PR review;
+nothing checks it. Plan: [`todo/MAINTAINABILITY_ENFORCEMENT_PLAN.md`](todo/MAINTAINABILITY_ENFORCEMENT_PLAN.md).
+
 Companion to the "where things live" index in [`MAP.md`](MAP.md) and the discovery step in the root
 [`CLAUDE.md`](../CLAUDE.md). Frontend-specific UI-copy rules stay in [`ui/COPY.md`](ui/COPY.md);
 this doc is source comments and structure.
@@ -21,11 +28,15 @@ paragraph explaining WHY is longer than the docstring, that paragraph belongs so
 Signature + one line is fine for a small helper. A pattern-match `_state_str(v)` needs no docstring
 at all; the name is the doc.
 
+*Reference only* — length is too soft to grade. Narrative in a docstring is caught by the two
+rules below.
+
 ### No cross-references to code outside this repo
 
 A comment that cites `depmixS4`, `caTools::runmean`, `DescTools::Mode`, the "R port", a superseded
 R function name, or any file/module not in this checkout is a **liability, not a reference** —
 nobody reading this repo can open it, including a future contributor and a future AI agent.
+Checked by convention-check (`wrong home`).
 
 **Fix, in order of preference:**
 1. Restate the invariant in this codebase's own terms — what does the function guarantee,
@@ -50,7 +61,9 @@ external system, not to files whose purpose is that bridge.
 
 ### No incident history in source
 
-None of the following belong in a source comment or docstring:
+None of the following belong in a source comment or docstring. The maintainability lint flags
+dataset uids, dated authorship, phase codes and commit SHAs in added comment lines; a load-bearing
+one opts out with `MAINT-EXEMPT: <reason>`. The rest are reference only.
 
 - Dataset IDs (`WIaUjL/p6t4mC`, `fXgbTl`, six-character project uid slugs)
 - Measured percentages tied to one run (`0.113 from CH3 into CH2`, `735-3576 of 65536 levels`)
@@ -67,6 +80,8 @@ Examples: `GATED_SEC_PER_PLANE = 0.12` and `GAP_WORTH_PAYING_FOR = 0.12` in
 number nobody can defend.
 
 ### Where narrative content goes
+
+Checked by convention-check (`wrong home`).
 
 | Content | Home |
 |---|---|
@@ -97,7 +112,9 @@ If a file is dense with these, add a one-line header:
 
 and skip content edits to that file's comments unless something is a literal duplicate.
 
-**Currently flagged as protected:** `app/src/tasks/scheduler.jl` (see file header).
+**Currently flagged as protected:** `app/src/tasks/scheduler/*.jl` (see the header of the
+`scheduler.jl` aggregator). Reference only — convention-check never flags these as `wrong home`, but
+nothing checks a trim.
 
 ### `# invariant:` prefix
 
@@ -117,6 +134,8 @@ If module A depends on module B's output shape, that shape gets a **type / struc
 a comment. A comment saying "expects X" is a risk-register entry, not a specification.
 
 ### The three specific triggers
+
+Trigger 1 is checked by convention-check (`should reuse`); 2 and 3 are reference only.
 
 1. **A `Dict{String,Any}` (or `AbstractDict`) crossing a boundary** — frontend↔Julia, Julia↔Python,
    API↔handler — needs a typed constructor at the boundary. Naming the shape (e.g.
@@ -202,15 +221,13 @@ are listed inline; a new task with a flat 7+-param list fails.
 ### Enums for state machines
 
 A `Symbol` or `String` field with a known set of legal values is a state machine documented only
-by convention. Prefer `@enum` + a typed setter (`set_status!(rec, ::TaskStatus)`) — the terminality
+by convention. Checked by convention-check (`should reuse`). Prefer `@enum` + a typed setter (`set_status!(rec, ::TaskStatus)`) — the terminality
 check comes with the type; a typo in the value becomes a compile-time error instead of a silent
 default.
 
-**This is the single most systemic P4 pattern in this codebase.** The Phase-4 register found six
-instances of the same shape (a `String`/`Symbol` field, 4–7 legal values, enum-in-a-comment):
-`TaskRecord.status`, `ChainNode.scope`, `ChainNode.barrier_policy`, `ImageNodeState.status`,
-`CciaImage.status`, `Population.pop_type` (+ `popType` in `gating_api.jl`). One `@enum` pass
-across these resolves six risk-register entries in one PR. Fix template:
+The six instances an audit found are all `@enum`s now — `TaskStatus`, `ChainScope`,
+`ChainBarrierPolicy`, `ChainNodeStatus` (`ImageNodeState.status`), `ImageStatus`, `PopType`. Copy
+them. The template:
 
 ```julia
 @enum TaskStatus TASK_QUEUED TASK_RUNNING TASK_DONE TASK_FAILED TASK_CANCELLED
@@ -232,7 +249,7 @@ Full list of instances + fix template details: [`docs/archive/comment-audit-find
 `TaskJob.imgs::Union{Nothing, Vector{CciaImage}}` uses `nothing`-vs-vector to discriminate
 set-scope vs single-image. Every branch has to remember the check. A sum type (`SingleTarget` /
 `SetTarget`) or a `job_target(job)` helper that never leaks the union removes the whole class of
-bugs.
+bugs. Checked by convention-check (`should reuse`).
 
 ---
 
@@ -244,7 +261,8 @@ composite dispatch}` is a landing spot for a fourth. That's how a monolith accre
 ### Split rule
 
 Once a task's file **grows past ~200 lines** OR **acquires a third responsibility**, split it along
-the responsibility axis:
+the responsibility axis. The maintainability lint flags a diff that pushes a task file past 200 lines
+or grows one already past it by ≥20; the third-responsibility half is reference only.
 
 ```
 tasks/<name>/
@@ -259,15 +277,17 @@ now a 20-line aggregator that includes `af_correct/translate.jl`, `af_correct/qc
 
 ### Splitting a lock-owned monolith needs invariant proof
 
-`app/src/tasks/scheduler.jl` (733 lines) is a monolith by size but the lock-ordering invariant
-crosses several of its would-be seams (`never nest _TASKS_LOCK inside _POOLS_LOCK`). A split MUST
-preserve the invariant, not just move the code. Flag it as a slow, explicitly-invariant-preserving
-refactor with tests that pin the ordering — not a routine cleanup.
+`app/src/tasks/scheduler.jl` was a ~790-line monolith whose lock-ordering invariant crossed its
+would-be seams (`never nest _TASKS_LOCK inside _POOLS_LOCK`). It is now split into
+`scheduler/*.jl` behind a 30-line aggregator. Any further split of a lock-owned file MUST preserve
+the invariant, not just move the code: a slow, explicitly-invariant-preserving refactor with tests
+that pin the ordering — not a routine cleanup.
 
 ### "For now this just handles X" is a red flag
 
 That phrase names a landing spot for the next feature to be wedged in rather than given its own
-home. Either commit to X being the whole answer (delete the qualifier) or extract now.
+home. Either commit to X being the whole answer (delete the qualifier) or extract now. Reference
+only (the phrase has no hits in the repo).
 
 ---
 
