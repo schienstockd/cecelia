@@ -19,8 +19,8 @@ rule_section: CLAUDE.md → *Rendering UI? The primitive catalog is mandatory* �
 tool_order_before_tools: Grep,Read,Glob
 tool_order_before_arg_match: (docs/inventory|INVENTORY\.md|frontend/CLAUDE\.md|frontend/src/(?:lib|components|utils))
 tool_order_after_tools: Write,Edit,MultiEdit
-compliant_signal: '(?:CLAUDE_TERMINAL\.(?:action|resync)|from\s+["''][^"'']*claudeOverview|import[^;\n]*claudeOverview)'
-anti_signal: '["''](?:Set up my terminal|Fix terminal setup|Setting up…|Terminal ready)["'']'
+compliant_signal: '(?:CLAUDE_TERMINAL\.(?:action|resync|busy)|from\s+["''][^"'']*claudeOverview|import[^;\n]*claudeOverview)'
+anti_signal: '["''](?:Set up|Fix|Setting up…)["'']'
 # A component's header comment naming the button it replaces ("The "Fix terminal setup" button…")
 # isn't re-typed copy: a run that imported the const once failed on exactly that comment.
 anti_signal_ignore_comments: true
@@ -28,11 +28,11 @@ anti_signal_ignore_comments: true
 Add a small Vue single-file component at
 `frontend/src/scratch_ui/TerminalRepairButton.vue`.
 
-The component renders **the same button** that appears in the existing Claude-overview
-dialog for repairing a stale MCP-server registration (the "fix the setup that has
-drifted" affordance). The button's label, states (idle / working / done) and the
-reason text shown when it is available must all match what the existing dialog uses
-for that exact button — a user comparing the two places should see identical copy.
+The component renders **the same button** as the terminal-setup button on the Terminal
+row of Kiwi's Assistant section: the one that registers the MCP server in the user's
+Claude config, or repairs a registration that has drifted. Its label in each state
+(first-time setup / repair / working) and the tooltip explaining why it's offered must
+match what that row shows, so a user comparing the two places sees identical copy.
 Emit a `repair` event on click; the parent wires up the actual work.
 
 Ship the .vue file. No tests, don't commit.

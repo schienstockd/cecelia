@@ -236,7 +236,7 @@ spawn `python` by hand).
 use the named helper, never re-derive the platform branch inline: `python_bin_path()`,
 `bioformats2raw_bin()`, `expand_user()` (never `Base.expanduser` — a silent no-op on Windows),
 `ensure_config_dir()`, `agent_bin_path()`, `_kill_tree`/`free_port` (never inline
-`kill`/`pgrep`/`taskkill`), `_dir_bytes`, always `joinpath()`, and **always pass `encoding="utf-8"` to
+`kill`/`pgrep`/`taskkill`), `_path_bytes` (size on disk), always `joinpath()`, and **always pass `encoding="utf-8"` to
 Python text I/O** (the default is cp1252 on Windows). Launcher logic lives in `pixi.toml` tasks, not
 shell scripts. The full table — which helper, which bug, and why each one exists — is in
 [`docs/DEV.md`](docs/DEV.md) → *Windows compatibility*. **Read it before writing any path, process, or

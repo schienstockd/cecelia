@@ -39,6 +39,7 @@ import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
 import { terminalCta, terminalSetupTooltip } from '../../utils/observerSetup'
+import { CLAUDE_TERMINAL } from '../../lib/claudeOverview'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, fetchCaptureEnvelope, type CaptureEnvelope,
@@ -492,8 +493,8 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
                     :disabled="observer.registering" @click="observer.registerMcp()"
                     v-tooltip.bottom="terminalSetupTooltip(observer.terminalState)">
               <i class="pi pi-download" />
-              {{ observer.registering ? 'Setting up…'
-                 : terminalCtaMode === 'resync' ? 'Fix' : 'Set up' }}
+              {{ observer.registering ? CLAUDE_TERMINAL.busy
+                 : terminalCtaMode === 'resync' ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
             </button>
           </div>
           <InlineNote v-if="observer.registerError" severity="warn"

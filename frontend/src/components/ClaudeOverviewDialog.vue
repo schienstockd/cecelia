@@ -18,9 +18,9 @@ defineEmits<{ (e: 'close'): void }>()
 const settings = useSettingsStore()
 const capabilities = computed(() => claudeCapabilities(settings.hiddenMcpAccounts))
 
-// Terminal set-up is NOT repeated here. It lives in the lab-log toolbar — one button, in the place
+// Terminal set-up is NOT repeated here. It lives on Kiwi's Terminal row — one button, in the place
 // people act from — and duplicating it in this dialog cost a whole band of chrome to say what the
-// toolbar already shows. This dialog is reference only: no live state, no controls.
+// row already shows. This dialog is reference only: no live state, no controls.
 </script>
 
 <template>

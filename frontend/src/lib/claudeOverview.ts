@@ -127,15 +127,13 @@ export function claudeChatCommand(mcpConfigPath: string): string {
   return mcpConfigPath ? `claude --mcp-config ${mcpConfigPath}` : ''
 }
 
-/** The button's own label + the states around it. Short, imperative (docs/UI.md house style). */
+/** The terminal-setup button's labels, as Kiwi's Terminal row and Settings → Cecelia MCP render them.
+ *  Short: the button sits in a compact row; the reason for each state is `terminalSetupTooltip`
+ *  (`utils/observerSetup.ts`). */
 export const CLAUDE_TERMINAL = {
-  note: 'Kiwi needs no setup. To chat in your own terminal, set it up once:',
-  action: 'Set up my terminal',
-  resync: 'Fix terminal setup',
+  action: 'Set up',
+  resync: 'Fix',
   busy: 'Setting up…',
-  done: 'Terminal ready — run claude, then use Chat to Claude',
-  staleWhy: 'Your registered server points elsewhere (moved install or a different port)',
-  failedPrefix: 'Setup failed. Start Claude Code with this instead:',
 } as const
 
 // Copyable one-liners — documentation prompts first (the shape Kiwi's built for), then a couple of

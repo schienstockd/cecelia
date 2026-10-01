@@ -20,7 +20,7 @@ restart; function bodies reload on save.
 - Strings: double quotes only (single quotes = `Char`)
 - Multiple dispatch: separate method per type, not OOP overloading
 - `@infiltrate` = `browser()` from R
-- Shell commands: always platform-safe. Use `_kill_tree` (`app/src/jobs.jl`) and `_dir_bytes` (`app/src/utils.jl`); never write `pgrep`/`kill`/`du` inline.
+- Shell commands: always platform-safe. Use `_kill_tree` (`app/src/jobs.jl`) and `_path_bytes` (`app/src/utils.jl`, walking dirs with `_dir_bytes`); never write `pgrep`/`kill`/`du` inline.
 - **Don't `export` generic names that collide with common deps or Base.** Exports land in any
   user's namespace; if Cecelia and another `using`'d package both export the same name, Julia
   leaves it *unbound* (ambiguous), breaking unqualified calls. In particular avoid clashing with

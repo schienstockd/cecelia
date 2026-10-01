@@ -1,48 +1,19 @@
 """
-Spatial slicing utilities for tiled and multiscale image processing.
+Numpy slice-tuple helpers for multiscale and cropped image access.
 
-Provides functions to generate numpy slice tuples for:
-  - Tiled 2-D / 3-D processing with configurable block size and overlap.
-  - Time-series expansion of per-frame slice lists.
-  - Multiscale downsampling slices (power-of-two strides in X and Y).
+- `create_slices_multiscales`: power-of-two X/Y strides, one slice tuple per pyramid level
+  (used by `zarr_utils.create_multiscales`).
+- `crop_slice_tuple`: a slice tuple cropping named axes to pixel bounds.
+- `preview_region_bounds`: the visible XY box + one plane that a task preview computes.
 
-Used by zarr_utils.create_multiscales and downstream segmentation tasks.
+There is no tiling helper here; segmentation tiles XY with `SegmentationUtils._create_xy_tiles`
+(`segmentation_utils.py`).
 """
 
 import math
 import numpy as np
 
-"""
-Convert coords to slices
-"""
 
-"""
-Create slices from image dimensions
-"""
-
-"""
-Create slices from image dimensions (3D time)
-"""
-
-"""
-Create slices from image dimensions (2D time)
-"""
-    
-"""
-Combine time and frame slices
-"""
-
-"""
-Create slices from image dimensions (3D)
-"""
-
-"""
-Create slices from image dimensions (2D)
-"""
-
-"""
-Create multiscale slices
-"""
 def create_slices_multiscales(im_dim, dim_utils = None,
                               x_idx = None, y_idx = None,
                               nscales = 1, ignore_channel = False,

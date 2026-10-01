@@ -13,12 +13,14 @@ rule_section: CLAUDE.md → *Before implementing anything — mandatory discover
 # earlier reshaping from `next_multiple`. Diagnosis: no matching helper in the inventory
 # meant a grep produced nothing plausible, so agents concluded "nothing to find" and
 # skipped the discovery step next time (Claude's prior updates fast). Current task
-# describes a slice-tuple generator for tiled multiscale zarr iteration — territory
-# `slice_utils` (see `docs/inventory/PYTHON.md`) genuinely owns
-# (`create_slices_multiscales`, `preview_region_bounds`, `crop_slice_tuple`). A
-# compliant agent grepping `slice`, `tile`, or `zarr` in `docs/inventory/PYTHON.md`
-# will find it and either (a) reuse it, (b) note the gap between what exists and what's
-# asked, or (c) Edit the existing module rather than Write a fresh one. All three
+# describes a slice-tuple generator for tiled multiscale zarr iteration — the territory of
+# `slice_utils` (see `docs/inventory/PYTHON.md`), which owns the slice-tuple helpers
+# (`create_slices_multiscales`, `preview_region_bounds`, `crop_slice_tuple`) but no
+# tiler. Its docstring and inventory line used to promise tiled generators that were
+# gone, so agents that looked found stubs. A compliant agent grepping `slice`, `tile`,
+# or `zarr` in `docs/inventory/PYTHON.md` will find it and either (a) note the gap
+# between what exists and what's asked, (b) Edit the existing module rather than
+# Write a fresh one, or (c) reuse `SegmentationUtils._create_xy_tiles`. All three
 # score compliant on tool_order. Design rationale:
 # `docs/todo/CLAUDE_MD_EVAL_REFRESH_ROUTINE.md` → *Verdict: distillation over escalation*.
 tool_order_before_tools: Grep,Read,Glob

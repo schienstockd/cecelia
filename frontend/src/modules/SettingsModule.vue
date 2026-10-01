@@ -25,8 +25,8 @@ import { useTaskStore } from '../stores/tasks'
 import { useObserverStore } from '../stores/observer'
 import { useKiwiStore } from '../stores/kiwi'
 import { mcpRows, type McpConnection } from '../utils/mcpConnections'
-import { isAuthError } from '../utils/observerSetup'
-import { claudeChatCommand } from '../lib/claudeOverview'
+import { isAuthError, terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
+import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
@@ -1353,9 +1353,11 @@ async function switchWt(path: string) {
         <span class="svc-actions">
           <button v-if="observerServiceRow.tone === 'warn'" class="save-btn"
                   :disabled="observer.registering" @click="observer.registerMcp()"
-                  v-tooltip.top="'Register the Cecelia MCP in your Claude config'">
+                  v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
             <i :class="['pi', observer.registering ? 'pi-spin pi-spinner' : 'pi-download']" />
-            {{ observer.registering ? 'Setting up…' : 'Set up' }}
+            {{ observer.registering ? CLAUDE_TERMINAL.busy
+               : terminalCta(observer.available, observer.terminalState) === 'resync'
+                 ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
           </button>
         </span>
       </div>

@@ -26,7 +26,7 @@ export const useObserverStore = defineStore('observer', () => {
     terminalState.value = s.terminal?.state ?? ''
   }
 
-  // One-click terminal setup (the lab-log toolbar's button until it's done): register the observer MCP
+  // One-click terminal setup (Kiwi's Terminal row and Settings → Cecelia MCP, until it's done): register the observer MCP
   // in the user's own Claude Code config so plain `claude` has the tools. Idempotent — clicking it again
   // re-syncs a stale entry. Detection is a config-file read on the backend (see _observer_terminal_state);
   // we deliberately never shell out to `claude mcp list`, which health-checks every server.

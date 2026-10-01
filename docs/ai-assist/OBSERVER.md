@@ -305,7 +305,7 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   populations, in what order); the server expands it to the stored layout and refuses a spec the
   project cannot plot, because a bad selection renders an EMPTY panel with no error. Add-only.
   See `docs/todo/MCP_BOARD_AUTHORING_PLAN.md` and `docs/ANALYSIS.md`.
-- **In-app overview** — `ClaudeOverviewDialog` (`?` in the lab-log toolbar): a brief how-to.
+- **In-app overview** — `ClaudeOverviewDialog` (`?` in Kiwi): a brief how-to.
 
 **Durable boundaries (why, so they aren't relitigated)**
 - **Additive writes only.** The MCP allow-list permits exactly `POST /api/lablog/append`

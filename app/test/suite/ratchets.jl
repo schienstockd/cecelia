@@ -605,8 +605,8 @@ end
 end
 
 # ── dir-bytes ratchet ─────────────────────────────────────────────────────────
-# Root CLAUDE.md → *Windows compatibility* names `_dir_bytes` (`app/src/utils.jl`) as the one
-# helper for on-disk directory size. Hand-rolling `\`du -sk ...\`` / `\`du -sh ...\`` inside a
+# Root CLAUDE.md → *Windows compatibility* names `_path_bytes` (`app/src/utils.jl`) for size on
+# disk; `_dir_bytes` is the one directory walker beneath it. Hand-rolling `\`du -sk ...\`` / `\`du -sh ...\`` inside a
 # task or handler works on Linux/macOS and errors on Windows (no `du`). Sole sanctioned owner is
 # `app/src/utils.jl`; every current call site already routes through `_dir_bytes(...)` or the
 # `_path_bytes` wrapper above it.

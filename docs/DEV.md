@@ -579,7 +579,8 @@ use the named helper, don't re-derive the platform branch inline:
   thread's backtrace and keeps running). Never write a third one. See `docs/DEV.md` → *Stopping the app*.
 - **`proc.exitcode == 0` doesn't mean success on cancel** — libuv sets it to 0 for signal-killed
   processes too. Always check `proc.termsignal == 0` as well (see *Task system* below).
-- **Directory size** — use `_dir_bytes(path)` in `app/src/utils.jl`, not a hardcoded `du`/`walkdir`.
+- **Size on disk** — use `_path_bytes(path)` in `app/src/utils.jl` (a store or a plain file), not a
+  hardcoded `du`/`walkdir`. It walks directories with `_dir_bytes`, the one platform-safe walker.
 - **Path separators** — always `joinpath()`, never string-concatenate paths.
 - **`[PROGRESS]` line endings** — `eachline()` already strips `\r\n` on Windows, no special-casing
   needed.

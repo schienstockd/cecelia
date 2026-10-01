@@ -63,7 +63,7 @@ const statusTip: Record<string, string> = {
 
     <!-- Guides — click-through walkthroughs of the basics (docs/todo/GUIDE_SYSTEM_PLAN.md). A COMPASS,
          deliberately not a `?`: the brand mark beside it already opens What's New + tips, and `?`
-         already means "what is this Claude panel" in the lab-log toolbar. Three different `?`s in one
+         already means "what is this Claude panel" in Kiwi. Three different `?`s in one
          app is worse than one new icon. -->
     <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon" data-guide="header.guides"
             v-tooltip.bottom="'Guides — walk through the basics'"

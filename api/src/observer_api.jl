@@ -65,8 +65,8 @@ function api_observer_status(req::HTTP.Request)
                             # written here (not only on a feedback run) so the info panel can always show
                             # the terminal one-liner, even before the user has ever run Ask Claude
                             "mcpConfigPath" => _write_observer_mcp_config(),
-                            # is the user's OWN terminal set up? drives which button the lab-log toolbar
-                            # shows (Set up my terminal vs Chat to Claude) — see _observer_terminal_state
+                            # is the user's OWN terminal set up? drives which button Kiwi's Terminal row
+                            # shows (Set up / Fix vs Chat to Claude) — see _observer_terminal_state
                             "terminal"      => _observer_terminal_state())
     200, JSON3.write(resp)
 end

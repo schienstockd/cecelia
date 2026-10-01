@@ -163,7 +163,7 @@ end
     @test Cecelia.agent_bin_path("") === nothing
     @test Cecelia.agent_bin_path("cecelia-definitely-no-such-binary-42") === nothing
 
-    # Is the user's own terminal set up? Drives which button the lab-log toolbar shows, so the
+    # Is the user's own terminal set up? Drives which button Kiwi's Terminal row shows, so the
     # three states must be exact. A stale entry (another checkout's python, or no/!matching
     # CECELIA_API_URL) is NOT "set up" — it fails silently in the user's session.
     want = Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")
