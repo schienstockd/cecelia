@@ -86,7 +86,7 @@ You have full read access to the repo (do not modify). `git diff --staged` follo
 - **potential duplicate** — same domain, similar shape, fit unverified or ambiguous.
 - **wrong home** — you read the comment and its surroundings, checked the exceptions, and can name the document it belongs in.
 
-The marker tag ends the line, exactly `[**should reuse**]`, `[**potential duplicate**]` or `[**wrong home**]` — nothing else inside the brackets. An addition you checked and found clean is not a finding: it goes in the evidence, not in a marked bullet.
+The marker tag ends the line, exactly `[**should reuse**]`, `[**potential duplicate**]` or `[**wrong home**]` — nothing else inside the brackets. An addition you checked and found clean is not a finding: it goes in the evidence, not in a marked bullet. **Never bold a marker word anywhere else** — not in prose, not in "no findings" lines. The commit hook counts every bold marker as a finding that needs an outcome tag, so write `no findings`, not "No **marker** findings".
 
 **Evidence to include** — for every finding AND for every addition that got a clean bill of health:
 - Which inventory / ground-truth files you read (paths, and section names or line numbers where relevant — these become `cited_doc_refs` in the effectiveness log).
