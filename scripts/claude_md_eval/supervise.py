@@ -109,10 +109,28 @@ def default_worktree() -> pathlib.Path:
 
 # ── deterministic steps ────────────────────────────────────────────────────────────────────────
 
+_PIXI_ENV_PREFIXES = ("PIXI_", "CONDA_")
+
+
+def clean_env(**extra: str) -> dict:
+    """`os.environ` without the activation of the pixi env this script runs in.
+
+    The supervisor itself runs under `pixi run`, and every command it starts in the pinned
+    worktree would otherwise inherit that activation: `PIXI_PROJECT_MANIFEST` (pixi warns and
+    may pick the wrong manifest), `PYTHONPATH` and the env's `bin/` on `PATH` (so `import cecelia`
+    could load this checkout instead of the pinned one).
+    """
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(_PIXI_ENV_PREFIXES) and k != "PYTHONPATH"}
+    env["PATH"] = os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep)
+                                  if f"{os.sep}.pixi{os.sep}envs{os.sep}" not in p)
+    return {**env, **extra}
+
+
 def _run(cmd: list[str], *, cwd: pathlib.Path, stage: str, env: dict | None = None,
          timeout: float | None = None, input: str | None = None) -> subprocess.CompletedProcess:
     try:
-        proc = subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True, input=input,
+        proc = subprocess.run(cmd, cwd=str(cwd), env=env if env is not None else clean_env(), capture_output=True, text=True, input=input,
                               encoding="utf-8", timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise SupervisorError(stage, f"{cmd[0]} failed: {e}") from e
@@ -144,7 +162,7 @@ def prepare_worktree(path: pathlib.Path, sha: str, repo: pathlib.Path = _REPO) -
         # keep the env and deps; anything else an earlier run left behind goes
         _run(["git", "clean", "-fdx", "--quiet", "-e", ".pixi", "-e", ".env",
               "-e", "frontend/node_modules"], cwd=path, stage="worktree")
-    if (repo / ".env").is_file():
+    if (repo / ".env").is_file() and (repo / ".env").resolve() != (path / ".env").resolve():
         shutil.copy(str(repo / ".env"), str(path / ".env"))
     head = git_output("rev-parse", "HEAD", cwd=str(path))
     if head != sha:
@@ -157,7 +175,7 @@ def prepare_worktree(path: pathlib.Path, sha: str, repo: pathlib.Path = _REPO) -
 
 def _eval_env(session: str) -> dict:
     # every row of this pass shares one session id, so `pass_runs` finds exactly them
-    return {**os.environ, "CLAUDE_CODE_SESSION_ID": session, "CECELIA_OBSERVER_NO_PAIR": "1"}
+    return clean_env(CLAUDE_CODE_SESSION_ID=session, CECELIA_OBSERVER_NO_PAIR="1")
 
 
 def run_suite(worktree: pathlib.Path, session: str, runs: int) -> None:
@@ -282,17 +300,28 @@ def group_findings(judged: _t.Sequence[dict], *, date: str,
 
     A finding the owner dropped doesn't count; one they resolved does, since its return means the
     fix didn't hold.
+
+    A `decision` still open in the previous record wins over this run's judge: whether the rule
+    means X is the owner's call, and a judge reading it the other way must not take the question
+    off their queue. The run's failures join that decision instead.
     """
-    seen_before = {(f.get("slug"), f.get("class")) for f in (previous or {}).get("findings", [])
-                   if f.get("status") != "dropped"}
+    earlier = (previous or {}).get("findings", [])
+    seen_before = {(f.get("slug"), f.get("class")) for f in earlier if f.get("status") != "dropped"}
+    pending = {f["slug"]: f for f in earlier if f.get("class") == "decision" and f.get("status") == "open"}
     groups: dict[tuple[str, str], list[dict]] = {}
     for j in judged:
-        groups.setdefault((j["prompt_id"], j["verdict"]["class"]), []).append(j)
+        cls = "decision" if j["prompt_id"] in pending and j["verdict"]["class"] != "infra" else j["verdict"]["class"]
+        groups.setdefault((j["prompt_id"], cls), []).append(j)
     findings, actions = [], []
     for n, ((slug, cls), items) in enumerate(sorted(groups.items()), 1):
         first = items[0]["verdict"]
         files = sorted({f for j in items for f in j["verdict"].get("files", [])})
         diagnosis = first["diagnosis"]
+        carried = cls == "decision" and slug in pending and first["class"] != "decision"
+        if carried:
+            asked = pending[slug]
+            diagnosis = (f"Still waiting on the owner's decision {asked['id']} from {previous['date']}: "
+                         f"{asked['proposed_fix']}\n\nThis run's judge read it as `{first['class']}`: {diagnosis}")
         if first.get("question"):
             diagnosis += f"\n\n**Question:** {first['question']}"
         if not all(j["verified"] for j in items):
@@ -304,7 +333,8 @@ def group_findings(judged: _t.Sequence[dict], *, date: str,
             "title": first["title"], "runs": len(items),
             "evidence": [{"trace": j["trace"], "excerpt": j["verdict"]["evidence"] or "(none)",
                           "verified": j["verified"]} for j in items[:3]],
-            "diagnosis": diagnosis, "proposed_fix": first["proposed_fix"], "files": files,
+            "diagnosis": diagnosis, "files": files,
+            "proposed_fix": pending[slug]["proposed_fix"] if carried else first["proposed_fix"],
         })
         if cls in ("genuine", "scorer_bug"):
             verify = (f"pixi run claude-md-eval-record replay --date {date} --force" if cls == "scorer_bug"
@@ -501,7 +531,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             print(_record.render_markdown(record))
             return 0
-        path = _record.write(record, force=args.force)[0]
+        # a live pass is today's data: a rerun the same day replaces its record. A `--session`
+        # re-triage of an older pass needs --force, so a hand-written record isn't lost by accident
+        path = _record.write(record, force=args.force or not args.session)[0]
         res, sup = record["results"], record["run"]["supervisor"]
         print(f"{record['date']}: {res['raw']['compliant']}/{res['raw']['total']} compliant, "
               f"{len(record['findings'])} finding(s), judge ${sup['cost_usd']:.2f} "
@@ -513,7 +545,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001 — any crash still leaves a record (Decision 13)
         where = e.stage if isinstance(e, SupervisorError) else state["stage"]
         print(f"claude-md-eval-supervise: failed at {where}: {type(e).__name__}: {e}", file=sys.stderr)
-        if not args.dry_run:
+        if not args.dry_run and not args.session:   # a failed re-triage is not a failed pass
             failed = _write_failure(args.date, where, e, state["sha"])
             # a failure gets its PR too, once there is a worktree at the pinned SHA to commit from
             if failed and not args.session and not args.no_pr and where not in ("start", "pin", "worktree", "publish"):

@@ -292,11 +292,22 @@ def delta(record: dict, previous: dict | None) -> dict | None:
         held = None if not tally or not tally["total"] else tally["compliant"] == tally["total"]
         hypotheses.append({"proposal": prop["id"], "prompt": pid, "hypothesis": prop["hypothesis"],
                            "held": held, "score": _score(tally) if tally else None})
+    # a finding whose class changed is the same problem read differently, not one fixed + one new
+    gone = [k for k in before if k not in now]
+    new = [k for k in now if k not in before]
+    reclassified = []
+    for k in list(new):
+        old = next((g for g in gone if g[0] == k[0]), None)
+        if old is not None:
+            gone.remove(old)
+            new.remove(k)
+            reclassified.append(f"{before[old]['id']} → {now[k]['id']} `{k[0]}` {old[1]} → {k[1]}")
     return {
         "previous": previous["date"],
-        "opened": [now[k]["id"] for k in now if k not in before],
+        "opened": [now[k]["id"] for k in new],
         "still_open": [now[k]["id"] for k in now if k in before],
-        "resolved": [f"{before[k]['id']} `{k[0]}` {k[1]}" for k in before if k not in now],
+        "reclassified": reclassified,
+        "resolved": [f"{before[k]['id']} `{k[0]}` {k[1]}" for k in gone],
         "score": {"previous": _score(previous["results"]["raw"]), "now": _score(record["results"]["raw"])},
         "changed": changed,
         "setup_growth": setup_growth(previous.get("tracking", {}).get("setup_size") or {},
@@ -512,6 +523,8 @@ def render_markdown(record: dict) -> str:
                 f"- Opened: {', '.join(d['opened']) or 'none'}",
                 f"- Still open: {', '.join(d['still_open']) or 'none'}",
                 f"- Resolved: {', '.join(d['resolved']) or 'none'}"]
+        if d.get("reclassified"):
+            out.append(f"- Reclassified: {', '.join(d['reclassified'])}")
         if d.get("setup_growth"):
             out.append(f"- **Setup grew more than {SETUP_GROWTH_FLAG:.0%}:** {'; '.join(d['setup_growth'])}")
         for h in d["hypotheses"]:

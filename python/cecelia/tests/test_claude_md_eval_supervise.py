@@ -114,10 +114,33 @@ class GroupFindingsTest(_SuperviseFixture):
         self.assertEqual({f["class"]: f["recurrence"] for f in findings},
                          {"genuine": "watch", "decision": "recurring"})
 
+    def test_an_open_owner_decision_wins_over_this_runs_judge(self):
+        prev = {"date": "2026-09-30", "findings": [
+            {"id": "F6", "slug": "p1", "class": "decision", "status": "open", "proposed_fix": "(a) or (b)?"}]}
+        findings, actions = self.sup.group_findings(self._judged("scorer_bug", "infra"), date="d", previous=prev)
+        self.assertEqual(sorted((f["class"], f["runs"]) for f in findings), [("decision", 1), ("infra", 1)])
+        carried = next(f for f in findings if f["class"] == "decision")
+        self.assertEqual(carried["proposed_fix"], "(a) or (b)?")
+        self.assertIn("Still waiting on the owner's decision F6 from 2026-09-30", carried["diagnosis"])
+        self.assertEqual(actions, [])                    # a decision is the owner's, not a next action
+        answered = {"date": "2026-09-30", "findings": [dict(prev["findings"][0], status="resolved")]}
+        findings, _ = self.sup.group_findings(self._judged("scorer_bug"), date="d", previous=answered)
+        self.assertEqual([f["class"] for f in findings], ["scorer_bug"])   # answered: the judge decides again
+
     def test_actions_put_scorer_bugs_first_and_skip_decisions(self):
         _, actions = self.sup.group_findings(self._judged("genuine", "scorer_bug", "decision"), date="d")
         self.assertEqual([a["verify"].split()[2] for a in actions],
                          ["claude-md-eval-record", "claude-md-eval"])
+
+
+class CleanEnvTest(_SuperviseFixture):
+    def test_the_outer_pixi_activation_is_dropped(self):
+        outer = {"PIXI_PROJECT_MANIFEST": "/a/pixi.toml", "CONDA_PREFIX": "/a/.pixi/envs/default",
+                 "PYTHONPATH": "/a/python", "HOME": "/h",
+                 "PATH": os.pathsep.join(["/a/.pixi/envs/default/bin", "/h/.pixi/bin", "/usr/bin"])}
+        with mock.patch.dict(os.environ, outer, clear=True):
+            env = self.sup.clean_env(X="1")
+        self.assertEqual(env, {"HOME": "/h", "X": "1", "PATH": os.pathsep.join(["/h/.pixi/bin", "/usr/bin"])})
 
 
 class RetryTest(_SuperviseFixture):
@@ -171,6 +194,17 @@ class SuperviseTest(_SuperviseFixture):
         rec = self.sup._record.load(self.tmp / "eval-runs" / "2026-10-05.json")
         self.assertEqual((rec["kind"], rec["run"]["stage"], rec["run"]["sha"]), ("failure", "suite", "abc123"))
         self.assertIn("FAILED", self.sup._record.render_markdown(rec))
+
+    def test_a_live_rerun_the_same_day_replaces_its_record(self):
+        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign)
+        self.sup._record.write(record)
+        with mock.patch.object(self.sup, "supervise", return_value=record), \
+                mock.patch.object(self.sup, "publish", return_value="url"):
+            self.assertEqual(self.sup.main([]), 0)                          # live: replaces
+            with self.assertRaises(self.sup._record.RecordError):
+                self.sup._record.write(record)                              # still guarded by default
+            self.assertEqual(self.sup.main(["--session", "eval-1"]), 1)     # re-triage: needs --force
+        self.assertEqual(sorted(p.stem for p in (self.tmp / "eval-runs").glob("*.json")), ["2026-09-30"])
 
     def test_a_failure_never_replaces_a_pass_record(self):
         self.sup._record.write(self.sup._record.build(self.events, "2026-09-30"))
