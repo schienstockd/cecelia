@@ -698,6 +698,28 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("END0", tall_findings)       # both descriptions in full at 70
         self.assertIn("END1", tall_findings)
 
+    def test_activity_rows_clip_instead_of_wrapping(self):
+        # A long `file:line` + branch ref used to wrap onto a second terminal row; activity
+        # rows are one line each, cut to the width with `…`.
+        events = [{
+            "event": "fanout_audit_finding", "ts": "2026-09-27T11:00:00Z",
+            "payload": {"slug": "f0", "file": "frontend/src/components/" + "x" * 60 + ".vue",
+                        "line": 21, "desc": "d", "marker": "confirmed"},
+            "pr": None, "branch": "eval-setup-findings", "commit": "9a05fa4",
+            "session": "s", "source": "live", "schema_version": 1,
+        }]
+        for use_colour in (False, True):
+            out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"), width=80,
+                                   use_colour=use_colour)
+            lines = out.splitlines()
+            act = next(i for i, ln in enumerate(lines) if "── activity" in ln)
+            row = console._ANSI_RE.sub("", lines[act + 1])
+            self.assertEqual(len(row), 80)
+            self.assertTrue(row.endswith("…"))
+
+    def test_clip_leaves_short_lines_alone(self):
+        self.assertEqual(console._clip("\x1b[1mabc\x1b[0m", 10), "\x1b[1mabc\x1b[0m")
+
 
 class MechanicalRunVisibilityTest(unittest.TestCase):
     def _row(self, event, payload):

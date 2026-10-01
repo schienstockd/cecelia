@@ -72,6 +72,27 @@ def _col(code: str, s: str, *, use_colour: bool) -> str:
     return f"{code}{s}{_RESET}" if use_colour else s
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _clip(line: str, width: int) -> str:
+    """Cut `line` to `width` visible columns, ending in `…` — ANSI escapes don't count.
+
+    For one-row-per-event panes: a row that wraps pushes the pane past its budget.
+    """
+    visible = _ANSI_RE.sub("", line)
+    if len(visible) <= width:
+        return line
+    out, shown = [], 0
+    for tok in re.split(f"({_ANSI_RE.pattern})", line):
+        if _ANSI_RE.fullmatch(tok):
+            out.append(tok)
+        elif shown < width - 1:
+            out.append(tok[:width - 1 - shown])
+            shown += len(out[-1])
+    return "".join(out) + "…" + (_RESET if _ANSI_RE.search(line) else "")
+
+
 # ── Event → (short_label, colour) — leftmost fixed-width tag, so mechanisms line up as a
 # category column. Same grouping as rollup.py; four-letter labels keep the row tight enough
 # to fit description hints on the same line most of the time.
@@ -520,15 +541,15 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
             if shown >= activity_budget:
                 break
             if e.get("event", "").endswith("_finding"):
-                activity_block.append(_finding_head_line(e, use_colour=use_colour))
+                row = _finding_head_line(e, use_colour=use_colour)
             else:
                 rendered = format_event(e, use_colour=use_colour, width=width - 2)
-                if rendered:
-                    # First line only — a finding block's second line is already covered
-                    # by the findings pane above.
-                    activity_block.append(rendered.splitlines()[0])
-                else:
+                if not rendered:
                     continue  # dropped meta event; don't count toward the cap
+                # First line only — a finding block's second line is already covered
+                # by the findings pane above.
+                row = rendered.splitlines()[0]
+            activity_block.append(_clip(row, width))
             shown += 1
         if not state.events:
             activity_block.append(_col(_DIM, "  waiting for events…", use_colour=use_colour))
