@@ -33,6 +33,7 @@ import textwrap
 import time
 import typing as _t
 
+from .eval_staleness import eval_record_warning, eval_store
 from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
 
 # ── Palette ────────────────────────────────────────────────────────────────────────────────
@@ -447,12 +448,14 @@ def _render_finding_block(event: dict, *, width: int, use_colour: bool,
 
 
 def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
-                     width: int, height: int = 40, use_colour: bool = True) -> str:
+                     width: int, height: int = 40, use_colour: bool = True,
+                     eval_warning: str | None = None) -> str:
     """Build the full-screen dashboard as one string, sized to fit `height` rows.
 
     Layout (mirrors `task_console.jl::render()`):
       - Title line: name · log path · current local time
       - Header counters: total runs · total findings by marker · total resolved by outcome
+      - `eval_warning`, when given: the CLAUDE.md eval has stopped or failed (`eval_staleness`)
       - `── by mechanism ──` block: one row per mechanism
       - `── recent findings ──` pane: newest N findings with capped descriptions
       - `── activity ──` pane: newest M event lines
@@ -495,6 +498,8 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
         header_parts.append(_col(_GREEN, f"{total_resolved} resolved", use_colour=use_colour))
     chrome.append(_col(_DIM, " · ", use_colour=use_colour).join(header_parts) or
                   _col(_DIM, "no events yet", use_colour=use_colour))
+    if eval_warning:
+        chrome.append(_clip(_col(_YELLOW, eval_warning, use_colour=use_colour), width))
     chrome.append("")
 
     # By-mechanism block (compact — one row per mechanism, still counts as chrome so it
@@ -816,6 +821,9 @@ def _terminal_width(default: int = _DEFAULT_WIDTH) -> int:
 def _run_stream_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                      *, out: _t.TextIO, use_colour: bool, follow: bool, width: int) -> int:
     """Append-only formatted event stream. What `... | tee out.log` produces."""
+    eval_warning = eval_record_warning(eval_store(log_path))
+    if eval_warning:
+        print(_col(_YELLOW, eval_warning, use_colour=use_colour), file=out, flush=True)
     for event in seed_events:
         line = format_event(event, use_colour=use_colour, width=width)
         if line is not None:
@@ -852,6 +860,7 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     state = DashboardState()
     for event in seed_events:
         state.add(event)
+    eval_warning = eval_record_warning(eval_store(log_path))   # once: weekly, not mid-session
 
     def _paint() -> None:
         width, height = _terminal_size()
@@ -863,7 +872,7 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
         # sits under the terminal's own bottom line and the topmost row is scrolled off.
         out.write("\033[?25l\033[2J\033[3J\033[H")
         out.write(render_dashboard(state, log_path, width=width, height=height - 1,
-                                    use_colour=True))
+                                    use_colour=True, eval_warning=eval_warning))
         out.write("\n")
         out.flush()
 

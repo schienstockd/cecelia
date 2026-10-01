@@ -168,8 +168,25 @@ Each phase is its own PR.
      $0.58 (~$0.07 each), and the findings matched the hand-written seed.
    - The judge budget is a high safety stop ($10, $0.75 per call), so the first real pass measures
      the real cost. The cap gets set after that.
-4. **Close-out:** both rollups, delta section, single-open-PR rule, staleness guard. Checkpoint:
-   the guard fires on an old store and is silent on a fresh one.
+4. **Close-out — built.** Checkpoint met: `test_eval_staleness.py` fires on an old store and is
+   silent on a fresh one.
+   - `record.delta` / `with_delta`: findings matched on (slug, class), so each is opened, still
+     open or resolved. The score is shown with every version that changed (prompt set, sandbox,
+     CLAUDE.md, Claude Code). Each earlier proposal's `expect <prompt> to …` hypothesis is checked
+     against this run.
+   - `supervise.publish`, in the persistent worktree:
+     - writes branch `eval-run/<date>` with the mirrored record and both rollups
+       (`claude-md-eval-rollup`, `audit-rollup`);
+     - commits with the `pixi run recital` output in the message, then pushes;
+     - opens the PR, or reuses it on a same-date rerun, and closes every other open `eval-run/*`
+       PR with a link to the new one.
+     A failure record gets a PR too, once the worktree exists. `--no-pr` skips publishing, and a
+     `--session` re-triage never publishes.
+   - `prepare_worktree` detaches before `reset --hard`, so last week's `eval-run/*` branch never
+     moves.
+   - Staleness: `cecelia.effectiveness.eval_staleness` puts one yellow line in the recital
+     console's header (and at the start of `--stream`) when the newest record is older than
+     7 + 2 days, or when it is a failure. A machine with no store stays silent.
 5. **Curation:** candidates and proposals per Decision 8. Checkpoint: running it on the current log
    gives proposals with evidence, or none.
 6. **Owner loop:**

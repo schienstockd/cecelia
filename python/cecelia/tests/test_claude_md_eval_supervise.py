@@ -136,17 +136,71 @@ class SuperviseTest(_SuperviseFixture):
         def crash(**kwargs):
             kwargs["state"].update(stage="suite", sha="abc123")
             raise self.sup.SupervisorError("suite", "claude-md-eval exited 1")
-        with mock.patch.object(self.sup, "supervise", crash):
+        with mock.patch.object(self.sup, "supervise", crash), \
+                mock.patch.object(self.sup, "publish", return_value="url") as publish:
             self.assertEqual(self.sup.main(["--date", "2026-10-05"]), 1)
+        self.assertEqual(publish.call_args.args[0]["kind"], "failure")   # its PR too (Decision 13)
         rec = self.sup._record.load(self.tmp / "eval-runs" / "2026-10-05.json")
         self.assertEqual((rec["kind"], rec["run"]["stage"], rec["run"]["sha"]), ("failure", "suite", "abc123"))
         self.assertIn("FAILED", self.sup._record.render_markdown(rec))
 
     def test_a_failure_never_replaces_a_pass_record(self):
         self.sup._record.write(self.sup._record.build(self.events, "2026-09-30"))
-        with mock.patch.object(self.sup, "supervise", side_effect=RuntimeError("boom")):
+        with mock.patch.object(self.sup, "supervise", side_effect=RuntimeError("boom")), \
+                mock.patch.object(self.sup, "publish") as publish:
             self.assertEqual(self.sup.main(["--date", "2026-09-30"]), 1)
+        publish.assert_not_called()
         self.assertEqual(self.sup._record.load(self.tmp / "eval-runs" / "2026-09-30.json")["kind"], "pass")
+
+
+class PublishTest(_SuperviseFixture):
+    def _fake_run(self, open_prs):
+        self.cmds = []
+
+        def run(cmd, input=None, **kw):
+            self.cmds.append((cmd, input))
+            out = ""
+            if cmd[1:3] == ["pr", "list"]:
+                out = json.dumps(open_prs)
+            elif cmd[1:3] == ["pr", "create"]:
+                out = "https://github.com/o/r/pull/9\n"
+            elif cmd[-1] == "recital":
+                out = "_Fanout audit: skipped — docs-only diff_\n"
+            return subprocess.CompletedProcess(cmd, 0, out, "")
+        return run
+
+    def _record(self):
+        return self.sup.supervise(session="eval-1", judge=self.judge())
+
+    def test_commits_the_record_and_rollups_then_closes_the_older_run_pr(self):
+        wt = self.tmp / "wt"
+        url = self.sup.publish(self._record(), worktree=wt, run=self._fake_run(
+            [{"number": 5, "headRefName": "eval-run/2026-09-23", "url": "u5"},
+             {"number": 6, "headRefName": "feat/other", "url": "u6"}]))
+        self.assertEqual(url, "https://github.com/o/r/pull/9")
+        names = [" ".join(c[1:4]) for c, _ in self.cmds]
+        self.assertEqual(names[0], "checkout --quiet -B")
+        self.assertIn("run claude-md-eval-rollup", names)
+        self.assertIn("run audit-rollup", names)
+        commit = next(i for c, i in self.cmds if c[1] == "commit")
+        self.assertIn("docs-only diff", commit)
+        self.assertIn("Co-Authored-By:", commit)
+        closed = [c for c, _ in self.cmds if c[1:3] == ["pr", "close"]]
+        self.assertEqual([c[3] for c in closed], ["5"])             # never the unrelated PR
+        self.assertIn("Superseded by https://github.com/o/r/pull/9", closed[0][-1])
+        self.assertTrue((wt / "docs" / "ai-assist" / "eval-runs" / "2026-09-30.md").is_file())
+
+    def test_a_rerun_of_the_same_date_reuses_its_pr(self):
+        self.sup.publish(self._record(), worktree=self.tmp / "wt", run=self._fake_run(
+            [{"number": 7, "headRefName": "eval-run/2026-09-30", "url": "u7"}]))
+        self.assertFalse([c for c, _ in self.cmds if c[1:3] in (["pr", "create"], ["pr", "close"])])
+
+    def test_a_failure_record_skips_the_rollups(self):
+        failed = self.sup._record.failure_record("2026-09-30", stage="suite", error="boom", sha="abc")
+        self.sup.publish(failed, worktree=self.tmp / "wt", run=self._fake_run([]))
+        self.assertFalse([c for c, _ in self.cmds if "rollup" in c[-1]])
+        body = next(i for c, i in self.cmds if c[1:3] == ["pr", "create"])
+        self.assertIn("**failed** at `suite`", body)
 
 
 @unittest.skipIf(sys.platform == "win32", "stands `true` in for pixi")
@@ -173,6 +227,14 @@ class WorktreeTest(_SuperviseFixture):
             (wt / "stray.txt").write_text("x", encoding="utf-8")
             self.sup.prepare_worktree(wt, sha, repo)
         self.assertEqual((wt / "f.txt").read_text(encoding="utf-8"), "one\n")
+        # last run's `eval-run/*` branch must not move when the worktree resets to a newer SHA
+        self._git("checkout", "-q", "-B", "eval-run/old", cwd=wt)
+        (repo / "f.txt").write_text("two\n", encoding="utf-8")
+        self._git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "two", cwd=repo)
+        new = self.sup.git_output("rev-parse", "HEAD", cwd=str(repo))
+        with mock.patch.object(self.sup.shutil, "which", pixi_is_true):
+            self.sup.prepare_worktree(wt, new, repo)
+        self.assertEqual(self.sup.git_output("rev-parse", "eval-run/old", cwd=str(repo)), sha)
         self.assertTrue((wt / ".pixi").is_dir())
         self.assertFalse((wt / "stray.txt").exists())
 
