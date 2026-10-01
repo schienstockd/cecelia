@@ -1,6 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
-**Status:** in progress — phases 1 (record store) and 2 (scorer F2) built 2026-10-01; phases 3–6 open. Consolidates the two briefs at
+**Status:** in progress — phases 1–6 built 2026-10-01; open: the first supervised pass, which
+measures the judge's cost so the cap can be set (Decision 4), and owner decision F6. Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
 
@@ -207,13 +208,29 @@ Each phase is its own PR.
    - Not built: authoring the added prompt, or running candidates unscored. The add proposal stops
      at "which rule, which findings"; writing the prompt stays with whoever accepts it.
    - `judge.py` holds the one tool-less `claude -p` call, shared by triage and curation.
-6. **Owner loop:**
-   - A terminal review queue (e.g. `pixi run recital-review`) built on the `effectiveness/console.py`
-     patterns. It's keyboard-driven: spot check `real`/`false`/`unclear`, finding status, proposal
-     accept/reject/defer, undo as a correcting event, progress and an empty state.
-   - It appends `review.jsonl` events (Decision 15), so labelling works from run one.
-   - Also: ingest those events at run start, spot-check sampling, loop review, setup-size metrics.
-   - Checkpoint: a missing or mismatched-schema record gives a clear error.
+6. **Owner loop — built.** `scripts/claude_md_eval/review.py` (`pixi run recital-review`), tests
+   in `python/cecelia/tests/test_claude_md_eval_review.py`. Checkpoint met: a missing record, an
+   other-schema record or an empty store each give a one-line error.
+   - **Queue.** It walks the record's queue items that have no live answer, one key each:
+     - decision: resolved / dropped / open (resolved asks for the answer as a note);
+     - proposal: accept / reject / defer;
+     - spot check: real / false / unclear;
+     - loop review: continue / retune / stop.
+     It also has skip, undo and quit keys, an `[n/total]` progress count, and an empty state. It
+     is line-based, not raw-key, so it runs anywhere `input()` does, scripted tests included.
+     Colours come from the shared console palette.
+   - **Events.** Answers go to `~/.cecelia-effectiveness/review.jsonl`: `finding_status`,
+     `proposal_decision`, `spot_check_label`, plus `loop_review_decision` for the loop review.
+     An undo is a new event with `value: null` and `corrects: <id>`. The latest event per
+     (record, event, ref) wins.
+   - **Applying.** At the start of a pass the supervisor folds the events into every earlier
+     record and rewrites it, unless it's a dry run. So recurrence, the delta and curation see the
+     owner's statuses and decisions.
+   - **Spot check.** On every 4th supervised run, 3–5 of that run's findings are sampled, seeded
+     by date so a rerun picks the same ones. They become `spot_check` queue items.
+   - **Loop review.** On every 8th run it shows scores per run, proposals accepted (of those
+     made), the spot-check false-positive rate and total cost. It becomes a `loop_review` item.
+   - **Setup size.** Growth over 10% in any setup-size metric is flagged in "Since last run".
 
 ## Open questions
 

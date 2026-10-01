@@ -107,6 +107,13 @@ class GroupFindingsTest(_SuperviseFixture):
         self.assertEqual({f["class"]: f["recurrence"] for f in findings},
                          {"genuine": "recurring", "decision": "watch"})
 
+    def test_a_dropped_finding_is_not_recurring_but_a_resolved_one_is(self):
+        prev = {"findings": [{"slug": "p1", "class": "genuine", "status": "dropped"},
+                             {"slug": "p1", "class": "decision", "status": "resolved"}]}
+        findings, _ = self.sup.group_findings(self._judged("genuine", "decision"), date="d", previous=prev)
+        self.assertEqual({f["class"]: f["recurrence"] for f in findings},
+                         {"genuine": "watch", "decision": "recurring"})
+
     def test_actions_put_scorer_bugs_first_and_skip_decisions(self):
         _, actions = self.sup.group_findings(self._judged("genuine", "scorer_bug", "decision"), date="d")
         self.assertEqual([a["verify"].split()[2] for a in actions],
@@ -135,6 +142,23 @@ class SuperviseTest(_SuperviseFixture):
         self.assertEqual(record["run"]["supervisor"]["judge_calls"], 1)
         self.assertEqual(record["run"]["cost_usd"], 0.3)   # the suite's, unchanged
         self.assertEqual([f["class"] for f in record["findings"]], ["genuine", "infra"])
+
+    def test_owner_answers_are_applied_to_the_earlier_record_first(self):
+        prev = self.sup._record.build(self.events, "2026-09-30", annotations={"findings": [
+            {"id": "F1", "slug": "p1", "class": "genuine", "status": "open", "recurrence": "watch",
+             "evidence": [{"trace": "t", "excerpt": "+BAD"}], "diagnosis": "d", "proposed_fix": "x"}]})
+        prev["date"] = "2026-09-23"
+        self.sup._record.write(prev)
+        review = self.sup._load_sibling("review")
+        review.append_review("finding_status", "2026-09-23", "F1", "resolved")
+        stored = self.tmp / "eval-runs" / "2026-09-23.json"
+
+        self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, persist=False)
+        self.assertEqual(self.sup._record.load(stored)["findings"][0]["status"], "open")    # a dry run
+        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign)
+        self.assertEqual(self.sup._record.load(stored)["findings"][0]["status"], "resolved")
+        self.assertEqual(record["delta"]["previous"], "2026-09-23")
+        self.assertEqual(record["delta"]["still_open"], [])     # resolved by the owner, so not "still open"
 
     def test_a_crash_still_writes_a_failure_record(self):
         def crash(**kwargs):

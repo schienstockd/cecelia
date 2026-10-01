@@ -234,14 +234,16 @@ def propose(current: dict, *, history: _t.Sequence[dict] = (), events: _t.Iterab
 
 
 def history_before(date: str) -> list[dict]:
-    return _record.pass_records(before=date)
+    """Earlier pass records with the owner's answers applied, as the supervised pass sees them."""
+    return _load_sibling("review").applied_pass_records(before=date)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--date", help="record to curate (default: the newest pass record)")
     args = ap.parse_args(argv)
-    records = [r for r in _record.pass_records() if not args.date or r["date"] == args.date]
+    records = [r for r in _load_sibling("review").applied_pass_records()
+               if not args.date or r["date"] == args.date]
     if not records:
         print("claude-md-eval-curate: no pass record to curate", file=sys.stderr)
         return 1

@@ -362,6 +362,11 @@ claude-md-eval-supervise = "python scripts/claude_md_eval/supervise.py"
 # supervised pass already puts them in the record. Never applies anything.
 claude-md-eval-curate = "python scripts/claude_md_eval/curate.py"
 
+# The owner's review queue for the newest CLAUDE.md eval run record: decisions, proposals, spot
+# checks, the loop review. One key per answer; answers are append-only events in
+# ~/.cecelia-effectiveness/review.jsonl, applied by the next supervised pass. `--date D` for another.
+recital-review = "python scripts/claude_md_eval/review.py"
+
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the
 # extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the
