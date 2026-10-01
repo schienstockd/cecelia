@@ -617,6 +617,24 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(lines[head + 1].strip(), "maintainability-lint@d1d7119")
         self.assertIn("↳ no entry here", lines[head + 2])
 
+    def test_findings_pane_lists_advisory_rows(self):
+        # `plausible` / `potential duplicate` arrive as `_advisory` rows (no slug) and must
+        # show in the findings pane like any finding.
+        events = [
+            {"event": "fanout_audit_advisory", "ts": "2026-10-01T00:36:21Z",
+             "payload": {"file": "console.py", "line": 509,
+                         "desc": "activity pane still inlines the ref", "marker": "plausible"},
+             "pr": None, "branch": None, "commit": None,
+             "session": "s", "source": "live", "schema_version": 1},
+        ]
+        state = self._state_with(events)
+        self.assertEqual(len(state.findings), 1)
+        out = render_dashboard(state, pathlib.Path("/tmp/x"), width=120, use_colour=False)
+        self.assertIn("plausible", out)
+        self.assertIn("console.py:509", out)
+        self.assertIn("activity pane still inlines the ref", out)
+        self.assertIn("console.py:509", format_event(events[0], use_colour=False))
+
     def test_frame_fits_declared_height(self):
         # The whole reason `height` exists: the frame must fit the viewport, or the top of
         # the dashboard scrolls off-screen and the counters are invisible. Pack in a mix of

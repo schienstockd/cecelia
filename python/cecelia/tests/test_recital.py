@@ -15,8 +15,9 @@ Uses the `claude_runner` seam to bypass real subprocess calls — same pattern a
   without a follow-up edit.
 - **Outcome-tag-requiring findings emit `_finding` rows** — `**confirmed**` (fanout) and
   `**should reuse**` (convention) each land as one pending log row with a deterministic slug;
-  `**plausible**` / `**potential duplicate**` do NOT, so pending↔resolution stays 1:1 with the
-  hook's tag-count check (per FINDINGS_EMISSION_PLAN.md Decision 2).
+  `**plausible**` / `**potential duplicate**` land as slug-less `_advisory` rows instead, so the
+  console shows them while pending↔resolution stays 1:1 with the hook's tag-count check (per
+  FINDINGS_EMISSION_PLAN.md Decision 2).
 - **Slugs are deterministic** across runs on the same (file, line, marker) — the author can
   re-run recital between commits and quote the same slug.
 - **Recital body prefixes `[slug]` on each outcome-tag-requiring bullet** — so the author sees
@@ -259,25 +260,64 @@ class FindingsEmissionTest(unittest.TestCase):
         self.assertEqual(body.count("- [conv-"), 2)
         self.assertNotIn("PARSE WARNING", body)
 
-    def test_plausible_and_potential_duplicate_are_not_emitted(self):
-        # Only outcome-tag-requiring markers produce `_finding` rows — the pending↔resolution
-        # contract stays 1:1 with the hook's tag-count check.
+    def test_plausible_and_potential_duplicate_emit_advisory_rows_only(self):
+        # Advisory markers get no `_finding` row (the pending↔resolution contract stays 1:1 with
+        # the hook's tag-count check) but do get a slug-less `_advisory` row, so the console
+        # shows them.
         def fake(prompt: str) -> str:
             if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
                 return "- **foo.jl:1** — maybe [**plausible**]"
             return "- **bar.vue:2** — hmm [**potential duplicate**]"
 
-        run_recital("some diff", claude_runner=fake)
+        body = run_recital("some diff", claude_runner=fake)
 
         finding_events = [e for e in self._events() if e["event"].endswith("_finding")]
         self.assertEqual(finding_events, [])
-        # But reviewer _run events still fire — both reviewers ran. (The mechanical
-        # inventory check also runs, but is scoped separately.)
+        advisories = [(e["event"], e["payload"]) for e in self._events()
+                      if e["event"].endswith("_advisory")]
+        self.assertEqual(advisories, [
+            ("fanout_audit_advisory",
+             {"file": "foo.jl", "line": 1, "desc": "maybe", "marker": "plausible"}),
+            ("convention_check_advisory",
+             {"file": "bar.vue", "line": 2, "desc": "hmm", "marker": "potential duplicate"}),
+        ])
+        # No slug in the body either — nothing for the author to tag.
+        self.assertNotIn("- [fanout-", body)
+        self.assertNotIn("- [conv-", body)
         reviewer_run_events = [
             e for e in self._events()
             if e["event"] in {"fanout_audit_run", "convention_check_run"}
         ]
         self.assertEqual(len(reviewer_run_events), 2)
+
+    def test_real_plausible_bullet_shape_emits_advisory(self):
+        # A real reviewer bullet shape: backticked symbol, `:LINE` in bold, the
+        # marker tag bolded inside the brackets at the end of a long line.
+        def fake(prompt: str) -> str:
+            if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
+                return (
+                    "- **python/cecelia/effectiveness/console.py:509** — `_finding_head_line`, "
+                    "activity pane. It still calls the head line with the default "
+                    "`with_context=True`. [**plausible**]"
+                )
+            return "no convention check needed"
+
+        run_recital("some diff", claude_runner=fake)
+
+        rows = [e["payload"] for e in self._events() if e["event"] == "fanout_audit_advisory"]
+        self.assertEqual([(r["file"], r["line"]) for r in rows],
+                         [("python/cecelia/effectiveness/console.py", 509)])
+
+    def test_advisory_marker_off_bullet_surfaces_parse_warning(self):
+        def fake(prompt: str) -> str:
+            if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
+                return "The activity pane may need the same fix **plausible**."
+            return "no convention check needed"
+
+        body = run_recital("some diff", claude_runner=fake)
+
+        self.assertIn("advisory marker(s)", body)
+        self.assertEqual([e for e in self._events() if e["event"].endswith("_advisory")], [])
 
     def test_multiple_findings_in_one_reviewer_output_each_emit(self):
         def fake(prompt: str) -> str:
@@ -295,7 +335,7 @@ class FindingsEmissionTest(unittest.TestCase):
             e for e in self._events()
             if e["event"] in {"fanout_audit_finding", "sibling_audit_finding"}
         ]
-        self.assertEqual(len(finding_events), 2)  # plausible dropped
+        self.assertEqual(len(finding_events), 2)  # plausible is an advisory, not a finding
         self.assertEqual({e["payload"]["file"] for e in finding_events}, {"a.jl", "b.jl"})
 
     def test_slug_is_deterministic_across_runs(self):
