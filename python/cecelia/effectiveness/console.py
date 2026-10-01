@@ -428,11 +428,12 @@ def _render_finding_block(event: dict, *, width: int, use_colour: bool,
     to fix. The branch/commit anchor sits on its own row under the head, aligned with the
     description text — it doesn't count against `desc_line_cap`.
     """
-    out = [_finding_head_line(event, use_colour=use_colour, with_context=False)]
+    # Head and ref rows clip to the width like activity rows; only the description wraps.
+    out = [_clip(_finding_head_line(event, use_colour=use_colour, with_context=False), width)]
     indent = " " * _DESC_INDENT
     ctx = _fmt_context(event)
     if ctx:
-        out.append(indent + "  " + _col(_DIM, ctx, use_colour=use_colour))
+        out.append(_clip(indent + "  " + _col(_DIM, ctx, use_colour=use_colour), width))
     desc = ((event.get("payload") or {}).get("desc") or "").strip()
     if not desc or desc_line_cap <= 0:
         return out
@@ -470,7 +471,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     title = _col(_BOLD, "Cecelia recital console", use_colour=use_colour)
     path_str = _col(_DIM, str(log_path), use_colour=use_colour)
     time_str = _col(_GREY, now, use_colour=use_colour)
-    chrome: list[str] = [f"{title}  {path_str}   {time_str}"]
+    chrome: list[str] = [_clip(f"{title}  {path_str}   {time_str}", width)]
 
     total_runs = sum(state.tally.runs.values())
     total_errored = sum(state.tally.errored_runs.values())
@@ -502,7 +503,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     if seen_mechs:
         chrome.append(_hr("by mechanism", width, use_colour=use_colour))
         for mech in seen_mechs:
-            chrome.append("  " + _tally_row(state.tally, mech, use_colour=use_colour))
+            chrome.append(_clip("  " + _tally_row(state.tally, mech, use_colour=use_colour), width))
         chrome.append("")
 
     # ── Budgeted panes ────────────────────────────────────────────────────────────────────
