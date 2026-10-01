@@ -1,6 +1,6 @@
 # Agent overnight run — "track everything, give me the behaviours, I'm back tomorrow"
 
-**Status:** in progress (2026-10-02) — P0 shipped (#1335, #1346); P1–P3 built on `feat/agent-eval-fixtures` (harness verified end to end with a scripted stand-in, no agent run yet); P4–P5 open.
+**Status:** in progress (2026-10-02) — P0 shipped (#1335, #1346); P1–P3 shipped (#1350; harness verified with a scripted stand-in, no agent run yet); P4 built, not enabled; P5 L1/L2 design proposed, needs a decision.
 **Audit this builds on:** [`docs/audit/agent-sandbox-value-name.md`](../audit/agent-sandbox-value-name.md).
 
 ## Goal
@@ -145,16 +145,47 @@ Known unknowns for the first real run: whether the GPU is visible inside the bwr
 falls back to CPU — slower, still fine at this size); whether `julia --project=app` precompiles in the
 fresh checkout within the timeout (the depot is shared, caches are writable).
 
-### P4 — midnight timer + run record
-Own timer (not Monday), shared flock with the CLAUDE.md eval, `ConditionACPower`. Record reuses
-`record.py`'s shape: score per tier, canary, navigation, findings, delta vs previous night, pinned
-SHA + Claude Code version.
+### P4 — midnight timer + run record — **built, NOT enabled**
+`scripts/agent_eval/cron_night.sh` + `systemd/agent-eval-night.{service,timer}`: nightly 00:30, one
+vague + one guided brief on a fresh synthetic fixture, `$CECELIA_AGENT_NIGHT_BUDGET` (default $5) each,
+records copied to `~/.cecelia-effectiveness/agent-runs/<stamp>-<brief>.{json,md}`, run roots under
+`/tmp/cecelia-agent-night` pruned after 7 days. Shares the CLAUDE.md eval's lock (busy = skip),
+`ConditionACPower`, not `Persistent`. Wiring verified with `CECELIA_AGENT_NIGHT_ARGS=--scripted-ceiling`
+and the lock-held skip.
+
+**Enable only after one manual vague + guided run has measured the cost (Decision 8):**
+
+```bash
+cp scripts/agent_eval/systemd/agent-eval-night.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now agent-eval-night.timer
+```
+
+Open: delta vs the previous night in the record (the CLAUDE.md eval's `record.py` delta is the model);
+a real-crop brief in the nightly set once the synthetic one is understood.
 
 ### P5 — act on findings
 Expected first candidates, in order of what P3 shows: close audit L1/L2 behind an explicit autonomous
-flag (don't move `_active`; refuse existing value_names); task-interface or doc fixes where the agent
-got lost; a second tier on a copy of jFWePN scored against the user's own analysis as reference
-(differential testing — no ground truth, but a real-data check).
+flag; task-interface or doc fixes where the agent got lost; more real-data crops (jFWePN) on the
+`crop.py` tier.
+
+**L1/L2 design — PROPOSAL, needs Dominik's call (not built).** L1 is now confirmed by a run (P2).
+L2 is harder than "refuse an existing output name": tracking, track measures, HMM, motif and clustering
+write *in place* into the value_name (or the pops' value_name) they are given, so the rule has to say
+which value_names an unattended run may touch at all.
+
+- *Recommended:* an **autonomous prefix**. The runner sets `CECELIA_AUTONOMOUS_PREFIX=<prefix>` (never
+  the GUI). While set: (L1) writers do not move `_active` — `versioned_set_field!`'s `set_active`
+  default, plus the explicit flips in measureLabels / composite / `versioned_filepath_write!`; (L2)
+  `run_task`'s pre-flight refuses a task whose write target does not start with the prefix. The write
+  target needs a per-task declaration in the task JSON (`"writes": "output" | "input" | "pops"`), with a
+  ratchet test that every result-producing task declares one — the same pattern as `requires`.
+  "Accept the run" = a new `promote_value_name!(img, field, vn)` that flips `_active`; it is also the
+  missing rollback lever. Stateless, survives a crashed run, readable in a file listing.
+- *Alternative:* a session ledger (value_names created since the run started are writable). No naming
+  rule, but needs state that a crash can leave stale, and an in-place write into a pre-existing
+  value_name is only caught if the ledger is right.
+- Touchpoints (prefix): 3 `_active` sites + `versioned_set_field!`, one pre-flight in `run_task`, a
+  `writes` field on every result-producing task JSON + its ratchet, `promote_value_name!` + test.
 
 ## Out of scope
 
