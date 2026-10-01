@@ -21,7 +21,6 @@ Verdicts:
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import importlib.util as _importlib_util
 import os
 import pathlib
@@ -48,13 +47,6 @@ RETIRE_STREAK = 3
 _INFRA_PROMPTS = {"canary"}
 
 
-def _parse_ts(ts: str) -> _dt.datetime:
-    try:
-        return _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except ValueError:
-        return _dt.datetime.min.replace(tzinfo=_dt.timezone.utc)
-
-
 def _counts(per_prompt: dict, pid: str) -> tuple[int, int, int] | None:
     r = per_prompt.get(pid)
     if not r:
@@ -69,19 +61,11 @@ def prompt_verdicts(events: _t.Sequence[dict], catalog: _t.Sequence[str],
     full = [s for s in _rollup._suites(events)
             if _rollup._suite_arm(s) == "with" and _rollup._is_full_pass(s)][:passes]
     latest = full[0] if full else None
-    # Run rows share the suite row's session id (`_ensure_eval_session`) and land inside
-    # its `duration_s` window — both, because a pass launched from an interactive Claude
-    # Code session inherits that session's id, shared with any other pass run from it.
     traces: dict[str, list[str]] = {}
     if latest is not None:
-        end = _parse_ts(latest.get("ts", ""))
-        start = end - _dt.timedelta(seconds=(latest.get("payload", {}) or {}).get("duration_s", 0) + 60)
-        for e in events:
+        for e in _rollup.pass_runs(events, latest):
             p = e.get("payload", {}) or {}
-            if (e.get("event") == "claude_md_eval_run" and p.get("trace_dir")
-                    and e.get("session") == latest.get("session")
-                    and start <= _parse_ts(e.get("ts", "")) <= end
-                    and p.get("verdict") != "compliant"):
+            if p.get("trace_dir") and p.get("verdict") != "compliant":
                 traces.setdefault(p.get("prompt_id"), []).append(p["trace_dir"])
 
     out = []
