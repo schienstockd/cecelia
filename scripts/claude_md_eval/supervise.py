@@ -123,7 +123,7 @@ def clean_env(**extra: str) -> dict:
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(_PIXI_ENV_PREFIXES) and k != "PYTHONPATH"}
     env["PATH"] = os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep)
-                                  if f"{os.sep}.pixi{os.sep}envs{os.sep}" not in p)
+                                  if "/.pixi/envs/" not in p.replace("\\", "/"))   # either separator
     return {**env, **extra}
 
 
