@@ -67,6 +67,15 @@ def view_camera(camera: Mapping, snap_h: Optional[float], n_x: int, n_y: int,
             "pitch": float(angles[0] or 0) * math.pi / 180}
 
 
+def plane_level(zoom: float, n_levels: int) -> int:
+    """The pyramid level the viewer's 2D view shows at ``zoom`` (L0 pixels per screen pixel):
+    ``pickTileLevel`` in ``utils/volumeViewer.ts`` on a first pick (a movie has no previous level
+    to hold), pinned by ``shaders/golden.json`` → ``planeLevel``. Assumes ×2 levels, as it does."""
+    if n_levels <= 1 or not math.isfinite(zoom) or zoom <= 1:
+        return 0
+    return max(0, min(n_levels - 1, math.floor(math.log2(zoom))))
+
+
 def _js_round(v: np.ndarray) -> np.ndarray:
     """``Math.round``: half rounds UP (NumPy's ``round`` is half-to-even)."""
     return np.floor(v + 0.5)
@@ -104,13 +113,34 @@ def label_palette() -> np.ndarray:
     return np.concatenate([rgb, np.full((len(rgb), 1), 255, np.uint8)], axis=1)
 
 
+#: Width of a label colour table (``label_table``): ids wrap onto rows of this many texels. Any 2D
+#: texture holds 4096 per side, so a table addresses 16.7 M ids before the last row runs out.
+LABEL_TABLE_W = 4096
+
+
+def label_table(ids: Sequence[int], rgb: Sequence[Sequence[float]]) -> np.ndarray:
+    """Per-label colours → the shader's colour TABLE (``labColour`` with a negative row count):
+    ``(rows, LABEL_TABLE_W, 4)`` uint8, id at ``(id // W, id % W)``, alpha 255 = drawn, 0 = not.
+    ``rgb`` in 0..1, the same linear values the palette carries. Pass ``-LABEL_TABLE_W`` as
+    ``lab.paletteRows``."""
+    ids = np.asarray(ids, np.int64).reshape(-1)
+    rows = int(ids.max()) // LABEL_TABLE_W + 1 if len(ids) else 1
+    out = np.zeros((rows * LABEL_TABLE_W, 4), np.uint8)
+    keep = ids > 0
+    if keep.any():
+        out[ids[keep], :3] = _js_round(np.clip(np.asarray(rgb, np.float64).reshape(-1, 3)[keep], 0, 1) * 255)
+        out[ids[keep], 3] = 255
+    return out.reshape(rows, LABEL_TABLE_W, 4)
+
+
 class MipHost:
     """One device + the MIP pipeline and its overlay passes. Set the inputs, then ``render`` a frame.
 
     Inputs, in the viewer's layouts:
       - ``volume``: ``(c, z, y, x)`` uint16 — channels stacked along z in ONE ``r16uint`` 3D texture.
       - ``lut``: ``(MAX_CHANNELS, LUT_STOPS, 4)`` uint8 — one ramp row per channel (``lut_rows``).
-      - ``palette``: ``(rows, 4)`` uint8 — label colours, ``id % rows`` (``label_palette``).
+      - ``palette``: ``(rows, 4)`` uint8 — label colours, ``id % rows`` (``label_palette``); or a
+        ``(rows, LABEL_TABLE_W, 4)`` colour table (``label_table``).
       - ``labels``: ``(z, y, x)`` uint32 for the same planes, or ``None`` (labels off).
       - ``points``: ``(n, 7)`` float32 — centre xyz (image µm), rgb, z plane (``buildPointBuffer``).
       - ``segments``: ``(n, 10)`` float32 — from xyz, to xyz, rgb, end plane (``buildTrackBuffer``).
@@ -206,9 +236,10 @@ class MipHost:
         self._bind_group = None
 
     def set_palette(self, palette: np.ndarray) -> None:
-        if palette.ndim != 2 or palette.shape[1] != 4 or palette.dtype != np.uint8:
-            raise ValueError(f"palette must be (rows, 4) uint8, got {palette.dtype} {palette.shape}")
-        self._pal = self._texture((palette.shape[0], 1, 1), "rgba8unorm", "2d", palette, 4)
+        if palette.dtype != np.uint8 or palette.shape[-1] != 4 or palette.ndim not in (2, 3):
+            raise ValueError(f"palette must be (rows, 4) or (rows, w, 4) uint8, got {palette.dtype} {palette.shape}")
+        size = (palette.shape[0], 1, 1) if palette.ndim == 2 else (palette.shape[1], palette.shape[0], 1)
+        self._pal = self._texture(size, "rgba8unorm", "2d", palette, 4)
         self._bind_group = None
 
     def set_labels(self, labels: Optional[np.ndarray]) -> None:

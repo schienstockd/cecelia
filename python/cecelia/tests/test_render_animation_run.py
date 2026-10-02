@@ -100,6 +100,15 @@ class RenderAnimationRunTest(unittest.TestCase):
         f = _frames(out)[0]
         self.assertGreater(f[30:34, 30:34, 1].mean(), 150, "the point at the volume centre is not drawn")
 
+    def test_title_card_is_prepended_only_when_asked(self):
+        # The card has to reach the movie (it is prepended after the encode, so a card in params that
+        # the runner drops ships a movie without it), and a record with none must not grow one.
+        plain = self._run()
+        carded = self._run(titleCard={"title": "Runner test", "durationSec": 1.0})
+        self.assertEqual(len(plain), 2)
+        self.assertGreaterEqual(len(carded), 2 + 2)           # 2 fps × 1 s of card, then the movie
+        self.assertLess(int(carded[0].mean()), 120)           # the dark card comes first
+
     def _point_frame(self, **extra):
         """t = 1 (the block bottom-right, red) with one green point inside the block."""
         from cecelia.writers import render_animation_run
@@ -131,6 +140,67 @@ class RenderAnimationRunTest(unittest.TestCase):
             None, {"pointPx": 1, "tailPx": 1, "borderPx": 0})
         self.assertEqual(lanes(0)['vp.ortho'], 1)
         self.assertEqual(lanes(1)['vp.ortho'], 0)
+
+
+
+class Render2DRunTest(unittest.TestCase):
+    """2D movies through the same pass: a slab of planes, head-on, as the viewer's 2D view draws."""
+
+    @classmethod
+    def setUpClass(cls):
+        _shared_host()
+        cls.d = tempfile.mkdtemp()
+        img = np.zeros((1, 1, N, N, N), np.uint16)
+        img[0, 0, 3, 4:12, 4:12] = 1000       # plane 3: top-left
+        img[0, 0, 20, 20:28, 20:28] = 1000    # plane 20: bottom-right
+        cls.zarr = _store(os.path.join(cls.d, "img.zarr"), img, "tczyx")
+        lab = np.zeros((1, N, N, N), np.uint32)
+        lab[:, :, 4:12, 4:12] = 2
+        lab[:, :, 20:28, 20:28] = 5
+        cls.labels = _store(os.path.join(cls.d, "lab.zarr"), lab, "tzyx")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.d, ignore_errors=True)
+
+    def _frame(self, z_range, overlays=None, plane_filter=None, **extra):
+        from cecelia.writers import render_animation_run
+        out = os.path.join(self.d, f"f{len(os.listdir(self.d))}.mp4")
+        st = {"t": 0, "ndisplay": 2, "zRange": z_range, "snapH": N,
+              "camera": {"center": [z_range[0], N / 2, N / 2], "zoom": 1.0, "angles": [0, 0, 0]},
+              "specs": [{"lo": 0, "hi": 1000, "lut": [[0, 0, 0], [1, 0, 0]], "visible": True}]}
+        if overlays:
+            st["overlays3d"] = overlays
+        if plane_filter:
+            st["planeFilter"] = plane_filter
+        render_animation_run.run({"zarrPath": self.zarr, "outPath": out, "canvasH": 64, "canvasW": 64,
+                                  "fps": 2, "states": [st, st], **extra})
+        return _frames(out)[0]
+
+    def test_one_plane_is_that_plane(self):
+        f = self._frame([3, 3])[..., 0]
+        self.assertGreater(f[10:22, 10:22].mean(), 150)
+        self.assertLess(f[42:54, 42:54].mean(), 40)       # plane 20 is not in the slab
+
+    def test_a_slab_is_its_max(self):
+        f = self._frame([0, N - 1])[..., 0]
+        self.assertGreater(f[10:22, 10:22].mean(), 150)
+        self.assertGreater(f[42:54, 42:54].mean(), 150)
+
+    def test_colour_table_draws_only_its_labels_in_their_colours(self):
+        f = self._frame([3, 3], labelsPath=self.labels, labelOpacity=1.0, labelContourPx=0,
+                        labelColours={"ids": [2], "colours": [[0.0, 0.0, 1.0]]})
+        tl = f[10:22, 10:22].reshape(-1, 3).mean(0)
+        self.assertGreater(tl[2], 150)                      # label 2 in its table colour
+        self.assertLess(tl[0], 60)
+        self.assertLess(f[42:54, 42:54, 2].mean(), 40)      # label 5 is not in the table
+
+    def test_points_off_the_plane_are_hidden(self):
+        ov = {"points": {"x": [16.0], "y": [16.0], "z": [20.0], "colour": [[0.0, 1.0, 0.0]]}}
+        on = self._frame([20, 20], overlays=ov, plane_filter={"points": [18, 22]}, pointSizePx=4)
+        off = self._frame([3, 3], overlays=ov, plane_filter={"points": [1, 5]}, pointSizePx=4)
+        self.assertGreater(on[30:34, 30:34, 1].mean(), 150)
+        self.assertLess(off[30:34, 30:34, 1].mean(), 40)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ describe('buildBatchMovieConfig', () => {
     expect(c.pointsSize).toBe(6)
     expect(c.pointBorder).toBe(0)            // no outline unless the look carries the viewer's
     expect(c.labelOpacity).toBe(0.7)         // the viewer's default fill opacity
+    expect([c.pointZTol, c.trackZTol]).toEqual([2, 2])   // the viewer's default z tolerances
   })
 
   it('sends ALL segmentations when tracks are on', () => {

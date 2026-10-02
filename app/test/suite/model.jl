@@ -577,7 +577,7 @@ end
     # would otherwise silently inherit the exemption.
     # Meta-ratchet: growing the allow-list requires bumping `allowed_max` in the same PR, so a
     # reviewer sees "weaken the check" attempts.
-    allowed_max = 5
+    allowed_max = 4
     allowed = Dict(
         # the atomic writer itself — this IS the tmp-then-rename implementation
         joinpath("app", "src", "utils.jl")      => [raw"""open(tmp, "w") do io"""],
@@ -589,10 +589,6 @@ end
         # (moved from `omezarr.jl` when it was split into `omezarr/`; `staging.jl` is the new home)
         joinpath("app", "src", "tasks", "importImages", "omezarr", "staging.jl")
                                                 => [raw"""open(dst, "w") do d"""],
-        # raw RGB24 frames streamed to the run's task dir and handed straight to the encoder, then
-        # deleted (the offline renderer, docs/todo/WEB_VIEWER_PLAN.md P5). Multi-GB and transient: staging a
-        # copy to rename would double the disk for a file nothing ever reads back.
-        joinpath("api", "src", "movie_render.jl") => [raw"""open(raw, "w") do io"""],
     )
     offenders = String[]
     for root in roots, (dir, _, files) in walkdir(root), f in files

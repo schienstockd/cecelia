@@ -84,7 +84,7 @@ export interface BatchMovieCfg {
   // The batch panel enumerates every tracked segmentation on the first selected image and lets the
   // user pick which to draw and what colour each gets. When empty (or `showPops` on), the backend
   // falls back to the single-source `allTracks` grey path — the pre-picker behaviour. Backend:
-  // `_resolve_movie_overlays_mask` composes one `build_overlays_for` closure per visible source
+  // `_resolve_movie_overlays_mask` composes one `build_overlays3d_for` closure per visible source
   // (each with its own `all_tracks_colour`) and merges their outputs, so a fXgbTl movie with cpSAM
   // + flowTom + coastalFg all ticked draws all three simultaneously, each in its own colour.
   trackSources?: Record<string, { visible: boolean; colour: string }>
@@ -102,6 +102,10 @@ export interface BatchMovieCfg {
   // via `viewerLook`. Absent = no outline and the viewer's default opacity (`LABEL_OPACITY`).
   pointBorder?: number
   labelOpacity?: number
+  // How many planes either side of a 2D movie's plane its points / tail ends still show — the
+  // viewer's z tolerances. Absent = the viewer's default, 2.
+  pointZTol?: number
+  trackZTol?: number
   titleCard?: TitleCardCfg
   // Which stretch of the timelapse each movie sweeps, as FRAME INDICES; `tEnd` null/absent = the last
   // frame, which is what every recording did before the control existed. Applied across a batch of
@@ -153,6 +157,8 @@ export interface BatchMovieRequestConfig {
   pointsSize: number
   pointBorder: number
   labelOpacity: number
+  pointZTol: number
+  trackZTol: number
   colourLabels: boolean
   colourOverrides: Record<string, string>
   titleCard: TitleCardCfg
@@ -227,6 +233,8 @@ export function buildBatchMovieConfig(
     pointsSize: cfg.pointsSize ?? 6,
     pointBorder: cfg.pointBorder ?? 0,
     labelOpacity: cfg.labelOpacity ?? LABEL_OPACITY,
+    pointZTol: cfg.pointZTol ?? 2,
+    trackZTol: cfg.trackZTol ?? 2,
     colourLabels: !!cfg.colourLabels,
     colourOverrides: colourOverrides ?? {},
     titleCard: {

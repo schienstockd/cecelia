@@ -7,7 +7,7 @@ import { TILE_WGSL } from './tileShader'
 import { BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL, makeBrickShader } from './brickShader'
 import { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
 import { PICK_BITSET_CAPACITY, PICK_BITSET_WORDS, labelPaletteBytes, LABEL_PALETTE_N } from '../../utils/viewerLabels'
-import { lutTextureBytes, type ViewerChannel, type ViewerMeta } from '../../utils/volumeViewer'
+import { lutTextureBytes, pickTileLevel, type ViewerChannel, type ViewerMeta } from '../../utils/volumeViewer'
 import { applyViewStateToBrowser, type ViewerViewState } from '../../utils/viewer/viewState'
 import LABEL_PALETTE from './shaders/label_palette.json'
 
@@ -133,6 +133,13 @@ describe('the host-side inputs — the shared golden', () => {
         const o = (Number(c) * LUT_STOPS + Number(i)) * 4
         expect(Array.from(bytes.slice(o, o + 4))).toEqual(want)
       }
+    }
+  })
+
+  it('2D level for a zoom (pickTileLevel, first pick)', () => {
+    for (const c of GOLDEN.planeLevel.cases) {
+      const meta = { levels: Array.from({ length: c.nLevels }, () => ({})) } as unknown as ViewerMeta
+      expect(pickTileLevel(c.zoom, meta)).toBe(c.level)
     }
   })
 

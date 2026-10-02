@@ -51,6 +51,10 @@
     ov_look = _overlays_raw_from_config(Dict{String,Any}("pointBorder" => 3, "labelOpacity" => 0), true)
     @test ov_look["pointBorderPx"] == 3
     @test ov_look["maskOpacity"] == 0.0
+    # the viewer's z tolerances — absent = its default, 2
+    @test (ov_mask["pointZTol"], ov_mask["trackZTol"]) == (2, 2)
+    ov_tol = _overlays_raw_from_config(Dict{String,Any}("pointZTol" => 0, "trackZTol" => 5), true)
+    @test (ov_tol["pointZTol"], ov_tol["trackZTol"]) == (0, 5)
     # The single record's outline width comes from the REQUEST, merged over the viewer's `look` (which
     # never carries it) — it used to fall back to 1 px whatever the viewer said.
     look = Dict{Symbol,Any}(:showPopulations => false)
@@ -63,7 +67,7 @@
     @test ov_gated["allCells"] === false
 
     # `popsFilter` on the config surfaces as `popPaths` on the overlay dict — the batch picker's
-    # per-image subset, forwarded to `build_overlays_for` / `build_mask_for` via
+    # per-image subset, forwarded to `build_overlays3d_for` / `mask_id_colours` via
     # `_resolve_movie_overlays_mask`. Absent / empty = no filter (all pops rendered).
     ov_no_pf = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true), false)
     @test !haskey(ov_no_pf, "popPaths")

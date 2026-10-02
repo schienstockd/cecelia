@@ -256,7 +256,7 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
   }
 
   // ── Trackclust ribbons — a second ribbon family, gated on showPops ─────────
-  // The movie's trackclust overlay reaches `build_overlays_for` through the same overlay gate as
+  // The movie's trackclust overlay reaches `build_overlays3d_for` through the same overlay gate as
   // the other pop-driven overlays (`_overlays_raw_from_config` needs one of showPops/showTracks/
   // showGatedTracks/has_mask). Alone it renders nothing — trackclust ribbons need a pops context
   // to attach to. Mirror that: only add trackclust ribbons when the pops branch is running.

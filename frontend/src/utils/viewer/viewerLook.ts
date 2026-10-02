@@ -34,6 +34,8 @@ export interface ViewerLookInput {
   pointSize: number
   pointBorder: number
   labelOpacity: number
+  pointZTol: number
+  trackZTol: number
   tailWidth: number
   tailLength: number
   labelContour: number
@@ -81,6 +83,8 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     pointsSize: i.pointSize,
     pointBorder: i.pointBorder,
     labelOpacity: i.labelOpacity,
+    pointZTol: i.pointZTol,
+    trackZTol: i.trackZTol,
     tailWidth: i.tailWidth,
     tailLength: i.tailLength,
     trackColourMode: i.trackColourMode,
@@ -141,6 +145,8 @@ export function readViewerLook(img: LookImage, setUid: string,
     pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
     pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
     labelOpacity: settings.viewerLabelOpacity,
+    pointZTol: settings.viewerPointZTol,
+    trackZTol: settings.viewerTrackZTol,
     tailWidth: settings.viewerTailWidth,
     tailLength: settings.viewerTailLength,
     labelContour: settings.viewerLabelContour,

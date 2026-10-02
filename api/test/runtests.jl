@@ -202,8 +202,8 @@ include(joinpath(@__DIR__, "suite", "movie_frames_and_overlays.jl"))
 
 # ── overlay_author trio testsets ──────────────────────────────
 # Three testsets covering overlay_author (shared between the live viewer and the offline
-# movie renderer): hex + pixel transform (colour parse + world→pixel maths), build_overlays_for
-# (labelProps → per-cell overlays), build_mask_for guard + id_colours dict.
+# movie renderer): hex + pixel transform (colour parse + world→pixel maths), build_overlays3d_for
+# (labelProps → per-cell overlays), mask_id_colours (a population mask's colours).
 include(joinpath(@__DIR__, "suite", "overlay_author.jl"))
 
 # ── Offline renderer plumbing testsets ────────────────────────

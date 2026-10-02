@@ -12,8 +12,8 @@
 # only include lines + section-header comments — same shape as app/test/suite/*.jl.
 
 @testset "API: overlay_author — build_overlays3d_for on the labelProps fixture" begin
-    # 3D analogue of build_overlays_for. Same fixture, same wide-open pop, but NATIVE VOXEL coords
-    # (no `PixelTransform`) and a `z` field on both points AND segments — the movie renderer's
+    # Same fixture, same wide-open pop as the overlay author's testsets: NATIVE VOXEL coords and a
+    # `z` field on both points AND segments — the movie renderer's
     # shader projects them with the raycast's own camera, so they must arrive as positions.
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
@@ -68,21 +68,18 @@
                                     "trackSources" => Dict{String,Any}(
                                         "B" => Dict{String,Any}("visible" => true, "colour" => "#ff0000")))
             ov_cfg = _overlays_raw_from_config(look, false)
-            b2, b3, _ = _resolve_keyframe_overlay_builders(img, ov_cfg)
-            @test b2 !== nothing && b3 !== nothing
+            b3, _ = _resolve_keyframe_overlay_builders(img, ov_cfg)
+            @test b3 !== nothing
             red = RGB{N0f8}(1, 0, 0)
             p3, s3 = b3(5)
             @test s3 !== nothing && length(s3.x0) > 0          # the tails are drawn
             @test p3 === nothing                              # and no dots: points are populations
             @test all(==(red), s3.colour)                     # in the source's colour
-            p2, s2 = b2(100, 100, nothing, 0)(5)
-            @test s2 !== nothing && all(==(red), s2.colour)   # 2D keyframes alike
-            @test p2 === nothing
             # two sources → one merged closure carrying both colours
             look2 = merge(look, Dict{String,Any}("trackSources" => Any[
                 Dict{String,Any}("valueName" => "B", "colour" => "#ff0000"),
                 Dict{String,Any}("valueName" => "B", "colour" => "#0000ff")]))
-            _, b3b, _ = _resolve_keyframe_overlay_builders(img, _overlays_raw_from_config(look2, false))
+            b3b, _ = _resolve_keyframe_overlay_builders(img, _overlays_raw_from_config(look2, false))
             _, s3b = b3b(5)
             @test length(s3b.x0) == 2 * length(s3.x0)
             @test Set(s3b.colour) == Set([red, RGB{N0f8}(0, 0, 1)])
@@ -98,18 +95,14 @@ end
     # points that could drift.
 
     # No image → no builders (channels-only movie).
-    b2d, b3d = _resolve_keyframe_overlay_builders(nothing, nothing)
-    @test b2d === nothing
-    @test b3d === nothing
+    @test _resolve_keyframe_overlay_builders(nothing, nothing) === (nothing, nothing)
     # Image but empty config → still nothing (no draw-request flags).
-    b2d2, b3d2 = _resolve_keyframe_overlay_builders(nothing,
-        Dict{String,Any}("valueName" => "B", "popType" => "flow"))
-    @test b2d2 === nothing && b3d2 === nothing
-    # A mask asked for with no segmentation named → still the THREE-slot shape the recorder unpacks
-    # (it returned two, so `build2d, per_t3d, build_mask = …` threw instead of recording channels-only).
+    @test _resolve_keyframe_overlay_builders(nothing,
+        Dict{String,Any}("valueName" => "B", "popType" => "flow")) === (nothing, nothing)
+    # A mask asked for with no segmentation named → still the two-slot shape the recorder unpacks.
     # `img` is never touched on this path, so any non-nothing stand-in works.
     @test _resolve_keyframe_overlay_builders(:img, Dict{String,Any}("showMask" => true)) ===
-          (nothing, nothing, nothing)
+          (nothing, nothing)
     # Serialisation: a `nothing` closure → nothing, so the state dict stays terse.
     @test _overlays3d_state(nothing, 0) === nothing
     # Empty points-and-segments → nothing (skip the frame's overlay passes).
@@ -133,9 +126,8 @@ end
 end
 
 @testset "API: overlay_author — colourBy + colourOverrides recolour via shared state" begin
-    # The drift-guarantee payoff: `colour_by` + `colour_overrides` plug in ONCE at
-    # `_build_overlay_state`, so pointing 2D and 3D authors at the same column produces the same
-    # per-vertex colours. Fixture is `testpr`/`KDIeEm` with a wide-open pop; we override the
+    # `colour_by` + `colour_overrides` plug in ONCE at `_build_overlay_state`, so every movie's points
+    # take the column's colours. Fixture is `testpr`/`KDIeEm` with a wide-open pop; we override the
     # `centroid_t` column so every cell falls to a known value → override wins uniformly.
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
@@ -171,19 +163,7 @@ end
                              if v isa Real && isfinite(Float64(v))])
             overrides = Dict{String,String}(string(t) => "#00ff00" for t in ts)
 
-            # 2D author with colourBy = centroid_t + total overrides → all points paint green.
-            H = ceil(Int, maximum(Float64.(df.centroid_y))) + 8
-            W = ceil(Int, maximum(Float64.(df.centroid_x))) + 8
-            tf = pixel_transform(H, W)
-            per_t_2d = build_overlays_for(img; value_name = "B", pop_type = "flow", transform = tf,
-                                           colour_by = "centroid_t",
-                                           colour_overrides = overrides)
-            pts, _ = per_t_2d(0)
-            @test pts !== nothing
-            @test length(pts.colour) > 0
-            @test all(c -> c == RGB{N0f8}(0, 1, 0), pts.colour)
-
-            # 3D author, same colourBy + overrides — same colours per vertex.
+            # colourBy = centroid_t + total overrides → every point paints green.
             per_t_3d = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
                                              colour_by = "centroid_t",
                                              colour_overrides = overrides)
@@ -195,10 +175,9 @@ end
             # Partial override — one value overridden, the rest fall to Okabe-Ito. The overridden
             # value's colour matches; some non-overridden values differ.
             partial = Dict{String,String}(string(first(ts)) => "#0000ff")
-            per_t_2d_p = build_overlays_for(img; value_name = "B", pop_type = "flow", transform = tf,
-                                             colour_by = "centroid_t",
-                                             colour_overrides = partial)
-            pts_p, _ = per_t_2d_p(first(ts))
+            per_t_p = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
+                                           colour_by = "centroid_t", colour_overrides = partial)
+            pts_p, _ = per_t_p(first(ts))
             @test pts_p !== nothing
             @test all(c -> c == RGB{N0f8}(0, 0, 1), pts_p.colour)
         finally
@@ -263,7 +242,7 @@ end
     @test length(json_heat) == 5
     @test collect(_heat_stops()) == json_heat
 
-    # Track-mode acceptance: every mode name the browser knows is accepted by build_overlays_for
+    # Track-mode acceptance: every mode name the browser knows is accepted by build_overlays3d_for
     # (no fall-through to the `"track"` default warning inside the function).
     json_modes = [String(m) for m in doc.trackColorModes]
     @test Set(json_modes) == Set(TRACK_COLOR_MODES)

@@ -87,6 +87,12 @@ class GoldenHostInputsTest(unittest.TestCase):
         got = wgpu_host.view_camera({"zoom": 1, "angles": [10, 20, 0]}, None, 100, 80, [1, 1, 1], 400)
         self.assertEqual((got["panX"], got["panY"]), (0, 0))
 
+    def test_plane_level(self):
+        from cecelia.utils import wgpu_host
+        for c in GOLDEN["planeLevel"]["cases"]:
+            with self.subTest(zoom=c["zoom"], n=c["nLevels"]):
+                self.assertEqual(wgpu_host.plane_level(c["zoom"], c["nLevels"]), c["level"])
+
     def test_lut_rows(self):
         from cecelia.utils import wgpu_host
         rows = wgpu_host.lut_rows(GOLDEN["lut"]["luts"])

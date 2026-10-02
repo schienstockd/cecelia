@@ -334,11 +334,11 @@ The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays an
 
 - **One shader source for the viewer and 3D movies.** The WGSL lives in
   `frontend/src/lib/webgpu/shaders/*.wgsl` (+ `constants.json`, `uniforms.json`). The browser expands
-  it (`shaderSource.ts`); 3D movies run the same files headlessly through `wgpu-py`
+  it (`shaderSource.ts`); every movie, 2D and 3D, runs the same files headlessly through `wgpu-py`
   (`python/cecelia/utils/wgpu_host.py`, `writers/render_animation_run.py`). Uniform slots are written
   by lane name on both sides, and the CPU-side inputs (camera from a view state, LUT rows, label
-  palette) are pinned by `shaders/golden.json` in both test suites. 2D movies still render in Julia
-  (`image_render.jl`). See `docs/todo/SHARED_RENDERER_PLAN.md`.
+  palette) are pinned by `shaders/golden.json` in both test suites. Julia's CPU compositor
+  (`image_render.jl`) is left for stills (cards, thumbnails). See `docs/todo/SHARED_RENDERER_PLAN.md`.
 
 ### Multi-atlas contract (WebGPU brick renderer)
 
