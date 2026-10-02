@@ -23,13 +23,22 @@ def _load_curate():
     return mod
 
 
-def _rec(date, scores, *, prompt_hash="h1", sandbox="s1", retries=(), findings=(), cost=1.0):
+def _rec(date, scores, *, prompt_hash="h1", sandbox="s1", retries=(), findings=(), cost=1.0, rescored=None):
+    """`scores` = compliant runs out of 3 per prompt, as logged; `rescored` overrides that per
+    prompt for the stored rescore (no trace on disk, so it is what `rescored_now` falls back to)."""
+    def verdicts(c):
+        return ["compliant"] * c + ["noncompliant"] * (3 - c)
+    traces = []
+    for pid, c in scores.items():
+        now = verdicts((rescored or {}).get(pid, c))
+        traces += [{"prompt_id": pid, "cost_usd": cost if i == 0 else 0.0, "trace": None,
+                    "scores": {"raw": v, "rescored": now[i]}} for i, v in enumerate(verdicts(c))]
     return {
         "date": date, "kind": "pass",
         "run": {"prompt_set": {"hash": prompt_hash}, "sandbox": sandbox, "full_catalog": True,
                 "retries": list(retries)},
         "results": {"per_prompt": {pid: {"raw": {"compliant": c, "total": 3}} for pid, c in scores.items()}},
-        "traces": [{"prompt_id": pid, "cost_usd": cost} for pid in scores],
+        "traces": traces,
         "findings": list(findings),
     }
 
@@ -50,6 +59,15 @@ class RetireTest(unittest.TestCase):
         out = self.c.retire_proposals(_rec("2026-09-30", {"p1": 3, "canary": 3}), self._history())
         self.assertEqual([(p["prompt"], p["sources"]) for p in out],
                          [("p1", ["2026-09-30", "2026-09-23", "2026-09-16"])])   # canary never
+
+    def test_the_streak_is_read_under_one_scorer_not_as_logged(self):
+        # logged green throughout, but today's scorer fails the oldest pass → no streak
+        history = [_rec("2026-09-16", {"p1": 3}, rescored={"p1": 1}), _rec("2026-09-23", {"p1": 3})]
+        self.assertEqual(self.c.retire_proposals(_rec("2026-09-30", {"p1": 3}), history), [])
+        # and the reverse: logged red, green under today's scorer → it retires
+        history = [_rec("2026-09-16", {"p1": 1}, rescored={"p1": 3}), _rec("2026-09-23", {"p1": 3})]
+        self.assertEqual([p["prompt"] for p in self.c.retire_proposals(_rec("2026-09-30", {"p1": 3}), history)],
+                         ["p1"])
 
     def test_an_infra_retry_in_the_window_blocks_it(self):
         out = self.c.retire_proposals(_rec("2026-09-30", {"p1": 3}),

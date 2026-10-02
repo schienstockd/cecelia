@@ -40,6 +40,10 @@ This hook enforces these gates on a commit whose message carries reviewer findin
    hand-typed recital bodies with no real `pixi run recital` invocation, and stale reviews
    from before a rebase. If HEAD SHA can't be captured (not a repo, git missing), the check
    degrades to allow rather than block on its own failure.
+3. **Every logged finding tagged.** Each `_finding` row recital logged for this change (parent
+   SHA + branch) needs a `[slug: outcome]` pair in this commit or an earlier one on the
+   branch — even when the message no longer quotes the finding. A finding fixed and trimmed
+   from the message must still say `fixed_pre_commit`; nothing closes it on the agent's behalf.
 
 P3 of FINDINGS_EMISSION_PLAN.md — log writing
 ---------------------------------------------
@@ -50,7 +54,7 @@ That is what turns the recital's pending `_finding` rows into evidence in the ro
 the presence-check is the only gate.
 
 Merge / cherry-pick / revert commits are skipped entirely: their messages are git-generated,
-and the orphan sweep must not auto-drop a branch's pending findings because a merge landed.
+and gate 3 must not demand tags for a branch's pending findings because a merge landed.
 
 Escape valve
 ------------
@@ -167,7 +171,7 @@ def _same_change(row: dict, head_sha: str, branch: str | None) -> bool:
     so their recitals share a parent SHA. Joining on SHA only let one session's commit
     auto-drop another session's finding (2026-09-30: `card-reshuffle` dropped
     `module-keepalive`'s `fanout-7d998e9e`). `branch=None` (detached HEAD / git failure)
-    falls back to SHA only; callers that WRITE on a match skip instead (see the sweep).
+    falls back to SHA only; gate 3 skips instead (it would block on another worktree's findings).
     """
     if row.get("commit") != head_sha:
         return False
@@ -192,7 +196,7 @@ def _has_matching_run(head_sha: str, branch: str | None = None) -> bool:
 def check(command: str) -> str | None:
     """Return None if the commit message `command` is allowed; else a human-readable reason.
 
-    Two gates:
+    Three gates:
     1. **Outcome-tag presence** — every finding marker (recital's `MARKERS`)
        needs a matching outcome tag (bare or slug-paired). Duplicate slugs are rejected.
     2. **SHA-anchored real-review** — a findings-carrying commit must have at least one
@@ -200,8 +204,9 @@ def check(command: str) -> str | None:
        recital ran against the same tree the commit is being made on top of). Catches
        hand-typed recital bodies with no real `pixi run recital` invocation, and stale
        reviews from before a rebase.
-    3. **Slug form when slugs exist** — if the message uses bare tags and the log holds
-       `_finding` rows for HEAD that no commit has tagged, block and list their slugs.
+    3. **Every logged slug tagged** — if the log holds `_finding` rows for this change that
+       neither this message nor an earlier commit on the branch tags by slug, block and list
+       them — whether the message tags bare, or dropped the finding line altogether.
 
     Gates 2 and 3 are skipped when HEAD SHA cannot be captured (not a repo, git missing) — degrade
     to allow rather than block on our own failure.
@@ -248,19 +253,23 @@ def check(command: str) -> str | None:
                 "to catch. After a rebase, re-run recital: the parent SHA changed. "
                 "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`."
             )
-        # Gate 3: bare tags write nothing to the log, so when recital slugged findings for
-        # this HEAD, a bare-tagged commit would leave them to the orphan sweep and record a
-        # fixed finding as `dropped_no_action`. Require the slug form for those.
-        if head_sha is not None and branch is not None and bare_outcomes:
-            untagged = _untagged_slugs_on_head(head_sha, branch, set(slugs))
-            if untagged:
-                return (
-                    f"Recital logged {len(untagged)} finding(s) for HEAD {head_sha[:8]} that "
-                    f"this commit doesn't tag by slug: {', '.join(sorted(untagged))}. Bare "
-                    "tags like `[fixed_pre_commit]` don't reach the effectiveness log. Use "
-                    "`[<slug>: <outcome>]` for each. "
-                    "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`."
-                )
+    # Gate 3: every finding recital logged for this change needs its slug tagged — bare tags
+    # write nothing to the log, and a finding trimmed from the message (often because it was
+    # fixed) would stay pending with no record of what happened to it.
+    head_sha, branch = _current_head_sha(), _current_branch()
+    if head_sha is not None and branch is not None:
+        untagged = _untagged_slugs_on_head(head_sha, branch, set(slugs))
+        if untagged:
+            listed = "\n".join(f"  - `{slug}` {_where(row)}" for slug, row in sorted(untagged.items()))
+            return (
+                f"Recital logged {len(untagged)} finding(s) for HEAD {head_sha[:8]} that this "
+                f"commit doesn't tag by slug:\n{listed}\n"
+                "Tag each one `[<slug>: fixed_pre_commit]` if you fixed it, else "
+                "`shipped_with_finding`, `false_positive` or `dropped_no_action` with the reason "
+                "on the line — even when the message no longer quotes the finding. Bare tags like "
+                "`[fixed_pre_commit]` don't reach the log. "
+                "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`."
+            )
 
     return None
 
@@ -293,22 +302,28 @@ def write_resolutions(
     return written
 
 
-#: Finding-emitting events the drop sweep considers. `_finding` events land in the log
-#: atomically with the reviewer spawn (`recital.py::_run_reviewer`); if the author trims
-#: the finding from the commit body, the row stays unresolved forever without this sweep.
+#: Finding-emitting events gate 3 considers. `_finding` events land in the log atomically with
+#: the reviewer spawn (`recital.py::_run_reviewer`).
 _FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding"})
-#: Their resolution counterparts. Kept as a frozenset for O(1) membership in the sweep.
+#: Their resolution counterparts.
 _RESOLVED_EVENTS = frozenset({
     "fanout_audit_finding_resolved", "convention_check_finding_resolved",
 })
 
 
+def _where(row: dict) -> str:
+    """`file:line (marker)` of a `_finding` row, for naming it in a block message."""
+    p = row.get("payload") or {}
+    loc = f"{p.get('file') or '?'}:{p['line']}" if p.get("line") else (p.get("file") or "?")
+    return f"{loc} ({p.get('marker') or '?'})"
+
+
 def _untagged_slugs_on_head(head_sha: str, branch: str,
-                            tagged_slugs: set[str]) -> dict[str, str]:
+                            tagged_slugs: set[str]) -> dict[str, dict]:
     """Slugs the recital emitted for this change (`_same_change`: SHA + branch) that neither
-    `tagged_slugs` nor any prior resolution covers, mapped to their `_finding` event name.
+    `tagged_slugs` nor any prior resolution covers, mapped to their `_finding` row.
     Log-read failure → empty."""
-    findings_on_head: dict[str, str] = {}
+    findings_on_head: dict[str, dict] = {}
     resolved_slugs: set[str] = set()
     try:
         for row in read_events():
@@ -317,7 +332,7 @@ def _untagged_slugs_on_head(head_sha: str, branch: str,
             if not slug:
                 continue
             if event in _FINDING_EVENTS and _same_change(row, head_sha, branch):
-                findings_on_head.setdefault(slug, event)
+                findings_on_head.setdefault(slug, row)
             elif event in _RESOLVED_EVENTS and row.get("branch") == branch:
                 # Same branch, any SHA: an earlier commit on this branch may have resolved it.
                 # Not other branches — slugs carry no branch, so two worktrees flagging the
@@ -329,47 +344,8 @@ def _untagged_slugs_on_head(head_sha: str, branch: str,
             if s not in resolved_slugs and s not in tagged_slugs}
 
 
-def write_dropped_for_orphan_slugs(
-    command: str, *, pr: str | None = None, commit: str | None = None,
-    branch: str | None = None,
-) -> int:
-    """Auto-emit `dropped_no_action` for every slug the recital emitted against the current
-    HEAD that this commit neither tags nor previously resolved.
-
-    Closes the "silent drop" gap: before this sweep, an agent could trim a finding line from
-    the commit body and the `_finding` row would stay `unresolved` forever, making the rollup
-    unable to tell "ignored" from "not yet handled." The sweep runs post-presence-check, so
-    an agent that DID tag a slug isn't second-guessed; only slugs on the current HEAD that no
-    commit has ever touched get the auto-drop. `commit` must be the parent SHA (matching the
-    recital row's `commit` field) and `branch` the current branch — `None` for either skips
-    the sweep (the finding→change join is the whole selection; a missing HEAD would broadcast
-    drops across the log, a missing branch across every worktree on the same base). Best-effort like `write_resolutions`: log failures don't block the commit.
-    """
-    if commit is None or branch is None:
-        return 0  # no safe attribution — a SHA-only join drops other worktrees' findings
-
-    tagged_slugs = {slug for slug, _ in _parse_pairs(command)}
-    orphans = _untagged_slugs_on_head(commit, branch, tagged_slugs)
-    written = 0
-    for slug in sorted(orphans):  # sorted so tests get stable ordering
-        resolved_event = _finding_event_for_slug(slug)
-        if resolved_event is None:
-            continue
-        try:
-            append_event(
-                resolved_event,
-                {"slug": slug, "outcome": "dropped_no_action",
-                 "reason": "auto-emitted: finding on HEAD not tagged in commit message"},
-                pr=pr, commit=commit, branch=branch,
-            )
-            written += 1
-        except Exception:  # noqa: BLE001 — best-effort emission
-            pass
-    return written
-
-
 #: Git state files present while a git-generated commit is being made. Their messages carry no
-#: recital, and sweeping on them would auto-drop the branch's pending findings.
+#: recital, and gate 3 on them would demand tags for the branch's pending findings.
 _SEQUENCER_STATE = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")
 
 _HOOKS_PATH = ".githooks"
@@ -424,9 +400,6 @@ def commit_msg_main(message_path: str) -> int:
     # Best-effort: log failures don't block the commit.
     pr, head_sha, branch = _current_pr(), _current_head_sha(), _current_branch()
     write_resolutions(message, pr=pr, commit=head_sha, branch=branch)
-    # Then close orphan slugs — findings the recital emitted for this change that neither this
-    # commit nor any prior one tagged, so the rollup can tell "ignored" from "not yet handled".
-    write_dropped_for_orphan_slugs(message, pr=pr, commit=head_sha, branch=branch)
     return _EXIT_ALLOW
 
 

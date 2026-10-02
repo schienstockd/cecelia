@@ -3,7 +3,7 @@
 
 Design: docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md → Decision 15 and phase 6.
 
-Walks the open items of a run record (owner decisions, proposals, spot checks, the loop review)
+Walks the open items of a run record (owner decisions, proposals, spot checks, the loop review, new bugs)
 one at a time, one key per answer. Every answer is an append-only event in
 `~/.cecelia-effectiveness/review.jsonl`; an undo is a correcting event, never an edit. Nothing here
 touches the repo or the record: the supervisor applies the events at the start of the next pass.
@@ -49,6 +49,7 @@ ANSWERS: dict[str, tuple[str, dict[str, str]]] = {
     "proposal": ("proposal_decision", {"a": "accept", "r": "reject", "d": "defer"}),
     "spot_check": ("spot_check_label", {"r": "real", "f": "false", "u": "unclear"}),
     "loop_review": ("loop_review_decision", {"c": "continue", "t": "retune", "s": "stop"}),
+    "bug": ("bug_status", {"w": "wont_fix", "o": "open"}),
 }
 REVIEW_EVENTS = tuple(e for e, _ in ANSWERS.values())
 _CONTROL = {"n": "skip", "z": "undo", "q": "quit"}
@@ -105,7 +106,7 @@ def current(reviews: _t.Iterable[dict]) -> dict[tuple[str, str, str], dict]:
 
 def apply_reviews(record: dict, reviews: _t.Iterable[dict]) -> dict:
     """`record` with the owner's answers folded in: finding status, proposal decisions, spot-check
-    labels, loop decision. What the supervisor does to the previous record at the start of a pass."""
+    labels, loop decision, bug status. What the supervisor does to the previous record at the start of a pass."""
     now = current(reviews)
     date = record["date"]
 
@@ -129,6 +130,10 @@ def apply_reviews(record: dict, reviews: _t.Iterable[dict]) -> dict:
               if d == date and e == "spot_check_label" and row.get("value") is not None}
     if labels:
         tracking["spot_check_labels"] = labels
+    for b in record.get("bugs", []):
+        row = answer("bug_status", b["id"])
+        if row and row["value"] in _record.BUG_STATUSES:
+            b["status"] = row["value"]
     row = answer("loop_review_decision", "loop")
     if row and tracking.get("loop_review"):
         tracking["loop_review"]["decision"] = row["value"]
@@ -175,10 +180,10 @@ def loop_review(record: dict, history: _t.Sequence[dict], *, run_number: int,
     accepted = sum(1 for (_, e, _), row in answers.items() if e == "proposal_decision" and row.get("value") == "accept")
     labels = [row["value"] for (_, e, _), row in answers.items()
               if e == "spot_check_label" and row.get("value") in ("real", "false")]
-    raw = lambda r: r["results"]["raw"]   # noqa: E731
     return {
         "runs": run_number,
-        "scores": [f"{r['date']} {raw(r)['compliant']}/{raw(r)['total']}" for r in records],
+        # one scorer across the series (Decision 17)
+        "scores": [f"{r['date']} {_record._score(_record._total(_record.rescored_now(r)[0]))}" for r in records],
         "proposals": sum(len(r.get("proposals", [])) for r in history),
         "accepted": accepted,
         "false_positive_rate": f"{labels.count('false')}/{len(labels)}" if labels else "n/a",
@@ -207,6 +212,11 @@ def describe(record: dict, item: dict) -> list[str]:
         if item["kind"] == "spot_check":
             lines.append("Is this finding real? Label it; the supervisor never does.")
         return [ln for ln in lines if ln]
+    if item["kind"] == "bug":
+        b = next(b for b in record.get("bugs", []) if b["id"] == item["ref"])
+        return [f"{b['id']} · {b['key']} · {b['file']}:{b['line']} · branch {b.get('branch') or '?'}",
+                b["desc"], f"Check: {b['why']}",
+                "Leave it open for a session to fix, or answer wont_fix to stop carrying it."]
     if item["kind"] == "proposal":
         p = proposals[item["ref"]]
         return [ln for ln in (f"{p['id']} · {p['kind']}", p["summary"],

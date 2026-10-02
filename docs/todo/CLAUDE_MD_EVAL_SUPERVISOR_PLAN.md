@@ -105,6 +105,21 @@ lost there.
     and N/N is a change; one with a 1/3 or 2/3 side is `noisy`, a hint. At N=3 a 70% prompt still
     shows 3/3 a third of the time. Escalating noisy prompts to N=10 is deferred: two passes had one
     noisy prompt each.
+18. **Each pass sweeps the log for unfixed bugs (2026-10-02).** `bugs.py`, between triage and
+    curation. Candidates are fanout findings logged since the previous pass that nobody marked
+    `fixed_pre_commit` or `false_positive`: `**confirmed**` ones shipped, dropped or never tagged, and
+    every `**plausible**` advisory. The previous record's `open` and `unmerged` bugs are added to them.
+    A finding whose change hasn't reached the pinned SHA (its branch has no commit after the
+    finding's commit, or that commit isn't merged) is `unmerged` and waits. For the rest, Python
+    inlines ±20 lines at `file:line` from the pinned SHA, and one tool-less judge call (Decision 4,
+    $1.50 cap, 40 items) says `live_bug` / `gone` / `not_a_bug`. The record's `bugs` list is the
+    work list (`open` / `unmerged` / `gone` / `dismissed` / `wont_fix`): a session pointed at the
+    record fixes the `open` ones on a normal branch, and the next pass marks them `gone`. New open
+    bugs go on the owner queue, where `wont_fix` stops carrying them. Convention findings are
+    code-shape, not bugs, and stay curation's input; a fixed bug still counts there as evidence
+    about the setup. The supervisor still opens no fix PRs (Decision 14). First dry run on the
+    real log: 24 judged for $0.38, 16 open, and the two confirmed authorship findings mislogged as
+    dropped came back `gone`.
 
 ## Run record (fields)
 

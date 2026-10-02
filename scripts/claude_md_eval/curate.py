@@ -98,11 +98,13 @@ def retire_proposals(current: dict, history: _t.Sequence[dict]) -> list[dict]:
     window = comparable_window(history, current)[:RETIRE_STREAK]
     if len(window) < RETIRE_STREAK:
         return []
+    # one scorer across the window (Decision 17), so a scorer fix can't start or end a streak
+    now = [_record.rescored_now(r)[0] for r in window]
     out = []
     for pid in current["results"]["per_prompt"]:
         if pid in NEVER_RETIRE:
             continue
-        tallies = [r["results"]["per_prompt"].get(pid, {}).get("raw") for r in window]
+        tallies = [pp.get(pid) for pp in now]
         green = all(t and t["total"] and t["compliant"] == t["total"] for t in tallies)
         retried = any(x.get("prompt_id") == pid for r in window for x in r["run"].get("retries", []))
         if green and not retried:
@@ -179,11 +181,11 @@ def pair_with_removals(adds: list[dict], retires: list[dict], current: dict,
     mean = sum(costs.values()) / len(costs) if costs else 0.0
     spend = sum(costs.values())
     free = [r["prompt"] for r in retires]
-    recent = [current, *sorted(history, key=lambda r: r["date"], reverse=True)[:3]]
+    recent = [_record.rescored_now(r)[0]
+              for r in (current, *sorted(history, key=lambda r: r["date"], reverse=True)[:3])]
 
     def spread(pid: str) -> float:
-        rates = [t["compliant"] / t["total"] for r in recent
-                 if (t := r["results"]["per_prompt"].get(pid, {}).get("raw")) and t["total"]]
+        rates = [t["compliant"] / t["total"] for pp in recent if (t := pp.get(pid)) and t["total"]]
         return max(rates) - min(rates) if rates else 0.0
 
     still = sorted((p for p in costs if p not in NEVER_RETIRE and p not in free), key=spread)

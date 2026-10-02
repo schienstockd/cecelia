@@ -35,6 +35,7 @@ import typing as _t
 
 from .eval_staleness import eval_record_warning, eval_store
 from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
+from .recital import ADVISORY_MARKERS
 
 # ── Palette ────────────────────────────────────────────────────────────────────────────────
 # Swatches loaded from `share/console_palette.json` via `palette.py`, so this console and
@@ -478,7 +479,12 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
 
     total_runs = sum(state.tally.runs.values())
     total_errored = sum(state.tally.errored_runs.values())
-    total_findings = sum(sum(v.values()) for v in state.tally.findings.values())
+    # Advisory findings carry no slug, so nothing ever resolves them — counted apart, or the
+    # header reads as a backlog of untagged findings.
+    advisory_markers = {m for ms in ADVISORY_MARKERS.values() for m in ms}
+    advisory = sum(n for v in state.tally.findings.values()
+                   for m, n in v.items() if m in advisory_markers)
+    total_findings = sum(sum(v.values()) for v in state.tally.findings.values()) - advisory
     confirmed = sum(v.get("confirmed", 0) for v in state.tally.findings.values())
     total_resolved = sum(sum(v.values()) for v in state.tally.resolved.values())
     # Totals only, three segments max — the per-marker / per-outcome breakdown lives in the
@@ -490,9 +496,10 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
         if total_errored:
             run_txt += _col(_RED, f" ({total_errored} errored)", use_colour=use_colour)
         header_parts.append(run_txt)
-    if total_findings:
+    if total_findings or advisory:
+        txt = f"{total_findings} finding{'' if total_findings == 1 else 's'}"
         header_parts.append(_col(_ORANGE if confirmed else _YELLOW,
-                                 f"{total_findings} finding{'' if total_findings == 1 else 's'}",
+                                 txt + (f" + {advisory} advisory" if advisory else ""),
                                  use_colour=use_colour))
     if total_resolved:
         header_parts.append(_col(_GREEN, f"{total_resolved} resolved", use_colour=use_colour))

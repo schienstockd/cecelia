@@ -486,6 +486,12 @@ class DashboardTest(unittest.TestCase):
         plain = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
                                  width=120, use_colour=False).splitlines()[1]
         self.assertEqual(plain, "2 runs (1 errored) · 4 findings · 4 resolved")
+        # advisory findings have no slug and never resolve, so they don't count as findings
+        events.append(dict(row, event="fanout_audit_advisory", payload={
+            "file": "a.jl", "line": 9, "desc": "d", "marker": "plausible"}))
+        plain = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                                 width=120, use_colour=False).splitlines()[1]
+        self.assertEqual(plain, "2 runs (1 errored) · 4 findings + 1 advisory · 4 resolved")
 
     def test_mechanism_row_is_compact(self):
         # Markers carry the finding count, `→` short outcome words; no `N findings` total and
