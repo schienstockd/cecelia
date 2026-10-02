@@ -161,11 +161,19 @@ fi
 [ -x "$PIXI" ] || have pixi || err "Pixi not found after install."
 
 # ── Julia (via Juliaup) ──────────────────────────────────────────────────────
+# A Cecelia-owned juliaup in <dir>, with its own state (JULIAUP_DEPOT_PATH=<dir>, set by the caller).
+# The installer quits with exit 0, having installed nothing, when any `juliaup` is on PATH. So run it
+# with a bare PATH. --add-to-path=no keeps it out of the user's shell profile.
+juliaup_into() {
+  curl -fsSL https://install.julialang.org \
+    | PATH=/usr/bin:/bin:/usr/sbin:/sbin sh -s -- --yes --add-to-path=no --path "$1"
+}
+
 # System scope: install into the shared depot; user scope: reuse one on PATH / in ~/.juliaup.
 if [ "$SCOPE" = "system" ]; then
   if [ ! -x "$JULIAUP_DEPOT_PATH/bin/julia" ]; then
     say "Installing Julia (juliaup) into the shared runtime ($JULIAUP_DEPOT_PATH)…"
-    curl -fsSL https://install.julialang.org | sh -s -- --yes --path "$JULIAUP_DEPOT_PATH"
+    juliaup_into "$JULIAUP_DEPOT_PATH"
   fi
   JULIA="$JULIAUP_DEPOT_PATH/bin/julia"
 else
@@ -176,6 +184,26 @@ else
   JULIA="$(command -v julia 2>/dev/null || echo "$HOME/.juliaup/bin/julia")"
 fi
 [ -x "$JULIA" ] || err "Julia not found after install — open a new terminal and re-run."
+
+# Apple Silicon: the Julia reused above can be an Intel build (an x86 Homebrew, an old .dmg, or a
+# ~/.juliaup that Migration Assistant carried over from an Intel Mac). It runs under Rosetta: slower,
+# and its children see an Intel `uname`, which broke wgpu's import in the movie renderer (see
+# `_native_arm_processor` in python/cecelia/utils/wgpu_host.py).
+# An Intel juliaup cannot add an arm64 Julia, so give Cecelia its own native juliaup in
+# <install>/juliaup, the same layout as system scope. app.py prefers it when present. The user's
+# own Julia is left alone.
+if [ "$SCOPE" != "system" ] && [ "$OS" = "Darwin" ] \
+   && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
+  JULIA_ARCH="$("$JULIA" --startup-file=no -e 'print(Sys.ARCH)' 2>/dev/null || true)"
+  if [ "$JULIA_ARCH" != "aarch64" ]; then
+    JULIAUP_DEPOT_PATH="$INSTALL_DIR/juliaup"; export JULIAUP_DEPOT_PATH
+    say "The Julia at $JULIA is not a native Apple Silicon build (${JULIA_ARCH:-unknown}). Installing a native Julia for Cecelia ($JULIAUP_DEPOT_PATH)…"
+    juliaup_into "$JULIAUP_DEPOT_PATH"
+    JULIA="$JULIAUP_DEPOT_PATH/bin/julia"
+    [ "$("$JULIA" --startup-file=no -e 'print(Sys.ARCH)' 2>/dev/null || true)" = "aarch64" ] \
+      || err "Could not install a native Julia into $JULIAUP_DEPOT_PATH."
+  fi
+fi
 
 # ── bioformats2raw (image import) ─────────────────────────────────────────────
 # ~190 MB, so fetched here rather than shipped in the bundle. The app resolves it at

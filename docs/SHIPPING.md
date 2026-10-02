@@ -390,6 +390,11 @@ Pixi scopes to the **Python** env. Julia stays on **juliaup + Manifest**, Node o
 inherits PATH so both resolve. For the *shipped* installer, Julia (and the prebuilt frontend) are
 baked into the conda env at build time — see **Building installers**.
 
+`install.sh` reuses a Julia already on PATH, with one exception. On Apple Silicon, if that Julia is
+an Intel build (it runs under Rosetta), the installer puts a native juliaup in `<install>/juliaup`
+and leaves the user's Julia alone. `app.py`'s `_find_julia` prefers `<install>/juliaup` whenever
+it exists, and sets `JULIAUP_DEPOT_PATH` for it. System scope uses the same layout.
+
 ### cellpose lives in TWO features
 `[feature.cellpose-v4]` (default env) carries `cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`).
 `[feature.cellpose-v3]` (opt-in `cellpose-v3` env, `platforms = ["osx-arm64"]`) carries

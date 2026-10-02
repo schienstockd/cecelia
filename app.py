@@ -25,7 +25,18 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 def _find_julia() -> str:
     """Resolve the Julia binary. A GUI-launched desktop shortcut may not have juliaup on PATH,
-    so fall back to its default install location."""
+    so fall back to its default install location.
+
+    A juliaup inside the install (`<root>/juliaup`) wins. install.sh puts one there for system scope,
+    and on Apple Silicon when the Julia it found was an Intel build. That juliaup keeps its own state,
+    so point JULIAUP_DEPOT_PATH at it, and put it first on PATH for anything that runs bare `julia`."""
+    private = os.path.join(ROOT, "juliaup")
+    if os.path.exists(os.path.join(private, "bin", "julia")):
+        bin_dir = os.path.join(private, "bin")
+        os.environ["JULIAUP_DEPOT_PATH"] = private
+        if not os.environ.get("PATH", "").startswith(bin_dir + os.pathsep):
+            os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+        return os.path.join(bin_dir, "julia")
     found = shutil.which("julia")
     if found:
         return found
@@ -225,7 +236,9 @@ def _crashed(rc: int) -> bool:
 def main() -> int:
     # Production mode: plain include, no Revise. Inherits PATH from the activated env so the
     # server's Python subprocesses use the same env. CECELIA_SUPERVISED tells the server that
-    # backend restart is available (we relaunch it on RESTART_EXIT_CODE).
+    # backend restart is available (we relaunch it on RESTART_EXIT_CODE). Resolve Julia first: it can
+    # set JULIAUP_DEPOT_PATH + PATH, and the server's env is copied from os.environ here.
+    julia = _find_julia()
     env = {**os.environ, "CECELIA_SUPERVISED": "1"}
     first = True
     crashes: list[float] = []          # fault timestamps inside CRASH_WINDOW — the loop breaker
@@ -237,7 +250,7 @@ def main() -> int:
         _apply_pending_revert()
         _apply_pending_update()
         proc = subprocess.Popen(
-            [_find_julia(), "--project", "src/server.jl"],
+            [julia, "--project", "src/server.jl"],
             cwd=os.path.join(ROOT, "api"),
             env=env,
         )
