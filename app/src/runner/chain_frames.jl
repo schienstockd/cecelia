@@ -52,6 +52,7 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
         "nodeId"     => p.node_id,
         "fn"         => p.fn,
         "pool"       => String(get(p, :pool, "")),
+        "by"         => String(get(p, :by, "")),
         "taskId"     => ev_task_id(p))
 
     # Per-node PROGRESS, shaped as a `task:progress` frame so it lands on the row the task snapshot

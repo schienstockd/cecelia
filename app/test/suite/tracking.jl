@@ -666,6 +666,20 @@ end
             run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
             node_id = "train", fn = "f", task_id = "", n = 1, total = 2))
         @test isempty(frames)
+
+        # A node frame names who the run executes as — every tab gets it, so the frame must say,
+        # not the receiving tab's own profile. Absent on the event ⇒ "" (unknown), never a guess.
+        empty!(frames)
+        Cecelia._fire_chain_event!("node:queued", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "f", params = Dict{String,Any}(), task_id = "T1", pool = "gpu",
+            by = "alice"))
+        @test frames[end]["by"] == "alice"
+        empty!(frames)
+        Cecelia._fire_chain_event!("node:queued", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "f", params = Dict{String,Any}(), task_id = "T1", pool = "gpu"))
+        @test frames[end]["by"] == ""
     finally
         for (ev, h) in pairs
             Cecelia.unsubscribe_chain_events!(ev, h)

@@ -128,7 +128,8 @@ mutable struct ChainRun
     template_hash::String                   # sha256 hex — pointer to cache entry on disk
     image_states::Dict{String,Dict{String,ImageNodeState}}  # uid => node_id => state
     created_at::Float64
-    by::String                              # profile that launched it ("" on runs from before) — its nodes run as it
+    by::String                              # profile that launched it ("" on runs from before)
+    resumed_by::String                      # profile that last resumed it ("" = never) — see `chain_run_as`
     _dir::String                            # <project>/settings/chains/runs/<run_id>/
     _lock::ReentrantLock                    # guards image_states + disk writes
     _barriers::Dict{String,Channel{Nothing}}      # node_id => arrive channel (set-scope barrier)
@@ -139,3 +140,7 @@ end
 # scheduler.jl, sized from the [pools] section of config.toml). A `gpu` pool with
 # limit 1 serialises GPU work across the whole process — chain nodes and module-page
 # tasks alike. There is intentionally no second, per-run pool layer.
+
+# Who the run's node tasks run as: whoever started THIS execution — the resumer if it was resumed,
+# else the launcher. `run.by` stays the launcher either way.
+chain_run_as(run::ChainRun)::String = isempty(run.resumed_by) ? run.by : run.resumed_by

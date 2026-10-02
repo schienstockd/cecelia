@@ -958,7 +958,8 @@ run happened.
 Each entry also carries `by`, the profile that launched it. It is set where the run is ASKED for
 (`handle_task_run` / `handle_chain_run` stamp `TaskRequest.by` / `ChainRequest.by`), not where it
 executes: the detached runner is a separate process whose active profile can predate a switch. A chain's
-nodes run as the chain's `by`; a task sees it as `params["_by"]` beside `_task_id`.
+nodes run as `chain_run_as(run)` — the launcher (`run.json` `by`), or whoever last resumed it
+(`resumed_by`); a task sees it as `params["_by"]` beside `_task_id`.
 
 `reap_run_log_for_project!` (`api/src/runner_api.jl`) closes those out at project open, converting
 stale `running` entries to `interrupted`. It reaps only what it can *prove* is dead — a task the

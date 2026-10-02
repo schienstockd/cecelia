@@ -2,12 +2,13 @@
 // Per-project notebook registry table (Phase 3). Mirrors ImageTable's inline-edit pattern for the
 // description field. Project notebooks are managed (create/describe/snapshot/delete); shipped
 // examples are read-only (duplicate-into-project only). See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useLogStore } from '../stores/log'
 import { useInlineEdit } from '../composables/useInlineEdit'
 import { useWsStore } from '../stores/ws'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
+import { parseAuthorStamp, authorSummary } from '../utils/authorStamp'
 
 const props = defineProps<{
   projectUid: string
@@ -21,6 +22,8 @@ const log = useLogStore()
 interface Notebook {
   name: string; file: string; scope: 'project' | 'example'
   path: string; description: string; version: number
+  createdBy?: unknown; updatedBy?: unknown
+  authorText: string   // derived on load — "by alice · edited by bob", '' when nobody to name
 }
 const notebooks = ref<Notebook[]>([])
 // Every cell is rendered by a `#cell-` slot (an icon, an inline edit, a badge), so these name the
@@ -36,6 +39,10 @@ const NB_COLUMNS: SelectionColumn[] = [
   { key: 'versionText', label: 'Ver',         sortable: true, sortKey: 'version', width: 60 },
   { key: 'scope',       label: 'Source',      sortable: true, width: 90 },
 ]
+// "By" only once someone is named — a one-person install (default profile) never sees the column.
+const BY_COLUMN: SelectionColumn = { key: 'authorText', label: 'By', sortable: true, width: 150, ellipsis: true }
+const columns = computed(() => notebooks.value.some(n => n.authorText)
+  ? [...NB_COLUMNS.slice(0, 3), BY_COLUMN, ...NB_COLUMNS.slice(3)] : NB_COLUMNS)
 const loading = ref(false)
 const newName = ref('')
 const busy = ref(false)
@@ -56,7 +63,9 @@ async function refresh() {
     const res = await fetch(`/api/notebooks?projectUid=${encodeURIComponent(props.projectUid)}`)
     const d = await res.json()
     if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
-    notebooks.value = d.notebooks ?? []
+    notebooks.value = ((d.notebooks ?? []) as Omit<Notebook, 'authorText'>[]).map(n => ({
+      ...n, authorText: authorSummary(parseAuthorStamp(n.createdBy), parseAuthorStamp(n.updatedBy)),
+    }))
   } catch (e) {
     log.error(`Failed to list notebooks: ${e instanceof Error ? e.message : String(e)}`, { source: 'notebooks' })
   } finally {
@@ -211,6 +220,7 @@ const commitEdit = (nb: Notebook) => commit(nb.file, nb.description, async val =
   try {
     await post('/api/notebooks/describe', { projectUid: props.projectUid, file: nb.file, description: val })
     nb.description = val
+    void refresh()   // the server restamped updatedBy
   } catch (e) {
     log.error(`Save description failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'notebooks' })
   }
@@ -254,7 +264,7 @@ defineExpose({ refresh })
          persist per user. `actions-width` MUST be declared with it: fixed layout gives the trailing
          column only what the others leave over, and this row carries five controls. -->
     <div class="nbt-scroll">
-    <SelectionTable class="nbt-table" data-guide="notebooks.table" selection-mode="none" :columns="NB_COLUMNS" :rows="notebooks"
+    <SelectionTable class="nbt-table" data-guide="notebooks.table" selection-mode="none" :columns="columns" :rows="notebooks"
                     id-key="file" sort-storage-key="cc.notebooks.sort" actions-label="Actions"
                     column-width-key="cc.notebooks.colw" actions-width="11rem" fit="content"
                     :row-tooltip="nb => nb.scope === 'project' ? nb.file : `${nb.file} — shipped example, read-only`"
@@ -277,6 +287,9 @@ defineExpose({ refresh })
 
       <template #cell-versionText="{ row: nb }">
         <span class="nbt-ver">{{ nb.scope === 'project' && nb.version ? `v${nb.version}` : '—' }}</span>
+      </template>
+      <template #cell-authorText="{ row: nb }">
+        <span class="cc-muted">{{ nb.authorText }}</span>
       </template>
       <template #cell-scope="{ row: nb }">
         <span class="nb-badge" :class="`scope-${nb.scope}`">{{ nb.scope }}</span>

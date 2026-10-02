@@ -22,3 +22,18 @@ export function authorLabel(s?: AuthorStamp): string {
   if (s.via === 'claude') return person ? `Claude for ${person}` : 'Claude'
   return person
 }
+
+/** A bare profile name (run log `by`, chain-run launcher) as a label — '' for the default profile. */
+export function profileLabel(name?: string): string {
+  return authorLabel(name ? { profile: name, via: 'app' } : undefined)
+}
+
+/** Created + last edited, as one line: "by alice", "by Claude · edited by bob", "edited by bob" (the
+ *  creator predates stamps, or was the default profile). '' when there is nobody to name. */
+export function authorSummary(created?: AuthorStamp, updated?: AuthorStamp): string {
+  const c = authorLabel(created)
+  const u = authorLabel(updated)
+  if (c && u && c !== u) return `by ${c} · edited by ${u}`
+  if (c) return `by ${c}`
+  return u ? `edited by ${u}` : ''
+}

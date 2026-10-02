@@ -61,6 +61,11 @@
                 "description" => "d"))[1] == 200
             nb = only(filter(n -> n.file == "nb.jl", nbs()))
             @test stamp(nb.createdBy) == alice_claude && stamp(nb.updatedBy) == alice_app
+            # A direct snapshot freezes someone's Pluto edits → restamps; the one inside write didn't
+            # (the `updatedBy === nothing` above).
+            @test via_router("/api/notebooks/snapshot", Dict("projectUid" => uid, "file" => "nb.jl"); claude = true)[1] == 200
+            nb = only(filter(n -> n.file == "nb.jl", nbs()))
+            @test stamp(nb.updatedBy) == alice_claude
             # A restore is an edit and restamps (sent as Claude only so the change is visible).
             @test via_router("/api/notebooks/restore", Dict("projectUid" => uid, "file" => "nb.jl",
                 "version" => 1, "force" => true); claude = true)[1] == 200
@@ -85,6 +90,11 @@
             @test _post(api_chains_save, Dict("projectUid" => proj.uid,
                 "template" => Dict("name" => "c2", "nodes" => [node], "edges" => [])))[1] == 200
             @test stamp(JSON3.read(read(cpath("c2"), String)).createdBy) == alice_app
+            # A rename is an edit: creator carries over, the renamer is the last editor.
+            @test via_router("/api/chains/rename", Dict("projectUid" => proj.uid, "name" => "c1",
+                "newName" => "c1b"); claude = true)[1] == 200
+            raw = JSON3.read(read(cpath("c1b"), String))
+            @test stamp(raw.createdBy) == alice_claude && stamp(raw.updatedBy) == alice_claude
 
             # ── Task requests carry the asker across the wire to the runner ───────────────
             req = Cecelia.task_request(Cecelia.task_request_dict(

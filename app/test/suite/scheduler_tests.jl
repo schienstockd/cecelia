@@ -241,9 +241,10 @@ end
     # `runId::nodeId::imageUid`, so a snapshot row without the node id can't be matched to one and the
     # same work would be listed twice (once adopted, once from the chain events).
     rec = Cecelia._register_task!("cn$(rand(1000:9999))", "segment.cellpose", "gpu", img.uid,
-                                 "run1", _ -> nothing; chain_node_id = "n3")
+                                 "run1", _ -> nothing; chain_node_id = "n3", by = "alice")
     let row = only(filter(r -> r.id == rec.id, list_tasks()))
         @test row.chain_run_id == "run1" && row.chain_node_id == "n3"
+        @test row.by == "alice"                    # a tab that didn't launch it can say who did
     end
     Cecelia._deregister_task!(rec.id)
 
