@@ -2,6 +2,7 @@ import { moduleKeyFromFun } from '../utils/taskModule'
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { shortId } from '../utils/id'
+import { useAppControlStore } from './appControl'
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
@@ -25,7 +26,8 @@ export interface TaskEntry {
   // `task:status` / `chain:node:*` frames, the in-flight snapshot or the run log. Undefined when no
   // carrier has named it yet (a run-log entry written before pools were recorded): unknown, not `cpu`.
   pool?: string
-  // The profile that launched it (run log / `list_tasks`). Absent on older runs and on this tab's own.
+  // The profile that launched it — the run log / `list_tasks` for others' rows, the active profile for
+  // this tab's own (one person per machine, so that IS who launched it). Absent on older runs.
   by?: string
   // Chain provenance — set when task originated from a chain run
   chainRunId?:   string
@@ -75,8 +77,11 @@ export const useTaskStore = defineStore('tasks', () => {
   // context needed for useToast). Avoids each dialog rolling its own "it's running" feedback.
   const lastStarted = ref<TaskEntry | null>(null)
 
+  // Who this tab launches as — the same name the server stamps (`by` on the task request).
+  const launcher = () => useAppControlStore().activeProfileName
+
   function add(t: Omit<TaskEntry, 'id' | 'log' | 'seq'>): TaskEntry {
-    const entry: TaskEntry = { ...t, id: shortId(), log: [], seq: ++_seqRef.value }
+    const entry: TaskEntry = { by: launcher(), ...t, id: shortId(), log: [], seq: ++_seqRef.value }
     tasks.value.unshift(entry)
     lastStarted.value = entry
     return entry
@@ -91,7 +96,7 @@ export const useTaskStore = defineStore('tasks', () => {
    */
   function addMany(items: Array<Omit<TaskEntry, 'id' | 'log' | 'seq'>>, toastLabel?: string): TaskEntry[] {
     const entries: TaskEntry[] = items.map(t =>
-      ({ ...t, id: shortId(), log: [], seq: ++_seqRef.value }))
+      ({ by: launcher(), ...t, id: shortId(), log: [], seq: ++_seqRef.value }))
     // reversed so the highest seq ends up at the head, exactly as N successive add() calls would leave it
     tasks.value.unshift(...[...entries].reverse())
     const last = entries[entries.length - 1]
@@ -164,6 +169,7 @@ export const useTaskStore = defineStore('tasks', () => {
     t.progress    = undefined
     t.startedAt   = undefined
     t.finishedAt  = undefined
+    t.by          = launcher()   // a re-run from this tab is this tab's launch, whoever ran it before
   }
 
   function cancel(id: string) {
@@ -280,6 +286,7 @@ export const useTaskStore = defineStore('tasks', () => {
     projectUid: string
     taskId?: string
     pool?: string
+    by?: string
     startedAt?: Date
     finishedAt?: Date
   }) {
@@ -291,6 +298,8 @@ export const useTaskStore = defineStore('tasks', () => {
       if (opts.imageName && existing.imageName === opts.imageUid) existing.imageName = opts.imageName
       // …same for the scheduler task id: :queued may arrive before the node has one
       if (opts.taskId) existing.backendTaskId = opts.taskId
+      // the frame names who the run executes as NOW — a resume moves it to the resumer
+      if (opts.by) existing.by = opts.by
       setStatus(syntheticId, opts.status,
                 { startedAt: opts.startedAt, finishedAt: opts.finishedAt, pool: opts.pool })
       return existing
@@ -317,6 +326,8 @@ export const useTaskStore = defineStore('tasks', () => {
       chainName:   opts.chainName,
       backendTaskId: opts.taskId || undefined,
       pool:        opts.pool || undefined,
+      // from the frame, never `launcher()`: chain frames reach every tab, not just the one that started it
+      by:          opts.by,
     }
     tasks.value.unshift(entry)
     return entry

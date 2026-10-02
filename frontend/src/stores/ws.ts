@@ -562,6 +562,7 @@ export const useWsStore = defineStore('ws', () => {
         // before submission, set-scope). Recorded so a dropped terminal frame can be recovered.
         taskId:     String(data.taskId ?? ''),
         pool:       String(data.pool ?? '') || undefined,
+        by:         String(data.by ?? '') || undefined,   // the run's launcher/resumer, from the server
         // the scheduler's own timing. A chain run emits no `task:status`, so these frames are the only
         // live carrier of it — without them a node's elapsed is timed from frame arrival.
         startedAt:  parseRailTime(data.startedAt),

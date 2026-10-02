@@ -158,7 +158,9 @@ const runOptions = computed<RunOption[]>(() => {
   for (const id of liveRunIds.value) {
     const t = chainTasks.value.find(t => t.chainRunId === id)
     const created = map.get(id)?.createdAt ?? (t?.startedAt ? t.startedAt.getTime() / 1000 : 0)
-    map.set(id, { ...map.get(id), runId: id, chainName: t?.chainName ?? map.get(id)?.chainName ?? '', createdAt: created, live: true })
+    // a run this session saw launch isn't persisted-listed yet — its rows carry who started it
+    map.set(id, { by: t?.by, ...map.get(id), runId: id, chainName: t?.chainName ?? map.get(id)?.chainName ?? '',
+                  createdAt: created, live: true })
   }
   return [...map.values()].sort((a, b) => b.createdAt - a.createdAt)
 })
