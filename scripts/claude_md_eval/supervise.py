@@ -548,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.dry_run and not args.session:   # a failed re-triage is not a failed pass
             failed = _write_failure(args.date, where, e, state["sha"])
             # a failure gets its PR too, once there is a worktree at the pinned SHA to commit from
-            if failed and not args.session and not args.no_pr and where not in ("start", "pin", "worktree", "publish"):
+            if failed and not args.no_pr and where not in ("start", "pin", "worktree", "publish"):
                 try:
                     print(f"  PR {publish(failed, worktree=args.worktree or default_worktree())}", file=sys.stderr)
                 except Exception as p:  # noqa: BLE001

@@ -142,6 +142,13 @@ class CleanEnvTest(_SuperviseFixture):
             env = self.sup.clean_env(X="1")
         self.assertEqual(env, {"HOME": "/h", "X": "1", "PATH": os.pathsep.join(["/h/.pixi/bin", "/usr/bin"])})
 
+    def test_a_windows_env_bin_is_dropped_too(self):
+        # no drive letter: on POSIX `os.pathsep` is ":" and would split `C:` apart
+        path = os.pathsep.join([r"\x\.pixi\envs\y\bin", r"\Users\h\.pixi\bin"])
+        with mock.patch.dict(os.environ, {"PATH": path}, clear=True):
+            env = self.sup.clean_env()
+        self.assertEqual(env["PATH"], r"\Users\h\.pixi\bin")
+
 
 class RetryTest(_SuperviseFixture):
     def test_retries_until_a_run_does_not_error_and_never_more_than_twice(self):
