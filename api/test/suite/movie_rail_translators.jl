@@ -51,8 +51,8 @@
     ov_look = _overlays_raw_from_config(Dict{String,Any}("pointBorder" => 3, "labelOpacity" => 0), true)
     @test ov_look["pointBorderPx"] == 3
     @test ov_look["maskOpacity"] == 0.0
-    # the viewer's z tolerances — absent = its default, 2
-    @test (ov_mask["pointZTol"], ov_mask["trackZTol"]) == (2, 2)
+    # the viewer's z tolerances — absent = its default (`shaders/constants.json`)
+    @test (ov_mask["pointZTol"], ov_mask["trackZTol"]) == (OVERLAY_Z_TOL, OVERLAY_Z_TOL)
     ov_tol = _overlays_raw_from_config(Dict{String,Any}("pointZTol" => 0, "trackZTol" => 5), true)
     @test (ov_tol["pointZTol"], ov_tol["trackZTol"]) == (0, 5)
     # The single record's outline width comes from the REQUEST, merged over the viewer's `look` (which

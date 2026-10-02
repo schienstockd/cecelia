@@ -155,10 +155,10 @@ end
     # The region / size contract the CPU renderer had (crop, then an integer stride, even sides),
     # now as a head-on camera on the viewer's pass; and the plane window the overlays are cut to.
     style = movie_overlay_style()
-    @test (style.point_z_tol, style.track_z_tol, style.point_border_px) == (2, 2, 0)
+    @test (style.point_z_tol, style.track_z_tol, style.point_border_px) == (OVERLAY_Z_TOL, OVERLAY_Z_TOL, 0)
     @test movie_overlay_style(k -> k == "pointZTol" ? 0 : nothing).point_z_tol == 0
-    zr, filt = _plane_window(5, 10, style)
-    @test zr == [5, 5] && filt["points"] == [3, 7] && filt["tracks"] == [3, 7]
+    zr, filt = _plane_window(5, 10, (; point_z_tol = 2, track_z_tol = 3))
+    @test zr == [5, 5] && filt["points"] == [3, 7] && filt["tracks"] == [2, 8]
     zr, filt = _plane_window(nothing, 10, style)
     @test zr == [0, 9] && filt === nothing                       # the whole stack: every overlay
     @test _plane_window(2:4, 10, style)[1] == [2, 4]
