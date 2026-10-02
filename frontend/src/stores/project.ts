@@ -5,6 +5,7 @@ import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 import { useSettingsStore } from './settings'
 import { isStoredValueNameStale } from '../utils/staleImageVersion'
+import { publishViewerImageMeta } from '../lib/viewerImageMetaChannel'
 
 // Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
 export interface ImageSort { key: string; dir: 'asc' | 'desc' }
@@ -265,7 +266,14 @@ export const useProjectStore = defineStore('project', () => {
   function updateImageMeta(imageUid: string, patch: Partial<CciaImage>) {
     for (const set of sets.value) {
       const img = set.images.find(i => i.uid === imageUid)
-      if (img) { Object.assign(img, patch); return }
+      if (!img) continue
+      // An open viewer (in-panel or pop-out) holds the names it read at open — tell it on a real
+      // rename. Compared, not just present: `refreshImageMeta` re-sends the same list on every task.
+      const renamed = patch.channelNames !== undefined
+        && JSON.stringify(patch.channelNames) !== JSON.stringify(img.channelNames ?? [])
+      Object.assign(img, patch)
+      if (renamed) publishViewerImageMeta(imageUid)
+      return
     }
   }
 
