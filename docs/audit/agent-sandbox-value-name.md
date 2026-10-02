@@ -62,12 +62,12 @@ fresh name — nothing enforces it.
 audit). Any versioned (dict-shaped) entry they passed over became a string — so the first step
 toward versioning segmentation would have corrupted `ccid.json`. No writer produces such entries
 yet, so no data was affected. Fix: both route through the new
-`versioned_entry_overwrite!` (`app/src/helpers.jl`), which keeps every entry's shape and replaces only a
-versioned target's `_latest` leaf. The two readers with the same flatten (measureLabels and
+`versioned_entry_overwrite!` (since folded into `versioned_set_field!`, see B2), which keeps every
+entry's shape and replaces only a versioned target's `_latest` leaf. The two readers with the same flatten (measureLabels and
 SegmentCorrect resolving `labels[vn]`) now unwrap through `unversion_value`. Test: `app/test/suite/vn_pilot_writer.jl` →
-*versioned_entry_overwrite! — keeps every entry's shape*.
+*versioned_set_field! — a versioned target keeps its history*.
 
-### B2 — toggle-off re-run flattens a versioned `filepath` (noted, **not fixed**)
+### B2 — toggle-off re-run flattens a versioned `filepath` (**fixed** on `fix/b2-filepath-versions`)
 
 With `keep_previous_version` off, `plan_versioned_target` (`app/src/helpers.jl`) returns the flat v1
 path even when `filepath[vn]` is already versioned, and `versioned_filepath_write!` then calls
@@ -89,6 +89,16 @@ recital's fanout audit on this branch; not fixed here):
   versioned entry whole.
 
 Fix shape for the first two: walk `version_leaves(entry)` (added on this branch).
+
+**Resolution.** Decision: *toggle off = overwrite the current version*, also for an entry that is
+already versioned — no surprise disk growth, no lost history. `plan_versioned_target` returns the
+`_latest` store's path for a versioned entry; `versioned_set_field!` replaces only a versioned
+target's `_latest` leaf (which also made the separate `versioned_entry_overwrite!` from B1
+redundant — removed, its callers use `versioned_set_field!`); the composite re-registration goes
+through `versioned_set_field!`; `remove_image_version!` deletes every `vN` store and sweeps the
+emptied `{vn}/vN/` dirs; the storage modal sums every version's bytes and describes the current one.
+Tests: `app/test/suite/vn_pilot_writer.jl`.
+
 
 ## What closes the sandbox (small)
 

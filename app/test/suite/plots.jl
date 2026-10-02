@@ -288,6 +288,7 @@ end
     r = Cecelia._summary_agg(df, "boxplot"; measure="m", granularity=:cell, nbins=10,
                              normalize=:none, by_image=true, group_by="st", raw=true)
     @test r["chartType"] == "raw" && r["measure"] == "m" && r["groupBy"] == "st"
+    @test r["series"] == []                            # present-but-empty: the frontend type requires it
     @test length(r["rows"]) == 4                       # the NaN-measure row is dropped
     row1 = r["rows"][1]
     @test row1["uID"] == "x" && row1["label"] == "1" && row1["value_name"] == "A"
@@ -300,7 +301,7 @@ end
                     "uID" => ["x","x","x","x","x"])
     rc = Cecelia._summary_agg(dfc, "count"; measure=nothing, granularity=:cell, nbins=0,
                               normalize=:none, by_image=true, raw=true)
-    @test rc["chartType"] == "raw" && rc["measure"] == "count"
+    @test rc["chartType"] == "raw" && rc["measure"] == "count" && rc["series"] == []
     cbyp = Dict(rw["pop"] => rw["value"] for rw in rc["rows"])
     @test cbyp["/p"] == 3.0 && cbyp["/q"] == 2.0 && all(!haskey(rw, "label") for rw in rc["rows"])
 

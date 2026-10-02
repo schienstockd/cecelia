@@ -19,6 +19,17 @@ describe('plotDataToCsv — raw datapoint export', () => {
     expect(lines).toHaveLength(3)
   })
 
+  it('accepts a raw payload with `rows` but no `series` (backends before the empty `series` key)', () => {
+    // plot_data.jl's raw branch used to return {chartType, measure, measureType, granularity, groupBy, rows}
+    const r = {
+      chartType: 'raw', measure: 'm', granularity: 'track', groupBy: null,
+      rows: [{ uID: 'img1', label: '', track_id: 3, value_name: 'A', pop: '/p', value: 2 }],
+    } as unknown as PlotDataResponse
+    const meta: CsvImageMeta = { lookup: () => ({ name: 'Image 1', attr: { Treatment: 'X' } }) }
+    expect(plotDataToCsv(r).split('\n')).toEqual(['uID,track_id,value_name,pop,m', 'img1,3,A,/p,2'])
+    expect(plotDataToCsv(r, meta).split('\n')[1]).toBe('img1,Image 1,X,3,A,/p,2')
+  })
+
   it('adds the groupBy column (named after it) only when groupBy is set', () => {
     const r: PlotDataResponse = {
       chartType: 'raw', measure: 'm', granularity: 'cell', groupBy: 'live.cell.hmm.state', series: [],

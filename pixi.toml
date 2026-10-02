@@ -124,7 +124,9 @@ stumpy       = ">=1.13"
 dtaidistance = ">=2.3"
 # MCP observer server (top-level mcp/ dir — read-only Claude access to a running project). Only the
 # `mcp` run task needs it; the client + its tests are stdlib-only. See mcp/README.md, docs/ai-assist/OBSERVER.md.
-mcp          = ">=1.2"
+# Capped <2: mcp 2.x renamed FastMCP → MCPServer and changed other APIs; `mcp/cecelia_mcp/server.py`
+# won't import. Lift with the port — docs/TODO.md → *Port the MCP observer to mcp 2.x*.
+mcp          = ">=1.2,<2"
 squidpy = ">=1.8.3, <1.9"
 rtree = ">=1.4.1, <2"
 pywavelets = ">=1.9.0, <2"
@@ -322,6 +324,15 @@ recital-console = "python -m cecelia.effectiveness.console"
 # capture the diff, score it via regex against the prompt's compliant/anti signals, and emit
 # rows to the effectiveness log with the CLAUDE.md blob SHA. `pixi run claude-md-eval-one
 # <prompt_id>` — see docs/todo/CLAUDE_MD_EVAL_PLAN.md.
+# Agent overnight run (docs/todo/AGENT_OVERNIGHT_PLAN.md): build an isolated fixture project
+# (synthetic, or a crop of an analysed image), run the hand-tuned ceiling pipeline, score a run.
+# Run inside pixi so task subprocesses get this env's python. Spawn no agents.
+agent-eval-setup   = "python scripts/agent_eval/setup.py"
+agent-eval-crop    = "python scripts/agent_eval/crop.py"
+agent-eval-ceiling = "julia --project=app scripts/agent_eval/ceiling.jl"
+agent-eval-score   = "python scripts/agent_eval/score.py"
+# Spawns ONE sandboxed `claude -p` (unless --dry-run) — cost capped by --budget-usd (default $10).
+agent-eval-run     = "python scripts/agent_eval/run_overnight.py"
 claude-md-eval-one = "python scripts/claude_md_eval/run_prompt.py"
 
 # Behavioural compliance eval — iterate the full prompt catalog under

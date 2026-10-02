@@ -243,7 +243,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # Register the branch labels zarr in ccid.json under `branch_labels` — NOT `labels`. Decision 6:
     # branch labels get their own registry so the generic labels picker never lists them.
     commit_state!(img) do raw
-        versioned_entry_overwrite!(raw, "branch_labels", p.outputValueName, [branch_zarr])
+        versioned_set_field!(raw, "branch_labels", [branch_zarr], p.outputValueName; set_active = false)
     end
 
     # QC (advisory): objective branch count + zero-branches warning

@@ -426,7 +426,6 @@ Human-readable message for the failure case (empty when `task_applies` is true).
 """
 function task_applicability_reason(task::CciaTask, img::CciaImage)::String
     need    = task_requires_axes(task)
-    isempty(need) && return ""
     have    = img_axes(img)
     missing = sort!(collect(setdiff(need, have)))
     fn = try _fun_name_from_task(task) catch; string(typeof(task)) end

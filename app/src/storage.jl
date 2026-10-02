@@ -21,10 +21,20 @@ function reclaimable_versions(fp::AbstractDict)::Vector{String}
     [vn for vn in versioned_keys(fp) if vn != active && !isnothing(versioned_get(fp, vn))]
 end
 
-# Size of one version's on-disk store (zarr dir or a plain file), 0 if missing.
+# Size of one value_name's on-disk stores (zarr dir or a plain file) — every `vN` of a versioned
+# entry — 0 if missing.
 function _version_bytes(img::CciaImage, filename)::Int
     isnothing(filename) && return 0
-    _path_bytes(joinpath(img_zero_dir(img), string(filename)))
+    sum((_path_bytes(joinpath(img_zero_dir(img), string(l))) for l in version_leaves(filename)); init = 0)
+end
+
+# After deleting `p`, remove the parent dirs it leaves empty — a `{vn}/vN/` store's `vN` and `{vn}` —
+# stopping at `stop` (the image's data dir), which is never removed.
+function _sweep_empty_parents!(p::AbstractString, stop::AbstractString)
+    d = dirname(p)
+    while d != stop && startswith(d, stop) && isdir(d) && isempty(readdir(d))
+        rm(d); d = dirname(d)
+    end
 end
 
 # ── Per-image storage ─────────────────────────────────────────────────────────
@@ -288,10 +298,9 @@ function prune_inner_versions!(img::CciaImage, value_name::AbstractString,
             if apply
                 on_log("[INFO] Removing: $p")
                 rm(p; recursive = true)
-                # Clean the vN parent dir if empty (Q1 layout: `{vn}/vN/` under `base`) — a stray empty
-                # dir would otherwise linger forever, since no writer sweeps it.
-                d = dirname(p)
-                isdir(d) && isempty(readdir(d)) && rm(d)
+                # Clean the emptied `{vn}/vN/` dirs (Q1 layout under `base`) — a stray empty dir would
+                # otherwise linger forever, since no writer sweeps it.
+                _sweep_empty_parents!(p, base)
             end
         end
         result["freedBytes"] += vbytes
@@ -395,23 +404,26 @@ function remove_image_version!(img::CciaImage, value_name::String, new_default::
         return nothing
     end
 
-    # data dir first, then labels dir (mirrors the old RemoveImage search order)
-    proj_dir   = dirname(dirname(img._dir))
-    candidates = [
-        joinpath(proj_dir, "0", img.uid, string(filename)),
-        joinpath(proj_dir, "1", img.uid, "labels", string(filename)),
-    ]
-    target = findfirst(ispath, candidates)
-    freed  = 0
-    if !isnothing(target)
-        p     = candidates[target]
-        freed = _path_bytes(p)
+    # Every version's store (a versioned entry has one per `vN`). Per store: data dir first, then labels
+    # dir (mirrors the old RemoveImage search order).
+    proj_dir = dirname(dirname(img._dir))
+    data_dir = joinpath(proj_dir, "0", img.uid)
+    freed    = 0
+    for leaf in version_leaves(filename)
+        candidates = [joinpath(data_dir, string(leaf)),
+                      joinpath(proj_dir, "1", img.uid, "labels", string(leaf))]
+        target = findfirst(ispath, candidates)
+        if isnothing(target)
+            on_log("[INFO] File '$leaf' not found on disk — clearing metadata only.")
+            continue
+        end
+        p      = candidates[target]
+        freed += _path_bytes(p)
         on_log("[INFO] Removing: $p")
         rm(p; recursive = true)
-        on_log("[INFO] Done.")
-    else
-        on_log("[INFO] File '$filename' not found on disk — clearing metadata only.")
+        _sweep_empty_parents!(p, data_dir)
     end
+    on_log("[INFO] Done.")
 
     # Commit under the image's lock — and only now. The `rm` above can be a multi-GB zarr, so holding
     # the lock across it would serialise unrelated work on this image for minutes for no benefit; the

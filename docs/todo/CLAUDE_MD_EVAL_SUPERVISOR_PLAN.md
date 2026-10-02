@@ -88,6 +88,23 @@ lost there.
       `spot_check_label`, `finding_status`, `proposal_decision`. Corrections are new events. The
       supervisor applies new events at the start of each run. The terminal queue (phase 6) writes
       them, and never touches the repo.
+16. **The timer runs from the supervisor's worktree (2026-10-02).** `REPO` in the unit is
+    `~/.cecelia-effectiveness/eval-worktree`, and `ExecStartPre` resets it to `origin/main`, so the
+    driver (`cron_pass.sh`, `supervise.py`) is always today's. It used to be the `cecelia-feijoa` dev
+    checkout, which was 46 commits behind with no `supervise.py`, so the timer would have run the
+    bare suite. A preflight check that failed when that checkout was behind or dirty would have
+    failed most weeks, and a second driver checkout would need a second 7.7 GB `.pixi`. The setup
+    also has a line budget (`SETUP_BUDGET`, then-current size + 10%). Going over it is a
+    `decision` finding, never a block.
+17. **A delta compares both passes under one scorer (2026-10-02).** The previous pass's traces are
+    rescored by this checkout's scorer, so a scorer fix can't pass for a setup change. 09-30 → 10-01
+    read 3/27 → 24/27 as logged, but 20/27 → 24/27 under one scorer. If more than one of
+    {prompt set, sandbox, CLAUDE.md, scorer} changed, the delta says **confounded** and a hypothesis
+    reads "consistent, not proven" instead of "held". The scorer counts only when traces were lost.
+    Claude Code is named but not counted, because it can't be pinned. Per prompt, a move between 0/N
+    and N/N is a change; one with a 1/3 or 2/3 side is `noisy`, a hint. At N=3 a 70% prompt still
+    shows 3/3 a third of the time. Escalating noisy prompts to N=10 is deferred: two passes had one
+    noisy prompt each.
 
 ## Run record (fields)
 
@@ -98,8 +115,9 @@ lost there.
   diagnosis, proposed fix`.
 - **Proposals:** prompt add/change/retire with source slugs; setup changes with a
   `Hypothesis: fixes <id>; expect <prompt> to pass`.
-- **Delta since last run:** findings opened/resolved, score change with any version change noted,
-  whether each earlier hypothesis held.
+- **Delta since last run:** findings opened/resolved, both scores under this checkout's scorer
+  with any version change noted, `confounded` and per-prompt `moves` (Decision 17), and whether each
+  earlier hypothesis held.
 - **Tracking:** setup-size metrics, plus spot-check and loop-review sections when due.
 - **Next actions:** ordered, each self-contained (files, the exact change, the verify command).
   The record's header says how to use it: point a session at this file, do the open Next actions,

@@ -443,8 +443,11 @@ function api_image_stores(req::HTTP.Request)
         for vn in versioned_keys(fp)
             fn = versioned_get_field(raw, "filepath", vn)
             isnothing(fn) && (out[vn] = nothing; continue)
-            zp    = joinpath(proj_dir, "0", image_uid, string(fn))
-            entry = Dict{String,Any}("bytes" => Cecelia._path_bytes(zp))
+            # bytes = every version's store on disk; codec / format / levels describe the current one
+            data  = joinpath(proj_dir, "0", image_uid)
+            zp    = joinpath(data, string(Cecelia.unversion_value(fn)))
+            entry = Dict{String,Any}("bytes" => sum(Cecelia._path_bytes(joinpath(data, string(l)))
+                                                    for l in Cecelia.version_leaves(fn); init = 0))
             c     = isdir(zp) ? store_compression(zp) : nothing
             if !isnothing(c)
                 entry["label"]   = c.label;  entry["codec"]   = c.codec

@@ -1,3 +1,38 @@
+# ── Adding / removing a member never writes back a stale sibling ─────────────
+# `add_image!` / `delete_image!` / `add_set!` / `delete_set!` used to persist through a full `save!`,
+# which also re-wrote every image the in-memory set held — dropping whatever a task had committed to a
+# sibling since it was loaded (the import's filepath + calibration, a segmentation's labels).
+@testset "manifest adds/removes keep sibling task output" begin
+    proj = create_project!(name="manifest-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    a    = add_image!(s; name="a")
+    Cecelia.commit_state!(a) do raw          # a task's output, committed behind the loaded object's back
+        raw["filepath"] = Dict{String,Any}("default" => "x.ome.zarr", "_active" => "default")
+        raw["meta"]     = Dict{String,Any}("PhysicalSizeX" => 0.8)
+    end
+    kept() = (r = init_object(proj.uid, a.uid); r.filepath["default"] == "x.ome.zarr" &&
+                                                 r.meta["PhysicalSizeX"] == 0.8)
+    b = add_image!(s; name="b")
+    @test kept()
+    delete_image!(s, b.uid)
+    @test kept()
+    s2 = add_set!(proj; name="s2")
+    @test kept()
+    delete_set!(proj, s2.uid)
+    @test kept()
+    s3 = add_set!(proj; name="s3")
+    move_image!(proj, a.uid, s.uid, s3.uid)
+    @test kept()
+    move_image!(proj, a.uid, s3.uid, s.uid)
+    delete_set!(proj, s3.uid)
+    # the manifests on disk still say exactly what the objects say
+    p2 = load_project(proj.uid)
+    @test p2.set_uids == [s.uid]
+    @test only(sets(p2)).image_uids == [a.uid]
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Legacy `kind` on disk is silently ignored ────────────────────────────────
 # Guards the on-disk contract: a pre-existing ccid.json/project.json with a `kind` key must load
 # cleanly (no field on the struct) and the next save! must strip it. Project-wide static/live/flow
