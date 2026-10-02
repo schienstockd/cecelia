@@ -568,7 +568,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         end
         return Dict{String,Any}("chartType" => "raw", "measure" => mcol, "measureType" => mtype,
                                 "granularity" => String(granularity),
-                                "groupBy" => (gb_applied ? gb : nothing), "rows" => rows)
+                                "groupBy" => (gb_applied ? gb : nothing), "rows" => rows,
+                                # empty, but present: every response carries `series` (the frontend's
+                                # PlotDataResponse requires it; the matrix branches do the same)
+                                "series" => Any[])
     end
     if chart_type == "points"
         # raw (downsampled) values per series — the data source for strip/jitter and (client-side
