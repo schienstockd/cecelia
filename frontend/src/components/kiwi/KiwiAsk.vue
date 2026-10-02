@@ -8,7 +8,8 @@
 // takes 30 s to 2 min (Open decision 4). A reply can be followed up: the next question continues its
 // engine session. State lives in `stores/kiwi.ts`.
 import { ref, computed, nextTick } from 'vue'
-import { useToast } from 'primevue/usetoast'
+import { useRouter } from 'vue-router'
+import { useToast } from '../../composables/useToast'
 import CcToggle from '../CcToggle.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -41,6 +42,7 @@ const observer = useObserverStore()
 const plotsRegistry = usePlotRegistryStore()
 const now = useNowTick()
 const toast = useToast()
+const router = useRouter()
 
 // KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2 — per-turn (primary) and per-claim (secondary) Save to
 // Blackboard. Builder is pure (`utils/kiwiTurnSave.ts`); the callbacks here read live store data
@@ -52,16 +54,12 @@ function saveCallbacks() {
     plotSummary: (plotId: string) => plotsRegistry.getLast(plotId)?.meta?.summary ?? '',
   }
 }
-async function persistSavedEntry(entryId: string) {
-  const puid = pm.current?.uid ?? ''
+// The Blackboard list refreshes itself from the `blackboard:changed` broadcast the backend fires on
+// create, so the click only has to route: `?entry=` opens it (BlackboardModule).
+function announceSaved(entryId: string) {
   toast.add({ severity: 'success', life: 5000, summary: 'Saved to Blackboard',
               detail: 'Click to open the entry.',
-              // primevue toasts aren't routable; leave the message and let the button do the work.
-            })
-  // Nudge the Blackboard list; it listens for `blackboard:changed` broadcasts (backend fires one
-  // on create) so we don't strictly need a manual refresh — a user already on /blackboard will
-  // pick up the new row via WS. Opening the entry directly is a nice-to-have follow-up.
-  void entryId; void puid
+              onClick: () => { void router.push({ path: '/blackboard', query: { entry: entryId } }) } })
 }
 async function saveTurn(t: KiwiTurn) {
   if (saveBusy.value[t.turnId]) return
@@ -72,7 +70,7 @@ async function saveTurn(t: KiwiTurn) {
     const payload = buildTurnSave(t, saveCallbacks())
     const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
                                             { kiwiRefs: payload.kiwiRefs })
-    if (id) await persistSavedEntry(id)
+    if (id) announceSaved(id)
     else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
                      detail: 'Blackboard rejected the entry.' })
   } finally { saveBusy.value = { ...saveBusy.value, [t.turnId]: false } }
@@ -87,7 +85,7 @@ async function saveClaim(t: KiwiTurn, c: KiwiClaim, i: number) {
     const payload = buildClaimSave(t, c, saveCallbacks())
     const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
                                             { kiwiRefs: payload.kiwiRefs })
-    if (id) await persistSavedEntry(id)
+    if (id) announceSaved(id)
     else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
                      detail: 'Blackboard rejected the claim.' })
   } finally { saveBusy.value = { ...saveBusy.value, [key]: false } }

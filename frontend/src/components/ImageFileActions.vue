@@ -13,7 +13,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useToast } from 'primevue/usetoast'
+import { useToast } from '../composables/useToast'
 import BaseModal from './BaseModal.vue'
 import CopyDialog from './CopyDialog.vue'
 import DeleteImagesDialog, { type DeletePlan } from './DeleteImagesDialog.vue'

@@ -1,6 +1,6 @@
 # Retire PrimeVue
 
-**Status:** planning (2026-10-02). P0 done (exact pins + Dependabot ignore).
+**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast).
 
 ## Goal
 
@@ -77,8 +77,9 @@ Modals and dialogs are already hand-rolled (`BaseModal.vue`). No other PrimeVue 
 - **P0, done.** `primevue` 4.5.5, `@primeuix/themes` 2.0.3 and `primeicons` 7.0.0 are pinned
   **exactly** in `frontend/package.json`, because a caret would accept a patch released under the
   new licence. `.github/dependabot.yml` ignores all their updates. #1340 closed.
-- **P1, Toast.** `components/ToastHost.vue` + `composables/useToast.ts` (same signature), on the
-  traffic-light severity tokens. Swap the 5 importers. Vitest for the queue/expiry logic.
+- **P1, Toast — done.** `components/ToastHost.vue` + `composables/useToast.ts` (same `add()`
+  signature, plus pause-on-hover as PrimeVue had), on the traffic-light severity tokens; pure queue
+  half in `utils/toastQueue.ts` with Vitest. `ToastService` is gone from `main.ts`.
 - **P2, Tooltip.** `directives/tooltip.ts` on `@floating-ui/dom`: show/hide delays, hide on scroll and
   on element unmount, the `escape: false` HTML path (`lib/qc.ts` already escapes every interpolation),
   and reactive value updates. Pure placement/option parsing goes in `utils/` with Vitest. **Needs

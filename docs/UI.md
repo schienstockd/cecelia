@@ -78,8 +78,8 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 
 ### Toast notifications (transient foreground feedback)
 
-PrimeVue `<Toast />` is mounted once in `App.vue` (registered via `ToastService` in `main.ts`); call
-`useToast()` anywhere. **Do not add a second notification system.** Toast is for a foreground action
+`components/ToastHost.vue` is mounted once in `App.vue`; call `useToast()` (`composables/useToast.ts`)
+anywhere, including stores and plain modules. Hovering a toast pauses its life. **Do not add a second notification system.** Toast is for a foreground action
 the user just triggered and is waiting on (a cohort check, a longer save) — NOT for background
 scheduler progress (that's the task manager) nor for every lab-log entry (those badge). Severity maps
 to the traffic-light scale: `info` (in progress) · `success` (done, all-clear) · `warn` (done, findings)

@@ -21,6 +21,10 @@ updates:
       - dependency-name: primevue
       - dependency-name: "@primeuix/*"
       - dependency-name: primeicons
+      # TypeScript 7 is the native (Go) rewrite and drops `typescript/lib/tsc`, which vue-tsc loads
+      # (#1360 failed every typecheck). Majors stay ignored until vue-tsc supports 7.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /

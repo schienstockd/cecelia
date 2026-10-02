@@ -4,7 +4,6 @@ import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import PrimeVue from 'primevue/config'
 import Tooltip from 'primevue/tooltip'
-import ToastService from 'primevue/toastservice'
 import Aura from '@primeuix/themes/aura'
 import 'primeicons/primeicons.css'
 import './style.css'
@@ -135,7 +134,6 @@ app.use(PrimeVue, {
     },
   },
 })
-app.use(ToastService)
 app.directive('tooltip', Tooltip)
 
 // ── The browser's own failures → the console ─────────────────────────────────
