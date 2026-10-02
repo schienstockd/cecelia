@@ -5,7 +5,7 @@ import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
 import { decodeViewerBagEvent } from '../utils/viewerBagChannel'
-import { LABEL_OPACITY } from '../utils/viewerLabels'
+import { LABEL_OPACITY, OVERLAY_Z_TOL } from '../utils/viewerLabels'
 import { debouncedSave } from '../utils/debouncedSave'
 import { fetchProfileSettings, patchProfileSettings,
          type ProfileSettingsValue } from '../utils/profileSettingsApi'
@@ -218,10 +218,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // that INTERSECTS the plane, while the points draw only the few centred on it, so the two look
   // unrelated. A cell spans several planes, so a small tolerance is the honest default; it is a setting
   // rather than a constant because the right number is the cell diameter, which is per experiment.
-  const viewerPointZTol = ref(Number(localStorage.getItem('cc.viewerPointZTol') ?? '2'))
+  const viewerPointZTol = ref(Number(localStorage.getItem('cc.viewerPointZTol') ?? String(OVERLAY_Z_TOL)))
   // Track ribbon Z reach — same idea as viewerPointZTol but for the tail path. A track spans several
   // planes and often reads best with more slack than a centroid dot, so the two are decoupled.
-  const viewerTrackZTol = ref(Number(localStorage.getItem('cc.viewerTrackZTol') ?? '2'))
+  const viewerTrackZTol = ref(Number(localStorage.getItem('cc.viewerTrackZTol') ?? String(OVERLAY_Z_TOL)))
   const viewerScaleBarPx = ref(Number(localStorage.getItem('cc.viewerScaleBarPx') ?? '20') || 20)
   const viewerTimestampPx = ref(Number(localStorage.getItem('cc.viewerTimestampPx') ?? '20') || 20)
   const viewerCacheFrames = ref(Number(localStorage.getItem('cc.viewerCacheFrames') ?? '0') || 0)

@@ -215,8 +215,8 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "pointBorderPx"    => max(0, _cfg_int(cfg, "pointBorder", 0)),
         # the planes either side of a 2D frame's whose points / tail ends it shows (the viewer's
         # `viewerPointZTol` / `viewerTrackZTol`)
-        "pointZTol"        => max(0, _cfg_int(cfg, "pointZTol", 2)),
-        "trackZTol"        => max(0, _cfg_int(cfg, "trackZTol", 2)),
+        "pointZTol"        => max(0, _cfg_int(cfg, "pointZTol", OVERLAY_Z_TOL)),
+        "trackZTol"        => max(0, _cfg_int(cfg, "trackZTol", OVERLAY_Z_TOL)),
         "segmentWidthPx"   => _cfg_int(cfg, "tailWidth", 2),
     )
     if has_mask

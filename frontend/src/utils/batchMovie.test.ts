@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, resolveTrackSources, defaultTrackSourceColour, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd, withCustomColours } from './batchMovie'
+import { OVERLAY_Z_TOL } from './viewerLabels'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -13,7 +14,7 @@ describe('buildBatchMovieConfig', () => {
     expect(c.pointsSize).toBe(6)
     expect(c.pointBorder).toBe(0)            // no outline unless the look carries the viewer's
     expect(c.labelOpacity).toBe(0.7)         // the viewer's default fill opacity
-    expect([c.pointZTol, c.trackZTol]).toEqual([2, 2])   // the viewer's default z tolerances
+    expect([c.pointZTol, c.trackZTol]).toEqual([OVERLAY_Z_TOL, OVERLAY_Z_TOL])   // the viewer's default
   })
 
   it('passes through channels, colour-by and overlay flags', () => {
