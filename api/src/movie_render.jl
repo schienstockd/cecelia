@@ -520,14 +520,16 @@ end
 # The config shape mirrors `_overlays_raw_from_config` in `movie_rail.jl`, plus:
 #   - `valueName`     : segmentation whose centroids/tracks/populations to draw
 #   - `popType`       : "flow"/"live"/"clust" (cell) or "track"/"trackclust" (gate-on-tracks)
-#   - `showPops`      : draw pop dots
-#   - `showTracks`    : whole-segmentation track ribbons (`all_tracks = true`)
-#   - `showGatedTracks`: draw track ribbons alongside pop dots
+#   - `showPopulations`: draw pop dots
+#   - `includeTracks` : draw track tails with them
+#   - `allTracks`     : every tracked cell, not just the pops' (`trackSources` = one colour each)
 #   - `tailLength`    : segment tail window (frames)
 #   - `pointSizePx`   : dot radius in the DRAWN frame
 #   - `segmentWidthPx`: ribbon width
-#   - `popsFilter`    : Vector{String} of pop paths to keep (nothing = all visible)
-#   - `trackColourMode`: "track" | "speed" | "solid"
+#   - `popPaths`      : Vector{String} of pop paths to keep (nothing = all visible)
+#   - `trackColorMode`: "track" | "speed" | "solid"
+# The same keys and the same gate as the 2D rail's `_resolve_movie_overlays_mask`. Older animation
+# configs said `showTracks` / `showGatedTracks` / `popsFilter`; those still read as before.
 _ov_str(cfg, k, dflt) = begin
     v = get(cfg, k, dflt)
     v === nothing ? String(dflt) : String(v)
@@ -559,12 +561,22 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
                                             on_log::Union{Nothing,Function} = nothing)
     (img === nothing || overlays_config === nothing) && return (nothing, nothing, nothing)
     show_pops   = _ov_bool(overlays_config, "showPopulations", false)
-    show_tracks = _ov_bool(overlays_config, "showTracks",      false)
-    show_gated  = _ov_bool(overlays_config, "showGatedTracks", false)
+    legacy_tracks = _ov_bool(overlays_config, "showTracks", false)
+    legacy_gated  = _ov_bool(overlays_config, "showGatedTracks", false)
+    # `include_tracks` gates the track-history build; `all_tracks` flips WHICH cells to iterate.
+    inc_tracks  = _ov_bool(overlays_config, "includeTracks", legacy_gated || legacy_tracks)
+    all_tracks  = _ov_bool(overlays_config, "allTracks", legacy_tracks)
     show_mask   = _ov_bool(overlays_config, "showMask",        false)
-    (show_pops || show_tracks || show_gated || show_mask) || return (nothing, nothing, nothing)
+    ts_raw = get(overlays_config, "trackSources", nothing)
+    track_sources = all_tracks && ts_raw isa AbstractVector ?
+        [(_wstr_any(e, "valueName", :valueName), _wstr_any(e, "colour", :colour; default = "#9ca3af"))
+         for e in ts_raw if e isa AbstractDict] :
+        Tuple{String,String}[]
+    filter!(s -> !isempty(s[1]), track_sources)
+    (show_pops || all_tracks || show_mask) || return (nothing, nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
+    isempty(vn) && !isempty(track_sources) && (vn = track_sources[1][1])
     # The mask's segmentation, when the caller names it apart from the overlays' (`maskValueName`).
     mask_vn = _ov_str(overlays_config, "maskValueName", vn)
     isempty(vn) && isempty(mask_vn) && return (nothing, nothing, nothing)
@@ -577,12 +589,9 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     # both spellings: `_overlays_raw_from_config` (the translator every caller goes through) writes
     # `trackColorMode`, which is the key the 2D overlay reader uses — reading only this one dropped it
     tcm  = _ov_str(overlays_config, "trackColourMode", _ov_str(overlays_config, "trackColorMode", "track"))
-    pops_filter = _ov_strvec(overlays_config, "popsFilter")
-    # `include_tracks` gates the track-history build. Whole-seg ribbons (`showTracks = true`) need
-    # it too — dropping this was a latent bug that shipped only dots when `showTracks` was on
-    # without `showGatedTracks`. The author's `all_tracks` flag flips WHICH cells to iterate; the
-    # `include_tracks` flag flips WHETHER to also record segments.
-    inc_tracks  = show_gated || show_tracks
+    pops_filter = something(_ov_strvec(overlays_config, "popPaths"),
+                            _ov_strvec(overlays_config, "popsFilter"), Some(nothing))
+    all_tracks_col = _ov_str(overlays_config, "allTracksColour", "#9ca3af")
     # `colourBy` is optional — an obs column name. `colourOverrides` is a Dict{String,String}
     # mapping value → hex. Both empty / missing → author falls back to pop-derived colours.
     cb_raw = get(overlays_config, "colourBy", nothing)
@@ -595,25 +604,25 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     # Same author for both dimensionalities; the 2D one takes a `PixelTransform`, so we curry a
     # per-canvas builder that the caller pins to the frame's crop/max_px at draw time. `native_h`/
     # `native_w` are the image extents — needed for `pixel_transform`.
+    # Whole-seg tracks from several segmentations: one author call per source, in its colour, merged
+    # (`merge_overlay_closures`) — as the 2D rail does. Otherwise one call on `vn`.
+    # A source's colour is also its "solid" track colour, as in the viewer.
+    sources = !isempty(track_sources) ? track_sources : [(vn, nothing)]
+    author_kw(src_vn, src_col) = (; value_name = src_vn, pop_type = pt, pops_filter = pops_filter,
+                                    include_tracks = inc_tracks, tail_length = tail,
+                                    all_tracks = all_tracks,
+                                    all_tracks_colour = something(src_col, all_tracks_col),
+                                    solid_colour = src_col,
+                                    # the viewer's points are its populations; tracks alone draw no dots
+                                    include_points = show_pops,
+                                    track_color_mode = tcm, colour_by = colour_by,
+                                    colour_overrides = colour_overrides)
     _build2d = (native_h, native_w, crop, max_px) -> begin
         tf = pixel_transform(native_h, native_w; crop = crop, max_px = max_px)
-        build_overlays_for(img; value_name = vn, pop_type = pt, transform = tf,
-                            pops_filter = pops_filter,
-                            include_tracks = inc_tracks,
-                            tail_length = tail,
-                            all_tracks = show_tracks,
-                            track_color_mode = tcm,
-                            colour_by = colour_by,
-                            colour_overrides = colour_overrides)
+        merge_overlay_closures([build_overlays_for(img; transform = tf, author_kw(s...)...)
+                                for s in sources])
     end
-    per_t3d = build_overlays3d_for(img; value_name = vn, pop_type = pt,
-                                    pops_filter = pops_filter,
-                                    include_tracks = inc_tracks,
-                                    tail_length = tail,
-                                    all_tracks = show_tracks,
-                                    track_color_mode = tcm,
-                                    colour_by = colour_by,
-                                    colour_overrides = colour_overrides)
+    per_t3d = merge_overlay_closures([build_overlays3d_for(img; author_kw(s...)...) for s in sources])
 
     # Mask factory — mirrors `_build2d`. Same three axes per frame (crop, max_px, z) drive
     # `build_mask_for`; skipped when the config didn't ask for a mask, so an animation that
@@ -710,8 +719,8 @@ of a fixed sweep.
      keyframe with only camera moves keeps the current colours instead of every channel going grey.
   4. **Per-set overlay settings** — arrives here as `overlays_config` (a Dict shaped by
      `_overlays_raw_from_config` on the request's `look`): `pointSizePx`, `segmentWidthPx`,
-     `tailLength`, `showPopulations`/`Tracks`/`GatedTracks`, `popType`, `valueName`, `popsFilter`,
-     `trackColourMode`. Applies uniformly across every frame (not per-frame tweenable — the
+     `tailLength`, `showPopulations`, `includeTracks`, `allTracks`, `trackSources`, `popType`,
+     `valueName`, `popPaths`, `trackColorMode` (the keys listed above `_resolve_keyframe_overlay_builders`). Applies uniformly across every frame (not per-frame tweenable — the
      animation page doesn't expose per-keyframe overlay knobs).
   5. **Built-in defaults** — `pointSizePx = 6`, `tailLength = 30`, `trackColourMode = "track"`,
      etc. — kick in when neither the snapshot nor `overlays_config` speaks to a knob.

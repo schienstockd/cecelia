@@ -363,6 +363,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
                               all_tracks::Bool = false,
                               all_tracks_colour::AbstractString = "#9ca3af",
                               track_color_mode::AbstractString = "track",
+                              solid_colour::Union{Nothing,AbstractString} = nothing,
                               colour_by::Union{Nothing,AbstractString} = nothing,
                               colour_overrides::Union{Nothing,AbstractDict} = nothing)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
@@ -581,11 +582,12 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
             end
         end
         s_span = (isfinite(s_min) && isfinite(s_max) && s_max > s_min) ? (s_max - s_min) : 0.0
-        # "solid" collapses to ONE colour for every ribbon in this author call (there is only ever
-        # one (value_name, pop_type) source per _build_overlay_state, so the browser's palette-by-
-        # source-index reduces to palette[0] here). "pop" keeps `col` — the pop's own swatch that
-        # was baked into track_hist's key upstream. This is the Julia mirror of the browser's split.
-        solid_col = CECELIA_TRACK_PALETTE[1]
+        # "solid" collapses to ONE colour for every ribbon in this author call — there is only ever
+        # one (value_name, pop_type) source per _build_overlay_state. That is the source's own colour
+        # when the caller has one (`solid_colour`, the viewer's per-source picker), else palette[0]:
+        # the browser's `solidRgb`. "pop" keeps `col` — the pop's own swatch that was baked into
+        # track_hist's key upstream. This is the Julia mirror of the browser's split.
+        solid_col = solid_colour === nothing ? CECELIA_TRACK_PALETTE[1] : hex_to_rgb(String(solid_colour))
         for (t1, x0, y0, z0, x1, y1, z1, kid, sp2, col) in raw
             colour = if tcm == "track"
                 CECELIA_TRACK_PALETTE[mod1(abs(kid), length(CECELIA_TRACK_PALETTE))]
@@ -612,6 +614,29 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
     OverlayState(pts_by_t, segs_by_end, hasT, tail_length, tracks_active)
 end
 
+"""
+    merge_overlay_closures(closures) -> ((args...) -> (points, segments)) | nothing
+
+One overlay closure out of several — a movie drawing more than one track source, each built by its
+own `build_overlays_for` / `build_overlays3d_for` call with its own colour. Each call's points and
+segments are concatenated column by column, so the merged closure returns the same shape its parts
+do (2D or 3D, whatever their arguments). `nothing` for an empty list.
+"""
+function merge_overlay_closures(closures::AbstractVector)
+    isempty(closures) && return nothing
+    length(closures) == 1 && return only(closures)
+    cat_nt(a, b) = a === nothing ? b : b === nothing ? a :
+                   NamedTuple{keys(a)}(map(vcat, values(a), values(b)))
+    (args...) -> begin
+        pts = nothing; segs = nothing
+        for cl in closures
+            p, s = cl(args...)
+            pts = cat_nt(pts, p); segs = cat_nt(segs, s)
+        end
+        (pts, segs)
+    end
+end
+
 # ─────────────────────────────────────────────────────────────────────────────────
 # 2D author — `PixelTransform` per frame, integer drawn coords, backward-compatible
 # `(; x::Vector{Int}, y::Vector{Int}, colour)` / `(; x0, y0, x1, y1, colour)` shape
@@ -622,13 +647,16 @@ end
     build_overlays_for(img; value_name, pop_type, transform,
                        pops_filter = nothing, include_tracks = true, tail_length = 30,
                        all_tracks = false, all_tracks_colour = "#9ca3af",
-                       track_color_mode = "track")
+                       track_color_mode = "track", solid_colour = nothing, include_points = true)
         -> (t -> (points, segments))
 
 Return a per-t closure that gives `record_view_movie` its 2D overlay shape. Coordinates are 1-based
 row-column in the drawn frame (post-crop + post-stride) — the mapping baked into `transform`.
 Segments emit `(; x0, y0, x1, y1, colour)`; points emit `(; x, y, colour)` — both use Int for
 compatibility with `draw_points!` / `draw_segments!`. `(nothing, nothing)` when nothing is drawable.
+
+`include_points = false` draws the tracks alone — what the viewer shows for a track source with no
+population on (its points come from populations only).
 
 Backed by `_build_overlay_state` — one collection, one place any pop-resolution / `track_color_mode`
 fix reaches. The projection differs only in `_apply(transform, x, y)` at emit time.
@@ -641,6 +669,8 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::PopTypeAr
                             all_tracks::Bool = false,
                             all_tracks_colour::AbstractString = "#9ca3af",
                             track_color_mode::AbstractString = "track",
+                            solid_colour::Union{Nothing,AbstractString} = nothing,
+                            include_points::Bool = true,
                             colour_by::Union{Nothing,AbstractString} = nothing,
                             colour_overrides::Union{Nothing,AbstractDict} = nothing)
     state = _build_overlay_state(img;
@@ -649,11 +679,13 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::PopTypeAr
                                   tail_length = tail_length, all_tracks = all_tracks,
                                   all_tracks_colour = all_tracks_colour,
                                   track_color_mode = track_color_mode,
+                                  solid_colour = solid_colour,
                                   colour_by = colour_by,
                                   colour_overrides = colour_overrides)
     tail_L = max(1, tail_length)
     return function(t::Int)
         pts_raw, segs_raw = _state_at(state, t)
+        include_points || (pts_raw = nothing)
         pts = nothing
         if pts_raw !== nothing && !isempty(pts_raw.x)
             xs = Int[]; ys = Int[]; cs = RGB{N0f8}[]
@@ -706,7 +738,8 @@ end
     build_overlays3d_for(img; value_name, pop_type,
                          pops_filter = nothing, include_tracks = true, tail_length = 30,
                          all_tracks = false, all_tracks_colour = "#9ca3af",
-                         track_color_mode = "track", colour_by = nothing, colour_overrides = nothing)
+                         track_color_mode = "track", solid_colour = nothing, include_points = true,
+                         colour_by = nothing, colour_overrides = nothing)
         -> (t -> (points, segments))
 
 Per-t closure over the shared overlay state (`_build_overlay_state`, the same one the 2D author
@@ -720,6 +753,8 @@ function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopType
                               all_tracks::Bool = false,
                               all_tracks_colour::AbstractString = "#9ca3af",
                               track_color_mode::AbstractString = "track",
+                              solid_colour::Union{Nothing,AbstractString} = nothing,
+                              include_points::Bool = true,
                               colour_by::Union{Nothing,AbstractString} = nothing,
                               colour_overrides::Union{Nothing,AbstractDict} = nothing)
     state = _build_overlay_state(img;
@@ -728,11 +763,12 @@ function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopType
                                   tail_length = tail_length, all_tracks = all_tracks,
                                   all_tracks_colour = all_tracks_colour,
                                   track_color_mode = track_color_mode,
+                                  solid_colour = solid_colour,
                                   colour_by = colour_by,
                                   colour_overrides = colour_overrides)
     return function(t::Int)
         pts, segs = _state_at(state, t)
-        (pts === nothing || isempty(pts.x)) && (pts = nothing)
+        (!include_points || pts === nothing || isempty(pts.x)) && (pts = nothing)
         (segs === nothing || isempty(segs.x0)) && (segs = nothing)
         (pts, segs)
     end
