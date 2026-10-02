@@ -5,7 +5,8 @@
 // window with its own (empty) project store, so a rename in the main window never reached it — the
 // old names stayed until the viewer was reopened. `stores/project.updateImageMeta` publishes here
 // when an image's `channelNames` actually change; `ViewerWindow` refetches meta and patches the
-// names in place (contrast, LUT and visibility untouched).
+// names in place (contrast, LUT and visibility untouched), and `stores/gating` refetches its
+// channels so gating axis labels follow too.
 //
 // Same transport as `viewerCacheClearChannel.ts`: `localStorage` + `storage` for other windows, and
 // a same-window CustomEvent for the in-panel viewer (`storage` never fires in the writing window).
