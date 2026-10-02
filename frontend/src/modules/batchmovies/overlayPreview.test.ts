@@ -27,11 +27,11 @@ describe('derivedOverlayFlags — locks the PR #751 rules', () => {
     expect(derivedOverlayFlags({ showPopulations: true }).includeTracks).toBe(false)
   })
 
-  it('showPoints fires under showPops OR showTracks', () => {
-    expect(derivedOverlayFlags({ showPopulations: true }).showPoints).toBe(true)
-    expect(derivedOverlayFlags({ showTracks: true }).showPoints).toBe(true)
-    expect(derivedOverlayFlags({}).showPoints).toBe(false)
-    expect(derivedOverlayFlags({ showGatedTracks: true }).showPoints).toBe(false)
+  it('the author runs under showPops OR showTracks (points only for pops)', () => {
+    expect(derivedOverlayFlags({ showPopulations: true }).authorRuns).toBe(true)
+    expect(derivedOverlayFlags({ showTracks: true }).authorRuns).toBe(true)
+    expect(derivedOverlayFlags({}).authorRuns).toBe(false)
+    expect(derivedOverlayFlags({ showGatedTracks: true }).authorRuns).toBe(false)
   })
 })
 
@@ -52,8 +52,9 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
 
   it('showTracks alone → whole-seg grey, ribbons uniform grey', () => {
     const r = renderOverlayPreview({ showTracks: true }, scene)
-    expect(r.points.length).toBeGreaterThan(0)
-    expect(r.points.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
+    expect(r.points.length).toBe(0)   // tails only — points are populations
+    expect(r.ribbons.length).toBeGreaterThan(0)
+    expect(r.ribbons.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
     // includeTracks fires under showTracks (PR #751) → ribbons drawn AND uniformly grey
     expect(r.ribbons.length).toBeGreaterThan(0)
     expect(r.ribbons.every(rib => rib.colour === ALL_TRACKS_GREY)).toBe(true)
@@ -119,6 +120,13 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
     expect(r.points.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
   })
 
+  it('tracks + a mask → tails, and the mask still outlined', () => {
+    const r = renderOverlayPreview({ showTracks: true, labelValueNames: ['flowTom'] }, scene)
+    expect(r.ribbons.length).toBeGreaterThan(0)
+    expect(r.points.length).toBeGreaterThan(0)
+    expect(r.points.every(p => p.mode === 'ring-only')).toBe(true)
+  })
+
   it('colourLabels on top of a mask → outlines tinted by pop colour', () => {
     const r = renderOverlayPreview(
       { labelValueNames: ['flowTom'], colourLabels: true }, scene)
@@ -151,12 +159,13 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
         { valueName: 'flowTom', colour: '#4ecdc4' },
       ],
     }, scene)
-    expect(r.points.length).toBeGreaterThan(0)
+    expect(r.points.length).toBe(0)   // tails only — points are populations
+    expect(r.ribbons.length).toBeGreaterThan(0)
     // Both source colours must appear — mirrors the backend's multi-source composition.
-    expect(r.points.some(p => p.colour === '#ff6b6b')).toBe(true)
-    expect(r.points.some(p => p.colour === '#4ecdc4')).toBe(true)
+    expect(r.ribbons.some(p => p.colour === '#ff6b6b')).toBe(true)
+    expect(r.ribbons.some(p => p.colour === '#4ecdc4')).toBe(true)
     // No point should stay grey when trackSources kicks the multi-source branch.
-    expect(r.points.every(p => p.colour !== ALL_TRACKS_GREY)).toBe(true)
+    expect(r.ribbons.every(p => p.colour !== ALL_TRACKS_GREY)).toBe(true)
   })
 
   it('showTracks + a SINGLE trackSource → every cell in that source colour', () => {
@@ -164,14 +173,16 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
       showTracks: true,
       trackSources: [{ valueName: 'cpSAM', colour: '#ff6b6b' }],
     }, scene)
-    expect(r.points.length).toBeGreaterThan(0)
-    expect(r.points.every(p => p.colour === '#ff6b6b')).toBe(true)
+    expect(r.points.length).toBe(0)   // tails only — points are populations
+    expect(r.ribbons.length).toBeGreaterThan(0)
+    expect(r.ribbons.every(p => p.colour === '#ff6b6b')).toBe(true)
   })
 
   it('showTracks alone + empty trackSources → single-source grey (legacy behaviour)', () => {
     const r = renderOverlayPreview({ showTracks: true, trackSources: [] }, scene)
-    expect(r.points.length).toBeGreaterThan(0)
-    expect(r.points.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
+    expect(r.points.length).toBe(0)   // tails only — points are populations
+    expect(r.ribbons.length).toBeGreaterThan(0)
+    expect(r.ribbons.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
   })
 
   it('showPops overrides trackSources — pops win (allTracks false, so trackSources ignored)', () => {
