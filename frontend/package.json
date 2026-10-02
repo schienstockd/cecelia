@@ -27,7 +27,7 @@
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
-    "@types/node": "^24.12.3",
+    "@types/node": "^26.6.3",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/tsconfig": "^0.9.1",
     "@webgpu/types": "^0.1.74",
