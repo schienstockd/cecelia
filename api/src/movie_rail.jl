@@ -213,6 +213,10 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "trackColorMode"   => _cfg_str(cfg, "trackColourMode", _cfg_str(cfg, "trackColorMode", "track")),
         "pointSizePx"      => _cfg_int(cfg, "pointsSize", 6),
         "pointBorderPx"    => max(0, _cfg_int(cfg, "pointBorder", 0)),
+        # the planes either side of a 2D frame's whose points / tail ends it shows (the viewer's
+        # `viewerPointZTol` / `viewerTrackZTol`)
+        "pointZTol"        => max(0, _cfg_int(cfg, "pointZTol", 2)),
+        "trackZTol"        => max(0, _cfg_int(cfg, "trackZTol", 2)),
         "segmentWidthPx"   => _cfg_int(cfg, "tailWidth", 2),
     )
     if has_mask
@@ -225,7 +229,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         out["allCells"]        = !(show_pops || show_gated)
     end
     # colourBy / colourOverrides — same knobs the overlay author reads (`_build_overlay_state`).
-    # `build_mask_for` picks them up so a labels layer coloured by "clusters" and the pop dots
+    # `mask_id_colours` picks them up so a labels layer coloured by "clusters" and the pop dots
     # coloured by "clusters" share the same palette. Absent / empty → pop-derived colours.
     cb_raw = _cfg_str(cfg, "colourBy", "")
     isempty(cb_raw) || (out["colourBy"] = cb_raw)
@@ -234,7 +238,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     co_raw isa AbstractDict && (out["colourOverrides"] = co_raw)
     # `popsFilter` — restrict pop-dot + all_cells=false mask to a subset of pop paths. Absent / empty
     # = "no filter" = draw every visible pop of `popType`. `_resolve_movie_overlays_mask` reads this
-    # as `popPaths` and threads it into `build_overlays_for` + `build_mask_for` as `pops_filter`.
+    # as `popPaths` and threads it into `build_overlays3d_for` + `mask_id_colours` as `pops_filter`.
     pf_raw = get(cfg, "popsFilter", nothing)
     pf_raw === nothing && (pf_raw = get(cfg, :popsFilter, nothing))
     if pf_raw isa AbstractVector && !isempty(pf_raw)
@@ -244,14 +248,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # (`gating/{value_name}.json`), so a batch that draws mask `default` while filtering `/qc/CD169-`
     # (a pop authored on `flowTom`) needs the resolver to look up `flowTom`'s tree, not `default`'s.
     # Emitted as `valueName` — the field `_resolve_movie_overlays_mask` already reads and threads into
-    # `build_overlays_for(; value_name=...)`. Absent → the resolver falls back to `vnn` (the mask
+    # `build_overlays3d_for(; value_name=...)`. Absent → the resolver falls back to `vnn` (the mask
     # segmentation), matching the pre-picker behaviour.
     pvn = _cfg_str(cfg, "popValueName", "")
     isempty(pvn) || (out["valueName"] = pvn)
     # `trackSources` — a list of `{valueName, colour}` entries picked in the batch panel's
     # "Track sources" list. Only meaningful under `showTracks && !showPops` (all-tracks mode) — the
     # batch panel hides the picker otherwise. When passed, `_resolve_movie_overlays_mask` composes
-    # ONE overlay closure per source (each `build_overlays_for` call has its own `all_tracks_colour`)
+    # ONE overlay closure per source (each `build_overlays3d_for` call has its own `all_tracks_colour`)
     # and merges their outputs. Without this the movie draws only the mask segmentation's tracks in
     # one grey; with two tracked segs (fXgbTl has cpSAM + flowTom + coastalFg + coastalSm15) the user
     # can now see both, each in its own colour.
@@ -388,7 +392,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     specs = _apply_channel_picks(specs, look_cfg, img, vnn)
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                        label_value_name === nothing ? vnn : String(label_value_name);
-                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false,
+                                       tally = false,
                                        on_log = line -> ws_log(nothing, task_id, line))
 
     out_path = _movie_named_path(img, image_uid; suffix = _movie_suffix(suffix))
@@ -415,13 +419,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                                    z = z_slice, channels = 0:(nc - 1), specs = specs,
                                    crop = view_crop, max_px = max_px,
                                    title_card = title_card,
-                                   overlays_for = ov.overlays_for,
-                                   mask_for     = ov.mask_for,
-                                   point_size_px    = ov.point_size_px,
-                                   segment_width_px = ov.segment_width_px,
-                                   mask_contour_px  = ov.mask_contour_px,
-                                   point_border_px  = ov.point_border_px,
-                                   mask_opacity     = ov.mask_opacity,
+                                   overlays3d_for = ov.overlays3d_for, mask = ov.mask,
+                                   style = ov.style,
                                    show_timestamp = show_timestamp, show_scale_bar = show_scale_bar,
                                    pixel_size_um  = pixel_size_um,
                                    time_step_min  = time_step_min,
@@ -589,7 +588,6 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                         overlays_raw : _overlays_raw_from_config(config, has_mask)
                     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                                        label_vn === nothing ? vnn : label_vn;
-                                                       z = z_slice, crop = nothing, max_px = max_px,
                                                        tally = false,
                                                        on_log = line -> ws_log(nothing, task_id, line))
                     # Apply the batch config's channel picks on top of the props-derived specs —
@@ -605,13 +603,8 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                                                 z = z_slice, channels = 0:(nc - 1), specs = specs,
                                                 crop = nothing, max_px = max_px,
                                                 title_card = tcard,
-                                                overlays_for = ov.overlays_for,
-                                                mask_for     = ov.mask_for,
-                                                point_size_px    = ov.point_size_px,
-                                                segment_width_px = ov.segment_width_px,
-                                                mask_contour_px  = ov.mask_contour_px,
-                                                point_border_px  = ov.point_border_px,
-                                                mask_opacity     = ov.mask_opacity,
+                                                overlays3d_for = ov.overlays3d_for, mask = ov.mask,
+                                                style = ov.style,
                                                 show_timestamp = show_ts, show_scale_bar = show_sb,
                                                 pixel_size_um  = pixel_size_um,
                                                 time_step_min  = time_step_min,
@@ -749,8 +742,8 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     # Compare-grid mask outlines default to per-id rainbow. Gray on top of coloured channels was
     # invisible on cpSAM (large blobs, magenta) and looked like undifferentiated dots on flowTom
     # (35k tiny cells collapsed to 2-px rings at 512×512). See docs/todo/MOVIE_COMPARE_PLAN.md
-    # for the 2026-08-31 report. `build_mask_for` reads "rainbow" as a sentinel and cycles
-    # `CECELIA_TRACK_PALETTE` by label id.
+    # for the 2026-08-31 report. An all-cells mask with no colour-by now draws in the viewer's
+    # per-id palette regardless; "rainbow" still matters to a colour-by mask's fallback colours.
     if overlays_dict isa AbstractDict && get(overlays_dict, "allCells", false) === true
         overlays_dict["allCellsColour"] = "rainbow"
     end
@@ -773,7 +766,7 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     end
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, overlays_dict,
                                        label_vn === nothing ? vnn : label_vn;
-                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false,
+                                       tally = false,
                                        on_log = on_log)
     (; zp, arr, caxes, specs = effective_specs, ov, z_slice, nc, view_crop,
        banked_specs = picked_specs)
@@ -864,13 +857,8 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                                  specs = cell.specs,
                                                  crop = cell.view_crop, max_px = cell_max_px,
                                                  title_card = nothing,           # applied at end
-                                                 overlays_for = cell.ov.overlays_for,
-                                                 mask_for     = cell.ov.mask_for,
-                                                 point_size_px    = cell.ov.point_size_px,
-                                                 segment_width_px = cell.ov.segment_width_px,
-                                                 mask_contour_px  = cell.ov.mask_contour_px,
-                                                 point_border_px  = cell.ov.point_border_px,
-                                                 mask_opacity     = cell.ov.mask_opacity,
+                                                 overlays3d_for = cell.ov.overlays3d_for, mask = cell.ov.mask,
+                                                 style = cell.ov.style,
                                                  show_timestamp = show_timestamp,
                                                  show_scale_bar = show_scale_bar,
                                                  pixel_size_um  = pixel_size_um,

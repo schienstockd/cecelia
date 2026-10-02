@@ -5,7 +5,7 @@
 #    keying bug — silently returned defaults when raw came from movie_rail.jl).
 #  - `API: render_view_frame — points and segments overlays` (offline renderer draws
 #    both live overlays paths against a real fixture).
-#  - `API: record_view_movie — the raw frame hand-off` (encoder gets what it should).
+#  - `API: record_view_movie — 2D through the shared renderer` (region, size, plane window, mask).
 #  - `API: interpolate_keyframes — the offline renderer tween`.
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
@@ -34,8 +34,7 @@
             img, err = _gating_image("testpr", "KDIeEm")
             @test err === nothing
 
-            # Minimal label store on disk so `build_mask_for` can open it — same shape as the
-            # `build_mask_for guard` testset above uses.
+            # Minimal label store on disk: a movie mask needs its store (`movie_mask`).
             nt, nc, ny, nx = 3, 1, 8, 8
             labels_dir = joinpath(dir, "testpr", "1", "KDIeEm", "labels")
             mkpath(labels_dir)
@@ -61,16 +60,17 @@
                 "showPopulations" => false, "popType" => "flow",
                 "showMask" => true, "allCells" => true, "allCellsColour" => "rainbow",
                 "maskContourPx" => 2)
-            r = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_str, "B";
-                                              z = nothing, crop = nothing, max_px = 0)
-            @test r.overlays_for === nothing
-            @test r.mask_for !== nothing
+            r = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_str, "B")
+            @test r.overlays3d_for === nothing
+            @test r.mask !== nothing
             @test r.mask_diag["requested"] === true
-            # rainbow paints each cell from the palette — not the default gray. A solid
-            # `#9ca3af` fallback (the pre-fix behaviour) would fail this check.
-            _, dict0 = r.mask_for(0)
-            @test dict0 !== nothing && !isempty(dict0)
-            @test any(v -> v in CECELIA_TRACK_PALETTE, values(dict0))
+            @test r.mask.contour_px == 2
+            # "all cells" is every label in the viewer's palette (no colour table)
+            @test r.mask.colours === nothing
+            # a population mask — not all cells — carries its label → colour table
+            ov_pop = merge(ov_str, Dict{String,Any}("allCells" => false, "allCellsColour" => "#00ff00"))
+            rp = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_pop, "B")
+            @test rp.mask === nothing || rp.mask.colours isa AbstractDict
 
             # Symbol-keyed ov_raw (what `record-test`'s JSON3 parse yields) must still work — the
             # helper tries symbol first, then string, so both wire shapes converge on the same
@@ -79,10 +79,9 @@
                 :showPopulations => false, :popType => "flow",
                 :showMask => true, :allCells => true, :allCellsColour => "rainbow",
                 :maskContourPx => 2)
-            r2 = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_sym, "B";
-                                               z = nothing, crop = nothing, max_px = 0)
-            @test r2.overlays_for === nothing
-            @test r2.mask_for !== nothing
+            r2 = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_sym, "B")
+            @test r2.overlays3d_for === nothing
+            @test r2.mask !== nothing && r2.mask.contour_px == 2
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
@@ -152,75 +151,49 @@ end
     end
 end
 
-@testset "API: record_view_movie — the raw frame hand-off" begin
-    # Julia composites, Python encodes. The ONE thing that cannot be checked downstream is the byte
-    # ORDER: a transposed movie plays perfectly — right length, right size, real pixels, just on its
-    # side — and on a field of scattered cells nobody notices. So it is asserted here, against
-    # `render_view_frame`'s own output rather than against a shape.
+@testset "API: record_view_movie — 2D through the shared renderer" begin
+    # The region / size contract the CPU renderer had (crop, then an integer stride, even sides),
+    # now as a head-on camera on the viewer's pass; and the plane window the overlays are cut to.
+    style = movie_overlay_style()
+    @test (style.point_z_tol, style.track_z_tol, style.point_border_px) == (2, 2, 0)
+    @test movie_overlay_style(k -> k == "pointZTol" ? 0 : nothing).point_z_tol == 0
+    zr, filt = _plane_window(5, 10, style)
+    @test zr == [5, 5] && filt["points"] == [3, 7] && filt["tracks"] == [3, 7]
+    zr, filt = _plane_window(nothing, 10, style)
+    @test zr == [0, 9] && filt === nothing                       # the whole stack: every overlay
+    @test _plane_window(2:4, 10, style)[1] == [2, 4]
+    params = _mask_params!(Dict{String,Any}(), (; labels_path = "/x", contour_px = 1, opacity = 0.5,
+                                                  colours = Dict(7 => RGB{N0f8}(1, 0, 0), 3 => RGB{N0f8}(0, 0, 1))))
+    @test params["labelColours"]["ids"] == [3, 7]
+    @test params["labelColours"]["colours"] == [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]
+
     v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
     if !api_have_fixture(v2)
         @test_skip "zarr format fixture missing"
     else
-        a2, ax2 = open_level0(v2)
         specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
-        kw = (; channels = 0:1, specs = specs)
-
-        io = IOBuffer()
-        W, H, n, stopped = write_raw_frames(io, a2, ax2, [0, 1, 2]; kw...)
-        @test (W, H) == (64, 64)
-        @test n == 3 && !stopped
-        bytes = take!(io)
-        @test length(bytes) == W * H * 3 * n
-
-        img  = render_view_frame(a2, ax2, 0; kw...)
-        want = collect(reinterpret(UInt8, vec(permutedims(img, (2, 1)))))
-        @test bytes[1:length(want)] == want
-        # ...and NOT the untransposed order, which is the sideways movie. Guarded on the two actually
-        # differing, so a symmetric frame could never make this pass vacuously.
-        wrong = collect(reinterpret(UInt8, vec(img)))
-        @test wrong != want
-        @test bytes[1:length(want)] != wrong
-
-        # frames follow one another in sweep order, so frame 1's bytes start where frame 0's end
-        img1 = render_view_frame(a2, ax2, 1; kw...)
-        want1 = collect(reinterpret(UInt8, vec(permutedims(img1, (2, 1)))))
-        @test bytes[(length(want) + 1):(2 * length(want))] == want1
-
-        # h264/yuv420p needs even dimensions and nothing downstream fixes an odd frame: a 63x61 crop
-        # has to come out 62x60, and the size the encoder is told must be the size written.
-        odd = IOBuffer()
-        Wo, Ho, no, _ = write_raw_frames(odd, a2, ax2, [0]; crop = (x = 0:62, y = 0:60), kw...)
-        @test (Wo, Ho) == (62, 60)
-        @test length(take!(odd)) == Wo * Ho * 3 * no
-
-        # cancellation is checked BETWEEN frames, so it costs at most one and writes nothing
-        cio = IOBuffer()
-        _, _, nc, sc = write_raw_frames(cio, a2, ax2, [0, 1, 2]; cancelled = () -> true, kw...)
-        @test nc == 0 && sc
-        @test isempty(take!(cio))
-
-        # a t range with nothing in it is a caller error, not an empty movie
-        @test_throws ArgumentError record_view_movie(v2, joinpath(mktempdir(), "x.mp4"); ts = [99])
-
-        # `overlays_for(t)` paints per-frame P3 overlays onto each raw frame — assert both that it is
-        # called for every frame and that the returned bytes carry the overlay pixel, so a wiring that
-        # silently drops points on the way to Python is caught.
         seen = Int[]
-        oio  = IOBuffer()
-        overlays_for = function (t::Int)
+        ov3d = function (t::Int)
             push!(seen, t)
-            pts = (; x = [4], y = [4], colour = [RGB{N0f8}(0, 0, 1)])
-            (pts, nothing)
+            ((; x = [4.0], y = [4.0], z = [1.0], colour = [RGB{N0f8}(0, 0, 1)]), nothing)
         end
-        Wo2, Ho2, no2, _ = write_raw_frames(oio, a2, ax2, [0, 1, 2]; overlays_for = overlays_for,
-                                            point_size_px = 3, kw...)
+        out = joinpath(mktempdir(), "rv.mp4")
+        r = record_view_movie(v2, out; ts = [0, 1, 2], channels = 0:1, specs = specs,
+                              overlays3d_for = ov3d, on_log = _ -> nothing)
+        @test isfile(out) && r.frames == 3 && (r.width, r.height) == (64, 64)
         @test seen == [0, 1, 2]
-        @test no2 == 3
-        obytes = take!(oio)
-        # Pull the (4, 4) pixel out of frame 0's RGB24 slab. Row-major, x fastest: byte offset for
-        # (row = 4, col = 4) is `((4 - 1) * W + (4 - 1)) * 3` — 1-based to match `frame[y, x]`.
-        off = ((4 - 1) * Wo2 + (4 - 1)) * 3
-        @test obytes[off + 1:off + 3] == UInt8[0, 0, 255]
+        # an odd crop comes out even, the size the movie reports
+        r_odd = record_view_movie(v2, joinpath(mktempdir(), "odd.mp4"); ts = [0], specs = specs,
+                                  channels = 0:1, crop = (x = 0:62, y = 0:60), on_log = _ -> nothing)
+        @test (r_odd.width, r_odd.height) == (62, 60)
+        # a stride halves it
+        r_half = record_view_movie(v2, joinpath(mktempdir(), "half.mp4"); ts = [0], specs = specs,
+                                   channels = 0:1, max_px = 32, on_log = _ -> nothing)
+        @test (r_half.width, r_half.height) == (32, 32)
+        # a cancelled record writes nothing; a t range with nothing in it is a caller error
+        rc = record_view_movie(v2, joinpath(mktempdir(), "c.mp4"); ts = [0], cancelled = () -> true)
+        @test rc.cancelled && rc.frames == 0
+        @test_throws ArgumentError record_view_movie(v2, joinpath(mktempdir(), "x.mp4"); ts = [99])
     end
 end
 

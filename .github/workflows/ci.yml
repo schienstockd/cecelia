@@ -191,6 +191,12 @@ jobs:
       - name: Instantiate Julia (server env)
         run: julia --project=api -e 'using Pkg; Pkg.instantiate()'
 
+      # Every movie renders through the shared renderer (wgpu), and the API tests record some — the
+      # same software Vulkan the Python job installs.
+      - name: Software Vulkan for the shared renderer (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q mesa-vulkan-drivers
+
       # API-layer unit tests: load the handlers with CECELIA_NO_SERVE (no socket) and exercise them
       # directly. Fixture-free, so it runs on every OS in the matrix.
       - name: API tests

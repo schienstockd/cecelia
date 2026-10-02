@@ -1,14 +1,14 @@
-"""3D movie renderer for the offline movie rail — the browser viewer's own MIP shader, run headlessly.
+"""Movie renderer for the offline movie rail — the browser viewer's own MIP shader, run headlessly.
 
-Called via ``run_py`` from ``record_keyframes_view_movie`` (``api/src/movie_render.jl``) for every
-movie with a 3D-view frame (``dims.ndisplay == 3``): keyframe animations, the viewer's Record in 3D,
-and batch 3D. Each frame is drawn by ``shaders/mip.wgsl`` plus its point and track-tail passes on a
-``wgpu`` device (``cecelia.utils.wgpu_host``), so a movie frame is the viewer's frame by
-construction — camera, contrast, colours, masks and overlays (``docs/todo/SHARED_RENDERER_PLAN.md``
-Phase 2). It needs no CUDA: any GPU through Vulkan / Metal / DX12, else a software adapter.
+Called via ``run_py`` from ``api/src/movie_render.jl`` for every movie: keyframe animations, the
+viewer's Record, batch and the compare grid's cells, 2D and 3D. Each frame is drawn by
+``shaders/mip.wgsl`` plus its point and track-tail passes on a ``wgpu`` device
+(``cecelia.utils.wgpu_host``), so a movie frame is the viewer's frame by construction — camera,
+contrast, colours, masks and overlays (``docs/todo/SHARED_RENDERER_PLAN.md`` Phases 2–3). It needs
+no CUDA: any GPU through Vulkan / Metal / DX12, else a software adapter.
 
-**2D animations still render in Julia.** This entry is 3D-only; the Julia caller routes here only
-when a state is 3D.
+A 2D movie is drawn the way the viewer's 2D view is: the same pass, head-on and orthographic, over a
+slab of planes (one plane = one sample; several = their max), at the pyramid level its zoom picks.
 
 **Contract with Julia** — params dict:
     ``zarrPath``       : image store (a bioformats2raw ``0/`` or a flat ``.zarr``)
@@ -22,6 +22,10 @@ when a state is 3D.
         ``specs``      : per channel ``{lo, hi, lut: [[r, g, b], …], visible}`` (``_as_lut`` stops)
         ``overlays3d`` : optional ``{points: {x, y, z, colour}, segments: {x0, y0, z0, x1, y1, z1,
                          colour}}`` in native voxel coordinates, colours as ``[r, g, b]`` in 0..1
+        ``ndisplay``   : 2 or 3 (default 3)
+        ``zRange``     : 2D only — the level-0 planes ``[lo, hi]`` shown (default: all)
+        ``planeFilter``: 2D only — ``{points: [lo, hi], tracks: [lo, hi]}``, the planes whose points /
+                         tail ends are drawn (the viewer's z tolerances); absent = all
     ``canvasH``/``canvasW`` : output frame size
     ``zAniso``         : physical_z / physical_x
     ``renderQuality``  : ``draft`` | ``standard`` | ``high`` — 128 / 256 / 512 ray steps; the viewer's
@@ -29,11 +33,13 @@ when a state is 3D.
     ``fps``            : encoder frame rate
     ``labelsPath``     : optional label store drawn as the viewer's 3D mask (nearest id along the
                          ray, ``label_palette``), with ``labelOpacity`` (default the viewer's
-                         ``LABEL_OPACITY``) / ``labelContourPx``
+                         ``LABEL_OPACITY``) / ``labelContourPx``; ``labelColours`` =
+                         ``{ids, colours}`` draws only those labels, in those colours (a
+                         population mask), instead of the palette
     ``pointSizePx`` / ``pointBorderPx`` / ``segmentWidthPx`` : overlay style, in output pixels
-    ``titleCard``      : optional; prepended after the render (same rule as ``encode_movie_run.py``)
+    ``titleCard``      : optional; prepended after the render (``title_card.prepend_title_to_movie``)
     ``overlays``       : optional per-frame ``[{timestamp?, scaleBar?}]`` — drawn onto the encoded
-                         frame, as ``encode_movie_run.py`` does
+                         frame
 """
 import os
 
@@ -47,13 +53,16 @@ from cecelia.utils.zarr_utils import open_as_zarr, read_axes, fortify
 _QUALITY_STEPS = {'draft': 128, 'standard': 256, 'high': 512}
 
 
-def _load_at_t(arr, t_idx, axes, want=('c', 'z', 'y', 'x')):
+def _load_at_t(arr, t_idx, axes, want=('c', 'z', 'y', 'x'), z_slice=None):
     """``arr`` (one level) at timepoint ``t_idx`` as the axes in ``want``, honouring the store's own
-    order (``read_axes``). A missing axis becomes a leading size-1 dim."""
+    order (``read_axes``). A missing axis becomes a leading size-1 dim. ``z_slice`` reads only those
+    planes of this level (a 2D frame's slab)."""
     ax = [a.lower() for a in (axes or [])]
     idx = [slice(None)] * arr.ndim
     if 't' in ax:
         idx[ax.index('t')] = int(t_idx)
+    if z_slice is not None and 'z' in ax:
+        idx[ax.index('z')] = z_slice
     vol = np.asarray(fortify(arr[tuple(idx)]))
     remaining = [a for a in ax if a != 't']
     vol = np.transpose(vol, [remaining.index(a) for a in want if a in remaining])
@@ -86,6 +95,24 @@ def _pick_level(levels, host, axes):
                        f'(max {host.max_texture_3d} per side)')
 
 
+def _pick_level_2d(levels, state, canvas_h):
+    """The level the viewer's 2D view would show this state at (``wgpu_host.plane_level``): its
+    zoom is L0 pixels per output pixel — the image rows the camera shows over the canvas height."""
+    cam = state.get('camera') or {}
+    snap_h = float(state.get('snapH') or canvas_h)
+    per_px = (snap_h / max(1e-6, float(cam.get('zoom') or 1))) / max(1, canvas_h)
+    return wgpu_host.plane_level(per_px, len(levels))
+
+
+def _level_z(z_range, nz, nz0):
+    """The level-0 planes ``z_range`` (inclusive) as a slice of a level with ``nz`` planes — a level
+    with fewer planes maps them proportionally."""
+    lo, hi = int(z_range[0]), int(z_range[1])
+    zl = min(nz - 1, lo * nz // max(1, nz0))
+    zh = min(nz - 1, max(zl, hi * nz // max(1, nz0)))
+    return slice(zl, zh + 1)
+
+
 def _point_instances(pts, voxel_um):
     """Julia's per-frame points → ``POINT_STRIDE`` rows: centre in image µm, rgb, z plane — what
     ``buildPointBuffer`` uploads (a centroid's µm is ``pixel × voxel size``)."""
@@ -115,24 +142,36 @@ def _segment_instances(segs, voxel_um):
     return out
 
 
-def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_style, overlay_style):
+def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_style, overlay_style,
+                   z_range=None):
     """The uniform lanes for one frame — the same lanes ``volumeRenderer.ts`` writes.
 
     ``dims_czyx`` is the texture actually uploaded; ``l0_zyx`` and ``voxel_um`` are level 0's, which
     is what the camera, the extents and the overlays are measured in (``meta.nX`` / ``voxelUm`` in
-    the viewer). A coarser level covers the same µm with fewer voxels, so only ``dims`` changes."""
+    the viewer). A coarser level covers the same µm with fewer voxels, so only ``dims`` changes.
+
+    ``z_range`` = the level-0 planes ``(lo, hi)`` the texture holds — a 2D frame's slab, as the
+    viewer's ``setImage`` / ``setZPlane`` place it (``ext.z`` = its depth, ``zOriginUm`` = its first
+    plane). ``None`` = the whole stack. A 2D frame is head-on and orthographic, as in the viewer."""
     nc, nz, ny, nx = dims_czyx
     nz0, ny0, nx0 = l0_zyx
     vx, vy, vz = voxel_um
+    z_lo, z_hi = (0, nz0 - 1) if z_range is None else (int(z_range[0]), int(z_range[1]))
+    flat = int(state.get('ndisplay', 3)) == 2
     cam = wgpu_host.view_camera(state.get('camera') or {}, state.get('snapH'), nx0, ny0, voxel_um, canvas_h)
-    perspective = float((state.get('camera') or {}).get('perspective') or 0) > 0
-    u = {'cam.yaw': cam['yaw'], 'cam.pitch': cam['pitch'], 'cam.dist': cam['dist'], 'cam.steps': steps,
+    perspective = not flat and float((state.get('camera') or {}).get('perspective') or 0) > 0
+    # Overlay plane filters (-1 = off): a 2D frame's state carries the viewer's own windows, the
+    # slab ± its z tolerances (`setOverlayDraw` / `setOverlaySegmentDraw`).
+    pf = state.get('planeFilter') or {}
+    p_lo, p_hi = (pf.get('points') or (-1, -1))
+    r_lo, r_hi = (pf.get('tracks') or (-1, -1))
+    u = {'cam.yaw': 0 if flat else cam['yaw'], 'cam.pitch': 0 if flat else cam['pitch'],
+         'cam.dist': cam['dist'], 'cam.steps': steps,
          'vp.nch': nc, 'vp.ortho': 0 if perspective else 1,
-         'ext.x': nx0 * vx, 'ext.y': ny0 * vy, 'ext.z': nz0 * vz, 'ext.zOriginUm': 0,
+         'ext.x': nx0 * vx, 'ext.y': ny0 * vy, 'ext.z': (z_hi - z_lo + 1) * vz, 'ext.zOriginUm': z_lo * vz,
          'dims.nx': nx, 'dims.ny': ny, 'dims.nz': nz, 'dims.zPerChannel': nz,
          'pan.x': cam['panX'], 'pan.y': cam['panY'],
-         # The whole stack is loaded, so no plane filter on either overlay pass (-1 = off).
-         'ov.planeLo': -1, 'ov.planeHi': -1, 'pan.ribbonLo': -1, 'pan.ribbonHi': -1,
+         'ov.planeLo': p_lo, 'ov.planeHi': p_hi, 'pan.ribbonLo': r_lo, 'pan.ribbonHi': r_hi,
          'ov.pointPx': max(1, overlay_style['pointPx']), 'ov.tailPx': max(1, overlay_style['tailPx']),
          'lab.pointBorderPx': max(0, overlay_style['borderPx'])}
     if label_style is not None:
@@ -173,13 +212,21 @@ def run(params):
     zarr_path = params['zarrPath']
     levels, _ = open_as_zarr(zarr_path)
     axes = read_axes(zarr_path)
-    level = _pick_level(levels, host, axes)
-    arr = levels[level]
     ax = [a.lower() for a in axes]
     shape0 = dict(zip(ax, levels[0].shape))
     l0_zyx = (shape0.get('z', 1), shape0.get('y', 1), shape0.get('x', 1))
-    if level:
-        log.log(f'[INFO] level 0 does not fit a 3D texture on this device; rendering level {level}')
+    # A movie is 2D or 3D throughout (Julia never mixes them). 2D draws a slab of planes at the
+    # level the viewer's 2D view would pick for its zoom; 3D the whole stack at the finest level
+    # that fits.
+    flat = bool(states) and all(int(s.get('ndisplay', 3)) == 2 for s in states)
+    if flat:
+        level = _pick_level_2d(levels, states[0], canvas_h)
+    else:
+        level = _pick_level(levels, host, axes)
+        if level:
+            log.log(f'[INFO] level 0 does not fit a 3D texture on this device; rendering level {level}')
+    arr = levels[level]
+    nz_level = dict(zip(ax, arr.shape)).get('z', 1)
 
     palette = wgpu_host.label_palette()
     host.set_palette(palette)
@@ -194,10 +241,16 @@ def run(params):
             label_style = {'opacity': float(opacity),
                            'contourPx': max(0, int(round(float(params.get('labelContourPx', 0))))),
                            'rows': len(palette)}
+            # Per-label colours (a population-filtered, population-coloured mask): the shader's
+            # colour table; labels absent from it are not drawn.
+            table = params.get('labelColours')
+            if isinstance(table, dict) and table.get('ids'):
+                host.set_palette(wgpu_host.label_table(table['ids'], table['colours']))
+                label_style['rows'] = -wgpu_host.LABEL_TABLE_W
         else:
             log.log(f'[WARN] mask skipped — its store has no level {level} to match the image')
 
-    cached_t = None
+    cached = None
     dims = None
     written = 0
     out_path = params['outPath']
@@ -206,20 +259,28 @@ def run(params):
         with movie_writer(staging, fps) as writer:
             for i, state in enumerate(states):
                 t_idx = int(state['t'])
-                if cached_t != t_idx:
-                    vol = _as_u16(_load_at_t(arr, t_idx, axes))
+                z_range = None
+                if flat:
+                    zr = state.get('zRange')
+                    z_range = (int(zr[0]), int(zr[1])) if zr else (0, l0_zyx[0] - 1)
+                if cached != (t_idx, z_range):
+                    zs = _level_z(z_range, nz_level, l0_zyx[0]) if z_range else None
+                    vol = _as_u16(_load_at_t(arr, t_idx, axes, z_slice=zs))
                     host.set_volume(vol)
                     dims = vol.shape
                     if labels_arr is not None:
-                        lab = _load_at_t(labels_arr, t_idx, lab_axes, want=('z', 'y', 'x'))
+                        lab = _load_at_t(labels_arr, t_idx, lab_axes, want=('z', 'y', 'x'), z_slice=zs)
                         host.set_labels(np.ascontiguousarray(lab, dtype=np.uint32))
-                    cached_t = t_idx
+                    cached = (t_idx, z_range)
                 host.set_lut(wgpu_host.lut_rows([s.get('lut') or [] for s in state.get('specs') or []]))
                 ov = state.get('overlays3d') or {}
                 host.set_points(_point_instances(ov.get('points'), voxel_um))
                 host.set_segments(_segment_instances(ov.get('segments'), voxel_um))
-                lanes = frame_uniforms(state, dims, l0_zyx, voxel_um, canvas_h, steps,
-                                       label_style, overlay_style)
+                # 2D: one sample is the plane; a slab is a top-down max over its planes, one step
+                # each, which hits every plane's centre (the viewer's ± window marches it finer).
+                n_steps = max(1, dims[1]) if flat else steps
+                lanes = frame_uniforms(state, dims, l0_zyx, voxel_um, canvas_h, n_steps,
+                                       label_style, overlay_style, z_range=z_range)
                 frame = host.render(canvas_w, canvas_h, lanes)[..., :3]
                 frame = crop_to_even(np.ascontiguousarray(frame))
                 # Timestamp / scale bar go onto the ENCODED frame, already sRGB — the same helper
@@ -244,7 +305,7 @@ def run(params):
     log.log(f'[INFO] rendered {written} frame(s) to {out_path}')
 
     # Title card is prepended AFTER the encode, at the final movie's exact resolution — same rule as
-    # `encode_movie_run.py`; one PIL font stack for every text glyph on a movie frame.
+    # the compare grid's stitcher; one PIL font stack for every text glyph on a movie frame.
     card = params.get('titleCard')
     if isinstance(card, dict) and card.get('enabled', True):
         from cecelia.utils import title_card

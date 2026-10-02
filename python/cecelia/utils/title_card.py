@@ -296,8 +296,7 @@ def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
 
     Returns the modified frame. ONE font stack, ONE colour palette, ONE renderer for every text glyph
     on a movie frame — same rule as ``caption_band`` and the title card. Used by
-    ``encode_movie_run.py`` when the offline renderer asks for the timestamp + scale-bar overlays
-    that the Julia-side kernel can't draw itself (no anti-aliased text primitive in Julia).
+    ``render_animation_run.py`` for the timestamp + scale-bar overlays a movie asks for.
 
     ``timestamp`` is the string to draw top-left (e.g. ``"0:07:30"``) or ``None``. ``scale_bar`` is
     ``{"lengthPx": int, "label": str}`` — a solid white bar at the bottom-right with its label above

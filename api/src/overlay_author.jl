@@ -1,8 +1,9 @@
-# ── overlay_author.jl — resolve populations/tracks into the offline renderer's columnar shape ─
+# ── overlay_author.jl — resolve populations/tracks into what a movie draws ────────────────────
 #
-# `frame_overlays.jl` is pure drawing; this file is the caller that gives it shape. Given an image,
-# a segmentation and a `pop_type`, it walks `resolve_pops` + the label store's centroids ONCE and
-# hands back per-t closures that `record_view_movie(overlays_for = ...)` can call every frame.
+# Given an image, a segmentation and a `pop_type`, this walks `resolve_pops` + the label store's
+# centroids ONCE and hands back a per-t closure of positions (`build_overlays3d_for`) that every
+# movie's frames read, and the label → colour map a population mask draws (`mask_id_colours`). The
+# movie renderer's shader draws both (`writers/render_animation_run.py`).
 #
 # The design mirrors the browser's overlay pass: one full resolve at open, then a per-frame slice.
 # Every frame allocates ONLY the vectors it draws — no per-frame `label_props` read, no re-scoring of
@@ -10,9 +11,9 @@
 # reasonable amount of work; the alternative (filter by t inside the closure) would rescan the whole
 # table 181 times.
 #
-# **Coordinate space**: the primitives take 1-based row-column in the DRAWN frame, which is
-# `render_view_frame`'s output after crop + max_px stride. `pixel_transform` bakes that mapping in
-# once, so callers stay ignorant of it — they hand over `img` + the frame shape.
+# **Coordinate space**: native voxels — the shader projects them with the frame's own camera.
+# `pixel_transform` maps native pixels onto a `render_view_frame` still (crop + stride) for the
+# card renderers (`behaviour_cards.jl`), which draw with `frame_overlays.jl`.
 #
 # `hex_to_rgb` is here rather than as a general utility for the same reason. Pop colours arrive from
 # the gating maps as `#rrggbb`/`#rgb`; parsing them is a five-line helper whose only consumer today
@@ -183,7 +184,7 @@ const _PALETTES_DATA = _load_palettes()
 # look, so a movie's tracks share colours with a look's tracks by construction.
 const CECELIA_TRACK_PALETTE = _PALETTES_DATA.palette
 
-# The three track-colour-mode names accepted by `build_overlays_for(track_color_mode = ...)`. Read
+# The track-colour-mode names accepted by `build_overlays3d_for(track_color_mode = ...)`. Read
 # from the JSON so a mode the browser knows is a mode this author accepts — no silent fallback to
 # `"track"` on a new mode name.
 const TRACK_COLOR_MODES = _PALETTES_DATA.modes
@@ -208,13 +209,10 @@ end
 # Shared overlay state — the collection every author consumes
 # ─────────────────────────────────────────────────────────────────────────────────
 #
-# One walk of the image → per-t bags of native-voxel (x, y, z, colour). BOTH
-# `build_overlays_for` (2D — `PixelTransform` per frame) and `build_overlays3d_for`
-# (3D — camera projection per frame) consume the same state, so pop resolution,
+# One walk of the image → per-t bags of native-voxel (x, y, z, colour), which
+# `build_overlays3d_for` hands every movie frame, 2D and 3D. Pop resolution,
 # `track_color_mode` semantics, tail-length windowing and colour handling all live
-# in ONE place. If a bug is fixed here it reaches both authors at once; if a new
-# feature (colourBy, colourOverrides, skeletons) lands here it lights up 2D and 3D
-# together.
+# in ONE place.
 
 struct OverlayState
     # Per-t bags in NATIVE VOXEL coords. `x`, `y`, `z` are Float64 (a centroid is
@@ -349,7 +347,7 @@ function _cb_prepare(df, cb_col::Union{Nothing,String},
     end
 end
 
-# Native-voxel collection. Three branches match the pre-refactor `build_overlays_for`:
+# Native-voxel collection. Three branches:
 #   * `all_tracks = true`  → whole-segmentation ribbons (every cell with `track_id > 0`)
 #   * cell pop_types       → `resolve_pops` + centroid table
 #   * track pop_types      → `pop_df(...; granularity=:cell)` (gates live on `track_props`)
@@ -618,7 +616,7 @@ end
     merge_overlay_closures(closures) -> ((args...) -> (points, segments)) | nothing
 
 One overlay closure out of several — a movie drawing more than one track source, each built by its
-own `build_overlays_for` / `build_overlays3d_for` call with its own colour. Each call's points and
+own `build_overlays3d_for` call with its own colour. Each call's points and
 segments are concatenated column by column, so the merged closure returns the same shape its parts
 do (2D or 3D, whatever their arguments). `nothing` for an empty list.
 """
@@ -632,94 +630,6 @@ function merge_overlay_closures(closures::AbstractVector)
         for cl in closures
             p, s = cl(args...)
             pts = cat_nt(pts, p); segs = cat_nt(segs, s)
-        end
-        (pts, segs)
-    end
-end
-
-# ─────────────────────────────────────────────────────────────────────────────────
-# 2D author — `PixelTransform` per frame, integer drawn coords, backward-compatible
-# `(; x::Vector{Int}, y::Vector{Int}, colour)` / `(; x0, y0, x1, y1, colour)` shape
-# that `draw_points!` / `draw_segments!` expect.
-# ─────────────────────────────────────────────────────────────────────────────────
-
-"""
-    build_overlays_for(img; value_name, pop_type, transform,
-                       pops_filter = nothing, include_tracks = true, tail_length = 30,
-                       all_tracks = false, all_tracks_colour = "#9ca3af",
-                       track_color_mode = "track", solid_colour = nothing, include_points = true)
-        -> (t -> (points, segments))
-
-Return a per-t closure that gives `record_view_movie` its 2D overlay shape. Coordinates are 1-based
-row-column in the drawn frame (post-crop + post-stride) — the mapping baked into `transform`.
-Segments emit `(; x0, y0, x1, y1, colour)`; points emit `(; x, y, colour)` — both use Int for
-compatibility with `draw_points!` / `draw_segments!`. `(nothing, nothing)` when nothing is drawable.
-
-`include_points = false` draws the tracks alone — what the viewer shows for a track source with no
-population on (its points come from populations only).
-
-Backed by `_build_overlay_state` — one collection, one place any pop-resolution / `track_color_mode`
-fix reaches. The projection differs only in `_apply(transform, x, y)` at emit time.
-"""
-function build_overlays_for(img; value_name::AbstractString, pop_type::PopTypeArg,
-                            transform::PixelTransform,
-                            pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                            include_tracks::Bool = true,
-                            tail_length::Int = 30,
-                            all_tracks::Bool = false,
-                            all_tracks_colour::AbstractString = "#9ca3af",
-                            track_color_mode::AbstractString = "track",
-                            solid_colour::Union{Nothing,AbstractString} = nothing,
-                            include_points::Bool = true,
-                            colour_by::Union{Nothing,AbstractString} = nothing,
-                            colour_overrides::Union{Nothing,AbstractDict} = nothing)
-    state = _build_overlay_state(img;
-                                  value_name = value_name, pop_type = pop_type,
-                                  pops_filter = pops_filter, include_tracks = include_tracks,
-                                  tail_length = tail_length, all_tracks = all_tracks,
-                                  all_tracks_colour = all_tracks_colour,
-                                  track_color_mode = track_color_mode,
-                                  solid_colour = solid_colour,
-                                  colour_by = colour_by,
-                                  colour_overrides = colour_overrides)
-    tail_L = max(1, tail_length)
-    return function(t::Int)
-        pts_raw, segs_raw = _state_at(state, t)
-        include_points || (pts_raw = nothing)
-        pts = nothing
-        if pts_raw !== nothing && !isempty(pts_raw.x)
-            xs = Int[]; ys = Int[]; cs = RGB{N0f8}[]
-            @inbounds for i in eachindex(pts_raw.x)
-                xy = _apply(transform, pts_raw.x[i], pts_raw.y[i])
-                xy === nothing && continue
-                push!(xs, xy[1]); push!(ys, xy[2]); push!(cs, pts_raw.colour[i])
-            end
-            isempty(xs) || (pts = (; x = xs, y = ys, colour = cs))
-        end
-        segs = nothing
-        if segs_raw !== nothing
-            xs0 = Int[]; ys0 = Int[]; xs1 = Int[]; ys1 = Int[]; cs = RGB{N0f8}[]
-            alphas = Float64[]
-            @inbounds for i in eachindex(segs_raw.x0)
-                xy0 = _apply(transform, segs_raw.x0[i], segs_raw.y0[i])
-                xy1 = _apply(transform, segs_raw.x1[i], segs_raw.y1[i])
-                # Same clipping rule as the pre-refactor path: drop a segment iff BOTH endpoints
-                # are outside the drawn frame. Keeping this exact was called out in the original
-                # docstring — a segment that panned off between frames should still draw its
-                # visible half up to the frame edge.
-                (xy0 === nothing && xy1 === nothing) && continue
-                (xy0 === nothing || xy1 === nothing) && continue
-                push!(xs0, xy0[1]); push!(ys0, xy0[2])
-                push!(xs1, xy1[1]); push!(ys1, xy1[2])
-                push!(cs, segs_raw.colour[i])
-                # Per-segment alpha for the tail fade — SAME formula the 3D projector uses so a 2D
-                # and 3D animation of the same track fade at the same rate. `t1_vec[i]` is the
-                # segment's arrival timepoint (bucketed by `_state_at`).
-                age = (t + 1) - segs_raw.t1[i]
-                push!(alphas, 0.2 + 0.8 * clamp(1.0 - Float64(age) / Float64(tail_L), 0.0, 1.0))
-            end
-            isempty(xs0) || (segs = (; x0 = xs0, y0 = ys0, x1 = xs1, y1 = ys1,
-                                       colour = cs, alpha = alphas))
         end
         (pts, segs)
     end
@@ -780,56 +690,27 @@ end
 # ─────────────────────────────────────────────────────────────────────────────────
 
 """
-    build_mask_for(img; value_name, pop_type, transform,
-                   pops_filter = nothing, z = nothing,
-                   all_cells = false, all_cells_colour = "#9ca3af")
-        -> (t -> (mask, id_colours))
+    mask_id_colours(img; value_name, pop_type, pops_filter = nothing,
+                    all_cells = false, all_cells_colour = "#9ca3af",
+                    colour_by = nothing, colour_overrides = nothing) -> Dict{Int,RGB{N0f8}}
 
-Return a `record_view_movie(mask_for = ...)` closure that reads the segmentation's label store per
-frame, projects it to the drawn frame's grid, and hands the primitive its `(mask, id_colours)` pair.
-
-Same design as `build_overlays_for`: resolve pops → id → colour ONCE at build, then per-t just read
-the label plane and stride it. The label store's `img_labels_path` is opened ONCE (`open_level0`)
-so a sweep pays one metadata round-trip, not `nT` — same shape as `record_view_movie`'s image read.
-
-`z` mirrors `render_view_frame`'s `z` selection: `nothing` MIPs the whole stack (the legacy viewer's default
-for a label layer), an `Int` picks one plane, a `UnitRange` MIPs that range. The z choice on the
-mask must match the frame's; the caller passes the same value in.
-
-`id_colours` is built from `resolve_pops` for cell pop_types (`flow`/`live`/`clust`) and from
-`pop_df(...; granularity = :cell)` for track pop_types (`track`/`trackclust`) — same branch as the
-overlay author, and for the same reason (track gates live on `track_props`, so `resolve_pops`'s
-cell fetch cannot evaluate them). Colour policy matches the browser: last pop wins for a cell in
-two pops (`draw_mask_outline!` overwrites on collision), and hidden pops (`show = false`) are
-skipped so hiding a population in the gating manager also hides its outlines.
-
-`all_cells = true` paints every cell in the segmentation in one colour, ignoring pops — the
-mask counterpart of `build_overlays_for(all_tracks = true)`. Useful for a cpSAM-style tracked
-segmentation with no gated pops, where the answer to "just show me the cells" is one colour
-per outline.
+Which labels a movie's mask draws, and in what colour: the populations' cells in their colours (or
+every cell, with `all_cells`), recoloured by `colour_by` when asked. An id absent from the map is not
+drawn. The shader takes it as its label colour table (`labelColours`, `render_animation_run.py`).
 """
-function build_mask_for(img; value_name::AbstractString, pop_type::PopTypeArg,
-                        transform::PixelTransform,
-                        pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                        z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
-                        all_cells::Bool = false,
-                        all_cells_colour::AbstractString = "#9ca3af",
-                        colour_by::Union{Nothing,AbstractString} = nothing,
-                        colour_overrides::Union{Nothing,AbstractDict} = nothing)
+function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
+                         pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                         all_cells::Bool = false,
+                         all_cells_colour::AbstractString = "#9ca3af",
+                         colour_by::Union{Nothing,AbstractString} = nothing,
+                         colour_overrides::Union{Nothing,AbstractDict} = nothing)
     pt = string(pop_type)
     vn = String(value_name)
     is_track_pt = pt in ("track", "trackclust")
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
 
-    # ── Open the label store ONCE. Same reason the movie sweep opens the image ONCE: an
-    # `nT`-frame sweep would otherwise pay `nT` metadata round-trips for a geometry that cannot
-    # change mid-sweep.
-    zp = img_labels_path(img, vn)
-    isdir(zp) || throw(ArgumentError("build_mask_for: label store not on disk for value_name '$vn'"))
-    arr, caxes = open_level0(String(zp))
-
-    # ── Build id → colour ONCE, from pops.
+    # ── id → colour from pops.
     id_colours = Dict{Int,RGB{N0f8}}()
     if all_cells
         # Paint every known cell in one colour. Enumerating labels from `label_props` costs one
@@ -855,7 +736,7 @@ function build_mask_for(img; value_name::AbstractString, pop_type::PopTypeArg,
         pops = try
             resolve_pops(img, pt; value_name = vn)
         catch e
-            @warn "build_mask_for: resolve_pops failed" value_name pop_type exception = e
+            @warn "mask_id_colours: resolve_pops failed" value_name pop_type exception = e
             NamedTuple[]
         end
         if pops_filter !== nothing
@@ -870,13 +751,13 @@ function build_mask_for(img; value_name::AbstractString, pop_type::PopTypeArg,
             end
         end
     else
-        # Track pop_types — expand via `pop_df` for the same reason as `build_overlays_for` (gates
+        # Track pop_types — expand via `pop_df` for the same reason as `_build_overlay_state` (gates
         # live on `track_props`). Only `label` + `pop` are read; centroids/track_id are irrelevant
         # for a label→colour lookup.
         m = try
             load_pop_map(img; value_name = vn, pop_type = pt)
         catch e
-            @warn "build_mask_for: load_pop_map failed for track pop_type" value_name pop_type exception = e
+            @warn "mask_id_colours: load_pop_map failed for track pop_type" value_name pop_type exception = e
             nothing
         end
         pop_meta = Dict{String,RGB{N0f8}}()
@@ -899,7 +780,7 @@ function build_mask_for(img; value_name::AbstractString, pop_type::PopTypeArg,
                 pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
                        centroids = :pixel, include_x = false, include_obs = true)
             catch e
-                @warn "build_mask_for: pop_df failed for track pop_type" value_name pop_type paths = want_paths exception = e
+                @warn "mask_id_colours: pop_df failed for track pop_type" value_name pop_type paths = want_paths exception = e
                 nothing
             end
             if df !== nothing && size(df, 1) > 0
@@ -928,7 +809,7 @@ function build_mask_for(img; value_name::AbstractString, pop_type::PopTypeArg,
         df = try
             as_df(lp)
         catch e
-            @warn "build_mask_for: colour_by column read failed" value_name colour_by exception = e
+            @warn "mask_id_colours: colour_by column read failed" value_name colour_by exception = e
             nothing
         end
         if df !== nothing
@@ -954,44 +835,32 @@ function build_mask_for(img; value_name::AbstractString, pop_type::PopTypeArg,
         end
     end
 
-    # Empty dict → the render loop pays for a mask read per frame with nothing to draw. Short-
-    # circuit so an unpopulated pop set is `(nothing, nothing)` — the primitive skips it entirely.
-    isempty(id_colours) && return (_::Int) -> (nothing, nothing)
+    id_colours
+end
 
-    # ── The per-t closure.
-    return function(t::Int)
-        # Read the label plane at (t, c = 0). Label stores are single-channel — the schema pins
-        # c = 0. `read_slab` returns (x, y, z) column-major (or (x, y) if the store is 2D); MIP over
-        # z if it survived (a scalar z drops the dim exactly like t and c do).
-        vol = try
-            v, _, _, _ = read_slab(arr, caxes, Int(t), 0; z = z)
-            v
+"""
+    movie_mask(img; value_name, contour_px, opacity, kwargs...) -> NamedTuple | nothing
+
+A movie's mask, for the shader: `(; labels_path, colours, contour_px, opacity)`. "All cells" with no
+`colour_by` draws every label in the viewer's palette (`colours = nothing`); otherwise `colours` is
+`mask_id_colours` — the populations' labels in their colours, the shader's colour table. `nothing`
+when the label store is not on disk or the colours could not be resolved (logged). `kwargs` are
+`mask_id_colours`'s.
+"""
+function movie_mask(img; value_name::AbstractString, contour_px::Integer, opacity::Real,
+                    all_cells::Bool = false, colour_by = nothing, kwargs...)
+    lp = img_labels_path(img, value_name)
+    isdir(lp) || return nothing
+    colours = if all_cells && (colour_by === nothing || isempty(String(colour_by)))
+        nothing
+    else
+        try
+            mask_id_colours(img; value_name = value_name, all_cells = all_cells,
+                            colour_by = colour_by, kwargs...)
         catch e
-            @warn "build_mask_for: read_slab failed" t exception = e
-            return (nothing, nothing)
+            @warn "movie mask: colours failed" value_name exception = e
+            return nothing
         end
-        m = ndims(vol) >= 3 ? dropdims(maximum(vol; dims = 3); dims = 3) : vol
-        # Transpose to (y, x) — same swap `render_view_frame` applies to the image plane, so the
-        # mask lands on the SAME grid the composited channels do.
-        plane = permutedims(m, (2, 1))
-        H, W = size(plane)
-        # Match `pixel_transform` on the frame side: crop by `x_lo:x_lo+cW-1` × `y_lo:y_lo+cH-1`,
-        # then stride by `step`. Anything else would put the outlines at a different resolution
-        # than the pixels beneath them.
-        y0 = transform.y_lo + 1
-        x0 = transform.x_lo + 1
-        y1 = min(H, transform.y_lo + transform.cH)
-        x1 = min(W, transform.x_lo + transform.cW)
-        (y1 >= y0 && x1 >= x0) || return (nothing, nothing)
-        sub = @view plane[y0:y1, x0:x1]
-        strided = transform.step > 1 ?
-            sub[1:transform.step:size(sub, 1), 1:transform.step:size(sub, 2)] :
-            sub
-        # Convert to Int if the store is a smaller integer — `draw_mask_outline!` takes any
-        # `AbstractMatrix{<:Integer}` but the `id_colours` dict is `Int`-keyed. A `copy` here so
-        # the composited frame doesn't hold a view onto the Zarr chunk's buffer.
-        mask = eltype(strided) <: Integer ? Array{Int}(strided) :
-               throw(ArgumentError("build_mask_for: label store is non-integer ($(eltype(strided)))"))
-        (mask, id_colours)
     end
+    (; labels_path = String(lp), colours, contour_px = Int(contour_px), opacity = Float64(opacity))
 end

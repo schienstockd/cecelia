@@ -29,7 +29,7 @@ def run(params: dict):
     )
     log.log(f'[INFO] stitched {n} frame(s) to {params["outPath"]}')
 
-    # Title card handling matches encode_movie_run.py: prepended AFTER the stitch, so the card is
+    # Title card handling matches render_animation_run.py: prepended AFTER the stitch, so the card is
     # rendered at the composed movie's exact resolution — one card, one PIL stack, one place.
     card = params.get('titleCard')
     if isinstance(card, dict) and card.get('enabled', True):

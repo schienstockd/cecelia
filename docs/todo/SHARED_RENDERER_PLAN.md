@@ -12,7 +12,8 @@ and its "shared drawing library" non-goal. That plan's shared-JSON work (Phases 
 
 ## Scope (locked 2026-10-01)
 
-- **Build Phases 1 and 2.** 3D movies are where the payoff is:
+- **Build Phases 1 and 2.** (Phase 3 followed on 2026-10-02, at Dominik's go-ahead.) 3D movies are
+  where the payoff is:
   - The torch ray-caster is the renderer with no parity test.
   - It has no masks.
   - It is CUDA-only: it runs on the CPU on Macs and on AMD/Intel GPUs.
@@ -276,12 +277,43 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
 - Fixes on the way: the viewer's point size is a RADIUS (`mip_points.wgsl`: fill radius `ov.pointPx`),
   while `draw_points!` takes it as a diameter, so 2D movie points are half the viewer's size.
 
+**Result (built 2026-10-02, after Dominik's go-ahead).**
+
+- **Not `tileShader`: the viewer's 2D view is `mip.wgsl`.** A normal plane is drawn by the same pass
+  as 3D — a texture one plane deep (or the ± window's planes), one step, head-on, orthographic
+  (`ViewerWindow.vue` `ensureRenderer`; `tile.wgsl` is only for whole-slide planes over 200 MB, and
+  draws no overlays). So every 2D movie now runs `render_animation_run.py` too: states carry
+  `ndisplay: 2`, the planes (`zRange`), and the viewer's overlay plane windows (`planeFilter`, its
+  z tolerances); the level is the one the viewer's 2D zoom picks.
+- **`record_view_movie` keeps its region and size.** The crop + integer stride become a head-on
+  camera (one output pixel per `step` image pixels, anchored at the crop's top-left), so plain Record,
+  batch and compare-grid cells come out the size they did. 2D keyframes render the viewer's canvas.
+- **Population masks stay.** `mip.wgsl` gained a colour-table mode (a negative row count): label →
+  colour, alpha 0 = not drawn, hidden labels skipped by the march. Movies send
+  `mask_id_colours` (the old `build_mask_for` policy: pop-filtered, pop-coloured, colour-by) as that
+  table; "all cells" draws the viewer's palette. The viewer still sends the palette's row count —
+  its output is bit-identical to before (max Δ 0 on flat, pitched and contour scenes).
+- **What changed on screen.** 2D masks are the viewer's (`labEdge` outline, nearest label in a
+  range — not the old max-id projection); points are the viewer's radius-sized discs (the half-size
+  bug is gone); a 2D movie on one plane shows only the points / tail ends within the viewer's z
+  tolerances (`pointZTol` / `trackZTol` now ride the look, default 2) — the old 2D author drew every
+  cell whatever its z.
+- **Retired:** `write_raw_frames`, `encode_movie_run.py` / `movie_io.encode_raw_frames`,
+  `build_overlays_for`, `build_mask_for`. `render_view_frame` + `frame_overlays.jl` stay for stills
+  (cell / behaviour cards, keyframe thumbnails).
+- **Checked on fXgbTl:** a 2D keyframe pair and a plain 2D Record (z = 7, flowTom tracks) render
+  through the shader with the source-coloured tails on the plane ± 2, timestamp and scale bar.
+
 ### Phase 4 — overlays in the shader too
 
 - The viewer draws points and track segments in shader passes that share the camera uniform
   (`mipShader.ts` `ov` uniform; "the overlays pan with the pixels and cannot drift apart"). Run the
   same passes on the server so Julia supplies overlay *data* (positions, colours) and no longer
   rasterises it. Julia's projection code for 3D overlays (`_overlays2d_state`) retires.
+
+**Result: done by Phases 2 and 3.** Every movie's points and tails are the viewer's `mip_points` /
+`mip_segments` passes over positions Julia sends (`build_overlays3d_for`); `_overlays2d_state` went in
+Phase 2.
 
 ### Phase 5 — large volumes
 

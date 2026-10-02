@@ -1027,32 +1027,33 @@ function api_viewer_pick_clear(body_bytes::Vector{UInt8})
     200, JSON3.write((; nSelected = 0))
 end
 
-# ── Shared: request-overlay dict → (overlays_for, mask_for) closures ─────────────
+# ── Shared: request-overlay dict → what `record_view_movie` draws ─────────────────
 #
 # Every offline-renderer entry point — the smoke route below AND the movie rail (`run_single_offline` /
 # `run_batch_offline` in `movie_rail.jl`) — reads the SAME overlay/mask spec off the request and hands
-# it to the SAME `build_overlays_for` / `build_mask_for` authors. One mapping, so a movie recorded from
-# the record button and a movie recorded from `/api/viewer/record-test` speak the same language.
+# it to the SAME authors. One mapping, so a movie recorded from the record button and a movie
+# recorded from `/api/viewer/record-test` speak the same language.
 #
-# `img_err` is `_gating_image`'s error string (or `nothing`). Returns `(overlays_for, mask_for,
-# point_size_px, segment_width_px, mask_contour_px, point_border_px, mask_opacity, ov_diag, mask_diag)`. `ov_diag` / `mask_diag` carry
-# the smoke test's diagnostic breadcrumbs (populated whether or not `tally` is on); with `tally = true`
-# the returned closures additionally count points/segments/frames drawn into refs stashed under
-# `ov_diag["_tally"]` / `mask_diag["_tally"]` — the smoke route unwraps them into its response body.
+# `img_err` is `_gating_image`'s error string (or `nothing`). Returns `(; overlays3d_for, mask, style,
+# ov_diag, mask_diag)`:
+#   - `overlays3d_for`: `t -> (points, segments)` in native voxel coordinates (`build_overlays3d_for`),
+#     which the shader projects with its own camera; `nothing` = none.
+#   - `mask`: `(; labels_path, colours, contour_px, opacity)` or `nothing`. `colours` is the label →
+#     colour map (`mask_id_colours`) for a population mask, `nothing` for every label in the viewer's
+#     palette.
+#   - `style`: point size / border, tail width, and the viewer's z tolerances (`pointZTol`, `trackZTol`).
+# `ov_diag` / `mask_diag` carry the smoke test's diagnostic breadcrumbs; with `tally = true` the
+# overlay closure additionally counts points/segments/frames into refs under `ov_diag["_tally"]`.
 function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
-                                      z::Union{Int,Nothing} = nothing,
-                                      crop = nothing, max_px::Int = 0,
                                       tally::Bool = false,
                                       on_log::Union{Nothing,Function} = nothing)
     ov_diag = Dict{String,Any}("requested" => ov_raw !== nothing, "reason" => "")
     mask_diag = Dict{String,Any}("requested" => false, "reason" => "")
-    overlays_for = nothing
-    mask_for = nothing
-    point_size_px = 6; segment_width_px = 2; mask_contour_px = 1
-    point_border_px = 0; mask_opacity = Float64(MASK_FILL_OPACITY)
+    overlays3d_for = nothing
+    mask = nothing
+    style = movie_overlay_style()
     if !(ov_raw isa AbstractDict)
-        return (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
-                  point_border_px, mask_opacity, ov_diag, mask_diag)
+        return (; overlays3d_for, mask, style, ov_diag, mask_diag)
     end
     # `ov_raw` reaches us as either symbol- OR string-keyed depending on the caller:
     # `_overlays_raw_from_config` (`movie_rail.jl`) builds a `Dict{String,Any}`, while
@@ -1089,7 +1090,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     all_tracks       = Bool(_ov(ov_raw, :allTracks, false))
     all_tracks_col   = String(_ov(ov_raw, :allTracksColour, "#9ca3af"))
     # Optional multi-source track composition — `trackSources` is a list of `{valueName, colour}`
-    # entries; when present under `allTracks`, we call `build_overlays_for` once per source (each
+    # entries; when present under `allTracks`, we call `build_overlays3d_for` once per source (each
     # with its own `all_tracks_colour`) and merge the resulting closures. Without this the whole-seg
     # branch could only draw ONE segmentation's tracks in one grey — fXgbTl (cpSAM + flowTom +
     # coastalFg + coastalSm15 all tracked) had no way to show them together with distinct colours.
@@ -1097,18 +1098,13 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     track_sources = ts_raw_v isa AbstractVector ? ts_raw_v : Any[]
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
-    point_size_px    = Int(_ov(ov_raw, :pointSizePx, point_size_px))
-    segment_width_px = Int(_ov(ov_raw, :segmentWidthPx, segment_width_px))
-    point_border_px  = max(0, Int(round(Float64(_ov(ov_raw, :pointBorderPx, point_border_px)))))
-    mask_opacity     = clamp(Float64(_ov(ov_raw, :maskOpacity, mask_opacity)), 0.0, 1.0)
+    style = movie_overlay_style(k -> _ov(ov_raw, Symbol(k), nothing))
+    mask_contour_px = 1
     ov_diag["valueName"] = ov_vn
     ov_diag["popType"]   = ov_pt
     ov_diag["allTracks"] = all_tracks
-    # `showMask` decides the mask-outline half INDEPENDENTLY of `showPopulations` / `allTracks`.
-    # Before this hoist, mask reading lived INSIDE the `else` branch of the pop/track guard, so a
-    # mask-only render (showPopulations=false, showMask=true, e.g. the compare-grid rainbow path)
-    # never ran build_mask_for and the outline never showed. Reading it up here means the guard
-    # covers all three flags, and the mask still fires when only it is on.
+    # `showMask` decides the mask half INDEPENDENTLY of `showPopulations` / `allTracks`, so a
+    # mask-only render (the compare grid) still draws its mask.
     show_mask = Bool(_ov(ov_raw, :showMask, false))
     all_cells = Bool(_ov(ov_raw, :allCells, false))
     mask_diag["requested"] = show_mask
@@ -1123,8 +1119,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"
     elseif !(show_pops || all_tracks || show_mask || has_multi_tracks)
-        # No overlay type asked for — skip the pop-dot / track / mask build entirely. Before this
-        # gate, `build_overlays_for` painted every pop of `pop_type` regardless of `showPopulations`.
+        # No overlay type asked for — skip the pop-dot / track / mask build entirely.
         ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks + showMask all false)"
     else
         d = axis_dims(caxes, ndims(arr))
@@ -1134,7 +1129,6 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
         if H == 0 || W == 0
             ov_diag["reason"] = "could not resolve y/x axes from caxes ($(caxes))"
         else
-            tf = pixel_transform(H, W; crop = crop, max_px = max_px)
             if has_multi_tracks
                 # One closure per source, merged into one `t -> (points, segments)`.
                 per_source = Any[]
@@ -1144,8 +1138,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                     col_src = _wstr_any(src, "colour",    :colour; default = String(all_tracks_col))
                     isempty(vn_src) && continue
                     cl = try
-                        build_overlays_for(img; value_name = vn_src, pop_type = ov_pt,
-                                            transform = tf,
+                        build_overlays3d_for(img; value_name = vn_src, pop_type = ov_pt,
                                             include_tracks = include_tracks,
                                             tail_length = tail_length,
                                             all_tracks = true,
@@ -1163,8 +1156,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 inner === nothing && (ov_diag["reason"] = "no track sources resolved")
             elseif show_pops || all_tracks
                 inner = try
-                    build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
-                                       transform = tf, pops_filter = ov_paths,
+                    build_overlays3d_for(img; value_name = ov_vn, pop_type = ov_pt,
+                                       pops_filter = ov_paths,
                                        include_tracks = include_tracks,
                                        tail_length = tail_length,
                                        all_tracks = all_tracks,
@@ -1181,13 +1174,13 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 inner = nothing
                 ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks both false)"
             end
-            # Shared inner → overlays_for wrap. `inner` is set by either the multi-source or the
+            # Shared inner → overlays3d_for wrap. `inner` is set by either the multi-source or the
             # single-source branch above; either way, the tally wrapper and the "ok" reason belong
             # at ONE writeback so the diagnostic surface stays uniform across branches.
             if inner !== nothing
                 if tally
                     pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
-                    overlays_for = function(t::Int)
+                    overlays3d_for = function(t::Int)
                         p, s = inner(t)
                         p === nothing || (pts_seen[]  += length(p.x))
                         s === nothing || (segs_seen[] += length(s.x0))
@@ -1196,13 +1189,13 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                     end
                     ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
                 else
-                    overlays_for = inner
+                    overlays3d_for = inner
                 end
                 isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
             end
-            # ── Optional P4 mask outlines. Same transform, same pops_filter, same
-            # `allTracks/allCells` split (`allCells` is the mask counterpart). `showMask`
-            # is the gate — off by default because it costs one label-store read per frame.
+            # ── Optional mask. Same pops_filter, same `allTracks/allCells` split (`allCells` is the
+            # mask counterpart). `showMask` is the gate — off by default because it costs one
+            # label-store read per frame.
             # A segmentation made on another version of this image (different pixel grid) can't be
             # drawn over this one — skip the mask, keep recording, say why. See
             # `label_geometry_mismatch`.
@@ -1221,41 +1214,22 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                             String(cb_raw_v) : nothing
                 co_raw_v = _ov(ov_raw, :colourOverrides, nothing)
                 mask_co = co_raw_v isa AbstractDict ? co_raw_v : nothing
-                mask_inner = try
-                    build_mask_for(img; value_name = ov_vn, pop_type = ov_pt,
-                                   transform = tf, pops_filter = ov_paths,
-                                   z = z, all_cells = all_cells,
-                                   all_cells_colour = all_cells_col,
-                                   colour_by = mask_cb,
-                                   colour_overrides = mask_co)
-                catch e
-                    mask_diag["reason"] = "author threw: $(sprint(showerror, e))"
-                    @warn "movie mask: author failed" value_name = ov_vn pop_type = ov_pt exception = e
-                    nothing
-                end
-                if mask_inner !== nothing
-                    if tally
-                        mask_frames = Ref(0); mask_ids = Ref(0)
-                        mask_for = function(t::Int)
-                            m, dict = mask_inner(t)
-                            if m !== nothing && dict !== nothing
-                                mask_frames[] += 1
-                                mask_ids[] = length(dict)
-                            end
-                            (m, dict)
-                        end
-                        mask_diag["_tally"] = (mask_frames, mask_ids)
-                    else
-                        mask_for = mask_inner
-                    end
+                mask = movie_mask(img; value_name = ov_vn, contour_px = mask_contour_px,
+                                  opacity = style.mask_opacity, pop_type = ov_pt,
+                                  pops_filter = ov_paths, all_cells = all_cells,
+                                  all_cells_colour = all_cells_col,
+                                  colour_by = mask_cb, colour_overrides = mask_co)
+                if mask === nothing
+                    mask_diag["reason"] = "no label store, or its colours could not be resolved"
+                else
+                    mask_diag["ids"] = mask.colours === nothing ? "palette" : length(mask.colours)
                     isempty(mask_diag["reason"]) && (mask_diag["reason"] = "ok")
                     mask_diag["allCells"] = all_cells
                 end
             end
         end
     end
-    (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
-       point_border_px, mask_opacity, ov_diag, mask_diag)
+    (; overlays3d_for, mask, style, ov_diag, mask_diag)
 end
 
 # ── POST /api/viewer/record-test ──────────────────────────────────────────────────
@@ -1270,7 +1244,7 @@ end
 #   * `resolve_image_version` → same active-vs-explicit rule the meta route uses,
 #   * `resolved_display_specs` from the SAVED viewer props (sampled fallback), so the mp4's colours
 #     match what the browser drew,
-#   * `record_view_movie` end-to-end (frame render → raw temp → `encode_movie_run.py`),
+#   * `record_view_movie` end-to-end (the shared renderer, `writers/render_animation_run.py`),
 #   * optional `title_card` — passes through to the shared prepend helper.
 #
 # `maxFrames` caps the sweep (default 30 — a smoke test should not wait minutes). Absent overlays: the
@@ -1331,15 +1305,9 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     # `tally = false`.
     ov_raw = get(data, :overlays, nothing)
     img, gerr = _gating_image(pu, iu)
-    ov = _resolve_movie_overlays_mask(img, gerr, arr, caxes, ov_raw, vnn; z = z,
-                                       crop = nothing, max_px = 0, tally = true)
-    overlays_for     = ov.overlays_for
-    mask_for         = ov.mask_for
-    point_size_px    = ov.point_size_px
-    segment_width_px = ov.segment_width_px
-    mask_contour_px  = ov.mask_contour_px
-    ov_diag          = ov.ov_diag
-    mask_diag        = ov.mask_diag
+    ov = _resolve_movie_overlays_mask(img, gerr, arr, caxes, ov_raw, vnn; tally = true)
+    ov_diag   = ov.ov_diag
+    mask_diag = ov.mask_diag
 
     # Filename picked here rather than by the caller: `_valid_movie_name` is what `/api/movies` filters
     # by, so a smoke movie has to sort with the others without a slash or a dot-tmp fragment.
@@ -1350,13 +1318,7 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     result = try
         record_view_movie(zp, out_path; ts = ts, channels = 0:(nc - 1), specs = specs,
                           z = z, title_card = title_card,
-                          overlays_for = overlays_for,
-                          mask_for = mask_for,
-                          point_size_px = point_size_px,
-                          segment_width_px = segment_width_px,
-                          mask_contour_px = mask_contour_px,
-                          point_border_px = ov.point_border_px,
-                          mask_opacity = ov.mask_opacity)
+                          overlays3d_for = ov.overlays3d_for, mask = ov.mask, style = ov.style)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
@@ -1373,12 +1335,6 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         ov_diag["segmentsDrawn"] = segs_ref[]
         ov_diag["framesCalled"]  = frames_ref[]
         delete!(ov_diag, "_tally")
-    end
-    if haskey(mask_diag, "_tally")
-        mf, mi = mask_diag["_tally"]
-        mask_diag["framesWithMask"] = mf[]
-        mask_diag["idColoursCount"] = mi[]
-        delete!(mask_diag, "_tally")
     end
     200, JSON3.write((; ok = true, path = result.path, filename = filename,
                         frames = result.frames, width = result.width, height = result.height,

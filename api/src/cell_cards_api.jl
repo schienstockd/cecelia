@@ -2,8 +2,8 @@
 #
 # Wraps the pure `cell_cards_metadata` (app/src/cell_cards.jl) with:
 #   1. HTTP body parsing (matches `frontend/src/components/plots/cellCards.ts` types)
-#   2. render_view_frame per chosen `t` — crop = medoid track's bbox, track colour baked in via
-#      `overlay_author.build_overlays_for(track_color_mode="pop", pops_filter=[pop_path])`
+#   2. render_view_frame per chosen `t` — crop = medoid track's bbox, the track drawn on it by
+#      `behaviour_cards.jl` (`pixel_transform` + `frame_overlays.jl`)
 #   3. PNG-encode + save each frame as a board-asset (`settings/board-assets/<id>.png`)
 #   4. Sidecar payload cache under `analysis/cell_cards/{value_name}__{suffix}.json`. Served as-is
 #      while its `stamp` matches (see `_cell_cards_stamp`: cluster output, saved viewer display,

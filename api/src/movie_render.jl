@@ -1,46 +1,17 @@
-# ── movie_render.jl — the offline renderer's timelapse sweep (WEB_VIEWER_PLAN.md → P5) ───────
+# ── movie_render.jl — what every movie renders ─────────────────────────────────────────────────
 #
-# Frames come from `render_view_frame` (image_render.jl); the mp4 comes from
-# `python/cecelia/utils/movie_io.py`, the ONE imageio writer this repo has. Nothing here encodes
-# video, and nothing here spawns Python by hand — `run_py` is the launcher.
-#
-# THE FRAMES CROSS THE LANGUAGE BOUNDARY AS RAW RGB24 IN ONE FILE, and that is the decision worth
-# stating. The obvious alternative — a PNG per frame, then read them back — pays an encode and a
-# decode per frame for bytes that are already in memory, and PNG encoding was measured at HALF of C's
-# warm frame (49.5 ms of 117 ms). A pipe would avoid the temp file, but `run_py` streams stdout and
-# does not take stdin, and a second launcher is exactly the duplication this codebase keeps paying for.
-# A FIFO would avoid it too and does not exist on Windows. So: one sequential write, one sequential
-# read, deleted after. The temp is `w * h * 3 * nT` bytes — ~600 MB for a 181-frame movie of the real
-# target, against a render that takes ~30 s.
-#
-# The frame SIZE is taken from the first frame and every later frame is asserted against it. A movie
-# whose frames change shape mid-sweep is not a recoverable error downstream: the encoder either
-# rejects it or, worse, writes a file whose later frames are torn.
+# Julia decides WHAT a movie shows — the timepoints, the camera per frame (a view state, or a crop +
+# stride as a head-on camera), the planes, the channel specs, the overlays as positions, the mask —
+# and hands it to `writers/render_animation_run.py`, which draws every frame with the browser
+# viewer's own shader and encodes the mp4 (`movie_io.movie_writer`, the ONE imageio writer this repo
+# has). Nothing here draws or encodes a frame, and nothing spawns Python by hand — `run_py` is the
+# launcher. Stills (cards, thumbnails) still composite in Julia (`image_render.jl`).
 
-# ── Per-frame overlay data for the encoder (`title_card.draw_frame_overlays`) ────
+# ── Per-frame text for the renderer (`title_card.draw_frame_overlays`) ────────────
 #
-# The Julia renderer has no anti-aliased text primitive, so timestamp + scale bar overlays are drawn
-# in the encode pass via PIL. Julia builds the per-frame `overlays` list (one dict per encoded frame,
-# `{timestamp?, scaleBar?}`) upfront and ships it in the encoder params. `write_raw_frames` doesn't
-# see it — this is intentional: overlays land ONCE, at encode time, so raw frames stay pure and a
-# re-encode from the same raw doesn't double-draw them.
-
-# How much bigger is the ENCODED frame's µm/pixel than the native store's? Crop doesn't change µm/px
-# (it just picks a region); max_px stride does (by the stride factor). Returned as a multiplier applied
-# to `native_um_per_px` to get the encoded frame's µm/px.
-function _encoded_scale(W_enc::Int, arr, caxes, crop, max_px::Int)
-    dims = axis_dims(caxes, ndims(arr))
-    native_w = haskey(dims, "x") ? size(arr, dims["x"]) : W_enc
-    # Post-crop width in native pixels — crop is `(; x = x0:x1, y = y0:y1)` in 0-based inclusive px.
-    cropped_w = if crop isa NamedTuple && hasproperty(crop, :x) && crop.x isa AbstractUnitRange
-        length(crop.x)
-    else
-        native_w
-    end
-    # If max_px stride was applied, encoded width = cropped_w / stride (integer division). Recover the
-    # stride by dividing (the encoded frame is even-cropped, so allow ±1).
-    W_enc > 0 ? max(1.0, Float64(cropped_w) / Float64(W_enc)) : 1.0
-end
+# Timestamp + scale bar are drawn onto the encoded frame via PIL. Julia builds the per-frame
+# `overlays` list (one dict per frame, `{timestamp?, scaleBar?}`) upfront and ships it in the
+# renderer's params.
 
 # Pick a "nice" scale-bar length: the LARGEST step ≤ 30% of the frame's physical width, from the
 # same ladder `niceScaleBar` in `frontend/src/utils/stillOverlay.ts` uses. One policy across the
@@ -99,33 +70,83 @@ function _build_timelapse_overlays(ts::AbstractVector{<:Integer}, um_per_px::Rea
     end for t in ts]
 end
 
+# ── What every movie's overlays look like ─────────────────────────────────────────
+#
+# The overlay style a movie draws with, read off an overlay config by `get(key)` (`nothing` = absent).
+# Defaults are the viewer's: a 6-px point with no border, a 2-px tail, `LABEL_OPACITY`, and its z
+# tolerances (`viewerPointZTol` / `viewerTrackZTol`, 2 planes) for which points and tails a 2D frame
+# shows.
+function movie_overlay_style(get::Function = _ -> nothing)
+    num(k, d) = (v = get(k); v isa Real ? Float64(v) : Float64(d))
+    (; point_size_px    = max(1, round(Int, num("pointSizePx", 6))),
+       segment_width_px = max(1, round(Int, num("segmentWidthPx", 2))),
+       point_border_px  = max(0, round(Int, num("pointBorderPx", 0))),
+       mask_opacity     = clamp(num("maskOpacity", MASK_FILL_OPACITY), 0.0, 1.0),
+       point_z_tol      = max(0, round(Int, num("pointZTol", 2))),
+       track_z_tol      = max(0, round(Int, num("trackZTol", 2))))
+end
+
+# Per-channel `(lo, hi, colour, visible)` → the runner's `{lo, hi, lut, visible}`. `colour` is a
+# resolved LUT, a colormap name or a `#rrggbb` hex — `_as_lut` is the one resolver for all three (a
+# name-only lookup here rendered every hex channel WHITE).
+_specs_payload(specs) = [begin
+        lo, hi, colour, vis = s
+        lut = _as_lut(colour isa AbstractString ? String(colour) : colour)
+        Dict{String,Any}("lo" => Float64(lo), "hi" => Float64(hi), "visible" => Bool(vis),
+                         "lut" => [Float64[rgb[1], rgb[2], rgb[3]] for rgb in lut])
+    end for s in specs]
+
+# A movie mask (`_resolve_movie_overlays_mask`'s `mask`) onto the runner's params: the label store, its
+# outline and opacity, and — for a population mask — the label → colour table.
+function _mask_params!(params::AbstractDict, mask)
+    mask === nothing && return params
+    params["labelsPath"]     = String(mask.labels_path)
+    params["labelContourPx"] = Int(mask.contour_px)
+    params["labelOpacity"]   = Float64(mask.opacity)
+    if mask.colours !== nothing
+        ids = sort!(collect(keys(mask.colours)))
+        params["labelColours"] = Dict{String,Any}("ids" => ids, "colours" =>
+            [Float64[Float64(red(c)), Float64(green(c)), Float64(blue(c))]
+             for c in (mask.colours[i] for i in ids)])
+    end
+    params
+end
+
+# A 2D frame's z: one plane, a range, or the whole stack (`nothing`) → the planes `[lo, hi]` the
+# runner uploads, and the viewer's overlay windows around them (`setOverlayDraw`: the slab ± the z
+# tolerance). The whole stack draws every point and tail.
+function _plane_window(z, nz::Int, style)
+    lo, hi = z === nothing ? (0, nz - 1) : z isa Integer ? (Int(z), Int(z)) : (first(z), last(z))
+    lo = clamp(lo, 0, nz - 1); hi = clamp(hi, lo, nz - 1)
+    filt = z === nothing ? nothing :
+        Dict{String,Any}("points" => [lo - style.point_z_tol, hi + style.point_z_tol],
+                         "tracks" => [lo - style.track_z_tol, hi + style.track_z_tol])
+    (Int[lo, hi], filt)
+end
+
 """
     record_view_movie(zarr_path, out_path; kwargs...) -> NamedTuple
 
-Render timepoints `ts` (0-based; all of them by default) through `render_view_frame` and encode them
-to `out_path` as an mp4 at `fps`. Returns `(; path, frames, width, height, cancelled)`.
+A 2D timelapse of timepoints `ts` (0-based; all of them by default) drawn by the viewer's own shader
+(`writers/render_animation_run.py`, the pass the viewer's 2D view uses) and encoded to `out_path` at
+`fps`. Returns `(; path, frames, width, height, cancelled)`.
 
-`z`, `channels`, `specs`, `crop` and `max_px` are `render_view_frame`'s and mean exactly what they mean
-there — **pass `specs`**, or every frame gets its own percentile contrast and the movie flickers.
+The frame is the image region `crop` (`(; x, y)` 0-based pixel ranges; `nothing` = all of it), one
+output pixel per `step` image pixels where `step = cld(max(H, W), max_px)` (`max_px = 0` = native) —
+`pixel_transform`'s region and size, the one the card renderers use too. `z` is one plane, a range (their max)
+or `nothing` (the whole stack's max). **Pass `specs`**, or every channel gets a default ramp.
 
-`on_progress(n, total)` and `cancelled()` are the rail's contract. Cancellation is checked between
-frames, so it costs at most one frame; a cancelled run writes nothing to `out_path` and leaves no temp
-behind, which is the same guarantee `movie_writer` makes on its side.
+`overlays3d_for(t) -> (points, segments)` gives each frame's overlays in native voxel coordinates
+(`build_overlays3d_for`); the shader projects them with the frame's camera, and on a plane or range
+shows the ones within the viewer's z tolerances (`style`, `movie_overlay_style`). `mask` is
+`_resolve_movie_overlays_mask`'s: a label store drawn by the same pass, in a colour table or the
+viewer's palette.
 
-`title_card` is a dict of the shape the frontend produces (`title`, `note`, `sections`,
-`durationSec`) — passed through to the encoder runner and prepended to the mp4 by the shared
-`title_card.prepend_title_to_movie` helper. `nothing` = no card.
+`cancelled()` is checked before the render starts; `on_process` gets the renderer process so the
+rail can kill it. A cancelled or failed run leaves nothing at `out_path`.
 
-`overlays_for(t::Int) -> (points, segments)` is called per frame to paint P3 content onto the CPU
-frame. Return `(nothing, nothing)` for a frame with no overlays. `points`/`segments` are the
-`frame_overlays.jl` column NamedTuples, with pixel coordinates the caller has already resolved
-against the frame's grid (post-crop / post-stride). `point_size_px` and `segment_width_px` mirror
-`render_view_frame`'s.
-
-`mask_for(t::Int) -> (mask, id_colours)` is called per frame for P4 outlines. `mask` is a 2D
-`AbstractMatrix{<:Integer}` at the frame's shape (the caller reads and projects the label store as
-they see fit); `id_colours` maps label id → outline colour. `(nothing, nothing)` = no mask for this
-frame. `mask_contour_px` sets the outline width.
+`title_card` is a dict of the shape the frontend produces — prepended to the mp4 by
+`title_card.prepend_title_to_movie`. `nothing` = no card.
 """
 function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            ts::Union{Nothing,AbstractVector{<:Integer}} = nothing,
@@ -133,10 +154,8 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            z = nothing, channels = nothing, specs = nothing,
                            crop = nothing, max_px::Int = 0,
                            title_card = nothing,
-                           overlays_for = nothing, mask_for = nothing,
-                           point_size_px::Int = 6, segment_width_px::Int = 2,
-                           mask_contour_px::Int = 1,
-                           point_border_px::Int = 0, mask_opacity::Real = MASK_FILL_OPACITY,
+                           overlays3d_for = nothing, mask = nothing,
+                           style = movie_overlay_style(),
                            show_timestamp::Bool = false, show_scale_bar::Bool = false,
                            pixel_size_um::Union{Nothing,Real} = nothing,
                            time_step_min::Union{Nothing,Real} = nothing,
@@ -145,118 +164,67 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function = _ -> nothing,
                            cancelled::Function = () -> false)
-    arr, caxes = open_level0(zarr_path)          # ONCE — see `read_slab`'s (arr, caxes) form
-    nd    = ndims(arr)
-    dims  = axis_dims(caxes, nd)
+    arr, caxes = open_level0(zarr_path)
+    dims  = axis_dims(caxes, ndims(arr))
     nT    = haskey(dims, "t") ? size(arr, dims["t"]) : 1
+    nZ    = haskey(dims, "z") ? size(arr, dims["z"]) : 1
+    nC    = haskey(dims, "c") ? size(arr, dims["c"]) : 1
+    H0    = haskey(dims, "y") ? size(arr, dims["y"]) : 0
+    W0    = haskey(dims, "x") ? size(arr, dims["x"]) : 0
     frames = ts === nothing ? collect(0:(nT - 1)) : collect(Int, ts)
     filter!(t -> 0 <= t < nT, frames)
     isempty(frames) && throw(ArgumentError("record_view_movie: no timepoints in range (image has $nT)"))
 
+    # The region and the output size: crop, then an integer stride (`pixel_transform`).
+    (H0 > 0 && W0 > 0) || throw(ArgumentError("record_view_movie: the image has no y/x extent"))
+    tf = pixel_transform(H0, W0; crop = crop, max_px = max_px)
+    step = tf.step
+    H = tf.dH - tf.dH % 2; W = tf.dW - tf.dW % 2   # h264 / yuv420p wants even sides
+    (H > 0 && W > 0) || throw(ArgumentError("record_view_movie: the frame is empty ($(tf.cH) × $(tf.cW), step $step)"))
+    cancelled() && return (; path = out_path, frames = 0, width = W, height = H, cancelled = true)
+
+    # Head-on camera on that region: `step` image rows per output row, the frame's top-left at the
+    # crop's (`applyViewStateToBrowser`'s centre / zoom, against a canvas of the output's height).
+    z_range, plane_filter = _plane_window(z, nZ, style)
+    camera = Dict{String,Any}("zoom" => 1.0 / step, "angles" => [0.0, 0.0, 0.0],
+                              "center" => Float64[z_range[1], tf.y_lo + H * step / 2,
+                                                  tf.x_lo + W * step / 2])
+    chans = channels === nothing ? (0:(nC - 1)) : channels
+    sp = specs === nothing ? [(0.0, 1.0, DEFAULT_CMAPS[mod1(k, 4)], true) for k in 1:nC] :
+         [k <= length(chans) ? specs[k] : (0.0, 1.0, "gray", false) for k in 1:nC]
+    sp = [(c - 1) in chans ? sp[c] : (sp[c][1], sp[c][2], sp[c][3], false) for c in 1:nC]
+    specs_out = _specs_payload(sp)
+    states = [begin
+        st = Dict{String,Any}("t" => t, "ndisplay" => 2, "zRange" => z_range, "snapH" => H,
+                              "camera" => camera, "specs" => specs_out)
+        plane_filter === nothing || (st["planeFilter"] = plane_filter)
+        ov = _overlays3d_state(overlays3d_for, t)
+        ov === nothing || (st["overlays3d"] = ov)
+        st
+    end for t in frames]
+
+    params = Dict{String,Any}("zarrPath" => String(zarr_path), "outPath" => String(out_path),
+                              "states" => states, "canvasH" => H, "canvasW" => W,
+                              "fps" => Float64(fps),
+                              "pointSizePx" => style.point_size_px,
+                              "pointBorderPx" => style.point_border_px,
+                              "segmentWidthPx" => style.segment_width_px)
+    _mask_params!(params, mask)
+    title_card === nothing || (params["titleCard"] = title_card)
+    # Timestamp + scale bar, drawn on the encoded frame. The bar tracks the encoded µm/pixel: native
+    # µm × the stride.
+    if show_timestamp || show_scale_bar
+        native_um = pixel_size_um === nothing ? 1.0 : Float64(pixel_size_um)
+        params["overlays"] = _build_timelapse_overlays(frames, native_um * step, W, time_step_min;
+                                                        show_timestamp = show_timestamp,
+                                                        show_scale_bar = show_scale_bar)
+    end
     mkpath(task_dir)
-    raw = joinpath(task_dir, "frames.$(string(rand(UInt32); base = 16)).rgb24")
-    W = H = 0
-    written = 0
-    stopped = false
-    try
-        open(raw, "w") do io
-            W, H, written, stopped = write_raw_frames(io, arr, caxes, frames; z = z,
-                channels = channels, specs = specs, crop = crop, max_px = max_px,
-                overlays_for = overlays_for, mask_for = mask_for,
-                point_size_px = point_size_px, segment_width_px = segment_width_px,
-                mask_contour_px = mask_contour_px,
-                point_border_px = point_border_px, mask_opacity = mask_opacity,
-                on_progress = on_progress, cancelled = cancelled)
-        end
-        stopped && return (; path = out_path, frames = 0, width = W, height = H, cancelled = true)
-
-        # `Cecelia.run_py`, qualified: api/src runs in `Main` with `using Cecelia`, so an unexported
-        # name called bare loads fine, registers fine, and dies at runtime. The suite ratchets it.
-        params = Dict{String,Any}("rawPath" => raw, "outPath" => out_path, "width" => W, "height" => H,
-                                  "frames" => written, "fps" => Float64(fps))
-        title_card === nothing || (params["titleCard"] = title_card)
-        # Per-frame timestamp + scale bar go on the encode side (`title_card.draw_frame_overlays` uses
-        # the PIL font stack). Julia builds the metadata upfront — this is a T-sweep, so frame i is
-        # timepoint `frames[i]` and its time is `frames[i] * time_step_min`. Scale bar length in px
-        # tracks the ENCODED frame's µm/pixel (native `pixel_size_um` × the crop/max_px downsample).
-        if show_timestamp || show_scale_bar
-            native_um = pixel_size_um === nothing ? 1.0 : Float64(pixel_size_um)
-            # `W` is the actual encoded width (post crop/max_px, even-cropped). Compute the encoded-µm
-            # per encoded pixel — a downsampled clip needs a longer bar for the same physical length.
-            eff_um_per_px = native_um * _encoded_scale(W, arr, caxes, crop, max_px)
-            params["overlays"] = _build_timelapse_overlays(frames[1:written], eff_um_per_px,
-                                                            W, time_step_min;
-                                                            show_timestamp = show_timestamp,
-                                                            show_scale_bar = show_scale_bar)
-        end
-        ok = Cecelia.run_py("writers/encode_movie_run.py", params, task_dir;
-                            on_log = on_log, on_process = on_process)
-        ok || error("record_view_movie: the encoder failed — see the log above")
-        (; path = out_path, frames = written, width = W, height = H, cancelled = false)
-    finally
-        rm(raw; force = true)
-    end
-end
-
-"""
-    write_raw_frames(io, arr, caxes, ts; kwargs...) -> (width, height, written, cancelled)
-
-Render each timepoint and append it to `io` as raw RGB24, top row first. Separate from
-`record_view_movie` because this half needs no Python, no temp file and no encoder — which is what
-makes the ONE thing that cannot be checked downstream checkable here: the byte ORDER.
-
-A transposed movie plays perfectly. It is the right length, the right size and full of real pixels;
-it is simply the image on its side, and on a field of scattered cells that is not obvious. So the
-test asserts these bytes against `render_view_frame`'s own output rather than against a shape.
-"""
-function write_raw_frames(io::IO, arr, caxes, ts::AbstractVector{<:Integer};
-                          z = nothing, channels = nothing, specs = nothing,
-                          crop = nothing, max_px::Int = 0,
-                          overlays_for = nothing, mask_for = nothing,
-                          point_size_px::Int = 6, segment_width_px::Int = 2,
-                          mask_contour_px::Int = 1,
-                          point_border_px::Int = 0, mask_opacity::Real = MASK_FILL_OPACITY,
-                          on_progress::Function = (n, t) -> nothing,
-                          cancelled::Function = () -> false)
-    W = H = 0
-    written = 0
-    for (i, t) in enumerate(ts)
-        cancelled() && return (W, H, written, true)
-        # `overlays_for(t)` is `(points, segments)` for this timepoint (either may be `nothing`). A
-        # callback rather than one big buffer because the caller already has the whole overlay table
-        # by t sorted, so it can slice in O(1) — pre-materialising per-t rows here would allocate
-        # every frame and defeat the browser's own contiguous-range trick.
-        pts, segs = overlays_for === nothing ? (nothing, nothing) : overlays_for(Int(t))
-        # `mask_for(t)` is `(mask, id_colours)`. Separate from `overlays_for` because a mask is a 2D
-        # array the caller reads/projects per-t (via `read_slab` on a labels store), and giving it its
-        # own callback keeps the projection choice with whoever owns the store.
-        mask, mask_cols = mask_for === nothing ? (nothing, nothing) : mask_for(Int(t))
-        img = render_view_frame(arr, caxes, Int(t); z = z, channels = channels,
-                                specs = specs, crop = crop, max_px = max_px,
-                                points = pts, point_size_px = point_size_px,
-                                point_border_px = point_border_px,
-                                segments = segs, segment_width_px = segment_width_px,
-                                mask = mask, mask_colours = mask_cols,
-                                mask_contour_px = mask_contour_px, mask_opacity = mask_opacity)
-        # h264/yuv420p needs even dimensions, and nothing downstream will fix an odd frame —
-        # `movie_io` says so explicitly. Cropped here rather than there so the size the encoder is
-        # told is the size that was actually written.
-        h, w = size(img)
-        img = img[1:(h - h % 2), 1:(w - w % 2)]
-        if i == 1
-            H, W = size(img)
-            (H == 0 || W == 0) &&
-                throw(ArgumentError("write_raw_frames: frame is $(size(img)) after the even crop"))
-        elseif size(img) != (H, W)
-            throw(ArgumentError("write_raw_frames: frame $t is $(size(img)), expected $((H, W))"))
-        end
-        # (y, x) column-major → RGB24 row order (x fastest within a row) is exactly the transpose, so
-        # this is one permute and one write rather than a per-pixel loop.
-        write(io, reinterpret(UInt8, vec(permutedims(img, (2, 1)))))
-        written += 1
-        on_progress(i, length(ts))
-    end
-    (W, H, written, false)
+    ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
+                        on_log = on_log, on_process = on_process)
+    ok || error("record_view_movie: the renderer failed — see the log above")
+    on_progress(length(frames), length(frames))
+    (; path = out_path, frames = length(frames), width = W, height = H, cancelled = false)
 end
 
 # ── Keyframe animation ────────────────────────────────────────────────────────────
@@ -542,24 +510,18 @@ _ov_int(cfg, k, dflt) = begin
     v = get(cfg, k, dflt)
     v isa Real ? Int(round(Float64(v))) : Int(dflt)
 end
-_ov_float(cfg, k, dflt) = begin
-    v = get(cfg, k, dflt)
-    v isa Real ? Float64(v) : Float64(dflt)
-end
 _ov_strvec(cfg, k) = begin
     v = get(cfg, k, nothing)
     v isa AbstractVector ? String[String(x) for x in v] : nothing
 end
 
-# Build 2D + 3D overlay closures upfront from the animation's overlay context. Missing `img` (no
-# segmentation) OR no draw-request flags → return (nothing, nothing, nothing) so the render loop
-# treats every state as channels-only. Third slot is a 2D mask factory — used by the CPU per-frame
-# branch to draw labels-contour outlines alongside points/segments. 3D animations skip masks (a
-# 2D contour on a z-plane doesn't project naturally onto a MIP; documented as a known gap in the
-# PR body).
+# The animation's overlays, built once from its overlay context: `(per_t3d, mask)` — the per-t
+# overlay closure in native voxel coordinates (`build_overlays3d_for`, which the shader projects, 2D
+# and 3D alike) and the mask spec `_mask_params!` hands the renderer. Missing `img` (no segmentation)
+# OR no draw-request flags → `(nothing, nothing)`: a channels-only movie.
 function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothing,
                                             on_log::Union{Nothing,Function} = nothing)
-    (img === nothing || overlays_config === nothing) && return (nothing, nothing, nothing)
+    (img === nothing || overlays_config === nothing) && return (nothing, nothing)
     show_pops   = _ov_bool(overlays_config, "showPopulations", false)
     legacy_tracks = _ov_bool(overlays_config, "showTracks", false)
     legacy_gated  = _ov_bool(overlays_config, "showGatedTracks", false)
@@ -573,13 +535,13 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
          for e in ts_raw if e isa AbstractDict] :
         Tuple{String,String}[]
     filter!(s -> !isempty(s[1]), track_sources)
-    (show_pops || all_tracks || show_mask) || return (nothing, nothing, nothing)
+    (show_pops || all_tracks || show_mask) || return (nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
     isempty(vn) && !isempty(track_sources) && (vn = track_sources[1][1])
     # The mask's segmentation, when the caller names it apart from the overlays' (`maskValueName`).
     mask_vn = _ov_str(overlays_config, "maskValueName", vn)
-    isempty(vn) && isempty(mask_vn) && return (nothing, nothing, nothing)
+    isempty(vn) && isempty(mask_vn) && return (nothing, nothing)
     isempty(vn) && (vn = mask_vn)
     # `frame` = the recorded version's `(arr, caxes)` — a mask from another version's grid is skipped.
     show_mask && frame !== nothing && !mask_fits_frame(img, mask_vn, frame...; on_log = on_log) &&
@@ -601,9 +563,6 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     colour_overrides = cov_raw isa AbstractDict ?
         Dict{String,String}(String(k) => String(v) for (k, v) in cov_raw) : nothing
 
-    # Same author for both dimensionalities; the 2D one takes a `PixelTransform`, so we curry a
-    # per-canvas builder that the caller pins to the frame's crop/max_px at draw time. `native_h`/
-    # `native_w` are the image extents — needed for `pixel_transform`.
     # Whole-seg tracks from several segmentations: one author call per source, in its colour, merged
     # (`merge_overlay_closures`) — as the 2D rail does. Otherwise one call on `vn`.
     # A source's colour is also its "solid" track colour, as in the viewer.
@@ -617,36 +576,17 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
                                     include_points = show_pops,
                                     track_color_mode = tcm, colour_by = colour_by,
                                     colour_overrides = colour_overrides)
-    _build2d = (native_h, native_w, crop, max_px) -> begin
-        tf = pixel_transform(native_h, native_w; crop = crop, max_px = max_px)
-        merge_overlay_closures([build_overlays_for(img; transform = tf, author_kw(s...)...)
-                                for s in sources])
-    end
     per_t3d = merge_overlay_closures([build_overlays3d_for(img; author_kw(s...)...) for s in sources])
 
-    # Mask factory — mirrors `_build2d`. Same three axes per frame (crop, max_px, z) drive
-    # `build_mask_for`; skipped when the config didn't ask for a mask, so an animation that
-    # only wants points/tracks pays nothing extra.
-    _build_mask = nothing
-    if show_mask
-        all_cells    = _ov_bool(overlays_config, "allCells", false)
-        all_cells_col = _ov_str(overlays_config, "allCellsColour", "#9ca3af")
-        _build_mask = (native_h, native_w, crop, max_px, z) -> begin
-            tf = pixel_transform(native_h, native_w; crop = crop, max_px = max_px)
-            try
-                build_mask_for(img; value_name = mask_vn, pop_type = pt, transform = tf,
-                                pops_filter = pops_filter, z = z,
-                                all_cells = all_cells,
-                                all_cells_colour = all_cells_col,
-                                colour_by = colour_by,
-                                colour_overrides = colour_overrides)
-            catch e
-                @warn "keyframes mask author failed" value_name = vn pop_type = pt exception = e
-                nothing
-            end
-        end
-    end
-    (_build2d, per_t3d, _build_mask)
+    # The mask, for the shader (`movie_mask`).
+    mask = !show_mask ? nothing :
+        movie_mask(img; value_name = mask_vn, contour_px = _ov_int(overlays_config, "maskContourPx", 1),
+                   opacity = movie_overlay_style(k -> get(overlays_config, k, nothing)).mask_opacity,
+                   pop_type = pt, pops_filter = pops_filter,
+                   all_cells = _ov_bool(overlays_config, "allCells", false),
+                   all_cells_colour = _ov_str(overlays_config, "allCellsColour", "#9ca3af"),
+                   colour_by = colour_by, colour_overrides = colour_overrides)
+    (per_t3d, mask)
 end
 
 # A 3D state's camera as the browser viewer stored it, for the movie host to apply exactly as the
@@ -703,7 +643,7 @@ end
     record_keyframes_view_movie(zarr_path, out_path, keyframes, channel_names; kwargs...)
 
 Render a keyframe animation offline — the sibling of `record_view_movie` for the animation page. Same
-encoder pipeline (raw RGB24 → `encode_movie_run.py`), same callback contract
+renderer (`writers/render_animation_run.py`, the viewer's shader, 2D and 3D), same callback contract
 (`on_log`/`on_progress`/`on_process`/`cancelled`), same title-card handling. The DIFFERENCE is each
 frame's args come from `interpolate_keyframes(keyframes)` — one tweened viewState per frame — instead
 of a fixed sweep.
@@ -769,9 +709,7 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     native_w = haskey(dims, "x") ? size(arr, dims["x"]) : 0
     (native_h == 0 || native_w == 0) &&
         throw(ArgumentError("record_keyframes_view_movie: image has no y/x axes"))
-    # 3D canvas defaults to 512×512 if not asked.
-    canvas3_h = something(canvas_h, 512)
-    canvas3_w = something(canvas_w, 512)
+    nZ    = haskey(dims, "z") ? size(arr, dims["z"]) : 1
 
     # Resolve every state's render args upfront: overlays need it for per-frame t indices, and it lets
     # us decide 2D vs 3D dispatch from ONE inspection of the interpolated states (a mid-animation
@@ -782,176 +720,74 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                                                  canvas_h = canvas_h, canvas_w = canvas_w)
                       for st in states]
     is_3d = any(a -> a.ndisplay == 3, args_per_frame)
+    # The output canvas: the one asked for, else the viewer canvas the first state was captured on
+    # (a 2D movie then IS the viewer's frame), else 512.
+    snap1 = states[1] isa AbstractDict ? get(states[1], "canvas", nothing) : nothing
+    snap_dim(k) = (v = snap1 isa AbstractDict ? get(snap1, k, nothing) : nothing;
+                   v isa Real && v > 0 ? round(Int, Float64(v)) : nothing)
+    canvas3_h = something(canvas_h, is_3d ? nothing : snap_dim("height"), 512)
+    canvas3_w = something(canvas_w, is_3d ? nothing : snap_dim("width"), 512)
 
-    # Overlay authors — one build per animation (not per frame). `build2d` needs the per-frame
-    # crop/max_px, so we curry it here and pass the crop into every 2D frame; `per_t3d` is one
-    # closure the 3D emitter calls with each frame's t. `build_mask` is the 2D mask factory; it is
-    # non-`nothing` only when a mask was asked for AND fits this image version, which is also the 3D
-    # renderer's cue to draw the label store.
-    build2d, per_t3d, build_mask = _resolve_keyframe_overlay_builders(img, overlays_config;
-                                                                      frame = (arr, caxes),
-                                                                      on_log = on_log)
-    ov_tail = overlays_config === nothing ? 30 : _ov_int(overlays_config, "tailLength", 30)
-    ov_psz  = overlays_config === nothing ? 6  : _ov_int(overlays_config, "pointSizePx", 6)
-    ov_sw   = overlays_config === nothing ? 2  : _ov_int(overlays_config, "segmentWidthPx", 2)
-    ov_mcw  = overlays_config === nothing ? 1  : _ov_int(overlays_config, "maskContourPx", 1)
-    ov_pb   = overlays_config === nothing ? 0  : _ov_int(overlays_config, "pointBorderPx", 0)
-    ov_mop  = overlays_config === nothing ? Float64(MASK_FILL_OPACITY) :
-              _ov_float(overlays_config, "maskOpacity", Float64(MASK_FILL_OPACITY))
+    # Overlays — one build per animation (not per frame): the per-t closure the states read with
+    # each frame's t, and the mask (only when asked for AND it fits this image version).
+    per_t3d, movie_mask = _resolve_keyframe_overlay_builders(img, overlays_config;
+                                                             frame = (arr, caxes), on_log = on_log)
+    style  = movie_overlay_style(k -> overlays_config === nothing ? nothing : get(overlays_config, k, nothing))
 
-    # ── 3D path — the viewer's own shaders, headless (`writers/render_animation_run.py`) ──
-    if is_3d
-        cancelled() && return (; path = out_path, frames = 0, width = canvas3_w, height = canvas3_h,
-                                 cancelled = true)
-        # Per state: t, the camera as the viewer stored it, the canvas its zoom was measured on, the
-        # per-channel specs, and the overlays as positions. The host applies the camera exactly as
-        # the viewer does and projects the overlays with the raycast's own camera.
-        py_states = Vector{Dict{String,Any}}(undef, length(args_per_frame))
-        for (i, a) in enumerate(args_per_frame)
-            t_clamped = clamp(Int(a.t), 0, nT - 1)
-            specs_out = Vector{Dict{String,Any}}(undef, length(a.specs))
-            for (k, s) in enumerate(a.specs)
-                lo, hi, colour, vis = s
-                # `colour` is the resolved LUT (Vector of RGB triplets), a colormap NAME, or a
-                # `#rrggbb` hex — the browser viewer sends hex for any colour not in the picker's
-                # palette. `_as_lut` is the one resolver for all three; a name-only lookup here
-                # rendered every hex channel WHITE.
-                lut = _as_lut(colour isa AbstractString ? String(colour) : colour)
-                lut_stops = Vector{Float64}[Float64[Float64(rgb[1]), Float64(rgb[2]), Float64(rgb[3])]
-                                            for rgb in lut]
-                specs_out[k] = Dict{String,Any}("lo" => Float64(lo), "hi" => Float64(hi),
-                                                 "lut" => lut_stops, "visible" => Bool(vis))
-            end
-            py_states[i] = Dict{String,Any}(
-                "t"      => t_clamped,
-                "camera" => _camera3d_payload(a, states[i]),
-                "specs"  => specs_out)
-            snap_h = _snapshot_canvas_h(states[i])
-            snap_h === nothing || (py_states[i]["snapH"] = snap_h)
-            ov3d = _overlays3d_state(per_t3d, t_clamped)
-            ov3d === nothing || (py_states[i]["overlays3d"] = ov3d)
+    # ── The viewer's own shaders, headless (`writers/render_animation_run.py`), 2D and 3D ──
+    cancelled() && return (; path = out_path, frames = 0, width = canvas3_w, height = canvas3_h,
+                             cancelled = true)
+    # Per state: t, the camera as the viewer stored it, the canvas its zoom was measured on, the
+    # per-channel specs, and the overlays as positions. The host applies the camera exactly as
+    # the viewer does and projects the overlays with the raycast's own camera.
+    py_states = Vector{Dict{String,Any}}(undef, length(args_per_frame))
+    for (i, a) in enumerate(args_per_frame)
+        t_clamped = clamp(Int(a.t), 0, nT - 1)
+        specs_out = _specs_payload(a.specs)
+        py_states[i] = Dict{String,Any}(
+            "t"      => t_clamped,
+            "camera" => _camera3d_payload(a, states[i]),
+            "specs"  => specs_out)
+        snap_h = _snapshot_canvas_h(states[i])
+        snap_h === nothing || (py_states[i]["snapH"] = snap_h)
+        ov3d = _overlays3d_state(per_t3d, t_clamped)
+        ov3d === nothing || (py_states[i]["overlays3d"] = ov3d)
+        if a.ndisplay == 2
+            # The viewer's 2D view: the state's plane, and the points / tails near it.
+            z_range, plane_filter = _plane_window(a.z, nZ, style)
+            py_states[i]["ndisplay"] = 2
+            py_states[i]["zRange"] = z_range
+            plane_filter === nothing || (py_states[i]["planeFilter"] = plane_filter)
         end
-        params = Dict{String,Any}(
-            "zarrPath"       => String(zarr_path),
-            "outPath"        => String(out_path),
-            "states"         => py_states,
-            "canvasH"        => canvas3_h, "canvasW" => canvas3_w,
-            "zAniso"         => Float64(z_aniso),
-            "renderQuality"  => String(render_quality),
-            "fps"            => Float64(fps),
-            "pointSizePx"    => ov_psz,
-            "pointBorderPx"  => ov_pb,
-            "segmentWidthPx" => ov_sw,
-        )
-        if build_mask !== nothing
-            # The whole label store, as the viewer's 3D view draws it (nearest id along the ray,
-            # palette colours) — not the 2D path's pop-filtered outline.
-            lp = img_labels_path(img, _ov_str(overlays_config, "maskValueName",
-                                              _ov_str(overlays_config, "valueName", "")))
-            isdir(lp) && (params["labelsPath"] = String(lp); params["labelContourPx"] = ov_mcw;
-                          params["labelOpacity"] = ov_mop)
-        end
-        title_card === nothing || (params["titleCard"] = title_card)
-        # Timestamp + scale bar, same shape the CPU encoder reads. The bar is sized to the first
-        # state's view; an animation that zooms keeps one bar length rather than a flickering one.
-        if show_timestamp || show_scale_bar
-            per_frame_ts = Int[clamp(Int(a.t), 0, nT - 1) for a in args_per_frame]
-            eff_um = pixel_size_um === nothing ? 1.0 :
-                     _um_per_px_3d(args_per_frame[1], states[1], pixel_size_um, canvas3_h)
-            params["overlays"] = _build_timelapse_overlays(per_frame_ts, eff_um, canvas3_w,
-                                                            time_step_min;
-                                                            show_timestamp = show_timestamp,
-                                                            show_scale_bar = show_scale_bar)
-        end
-        ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
-                             on_log = on_log, on_process = on_process)
-        ok || error("record_keyframes_view_movie: the 3D renderer failed — see the log above")
-        return (; path = out_path, frames = length(py_states),
-                  width = canvas3_w, height = canvas3_h, cancelled = false)
     end
-
-    mkpath(task_dir)
-    raw = joinpath(task_dir, "kfframes.$(string(rand(UInt32); base = 16)).rgb24")
-    W = H = 0; written = 0; stopped = false
-    try
-        open(raw, "w") do io
-            for (i, st) in enumerate(states)
-                cancelled() && (stopped = true; break)
-                args = viewstate_to_render_args(st, channel_names, default_specs,
-                                                 native_h, native_w;
-                                                 canvas_h = canvas_h, canvas_w = canvas_w)
-                t_clamped = clamp(args.t, 0, nT - 1)
-                # 2D per-frame overlay: build a fresh author bound to THIS frame's crop (a
-                # camera pan changes the crop from frame to frame). No overlays_config → the
-                # closure is `nothing` and `render_view_frame`'s `points`/`segments` kwargs
-                # stay unset, matching the pre-overlay behaviour. Same story for the mask
-                # closure — off unless `showMask` was in the config.
-                pts_2d = nothing; segs_2d = nothing
-                if build2d !== nothing
-                    per_t2d = build2d(native_h, native_w, args.crop, 0)
-                    pts_2d, segs_2d = per_t2d(Int(t_clamped))
-                end
-                mask_2d = nothing; mask_cols = nothing
-                if build_mask !== nothing
-                    per_t_mask = build_mask(native_h, native_w, args.crop, 0, args.z)
-                    per_t_mask === nothing || ((mask_2d, mask_cols) = per_t_mask(Int(t_clamped)))
-                end
-                img = render_view_frame(arr, caxes, Int(t_clamped);
-                                         z = args.z, specs = args.specs, crop = args.crop,
-                                         points = pts_2d, point_size_px = ov_psz,
-                                         point_border_px = ov_pb,
-                                         segments = segs_2d, segment_width_px = ov_sw,
-                                         mask = mask_2d, mask_colours = mask_cols,
-                                         mask_contour_px = ov_mcw, mask_opacity = ov_mop)
-                h, w = size(img)
-                img = img[1:(h - h % 2), 1:(w - w % 2)]
-                if i == 1
-                    H, W = size(img)
-                elseif size(img) != (H, W)
-                    # A camera path that pans off-image can produce a smaller crop halfway through;
-                    # pad the frame to the first-frame size so h264 doesn't reject the sequence. A
-                    # keyframe animation must not fail on a legitimate zoom-out.
-                    padded = fill(RGB{N0f8}(0, 0, 0), H, W)
-                    hh, ww = min(size(img, 1), H), min(size(img, 2), W)
-                    padded[1:hh, 1:ww] .= img[1:hh, 1:ww]
-                    img = padded
-                end
-                write(io, reinterpret(UInt8, vec(permutedims(img, (2, 1)))))
-                written += 1
-                on_progress(i, length(states))
-            end
-        end
-        stopped && return (; path = out_path, frames = 0, width = W, height = H, cancelled = true)
-        params = Dict{String,Any}("rawPath" => raw, "outPath" => out_path,
-                                   "width" => W, "height" => H,
-                                   "frames" => written, "fps" => Float64(fps))
-        title_card === nothing || (params["titleCard"] = title_card)
-        # Per-frame overlays: an animation's t varies per frame (from viewState), so build the ts list
-        # from the interpolated states, not from a fixed range. Scale bar: frames render their crop at
-        # native resolution, so the encoded µm/px is the first frame's crop over the encoded width
-        # (`_encoded_scale`, as `record_view_movie` does) — one bar length, not a flickering one.
-        if show_timestamp || show_scale_bar
-            per_frame_ts = Int[]
-            for st in states[1:written]
-                a = viewstate_to_render_args(st, channel_names, default_specs,
-                                              native_h, native_w;
-                                              canvas_h = canvas_h, canvas_w = canvas_w)
-                push!(per_frame_ts, clamp(Int(a.t), 0, nT - 1))
-            end
-            first_args = viewstate_to_render_args(states[1], channel_names, default_specs,
-                                                    native_h, native_w;
-                                                    canvas_h = canvas_h, canvas_w = canvas_w)
-            eff_um = (pixel_size_um === nothing ? 1.0 : Float64(pixel_size_um)) *
-                     _encoded_scale(W, arr, caxes, first_args.crop, 0)
-            params["overlays"] = _build_timelapse_overlays(per_frame_ts, eff_um, W, time_step_min;
-                                                            show_timestamp = show_timestamp,
-                                                            show_scale_bar = show_scale_bar)
-        end
-        ok = Cecelia.run_py("writers/encode_movie_run.py", params, task_dir;
-                             on_log = on_log, on_process = on_process)
-        ok || error("record_keyframes_view_movie: the encoder failed — see the log above")
-        (; path = out_path, frames = written, width = W, height = H, cancelled = false)
-    finally
-        rm(raw; force = true)
+    params = Dict{String,Any}(
+        "zarrPath"       => String(zarr_path),
+        "outPath"        => String(out_path),
+        "states"         => py_states,
+        "canvasH"        => canvas3_h, "canvasW" => canvas3_w,
+        "zAniso"         => Float64(z_aniso),
+        "renderQuality"  => String(render_quality),
+        "fps"            => Float64(fps),
+        "pointSizePx"    => style.point_size_px,
+        "pointBorderPx"  => style.point_border_px,
+        "segmentWidthPx" => style.segment_width_px,
+    )
+    _mask_params!(params, movie_mask)
+    title_card === nothing || (params["titleCard"] = title_card)
+    # Timestamp + scale bar, same shape the CPU encoder reads. The bar is sized to the first
+    # state's view; an animation that zooms keeps one bar length rather than a flickering one.
+    if show_timestamp || show_scale_bar
+        per_frame_ts = Int[clamp(Int(a.t), 0, nT - 1) for a in args_per_frame]
+        eff_um = pixel_size_um === nothing ? 1.0 :
+                 _um_per_px_3d(args_per_frame[1], states[1], pixel_size_um, canvas3_h)
+        params["overlays"] = _build_timelapse_overlays(per_frame_ts, eff_um, canvas3_w,
+                                                        time_step_min;
+                                                        show_timestamp = show_timestamp,
+                                                        show_scale_bar = show_scale_bar)
     end
+    ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
+                         on_log = on_log, on_process = on_process)
+    ok || error("record_keyframes_view_movie: the renderer failed — see the log above")
+    (; path = out_path, frames = length(py_states),
+      width = canvas3_w, height = canvas3_h, cancelled = false)
 end

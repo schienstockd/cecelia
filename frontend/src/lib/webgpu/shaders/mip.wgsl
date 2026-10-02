@@ -102,9 +102,25 @@ fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
 }
 
 // 'id % rows' on the one-row palette. Id 0 never reaches here, so every row is available to real cells.
-fn labColour(id: u32) -> vec3<f32> {
-  let rows = max(i32(p.lab.z), 1);
-  return textureLoad(pal, vec2<i32>(i32(id % u32(rows)), 0), 0).rgb;
+// A NEGATIVE row count switches to a colour TABLE: `pal` is W = -rows texels wide and as many rows
+// as it needs, id at (id % W, id / W), and alpha 0 = this label is not drawn. That is how a movie
+// draws a population-filtered, population-coloured mask with this pass; the viewer always sends the
+// palette's row count, which takes the branch it always took.
+fn labColour(id: u32) -> vec4<f32> {
+  let rows = i32(p.lab.z);
+  if (rows < 0) {
+    let w = u32(-rows);
+    let row = id / w;
+    if (row >= textureDimensions(pal).y) { return vec4(0.0); }
+    return textureLoad(pal, vec2<i32>(i32(id % w), i32(row)), 0);
+  }
+  return vec4(textureLoad(pal, vec2<i32>(i32(id % u32(max(rows, 1))), 0), 0).rgb, 1.0);
+}
+
+// Whether a label is drawn at all: always on the palette, the table's alpha otherwise. A hidden label
+// is skipped by the march, so the nearest DRAWN one along the ray is what shows.
+fn labShown(id: u32) -> bool {
+  return p.lab.z >= 0.0 || labColour(id).a > 0.0;
 }
 
 @fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
@@ -152,7 +168,7 @@ fn labColour(id: u32) -> vec3<f32> {
         vi.x >= i32(p.dims.x) || vi.y >= i32(p.dims.y) || vi.z >= i32(p.dims.z)) { continue; }
     if (p.lab.x > 0.0 && labId == 0u) {
       let id = textureLoad(lab, vi, 0).r;
-      if (id != 0u) { labId = id; labVi = vi; }
+      if (id != 0u && labShown(id)) { labId = id; labVi = vi; }
     }
     for (var c = 0; c < nch; c = c + 1) {
       // Channels are stacked along z in ONE texture, so a channel is a z offset of zpc planes.
@@ -171,7 +187,7 @@ fn labColour(id: u32) -> vec3<f32> {
   // image — not added to it. Adding would brighten the signal it is meant to annotate, and two masks
   // over one bright cell would saturate to white.
   if (labId != 0u && p.lab.x > 0.0 && labEdge(labVi, labId, i32(p.lab.y))) {
-    acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
+    acc = mix(min(acc, vec3(1.0)), labColour(labId).rgb, p.lab.x);
   }
   // Pick highlight sits ON TOP of everything above — the whole point of "what am I editing right now"
   // is that it is legible without the user having to hunt. Focus wins over pick (both may be true).
