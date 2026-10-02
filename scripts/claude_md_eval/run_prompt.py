@@ -195,7 +195,7 @@ def _regex_hits(diff: str, meta: dict[str, str]) -> tuple[int, int]:
 
     `anti_signal_ignore_comments: true` is a per-prompt opt-in that drops comments before the
     anti regex runs: an agent explaining which literal it avoided isn't using it. It's opt-in,
-    not global, because some prompts score the comment itself (`cite-algorithm`).
+    not global, because some prompts score what a comment says (`cite-algorithm`'s citation).
     """
     additions = _additions_only(diff)
     compliant_signal = meta.get("compliant_signal", "")
