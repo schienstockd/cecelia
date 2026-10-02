@@ -70,6 +70,33 @@ class RealShadersTest(unittest.TestCase):
                 self.assertRegex(wgsl_utils.format_var(v), r"^\d+(\.\d+)?$")
 
 
+class MacArmProcessorTest(unittest.TestCase):
+    """wgpu's Metal backend imports rubicon-objc, which reads the CPU from ``platform.processor()``.
+    A Rosetta parent makes that say ``i386`` in a native arm64 Python, and the import crashes."""
+
+    def _run(self, plat, machine, processor):
+        import platform
+        from unittest import mock
+        from cecelia.utils import wgpu_host
+        saved = platform.processor
+        try:
+            with mock.patch("sys.platform", plat), \
+                 mock.patch("os.uname", return_value=mock.Mock(machine=machine), create=True), \
+                 mock.patch("platform.processor", return_value=processor):
+                wgpu_host._native_arm_processor()
+                return platform.processor()
+        finally:
+            platform.processor = saved
+
+    def test_rosetta_parent_on_apple_silicon_reads_arm(self):
+        self.assertEqual(self._run("darwin", "arm64", "i386"), "arm")
+
+    def test_everything_else_is_left_alone(self):
+        self.assertEqual(self._run("darwin", "arm64", "arm"), "arm")
+        self.assertEqual(self._run("darwin", "x86_64", "i386"), "i386")      # a real Intel Mac
+        self.assertEqual(self._run("linux", "aarch64", ""), "")
+
+
 class GoldenHostInputsTest(unittest.TestCase):
     """The CPU-side inputs the viewer computes before upload — same golden as the TS test."""
 
