@@ -1,6 +1,6 @@
 # Retire PrimeVue
 
-**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast). P2 built (own tooltip), awaiting Dominik's visual pass. P3 built (PrimeVue removed), stacked on P2.
+**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast). P2 built (own tooltip), awaiting Dominik's visual pass. P3 built (PrimeVue removed), stacked on P2. P4 built (icons on vendored Lucide), stacked on P3.
 
 ## Goal
 
@@ -105,12 +105,23 @@ Modals and dialogs are already hand-rolled (`BaseModal.vue`). No other PrimeVue 
   `primevue` / `@primevue` / `@primeuix` import or dependency). The token guard no longer exempts
   `--p-*`, since nothing declares them now. Inventory, `docs/UI.md`, README + architecture labels
   updated.
-- **P4, icons.** `components/CcIcon.vue` on `lucide-vue-next`, plus a mapping table (primeicons name →
-  Lucide name) built from `ICON_LEGEND`. Then a codemod: `<i class="pi pi-X">` → `<CcIcon name="…">`,
-  `icon: 'pi-X'` data → the new name, and the built-up prefixes by hand. `iconLegend.ts` switches to
-  Lucide names, so the test keeps guarding. Drop `primeicons`, and update `docs/UI.md` → *Icons*.
-  Independent of P1–P3, so it can go first. **Needs Dominik's eyes**: stroke weight vs neighbouring
-  text, the busy spinner, and icon-button alignment in toolbars.
+- **P4, icons — built, stacked on P3.** Not the `CcIcon` component Decision 2 sketched: each legend
+  entry gained a `lucide` name (+ `fill: true` for the two solid shapes, star and dot), and
+  `scripts/vendor_icons.mjs` (`pixi run icons`) writes `src/icons.css` — one CSS mask per existing
+  `pi-*` class, from the pinned `lucide-static` tarball. Costed: a component meant rewriting 1,388
+  class uses in 153 files and every `icon: 'pi-…'` data path that renders them; the mask keeps all of
+  them as they are, takes `color`/`font-size` like the font did, and sits in `@layer cc-base` with the
+  same 1rem baseline. Vendoring the 141 used glyphs (60 KB, 8 KB gzipped — the font was a 35 KB woff2
+  plus CSS) rather than depending on a Lucide package: those ship all ~2,000 glyphs at 20–50 MB, and
+  every install runs `npm install`. `primeicons` dropped; Dependabot's PrimeVue ignore is gone
+  entirely; the PrimeVue ratchet now also forbids `primeicons`. `iconLegend.test.ts` checks every
+  rendered glyph is vendored, `icons.css` matches the legend, and no two meanings share a Lucide
+  glyph. Mapping choices that follow the meaning rather than the old shape: `pi-pause` → columns-2
+  (it means "side by side"), `pi-ellipsis-v` → grip-vertical ("drag to place"), `pi-desktop` →
+  square-terminal ("the console"), `pi-gauge` → ruler ("voxel size"), `pi-github` → folder-git-2
+  (Lucide has no brand marks), `pi-file-o` → file-x ("a file it cannot read"). **Needs Dominik's eyes**:
+  stroke weight vs neighbouring text, the busy spinner (1s turn, was 2s), baseline alignment of
+  inline icons, and icon-button squares in toolbars.
 
 ## Risks
 

@@ -49,7 +49,7 @@ export interface IssuesResponse {
 /**
  * The button label for a candidate — a WORD, deliberately, not a glyph.
  *
- * PrimeIcons has nothing that reads as "merge these two" or "cut this in half", and every free
+ * The icon set (PrimeIcons, then) had nothing that reads as "merge these two" or "cut this in half", and every free
  * candidate collides with a meaning the glossary already records (`pi-link` against
  * `pi-external-link`, `pi-expand` against `pi-window-maximize`). Both ops are destructive and
  * asymmetric, so the label has to be exact rather than guessable — see the icon section of

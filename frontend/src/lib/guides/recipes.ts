@@ -40,7 +40,7 @@ interface RecipeBase {
 export interface WrittenRecipe extends RecipeBase {
   // The recognition test — "is this me?" — not a description of the steps.
   whenThisIsYou: string
-  icon: string                  // a PrimeIcons class, as a GuideDef carries
+  icon: string                  // an icon class, as a GuideDef carries
   steps: RecipeStep[]
   wanted?: never
 }

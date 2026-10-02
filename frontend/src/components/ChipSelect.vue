@@ -13,7 +13,7 @@
     multiple              modelValue is a `string[]` in PICK order
     multiple + reorderable drag the selected chips to reorder the array (pill variant only)
 
-  Per-option extras (all optional): `icon` (PrimeIcons class), `tip` (tooltip), `disabled`,
+  Per-option extras (all optional): `icon` (icon class), `tip` (tooltip), `disabled`,
   `badge` (a count shown after the label), `accent` (override the active colour — for per-level /
   per-population colours). Pure selection/reorder logic lives in utils/chipSelect.ts (unit-tested).
 

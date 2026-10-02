@@ -23,7 +23,7 @@ const props = defineProps<{
   /** what each half holds, lower-case and short — goes straight into the tooltip ("the task list") */
   topLabel: string
   bottomLabel: string
-  topIcon: string      // PrimeIcons class, e.g. 'pi-cog'
+  topIcon: string      // icon class, e.g. 'pi-cog'
   bottomIcon: string
 }>()
 

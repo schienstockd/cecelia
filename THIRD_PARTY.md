@@ -75,7 +75,7 @@ license.
 | Package | License |
 |---------|---------|
 | Vue 3 / vue-router / Pinia | MIT |
-| PrimeVue / PrimeIcons / @primevue/themes | MIT |
+| Lucide icons (vendored subset in `frontend/src/icons.css`, via `lucide-static`) | ISC |
 | Observable Plot (`@observablehq/plot`) | ISC |
 | regl-scatterplot | MIT |
 | Vue Flow (`@vue-flow/*`) | MIT |

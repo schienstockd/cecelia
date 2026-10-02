@@ -428,6 +428,14 @@ It cannot rot, because `iconLegend.test.ts` scans every glyph actually rendered 
 (comments stripped) and fails when one is **missing from the list**, or **listed and rendered nowhere**.
 A new icon therefore fails the suite until somebody says what it means.
 
+**The glyphs are Lucide** (ISC, https://lucide.dev/icons), vendored: each legend entry names its
+Lucide glyph (`lucide: 'trash-2'`, `fill: true` for the few solid shapes), and `pixi run icons`
+(`scripts/vendor_icons.mjs`) writes `frontend/src/icons.css` — one CSS mask per `pi-*` class, in
+`@layer cc-base` with a 1rem baseline. So an icon is still `<i class="pi pi-trash">` and still takes
+`color` and `font-size` like the old icon font. The `pi-*` names are PrimeIcons' (the set before,
+retired with PrimeVue — `docs/todo/PRIMEVUE_RETIRE_PLAN.md`), kept so no call site changed. The test
+also fails when `icons.css` drifts from the legend, or two meanings map to one Lucide glyph.
+
 Two rules, both learned the hard way in the 2026-08-17 audit (126 glyphs, ~600 uses):
 
 - **One meaning per glyph.** `pi-replay` meant both "run it again" (task re-run, notebook restore) *and*
@@ -480,7 +488,7 @@ existed. There is no component library to reach for (PrimeVue was retired — `d
 `BaseModal` provides the dimmed overlay, the centred surface box, the header (icon + title + ✕), and
 close-on-✕ / click-outside / **Escape**. You provide the content via slots.
 
-- **Props:** `title` (string), `icon` (a PrimeIcons class, e.g. `pi-box`), `width` (CSS, default
+- **Props:** `title` (string), `icon` (an icon class, e.g. `pi-box`), `width` (CSS, default
   `480px`), `height` (optional fixed CSS height; omit to size to content, capped at `90vh`).
 - **Slots:** default = the scrolling **body**; `#footer` = pinned action row; `#toolbar` = a pinned row
   under the header (search bars, tabs, breadcrumbs); `#title` = override the whole title area (e.g. to
@@ -2403,7 +2411,7 @@ Full design: `docs/todo/VIEW_PROFILES_PLAN.md`.
 interface NavItem {
   to:               string      // Vue Router path
   label:            string      // sidebar label
-  icon:             string      // PrimeIcons class e.g. 'pi-th-large'
+  icon:             string      // icon class e.g. 'pi-th-large'
   tip:              string      // tooltip text (required)
   disabled?:        boolean     // grey out the link entirely
   soon?:            boolean     // adds a "soon" badge
@@ -2411,7 +2419,7 @@ interface NavItem {
 }
 ```
 
-Icons: browse at https://primevue.org/icons — use the `pi-*` name, prefix with `pi` in the class list: `['pi', item.icon]`.
+Icons: pick from `lib/iconLegend.ts` (see *Icons* above) — use the `pi-*` name, prefix with `pi` in the class list: `['pi', item.icon]`.
 
 ---
 

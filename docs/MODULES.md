@@ -1610,7 +1610,7 @@ Add an entry to the `navItems` array:
 { to: '/mymodule', label: 'My Module', icon: 'pi-<icon-name>', tip: 'One-line tooltip.', requiresProject: true }
 ```
 
-`requiresProject: true` greys out the item when no project is open. Use `false` for Settings-style pages that don't need a project. Browse available PrimeIcons at `primefaces.org/primeicons`.
+`requiresProject: true` greys out the item when no project is open. Use `false` for Settings-style pages that don't need a project. Pick the icon from `frontend/src/lib/iconLegend.ts` (`docs/UI.md` → *Icons*).
 
 ---
 

@@ -296,6 +296,11 @@ models-fetch = "python scripts/models_fetch.py"
 # app/test/runtests.jl. Parsing lives in frontend/src/utils/uiCopy.ts. See docs/UI.md → UI copy.
 ui-copy = "node scripts/ui_copy_inventory.mjs"
 
+# Rebuild frontend/src/icons.css (the vendored Lucide glyphs) from the `lucide` names in
+# frontend/src/lib/iconLegend.ts. Run after adding or changing a glyph; iconLegend.test.ts fails
+# until you do. Fetches the pinned lucide-static tarball (network). See scripts/vendor_icons.mjs.
+icons = "node scripts/vendor_icons.mjs"
+
 # Read ~/.cecelia-effectiveness/events.jsonl (or $CECELIA_EFFECTIVENESS_LOG) and rewrite
 # docs/ai-assist/EFFECTIVENESS.md — the public rollup of the AI-assist infrastructure's catch/FP
 # numbers. On-demand only; never auto-committed. Review the diff, commit if the update is

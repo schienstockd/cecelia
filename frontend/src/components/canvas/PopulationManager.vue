@@ -791,7 +791,7 @@ function moveTo(target: string) {
    for). Only the bar's own chrome stays here. */
 .pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border); }
 .pm-add-spacer { flex: 1; }
-/* Redo is `pi-undo` MIRRORED, the way every icon set draws the pair — PrimeIcons has no redo glyph,
+/* Redo is `pi-undo` MIRRORED, the way every icon set draws the pair — the set had no redo glyph,
    and the two nearest candidates are both wrong: `pi-replay` is pixel-identical to `pi-undo` (same
    counter-clockwise arrow, so the two buttons looked the same), and `pi-refresh` already means
    "reload / restart a service". Mirroring keeps ONE glyph for stepping through history and lets the

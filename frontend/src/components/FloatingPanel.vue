@@ -29,7 +29,7 @@ import { useResizeHandles } from '../composables/useResizeHandles'
 const props = withDefaults(defineProps<{
   title: string
   storageKey: string            // localStorage namespace: cc.floating.<storageKey>
-  icon?: string                 // optional PrimeIcons class (e.g. 'pi-eye')
+  icon?: string                 // optional icon class (e.g. 'pi-eye')
   accent?: string               // optional highlight colour applied to the panel border + header icon
   defaultX?: number
   defaultY?: number
