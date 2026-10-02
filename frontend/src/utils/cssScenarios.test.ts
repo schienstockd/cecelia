@@ -423,41 +423,39 @@ describe('raw sizes and radii', () => {
 })
 
 describe('tooltip sizing', () => {
-  // PrimeVue measures the `.p-tooltip` CONTAINER — `getOuterWidth(tooltipElement)` in all four align
-  // functions and in `isOutOfBounds` — and Aura caps it at `tooltip.max.width` = 12.5rem. Widening the
-  // inner `.p-tooltip-text` instead does not raise that cap; it makes the text overflow a box the
-  // library still thinks is 200px, and every placement is then off by the difference. `alignLeft` is
-  // `left = hostLeft - measuredWidth`, so a 280px tip measured as 200px reaches 80px PAST its target's
-  // left edge and swallows the control it describes (the module pages' CSV button, 2026-08-22).
+  // The positioner (directives/tooltip.ts → utils/anchorPosition.ts) measures the `.cc-tooltip` ROOT. Widening the
+  // inner `.cc-tooltip-text` instead makes the text overflow a box still measured narrower, and every
+  // placement is then off by the difference — with PrimeVue that put a 280px `.left` tip 80px PAST its
+  // target's left edge, swallowing the module pages' CSV button.
   //
   // Nothing else could see this. `misplacedTooltips` reads templates and would call that CSV button
   // correctly placed — `.left` on a narrow target is the right SIDE. The bug is entirely in which
   // element carries the width, which only the stylesheet knows.
   const sizing = /^(width|max-width)\s*:/
 
-  it('is declared on the element PrimeVue measures, not on the text inside it', () => {
+  it('is declared on the element that gets measured, not on the text inside it', () => {
     const rules = cssRules(RAW['/src/style.css'] ?? '')
     expect(rules.length).toBeGreaterThan(100)                  // style.css resolved
 
     const onText = rules
-      .filter(r => /\.p-tooltip-text\b/.test(r.selector))
+      .filter(r => /\.cc-tooltip-text\b/.test(r.selector))
       .flatMap(r => r.body.split(';').map(d => d.trim()).filter(d => sizing.test(d))
         .map(d => `${r.selector} | ${d}`))
     expect(onText).toEqual([])
 
     // …and the root actually carries it, so this can't pass by deleting the cap altogether.
-    const root = rules.find(r => r.selector.trim() === '.p-tooltip')?.body ?? ''
-    expect(root).toMatch(/width:\s*max-content\s*!important/)  // beats the directive's inline fit-content
+    const root = rules.find(r => r.selector.trim() === '.cc-tooltip')?.body ?? ''
+    expect(root).toMatch(/width:\s*max-content/)
     expect(root).toMatch(/max-width:\s*min\(/)
   })
 
   it('keeps every per-tooltip width override on the root too', () => {
     const rules = cssRules(RAW['/src/style.css'] ?? '')
     const widened = rules.filter(r => sizing.test(r.body.trim()) || /;\s*(max-)?width\s*:/.test(r.body))
-      .filter(r => /\.p-tooltip/.test(r.selector))
+      .filter(r => /\.cc-tooltip/.test(r.selector))
       .map(r => r.selector.trim())
-    // Every selector that sizes a tooltip must anchor on `.p-tooltip` itself (`.p-tooltip.qc-tip`),
+    // Every selector that sizes a tooltip must anchor on `.cc-tooltip` itself (`.cc-tooltip.qc-tip`),
     // never on a descendant — a descendant is not the box that gets measured.
-    for (const sel of widened) expect(sel).toMatch(/^\.p-tooltip(\.[\w-]+)*$/)
+    for (const sel of widened) expect(sel).toMatch(/^\.cc-tooltip(\.[\w-]+)*$/)
   })
 })

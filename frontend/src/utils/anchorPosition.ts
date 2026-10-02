@@ -3,16 +3,18 @@
 // on (so the caller can point an arrow the right way).
 //
 // Pure and DOM-free on purpose — the callers do the measuring (`getBoundingClientRect`, `offsetWidth`)
-// and this does the arithmetic, so the arithmetic is testable. Two consumers:
-//   - `TeleportPopover.vue` — dropdowns/menus, `bottom-start`/`bottom-end`
-//   - `GuideBubble.vue`     — guide bubbles, all four sides + centred alignment
+// and this does the arithmetic, so the arithmetic is testable. Three consumers:
+//   - `TeleportPopover.vue`   — dropdowns/menus, `bottom-start`/`bottom-end`
+//   - `GuideBubble.vue`       — guide bubbles, all four sides + centred alignment
+//   - `directives/tooltip.ts` — every `v-tooltip`, all four sides + an explicit `fallbacks` chain
 // Extracted FROM TeleportPopover (whose `reposition()` was exactly this, minus two sides). Do not add
 // a third copy of "clamp a floating box into the viewport" — extend the placement grammar here.
 //
 // The rules, in order:
 //   1. place on the requested side, `gap` px from the anchor edge;
 //   2. if it would overflow that side, FLIP to the opposite side — but only if the opposite side has
-//      more room, so a box taller than the viewport doesn't ping-pong;
+//      more room, so a box taller than the viewport doesn't ping-pong. With `fallbacks`, take the
+//      first of those sides that fits instead, and stay put when none does;
 //   3. clamp the cross axis into the viewport (never off-screen, `margin` px minimum);
 //   4. clamp the main axis too, as a last resort — a box with nowhere to go is still readable.
 
@@ -38,6 +40,7 @@ export interface PlaceOpts {
   placement?: Placement
   gap?: number        // px between the anchor edge and the box (default 4)
   margin?: number     // px minimum from the viewport edge (default 4)
+  fallbacks?: Side[]  // sides to try, in order, when the requested one doesn't fit
 }
 
 export interface Placed {
@@ -98,13 +101,20 @@ export function placeBox(opts: PlaceOpts): Placed {
   const margin = opts.margin ?? 4
   const { side: want, align } = parsePlacement(opts.placement ?? 'bottom-start')
 
-  // 1-2. does the requested side fit? if not, flip — but only when the opposite side is roomier.
+  // 1-2. does the requested side fit? if not, take the first fallback that does — or, with none
+  // given, flip to the opposite side when it is roomier.
   const needed = (side: Side) => (side === 'top' || side === 'bottom' ? box.height : box.width) + gap
+  const fits = (side: Side) => roomOn(side, a, vp) >= needed(side) + margin
   let side = want
   let flipped = false
-  if (roomOn(want, a, vp) < needed(want) + margin) {
-    const other = OPPOSITE[want]
-    if (roomOn(other, a, vp) > roomOn(want, a, vp)) { side = other; flipped = true }
+  if (!fits(want)) {
+    if (opts.fallbacks) {
+      const next = opts.fallbacks.find(fits)
+      if (next) { side = next; flipped = true }
+    } else {
+      const other = OPPOSITE[want]
+      if (roomOn(other, a, vp) > roomOn(want, a, vp)) { side = other; flipped = true }
+    }
   }
 
   const vertical = side === 'top' || side === 'bottom'

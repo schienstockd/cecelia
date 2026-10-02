@@ -58,7 +58,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | A short line with its reasoning on hover | `components/InlineNote.vue` | an `<i class="pi …"/> {{ text }}` + `v-tooltip` by hand (four sites had one each, two already drifted off the severity model) |
 | Explaining what a dropdown OPTION means | a `help` field on the option in the task JSON (`utils/optionHelp.ts` renders it) | overloading the param `tip`, or a param advisory — an advisory carries a severity, and `ok` draws a green check claiming a verdict nobody reached |
 | Teaching a multi-step workflow | a `GuideDef` in `lib/guides/` (a `moduleTaskGuide({…})` call when the page is ModuleLayout + TaskRunner) — see *Guides* | a page full of explanatory prose, a bespoke tour component, or hand-writing the five standard task-runner steps a fourth time |
-| Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover` and `GuideBubble` both call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
+| Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover`, `GuideBubble` and the `v-tooltip` directive all call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
 | "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
@@ -212,7 +212,7 @@ explain in the UI, that text goes in the relevant `docs/<AREA>.md` instead.
 
 **Tokens live on `:root`, and that is load-bearing.** `.cc-dark` is a `<div>` inside `<body>`
 (`App.vue`'s shell), so anything a library appends to `document.body` is a *sibling* of it and inherits
-nothing declared there. PrimeVue's tooltip does exactly that — so while the scale sat on `.cc-dark`,
+nothing declared there. The tooltip (`directives/tooltip.ts`, PrimeVue's before it) does exactly that — so while the scale sat on `.cc-dark`,
 every `var(--cc-*)` in the tooltip override was invalid at computed-value time and the tooltip rendered
 at the browser default **16px**, with `<body>`'s own `font-size` dead the same way. Declared ≠ reachable,
 and the symptoms are identical, which is why the token guard stayed green throughout. If you style
