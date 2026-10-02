@@ -66,7 +66,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks, CACHE_BUDGET_BYTES, labelDimsMismatch,
+  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -1075,9 +1075,9 @@ const camZoom = computed(() => {
   return visibleL0Y / devicePxY
 })
 /**
- * Pyramid level the current view fetches at. The volume viewer picks the coarsest level, and a full-res
- * volume of a wide-XY image exceeds WebGPU's `maxBufferSize` (`f8gzA2` needs 1.28 GB against a 256 MB
- * cap) — so the 3D view picks the deepest level by default, user-overridable via
+ * Pyramid level the current view fetches at. 3D Auto depends on the renderer (`pickVolumeLevel`):
+ * brick gets the deepest level as its SSE FLOOR; flat gets the finest level whose one-timepoint
+ * texture fits the adapter's limits and the cache budget. User-overridable via
  * `settings.viewerVolumeLevel`.
  *
  * The 2D plane view is ZOOM-DRIVEN — `pickTileLevel(camZoom, meta)` at every camera dist. That is the
@@ -1101,7 +1101,14 @@ const slabLevel = computed(() => {
     return pickTileLevel(camZoom.value, m, loadedLevel.value)
   }
   const override = settings.viewerVolumeLevel
-  return pickVolumeLevel(m, override < 0 ? undefined : override)
+  // Flat 3D fits against the hardware. `stableAdapterReport` is pinned at the first renderer
+  // build, which `reallocate` awaits before reading this — so the allocation sees the real limits.
+  const a = stableAdapterReport.value
+  const fit = !bricksEnabled.value && a
+    ? { maxBufferSize: a.maxBufferSize, maxTextureDimension3D: a.maxTextureDimension3D,
+        budgetBytes: effectiveCacheBytes.value }
+    : undefined
+  return pickVolumeLevel(m, override < 0 ? undefined : override, fit)
 })
 /** The XY dims actually being fetched — level-0's `meta.nX`/`nY`, or the coarser level's dims. */
 const renderNX = computed(() =>
@@ -1233,10 +1240,9 @@ const tierHasNoEffect = computed<boolean>(() => {
 /** Fallback for Auto when no adapter is known yet (renderer not constructed). Conservative;
  *  matches `webgpuProbe`'s pattern of "never claim a value you don't have." */
 const AUTO_CACHE_MB_FALLBACK = 512
-/** Auto derivation: integrated → 512 MB, discrete → 2 GB. Both capped at 70% of the browser's
- *  `maxBufferSize` — the atlas is one big 3D texture and can't exceed the biggest allocatable
- *  buffer. 0.7 is a safety margin against soft OOM from other tabs; tune when we've measured. */
-const AUTO_CACHE_SAFETY = 0.7
+/** Auto derivation: integrated → 512 MB, discrete → 2 GB. Both capped at `VRAM_SAFETY` of the
+ *  browser's `maxBufferSize` — the atlas is one big 3D texture and can't exceed the biggest
+ *  allocatable buffer. */
 // Uses `stableAdapterReport` — the hardware's limits don't change under us, and using the LIVE
 // adapter here re-entered `bricksEnabled`'s oscillator via `effectiveCacheBytes` (destroying the
 // renderer collapsed Auto back to 512 MB, which flipped the brick classifier back on).
@@ -1244,12 +1250,12 @@ const AUTO_CACHE_MB = computed(() => {
   const a = stableAdapterReport.value
   if (!a) return AUTO_CACHE_MB_FALLBACK
   const target = a.looksDiscrete ? 2048 : 512
-  const cap = Math.floor((a.maxBufferSize * AUTO_CACHE_SAFETY) / (1024 * 1024))
+  const cap = Math.floor((a.maxBufferSize * VRAM_SAFETY) / (1024 * 1024))
   return Math.min(target, Math.max(128, cap))
 })
 // ChipSelect takes string values; the setting stores a number. Convert at the boundary.
 // Options list is a computed — the numeric chips get `disabled` when they exceed what the
-// browser's `maxBufferSize` will actually allocate (0.7 safety margin, same as `AUTO_CACHE_MB`),
+// browser's `maxBufferSize` will actually allocate (`VRAM_SAFETY` margin, same as `AUTO_CACHE_MB`),
 // so a user on a 256-MB-buffer laptop can't pick 4 GB and hit the renderer's own OOM guard.
 // Renderers self-guard: `volumeRenderer.ts:729` and `brickAtlasTexture.ts:87` both catch
 // `out-of-memory` on the underlying texture allocation. Disabling oversized chips is UX (don't
@@ -1268,7 +1274,7 @@ const BASE_CACHE_OPTIONS: Array<{ value: string; label: string; mb: number; tip:
   { value: '12288', label: '12 GB', mb: 12288, tip: 'Three atlases — workstation-class VRAM' },
   { value: '16384', label: '16 GB', mb: 16384, tip: 'Four atlases — MAX_ATLASES ceiling' },
 ]
-/** Hard cap for the cache chips: `MAX_ATLASES × maxBufferSize`. No AUTO_CACHE_SAFETY here —
+/** Hard cap for the cache chips: `MAX_ATLASES × maxBufferSize`. No VRAM_SAFETY here —
  *  the safety margin only exists for AUTO's conservative default (leave VRAM for other apps);
  *  a user explicitly picking a chip should be able to hit the full multi-atlas ceiling.
  *  Renderers still self-guard against actual OOM at texture allocation. */
@@ -3055,10 +3061,16 @@ const levelPump = debouncedLatest<number>(async () => {
   // OOM shape as the show3D racer. loadVersion's reallocate reads `slabLevel.value` fresh and
   // sets `loadedLevel = slabLevel.value`, so a follow-up here would be a no-op anyway.
   if (starting.value) return
+  // A mode switch reallocates on its own; if that already picked the level up, refetching here
+  // would only drop the cache it just filled.
+  if (slabLevel.value === loadedLevel.value) return
   await reallocate(false)
 }, { wait: 150 })
 watch(slabLevel, (newLvl) => {
-  if (!meta.value || mode.value !== 'plane' || starting.value) return
+  // Brick 3D takes the level as a floor (watch below), not a reallocation. Flat 3D reallocates
+  // when its fit moves (cache size changed) — its fetches are sized by `renderNX`, so a level
+  // the textures were not allocated for would fail every upload.
+  if (!meta.value || starting.value || (mode.value !== 'plane' && bricksEnabled.value)) return
   if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
 })
 /** Brick renderer: use the dropdown as a FLOOR (coarsest allowed), letting SSE pick finer as
@@ -5347,21 +5359,19 @@ onUnmounted(() => {
             <span v-if="zWindowActive" class="cc-readout cc-fs-2xs">±{{ zWindowDraft }} · {{ zLoaded[0] }}–{{ zLoaded[1] }}</span>
           </div>
         </template>
-        <!-- 3D pyramid level. The volume viewer picks the coarsest resolution by default, and a full-res volume
-             of a wide-XY image exceeds the WebGPU max buffer (`f8gzA2` → 1.28 GB against a 256 MB cap).
-             So auto = the deepest level; the dropdown lets a user step finer if their card can hold it.
-             `@change` (not `@update:*`) so it commits on release, same discipline as Depth. -->
+        <!-- 3D pyramid level. Auto = the finest level that fits on flat, an SSE floor on brick
+             (`pickVolumeLevel`); the dropdown pins a level. `@change` (not `@update:*`) so it commits
+             on release, same discipline as Depth. -->
         <div v-if="mode === 'volume' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
           <select v-model.number="settings.viewerVolumeLevel" class="vw-grow"
                   v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
                   @change="reallocate()">
-            <!-- 3D-mode Auto: the dropdown is a FLOOR the SSE picker clamps against. On the brick
-                 renderer the atlas's active level moves with zoom; show it in the label so the
-                 3D control matches the 2D one's live readout. Flat renderer:
-                 `brickCurrentLevel` is undefined and the label collapses to plain "Auto". -->
-            <option :value="-1">Auto{{ bricksEnabled && brickCurrentLevel !== undefined
-              ? ` (L${brickCurrentLevel} — zoom-driven)` : '' }}</option>
+            <!-- Auto carries what it picked, like the 2D control: brick shows the atlas's live
+                 SSE level, flat the level it allocated. -->
+            <option :value="-1">Auto{{ bricksEnabled
+              ? (brickCurrentLevel !== undefined ? ` (L${brickCurrentLevel} — zoom-driven)` : '')
+              : ` (L${slabLevel})` }}</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>

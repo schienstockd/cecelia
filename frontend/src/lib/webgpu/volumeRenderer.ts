@@ -29,7 +29,7 @@
 import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL, MIP_PICK_BINDING, MIP_LAYOUT } from './mipShader'
 import { PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer } from '../../utils/viewerLabels'
 import {
-  MAX_CHANNELS, LUT_STOPS, lutTextureBytes, extentUm,
+  MAX_CHANNELS, LUT_STOPS, LABEL_BPV, lutTextureBytes, extentUm,
   type ViewerMeta, type ViewerChannel, type OrbitCamera,
 } from '../../utils/volumeViewer'
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
@@ -46,9 +46,6 @@ const UNIFORM_BYTES = MIP_LAYOUT.bytes
  *  the labels into pan.x/pan.y and nothing draws. The layout test checks the names against the
  *  shader's struct. */
 const U = MIP_LAYOUT.at
-/** Label ids are UInt32 on disk and `r32uint` on the GPU. Anything narrower is widened client-side
- *  (`utils/viewerLabels.ts`) rather than given a second texture format. */
-const LABEL_BPV = 4
 /** Probe side for `sampleFrame`. 128 because `128 * 4` is already a multiple of the 256-byte
  *  `bytesPerRow` alignment a texture-to-buffer copy requires — no padded rows to unpick. */
 export const PROBE_PX = 128
@@ -283,7 +280,7 @@ export interface VolumeRenderer {
    * outright (SispLk zoom-in stuck at L5, 2026-08-29 screenshot). Over-fetch protection now
    * comes from `MAX_INTERSECT_BRICKS` inside `scheduleBricks` — coarser than picking a hard pin,
    * but wide-viewport-on-huge-L0 (f8gzA2 fit) is exactly what the intersect count catches.
-   * Absent on the flat renderer — its `pickVolumeLevel` already picks per fetch.
+   * Absent on the flat renderer — `pickVolumeLevel` picks its level per allocation.
    */
   setLevelFloor?(level: number | undefined): void
   /**
@@ -759,7 +756,7 @@ export async function createVolumeRenderer(
       // it out would let the cache promise a capacity it cannot hold, and the frame that discovers that
       // is an out-of-memory scope firing mid-scrub rather than a smaller cache. Sized in RENDER voxels,
       // so a coarser pyramid level shrinks the cost quadratically — the whole reason the 3D view can
-      // load a big-XY image at all (`pickVolumeLevel` picks the deepest by default).
+      // load a big-XY image at all (`pickVolumeLevel` drops to a level that fits).
       bytesPerTimepoint = renderNX * renderNY * depth *
         (m.bytesPerVoxel * nch + (withLabels ? LABEL_BPV : 0))
       allowed = Infinity                       // a new shape gets a fresh chance at the limit
@@ -803,7 +800,7 @@ export async function createVolumeRenderer(
       device.pushErrorScope('out-of-memory')
       // Textures are sized in RENDER voxels — a level-1 volume of a 3.3 mm image is half the width of
       // level-0, so the buffer is 1/4 the bytes, which is the whole reason the 3D view can load big-XY
-      // images at all (the client picks the coarsest level by default via `pickVolumeLevel`).
+      // images at all (the client drops to a level that fits via `pickVolumeLevel`).
       // Format keys on the store dtype — 8-bit sources (Manual IBEX .ims → `|u1`) allocate `r8uint`,
       // 16-bit sources (Automated IBEX → `>u2`) keep `r16uint`. The mip shader binds `texture_3d<u32>`
       // in both cases and reads `.r` as a u32; contrast/LUT max already keys on `bytesPerVoxel`.
