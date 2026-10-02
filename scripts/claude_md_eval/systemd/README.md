@@ -8,6 +8,17 @@ rather than a week later). See [`docs/todo/CLAUDE_MD_EVAL_PLAN.md`](../../../doc
 
 ## Install (Linux + systemd)
 
+The timer runs from the supervisor's own worktree, `~/.cecelia-effectiveness/eval-worktree`, never
+from a dev checkout: a dev checkout falls behind `main` and carries edits, so the timer would run
+whatever driver it happened to hold. The unit resets that worktree to `origin/main` before each pass.
+It has to exist first, so run one supervised pass by hand from any up-to-date checkout:
+
+```bash
+pixi run claude-md-eval-supervise -- --no-pr   # creates the worktree + its .pixi; spends real API $
+```
+
+Then install the units:
+
 ```bash
 mkdir -p ~/.config/systemd/user
 cp scripts/claude_md_eval/systemd/claude-md-eval.{service,timer} ~/.config/systemd/user/
@@ -29,41 +40,15 @@ systemctl --user start claude-md-eval.service
 journalctl --user -u claude-md-eval.service -f
 ```
 
-## Pre-merge test (this branch)
-
-Before PR #1274 lands, the wrapper + unit files live only on
-`feat/indirect-eval-tier`, not on `cecelia-feijoa/main`. To fire the timer
-from that branch tonight without waiting for the merge:
-
-```bash
-# Copy from the branch's checkout, not main.
-cp ~/cc-workspace/cecelia/cecelia-indirect-eval/scripts/claude_md_eval/systemd/claude-md-eval.{service,timer} \
-   ~/.config/systemd/user/
-
-# Override REPO so ExecStart points at the branch worktree, not the main checkout.
-systemctl --user edit claude-md-eval.service
-# In the editor, add:
-#   [Service]
-#   Environment=REPO=/home/dominik/cc-workspace/cecelia/cecelia-indirect-eval
-
-systemctl --user daemon-reload
-systemctl --user enable --now claude-md-eval.timer
-systemctl --user list-timers claude-md-eval.timer
-# NEXT should be tonight 23:59 local.
-```
-
-Post-merge, remove the override with `systemctl --user revert claude-md-eval.service`
-so the timer runs from the standard `cecelia-feijoa` checkout.
-
 ## What it does
 
-- Runs `scripts/claude_md_eval/cron_pass.sh`, which is `pixi run claude-md-eval`
-  under `nice -n 10 ionice -c 3` with a lockfile so overlapping fires can't
-  double-spawn.
-- Emits `_run` / `_suite` rows to `~/.cecelia-effectiveness/events.jsonl` and
-  auto-renders `docs/ai-assist/CLAUDE_MD_EVAL.md` at the end of the pass.
-- Leaves the regenerated rollup uncommitted — the user reviews the `git diff`
-  when they want to inspect the trend, same as manual runs.
+- `ExecStartPre` fetches and resets the worktree to `origin/main`, then runs its
+  `scripts/claude_md_eval/cron_pass.sh --pinned`: `pixi run claude-md-eval-supervise --ref HEAD`
+  under `nice -n 10 ionice -c 3`, with a lockfile so overlapping fires can't double-spawn. It
+  refuses to run if the checkout has no `supervise.py`.
+- The supervisor runs the suite, triages failures, writes the run record to
+  `~/.cecelia-effectiveness/eval-runs/<date>.json` and opens one `eval-run/<date>` PR
+  (`docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md`).
 
 Won't fire on battery (`ConditionACPower=true` in the .service). Won't fire
 retroactively on boot (`Persistent=` intentionally omitted from the timer)
@@ -75,15 +60,14 @@ inspection per D12 discipline, which cron can't do.
 
 ## Adjust for your setup
 
-If your checkout lives somewhere other than `~/cc-workspace/cecelia/cecelia-feijoa`,
-or if `pixi` / `claude` live outside the covered defaults (`~/.pixi/bin` for
-`pixi`, `~/.local/bin` for `claude`):
+If `pixi` / `claude` live outside the covered defaults (`~/.pixi/bin` for
+`pixi`, `~/.local/bin` for `claude`), or the eval store is not `~/.cecelia-effectiveness`:
 
 ```bash
 systemctl --user edit claude-md-eval.service
 # Then add:
 #   [Service]
-#   Environment=REPO=/path/to/your/checkout
+#   Environment=REPO=/path/to/the/eval-worktree
 #   Environment=PATH=/wherever/pixi/lives:/usr/local/bin:/usr/bin:/bin
 ```
 

@@ -43,6 +43,10 @@ class _SuperviseFixture(_Fixture):
         p = mock.patch.object(self.sup._run_prompt, "_PROMPTS_DIR", prompts)
         p.start()
         self.addCleanup(p.stop)
+        # setup size is measured on this checkout; its growth must not change what these tests see
+        b = mock.patch.dict(self.sup._record.SETUP_BUDGET, {k: 10**6 for k in self.sup._record.SETUP_BUDGET})
+        b.start()
+        self.addCleanup(b.stop)
         with open(self.tmp / "events.jsonl", "w", encoding="utf-8") as fh:
             fh.writelines(json.dumps(e) + "\n" for e in self.events)
         self.calls = []
@@ -172,6 +176,14 @@ class SuperviseTest(_SuperviseFixture):
         self.assertEqual(record["run"]["supervisor"]["judge_calls"], 1)
         self.assertEqual(record["run"]["cost_usd"], 0.3)   # the suite's, unchanged
         self.assertEqual([f["class"] for f in record["findings"]], ["genuine", "infra"])
+
+    def test_a_setup_over_budget_adds_a_decision_finding(self):
+        with mock.patch.dict(self.sup._record.SETUP_BUDGET, {"claude_md_lines": 1}):
+            record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign)
+        self.assertEqual(self.sup._record.validate(record), [])
+        size = [f for f in record["findings"] if f["slug"] == "setup-size"]
+        self.assertEqual([(f["id"], f["class"]) for f in size], [("F3", "decision")])
+        self.assertIn({"kind": "decision", "ref": "F3"}, record["queue"])
 
     def test_owner_answers_are_applied_to_the_earlier_record_first(self):
         prev = self.sup._record.build(self.events, "2026-09-30", annotations={"findings": [

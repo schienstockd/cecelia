@@ -359,12 +359,17 @@ def _pr_body(record: dict) -> str:
                 f"`{record['run']['stage']}`: `{record['run']['error']}`.\n\n"
                 f"Record: `{_record.MIRROR_REL}/{date}.md`.\n\n{_PR_FOOTER}\n")
     res, d = record["results"]["raw"], record.get("delta") or {}
-    lines = [f"Supervised CLAUDE.md eval pass, {date}: **{res['compliant']}/{res['total']}** compliant.",
+    now = d.get("score", {}).get("now")
+    lines = [f"Supervised CLAUDE.md eval pass, {date}: **{res['compliant']}/{res['total']}** compliant as logged"
+             + (f", {now} under today's scorer" if now and now != f"{res['compliant']}/{res['total']}" else "")
+             + ".",
              "", f"Record: [`{_record.MIRROR_REL}/{date}.md`]({_record.MIRROR_REL}/{date}.md). "
              "Point a session at it to work the next actions.", ""]
     if d:
-        lines.append(f"Since {d['previous']}: {d['score']['previous']} → {d['score']['now']}"
-                     + (f" ({', '.join(d['changed'])} changed)" if d["changed"] else "") + ".")
+        lines.append(f"Since {d['previous']}, both under today's scorer: {d['score']['previous']} → {d['score']['now']}"
+                     + (f" ({', '.join(d['changed'])} changed)" if d["changed"] else "")
+                     + (f". **Confounded:** {', '.join(d['confounded'])} moved together" if d.get("confounded") else "")
+                     + ".")
     lines += [f"- Findings: {len(record['findings'])}, owner queue: {len(record['queue'])}",
               f"- Judge: {record['run']['supervisor']['judge_calls']} call(s), "
               f"${record['run']['supervisor']['cost_usd']:.2f}", "", _PR_FOOTER]
@@ -465,6 +470,12 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
     state["stage"] = "triage"
     judged, spend = triage(failures, judge=judge, budget=judge_budget)
     findings, actions = group_findings(judged, date=date, previous=previous)
+    size = _record.budget_finding(
+        _record.setup_size(sha or "HEAD"), f"F{len(findings) + 1}",
+        recurring=any(f.get("slug") == "setup-size" and f.get("status") != "dropped"
+                      for f in (previous or {}).get("findings", [])))
+    if size:
+        findings.append(size)
     notes = {"findings": findings, "next_actions": actions, "retries": retries, "sha": sha,
              "supervisor": {**spend, "session": session}}
     record = _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)

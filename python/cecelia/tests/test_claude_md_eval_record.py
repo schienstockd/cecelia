@@ -195,14 +195,82 @@ class DeltaTest(_Fixture):
     def test_a_version_change_is_named_next_to_the_score(self):
         now = self.rec.build(self.events, "2026-09-30", sandboxed=True)
         d = self.rec.delta(now, self._previous())
-        self.assertEqual(d["changed"], ["sandbox"])
-        self.assertIn("not comparable directly:** sandbox changed", self.rec.render_markdown({**now, "delta": d}))
+        self.assertEqual((d["changed"], d["confounded"]), (["sandbox"], []))
+        self.assertIn("Only sandbox changed.", self.rec.render_markdown({**now, "delta": d}))
+
+    def test_both_passes_are_scored_by_todays_scorer(self):
+        # the earlier pass logged 0/3; its r1 trace passes today's scorer, as it does in this one
+        d = self.rec.delta(self.rec.build(self.events, "2026-09-30"), self._previous())
+        self.assertEqual(d["score"], {"previous": "1/3", "now": "1/3", "previous_logged": "0/3"})
+        self.assertEqual(d["moves"], [])
+
+    def test_a_lost_trace_names_the_scorer_as_changed(self):
+        prev = self._previous()
+        prev["traces"][0]["trace"] = str(self.tmp / "gone")
+        self.assertEqual(self.rec.delta(self.rec.build(self.events, "2026-09-30"), prev)["changed"], ["scorer"])
+
+    def test_several_changes_together_are_confounded_and_no_hypothesis_holds(self):
+        now = self.rec.build(self.events, "2026-09-30", sandboxed=True)
+        for t in now["traces"]:
+            t["scores"]["rescored"] = "compliant"
+        prev = self._previous(claude_md_blob="older", claude_code_version="1.0")
+        d = self.rec.delta(now, prev)
+        self.assertEqual(d["confounded"], ["sandbox", "CLAUDE.md"])   # Claude Code is named, not counted
+        self.assertIn("Claude Code", d["changed"])
+        md = self.rec.render_markdown({**now, "delta": d})
+        self.assertIn("**Confounded: sandbox, CLAUDE.md.**", md)
+        self.assertIn("**consistent, not proven (confounded)**", md)
+        self.assertNotIn("**held**", md)
+
+    def test_only_a_move_between_the_ends_is_a_change(self):
+        now = self.rec.build(self.events, "2026-09-30")
+        for t in now["traces"]:
+            t["scores"]["rescored"] = "compliant"
+        cases = {"0/3": "change", "1/3": "noisy", "3/3": None}
+        for before, kind in cases.items():
+            c = int(before[0])
+            prev_now = ({"p1": {"compliant": c, "noncompliant": 3 - c, "error": 0, "total": 3}}, 0)
+            moves = self.rec.delta(now, self._previous(), previous_now=prev_now)["moves"]
+            self.assertEqual([m["kind"] for m in moves], [kind] if kind else [], before)
+
+    def test_result_state_reads_errors_as_unscored(self):
+        rs = self.rec.result_state
+        self.assertEqual([rs({"compliant": 2, "error": 1, "total": 3}), rs({"compliant": 0, "total": 3}),
+                          rs({"compliant": 1, "total": 3}), rs({"error": 3, "total": 3}), rs(None)],
+                         ["pass", "fail", "noisy", None, None])
+
+    def test_a_delta_stored_before_rescoring_still_renders_as_logged(self):
+        now = self.rec.build(self.events, "2026-09-30")
+        legacy = {"previous": "2026-09-23", "opened": [], "still_open": [], "resolved": [],
+                  "score": {"previous": "3/27", "now": "24/27"}, "changed": ["sandbox"],
+                  "setup_growth": [], "hypotheses": []}
+        md = self.rec.render_markdown({**now, "delta": legacy})
+        self.assertIn("3/27 → 24/27 as logged — **not comparable directly:** sandbox changed.", md)
+        self.assertNotIn("Moves:", md)
 
     def test_with_delta_reads_the_previous_record_from_the_store(self):
         self.rec.write(self._previous())
         self.assertEqual(self.rec.with_delta(self.rec.build(self.events, "2026-09-30"))["delta"]["previous"],
                          "2026-09-23")
         self.assertIsNone(self.rec.delta(self.rec.build(self.events, "2026-09-30"), None))
+
+
+class SetupBudgetTest(_Fixture):
+    def test_over_budget_is_an_open_decision_for_the_owner(self):
+        size = {"ref": "abc12345", "claude_md_lines": 500, "frontend_claude_md_lines": 10}
+        self.assertEqual(self.rec.over_budget(size, {"claude_md_lines": 451, "frontend_claude_md_lines": 52}),
+                         ["claude_md_lines 500/451"])
+        with mock.patch.dict(self.rec.SETUP_BUDGET, {"claude_md_lines": 451}):
+            f = self.rec.budget_finding(size, "F3", recurring=True)
+            self.assertIsNone(self.rec.budget_finding({**size, "claude_md_lines": 451}, "F3"))
+        self.assertEqual((f["id"], f["class"], f["status"], f["recurrence"]), ("F3", "decision", "open", "recurring"))
+        r = self.rec.build(self.events, "2026-09-30", annotations={"findings": [f]})
+        self.assertEqual(self.rec.validate(r), [])
+        self.assertIn({"kind": "decision", "ref": "F3"}, r["queue"])
+
+    def test_the_setup_size_section_shows_used_against_budget(self):
+        md = self.rec.render_markdown(self.rec.build(self.events, "2026-09-30"))
+        self.assertRegex(md, rf"CLAUDE\.md \d+/{self.rec.SETUP_BUDGET['claude_md_lines']} lines")
 
 
 class StoreTest(_Fixture):
