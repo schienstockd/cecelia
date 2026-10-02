@@ -16,9 +16,11 @@ Environment=REPO=%h/cc-workspace/cecelia/cecelia-feijoa
 # claude-md-eval.service` if either binary lives elsewhere.
 Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/claude_md_eval/cron_pass.sh"'
-# One-shot pass caps at 30 min — measured 22 min for 12 prompts × N=3 (2026-09-29). A hung
-# run gets killed rather than wedging the timer.
-TimeoutStartSec=30min
+# The supervised pass is longer than the bare suite: a full `pixi install` in the persistent
+# eval worktree the first time, the suite (~25 min at N=3 for 9 prompts), retries, one judge call
+# per failure, curation, then rollups + recital + the PR. 4h is generous headroom; a hung run
+# still gets killed rather than wedging the timer.
+TimeoutStartSec=4h
 StandardOutput=journal
 StandardError=journal
 

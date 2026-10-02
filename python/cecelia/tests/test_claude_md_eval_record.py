@@ -180,6 +180,13 @@ class DeltaTest(_Fixture):
         self.assertEqual((d["opened"], d["still_open"], d["resolved"]), (["F2"], ["F1"], ["F2 `gone` genuine"]))
         self.assertEqual(d["changed"], [])
 
+    def test_a_class_change_is_reclassified_not_resolved_and_opened(self):
+        now = self.rec.build(self.events, "2026-09-30", annotations={"findings": [
+            self._finding(id="F1", **{"class": "scorer_bug"})]})
+        d = self.rec.delta(now, self._previous())
+        self.assertEqual((d["opened"], d["reclassified"], d["resolved"]),
+                         ([], ["F1 → F1 `p1` genuine → scorer_bug"], ["F2 `gone` genuine"]))
+
     def test_each_hypothesis_is_checked_against_this_run(self):
         now = self.rec.build(self.events, "2026-09-30")
         d = self.rec.delta(now, self._previous())
