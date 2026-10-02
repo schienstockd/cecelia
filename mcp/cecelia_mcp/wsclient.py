@@ -4,7 +4,7 @@ Deliberately thin: all it does is connect to ``ws://…/ws``, JSON-decode each f
 ``normalize_frame``, and hand the result to the monitor. The signal logic lives in ``monitor.py``
 (pure, tested there); the parse step is testable via ``feed_raw`` without opening a socket.
 
-The MCP server (stdio) runs FastMCP's own loop; this runs on a background daemon thread with its own
+The MCP server (stdio) runs the MCP SDK's own loop; this runs on a background daemon thread with its own
 asyncio loop (see ``start_listener``). ``websockets`` is already a repo dependency (the napari bridge),
 so no new dep. If the backend is down or drops, ``websockets.connect``'s async-iterator form
 reconnects automatically — the observer is best-effort and never blocks the read tools.
@@ -62,7 +62,7 @@ async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event |
 def start_listener(monitor: SessionMonitor, ws_url: str) -> threading.Thread:
     """Run ``observe`` on a background daemon thread with its own event loop. Returns the thread.
 
-    Daemon so it never keeps the process alive past FastMCP's stdio loop. Failures are swallowed —
+    Daemon so it never keeps the process alive past the MCP stdio loop. Failures are swallowed —
     the observer is an add-on; the read tools must work even if the event stream never connects."""
     def _run():
         try:

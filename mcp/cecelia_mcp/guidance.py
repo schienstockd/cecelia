@@ -5,7 +5,7 @@ and pasted into their session (`buildChatPrompt`), which made the naturalness of
 cecelia" depend on the user remembering to paste. It lives here instead, and reaches the assistant
 through the MCP protocol itself:
 
-  SERVER_INSTRUCTIONS → FastMCP(instructions=…) → the `initialize` response → the client's system
+  SERVER_INSTRUCTIONS → MCPServer(instructions=…) → the `initialize` response → the client's system
                         prompt. Always present, so keep it SHORT: it is in context for every session
                         that has this server registered, and the observer is registered user-scope
                         (every `claude` session on the machine), most of which are not about Cecelia.
