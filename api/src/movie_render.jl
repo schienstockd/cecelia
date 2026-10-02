@@ -74,16 +74,16 @@ end
 #
 # The overlay style a movie draws with, read off an overlay config by `get(key)` (`nothing` = absent).
 # Defaults are the viewer's: a 6-px point with no border, a 2-px tail, `LABEL_OPACITY`, and its z
-# tolerances (`viewerPointZTol` / `viewerTrackZTol`, 2 planes) for which points and tails a 2D frame
-# shows.
+# tolerances (`viewerPointZTol` / `viewerTrackZTol`, `OVERLAY_Z_TOL`) for which points and tails a 2D
+# frame shows.
 function movie_overlay_style(get::Function = _ -> nothing)
     num(k, d) = (v = get(k); v isa Real ? Float64(v) : Float64(d))
     (; point_size_px    = max(1, round(Int, num("pointSizePx", 6))),
        segment_width_px = max(1, round(Int, num("segmentWidthPx", 2))),
        point_border_px  = max(0, round(Int, num("pointBorderPx", 0))),
        mask_opacity     = clamp(num("maskOpacity", MASK_FILL_OPACITY), 0.0, 1.0),
-       point_z_tol      = max(0, round(Int, num("pointZTol", 2))),
-       track_z_tol      = max(0, round(Int, num("trackZTol", 2))))
+       point_z_tol      = max(0, round(Int, num("pointZTol", OVERLAY_Z_TOL))),
+       track_z_tol      = max(0, round(Int, num("trackZTol", OVERLAY_Z_TOL))))
 end
 
 # Per-channel `(lo, hi, colour, visible)` → the runner's `{lo, hi, lut, visible}`. `colour` is a

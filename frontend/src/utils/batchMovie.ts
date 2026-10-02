@@ -6,7 +6,7 @@
 //    (<attr1>_<attr2>_..._<uid|image name>.mp4; blanks dropped, unsafe chars → '_').
 
 import { viewerColormapForHex, channelsForRender } from './viewerColormap'
-import { LABEL_OPACITY } from './viewerLabels'
+import { LABEL_OPACITY, OVERLAY_Z_TOL } from './viewerLabels'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
@@ -103,7 +103,7 @@ export interface BatchMovieCfg {
   pointBorder?: number
   labelOpacity?: number
   // How many planes either side of a 2D movie's plane its points / tail ends still show — the
-  // viewer's z tolerances. Absent = the viewer's default, 2.
+  // viewer's z tolerances. Absent = the viewer's default (`OVERLAY_Z_TOL`).
   pointZTol?: number
   trackZTol?: number
   titleCard?: TitleCardCfg
@@ -233,8 +233,8 @@ export function buildBatchMovieConfig(
     pointsSize: cfg.pointsSize ?? 6,
     pointBorder: cfg.pointBorder ?? 0,
     labelOpacity: cfg.labelOpacity ?? LABEL_OPACITY,
-    pointZTol: cfg.pointZTol ?? 2,
-    trackZTol: cfg.trackZTol ?? 2,
+    pointZTol: cfg.pointZTol ?? OVERLAY_Z_TOL,
+    trackZTol: cfg.trackZTol ?? OVERLAY_Z_TOL,
     colourLabels: !!cfg.colourLabels,
     colourOverrides: colourOverrides ?? {},
     titleCard: {

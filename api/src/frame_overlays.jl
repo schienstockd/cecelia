@@ -18,6 +18,15 @@
 
 using ColorTypes: RGB
 using FixedPointNumbers: N0f8
+using JSON3
+
+#: The constants the viewer, its shaders and the movie renderer share — `shaders/constants.json`,
+#: which the browser (`shaderSource.ts`) and the Python host (`wgsl_utils.shader_constants`) read too.
+const SHADER_CONSTANTS_PATH = normpath(joinpath(@__DIR__, "..", "..", "frontend", "src", "lib",
+                                                "webgpu", "shaders", "constants.json"))
+const SHADER_CONSTANTS = JSON3.read(read(SHADER_CONSTANTS_PATH, String))
+#: Planes either side of a 2D frame's whose points / tail ends it shows — the viewer's default.
+const OVERLAY_Z_TOL = Int(SHADER_CONSTANTS.OVERLAY_Z_TOL)
 
 """
     draw_points!(frame, points; size_px = 6, border_px = 0) -> frame
@@ -162,10 +171,9 @@ function _bresenham_blend!(frame::AbstractMatrix{<:RGB}, x0::Int, y0::Int, x1::I
     frame
 end
 
-#: Default fill opacity for `contour_px = 0` — the browser's `viewerLabelOpacity` default
-#: (`LABEL_OPACITY`, frontend/src/lib/webgpu/shaders/constants.json). A look read off the viewer
-#: carries the viewer's own value (`maskOpacity`).
-const MASK_FILL_OPACITY = 0.7f0
+#: Default fill opacity for `contour_px = 0` — the viewer's `LABEL_OPACITY`. A look read off the
+#: viewer carries its own value (`maskOpacity`).
+const MASK_FILL_OPACITY = Float32(SHADER_CONSTANTS.LABEL_OPACITY)
 
 function _fill_mask!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Integer},
                      id_colours::AbstractDict, opacity::Real)

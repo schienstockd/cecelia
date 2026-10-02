@@ -19,6 +19,9 @@ import { expandWgsl } from '../lib/webgpu/shaderSource'
 /** the viewer's `add_labels` default, kept so a mask reads the same in both viewers — and in a 3D
  *  movie, which reads the same `shaders/constants.json`. */
 export const LABEL_OPACITY = SHADER_CONSTANTS.LABEL_OPACITY
+/** Planes either side of the one on screen whose points / tail ends still show — the default of the
+ *  viewer's z tolerances, and of a 2D movie's (`shaders/constants.json`, read by Julia too). */
+export const OVERLAY_Z_TOL = SHADER_CONSTANTS.OVERLAY_Z_TOL
 
 /**
  * Palette rows. Label ids map by `id % LABEL_PALETTE_N`, so this is "how many cells can touch before
