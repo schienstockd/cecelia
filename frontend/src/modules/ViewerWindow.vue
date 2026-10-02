@@ -4086,6 +4086,7 @@ const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
     cam: cam.value, meta: m, t: t.value, zPlane: zPlane.value,
     ndisplay: mode.value === 'plane' ? 2 : 3,
     canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+    perspective: settings.viewerVolumeProjection === 'persp',
   })
   viewerStore.setViewState(vs)
 }, { wait: 100 })
@@ -4096,7 +4097,7 @@ const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
 // that don't replace the array reference.
 watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
        () => cam.value.yaw, () => cam.value.pitch,
-       zPlane, t, mode, meta],
+       zPlane, t, mode, meta, () => settings.viewerVolumeProjection],
       () => publishViewStateSink.schedule(undefined))
 watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|${ch.hi}`).join(','),
       () => publishViewStateSink.schedule(undefined))
@@ -4715,6 +4716,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       cam: cam.value, meta: meta.value, t: shownT.value, zPlane: zPlane.value,
       ndisplay: mode.value === 'plane' ? 2 : 3,
       canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+      perspective: settings.viewerVolumeProjection === 'persp',
     }) : null
     // Snapshot the CURRENT landscape into the capture envelope, so `get_capture(id)` returns
     // pixels + marks + view state + landscape in one call. Whole point of the landscape: hand

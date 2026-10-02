@@ -43,7 +43,7 @@ export interface ViewerViewState {
     center: [number, number, number]        // [cz, cy, cx] in image L0 pixels
     zoom:   number                          // canvas_h_px / visible_image_h_pixels
     angles: [number, number, number]        // (rx, ry, rz) degrees; [0,0,0] in 2D
-    perspective: number                     // viewer always emits it; 0 for orthographic
+    perspective: number                     // 1 = the 3D view is perspective, 0 = orthographic (always 0 in 2D)
   }
   dims: {
     ndisplay: 2 | 3
@@ -88,12 +88,15 @@ export interface BuildViewStateInput {
   /** VIEW_HALF_ANGLE from `volumeViewer.ts` — kept as an input rather than an import so this file
    *  is easy to test with hand-picked values. */
   viewHalfAngle: number
+  /** The 3D projection toggle (`settings.viewerVolumeProjection === 'persp'`). Ignored in 2D, which is
+   *  always orthographic. */
+  perspective?: boolean
 }
 
 /** Build a viewer-shaped view state from the browser viewer's current camera + meta + slider
  *  positions + canvas size. Pure → testable, no DOM / no store. */
 export function buildViewState(input: BuildViewStateInput): ViewerViewState {
-  const { cam, meta, t, zPlane, ndisplay, canvasW, canvasH, viewHalfAngle } = input
+  const { cam, meta, t, zPlane, ndisplay, canvasW, canvasH, viewHalfAngle, perspective = false } = input
   const umPerL0X = meta.voxelUm?.[0] || 1
   const umPerL0Y = meta.voxelUm?.[1] || 1
 
@@ -136,7 +139,7 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
   }
 
   return {
-    camera: { center: [cz, cy, cx], zoom, angles, perspective: 0 },
+    camera: { center: [cz, cy, cx], zoom, angles, perspective: ndisplay === 3 && perspective ? 1 : 0 },
     dims:   { ndisplay, current_step: [t, zPlane], point: [t, zPlane] },
     layers,
     canvas: { width: canvasW, height: canvasH },

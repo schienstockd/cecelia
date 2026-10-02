@@ -16,8 +16,9 @@ import { distinctColors } from '../plots/plot'
 import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
 import { expandWgsl } from '../lib/webgpu/shaderSource'
 
-/** the viewer's `add_labels` default, kept so a mask reads the same in both viewers. */
-export const LABEL_OPACITY = 0.7
+/** the viewer's `add_labels` default, kept so a mask reads the same in both viewers — and in a 3D
+ *  movie, which reads the same `shaders/constants.json`. */
+export const LABEL_OPACITY = SHADER_CONSTANTS.LABEL_OPACITY
 
 /**
  * Palette rows. Label ids map by `id % LABEL_PALETTE_N`, so this is "how many cells can touch before

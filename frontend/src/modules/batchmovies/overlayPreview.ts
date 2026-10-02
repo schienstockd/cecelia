@@ -129,16 +129,18 @@ export function previewHasMask(cfg: OverlayPreviewConfig): boolean {
  *  `_overlays_raw_from_config` cannot disagree.
  *  - `allTracks = showTracks && !showPops` — pops wins when both.
  *  - `includeTracks = showTracks || showGatedTracks` — either chip pushes ribbons.
+ *  - `authorRuns = showPops || showTracks` — the pop / track author runs; it draws points only for
+ *    pops (`include_points = showPopulations`), tracks alone are tails.
  *  See PR #751 + the API testset "movie rail — offline overlay-config translator". */
 export function derivedOverlayFlags(cfg: OverlayPreviewConfig):
-  { allTracks: boolean; includeTracks: boolean; showPoints: boolean } {
+  { allTracks: boolean; includeTracks: boolean; authorRuns: boolean } {
   const showPops = !!cfg.showPopulations
   const showTracks = !!cfg.showTracks
   const showGated = !!cfg.showGatedTracks
   return {
     allTracks: showTracks && !showPops,
     includeTracks: showTracks || showGated,
-    showPoints: showPops || showTracks,
+    authorRuns: showPops || showTracks,
   }
 }
 
@@ -208,7 +210,7 @@ function trackclustRibbonPath(c: OverlayCell): Array<{ x: number; y: number }> {
  *  Overlays row surfaces (`tracks`, `trackclust`, `gated`, `pops`, `labels`) + the mask pickers,
  *  mirroring the backend `_config_overlay_pops` + `_build_overlay_state` branches. */
 export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlayScene): SceneAidRender {
-  const { allTracks, includeTracks, showPoints } = derivedOverlayFlags(cfg)
+  const { allTracks, includeTracks, authorRuns } = derivedOverlayFlags(cfg)
   const showTrackclust = !!cfg.showTrackclust
   const colourLabels = !!cfg.colourLabels
   const hasMask = previewHasMask(cfg)
@@ -223,7 +225,7 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
   }
 
   // ── Pop points + cell-track ribbons ────────────────────────────────────────
-  if (showPoints) {
+  if (authorRuns) {
     if (allTracks) {
       // Whole-seg branch — every tracked cell. `trackSources` (non-empty) splits the cells across
       // two pseudo-segmentations and paints each in its picked colour — mirroring what the backend's
@@ -237,7 +239,7 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
       for (const c of scene.cells) {
         if (c.trackId === null) continue
         const colour = multiColours ? multiColours[c.segIdx % multiColours.length]! : ALL_TRACKS_GREY
-        points.push({ x: c.x, y: c.y, colour, ringed: hasMask })
+        // tails only — the viewer's (and the movie's) points are its populations
         if (includeTracks) ribbons.push({ points: ribbonPath(c), colour })
       }
     } else {
@@ -267,12 +269,11 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
     }
   }
 
-  // ── Mask outlines when nothing else is on ───────────────────────────────────
+  // ── Mask outlines when no points carry them ─────────────────────────────────
   // The movie's mask branch draws label CONTOURS around every labelled cell when a mask column is
-  // picked. Without any other overlay flag, the preview would go blank while the movie actually
-  // rendered outlines — so add ring-only points to reflect it. Colour tinted by pop when
-  // `colourLabels`, else neutral grey.
-  if (hasMask && points.length === 0 && ribbons.length === 0) {
+  // picked. With no points to ring (nothing else on, or tracks alone — tails only), add ring-only
+  // points to reflect it. Colour tinted by pop when `colourLabels`, else neutral grey.
+  if (hasMask && points.length === 0) {
     for (const c of scene.cells) {
       const colour = colourLabels ? scene.pops[c.popIdx].colour : ALL_TRACKS_GREY
       points.push({ x: c.x, y: c.y, colour, mode: 'ring-only' })

@@ -4,8 +4,7 @@
 #  - `API: overlay_author — build_overlays3d_for on the labelProps fixture` (3D analogue).
 #  - `API: movie rail — overlay context resolver + JSON serialisation`.
 #  - `API: overlay_author — colourBy + colourOverrides recolour via shared state`.
-#  - `API: overlay_author — rotation_matrix_from_angles matches vispy convention`.
-#  - `API: movie rail — 2D↔3D overlay projection agrees at identity view`.
+#  - `API: movie rail — 3D camera payload + scale bar follow the viewer's conventions`.
 #  - `API: palette + track-mode JSON is the shared source of truth for overlay_author`
 #    (VIEWER_PARITY phases 1 + 2).
 #
@@ -14,9 +13,8 @@
 
 @testset "API: overlay_author — build_overlays3d_for on the labelProps fixture" begin
     # 3D analogue of build_overlays_for. Same fixture, same wide-open pop, but NATIVE VOXEL coords
-    # (no `PixelTransform`) and a `z` field on both points AND segments. Bug this catches: the 3D
-    # author silently drops the z column on a 2D-segmented image, OR emits drawn-pixel coords by
-    # accident — either would visually work in the smoke script but render wrong under a rotation.
+    # (no `PixelTransform`) and a `z` field on both points AND segments — the movie renderer's
+    # shader projects them with the raycast's own camera, so they must arrive as positions.
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
         @test_skip "labelProps fixture missing"
@@ -44,20 +42,50 @@
 
             per_t = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
                                           include_tracks = false)
-            # Identity view: R = I, cx/cy/cz = 0, zoom scale = 1 → projected (u, v) = native (x + 0.5, y + 0.5).
-            # This is the "drift guarantee" from a caller's POV: no rotation, no offset, dots land
-            # where the cell is.
-            R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
-            canvas_h, canvas_w = 100, 100
-            pts0, segs0 = per_t(0, R0, 0.0, 0.0, 0.0, 1.0, canvas_h, canvas_w, 1.0)
+            pts0, segs0 = per_t(0)
             @test pts0 !== nothing
-            @test length(pts0.u) > 0
-            @test length(pts0.u) == length(pts0.v)
-            @test length(pts0.colour) == length(pts0.u)
+            @test length(pts0.x) > 0
+            @test length(pts0.x) == length(pts0.y) == length(pts0.z)
+            @test length(pts0.colour) == length(pts0.x)
+            # Positions, not pixels: the same centroids the 2D author starts from (native voxels).
+            lp = label_props(img; value_name = "B")
+            view_centroid_cols(lp; order = [:x, :y, :z])
+            df = as_df(lp)
+            @test minimum(pts0.x) >= minimum(Float64.(df.centroid_x)) - 1e-9
+            @test maximum(pts0.x) <= maximum(Float64.(df.centroid_x)) + 1e-9
             # Every point paints in the pop's colour — the resolver honoured the gate.
             @test all(c -> c == RGB{N0f8}(0, 1, 0), pts0.colour)
             # No tracks requested → no segments even if the fixture has `track_id`.
             @test segs0 === nothing
+
+            # What a keyframe / 3D Record actually receives: the viewer's look through the ONE
+            # translator (`_overlays_raw_from_config`), not a hand-built dict. Tracks on, pops off,
+            # one track source in its own colour: the viewer draws its tails in that colour, no dots.
+            look = Dict{String,Any}("showTracks" => true, "showGatedTracks" => true,
+                                    "showPopulations" => false, "popType" => "flow",
+                                    "popValueName" => "B", "tailLength" => 5,
+                                    "trackColourMode" => "solid",
+                                    "trackSources" => Dict{String,Any}(
+                                        "B" => Dict{String,Any}("visible" => true, "colour" => "#ff0000")))
+            ov_cfg = _overlays_raw_from_config(look, false)
+            b2, b3, _ = _resolve_keyframe_overlay_builders(img, ov_cfg)
+            @test b2 !== nothing && b3 !== nothing
+            red = RGB{N0f8}(1, 0, 0)
+            p3, s3 = b3(5)
+            @test s3 !== nothing && length(s3.x0) > 0          # the tails are drawn
+            @test p3 === nothing                              # and no dots: points are populations
+            @test all(==(red), s3.colour)                     # in the source's colour
+            p2, s2 = b2(100, 100, nothing, 0)(5)
+            @test s2 !== nothing && all(==(red), s2.colour)   # 2D keyframes alike
+            @test p2 === nothing
+            # two sources → one merged closure carrying both colours
+            look2 = merge(look, Dict{String,Any}("trackSources" => Any[
+                Dict{String,Any}("valueName" => "B", "colour" => "#ff0000"),
+                Dict{String,Any}("valueName" => "B", "colour" => "#0000ff")]))
+            _, b3b, _ = _resolve_keyframe_overlay_builders(img, _overlays_raw_from_config(look2, false))
+            _, s3b = b3b(5)
+            @test length(s3b.x0) == 2 * length(s3.x0)
+            @test Set(s3b.colour) == Set([red, RGB{N0f8}(0, 0, 1)])
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
@@ -65,9 +93,9 @@
 end
 
 @testset "API: movie rail — overlay context resolver + JSON serialisation" begin
-    # `_resolve_keyframe_overlay_builders` gates the whole overlay pipeline; `_overlays2d_state`
-    # is the JSON contract the Python renderer reads. Julia projects; Python rasterises. Pins the
-    # four decision points that could drift.
+    # `_resolve_keyframe_overlay_builders` gates the whole overlay pipeline; `_overlays3d_state` is
+    # the JSON contract the 3D renderer reads (positions; the shader projects). Pins the decision
+    # points that could drift.
 
     # No image → no builders (channels-only movie).
     b2d, b3d = _resolve_keyframe_overlay_builders(nothing, nothing)
@@ -83,34 +111,25 @@ end
     @test _resolve_keyframe_overlay_builders(:img, Dict{String,Any}("showMask" => true)) ===
           (nothing, nothing, nothing)
     # Serialisation: a `nothing` closure → nothing, so the state dict stays terse.
-    @test _overlays2d_state(nothing, 0, (0.0, 0.0, 0.0), nothing, 1.0,
-                              100, 100, 10, 1.0, 100, 100, 30, 6, 2) === nothing
-    # Empty points-and-segments → nothing (skip the frame's overlay pass).
-    empty_closure = (t, R, cx, cy, cz, wpp, ch, cw, za) -> (nothing, nothing)
-    @test _overlays2d_state(empty_closure, 5, (0.0, 0.0, 0.0), nothing, 1.0,
-                              100, 100, 10, 1.0, 100, 100, 30, 6, 2) === nothing
+    @test _overlays3d_state(nothing, 0) === nothing
+    # Empty points-and-segments → nothing (skip the frame's overlay passes).
+    @test _overlays3d_state(t -> (nothing, nothing), 5) === nothing
     # A non-empty payload → JSON-safe primitives (Vector{Float64}, no RGB objects at rest).
-    pts = (; u = [50.5, 60.0], v = [40.0, 45.0],
+    pts = (; x = [50.5, 60.0], y = [40.0, 45.0], z = [3.0, 4.5],
              colour = [RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 1, 0)])
-    segs = (; u0 = [50.5], v0 = [40.0], u1 = [60.0], v1 = [45.0],
-              colour = [RGB{N0f8}(1, 0, 0)], alpha = [0.8])
-    non_empty = (t, R, cx, cy, cz, wpp, ch, cw, za) -> (pts, segs)
-    dct = _overlays2d_state(non_empty, 5, (0.0, 0.0, 0.0), nothing, 1.0,
-                              100, 100, 10, 1.0, 100, 100, 30, 6, 2)
+    segs = (; x0 = [50.5], y0 = [40.0], z0 = [3.0], x1 = [60.0], y1 = [45.0], z1 = [4.5],
+              colour = [RGB{N0f8}(1, 0, 0)], t1 = [5])
+    dct = _overlays3d_state(t -> (pts, segs), 5)
     @test dct isa AbstractDict
-    @test dct["pointSize"] == 6
-    @test dct["segmentWidth"] == 2
-    @test dct["tailLength"] == 30
-    @test dct["points"]["u"] == [50.5, 60.0]
-    @test dct["points"]["v"] == [40.0, 45.0]
+    @test dct["points"]["x"] == [50.5, 60.0]
+    @test dct["points"]["z"] == [3.0, 4.5]
     @test dct["points"]["colour"][1] == Float64[1.0, 0.0, 0.0]
-    @test dct["segments"]["u0"] == [50.5]
-    @test dct["segments"]["alpha"] == [0.8]
+    @test dct["segments"]["z1"] == [4.5]
+    @test !haskey(dct["segments"], "alpha")      # the viewer draws tails at one alpha; so does the movie
     # Round-trips through JSON3 — the actual over-the-wire test.
     j = JSON3.read(JSON3.write(dct))
-    @test j.pointSize == 6
-    @test collect(j.points.u) == [50.5, 60.0]
-    @test collect(j.segments.alpha) == [0.8]
+    @test collect(j.points.x) == [50.5, 60.0]
+    @test collect(j.segments.y1) == [45.0]
 end
 
 @testset "API: overlay_author — colourBy + colourOverrides recolour via shared state" begin
@@ -168,8 +187,7 @@ end
             per_t_3d = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
                                              colour_by = "centroid_t",
                                              colour_overrides = overrides)
-            R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
-            pts3d, _ = per_t_3d(0, R0, 0.0, 0.0, 0.0, 1.0, 100, 100, 1.0)
+            pts3d, _ = per_t_3d(0)
             @test pts3d !== nothing
             @test length(pts3d.colour) > 0
             @test all(c -> c == RGB{N0f8}(0, 1, 0), pts3d.colour)
@@ -189,50 +207,29 @@ end
     end
 end
 
-@testset "API: overlay_author — rotation_matrix_from_angles matches vispy convention" begin
-    # The rotation-matrix convention is REPLICATED in three places: `render_view_frame_3d` (Julia
-    # CPU fallback), `render_animation_run.py::_rotation_matrix` (GPU raycast), and
-    # `rotation_matrix_from_angles` (overlay projection). ALL THREE must agree — if the overlay
-    # matrix drifts from the ray one, dots and the volume rotate in different directions.
-    R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
-    @test isapprox(R0, [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]; atol = 1e-9)
-    R90y = rotation_matrix_from_angles((0.0, 90.0, 0.0))
-    # Ry(90°) sends x → -z, z → x, y → y (standard right-hand rule). Check three column vectors.
-    @test isapprox(R90y * [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]; atol = 1e-9)
-    @test isapprox(R90y * [0.0, 1.0, 0.0], [0.0, 1.0,  0.0]; atol = 1e-9)
-    @test isapprox(R90y * [0.0, 0.0, 1.0], [1.0, 0.0,  0.0]; atol = 1e-9)
-end
+@testset "API: movie rail — 3D camera payload + scale bar follow the viewer's conventions" begin
+    # Julia forwards a 3D camera as the viewer stored it, plus the canvas the zoom was measured on;
+    # the host applies it as `applyViewStateToBrowser` does (pinned by `shaders/golden.json` on both
+    # sides), so there is no Julia-side conversion to keep in step.
+    a = (; angles = (20.0, 45.0, 0.0), zoom = 2.3319, center3d = (5.0, 30.0, 60.0))
+    st = Dict{String,Any}("canvas" => Dict{String,Any}("width" => 1186, "height" => 999),
+                          "camera" => Dict{String,Any}("perspective" => 0))
+    cam = _camera3d_payload(a, st)
+    @test cam["angles"] == [20.0, 45.0, 0.0]
+    @test cam["zoom"] == 2.3319
+    @test cam["center"] == [5.0, 30.0, 60.0]
+    @test cam["perspective"] == 0.0
+    @test _snapshot_canvas_h(st) == 999.0
+    # A batch camera: no centre (each image rotates about its own midpoint), no canvas.
+    nb = _camera3d_payload((; angles = (0.0, 0.0, 0.0), zoom = nothing, center3d = nothing), Dict{String,Any}())
+    @test !haskey(nb, "center") && nb["zoom"] == 1.0
+    @test _snapshot_canvas_h(Dict{String,Any}()) === nothing
 
-@testset "API: movie rail — 2D↔3D overlay projection agrees at identity view" begin
-    # The DRIFT GUARANTEE. At angles=(0,0,0), zoom=1, the 3D projection reduces to an axial
-    # projection: (x, y, z) → (u, v) = (x - cx + (W+1)/2 * something, y - cy + ...). We test that
-    # a point at native voxel (cx, cy, cz) projects to the CANVAS CENTRE, and that swapping angles
-    # for the same identity view produces the SAME screen coords whether we go through the 2D
-    # `pixel_transform` path (which draws at native pixel + offset) or the 3D projection. The two
-    # authors read from ONE `_build_overlay_state` and use the same collection; the projection
-    # math must round-trip to the same drawn pixel for identity views.
-    R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
-    canvas_h, canvas_w = 100, 100
-    # Volume extents matching a 100×100×20 image (so ext_x = ext_y and z_aniso = 1 collapses to
-    # canvas coordinates that equal the world coordinates plus a centre offset).
-    native_w, native_h, nZ = 100, 100, 20
-    z_aniso = 1.0
-    cx, cy, cz = 49.5, 49.5, 9.5
-    wpp = _world_per_px_3d(native_w, native_h, nZ, z_aniso, 1.0, canvas_w)
-    @test isapprox(wpp, 1.0; atol = 1e-9)   # canvas span == native extent → 1 world unit / pixel
-    u, v = _project_3d_point(R0, cx, cy, cz, z_aniso, wpp,
-                                       canvas_h, canvas_w, cx, cy, cz)
-    # Centre of volume projects to centre of canvas ((W + 1) / 2, (H + 1) / 2 — 0-based).
-    @test isapprox(u, (canvas_w + 1) / 2; atol = 1e-9)
-    @test isapprox(v, (canvas_h + 1) / 2; atol = 1e-9)
-    # Same world point projected at Ry(90°) rotation — the point at the volume centre should STILL
-    # project to the canvas centre (rotation about a point through the centre leaves the centre
-    # fixed). This proves the projection actually uses cx/cy/cz as the rotation origin.
-    R90 = rotation_matrix_from_angles((0.0, 90.0, 0.0))
-    u90, v90 = _project_3d_point(R90, cx, cy, cz, z_aniso, wpp,
-                                           canvas_h, canvas_w, cx, cy, cz)
-    @test isapprox(u90, (canvas_w + 1) / 2; atol = 1e-9)
-    @test isapprox(v90, (canvas_h + 1) / 2; atol = 1e-9)
+    # Scale bar: the viewer shows `captured_h / zoom` image rows across the canvas height, so the
+    # bar's µm per output pixel scales with the snapshot canvas, not the output's.
+    @test _um_per_px_3d(a, st, 0.5, 999) ≈ 0.5 / 2.3319
+    @test _um_per_px_3d(a, st, 0.5, 512) ≈ 0.5 * (999 / 2.3319) / 512
+    @test _um_per_px_3d(a, Dict{String,Any}(), 0.5, 512) ≈ 0.5 / 2.3319     # no canvas → its own
 end
 # ── VIEWER_PARITY phases 1 + 2: overlay_author reads the same JSON the browser reads ─────────────
 # The house palette, the three track-colour-mode names, and the heat-ramp anchors used by the

@@ -20,9 +20,10 @@ using ColorTypes: RGB
 using FixedPointNumbers: N0f8
 
 """
-    draw_points!(frame, points; size_px = 6) -> frame
+    draw_points!(frame, points; size_px = 6, border_px = 0) -> frame
 
-Fill a disc of `size_px` diameter at each `(y, x)` of `points`, in that point's `colour`. Coordinates
+Fill a disc of `size_px` diameter at each `(y, x)` of `points`, in that point's `colour`, ringed by a
+black outline `border_px` wide OUTSIDE the disc (the viewer's point border, `mip_points.wgsl`). Coordinates
 are **1-based row-column** (`frame[y, x]`); a marker whose centre lies off-frame still contributes any
 pixels of its disc that fall inside. Points are drawn in the order they appear — the LAST wins under
 overlap, which is what makes a foreground pop paint over a background pop when the caller sorted them.
@@ -31,7 +32,8 @@ overlap, which is what makes a foreground pop paint over a background pop when t
 colour::AbstractVector{<:RGB})`. All three must be the same length; a mismatch is an ArgumentError
 (a silently-shorter colour column would paint one pop's markers in another pop's colour).
 """
-function draw_points!(frame::AbstractMatrix{<:RGB}, points::NamedTuple; size_px::Int = 6)
+function draw_points!(frame::AbstractMatrix{<:RGB}, points::NamedTuple; size_px::Int = 6,
+                      border_px::Int = 0)
     n = length(points.x)
     length(points.y) == n && length(points.colour) == n ||
         throw(ArgumentError("draw_points!: x/y/colour columns differ in length " *
@@ -43,14 +45,18 @@ function draw_points!(frame::AbstractMatrix{<:RGB}, points::NamedTuple; size_px:
     # strict `dx² + dy² <= r²` on integer coords under-fills the edge by one pixel).
     r = max(1, size_px ÷ 2)
     rr = (r + 0.5)^2
+    R = r + max(0, border_px)
+    RR = (R + 0.5)^2
+    black = RGB{N0f8}(0, 0, 0)
     @inbounds for k in 1:n
         cx = Int(points.x[k]); cy = Int(points.y[k])
         col = convert(RGB{N0f8}, points.colour[k])
-        for dy in -r:r, dx in -r:r
-            dx * dx + dy * dy <= rr || continue
+        for dy in -R:R, dx in -R:R
+            d2 = dx * dx + dy * dy
+            d2 <= RR || continue
             y = cy + dy; x = cx + dx
             (1 <= y <= H && 1 <= x <= W) || continue
-            frame[y, x] = col
+            frame[y, x] = d2 <= rr ? col : black
         end
     end
     frame
@@ -156,12 +162,14 @@ function _bresenham_blend!(frame::AbstractMatrix{<:RGB}, x0::Int, y0::Int, x1::I
     frame
 end
 
-#: Fill opacity for `contour_px = 0` — the browser's `viewerLabelOpacity` default (settings.ts).
+#: Default fill opacity for `contour_px = 0` — the browser's `viewerLabelOpacity` default
+#: (`LABEL_OPACITY`, frontend/src/lib/webgpu/shaders/constants.json). A look read off the viewer
+#: carries the viewer's own value (`maskOpacity`).
 const MASK_FILL_OPACITY = 0.7f0
 
 function _fill_mask!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Integer},
-                     id_colours::AbstractDict)
-    a = MASK_FILL_OPACITY
+                     id_colours::AbstractDict, opacity::Real)
+    a = clamp(Float32(opacity), 0f0, 1f0)
     @inbounds for j in axes(frame, 2), i in axes(frame, 1)
         id = mask[i, j]
         id == 0 && continue
@@ -176,7 +184,7 @@ function _fill_mask!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Intege
 end
 
 """
-    draw_mask_outline!(frame, mask, id_colours; contour_px = 1) -> frame
+    draw_mask_outline!(frame, mask, id_colours; contour_px = 1, opacity = MASK_FILL_OPACITY) -> frame
 
 Paint segmentation outlines onto `frame`. An outline pixel is one where `mask[y, x] != 0` AND at
 least one 4-connected neighbour holds a DIFFERENT id — label boundaries, plus the boundary between a
@@ -194,17 +202,18 @@ just-painted colours into the interior of a large cell (the outline walks sidewa
 rather than a border). We compute boundary hits into a local list first, then stamp.
 
 `contour_px = 0` FILLS instead: every labelled pixel blends its colour over the frame at
-`MASK_FILL_OPACITY` — the browser viewer's rule (`labEdge` treats width 0 as "every voxel is edge",
+`opacity` (default `MASK_FILL_OPACITY`) — the browser viewer's rule (`labEdge` treats width 0 as "every voxel is edge",
 mixed at `viewerLabelOpacity`, default 0.7), and what the movie panel's outline slider promises
 ("0 fills the mask"). Offline used to return here without drawing, so a movie recorded at the default
 0 had no mask at all.
 """
 function draw_mask_outline!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Integer},
-                            id_colours::AbstractDict; contour_px::Int = 1)
+                            id_colours::AbstractDict; contour_px::Int = 1,
+                            opacity::Real = MASK_FILL_OPACITY)
     size(frame) == size(mask) ||
         throw(ArgumentError("draw_mask_outline!: mask $(size(mask)) differs from frame $(size(frame))"))
     contour_px < 0 && return frame
-    contour_px == 0 && return _fill_mask!(frame, mask, id_colours)
+    contour_px == 0 && return _fill_mask!(frame, mask, id_colours, opacity)
     H, W = size(frame)
     half = max(0, contour_px ÷ 2)
     hits = Tuple{Int,Int,RGB{N0f8}}[]

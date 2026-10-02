@@ -258,6 +258,12 @@ end
     vis = interpolate_keyframes([kf(Dict("visible" => false)), kf(Dict("visible" => true), 3)])
     @test [f["visible"] for f in vis] == [false, false, false, true]
 
+    # `camera.perspective` is a 0/1 number but a switch: it flips on the keyframe, either direction,
+    # rather than on the first in-between frame (where a 0.5 would already read as perspective).
+    pa = Dict("camera" => Dict("perspective" => 0)); pb = Dict("camera" => Dict("perspective" => 1))
+    @test [f["camera"]["perspective"] for f in interpolate_keyframes([kf(pa), kf(pb, 3)])] == [0, 0, 0, 1]
+    @test [f["camera"]["perspective"] for f in interpolate_keyframes([kf(pb), kf(pa, 3)])] == [1, 1, 1, 0]
+
     # nested state (camera / dims / per-layer props) tweens all the way down
     a = Dict("camera" => Dict("zoom" => 1.0, "center" => [0.0, 0.0]), "dims" => Dict("current_step" => [0, 4]))
     b = Dict("camera" => Dict("zoom" => 3.0, "center" => [10.0, 20.0]), "dims" => Dict("current_step" => [8, 4]))

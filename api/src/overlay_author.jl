@@ -363,6 +363,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
                               all_tracks::Bool = false,
                               all_tracks_colour::AbstractString = "#9ca3af",
                               track_color_mode::AbstractString = "track",
+                              solid_colour::Union{Nothing,AbstractString} = nothing,
                               colour_by::Union{Nothing,AbstractString} = nothing,
                               colour_overrides::Union{Nothing,AbstractDict} = nothing)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
@@ -581,11 +582,12 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
             end
         end
         s_span = (isfinite(s_min) && isfinite(s_max) && s_max > s_min) ? (s_max - s_min) : 0.0
-        # "solid" collapses to ONE colour for every ribbon in this author call (there is only ever
-        # one (value_name, pop_type) source per _build_overlay_state, so the browser's palette-by-
-        # source-index reduces to palette[0] here). "pop" keeps `col` — the pop's own swatch that
-        # was baked into track_hist's key upstream. This is the Julia mirror of the browser's split.
-        solid_col = CECELIA_TRACK_PALETTE[1]
+        # "solid" collapses to ONE colour for every ribbon in this author call — there is only ever
+        # one (value_name, pop_type) source per _build_overlay_state. That is the source's own colour
+        # when the caller has one (`solid_colour`, the viewer's per-source picker), else palette[0]:
+        # the browser's `solidRgb`. "pop" keeps `col` — the pop's own swatch that was baked into
+        # track_hist's key upstream. This is the Julia mirror of the browser's split.
+        solid_col = solid_colour === nothing ? CECELIA_TRACK_PALETTE[1] : hex_to_rgb(String(solid_colour))
         for (t1, x0, y0, z0, x1, y1, z1, kid, sp2, col) in raw
             colour = if tcm == "track"
                 CECELIA_TRACK_PALETTE[mod1(abs(kid), length(CECELIA_TRACK_PALETTE))]
@@ -612,6 +614,29 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
     OverlayState(pts_by_t, segs_by_end, hasT, tail_length, tracks_active)
 end
 
+"""
+    merge_overlay_closures(closures) -> ((args...) -> (points, segments)) | nothing
+
+One overlay closure out of several — a movie drawing more than one track source, each built by its
+own `build_overlays_for` / `build_overlays3d_for` call with its own colour. Each call's points and
+segments are concatenated column by column, so the merged closure returns the same shape its parts
+do (2D or 3D, whatever their arguments). `nothing` for an empty list.
+"""
+function merge_overlay_closures(closures::AbstractVector)
+    isempty(closures) && return nothing
+    length(closures) == 1 && return only(closures)
+    cat_nt(a, b) = a === nothing ? b : b === nothing ? a :
+                   NamedTuple{keys(a)}(map(vcat, values(a), values(b)))
+    (args...) -> begin
+        pts = nothing; segs = nothing
+        for cl in closures
+            p, s = cl(args...)
+            pts = cat_nt(pts, p); segs = cat_nt(segs, s)
+        end
+        (pts, segs)
+    end
+end
+
 # ─────────────────────────────────────────────────────────────────────────────────
 # 2D author — `PixelTransform` per frame, integer drawn coords, backward-compatible
 # `(; x::Vector{Int}, y::Vector{Int}, colour)` / `(; x0, y0, x1, y1, colour)` shape
@@ -622,13 +647,16 @@ end
     build_overlays_for(img; value_name, pop_type, transform,
                        pops_filter = nothing, include_tracks = true, tail_length = 30,
                        all_tracks = false, all_tracks_colour = "#9ca3af",
-                       track_color_mode = "track")
+                       track_color_mode = "track", solid_colour = nothing, include_points = true)
         -> (t -> (points, segments))
 
 Return a per-t closure that gives `record_view_movie` its 2D overlay shape. Coordinates are 1-based
 row-column in the drawn frame (post-crop + post-stride) — the mapping baked into `transform`.
 Segments emit `(; x0, y0, x1, y1, colour)`; points emit `(; x, y, colour)` — both use Int for
 compatibility with `draw_points!` / `draw_segments!`. `(nothing, nothing)` when nothing is drawable.
+
+`include_points = false` draws the tracks alone — what the viewer shows for a track source with no
+population on (its points come from populations only).
 
 Backed by `_build_overlay_state` — one collection, one place any pop-resolution / `track_color_mode`
 fix reaches. The projection differs only in `_apply(transform, x, y)` at emit time.
@@ -641,6 +669,8 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::PopTypeAr
                             all_tracks::Bool = false,
                             all_tracks_colour::AbstractString = "#9ca3af",
                             track_color_mode::AbstractString = "track",
+                            solid_colour::Union{Nothing,AbstractString} = nothing,
+                            include_points::Bool = true,
                             colour_by::Union{Nothing,AbstractString} = nothing,
                             colour_overrides::Union{Nothing,AbstractDict} = nothing)
     state = _build_overlay_state(img;
@@ -649,11 +679,13 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::PopTypeAr
                                   tail_length = tail_length, all_tracks = all_tracks,
                                   all_tracks_colour = all_tracks_colour,
                                   track_color_mode = track_color_mode,
+                                  solid_colour = solid_colour,
                                   colour_by = colour_by,
                                   colour_overrides = colour_overrides)
     tail_L = max(1, tail_length)
     return function(t::Int)
         pts_raw, segs_raw = _state_at(state, t)
+        include_points || (pts_raw = nothing)
         pts = nothing
         if pts_raw !== nothing && !isempty(pts_raw.x)
             xs = Int[]; ys = Int[]; cs = RGB{N0f8}[]
@@ -694,67 +726,25 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::PopTypeAr
 end
 
 # ─────────────────────────────────────────────────────────────────────────────────
-# 3D author — camera projection per frame, subpixel (u, v) coords, per-segment
-# alpha for the tail fade. Same `OverlayState` as the 2D author so overlay
-# resolution never drifts between the two views of one experiment.
+# 3D overlays — world positions; the movie renderer's shader projects them.
 # ─────────────────────────────────────────────────────────────────────────────────
 #
-# The projection matches `render_view_frame_3d` / `render_animation_run.py::_render_frame`
-# byte-for-byte: `world = R @ view` (Rz × Ry × Rx, vispy Base3DRotationCamera), so
-# `view = R^T @ world_iso` where `world_iso` is native voxels with `z` scaled by
-# `z_aniso = physical_z / physical_x`. The screen coord is the same `world_per_px`
-# scaling the ray builder uses so an overlay dot lands ON the cell the ray hit.
-
-"""
-    rotation_matrix_from_angles(angles) -> Matrix{Float64}
-
-Compose the R = Rz × Ry × Rx rotation matrix (vispy Base3DRotationCamera convention). `angles` is
-a 3-tuple / vector `(rx, ry, rz)` in DEGREES. Match with `render_view_frame_3d`'s kernel and the
-Python renderer's `_rotation_matrix` — one convention, three implementations required to agree.
-"""
-function rotation_matrix_from_angles(angles)
-    rx = deg2rad(Float64(angles[1]))
-    ry = deg2rad(Float64(angles[2]))
-    rz = deg2rad(Float64(angles[3]))
-    sx, cx = sin(rx), cos(rx)
-    sy, cy = sin(ry), cos(ry)
-    sz, cz = sin(rz), cos(rz)
-    Float64[
-        cz*cy   cz*sy*sx - sz*cx    cz*sy*cx + sz*sx
-        sz*cy   sz*sy*sx + cz*cx    sz*sy*cx - cz*sx
-       -sy      cy*sx               cy*cx
-    ]
-end
-
-# view = R^T @ world_iso, then screen = view/world_per_px + (canvas + 1) / 2.
-@inline function _project_3d_point(R::AbstractMatrix{Float64}, cx::Float64, cy::Float64, cz::Float64,
-                                    z_aniso::Float64, world_per_px::Float64,
-                                    canvas_h::Int, canvas_w::Int,
-                                    x::Float64, y::Float64, z::Float64)
-    xw = x - cx
-    yw = y - cy
-    zw = (z - cz) * z_aniso
-    xv = R[1,1]*xw + R[2,1]*yw + R[3,1]*zw
-    yv = R[1,2]*xw + R[2,2]*yw + R[3,2]*zw
-    u = xv / world_per_px + (Float64(canvas_w) + 1.0) / 2.0
-    v = yv / world_per_px + (Float64(canvas_h) + 1.0) / 2.0
-    (u, v)
-end
+# A 3D movie is drawn by the browser viewer's own shaders (`writers/render_animation_run.py`), and
+# its point and track-tail passes project with the SAME camera as the raycast (one uniform block).
+# So Julia hands over positions, not pixels: there is no second projection to keep in step with the
+# volume.
 
 """
     build_overlays3d_for(img; value_name, pop_type,
                          pops_filter = nothing, include_tracks = true, tail_length = 30,
                          all_tracks = false, all_tracks_colour = "#9ca3af",
-                         track_color_mode = "track")
-        -> ((t, R, cx, cy, cz, world_per_px, canvas_h, canvas_w, z_aniso) -> (points, segments))
+                         track_color_mode = "track", solid_colour = nothing, include_points = true,
+                         colour_by = nothing, colour_overrides = nothing)
+        -> (t -> (points, segments))
 
-Per-t + per-camera closure that projects the shared overlay state through the SAME rotation the
-volume raycast uses and emits DRAWN PIXEL (u, v) coordinates. Points: `(; u, v, colour)`;
-Segments: `(; u0, v0, u1, v1, colour, alpha)`. The renderer downstream (Julia OR Python) then just
-draws — the projection math never leaves Julia, so it can't drift from the ray-cast math.
-
-`alpha` per segment ramps the tail fade the browser overlay uses:
-`alpha = 0.2 + 0.8 * clamp(1 - age / tail_length, 0, 1)`, `age = (t + 1) - t1`.
+Per-t closure over the shared overlay state (`_build_overlay_state`, the same one the 2D author
+reads), in native voxel coordinates. Points: `(; x, y, z, colour)`; segments: the tail window's
+`(; x0, y0, z0, x1, y1, z1, colour, t1)`. Either is `nothing` when the frame has none.
 """
 function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopTypeArg,
                               pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
@@ -763,6 +753,8 @@ function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopType
                               all_tracks::Bool = false,
                               all_tracks_colour::AbstractString = "#9ca3af",
                               track_color_mode::AbstractString = "track",
+                              solid_colour::Union{Nothing,AbstractString} = nothing,
+                              include_points::Bool = true,
                               colour_by::Union{Nothing,AbstractString} = nothing,
                               colour_overrides::Union{Nothing,AbstractDict} = nothing)
     state = _build_overlay_state(img;
@@ -771,45 +763,13 @@ function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopType
                                   tail_length = tail_length, all_tracks = all_tracks,
                                   all_tracks_colour = all_tracks_colour,
                                   track_color_mode = track_color_mode,
+                                  solid_colour = solid_colour,
                                   colour_by = colour_by,
                                   colour_overrides = colour_overrides)
-    tail_L = max(1, tail_length)
-    return function(t::Int, R::AbstractMatrix{Float64},
-                    cx::Real, cy::Real, cz::Real,
-                    world_per_px::Real,
-                    canvas_h::Int, canvas_w::Int,
-                    z_aniso::Real)
-        pts_raw, segs_raw = _state_at(state, t)
-        cxf, cyf, czf = Float64(cx), Float64(cy), Float64(cz)
-        wpp = Float64(world_per_px)
-        zaf = Float64(z_aniso)
-        pts = nothing
-        if pts_raw !== nothing && !isempty(pts_raw.x)
-            us = Float64[]; vs = Float64[]; cs = RGB{N0f8}[]
-            @inbounds for i in eachindex(pts_raw.x)
-                u, v = _project_3d_point(R, cxf, cyf, czf, zaf, wpp, canvas_h, canvas_w,
-                                          pts_raw.x[i], pts_raw.y[i], pts_raw.z[i])
-                push!(us, u); push!(vs, v); push!(cs, pts_raw.colour[i])
-            end
-            pts = (; u = us, v = vs, colour = cs)
-        end
-        segs = nothing
-        if segs_raw !== nothing && !isempty(segs_raw.x0)
-            us0 = Float64[]; vs0 = Float64[]; us1 = Float64[]; vs1 = Float64[]
-            cs = RGB{N0f8}[]; alphas = Float64[]
-            @inbounds for i in eachindex(segs_raw.x0)
-                u0, v0 = _project_3d_point(R, cxf, cyf, czf, zaf, wpp, canvas_h, canvas_w,
-                                            segs_raw.x0[i], segs_raw.y0[i], segs_raw.z0[i])
-                u1, v1 = _project_3d_point(R, cxf, cyf, czf, zaf, wpp, canvas_h, canvas_w,
-                                            segs_raw.x1[i], segs_raw.y1[i], segs_raw.z1[i])
-                push!(us0, u0); push!(vs0, v0); push!(us1, u1); push!(vs1, v1)
-                push!(cs, segs_raw.colour[i])
-                age = (t + 1) - segs_raw.t1[i]
-                alpha = 0.2 + 0.8 * clamp(1.0 - Float64(age) / Float64(tail_L), 0.0, 1.0)
-                push!(alphas, alpha)
-            end
-            segs = (; u0 = us0, v0 = vs0, u1 = us1, v1 = vs1, colour = cs, alpha = alphas)
-        end
+    return function(t::Int)
+        pts, segs = _state_at(state, t)
+        (!include_points || pts === nothing || isempty(pts.x)) && (pts = nothing)
+        (segs === nothing || isempty(segs.x0)) && (segs = nothing)
         (pts, segs)
     end
 end

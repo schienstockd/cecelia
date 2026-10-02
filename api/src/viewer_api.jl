@@ -1035,7 +1035,7 @@ end
 # the record button and a movie recorded from `/api/viewer/record-test` speak the same language.
 #
 # `img_err` is `_gating_image`'s error string (or `nothing`). Returns `(overlays_for, mask_for,
-# point_size_px, segment_width_px, mask_contour_px, ov_diag, mask_diag)`. `ov_diag` / `mask_diag` carry
+# point_size_px, segment_width_px, mask_contour_px, point_border_px, mask_opacity, ov_diag, mask_diag)`. `ov_diag` / `mask_diag` carry
 # the smoke test's diagnostic breadcrumbs (populated whether or not `tally` is on); with `tally = true`
 # the returned closures additionally count points/segments/frames drawn into refs stashed under
 # `ov_diag["_tally"]` / `mask_diag["_tally"]` — the smoke route unwraps them into its response body.
@@ -1049,9 +1049,10 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     overlays_for = nothing
     mask_for = nothing
     point_size_px = 6; segment_width_px = 2; mask_contour_px = 1
+    point_border_px = 0; mask_opacity = Float64(MASK_FILL_OPACITY)
     if !(ov_raw isa AbstractDict)
         return (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
-                  ov_diag, mask_diag)
+                  point_border_px, mask_opacity, ov_diag, mask_diag)
     end
     # `ov_raw` reaches us as either symbol- OR string-keyed depending on the caller:
     # `_overlays_raw_from_config` (`movie_rail.jl`) builds a `Dict{String,Any}`, while
@@ -1098,6 +1099,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     point_size_px    = Int(_ov(ov_raw, :pointSizePx, point_size_px))
     segment_width_px = Int(_ov(ov_raw, :segmentWidthPx, segment_width_px))
+    point_border_px  = max(0, Int(round(Float64(_ov(ov_raw, :pointBorderPx, point_border_px)))))
+    mask_opacity     = clamp(Float64(_ov(ov_raw, :maskOpacity, mask_opacity)), 0.0, 1.0)
     ov_diag["valueName"] = ov_vn
     ov_diag["popType"]   = ov_pt
     ov_diag["allTracks"] = all_tracks
@@ -1133,10 +1136,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
         else
             tf = pixel_transform(H, W; crop = crop, max_px = max_px)
             if has_multi_tracks
-                # One closure per source; merge them into one `t -> (points, segments)` by
-                # concatenating the per-source outputs. This is the shape `build_overlays_for`
-                # already emits (`(; x, y, colour)` for points and `(; x0, y0, x1, y1, colour, alpha)`
-                # for segments), so no format bridging.
+                # One closure per source, merged into one `t -> (points, segments)`.
                 per_source = Any[]
                 for src in track_sources
                     src isa AbstractDict || continue
@@ -1150,6 +1150,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                                             tail_length = tail_length,
                                             all_tracks = true,
                                             all_tracks_colour = col_src,
+                                            solid_colour = col_src,
+                                            include_points = false,
                                             track_color_mode = track_color_mode)
                     catch e
                         @warn "movie overlays: multi-source author failed" value_name = vn_src exception = e
@@ -1157,32 +1159,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                     end
                     cl === nothing || push!(per_source, cl)
                 end
-                inner = if isempty(per_source)
-                    ov_diag["reason"] = "no track sources resolved"
-                    nothing
-                else
-                    function(t::Int)
-                        pts_x = Int[]; pts_y = Int[]; pts_c = RGB{N0f8}[]
-                        s_x0 = Int[]; s_y0 = Int[]; s_x1 = Int[]; s_y1 = Int[]
-                        s_c = RGB{N0f8}[]; s_a = Float64[]
-                        for cl in per_source
-                            p, s = cl(t)
-                            if p !== nothing
-                                append!(pts_x, p.x); append!(pts_y, p.y); append!(pts_c, p.colour)
-                            end
-                            if s !== nothing
-                                append!(s_x0, s.x0); append!(s_y0, s.y0)
-                                append!(s_x1, s.x1); append!(s_y1, s.y1)
-                                append!(s_c, s.colour); append!(s_a, s.alpha)
-                            end
-                        end
-                        pts = isempty(pts_x) ? nothing : (; x = pts_x, y = pts_y, colour = pts_c)
-                        segs = isempty(s_x0) ? nothing :
-                            (; x0 = s_x0, y0 = s_y0, x1 = s_x1, y1 = s_y1,
-                               colour = s_c, alpha = s_a)
-                        (pts, segs)
-                    end
-                end
+                inner = merge_overlay_closures(per_source)
+                inner === nothing && (ov_diag["reason"] = "no track sources resolved")
             elseif show_pops || all_tracks
                 inner = try
                     build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
@@ -1191,6 +1169,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                                        tail_length = tail_length,
                                        all_tracks = all_tracks,
                                        all_tracks_colour = all_tracks_col,
+                                       # the viewer's points are its populations; tracks alone draw no dots
+                                       include_points = show_pops,
                                        track_color_mode = track_color_mode)
                 catch e
                     ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
@@ -1274,7 +1254,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
             end
         end
     end
-    (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px, ov_diag, mask_diag)
+    (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
+       point_border_px, mask_opacity, ov_diag, mask_diag)
 end
 
 # ── POST /api/viewer/record-test ──────────────────────────────────────────────────
@@ -1373,7 +1354,9 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
                           mask_for = mask_for,
                           point_size_px = point_size_px,
                           segment_width_px = segment_width_px,
-                          mask_contour_px = mask_contour_px)
+                          mask_contour_px = mask_contour_px,
+                          point_border_px = ov.point_border_px,
+                          mask_opacity = ov.mask_opacity)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end

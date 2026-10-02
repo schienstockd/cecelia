@@ -145,11 +145,15 @@ function _config_3d_keyframes(config, t0::Int, t1::Int)
     z_raw = _cfg_maybe(cam, "zoom")
     zoom = z_raw isa Real && Float64(z_raw) > 0 ? Float64(z_raw) : 1.0
     t1 = max(t0, t1)
-    # the viewer canvas the zoom was measured against — `_renderer_zoom_3d` converts with it
+    # the viewer canvas the zoom was measured against — the movie host applies the zoom against it
     cdim(k) = (v = _cfg_maybe(cam, k); v isa Real && v > 0 ? Float64(v) : nothing)
     cw, ch = cdim("width"), cdim("height")
+    # the viewer's projection toggle (1 = perspective); absent = orthographic, as before
+    p_raw = _cfg_maybe(cam, "perspective")
+    persp = p_raw isa Real && Float64(p_raw) > 0 ? 1.0 : 0.0
     function state(t)
-        st = Dict{String,Any}("camera" => Dict{String,Any}("angles" => angles, "zoom" => zoom),
+        st = Dict{String,Any}("camera" => Dict{String,Any}("angles" => angles, "zoom" => zoom,
+                                                            "perspective" => persp),
                               "dims"   => Dict{String,Any}("ndisplay" => 3, "current_step" => [t, 0]))
         (cw === nothing || ch === nothing) || (st["canvas"] = Dict{String,Any}("width" => cw, "height" => ch))
         st
@@ -208,11 +212,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "tailLength"       => _cfg_int(cfg, "tailLength", 30),
         "trackColorMode"   => _cfg_str(cfg, "trackColourMode", _cfg_str(cfg, "trackColorMode", "track")),
         "pointSizePx"      => _cfg_int(cfg, "pointsSize", 6),
+        "pointBorderPx"    => max(0, _cfg_int(cfg, "pointBorder", 0)),
         "segmentWidthPx"   => _cfg_int(cfg, "tailWidth", 2),
     )
     if has_mask
         out["showMask"]        = true
         out["maskContourPx"]   = _cfg_int(cfg, "labelContour", 1)
+        # the fill opacity a filled (contour 0) mask blends at — the viewer's `viewerLabelOpacity`
+        out["maskOpacity"]     = clamp(Float64(_cfg_get(cfg, "labelOpacity", Float64(MASK_FILL_OPACITY))), 0.0, 1.0)
         # `allCells` = whole-segmentation mask (every id painted). If neither pops nor cell tracks are
         # on, that IS the intended mask; else the mask filters by the same pops the points would draw.
         out["allCells"]        = !(show_pops || show_gated)
@@ -250,6 +257,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # can now see both, each in its own colour.
     ts_raw = get(cfg, "trackSources", nothing)
     ts_raw === nothing && (ts_raw = get(cfg, :trackSources, nothing))
+    # The viewer's look keeps them as a map, `{valueName: {visible, colour}}` (`viewerLook`); the
+    # batch request sends the list. Same entries either way — the visible ones.
+    if ts_raw isa AbstractDict
+        ts_raw = Any[Dict{String,Any}("valueName" => String(k),
+                                      "colour" => _wstr_any(v, "colour", :colour))
+                     for (k, v) in ts_raw
+                     if v isa AbstractDict && something(get(v, "visible", nothing), get(v, :visible, nothing), true) === true]
+    end
     if ts_raw isa AbstractVector && !isempty(ts_raw)
         # Symbol/String key tolerance — same reason `_ov` reads both shapes.
         _svalue(e, k) = something(get(e, Symbol(k), nothing), get(e, String(k), ""))
@@ -405,6 +420,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                                    point_size_px    = ov.point_size_px,
                                    segment_width_px = ov.segment_width_px,
                                    mask_contour_px  = ov.mask_contour_px,
+                                   point_border_px  = ov.point_border_px,
+                                   mask_opacity     = ov.mask_opacity,
                                    show_timestamp = show_timestamp, show_scale_bar = show_scale_bar,
                                    pixel_size_um  = pixel_size_um,
                                    time_step_min  = time_step_min,
@@ -593,6 +610,8 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                                                 point_size_px    = ov.point_size_px,
                                                 segment_width_px = ov.segment_width_px,
                                                 mask_contour_px  = ov.mask_contour_px,
+                                                point_border_px  = ov.point_border_px,
+                                                mask_opacity     = ov.mask_opacity,
                                                 show_timestamp = show_ts, show_scale_bar = show_sb,
                                                 pixel_size_um  = pixel_size_um,
                                                 time_step_min  = time_step_min,
@@ -633,7 +652,7 @@ end
 
 # One image of a 3D batch: the image's frame + the batch's channel picks, rendered as a volume from the
 # authored camera. Returns `cancelled::Bool`, or `nothing` when the image can't be recorded (already
-# logged). Masks are not drawn — the 3D renderer has no mask pass.
+# logged). A mask is drawn the way the viewer's 3D view draws one (every label, its palette).
 function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
                           value_name::String, label_vn, out_path::AbstractString;
                           fps, size_x, size_y, t_start, t_end, title_card, render_quality::Symbol,
@@ -650,8 +669,9 @@ function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
     vnn = isempty(value_name) ? nothing : value_name
     chans = something(channel_names(img; value_name = vnn), String[])
     specs = _apply_channel_picks(specs, config, img, vnn)
-    ovs = _overlays_raw_from_config(config, false)
+    ovs = _overlays_raw_from_config(config, label_vn !== nothing)
     ovs === nothing || (ovs["valueName"] = _ov_look_seg(config, label_vn === nothing ? "" : String(label_vn)))
+    (ovs === nothing || label_vn === nothing) || (ovs["maskValueName"] = String(label_vn))
     cw, ch = _config_3d_canvas(config, size_x, size_y)
     pxsz, ts_min = img_physical_sizes(img)
     z_aniso = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[1] / pxsz[3] : 1.0
@@ -849,6 +869,8 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                                  point_size_px    = cell.ov.point_size_px,
                                                  segment_width_px = cell.ov.segment_width_px,
                                                  mask_contour_px  = cell.ov.mask_contour_px,
+                                                 point_border_px  = cell.ov.point_border_px,
+                                                 mask_opacity     = cell.ov.mask_opacity,
                                                  show_timestamp = show_timestamp,
                                                  show_scale_bar = show_scale_bar,
                                                  pixel_size_um  = pixel_size_um,

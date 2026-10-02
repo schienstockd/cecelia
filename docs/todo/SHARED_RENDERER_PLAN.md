@@ -2,7 +2,9 @@
 
 **Status:** in progress (2026-10-01).
 - **Phase 0 passed on Linux** (see Phase 0 → Result).
-- **Phase 1 built** on `feat/shared-renderer-p1` (see Phase 1 → Result). **Phase 2 is next.**
+- **Phase 1 built** on `feat/shared-renderer-p1` (PR #1345; see Phase 1 → Result).
+- **Phase 2 built** on `feat/shared-renderer-p2` (see Phase 2 → Result), except the viewer-side
+  pixel capture, which needs a browser. **The Phase 3+ review is next.**
 - **Committed scope is Phases 1–2.** Phases 3–5 are decided only after Phase 2 ships (see *Scope*).
 
 Supersedes [`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay")
@@ -199,11 +201,80 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
 - **Time torch against wgpu on the same frame before deleting torch.** Not measured in Phase 0.
 - Delete the torch ray-caster.
 
+**Result (2026-10-01): built, apart from the viewer-side capture.**
+
+- **Every 3D movie now runs the viewer's shaders.** `writers/render_animation_run.py` drives
+  `wgpu_host.MipHost`: `mip.wgsl`, then `mip_segments.wgsl`, then `mip_points.wgsl`, in one pass, in
+  the viewer's draw order. That covers keyframe animations, the viewer's Record in 3D and batch 3D,
+  which all funnel through `record_keyframes_view_movie`. Torch, the Julia CPU 3D kernel
+  (`render_view_frame_3d`, unreachable behind the GPU branch) and the vispy rotation helpers are
+  deleted.
+- **A bug found on the way: the old 3D path tilted the wrong way.**
+  - What: `R = Rz·Ry·Rx` with `rx = angles[0]` is the viewer's camera with the pitch sign flipped.
+    Yaw agrees. Both torch and Julia's 3D overlay projection used it, so any browser-authored 3D
+    keyframe with pitch recorded mirrored.
+  - Why Phase 0 missed it: its camera was `[0, 0, 0]`.
+  - Measured on fXgbTl t=3 at pitch +35°: torch's frame is mean |Δ| 47.6 from the shader at +35°
+    and 8.6 from the shader at −35°.
+  - Figure on the dev machine: `~/Downloads/TMP/shared_renderer_p2_pitch_flip.png`.
+- **Julia sends the camera as the viewer stored it** (`_camera3d_payload`), plus the height of the
+  canvas its zoom was measured on (`_snapshot_canvas_h`). The host applies it with `view_camera`,
+  which is `applyViewStateToBrowser` line for line. `_renderer_zoom_3d` and `_world_per_px_3d` are gone.
+- **Overlays arrive as positions, not pixels.** `build_overlays3d_for` returns native-voxel
+  points and tail segments. The host packs them in the viewer's instance layout (`POINT_STRIDE` /
+  `SEG_STRIDE`), and the shader projects them with the raycast's own uniform block, so overlays
+  cannot drift from the volume. That pulls Phase 4 forward for 3D, which was forced by the pitch
+  finding: keeping Julia's projection would have needed a third copy of the camera.
+  - The 3D tail fade is gone. The viewer draws tails at one alpha (0.85), and now so does the movie.
+- **Masks in 3D.** A 3D movie now draws the viewer's 3D mask: every label, nearest along the ray,
+  `shaders/label_palette.json` colours, `LABEL_OPACITY`, and the request's `labelContour`.
+  - It is not pop-filtered, because the viewer's 3D view isn't either.
+  - The viewer's Record and the batch already send `labelValueNames`. `maskValueName` keeps the
+    mask's segmentation apart from the overlays'.
+- **Shared CPU inputs, golden-pinned on both sides** (`shaders/golden.json`): the view-state camera,
+  the LUT rows, and the label palette (`label_palette.json` = `labelPaletteBytes()`).
+- **Real data.** fXgbTl t=3, rebuilt from the raw view state through the runner's own path
+  (`view_camera` → `lut_rows` → `frame_uniforms` → `MipHost`), matches the Phase 0 frame from the
+  viewer's TS exactly (max |Δ| 0). That holds in µm and in the runner's x-voxel units.
+- **Speed, same 1186x999 four-channel frame, incl. readback** (torch used about 442 samples per ray,
+  wgpu 256 steps):
+
+  | | ms/frame |
+  |---|---|
+  | torch CUDA | 1366 |
+  | wgpu RTX 2000 Ada | 14 |
+  | torch CPU | 43 163 |
+  | wgpu llvmpipe | 1045 |
+
+  So 3D movies no longer need CUDA. A Mac or AMD/Intel machine gets its own GPU, and a machine with
+  no GPU gets llvmpipe at about a second per frame.
+- **Level.** The host asks the device for its real 3D-texture limit (16384 on the RTX vs the 2048
+  default). The movie uses level 0 when it fits, else the first coarser level that does, with the
+  extents still in level-0 µm.
+- **Tests.**
+  - `test_wgsl_utils.py`: a point sits on its voxel at four cameras, pitched and yawed.
+  - `test_render_animation_run.py`: a store → mp4 end to end, covering t, camera, mask and point.
+  - API testsets: camera payload, scale bar, world-space overlays.
+- **Open.**
+  - **The viewer-side capture is still needed.** A `canvas.toDataURL()` of the viewer at a fixed
+    view state on a committed fixture closes the pixel test. That needs a browser, so it's
+    Dominik's click.
+- **Closed after review.**
+  - **Perspective.** `buildViewState` records the 3D projection toggle (`camera.perspective` 1/0;
+    2D is always 0), and Fill from view carries it on `camera3d`. Applying a view state in the
+    viewer still leaves the toggle alone.
+  - **Point border and mask opacity.** The look carries `pointBorder` and `labelOpacity`
+    (`viewerLook`); `_overlays_raw_from_config` forwards them as `pointBorderPx` / `maskOpacity`
+    to both renderers (the 3D host's lanes, and `draw_points!` / `draw_mask_outline!` in 2D). A
+    batch config without them draws no border at `LABEL_OPACITY`.
+
 ### Phase 3 — 2D movies on the shared shader
 
 - `tileShader` for the plain Record, batch and compare-grid cells, replacing `render_view_frame` +
   `draw_mask_outline!`. Viewer Parity's deferred Phase 5 (mask outline algorithm) goes away with it.
 - The compare grid keeps its stitcher (`movie_io.stitch_movies`) — it composes frames, not pixels.
+- Fixes on the way: the viewer's point size is a RADIUS (`mip_points.wgsl`: fill radius `ov.pointPx`),
+  while `draw_points!` takes it as a diameter, so 2D movie points are half the viewer's size.
 
 ### Phase 4 — overlays in the shader too
 

@@ -70,6 +70,38 @@ class RealShadersTest(unittest.TestCase):
                 self.assertRegex(wgsl_utils.format_var(v), r"^\d+(\.\d+)?$")
 
 
+class GoldenHostInputsTest(unittest.TestCase):
+    """The CPU-side inputs the viewer computes before upload — same golden as the TS test."""
+
+    def test_view_camera(self):
+        from cecelia.utils import wgpu_host
+        for c in GOLDEN["viewCamera"]:
+            with self.subTest(c["name"]):
+                got = wgpu_host.view_camera(c["camera"], c["snapH"], c["nX"], c["nY"], c["voxelUm"],
+                                            c["canvasH"], c["halfAngle"])
+                for k, v in c["want"].items():
+                    self.assertAlmostEqual(got[k], v, places=9, msg=k)
+
+    def test_view_camera_without_centre_is_centred(self):
+        from cecelia.utils import wgpu_host
+        got = wgpu_host.view_camera({"zoom": 1, "angles": [10, 20, 0]}, None, 100, 80, [1, 1, 1], 400)
+        self.assertEqual((got["panX"], got["panY"]), (0, 0))
+
+    def test_lut_rows(self):
+        from cecelia.utils import wgpu_host
+        rows = wgpu_host.lut_rows(GOLDEN["lut"]["luts"])
+        for c, stops in GOLDEN["lut"]["rows"].items():
+            for i, want in stops.items():
+                with self.subTest(channel=c, stop=i):
+                    self.assertEqual(rows[int(c), int(i)].tolist(), want)
+
+    def test_label_palette(self):
+        from cecelia.utils import wgpu_host
+        pal = wgpu_host.label_palette()
+        self.assertEqual(pal.shape, (64, 4))
+        self.assertTrue((pal[:, 3] == 255).all())
+
+
 def _srgb_encode(linear: np.ndarray) -> np.ndarray:
     """The ``rgba8unorm-srgb`` store: IEC 61966-2-1 transfer, then 8-bit."""
     lin = np.clip(linear, 0.0, 1.0)
@@ -87,6 +119,34 @@ def _ramp(lut_row: np.ndarray, n: np.ndarray, stops: int) -> np.ndarray:
     return rgb[i] * (1 - f) + rgb[j] * f
 
 
+_HOST = None
+
+
+def _shared_host():
+    """One ``MipHost`` for every render test, or a skip. CI sets CECELIA_REQUIRE_WGPU so a missing
+    adapter FAILS there: the job exists to prove the shared renderer runs on each OS. A dev machine
+    without one just skips."""
+    global _HOST
+    if _HOST is not None:
+        return _HOST
+    required = os.environ.get("CECELIA_REQUIRE_WGPU") == "1"
+    try:
+        from cecelia.utils import wgpu_host
+        adapter = wgpu_host.request_adapter()
+    except Exception as e:  # import or driver failure — reported, not hidden
+        if required:
+            raise
+        raise unittest.SkipTest(f"wgpu unavailable: {e!r}")
+    if adapter is None:
+        if required:
+            raise RuntimeError("wgpu: no adapter, and CECELIA_REQUIRE_WGPU=1")
+        raise unittest.SkipTest("wgpu: no adapter on this machine")
+    _HOST = wgpu_host.MipHost(adapter)
+    info = _HOST.adapter_info
+    print(f"\n[wgpu] {info.get('device')} ({info.get('backend_type')}, {info.get('adapter_type')})")
+    return _HOST
+
+
 class MipRenderTest(unittest.TestCase):
     """A 16x12x6 two-channel volume seen face-on, orthographic, framed so one pixel is one voxel
     column: pixel (x, y) is then the max over z of voxel column (x, y), image row 0 at the top."""
@@ -95,23 +155,7 @@ class MipRenderTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # CI sets CECELIA_REQUIRE_WGPU so a missing adapter FAILS there: the job exists to prove the
-        # shared renderer runs on each OS. A dev machine without one just skips.
-        required = os.environ.get("CECELIA_REQUIRE_WGPU") == "1"
-        try:
-            from cecelia.utils import wgpu_host
-            adapter = wgpu_host.request_adapter()
-        except Exception as e:  # import or driver failure — reported, not hidden
-            if required:
-                raise
-            raise unittest.SkipTest(f"wgpu unavailable: {e!r}")
-        if adapter is None:
-            if required:
-                raise RuntimeError("wgpu: no adapter, and CECELIA_REQUIRE_WGPU=1")
-            raise unittest.SkipTest("wgpu: no adapter on this machine")
-        cls.host = wgpu_host.MipHost(adapter)
-        print(f"\n[wgpu] {cls.host.adapter_info.get('device')} "
-              f"({cls.host.adapter_info.get('backend_type')}, {cls.host.adapter_info.get('adapter_type')})")
+        cls.host = _shared_host()
 
         consts = wgsl_utils.shader_constants()
         cls.stops, maxc = int(consts["LUT_STOPS"]), int(consts["MAX_CHANNELS"])
@@ -128,6 +172,13 @@ class MipRenderTest(unittest.TestCase):
         cls.host.set_lut(cls.lut)
         cls.host.set_palette(cls.palette)
         cls.windows = [(100.0, 1100.0), (0.0, 2000.0)]
+
+    def setUp(self):
+        # The host is shared across test classes; put this class's inputs back before each test.
+        self.host.set_volume(self.vol)
+        self.host.set_lut(self.lut)
+        self.host.set_palette(self.palette)
+        self.host.set_labels(None)
 
     def _uniforms(self, **extra):
         half_angle = float(wgsl_utils.shader_constants()["VIEW_HALF_ANGLE"])
@@ -172,3 +223,54 @@ class MipRenderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverlayRenderTest(unittest.TestCase):
+    """A point marks the voxel it was measured from at any camera — the overlay pass shares the
+    raycast's uniform block, so this checks the host's instance layout and draw, not the maths."""
+
+    N, W = 32, 96
+
+    @classmethod
+    def setUpClass(cls):
+        cls.host = _shared_host()
+
+    def _render(self, vol, points, yaw, pitch):
+        from cecelia.utils import wgpu_host
+        n = self.N
+        self.host.set_volume(vol)
+        lut = np.zeros((32, 64, 4), np.uint8)
+        lut[0, :, 0] = np.round(255 * np.arange(64) / 63)
+        lut[:, :, 3] = 255
+        self.host.set_lut(lut)
+        self.host.set_palette(wgpu_host.label_palette())
+        self.host.set_points(points)
+        half = float(wgsl_utils.shader_constants()["VIEW_HALF_ANGLE"])
+        u = {"cam.yaw": yaw, "cam.pitch": pitch, "cam.dist": n / half, "cam.steps": 256,
+             "vp.nch": 1, "vp.ortho": 1, "ext.x": n, "ext.y": n, "ext.z": n,
+             "dims.nx": n, "dims.ny": n, "dims.nz": n, "dims.zPerChannel": n,
+             "ov.pointPx": 3, "ov.planeLo": -1, "ov.planeHi": -1, "pan.ribbonLo": -1,
+             "ch[0].lo": 0, "ch[0].hi": 1000, "ch[0].visible": 1}
+        try:
+            return self.host.render(self.W, self.W, u)[..., :3].astype(int)
+        finally:
+            self.host.set_points(None)
+
+    def test_point_sits_on_its_voxel_when_rotated(self):
+        n = self.N
+        vox = (21, 9, 6)                                       # x, y, z voxel index
+        vol = np.zeros((1, n, n, n), np.uint16)
+        vol[0, vox[2], vox[1], vox[0]] = 1000
+        centre_um = [v + 0.5 for v in vox]                     # 1 µm voxels: the voxel's centre
+        point = np.array([[*centre_um, 0.0, 1.0, 0.0, float(vox[2])]], np.float32)
+        empty = np.zeros_like(vol)
+        for yaw, pitch in [(0.0, 0.0), (0.6, 0.0), (0.6, 0.4), (-1.1, -0.5)]:
+            with self.subTest(yaw=yaw, pitch=pitch):
+                img = self._render(vol, None, yaw, pitch)
+                vy, vx = np.unravel_index(np.argmax(img[..., 0]), img.shape[:2])
+                self.assertGreater(img[vy, vx, 0], 200, "the bright voxel is not in frame")
+                dot = self._render(empty, point, yaw, pitch)[..., 1]
+                ys, xs = np.nonzero(dot > 128)
+                self.assertTrue(len(xs), "the point drew nothing")
+                self.assertLessEqual(abs(xs.mean() - vx), 1.5)
+                self.assertLessEqual(abs(ys.mean() - vy), 1.5)

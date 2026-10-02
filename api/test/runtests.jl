@@ -256,10 +256,10 @@ include(joinpath(@__DIR__, "suite", "viewer_slab_and_meta.jl"))
 include(joinpath(@__DIR__, "suite", "movie_rail_translators.jl"))
 
 # ── overlay_author 3D + movie-rail 3D + VIEWER_PARITY testsets ─
-# Six testsets covering the 3D half of overlay_author + movie-rail 3D pipeline: build_overlays3d_for,
-# movie rail overlay context resolver + JSON, overlay_author colourBy + colourOverrides,
-# overlay_author rotation_matrix_from_angles, movie rail 2D↔3D overlay projection, palette +
-# track-mode JSON as the shared source of truth (VIEWER_PARITY 1+2). Path expression uses API_TEST_DIR.
+# Five testsets covering the 3D half of overlay_author + movie-rail 3D pipeline: build_overlays3d_for,
+# movie rail overlay context resolver + JSON, overlay_author colourBy + colourOverrides, the 3D
+# camera payload + scale bar, palette + track-mode JSON as the shared source of truth
+# (VIEWER_PARITY 1+2). Path expression uses API_TEST_DIR.
 include(joinpath(@__DIR__, "suite", "overlay_3d_and_rail_3d.jl"))
 
 # ── /api/tasks/validate + /api/correction-plan + /api/cell_cards + _require_ids testsets ─

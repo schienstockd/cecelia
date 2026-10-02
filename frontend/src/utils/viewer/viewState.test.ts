@@ -69,6 +69,17 @@ describe('buildViewState', () => {
     expect(vs.camera.angles[1]).toBeCloseTo(45, 4)                 // yaw → ry
   })
 
+  it('records the projection toggle in 3D, and always orthographic in 2D', () => {
+    const at = (ndisplay: 2 | 3, perspective?: boolean) => buildViewState({
+      cam: fakeCam(), meta: fakeMeta(), t: 0, zPlane: 0, ndisplay,
+      canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE, perspective,
+    }).camera.perspective
+    expect(at(3, true)).toBe(1)
+    expect(at(3, false)).toBe(0)
+    expect(at(3)).toBe(0)
+    expect(at(2, true)).toBe(0)
+  })
+
   it('emits per-channel layers with contrast + visibility + LUT-derived colormap name', () => {
     // DAPI LUT top = [0,0,1] → #0000ff → 'blue' (picker canonical over 'i blue'); CD3 = [0,1,0] → 'green'.
     // The name is what `seedConfigFromViewState` reads, so an empty channels map here is what broke
