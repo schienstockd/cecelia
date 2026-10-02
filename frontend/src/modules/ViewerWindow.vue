@@ -34,6 +34,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
+import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { usePlotResize } from '../composables/usePlotResize'
@@ -1867,9 +1868,40 @@ function pushChannels() {
 function setAllChannels(visible: boolean) {
   const m = meta.value
   if (!m) return
+  // "All on" is an explicit ask for more than one channel, so it ends one-at-a-time mode.
+  if (visible) soloChannel.value = false
   for (const ch of m.channels) ch.visible = visible
   pushChannels()
 }
+/** One-at-a-time mode: switching a channel ON switches every other one OFF, so stepping through
+ *  markers is one click each instead of on-this-then-off-that. Turning the mode on keeps the first
+ *  visible channel (or the first channel, if none is) and hides the rest. */
+const soloChannel = ref(false)
+function setChannelVisible(c: number, visible: boolean) {
+  const m = meta.value
+  if (!m) return
+  if (visible && soloChannel.value) m.channels.forEach((ch, i) => { ch.visible = i === c })
+  else m.channels[c].visible = visible
+  pushChannels()
+}
+function applySolo(m: ViewerMeta, keep = m.channels.findIndex(ch => ch.visible)) {
+  if (!soloChannel.value) return
+  const vis = soloVisibility(m.channels.length, keep)
+  m.channels.forEach((ch, i) => { ch.visible = vis[i] })
+}
+/** Step the shown channel up/down the list (wraps), for the arrows beside the toggle. */
+function stepSolo(dir: 1 | -1) {
+  const m = meta.value
+  if (!m) return
+  const next = stepChannel(m.channels.findIndex(ch => ch.visible), dir, Math.min(m.channels.length, MAX_CHANNELS))
+  if (next >= 0) setChannelVisible(next, true)
+}
+watch(soloChannel, on => {
+  const m = meta.value
+  if (!on || !m) return
+  applySolo(m)
+  pushChannels()
+})
 /** True when every channel is on. False when any is off — a mixed state reads as "not all on" so
  *  the toggle's next click will flip everything ON, not OFF. Same discipline as select-all
  *  checkboxes elsewhere. */
@@ -3861,6 +3893,8 @@ async function loadVersion(refit: boolean) {
     res = await fetch(metaUrl({ projectUid, imageUid, valueName: '' }))
   }
   const m = await readJson<ViewerMeta>(res, 'Metadata')
+  // A fresh image arrives all-on; still one channel if one-at-a-time is on.
+  applySolo(m)
   meta.value = m
   // What the server RESOLVED, so the picker shows the active version rather than an empty box. Only
   // when we asked for nothing in particular — otherwise this is already what we asked for.
@@ -3952,6 +3986,7 @@ async function loadVersion(refit: boolean) {
         applyT:      tp => { if (tp < m.nT) t.value = Math.max(0, Math.floor(tp)) },
       })
     })
+    applySolo(m)     // restored visibility can carry several channels; one-at-a-time still wins
     pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
     // Reallocate's `gotoT` already fired for the PRE-restore t (usually 0). If the restore moved
     // t (usually because the panel remembered a mid-timecourse frame), kick a fresh pump so the
@@ -4171,6 +4206,8 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
       dst.hi = src.hi
       dst.visible = src.visible
     }
+    // An explicit view asking for several channels outranks one-at-a-time, as "All on" does.
+    if (m.channels.filter(ch => ch.visible).length > 1) soloChannel.value = false
 
     // Camera pose is cheap — one write + a redraw; the draw loop reads `cam.value` inside.
     cam.value = applied.cam
@@ -4916,6 +4953,9 @@ onMounted(() => {
           m.channels[i].lut = prev.channels[i].lut
         }
       }
+      // Same-shape reload keeps the channel that was being shown.
+      applySolo(m, prev && prev.channels.length === m.channels.length
+        ? prev.channels.findIndex(ch => ch.visible) : undefined)
       meta.value = m
       // Clamp any z-state that outran the new depth. A shrunk nZ leaves zPlane/zRange indexing
       // past the end, which drives zDepth negative in `slabZ` and every request is rejected.
@@ -5613,6 +5653,21 @@ onUnmounted(() => {
                  toggles line up in the same column. Non-interactive, hidden from a11y. -->
             <span class="vw-ch-master-slot" aria-hidden="true" />
           </div>
+          <div class="cc-row cc-row-tight vw-ch-master">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Showing a channel hides the others'">
+              One at a time
+            </span>
+            <CcToggle v-model="soloChannel" aria-label="Show one channel at a time" />
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="!soloChannel"
+                    @click="stepSolo(-1)" v-tooltip.left="'Previous channel'" aria-label="Show previous channel">
+              <i class="pi pi-chevron-up" />
+            </button>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="!soloChannel"
+                    @click="stepSolo(1)" v-tooltip.left="'Next channel'" aria-label="Show next channel">
+              <i class="pi pi-chevron-down" />
+            </button>
+          </div>
           <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
             <div class="cc-row cc-row-tight">
               <span class="vw-ch-name cc-fs-xs"
@@ -5633,7 +5688,8 @@ onUnmounted(() => {
                 :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
                 @update:model-value="v => setChannelColour(c, v)"
               />
-              <CcToggle v-model="ch.visible" :aria-label="'Show ' + ch.name" @update:modelValue="pushChannels" />
+              <CcToggle :model-value="ch.visible" :aria-label="'Show ' + ch.name"
+                        @update:model-value="v => setChannelVisible(c, v)" />
               <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
                       v-tooltip.left="'Auto contrast — window on the loaded pixels (ImageJ-style)'">
                 <i class="pi pi-bolt" />
