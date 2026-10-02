@@ -1,0 +1,677 @@
+{
+  "schema_version": 1,
+  "kind": "pass",
+  "date": "2026-10-01",
+  "run": {
+    "suite_ts": "2026-10-01T09:13:58Z",
+    "session": "eval-sup-b56f747e",
+    "branch": null,
+    "sha": "67649e65f25657a08040b89b36b62d23274ca5e7",
+    "claude_md_blob": "e5cb42e4063886e6b051e094855ee33af998bb60",
+    "full_catalog": true,
+    "arm": "with",
+    "runs_per_prompt": 3,
+    "prompt_set": {
+      "ids": [
+        "canary",
+        "cite-algorithm",
+        "dir-size",
+        "discovery-first",
+        "frontend-coalesce",
+        "frontend-copy-canonical",
+        "frontend-inlinenote",
+        "hand-rolled-debounce",
+        "kill-process-tree"
+      ],
+      "hash": "0a4dd66969e7"
+    },
+    "scored_at": "67649e65f25657a08040b89b36b62d23274ca5e7",
+    "sandbox": "933f00a902fb",
+    "claude_code_version": "2.1.286",
+    "model": "claude-opus-5-5",
+    "cost_usd": 10.6267,
+    "retries": [],
+    "supervisor": {
+      "judge_calls": 3,
+      "cost_usd": 0.4262,
+      "skipped": 0,
+      "failed": 0,
+      "session": "eval-sup-b56f747e",
+      "curation_usd": 0.2335
+    },
+    "trace_root": "/home/dominik/.cecelia-effectiveness/traces"
+  },
+  "results": {
+    "raw": {
+      "compliant": 24,
+      "noncompliant": 3,
+      "error": 0,
+      "total": 27
+    },
+    "rescored": {
+      "compliant": 24,
+      "noncompliant": 3,
+      "error": 0,
+      "total": 27
+    },
+    "per_prompt": {
+      "canary": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "cite-algorithm": {
+        "raw": {
+          "compliant": 0,
+          "noncompliant": 3,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 0,
+          "noncompliant": 3,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "dir-size": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "discovery-first": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "frontend-coalesce": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "frontend-copy-canonical": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "frontend-inlinenote": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "hand-rolled-debounce": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "kill-process-tree": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      }
+    },
+    "candidates": []
+  },
+  "traces": [
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085324Z-canary-with-r1",
+      "prompt_id": "canary",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.238,
+      "turns": 3,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085348Z-canary-with-r2",
+      "prompt_id": "canary",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.2267,
+      "turns": 3,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085405Z-canary-with-r3",
+      "prompt_id": "canary",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.2344,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085535Z-cite-algorithm-with-r1",
+      "prompt_id": "cite-algorithm",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.4893,
+      "turns": 9,
+      "error": null,
+      "scores": {
+        "raw": "noncompliant",
+        "rescored": "noncompliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085638Z-cite-algorithm-with-r2",
+      "prompt_id": "cite-algorithm",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.4265,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "noncompliant",
+        "rescored": "noncompliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085737Z-cite-algorithm-with-r3",
+      "prompt_id": "cite-algorithm",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.4315,
+      "turns": 7,
+      "error": null,
+      "scores": {
+        "raw": "noncompliant",
+        "rescored": "noncompliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085808Z-dir-size-with-r1",
+      "prompt_id": "dir-size",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.27,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085836Z-dir-size-with-r2",
+      "prompt_id": "dir-size",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.283,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085903Z-dir-size-with-r3",
+      "prompt_id": "dir-size",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.3005,
+      "turns": 5,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085944Z-discovery-first-with-r1",
+      "prompt_id": "discovery-first",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.4011,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090026Z-discovery-first-with-r2",
+      "prompt_id": "discovery-first",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.3411,
+      "turns": 5,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090110Z-discovery-first-with-r3",
+      "prompt_id": "discovery-first",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.3754,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090206Z-frontend-coalesce-with-r1",
+      "prompt_id": "frontend-coalesce",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.482,
+      "turns": 7,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090253Z-frontend-coalesce-with-r2",
+      "prompt_id": "frontend-coalesce",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.5063,
+      "turns": 5,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090421Z-frontend-coalesce-with-r3",
+      "prompt_id": "frontend-coalesce",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.743,
+      "turns": 9,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090503Z-frontend-copy-canonical-with-r1",
+      "prompt_id": "frontend-copy-canonical",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.3697,
+      "turns": 7,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090553Z-frontend-copy-canonical-with-r2",
+      "prompt_id": "frontend-copy-canonical",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.4075,
+      "turns": 7,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090645Z-frontend-copy-canonical-with-r3",
+      "prompt_id": "frontend-copy-canonical",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.4887,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090730Z-frontend-inlinenote-with-r1",
+      "prompt_id": "frontend-inlinenote",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.4304,
+      "turns": 7,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090759Z-frontend-inlinenote-with-r2",
+      "prompt_id": "frontend-inlinenote",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.3144,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090832Z-frontend-inlinenote-with-r3",
+      "prompt_id": "frontend-inlinenote",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.3526,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T090930Z-hand-rolled-debounce-with-r1",
+      "prompt_id": "hand-rolled-debounce",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.4596,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T091053Z-hand-rolled-debounce-with-r2",
+      "prompt_id": "hand-rolled-debounce",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.5523,
+      "turns": 9,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T091153Z-hand-rolled-debounce-with-r3",
+      "prompt_id": "hand-rolled-debounce",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.5001,
+      "turns": 10,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T091237Z-kill-process-tree-with-r1",
+      "prompt_id": "kill-process-tree",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.3428,
+      "turns": 5,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T091316Z-kill-process-tree-with-r2",
+      "prompt_id": "kill-process-tree",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.3367,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T091358Z-kill-process-tree-with-r3",
+      "prompt_id": "kill-process-tree",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.3231,
+      "turns": 5,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "slug": "cite-algorithm",
+      "class": "scorer_bug",
+      "status": "open",
+      "recurrence": "watch",
+      "title": "Citations sit in the module docstring, but the scorer only accepts `#` comments",
+      "runs": 3,
+      "evidence": [
+        {
+          "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085535Z-cite-algorithm-with-r1",
+          "excerpt": "+    implementations.\" Cytometry A. 2012;81A(4):273-277. doi:10.1002/cyto.a.22030",
+          "verified": true
+        },
+        {
+          "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085638Z-cite-algorithm-with-r2",
+          "excerpt": "+    Cytometry A. 2006;69A(6):541-551. doi:10.1002/cyto.a.20258",
+          "verified": true
+        },
+        {
+          "trace": "/home/dominik/.cecelia-effectiveness/traces/20261001T085737Z-cite-algorithm-with-r3",
+          "excerpt": "+  Cytometry A. 2006;69A(6):541-551. doi:10.1002/cyto.a.20258",
+          "verified": true
+        }
+      ],
+      "diagnosis": "The agent followed the rule. The module docstring of the new file cites Parks/Roederer/Moore 2006 (doi:10.1002/cyto.a.20258), Moore & Parks 2012 (doi:10.1002/cyto.a.22030) and https://github.com/whitews/FlowUtils. It also names the in-repo Julia port it was translated from. Each of those citations matches the scorer's `10\\.\\d{4}/` or `github\\.com/owner/repo` alternative.\n\nThe problem is the regex's leading `#.*`. It only counts a citation that appears after a `#` on the same line. In Python, a module or function docstring is the normal and arguably better place for a reference, and this file has no `#` before any of its citation lines. That is why compliant_hits came out as 0. The scorer is checking where the citation is written, not whether there is one.",
+      "proposed_fix": "In the cite-algorithm prompt frontmatter, drop the `#.*` prefix from compliant_signal, so the pattern becomes `(?:doi\\.org|doi:|arXiv|arxiv|10\\.\\d{4}/|github\\.com/[\\w.-]+/[\\w.-]+)` and matches added lines anywhere, including docstrings. If the check should stay limited to comments or docstrings, allow `#`, `\"\"\"` blocks, or `//`.",
+      "files": [
+        "scripts/claude_md_eval/prompts/cite-algorithm.md"
+      ]
+    }
+  ],
+  "proposals": [
+    {
+      "kind": "add",
+      "rule": "app/CLAUDE.md → *Versioned variable pattern (ccid.json)*",
+      "sources": [
+        "conv-79bc4140",
+        "fanout-0a4900e9",
+        "fanout-47e32e39",
+        "fanout-4dddf761",
+        "fanout-56c60f79",
+        "fanout-74528d16",
+        "fanout-a09fdc59",
+        "fanout-caa750ed",
+        "fanout-cae493ed",
+        "fanout-f42b3a00"
+      ],
+      "summary": "Add a prompt for app/CLAUDE.md → *Versioned variable pattern (ccid.json)*: 10 findings in 30 days, no prompt",
+      "id": "P1"
+    }
+  ],
+  "delta": {
+    "previous": "2026-09-30",
+    "opened": [
+      "F1"
+    ],
+    "still_open": [],
+    "resolved": [
+      "F1 `frontend-copy-canonical` genuine",
+      "F2 `frontend-copy-canonical` scorer_bug",
+      "F3 `kill-process-tree` genuine",
+      "F4 `discovery-first` genuine",
+      "F5 `dir-size` genuine",
+      "F6 `cite-algorithm` decision"
+    ],
+    "score": {
+      "previous": "3/27",
+      "now": "24/27"
+    },
+    "changed": [
+      "prompt set",
+      "sandbox",
+      "CLAUDE.md",
+      "Claude Code"
+    ],
+    "setup_growth": [],
+    "hypotheses": [
+      {
+        "proposal": "P1",
+        "prompt": "frontend-copy-canonical",
+        "hypothesis": "fixes F1; expect frontend-copy-canonical to pass",
+        "held": true,
+        "score": "3/3"
+      },
+      {
+        "proposal": "P2",
+        "prompt": "kill-process-tree",
+        "hypothesis": "fixes F3; expect kill-process-tree to pass by reusing `_kill_tree`",
+        "held": true,
+        "score": "3/3"
+      },
+      {
+        "proposal": "P3",
+        "prompt": "discovery-first",
+        "hypothesis": "fixes F4; expect discovery-first to keep passing on a true premise",
+        "held": true,
+        "score": "3/3"
+      },
+      {
+        "proposal": "P4",
+        "prompt": "dir-size",
+        "hypothesis": "fixes F5; expect dir-size to stay 3/3",
+        "held": true,
+        "score": "3/3"
+      }
+    ]
+  },
+  "tracking": {
+    "setup_size": {
+      "ref": "67649e65f25657a08040b89b36b62d23274ca5e7",
+      "claude_md_lines": 410,
+      "frontend_claude_md_lines": 47,
+      "hook_count": 2,
+      "inventory_doc_count": 9
+    },
+    "spot_check": [],
+    "loop_review": null
+  },
+  "next_actions": [
+    {
+      "title": "Citations sit in the module docstring, but the scorer only accepts `#` comments",
+      "finding": "F1",
+      "files": [
+        "scripts/claude_md_eval/prompts/cite-algorithm.md"
+      ],
+      "change": "In the cite-algorithm prompt frontmatter, drop the `#.*` prefix from compliant_signal, so the pattern becomes `(?:doi\\.org|doi:|arXiv|arxiv|10\\.\\d{4}/|github\\.com/[\\w.-]+/[\\w.-]+)` and matches added lines anywhere, including docstrings. If the check should stay limited to comments or docstrings, allow `#`, `\"\"\"` blocks, or `//`.",
+      "verify": "pixi run claude-md-eval-record replay --date 2026-10-01 --force"
+    }
+  ],
+  "queue": [
+    {
+      "kind": "proposal",
+      "ref": "P1"
+    }
+  ]
+}
