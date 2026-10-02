@@ -226,7 +226,7 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
             "claude_code_version": header.get("claude_code_version"), "model": header.get("model"),
             "cost_usd": suite["payload"].get("totals", {}).get("cost_usd"),
             "retries": notes.get("retries", []),
-            # The supervisor's own judge spend, kept apart from the suite's (Decision 4).
+            # The supervisor's own spend (judge + bug sweep + curation), kept apart from the suite's (Decision 4).
             "supervisor": notes.get("supervisor"),
             "trace_root": str(_run_prompt.trace_root()),
         },
@@ -538,6 +538,14 @@ def _score(t: dict) -> str:
     return f"{t.get('compliant', 0)}/{t.get('total', 0)}"
 
 
+def supervisor_spend(sup: dict) -> str:
+    """The supervisor's spend split by what it bought; `cost_usd` is the total of all three."""
+    bugs, curation = sup.get("bugs_usd", 0) or 0, sup.get("curation_usd", 0) or 0
+    judge = max(sup.get("cost_usd", 0) - bugs - curation, 0)
+    return (f"${sup.get('cost_usd', 0):.2f} · judge {sup.get('judge_calls', 0)} call(s) ${judge:.2f} · "
+            f"bug sweep ${bugs:.2f} · curation ${curation:.2f}")
+
+
 def _cell(text: _t.Any) -> str:
     return str(text if text is not None else "—").replace("|", "\\|").replace("\n", " ")
 
@@ -581,8 +589,7 @@ def render_markdown(record: dict) -> str:
         ("Claude Code", f"{run.get('claude_code_version')} · {run.get('model')}"),
         ("Cost", f"${run['cost_usd']:.2f}" if run["cost_usd"] is not None else None),
         ("Retries", len(run["retries"])),
-        ("Supervisor", (f"{run['supervisor'].get('judge_calls', 0)} judge call(s) · "
-                        f"${run['supervisor'].get('cost_usd', 0):.2f}"
+        ("Supervisor", (supervisor_spend(run["supervisor"])
                         + (f" · {run['supervisor']['skipped']} unjudged (budget)"
                            if run["supervisor"].get("skipped") else ""))
          if run.get("supervisor") else "not supervised (replayed)"),
