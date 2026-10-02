@@ -21,6 +21,7 @@ Base.@kwdef struct TrainSupportDenoiseParams
     minLossDelta::Float64    = 5e-3
     midZOnly::Bool           = true
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
+    by::String                     = ""        # scheduler-injected launcher (`_by`, jobs.jl) → manifest
 end
 
 function parse_train_support_denoise_params(d::AbstractDict)::TrainSupportDenoiseParams
@@ -41,7 +42,8 @@ function parse_train_support_denoise_params(d::AbstractDict)::TrainSupportDenois
         patience          = Int(get(d, "patience", 5)),
         minLossDelta      = Float64(get(d, "minLossDelta", 5e-3)),
         midZOnly          = Bool(get(d, "midZOnly", true)),
-        version = parse_version_pin(d))
+        version = parse_version_pin(d),
+        by      = string(get(d, "_by", "")))
 end
 
 # SET scope, mirroring `TrainFlowModel` above. One denoise model per acquisition-class, reused across
@@ -256,7 +258,9 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
            earlyStop        = p.earlyStop,
            patience         = p.patience,
            minLossDelta     = p.minLossDelta,
-           midZOnly         = p.midZOnly),
+           midZOnly         = p.midZOnly,
+           # who + which project — the vault is per install, so the manager scopes by these
+           origin           = vault_origin_stamp(imgs[1], p.by)),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

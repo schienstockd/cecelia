@@ -2171,6 +2171,17 @@ rail work showed that was the same switch under a second name. The icon names th
 chip row** (optical-flow / denoise) that switches which vault is being browsed — one manager, one
 refresh path, one delete/rename path.
 
+**The vault is per install, so its list is scoped like the Task Manager's.** Default: your models from
+the open project. A View popover (`pi-eye`, lit when off its default) holds **Other users** / **Other
+projects** (`settings.vaultOtherUsers` / `vaultOtherProjects`, per profile), and a search box filters
+by name, channel, user or project. A User / Project column appears only when its toggle is on — with it
+off every row would repeat the same value. Who and where also show on row hover and in the details
+modal's **Origin** group. A model with no recorded creator or project is never scoped out: that is every
+model trained before the stamp. Rule + tests: `utils/vaultScope.ts`; the stamp is
+`Cecelia.vault_origin_stamp` (`createdBy` + `project` in the manifest), resolved per row by
+`vault_model_origin` (`api/src/vault_api.jl`), which recovers an older model's project from its source
+image uids.
+
 The **Analysis board** has no such toggle: its rail is always shown and swaps by the active slot's
 `rail` (`docs/ANALYSIS.md` → *The rail*).
 

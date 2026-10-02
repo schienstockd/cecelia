@@ -1045,6 +1045,9 @@ def run(params):
         'lossWeights': loss_weights,
         'trainedAt': _now_iso(),
     }
+    # `createdBy` + `project` (`vault_origin_stamp`): the vault is per install, not per project, and
+    # the manager scopes its list by these. Absent on a REPL call that passes no `origin`.
+    manifest.update(params.get('origin') or {})
 
     if mode == 'seconds':
         # Only on a seconds model, rather than as nulls on every one. A key that is absent means "this

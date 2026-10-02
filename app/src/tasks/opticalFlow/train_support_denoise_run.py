@@ -337,6 +337,10 @@ def run(params):
         bp=False,
     )
 
+    # `createdBy` + `project` (`vault_origin_stamp`) on the manifest the vault LISTS — pooled, or a
+    # bundle's top-level one. The vault is per install, so the manager scopes its list by these.
+    origin = params.get('origin') or {}
+
     common_training = {
         'imageUids': [m['uID'] for m in movies],
         'valueName': value_name,
@@ -369,6 +373,7 @@ def run(params):
                              channelIndices=[int(c) for c in channels],
                              framesPerImage=[int(v.shape[0]) for v in all_vols],
                              **summary),
+            **origin,
         }
         manifest_path = str(Path(model_path).with_suffix('.json'))
         write_json_atomic(manifest_path, manifest)
@@ -442,6 +447,7 @@ def run(params):
         # `perChannelStepLosses` / `perChannelStepIndices` carry the sub-epoch trace per channel so
         # the plot's Detail view can render the log(step) descent + plateau per channel.
         top_manifest = {
+            **origin,
             'kind': 'denoise-support',
             'mode': 'perChannel',
             'channels': [b['name'] for b in bundled_channels],

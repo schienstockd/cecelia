@@ -18,12 +18,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import BaseModal from '../../components/BaseModal.vue'
-import { modelDetailGroups, type FlowManifest } from '../../utils/flowManifest'
+import { modelDetailGroups, type FlowManifest, type DetailGroup } from '../../utils/flowManifest'
 
-const props = defineProps<{ name: string; manifest: FlowManifest; path?: string }>()
+// `origin` = who trained it and in which project (`utils/vaultScope.ts`) — from the vault row, not
+// the manifest, because a model trained before the stamp has its project recovered server-side.
+const props = defineProps<{ name: string; manifest: FlowManifest; path?: string; origin?: DetailGroup }>()
 defineEmits<{ (e: 'close'): void }>()
 
 const groups = computed(() => modelDetailGroups(props.manifest))
+const shownGroups = computed(() => [...(props.origin ? [props.origin] : []), ...groups.value])
 </script>
 
 <template>
@@ -32,7 +35,7 @@ const groups = computed(() => modelDetailGroups(props.manifest))
       No manifest — this model assumes coastal’s default metric set. Re-train it to record one.
     </p>
 
-    <section v-for="g in groups" :key="g.label" class="fmd-group">
+    <section v-for="g in shownGroups" :key="g.label" class="fmd-group">
       <div class="cc-eyebrow cc-fs-2xs">{{ g.label }}</div>
       <dl class="fmd-list">
         <template v-for="f in g.fields" :key="f.label">

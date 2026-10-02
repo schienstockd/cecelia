@@ -61,7 +61,8 @@ end
 """Augment a `list_*_models()` row with the fields the vault manager renders. Reads `m.stem` if the
 list function already populated it (all three do today); falls back to `vault_model_stem(m.name)`
 for a caller that hasn't been updated. Same rule, one place."""
-function vault_model_row(dir::AbstractString, m::NamedTuple)
+function vault_model_row(dir::AbstractString, m::NamedTuple,
+                         projects::Vector{Dict{String,Any}} = Dict{String,Any}[])
     kind = Symbol(get(m, :kind, :pooled))
     path = joinpath(dir, m.name)
     bytes = vault_model_bytes(path, kind)
@@ -71,7 +72,53 @@ function vault_model_row(dir::AbstractString, m::NamedTuple)
        bytes = bytes,
        modified = mt > 0 ? Dates.format(Dates.unix2datetime(mt), "yyyy-mm-dd") : "",
        hasManifest = !isempty(m.manifest),
-       manifest = m.manifest)
+       manifest = m.manifest,
+       vault_model_origin(m.manifest, projects)...)
+end
+
+# The source image uids a manifest records — flow `sourceImages`, denoise `training.imageUids`.
+function _vault_source_uids(manifest::AbstractDict)::Vector{String}
+    tr  = get(manifest, "training", nothing)
+    raw = something(get(manifest, "sourceImages", nothing),
+                    tr isa AbstractDict ? get(tr, "imageUids", nothing) : nothing, String[])
+    raw isa AbstractVector ? String[string(u) for u in raw] : String[]
+end
+
+"""
+    vault_model_origin(manifest, projects) -> NamedTuple
+
+`(createdBy, createdVia, projectUid, projectName, projectInferred)` for one vault row — who trained it
+and in which project, which the manager filters on (the vault is per install, not per project; see
+`Cecelia.vault_origin_stamp`, which records them). `projects` is `_scan_projects_raw()`, read once per
+listing.
+
+A model trained before the stamp has no creator — `createdBy` stays `""`, and the manager counts it
+as nobody else's rather than hiding it. Its project is RECOVERED from the source image uids: an
+image's metadata dir is `<project>/1/<uid>`, so one `isfile` per project finds it, and every model
+already on a machine lands in the right project instead of all of them vanishing from the default
+view. `projectInferred` says so. The recorded name is refreshed from the live project when it still
+exists, so a renamed project reads as it is called now.
+"""
+function vault_model_origin(manifest::AbstractDict, projects::Vector{Dict{String,Any}})
+    by  = get(manifest, "createdBy", nothing)
+    who = by isa AbstractDict ? string(get(by, "profile", "")) : ""
+    via = by isa AbstractDict ? string(get(by, "via", "")) : ""
+    _name(uid) = (i = findfirst(p -> string(get(p, "uid", "")) == uid, projects);
+                  isnothing(i) ? nothing : string(get(projects[i], "name", "")))
+
+    proj = get(manifest, "project", nothing)
+    if proj isa AbstractDict && !isempty(string(get(proj, "uid", "")))
+        uid = string(get(proj, "uid", ""))
+        return (; createdBy = who, createdVia = via, projectUid = uid,
+                  projectName = something(_name(uid), string(get(proj, "name", ""))),
+                  projectInferred = false)
+    end
+    for u in _vault_source_uids(manifest), p in projects
+        isfile(state_file(string(get(p, "path", "")), u)) || continue
+        return (; createdBy = who, createdVia = via, projectUid = string(get(p, "uid", "")),
+                  projectName = string(get(p, "name", "")), projectInferred = true)
+    end
+    (; createdBy = who, createdVia = via, projectUid = "", projectName = "", projectInferred = false)
 end
 
 """Rename either a pooled pair (`<from>.pt` + `<from>.json` → `<to>.pt` + `<to>.json`) or a bundle

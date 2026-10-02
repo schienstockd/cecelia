@@ -29,6 +29,7 @@ Base.@kwdef struct TrainFlowModelParams
     seed::Int                            = 42
     normalise::Float64                   = 99.99
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
+    by::String                     = ""        # scheduler-injected launcher (`_by`, jobs.jl) → manifest
 end
 
 function parse_train_flow_model_params(d::AbstractDict)::TrainFlowModelParams
@@ -55,7 +56,8 @@ function parse_train_flow_model_params(d::AbstractDict)::TrainFlowModelParams
         embeddingDim             = Int(get(d, "embeddingDim", 16)),
         seed                     = Int(get(d, "seed", 42)),
         normalise                = Float64(get(d, "normalise", 99.99)),
-        version = parse_version_pin(d))
+        version = parse_version_pin(d),
+        by      = string(get(d, "_by", "")))
 end
 
 # `modelName` names into the model VAULT, which is global — shared across projects, not a property of
@@ -333,7 +335,9 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            # promise a reproducibility it cannot deliver. It is still recorded in the manifest, and
            # a REPL/chain caller can override it.
            seed             = p.seed,
-           normalise        = p.normalise),
+           normalise        = p.normalise,
+           # who + which project — the vault is per install, so the manager scopes by these
+           origin           = vault_origin_stamp(imgs[1], p.by)),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

@@ -160,6 +160,7 @@ export function denoiseModelDetailGroups(m: DenoiseManifest | null | undefined):
 
   const known = new Set([
     'kind', 'mode', 'channels', 'perChannel', 'arch', 'training',
+    'createdBy', 'project',   // the modal's Origin group, from the vault row (utils/vaultScope.ts)
   ])
   const other = Object.entries(m).filter(([k]) => !known.has(k))
     .map(([k, v]) => field(k, v, true))
