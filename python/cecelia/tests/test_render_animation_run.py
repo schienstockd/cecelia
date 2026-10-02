@@ -100,6 +100,38 @@ class RenderAnimationRunTest(unittest.TestCase):
         f = _frames(out)[0]
         self.assertGreater(f[30:34, 30:34, 1].mean(), 150, "the point at the volume centre is not drawn")
 
+    def _point_frame(self, **extra):
+        """t = 1 (the block bottom-right, red) with one green point inside the block."""
+        from cecelia.writers import render_animation_run
+        out = os.path.join(self.d, f"pt{len(os.listdir(self.d))}.mp4")
+        ov = {"points": {"x": [24.0], "y": [24.0], "z": [16.0], "colour": [[0.0, 1.0, 0.0]]}}
+        render_animation_run.run({
+            "zarrPath": self.zarr, "outPath": out, "canvasH": 64, "canvasW": 64, "fps": 2,
+            "pointSizePx": 3, **extra,
+            "states": [{"t": 1, "camera": {"angles": [0, 0, 0], "zoom": 1.0}, "snapH": N,
+                        "specs": [{"lo": 0, "hi": 1000, "lut": [[0, 0, 0], [1, 0, 0]], "visible": True}],
+                        "overlays3d": ov}] * 2})
+        return _frames(out)[0]
+
+    def test_point_border_is_a_black_ring(self):
+        # The point sits at pixel ~(47.5, 47.5) over the red block; a 6-px border puts black where
+        # the borderless frame shows the block. The quad's outer quarter is antialiased, so the solid
+        # ring is 3..6.75 px from the centre.
+        plain, ringed = self._point_frame(), self._point_frame(pointBorderPx=6)
+        ring = (slice(46, 50), slice(51, 54))
+        self.assertGreater(plain[ring][..., 0].mean(), 150)
+        self.assertLess(ringed[ring][..., 0].mean(), 60, "no black ring around the point")
+        self.assertGreater(ringed[47:50, 47:50, 1].mean(), 150, "the fill is gone")
+
+    def test_perspective_camera_sets_the_projection(self):
+        from cecelia.writers import render_animation_run
+        st = lambda p: {"camera": {"angles": [0, 0, 0], "zoom": 1.0, "perspective": p}, "snapH": N}
+        lanes = lambda p: render_animation_run.frame_uniforms(
+            st(p), (1, N, N, N), (N, N, N), (1.0, 1.0, 1.0), 64, 64,
+            None, {"pointPx": 1, "tailPx": 1, "borderPx": 0})
+        self.assertEqual(lanes(0)['vp.ortho'], 1)
+        self.assertEqual(lanes(1)['vp.ortho'], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

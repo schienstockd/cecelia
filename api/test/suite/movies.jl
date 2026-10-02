@@ -94,6 +94,9 @@ end
     @test kfs[1]["viewState"]["camera"]["angles"] == [30.0, 45.0, 0.0]
     @test kfs[1]["viewState"]["camera"]["zoom"] == 1.5
     @test !haskey(kfs[1]["viewState"]["camera"], "center")    # each image rotates about its own middle
+    @test kfs[1]["viewState"]["camera"]["perspective"] == 0.0  # no projection captured → orthographic
+    pcfg = Dict{Symbol,Any}(:camera3d => Dict{Symbol,Any}(:angles => [0, 0, 0], :zoom => 1, :perspective => 1))
+    @test _config_3d_keyframes(pcfg, 0, 1)[1]["viewState"]["camera"]["perspective"] == 1.0
     # the states interpolate to one frame per timepoint, camera held
     states = interpolate_keyframes(kfs)
     @test length(states) == 9

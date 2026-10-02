@@ -6,6 +6,7 @@
 //    (<attr1>_<attr2>_..._<uid|image name>.mp4; blanks dropped, unsafe chars → '_').
 
 import { viewerColormapForHex, channelsForRender } from './viewerColormap'
+import { LABEL_OPACITY } from './viewerLabels'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
@@ -18,7 +19,11 @@ export const RENDER_QUALITY_DEFAULT: RenderQuality = 'standard'
 // The 3D camera a batch renders every image from — the viewer's angle + zoom, captured by Fill from
 // view, with the canvas the zoom was measured against (the default output size). The CENTRE is
 // deliberately not stored: each image rotates about its own volume centre.
-export interface Camera3D { angles: [number, number, number]; zoom: number; width?: number; height?: number }
+export interface Camera3D {
+  angles: [number, number, number]; zoom: number; width?: number; height?: number
+  /** 1 = perspective, 0 / absent = orthographic — the viewer's 3D projection toggle */
+  perspective?: number
+}
 
 // Title-card options — a description slide prepended to each recorded movie.
 export interface TitleCardCfg {
@@ -93,6 +98,10 @@ export interface BatchMovieCfg {
   // config instead; a look read off the viewer carries them, so a recorded look keeps its colours.
   colourOverrides?: Record<string, string>
   pointsSize?: number
+  // Black outline around each point (px, 0 = none) and the mask fill opacity — the viewer's own values
+  // via `viewerLook`. Absent = no outline and the viewer's default opacity (`LABEL_OPACITY`).
+  pointBorder?: number
+  labelOpacity?: number
   titleCard?: TitleCardCfg
   // Which stretch of the timelapse each movie sweeps, as FRAME INDICES; `tEnd` null/absent = the last
   // frame, which is what every recording did before the control existed. Applied across a batch of
@@ -142,6 +151,8 @@ export interface BatchMovieRequestConfig {
    *  colour}` entries. Empty (or absent) when the batch should fall back to single-source. */
   trackSources: Array<{ valueName: string; colour: string }>
   pointsSize: number
+  pointBorder: number
+  labelOpacity: number
   colourLabels: boolean
   colourOverrides: Record<string, string>
   titleCard: TitleCardCfg
@@ -214,6 +225,8 @@ export function buildBatchMovieConfig(
           .map(([valueName, v]) => ({ valueName, colour: v.colour }))
       : [],
     pointsSize: cfg.pointsSize ?? 6,
+    pointBorder: cfg.pointBorder ?? 0,
+    labelOpacity: cfg.labelOpacity ?? LABEL_OPACITY,
     colourLabels: !!cfg.colourLabels,
     colourOverrides: colourOverrides ?? {},
     titleCard: {

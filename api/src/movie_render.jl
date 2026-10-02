@@ -136,6 +136,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            overlays_for = nothing, mask_for = nothing,
                            point_size_px::Int = 6, segment_width_px::Int = 2,
                            mask_contour_px::Int = 1,
+                           point_border_px::Int = 0, mask_opacity::Real = MASK_FILL_OPACITY,
                            show_timestamp::Bool = false, show_scale_bar::Bool = false,
                            pixel_size_um::Union{Nothing,Real} = nothing,
                            time_step_min::Union{Nothing,Real} = nothing,
@@ -164,6 +165,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                 overlays_for = overlays_for, mask_for = mask_for,
                 point_size_px = point_size_px, segment_width_px = segment_width_px,
                 mask_contour_px = mask_contour_px,
+                point_border_px = point_border_px, mask_opacity = mask_opacity,
                 on_progress = on_progress, cancelled = cancelled)
         end
         stopped && return (; path = out_path, frames = 0, width = W, height = H, cancelled = true)
@@ -213,6 +215,7 @@ function write_raw_frames(io::IO, arr, caxes, ts::AbstractVector{<:Integer};
                           overlays_for = nothing, mask_for = nothing,
                           point_size_px::Int = 6, segment_width_px::Int = 2,
                           mask_contour_px::Int = 1,
+                          point_border_px::Int = 0, mask_opacity::Real = MASK_FILL_OPACITY,
                           on_progress::Function = (n, t) -> nothing,
                           cancelled::Function = () -> false)
     W = H = 0
@@ -231,9 +234,10 @@ function write_raw_frames(io::IO, arr, caxes, ts::AbstractVector{<:Integer};
         img = render_view_frame(arr, caxes, Int(t); z = z, channels = channels,
                                 specs = specs, crop = crop, max_px = max_px,
                                 points = pts, point_size_px = point_size_px,
+                                point_border_px = point_border_px,
                                 segments = segs, segment_width_px = segment_width_px,
                                 mask = mask, mask_colours = mask_cols,
-                                mask_contour_px = mask_contour_px)
+                                mask_contour_px = mask_contour_px, mask_opacity = mask_opacity)
         # h264/yuv420p needs even dimensions, and nothing downstream will fix an odd frame —
         # `movie_io` says so explicitly. Cropped here rather than there so the size the encoder is
         # told is the size that was actually written.
@@ -309,11 +313,15 @@ _kf_dict(x) = Dict{String,Any}()
 
 # `f` is 0 at the outgoing state and 1 at the incoming one, and it REACHES 1 — the last frame of a
 # transition IS the keyframe, which is what stops a discrete value changing one frame early or late.
+# Numbers that are really switches (`camera.perspective` is 0/1) hold until the keyframe too.
+const _KF_DISCRETE = ("perspective",)
+
 function _kf_blend(a, b, f::Real)
     out = Dict{String,Any}()
     for k in union(keys(a), keys(b))
         av = get(a, k, nothing); bv = get(b, k, nothing)
-        out[k] = av === nothing ? bv : bv === nothing ? av : _kf_lerp(av, bv, f)
+        out[k] = av === nothing ? bv : bv === nothing ? av :
+                 k in _KF_DISCRETE ? (f >= 1 ? bv : av) : _kf_lerp(av, bv, f)
     end
     out
 end
@@ -532,6 +540,10 @@ _ov_int(cfg, k, dflt) = begin
     v = get(cfg, k, dflt)
     v isa Real ? Int(round(Float64(v))) : Int(dflt)
 end
+_ov_float(cfg, k, dflt) = begin
+    v = get(cfg, k, dflt)
+    v isa Real ? Float64(v) : Float64(dflt)
+end
 _ov_strvec(cfg, k) = begin
     v = get(cfg, k, nothing)
     v isa AbstractVector ? String[String(x) for x in v] : nothing
@@ -652,7 +664,8 @@ function _snapshot_canvas_h(state)
 end
 
 # µm per output pixel of a 3D frame: the viewer shows `captured_h / zoom` image rows across the
-# canvas height (`applyViewStateToBrowser`), orthographic, whatever the canvas.
+# canvas height (`applyViewStateToBrowser`), whatever the canvas. Exact under orthographic; under
+# perspective, exact at the depth of the rotation centre (`mip_common.wgsl`: same half-height there).
 function _um_per_px_3d(a, state, pixel_size_um::Real, out_h::Integer)
     zoom = a.zoom isa Real && a.zoom > 0 ? Float64(a.zoom) : 1.0
     captured_h = something(_snapshot_canvas_h(state), Float64(out_h))
@@ -773,6 +786,9 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     ov_psz  = overlays_config === nothing ? 6  : _ov_int(overlays_config, "pointSizePx", 6)
     ov_sw   = overlays_config === nothing ? 2  : _ov_int(overlays_config, "segmentWidthPx", 2)
     ov_mcw  = overlays_config === nothing ? 1  : _ov_int(overlays_config, "maskContourPx", 1)
+    ov_pb   = overlays_config === nothing ? 0  : _ov_int(overlays_config, "pointBorderPx", 0)
+    ov_mop  = overlays_config === nothing ? Float64(MASK_FILL_OPACITY) :
+              _ov_float(overlays_config, "maskOpacity", Float64(MASK_FILL_OPACITY))
 
     # ── 3D path — the viewer's own shaders, headless (`writers/render_animation_run.py`) ──
     if is_3d
@@ -815,6 +831,7 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
             "renderQuality"  => String(render_quality),
             "fps"            => Float64(fps),
             "pointSizePx"    => ov_psz,
+            "pointBorderPx"  => ov_pb,
             "segmentWidthPx" => ov_sw,
         )
         if build_mask !== nothing
@@ -822,7 +839,8 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
             # palette colours) — not the 2D path's pop-filtered outline.
             lp = img_labels_path(img, _ov_str(overlays_config, "maskValueName",
                                               _ov_str(overlays_config, "valueName", "")))
-            isdir(lp) && (params["labelsPath"] = String(lp); params["labelContourPx"] = ov_mcw)
+            isdir(lp) && (params["labelsPath"] = String(lp); params["labelContourPx"] = ov_mcw;
+                          params["labelOpacity"] = ov_mop)
         end
         title_card === nothing || (params["titleCard"] = title_card)
         # Timestamp + scale bar, same shape the CPU encoder reads. The bar is sized to the first
@@ -872,9 +890,10 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                 img = render_view_frame(arr, caxes, Int(t_clamped);
                                          z = args.z, specs = args.specs, crop = args.crop,
                                          points = pts_2d, point_size_px = ov_psz,
+                                         point_border_px = ov_pb,
                                          segments = segs_2d, segment_width_px = ov_sw,
                                          mask = mask_2d, mask_colours = mask_cols,
-                                         mask_contour_px = ov_mcw)
+                                         mask_contour_px = ov_mcw, mask_opacity = ov_mop)
                 h, w = size(img)
                 img = img[1:(h - h % 2), 1:(w - w % 2)]
                 if i == 1

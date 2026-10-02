@@ -455,7 +455,8 @@ async function recordTimelapse() {
     // 3D and not a comparison → a volume render through the keyframe renderer (the compare grid
     // has no 3D renderer and stays an all-Z projection).
     if (show3D.value && shape.cells <= 1 && openedImage.value) {
-      const vs3 = volumeViewState(snapshot as unknown as ViewerViewState | null)
+      const vs3 = volumeViewState(snapshot as unknown as ViewerViewState | null,
+                                  settings.viewerVolumeProjection === 'persp')
       const lastT = Math.max(0, (openedImage.value.sizeT ?? 1) - 1)
       const t = taskStore.add({
         module: 'viewer', label: `Record ${openedImage.value.name ?? 'movie'}`,

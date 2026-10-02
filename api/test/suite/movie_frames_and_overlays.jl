@@ -218,6 +218,15 @@ end
         size_px = 3)
     @test over[10, 10] == RGB{N0f8}(0, 0, 1)
 
+    # A border rings the disc in black OUTSIDE it (the viewer's point border): the fill keeps its
+    # radius, the ring adds `border_px` beyond it, and nothing past the ring is touched.
+    ring = fill(RGB{N0f8}(1, 1, 1), 20, 20)
+    draw_points!(ring, (; x = [10], y = [10], colour = [RGB{N0f8}(1, 0, 0)]); size_px = 4, border_px = 2)
+    @test ring[10, 12] == RGB{N0f8}(1, 0, 0)                   # r = 2: still fill
+    @test ring[10, 13] == RGB{N0f8}(0, 0, 0)                   # ring
+    @test ring[10, 14] == RGB{N0f8}(0, 0, 0)                   # ring, r + border
+    @test ring[10, 15] == RGB{N0f8}(1, 1, 1)                   # beyond it
+
     # Length mismatch is caught early — a silently-shorter colour column paints one pop's markers in
     # another pop's colour.
     @test_throws ArgumentError draw_points!(black,
@@ -306,6 +315,10 @@ end
     @test ffr[9, 9] == RGB{N0f8}(0.7, 0, 0.3)          # interior, not just the rim
     @test ffr[1, 1] == RGB{N0f8}(0, 0, 1)              # background
     @test ffr[2, 2] == RGB{N0f8}(0, 0, 1)              # id 9 has no colour → skipped
+    # the viewer's own opacity, when the look carries one
+    ofr = fill(RGB{N0f8}(0, 0, 1), 20, 20)
+    draw_mask_outline!(ofr, blk, id_col; contour_px = 0, opacity = 0.25)
+    @test ofr[9, 9] == RGB{N0f8}(0.25, 0, 0.75)
     @test mfr[10, 9]  == RGB{N0f8}(0, 0, 0)                    # background stays untouched
     @test mfr[12, 12] == RGB{N0f8}(0, 0, 0)
 

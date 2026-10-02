@@ -1035,7 +1035,7 @@ end
 # the record button and a movie recorded from `/api/viewer/record-test` speak the same language.
 #
 # `img_err` is `_gating_image`'s error string (or `nothing`). Returns `(overlays_for, mask_for,
-# point_size_px, segment_width_px, mask_contour_px, ov_diag, mask_diag)`. `ov_diag` / `mask_diag` carry
+# point_size_px, segment_width_px, mask_contour_px, point_border_px, mask_opacity, ov_diag, mask_diag)`. `ov_diag` / `mask_diag` carry
 # the smoke test's diagnostic breadcrumbs (populated whether or not `tally` is on); with `tally = true`
 # the returned closures additionally count points/segments/frames drawn into refs stashed under
 # `ov_diag["_tally"]` / `mask_diag["_tally"]` — the smoke route unwraps them into its response body.
@@ -1049,9 +1049,10 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     overlays_for = nothing
     mask_for = nothing
     point_size_px = 6; segment_width_px = 2; mask_contour_px = 1
+    point_border_px = 0; mask_opacity = Float64(MASK_FILL_OPACITY)
     if !(ov_raw isa AbstractDict)
         return (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
-                  ov_diag, mask_diag)
+                  point_border_px, mask_opacity, ov_diag, mask_diag)
     end
     # `ov_raw` reaches us as either symbol- OR string-keyed depending on the caller:
     # `_overlays_raw_from_config` (`movie_rail.jl`) builds a `Dict{String,Any}`, while
@@ -1098,6 +1099,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     point_size_px    = Int(_ov(ov_raw, :pointSizePx, point_size_px))
     segment_width_px = Int(_ov(ov_raw, :segmentWidthPx, segment_width_px))
+    point_border_px  = max(0, Int(round(Float64(_ov(ov_raw, :pointBorderPx, point_border_px)))))
+    mask_opacity     = clamp(Float64(_ov(ov_raw, :maskOpacity, mask_opacity)), 0.0, 1.0)
     ov_diag["valueName"] = ov_vn
     ov_diag["popType"]   = ov_pt
     ov_diag["allTracks"] = all_tracks
@@ -1274,7 +1277,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
             end
         end
     end
-    (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px, ov_diag, mask_diag)
+    (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
+       point_border_px, mask_opacity, ov_diag, mask_diag)
 end
 
 # ── POST /api/viewer/record-test ──────────────────────────────────────────────────
@@ -1373,7 +1377,9 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
                           mask_for = mask_for,
                           point_size_px = point_size_px,
                           segment_width_px = segment_width_px,
-                          mask_contour_px = mask_contour_px)
+                          mask_contour_px = mask_contour_px,
+                          point_border_px = ov.point_border_px,
+                          mask_opacity = ov.mask_opacity)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end

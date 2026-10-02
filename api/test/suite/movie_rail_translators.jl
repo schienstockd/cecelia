@@ -44,6 +44,13 @@
     @test ov_mask["showMask"] === true
     @test ov_mask["maskContourPx"] == 3
     @test ov_mask["allCells"] === true
+    # Point border + mask opacity: absent → no outline and the default opacity; the viewer's look
+    # carries its own (a deliberate 0 opacity stays 0).
+    @test ov_mask["pointBorderPx"] == 0
+    @test ov_mask["maskOpacity"] == Float64(MASK_FILL_OPACITY)
+    ov_look = _overlays_raw_from_config(Dict{String,Any}("pointBorder" => 3, "labelOpacity" => 0), true)
+    @test ov_look["pointBorderPx"] == 3
+    @test ov_look["maskOpacity"] == 0.0
     # The single record's outline width comes from the REQUEST, merged over the viewer's `look` (which
     # never carries it) — it used to fall back to 1 px whatever the viewer said.
     look = Dict{Symbol,Any}(:showPopulations => false)

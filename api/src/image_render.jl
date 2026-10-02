@@ -324,9 +324,10 @@ function render_view_frame(arr, caxes, t::Int;
                            z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
                            channels::Union{Nothing,AbstractVector{<:Integer}} = nothing,
                            specs = nothing, crop = nothing, max_px::Int = 0,
-                           points = nothing, point_size_px::Int = 6,
+                           points = nothing, point_size_px::Int = 6, point_border_px::Int = 0,
                            segments = nothing, segment_width_px::Int = 2,
-                           mask = nothing, mask_colours = nothing, mask_contour_px::Int = 1)
+                           mask = nothing, mask_colours = nothing, mask_contour_px::Int = 1,
+                           mask_opacity::Real = MASK_FILL_OPACITY)
     nd   = ndims(arr)
     dims = axis_dims(caxes, nd)
     nc   = haskey(dims, "c") ? size(arr, dims["c"]) : 1
@@ -395,10 +396,12 @@ function render_view_frame(arr, caxes, t::Int;
     # fatter marker. The caller has already resolved µm → pixel and honoured `crop`/`max_px`; this
     # file is pure drawing.
     if mask !== nothing && mask_colours !== nothing
-        draw_mask_outline!(frame, mask, mask_colours; contour_px = mask_contour_px)
+        draw_mask_outline!(frame, mask, mask_colours; contour_px = mask_contour_px,
+                           opacity = mask_opacity)
     end
     segments === nothing || draw_segments!(frame, segments; width_px = segment_width_px)
-    points === nothing   || draw_points!(frame, points; size_px = point_size_px)
+    points === nothing   || draw_points!(frame, points; size_px = point_size_px,
+                                         border_px = point_border_px)
     # sRGB encoding AFTER overlays: the overlay drawers write in the composite's colour space, so
     # encoding pre-overlay would give the tracks / masks a different gamma than the pixels around
     # them. One transfer at the end, one uniform sRGB output — same reasoning as the browser

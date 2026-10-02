@@ -259,16 +259,22 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
   - **The viewer-side capture is still needed.** A `canvas.toDataURL()` of the viewer at a fixed
     view state on a committed fixture closes the pixel test. That needs a browser, so it's
     Dominik's click.
-  - **Perspective.** A view state always says `perspective: 0`; the viewer's ortho/persp toggle is a
-    setting, not part of the view, so a movie of a perspective view renders orthographic.
-  - **Point border and label opacity aren't in the look.** Movies use border 0 and the viewer's
-    default opacity.
+- **Closed after review.**
+  - **Perspective.** `buildViewState` records the 3D projection toggle (`camera.perspective` 1/0;
+    2D is always 0), and Fill from view carries it on `camera3d`. Applying a view state in the
+    viewer still leaves the toggle alone.
+  - **Point border and mask opacity.** The look carries `pointBorder` and `labelOpacity`
+    (`viewerLook`); `_overlays_raw_from_config` forwards them as `pointBorderPx` / `maskOpacity`
+    to both renderers (the 3D host's lanes, and `draw_points!` / `draw_mask_outline!` in 2D). A
+    batch config without them draws no border at `LABEL_OPACITY`.
 
 ### Phase 3 — 2D movies on the shared shader
 
 - `tileShader` for the plain Record, batch and compare-grid cells, replacing `render_view_frame` +
   `draw_mask_outline!`. Viewer Parity's deferred Phase 5 (mask outline algorithm) goes away with it.
 - The compare grid keeps its stitcher (`movie_io.stitch_movies`) — it composes frames, not pixels.
+- Fixes on the way: the viewer's point size is a RADIUS (`mip_points.wgsl`: fill radius `ov.pointPx`),
+  while `draw_points!` takes it as a diameter, so 2D movie points are half the viewer's size.
 
 ### Phase 4 — overlays in the shader too
 

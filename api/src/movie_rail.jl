@@ -148,8 +148,12 @@ function _config_3d_keyframes(config, t0::Int, t1::Int)
     # the viewer canvas the zoom was measured against — the movie host applies the zoom against it
     cdim(k) = (v = _cfg_maybe(cam, k); v isa Real && v > 0 ? Float64(v) : nothing)
     cw, ch = cdim("width"), cdim("height")
+    # the viewer's projection toggle (1 = perspective); absent = orthographic, as before
+    p_raw = _cfg_maybe(cam, "perspective")
+    persp = p_raw isa Real && Float64(p_raw) > 0 ? 1.0 : 0.0
     function state(t)
-        st = Dict{String,Any}("camera" => Dict{String,Any}("angles" => angles, "zoom" => zoom),
+        st = Dict{String,Any}("camera" => Dict{String,Any}("angles" => angles, "zoom" => zoom,
+                                                            "perspective" => persp),
                               "dims"   => Dict{String,Any}("ndisplay" => 3, "current_step" => [t, 0]))
         (cw === nothing || ch === nothing) || (st["canvas"] = Dict{String,Any}("width" => cw, "height" => ch))
         st
@@ -208,11 +212,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "tailLength"       => _cfg_int(cfg, "tailLength", 30),
         "trackColorMode"   => _cfg_str(cfg, "trackColourMode", _cfg_str(cfg, "trackColorMode", "track")),
         "pointSizePx"      => _cfg_int(cfg, "pointsSize", 6),
+        "pointBorderPx"    => max(0, _cfg_int(cfg, "pointBorder", 0)),
         "segmentWidthPx"   => _cfg_int(cfg, "tailWidth", 2),
     )
     if has_mask
         out["showMask"]        = true
         out["maskContourPx"]   = _cfg_int(cfg, "labelContour", 1)
+        # the fill opacity a filled (contour 0) mask blends at — the viewer's `viewerLabelOpacity`
+        out["maskOpacity"]     = clamp(Float64(_cfg_get(cfg, "labelOpacity", Float64(MASK_FILL_OPACITY))), 0.0, 1.0)
         # `allCells` = whole-segmentation mask (every id painted). If neither pops nor cell tracks are
         # on, that IS the intended mask; else the mask filters by the same pops the points would draw.
         out["allCells"]        = !(show_pops || show_gated)
@@ -405,6 +412,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                                    point_size_px    = ov.point_size_px,
                                    segment_width_px = ov.segment_width_px,
                                    mask_contour_px  = ov.mask_contour_px,
+                                   point_border_px  = ov.point_border_px,
+                                   mask_opacity     = ov.mask_opacity,
                                    show_timestamp = show_timestamp, show_scale_bar = show_scale_bar,
                                    pixel_size_um  = pixel_size_um,
                                    time_step_min  = time_step_min,
@@ -593,6 +602,8 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                                                 point_size_px    = ov.point_size_px,
                                                 segment_width_px = ov.segment_width_px,
                                                 mask_contour_px  = ov.mask_contour_px,
+                                                point_border_px  = ov.point_border_px,
+                                                mask_opacity     = ov.mask_opacity,
                                                 show_timestamp = show_ts, show_scale_bar = show_sb,
                                                 pixel_size_um  = pixel_size_um,
                                                 time_step_min  = time_step_min,
@@ -850,6 +861,8 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                                  point_size_px    = cell.ov.point_size_px,
                                                  segment_width_px = cell.ov.segment_width_px,
                                                  mask_contour_px  = cell.ov.mask_contour_px,
+                                                 point_border_px  = cell.ov.point_border_px,
+                                                 mask_opacity     = cell.ov.mask_opacity,
                                                  show_timestamp = show_timestamp,
                                                  show_scale_bar = show_scale_bar,
                                                  pixel_size_um  = pixel_size_um,

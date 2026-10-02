@@ -32,6 +32,8 @@ export interface ViewerLookInput {
   trackSourceColours: Record<string, string>
   showGatedTracks: boolean
   pointSize: number
+  pointBorder: number
+  labelOpacity: number
   tailWidth: number
   tailLength: number
   labelContour: number
@@ -53,7 +55,8 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   const canvas = i.viewState?.canvas
   const cam = c && Array.isArray(c.angles) && typeof c.zoom === 'number'
     ? { angles: [c.angles[0] ?? 0, c.angles[1] ?? 0, c.angles[2] ?? 0] as [number, number, number], zoom: c.zoom,
-        ...(canvas?.width && canvas?.height ? { width: canvas.width, height: canvas.height } : {}) }
+        ...(canvas?.width && canvas?.height ? { width: canvas.width, height: canvas.height } : {}),
+        ...(c.perspective ? { perspective: 1 } : {}) }
     : null
   const z = viewPlaneZ(i.viewState)
   const out: BatchMovieCfg = {
@@ -76,6 +79,8 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     trackSources: Object.fromEntries(tracked.map(vn =>
       [vn, { visible: true, colour: i.trackSourceColours[vn] || TRACK_SOURCE_GREY }])),
     pointsSize: i.pointSize,
+    pointBorder: i.pointBorder,
+    labelOpacity: i.labelOpacity,
     tailWidth: i.tailWidth,
     tailLength: i.tailLength,
     trackColourMode: i.trackColourMode,
@@ -134,6 +139,8 @@ export function readViewerLook(img: LookImage, setUid: string,
     trackSourceColours: setUid ? settings.getTrackSourceColours(setUid) : {},
     showGatedTracks: setUid ? settings.getShowGatedTracks(setUid) : false,
     pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
+    pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
+    labelOpacity: settings.viewerLabelOpacity,
     tailWidth: settings.viewerTailWidth,
     tailLength: settings.viewerTailLength,
     labelContour: settings.viewerLabelContour,
@@ -155,13 +162,14 @@ export function hexViewState<T extends { layers?: Record<string, { colormap?: un
 }
 
 /** The view a 3D recording renders from: the viewer's own when it is in 3D, else straight on (zoom 1,
- *  no centre → the volume midpoint) with the viewer's channels. For a Record set to 3D while the viewer
- *  sits in 2D — there is no 3D camera on screen to copy. */
-export function volumeViewState(vs: ViewerViewState | null): ViewerViewState {
+ *  no centre → the volume midpoint) with the viewer's channels, in the projection the viewer's 3D view
+ *  would use (`perspective`, the toggle). For a Record set to 3D while the viewer sits in 2D — there
+ *  is no 3D camera on screen to copy. */
+export function volumeViewState(vs: ViewerViewState | null, perspective = false): ViewerViewState {
   if (vs?.dims?.ndisplay === 3) return vs
   const t = vs?.dims?.current_step?.[0] ?? 0
   return {
-    camera: { zoom: 1, angles: [0, 0, 0], perspective: 0 } as unknown as ViewerViewState['camera'],
+    camera: { zoom: 1, angles: [0, 0, 0], perspective: perspective ? 1 : 0 } as unknown as ViewerViewState['camera'],
     dims: { ndisplay: 3, current_step: [t, 0], point: [t, 0] },
     layers: vs?.layers ?? {},
     canvas: vs?.canvas ?? { width: 0, height: 0 },

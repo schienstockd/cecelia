@@ -15,7 +15,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   trackVisible: {},
   trackSourceColours: {},
   showGatedTracks: false,
-  pointSize: 8, tailWidth: 3, tailLength: 12, labelContour: 2,
+  pointSize: 8, pointBorder: 2, labelOpacity: 0.4, tailWidth: 3, tailLength: 12, labelContour: 2,
   trackColourMode: 'speed', colourBy: '', colourOverrides: {},
   ...over,
 })
@@ -44,6 +44,13 @@ describe('viewerLook', () => {
     expect(viewerLook(base()).camera3d).toBeUndefined()   // 2D → no 3D camera
   })
 
+  it('3D perspective → the batch camera carries it', () => {
+    const l = viewerLook(base({ viewState: { layers: {},
+      camera: { center: [1, 2, 3], zoom: 2, angles: [30, 45, 0], perspective: 1 },
+      dims: { ndisplay: 3, current_step: [0, 0], point: [0, 0] } } }))
+    expect(l.camera3d).toEqual({ angles: [30, 45, 0], zoom: 2, perspective: 1 })
+  })
+
   it('3D → show3D with no z slice', () => {
     const l = viewerLook(base({ viewState: { layers: {}, dims: { ndisplay: 3, current_step: [0, 4], point: [0, 4] } } }))
     expect(l.show3D).toBe(true)
@@ -69,6 +76,7 @@ describe('viewerLook', () => {
   it('carries the overlay sizes, colour mode and colour-by', () => {
     const l = viewerLook(base({ colourBy: 'clusters', colourOverrides: { '1': '#00ff00' } }))
     expect([l.pointsSize, l.tailWidth, l.tailLength, l.trackColourMode]).toEqual([8, 3, 12, 'speed'])
+    expect([l.pointBorder, l.labelOpacity]).toEqual([2, 0.4])
     expect(l.colourBy).toBe('clusters')
     expect(l.colourOverrides).toEqual({ '1': '#00ff00' })
   })
@@ -126,5 +134,7 @@ describe('volumeViewState', () => {
     expect('center' in v.camera).toBe(false)
     expect(v.layers).toBe(vs.layers)
     expect(v.canvas).toEqual({ width: 640, height: 480 })
+    expect(v.camera.perspective).toBe(0)
+    expect(volumeViewState(vs, true).camera.perspective).toBe(1)   // the 3D toggle, not 2D's ortho
   })
 })
