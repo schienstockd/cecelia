@@ -17,6 +17,7 @@ import {
   livePreviews, previewShown, togglePreview,
 } from '../composables/useOverlayAutoShow'
 import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/overlayAutoShow'
+import { resolveValueName } from '../utils/valueName'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
@@ -327,9 +328,10 @@ watch(openedImage, (img) => {
   // show for a set with no `labels` registry.
   trackVns.value = settings.getTrackVisibility(img.uid, trackableValueNames(img))
   branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
-  // Default to the active version (the `_active` key from the versioned filepath dict) — this is what
-  // the server opens when no valueName is passed, so the dropdown must agree (shared resolver).
-  selectedValueName.value = activeValueName(img)
+  // The version the viewer is showing: the remembered pick while the image still has it, else the
+  // active version (`activeValueName` mirrors what the server opens when no valueName is passed).
+  const names = Object.keys(img.filepaths ?? {})
+  selectedValueName.value = resolveValueName(settings.getImageVersion(img.uid), names, names, activeValueName(img))
   // Restore remembered label visibility for this image; unknown labels default to true.
   visibleLabels.value = settings.getLabelVisibility(img.uid, Object.keys(img.labels ?? {}))
   loadObsCols()                       // colour-by options for the selected segmentation
@@ -350,6 +352,8 @@ watch(openedImage, (img) => {
   const picked = settings.getImageVersion(uid)
   if (prev && active && prev !== active && (picked === '' || picked === prev)) {
     settings.setImageVersion(uid, active)
+    selectedValueName.value = active
+    loadObsCols()
   }
   lastServerActive.value[uid] = active
 }, { immediate: true })
@@ -835,15 +839,18 @@ function onTaskResult(data: Record<string, unknown>) {
   const meta = (data.meta ?? {}) as Record<string, unknown>
 
   const addedValueName = meta.valueName as string | undefined
-  if (addedValueName) {
+  if (addedValueName && settings.viewerAutoUpdate) {
+    // Switch the dropdown AND the viewer together — the viewer only follows `cc.viewerImageVersion`,
+    // so setting the dropdown alone left the panel naming the new version over the old pixels.
+    // Auto-update off: neither moves.
     selectedValueName.value = addedValueName
-    if (settings.viewerAutoUpdate) {
-      reloadViewer()
-      // Task result carrying an intensity vn means THAT store's pixels changed. Scope the rev to
-      // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
-      // on the same image but a different vn keeps its atlas.
-      publishViewerCacheClear({ imageUid, valueName: addedValueName })
-    }
+    settings.setImageVersion(imageUid, addedValueName)
+    loadObsCols()
+    reloadViewer()
+    // Task result carrying an intensity vn means THAT store's pixels changed. Scope the rev to
+    // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
+    // on the same image but a different vn keeps its atlas.
+    publishViewerCacheClear({ imageUid, valueName: addedValueName })
   }
 
   const labelValueName = meta.labelValueName as string | undefined
