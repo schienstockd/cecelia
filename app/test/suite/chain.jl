@@ -229,10 +229,15 @@ end
         states[img.uid][nid].params_hash = "h"
     end
     run = Cecelia.ChainRun("rid", "restart-chain", proj.uid, [img.uid], tpl,
-                           "hash", states, time(), "", joinpath(Cecelia._runs_dir(proj), "rid"),
+                           "hash", states, time(), "", "", joinpath(Cecelia._runs_dir(proj), "rid"),
                            ReentrantLock(), Dict{String,Channel{Nothing}}(),
                            Dict{String,Channel{Nothing}}())
     mkpath(run._dir)
+    # Nodes run as whoever started THIS execution: the launcher, until someone resumes it.
+    run.by = "alice"
+    @test Cecelia.chain_run_as(run) == "alice"
+    run.resumed_by = "bob"
+    @test Cecelia.chain_run_as(run) == "bob" && run.by == "alice"
     Cecelia._force_restart_from!(run, "n2")
     @test run.image_states[img.uid]["n1"].status == NODE_DONE       # upstream untouched
     @test run.image_states[img.uid]["n2"].status == NODE_PENDING    # start node reset

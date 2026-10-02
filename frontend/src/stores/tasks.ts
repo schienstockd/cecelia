@@ -25,6 +25,8 @@ export interface TaskEntry {
   // `task:status` / `chain:node:*` frames, the in-flight snapshot or the run log. Undefined when no
   // carrier has named it yet (a run-log entry written before pools were recorded): unknown, not `cpu`.
   pool?: string
+  // The profile that launched it (run log / `list_tasks`). Absent on older runs and on this tab's own.
+  by?: string
   // Chain provenance — set when task originated from a chain run
   chainRunId?:   string
   chainNodeId?:  string

@@ -75,6 +75,11 @@ describe('adoptableTasks', () => {
     expect(adoptableTasks([row({ pool_name: '' })], ctx, none)[0].pool).toBeUndefined()
   })
 
+  it('carries who launched it when the snapshot says', () => {
+    expect(adoptableTasks([row({ by: 'alice' })], ctx, none)[0].by).toBe('alice')
+    expect(adoptableTasks([row()], ctx, none)[0].by).toBeUndefined()
+  })
+
   it('derives the module page from the fun category', () => {
     expect(adoptableTasks([row({ fun_name: 'importImages.omezarr' })], ctx, none)[0].module).toBe('manageImages')
     expect(adoptableTasks([row({ fun_name: 'segment.cellpose' })], ctx, none)[0].module).toBe('segment')

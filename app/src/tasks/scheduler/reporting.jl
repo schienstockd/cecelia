@@ -51,7 +51,7 @@ function list_tasks()
     lock(_TASKS_LOCK) do
         [(; id=rec.id, fun_name=rec.fun_name, pool_name=rec.pool_name,
            image_uid=rec.image_uid, project_uid=rec.project_uid, chain_run_id=rec.chain_run_id,
-           chain_node_id=rec.chain_node_id,
+           chain_node_id=rec.chain_node_id, by=rec.by,
            status=string(rec.status), queued_at=iso_utc(rec.queued_at),
            started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs,
            params=_publishable_params(rec.params))

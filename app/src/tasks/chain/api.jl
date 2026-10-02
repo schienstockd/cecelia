@@ -51,6 +51,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
         image_states,
         Float64(raw[:created_at]),
         string(get(raw, :by, "")),
+        string(get(raw, :resumed_by, "")),
         run_dir,
         ReentrantLock(),
         barriers,
@@ -105,6 +106,8 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         ordered_nodes = _topo_sort(run.template_snapshot)
         _reset_stale_nodes!(run, overrides, ordered_nodes)
         isnothing(start_node) || _force_restart_from!(run, start_node)
+        run.resumed_by = by
+        _save_run!(run)
     else
         isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
         isempty(image_uids) && error("run_chain requires at least one image UID")
@@ -137,7 +140,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         run_dir = joinpath(_runs_dir(proj), new_id)
         run     = ChainRun(
             new_id, template.name, proj.uid, image_uids, template, hash,
-            image_states, time(), by, run_dir, ReentrantLock(),
+            image_states, time(), by, "", run_dir, ReentrantLock(),
             barriers, barriers_done,
         )
         _save_run!(run)

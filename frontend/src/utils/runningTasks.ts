@@ -46,6 +46,8 @@ export interface InFlightTaskRow {
    * spec has no params legitimately reports `{}`, so only `undefined` means "unknown".
    */
   params?: Record<string, unknown>
+  /** the profile that launched it; absent from an older backend */
+  by?: string
 }
 
 /** What a row needs from the app to become a task-list entry. */
@@ -72,6 +74,8 @@ export interface AdoptedTask {
   startedAt?: Date
   /** the pool the scheduler queued it in; absent when the snapshot named none */
   pool?: string
+  /** the profile that launched it, when the snapshot named one */
+  by?: string
   chainRunId?: string
   chainNodeId?: string
   /** the scheduler's id — how a later frame or a recovered outcome matches this row */
@@ -147,6 +151,7 @@ export function adoptableTasks(
       // from when this tab noticed. `''`/absent = queued, or a backend too old to send it.
       startedAt:  r.started_at ? new Date(r.started_at) : undefined,
       ...(r.pool_name ? { pool: String(r.pool_name) } : {}),
+      ...(r.by ? { by: String(r.by) } : {}),
       // Only a real object counts. Left `undefined` otherwise, which is what withholds Re-run — an
       // older backend sends nothing, and defaulting to `{}` would present "no params" as the answer.
       ...(r.params && typeof r.params === 'object' && !Array.isArray(r.params)

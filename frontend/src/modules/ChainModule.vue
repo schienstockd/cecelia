@@ -38,6 +38,7 @@ import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, sta
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
 import { fetchVersions } from '../utils/versions'
+import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ const chainTasks = computed(() =>
 const liveRunIds = computed(() => [...new Set(chainTasks.value.map(t => t.chainRunId!))])
 
 // Persisted runs listed from disk (GET /api/chains/runs) + a cache of fully-loaded ones.
-interface RunMeta { runId: string; chainName: string; createdAt: number; imageCount: number }
+interface RunMeta { runId: string; chainName: string; createdAt: number; imageCount: number; by?: string; resumedBy?: string }
 interface LoadedRun { chainName: string; createdAt: number; nodes: LiveTemplateNode[]; edges: { from: string; to: string }[]; tasks: LiveTaskLike[] }
 const persistedRuns = ref<RunMeta[]>([])
 const loadedRuns = ref<Map<string, LoadedRun>>(new Map())
@@ -148,15 +149,16 @@ async function loadRun(runId: string) {
 }
 
 // Dropdown options: persisted runs ∪ live runs, newest first, each with a timestamp for context.
-interface RunOption { runId: string; chainName: string; createdAt: number; live: boolean }
+interface RunOption { runId: string; chainName: string; createdAt: number; live: boolean; by?: string; resumedBy?: string }
 const runOptions = computed<RunOption[]>(() => {
   const map = new Map<string, RunOption>()
   for (const r of persistedRuns.value)
-    map.set(r.runId, { runId: r.runId, chainName: r.chainName, createdAt: r.createdAt, live: false })
+    map.set(r.runId, { runId: r.runId, chainName: r.chainName, createdAt: r.createdAt, live: false,
+                       by: r.by, resumedBy: r.resumedBy })
   for (const id of liveRunIds.value) {
     const t = chainTasks.value.find(t => t.chainRunId === id)
     const created = map.get(id)?.createdAt ?? (t?.startedAt ? t.startedAt.getTime() / 1000 : 0)
-    map.set(id, { runId: id, chainName: t?.chainName ?? map.get(id)?.chainName ?? '', createdAt: created, live: true })
+    map.set(id, { ...map.get(id), runId: id, chainName: t?.chainName ?? map.get(id)?.chainName ?? '', createdAt: created, live: true })
   }
   return [...map.values()].sort((a, b) => b.createdAt - a.createdAt)
 })
@@ -169,7 +171,10 @@ function fmtRunTime(sec: number): string {
 function runLabel(o: RunOption): string {
   const base = o.chainName ? `${o.chainName} / ${o.runId}` : o.runId
   const ts = fmtRunTime(o.createdAt)
-  return `${base}${ts ? ` · ${ts}` : ''}${o.live ? ' · live' : ''}`
+  const by = profileLabel(o.by)
+  const re = profileLabel(o.resumedBy)
+  const who = `${by ? ` · by ${by}` : ''}${re && re !== by ? ` · resumed by ${re}` : ''}`
+  return `${base}${ts ? ` · ${ts}` : ''}${who}${o.live ? ' · live' : ''}`
 }
 
 // Tasks for the selected run. Persisted (run.json) is the full frozen graph; live (task store) is
@@ -569,14 +574,31 @@ async function switchChain(name: string) {
   await loadChain(name)
 }
 
+// "by alice · edited by bob" for the open chain — the server stamps it, so re-read after a save.
+const chainAuthor = ref('')
+async function refreshChainAuthor(name: string) {
+  const uid = projectMeta.current?.uid
+  if (!uid || !name) return
+  try {
+    const res = await fetch(`/api/chains/get?projectUid=${uid}&name=${encodeURIComponent(name)}`)
+    if (!res.ok) return
+    const raw = await res.json() as { createdBy?: unknown; updatedBy?: unknown }
+    if (activeChain.value === name)
+      chainAuthor.value = authorSummary(parseAuthorStamp(raw.createdBy), parseAuthorStamp(raw.updatedBy))
+  } catch { /* non-critical */ }
+}
+
 async function loadChain(name: string) {
+  chainAuthor.value = ''
   const uid = projectMeta.current?.uid
   if (!uid) return
   try {
     const res = await fetch(`/api/chains/get?projectUid=${uid}&name=${encodeURIComponent(name)}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const tmpl = await res.json() as ChainTemplate & { positions?: Record<string, {x:number; y:number}> }
+    const tmpl = await res.json() as ChainTemplate & { positions?: Record<string, {x:number; y:number}>
+                                                       createdBy?: unknown; updatedBy?: unknown }
     applyTemplate(tmpl, tmpl.positions ?? {})
+    chainAuthor.value = authorSummary(parseAuthorStamp(tmpl.createdBy), parseAuthorStamp(tmpl.updatedBy))
   } catch (e) {
     log.warn(`Could not load chain "${name}": ${e}`, { source: 'whiteboard' })
   }
@@ -692,6 +714,7 @@ async function saveChain() {
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     log.info(`Chain "${activeChain.value}" saved.`, { source: 'whiteboard' })
+    void refreshChainAuthor(activeChain.value)
   } catch (e) {
     log.error(`Save failed: ${e}`, { source: 'whiteboard' })
   } finally {
@@ -1409,6 +1432,7 @@ onActivated(async () => {
           </select>
           <span v-else class="no-chains-hint cc-muted">No chains yet</span>
         </div>
+        <span v-if="activeChain && chainAuthor" class="chain-author cc-muted cc-fs-2xs">{{ chainAuthor }}</span>
         <!-- One joined group for acting on the chain FILE (new / rename / delete)… -->
         <div class="chain-bar-actions cc-btn-group">
           <button
@@ -1910,6 +1934,12 @@ onActivated(async () => {
   padding: 0.45rem 0.55rem;
   border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
+}
+
+.chain-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chain-bar-select {

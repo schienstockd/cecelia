@@ -25,6 +25,7 @@ import { taskElapsed } from '../utils/taskElapsed'
 import { canRerunTask } from '../utils/taskRerun'
 // the foreign-project LABEL now comes off the row (utils/taskRows.ts); the scope predicate stays here
 import { taskInScope } from '../utils/taskScope'
+import { profileLabel } from '../utils/authorStamp'
 
 // `standalone` = this is the pop-out window (modules/TasksView.vue), not the /tasks page. The only
 // thing it changes is the pop-out button itself, which would otherwise offer to open the window you
@@ -116,6 +117,8 @@ const filtered = computed(() => {
 // Declared ABOVE `rows`, which reads it — see utils/setupOrder.ts for why order matters here.
 const now = useNowTick()
 const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.value)
+// who launched it — '' for the default profile (a one-person install names nobody) and for this tab's own
+const launcher = (t: TaskEntry) => profileLabel(t.by)
 
 // The table reads row FIELDS (and sorts by them), so the entries are flattened by the shared mapper —
 // the same one the per-module list uses, so the two lists can't drift again. Where the two surfaces
@@ -447,7 +450,8 @@ const FILTERS: ChipOption[] = [
                   <i class="pi pi-sitemap" />{{ selected.chainName || selected.chainRunId }}
                 </span>
               </div>
-              <span class="log-image cc-muted cc-fs-xs">{{ selected.imageName }}</span>
+              <span class="log-image cc-muted cc-fs-xs">{{ selected.imageName }}<template
+                v-if="launcher(selected)"> · by {{ launcher(selected) }}</template></span>
             </div>
             <span v-if="elapsed(selected)" class="log-elapsed cc-muted cc-fs-xs">{{ elapsed(selected) }}</span>
             <div class="log-actions">

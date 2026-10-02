@@ -562,7 +562,7 @@ function api_notebooks_write(body_bytes::Vector{UInt8})
                                  "createdBy" => author_stamp())
     _write_registry!(uid, reg)
     # snapshot v1 — an immediate restore point before the user starts editing in Pluto
-    api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))))
+    api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))); stamp = false)
     # nudge an open Notebooks page to refresh (it has no per-notebook poll); harmless if none is open.
     broadcast_ws(Dict{String,Any}("type" => "notebooks_changed", "projectUid" => uid, "file" => file))
     200, JSON3.write((; ok = true, file = file))
@@ -607,7 +607,7 @@ function api_notebooks_revise(body_bytes::Vector{UInt8})
     isfile(dest) || return 409, JSON3.write((; error = "Notebook not found: $file (use create for a new one; revise is for existing)"))
 
     # freeze the current live state first, then overwrite — nothing is lost (restorable via History)
-    snap = api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))))
+    snap = api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))); stamp = false)
     # Reuse the prior version's cell ids (read BEFORE we truncate) so Pluto's auto_reload_from_file can
     # merge the change into an OPEN notebook in place instead of leaving it stale.
     reuse = _content_cell_ids(dest)
@@ -689,7 +689,9 @@ end
 # POST /api/notebooks/snapshot  { projectUid, file }  → { snapshot, version }
 # Freeze an immutable copy to notebooks/.snapshots/<name>@v<N>.jl (N = next number on disk) and set
 # the notebook's `current` to N. Answers "which version made Figure 3" without git/file-watching.
-function api_notebooks_snapshot(body_bytes::Vector{UInt8})
+# A direct snapshot is the user freezing their Pluto edits, so it stamps `updatedBy`; `stamp = false`
+# for the internal call inside write/revise, which stamp their own authorship.
+function api_notebooks_snapshot(body_bytes::Vector{UInt8}; stamp::Bool = true)
     body = _parse_body(body_bytes)
     body isa Tuple && return body
     uid  = _wstr(body, :projectUid)
@@ -708,6 +710,7 @@ function api_notebooks_snapshot(body_bytes::Vector{UInt8})
     e   = get(reg, file, Dict{String,Any}())
     e["current"]   = v                 # the live notebook now IS this snapshot
     e["updatedAt"] = string(Dates.now())
+    stamp && (e["updatedBy"] = author_stamp())
     reg[file] = e
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true, snapshot = snapname, version = v))

@@ -315,7 +315,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                               params       = effective_params,
                               chain_run_id = run.id,
                               chain_node_id = node.id,
-                              by           = run.by);
+                              by           = chain_run_as(run));
                 on_log      = line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"),
                 on_progress = (n, t) -> _fire_node_progress!(run, node, image_uid, tid, n, t),
                 # Only `running` is mirrored into node state: `queued` is already set above, and the
@@ -486,7 +486,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                           params       = effective_params,
                           chain_run_id = run.id,
                           chain_node_id = node.id,
-                          by           = run.by);
+                          by           = chain_run_as(run));
             on_log      = line -> Base.invokelatest(on_log, "[$(first(imgs).uid)/$(node.id)] $line"),
             on_progress = (n, t) -> _fire_node_progress!(run, node, first(imgs).uid, tid, n, t),
             # One task, N images: mirror the pool pick-up onto every participating image, so the whole

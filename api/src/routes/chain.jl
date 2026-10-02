@@ -63,7 +63,9 @@ function api_chains_runs(req::HTTP.Request)
         push!(out, (; runId     = string(get(raw, :id, basename(d))),
                       chainName  = string(get(raw, :chain_name, "")),
                       createdAt  = Float64(get(raw, :created_at, 0.0)),
-                      imageCount = length(get(raw, :image_uids, []))))
+                      imageCount = length(get(raw, :image_uids, [])),
+                      by         = string(get(raw, :by, "")),           # launcher; "" on older runs
+                      resumedBy  = string(get(raw, :resumed_by, ""))))
     end
     sort!(out; by = r -> r.createdAt, rev = true)
     200, JSON3.write((; runs = out))
@@ -247,6 +249,7 @@ function api_chains_rename(body_bytes::Vector{UInt8})
     raw = try
         r = read_ccid_raw(src)   # the canonical "state JSON → mutable String-keyed Dict" reader
         r["name"] = newname
+        r["updatedBy"] = author_stamp()   # a rename is an edit; the creator carries over in `r`
         r
     catch e
         return 500, JSON3.write((; error="Could not read chain '$name': $(sprint(showerror, e))"))

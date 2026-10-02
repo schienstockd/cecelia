@@ -171,6 +171,7 @@ function _save_run!(run::ChainRun)
             image_states   = states,
             created_at     = run.created_at,
             by             = run.by,
+            resumed_by     = run.resumed_by,
         ))
     end
 end

@@ -25,6 +25,8 @@ export interface RunLogEntry {
   // The resource pool the run was queued in (`open_run_log!`). Absent on entries written before the
   // pool was recorded, which a reader shows as blank, never as a guessed `cpu`.
   pool?: string
+  // The profile that launched it. Absent on entries written before launchers were recorded.
+  by?: string
   // The version name this run WROTE (as opposed to `valueName`, which is the one it READ). Derived
   // server-side from `(fun, params)` via `task_output_name` (see `_enriched_run_log` in
   // `api/src/routes.jl`) so a spec-driven lookup stays in one place. Absent for entries that name no

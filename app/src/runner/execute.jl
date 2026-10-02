@@ -282,7 +282,7 @@ function execute_chain(req::ChainRequest;
             run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req),
                       on_cancel_check = is_chain_cancelled, on_log = on_log)
         else
-            run_chain(proj, String[]; run_id = req.run_id,
+            run_chain(proj, String[]; run_id = req.run_id, by = _request_by(req),
                       start_node = isempty(req.start_node) ? nothing : req.start_node,
                       on_cancel_check = is_chain_cancelled, on_log = on_log)
         end
