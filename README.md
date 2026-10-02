@@ -21,7 +21,7 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ## What Cecelia does
 
-<p align="center"><img src="frontend/public/readme-framework.svg" alt="Components: a browser (Vue 3 + PrimeVue) hosting the WebGPU viewer, Analysis board, Notebooks and Task console; a Julia backend (HTTP + WebSocket, Cecelia.jl) with the chain scheduler, gating, data model and population manager; a Pixi-managed Python compute env with cellpose, btrack, scanpy, scikit-image and PyTorch; custom modules and plugins register into the Browser. Workflow: Raw → Import → Correct → Segment → Track → Gate → Cluster → Quantify → Analyse, with a View surface (WebGPU browser viewer + offline movie renderer) that stays in sync at every stage." width="100%"></p>
+<p align="center"><img src="frontend/public/readme-framework.svg" alt="Components: a browser (Vue 3 + TypeScript) hosting the WebGPU viewer, Analysis board, Notebooks and Task console; a Julia backend (HTTP + WebSocket, Cecelia.jl) with the chain scheduler, gating, data model and population manager; a Pixi-managed Python compute env with cellpose, btrack, scanpy, scikit-image and PyTorch; custom modules and plugins register into the Browser. Workflow: Raw → Import → Correct → Segment → Track → Gate → Cluster → Quantify → Analyse, with a View surface (WebGPU browser viewer + offline movie renderer) that stays in sync at every stage." width="100%"></p>
 
 One browser window, one Julia backend, one Pixi-managed Python env. Every stage of the pipeline —
 import, correction, segmentation, tracking, gating, clustering, quantification, analysis — writes
@@ -200,7 +200,7 @@ try to invent one.
 - The **celltrackR** R package (Wortel & Textor) — its track-measurement algorithms are ported in
   `app/src/tasks/tracking/track_measures.jl`. Cited work, not just a dependency: Wortel et al.
   (2021), *Cell Reports Methods*, [doi:10.1016/j.crmeth.2021.100006](https://doi.org/10.1016/j.crmeth.2021.100006).
-- The **Julia**, **Python**, and **Vue** (with PrimeVue and Observable Plot) open-source ecosystems.
+- The **Julia**, **Python**, and **Vue** (with Observable Plot) open-source ecosystems.
 
 ---
 

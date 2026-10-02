@@ -144,6 +144,15 @@ body {
   overflow: hidden;
 }
 
+/* ── What PrimeVue's Aura preset used to set globally ─────────────────────────
+   Kept in the lowest layer, where Aura's were, so every rule in the app still outranks them.
+   `color-scheme` gives native controls (scrollbars, inputs, select menus) their dark rendering;
+   `.pi` is the 1rem baseline every icon sized from before a rule of ours overrode it. */
+@layer cc-base {
+  .cc-dark { color-scheme: dark; }
+  .pi { font-size: 1rem; }
+}
+
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar        { width: 6px; height: 6px; }

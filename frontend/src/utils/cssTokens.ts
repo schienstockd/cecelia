@@ -9,11 +9,8 @@
 // the global custom-caret background-image, leaving an arrowless, transparent dropdown.
 //
 // Neither failure mode throws, so nothing catches it at build time. Hence this checker, run over the
-// real sources by `cssTokens.test.ts`. Only `--cc-*` is checked — `--p-*` (PrimeVue) and other
-// vendor tokens are declared outside our stylesheet.
-
-// PrimeVue declares its own `--p-*` tokens in vendor CSS we don't parse, so they're out of scope.
-const VENDOR = /^--p-/
+// real sources by `cssTokens.test.ts`. Every `var(--…)` is checked: no vendor stylesheet declares
+// tokens any more (PrimeVue's `--p-*` went with it), so a reference nothing here declares is dead.
 
 /**
  * Strip block, HTML and line comments — token-shaped text in prose or in a commented-out line is not
@@ -49,7 +46,7 @@ export interface TokenRef {
 export function referencedTokens(text: string): TokenRef[] {
   const out: TokenRef[] = []
   for (const m of stripComments(text).matchAll(/var\(\s*(--[A-Za-z0-9_-]+)\s*(,?)/g)) {
-    if (!VENDOR.test(m[1])) out.push({ token: m[1], hasFallback: m[2] === ',' })
+    out.push({ token: m[1], hasFallback: m[2] === ',' })
   }
   return out
 }
@@ -60,8 +57,8 @@ export function referencedTokens(text: string): TokenRef[] {
  * `findDeadTokenRefs` proves a token is *declared*; it cannot prove the element referencing it can
  * *reach* the declaration, and those are different bugs with identical symptoms. The global tokens
  * used to live on `.cc-dark`, which is a `<div>` inside `<body>` (App.vue's shell) — so anything a
- * library appends to `document.body` is a SIBLING of that div and inherits none of them. PrimeVue's
- * tooltip does exactly that, so every `var(--cc-*)` in the tooltip override was invalid at
+ * library appends to `document.body` is a SIBLING of that div and inherits none of them. The
+ * tooltip (PrimeVue's then, ours now) does exactly that, so every `var(--cc-*)` in the tooltip override was invalid at
  * computed-value time and the tooltip silently rendered at the browser default 16px. `<body>`'s own
  * `font-size: var(--cc-fs-md)` was dead the same way.
  *

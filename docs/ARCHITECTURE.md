@@ -640,7 +640,7 @@ cecelia-feijoa/
   app/          Julia package — Cecelia.jl (Revise-tracked) + each task's co-located Python
                 runner (app/src/tasks/<cat>/<name>_run.py, run by path via run_py).
   api/          Julia API server scripts — NOT a package, NOT Revise-tracked
-  frontend/     Vue 3 (Vite, TypeScript, Pinia, PrimeVue)
+  frontend/     Vue 3 (Vite, TypeScript, Pinia)
   python/       Installable Python package `cecelia` (pyproject.toml here) — the IO LIBRARY only:
                 analysis/IO helpers (cecelia.utils) + writers. NO task runners. Top-level, sibling
                 to app/. This is what an external consumer (coastal) `pip install`s.

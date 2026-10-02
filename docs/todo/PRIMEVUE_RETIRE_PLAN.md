@@ -1,6 +1,6 @@
 # Retire PrimeVue
 
-**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast). P2 built (own tooltip), awaiting Dominik's visual pass.
+**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast). P2 built (own tooltip), awaiting Dominik's visual pass. P3 built (PrimeVue removed), stacked on P2.
 
 ## Goal
 
@@ -95,9 +95,16 @@ Modals and dialogs are already hand-rolled (`BaseModal.vue`). No other PrimeVue 
   full-width `.left` row falling to top, HTML path, live update, Escape, outside-hover, detached
   target, scroll, unmount. **Needs Dominik's eyes before merging**: placement in dense panels
   (PopulationManager, the task panels, the ImageTable QC badge), dark mode, and the floating windows.
-- **P3, remove.** Drop `primevue`, `@primeuix/themes`, the `PrimeVue` config + Aura preset and the
-  `primevue` CSS layer. Check what Aura was still styling (base font, focus rings), add the ratchet
-  test, and update `docs/inventory/FRONTEND.md`, `docs/ui/PRIMITIVES.md` and `docs/UI.md`.
+- **P3, remove — built, stacked on P2.** `primevue` + `@primeuix/themes` dropped (no `@primeuix/*`
+  or `@primevue/*` left in the lock), the `PrimeVue` config + Aura preset gone from `main.ts`, and
+  Dependabot's ignore narrowed to `primeicons`. What Aura was still styling, measured by dumping the
+  CSS it injects with no component mounted: `box-sizing: border-box` (ours already), `color-scheme:
+  dark` on `.cc-dark` (native scrollbars, inputs, select menus) and `.pi { font-size: 1rem }`, plus
+  `.p-*` component classes nothing here uses. The two that mattered are kept in `@layer cc-base` in
+  `style.css`, the lowest layer, as Aura's were. Ratchet: `utils/primevueRetired.test.ts` (no
+  `primevue` / `@primevue` / `@primeuix` import or dependency). The token guard no longer exempts
+  `--p-*`, since nothing declares them now. Inventory, `docs/UI.md`, README + architecture labels
+  updated.
 - **P4, icons.** `components/CcIcon.vue` on `lucide-vue-next`, plus a mapping table (primeicons name →
   Lucide name) built from `ICON_LEGEND`. Then a codemod: `<i class="pi pi-X">` → `<CcIcon name="…">`,
   `icon: 'pi-X'` data → the new name, and the built-up prefixes by hand. `iconLegend.ts` switches to

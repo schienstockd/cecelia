@@ -2,8 +2,6 @@ import { createApp, watch } from 'vue'
 import { keepAlivePause } from './composables/useKeepAlive'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
-import PrimeVue from 'primevue/config'
-import Aura from '@primeuix/themes/aura'
 import 'primeicons/primeicons.css'
 import './style.css'
 import App from './App.vue'
@@ -125,15 +123,6 @@ app.use(pinia)
 app.use(router)
 // module pages under App.vue's <KeepAlive> go inert while hidden — see composables/useKeepAlive.ts
 app.use(keepAlivePause)
-app.use(PrimeVue, {
-  theme: {
-    preset: Aura,
-    options: {
-      darkModeSelector: '.cc-dark',
-      cssLayer: { name: 'primevue', order: 'theme, base, primevue' },
-    },
-  },
-})
 app.directive('tooltip', tooltip)
 
 // ── The browser's own failures → the console ─────────────────────────────────
