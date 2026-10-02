@@ -103,7 +103,10 @@ async function screenshot(what: string): Promise<{ assetId?: string; viewState?:
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: projectUid.value, imageUid: uid,
-        valueName: activeImage.value?.activeValueName, viewState: vs,
+        // The version the viewer is showing (same rule as `readViewerLook`), not the active one —
+        // `vs` was captured off those pixels, and the render reads the viewer's version too.
+        valueName: (isOpen.value ? viewer.openImage?.valueName : '') || activeImage.value?.activeValueName,
+        viewState: vs,
       }),
     })
     if (!res.ok) {
