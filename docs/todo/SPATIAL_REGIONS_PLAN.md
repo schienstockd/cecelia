@@ -258,7 +258,7 @@ transition analysis. `centroid_t` is excluded from the distance space either way
 
 New `GET /api/analysis/spatial` (backed by `app/src/ai/spatial.jl`) + two MCP tools splitting the
 route's two slices — `get_region_clusters` (niches) + `get_contact_stats` (pairwise co-localisation);
-mirror `get_cluster_summary` (route → `client.py` `ALLOWED_ROUTES` + method → `@mcp.tool()`). Output
+mirror `get_cluster_summary` (route → `client.py` `ALLOWED_ROUTES` + method → `@_tool`). Output
 format is **flat, interpretable rows** — `population_pair → mean_distance → z_score → p_value`,
 `population × region → frequency`, `population_pair → pearson_r` — never raw matrices. This is a
 from-the-start design constraint on every analysis function's stored output, not a retrofit.
