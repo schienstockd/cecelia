@@ -29,9 +29,33 @@ TARGET_FORMAT = "rgba8unorm-srgb"
 POINT_STRIDE, SEG_STRIDE = 7, 10
 
 
+def _native_arm_processor() -> None:
+    """Make ``platform.processor()`` agree with the process on Apple Silicon, before wgpu loads.
+
+    wgpu's Metal backend imports ``rubicon-objc``, which picks its message-send symbols from
+    ``platform.processor()`` — and that shells out to ``uname -p``. Under a parent running in Rosetta
+    (an Intel Julia on an Apple Silicon Mac) the child ``uname`` runs translated too and says
+    ``i386``, while this Python is native arm64: rubicon then binds the Intel-only
+    ``objc_msgSendSuper_stret`` and the import dies (``dlsym … symbol not found``). The kernel's
+    answer for THIS process (``os.uname().machine``) is the one to trust."""
+    import os
+    import platform
+    import sys
+    if sys.platform != "darwin" or os.uname().machine != "arm64":
+        return
+    if not platform.processor().startswith("arm"):
+        platform.processor = lambda: "arm"
+
+
+def _wgpu():
+    _native_arm_processor()
+    import wgpu
+    return wgpu
+
+
 def request_adapter(prefer: str = "high-performance"):
     """The best adapter wgpu offers, else the software fallback; ``None`` if there is neither."""
-    import wgpu
+    wgpu = _wgpu()
     adapter = wgpu.gpu.request_adapter_sync(power_preference=prefer)
     if adapter is None:
         adapter = wgpu.gpu.request_adapter_sync(force_fallback_adapter=True)
@@ -117,7 +141,7 @@ class MipHost:
     """
 
     def __init__(self, adapter=None):
-        import wgpu
+        wgpu = _wgpu()
         self._wgpu = wgpu
         self.adapter = adapter or request_adapter()
         if self.adapter is None:
