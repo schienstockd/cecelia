@@ -3,7 +3,7 @@
      slot. Camera props are (yaw, pitch) alone: pan and dist do not rotate the volume, so the
      component is oblivious to them and the SVG never redraws on a pan or a wheel-zoom.
 
-     Projection lives in `utils/axesGizmo.ts` — SAME basis as `lib/webgpu/mipShader.ts`'s
+     Projection lives in `utils/axesGizmo.ts` — SAME basis as `lib/webgpu/shaders/mip_common.wgsl`'s
      `camera()`, so the arrows can never drift off the rotating volume behind them.
 
      Layout is two stacked rows — the SVG on top, a separate readout strip below — because a

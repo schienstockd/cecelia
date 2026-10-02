@@ -8,6 +8,7 @@
 // once came out WHITE (`lutTextureBytes` takes the server's stops and nothing else).
 
 import { parseHex } from './colour'
+import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
 
 /** Per-channel display state as the server resolved it — see `api_viewer_meta`. */
 export interface ViewerChannel {
@@ -108,10 +109,10 @@ export interface ViewerMeta {
  *  per slot. In 3D mode this also multiplies the vol texture's z-layer count (nZ * nT * MAX_CHANNELS),
  *  which can bump into `maxTextureDimension3D` (2048 on integrated) for deep z-stacks — but 2D and
  *  moderate 3D fit fine. */
-export const MAX_CHANNELS = 32
+export const MAX_CHANNELS = SHADER_CONSTANTS.MAX_CHANNELS
 /** Stops per channel in the LUT texture. Matches the bridge's `_LUT_MAX_STOPS`, which is what caps the
  *  stops the props file can carry in the first place. */
-export const LUT_STOPS = 64
+export const LUT_STOPS = SHADER_CONSTANTS.LUT_STOPS
 
 export interface SlabQuery {
   projectUid: string
@@ -575,7 +576,7 @@ const PITCH_LIMIT = Math.PI / 2 - 0.01
  * it and the shader turns `dist` back into a half-height. Two copies drift, and the symptom is a
  * "Reset view" that does not fit.
  */
-export const VIEW_HALF_ANGLE = 0.45
+export const VIEW_HALF_ANGLE = SHADER_CONSTANTS.VIEW_HALF_ANGLE
 
 /**
  * Hard ceiling on total cache bytes. Invisible to the user, and it is what makes the viewer
@@ -697,7 +698,7 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *  band and dist didn't change, don't shift the pan either — the view would drift on further wheel
  *  notches at the clamp.
  *
- *  Sign convention: the SHADER (`tileShader.ts`, and mirrored by the volume shader) is the ground
+ *  Sign convention: the SHADER (`shaders/tile.wgsl`, and mirrored by the volume shader) is the ground
  *  truth. It computes `ndcX = (wx - panX) / halfW` and `ndcY = -(wy + panY) / halfH`, i.e. the
  *  screen center is at world `(panX, -panY)`. So the world under the cursor is
  *     wx = panX + ndcX * halfW

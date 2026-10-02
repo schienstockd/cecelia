@@ -5,9 +5,10 @@
 // Firefox has no compositor — see NAPARI_WEBGPU_AUDIT.md → G0). So a broken shader would be found by
 // Dominik, on his click, in a window that also needs the backend restarted first.
 //
-// This is NOT a second copy of the shader. It READS `frontend/src/lib/webgpu/mipShader.ts` and
-// substitutes the two constants, so the page runs the exact string the app runs; a divergence is
-// impossible by construction. It renders a PHANTOM (no server, no zarr), which is what lets it check
+// This is NOT a second copy of the shader. It READS `frontend/src/lib/webgpu/shaders/mip*.wgsl` and
+// expands them with the app's own expander (`wgslExpand.ts`, which Node runs with its types
+// stripped), so the page runs the exact string the app runs; a divergence is impossible by
+// construction. It renders a PHANTOM (no server, no zarr), which is what lets it check
 // the two things a real image cannot distinguish:
 //
 //   1. does the WGSL compile at all,
@@ -25,182 +26,64 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
-const SRC = join(import.meta.dirname, '..', '..', '..', '..',
-                 'frontend', 'src', 'lib', 'webgpu', 'mipShader.ts')
-const src = readFileSync(SRC, 'utf8')
+const ROOT = join(import.meta.dirname, '..', '..', '..', '..', 'frontend', 'src', 'lib', 'webgpu')
+const SHADERS = join(ROOT, 'shaders')
+const { expandSource, buildUniformLayout } = await import(join(ROOT, 'wgslExpand.ts'))
+const readShader = (f) => readFileSync(join(SHADERS, f), 'utf8')
+const CONSTS = JSON.parse(readShader('constants.json'))
+const { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } = CONSTS
+const expand = (f) => expandSource(f, CONSTS, readShader)
 
-// The constants the shader interpolates come from volumeViewer.ts; read them rather than restate them.
-const VV = readFileSync(join(import.meta.dirname, '..', '..', '..', '..',
-                             'frontend', 'src', 'utils', 'volumeViewer.ts'), 'utf8')
-const constOf = (name) => {
-  const m = VV.match(new RegExp('export const ' + name + ' = (\\d+)'))
-  if (!m) throw new Error('could not read ' + name + ' from volumeViewer.ts')
-  return Number(m[1])
-}
-const MAX_CHANNELS = constOf('MAX_CHANNELS')
-const LUT_STOPS = constOf('LUT_STOPS')
-// The framing constant the camera and the shader share. Read, not retyped — the guard below fails if a
-// NEW interpolation appears, which is how this one announced itself.
-const VIEW_HALF_ANGLE = (() => {
-  const m = VV.match(/export const VIEW_HALF_ANGLE = ([\d.]+)/)
-  if (!m) throw new Error('could not read VIEW_HALF_ANGLE from volumeViewer.ts')
-  return Number(m[1])
-})()
+// The UNIFORM LAYOUT comes from `uniforms.json`, the same table the renderer writes by, not from a
+// number typed here. It changed the day the overlay pass was added (four leading vec4s became five)
+// and a stale copy shifts every channel's contrast window by one slot — which renders as the WRONG
+// CHANNEL being bright, not as an error. LAB0 used to be derived as "the last leading vec4" and a
+// 7th vec4 added after it sent label opacity into pan.x; it is read by NAME now.
+const MIP_LAYOUT = buildUniformLayout('mip', JSON.parse(readShader('uniforms.json')).mip, CONSTS)
+const CH0 = MIP_LAYOUT.at.ch.lo
+const LEADING_VEC4S = CH0 / 4
+const LAB0 = MIP_LAYOUT.at.lab.opacity
 
-// The UNIFORM LAYOUT comes from the renderer, not from a number typed here. It changed the day the
-// overlay pass was added (four leading vec4s became five) and a stale copy shifts every channel's
-// contrast window by one slot — which renders as the WRONG CHANNEL being bright, not as an error.
-const VR = readFileSync(join(import.meta.dirname, '..', '..', '..', '..',
-                             'frontend', 'src', 'lib', 'webgpu', 'volumeRenderer.ts'), 'utf8')
-const LEADING_VEC4S = (() => {
-  const m = VR.match(/const UNIFORM_BYTES = (\d+) \* 16 \+ MAX_CHANNELS \* 16/)
-  if (!m) throw new Error('could not read UNIFORM_BYTES from volumeRenderer.ts')
-  return Number(m[1])
-})()
-
-// Pick-highlight storage buffer — the mask shader includes a WGSL snippet from
-// `frontend/src/utils/viewerLabels.ts`'s `pickBufferWgsl(binding)`. Read the layout constants +
-// the binding number from source; the snippet body is short enough to inline here (following the
-// existing "constants read, shader-body verbatim" split). Same-shape guard as UNIFORM_BYTES: if
-// the JS pack changes shape, this throws at extraction rather than passing a stale substitution.
-const VL = readFileSync(join(import.meta.dirname, '..', '..', '..', '..',
-                             'frontend', 'src', 'utils', 'viewerLabels.ts'), 'utf8')
-const PICK_BITSET_CAPACITY = (() => {
-  const m = VL.match(/PICK_BITSET_CAPACITY = ([\d_]+)/)
-  if (!m) throw new Error('could not read PICK_BITSET_CAPACITY from viewerLabels.ts')
-  return Number(m[1].replace(/_/g, ''))
-})()
-const PICK_BITSET_WORDS = PICK_BITSET_CAPACITY / 32
-const MIP_PICK_BINDING = (() => {
-  const m = src.match(/export const MIP_PICK_BINDING = (\d+)/)
-  if (!m) throw new Error('could not read MIP_PICK_BINDING from mipShader.ts')
-  return Number(m[1])
-})()
-const PICK_WGSL = `
-struct PickData {
-  focus:    u32,
-  contour:  u32,
-  reserved0: u32,
-  reserved1: u32,
-  bits:     array<u32, ${PICK_BITSET_WORDS}>,
-};
-@group(0) @binding(${MIP_PICK_BINDING}) var<storage, read> pick: PickData;
-
-fn labInPick(id: u32) -> bool {
-  if (id == 0u || id >= ${PICK_BITSET_CAPACITY}u) { return false; }
-  let w = pick.bits[id >> 5u];
-  return (w & (1u << (id & 31u))) != 0u;
-}
-fn labIsFocus(id: u32) -> bool { return id != 0u && id == pick.focus; }
-fn labPickContourPx() -> i32 { return i32(pick.contour); }
-`
 // The uniform's stage VISIBILITY, read from the renderer rather than restated here. It has to include
 // VERTEX — the overlay passes project a point before there is a fragment to shade — and a layout that
 // omits a stage makes `createRenderPipeline` return an INVALID pipeline, which invalidates the whole
 // render pass (the volume draws in that pass too). This harness had its own copy of the wrong answer.
+const VR = readFileSync(join(ROOT, 'volumeRenderer.ts'), 'utf8')
 const UNIFORM_VIS = (() => {
   const m = VR.match(/binding: 0, visibility: ([^,]+),\s*\n?\s*buffer:/)
   if (!m) throw new Error('could not read binding 0 visibility from volumeRenderer.ts')
   return m[1].trim()
 })()
 
-const CH0 = (() => {
-  const m = VR.match(/const CH0 = (\d+)/)
-  if (!m) throw new Error('could not read CH0 from volumeRenderer.ts')
-  return Number(m[1])
-})()
-if (CH0 !== LEADING_VEC4S * 4) {
-  throw new Error(`CH0 (${CH0}) disagrees with UNIFORM_BYTES (${LEADING_VEC4S} vec4s)`)
-}
-// The labels vec4's float index. Read, not derived — this used to be `(LEADING_VEC4S - 1) * 4` on the
-// assumption that labels is the LAST leading vec4, and a 7th leading vec4 (pan + tail-plane clip)
-// added AFTER it shifted the harness silently: label opacity was writing into pan.x, so every label
-// test drew nothing. Now `const LAB0` in the renderer is the ONE source of truth, mirrored here.
-const LAB0 = (() => {
-  const m = VR.match(/const LAB0 = (\d+)/)
-  if (!m) throw new Error('could not read LAB0 from volumeRenderer.ts')
-  return Number(m[1])
-})()
-
-// The three shaders share an interpolated prelude (one camera, one uniform layout — there were three
-// copies and that is how a sign convention drifts). Resolve it first, or every body arrives with an
-// unresolved ${SHARED_WGSL} and nothing compiles.
-const sharedOpen = src.indexOf('const SHARED_WGSL = `')
-if (sharedOpen < 0) throw new Error('SHARED_WGSL not found — did the export shape change?')
-const sharedBody = src.slice(sharedOpen + 'const SHARED_WGSL = `'.length)
-const SHARED = sharedBody.slice(0, sharedBody.indexOf('`'))
-
 // The camera's sign convention, pinned. `projectJS` below re-derives the projection independently —
 // that is the point of it — but 'independent' has to mean 'derived from the same stated intent', not
 // 'derived from whatever it said when it was written'. If the shader's `up` is ever flipped back, this
 // throws at generation time rather than letting the harness quietly accuse a correct shader.
-if (!SHARED.includes('c.up = cross(c.right, c.fwd)')) {
-  throw new Error("SHARED_WGSL's camera no longer says `up = cross(right, fwd)` — the overlay check's " +
+if (!readShader('mip_common.wgsl').includes('c.up = cross(c.right, c.fwd)')) {
+  throw new Error("mip_common.wgsl's camera no longer says `up = cross(right, fwd)` — the overlay check's " +
                   'own derivation (projectJS) encodes that convention and must be flipped with it')
 }
 
-// The WGSL is a template literal; take it verbatim and resolve only the two interpolations.
-const open = src.indexOf('export const MIP_WGSL = `')
-if (open < 0) throw new Error('MIP_WGSL not found — did the export shape change?')
-const body = src.slice(open + 'export const MIP_WGSL = `'.length)
-const close = body.indexOf('`')
-if (close < 0) throw new Error('unterminated MIP_WGSL template literal')
-let wgsl = body.slice(0, close)
-if (wgsl.includes('${') === false) throw new Error('no interpolation found — check the extraction')
-wgsl = wgsl.replaceAll('${SHARED_WGSL}', SHARED)
-             .replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
-           .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
-           .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
-           .replaceAll('${pickBufferWgsl(MIP_PICK_BINDING)}', PICK_WGSL)
-if (wgsl.includes('${')) throw new Error('unresolved interpolation left in the WGSL: ' + wgsl.match(/\$\{[^}]*\}/))
-
-// Did we get the WHOLE shader? A backtick inside a WGSL comment ends the template literal it is
-// embedded in, and the extraction then takes everything up to THAT backtick — a silently truncated
-// shader that is still perfectly valid JavaScript, so neither the syntax check at the bottom nor
-// `node --check` on the source notices. It has happened twice. The entry points are the cheapest
-// evidence that the string is complete; the line count in the summary is the second.
 const complete = (name, code) => {
   for (const want of ['@vertex fn vs', '@fragment fn fs']) {
-    if (!code.includes(want)) {
-      throw new Error(`${name} is missing '${want}' — the extraction was TRUNCATED, almost certainly ` +
-                      'by a backtick inside a WGSL comment (the template literal ends there)')
-    }
+    if (!code.includes(want)) throw new Error(`${name} is missing '${want}'`)
   }
 }
-complete('MIP_WGSL', wgsl)
+const wgsl = expand('mip.wgsl')
+complete('mip.wgsl', wgsl)
 
-// The overlay pass, extracted the same way. It shares the uniform buffer and therefore the camera, and
-// `project()` in it is meant to be the exact inverse of the raycast's ray construction — so the check
-// below re-derives the projection in JS and asserts the point lands where JS says it should. That is
-// the only way to catch a right/up swap or a y-flip: both still draw a point, in the wrong place.
-const pOpen = src.indexOf('export const POINTS_WGSL = `')
-if (pOpen < 0) throw new Error('POINTS_WGSL not found — did the export shape change?')
-const pBody = src.slice(pOpen + 'export const POINTS_WGSL = `'.length)
-const pClose = pBody.indexOf('`')
-if (pClose < 0) throw new Error('unterminated POINTS_WGSL template literal')
-let pwgsl = pBody.slice(0, pClose)
-pwgsl = pwgsl.replaceAll('${SHARED_WGSL}', SHARED)
-             .replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
-             .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
-             .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
-if (pwgsl.includes('${')) throw new Error('unresolved interpolation in POINTS_WGSL: ' + pwgsl.match(/\$\{[^}]*\}/))
-complete('POINTS_WGSL', pwgsl)
+// The overlay pass. It shares the uniform buffer and therefore the camera, and `project()` in it is
+// meant to be the exact inverse of the raycast's ray construction — so the check below re-derives the
+// projection in JS and asserts the point lands where JS says it should. That is the only way to catch
+// a right/up swap or a y-flip: both still draw a point, in the wrong place.
+const pwgsl = expand('mip_points.wgsl')
+complete('mip_points.wgsl', pwgsl)
 
-// The track-tail pass, extracted the same way. It is checked below for COMPILATION only: a segment
-// quad's correctness is a screen-space width, and asserting that needs a known camera plus a readback
-// wide enough to measure a 4px band — worth adding when the tails are being tuned rather than now.
-const sOpen = src.indexOf('export const SEGMENTS_WGSL = `')
-if (sOpen < 0) throw new Error('SEGMENTS_WGSL not found — did the export shape change?')
-const sBody = src.slice(sOpen + 'export const SEGMENTS_WGSL = `'.length)
-const sClose = sBody.indexOf('`')
-if (sClose < 0) throw new Error('unterminated SEGMENTS_WGSL template literal')
-let swgsl = sBody.slice(0, sClose)
-swgsl = swgsl.replaceAll('${SHARED_WGSL}', SHARED)
-             .replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
-             .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
-             .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
-if (swgsl.includes('${')) throw new Error('unresolved interpolation in SEGMENTS_WGSL: ' + swgsl.match(/\$\{[^}]*\}/))
-complete('SEGMENTS_WGSL', swgsl)
+// The track-tail pass. It is checked below for COMPILATION only: a segment quad's correctness is a
+// screen-space width, and asserting that needs a known camera plus a readback wide enough to measure
+// a 4px band — worth adding when the tails are being tuned rather than now.
+const swgsl = expand('mip_segments.wgsl')
+complete('mip_segments.wgsl', swgsl)
 
 const NCH = 3
 const page = `<!doctype html><html><head><meta charset=utf-8><title>Cecelia — MIP shader check</title>
@@ -214,7 +97,7 @@ const page = `<!doctype html><html><head><meta charset=utf-8><title>Cecelia — 
  .ok{color:#8ce99a}.bad{color:#ff8a80}
 </style></head><body>
 <h1>MIP shader check — generated from the app's own source</h1>
-<p>Runs <code>frontend/src/lib/webgpu/mipShader.ts</code> verbatim on a phantom volume, so it needs no
+<p>Runs <code>frontend/src/lib/webgpu/shaders/mip*.wgsl</code> verbatim on a phantom volume, so it needs no
 backend and no zarr. Channel 0 is a <b>red</b> shell, 1 <b>green</b> at a larger radius, 2 <b>blue</b>
 larger again — through the same LUT texture the app builds. It asserts the pixels, so a wrong answer is
 reported rather than left to the eye.</p>

@@ -221,8 +221,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const viewerVolumeLevel = ref(Number(localStorage.getItem('cc.viewerVolumeLevel') ?? '-1'))
   // 3D projection: 'ortho' (default) = Imaris-style head-on, easier on the eye for intravital movies
   // and matches the offline movie renderer's parallel-ray MIP. 'persp' = perspective with
-  // foreshortening. Both are already implemented in the shaders (`brickShader.ts`, `mipShader.ts`);
-  // this only picks which one the renderer's `ortho` uniform ships. Live-toggled — no reallocate.
+  // foreshortening. Both are already implemented in the shaders (`shaders/brick*.wgsl`,
+  // `shaders/mip*.wgsl`); this only picks which one the renderer's `ortho` uniform ships. Live-toggled — no reallocate.
   const viewerVolumeProjection = ref<'ortho' | 'persp'>(
     (localStorage.getItem('cc.viewerVolumeProjection') as 'ortho' | 'persp') || 'ortho')
   // Auto-contrast top percentile — the knob the Auto button uses when picking `hi`. Default

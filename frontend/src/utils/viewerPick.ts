@@ -59,7 +59,7 @@ export function screenToImagePx(
   // NDC — right is +, up is +. Canvas y is top-down so it flips.
   const ndcX = (2 * cx) / Math.max(canvasW, 1) - 1
   const ndcY = 1 - (2 * cy) / Math.max(canvasH, 1)
-  // Invert the shader's projection. `tileShader.ts` (and the volume shaders it mirrors) place
+  // Invert the shader's projection. `shaders/tile.wgsl` (and the volume shaders it mirrors) place
   // screen-centre at world `(panX, -panY)`:
   //   ndcX = (wx - panX) / halfW      →  wx = panX + ndcX * halfW
   //   ndcY = -(wy + panY) / halfH     →  wy = -panY - ndcY * halfH
@@ -71,8 +71,8 @@ export function screenToImagePx(
   const worldX =  cam.panX + ndcX * halfW
   const worldY = -cam.panY - ndcY * halfH
   // Image is centred on the world origin and, per the shader's "screen up = -y in world"
-  // convention (tileShader.ts:53, mipShader.ts:42-48), image row 0 lives at world y = -extY/2
-  // and grows downward through world. So the absolute image µm is `world + ext/2` on BOTH axes —
+  // convention (shaders/tile.wgsl `vs`, shaders/mip_common.wgsl `camera()`), image row 0 lives at
+  // world y = -extY/2 and grows downward through world. So the absolute image µm is `world + ext/2` on BOTH axes —
   // no reflection. The previous version negated worldY here because its `worldY` was computed
   // with the opposite y-sign to the shader; the same fix above made this negation wrong too.
   const absX_um = worldX + extX / 2

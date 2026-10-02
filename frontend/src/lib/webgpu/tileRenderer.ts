@@ -23,7 +23,10 @@
 // in isolation. On mode switch to 3D the viewer disposes this renderer and creates the volume one
 // (WIP note in the ViewerWindow wire-up).
 
-import { TILE_WGSL, TILE_UNIFORM_BYTES } from './tileShader'
+import { TILE_WGSL, TILE_UNIFORM_BYTES, TILE_LAYOUT } from './tileShader'
+
+/** f32 slot of every uniform lane, by name (`shaders/uniforms.json` → "tile"). */
+const U = TILE_LAYOUT.at
 import {
   MAX_CHANNELS, LUT_STOPS, lutTextureBytes,
   type ViewerMeta, type ViewerChannel,
@@ -33,9 +36,6 @@ import { pickSrgbCanvasFormats } from './canvasFormat'
 export { WebGpuUnavailable, type AdapterReport }
 import { tileKeyStr, tileFetchRect, type TileKey } from '../../utils/tileViewer'
 
-/** Float index of channel slot 0 — four leading vec4s in. Written out because getting it wrong
- *  shifts every channel's window by one slot, which draws with the wrong channel bright. */
-const CH0 = 16
 /** Bytes per voxel the atlas is currently allocated for. Set on `setImage` from the store's dtype
  *  (`meta.bytesPerVoxel`): 1 for `|u1` sources (Manual IBEX .ims), 2 for `|u2` sources. Feeds both
  *  the budget math (`computeCapacity`) and the `writeTexture` layout (`bytesPerRow = w * BPV`) —
@@ -267,10 +267,10 @@ export async function createTileRenderer(
     )
     for (let c = 0; c < MAX_CHANNELS; c++) {
       const ch = channels[c]
-      const o = CH0 + c * 4
-      u[o] = ch ? ch.lo : 0
-      u[o + 1] = ch ? ch.hi : 1
-      u[o + 2] = ch && ch.visible ? 1 : 0
+      const o = c * 4
+      u[U.ch.lo + o] = ch ? ch.lo : 0
+      u[U.ch.hi + o] = ch ? ch.hi : 1
+      u[U.ch.visible + o] = ch && ch.visible ? 1 : 0
     }
   }
 
@@ -336,9 +336,9 @@ export async function createTileRenderer(
       currentLevel = level
       // Publish the geometry the shader reads — always, whether we reuse or reallocate.
       const [ex, ey] = [m.nX * (m.voxelUm[0] || 1), m.nY * (m.voxelUm[1] || 1)]
-      u[8] = ex; u[9] = ey; u[10] = 0; u[11] = 0
-      u[12] = nch; u[13] = 0; u[14] = 0; u[15] = 0
-      u[4] = nch                                        // vp.x = channel count
+      u[U.ext.x] = ex; u[U.ext.y] = ey; u[U.ext.unused0] = 0; u[U.ext.unused1] = 0
+      u[U.slot.channelsPerSlot] = nch; u[U.slot.unused0] = 0; u[U.slot.unused1] = 0; u[U.slot.unused2] = 0
+      u[U.vp.nch] = nch
       const bpv = m.bytesPerVoxel === 1 ? 1 : 2
       if (reuse && atlasBPV === bpv) return
       // Different shape or dtype → fresh atlas.
@@ -459,7 +459,7 @@ export async function createTileRenderer(
     loadedLevel: () => currentLevel,
 
     setCamera(panX, panY, dist) {
-      u[0] = panX; u[1] = panY; u[2] = dist
+      u[U.cam.panX] = panX; u[U.cam.panY] = panY; u[U.cam.dist] = dist
     },
     setChannels: setChannelsImpl,
 
@@ -475,8 +475,8 @@ export async function createTileRenderer(
     draw(tilesToDraw) {
       if (!usable() || !bindGroup || !atlas) return
       const w = canvas.width, h = canvas.height
-      u[3] = w > 0 ? w / Math.max(h, 1) : 1               // cam.w = aspect
-      u[5] = w; u[6] = h                                  // vp.y, vp.z = canvas size (px)
+      u[U.cam.aspect] = w > 0 ? w / Math.max(h, 1) : 1
+      u[U.vp.canvasW] = w; u[U.vp.canvasH] = h
       pushUniforms()
 
       // Instance data — one row per tile draw. Zero tiles is a legitimate frame (mount before the

@@ -3,14 +3,15 @@
 // interpolated, the uniform block, the LUT texture and the label palette. The Python host
 // (`render_frame.py`) uploads these verbatim, so the only thing it re-derives is the volume itself.
 //
-// The uniform packing below MIRRORS `volumeRenderer.ts` slot by slot (setImage / setCamera /
-// setChannels / render) — it is not exported from there, which is exactly Decision 3's point.
+// The uniforms are packed by lane NAME (`shaders/uniforms.json`, the table `volumeRenderer.ts` writes
+// by) — Phase 1 replaced the slot-by-slot mirror this spike started with.
 //
 // Run (from frontend/):
 //   SPIKE_IN=<inputs.json> SPIKE_OUT=<gpu_inputs.json> npx vitest run --dir ../docs/todo/spike/shared-renderer
 import { it } from 'vitest'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { MIP_WGSL } from '../../../../frontend/src/lib/webgpu/mipShader'
+import { packUniforms } from '../../../../frontend/src/lib/webgpu/shaderSource'
 import {
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, extentUm, lutTextureBytes, lutFromHex, fitCamera,
   type ViewerMeta, type ViewerChannel,
@@ -39,18 +40,22 @@ it.skipIf(!process.env.SPIKE_IN)('export one view as GPU inputs', () => {
   })
   const cam = applied.cam
 
-  const u = new Float32Array((7 + MAX_CHANNELS) * 4)
-  u[0] = cam.yaw; u[1] = cam.pitch; u[2] = cam.dist; u[3] = inp.steps            // setCamera + render
-  u[4] = channels.length; u[5] = inp.width; u[6] = inp.height                       // setImage + render
-  u[7] = 1                                    // orthographic: the plane view, and 3D's default projection
-  u[8] = ext[0]; u[9] = ext[1]; u[10] = ext[2]; u[11] = 0
-  u[12] = inp.nX; u[13] = inp.nY; u[14] = inp.nZ; u[15] = inp.nZ
-  u[16] = 1; u[17] = -1; u[18] = 1; u[19] = -1                                      // overlays: none
-  u[24] = cam.panX || 0; u[25] = cam.panY || 0; u[26] = -1; u[27] = -1
-  for (let c = 0; c < MAX_CHANNELS; c++) {                                          // setChannels
-    const ch = applied.channels[c]
-    u[28 + c * 4] = ch ? ch.lo : 0; u[29 + c * 4] = ch ? ch.hi : 1; u[30 + c * 4] = ch?.visible ? 1 : 0
+  const lanes: Record<string, number> = {
+    'cam.yaw': cam.yaw, 'cam.pitch': cam.pitch, 'cam.dist': cam.dist, 'cam.steps': inp.steps,
+    'vp.nch': channels.length, 'vp.canvasW': inp.width, 'vp.canvasH': inp.height,
+    'vp.ortho': 1,                          // the plane view, and 3D's default projection
+    'ext.x': ext[0], 'ext.y': ext[1], 'ext.z': ext[2],
+    'dims.nx': inp.nX, 'dims.ny': inp.nY, 'dims.nz': inp.nZ, 'dims.zPerChannel': inp.nZ,
+    'ov.pointPx': 1, 'ov.planeLo': -1, 'ov.tailPx': 1, 'ov.planeHi': -1,              // overlays: none
+    'pan.x': cam.panX || 0, 'pan.y': cam.panY || 0, 'pan.ribbonLo': -1, 'pan.ribbonHi': -1,
   }
+  for (let c = 0; c < MAX_CHANNELS; c++) {
+    const ch = applied.channels[c]
+    lanes[`ch[${c}].lo`] = ch ? ch.lo : 0
+    lanes[`ch[${c}].hi`] = ch ? ch.hi : 1
+    lanes[`ch[${c}].visible`] = ch?.visible ? 1 : 0
+  }
+  const u = packUniforms('mip', lanes)
 
   writeFileSync(process.env.SPIKE_OUT!, JSON.stringify({
     wgsl: MIP_WGSL,

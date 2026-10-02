@@ -7,7 +7,7 @@
 // screenshot proves the shader math without needing the fetch pipeline — the same idea as the
 // magenta clear, one step deeper.
 //
-// The uniform block matches `mipShader.ts`'s camera math field-for-field (yaw/pitch/dist/pan,
+// The uniform block matches `shaders/mip_common.wgsl`'s camera math field-for-field (yaw/pitch/dist/pan,
 // VIEW_HALF_ANGLE, ortho toggle) so P5d/P6 can graft the LUT + label + overlay bindings on with
 // no camera drift. What's NOT in P5b: LUT texture, label texture, contrast windows, overlay
 // pipelines, sampleFrame probe copy. Each landed as a no-op in P5a and stays that way.

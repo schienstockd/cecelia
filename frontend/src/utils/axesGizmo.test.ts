@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { projectAxes, formatZoom } from './axesGizmo'
 
-// Golden values are hand-derived from mipShader.ts's `camera()` fn:
+// Golden values are hand-derived from shaders/mip_common.wgsl's `camera()` fn:
 //   fwd   = (cp*sy, sp, cp*cy)
 //   right = normalize(cross((0,1,0), fwd))
 //   up    = cross(right, fwd)

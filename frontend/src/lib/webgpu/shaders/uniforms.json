@@ -1,0 +1,46 @@
+{
+  "mip": {
+    "struct": "P",
+    "file": "mip_common.wgsl",
+    "fields": [
+      { "name": "cam",  "lanes": ["yaw", "pitch", "dist", "steps"] },
+      { "name": "vp",   "lanes": ["nch", "canvasW", "canvasH", "ortho"] },
+      { "name": "ext",  "lanes": ["x", "y", "z", "zOriginUm"] },
+      { "name": "dims", "lanes": ["nx", "ny", "nz", "zPerChannel"] },
+      { "name": "ov",   "lanes": ["pointPx", "planeLo", "tailPx", "planeHi"] },
+      { "name": "lab",  "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
+      { "name": "pan",  "lanes": ["x", "y", "ribbonLo", "ribbonHi"] },
+      { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
+    ]
+  },
+  "tile": {
+    "struct": "P",
+    "file": "tile.wgsl",
+    "fields": [
+      { "name": "cam",  "lanes": ["panX", "panY", "dist", "aspect"] },
+      { "name": "vp",   "lanes": ["nch", "canvasW", "canvasH", "unused"] },
+      { "name": "ext",  "lanes": ["x", "y", "unused0", "unused1"] },
+      { "name": "slot", "lanes": ["channelsPerSlot", "unused0", "unused1", "unused2"] },
+      { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
+    ]
+  },
+  "brick": {
+    "struct": "BU",
+    "file": "brick_common.wgsl",
+    "fields": [
+      { "name": "cam",      "lanes": ["yaw", "pitch", "dist", "steps"] },
+      { "name": "vp",       "lanes": ["nch", "canvasW", "canvasH", "ortho"] },
+      { "name": "ext",      "lanes": ["x", "y", "z", "zOriginUm"] },
+      { "name": "dims",     "lanes": ["nx", "ny", "nz", "unused"] },
+      { "name": "brick",    "lanes": ["x", "y", "z", "channelsPerBrick"] },
+      { "name": "atlas",    "lanes": ["w", "h", "d", "slotsX"] },
+      { "name": "grid",     "lanes": ["nBx", "nBy", "nBz", "slotsY"] },
+      { "name": "pan",      "lanes": ["x", "y", "ribbonLo", "ribbonHi"] },
+      { "name": "ov",       "lanes": ["pointPx", "planeLo", "tailPx", "planeHi"] },
+      { "name": "lab",      "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
+      { "name": "prevGrid", "lanes": ["nBx", "nBy", "nBz", "valid"] },
+      { "name": "prevDims", "lanes": ["nx", "ny", "nz", "unused"] },
+      { "name": "ch",       "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
+    ]
+  }
+}

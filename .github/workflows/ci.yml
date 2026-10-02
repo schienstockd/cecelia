@@ -272,10 +272,20 @@ jobs:
           pixi-version: v0.71.1
           cache: true
 
+      # The movie renderer runs the viewer's WGSL through wgpu (test_wgsl_utils.py renders one frame).
+      # Linux runners have no GPU, so give them Mesa's software Vulkan (lavapipe); macOS has Metal and
+      # Windows has DX12's WARP, so they need nothing. CECELIA_REQUIRE_WGPU turns "no adapter" from a
+      # skip into a failure — the point of the job is to prove the shared renderer runs on each OS.
+      - name: Software Vulkan for the shared renderer (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q mesa-vulkan-drivers
+
       # Python analysis-env tests (unittest-discovered python/cecelia/tests/*) — e.g. the zarr writer
       # regression and the UTF-8 text-I/O detector. Runs in the Pixi env; fixture-free.
       - name: Python tests
         run: pixi run test-py
+        env:
+          CECELIA_REQUIRE_WGPU: "1"
 
       # MCP observer client tests (mcp/tests/*) — allow-list + URL/body building, HTTP mocked. Stdlib
       # only; no server needed.
