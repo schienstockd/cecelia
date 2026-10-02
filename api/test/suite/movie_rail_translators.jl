@@ -97,6 +97,14 @@
     @test ov_ts["trackSources"][1]["valueName"] == "cpSAM"
     @test ov_ts["trackSources"][1]["colour"]    == "#ff6b6b"
     @test ov_ts["trackSources"][2]["valueName"] == "flowTom"
+    # The viewer's look keeps them as a map `{valueName: {visible, colour}}` — same entries, hidden
+    # ones dropped.
+    ov_map = _overlays_raw_from_config(Dict{String,Any}(
+        "showTracks" => true,
+        "trackSources" => Dict{String,Any}(
+            "flowTom" => Dict{String,Any}("visible" => true,  "colour" => "#AA1F5E"),
+            "cpSAM"   => Dict{String,Any}("visible" => false, "colour" => "#ff6b6b"))), false)
+    @test ov_map["trackSources"] == [Dict{String,Any}("valueName" => "flowTom", "colour" => "#AA1F5E")]
     # An entry with no colour falls back to the neutral grey, so a caller can send half-filled
     # entries without breaking the multi-source path.
     ov_ts_default = _overlays_raw_from_config(Dict{String,Any}(

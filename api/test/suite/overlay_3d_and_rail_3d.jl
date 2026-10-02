@@ -58,6 +58,35 @@
             @test all(c -> c == RGB{N0f8}(0, 1, 0), pts0.colour)
             # No tracks requested → no segments even if the fixture has `track_id`.
             @test segs0 === nothing
+
+            # What a keyframe / 3D Record actually receives: the viewer's look through the ONE
+            # translator (`_overlays_raw_from_config`), not a hand-built dict. Tracks on, pops off,
+            # one track source in its own colour: the viewer draws its tails in that colour, no dots.
+            look = Dict{String,Any}("showTracks" => true, "showGatedTracks" => true,
+                                    "showPopulations" => false, "popType" => "flow",
+                                    "popValueName" => "B", "tailLength" => 5,
+                                    "trackColourMode" => "solid",
+                                    "trackSources" => Dict{String,Any}(
+                                        "B" => Dict{String,Any}("visible" => true, "colour" => "#ff0000")))
+            ov_cfg = _overlays_raw_from_config(look, false)
+            b2, b3, _ = _resolve_keyframe_overlay_builders(img, ov_cfg)
+            @test b2 !== nothing && b3 !== nothing
+            red = RGB{N0f8}(1, 0, 0)
+            p3, s3 = b3(5, R0, 0.0, 0.0, 0.0, 1.0, canvas_h, canvas_w, 1.0)
+            @test s3 !== nothing && length(s3.u0) > 0          # the tails are drawn
+            @test p3 === nothing                              # and no dots: points are populations
+            @test all(==(red), s3.colour)                     # in the source's colour
+            p2, s2 = b2(100, 100, nothing, 0)(5)
+            @test s2 !== nothing && all(==(red), s2.colour)   # 2D keyframes alike
+            @test p2 === nothing
+            # two sources → one merged closure carrying both colours
+            look2 = merge(look, Dict{String,Any}("trackSources" => Any[
+                Dict{String,Any}("valueName" => "B", "colour" => "#ff0000"),
+                Dict{String,Any}("valueName" => "B", "colour" => "#0000ff")]))
+            _, b3b, _ = _resolve_keyframe_overlay_builders(img, _overlays_raw_from_config(look2, false))
+            _, s3b = b3b(5, R0, 0.0, 0.0, 0.0, 1.0, canvas_h, canvas_w, 1.0)
+            @test length(s3b.u0) == 2 * length(s3.u0)
+            @test Set(s3b.colour) == Set([red, RGB{N0f8}(0, 0, 1)])
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

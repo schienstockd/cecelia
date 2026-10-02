@@ -250,6 +250,15 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # can now see both, each in its own colour.
     ts_raw = get(cfg, "trackSources", nothing)
     ts_raw === nothing && (ts_raw = get(cfg, :trackSources, nothing))
+    # The viewer's look keeps them as a map, `{valueName: {visible, colour}}` (`viewerLook`); the
+    # batch request sends the list. Same entries either way — the visible ones.
+    if ts_raw isa AbstractDict
+        ts_raw = Any[Dict{String,Any}("valueName" => String(k),
+                                      "colour" => String(something(get(v, "colour", nothing),
+                                                                   get(v, :colour, nothing), "")))
+                     for (k, v) in ts_raw
+                     if v isa AbstractDict && something(get(v, "visible", nothing), get(v, :visible, nothing), true) === true]
+    end
     if ts_raw isa AbstractVector && !isempty(ts_raw)
         # Symbol/String key tolerance — same reason `_ov` reads both shapes.
         _svalue(e, k) = something(get(e, Symbol(k), nothing), get(e, String(k), ""))

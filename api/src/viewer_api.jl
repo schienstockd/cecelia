@@ -1133,10 +1133,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
         else
             tf = pixel_transform(H, W; crop = crop, max_px = max_px)
             if has_multi_tracks
-                # One closure per source; merge them into one `t -> (points, segments)` by
-                # concatenating the per-source outputs. This is the shape `build_overlays_for`
-                # already emits (`(; x, y, colour)` for points and `(; x0, y0, x1, y1, colour, alpha)`
-                # for segments), so no format bridging.
+                # One closure per source, merged into one `t -> (points, segments)`.
                 per_source = Any[]
                 for src in track_sources
                     src isa AbstractDict || continue
@@ -1150,6 +1147,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                                             tail_length = tail_length,
                                             all_tracks = true,
                                             all_tracks_colour = col_src,
+                                            solid_colour = col_src,
+                                            include_points = false,
                                             track_color_mode = track_color_mode)
                     catch e
                         @warn "movie overlays: multi-source author failed" value_name = vn_src exception = e
@@ -1157,32 +1156,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                     end
                     cl === nothing || push!(per_source, cl)
                 end
-                inner = if isempty(per_source)
-                    ov_diag["reason"] = "no track sources resolved"
-                    nothing
-                else
-                    function(t::Int)
-                        pts_x = Int[]; pts_y = Int[]; pts_c = RGB{N0f8}[]
-                        s_x0 = Int[]; s_y0 = Int[]; s_x1 = Int[]; s_y1 = Int[]
-                        s_c = RGB{N0f8}[]; s_a = Float64[]
-                        for cl in per_source
-                            p, s = cl(t)
-                            if p !== nothing
-                                append!(pts_x, p.x); append!(pts_y, p.y); append!(pts_c, p.colour)
-                            end
-                            if s !== nothing
-                                append!(s_x0, s.x0); append!(s_y0, s.y0)
-                                append!(s_x1, s.x1); append!(s_y1, s.y1)
-                                append!(s_c, s.colour); append!(s_a, s.alpha)
-                            end
-                        end
-                        pts = isempty(pts_x) ? nothing : (; x = pts_x, y = pts_y, colour = pts_c)
-                        segs = isempty(s_x0) ? nothing :
-                            (; x0 = s_x0, y0 = s_y0, x1 = s_x1, y1 = s_y1,
-                               colour = s_c, alpha = s_a)
-                        (pts, segs)
-                    end
-                end
+                inner = merge_overlay_closures(per_source)
+                inner === nothing && (ov_diag["reason"] = "no track sources resolved")
             elseif show_pops || all_tracks
                 inner = try
                     build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
@@ -1191,6 +1166,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                                        tail_length = tail_length,
                                        all_tracks = all_tracks,
                                        all_tracks_colour = all_tracks_col,
+                                       # the viewer's points are its populations; tracks alone draw no dots
+                                       include_points = show_pops,
                                        track_color_mode = track_color_mode)
                 catch e
                     ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
