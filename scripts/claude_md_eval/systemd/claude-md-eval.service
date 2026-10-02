@@ -18,8 +18,10 @@ Environment=REPO=%h/.cecelia-effectiveness/eval-worktree
 Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Reset it to origin/main first, so every pass runs today's driver
 # (docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md → Decision 16). `--detach` first: the last pass
-# left it on its `eval-run/*` branch, and a reset there would move that branch.
-ExecStartPre=/bin/bash -c 'git -C "$${REPO}" fetch --quiet origin && git -C "$${REPO}" checkout --quiet --detach && git -C "$${REPO}" reset --quiet --hard origin/main'
+# left it on its `eval-run/*` branch, and a reset there would move that branch. The fetch retries
+# because this machine's resolver drops lookups now and then, and a single miss at midnight would
+# skip the week; if it never succeeds the pass runs the local origin/main, as `supervise.pin` does.
+ExecStartPre=/bin/bash -c 'for i in 1 2 3 4 5; do git -C "$${REPO}" fetch --quiet origin && break; echo "fetch failed ($$i/5)" >&2; sleep 30; done; git -C "$${REPO}" checkout --quiet --detach && git -C "$${REPO}" reset --quiet --hard origin/main'
 ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/claude_md_eval/cron_pass.sh" --pinned'
 # The supervised pass is longer than the bare suite: a full `pixi install` in the persistent
 # eval worktree the first time, the suite (~25 min at N=3 for 9 prompts), retries, one judge call
