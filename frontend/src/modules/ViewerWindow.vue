@@ -54,6 +54,7 @@ import {
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
+import { onViewerImageMeta } from '../lib/viewerImageMetaChannel'
 import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
@@ -4463,6 +4464,7 @@ function publishViewerFocus() {
 // panel-viewer path. A bumped rev threads into `sourceId`/`BrickSource.rev`, so the same
 // invalidation logic #779 wired for a version swap fires for a same-store rewrite too.
 let stopCacheClearWatch: (() => void) | null = null
+let stopImageMetaWatch: (() => void) | null = null
 
 // Analysis-board "image strip" capture — the browser equivalent of napari's screenshot.
 // A caller in the OPENER window (same-origin) reads the popup's `Window.__cceceliaViewerCapture`
@@ -4869,6 +4871,19 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
 function onDrawCancel() { drawMode.value = false }
 
 onMounted(() => {
+  // Channel renamed elsewhere (image table, metadata panel) while we're open: refetch meta and take
+  // only the names — contrast / LUT / visibility are the user's live view and stay as they are.
+  stopImageMetaWatch = onViewerImageMeta(async (ev) => {
+    if (ev.imageUid !== imageUid || !meta.value) return
+    try {
+      const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+      const m = await readJson<ViewerMeta>(res, 'Metadata')
+      const chs = meta.value?.channels ?? []
+      for (let i = 0; i < Math.min(chs.length, m.channels.length); i++) chs[i].name = m.channels[i].name
+    } catch (e) {
+      vlog('warn', 'Channel-name refresh failed: ' + (e instanceof Error ? e.message : String(e)))
+    }
+  })
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSelectModeTick)
   window.addEventListener('focus', publishViewerFocus)
@@ -4927,6 +4942,7 @@ onUnmounted(() => {
   delete (window as unknown as { __cceceliaViewerScreenshot?: unknown }).__cceceliaViewerScreenshot
   delete (window as unknown as { __cceceliaViewerBeginDraw?: unknown }).__cceceliaViewerBeginDraw
   stopCacheClearWatch?.(); stopCacheClearWatch = null
+  stopImageMetaWatch?.(); stopImageMetaWatch = null
   stopPlay()
   pump.cancel()
   zPump.cancel()
