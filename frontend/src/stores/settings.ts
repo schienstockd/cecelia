@@ -215,11 +215,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const viewerScaleBarPx = ref(Number(localStorage.getItem('cc.viewerScaleBarPx') ?? '20') || 20)
   const viewerTimestampPx = ref(Number(localStorage.getItem('cc.viewerTimestampPx') ?? '20') || 20)
   const viewerCacheFrames = ref(Number(localStorage.getItem('cc.viewerCacheFrames') ?? '0') || 0)
-  // 3D pyramid LEVEL for the volume view. -1 = auto (the DEEPEST level = coarsest resolution),
-  // 0..N-1 = force that level. The default is the deepest level because a full-res volume
-  // exceeds WebGPU's `maxBufferSize` on wide-XY images (`f8gzA2` → 1.28 GB against a 256 MB cap).
-  // Imaris-style octree LOD was on the wishlist but never shipped, so "coarsest by default, user
-  // may override" is the answer this ships with. (Spatial audit Phase 2.5, 2026-08-25.)
+  // 3D pyramid LEVEL for the volume view. -1 = auto, 0..N-1 = force that level. What auto means
+  // per renderer (brick: deepest as the SSE floor; flat: finest level that fits the adapter) lives
+  // on `pickVolumeLevel`.
   const viewerVolumeLevel = ref(Number(localStorage.getItem('cc.viewerVolumeLevel') ?? '-1'))
   // 3D projection: 'ortho' (default) = Imaris-style head-on, easier on the eye for intravital movies
   // and matches the offline movie renderer's parallel-ray MIP. 'persp' = perspective with

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch,
+  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -598,6 +598,31 @@ describe('pickVolumeLevel — 3D LOD (viewer-parity: coarsest by default)', () =
     expect(pickVolumeLevel(m, 2)).toBe(2)
     expect(pickVolumeLevel(m, 99)).toBe(3)      // clamped to deepest
     expect(pickVolumeLevel(m, -5)).toBe(0)      // clamped to L0
+  })
+  // yDfwP7's drift-corrected store: L0 191×163×9 and L1 96×82, 4 channels, 16-bit. Flat 3D Auto
+  // used to pin L1 on it, while 2D and brick both reached L0.
+  const yDfwP7 = meta({
+    nC: 4, nZ: 9, nX: 191, nY: 163, bytesPerVoxel: 2,
+    levels: [{ level: 0, nX: 191, nY: 163, chunkX: 191, chunkY: 163 },
+             { level: 1, nX: 96, nY: 82, chunkX: 96, chunkY: 82 }],
+  })
+  const roomy = { maxBufferSize: 4 * 2 ** 30, maxTextureDimension3D: 16384, budgetBytes: 2 * 2 ** 30 }
+  it('flat Auto (a fit given) picks the finest level that fits — L0 on a small image', () => {
+    expect(pickVolumeLevel(yDfwP7, undefined, roomy)).toBe(0)
+    expect(pickVolumeLevel(yDfwP7)).toBe(1)      // brick floor / no adapter yet: unchanged
+    expect(pickVolumeLevel(yDfwP7, 1, roomy)).toBe(1)   // a pin still wins
+  })
+  it('flat Auto steps coarser when a level is over the buffer, budget or 3D-dimension limit', () => {
+    const m = withLevels(4)                      // 1000², 500², 250², 125² · nZ 4 · 2 ch · 2 B
+    const bytesAt = (nx: number) => nx * nx * 4 * (2 * 2 + LABEL_BPV)
+    // f8gzA2's failure shape: L0 over a 256 MB-class buffer → drop until it fits.
+    expect(pickVolumeLevel(m, undefined, { ...roomy, maxBufferSize: bytesAt(500) / 0.7 })).toBe(1)
+    expect(pickVolumeLevel(m, undefined, { ...roomy, budgetBytes: bytesAt(250) })).toBe(2)
+    expect(pickVolumeLevel(m, undefined, { ...roomy, maxTextureDimension3D: 2048 })).toBe(0)
+    expect(pickVolumeLevel(m, undefined, { ...roomy, maxTextureDimension3D: 300 })).toBe(2)
+    // Channels stack along z: depth × nch over the cap rules every level out → deepest.
+    expect(pickVolumeLevel(m, undefined, { ...roomy, maxTextureDimension3D: 7 })).toBe(3)
+    expect(pickVolumeLevel(m, undefined, { ...roomy, budgetBytes: 1 })).toBe(3)
   })
 })
 

@@ -9,6 +9,7 @@
 
 import { parseHex } from './colour'
 import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
+import type { DeviceLimits } from './brickAtlas'
 
 /** Per-channel display state as the server resolved it — see `api_viewer_meta`. */
 export interface ViewerChannel {
@@ -305,28 +306,59 @@ export function pickTileLevel(zoom: number, meta: ViewerMeta, previousLevel?: nu
   return prev
 }
 
+/** Label ids are UInt32 on disk and `r32uint` on the GPU — what a mask voxel costs beside its image.
+ *  Anything narrower is widened client-side (`utils/viewerLabels.ts`) rather than given a second
+ *  texture format. Shared by the flat renderer's cache sizing and `pickVolumeLevel`'s fit check. */
+export const LABEL_BPV = 4
+
+/** Headroom kept under `maxBufferSize` — other tabs and the driver want VRAM too. One factor for the
+ *  viewer's Auto cache size and for `pickVolumeLevel`'s per-timepoint fit, so the level Auto picks is
+ *  one the Auto cache can hold. Unmeasured; tune here. */
+export const VRAM_SAFETY = 0.7
+
+/** What the flat 3D renderer can allocate for ONE timepoint: the device limits plus the cache budget
+ *  (a timepoint the cache cannot hold is a timepoint that never shows). */
+export interface VolumeFitLimits extends DeviceLimits {
+  budgetBytes: number
+}
+
 /**
  * 3D volume LOD: the pyramid level to load a whole (t, c) volume from.
  *
- * viewer also renders 3D at the coarsest level; Imaris-style octree LOD was on the wishlist but never
- * shipped. Default to the DEEPEST level so a big-XY volume request can never exceed WebGPU's
- * `maxBufferSize` (256 MB on a Dawn adapter, and a full-res f8gzA2-shape volume is 687 MB per
- * channel — the error the audit's user hit).
- *
  * `override` (0-based) is the user's choice from the level dropdown; clamped to `[0, nLevels-1]`.
- * `undefined` picks the deepest.
+ *
+ * Auto (`override` undefined) has two answers, by renderer:
+ *  - no `fit` → the DEEPEST level. The brick renderer reads this as a FLOOR and lets SSE go finer on
+ *    zoom; it is also the safe answer before the adapter's limits are known.
+ *  - `fit` (flat renderer) → the FINEST level whose one-timepoint texture fits: channels stacked along
+ *    z under `maxTextureDimension3D`, bytes (mask included) under `maxBufferSize × VRAM_SAFETY` and
+ *    the cache budget. Flat only runs in Auto when the whole L0 movie fits the cache
+ *    (`shouldUseBricks`), so a deepest-level pin would throw away resolution it can hold; the byte
+ *    check keeps the `maxBufferSize` guard the pin existed for, per level. Nothing fits → deepest.
  */
-export function pickVolumeLevel(meta: ViewerMeta, override?: number): number {
+export function pickVolumeLevel(meta: ViewerMeta, override?: number, fit?: VolumeFitLimits): number {
   const n = meta.levels?.length ?? 1
   if (n <= 1) return 0
-  if (override === undefined || !Number.isFinite(override)) return n - 1
-  return Math.max(0, Math.min(n - 1, Math.floor(override)))
+  if (override !== undefined && Number.isFinite(override)) {
+    return Math.max(0, Math.min(n - 1, Math.floor(override)))
+  }
+  if (!fit) return n - 1
+  const nch = Math.min(meta.nC, MAX_CHANNELS)
+  const depth = Math.max(1, meta.nZ)
+  const maxBytes = Math.min(fit.maxBufferSize * VRAM_SAFETY, fit.budgetBytes)
+  const dimCap = fit.maxTextureDimension3D
+  for (let lv = 0; lv < n - 1; lv++) {
+    const l = meta.levels![lv]
+    const bytes = l.nX * l.nY * depth * (meta.bytesPerVoxel * nch + LABEL_BPV)
+    if (l.nX <= dimCap && l.nY <= dimCap && depth * nch <= dimCap && bytes <= maxBytes) return lv
+  }
+  return n - 1
 }
 
 /**
  * Fallback whole-movie byte budget for `shouldUseBricks` when the caller doesn't know the
  * runtime budget yet (adapter not up, first classification). The RUNTIME budget is
- * `effectiveCacheBytes` in `ViewerWindow` — derived from `maxBufferSize × 0.7`, then overridden
+ * `effectiveCacheBytes` in `ViewerWindow` — derived from `maxBufferSize × VRAM_SAFETY`, then overridden
  * by `settings.viewerCacheMB` if the user has picked a specific size. Callers that know it
  * should pass it in; this constant only guards the first-classify path.
  *
