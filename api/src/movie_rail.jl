@@ -254,8 +254,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # batch request sends the list. Same entries either way — the visible ones.
     if ts_raw isa AbstractDict
         ts_raw = Any[Dict{String,Any}("valueName" => String(k),
-                                      "colour" => String(something(get(v, "colour", nothing),
-                                                                   get(v, :colour, nothing), "")))
+                                      "colour" => _wstr_any(v, "colour", :colour))
                      for (k, v) in ts_raw
                      if v isa AbstractDict && something(get(v, "visible", nothing), get(v, :visible, nothing), true) === true]
     end
