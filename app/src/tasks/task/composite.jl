@@ -311,9 +311,8 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
                     k == out_vn               && continue
                     delete!(fp2, k)
                 end
-                fp2[out_vn] = out_filename
-                fp2[VERSIONED_ACTIVE_KEY] = out_vn
                 raw2["filepath"] = fp2
+                versioned_set_field!(raw2, "filepath", out_filename, out_vn)   # a versioned out_vn keeps its vNs
                 registered = true
             end
             registered && on_log("[INFO] Composite output registered as '$out_vn' → $out_filename")

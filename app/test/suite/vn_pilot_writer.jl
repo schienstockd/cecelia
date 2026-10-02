@@ -75,6 +75,15 @@ end
         @test rel == joinpath("default", "v3", "ccidImage.ome.zarr")
         @test as_new === true
 
+        # Same versioned entry, toggle OFF → overwrite the CURRENT version (`_latest` = v2) in place —
+        # not the flat v1 path, which would overwrite v1 and orphan v2.
+        set_keep_previous_version!(false)
+        abs, rel, as_new = plan_versioned_target(img, "default", "ccidImage.ome.zarr")
+        @test rel == "default/v2/ccidImage.ome.zarr"
+        @test abs == joinpath(img_zero_dir(img), "default/v2/ccidImage.ome.zarr")
+        @test as_new === false
+        set_keep_previous_version!(true)
+
         # A non-active value_name (`corrected`) has its own version series independent of `default`.
         # Filename is task-specific so the returned path carries whatever the caller passes in.
         img.filepath["corrected"] = "ccidDriftCorrected.ome.zarr"
@@ -117,15 +126,15 @@ end
     rm(proj.root; recursive = true)
 end
 
-# The segmentation writers (`register_label_files!`, measureLabels) used to rebuild the whole field
-# with `string(v)` / `[string(v)]`, flattening any versioned entry they passed over into a string.
-@testset "versioned_entry_overwrite! — keeps every entry's shape" begin
+# Overwrite writers (the segmentation registrations, a toggle-off pixel re-run) must neither flatten a
+# versioned entry they pass over nor drop a versioned target's earlier `vN`s.
+@testset "versioned_set_field! — a versioned target keeps its history" begin
     v_lp  = Dict{String,Any}("v1" => "a.h5ad", "v2" => "a/v2/a.h5ad", LATEST_ACTIVE_KEY => "v2")
     raw   = Dict{String,Any}("label_props" => Dict{String,Any}(
                 "default" => "default.h5ad", "a" => v_lp, VERSIONED_ACTIVE_KEY => "default"))
 
     # another value_name: the versioned entry and `_active` are left alone
-    versioned_entry_overwrite!(raw, "label_props", "b", "b.h5ad")
+    versioned_set_field!(raw, "label_props", "b.h5ad", "b"; set_active = false)
     lp = raw["label_props"]
     @test lp["b"] == "b.h5ad"
     @test lp["a"] == v_lp
@@ -133,7 +142,7 @@ end
     @test lp[VERSIONED_ACTIVE_KEY] == "default"
 
     # a versioned target: only its `_latest` leaf is replaced, earlier versions survive
-    versioned_entry_overwrite!(raw, "label_props", "a", "a2.h5ad"; set_active = true)
+    versioned_set_field!(raw, "label_props", "a2.h5ad", "a")
     lp = raw["label_props"]
     @test lp["a"]["v1"] == "a.h5ad"
     @test lp["a"]["v2"] == "a2.h5ad"
@@ -142,10 +151,10 @@ end
 
     # absent field, and a bare legacy scalar field
     raw2 = Dict{String,Any}()
-    versioned_entry_overwrite!(raw2, "labels", "default", ["default.zarr"])
+    versioned_set_field!(raw2, "labels", ["default.zarr"], "default"; set_active = false)
     @test raw2["labels"] == Dict{String,Any}("default" => ["default.zarr"])
     raw3 = Dict{String,Any}("label_props" => "old.h5ad")
-    versioned_entry_overwrite!(raw3, "label_props", "new", "new.h5ad")
+    versioned_set_field!(raw3, "label_props", "new.h5ad", "new"; set_active = false)
     @test raw3["label_props"]["default"] == "old.h5ad"
     @test raw3["label_props"]["new"] == "new.h5ad"
     @test raw3["label_props"][VERSIONED_ACTIVE_KEY] == VERSIONED_DEFAULT_VAL
@@ -174,6 +183,37 @@ end
     @test [collect(String, l) for l in Cecelia.version_leaves(entry)] |> sort ==
           [["default.zarr"], ["default/v2/default.zarr"]]
     @test Cecelia.version_leaves(["fresh.zarr"]) == Any[["fresh.zarr"]]
+
+    rm(proj.root; recursive = true)
+end
+
+@testset "remove_image_version! — a versioned filepath sheds every vN store" begin
+    proj = create_project!(name = "remove-versions-$(rand(1000:9999))")
+    s    = add_set!(proj; name = "set")
+    img  = add_image!(s; name = "img")
+    zero = img_zero_dir(img)
+    for rel in ("ccidImage.ome.zarr", "default/v2/ccidImage.ome.zarr", "drift.ome.zarr")
+        d = joinpath(zero, rel); mkpath(d); write(joinpath(d, "chunk"), rand(UInt8, 1024))
+    end
+    img.filepath = Dict{String,Union{String,Dict{String,Any}}}(
+        "default" => Dict{String,Any}("v1" => "ccidImage.ome.zarr",
+                                      "v2" => "default/v2/ccidImage.ome.zarr", LATEST_ACTIVE_KEY => "v2"),
+        "drift"   => "drift.ome.zarr", VERSIONED_ACTIVE_KEY => "drift")
+    save!(img)
+
+    # the storage scan sizes every vN of `default`, and lists it as reclaimable
+    st = image_storage(img)
+    @test only(v.bytes for v in st.versions if v.valueName == "default") >= 2048
+    @test "default" in st.reclaimable
+
+    freed, cleared = remove_image_version!(img, "default", "drift")
+    @test freed >= 2048
+    @test cleared == false
+    @test !ispath(joinpath(zero, "ccidImage.ome.zarr"))
+    @test !ispath(joinpath(zero, "default"))              # emptied `default/v2/` swept with its parent
+    @test  isdir(joinpath(zero, "drift.ome.zarr"))
+    r = init_object(proj.uid, img.uid)
+    @test !haskey(r.filepath, "default")
 
     rm(proj.root; recursive = true)
 end

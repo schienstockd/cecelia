@@ -15,6 +15,42 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.10] — 2026-10-02
+
+Patch release: two data-loss fixes in image bookkeeping, 3D movies at the viewer's brightness, and
+summary-plot CSV export working again. Also: the Task Manager shows which resource pool each task runs in.
+
+### Changed
+
+- **3D movies are brighter — they now match the viewer.** The 3D renderer (Record 3D, batch 3D,
+  keyframe animations) skipped the sRGB encode, so every 3D movie played about 2× darker in the
+  mid-tones than the viewer showed. **3D movies exported before this release will look darker than
+  re-rendered ones; re-export any you want to compare side by side.** (#1333)
+- **Storage sizes count every version.** The storage modal and reclaim list sized a versioned image
+  as its current version only (or as 0); they now sum all versions, so the totals go up — they were
+  under-reported, nothing new was written. (#1346)
+
+### Added
+
+- **Task Manager — Pool column.** Each task shows the resource pool it actually runs in, with a sortable
+  column, pool filter chips and a pool tag in the per-module task list. History / This project /
+  Auto-follow move into a View popover that lights while any is off its default. (#1329)
+
+### Fixed
+
+- **Images no longer lose task output when another image is added, removed or moved.** Adding an
+  image to a set (including the crop / bin / project / resample / register / copy tasks, which add their
+  result to a set loaded minutes earlier) re-wrote every sibling image from memory, wiping any output a
+  task had committed since — filepath, calibration, labels. Only the changed member is written now.
+  (#1348)
+- **Versioned images keep their history when "keep previous version" is off.** Re-running a task on an
+  image that already had versions overwrote v1 and orphaned v2+; it now overwrites the current version.
+  Deleting an image version removes every version store and its emptied folders. (#1346, #1335)
+- **Summary-plot CSV export works again.** Every summary-plot CSV (panel, board zip, PDF attachment)
+  failed with `e.series.map is undefined`. (#1352)
+- **Tasks on an uncalibrated image say why they can't run** instead of a blank
+  `TaskApplicabilityError`. (#1348)
+
 ## [0.2.9] — 2026-10-01
 
 Patch release: Record now exports what the viewer shows, with real 3D movies, and summary-plot CSVs
@@ -1164,7 +1200,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.9...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.10...HEAD
+[0.2.10]: https://github.com/schienstockd/cecelia/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/schienstockd/cecelia/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/schienstockd/cecelia/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/schienstockd/cecelia/compare/v0.2.6...v0.2.7

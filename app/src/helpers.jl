@@ -81,7 +81,18 @@ function versioned_set_field!(d::Dict{String,Any}, field::String, item_value,
         d[field] = Dict{String,Any}(VERSIONED_DEFAULT_VAL => existing,
                                     VERSIONED_ACTIVE_KEY   => VERSIONED_DEFAULT_VAL)
     end
-    versioned_set!(d[field]::Dict{String,Any}, item_value, value_name; set_active = set_active)
+    fd    = d[field]::Dict{String,Any}
+    entry = get(fd, value_name, nothing)
+    if !isnothing(item_value) && is_versioned_entry(entry)
+        # A versioned target keeps its history: only the `_latest` leaf is replaced. Replacing the whole
+        # entry would drop every earlier `vN` from ccid.json while their stores stay on disk.
+        native = json_native(entry)
+        version_set!(native, item_value, version_latest(native))
+        fd[value_name] = native
+        set_active && (fd[VERSIONED_ACTIVE_KEY] = value_name)
+    else
+        versioned_set!(fd, item_value, value_name; set_active = set_active)
+    end
     d
 end
 
@@ -286,7 +297,14 @@ function plan_versioned_target(img, value_name::AbstractString, filename::Abstra
     flat_rel = String(filename)
     flat_abs = joinpath(img_zero_dir(img), flat_rel)
     prior = get(img.filepath, String(value_name), nothing)
-    (isnothing(prior) || !keep_previous_version()) && return (flat_abs, flat_rel, false)
+    isnothing(prior) && return (flat_abs, flat_rel, false)
+    if !keep_previous_version()
+        # Toggle off = overwrite the CURRENT version. For an already-versioned entry that is the
+        # `_latest` store, not the flat v1 path (which would overwrite v1 and orphan `v2+`).
+        is_versioned_entry(prior) || return (flat_abs, flat_rel, false)
+        latest_rel = String(version_get(prior))
+        return (joinpath(img_zero_dir(img), latest_rel), latest_rel, false)
+    end
     # `version_next` needs the versioned inner dict; wrap the legacy scalar in memory for the path
     # calculation only. The ccid.json write path re-does this via `versioned_upgrade_entry!` on the
     # raw dict inside `commit_state!`.
@@ -329,41 +347,6 @@ function versioned_filepath_write!(raw::Dict{String,Any}, value_name::AbstractSt
     else
         versioned_set_field!(raw, "filepath", String(rel_path), String(value_name))
     end
-end
-
-"""
-    versioned_entry_overwrite!(raw, field, value_name, item_value; set_active=false) -> Dict
-
-Register `item_value` as `raw[field][value_name]` for a writer with overwrite semantics (the
-segmentation `labels` / `label_props` / `branch_labels` writers). Every other entry keeps its shape,
-versioned entries included (nested JSON3 values are `json_native`-ed, never stringified). A versioned
-target has its `_latest` leaf replaced, so earlier `vN`s survive. A bare legacy scalar field becomes
-`{default: scalar, _active: default}`, as in `versioned_set_field!`.
-
-Differs from `versioned_set_field!` only in the versioned-target branch, which that helper doesn't
-have (it replaces the whole entry); see `docs/audit/agent-sandbox-value-name.md` → B2.
-
-`set_active=true` also points `_active` at `value_name`.
-"""
-function versioned_entry_overwrite!(raw::Dict{String,Any}, field::String,
-                                    value_name::AbstractString, item_value;
-                                    set_active::Bool = false)
-    existing = get(raw, field, nothing)
-    d = existing isa AbstractDict ?
-        Dict{String,Any}(String(k) => json_native(v) for (k, v) in existing) :
-        isnothing(existing) ? Dict{String,Any}() :
-        Dict{String,Any}(VERSIONED_DEFAULT_VAL => existing,   # bare legacy scalar
-                         VERSIONED_ACTIVE_KEY  => VERSIONED_DEFAULT_VAL)
-    vn    = String(value_name)
-    entry = get(d, vn, nothing)
-    if is_versioned_entry(entry)
-        version_set!(entry, item_value, version_latest(entry))
-    else
-        d[vn] = item_value
-    end
-    set_active && (d[VERSIONED_ACTIVE_KEY] = vn)
-    raw[field] = d
-    d
 end
 
 # Read a ccid.json / project.json into a String-keyed Dict{String,Any} ready for the versioned_*

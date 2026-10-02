@@ -110,7 +110,13 @@ def write_h5ad_atomic(adata, path, **write_kwargs):
     THE way to write an `.h5ad` — creating one or rewriting one. Both matter: rewriting in place can
     destroy an existing table, and a half-written *new* file is worse than no file, because discovery
     is a directory listing (see the module docstring) and would present it as a real result.
+
+    **Strings stay plain `string-array` datasets.** pandas 3 makes `str` the default string dtype,
+    and anndata ≥0.13 writes that as a `nullable-string-array` GROUP (`values` + `mask`) — for the
+    obs index too. The Julia reader (`app/src/label_props.jl`) and every table already on disk use
+    the dataset form, so pin it here, the one place every `.h5ad` is written.
     """
-    with atomic_path(path) as tmp:
+    import anndata as ad  # H5AD-OK: the canonical writer — pins the string encoding
+    with atomic_path(path) as tmp, ad.settings.override(allow_write_nullable_strings=False):
         adata.write_h5ad(tmp, **write_kwargs)
     return path

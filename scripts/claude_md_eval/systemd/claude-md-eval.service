@@ -1,24 +1,31 @@
 [Unit]
 Description=CLAUDE.md compliance eval — scheduled pass
-Documentation=file://%h/cc-workspace/cecelia/cecelia-feijoa/docs/todo/CLAUDE_MD_EVAL_PLAN.md
+Documentation=file://%h/.cecelia-effectiveness/eval-worktree/docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md
 # Don't fire if the machine is on battery — a pass costs ~$4-6 (real API spend)
 # and shouldn't drain the laptop unattended.
 ConditionACPower=true
 
 [Service]
 Type=oneshot
-# %h expands to the invoking user's HOME. Set REPO explicitly via `systemctl edit`
-# if this checkout lives somewhere else.
-Environment=REPO=%h/cc-workspace/cecelia/cecelia-feijoa
+# REPO is the supervisor's own worktree, not a dev checkout. A dev checkout falls behind main and
+# carries edits, and the timer would run whatever cron_pass.sh and supervise.py it held. %h is HOME.
+# It must exist: run `pixi run claude-md-eval-supervise` once from any checkout to create it.
+Environment=REPO=%h/.cecelia-effectiveness/eval-worktree
 # PATH must include `pixi` and `claude`. Pixi's installer drops the binary in
 # `~/.pixi/bin` (not `~/.local/bin`); `claude`'s installer drops it in
 # `~/.local/bin`. Both are covered here. Adjust via `systemctl --user edit
 # claude-md-eval.service` if either binary lives elsewhere.
 Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/claude_md_eval/cron_pass.sh"'
-# One-shot pass caps at 30 min — measured 22 min for 12 prompts × N=3 (2026-09-29). A hung
-# run gets killed rather than wedging the timer.
-TimeoutStartSec=30min
+# Reset it to origin/main first, so every pass runs today's driver
+# (docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md → Decision 16). `--detach` first: the last pass
+# left it on its `eval-run/*` branch, and a reset there would move that branch.
+ExecStartPre=/bin/bash -c 'git -C "$${REPO}" fetch --quiet origin && git -C "$${REPO}" checkout --quiet --detach && git -C "$${REPO}" reset --quiet --hard origin/main'
+ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/claude_md_eval/cron_pass.sh" --pinned'
+# The supervised pass is longer than the bare suite: a full `pixi install` in the persistent
+# eval worktree the first time, the suite (~25 min at N=3 for 9 prompts), retries, one judge call
+# per failure, curation, then rollups + recital + the PR. 4h is generous headroom; a hung run
+# still gets killed rather than wedging the timer.
+TimeoutStartSec=4h
 StandardOutput=journal
 StandardError=journal
 

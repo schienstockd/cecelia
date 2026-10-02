@@ -1553,7 +1553,8 @@ export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string 
   // Each aggregate table's value columns — ONE list per chart, used for its header AND as the clash
   // set for attribute headers, so an attribute named `count` / `mean` / `value` can't duplicate one.
   const tail = CSV_VALUE_COLUMNS[r.chartType] ?? []
-  const img = csvImageCols(r.series.map(s => s.uID ?? ''), meta, ['uID', 'value_name', 'pop', ...tail])
+  // `?? []`: a raw export response (`raw: true`) from a backend predating its empty `series` has none
+  const img = csvImageCols((r.series ?? []).map(s => s.uID ?? ''), meta, ['uID', 'value_name', 'pop', ...tail])
   const id = (s: PlotSeries): unknown[] => [s.uID ?? '', ...img.cells(s.uID ?? ''), s.value_name, s.pop]
   const idH = ['uID', ...img.header, 'value_name', 'pop', ...tail]
   switch (r.chartType) {

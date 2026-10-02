@@ -139,6 +139,9 @@ function _read_anndata_vector(parent, name)
             codes = read(obj["codes"])                    # 0-based integer codes
             cats  = _as_strings(read(obj["categories"]))
             return [c < 0 ? missing : cats[c + 1] for c in codes]
+        elseif enc == "nullable-string-array"
+            vals, mask = _as_strings(read(obj["values"])), read(obj["mask"])
+            return [Bool(m) ? missing : v for (v, m) in zip(vals, mask)]
         else
             error("LabelProps: unsupported group encoding '$enc' for '$name'")
         end
@@ -153,6 +156,9 @@ end
 # always Vector{String} — `collect(String, …)` keeps an empty array typed as String[]
 # (a broadcast `String.(x)` over an empty Union{}-eltype HDF5 read yields Vector{Union{}})
 _as_strings(x) = x isa AbstractString ? [x] : collect(String, x)
+# pandas 3 + anndata ≥0.13 write strings as a `nullable-string-array` group (`values` + `mask`);
+# Cecelia's own writer (`write_h5ad_atomic`) pins the dataset form, but a table from elsewhere may not
+_as_strings(x::AbstractDict) = _as_strings(x["values"])
 
 # Orient X so we can slice a single feature column lazily. AnnData writes (n_obs, n_var)
 # C-order; HDF5.jl may report dims reversed, so detect which axis is `var`.
@@ -203,7 +209,8 @@ Number of observations (cells) — the length of the obs index. Reads the datase
 function n_obs(lp::LabelProps)::Int
     _with_h5(lp.path, "r") do fid
         haskey(fid, "obs/_index") || return 0
-        Int(first(size(fid["obs/_index"])))
+        idx = fid["obs/_index"]
+        Int(first(size(idx isa HDF5.Group ? idx["values"] : idx)))
     end
 end
 

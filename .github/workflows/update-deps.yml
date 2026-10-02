@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Same pixi version as ci.yml, so the lock this writes is one CI can read. Bump both together.
       - name: Install Pixi

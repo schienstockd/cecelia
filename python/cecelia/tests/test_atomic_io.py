@@ -122,6 +122,19 @@ class AtomicH5adTest(unittest.TestCase):
         self.assertEqual(ad.read_h5ad(p).n_obs, 3)
         self.assertEqual([f for f in os.listdir(self.td) if ".tmp." in f], [])
 
+    def test_strings_stay_plain_datasets(self):
+        """pandas 3 `str` columns + anndata ≥0.13 default to a `nullable-string-array` GROUP; the
+        Julia reader's `n_obs` and every table on disk expect `obs/_index` as a dataset."""
+        import h5py
+        import pandas as pd
+        a = _adata()
+        a.obs["s"] = pd.array(["a", "b", "c"], dtype="str")
+        p = os.path.join(self.td, "base.h5ad")
+        write_h5ad_atomic(a, p, convert_strings_to_categoricals=False)
+        with h5py.File(p, "r") as f:
+            self.assertIsInstance(f["obs/_index"], h5py.Dataset)
+            self.assertNotEqual(f["obs/s"].attrs.get("encoding-type"), "nullable-string-array")
+
     def test_a_failed_h5ad_write_keeps_the_existing_table(self):
         """The severe case: the cell table IS the measurement data, and a truncated HDF5 is not
         partially readable the way a truncated JSON is."""

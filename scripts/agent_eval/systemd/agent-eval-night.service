@@ -1,0 +1,19 @@
+[Unit]
+Description=Agent overnight run — one vague + one guided brief on a synthetic fixture
+Documentation=file://%h/cc-workspace/cecelia/cecelia-feijoa/docs/todo/AGENT_OVERNIGHT_PLAN.md
+# Real API spend (≤ budget × briefs) — never on battery.
+ConditionACPower=true
+
+[Service]
+Type=oneshot
+Environment=REPO=%h/cc-workspace/cecelia/cecelia-feijoa
+# pixi (~/.pixi/bin), claude (~/.local/bin), julia (~/.juliaup/bin).
+Environment=PATH=%h/.pixi/bin:%h/.local/bin:%h/.juliaup/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/agent_eval/cron_night.sh"'
+# Two briefs × the runner's 120 min agent timeout, plus setup.
+TimeoutStartSec=270min
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

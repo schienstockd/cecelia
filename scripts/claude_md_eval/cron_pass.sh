@@ -20,10 +20,15 @@
 
 set -euo pipefail
 
+# `--pinned` is how the timer calls it (Decision 16): this checkout IS the supervisor's worktree,
+# which the unit's ExecStartPre has just reset to origin/main, so the pass pins HEAD rather than
+# re-resolving origin/main and resetting the files this script and the supervisor run from.
 TASK=claude-md-eval-supervise
-if [ "${1:-}" = "--no-supervise" ]; then
-    TASK=claude-md-eval
-fi
+TASK_ARGS=()
+case "${1:-}" in
+    --no-supervise) TASK=claude-md-eval ;;
+    --pinned) TASK_ARGS=(--ref HEAD) ;;
+esac
 
 # Repo root — this script lives at `<repo>/scripts/claude_md_eval/cron_pass.sh`.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,6 +36,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 LOG_DIR="${CECELIA_EVAL_CRON_LOG_DIR:-$HOME/.cecelia-effectiveness/cron}"
 mkdir -p "$LOG_DIR"
+
+# A checkout too old to have the supervisor would run something else under its name. Fail loudly.
+if [ "$TASK" = claude-md-eval-supervise ] && [ ! -f "$SCRIPT_DIR/supervise.py" ]; then
+    echo "$(date -Is) $REPO_ROOT has no scripts/claude_md_eval/supervise.py; refusing to run" \
+        | tee -a "$LOG_DIR/eval-$(date -u +%Y%m%dT%H%M%SZ).log" >&2
+    exit 1
+fi
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE="$LOG_DIR/eval-$TS.log"
@@ -51,6 +63,6 @@ fi
     echo "pixi: $(command -v pixi || echo '(not found)')"
     cd "$REPO_ROOT"
     echo "task: $TASK"
-    nice -n 10 ionice -c 3 pixi run "$TASK"
+    nice -n 10 ionice -c 3 pixi run "$TASK" ${TASK_ARGS[@]+"${TASK_ARGS[@]}"}
     echo "=== cron pass finished $(date -Is) ==="
 } 2>&1 | tee -a "$LOG_FILE"
