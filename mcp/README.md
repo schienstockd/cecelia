@@ -11,7 +11,7 @@ chain run. That is the arc in [`docs/ai-assist/OBSERVER.md`](../docs/ai-assist/O
 (observe) and Phase 2 (actionable assist) have shipped; `submit_task` / `adjust_params` /
 `acknowledge_flag` remain deliberately **not** wired.
 
-It's a **standalone stdio process** (Python + [FastMCP](https://github.com/modelcontextprotocol/python-sdk))
+It's a **standalone stdio process** (Python + the [MCP SDK](https://github.com/modelcontextprotocol/python-sdk)'s `MCPServer`)
 that talks to the Julia API over HTTP. It is separate infra, not part of the `cecelia` Python package
 (one language per top-level dir).
 
@@ -24,7 +24,7 @@ mcp/
     guidance.py  # what the server TELLS a session about its own toolset (see below)
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
-    server.py    # FastMCP server — wires the client into the read tools + poll_observations + the additive writes
+    server.py    # MCPServer — wires the client into the read tools + poll_observations + the additive writes
   tests/
     test_client.py    # stdlib unittest, HTTP mocked
     test_monitor.py   # the 10-attempts pattern + frame normalization (pure, no socket)
@@ -37,7 +37,7 @@ mcp/
 `check my current project in cecelia` is a sufficient prompt. There is nothing to paste, because the
 server carries its own instructions:
 
-- **`SERVER_INSTRUCTIONS`** → `FastMCP(instructions=…)`, delivered in the `initialize` response and
+- **`SERVER_INSTRUCTIONS`** → `MCPServer(instructions=…)`, delivered in the `initialize` response and
   landing in the client's system prompt. It only has to get the assistant to the front door: resolve
   the project with `list_projects` (most-recently-opened first) — or with `find_object` when the user
   quotes a uid instead of a project — then call `get_session_briefing`.

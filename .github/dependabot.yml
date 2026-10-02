@@ -13,6 +13,16 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    # PrimeVue 5 / @primeuix/themes 3 / primeicons 8 moved from MIT to the proprietary, key-gated
+    # PrimeUI License. Stay on the last MIT majors until they are retired —
+    # docs/todo/PRIMEVUE_RETIRE_PLAN.md.
+    ignore:
+      - dependency-name: primevue
+        update-types: [version-update:semver-major]
+      - dependency-name: "@primeuix/*"
+        update-types: [version-update:semver-major]
+      - dependency-name: primeicons
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /

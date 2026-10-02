@@ -124,9 +124,7 @@ stumpy       = ">=1.13"
 dtaidistance = ">=2.3"
 # MCP observer server (top-level mcp/ dir — read-only Claude access to a running project). Only the
 # `mcp` run task needs it; the client + its tests are stdlib-only. See mcp/README.md, docs/ai-assist/OBSERVER.md.
-# Capped <2: mcp 2.x renamed FastMCP → MCPServer and changed other APIs; `mcp/cecelia_mcp/server.py`
-# won't import. Lift with the port — docs/TODO.md → *Port the MCP observer to mcp 2.x*.
-mcp          = ">=1.2,<2"
+mcp          = ">=2.2"
 squidpy = ">=1.8.3, <1.9"
 rtree = ">=1.4.1, <2"
 pywavelets = ">=1.9.0, <2"
