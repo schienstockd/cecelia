@@ -81,7 +81,7 @@ class MacArmProcessorTest(unittest.TestCase):
         saved = platform.processor
         try:
             with mock.patch("sys.platform", plat), \
-                 mock.patch("os.uname", return_value=mock.Mock(machine=machine)), \
+                 mock.patch("os.uname", return_value=mock.Mock(machine=machine), create=True), \
                  mock.patch("platform.processor", return_value=processor):
                 wgpu_host._native_arm_processor()
                 return platform.processor()
