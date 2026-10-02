@@ -19,7 +19,7 @@
     "marked": "^18.0.14",
     "mermaid": "^12.0.0",
     "pdf-lib": "^1.17.1",
-    "pinia": "^3.0.4",
+    "pinia": "^4.0.3",
     "primeicons": "7.0.0",
     "primevue": "4.5.5",
     "regl-scatterplot": "^1.16.0",
