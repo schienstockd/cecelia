@@ -225,6 +225,8 @@ After prediction, `_crop_masks` trims the overlap, then `_write_tile_to_arr` mer
 
 Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice + inter-slice stitch). No explicit Z tiling is done.
 
+That stitch (`cellpose.utils.stitch3D`) reuses ids across an empty plane before its first match, so two cells several planes apart can come back as ONE label whose centroid sits in the gap. `split_z_gaps` (`cellpose_utils.py`) gives every z-contiguous run its own id after every stitched call; a stitched cell is contiguous by construction, so a correct stitch passes through unchanged.
+
 ---
 
 ### Skipping the padding a drift correction added
