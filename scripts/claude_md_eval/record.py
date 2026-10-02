@@ -58,6 +58,13 @@ PROPOSAL_KINDS = ("setup", "scorer", "retire", "add")
 QUEUE_KINDS = ("decision", "proposal", "spot_check", "loop_review")
 #: Decision 15: flag a setup metric that grew by more than this since the last record.
 SETUP_GROWTH_FLAG = 0.10
+#: Decision 16: line budgets for the setup the agents read, set 2026-10-02 at the then-current size
+#: plus 10%. Over budget is a `decision` finding for the owner; it never blocks a pass.
+SETUP_BUDGET = {"claude_md_lines": 451, "frontend_claude_md_lines": 52}
+#: Decision 17: a score move is attributable to a change only when it moved alone. The scorer is
+#: named only when traces were lost: otherwise both passes are scored by this checkout's scorer.
+#: Claude Code is named but not counted, since it updates itself and can't be pinned.
+CONFOUNDERS = ("prompt set", "sandbox", "CLAUDE.md", "scorer")
 VERDICTS = ("compliant", "noncompliant", "error")
 
 _HOW_TO_USE = (
@@ -264,11 +271,53 @@ def pass_records(before: str | None = None) -> list[dict]:
 _HYPOTHESIS_RE = re.compile(r"expect\s+`?([\w-]+)`?\s+to\b")
 
 
-def delta(record: dict, previous: dict | None) -> dict | None:
+def _by_prompt(pairs: _t.Iterable[tuple[str, str | None]]) -> dict:
+    verdicts: dict[str, list] = {}
+    for pid, v in pairs:
+        verdicts.setdefault(pid, []).append(v)
+    return {pid: _tally(vs) for pid, vs in verdicts.items()}
+
+
+def _total(per_prompt: dict) -> dict:
+    return {k: sum(t.get(k, 0) for t in per_prompt.values()) for k in (*VERDICTS, "total")}
+
+
+def rescored_now(record: dict) -> tuple[dict, int]:
+    """`record`'s per-prompt tallies under this checkout's scorer, and how many traces it couldn't rescore.
+
+    A trace that is gone keeps the verdict it was stored with, so the caller names the scorer as
+    changed when any is missing.
+    """
+    pairs, missing = [], 0
+    for t in record.get("traces", []):
+        v = rescore(pathlib.Path(t["trace"]), t["prompt_id"]) if t.get("trace") else None
+        if v is None:
+            missing += 1
+            v = t["scores"].get("rescored") or t["scores"]["raw"]
+        pairs.append((t["prompt_id"], v))
+    return _by_prompt(pairs), missing
+
+
+def result_state(tally: dict | None) -> str | None:
+    """`pass` (every scored run compliant), `fail` (none), `noisy` (some), None (nothing scored).
+
+    At N=3 a prompt that passes 70% of the time still shows 3/3 a third of the time, so only the
+    two ends say anything on their own; 1/3 and 2/3 can't tell flaky from broken.
+    """
+    n = (tally or {}).get("total", 0) - (tally or {}).get("error", 0)
+    if n <= 0:
+        return None
+    c = tally.get("compliant", 0)
+    return "pass" if c == n else "fail" if c == 0 else "noisy"
+
+
+def delta(record: dict, previous: dict | None, *, previous_now: tuple[dict, int] | None = None) -> dict | None:
     """What changed since `previous`: findings, score, versions, and whether each hypothesis held.
 
-    Findings match on (slug, class). A score is only comparable when the prompt set, sandbox and
-    CLAUDE.md are unchanged (Decision 1), so every change is named next to it.
+    Findings match on (slug, class). Both passes are scored by this checkout's scorer (`previous`'s
+    traces are rescored, or `previous_now` passes that result in), so a scorer fix can't pass for a
+    setup change. A move between 0/N and N/N is a `change`; one with a noisy side is `noisy`. When
+    more than one `CONFOUNDERS` entry changed, `confounded` names them and no move is attributable.
     """
     if previous is None:
         return None
@@ -281,14 +330,27 @@ def delta(record: dict, previous: dict | None) -> dict | None:
         ("sandbox", prun.get("sandbox"), run.get("sandbox")),
         ("CLAUDE.md", prun.get("claude_md_blob"), run.get("claude_md_blob")),
         ("Claude Code", prun.get("claude_code_version"), run.get("claude_code_version"))) if a != b]
-    per_prompt = record["results"]["per_prompt"]
+    prev_pp, missing = previous_now if previous_now is not None else rescored_now(previous)
+    if missing:
+        changed.append("scorer")
+    confounders = [c for c in changed if c in CONFOUNDERS]
+    now_pp = _by_prompt((t["prompt_id"], t["scores"].get("rescored") or t["scores"]["raw"])
+                        for t in record.get("traces", []))
+    moves = []
+    for pid in (p for p in now_pp if p in prev_pp):
+        a, b = prev_pp[pid], now_pp[pid]
+        sa, sb = result_state(a), result_state(b)
+        if None in (sa, sb) or _score(a) == _score(b) or (sa == sb and sa != "noisy"):
+            continue
+        moves.append({"prompt": pid, "previous": _score(a), "now": _score(b),
+                      "kind": "change" if "noisy" not in (sa, sb) else "noisy"})
     hypotheses = []
     for prop in previous.get("proposals", []):
         m = _HYPOTHESIS_RE.search(prop.get("hypothesis") or "")
         if not m:
             continue
         pid = m.group(1)
-        tally = per_prompt.get(pid, {}).get("raw")
+        tally = now_pp.get(pid)
         held = None if not tally or not tally["total"] else tally["compliant"] == tally["total"]
         hypotheses.append({"proposal": prop["id"], "prompt": pid, "hypothesis": prop["hypothesis"],
                            "held": held, "score": _score(tally) if tally else None})
@@ -308,8 +370,12 @@ def delta(record: dict, previous: dict | None) -> dict | None:
         "still_open": [now[k]["id"] for k in now if k in before],
         "reclassified": reclassified,
         "resolved": [f"{before[k]['id']} `{k[0]}` {k[1]}" for k in gone],
-        "score": {"previous": _score(previous["results"]["raw"]), "now": _score(record["results"]["raw"])},
+        # both at this checkout's scorer; `previous_logged` is what the earlier pass logged
+        "score": {"previous": _score(_total(prev_pp)), "now": _score(_total(now_pp)),
+                  "previous_logged": _score(previous["results"]["raw"])},
         "changed": changed,
+        "confounded": confounders if len(confounders) > 1 else [],
+        "moves": moves,
         "setup_growth": setup_growth(previous.get("tracking", {}).get("setup_size") or {},
                                      record.get("tracking", {}).get("setup_size") or {}),
         "hypotheses": hypotheses,
@@ -324,6 +390,27 @@ def setup_growth(before: dict, now: dict) -> list[str]:
         if isinstance(value, int) and isinstance(old, int) and old > 0 and (value - old) / old > SETUP_GROWTH_FLAG:
             out.append(f"{key} {old} → {value}")
     return out
+
+
+def over_budget(size: dict, budget: dict | None = None) -> list[str]:
+    """The setup-size metrics over `SETUP_BUDGET`, each as `name used/budget`."""
+    budget = SETUP_BUDGET if budget is None else budget
+    return [f"{k} {size[k]}/{cap}" for k, cap in budget.items()
+            if isinstance(size.get(k), int) and size[k] > cap]
+
+
+def budget_finding(size: dict, fid: str, *, recurring: bool = False) -> dict | None:
+    """The owner's `decision` finding when the setup is over budget (Decision 16), else None."""
+    over = over_budget(size)
+    if not over:
+        return None
+    return {"id": fid, "slug": "setup-size", "class": "decision", "status": "open",
+            "recurrence": "recurring" if recurring else "watch",
+            "title": "The setup is over its line budget", "runs": 0, "evidence": [],
+            "diagnosis": f"Over budget at `{(size.get('ref') or '?')[:8]}`: {', '.join(over)}.",
+            "proposed_fix": "Owner decides: trim the file back under budget, or raise "
+                            "`SETUP_BUDGET` in `scripts/claude_md_eval/record.py`.",
+            "files": ["CLAUDE.md", "frontend/CLAUDE.md"]}
 
 
 def with_delta(record: dict) -> dict:
@@ -471,7 +558,8 @@ def render_markdown(record: dict) -> str:
             f"**{_score(res['raw'])} as logged → {_score(res['rescored'])} rescored** with the scorer at "
             f"`{(run.get('scored_at') or '?')[:8]}`.", "",
             "| Prompt | Logged | Rescored |", "|---|---|---|"]
-    out += [f"| `{pid}` | {_score(v['raw'])} | {_score(v['rescored'])} |"
+    out += [f"| `{pid}` | {_score(v['raw'])} | {_score(v['rescored'])}"
+            f"{' noisy' if result_state(v['rescored']) == 'noisy' else ''} |"
             for pid, v in res["per_prompt"].items()]
     if res["candidates"]:
         out += ["", "Candidates (unscored): " + ", ".join(f"`{c}`" for c in res["candidates"])]
@@ -517,10 +605,30 @@ def render_markdown(record: dict) -> str:
     if not d:
         out.append("First record; nothing to compare.")
     else:
-        note = (f" — **not comparable directly:** {', '.join(d['changed'])} changed" if d["changed"]
-                else " — same prompt set, sandbox, CLAUDE.md and Claude Code")
-        out += [f"Against {d['previous']}: {d['score']['previous']} → {d['score']['now']}{note}.", "",
-                f"- Opened: {', '.join(d['opened']) or 'none'}",
+        confounded = d.get("confounded") or []
+        if confounded:
+            out += [f"**Confounded: {', '.join(confounded)}.** These changed together, so no move "
+                    "below can be put down to one of them.", ""]
+        counted = [c for c in d["changed"] if c in CONFOUNDERS]
+        note = (" No counted change, so a move is the code or noise." if not counted
+                else f" Only {counted[0]} changed." if len(counted) == 1 else "")
+        if "Claude Code" in d["changed"]:
+            note += " Claude Code changed too (not counted: it can't be pinned)."
+        moves = d.get("moves")
+        if moves is None:   # a delta stored before Decision 17 compared logged scores
+            out += [f"Against {d['previous']}: {d['score']['previous']} → {d['score']['now']} as logged"
+                    + (f" — **not comparable directly:** {', '.join(d['changed'])} changed" if d["changed"]
+                       else "") + ".", ""]
+        else:
+            out += [f"Against {d['previous']}, both scored by this checkout's scorer: "
+                    f"{d['score']['previous']} → {d['score']['now']} (logged then: "
+                    f"{d['score']['previous_logged']}). The total is not a trend at N="
+                    f"{record['run'].get('runs_per_prompt')}.{note}", ""]
+            out.append("- Moves: " + (", ".join(
+                f"`{m['prompt']}` {m['previous']} → {m['now']}" + (" (noisy: a hint, not a change)"
+                                                                   if m["kind"] == "noisy" else "")
+                for m in moves) or "none"))
+        out += [f"- Opened: {', '.join(d['opened']) or 'none'}",
                 f"- Still open: {', '.join(d['still_open']) or 'none'}",
                 f"- Resolved: {', '.join(d['resolved']) or 'none'}"]
         if d.get("reclassified"):
@@ -528,13 +636,15 @@ def render_markdown(record: dict) -> str:
         if d.get("setup_growth"):
             out.append(f"- **Setup grew more than {SETUP_GROWTH_FLAG:.0%}:** {'; '.join(d['setup_growth'])}")
         for h in d["hypotheses"]:
-            verdict = {True: "held", False: "did not hold", None: "untested (prompt not run)"}[h["held"]]
+            verdict = ({True: "consistent, not proven (confounded)", False: "did not hold"} if confounded
+                       else {True: "held", False: "did not hold"}).get(h["held"], "untested (prompt not run)")
             out.append(f"- {h['proposal']} ({h['hypothesis']}): **{verdict}**"
                        + (f", `{h['prompt']}` {h['score']}" if h["score"] else ""))
 
     out += ["", "## Setup size", "",
-            f"At `{(size.get('ref') or '?')[:8]}`: CLAUDE.md {size.get('claude_md_lines')} lines, "
-            f"`frontend/CLAUDE.md` {size.get('frontend_claude_md_lines')}, "
+            f"At `{(size.get('ref') or '?')[:8]}`: CLAUDE.md {size.get('claude_md_lines')}"
+            f"/{SETUP_BUDGET['claude_md_lines']} lines, `frontend/CLAUDE.md` "
+            f"{size.get('frontend_claude_md_lines')}/{SETUP_BUDGET['frontend_claude_md_lines']}, "
             f"{size.get('hook_count')} hook(s), {size.get('inventory_doc_count')} inventory docs."]
 
     out += ["", "## Next actions", ""]
