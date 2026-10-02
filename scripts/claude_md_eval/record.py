@@ -55,7 +55,10 @@ FINDING_CLASSES = ("scorer_bug", "infra", "genuine", "decision")
 FINDING_STATUSES = ("open", "resolved", "dropped")
 RECURRENCE = ("recurring", "watch")
 PROPOSAL_KINDS = ("setup", "scorer", "retire", "add")
-QUEUE_KINDS = ("decision", "proposal", "spot_check", "loop_review")
+QUEUE_KINDS = ("decision", "proposal", "spot_check", "loop_review", "bug")
+#: Decision 18 (`bugs.py`). `dismissed` is the judge's `not_a_bug`, listed once so a person can
+#: overrule it; `wont_fix` is the owner's answer. Only `open` and `unmerged` carry to the next pass.
+BUG_STATUSES = ("open", "unmerged", "gone", "dismissed", "wont_fix")
 #: Decision 15: flag a setup metric that grew by more than this since the last record.
 SETUP_GROWTH_FLAG = 0.10
 #: Decision 16: line budgets for the setup the agents read, set 2026-10-02 at the then-current size
@@ -69,7 +72,14 @@ VERDICTS = ("compliant", "noncompliant", "error")
 
 _HOW_TO_USE = (
     "Point a session at this file. Do the open Next actions in order, then update each finding's "
-    "status. Generated from `{json}` — edit the JSON, never this page.")
+    "status. To fix bugs, work the `open` ones under *Bugs*. Generated from `{json}` — edit the "
+    "JSON, never this page.")
+_BUGS_HOW_TO = (
+    "Possible bugs in shipped code, from fanout findings nobody fixed, checked against the pinned SHA. "
+    "To work them: for each `open` bug, read the code at `file:line` on `origin/main`, confirm it, "
+    "and fix it on a normal branch (recital, PR), naming the bug's key in the commit message. "
+    "The next pass checks each one again and marks the fixed ones `gone`. "
+    "A bug that isn't worth fixing: answer it `wont_fix` with `pixi run recital-review`.")
 
 
 class RecordError(ValueError):
@@ -234,12 +244,17 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
                      "loop_review": notes.get("loop_review"),
                      **({"spot_check_labels": notes["spot_check_labels"]} if notes.get("spot_check_labels") else {})},
         "next_actions": notes.get("next_actions", []),
+        # Decision 18: the work list a session fixes from; carried pass to pass until `gone`.
+        "bugs": notes.get("bugs", []),
         # What the owner has to answer (Decision 3: a review queue, not a markdown edit).
         "queue": ([{"kind": "decision", "ref": f["id"]} for f in findings
                    if f.get("class") == "decision" and f.get("status") == "open"]
                   + [{"kind": "proposal", "ref": p["id"]} for p in proposals]
                   + [{"kind": "spot_check", "ref": fid} for fid in notes.get("spot_check") or []]
-                  + ([{"kind": "loop_review", "ref": "loop"}] if notes.get("loop_review") else [])),
+                  + ([{"kind": "loop_review", "ref": "loop"}] if notes.get("loop_review") else [])
+                  # new open bugs only: a carried one was already asked about
+                  + [{"kind": "bug", "ref": b["id"]} for b in notes.get("bugs", [])
+                     if b.get("status") == "open" and b.get("first_seen") == date]),
     }
     return record
 
@@ -427,6 +442,7 @@ _REQUIRED = {
     "finding": ("id", "slug", "class", "status", "recurrence", "evidence", "diagnosis", "proposed_fix"),
     "next_action": ("title", "files", "change", "verify"),
     "proposal": ("id", "kind", "summary", "sources"),
+    "bug": ("id", "key", "status", "file", "line", "desc", "why", "first_seen"),
     "failure": ("schema_version", "date", "kind", "run"),
     "failure_run": ("stage", "error", "sha"),
 }
@@ -468,6 +484,10 @@ def validate(record: dict) -> list[str]:
             errs.append(f"{where}: kind {p['kind']!r} not in {PROPOSAL_KINDS}")
     for i, a in enumerate(record.get("next_actions", [])):
         need(a, f"next_action {i + 1}", _REQUIRED["next_action"])
+    for b in record.get("bugs", []):   # optional: records from before Decision 18 have none
+        need(b, f"bug {b.get('id', '?')}", _REQUIRED["bug"])
+        if b.get("status") not in BUG_STATUSES:
+            errs.append(f"bug {b.get('id', '?')}: status {b.get('status')!r} not in {BUG_STATUSES}")
     for t in record.get("traces", []):
         for stage, v in t.get("scores", {}).items():
             if v is not None and v not in VERDICTS:
@@ -478,8 +498,9 @@ def validate(record: dict) -> list[str]:
         elif item["kind"] == "loop_review":
             if not record.get("tracking", {}).get("loop_review"):
                 errs.append("queue: a loop_review item with no tracking.loop_review")
-        elif item.get("ref") not in ids + [p.get("id") for p in record.get("proposals", [])]:
-            errs.append(f"queue: {item.get('ref')!r} names no finding or proposal")
+        elif item.get("ref") not in ids + [x.get("id") for x in (*record.get("proposals", []),
+                                                                   *record.get("bugs", []))]:
+            errs.append(f"queue: {item.get('ref')!r} names no finding, proposal or bug")
     return errs
 
 
@@ -498,7 +519,7 @@ def load(path: pathlib.Path) -> dict:
 
 
 _ANNOTATION_KEYS = ("findings", "proposals", "next_actions", "candidates", "retries", "sha", "supervisor",
-                    "spot_check", "loop_review", "spot_check_labels")
+                    "spot_check", "loop_review", "spot_check_labels", "bugs")
 
 
 def carried_annotations(path: pathlib.Path) -> dict | None:
@@ -519,6 +540,20 @@ def _score(t: dict) -> str:
 
 def _cell(text: _t.Any) -> str:
     return str(text if text is not None else "—").replace("|", "\\|").replace("\n", " ")
+
+
+def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
+    if not bugs:
+        return ["None."]
+    counts = {s: sum(b["status"] == s for b in bugs) for s in BUG_STATUSES}
+    out = [_BUGS_HOW_TO, "",
+           " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
+    for b in bugs:
+        out += [f"### {b['id']} · {b['status']} · `{b['file']}:{b['line']}` · `{b['key']}`", "",
+                f"**Check:** {b['why']}", "",
+                f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
+                f"first seen {b['first_seen']}): {b['desc']}", ""]
+    return out
 
 
 def render_markdown(record: dict) -> str:
@@ -580,6 +615,8 @@ def render_markdown(record: dict) -> str:
             + (f" — sources: {', '.join(p['sources'])}" if p.get("sources") else "")
             + (f"  \n  Hypothesis: {p['hypothesis']}" if p.get("hypothesis") else "")
             for p in record["proposals"]] or ["None."]
+
+    out += ["", "## Bugs", ""] + _render_bugs(record.get("bugs", []))
 
     out += ["", "## Owner queue", ""]
     out += [f"- {q['kind']}: {q['ref']}" for q in record["queue"]] or ["Empty."]

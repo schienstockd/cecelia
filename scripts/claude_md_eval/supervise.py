@@ -370,6 +370,12 @@ def _pr_body(record: dict) -> str:
                      + (f" ({', '.join(d['changed'])} changed)" if d["changed"] else "")
                      + (f". **Confounded:** {', '.join(d['confounded'])} moved together" if d.get("confounded") else "")
                      + ".")
+    bugs = record.get("bugs", [])
+    if bugs:
+        n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone")}
+        new = sum(b["status"] == "open" and b["first_seen"] == date for b in bugs)
+        lines += [f"**Bugs: {n['open']} open** ({new} new), {n['gone']} fixed since the last pass. "
+                  "To fix them, point a session at the record's *Bugs* section.", ""]
     lines += [f"- Findings: {len(record['findings'])}, owner queue: {len(record['queue'])}",
               f"- Judge: {record['run']['supervisor']['judge_calls']} call(s), "
               f"${record['run']['supervisor']['cost_usd']:.2f}", "", _PR_FOOTER]
@@ -415,6 +421,7 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
 def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path | None = None,
               session: str | None = None, date: str | None = None, judge_budget: float = JUDGE_TOTAL_USD,
               judge: _t.Callable | None = None, assign: _t.Callable | None = None,
+              bug_judge: _t.Callable | None = None,
               sandboxed: bool | None = None, persist: bool = True,
               state: dict | None = None) -> dict:
     """Run (or, with `session`, re-triage) one pass; returns its record, unwritten.
@@ -476,14 +483,19 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
                       for f in (previous or {}).get("findings", [])))
     if size:
         findings.append(size)
-    notes = {"findings": findings, "next_actions": actions, "retries": retries, "sha": sha,
-             "supervisor": {**spend, "session": session}}
+    # Decision 18: the reviewer findings nobody fixed, checked against the code this pass ran on
+    state["stage"] = "bugs"
+    bugs, bug_cost = _load_sibling("bugs").sweep(events, date=date, sha=sha or _record._git("rev-parse", "HEAD"),
+                                                 previous=previous, judge=bug_judge)
+    notes = {"findings": findings, "next_actions": actions, "retries": retries, "sha": sha, "bugs": bugs,
+             "supervisor": {**spend, "session": session, "bugs_usd": round(bug_cost, 4)}}
     record = _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)
     state["stage"] = "curate"
     curate = _load_sibling("curate")
     proposals, cost = curate.propose(record, history=history, events=events, assign=assign)
     notes["proposals"] = proposals
-    notes["supervisor"].update(curation_usd=round(cost, 4), cost_usd=round(spend["cost_usd"] + cost, 4))
+    notes["supervisor"].update(curation_usd=round(cost, 4),
+                               cost_usd=round(spend["cost_usd"] + bug_cost + cost, 4))
     run_number = len(history) + 1
     notes["spot_check"] = review.spot_check_sample(findings, run_number=run_number, seed=date)
     notes["loop_review"] = review.loop_review(record, history, run_number=run_number, reviews=reviews)

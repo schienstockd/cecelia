@@ -372,6 +372,8 @@ claude-md-eval-supervise = "python scripts/claude_md_eval/supervise.py"
 # Curation proposals for the newest run record (retire / add / setup), printed as JSON; the
 # supervised pass already puts them in the record. Never applies anything.
 claude-md-eval-curate = "python scripts/claude_md_eval/curate.py"
+# Dry run of the weekly bug sweep (Decision 18): unfixed fanout findings vs origin/main, one judge call.
+claude-md-eval-bugs = "python scripts/claude_md_eval/bugs.py"
 
 # The owner's review queue for the newest CLAUDE.md eval run record: decisions, proposals, spot
 # checks, the loop review. One key per answer; answers are append-only events in

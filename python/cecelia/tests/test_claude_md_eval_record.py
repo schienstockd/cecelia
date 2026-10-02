@@ -158,7 +158,7 @@ class ValidateTest(_Fixture):
     def test_queue_ref_must_name_a_finding_or_proposal(self):
         r = self.rec.build(self.events, "2026-09-30")
         r["queue"].append({"kind": "decision", "ref": "F9"})
-        self.assertIn("queue: 'F9' names no finding or proposal", self.rec.validate(r))
+        self.assertIn("queue: 'F9' names no finding, proposal or bug", self.rec.validate(r))
 
 
 class DeltaTest(_Fixture):

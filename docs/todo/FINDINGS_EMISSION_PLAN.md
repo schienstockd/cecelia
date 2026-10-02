@@ -121,13 +121,13 @@ Existing count summary stays as the header line of each section.
 - Extend `check_commit_recital.py` regex to match bracketed pairs
 - Backward compat: bare outcome tags still accepted for N=0 backlog transitions; but new finding rows require pair-form (fail commit otherwise, with helpful message pointing at the slugs)
 - Hook writes `_finding_resolved` rows on commit-hook success (before releasing the commit)
-- **Silent-drop guard (`write_dropped_for_orphan_slugs`).** After writing the tagged pairs, sweep the log for `_finding` rows on the current HEAD whose slug the commit didn't tag and no prior commit resolved. Auto-emit `[dropped_no_action]` per orphan. Doesn't block the commit — the goal is to make silent drops visible in the rollup, not force a tag. Prevents the failure mode Sonnet flagged Sep 2026: an agent trims a finding line out of the commit body and the `_finding` row stays `unresolved` forever, so the rollup can't tell "ignored" from "not yet handled".
+- **Silent-drop guard (`write_dropped_for_orphan_slugs`).** After writing the tagged pairs, sweep the log for `_finding` rows on the current HEAD whose slug the commit didn't tag and no prior commit resolved. Auto-emit `[dropped_no_action]` per orphan. Doesn't block the commit — the goal is to make silent drops visible in the rollup, not force a tag. Prevents the failure mode Sonnet flagged Sep 2026: an agent trims a finding line out of the commit body and the `_finding` row stays `unresolved` forever, so the rollup can't tell "ignored" from "not yet handled". **Superseded 2026-10-02:** the sweep recorded findings that were fixed and then trimmed from the message as `dropped_no_action` (two confirmed findings on `feat/profile-authorship`, both fixed in 34fceb6e). Gate 3 now blocks instead, listing each untagged slug; the sweep is removed.
 - Tests:
   - Pair form parses
   - Bare form still accepted but only when no pending findings exist for the current diff
   - Resolution rows land in the log with matching slug + outcome
   - Duplicate slugs fail the commit
-  - Untagged slug on HEAD auto-drops; tagged slug is left alone; previously-resolved slug isn't re-dropped; slug on a different HEAD is ignored; missing HEAD SHA skips the sweep entirely
+  - Untagged slug on HEAD blocks (even with no finding line in the message); tagged slug passes; previously-resolved slug passes; slug on a different HEAD or branch is ignored; missing HEAD SHA or branch degrades to allow
 
 ### P4 — First real use, self-catch acceptance
 

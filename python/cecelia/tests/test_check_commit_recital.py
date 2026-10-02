@@ -383,9 +383,8 @@ class SHAAnchoredCheckTest(unittest.TestCase):
 
 
 class SlugFormGateTest(unittest.TestCase):
-    """Bare tags write nothing to the log. When recital slugged findings for HEAD, a
-    bare-tagged commit (session 94ccd376's shape) would leave them to the orphan sweep and
-    log a fixed finding as `dropped_no_action` — so the hook requires the slug form."""
+    """Bare tags write nothing to the log, so when recital slugged findings for HEAD the hook
+    requires the slug form."""
 
     def setUp(self):
         self.hook = _load_hook()
@@ -435,10 +434,8 @@ class SlugFormGateTest(unittest.TestCase):
         self.assertIsNone(self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'"))
 
     def test_slug_pair_alone_is_not_treated_as_bare(self):
-        # Another untagged slug on the change must not trip the bare-tag gate when this
-        # message tags by slug only — the outcome word inside the pair isn't a bare tag.
+        # the outcome word inside the pair isn't a bare tag
         self._emit_finding("fanout-11111111")
-        self._emit_finding("fanout-22222222")
         self.assertIsNone(self.hook.check(
             "git commit -m 'x [**confirmed**] [fanout-11111111: fixed_pre_commit]'"))
 
@@ -460,15 +457,10 @@ class SlugFormGateTest(unittest.TestCase):
         self.assertIsNone(self.hook.check("git commit -m 'x [**confirmed**] [fixed_pre_commit]'"))
 
 
-class OrphanSlugDropTest(unittest.TestCase):
-    """Auto-drop sweep for slugs the recital emitted against the current HEAD that this
-    commit neither tagged nor previously resolved.
-
-    Before this sweep, an agent could trim a finding line out of the commit body and the
-    `_finding` row would stay `unresolved` in the rollup forever — the log couldn't tell
-    "ignored" from "not yet handled." The sweep runs after `write_resolutions` in main(),
-    so a tagged slug isn't second-guessed; only orphans get the auto-drop.
-    """
+class UntaggedSlugGateTest(unittest.TestCase):
+    """Gate 3: every `_finding` recital logged for this change needs a slug tag, whether or not
+    the message still quotes the finding. A fixed finding trimmed from the message must say
+    `fixed_pre_commit` — nothing closes it on the agent's behalf."""
 
     def setUp(self):
         self.hook = _load_hook()
@@ -480,131 +472,76 @@ class OrphanSlugDropTest(unittest.TestCase):
         )
         self._env_patch.start()
         self.addCleanup(self._env_patch.stop)
+        self.head, self.branch = "a" * 40, "feat/x"
+        for name, value in (("_current_head_sha", lambda: self.head),
+                            ("_current_branch", lambda: self.branch)):
+            patch = mock.patch.object(self.hook, name, side_effect=value)
+            patch.start()
+            self.addCleanup(patch.stop)
 
-    def _events(self):
-        return list(read_events(self.log_path))
-
-    def _emit_finding(self, slug: str, commit: str, event: str = "fanout_audit_finding",
-                      branch: str = "feat/x"):
+    def _emit_finding(self, slug: str, commit: str | None = None,
+                      event: str = "fanout_audit_finding", branch: str = "feat/x"):
         append_event(
             event,
-            {"slug": slug, "file": "x.py", "line": 1, "desc": "d", "marker": "confirmed"},
-            commit=commit, branch=branch,
+            {"slug": slug, "file": "x.py", "line": 7, "desc": "d", "marker": "confirmed"},
+            commit=commit or self.head, branch=branch,
         )
 
-    def test_untagged_slug_on_head_gets_auto_dropped(self):
-        head = "a" * 40
-        self._emit_finding("fanout-11111111", commit=head)
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'no tags in here'", pr=None, commit=head, branch="feat/x",
-        )
-        self.assertEqual(n, 1)
-        rows = [e for e in self._events() if e["event"] == "fanout_audit_finding_resolved"]
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["payload"]["slug"], "fanout-11111111")
-        self.assertEqual(rows[0]["payload"]["outcome"], "dropped_no_action")
-        self.assertEqual(rows[0]["branch"], "feat/x")
+    def test_finding_trimmed_from_the_message_blocks_and_names_it(self):
+        self._emit_finding("fanout-11111111")
+        reason = self.hook.check("fix: the thing, finding fixed and not mentioned")
+        self.assertIsNotNone(reason)
+        self.assertIn("fanout-11111111", reason)
+        self.assertIn("x.py:7 (confirmed)", reason)
 
-    def test_tagged_slug_is_not_auto_dropped(self):
-        head = "b" * 40
-        self._emit_finding("fanout-22222222", commit=head)
-        msg = "git commit -m 'foo [**confirmed**] [fanout-22222222: fixed_pre_commit]'"
-        n = self.hook.write_dropped_for_orphan_slugs(msg, pr=None, commit=head, branch="feat/x")
-        self.assertEqual(n, 0)
+    def test_tagged_slug_passes_without_its_finding_line(self):
+        self._emit_finding("fanout-22222222")
+        self.assertIsNone(self.hook.check("fix: thing [fanout-22222222: fixed_pre_commit]"))
 
-    def test_previously_resolved_slug_is_not_re_dropped(self):
-        # A slug resolved by an earlier commit stays resolved; the sweep must not overwrite
-        # it with `dropped_no_action` on a later unrelated commit.
-        head = "c" * 40
-        self._emit_finding("fanout-33333333", commit=head)
-        append_event(
-            "fanout_audit_finding_resolved",
-            {"slug": "fanout-33333333", "outcome": "fixed_pre_commit"},
-            commit=head, branch="feat/x",
-        )
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'later unrelated commit'", pr=None, commit=head, branch="feat/x",
-        )
-        self.assertEqual(n, 0)
+    def test_every_logged_slug_needs_its_own_tag(self):
+        self._emit_finding("fanout-77777777")
+        self._emit_finding("conv-99999999", event="convention_check_finding")
+        reason = self.hook.check("fix [fanout-77777777: fixed_pre_commit]")
+        self.assertIn("conv-99999999", reason)
+        self.assertNotIn("fanout-77777777", reason)
 
-    def test_finding_on_different_head_is_ignored(self):
-        # Findings from a prior HEAD belong to that HEAD's commit — this commit shouldn't
-        # bulk-drop them. The `commit == current_head` filter is what enforces this.
-        old_head = "d" * 40
-        new_head = "e" * 40
-        self._emit_finding("fanout-44444444", commit=old_head)
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'commit against new head'",
-            pr=None, commit=new_head, branch="feat/x",
-        )
-        self.assertEqual(n, 0)
+    def test_slug_resolved_by_an_earlier_commit_on_the_branch_passes(self):
+        self._emit_finding("fanout-33333333")
+        append_event("fanout_audit_finding_resolved",
+                     {"slug": "fanout-33333333", "outcome": "fixed_pre_commit"},
+                     commit=self.head, branch="feat/x")
+        self.assertIsNone(self.hook.check("later unrelated commit"))
 
-    def test_missing_head_sha_skips_sweep(self):
-        # If HEAD SHA can't be captured, the sweep must degrade — broadcasting drops across
-        # every unresolved slug in the log would be catastrophic (the finding→HEAD join is
-        # the whole selection).
-        self._emit_finding("fanout-55555555", commit="f" * 40)
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'foo'", pr=None, commit=None, branch=None,
-        )
-        self.assertEqual(n, 0)
+    def test_finding_on_a_different_head_is_ignored(self):
+        # it belongs to that HEAD's commit
+        self._emit_finding("fanout-44444444", commit="d" * 40)
+        self.assertIsNone(self.hook.check("commit against new head"))
 
-    def test_convention_slug_uses_convention_resolved_event(self):
-        # The mechanism prefix determines which `_resolved` event we emit; a `conv-` slug
-        # must land as `convention_check_finding_resolved`, not `fanout_audit_finding_resolved`.
-        head = "0" * 40
-        self._emit_finding("conv-66666666", commit=head, event="convention_check_finding")
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'no tag'", pr=None, commit=head, branch="feat/x",
-        )
-        self.assertEqual(n, 1)
-        rows = [e for e in self._events() if e["event"] == "convention_check_finding_resolved"]
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["payload"]["outcome"], "dropped_no_action")
+    def test_missing_head_or_branch_degrades_to_allow(self):
+        # without both, this worktree's findings can't be told from another's on the same base
+        self._emit_finding("fanout-55555555")
+        self.branch = None
+        self.assertIsNone(self.hook.check("no tag"))
+        self.branch, self.head = "feat/x", None
+        self.assertIsNone(self.hook.check("no tag"))
 
-    def test_missing_branch_skips_sweep(self):
-        # Without a branch the sweep can't tell this worktree's findings from another's on
-        # the same base SHA, so it writes nothing rather than guess.
-        head = "2" * 40
-        self._emit_finding("fanout-aaaaaaaa", commit=head)
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'no tag'", pr=None, commit=head, branch=None,
-        )
-        self.assertEqual(n, 0)
-
-    def test_other_branch_on_same_base_sha_is_not_dropped(self):
-        # The 2026-09-30 incident: `card-reshuffle` and `module-keepalive` both branched off
-        # the same main tip; card-reshuffle's commit auto-dropped module-keepalive's finding.
-        head = "3" * 40
-        self._emit_finding("fanout-7d998e9e", commit=head, branch="module-keepalive")
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'no tag'", pr=None, commit=head, branch="card-reshuffle",
-        )
-        self.assertEqual(n, 0)
-        self.assertEqual([e for e in self._events() if e["event"].endswith("_resolved")], [])
+    def test_other_branch_on_same_base_sha_does_not_block(self):
+        # parallel worktrees off one main tip share a parent SHA
+        self._emit_finding("fanout-7d998e9e", branch="module-keepalive")
+        self.branch = "card-reshuffle"
+        self.assertIsNone(self.hook.check("no tag"))
 
     def test_other_branch_resolution_does_not_hide_this_branch_finding(self):
-        # Slugs carry no branch: two worktrees flagging the same file:line share one. The other
-        # branch resolving it must not make this branch's pending finding look handled.
-        head = "4" * 40
-        self._emit_finding("fanout-bbbbbbbb", commit=head, branch="feat/x")
+        # Slugs carry no branch: two worktrees flagging the same file:line share one.
+        self._emit_finding("fanout-bbbbbbbb")
         append_event("fanout_audit_finding_resolved",
                      {"slug": "fanout-bbbbbbbb", "outcome": "fixed_pre_commit"},
-                     commit=head, branch="other-worktree")
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "no tag", pr=None, commit=head, branch="feat/x",
-        )
-        self.assertEqual(n, 1)
+                     commit=self.head, branch="other-worktree")
+        self.assertIn("fanout-bbbbbbbb", self.hook.check("no tag"))
 
-    def test_multiple_orphans_all_get_dropped(self):
-        head = "1" * 40
-        self._emit_finding("fanout-77777777", commit=head)
-        self._emit_finding("fanout-88888888", commit=head)
-        self._emit_finding("conv-99999999", commit=head, event="convention_check_finding")
-        n = self.hook.write_dropped_for_orphan_slugs(
-            "git commit -m 'no tags'", pr=None, commit=head, branch="feat/x",
-        )
-        self.assertEqual(n, 3)
+    def test_deliberate_drop_is_a_tag(self):
+        self._emit_finding("fanout-cccccccc")
+        self.assertIsNone(self.hook.check("x [fanout-cccccccc: dropped_no_action]"))
 
 
 class GuardTest(unittest.TestCase):
@@ -712,8 +649,8 @@ class CommitMsgHookTest(unittest.TestCase):
                      commit=self.head, branch="feat/x")
         with mock.patch.object(self.hook, "_in_sequencer_commit", return_value=True):
             rc = self.hook.main(["--commit-msg", self._msg_file("Merge branch 'main'\n")])
-        self.assertEqual(rc, 0)
-        self.assertEqual(self._resolved(), [])  # no orphan auto-drop on a merge
+        self.assertEqual(rc, 0)   # gate 3 would block on the untagged finding without the skip
+        self.assertEqual(self._resolved(), [])
 
     def test_agent_commit_without_recital_run_blocks(self):
         # Session 3658f232 (2026-09-30): no findings, copied check trailer, no recital — passed.
