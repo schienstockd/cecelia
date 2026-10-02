@@ -63,7 +63,7 @@ class AddCategoricalObsTest(unittest.TestCase):
         back = ad.read_h5ad(self.path)
         self.assertEqual(sorted(back.obs["state"].cat.categories.tolist()), ["X", "Y"])
         self.assertEqual(back.obs.loc["20", "state"], "X")
-        self.assertEqual(back.obs["state"].cat.codes[back.obs.index.get_loc("10")], -1)
+        self.assertEqual(back.obs["state"].cat.codes.iloc[back.obs.index.get_loc("10")], -1)
 
 
 class ChannelNameSelectionTest(unittest.TestCase):
