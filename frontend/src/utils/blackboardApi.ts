@@ -3,6 +3,8 @@
 // can render "no entries" / "not found" without a try/catch of its own. Backend contract is in
 // api/src/blackboard_api.jl and the plan is docs/todo/BIDIR_CONTEXT_PLAN.md → Part 4.
 
+import { parseAuthorStamp, type AuthorStamp } from './authorStamp'
+
 /** PROJECT_MEMORY_PLAN Decision 3 — `status ∈ (open | resolved | parked)` on every entry, missing
  *  backfills as "open" server-side; kept as a literal union so a bad enum value gets caught at compile
  *  time on both the list and set paths. */
@@ -59,6 +61,8 @@ export interface BlackboardEntry {
    *  on a normal (non-Kiwi) Blackboard entry. Shape mirrors `kiwiTurnSave.KiwiRefsSidecar`; parsed
    *  loosely here so a schema drift on either side degrades gracefully. */
   kiwiRefs?: Record<string, unknown>
+  createdBy?: AuthorStamp        // absent on entries from before stamps, and on the project profile
+  updatedBy?: AuthorStamp
 }
 
 interface ListResp    { entries?: unknown[] }
@@ -95,6 +99,8 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
   const outcome = parseOutcome(r.outcome)
   const kiwiRefs = (r.kiwiRefs && typeof r.kiwiRefs === 'object' && !Array.isArray(r.kiwiRefs))
     ? r.kiwiRefs as Record<string, unknown> : undefined
+  const createdBy = parseAuthorStamp(r.createdBy)
+  const updatedBy = parseAuthorStamp(r.updatedBy)
   return {
     entryId,
     title:     typeof r.title === 'string' ? r.title : '',
@@ -106,6 +112,8 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
     status:    parseStatus(r.status),
     ...(outcome ? { outcome } : {}),
     ...(kiwiRefs ? { kiwiRefs } : {}),
+    ...(createdBy ? { createdBy } : {}),
+    ...(updatedBy ? { updatedBy } : {}),
   }
 }
 

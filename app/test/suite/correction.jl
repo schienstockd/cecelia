@@ -163,13 +163,14 @@ end
     Cecelia.append_corrections!(dir, "memTom",
         [Dict("op" => "track.join", "trackIds" => [10, 20], "summary" => "joined")]; run_id = "r1")
     Cecelia.append_corrections!(dir, "memTom",
-        [Dict("op" => "track.remove", "trackIds" => [30], "summary" => "removed")]; run_id = "r2")
+        [Dict("op" => "track.remove", "trackIds" => [30], "summary" => "removed")]; run_id = "r2", by = "alice")
 
     doc = Cecelia.load_corrections(dir, "memTom")
     @test doc["valueName"] == "memTom"
     @test length(doc["entries"]) == 2                     # append-only across runs
     @test [e["seq"] for e in doc["entries"]] == [1, 2]    # monotonic, so history has a stable order
     @test [e["runId"] for e in doc["entries"]] == ["r1", "r2"]
+    @test !haskey(doc["entries"][1], "by") && doc["entries"][2]["by"] == "alice"
     @test doc["entries"][1]["op"] == "track.join"
 end
 
@@ -457,13 +458,14 @@ end
     ]; run_id = "r1")
     Cecelia.append_label_corrections!(dir, "memTom", [
         Dict("op" => "label.remove", "t" => 1, "ids" => [5], "nPixels" => 4),
-    ]; run_id = "r2")
+    ]; run_id = "r2", by = "alice")
 
     doc = Cecelia.load_label_corrections(dir, "memTom")
     @test doc["valueName"] == "memTom"
     @test length(doc["entries"]) == 2
     @test [e["seq"] for e in doc["entries"]] == [1, 2]        # monotonic across runs
     @test [e["runId"] for e in doc["entries"]] == ["r1", "r2"]
+    @test !haskey(doc["entries"][1], "by") && doc["entries"][2]["by"] == "alice"
     @test doc["entries"][1]["op"] == "label.merge"
 end
 

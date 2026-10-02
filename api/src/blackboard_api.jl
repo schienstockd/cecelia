@@ -121,11 +121,31 @@ function _outcome_from_meta(meta)::Union{Dict{String,Any},Nothing}
     _valid_bb_outcome_verdict(v) || return nothing
     note = String(get(o, "note", ""))
     isempty(note) && return nothing
-    Dict{String,Any}(
+    out = Dict{String,Any}(
         "verdict"  => v,
         "note"     => note,
         "taggedAt" => String(get(o, "taggedAt", "")),
     )
+    by = _by_from_meta(o, "taggedBy")
+    by === nothing || (out["taggedBy"] = by)
+    out
+end
+
+# Copy `createdBy` / `updatedBy` onto a reply row — absent-on-missing like outcome/fingerprint.
+function _bb_put_authors!(row::AbstractDict, meta)
+    for k in ("createdBy", "updatedBy")
+        b = _by_from_meta(meta, k)
+        b === nothing || (row[k] = b)
+    end
+    row
+end
+
+# An authorship stamp (`author_stamp()` shape) recorded under `key`, or `nothing` — entries written
+# before stamps existed have none, and stay unattributed rather than guessed.
+function _by_from_meta(meta, key::AbstractString)::Union{Dict{String,Any},Nothing}
+    b = get(meta, key, nothing)
+    b isa AbstractDict || return nothing
+    Dict{String,Any}(String(k) => String(v) for (k, v) in b)
 end
 
 # Entry fingerprint — PROJECT_MEMORY_PLAN Phase 5.1/5.2. Small, structured, set-once at create so
@@ -279,7 +299,9 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
     snapshots = Any[], status::AbstractString = "open",
     outcome::Union{Nothing,AbstractDict} = nothing,
     fingerprint::Union{Nothing,AbstractDict} = nothing,
-    kiwiRefs::Union{Nothing,AbstractDict} = nothing)
+    kiwiRefs::Union{Nothing,AbstractDict} = nothing,
+    createdBy::Union{Nothing,AbstractDict} = nothing,
+    updatedBy::Union{Nothing,AbstractDict} = nothing)
     dir = _bb_entry_dir(uid, id)
     meta = Dict{String,Any}(
         "entryId"     => id,
@@ -308,7 +330,11 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
             "note"     => String(get(outcome, "note", "")),
             "taggedAt" => String(get(outcome, "taggedAt", "")),
         )
+        haskey(outcome, "taggedBy") && (meta["outcome"]["taggedBy"] = outcome["taggedBy"])
     end
+    # Authorship — `author_stamp()` dicts. Absent on legacy entries and the auto-made profile entry.
+    createdBy === nothing || (meta["createdBy"] = createdBy)
+    updatedBy === nothing || (meta["updatedBy"] = updatedBy)
     # Fingerprint — P5.1. Same absent-on-missing discipline as outcome. The dict is shallow-copied
     # under String keys so the on-disk shape stays stable regardless of whether the caller passed
     # Symbol- or String-keyed data. `v` is coerced to Int; other fields pass through as-is (the
@@ -503,6 +529,7 @@ function api_blackboard_list(req::HTTP.Request)
         # pass score the whole project without a per-entry fetch.
         fp = _fingerprint_from_meta(meta)
         fp !== nothing && (row["fingerprint"] = fp)
+        _bb_put_authors!(row, meta)
         push!(entries, row)
     end
     200, JSON3.write((; entries = entries))
@@ -568,6 +595,7 @@ function api_blackboard_entry_get(req::HTTP.Request)
     # discipline — a normal Blackboard entry has none; a saved Kiwi turn carries a map.
     kr = _kiwi_refs_from_meta(meta)
     kr !== nothing && (entry_out["kiwiRefs"] = kr)
+    _bb_put_authors!(entry_out, meta)
     200, JSON3.write((; entry = entry_out))
 end
 
@@ -723,7 +751,9 @@ function api_blackboard_status(body_bytes::Vector{UInt8})
         status = status,
         outcome = _outcome_from_meta(meta),
         fingerprint = _fingerprint_from_meta(meta),
-        kiwiRefs = _kiwi_refs_from_meta(meta))
+        kiwiRefs = _kiwi_refs_from_meta(meta),
+        createdBy = _by_from_meta(meta, "createdBy"),
+        updatedBy = author_stamp())
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -793,6 +823,7 @@ function api_blackboard_outcome(body_bytes::Vector{UInt8})
         "verdict"  => verdict,
         "note"     => note_str,
         "taggedAt" => ts,
+        "taggedBy" => author_stamp(),
     )
     _write_bb_meta!(uid, id;
         title = String(get(meta, "title", "")),
@@ -804,7 +835,9 @@ function api_blackboard_outcome(body_bytes::Vector{UInt8})
         status = _status_from_meta(meta),
         outcome = new_outcome,
         fingerprint = _fingerprint_from_meta(meta),
-        kiwiRefs = _kiwi_refs_from_meta(meta))
+        kiwiRefs = _kiwi_refs_from_meta(meta),
+        createdBy = _by_from_meta(meta, "createdBy"),
+        updatedBy = author_stamp())
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -884,7 +917,7 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     _write_bb_meta!(uid, id;
         title = title, createdAt = ts, updatedAt = ts, current = 0,
         attachments = attachments, status = status, fingerprint = fingerprint,
-        kiwiRefs = kiwi_refs)
+        kiwiRefs = kiwi_refs, createdBy = author_stamp())
 
     reg = _read_bb_registry(uid)
     reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)
@@ -967,7 +1000,9 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
         updatedAt = ts, current = v, attachments = atts,
         snapshots = snapshots, status = prev_status,
         outcome = prev_outcome, fingerprint = prev_fingerprint,
-        kiwiRefs = prev_kiwi_refs)
+        kiwiRefs = prev_kiwi_refs,
+        createdBy = _by_from_meta(meta, "createdBy"),
+        updatedBy = author_stamp())
 
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
@@ -1041,7 +1076,9 @@ function api_blackboard_restore(body_bytes::Vector{UInt8})
         attachments = restored_atts, snapshots = snapshots,
         status = prev_status, outcome = prev_outcome,
         fingerprint = prev_fingerprint,
-        kiwiRefs = prev_kiwi_refs)
+        kiwiRefs = prev_kiwi_refs,
+        createdBy = _by_from_meta(meta, "createdBy"),
+        updatedBy = author_stamp())
     reg = _read_bb_registry(uid)
     entry = get!(reg, id, Dict{String,Any}())
     entry["current"]   = v_asked
@@ -1109,7 +1146,9 @@ function api_blackboard_prune(body_bytes::Vector{UInt8})
                     status = _status_from_meta(meta),
                     outcome = _outcome_from_meta(meta),
                     fingerprint = _fingerprint_from_meta(meta),
-                    kiwiRefs = _kiwi_refs_from_meta(meta))
+                    kiwiRefs = _kiwi_refs_from_meta(meta),
+                    createdBy = _by_from_meta(meta, "createdBy"),
+                    updatedBy = _by_from_meta(meta, "updatedBy"))
             end
         end
     end

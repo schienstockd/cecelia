@@ -80,18 +80,22 @@ end
 Write a chain template to `<project>/settings/chains/<name>.json`.
 Creates the chains/ directory if needed.
 """
-function save_chain_template!(proj::CciaProject, t::ChainTemplate)::ChainTemplate
+function save_chain_template!(proj::CciaProject, t::ChainTemplate;
+                              created_by::Union{Nothing,AbstractDict} = nothing,
+                              updated_by::Union{Nothing,AbstractDict} = nothing)::ChainTemplate
     mkpath(_chains_dir(proj))
-    write_atomic(_template_path(proj, t.name)) do io
-        JSON3.pretty(io, (;
-            name  = t.name,
-            nodes = [(; id=n.id, fn=n.fn, scope=string(n.scope), params=n.params,
-                       barrier_policy=string(n.barrier_policy), resource_pool=n.resource_pool)
-                     for n in t.nodes],
-            edges = [(; from=e.from, to=e.to) for e in t.edges],
-            startTargets = t.start_targets,
-        ))
-    end
+    doc = (;
+        name  = t.name,
+        nodes = [(; id=n.id, fn=n.fn, scope=string(n.scope), params=n.params,
+                   barrier_policy=string(n.barrier_policy), resource_pool=n.resource_pool)
+                 for n in t.nodes],
+        edges = [(; from=e.from, to=e.to) for e in t.edges],
+        startTargets = t.start_targets,
+    )
+    # `author_stamp()`s — the API passes them; a REPL save leaves them off.
+    created_by === nothing || (doc = merge(doc, (; createdBy = created_by)))
+    updated_by === nothing || (doc = merge(doc, (; updatedBy = updated_by)))
+    write_atomic(io -> JSON3.pretty(io, doc), _template_path(proj, t.name))
     t
 end
 
@@ -166,6 +170,7 @@ function _save_run!(run::ChainRun)
             template_hash  = run.template_hash,
             image_states   = states,
             created_at     = run.created_at,
+            by             = run.by,
         ))
     end
 end

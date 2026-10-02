@@ -37,6 +37,13 @@ class ClientTest(unittest.TestCase):
     def setUp(self):
         self.c = CeceliaClient(base_url="http://x:8080")
 
+    def test_requests_are_marked_as_claude(self):
+        # the server stamps writes `via: claude` off this header (author_stamp) — without it a
+        # Claude-made blackboard entry reads as the user's own
+        with _patch_urlopen({"ok": True}) as u:
+            self.c._request("POST", "/api/blackboard/create", body={"projectUid": "", "title": "t"})
+        self.assertEqual(u.call_args[0][0].get_header("X-cecelia-client"), "claude")
+
     def test_allowlist_blocks_unknown_routes(self):
         # a mutating route that exists in the API must NOT be reachable through the client
         with self.assertRaises(DisallowedRoute):

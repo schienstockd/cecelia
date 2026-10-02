@@ -35,12 +35,17 @@ struct TrackCorrect <: CciaTask end
 Base.@kwdef struct TrackCorrectParams
     valueName::String              = VERSIONED_DEFAULT_VAL
     trackOps::Vector{Dict{String,Any}} = Dict{String,Any}[]
+    # scheduler-injected (`_task_id` / `_by`, jobs.jl) — stamped onto the journal entries
+    taskId::Union{String,Nothing}  = nothing
+    by::String                     = ""
 end
 
 function parse_track_correct_params(d::AbstractDict)::TrackCorrectParams
     TrackCorrectParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
-        trackOps  = parse_track_ops(get(d, "trackOps", nothing)))
+        trackOps  = parse_track_ops(get(d, "trackOps", nothing)),
+        taskId    = (t = get(d, "_task_id", nothing); t === nothing ? nothing : string(t)),
+        by        = string(get(d, "_by", "")))
 end
 
 """
@@ -197,7 +202,7 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
 
     # ── Journal (Decision 3/7): durable, per-image, append-only ───────────────────
     journal = try
-        append_corrections!(img._dir, pcorr.valueName, entries)
+        append_corrections!(img._dir, pcorr.valueName, entries; run_id = pcorr.taskId, by = pcorr.by)
     catch e
         on_log("[WARN] could not write the correction journal: $e")
         nothing

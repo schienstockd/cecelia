@@ -426,6 +426,7 @@ export spatial_summary, contact_matrix
 export active_profile_name, active_profile_dir, set_active_profile!, kiwi_terminal_command
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
+export REQUEST_VIA, author_stamp
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,

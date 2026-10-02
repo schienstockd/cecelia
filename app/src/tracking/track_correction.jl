@@ -360,13 +360,14 @@ function load_corrections(task_dir::AbstractString, value_name::AbstractString):
 end
 
 """
-    append_corrections!(task_dir, value_name, entries; run_id) -> String
+    append_corrections!(task_dir, value_name, entries; run_id, by) -> String
 
 Append `entries` to the journal and write it atomically. Each entry is stamped with the run that
-produced it so the history can be read back grouped by correction run. Returns the path.
+produced it so the history can be read back grouped by correction run, and with `by`, the profile
+that ran it. Returns the path.
 """
 function append_corrections!(task_dir::AbstractString, value_name::AbstractString,
-                             entries::AbstractVector; run_id = nothing)::String
+                             entries::AbstractVector; run_id = nothing, by = "")::String
     doc = load_corrections(task_dir, value_name)
     existing = collect(Dict{String,Any}, doc["entries"])
     seq = length(existing)
@@ -374,6 +375,7 @@ function append_corrections!(task_dir::AbstractString, value_name::AbstractStrin
         rec = Dict{String,Any}(string(k) => v for (k, v) in pairs(e))
         rec["seq"] = (seq += 1)
         isnothing(run_id) || (rec["runId"] = string(run_id))
+        isempty(by) || (rec["by"] = string(by))   # the profile that ran the correction
         push!(existing, rec)
     end
     doc["entries"] = existing

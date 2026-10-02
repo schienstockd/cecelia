@@ -37,6 +37,7 @@ import {
 } from '../utils/blackboardFilters'
 import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
 import { formatAgo } from '../utils/formatAgo'
+import { authorLabel } from '../utils/authorStamp'
 import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
 import { useRoute } from 'vue-router'
 import { useCaptureFocus } from '../composables/useCaptureFocus'
@@ -610,6 +611,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
               <span class="bb-pane-title">{{ selected.title }}</span>
               <span class="bb-pane-sub cc-fs-2xs cc-muted">
                 updated {{ formatAgo(selected.updatedAt) }}
+                <template v-if="authorLabel(selected.updatedBy ?? selected.createdBy)">
+                  by {{ authorLabel(selected.updatedBy ?? selected.createdBy) }}</template>
                 <template v-if="selected.current > 0"> · v{{ selected.current }}</template>
               </span>
               <span class="bb-bar-spacer" />

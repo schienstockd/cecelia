@@ -50,6 +50,9 @@ Base.@kwdef struct TaskRequest
     # is what produced five separate bugs — see docs/SCHEDULER.md.
     chain_run_id::String         = ""
     chain_node_id::String        = ""
+    # The profile that asked for it. Set by the ASKING side: the runner is a separate process whose
+    # active profile may predate a switch. "" ⇒ resolve here (a REPL caller, an older peer).
+    by::String                   = ""
 end
 
 # JSON round-trip — the request IS the wire format, so it gets one canonical encoder/decoder rather
@@ -59,7 +62,7 @@ task_request_dict(r::TaskRequest)::Dict{String,Any} = Dict{String,Any}(
     "taskId"     => r.task_id,   "funName"    => r.fun_name, "projectUid" => r.project_uid,
     "imageUid"   => r.image_uid, "imageUids"  => r.image_uids,
     "poolName"   => r.pool_name, "params"     => r.params,   "target"     => r.target,
-    "chainRunId" => r.chain_run_id, "chainNodeId" => r.chain_node_id)
+    "chainRunId" => r.chain_run_id, "chainNodeId" => r.chain_node_id, "by" => r.by)
 
 function task_request(d::AbstractDict)::TaskRequest
     s(k, dflt = "") = string(get(d, k, dflt))
@@ -73,7 +76,8 @@ function task_request(d::AbstractDict)::TaskRequest
         params      = Dict{String,Any}(String(k) => v for (k, v) in get(d, "params", Dict{String,Any}())),
         target      = s("target", "local"),
         chain_run_id  = s("chainRunId"),
-        chain_node_id = s("chainNodeId"))
+        chain_node_id = s("chainNodeId"),
+        by            = s("by"))
 end
 
 """
@@ -160,6 +164,7 @@ function _execute_set_task(req::TaskRequest, task_struct, pool::String;
                           pool_name        = pool,
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
+                          by               = _request_by(req),
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin
@@ -197,6 +202,7 @@ function _execute_image_task(req::TaskRequest, task_struct, pool::String;
                           pool_name        = pool,
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
+                          by               = _request_by(req),
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin
@@ -233,11 +239,15 @@ Base.@kwdef struct ChainRequest
     run_id::String             = ""
     start_node::String         = ""
     target::String             = "local"
+    by::String                 = ""   # as TaskRequest.by — who started the run
 end
+
+# `req.by`, or this process's active profile when the asker didn't say.
+_request_by(req)::String = isempty(req.by) ? active_profile_name() : req.by
 
 chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
     "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
-    "runId" => r.run_id, "startNode" => r.start_node, "target" => r.target)
+    "runId" => r.run_id, "startNode" => r.start_node, "target" => r.target, "by" => r.by)
 
 chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     project_uid = string(get(d, "projectUid", "")),
@@ -245,7 +255,8 @@ chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     image_uids  = String[string(u) for u in get(d, "imageUids", String[])],
     run_id      = string(get(d, "runId", "")),
     start_node  = string(get(d, "startNode", "")),
-    target      = string(get(d, "target", "local")))
+    target      = string(get(d, "target", "local")),
+    by          = string(get(d, "by", "")))
 
 """
     execute_chain(req::ChainRequest; on_log, on_finished) -> Bool
@@ -268,7 +279,7 @@ function execute_chain(req::ChainRequest;
     try
         proj = load_project(req.project_uid)
         if isempty(req.run_id)
-            run_chain(proj, req.image_uids; chain = req.chain_name,
+            run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req),
                       on_cancel_check = is_chain_cancelled, on_log = on_log)
         else
             run_chain(proj, String[]; run_id = req.run_id,

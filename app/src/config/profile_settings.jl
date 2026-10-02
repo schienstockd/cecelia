@@ -219,3 +219,26 @@ function record_profile_rename!(old::AbstractString, new::AbstractString;
     open(io -> println(io, old), p, "a")
     nothing
 end
+
+# ── Authorship ────────────────────────────────────────────────────────────────────
+#
+# Who wrote a piece of project content: the active profile, and whether it came from the app or from
+# Claude (the observer MCP marks its requests with `X-Cecelia-Client: claude`; the router binds that
+# per request). One active profile per machine is the model, so a Claude write is made FOR whoever is
+# signed in — hence both fields, never one or the other.
+
+"""
+    REQUEST_VIA
+
+Where the current API request came from: `"app"` (default — GUI, REPL, tests) or `"claude"`. Bound
+per request by the router; read through `author_stamp`.
+"""
+const REQUEST_VIA = Base.ScopedValues.ScopedValue("app")
+
+"""
+    author_stamp() -> Dict{String,Any}
+
+`{profile, via}` for the write being made now — store it as `createdBy` / `updatedBy`.
+"""
+author_stamp()::Dict{String,Any} =
+    Dict{String,Any}("profile" => active_profile_name(), "via" => REQUEST_VIA[])

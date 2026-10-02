@@ -216,7 +216,9 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
 
     handler = get(table, path, nothing)   # SubString hashes as its String — no copy per request
     handler === nothing && return 404, JSON3.write((; error="Not found: $path"))
-    handler(req, body_bytes)
+    # Bind who's asking for the whole handler, so a writer stamps `author_stamp()` without threading it.
+    via = HTTP.header(req, "X-Cecelia-Client", "") == "claude" ? "claude" : "app"
+    Base.ScopedValues.with(() -> handler(req, body_bytes), REQUEST_VIA => via)
 end
 
 # ── GET ─────────────────────────────────────────────────────────────────────

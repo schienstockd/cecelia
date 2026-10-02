@@ -275,7 +275,8 @@ class CeceliaClient:
             if q:
                 url += "?" + urllib.parse.urlencode(q)
         data = None
-        headers = {"Accept": "application/json"}
+        # marks Claude-made writes so the server stamps them `via: claude` (author_stamp)
+        headers = {"Accept": "application/json", "X-Cecelia-Client": "claude"}
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"

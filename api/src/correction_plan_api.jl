@@ -168,7 +168,11 @@ function api_correction_plan_mount(req::HTTP.Request, body_bytes::Vector{UInt8})
     end
 
     created = !isfile(path)
-    save_chain_template!(load_project(proj_uid), template)
+    # An overwrite keeps the chain's creator (absent on a legacy file stays absent) and stamps this write.
+    prior_by = created ? nothing : (try get(read_ccid_raw(path), "createdBy", nothing) catch; nothing end)
+    save_chain_template!(load_project(proj_uid), template;
+                         created_by = created ? author_stamp() : prior_by,
+                         updated_by = created ? nothing : author_stamp())
     @info "Mounted correction plan to chain" name=template.name project=proj_uid nodes=length(template.nodes) created=created
     _broadcast_chains_updated(proj_uid)
     return 200, JSON3.write((;
