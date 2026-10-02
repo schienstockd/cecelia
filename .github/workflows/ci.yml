@@ -108,7 +108,7 @@ jobs:
     env:
       JULIA_CPU_TARGET: ${{ matrix.cpu_target }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Pixi + Python env
         uses: prefix-dev/setup-pixi@v0
@@ -163,7 +163,7 @@ jobs:
     env:
       JULIA_CPU_TARGET: ${{ matrix.cpu_target }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Pixi + Python env
         uses: prefix-dev/setup-pixi@v0
@@ -264,7 +264,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Pixi + Python env
         uses: prefix-dev/setup-pixi@v0
