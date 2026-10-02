@@ -208,18 +208,18 @@ function load_label_corrections(task_dir::AbstractString, value_name::AbstractSt
 end
 
 """
-    append_label_corrections!(task_dir, value_name, entries; run_id) -> String
+    append_label_corrections!(task_dir, value_name, entries; run_id, by) -> String
 
 Append `entries` to the journal and write it atomically. Each entry is stamped with `seq` (append
 order across ALL runs, so replay is deterministic) and `runId` (the correction run that produced
-it, so the history can be grouped). Returns the path.
+it, so the history can be grouped), plus `by` — the profile that ran it. Returns the path.
 
 Entries are the caller's shape — normally `{op, t, ids, into?, nPixels}` — and this function does
 NOT validate them. Validation is `validate_label_op`'s job and happens BEFORE the run touches
 anything; a journal write only fires after a successful apply, so an invalid op never appears.
 """
 function append_label_corrections!(task_dir::AbstractString, value_name::AbstractString,
-                                   entries::AbstractVector; run_id = nothing)::String
+                                   entries::AbstractVector; run_id = nothing, by = "")::String
     doc = load_label_corrections(task_dir, value_name)
     existing = collect(Dict{String,Any}, doc["entries"])
     seq = length(existing)
@@ -227,6 +227,7 @@ function append_label_corrections!(task_dir::AbstractString, value_name::Abstrac
         rec = Dict{String,Any}(string(k) => v for (k, v) in pairs(e))
         rec["seq"] = (seq += 1)
         isnothing(run_id) || (rec["runId"] = string(run_id))
+        isempty(by) || (rec["by"] = string(by))   # the profile that ran the correction
         push!(existing, rec)
     end
     doc["entries"] = existing

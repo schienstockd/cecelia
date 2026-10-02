@@ -388,10 +388,12 @@ function api_notebooks_list(req::HTTP.Request)
 
     pdir = _project_notebooks_dir(uid); edir = _repo_notebooks_dir()
     proj = [(; name = splitext(f)[1], file = f, scope = "project", path = joinpath(pdir, f),
-             description = _reg_desc(get(reg, f, Dict())), version = _reg_current(get(reg, f, Dict())))
+             description = _reg_desc(get(reg, f, Dict())), version = _reg_current(get(reg, f, Dict())),
+             createdBy = get(get(reg, f, Dict()), "createdBy", nothing),
+             updatedBy = get(get(reg, f, Dict()), "updatedBy", nothing))
             for f in _files(pdir)]
     examples = [(; name = splitext(f)[1], file = f, scope = "example", path = joinpath(edir, f),
-                 description = "", version = 0)
+                 description = "", version = 0, createdBy = nothing, updatedBy = nothing)
                 for f in _files(edir)]
     200, JSON3.write((; notebooks = vcat(proj, examples)))
 end
@@ -439,7 +441,8 @@ function api_notebooks_create(body_bytes::Vector{UInt8})
 
     reg = _read_registry(uid)
     reg[file] = Dict{String,Any}("description" => _cap_desc(_wstr(body, :description)),
-                                 "current" => 0, "updatedAt" => string(Dates.now()))
+                                 "current" => 0, "updatedAt" => string(Dates.now()),
+                                 "createdBy" => author_stamp())
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true, file = file))
 end
@@ -555,7 +558,8 @@ function api_notebooks_write(body_bytes::Vector{UInt8})
 
     reg = _read_registry(uid)
     reg[file] = Dict{String,Any}("description" => _cap_desc(_wstr(body, :description)),
-                                 "current" => 0, "updatedAt" => string(Dates.now()))
+                                 "current" => 0, "updatedAt" => string(Dates.now()),
+                                 "createdBy" => author_stamp())
     _write_registry!(uid, reg)
     # snapshot v1 — an immediate restore point before the user starts editing in Pluto
     api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))))
@@ -577,6 +581,7 @@ function api_notebooks_describe(body_bytes::Vector{UInt8})
     e = get(reg, file, Dict{String,Any}("current" => 0))
     e["description"] = _cap_desc(_wstr(body, :description))
     e["updatedAt"]   = string(Dates.now())
+    e["updatedBy"]   = author_stamp()
     reg[file] = e
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true))
@@ -612,6 +617,7 @@ function api_notebooks_revise(body_bytes::Vector{UInt8})
     e = get(reg, file, Dict{String,Any}("current" => 0))
     haskey(body, :description) && (e["description"] = _cap_desc(_wstr(body, :description)))
     e["updatedAt"] = string(Dates.now())
+    e["updatedBy"] = author_stamp()
     reg[file] = e
     _write_registry!(uid, reg)
     broadcast_ws(Dict{String,Any}("type" => "notebooks_changed", "projectUid" => uid, "file" => file))
@@ -674,7 +680,8 @@ function api_notebooks_duplicate(body_bytes::Vector{UInt8})
     newfile = basename(dest)
     reg = _read_registry(uid)
     reg[newfile] = Dict{String,Any}("description" => "Copied from $(scope)/$(file)",
-                                    "current" => 0, "updatedAt" => string(Dates.now()))
+                                    "current" => 0, "updatedAt" => string(Dates.now()),
+                                    "createdBy" => author_stamp())
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true, file = newfile))
 end
@@ -750,6 +757,7 @@ function api_notebooks_restore(body_bytes::Vector{UInt8})
     e = get(reg, file, Dict{String,Any}())
     e["current"]   = ver             # the live notebook now IS version `ver` → the table shows "v{ver}"
     e["updatedAt"] = string(Dates.now())
+    e["updatedBy"] = author_stamp()
     reg[file] = e
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true, restoredFrom = ver, version = ver))

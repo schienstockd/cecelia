@@ -8,6 +8,7 @@
 // Must be called from `setup`.
 
 import { nextTick } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { useRouter } from 'vue-router'
 import { useViewerStore } from '../stores/viewer'
 import { useProjectStore } from '../stores/project'
@@ -65,7 +66,7 @@ export function useKiwiPoint() {
         await router.push('/manage-images')
         return ''
       case 'route':
-        if (tgt.rememberFn) localStorage.setItem(`cc-fn:${tgt.rememberFn.module}`, tgt.rememberFn.task)
+        if (tgt.rememberFn) profileStorage.setItem(`cc-fn:${tgt.rememberFn.module}`, tgt.rememberFn.task)
         await router.push({ path: tgt.path, ...(tgt.query ? { query: tgt.query } : {}) })
         return ''
       case 'capture': {

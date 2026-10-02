@@ -43,14 +43,6 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
-### Port the MCP observer to mcp 2.x
-
-`pixi.toml` caps `mcp = ">=1.2,<2"` because mcp 2.x renamed `FastMCP` → `MCPServer`
-(`from mcp.server.mcpserver import MCPServer`) and changed other APIs, so `mcp/cecelia_mcp/server.py`
-fails at import (`No module named 'mcp.server.fastmcp'`). Port the server
-([migration guide](https://py.sdk.modelcontextprotocol.io/v2/migration/)), run `pixi run test-mcp`,
-then lift the cap.
-
 ### `segment.measureLabels` picks the wrong intensity image on any drift-corrected project
 
 Reproduces on any image whose labels were computed against a *derived* value (denoised, drift-

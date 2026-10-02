@@ -43,6 +43,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { onRevealPlots, setSectionOpen } from '../utils/sectionOpen'
 import { usePlotFullscreen } from '../composables/usePlotFullscreen'
 import { useProjectStore } from '../stores/project'
@@ -77,7 +78,7 @@ const props = withDefaults(defineProps<{
   // stays so the next real case reuses it instead of hand-rolling a callout. The bar: an interaction
   // affordance with no other surface, that no live check could answer.
   hint?:        string   // first-use-only one-liner shown above the panel (dismissed per hintKey)
-  hintKey?:     string   // stable id for the hint's localStorage dismissal (required if hint set)
+  hintKey?:     string   // stable id for the hint's dismissal (required if hint set)
   // The #right panel's width bounds. These used to live inside the panels themselves, back when each
   // owned its own width — TaskRunner 200/600/280, MetadataPanel 260/520/280. The host owns the width
   // now (one panel, one handle), so the numbers have to come from here or they are silently lost:
@@ -149,21 +150,21 @@ const attrFilter = ref<AttrFilterState>(emptyAttrFilter())
 // Attributes and processing-history are two separate dropdowns off the action bar (Filter / Task),
 // each COLLAPSED by default with its own open-state persisted per module (UI.md).
 const filterKey = computed(() => `cc-filters-open:${props.module ?? 'default'}`)
-const filtersOpen = ref(localStorage.getItem(`cc-filters-open:${props.module ?? 'default'}`) === '1')
-watch(filtersOpen, v => { try { localStorage.setItem(filterKey.value, v ? '1' : '0') } catch { /* ignore */ } })
+const filtersOpen = ref(profileStorage.getItem(`cc-filters-open:${props.module ?? 'default'}`) === '1')
+watch(filtersOpen, v => { try { profileStorage.setItem(filterKey.value, v ? '1' : '0') } catch { /* ignore */ } })
 const taskKey = computed(() => `cc-task-open:${props.module ?? 'default'}`)
-const taskOpen = ref(localStorage.getItem(`cc-task-open:${props.module ?? 'default'}`) === '1')
-watch(taskOpen, v => { try { localStorage.setItem(taskKey.value, v ? '1' : '0') } catch { /* ignore */ } })
+const taskOpen = ref(profileStorage.getItem(`cc-task-open:${props.module ?? 'default'}`) === '1')
+watch(taskOpen, v => { try { profileStorage.setItem(taskKey.value, v ? '1' : '0') } catch { /* ignore */ } })
 
 // ── Row filters (Excluded / Imported / Starred) ─────────────────────────────────
 // One persisted on/off toggle per filter, declared as data in utils/rowFilters.ts and rendered by a
 // single v-for below — see that file for why they aren't three hand-written blocks. Excluded images
 // are shown greyed by DEFAULT (not hidden); each toggle hides its rows only when switched on.
 const rowFilterActive = ref<Record<string, boolean>>(Object.fromEntries(
-  ROW_FILTERS.map(f => [f.id, localStorage.getItem(rowFilterKey(f.id, props.module)) === '1'])))
+  ROW_FILTERS.map(f => [f.id, profileStorage.getItem(rowFilterKey(f.id, props.module)) === '1'])))
 watch(rowFilterActive, v => {
   for (const f of ROW_FILTERS) {
-    try { localStorage.setItem(rowFilterKey(f.id, props.module), v[f.id] ? '1' : '0') } catch { /* ignore */ }
+    try { profileStorage.setItem(rowFilterKey(f.id, props.module), v[f.id] ? '1' : '0') } catch { /* ignore */ }
   }
 }, { deep: true })
 // the filters worth showing, with their current count resolved once for the button + its tooltip
@@ -183,11 +184,11 @@ const excludedCount = computed(() => (activeSet.value?.images ?? []).filter(isEx
 // 'last' (the most recent run). Persisted per module alongside the other filter toggles.
 const procFunKey  = computed(() => `cc-proc-fun:${props.module ?? 'default'}`)
 const procModeKey = computed(() => `cc-proc-mode:${props.module ?? 'default'}`)
-const procFun  = ref(localStorage.getItem(`cc-proc-fun:${props.module ?? 'default'}`) ?? '')
+const procFun  = ref(profileStorage.getItem(`cc-proc-fun:${props.module ?? 'default'}`) ?? '')
 const procMode = ref<ProcMode>(
-  (localStorage.getItem(`cc-proc-mode:${props.module ?? 'default'}`) as ProcMode) || 'ever')
-watch(procFun,  v => { try { localStorage.setItem(procFunKey.value, v) } catch { /* ignore */ } })
-watch(procMode, v => { try { localStorage.setItem(procModeKey.value, v) } catch { /* ignore */ } })
+  (profileStorage.getItem(`cc-proc-mode:${props.module ?? 'default'}`) as ProcMode) || 'ever')
+watch(procFun,  v => { try { profileStorage.setItem(procFunKey.value, v) } catch { /* ignore */ } })
+watch(procMode, v => { try { profileStorage.setItem(procModeKey.value, v) } catch { /* ignore */ } })
 onMounted(() => { taskDefs.ensureLoaded() })   // for pretty function labels in the dropdown
 
 // funs that have actually been run across the set — the candidate list for the "processed with" filter

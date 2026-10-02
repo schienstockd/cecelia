@@ -105,7 +105,7 @@ Append-only, dated, author-tagged entries. Never edit old entries — add a corr
   for treated cohort.
 ```
 
-Author tag `[Claude]` or `[User]` on every entry block. Correction entries reference the original by date and author. Claude reads corrections and adjusts reasoning within the session.
+Author tag `[Claude]` or `[User]` on every entry block. On a non-`default` profile the server stamps who: `[User · alice]`, `[User — correction · alice]` (`lab_log_user_author`); classification reads the part before ` · `. Correction entries reference the original by date and author. Claude reads corrections and adjusts reasoning within the session.
 
 ### App-generated context — `[Cecelia]` entries
 

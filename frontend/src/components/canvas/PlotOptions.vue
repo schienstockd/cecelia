@@ -7,13 +7,14 @@
 
   Each section is a `CollapsibleSection` (canonical primitive, see `frontend/CLAUDE.md` — the
   hand-rolled `.po-toggle` chevrons drifted away from the ones every other menu uses). Open/closed
-  persists across nav via localStorage under `plotOptions.<key>`, mirroring the other menus' pattern.
+  persists across nav via profileStorage under `plotOptions.<key>`, mirroring the other menus' pattern.
 
   `sections` optionally restricts which sub-sections show (e.g. a plot family with no raw points hides
   Points). Default = all four.
 -->
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { profileStorage } from '../../utils/profileStorage'
 import { facetMode, type VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
@@ -35,14 +36,14 @@ const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
 
 // ACCORDION: only one section open at a time. `CollapsibleSection` supports this via its controlled
 // mode (`:open` + `@update:open`); a group-level fact like "one at a time" cannot live in a section
-// (see the component's own comment). Persist the currently-open key across nav via localStorage —
+// (see the component's own comment). Persist the currently-open key across nav via profileStorage —
 // same policy as the individual `storageKey`s the other menus use, just at the group level.
 const OPEN_KEY = 'plotOptions.openSection'
 const openKey = ref<SectionKey | null>((() => {
-  const v = typeof window !== 'undefined' ? window.localStorage.getItem(OPEN_KEY) : null
+  const v = typeof window !== 'undefined' ? profileStorage.getItem(OPEN_KEY) : null
   return (v === 'layout' || v === 'points' || v === 'colours' || v === 'labels' || v === 'stats') ? v : null
 })())
-watch(openKey, v => { try { window.localStorage.setItem(OPEN_KEY, v ?? '') } catch { /* ignore */ } })
+watch(openKey, v => { try { profileStorage.setItem(OPEN_KEY, v ?? '') } catch { /* ignore */ } })
 const isOpen = (k: SectionKey) => openKey.value === k
 const setOpen = (k: SectionKey, v: boolean) => { openKey.value = v ? k : (openKey.value === k ? null : openKey.value) }
 

@@ -35,6 +35,8 @@ mutable struct TaskRecord
     # standalone task, and for a set-scope chain node (those bypass `run_task`, so they have no record at
     # all — see `_execute_set_scope_node!` in chain.jl).
     chain_node_id::String
+    # The profile that launched it — stamped onto the run log and handed to the task as `_by`.
+    by::String
     status::TaskStatus                      # see @enum TaskStatus above
     # When it was submitted, and when a pool slot actually admitted it (`nothing` until then, so a task
     # waiting on a busy GPU has a queue wait and no run time). Both UTC. Reported by `list_tasks()`; the
@@ -66,11 +68,12 @@ function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_st
                          project_uid::String = "",
                          live_outputs::Vector{LiveOutput} = LiveOutput[],
                          chain_node_id::String = "",
+                         by::String = "",
                          params::Dict{String,Any} = Dict{String,Any}())
     # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
     # so any start still on record belongs to the previous run and must not be inherited.
     forget_task_start!(id)
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, TASK_QUEUED,
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by, TASK_QUEUED,
                      Dates.now(UTC), nothing, nothing,
                      on_status_change, live_outputs, params)
     lock(_TASKS_LOCK) do; _TASKS[id] = rec; end

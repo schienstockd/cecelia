@@ -88,7 +88,8 @@ function _execute_job!(job::TaskJob)
         # no Julia code here ever runs again. See run_log.jl's header. Never fail a task over its log.
         try
             for tgt in log_targets
-                open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id, pool = rec.pool_name)
+                open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id, pool = rec.pool_name,
+                              by = rec.by)
             end
         catch e
             @warn "run-log open failed" task_id = job.id exception = e
@@ -99,7 +100,7 @@ function _execute_job!(job::TaskJob)
         job_target = run_task_target(job.target)
         result = try
             _run_task(job.task, job_target,
-                      merge(job.params, Dict("_task_id" => job.id));
+                      merge(job.params, Dict("_task_id" => job.id, "_by" => rec.by));
                       on_log      = line -> Base.invokelatest(job.on_log, line),
                       on_progress = (n, t) -> Base.invokelatest(job.on_progress, n, t),
                       on_process  = proc -> begin
@@ -139,7 +140,7 @@ function _execute_job!(job::TaskJob)
             for tgt in log_targets
                 close_run_log!(tgt, job.id, string(final);
                                fun_name = fun_name, value_name = value_name, params = job.params,
-                               pool = rec.pool_name)
+                               pool = rec.pool_name, by = rec.by)
             end
         catch e
             @warn "run-log close failed" task_id = job.id exception = e
@@ -162,7 +163,7 @@ function _execute_job!(job::TaskJob)
             for tgt in log_targets
                 close_run_log!(tgt, job.id, "failed";
                                fun_name = fun_name, value_name = value_name, params = job.params,
-                               pool = rec.pool_name)
+                               pool = rec.pool_name, by = rec.by)
             end
         catch; end
     finally

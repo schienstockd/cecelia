@@ -5,7 +5,7 @@
     label       string   Heading text shown in the toggle bar.
     defaultOpen bool     Whether the section starts open (default: true).
     maxHeight   string   CSS max-height for the body div (default: '320px').
-    storageKey  string   When set, the open/closed state is remembered in localStorage under this
+    storageKey  string   When set, the open/closed state is remembered per profile (profileStorage) under this
                          key (so it survives navigation — see the "persist every option" rule).
     open        bool|null CONTROLLED mode: pass it (with @update:open, or v-model:open) and the parent
                          owns which sections are open. Omit it — it is `null` — and the section manages
@@ -15,6 +15,7 @@
 -->
 <script setup lang="ts">
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { onSectionOpen } from '../utils/sectionOpen'
 
 const props = withDefaults(defineProps<{
@@ -33,10 +34,10 @@ const props = withDefaults(defineProps<{
 })
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
-const stored = props.storageKey ? localStorage.getItem(props.storageKey) : null
+const stored = props.storageKey ? profileStorage.getItem(props.storageKey) : null
 const inner = ref(stored === null ? props.defaultOpen : stored === '1')
 watch(inner, v => {
-  if (props.storageKey) { try { localStorage.setItem(props.storageKey, v ? '1' : '0') } catch { /* ignore */ } }
+  if (props.storageKey) { try { profileStorage.setItem(props.storageKey, v ? '1' : '0') } catch { /* ignore */ } }
 })
 // opened / closed from outside (`utils/sectionOpen.ts` — e.g. a page folding its image table so a
 // pointed-at plot is the first thing in view)

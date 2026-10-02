@@ -213,6 +213,7 @@ end
     @test e["taskId"] == "T1"
     @test e["params"]["cellDiameter"] == 10        # params are on the OPEN entry, not held until close
     @test !haskey(e["params"], "_task_id")
+    @test !haskey(e, "by")                         # no launcher given → none recorded, not a guess
 
     # close patches that entry in place — it does not append a second one
     close_run_log!(img, "T1", "done")
@@ -224,14 +225,16 @@ end
 
     # :cancelled is RECORDED, not skipped. This is the regression that made a killed segmentation
     # untraceable: it used to be dropped as "the user aborted, not an outcome worth logging".
-    open_run_log!(img, "segment.cellposeMeasure", "afCorrected"; task_id = "T2")
-    close_run_log!(img, "T2", "cancelled")
+    open_run_log!(img, "segment.cellposeMeasure", "afCorrected"; task_id = "T2", by = "alice")
+    close_run_log!(img, "T2", "cancelled"; by = "alice")
+    @test read_run_log(img)[end]["by"] == "alice"  # who launched it
     @test read_run_log(img)[end]["status"] == "cancelled"
     @test length(read_run_log(img)) == 2
 
     # closing an id that was never opened still records the outcome rather than dropping it
-    close_run_log!(img, "T404", "failed"; fun_name = "tracking.bayesian_tracking")
+    close_run_log!(img, "T404", "failed"; fun_name = "tracking.bayesian_tracking", by = "bob")
     @test read_run_log(img)[end]["status"] == "failed"
+    @test read_run_log(img)[end]["by"] == "bob"
     @test read_run_log(img)[end]["fun"] == "tracking.bayesian_tracking"
 
     # ── the reap ────────────────────────────────────────────────────────────

@@ -917,7 +917,7 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   picks a projects dir (`GET /api/setup/defaults`, live `GET /api/setup/validate`, `POST
   /api/setup/init`); the backend writes `custom.toml` (`Cecelia.set_projects_dir!`).
 - **First-use hints** — `frontend/src/components/HintCallout.vue`: a one-line, dismiss-permanently
-  callout keyed by id in `localStorage` (`cc.hint.<id>`). Module pages declare one via `ModuleLayout`'s
+  callout keyed by id in `profileStorage` (`cc.hint.<id>`, per profile — `utils/profileStorage.ts`). Module pages declare one via `ModuleLayout`'s
   `hint` + `hint-key` props (don't hand-roll it per page).
 
   **There are currently none, and that is the intended state.** `ONBOARDING_PLAN.md` P4 specified four

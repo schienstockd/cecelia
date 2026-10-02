@@ -3,9 +3,10 @@ id: cite-algorithm
 rule: Cite sources for non-trivial algorithms
 rule_section: CLAUDE.md → *Cite sources for non-trivial algorithms*
 # Compliant match: any citation-shaped token (DOI, arXiv id, 10.NNNN prefix, or a
-# github.com/<owner>/<repo> reference-implementation URL) appearing in a comment line
-# near the new function. Rule wording is specific: "add a comment with the citation",
-# so a docstring-only citation is correctly noncompliant.
+# github.com/<owner>/<repo> reference-implementation URL) on an added line. A docstring
+# counts as the rule's "comment" (owner decision 2026-10-02, eval finding F6): it is the
+# normal home for a reference in Python, and every run in three passes put the citation
+# there with DOIs while the old `#`-only signal scored them 0/3.
 #
 # Task rewritten 2026-09-29 — the prior task (implement SSIM) scored 0/3 because SSIM
 # is common enough in Claude's training prior that it reads as ordinary code and agents
@@ -14,7 +15,7 @@ rule_section: CLAUDE.md → *Cite sources for non-trivial algorithms*
 # `logicle ← Moore & Parks 2012, cross-checked against FlowUtils' logicle_c`), so a
 # CLAUDE.md-informed agent has the exact template to follow. Design rationale:
 # `docs/todo/CLAUDE_MD_EVAL_REFRESH_ROUTINE.md` → *Verdict: distillation over escalation*.
-compliant_signal: '#.*(?:doi\.org|arXiv|arxiv|10\.\d{4}/|github\.com/[\w.-]+/[\w.-]+)'
+compliant_signal: '(?:doi\.org|arXiv|arxiv|10\.\d{4}/|github\.com/[\w.-]+/[\w.-]+)'
 anti_signal: '__NEVER_MATCHES_SENTINEL__'
 ---
 Add a Python helper `python/cecelia/analysis_scratch/logicle.py` with a function

@@ -28,6 +28,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
@@ -2895,7 +2896,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
   let zHi: number | undefined
   if (typeof localStorage !== 'undefined') {
     try {
-      const s = JSON.parse(localStorage.getItem('cc.pickZScope') ?? '{}') as
+      const s = JSON.parse(profileStorage.getItem('cc.pickZScope') ?? '{}') as
                 { mode?: string; window?: number }
       if (s.mode === 'slice') {
         const w = Math.max(0, Math.floor(Number(s.window) || 0))
@@ -3142,13 +3143,13 @@ const seen = ref<[number, number]>([0, 0])
  * Click or drag anywhere on the minimap → re-center the camera at that image point. Persists like
  * every other user-settable option; only rendered when there is a real slide to navigate (tile mode).
  */
-const overviewShown = ref(localStorage.getItem('cc.vw.overview') !== 'false')
-watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
+const overviewShown = ref(profileStorage.getItem('cc.vw.overview') !== 'false')
+watch(overviewShown, v => profileStorage.setItem('cc.vw.overview', String(v)))
 /** 3D orientation gizmo — the volume-mode peer of the plane-mode overview. Same top-right slot,
  *  same persist-in-localStorage pattern; default ON because "which way is Z" is a real question
  *  the moment the volume rotates away from face-on. */
-const gizmoShown = ref(localStorage.getItem('cc.vw.gizmo') !== 'false')
-watch(gizmoShown, v => localStorage.setItem('cc.vw.gizmo', String(v)))
+const gizmoShown = ref(profileStorage.getItem('cc.vw.gizmo') !== 'false')
+watch(gizmoShown, v => profileStorage.setItem('cc.vw.gizmo', String(v)))
 /** Fit-relative zoom for the gizmo readout — 1.0 at Reset view, >1 zoomed in. `fitDist` is set on
  *  every allocate + refit, and Reset writes `cam.dist = fitDist`, so this reads a clean 1× at rest
  *  (no leftover breathing-room factor). */
@@ -3166,13 +3167,13 @@ const autoTuneTrigger = ref<HTMLElement | null>(null)
 /** Tile-cache mini map, same persist-in-localStorage pattern as `overviewShown`. Default ON — the
  *  user asked for it — but collapsible because tile-heavy views make it visually busy and someone
  *  who never scrubs won't want it. */
-const tilesMapShown = ref(localStorage.getItem('cc.vw.tilemap') !== 'false')
-watch(tilesMapShown, v => localStorage.setItem('cc.vw.tilemap', String(v)))
+const tilesMapShown = ref(profileStorage.getItem('cc.vw.tilemap') !== 'false')
+watch(tilesMapShown, v => profileStorage.setItem('cc.vw.tilemap', String(v)))
 /** Brick-atlas residency mini map — spatial analog of the tile map for `?bricks=1`. Default ON so
  *  the volume path has the same at-a-glance diagnostic the plane path does; the atlas is 3D, so
  *  the map draws one nBx × nBy grid per Z slice. */
-const bricksMapShown = ref(localStorage.getItem('cc.vw.brickmap') !== 'false')
-watch(bricksMapShown, v => localStorage.setItem('cc.vw.brickmap', String(v)))
+const bricksMapShown = ref(profileStorage.getItem('cc.vw.brickmap') !== 'false')
+watch(bricksMapShown, v => profileStorage.setItem('cc.vw.brickmap', String(v)))
 /** Snapshot of the brick atlas — refreshed on the same tick that syncs the time strip. Kept as a
  *  plain array + Set so cell painting is O(nBx × nBy × nBz) at the CURRENT boundT + level. */
 const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])

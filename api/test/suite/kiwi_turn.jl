@@ -38,7 +38,7 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     @test all(t -> startswith(t, "mcp__" * OBSERVER_MCP_NAME * "__"), _kiwi_allowed_tools())
     # every observer tool is decided: allowed or excluded with a reason — a new tool fails here
     server = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "server.py"), String)
-    tools = Set(m.captures[1] for m in eachmatch(r"@mcp\.tool\([^)]*\)\s*\ndef ([a-z_]+)\(", server))
+    tools = Set(m.captures[1] for m in eachmatch(r"@_tool\s*\ndef ([a-z_]+)\(", server))   # `_tool` = server.py's registrar
     @test length(tools) > 40
     @test tools == union(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS))
     @test isempty(intersect(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS)))
@@ -290,6 +290,19 @@ end
         @test first(kiwi_start_turn("testpr", "q"; follow_up = "kt-nope")) == 400
         st, other = kiwi_start_turn("testpr", "q"; profile = "alice"); wait_idle("testpr")
         @test st == 200 && turn_profile(other) == "alice"               # an explicit profile wins
+        # alice's session lives in alice's CLAUDE_CONFIG_DIR — another profile is told, not silently restarted
+        st, al = kiwi_start_turn("testpr", "what images?"; refs = [img_ref], profile = "alice"); wait_idle("testpr")
+        @test st == 200 && al["status"] == "done"
+        st, err = kiwi_start_turn("testpr", "and?"; follow_up = al["turnId"])
+        @test st == 409 && occursin("alice", err["error"])
+        st, mine = kiwi_start_turn("testpr", "and?"; follow_up = al["turnId"], profile = "alice"); wait_idle("testpr")
+        @test st == 200
+        # renamed alice → alicia: her own turn is still hers
+        mkpath(Cecelia.profile_settings_dir("alicia"))
+        Cecelia.record_profile_rename!("alice", "alicia")
+        st, _ = kiwi_start_turn("testpr", "and?"; follow_up = al["turnId"], profile = "alicia"); wait_idle("testpr")
+        @test st == 200
+        rm(Cecelia.profile_settings_dir("alicia"); recursive = true)
         @test turn_profile(Dict{String,Any}("turnId" => "kt-old")) == "legacy"   # pre-stamp record (D10)
         _KIWI_AGENT[] = m -> (push!(built, m); _KiwiFakeEngine([_kiwi_fake_reply(good; seen = ["""{"uid":"KDIeEm"}"""])], Tuple{String,String}[]))
 

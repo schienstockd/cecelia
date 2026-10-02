@@ -50,6 +50,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
         template_hash,
         image_states,
         Float64(raw[:created_at]),
+        string(get(raw, :by, "")),
         run_dir,
         ReentrantLock(),
         barriers,
@@ -94,7 +95,8 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                    start_node::Union{String,Nothing} = nothing,
                    overrides::Dict{String,Any}    = Dict{String,Any}(),
                    on_log::Function               = line -> println(line),
-                   on_cancel_check::Function      = _ -> false)::ChainRun
+                   on_cancel_check::Function      = _ -> false,
+                   by::String                     = active_profile_name())::ChainRun
 
     if !isnothing(run_id)
         # Resume: restore run from disk, reset stale/failed nodes, keep :done ones. An explicit
@@ -135,7 +137,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         run_dir = joinpath(_runs_dir(proj), new_id)
         run     = ChainRun(
             new_id, template.name, proj.uid, image_uids, template, hash,
-            image_states, time(), run_dir, ReentrantLock(),
+            image_states, time(), by, run_dir, ReentrantLock(),
             barriers, barriers_done,
         )
         _save_run!(run)

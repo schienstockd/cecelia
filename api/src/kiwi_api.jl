@@ -67,7 +67,7 @@ function _kiwi_conversation(puid::AbstractString, tid::AbstractString)
         get(r, "seen", false) == true && get(get(r, "result", Dict()), "ok", false) == true && note!(r["ref"], r["result"])
     end
     seen = Set{String}()
-    (; sessionId = sid, results,
+    (; sessionId = sid, results, profile = Cecelia.turn_profile(t),
        refs = [r for r in refs if !(_kiwi_canon(r) in seen) && (push!(seen, _kiwi_canon(r)); true)])
 end
 
@@ -89,6 +89,11 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
     conv = isempty(follow_up) ? nothing : _kiwi_conversation(puid, follow_up)
     (!isempty(follow_up) && conv === nothing) &&
         return 400, Dict{String,Any}("error" => "that reply can’t be followed up — ask it fresh")
+    # The engine session lives in the asking profile's CLAUDE_CONFIG_DIR, so another profile can't
+    # resume it — it would silently start over (the stale-session self-heal). Say so instead.
+    # `legacy` turns predate the stamp and are let through; a renamed profile still owns its old turns.
+    (conv !== nothing && conv.profile != "legacy" && !(conv.profile in Cecelia.profile_names(profile))) &&
+        return 409, Dict{String,Any}("error" => "that conversation was $(conv.profile)’s — ask it fresh")
     agent = _KIWI_AGENT[](observer_valid_model(model))
     Cecelia.agent_available(agent) || return 503, Dict{String,Any}("error" => "No $(Cecelia.agent_label(agent)) CLI found — install it to ask Kiwi")
     rec = Dict{String,Any}(

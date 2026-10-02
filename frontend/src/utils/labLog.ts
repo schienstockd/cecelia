@@ -6,7 +6,7 @@
 
 export interface LabLogEntry {
   date: string        // YYYY-MM-DD (injected by the backend)
-  author: string      // e.g. "Claude", "User", "User — correction"
+  author: string      // e.g. "Claude", "User", "User · alice", "User — correction"
   lines: string[]     // bullet lines
   raw: string         // the full block markdown
 }
@@ -64,7 +64,9 @@ export const CECELIA_AUTHOR = 'Cecelia'
  * author string ("User — correction") also contains "user" — order matters.
  */
 export function authorKind(author: string): AuthorKind {
-  const a = (author ?? '').trim().toLowerCase()
+  // A human entry carries the profile that wrote it after ` · ` (`lab_log_user_author` in
+  // app/src/lab_log.jl) — classify on the tag alone so a profile name can't change the kind.
+  const a = (author ?? '').split(' · ')[0].trim().toLowerCase()
   if (a.includes('correction')) return 'correction'
   if (a.includes('labarchives')) return 'labarchives'
   if (a.includes('cecelia')) return 'cecelia'

@@ -37,13 +37,18 @@ Base.@kwdef struct SegmentCorrectParams
     valueName::String                    = VERSIONED_DEFAULT_VAL
     labelOps::Vector{Dict{String,Any}}   = Dict{String,Any}[]
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
+    # scheduler-injected (`_task_id` / `_by`, jobs.jl) — stamped onto the journal entries
+    taskId::Union{String,Nothing}  = nothing
+    by::String                     = ""
 end
 
 function parse_segment_correct_params(d::AbstractDict)::SegmentCorrectParams
     SegmentCorrectParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
         labelOps  = parse_label_ops(get(d, "labelOps", nothing)),
-        version = parse_version_pin(d))
+        version = parse_version_pin(d),
+        taskId  = (t = get(d, "_task_id", nothing); t === nothing ? nothing : string(t)),
+        by      = string(get(d, "_by", "")))
 end
 
 """
@@ -210,7 +215,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
         push!(entries, rec)
     end
     journal = try
-        append_label_corrections!(task_dir, p.valueName, entries)
+        append_label_corrections!(task_dir, p.valueName, entries; run_id = p.taskId, by = p.by)
     catch e
         on_log("[WARN] could not write the label correction journal: $e")
         nothing

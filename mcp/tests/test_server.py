@@ -1,9 +1,9 @@
-"""Server-level checks: the FastMCP server imports cleanly and actually REGISTERS the expected tools.
+"""Server-level checks: the MCP server imports cleanly and actually REGISTERS the expected tools.
 
 Complements test_client.py (which covers the HTTP client in isolation). Importing `server` is
 side-effect-free — the client is constructed lazily and `mcp.run()` only fires under `__main__` — so
 this just asserts the wiring: e.g. `get_repl_api` is exposed as a tool, not merely defined. Needs
-mcp/fastmcp in the env, so it runs under `pixi run test-mcp`.
+`mcp` in the env, so it runs under `pixi run test-mcp`.
 """
 import asyncio
 import unittest
@@ -14,7 +14,7 @@ from cecelia_mcp import guidance, server
 
 class ServerToolRegistrationTest(unittest.TestCase):
     def setUp(self):
-        # FastMCP.list_tools() is the async protocol accessor → the registered Tool objects.
+        # MCPServer.list_tools() is the async protocol accessor → the registered Tool objects.
         self.names = {t.name for t in asyncio.run(server.mcp.list_tools())}
 
     def test_get_repl_api_is_registered(self):
@@ -69,7 +69,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             server._client.get_capture = original
         self.assertEqual(2, len(out))
         # first block is the Image content, second is the envelope dict
-        from mcp.server.fastmcp import Image
+        from mcp.server.mcpserver import Image
         self.assertIsInstance(out[0], Image)
         self.assertEqual({"captureId": "cap-20260918T140000-abcdef",
                           "surface": "viewer_frame",
@@ -284,6 +284,28 @@ class ServerToolRegistrationTest(unittest.TestCase):
         # what this replaces.)
         self.assertIn("find_object", self.names)
         self.assertIn("find_object", guidance.SERVER_INSTRUCTIONS)
+
+
+class ToolErrorSurfacingTest(unittest.TestCase):
+    """mcp 2.x hides any non-`ToolError` message behind `Error executing tool <name>`. The client's
+    `ApiError` text is written for the model ("cannot reach Cecelia API … Is `pixi run dev`
+    running?"), so `_tool` must carry it through."""
+
+    def test_an_api_error_reaches_the_model(self):
+        from cecelia_mcp.client import ApiError
+        from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+
+        def boom():
+            raise ApiError(0, "cannot reach Cecelia API")
+        with unittest.mock.patch.object(server._client, "get_projects", boom):
+            with self.assertRaises(ToolError) as cm:
+                asyncio.run(server.mcp.call_tool("list_projects", {}))
+        self.assertNotIsInstance(cm.exception, UnexpectedToolError)
+        self.assertIn("cannot reach Cecelia API", str(cm.exception))
+
+    def test_wrapping_keeps_the_argument_schema(self):
+        tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+        self.assertIn("project_uid", tools["get_project_info"].input_schema["properties"])
 
 
 class GuidanceTest(unittest.TestCase):

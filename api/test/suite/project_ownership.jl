@@ -54,3 +54,34 @@
         init_cecelia!()   # restore
     end
 end
+
+@testset "Project ownership — follows a profile rename, dropped on delete; recents per profile" begin
+    mktempdir() do tmp
+        write(joinpath(tmp, "custom.toml"), "[dirs]\nprojects = '$(tmp)'\n")
+        withenv("CECELIA_DEV_DIR" => tmp) do
+            init_cecelia!()
+            _post(api_kiwi_profiles_create, Dict("name" => "alice"))
+            _post(api_kiwi_profiles_create, Dict("name" => "bob"))
+            _post(api_kiwi_profiles_select, Dict("name" => "alice"))
+            uid = String(JSON3.read(_post(api_projects_create, Dict("name" => "p-alice"))[2]).project.uid)
+            owners() = [String(x) for x in JSON3.read(read(joinpath(tmp, uid, "project.json"), String)).owners]
+
+            # Opening it records alice's recent, not bob's.
+            @test _post(api_projects_load, Dict("uid" => uid))[1] == 200
+            @test haskey(Cecelia.read_profile_recents("alice"), uid)
+            @test !haskey(Cecelia.read_profile_recents("bob"), uid)
+
+            _post(api_kiwi_profiles_select, Dict("name" => "bob"))
+            @test _post(api_kiwi_profiles_rename, Dict("oldName" => "alice", "newName" => "alicia"))[1] == 200
+            @test owners() == ["alicia"]
+            @test haskey(Cecelia.read_profile_recents("alicia"), uid)   # recents moved with the dir
+            @test Cecelia.profile_names("alicia") == ["alicia", "alice"]  # former name kept
+            proj = load_project(uid)
+            Cecelia.write_json_atomic(Cecelia._dismissed_path(proj), Dict("alice" => ["h1"]))
+            @test read_dismissed(proj, "alicia") == ["h1"]             # alice's hides stay hers
+
+            @test _post(api_kiwi_profiles_delete, Dict("name" => "alicia"))[1] == 200
+            @test owners() == String[]                                 # visible to all, not orphaned
+        end
+    end
+end

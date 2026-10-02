@@ -25,11 +25,13 @@ adjust_params, acknowledge_flag) is deliberately NOT wired here.
 from __future__ import annotations
 
 import base64
+import functools
 import os
 
-from mcp.server.fastmcp import FastMCP, Image
+from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
-from cecelia_mcp.client import CeceliaClient
+from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
 from cecelia_mcp.monitor import SessionMonitor
@@ -51,10 +53,26 @@ _monitor = SessionMonitor()
 # is what makes "check my project in cecelia" enough on its own — the assistant knows to resolve the
 # project and pull the briefing without the user pasting a prompt. Kept short on purpose; the long
 # form is delivered by get_session_briefing. See cecelia_mcp/guidance.py for the split and its budget.
-mcp = FastMCP("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
+mcp = MCPServer("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
 
 
-@mcp.tool()
+def _tool(fn):
+    """`@mcp.tool()`, with the client's anticipated failures passed to the model as `ToolError`.
+
+    mcp 2.x shows the model only `Error executing tool <name>` for any other exception, which would
+    hide the client's messages written for it ("cannot reach Cecelia API … Is `pixi run dev`
+    running?", the API's own `{error: …}`, a disallowed route). A genuine crash still stays opaque.
+    """
+    @functools.wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (ApiError, DisallowedRoute) as e:
+            raise ToolError(str(e)) from e
+    return mcp.tool()(wrapped)
+
+
+@_tool
 def list_projects() -> list:
     """Every Cecelia project on this machine, MOST-RECENTLY-OPENED FIRST — so for "my project" / "my
     current project" with no id given, the first entry is the one the user is working in. Name it back
@@ -72,7 +90,7 @@ def list_projects() -> list:
     ]
 
 
-@mcp.tool()
+@_tool
 def find_object(query: str, limit: int = 50) -> dict:
     """WHICH PROJECT a uid belongs to — call this the moment the user quotes an id you have no project
     for ("what happened to image p6t4mC?", a uid in a note, a filename, a lab-log line). Every other
@@ -97,7 +115,7 @@ def find_object(query: str, limit: int = 50) -> dict:
     return _client.find_object(query, limit)
 
 
-@mcp.tool()
+@_tool
 def get_project_info(project_uid: str) -> dict:
     """Project summary: name, kind, image count, its sets, a per-status breakdown, and `excludedCount`
     — how many images are EXCLUDED (included:false). An excluded image is a silent member: it still
@@ -121,7 +139,7 @@ def get_project_info(project_uid: str) -> dict:
     }
 
 
-@mcp.tool()
+@_tool
 def list_images(project_uid: str) -> list:
     """Every image in the project: uid, name, processing status, which set it belongs to, `attr` (its
     attribute ASSIGNMENT, e.g. `{"Mouse": "3", "Location": "b"}`), and `included` — false means
@@ -134,20 +152,20 @@ def list_images(project_uid: str) -> list:
     return _client.list_images(project_uid).get("images", [])
 
 
-@mcp.tool()
+@_tool
 def get_image_info(project_uid: str, image_uid: str) -> dict:
     """One image's full metadata: channels, dimensions, physical sizes, label props, QC, run log, note."""
     return _client.get_image_meta(project_uid, image_uid).get("image", {})
 
 
-@mcp.tool()
+@_tool
 def get_image_notes(project_uid: str, image_uid: str) -> str:
     """The user-written note for an image ('' if none) — the user's own words, first-class context."""
     img = _client.get_image_meta(project_uid, image_uid).get("image", {})
     return img.get("note", "") or ""
 
 
-@mcp.tool()
+@_tool
 def get_qc_metrics(project_uid: str, image_uid: str) -> dict:
     """Per-image QC flags/metrics computed after tasks run ({} if none yet). For "is THIS image an
     outlier vs the rest of the set?", use get_cohort_qc instead — a single image's number means little
@@ -156,7 +174,7 @@ def get_qc_metrics(project_uid: str, image_uid: str) -> dict:
     return img.get("qc", {}) or {}
 
 
-@mcp.tool()
+@_tool
 def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str | None = None) -> dict:
     """Cohort QC for one task across a set's images — the way to spot an outlier run ("image 7 has 8×
     fewer cells than the cohort"). Aggregates the objective metric each task banks, over the set's
@@ -198,14 +216,14 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
-@mcp.tool()
+@_tool
 def get_task_log(project_uid: str, image_uid: str, fun: str) -> str:
     """Raw log text for one task function (e.g. "segment.cellpose") on one image; '' if never run."""
     r = _client.get_task_log(project_uid, image_uid, fun)
     return r.get("content", "") if r.get("exists") else ""
 
 
-@mcp.tool()
+@_tool
 def get_task_history(project_uid: str, limit: int = 100) -> list:
     """Recent task runs across all images, newest first. Each row: `imageUid`, `imageName`, `fun`,
     `valueName`, `at` (timestamp), `status` (the image's current status), **`runStatus`** — that run's
@@ -232,7 +250,7 @@ def get_task_history(project_uid: str, limit: int = 100) -> list:
     return _client.get_task_history(project_uid, limit).get("history", [])
 
 
-@mcp.tool()
+@_tool
 def get_module_params(category: str = "") -> dict:
     """Task PARAMETER SPECS — the valid range / default / type of every task's params. Read this before
     suggesting a parameter change, so the suggestion is IN RANGE and names the real param `key`.
@@ -271,7 +289,7 @@ def get_module_params(category: str = "") -> dict:
     return _client.get_module_params(category or None)
 
 
-@mcp.tool()
+@_tool
 def get_available_plots(module: str = "") -> list:
     """The plot types the analysis board can render — use this to SUGGEST a visualization ("plot the HMM
     state frequencies as a bar chart") or to pick the chart for a notebook.
@@ -285,7 +303,7 @@ def get_available_plots(module: str = "") -> list:
     return _client.get_available_plots(module or None)
 
 
-@mcp.tool()
+@_tool
 def add_analysis_board(project_uid: str, name: str, plots: list, template: str = "",
                        compare_by: str = "") -> dict:
     """ADD one Analysis board to the project — a figure the user opens on the /analysis page.
@@ -343,7 +361,7 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     return _client.add_analysis_board(project_uid, name, plots, template, compare_by)
 
 
-@mcp.tool()
+@_tool
 def get_analysis_boards(project_uid: str) -> dict:
     """The Analysis boards this project already has, and WHAT EACH ONE SHOWS — read this before
     proposing a figure, so you extend the user's thinking instead of rebuilding it.
@@ -368,7 +386,7 @@ def get_analysis_boards(project_uid: str) -> dict:
     return _client.get_analysis_boards(project_uid)
 
 
-@mcp.tool()
+@_tool
 def get_image_attributes(project_uid: str, set_uid: str, image_uids: str = "") -> dict:
     """The per-image ATTRIBUTES on a set — `{attrs: [{name, values}]}`, e.g.
     `[{name: "Mouse", values: ["1","2","3","4"]}, {name: "Location", values: ["a","b","c","d"]}]`.
@@ -386,7 +404,7 @@ def get_image_attributes(project_uid: str, set_uid: str, image_uids: str = "") -
     return _client.get_image_attributes(project_uid, set_uid, image_uids or None)
 
 
-@mcp.tool()
+@_tool
 def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """The synthesized ANALYSIS LINEAGE — how each image's data was produced, so you don't have to ask
     the user to re-explain the workflow. Scope with `image_uid` (one image) or `set_uid` (one set);
@@ -410,7 +428,7 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
     return _client.get_analysis_lineage(project_uid, image_uid or None, set_uid or None)
 
 
-@mcp.tool()
+@_tool
 def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """Population DEFINITIONS per image — the detail behind lineage's `gatedPops`. Use this to know what
     a population actually MEANS: its gate geometry or filter rule, and where it sits in the tree. Scope
@@ -431,7 +449,7 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
     return _client.get_populations(project_uid, image_uid or None, set_uid or None)
 
 
-@mcp.tool()
+@_tool
 def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = "",
                         kind: str = "", value_names: list[str] | None = None) -> dict:
     """Phenotype + motility SUMMARIES per population — what the cells/tracks actually look like. Use this
@@ -458,7 +476,7 @@ def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
                                        kind or None, value_names or None)
 
 
-@mcp.tool()
+@_tool
 def get_behaviour_summary(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """HMM BEHAVIOUR distribution per image — how the tracked cells split across behaviour states, and
     their transitions. Scope with `image_uid` / `set_uid`; omit both for the whole project.
@@ -474,7 +492,7 @@ def get_behaviour_summary(project_uid: str, image_uid: str = "", set_uid: str = 
     return _client.get_behaviour_summary(project_uid, image_uid or None, set_uid or None)
 
 
-@mcp.tool()
+@_tool
 def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """CLUSTERING summary per image — for each clustering run, how the cells/tracks landed. Scope with
     `image_uid` / `set_uid`; omit both for the whole project.
@@ -506,7 +524,7 @@ def _spatial_drop(other: str, project_uid: str, image_uid: str, set_uid: str) ->
     }
 
 
-@mcp.tool()
+@_tool
 def get_region_clusters(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """SPATIAL REGION clustering per image — neighbourhood-composition niches. Scope with `image_uid` /
     `set_uid`; omit both for the whole project.
@@ -524,7 +542,7 @@ def get_region_clusters(project_uid: str, image_uid: str = "", set_uid: str = ""
     return _spatial_drop("contactStats", project_uid, image_uid, set_uid)
 
 
-@mcp.tool()
+@_tool
 def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """PAIRWISE cell-type CONTACT statistics per image — which populations selectively co-localise or
     avoid each other. Scope with `image_uid` / `set_uid`; omit both for the whole project.
@@ -549,7 +567,7 @@ def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") 
     return _spatial_drop("regionRuns", project_uid, image_uid, set_uid)
 
 
-@mcp.tool()
+@_tool
 def get_chains(project_uid: str) -> dict:
     """The project's whiteboard CHAINS — the wired analysis pipelines and their runs. Use this to see the
     INTENDED pipeline (which task feeds which) and which chains were actually executed — the run log is a
@@ -979,7 +997,7 @@ def _memory_briefing_slice(project_uid: str) -> dict:
     }
 
 
-@mcp.tool()
+@_tool
 def get_session_briefing(project_uid: str) -> dict:
     """Startup context for THIS session — call this FIRST when a chat begins, so you're oriented without
     the user re-explaining. Returns:
@@ -1038,7 +1056,7 @@ def get_session_briefing(project_uid: str) -> dict:
     return {**base, **_memory_briefing_slice(project_uid), "guidance": BRIEFING_GUIDANCE}
 
 
-@mcp.tool()
+@_tool
 def get_labarchives_context(project_uid: str) -> dict:
     """The project's LabArchives (ELN) context IN FULL — what the experiment is, as recorded in the
     lab notebook. The session briefing carries only the section headings + gaps; call this when you
@@ -1058,7 +1076,7 @@ def get_labarchives_context(project_uid: str) -> dict:
     return _client.get_labarchives_context(project_uid)
 
 
-@mcp.tool()
+@_tool
 def get_repl_api() -> dict:
     """The Cecelia REPL / notebook data-access surface — read THIS before writing any `using Cecelia`
     code (a Pluto notebook, a REPL snippet). It is the ground truth for the interface; do not guess
@@ -1077,13 +1095,13 @@ def get_repl_api() -> dict:
     return _client.get_repl_api()
 
 
-@mcp.tool()
+@_tool
 def read_lab_log(project_uid: str) -> str:
     """The full lab-log markdown for the project — the accumulated cross-session memory."""
     return _client.read_lab_log(project_uid).get("content", "")
 
 
-@mcp.tool()
+@_tool
 def list_notebooks(project_uid: str) -> dict:
     """List a project's notebooks (name, file, description, current version) plus the shipped examples.
     Use it to find the `file` for get_notebook / set_notebook_description when the user refers to a
@@ -1091,7 +1109,7 @@ def list_notebooks(project_uid: str) -> dict:
     return _client.list_notebooks(project_uid)
 
 
-@mcp.tool()
+@_tool
 def get_notebook(project_uid: str, file: str) -> dict:
     """Read a notebook's CURRENT Pluto source — including the user's own edits — so you can help when
     they're stuck ("can you have a look?"). Returns {file, scope, content}. `file` is the notebook
@@ -1105,7 +1123,7 @@ def get_notebook(project_uid: str, file: str) -> dict:
     return _client.get_notebook(project_uid, file)
 
 
-@mcp.tool()
+@_tool
 def append_lab_log(project_uid: str, lines: list[str], source: str = "claude") -> dict:
     """Append a dated, tagged entry to the lab log. Append-only — never edits existing content.
 
@@ -1127,7 +1145,7 @@ def append_lab_log(project_uid: str, lines: list[str], source: str = "claude") -
     return _client.append_lab_log(project_uid, author, lines)
 
 
-@mcp.tool()
+@_tool
 def set_labarchives_context(project_uid: str, source: dict, sections: list,
                             cohort: list | None = None) -> dict:
     """REPLACE the project's LabArchives context sidecar — the experimental background a future
@@ -1155,7 +1173,7 @@ def set_labarchives_context(project_uid: str, source: dict, sections: list,
     return _client.set_labarchives_context(project_uid, source, sections, cohort or [])
 
 
-@mcp.tool()
+@_tool
 def list_blackboard_entries(project_uid: str) -> dict:
     """List this project's BLACKBOARD entries — shared thinking the user and you have iterated on
     across sessions, one entry per topic (Markdown + attached captureIds). Returns newest-first
@@ -1175,7 +1193,7 @@ def list_blackboard_entries(project_uid: str) -> dict:
     return _client.list_blackboard_entries(project_uid)
 
 
-@mcp.tool()
+@_tool
 def read_blackboard_entry(project_uid: str, entry_id: str, version: int | None = None) -> dict:
     """Read a BLACKBOARD entry's current Markdown (or a snapshotted `version`). Returns
     `{entry: {entryId, title, content, current, updatedAt, versions, attachments, status}}`.
@@ -1188,7 +1206,7 @@ def read_blackboard_entry(project_uid: str, entry_id: str, version: int | None =
     return _client.read_blackboard_entry(project_uid, entry_id, version)
 
 
-@mcp.tool()
+@_tool
 def create_blackboard_entry(project_uid: str, title: str, content_md: str,
                             attach_capture_ids: list[str] | None = None,
                             image_uid: str | None = None,
@@ -1221,7 +1239,7 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
                                             attach_capture_ids, fingerprint, kiwi_refs)
 
 
-@mcp.tool()
+@_tool
 def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
                             attach_capture_ids: list[str] | None = None,
                             note: str = "") -> dict:
@@ -1246,7 +1264,7 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
                                             attach_capture_ids, note)
 
 
-@mcp.tool()
+@_tool
 def set_blackboard_status(project_uid: str, entry_id: str, status: str) -> dict:
     """Flip a BLACKBOARD entry's status without touching its content. `status` is one of `open`
     (still on the table), `resolved` (topic settled — the entry stays as a record but drops out of
@@ -1266,7 +1284,7 @@ def set_blackboard_status(project_uid: str, entry_id: str, status: str) -> dict:
     return _client.set_blackboard_status(project_uid, entry_id, status)
 
 
-@mcp.tool()
+@_tool
 def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: str) -> dict:
     """Tag a BLACKBOARD entry with a good-or-bad OUTCOME so future sessions know whether to trust the
     thread it captured. `verdict` is `"good"` (the finding / suggestion held up on real data) or
@@ -1288,7 +1306,7 @@ def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: 
     return _client.set_blackboard_outcome(project_uid, entry_id, verdict, note)
 
 
-@mcp.tool()
+@_tool
 def search_blackboard(project_uid: str, query: str,
                       status: str | None = None, limit: int | None = None) -> dict:
     """Search this project's BLACKBOARD entries. Case-insensitive substring over titles AND bodies;
@@ -1311,7 +1329,7 @@ def search_blackboard(project_uid: str, query: str,
     return _client.search_blackboard(project_uid, query, status, limit)
 
 
-@mcp.tool()
+@_tool
 def create_notebook(project_uid: str, name: str, cells: list[str], description: str = "") -> dict:
     """Create a Pluto NOTEBOOK from Julia cell sources — to answer a "give me the data / plot this"
     request with a runnable, editable artifact the user then owns. Read get_repl_api FIRST so the code
@@ -1340,7 +1358,7 @@ def create_notebook(project_uid: str, name: str, cells: list[str], description: 
     return _client.create_notebook(project_uid, name, cells, description)
 
 
-@mcp.tool()
+@_tool
 def set_notebook_description(project_uid: str, file: str, description: str) -> dict:
     """Update a notebook's description — ONE short line (title-ish, not a paragraph; capped server-side).
     Shown in the Notebooks page. Use this to reword the blurb after create_notebook — e.g. the user asks
@@ -1350,7 +1368,7 @@ def set_notebook_description(project_uid: str, file: str, description: str) -> d
     return _client.set_notebook_description(project_uid, file, description)
 
 
-@mcp.tool()
+@_tool
 def revise_notebook(project_uid: str, file: str, cells: list[str], description: str = "") -> dict:
     """Make a NEW VERSION of an EXISTING notebook — the correct way to change one the user already has.
     The server SNAPSHOTS the current notebook first (a restorable version, visible under History on the
@@ -1366,7 +1384,7 @@ def revise_notebook(project_uid: str, file: str, cells: list[str], description: 
     return _client.revise_notebook(project_uid, file, cells, description)
 
 
-@mcp.tool()
+@_tool
 def create_chain(project_uid: str, name: str, nodes: list, edges: list,
                  start_targets: list | None = None) -> dict:
     """DESIGN a whiteboard chain — the wired pipeline for a project. You author it; **you cannot run
@@ -1416,7 +1434,7 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
     return _client.create_chain(project_uid, name, nodes, edges, start_targets)
 
 
-@mcp.tool()
+@_tool
 def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: list[int],
                 focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Highlight a set of TRACKS on the user's viewer — your "look at THESE tracks" pointer.
@@ -1441,7 +1459,7 @@ def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: li
     return _client.mark_tracks(project_uid, image_uid, value_name, track_ids, focus_id, label, ttl_s)
 
 
-@mcp.tool()
+@_tool
 def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: list[int],
                focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Outline a set of CELLS on the user's viewer — your "look at THESE cells" pointer.
@@ -1460,7 +1478,7 @@ def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: lis
     return _client.mark_cells(project_uid, image_uid, value_name, label_ids, focus_id, label, ttl_s)
 
 
-@mcp.tool()
+@_tool
 def select_on_plot(project_uid: str, kind: str, sources: list[dict],
                    focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Highlight a MULTI-SOURCE set of tracks or cells — the reverse of a user's plot brush.
@@ -1495,7 +1513,7 @@ def select_on_plot(project_uid: str, kind: str, sources: list[dict],
     return _client.select_on_plot(project_uid, kind, sources, focus_id, label, ttl_s)
 
 
-@mcp.tool()
+@_tool
 def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300) -> dict:
     """Point at a UI CONTROL on the user's screen — your "click here" pointer.
 
@@ -1517,7 +1535,7 @@ def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300
     return _client.mark_ui(project_uid, anchor, label, ttl_s)
 
 
-@mcp.tool()
+@_tool
 def mark_freeform(project_uid: str, capture_id: str, overlay: list,
                   label: str = "", ttl_s: int = 300) -> dict:
     """Draw a FREEFORM overlay on a stored CAPTURE — your "look right HERE" pointer.
@@ -1543,7 +1561,7 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
     return _client.mark_freeform(project_uid, capture_id, overlay, label, ttl_s)
 
 
-@mcp.tool()
+@_tool
 def list_plots(project_uid: str) -> list[dict]:
     """Every plot panel currently MOUNTED in the user's browser for this project — call this
     BEFORE `mark_plot` when the user says "the UMAP" / "that heatmap" and you don't already have
@@ -1570,7 +1588,7 @@ def list_plots(project_uid: str) -> list[dict]:
     return _client.list_plots(project_uid)
 
 
-@mcp.tool()
+@_tool
 def mark_plot(project_uid: str, family: str, plot_id: str,
               u: float, v: float,
               cell: str = "", label: str = "", ttl_s: int = 300) -> dict:
@@ -1605,7 +1623,7 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
     return _client.mark_plot(project_uid, family, plot_id, u, v, cell, label, ttl_s)
 
 
-@mcp.tool()
+@_tool
 def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
                              measure: str = "", pop: str = "") -> dict:
     """Open an Analysis board that contains a specific plot — your "pull up the UMAP" pointer
@@ -1657,7 +1675,7 @@ def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
     return {"ok": True, "board": board_name}
 
 
-@mcp.tool()
+@_tool
 def seek_viewer(project_uid: str, image_uid: str,
                 t: int | None = None, z: int | None = None) -> dict:
     """Move the user's VIEWER to a specific frame — your "look at t=40" imperative when you want
@@ -1685,7 +1703,7 @@ def seek_viewer(project_uid: str, image_uid: str,
     return _client.seek_viewer(project_uid, image_uid, t, z)
 
 
-@mcp.tool()
+@_tool
 def mark_tile(project_uid: str, image_uid: str, cell_id: str,
               label: str = "", ttl_s: int = 300) -> dict:
     """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when
@@ -1703,7 +1721,7 @@ def mark_tile(project_uid: str, image_uid: str, cell_id: str,
     return _client.mark_tile(project_uid, image_uid, cell_id, label, ttl_s)
 
 
-@mcp.tool()
+@_tool
 def get_landscape(project_uid: str, image_uid: str, value_name: str,
                   t: int = -1, z: int = -1) -> dict:
     """The user's current LANDSCAPE HEATMAP — a cheap categorical map over the viewer's grid tiles.
@@ -1725,7 +1743,7 @@ def get_landscape(project_uid: str, image_uid: str, value_name: str,
     return _client.get_landscape(project_uid, image_uid, value_name, t, z)
 
 
-@mcp.tool()
+@_tool
 def get_recent_captures(project_uid: str, limit: int = 10) -> list:
     """What the user has SHARED with you from their viewer — the "look at this" surface (BIDIR).
 
@@ -1746,7 +1764,7 @@ def get_recent_captures(project_uid: str, limit: int = 10) -> list:
     return _client.get_recent_captures(project_uid, limit).get("items", [])
 
 
-@mcp.tool()
+@_tool
 def get_capture(project_uid: str, capture_id: str) -> list:
     """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
 
@@ -1864,7 +1882,7 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     return blocks
 
 
-@mcp.tool()
+@_tool
 def get_capture_landscape_tiles(project_uid: str, capture_id: str,
                                 tile_ids: list[str] | None = None,
                                 bbox: list[float] | None = None) -> dict:
@@ -1901,7 +1919,7 @@ def get_capture_landscape_tiles(project_uid: str, capture_id: str,
     return {"captureId": capture_id, "landscape": slim.get("landscape") or {"tiles": []}}
 
 
-@mcp.tool()
+@_tool
 def register_push_target(project_uid: str, session_label: str = "") -> dict:
     """Pair THIS Claude Code session with a Cecelia project for cross-session push (BIDIR Part 5).
 
@@ -1928,7 +1946,7 @@ def register_push_target(project_uid: str, session_label: str = "") -> dict:
     return _client.register_push_target(project_uid, session_label)
 
 
-@mcp.tool()
+@_tool
 def get_object_ids(project_uid: str, image_uid: str, value_name: str,
                    kind: str = "cells", limit: int = 200, sample: bool = False) -> dict:
     """Real cell / track ids for a segmentation — call this BEFORE mark_cells / mark_tracks.
@@ -1951,7 +1969,7 @@ def get_object_ids(project_uid: str, image_uid: str, value_name: str,
     return _client.get_object_ids(project_uid, image_uid, value_name, kind, limit, sample)
 
 
-@mcp.tool()
+@_tool
 def get_recent_logs(level: str = "", source: str = "", limit: int = 100) -> list:
     """Recent lines from the app's console — everything the backend SIDE says, newest last.
 
@@ -1981,7 +1999,7 @@ def get_recent_logs(level: str = "", source: str = "", limit: int = 100) -> list
     return logs[-limit:] if limit and limit > 0 else logs
 
 
-@mcp.tool()
+@_tool
 def poll_observations(project_uid: str) -> dict:
     """Drain the observer's pending observations since the last poll — the "sit next to me" signal.
 
@@ -2012,7 +2030,7 @@ def poll_observations(project_uid: str) -> dict:
     return {"observations": observations, "stats": _monitor.stats()}
 
 
-@mcp.tool()
+@_tool
 def set_observer_active(active: bool) -> dict:
     """Turn the live observer on or off (the off switch, per OBSERVER.md §6).
 
@@ -2024,7 +2042,7 @@ def set_observer_active(active: bool) -> dict:
     return _monitor.stats()
 
 
-@mcp.tool()
+@_tool
 def get_observer_stats() -> dict:
     """The observer's running per-session state without draining anything: whether it's `enabled`,
     how many observations were `surfacedCount` (vs the `surfaceCap`), whether it's `throttled`, and a
@@ -2055,7 +2073,7 @@ def main():
     # Best-effort: subscribe to the API's WS event stream so the monitor can detect patterns. If the
     # backend isn't up yet the listener reconnects on its own; the read tools work regardless.
     start_listener(_monitor, api_url_to_ws(_API_URL))
-    mcp.run()  # stdio transport
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

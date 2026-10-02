@@ -96,7 +96,7 @@ of text they had no reason to read. Two things fixed it, both in `mcp/cecelia_mc
 
 | Constant | Delivered by | Cost | Carries |
 |---|---|---|---|
-| `SERVER_INSTRUCTIONS` | `FastMCP(instructions=…)` → the `initialize` response → the client's system prompt | **always in context**, in every session with the server registered | the entry point only: resolve the project via `list_projects`, then `get_session_briefing`; read-only + designs-but-never-starts; don't self-configure |
+| `SERVER_INSTRUCTIONS` | `MCPServer(instructions=…)` → the `initialize` response → the client's system prompt | **always in context**, in every session with the server registered | the entry point only: resolve the project via `list_projects`, then `get_session_briefing`; read-only + designs-but-never-starts; don't self-configure |
 | `BRIEFING_GUIDANCE` | `get_session_briefing`'s `guidance` field | nothing until a session opens a project | the working rules: grouping/replicates, boards, chains, cohort QC, how to open |
 
 The split is a budget, not taste. The observer is registered **user-scope** (`claude mcp add-json …

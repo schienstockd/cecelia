@@ -213,6 +213,7 @@ end
             chains_dir = joinpath(dir, "testpr", "settings", "chains")
             chain_path = joinpath(chains_dir, "correction-plan-KDIeEm.json")
             @test isfile(chain_path)
+            @test haskey(JSON3.read(read(chain_path, String)), :createdBy)   # mounted = authored now
 
             # Second mount without overwrite → 409 conflict.
             st, body = _mount(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm"))
@@ -226,6 +227,9 @@ end
                                     "overwrite" => true))
             @test st == 200
             @test JSON3.read(body).created === false
+            let raw = JSON3.read(read(chain_path, String))     # creator kept, this write stamped
+                @test haskey(raw, :createdBy) && haskey(raw, :updatedBy)
+            end
 
             # No saved plan → 409 with an actionable message (delete plan.json to prove it).
             plan_path = joinpath(dir, "testpr", "1", "KDIeEm", "plan.json")
