@@ -89,6 +89,10 @@ function write_profile_settings!(dict::AbstractDict,
     Dict{String,Any}(String(k) => v for (k, v) in dict)
 end
 
+# Serialises the read-modify-write: the settings store and `utils/profileStorage.ts` PATCH on
+# independent debounces, and two concurrent handlers would otherwise drop one side's keys.
+const _PROFILE_SETTINGS_LOCK = ReentrantLock()
+
 """
     patch_profile_settings!(patch, name = active_profile_name()) -> Dict{String,Any}
 
@@ -100,6 +104,11 @@ the merged settings the file now contains.
 function patch_profile_settings!(patch::AbstractDict,
                                  name::AbstractString = active_profile_name();
                                  config_root::AbstractString = config_dir())::Dict{String,Any}
+    lock(() -> _patch_profile_settings!(patch, name, config_root), _PROFILE_SETTINGS_LOCK)
+end
+
+function _patch_profile_settings!(patch::AbstractDict, name::AbstractString,
+                                  config_root::AbstractString)::Dict{String,Any}
     current = read_profile_settings(name; config_root = config_root)
     merged  = Dict{String,Any}(String(k) => v for (k, v) in current)
     for (k, v) in patch
@@ -112,3 +121,124 @@ function patch_profile_settings!(patch::AbstractDict,
     end
     write_profile_settings!(merged, name; config_root = config_root)
 end
+
+# ── Per-profile recent projects ────────────────────────────────────────────────────────────────
+#
+# `project.json lastOpenedAt` is the INSTALL's last open — on a shared machine it orders the project
+# list by whoever opened something last. Each profile keeps its own `{projectUid = ISO time}` here,
+# next to settings.toml, and the project list overlays it. A project this profile has never opened
+# keeps the project's own timestamp and sorts below every project it has.
+#
+#   <config_dir>/user-profiles/<name>/recent-projects.toml
+
+profile_recents_path(name::AbstractString = active_profile_name();
+                     config_root::AbstractString = config_dir())::String =
+    joinpath(profile_settings_dir(name; config_root = config_root), "recent-projects.toml")
+
+"""
+    read_profile_recents(name = active_profile_name()) -> Dict{String,String}
+
+`projectUid => ISO timestamp` of this profile's last open. Empty when missing or unparseable.
+"""
+function read_profile_recents(name::AbstractString = active_profile_name();
+                              config_root::AbstractString = config_dir())::Dict{String,String}
+    path = profile_recents_path(name; config_root = config_root)
+    isfile(path) || return Dict{String,String}()
+    try
+        Dict{String,String}(String(k) => string(v) for (k, v) in TOML.parsefile(path))
+    catch
+        Dict{String,String}()
+    end
+end
+
+"""
+    touch_profile_recent!(uid, at, name = active_profile_name())
+
+Record that this profile opened project `uid` at `at` (ISO string).
+"""
+function touch_profile_recent!(uid::AbstractString, at::AbstractString,
+                               name::AbstractString = active_profile_name();
+                               config_root::AbstractString = config_dir())
+    lock(_PROFILE_SETTINGS_LOCK) do
+        recents = read_profile_recents(name; config_root = config_root)
+        recents[String(uid)] = String(at)
+        profile_settings_path!(name; config_root = config_root)   # mkpath the profile dir
+        write_atomic(io -> TOML.print(io, recents), profile_recents_path(name; config_root = config_root))
+    end
+    nothing
+end
+
+"""
+    overlay_profile_recents!(projects, recents) -> projects
+
+Replace each project's `lastOpenedAt` with this profile's own open time where it has one, and sort:
+projects this profile opened first (newest first), then the rest by the project's own timestamp.
+"""
+function overlay_profile_recents!(projects::Vector{Dict{String,Any}}, recents::AbstractDict)
+    for p in projects
+        t = get(recents, string(get(p, "uid", "")), nothing)
+        t === nothing || (p["lastOpenedAt"] = t)
+    end
+    sort!(projects; rev = true,
+          by = p -> (haskey(recents, string(get(p, "uid", ""))),
+                     string(get(p, "lastOpenedAt", get(p, "createdAt", "")))))
+end
+
+# ── Former names ────────────────────────────────────────────────────────────────────────────────
+#
+# A rename moves the profile dir but leaves the old name stamped on things that record it on purpose
+# (Kiwi turns) or key by it (lab-log hides). The dir keeps a list of the names it has had, so "is this
+# record mine?" can answer yes across a rename.
+#
+#   <config_dir>/user-profiles/<name>/renamed-from   (one former name per line)
+
+_profile_former_path(name::AbstractString; config_root::AbstractString = config_dir())::String =
+    joinpath(profile_settings_dir(name; config_root = config_root), "renamed-from")
+
+"""
+    profile_names(name = active_profile_name()) -> Vector{String}
+
+`name` followed by every name this profile has had before, newest first.
+"""
+function profile_names(name::AbstractString = active_profile_name();
+                       config_root::AbstractString = config_dir())::Vector{String}
+    p = _profile_former_path(name; config_root = config_root)
+    former = isfile(p) ? filter(!isempty, strip.(readlines(p))) : String[]
+    unique(String[String(name); String.(reverse(former))])
+end
+
+"""
+    record_profile_rename!(old, new)
+
+Call AFTER the dir moved to `new`: append `old` to its former-names list.
+"""
+function record_profile_rename!(old::AbstractString, new::AbstractString;
+                                config_root::AbstractString = config_dir())
+    p = _profile_former_path(new; config_root = config_root)
+    isdir(dirname(p)) || return nothing
+    open(io -> println(io, old), p, "a")
+    nothing
+end
+
+# ── Authorship ────────────────────────────────────────────────────────────────────
+#
+# Who wrote a piece of project content: the active profile, and whether it came from the app or from
+# Claude (the observer MCP marks its requests with `X-Cecelia-Client: claude`; the router binds that
+# per request). One active profile per machine is the model, so a Claude write is made FOR whoever is
+# signed in — hence both fields, never one or the other.
+
+"""
+    REQUEST_VIA
+
+Where the current API request came from: `"app"` (default — GUI, REPL, tests) or `"claude"`. Bound
+per request by the router; read through `author_stamp`.
+"""
+const REQUEST_VIA = Base.ScopedValues.ScopedValue("app")
+
+"""
+    author_stamp() -> Dict{String,Any}
+
+`{profile, via}` for the write being made now — store it as `createdBy` / `updatedBy`.
+"""
+author_stamp()::Dict{String,Any} =
+    Dict{String,Any}("profile" => active_profile_name(), "via" => REQUEST_VIA[])

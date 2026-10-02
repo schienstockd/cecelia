@@ -20,6 +20,8 @@
 // Pure logic here, so the toggle rule and the stored-value guard are testable without mounting a
 // component (docs/DEV.md → frontend test scope). `composables/usePaneExpand.ts` is the wrapper to use.
 
+import { profileStorage } from './profileStorage'
+
 export type PaneExpand = 'split' | 'top' | 'bottom'
 export type PaneHalf = 'top' | 'bottom'
 
@@ -42,9 +44,9 @@ export function nextPane(current: PaneExpand, clicked: PaneHalf): PaneExpand {
 }
 
 export function loadPane(storageKey: string): PaneExpand {
-  try { return parsePane(localStorage.getItem(storageKey)) } catch { return 'split' }
+  try { return parsePane(profileStorage.getItem(storageKey)) } catch { return 'split' }
 }
 
 export function savePane(storageKey: string, pane: PaneExpand): void {
-  try { localStorage.setItem(storageKey, pane) } catch { /* private mode / quota — not worth failing over */ }
+  try { profileStorage.setItem(storageKey, pane) } catch { /* private mode / quota — not worth failing over */ }
 }

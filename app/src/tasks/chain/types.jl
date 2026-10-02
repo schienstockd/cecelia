@@ -128,6 +128,7 @@ mutable struct ChainRun
     template_hash::String                   # sha256 hex — pointer to cache entry on disk
     image_states::Dict{String,Dict{String,ImageNodeState}}  # uid => node_id => state
     created_at::Float64
+    by::String                              # profile that launched it ("" on runs from before) — its nodes run as it
     _dir::String                            # <project>/settings/chains/runs/<run_id>/
     _lock::ReentrantLock                    # guards image_states + disk writes
     _barriers::Dict{String,Channel{Nothing}}      # node_id => arrive channel (set-scope barrier)

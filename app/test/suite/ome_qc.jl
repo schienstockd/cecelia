@@ -2607,6 +2607,14 @@ end
 # tar here would pass on unix no matter what the code does — a test that cannot fail. So assert the
 # shape of the command instead: `-f` takes a bare filename, the directory rides on the cwd. Both
 # assertions fail against the old absolute-`-f` form on every platform.
+@testset "project import — owners localised to this install" begin
+    here(n) = n in ("default", "alice")
+    @test Cecelia.import_owners(Any[], here, "alice") == String[]            # pre-identity stays open
+    @test Cecelia.import_owners(["zoe"], here, "alice") == ["alice"]         # exporter's name unknown here
+    @test Cecelia.import_owners(["zoe", "default"], here, "alice") == ["default"]
+    @test Cecelia.import_owners(["alice"], here, "bob") == ["alice"]
+end
+
 @testset "tar commands keep drive letters out of -f" begin
     pack = Cecelia._tar_pack_cmd(joinpath("D:", "a", "out", "store.zarr.tar"),
                                  joinpath("D:", "proj", "0", "img", "store.zarr"))

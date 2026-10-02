@@ -12,6 +12,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
+import { renameLiveMirrorOwner } from '../utils/profileStorage'
 import BaseModal from './BaseModal.vue'
 import CcToggle from './CcToggle.vue'
 import ConfirmButton from './ConfirmButton.vue'
@@ -115,6 +116,7 @@ async function commitRename() {
   try {
     const r = await renameProfile(oldName, newName)
     if (!r.ok) { profilesError.value = r.error ?? 'Rename failed'; return }
+    renameLiveMirrorOwner(oldName, newName)   // same person — keep this browser's mirror theirs
     cancelRename()
     await refreshRoster()
     // Reload only when the RENAMED profile was active — otherwise this pane keeps working.

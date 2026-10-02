@@ -1,12 +1,13 @@
 // Kiwi — the prompt box's draft, the running turn and the feed (KIWI_ASSISTANT_PLAN Phase 4–5).
 //
-// The DRAFT (refs attached to the next question) lives in localStorage and syncs across windows by
+// The DRAFT (refs attached to the next question) lives in profileStorage (per profile, localStorage-mirrored) and syncs across windows by
 // the `storage` event: the pop-out viewer has its own Pinia, and its "Add to Kiwi" button must land
 // in the main window's cockpit. A ref arriving from another window also opens the cockpit there.
 // Turns come from `/api/kiwi/turns` and the `kiwi:step` / `kiwi:done` WS events (`api/src/kiwi_api.jl`).
 // Pure logic is in `utils/kiwiTurn.ts`.
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
+import { profileStorage } from '../utils/profileStorage'
 import { ref, computed, watch } from 'vue'
 import { useProjectMetaStore } from './projectMeta'
 import { useSettingsStore } from './settings'
@@ -24,11 +25,11 @@ export const useKiwiStore = defineStore('kiwi', () => {
   const projectUid = computed(() => pm.current?.uid ?? '')
 
   // ── Draft ──────────────────────────────────────────────────────────────────────────────────────
-  const draft = ref<KiwiDraft>(parseDraft(localStorage.getItem(DRAFT_KEY)))
-  const prompt = ref(localStorage.getItem(PROMPT_KEY) ?? '')
+  const draft = ref<KiwiDraft>(parseDraft(profileStorage.getItem(DRAFT_KEY)))
+  const prompt = ref(profileStorage.getItem(PROMPT_KEY) ?? '')
   const refs = computed<KiwiRef[]>(() => draft.value.projectUid === projectUid.value ? draft.value.refs : [])
 
-  function saveDraft() { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft.value)) }
+  function saveDraft() { profileStorage.setItem(DRAFT_KEY, JSON.stringify(draft.value)) }
 
   // What each attached ref resolves to NOW — its label, what it holds, whether it is there — so the
   // attachment rows say more than "plot". Keyed by `refKey`; fetched for refs not yet asked about.
@@ -44,7 +45,7 @@ export const useKiwiStore = defineStore('kiwi', () => {
       draftResults.value = next
     } catch { /* rows fall back to the ref's own label */ }
   }, { immediate: true })
-  watch(prompt, v => localStorage.setItem(PROMPT_KEY, v))
+  watch(prompt, v => profileStorage.setItem(PROMPT_KEY, v))
 
   /** Attach a ref to the next question and open the cockpit. `puid` for a window that has no open
    *  project of its own — the pop-out viewer knows its project only from `?project=`. */

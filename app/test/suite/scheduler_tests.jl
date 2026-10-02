@@ -37,7 +37,7 @@ end
     img  = add_image!(s; name="img")
 
     logs = String[]
-    result = run_task(_CrashTask(), img, Dict{String,Any}(); on_log = l -> push!(logs, l))
+    result = run_task(_CrashTask(), img, Dict{String,Any}(); on_log = l -> push!(logs, l), by = "alice")
 
     @test result === nothing                                       # crash → nil result
     @test any(l -> occursin("Task crashed", l) && occursin("boom", l), logs)  # reached on_log
@@ -52,6 +52,7 @@ end
     rlog = read_run_log(img)
     @test length(rlog) == 1
     @test String(rlog[end]["fun"]) == fun_name && String(rlog[end]["status"]) == "failed"
+    @test String(rlog[end]["by"]) == "alice"                       # the launcher rides rec → run log
     rm(proj.root; recursive=true)
 end
 

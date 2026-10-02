@@ -229,7 +229,7 @@ end
         states[img.uid][nid].params_hash = "h"
     end
     run = Cecelia.ChainRun("rid", "restart-chain", proj.uid, [img.uid], tpl,
-                           "hash", states, time(), joinpath(Cecelia._runs_dir(proj), "rid"),
+                           "hash", states, time(), "", joinpath(Cecelia._runs_dir(proj), "rid"),
                            ReentrantLock(), Dict{String,Channel{Nothing}}(),
                            Dict{String,Channel{Nothing}}())
     mkpath(run._dir)

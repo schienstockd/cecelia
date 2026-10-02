@@ -133,8 +133,16 @@ function api_chains_save(body_bytes::Vector{UInt8})
 
     dir  = _chains_dir_for_project(uid)
     mkpath(dir)
+    path = joinpath(dir, "$(name).json")
+    # Authorship comes from the server, never the body: `createdBy` stays whatever the file on disk
+    # says (absent on a chain saved before stamps — left unattributed), `updatedBy` is this save.
+    prior = isfile(path) ? (try read_ccid_raw(path) catch; Dict{String,Any}() end) : nothing
+    created = prior === nothing ? author_stamp() : get(prior, "createdBy", nothing)
+    delete!(out, "createdBy")
+    created === nothing || (out["createdBy"] = created)
+    out["updatedBy"] = author_stamp()
     # Still the whiteboard's own body — `positions` and any other canvas-only sidecar field survive.
-    write_json_atomic(joinpath(dir, "$(name).json"), out)
+    write_json_atomic(path, out)
     200, JSON3.write((; ok=true))
 end
 
@@ -199,7 +207,7 @@ function api_chains_create(body_bytes::Vector{UInt8})
     mkpath(dir)
     # Write through save_chain_template! so the on-disk shape is the one the package writes — an
     # outside author supplies no `positions`, and the whiteboard lays the nodes out on first load.
-    save_chain_template!(load_project(uid), template)
+    save_chain_template!(load_project(uid), template; created_by = author_stamp())
     @info "Created chain" name project=uid nodes=length(template.nodes)
     _broadcast_chains_updated(uid)
     200, JSON3.write((; ok=true, name, nodeCount=length(template.nodes)))

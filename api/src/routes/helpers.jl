@@ -76,8 +76,8 @@ function _scan_projects_raw()::Vector{Dict{String,Any}}
             @warn "Skipping malformed project" dir=entry exception=e
         end
     end
-    sort!(projects; by=p -> string(get(p, "lastOpenedAt", get(p, "createdAt", ""))), rev=true)
-    projects
+    # Ordered by THIS profile's opens, not the install's (see `overlay_profile_recents!`).
+    overlay_profile_recents!(projects, read_profile_recents())
 end
 
 # `meta_int` / `meta_float` / `meta_str` (`app/src/model/image.jl`) are the ONE way to read a

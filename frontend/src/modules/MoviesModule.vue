@@ -4,6 +4,7 @@
 // library), streamed from the range-capable backend route so seeking works; playback speed + zoom on
 // top. Motivated by there being no good desktop player to rely on. See docs/todo/ANIMATION_PLAN.md.
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { profileStorage } from '../utils/profileStorage'
 import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
@@ -260,23 +261,23 @@ const MOVIE_COLUMNS = computed<SelectionColumn[]>(() => [
 // Star and tags COMPOSE with each other and with the column sort — they answer different questions,
 // so one never replaces another (Decision 3/4). Both persist: a filter that resets on navigation is
 // one the user has to re-apply every time they come back to compare two movies.
-const starredOnly = ref(localStorage.getItem('cc.movies.starredOnly') === 'true')
-watch(starredOnly, v => localStorage.setItem('cc.movies.starredOnly', String(v)))
-const pickedTags = ref<string[]>(JSON.parse(localStorage.getItem('cc.movies.tags') ?? '[]'))
-watch(pickedTags, v => localStorage.setItem('cc.movies.tags', JSON.stringify(v)), { deep: true })
+const starredOnly = ref(profileStorage.getItem('cc.movies.starredOnly') === 'true')
+watch(starredOnly, v => profileStorage.setItem('cc.movies.starredOnly', String(v)))
+const pickedTags = ref<string[]>(JSON.parse(profileStorage.getItem('cc.movies.tags') ?? '[]'))
+watch(pickedTags, v => profileStorage.setItem('cc.movies.tags', JSON.stringify(v)), { deep: true })
 
 // Filtering by the source image's ATTRIBUTES — the same control the image table has, over the shared
 // `AttrFilterPanel` (utils/attrFilter.ts). It composes with star and tags like everything else here.
 // Persisted, and TOLERANT of a stale shape: a filter is not worth failing the page over.
 const attrFilter = ref<AttrFilterState>((() => {
   try {
-    const raw = JSON.parse(localStorage.getItem('cc.movies.attrFilter') ?? 'null')
+    const raw = JSON.parse(profileStorage.getItem('cc.movies.attrFilter') ?? 'null')
     return raw && typeof raw === 'object' ? { ...emptyAttrFilter(), ...raw } : emptyAttrFilter()
   } catch { return emptyAttrFilter() }
 })())
-watch(attrFilter, v => localStorage.setItem('cc.movies.attrFilter', JSON.stringify(v)), { deep: true })
-const filtersOpen = ref(localStorage.getItem('cc.movies.filtersOpen') === 'true')
-watch(filtersOpen, v => localStorage.setItem('cc.movies.filtersOpen', String(v)))
+watch(attrFilter, v => profileStorage.setItem('cc.movies.attrFilter', JSON.stringify(v)), { deep: true })
+const filtersOpen = ref(profileStorage.getItem('cc.movies.filtersOpen') === 'true')
+watch(filtersOpen, v => profileStorage.setItem('cc.movies.filtersOpen', String(v)))
 
 // Declared BEFORE the rows that read them. `movieTableRows` is a lazy computed, but the `watch` on it
 // further down is NOT lazy — a watcher evaluates its source once at creation to capture the old value,
@@ -309,10 +310,10 @@ watch(allRows, rows => {
 // Controlling the sort turns off `SelectionTable`'s own persistence, so it is kept here — under the
 // key the table used, so a sort chosen before this landed still comes back.
 const SORT_KEY = 'cc.movies.sort'
-const movieSort = ref<SortState>(parseSortState(localStorage.getItem(SORT_KEY)))
+const movieSort = ref<SortState>(parseSortState(profileStorage.getItem(SORT_KEY)))
 watch(movieSort, s => {
-  if (s) localStorage.setItem(SORT_KEY, JSON.stringify(s))
-  else localStorage.removeItem(SORT_KEY)
+  if (s) profileStorage.setItem(SORT_KEY, JSON.stringify(s))
+  else profileStorage.removeItem(SORT_KEY)
 })
 const shownRows = computed(() => {
   const s = movieSort.value

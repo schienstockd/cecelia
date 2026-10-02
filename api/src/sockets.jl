@@ -650,7 +650,7 @@ function handle_chain_run(ws, data)
     # Hand it to the detached runner if there is one. A REFUSAL is not a fallback: it means that run id
     # is already executing there, and starting a second execution would have two processes writing the
     # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
-    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node)
+    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, by = active_profile_name())
     outcome = _submit_chain_to_runner(creq)
     outcome === :accepted && return
     if outcome === :refused
@@ -731,7 +731,8 @@ function handle_task_run(ws, data)
     # dispatch, the pre-job throw guard, and the result→terminal-status ordering all live there, so the
     # detached runner executes the identical code rather than a second copy of it.
     # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).
-    req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params)
+    req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params,
+                        by = active_profile_name())
 
     # Run it in THIS process — the fallback whenever no runner takes it. Dies with this server.
     run_in_process() = execute_task(req;

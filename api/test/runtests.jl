@@ -303,3 +303,7 @@ include(joinpath(@__DIR__, "suite", "profile_settings.jl")) # USER_PROFILE_PLAN 
 # ── Project ownership (USER_PROFILE_PLAN Phase 5) ────────────────
 # Create-time stamps active profile as owner + claim/unclaim round-trip.
 include(joinpath(@__DIR__, "suite", "project_ownership.jl"))
+
+# ── Authorship stamps (persistence audit gap C) ───────────────────
+# Blackboard / notebooks / chains record {profile, via}; task + chain requests carry the asker.
+include(joinpath(@__DIR__, "suite", "authorship.jl"))

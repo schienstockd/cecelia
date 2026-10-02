@@ -170,3 +170,30 @@ end
         end
     end
 end
+
+@testset "profile_settings — per-profile recent projects" begin
+    mktempdir() do tmp
+        @test Cecelia.read_profile_recents("alice"; config_root = tmp) == Dict{String,String}()
+        Cecelia.touch_profile_recent!("pA", "2026-10-01T09:00:00", "alice"; config_root = tmp)
+        Cecelia.touch_profile_recent!("pB", "2026-09-01T09:00:00", "alice"; config_root = tmp)
+        Cecelia.touch_profile_recent!("pC", "2026-10-01T12:00:00", "bob";   config_root = tmp)
+        alice = Cecelia.read_profile_recents("alice"; config_root = tmp)
+        @test alice == Dict("pA" => "2026-10-01T09:00:00", "pB" => "2026-09-01T09:00:00")
+        @test !haskey(alice, "pC")                         # bob's open is bob's
+
+        # pC was opened most recently on the install (by bob) but alice has never opened it, so it
+        # sorts below both of hers; her own times replace the install-wide stamp.
+        projects = [Dict{String,Any}("uid" => "pA", "lastOpenedAt" => "2026-09-30T00:00:00"),
+                    Dict{String,Any}("uid" => "pB", "lastOpenedAt" => "2026-09-01T09:00:00"),
+                    Dict{String,Any}("uid" => "pC", "lastOpenedAt" => "2026-10-01T12:00:00")]
+        Cecelia.overlay_profile_recents!(projects, alice)
+        @test [p["uid"] for p in projects] == ["pA", "pB", "pC"]
+        @test projects[1]["lastOpenedAt"] == "2026-10-01T09:00:00"
+
+        # No recents (fresh profile / single-seat install before its first open): install order.
+        projects2 = [Dict{String,Any}("uid" => "x", "lastOpenedAt" => "2026-01-01"),
+                     Dict{String,Any}("uid" => "y", "lastOpenedAt" => "2026-02-01")]
+        Cecelia.overlay_profile_recents!(projects2, Dict{String,String}())
+        @test [p["uid"] for p in projects2] == ["y", "x"]
+    end
+end
