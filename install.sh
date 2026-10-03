@@ -178,10 +178,18 @@ if [ "$SCOPE" = "system" ]; then
   JULIA="$JULIAUP_DEPOT_PATH/bin/julia"
 else
   if ! have julia && [ ! -x "$HOME/.juliaup/bin/julia" ]; then
-    say "Installing Julia (juliaup)…"
-    curl -fsSL https://install.julialang.org | sh -s -- --yes
+    if have juliaup; then
+      # A juliaup with no `julia` launcher: the installer would quit having done nothing (see
+      # juliaup_into), so ask the juliaup itself for a default channel; its launcher sits beside it.
+      say "Adding a Julia release to the existing juliaup…"
+      juliaup add release && juliaup default release
+      JULIA="$(dirname "$(command -v juliaup)")/julia"
+    else
+      say "Installing Julia (juliaup)…"
+      curl -fsSL https://install.julialang.org | sh -s -- --yes
+    fi
   fi
-  JULIA="$(command -v julia 2>/dev/null || echo "$HOME/.juliaup/bin/julia")"
+  [ -n "${JULIA:-}" ] || JULIA="$(command -v julia 2>/dev/null || echo "$HOME/.juliaup/bin/julia")"
 fi
 [ -x "$JULIA" ] || err "Julia not found after install — open a new terminal and re-run."
 
