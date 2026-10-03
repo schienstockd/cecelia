@@ -93,6 +93,8 @@ export interface AdvisorImage {
   /** valueName → segmentation label filenames (matches `CciaImage.labels`). Used by cross-image
    *  advisors to check whether a selected pop's VN is present on every image. */
   labels?: Record<string, string[]>
+  /** display names of the image's channels (matches `CciaImage.channelNames`) — a rename changes them */
+  channelNames?: string[]
   /** Source file path (pre-import). Present on newly registered, not-yet-imported rows — the
    *  pre-import pyramid advisor reads it to peek dims through `/api/import/peek-pyramid`. */
   oriPath?: string | null
@@ -621,9 +623,10 @@ function _vnsFromPops(pops: readonly unknown[]): string[] {
 
 /** Advisory for `popsToCluster` — see the registration comment for the invariant it defends. */
 export const popsCompatAdvisor: ParamAdvisor = {
-  // rerun on: images changing, their label sets shifting (a re-import can wipe a VN), or the pop pick
+  // rerun on: images changing, their label sets shifting (a re-import can wipe a VN), a channel
+  // rename (the advice quotes the names), or the pop pick
   reloadOn: ctx => [
-    (ctx.images ?? []).map(i => `${i.uid}:${Object.keys(i.labels ?? {}).sort().join('/')}`).join(','),
+    (ctx.images ?? []).map(i => `${i.uid}:${Object.keys(i.labels ?? {}).sort().join('/')}:${(i.channelNames ?? []).join('|')}`).join(','),
     JSON.stringify(ctx.values?.popsToCluster ?? []),
   ],
   advise: async (value, ctx) => {

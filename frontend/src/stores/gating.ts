@@ -4,7 +4,7 @@ import { useLogStore } from './log'
 import { useWsStore } from './ws'
 import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
-import { onViewerImageMeta } from '../lib/viewerImageMetaChannel'
+import { useImageMetaRefresh } from '../composables/useImageMetaRefresh'
 import { clusterMeasure } from '../utils/clusterMeasure'
 import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
 import { popPath } from '../utils/popName'
@@ -456,10 +456,7 @@ export function createGatingStore(initialPopType: string) {
   })
   // Channel renamed (image table, metadata panel): `channelNames` is a once-per-select copy, so
   // refetch or the axis labels keep the old names until the image is reselected.
-  const stopImageMeta = onViewerImageMeta(ev => {
-    if (ev.imageUid === imageUid.value) void fetchChannels()
-  })
-  onScopeDispose(stopImageMeta)
+  useImageMetaRefresh(() => (imageUid.value ? [imageUid.value] : []), () => { void fetchChannels() })
 
   // Ping the browser volume viewer via localStorage — /viewer-window is a popup with its own store
   // (P2), so a `pop.show` change here needs a channel to reach it. The tick's VALUE carries the

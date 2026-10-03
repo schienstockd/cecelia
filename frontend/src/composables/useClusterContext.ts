@@ -12,6 +12,7 @@ import { ref, computed, watch, type Ref } from 'vue'
 import type { GatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
 import { useDataRefresh } from './useDataRefresh'
+import { useImageMetaRefresh } from './useImageMetaRefresh'
 import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
 
 export interface ShownPop { path: string; name: string; colour: string; clusterIds: number[] }
@@ -120,6 +121,8 @@ export function useClusterContext(opts: {
   // with the heatmap still requesting the previous run's columns — "I re-ran it and nothing changed".
   // Same primitive, same global autoRefreshOnTask toggle, so cluster/region pages behave like the rest.
   useDataRefresh(() => imageUids.value, loadFeatures)
+  // a channel rename → `nameMap` (the heatmap/UMAP row labels) is a copy of the names; refetch it
+  useImageMetaRefresh(() => imageUids.value, loadFeatures)
 
   // the label map a plot should use for the CURRENT run: channel display names, overlaid with this
   // run's own column→label map. Hosts pass this as `nameMap` so one lookup relabels both.

@@ -426,7 +426,8 @@ async function loadCols() {
   } catch { /* no columns available yet */ }
 }
 
-// reload when the image, the sibling valueName, or the selected populations change.
+// reload when the image, its channel names (a rename relabels the chips), the sibling valueName, or
+// the selected populations change.
 // The pop/valueName params are looked up BY TYPE — same reason `scopeValueName` does: their keys
 // aren't a naming convention (`clustTracks.cluster` calls them `popsToCluster`, `hmm_states` calls
 // them `pops`), and hardcoding `values.pops` here meant the picker never re-fired when the pops it
@@ -434,6 +435,7 @@ async function loadCols() {
 const popKey = computed(() => siblingKeyOfType(props.context?.params, 'popSelection'))
 const vnKey = computed(() => siblingKeyOfType(props.context?.params, 'valueNameSelection'))
 watch(() => [props.context?.images?.[0]?.uid,
+             props.context?.images?.[0]?.channelNames?.join('|'),
              vnKey.value ? props.context?.values?.[vnKey.value] : undefined,
              popKey.value ? JSON.stringify(props.context?.values?.[popKey.value]) : ''],
   () => { loadCols() }, { immediate: true })

@@ -467,6 +467,13 @@ describe('popsCompatAdvisor — cluster-tracks VN compatibility', () => {
     expect(out?.tip).toContain('cpSAM: [dapi, gfp]')
   })
 
+  it('re-runs after a channel rename (the advice quotes the names)', () => {
+    const img = (names: string[]) => ({ uid: 'a', labels: { flowTom: [] }, channelNames: names })
+    const before = popsCompatAdvisor.reloadOn!(CTX([img(['GFP', 'TOM'])], ['flowTom/qc']))
+    const after = popsCompatAdvisor.reloadOn!(CTX([img(['GFP', 'CD169'])], ['flowTom/qc']))
+    expect(before).not.toEqual(after)
+  })
+
   it('registers under the popsToCluster key so clustTracks + clustPops both pick it up', () => {
     expect(paramAdvisor({ key: 'popsToCluster', type: 'popSelection' })).toBe(popsCompatAdvisor)
   })
