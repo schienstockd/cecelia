@@ -3,9 +3,8 @@
 # Four testsets pinning the wiring that feeds the offline movie renderer:
 #  - `API: _resolve_movie_overlays_mask honours String-keyed ov_raw` (String-vs-Symbol
 #    keying bug — silently returned defaults when raw came from movie_rail.jl).
-#  - `API: render_view_frame — points and segments overlays` (offline renderer draws
-#    both live overlays paths against a real fixture).
 #  - `API: record_view_movie — 2D through the shared renderer` (region, size, plane window, mask).
+#  - `API: stills — the movie's frames as PNGs` (`render_view_stills`, `render_view_state_still`).
 #  - `API: interpolate_keyframes — the offline renderer tween`.
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
@@ -88,69 +87,6 @@
     end
 end
 
-@testset "API: render_view_frame — points and segments overlays" begin
-    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
-    if !api_have_fixture(v2)
-        @test_skip "zarr format fixture missing"
-    else
-        specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
-        base  = render_view_frame(v2, 1; channels = 0:1, specs = specs)
-        H, W = size(base)
-
-        # A point marker changes the pixel — assertion is on DIFFERENCE against the un-overlayed frame,
-        # so a fixture that happens to have blue at (10, 10) still passes.
-        with_pt = render_view_frame(v2, 1; channels = 0:1, specs = specs,
-                                    points = (; x = [10], y = [10],
-                                              colour = [RGB{N0f8}(0, 0, 1)]),
-                                    point_size_px = 3)
-        @test size(with_pt) == (H, W)
-        @test with_pt[10, 10] == RGB{N0f8}(0, 0, 1)
-        @test with_pt != base
-
-        # Same for segments.
-        with_seg = render_view_frame(v2, 1; channels = 0:1, specs = specs,
-                                     segments = (; x0 = [5], y0 = [5], x1 = [40], y1 = [5],
-                                                 colour = [RGB{N0f8}(1, 1, 1)]),
-                                     segment_width_px = 1)
-        @test with_seg[5, 5]  == RGB{N0f8}(1, 1, 1)
-        @test with_seg[5, 40] == RGB{N0f8}(1, 1, 1)
-
-        # Segments draw BELOW points — a marker at a track endpoint reads as a marker, not as a
-        # fatter tail.
-        both = render_view_frame(v2, 1; channels = 0:1, specs = specs,
-                                 points   = (; x = [20], y = [20],
-                                             colour = [RGB{N0f8}(1, 0, 0)]),
-                                 segments = (; x0 = [20], y0 = [20], x1 = [30], y1 = [20],
-                                             colour = [RGB{N0f8}(0, 1, 0)]),
-                                 point_size_px = 3, segment_width_px = 1)
-        @test both[20, 20] == RGB{N0f8}(1, 0, 0)              # point wins at the shared pixel
-        @test both[20, 30] == RGB{N0f8}(0, 1, 0)              # the tail's other end is untouched
-
-        # A mask outline paints the outline colour on the rim of the labelled region — asserted on a
-        # cell shape big enough to have an interior, so the "outline is a rim, not a fill" property
-        # from the primitive testset carries through.
-        mask = zeros(Int, H, W)
-        mask[30:40, 30:40] .= 1
-        with_mask = render_view_frame(v2, 1; channels = 0:1, specs = specs,
-                                      mask = mask,
-                                      mask_colours = Dict{Int,RGB{N0f8}}(1 => RGB{N0f8}(1, 0, 1)),
-                                      mask_contour_px = 1)
-        @test size(with_mask) == (H, W)
-        @test with_mask[30, 30] == RGB{N0f8}(1, 0, 1)         # rim
-        @test with_mask[35, 35] != RGB{N0f8}(1, 0, 1)         # interior — original pixel preserved
-
-        # Layer order: mask below segments below points. A point AT a mask outline pixel still reads
-        # as the point's colour.
-        layered = render_view_frame(v2, 1; channels = 0:1, specs = specs,
-                                    mask = mask,
-                                    mask_colours = Dict{Int,RGB{N0f8}}(1 => RGB{N0f8}(1, 0, 1)),
-                                    points = (; x = [30], y = [30],
-                                              colour = [RGB{N0f8}(1, 1, 0)]),
-                                    point_size_px = 3, mask_contour_px = 1)
-        @test layered[30, 30] == RGB{N0f8}(1, 1, 0)           # point wins over the outline
-    end
-end
-
 @testset "API: record_view_movie — 2D through the shared renderer" begin
     # The region / size contract the CPU renderer had (crop, then an integer stride, even sides),
     # now as a head-on camera on the viewer's pass; and the plane window the overlays are cut to.
@@ -200,6 +136,40 @@ end
         rc = record_view_movie(v2, joinpath(mktempdir(), "c.mp4"); ts = [0], cancelled = () -> true)
         @test rc.cancelled && rc.frames == 0
         @test_throws ArgumentError record_view_movie(v2, joinpath(mktempdir(), "x.mp4"); ts = [99])
+    end
+end
+
+@testset "API: stills — the movie's frames as PNGs" begin
+    # `render_view_stills` is `record_view_movie`'s region and size, one PNG per timepoint; the test
+    # suite renders them in a one-off process (`STILLS_VIA`), never through the preview worker.
+    @test STILLS_VIA[] === _stills_one_off
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    if !api_have_fixture(v2)
+        @test_skip "zarr format fixture missing"
+    else
+        specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
+        dir = mktempdir()
+        paths = [joinpath(dir, "a.png"), joinpath(dir, "b.png"), joinpath(dir, "c.png")]
+        # a timepoint may repeat (a card snaps several picks to one tracked t)
+        r = render_view_stills(v2, paths, [1, 0, 1]; specs = specs, channels = 0:1,
+                               crop = (x = 0:62, y = 0:60), on_log = _ -> nothing)
+        @test (r.width, r.height) == (62, 60) && r.paths == paths
+        imgs = [PNGFiles.load(p) for p in paths]
+        @test all(i -> size(i) == (60, 62), imgs)
+        @test imgs[1] == imgs[3] && imgs[1] != imgs[2]
+        # a stride halves it, as in the movie
+        r2 = render_view_stills(v2, [joinpath(dir, "h.png")], [0]; specs = specs, channels = 0:1,
+                                max_px = 32, on_log = _ -> nothing)
+        @test (r2.width, r2.height) == (32, 32)
+        @test_throws ArgumentError render_view_stills(v2, paths[1:2], [0]; on_log = _ -> nothing)
+        @test_throws ArgumentError render_view_stills(v2, paths[1:1], [99]; on_log = _ -> nothing)
+        # a 3D view state renders its 3D view, at the canvas it was captured on
+        vs = Dict{String,Any}("camera" => Dict{String,Any}("angles" => [0, 30, 0], "zoom" => 1.0),
+                              "dims" => Dict{String,Any}("ndisplay" => 3, "current_step" => [1, 0]),
+                              "canvas" => Dict{String,Any}("width" => 48, "height" => 40))
+        s3 = render_view_state_still(v2, joinpath(dir, "k.png"), vs, ["CH1", "CH2"];
+                                     default_specs = specs, on_log = _ -> nothing)
+        @test (s3.width, s3.height) == (48, 40) && size(PNGFiles.load(s3.path)) == (40, 48)
     end
 end
 
@@ -271,3 +241,9 @@ end
     @test length(nt) == 16 && nt[end]["a"] == 1.0
 end
 
+
+@testset "API: _z_aniso — physical z over x, 1 when x is unknown" begin
+    @test _z_aniso((2.0, 0.5, 0.5)) == 4.0
+    @test _z_aniso((2.0, 0.5, 0.0)) == 1.0      # a zero x size would make the 3D render Inf-deep
+    @test _z_aniso((2.0,)) == 1.0
+end

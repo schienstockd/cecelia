@@ -337,8 +337,10 @@ The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays an
   it (`shaderSource.ts`); every movie, 2D and 3D, runs the same files headlessly through `wgpu-py`
   (`python/cecelia/utils/wgpu_host.py`, `writers/render_animation_run.py`). Uniform slots are written
   by lane name on both sides, and the CPU-side inputs (camera from a view state, LUT rows, label
-  palette) are pinned by `shaders/golden.json` in both test suites. Julia's CPU compositor
-  (`image_render.jl`) is left for stills (cards, thumbnails). See `docs/todo/SHARED_RENDERER_PLAN.md`.
+  palette) are pinned by `shaders/golden.json` in both test suites. Stills (card filmstrips, keyframe
+  thumbnails) are the same frames as PNGs, served by the resident preview worker so a still does not
+  pay a renderer's start-up (`docs/todo/STILLS_WORKER_PLAN.md`). Julia's CPU compositor
+  (`image_render.jl`) is left for the crop panel's preview. See `docs/todo/SHARED_RENDERER_PLAN.md`.
 
 ### Multi-atlas contract (WebGPU brick renderer)
 

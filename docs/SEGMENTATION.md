@@ -1254,6 +1254,11 @@ segmentation would not be a preview). Resident because a process that can segmen
 imports before it can answer: fatal per preview, irrelevant once. It calls `CellposeUtils.predict_slice`
 — the same method the full run uses — so a preview cannot drift from the thing it previews.
 
+The worker also renders **stills** — card filmstrips and keyframe thumbnails on the viewer's shader
+(`render` command, `docs/todo/STILLS_WORKER_PLAN.md`) — because it already is the resident Python process
+a still would otherwise pay ~1.9 s to start. Requests run off its event loop, renders and previews under
+separate locks, so neither waits for the other.
+
 **Nothing is written to disk.** The worker returns the mask block (`cecelia.utils.block_transfer`) and
 the bridge builds a full-label-extent lazy array with that block placed in it, so the layer aligns with
 the image by shape alone with no `translate`. An earlier design wrote a never-promoted scratch store;

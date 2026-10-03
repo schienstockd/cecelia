@@ -280,6 +280,11 @@ class SupervisorSpendTest(_Fixture):
         self.assertEqual(self.rec.supervisor_spend(sup),
                          "$0.87 · judge 0 call(s) $0.00 · bug sweep $0.50 · curation $0.37")
 
+    def test_the_supervisor_line_shows_how_curation_binned_the_findings(self):
+        sup = {"judge_calls": 0, "cost_usd": 0.1, "finding_bins": {"agent_made": 59, "legacy": 77, "unknown": 8}}
+        md = self.rec.render_markdown(self.rec.build(self.events, "2026-09-30", annotations={"supervisor": sup}))
+        self.assertIn("findings 59 agent made · 77 legacy · 8 unknown", md)
+
     def test_an_older_record_without_the_parts_reads_as_all_judge(self):
         self.assertEqual(self.rec.supervisor_spend({"judge_calls": 1, "cost_usd": 0.1}),
                          "$0.10 · judge 1 call(s) $0.10 · bug sweep $0.00 · curation $0.00")

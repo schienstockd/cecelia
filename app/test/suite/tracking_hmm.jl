@@ -238,6 +238,12 @@ end
     catch e; e end
     @test err isa ErrorException
     @test occursin("hmm_fit_states", err.msg) && occursin("live.cell.speed", err.msg)
+    @test occursin("tracking.track_measures", err.msg)   # names the missing STEP, not just the columns
+    err = try
+        Cecelia._require_cols(DataFrame(t = [1]), ["live.cell.hmm.state.x"], "hmm_transitions")
+        nothing
+    catch e; e end
+    @test occursin("behaviour.hmm_states", err.msg) && !occursin("track_measures", err.msg)
 
     err = try
         hmm_fit_states(drop(good, "t"), ["live.cell.speed"]; num_states=2, time_col="t")

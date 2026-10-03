@@ -22,7 +22,10 @@ tool_order_before_tools: Grep,Read,Glob
 tool_order_before_arg_match: (docs/inventory|frontend/CLAUDE\.md|frontend/src/utils|docs/UI\.md)
 tool_order_after_tools: Write,Edit,MultiEdit
 compliant_signal: '(?:debouncedLatest\s*[<(]|from\s+["''][^"'']*debouncedLatest|import[^;\n]*debouncedLatest)'
-anti_signal: '\bsetTimeout\s*\('
+# The sequence-token half too: a request counter (`++reqId`) beside the canonical is the stale guard
+# hand-rolled again. Comments are ignored: naming the shape you avoided isn't using it.
+anti_signal: '(?:\bsetTimeout\s*\(|\+\+\s*\w*(?:[Ss]eq|[Rr]eq|[Ii]d|[Tt]oken|[Gg]en)\b|\b\w*(?:[Ss]eq|[Rr]eq|[Ii]d|[Tt]oken|[Gg]en)\s*\+\+)'
+anti_signal_ignore_comments: true
 ---
 Add a small Vue single-file component at
 `frontend/src/scratch_ui/PopulationSearchInput.vue`.

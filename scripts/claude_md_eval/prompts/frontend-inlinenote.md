@@ -20,7 +20,11 @@ tool_order_before_tools: Grep,Read,Glob
 tool_order_before_arg_match: (docs/inventory|INVENTORY\.md|frontend/CLAUDE\.md|frontend/src/(?:lib|components|utils))
 tool_order_after_tools: Write,Edit,MultiEdit
 compliant_signal: '(?:<InlineNote|from\s+["''][^"'']*InlineNote|import\s+InlineNote)'
-anti_signal: '(?:<i\s+class="[^"]*\bpi-(?:exclamation-triangle|info-circle|times-circle)\b|color:\s*var\(--cc-sev-)'
+# The icon or severity class in markup — static, bound (`:class`), or beside an `InlineNote` — is the
+# shape hand-rolled again; the primitive resolves both itself. Markup forms only: an inventory line
+# naming the icon in prose is not using it. Comments are ignored.
+anti_signal: '(?:class="[^"]*\b(?:pi-(?:exclamation-triangle|info-circle|times-circle)|cc-sev-\w+)|["'']pi-(?:exclamation-triangle|info-circle|times-circle)["'']|color:\s*var\(--cc-sev-)'
+anti_signal_ignore_comments: true
 ---
 Add a small Vue single-file component at
 `frontend/src/scratch_ui/StaleRegistrationNotice.vue`.

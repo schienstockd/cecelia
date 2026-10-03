@@ -1,7 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
 **Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03):
-7 built; the rest not started, phase 12 first. Open: the first supervised pass, which measures the judge's cost so the cap can be
+7, 8, 10 (pilot) and 12 built 2026-10-03; 9 and 11 not started. Open: the first supervised pass, which measures the judge's cost so the cap can be
 set (Decision 4). Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
@@ -190,10 +190,9 @@ the mistake.
       a pass rate over N, with Decision 17's `noisy` rule, never one pass/fail.
 24. **Every scorer is shown to fail before its prompt counts.** A prompt that always passes says
     nothing if its scorer can't fail. Each active prompt needs a test where a non-compliant answer
-    scores non-compliant (the shape: `python/cecelia/tests/test_claude_md_eval.py` cases that
-    feed a known-bad snippet to the prompt's scorer). On 2026-10-03,
-    `frontend-coalesce`, `frontend-copy-canonical`, `frontend-inlinenote` and `hand-rolled-debounce`
-    had none, so their 3/3 is not yet evidence. A prompt without one can't be retired.
+    scores non-compliant, run through the real prompt file and `score_all`
+    (`python/cecelia/tests/test_claude_md_eval_knownfail.py` → `KNOWN`; a prompt added without an
+    entry fails `ActivePromptsCoveredTest`). A prompt without one can't be retired.
 
 ## Run record (fields)
 
@@ -361,20 +360,85 @@ Each phase is its own PR.
      `aca112aa` on #1371. Against today's main it finds nothing (`#1384`'s cherry-pick counts as
      landed). The first run also flagged a #1379 commit; #1379 merged after `fff22d82`, which led to
      the merged-after-SHA skip.
-8. **Log binning (Decision 21) — not started.** `curate.py`: `agent_made` / `legacy` from the
-   finding kind and `git blame` at the finding's commit; `legacy` groups become ratchet-test
-   proposals. Checkpoint: the 10 P1 source findings all bin `legacy`.
+8. **Log binning (Decision 21) — built 2026-10-03.** `curate.py` → `bin_findings`, no judge call.
+   - Convention `should reuse` / `wrong home` → `agent_made`.
+   - Fanout: a row's `commit` is the diff's BASE and its `file:line` reads the tree after the diff.
+     The diff is the single-parent child of that base on the branch's first-parent line (parallel
+     worktrees share a base; a later merge of main would reach every sibling). Blaming that child
+     alone misbins: it usually carries the session's own fix of the sibling. So the diff's hunks
+     decide: file added → `agent_made`; renamed → `unknown`; the line outside every hunk, or in one
+     that replaced lines → `legacy`; in a pure addition → `agent_made` unless `blame -w -C -C`
+     puts it in an older commit (moved code), or code the finding quotes stands at the base within
+     ±10 lines (the fix went in above the flagged code; its line numbers predate the fix) → `legacy`.
+   - Only `agent_made` feed `add` (≥3, uncovered). `legacy` ≥3 on one rule → a `ratchet` proposal
+     (a test banning the old shape), reviewed in `recital-review` like any proposal. `unknown`
+     feeds neither; the record's Supervisor line counts all three. The existing judge call also
+     names `correct_example` (where the right pattern lives); an add carries the commonest one.
+   - Checkpoint met on the 2026-10-03 log (30 days, 144 findings, 2.4 s, $0): the 10 P1 sources
+     all `legacy`. Overall 59 `agent_made` (54 convention, 5 fanout) · 77 `legacy` · 8 `unknown`
+     — of 91 fanout findings only 5 were mistakes the reviewed diff made.
 9. **Verify step (Decision 20) — not started.** Grouping, sandboxed read-only agents, the four
    verdicts, the per-pass cap, owner queue = `decide` only. Checkpoint: on the 10-02 bugs it
    reproduces the hand-verified verdicts above; measure its cost on that run before setting the cap.
-10. **Transcript miner (Decision 23) — not started.** Pilot first, judged by hand: candidate
-    moments from the last 30 days, then how many make a reproducible probe. Wired into the pass
-    only if the pilot finds some.
+10. **Transcript miner (Decision 23) — pilot done 2026-10-03; not wired into the pass.**
+    `scripts/claude_md_eval/session_moments.py` (`pixi run claude-md-eval-moments`), tests in
+    `python/cecelia/tests/test_claude_md_eval_session_moments.py`. Mechanical, $0, 16 s over the
+    30-day window: 1119 session files, 274 interactive (845 `claude -p` spawns skipped). Moments:
+    correction 47, refused 40, interrupt 44, retraction 94, memory 23 (17 memory sessions still on
+    disk). The excerpts and the per-moment verdicts stay in
+    `~/.cecelia-effectiveness/transcript-pilot/2026-10-03.md`; this entry cites counts only.
+    - **Hand-judged sample, 20 (4 per signal).** Real pushback: memory 4/4, retraction 4/4,
+      refused 3/4, correction 3/4, interrupt 1/4 (interrupts are mostly the owner pasting logs or
+      adding status). The `memory` moment lands where the memory was written, often turns after
+      the mistake, so it marks the session, not the turn.
+    - **11 of 20 are probe-worthy, 2 as a single-shot sandbox prompt.** The two: per-dot
+      provenance from the server for pooled plots (a code rule), and answer length in a design
+      discussion (behavioural, scored as a pass rate). The other 9 need state the sandbox doesn't
+      have: a live PR (check it's open before pushing), host processes (check before removing a
+      worktree), the running app or project data (trace the wiring / run the pipeline's own
+      metrics instead of reasoning), a long debugging context (don't hand off when stuck), or an
+      interactive question tool (menus during exploration). 1 was already fixed by tooling
+      (`bootstrap-worktree`), 3 were one-off or taste, 5 false.
+    - **Whole-population check on `refused`:** 26 of 40 are `AskUserQuestion` menus, 25 of them
+      between 09-05 and 09-19. `feedback_no_menus_in_dialogue` was written 09-19; one since.
+      The older, general `feedback_ask_in_his_terms` (08-08) didn't stop them. A specific,
+      trigger-named memory ended a pattern a general one didn't — and that is not a CLAUDE.md
+      rule, so the eval would never have seen it.
+    - **Recommendation: no-go for wiring it into the weekly pass as a prompt source; go as a
+      weekly *report*.** Most hard failures are behaviour that needs live state, which single-shot
+      prompts can't reproduce (the same wall P1 hit from the other side). What the miner does
+      well is measure: a pattern's rate per week, before and after a rule or memory lands, as the
+      menus case shows. So the pass should print the per-signal counts and the top tools refused
+      in the record ("Since last run"), the two single-shot candidates go to curation as normal
+      add proposals, and the stateful ones wait for the agent-overnight harness, which can seed
+      a live app and project.
 11. **Fix stage (Decision 22) — not started**, after 9 has run for a few passes and its `fix`
     verdicts have held up. Hand-run the fixing agent on 3–5 `fix` items first, so the harness and
     the verdicts aren't proven in one go; then automate as the harness's first real use.
-12. **Scorer known-fail tests (Decision 24) — not started.** The four prompts above get a failing-
-    answer test. Before 7–11: it decides whether the current 27/27 means anything.
+12. **Scorer known-fail tests (Decision 24) — built 2026-10-03.** `test_claude_md_eval_knownfail.py`:
+    every active prompt has realistic non-compliant answers plus one compliant one (trimmed from a
+    real trace). No prompt had a test through its real prompt file before. Six scorers were
+    lenient, each fixed in its `anti_signal`:
+    - `frontend-coalesce`: a canonical scheduler for the throttle with the stale guard still
+      hand-rolled (`++latestReq`) scored compliant, and `setTimeout\([^)]*[Ss]equence` never
+      matched an arrow callback. Now bare `setTimeout`, request counters, a local definition of
+      one of the three schedulers; comments ignored.
+    - `hand-rolled-debounce`: the same counter gap — `debouncedLatest` imported, `++reqId` beside it.
+    - `frontend-inlinenote`: `InlineNote` imported with a hand-rolled icon beside it, or the icon
+      bound through `:class`. Now any markup form of the icons or a `cc-sev-*` class; prose (an
+      inventory line naming the icon) still doesn't count — one 10-01 run would have flipped on it.
+    - `frontend-copy-canonical`: labels from `CLAUDE_TERMINAL` with a re-typed tooltip scored
+      compliant. Now a `v-tooltip` / `title` bound to a string literal is an anti hit.
+    - `dir-size`, `kill-process-tree`: a local `_dir_bytes` / `_kill_tree` matched the compliant
+      regex with its own definition. Now redefining the canonical (and a `walkdir` sum) is an anti
+      hit, in code only (a Julia `#` comment naming it isn't; `_strip_comments` doesn't know `#`).
+    - The judge saw anti matches the scorer had dropped as comments: `supervise.judge_input` now
+      lists them through `run_prompt.anti_signal_lines`, the same text `_regex_hits` scores.
+    Rescored every saved trace for the six (9–12 runs each, 2026-09-30 → 10-02): no verdict
+    changed, so earlier passes stand; the fixes only matter for failures that hadn't happened yet.
+    The prompt files changed, so the prompt-set hash did too (Decision 1's retire window restarts).
+    `canary`, `cite-algorithm`, `discovery-first` caught every case without changes. Checked by restoring the old scorers: the test fails on
+    exactly the lenient cases.
 
 ## Open questions
 

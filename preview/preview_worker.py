@@ -49,6 +49,14 @@ Protocol: one JSON message per connection, same shape as the napari bridge.
     {"type": "cleanup", "taskDir": "..."} -> {"type": "ok"}   removes every scratch preview store
                                                              (labels AND AF images) keyed on
                                                              {task_dir}
+    {"type": "render", "params": {...}} -> {"type": "ok", "paths": [...]}   stills on the viewer's
+                                                             shader — `render_animation_run`'s
+                                                             params with `outPaths`, one PNG per state
+
+Stills ride here rather than in a worker of their own because this process already has the lifecycle
+a resident one needs (docs/todo/STILLS_WORKER_PLAN.md): a fresh renderer per still pays ~1.9 s of
+start-up for a frame that takes milliseconds. Requests run off the event loop, renders and previews
+under separate locks, so a card sheet does not wait behind a cellpose preview; `ping` takes neither.
 
 `PROTOCOL` exists because a running worker is ADOPTED, not relaunched, when the backend restarts — that
 is deliberate (a warm worker survives a Revise restart, which is most of its value) but it means stale
@@ -64,6 +72,7 @@ import itertools
 import json
 import os
 import shutil
+import threading
 import traceback
 
 import numpy as np
@@ -237,7 +246,10 @@ def _cellpose_imports():
 #:     Same reply shape as `segment.cellpose` — one `labels` layer on disk via `_stage_labels_store`.
 #:     A protocol-14 worker responds "no preview backend for 'segment.ridges'", which reads to a user
 #:     as the button being dead on the Ridges page.
-PROTOCOL = 15
+#: 16: a `render` command — stills on the shared shader. A protocol-15 worker answers "unknown
+#:     command: 'render'", which reads as a card that never renders; the backend's fallback (the
+#:     one-off renderer) would hide that, so the bump is what replaces the stale worker.
+PROTOCOL = 16
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -1319,10 +1331,40 @@ def preview(msg):
     return out
 
 
+#: The one GPU host stills render on, built by the first `render` and kept: its device and compiled
+#: pipelines are the start-up a still would otherwise pay. Renders take turns on it.
+_RENDER_HOST = None
+_RENDER_LOCK = threading.Lock()
+#: Previews keep running one at a time, as they did on the event loop.
+_PREVIEW_LOCK = threading.Lock()
+
+
+def render(msg):
+    """Stills: `render_animation_run.render_stills` on the kept host. The request's volume and labels
+    are dropped after, so an idle worker holds the pipelines, not the last image."""
+    global _RENDER_HOST
+    from cecelia.utils import wgpu_host
+    from cecelia.writers import render_animation_run
+    if _RENDER_HOST is None:
+        _RENDER_HOST = wgpu_host.MipHost()
+    try:
+        # stdout: the backend tees it to the log rail
+        return render_animation_run.render_stills(msg["params"], _RENDER_HOST, script_utils.StdoutLogger())
+    finally:
+        _RENDER_HOST.set_volume(np.zeros((1, 1, 1, 1), np.uint16))
+        _RENDER_HOST.set_labels(None)
+
+
+def _command_lock(kind):
+    return _RENDER_LOCK if kind == "render" else None if kind == "ping" else _PREVIEW_LOCK
+
+
 def execute_command(msg):
     kind = msg.get("type", "")
     if kind == "ping":
         return {"type": "ok", "protocol": PROTOCOL, "backends": sorted(_BACKENDS)}
+    if kind == "render":
+        return {"type": "ok", "paths": render(msg)}
     if kind == "preview":
         return {"type": "ok", **preview(msg)}
     if kind == "cleanup":
@@ -1337,10 +1379,19 @@ def execute_command(msg):
     raise ValueError(f"unknown command: {kind!r}")
 
 
+def _execute_locked(msg):
+    lock = _command_lock(msg.get("type", ""))
+    if lock is None:
+        return execute_command(msg)
+    with lock:
+        return execute_command(msg)
+
+
 async def handle(ws):
     async for raw in ws:
         try:
-            reply = execute_command(json.loads(raw))
+            # Off the event loop, so a render and a preview (or a ping) are not queued behind each other.
+            reply = await asyncio.to_thread(_execute_locked, json.loads(raw))
         except Exception as e:                       # never let one bad request kill the worker
             traceback.print_exc()
             reply = {"type": "error", "msg": f"{type(e).__name__}: {e}"}

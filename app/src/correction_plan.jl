@@ -311,8 +311,7 @@ did not carry.
 """
 function apply_rules(scores::AbstractVector{QCResult},
                      preset,  # AcquisitionPreset from correction_presets.jl
-                     wizard::AbstractDict = Dict{Symbol,Any}();
-                     channel_names::AbstractVector = String[])
+                     wizard::AbstractDict = Dict{Symbol,Any}())
     steps_by_fn = Dict{String,CorrectionStep}()
     excluded    = CorrectionStep[]
 
@@ -360,47 +359,12 @@ function apply_rules(scores::AbstractVector{QCResult},
                         "All selected channels saturated (meta.saturation)")
     end
 
-    # (d) A channel NAMED as autofluorescence → afCorrect, prefilled; AF is also the drift reference.
-    _apply_af_channel!(steps_by_fn, channel_names)
-
     # 3. Wizard overrides (§3 tier 2, above card and score).
     _apply_wizard!(steps_by_fn, excluded, wizard, t_present, z_present)
 
     included = collect(values(steps_by_fn))
     sort!(included, by = s -> (s.order_weight, s.fun_name))
     return (included = included, excluded = excluded)
-end
-
-# The interim plan-time signal for afCorrect (CORRECTION_QC_PLAN §Q-M5 — a fluorophore panel is the
-# real one): a channel named exactly "AF" / "autofluorescence". Anchored, so Alexa Fluor names
-# ("AF488", "AF647") never match. The combinations follow the usual hand-set pattern — each marker
-# channel against every other marker, `exclusive` (different cell types) — which the user or agent
-# flips when cells co-express. Drift is referenced to the AF channel: it carries tissue structure and
-# not the moving cells.
-const _AF_CHANNEL_NAME = r"^\s*(af|auto[- ]?fluo(rescence)?)\s*$"i
-
-af_channel_index(names::AbstractVector) =
-    findfirst(n -> n isa AbstractString && occursin(_AF_CHANNEL_NAME, n), names)
-
-function _apply_af_channel!(steps_by_fn, channel_names::AbstractVector)
-    af = af_channel_index(channel_names)
-    (af === nothing || length(channel_names) < 2) && return steps_by_fn
-    markers = String[String(n) for (i, n) in enumerate(channel_names) if i != af]
-    if !haskey(steps_by_fn, "cleanupImages.afCorrect")
-        combos = Dict{String,Any}(
-            string(i - 1) => Dict{String,Any}("targetChannel" => [m],
-                                              "competingChannels" => [o for o in markers if o != m],
-                                              "exclusive" => true)
-            for (i, m) in enumerate(markers))
-        steps_by_fn["cleanupImages.afCorrect"] = CorrectionStep(
-            "cleanupImages.afCorrect", Dict{String,Any}("afCombinations" => combos); source = :computed_qc)
-    end
-    drift = get(steps_by_fn, "cleanupImages.driftCorrect", nothing)
-    if drift !== nothing && !haskey(drift.params, "driftChannel")
-        _set_param!(steps_by_fn, "cleanupImages.driftCorrect", "driftChannel",
-                    [String(channel_names[af])], drift.source)
-    end
-    return steps_by_fn
 end
 
 # W2 = stage rotated → driftEstimator = sitkRigid.
@@ -470,12 +434,11 @@ function recommend_plan(meta::AbstractDict;
                         image_uid::AbstractString = "",
                         card_id::Union{Symbol,Nothing} = nothing,
                         wizard::AbstractDict = Dict{Symbol,Any}(),
-                        vault_models::Union{AbstractVector,Nothing} = nothing,
-                        channel_names::AbstractVector = String[])::CorrectionPlan
+                        vault_models::Union{AbstractVector,Nothing} = nothing)::CorrectionPlan
     scores = compute_qc_scores(meta; vault_models = vault_models)
     card   = card_id === nothing ? recommend_card(scores, wizard) : card_id
     preset = preset_by_id(card)
-    res    = apply_rules(scores, preset, wizard; channel_names = channel_names)
+    res    = apply_rules(scores, preset, wizard)
     CorrectionPlan(String(image_uid), card, wizard,
                    res.included, res.excluded, scores;
                    saturation_fingerprint = saturation_fingerprint(meta))
@@ -518,8 +481,7 @@ function recommend_plan(img::CciaImage;
     raw  = read_ccid_raw(ccid)
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     recommend_plan(meta; image_uid = String(img.uid), card_id = card_id, wizard = wizard,
-                   vault_models = denoise_model_names(),
-                   channel_names = something(channel_names(img), String[]))
+                   vault_models = denoise_model_names())
 end
 
 
