@@ -103,16 +103,19 @@ def recommend_correction_plan(project_uid: str, image_uid: str) -> dict:
 
 
 @_tool
-def gate_histogram(project_uid: str, image_uid: str, value_name: str, x: str, y: str = "volume_mesh",
+def gate_histogram(project_uid: str, image_uid: str, value_name: str, x: str, y: str = "",
                    transform: dict | None = None, pop: str = "root", bins: int = 30) -> dict:
     """The distribution to choose a gate from: per axis, quantiles + an even-width count table of
     segmentation `value_name`'s cells (inside population `pop`), AFTER `transform` — the same space
-    gate coordinates are in. `x`/`y` are gateable columns (e.g. `mean_intensity_2` = channel index 2,
-    `volume_mesh`, `sphericity`); the observer's get_image_info lists channel names in index order.
+    gate coordinates are in. `x`/`y` are gateable columns (e.g. `mean_intensity_2` = channel index 2);
+    `y` defaults to `x`. Which columns exist depends on the measure task (mesh measures such as
+    `volume_mesh` only come from the mesh-measuring tasks) — the observer's get_measure_summary lists
+    them; get_image_info lists channel names in index order.
     `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
     {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}.
     A positive population shows as a second hump: put the threshold in the valley between them."""
-    return _client.gate_histogram(project_uid, image_uid, value_name, x, y, transform, pop, max(5, min(bins, 80)))
+    return _client.gate_histogram(project_uid, image_uid, value_name, x, y or x, transform, pop,
+                                  max(5, min(bins, 80)))
 
 
 @_tool

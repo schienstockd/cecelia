@@ -109,6 +109,27 @@ def _pop_paths(node: dict, prefix: str = "") -> list[str]:
     return out
 
 
+def _track_summary(props_dir: pathlib.Path, vn: str) -> dict:
+    """Cells, tracks and median per-track measures of one label set — the numbers to hold an agent's
+    tracking against the reference's."""
+    from cecelia.utils.label_props_utils import LabelPropsView
+    out = {}
+    try:
+        cells = LabelPropsView(str(props_dir / f"{vn}.h5ad")).view_cols(["track_id"]).as_df()
+        out["cells"] = len(cells)
+        if "track_id" in cells:
+            out["tracks"] = int(cells["track_id"].dropna().nunique())
+        tracks_file = props_dir / f"{vn}__tracks.h5ad"
+        if tracks_file.exists():
+            t = LabelPropsView(str(tracks_file)).as_df()
+            out["trackMedians"] = {c.removeprefix("live.track."): round(float(t[c].median()), 3)
+                                   for c in ("live.track.speed", "live.track.duration",
+                                             "live.track.straightness") if c in t}
+    except Exception as e:  # noqa: BLE001 — a record, not a gate
+        out["error"] = str(e)
+    return out
+
+
 def analysis_state(api_url: str, projects_dir: pathlib.Path, project: str, image: str) -> dict:
     """What an image holds now: label sets, their gated populations with counts, versions, chains."""
     root = projects_dir / project
@@ -124,7 +145,7 @@ def analysis_state(api_url: str, projects_dir: pathlib.Path, project: str, image
                                                               "valueName": vn, "pop": p})
             except Exception as e:  # noqa: BLE001 — a record, not a gate
                 pops[p] = {"error": str(e)}
-        sets[vn] = {"populations": pops}
+        sets[vn] = {"populations": pops, **_track_summary(root / "1" / image / "labelProps", vn)}
     chains_dir = root / "settings" / "chains"
     return {"labelSets": sets,
             "imageVersions": sorted(vn_versioning.versioned_keys(ccid.get("filepath") or {})),
