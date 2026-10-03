@@ -4,7 +4,7 @@ import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 import { useSettingsStore } from './settings'
-import { isStoredValueNameStale } from '../utils/staleImageVersion'
+import { prunedImageVersion } from '../utils/staleImageVersion'
 import { publishViewerImageMeta } from '../lib/viewerImageMetaChannel'
 
 // Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
@@ -273,6 +273,13 @@ export const useProjectStore = defineStore('project', () => {
         && JSON.stringify(patch.channelNames) !== JSON.stringify(img.channelNames ?? [])
       Object.assign(img, patch)
       if (renamed) publishViewerImageMeta(imageUid)
+      // A version can vanish under the stored pick (re-import, storage reclaim, a headless
+      // importImages.remove). Re-point it at the active version so an open pop-out switches too.
+      if (patch.filepaths !== undefined) {
+        const settings = useSettingsStore()
+        const next = prunedImageVersion(settings.getImageVersion(imageUid), img.filepaths, img.activeValueName)
+        if (next !== null) settings.setImageVersion(imageUid, next)
+      }
       return
     }
   }
@@ -287,16 +294,7 @@ export const useProjectStore = defineStore('project', () => {
         `/api/images/meta?projectUid=${encodeURIComponent(projectUid)}&imageUid=${encodeURIComponent(imageUid)}`)
       if (!res.ok) return
       const body = await res.json() as { image?: Partial<CciaImage> }
-      if (body.image) {
-        updateImageMeta(imageUid, body.image)
-        // Re-import wipes and re-registers valueNames; drop a stored version pick that no longer
-        // exists so the next viewer open doesn't 404 asking for it (falls back to server-active).
-        const settings = useSettingsStore()
-        const stored = settings.getImageVersion(imageUid)
-        if (isStoredValueNameStale(stored, body.image.filepaths)) {
-          settings.setImageVersion(imageUid, '')
-        }
-      }
+      if (body.image) updateImageMeta(imageUid, body.image)
     } catch { /* leave the store as-is on any error */ }
   }
 
