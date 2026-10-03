@@ -1,0 +1,1203 @@
+{
+  "schema_version": 1,
+  "kind": "pass",
+  "date": "2026-10-02",
+  "run": {
+    "suite_ts": "2026-10-02T14:18:45Z",
+    "session": "eval-sup-80cc1bc7",
+    "branch": null,
+    "sha": "fff22d82ea0cb152953b8a0902016d7b984238f5",
+    "claude_md_blob": "e90d540268df89a78012ab593b4c2512f2428fe7",
+    "full_catalog": true,
+    "arm": "with",
+    "runs_per_prompt": 3,
+    "prompt_set": {
+      "ids": [
+        "canary",
+        "cite-algorithm",
+        "dir-size",
+        "discovery-first",
+        "frontend-coalesce",
+        "frontend-copy-canonical",
+        "frontend-inlinenote",
+        "hand-rolled-debounce",
+        "kill-process-tree"
+      ],
+      "hash": "e400e46565f2"
+    },
+    "scored_at": "fff22d82ea0cb152953b8a0902016d7b984238f5",
+    "sandbox": "933f00a902fb",
+    "claude_code_version": "2.1.287",
+    "model": "claude-opus-5-5",
+    "cost_usd": 10.8118,
+    "retries": [],
+    "supervisor": {
+      "judge_calls": 0,
+      "cost_usd": 0.8655,
+      "skipped": 0,
+      "failed": 0,
+      "session": "eval-sup-80cc1bc7",
+      "bugs_usd": 0.4959,
+      "curation_usd": 0.3696
+    },
+    "trace_root": "/home/dominik/.cecelia-effectiveness/traces"
+  },
+  "results": {
+    "raw": {
+      "compliant": 27,
+      "noncompliant": 0,
+      "error": 0,
+      "total": 27
+    },
+    "rescored": {
+      "compliant": 27,
+      "noncompliant": 0,
+      "error": 0,
+      "total": 27
+    },
+    "per_prompt": {
+      "canary": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "cite-algorithm": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "dir-size": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "discovery-first": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "frontend-coalesce": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "frontend-copy-canonical": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "frontend-inlinenote": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "hand-rolled-debounce": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      },
+      "kill-process-tree": {
+        "raw": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        },
+        "rescored": {
+          "compliant": 3,
+          "noncompliant": 0,
+          "error": 0,
+          "total": 3
+        }
+      }
+    },
+    "candidates": []
+  },
+  "traces": [
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140023Z-canary-with-r1",
+      "prompt_id": "canary",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.2394,
+      "turns": 3,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140039Z-canary-with-r2",
+      "prompt_id": "canary",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.229,
+      "turns": 3,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140057Z-canary-with-r3",
+      "prompt_id": "canary",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.2269,
+      "turns": 3,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140209Z-cite-algorithm-with-r1",
+      "prompt_id": "cite-algorithm",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.4722,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140306Z-cite-algorithm-with-r2",
+      "prompt_id": "cite-algorithm",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.4301,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140453Z-cite-algorithm-with-r3",
+      "prompt_id": "cite-algorithm",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.7482,
+      "turns": 12,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140520Z-dir-size-with-r1",
+      "prompt_id": "dir-size",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.2837,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140544Z-dir-size-with-r2",
+      "prompt_id": "dir-size",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.2793,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140611Z-dir-size-with-r3",
+      "prompt_id": "dir-size",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.2913,
+      "turns": 4,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140651Z-discovery-first-with-r1",
+      "prompt_id": "discovery-first",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.3672,
+      "turns": 7,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140728Z-discovery-first-with-r2",
+      "prompt_id": "discovery-first",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.3606,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140807Z-discovery-first-with-r3",
+      "prompt_id": "discovery-first",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.3803,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140903Z-frontend-coalesce-with-r1",
+      "prompt_id": "frontend-coalesce",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.6696,
+      "turns": 10,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T140945Z-frontend-coalesce-with-r2",
+      "prompt_id": "frontend-coalesce",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.5203,
+      "turns": 7,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141032Z-frontend-coalesce-with-r3",
+      "prompt_id": "frontend-coalesce",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.4846,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141111Z-frontend-copy-canonical-with-r1",
+      "prompt_id": "frontend-copy-canonical",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.4015,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141156Z-frontend-copy-canonical-with-r2",
+      "prompt_id": "frontend-copy-canonical",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.3966,
+      "turns": 9,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141243Z-frontend-copy-canonical-with-r3",
+      "prompt_id": "frontend-copy-canonical",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.4375,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141313Z-frontend-inlinenote-with-r1",
+      "prompt_id": "frontend-inlinenote",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.3699,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141352Z-frontend-inlinenote-with-r2",
+      "prompt_id": "frontend-inlinenote",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.4151,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141433Z-frontend-inlinenote-with-r3",
+      "prompt_id": "frontend-inlinenote",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.3873,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141518Z-hand-rolled-debounce-with-r1",
+      "prompt_id": "hand-rolled-debounce",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.4482,
+      "turns": 9,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141608Z-hand-rolled-debounce-with-r2",
+      "prompt_id": "hand-rolled-debounce",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.4938,
+      "turns": 10,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141655Z-hand-rolled-debounce-with-r3",
+      "prompt_id": "hand-rolled-debounce",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.4544,
+      "turns": 8,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141728Z-kill-process-tree-with-r1",
+      "prompt_id": "kill-process-tree",
+      "run_number": 1,
+      "arm": "with",
+      "cost_usd": 0.3349,
+      "turns": 5,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141807Z-kill-process-tree-with-r2",
+      "prompt_id": "kill-process-tree",
+      "run_number": 2,
+      "arm": "with",
+      "cost_usd": 0.3569,
+      "turns": 6,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    },
+    {
+      "trace": "/home/dominik/.cecelia-effectiveness/traces/20261002T141844Z-kill-process-tree-with-r3",
+      "prompt_id": "kill-process-tree",
+      "run_number": 3,
+      "arm": "with",
+      "cost_usd": 0.333,
+      "turns": 5,
+      "error": null,
+      "scores": {
+        "raw": "compliant",
+        "rescored": "compliant"
+      }
+    }
+  ],
+  "findings": [],
+  "proposals": [
+    {
+      "kind": "add",
+      "rule": "app/CLAUDE.md → *Versioned variable pattern (ccid.json)*",
+      "sources": [
+        "fanout-0a4900e9",
+        "fanout-47e32e39",
+        "fanout-4dddf761",
+        "fanout-56c60f79",
+        "fanout-74528d16",
+        "fanout-a09fdc59",
+        "fanout-bdf8c7d2",
+        "fanout-caa750ed",
+        "fanout-cae493ed",
+        "fanout-f42b3a00"
+      ],
+      "summary": "Add a prompt for app/CLAUDE.md → *Versioned variable pattern (ccid.json)*: 10 findings in 30 days, no prompt",
+      "id": "P1"
+    }
+  ],
+  "delta": {
+    "previous": "2026-10-01",
+    "opened": [],
+    "still_open": [],
+    "reclassified": [],
+    "resolved": [
+      "F1 `cite-algorithm` scorer_bug"
+    ],
+    "score": {
+      "previous": "27/27",
+      "now": "27/27",
+      "previous_logged": "24/27"
+    },
+    "changed": [
+      "prompt set",
+      "CLAUDE.md",
+      "Claude Code"
+    ],
+    "confounded": [
+      "prompt set",
+      "CLAUDE.md"
+    ],
+    "moves": [],
+    "setup_growth": [],
+    "hypotheses": []
+  },
+  "tracking": {
+    "setup_size": {
+      "ref": "fff22d82ea0cb152953b8a0902016d7b984238f5",
+      "claude_md_lines": 409,
+      "frontend_claude_md_lines": 47,
+      "hook_count": 2,
+      "inventory_doc_count": 9
+    },
+    "spot_check": [],
+    "loop_review": null
+  },
+  "next_actions": [],
+  "bugs": [
+    {
+      "key": "fanout-0505b4f8",
+      "marker": "plausible",
+      "file": "api/src/movie_render.jl",
+      "line": 326,
+      "desc": "`_kf_lerp` (via `interpolate_keyframes`) now also gets `camera.perspective`, which is an on/off value, but the function blends it like any other number. Animation keyframes come from `buildViewState`, which now emits 1 or 0. Between a 0 keyframe and a 1 keyframe, the frames in between get values like 0.5. `render_animation_run.frame_uniforms` (`python/cecelia/writers/render_animation_run.py:128`) treats anything `> 0` as perspective. So the projection switches on the first frame of the transition instead of on the keyframe. The comment at `movie_render.jl:316` says the interpolation exists to stop exactly this kind of early switch. To confirm: check whether one animation can capture keyframes taken under both projection settings (the toggle can change between captures). The timelapse and batch paths always use one value for every keyframe, so they're clear",
+      "branch": "feat/shared-renderer-p2",
+      "commit": "d21fb77eeec7dad4e2db5abce888c042ee64d8f2",
+      "logged": "2026-10-02T01:16:56Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The excerpt shows `viewstate_to_render_args`, not `_kf_lerp`, so it can't tell whether `perspective` is still blended; a person should check.",
+      "id": "B1"
+    },
+    {
+      "key": "fanout-0a356159",
+      "marker": "plausible",
+      "file": "frontend/src/stores/tasks.ts",
+      "line": 300,
+      "desc": "the existing-row branch of `addFromChainEvent`, `if (opts.by && !existing.by)`. On resume, `run_chain` keeps the same `run_id` and sets `run.resumed_by = by` (`chain/api.jl:109`). `chain_run_as` then returns the resumer (`types.jl:146`), and the new frames now carry it. The synthetic key `runId::nodeId::imageUid` doesn't change, so a row this tab already holds from the first attempt keeps the original launcher and ignores the resumer named in the frame. That contradicts \"resumes … restamp\" and the execute.jl comment \"who this execution runs as\". To confirm: does a row's `by` mean the original launcher or whoever the run currently executes as?",
+      "branch": "feat/author-display",
+      "commit": "8b704f9b1d550b84d5c6b0295cbb575c0260b814",
+      "logged": "2026-10-02T06:02:14Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "not judged yet (over the per-pass cap)",
+      "id": "B2"
+    },
+    {
+      "key": "fanout-1068602a",
+      "marker": "plausible",
+      "file": "app/src/tasks/segment/measure_labels.jl",
+      "line": 102,
+      "desc": "these label writers have the same output-path shape that this fix changed in `plan_versioned_target`. They always write the flat `\"$(vn).h5ad\"` / `\"$(vn).zarr\"` path, and now `versioned_set_field!` stores that flat path in the `_latest` leaf of a versioned target. On a versioned `labels` / `label_props` / `branch_labels` entry, a re-run would overwrite v1's store, make `_latest` point at v1's path, and orphan the `vN/` store. This is only reachable once a writer produces versioned label entries, and the audit says none does yet. A test that seeds a versioned `label_props[vn]` and re-runs measureLabels would confirm it",
+      "branch": "fix/b2-filepath-versions",
+      "commit": "18f8085604d8e4154a5a789236500082d52c95ac",
+      "logged": "2026-10-01T09:15:07Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "Line 102 still writes the flat `\"$(outputValueName).h5ad\"` path with no versioned-target handling, so the latent overwrite/orphan case remains.",
+      "id": "B3"
+    },
+    {
+      "key": "fanout-12133bf8",
+      "marker": "plausible",
+      "file": "api/src/frame_overlays.jl",
+      "line": 160,
+      "desc": "`MASK_FILL_OPACITY = 0.7f0`, the same mask-opacity constant in the 2D movie path (its docstring says it mirrors `viewerLabelOpacity`). The diff makes the 3D movie read the opacity from `constants.json`, while 2D masks still use this hand copy. The 2D and 3D movies would disagree if the JSON changes. To confirm: is Julia meant to read `constants.json` the way it already reads `palettes.json`?",
+      "branch": "feat/shared-renderer-p2",
+      "commit": "4ea5a6963aaeab4d77d35bfe125b4266c288c010",
+      "logged": "2026-10-01T13:53:20Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "`MASK_FILL_OPACITY = 0.7f0` is still hard-coded rather than read from constants.json, so 2D masks can drift from 3D.",
+      "id": "B4"
+    },
+    {
+      "key": "fanout-1d936366",
+      "marker": "plausible",
+      "file": "frontend/src/tasks/paramAdvisors.ts",
+      "line": 649,
+      "desc": "`popsCompatAdvisor` compares `channelNamesPerVn` from a per-call fetch and re-runs only on `reloadOn` keys. After a rename, the advisory string can be stale until a param changes. Only the advice text is affected",
+      "branch": "viewer-channel-names",
+      "commit": "1354c72f9f5db4fdd8e861a5d94843243ee4a54b",
+      "logged": "2026-10-02T05:58:00Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "not judged yet (over the per-pass cap)",
+      "id": "B5"
+    },
+    {
+      "key": "fanout-25e52811",
+      "marker": "plausible",
+      "file": "api/src/movie_rail.jl",
+      "line": 589,
+      "desc": "`effective_overlays = overlays_raw isa AbstractDict ? overlays_raw : _overlays_raw_from_config(...)`. When the batch request carries a prebuilt `overlays` dict, it skips the translator, so the new map-shape `trackSources` normalisation never runs on it. If that dict ever holds the viewer's `{valueName: {visible, colour}}` map, `_resolve_movie_overlays_mask` (viewer_api.jl:1097, `ts_raw_v isa AbstractVector`) drops it silently. This would be confirmed if any frontend batch caller sends `overlays.trackSources` as a map rather than a list.",
+      "branch": "feat/shared-renderer-p2",
+      "commit": "9ea42175e61de8107bbb7fd23c35dd4ef98d0a34",
+      "logged": "2026-10-02T03:25:19Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "A prebuilt `overlays` dict still skips `_overlays_raw_from_config`, so a map-shaped `trackSources` wouldn't be normalised.",
+      "id": "B6"
+    },
+    {
+      "key": "fanout-3c3a6d04",
+      "marker": "plausible",
+      "file": "frontend/src/tasks/ParamRenderer.vue",
+      "line": 396,
+      "desc": "`loadCols()` copies channel names into the local `colGroups` ref via `channelLabel(c, d.channelNames)` (`:358-364`, `:402`, `:425`). Its watch (`:436-439`) keys only on the image uid, the sibling valueName and the sibling pops, so the labelPropsColsSelection chip labels go stale after a rename. Lower impact: the task form is usually reopened   — confirm by checking whether the param form stays mounted across a rename made in the image table.",
+      "branch": "viewer-channel-names",
+      "commit": "1354c72f9f5db4fdd8e861a5d94843243ee4a54b",
+      "logged": "2026-10-02T05:58:00Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "not judged yet (over the per-pass cap)",
+      "id": "B7"
+    },
+    {
+      "key": "fanout-53af215d",
+      "marker": "plausible",
+      "file": "docs/ai-assist/eval-runs/2026-09-30.md",
+      "line": 115,
+      "desc": "finding F6 (`cite-algorithm` · decision · **open**) and Next action #2 (line 170, which names `CLAUDE.md` as a file to change) still describe the citation-comment decision as undecided. This diff makes that decision (option (a), widen the signal). The record isn't a code sibling, but it now says something the scorer no longer does. To confirm: check whether eval-run records are hand-edited to mark findings resolved, or whether `curate.py`/replay regenerates them. If they are hand-edited, F6 should flip to resolved in this change",
+      "branch": "fix/eval-cite-docstring",
+      "commit": "c5dcc5a815b82a9b3c1cefe31826eafb0498205b",
+      "logged": "2026-10-02T01:35:55Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "F6 still reads as an open decision in the record; a person should check whether these records are hand-edited to mark it resolved.",
+      "id": "B8"
+    },
+    {
+      "key": "fanout-61addbe2",
+      "marker": "plausible",
+      "file": "scripts/claude_md_eval/curate.py",
+      "line": 86,
+      "desc": "`comparable_window` says scores are comparable when `(prompt_set hash, sandbox)` match. The new `CONFOUNDERS` (record.py) also counts `CLAUDE.md` and `scorer`. So a CLAUDE.md change keeps the retire streak going, while `delta()` treats the same change as a confounder. This may be on purpose, since retirement is about the probe and not the setup. To confirm: check the intent in `CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md`",
+      "branch": "fix/eval-attribution",
+      "commit": "6c68ced601983eb2c74b90da996b83c97f32a6a8",
+      "logged": "2026-10-02T01:40:29Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "`comparable_window` still keys only on prompt-set hash and sandbox, so a CLAUDE.md change doesn't end a streak; whether that is intended needs the plan doc checked.",
+      "id": "B9"
+    },
+    {
+      "key": "fanout-70a81c96",
+      "marker": "plausible",
+      "file": "frontend/src/modules/ViewerWindow.vue",
+      "line": 3980,
+      "desc": "`loadVersion`'s post-alloc `applyViewState` → `applyChannel` sets `ch.visible = patch.visible`. It runs *after* the new `applySolo(m)` at :3897 in the same function, so when solo mode is on during a version switch (`loadVersion(false)` at :4310), restored autosave props can turn several channels back on while the toggle still reads \"One at a time\". This is the same load-path guard the hunk added, but this call site runs after it. To confirm: check whether `settings.viewerAutoSaveLayerProps` can hold more than one visible channel at the moment of a switch (it can't if autosave always mirrors the current solo state)",
+      "branch": "feat/channel-solo",
+      "commit": "88226b83a5d72cde1c8fdca55cb8ed7b712a5980",
+      "logged": "2026-10-02T05:42:04Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The post-alloc `applyChannel` still sets `ch.visible` directly, and the excerpt shows no solo re-check after it.",
+      "id": "B10"
+    },
+    {
+      "key": "fanout-768b3327",
+      "marker": "plausible",
+      "file": "api/src/movie_render.jl",
+      "line": 739,
+      "desc": "the `record_keyframes_view_movie` docstring (item 4, `overlays_config` contract) still lists `showPopulations`/`Tracks`/`GatedTracks` and `popsFilter` as the keys the resolver reads. This diff switches the resolver to `includeTracks`/`allTracks`/`popPaths`, which is what the translator writes; the old keys are only a legacy fallback now. The docstring describes the contract this fix changed, so it is now stale. Confirm by checking whether this docstring is treated as the contract a caller relies on.",
+      "branch": "keyframe-tracks",
+      "commit": "d0d4142ec9ae7d1fea7ddfb6429223b4ef761184",
+      "logged": "2026-10-02T02:58:12Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The docstring the finding refers to isn't in the excerpt, so a person needs to check whether it still lists the legacy keys.",
+      "id": "B11"
+    },
+    {
+      "key": "fanout-7dd319ca",
+      "marker": "plausible",
+      "file": "app/src/tasks/chain/execute.jl",
+      "line": 447,
+      "desc": "`task_requires_axes`. The set-scope gating still checks only `!isempty(task_requires_axes(task_struct))`. This hunk removed the same shape from `task_applicability_reason`: an axes-only check in front of a predicate that also checks scale. A set-scope task that requires only a scale would skip this whole block. Its images would not be dropped, `task_applies` / `task_missing_scale` would never run, and line 459's message is about axes only. Not live today: the only set-scope tasks that declare a scale (`opticalFlow/train.json`, `train_support_denoise.json`) also require `axes: [\"T\"]`. It becomes live once a scale-only set-scope task, or a composite unioning to one, is added.",
+      "branch": "fix/manifest-lost-update",
+      "commit": "eeec1588b35e5c923bae0aed6a5b0c92a27b241e",
+      "logged": "2026-10-01T13:52:54Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "Set-scope gating is still guarded only by `!isempty(task_requires_axes(...))`, so a task that requires only a scale would skip the gating.",
+      "id": "B12"
+    },
+    {
+      "key": "fanout-81bf20cf",
+      "marker": "plausible",
+      "file": "api/src/viewer_api.jl",
+      "line": 1096,
+      "desc": "the `_resolve_movie_overlays_mask` reader of `trackSources`, which only accepts a list. The smoke route (viewer_api.jl:1332) passes the raw `data.overlays` straight in without the translator, so it is the same shape as the site above: a map `trackSources` there falls through to the single-source grey. This only matters if smoke/debug callers ever send the viewer look's map.",
+      "branch": "feat/shared-renderer-p2",
+      "commit": "9ea42175e61de8107bbb7fd23c35dd4ef98d0a34",
+      "logged": "2026-10-02T03:25:19Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "`_resolve_movie_overlays_mask` still accepts `trackSources` only as an `AbstractVector`, so a map silently falls through.",
+      "id": "B13"
+    },
+    {
+      "key": "fanout-8856dd4c",
+      "marker": "plausible",
+      "file": "frontend/src/utils/batchMovie.ts",
+      "line": 224,
+      "desc": "the `trackSources` map-to-list conversion, the frontend twin of the new map branch in `_overlays_raw_from_config` (`api/src/movie_rail.jl:262`). They disagree on an entry that has no `visible` key. Julia treats a missing `visible` as true (`something(..., true)`), but this filter is `.filter(([, v]) => v?.visible)`, which drops it. `BatchMoviesPanel.vue:334` also treats a missing value as visible (`?? true`), so the backend agrees with the panel and this converter is the odd one out. To confirm, check whether any producer writes an entry without `visible`. `BatchMoviesPanel.vue:325,330` always sets it; I haven't checked `viewerLook.ts:79`.",
+      "branch": "feat/shared-renderer-p2",
+      "commit": "9ea42175e61de8107bbb7fd23c35dd4ef98d0a34",
+      "logged": "2026-10-02T03:18:10Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The converter still filters with `v?.visible`, so it drops entries with no `visible` key that the backend treats as visible.",
+      "id": "B14"
+    },
+    {
+      "key": "fanout-9a74d485",
+      "marker": "plausible",
+      "file": "api/src/movie_helpers.jl",
+      "line": 284,
+      "desc": "`_config_overlay_pops` builds the title card's whole-segmentation \"tracks\" rows from `config[:trackValueNames]` only. The diff makes the overlay renderers accept the viewer look's `trackSources` map, but `viewerLook.ts:79` sends `trackSources` and no `trackValueNames`. A title card built from a viewer look would then name no track rows while the movie draws the tails. To confirm, check whether the `card` passed at `sockets.jl:478` is built from `look_cfg` or from a config that carries `trackValueNames` (`routes/helpers.jl:241`)",
+      "branch": "feat/shared-renderer-p2",
+      "commit": "9ea42175e61de8107bbb7fd23c35dd4ef98d0a34",
+      "logged": "2026-10-02T03:11:33Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "Title-card track rows still come only from `config[:trackValueNames]` and ignore `trackSources`.",
+      "id": "B15"
+    },
+    {
+      "key": "fanout-a7199a53",
+      "marker": "plausible",
+      "file": "frontend/src/modules/ViewerWindow.vue",
+      "line": 1952,
+      "desc": "`slabLevel` / `renderNX` read live in the flat timepoint fetch (`lvl = slabLevel.value`, `expectNX = renderNX.value`) instead of the allocated `loadedLevel`. Before this diff, flat 3D `slabLevel` only moved through the override dropdown, which calls `reallocate()` right away. Now it also moves whenever `effectiveCacheBytes` or `stableAdapterReport` changes, and the reallocate only arrives through the 150 ms `levelPump` debounce. A fetch in that gap uses the new level's dims against textures sized for the old one, which is the \"would fail every upload\" case the new watch comment describes. To confirm: check whether a cache-MB change already reallocates synchronously (the `bricksEnabled` docstring says a \"budget flip fires the reallocate watcher\"). If it does, this gap is already closed.",
+      "branch": "flat3d-auto-lod",
+      "commit": "88226b83a5d72cde1c8fdca55cb8ed7b712a5980",
+      "logged": "2026-10-02T05:55:39Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The excerpt stops before the flat fetch reads `slabLevel`/`renderNX`, so the debounce gap can't be ruled out; a person should check.",
+      "id": "B16"
+    },
+    {
+      "key": "fanout-b510526f",
+      "marker": "plausible",
+      "file": "scripts/claude_md_eval/supervise.py",
+      "line": 395,
+      "desc": "`_pr_body`/PR title score: the headline still prints the current record's logged `results.raw` compliant/total. The body line at :366 prints `d['score']['now']`, which is now the rescored-or-raw tally from `_by_prompt`. When `rescored` differs from `raw`, the title and body show two different \"now\" scores for the same pass. The test fixture has that case: raw 0/3, rescored 1/3. To confirm: decide which one the title is meant to show.",
+      "branch": "fix/eval-attribution",
+      "commit": "6c68ced601983eb2c74b90da996b83c97f32a6a8",
+      "logged": "2026-10-02T01:38:05Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The commit message and PR title still build the score from `results.raw`, which can differ from the rescored 'now' score in the body.",
+      "id": "B17"
+    },
+    {
+      "key": "fanout-b5585405",
+      "marker": "plausible",
+      "file": "frontend/src/modules/ViewerWindow.vue",
+      "line": 428,
+      "desc": "`valueName` ref seed, `settings.getImageVersion(imageUid) || route.query.valueName`. This is the popup's copy of the \"remembered pick\" lookup that the hunk at `ViewerPanel.vue:333-334` now routes through `resolveValueName(picked, names, names, activeValueName(img))`. The panel drops a remembered pick the image no longer has and falls back to the active version. The popup takes it as-is, with no membership check, so with a stale `cc.viewerImageVersion` the panel names the active version while the popup opens the stale one. That is the \"dropdown names one version, pixels show another\" problem this diff fixes. To confirm: find a path that leaves a stale pick unpruned. `project.ts:287-290` (re-import) and `ImageFileActions.vue:183,210-214` (delete) both prune, so it may already be covered",
+      "branch": "fix/viewer-auto-refresh",
+      "commit": "88226b83a5d72cde1c8fdca55cb8ed7b712a5980",
+      "logged": "2026-10-02T05:45:04Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The popup still takes `settings.getImageVersion(imageUid)` without checking the version still exists.",
+      "id": "B18"
+    },
+    {
+      "key": "fanout-bf9d0db5",
+      "marker": "confirmed",
+      "file": "api/src/movie_render.jl",
+      "line": 917,
+      "desc": "`record_keyframes_view_movie` 2D scale bar, `eff_um = pixel_size_um / first_zoom`. This is the same mistake the hunk fixed for 3D with `_um_per_px_3d`: the viewer's raw zoom is treated as if it were the output's scale. The 2D frame is `render_view_frame(...; crop = args.crop)` with `max_px = 0`, so it renders the crop at native resolution and one output pixel equals one native pixel. Dividing by zoom makes the bar wrong by a factor of the zoom. `record_view_movie` (movie_render.jl:184) gets it right with `_encoded_scale(W, …, crop, …)`",
+      "branch": "feat/shared-renderer-p2",
+      "commit": "4ea5a6963aaeab4d77d35bfe125b4266c288c010",
+      "logged": "2026-10-01T09:51:45Z",
+      "outcome": "dropped_no_action",
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "No code was shown at movie_render.jl:917, so the excerpt can't tell whether the 2D scale bar still divides by zoom; a person should check.",
+      "id": "B19"
+    },
+    {
+      "key": "fanout-c738de30",
+      "marker": "plausible",
+      "file": "frontend/src/lib/webgpu/shaders/brick.wgsl",
+      "line": 169,
+      "desc": ", **brick_multi.wgsl:152** — `labColour`. `mip.wgsl` now treats a negative `p.lab.z` as a colour table: it returns `vec4`, and `labShown` skips labels whose alpha is 0. Both brick copies still clamp the row count with `max(i32(p.lab.z), 1)` and return `vec3`. If a negative row count ever reaches them, every label gets palette row 0 and hidden labels still draw. Nothing sends one today: `volumeRenderer.ts:1014` and `brickVolumeRenderer.ts` send `LABEL_PALETTE_N`, and the movie host only drives `mip.wgsl`. This is confirmed if Phase 5 (bricks for movies) sends `labelColours` through the brick pass.",
+      "branch": "feat/shared-renderer-p3",
+      "commit": "fee4bc48ef6e99afc04f930a891caf311205e8d0",
+      "logged": "2026-10-02T05:56:23Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "brick.wgsl `labColour` still clamps with `max(i32(p.lab.z), 1)` and returns vec3, so a negative row count would mis-colour (latent until Phase 5).",
+      "id": "B20"
+    },
+    {
+      "key": "fanout-d8132e16",
+      "marker": "confirmed",
+      "file": "frontend/src/components/plots/GatingStrategyView.vue",
+      "line": 99,
+      "desc": "`loadChannels()` copies `/api/gating/channels` → `channelNames` into a local ref (`:68`), and `colLabel` (`:88-91`) reads it for the montage axes and the colour-by picker. This is the same once-per-load copy the hunk fixed in `stores/gating.ts`. It refetches only on `watch([imageUid, popType])` (`:211`) and `useDataRefresh` (`:214`), and neither fires on a rename. So after a rename the gating-strategy plot on the Analysis board keeps the old axis names",
+      "branch": "viewer-channel-names",
+      "commit": "1354c72f9f5db4fdd8e861a5d94843243ee4a54b",
+      "logged": "2026-10-02T05:58:00Z",
+      "outcome": "dropped_no_action",
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "not judged yet (over the per-pass cap)",
+      "id": "B21"
+    },
+    {
+      "key": "fanout-dfe8b67a",
+      "marker": "confirmed",
+      "file": "frontend/src/composables/useClusterContext.ts",
+      "line": 58,
+      "desc": "`loadFeatures()` builds `nameMap` from `d.channelNames` (`:66,72`), which feeds `labelMap` for the cluster heatmap/UMAP row labels (`:126-127`). It reloads only on `[projectUid, imageUids, popType, enabled]` (`:114`) and `useDataRefresh` (`:122`). It drives `g`, whose `channelNames` now refetches, but plots read this context's own `nameMap`, so heatmap labels stay stale after a rename",
+      "branch": "viewer-channel-names",
+      "commit": "1354c72f9f5db4fdd8e861a5d94843243ee4a54b",
+      "logged": "2026-10-02T05:58:00Z",
+      "outcome": "dropped_no_action",
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "not judged yet (over the per-pass cap)",
+      "id": "B22"
+    },
+    {
+      "key": "fanout-e72078b5",
+      "marker": "plausible",
+      "file": "python/cecelia/tests/test_check_commit_recital.py",
+      "line": 653,
+      "desc": "symbol: `write_dropped_for_orphan_slugs`, the orphan sweep this diff removes. Shape: the merge-commit test still has the comment `# no orphan auto-drop on a merge`. The sweep it guards against is gone, so the assertion `self._resolved() == []` now passes whether or not the merge skip works. What would confirm it: check whether the test also reaches gate 3 through `commit_msg_main`, either by asserting the exit code with an untagged finding logged, or only by checking that nothing was written.",
+      "branch": "fix/recital-triage",
+      "commit": "88226b83a5d72cde1c8fdca55cb8ed7b712a5980",
+      "logged": "2026-10-02T06:02:47Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "not judged yet (over the per-pass cap)",
+      "id": "B23"
+    },
+    {
+      "key": "fanout-e8325eeb",
+      "marker": "plausible",
+      "file": "frontend/package.json",
+      "line": 15,
+      "desc": "the exact-pin rule (\"a caret would accept a patch released under the new licence\") covers only the direct deps. The transitive `@primeuix/styles` `^2.0.3`, `@primeuix/styled` `^0.7.4` and `@primeuix/utils` `^0.6.2` (which `primevue` 4.5.5 and `@primeuix/themes` 2.0.3 pull in, per `frontend/package-lock.json:263-300,2895-2905`) keep caret ranges. There's no `overrides` block in `package.json`. So a lockfile refresh or `npm update` could still pull a patch released under the new licence. The Dependabot `@primeuix/*` ignore covers Dependabot only. To confirm: decide whether the P0 guarantee is meant to cover transitives. If it is, it needs `overrides`",
+      "branch": "deps/mcp-v2",
+      "commit": "8a0ce568b1a2e6cc8701201fd93c2d38edfcf978",
+      "logged": "2026-10-02T01:57:39Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "Only the direct deps are exact-pinned and no `overrides` block appears in the excerpt, so caret ranges on the transitive `@primeuix/*` packages still float.",
+      "id": "B24"
+    },
+    {
+      "key": "fanout-f3b87bf7",
+      "marker": "plausible",
+      "file": "frontend/src/stores/gating.ts",
+      "line": 131,
+      "desc": "`channelNames`, the same \"read once when opened\" pattern. The gating store keeps its own copy of the display names next to `channels`. Nothing subscribes it to `onViewerImageMeta` or to `project.updateImageMeta`, so a rename made while the gating page is open could leave the axis labels showing the old names. To confirm, check whether the gating view re-runs its load when `project.imageByUid(uid).channelNames` changes, or always reloads on navigation.",
+      "branch": "viewer-channel-names",
+      "commit": "88226b83a5d72cde1c8fdca55cb8ed7b712a5980",
+      "logged": "2026-10-02T05:42:58Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "open",
+      "why": "The excerpt shows no subscription refreshing `channelNames` after a rename, so a person needs to check the reload path.",
+      "id": "B25"
+    },
+    {
+      "key": "fanout-0d3aceb5",
+      "marker": "plausible",
+      "file": "pixi.toml",
+      "line": 396,
+      "desc": "`julia-instantiate`, `update-julia` (:400), `doctor` (:405), `prod` (:218) and `stop` (:440) all run a bare `julia` and so use the shell's PATH. They never go through `_find_julia`. On a user-scope Apple Silicon install that got `<install>/juliaup`, running any of these from a terminal starts the user's Intel Julia under Rosetta, with no `JULIAUP_DEPOT_PATH`. To confirm, check whether user-scope installs are expected to run these tasks from a shell, or only through `pixi run app` → `app.py`",
+      "branch": "fix/macos-native-julia",
+      "commit": "fff22d82ea0cb152953b8a0902016d7b984238f5",
+      "logged": "2026-10-02T10:42:11Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`fix/macos-native-julia` hasn't reached fff22d82",
+      "id": "B26"
+    },
+    {
+      "key": "fanout-0fd6e80d",
+      "marker": "plausible",
+      "file": "python/cecelia/utils/coastal_utils.py",
+      "line": 832,
+      "desc": "`CoastalUtils.predict_slice` → `_match_3d` → `coastal.utils.match_masks_3d(planes, stitch_threshold=...)`. This is the other place where per-plane 2D labels get stitched across Z by IoU, and its output goes straight to `np.stack(matched)` without passing through `split_z_gaps`. If `match_masks_3d` is a port of cellpose's `stitch3D` (the name, the `stitch_threshold` kwarg and the per-Z-plus-IoU-across-Z design all point that way), it has the same bug: ids get reused across an empty plane before the first match. To confirm, read `match_masks_3d` in the coastal package and check whether it resets the running max id on an empty plane before the first matched pair.",
+      "branch": "fix-cellpose-stitch-ids",
+      "commit": "fff22d82ea0cb152953b8a0902016d7b984238f5",
+      "logged": "2026-10-02T10:48:14Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`fix-cellpose-stitch-ids` hasn't reached fff22d82",
+      "id": "B27"
+    },
+    {
+      "key": "fanout-3fe297f2",
+      "marker": "plausible",
+      "file": "frontend/src/utils/batchMovie.test.ts",
+      "line": 17,
+      "desc": "`buildBatchMovieConfig` z-tolerance defaults: asserts `[2, 2]`, and its comment calls this \"the viewer's default\", which is now `OVERLAY_Z_TOL`. Same pattern as above.",
+      "branch": "feat/shared-renderer-p3",
+      "commit": "5c5c760d9e72ec5b1f4ffd0e5a73e96f8c516621",
+      "logged": "2026-10-02T06:06:33Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`feat/shared-renderer-p3` hasn't reached fff22d82",
+      "id": "B28"
+    },
+    {
+      "key": "fanout-764ab95d",
+      "marker": "plausible",
+      "file": "api/test/suite/movie_rail_translators.jl",
+      "line": 55,
+      "desc": "`_overlays_raw_from_config` default `pointZTol`/`trackZTol`: same pattern, it asserts the literal `(2, 2)` rather than `OVERLAY_Z_TOL`.",
+      "branch": "feat/shared-renderer-p3",
+      "commit": "5c5c760d9e72ec5b1f4ffd0e5a73e96f8c516621",
+      "logged": "2026-10-02T06:06:33Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`feat/shared-renderer-p3` hasn't reached fff22d82",
+      "id": "B29"
+    },
+    {
+      "key": "fanout-8f5a4361",
+      "marker": "plausible",
+      "file": "install.sh",
+      "line": 182,
+      "desc": "user-scope fresh install still pipes `curl https://install.julialang.org | sh -s -- --yes` directly. That is the same shape `juliaup_into` was added to fix: the installer quits with exit 0 when any `juliaup` is on PATH. The branch only runs when there's no `julia` on PATH and no `~/.juliaup/bin/julia`, so it's affected only when a `juliaup` binary is on PATH without a `julia` (e.g. a juliaup with no default channel). I couldn't verify that this state happens in practice",
+      "branch": "fix/macos-native-julia",
+      "commit": "fff22d82ea0cb152953b8a0902016d7b984238f5",
+      "logged": "2026-10-02T10:40:09Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`fix/macos-native-julia` hasn't reached fff22d82",
+      "id": "B30"
+    },
+    {
+      "key": "fanout-8fabef86",
+      "marker": "plausible",
+      "file": "api/test/suite/offline_renderer_plumbing.jl",
+      "line": 158,
+      "desc": "`movie_overlay_style` default z tolerances: the test asserts the literal `(2, 2, 0)`. The source default now comes from `OVERLAY_Z_TOL`, but the test still pins the old hardcoded value, so changing `constants.json` would fail this test even though the code would be behaving correctly. To confirm it needs a change, decide whether the test should pin the shared constant or the literal.",
+      "branch": "feat/shared-renderer-p3",
+      "commit": "5c5c760d9e72ec5b1f4ffd0e5a73e96f8c516621",
+      "logged": "2026-10-02T06:06:33Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`feat/shared-renderer-p3` hasn't reached fff22d82",
+      "id": "B31"
+    },
+    {
+      "key": "fanout-d357bad8",
+      "marker": "confirmed",
+      "file": "python/cecelia/utils/coastal_utils.py",
+      "line": 832,
+      "desc": "`CoastalUtils.predict_slice` → `_match_3d` → `coastal.utils.match_masks_3d`. This is a port of cellpose's `stitch3D` with the same flaw. When one plane is empty, `intersection_over_union(...)[1:, 1:]` comes back empty and the loop hits `continue` (`coastal/utils.py:169-170`). The next plane then keeps its raw per-plane ids 1..k, which are already in use on earlier planes. So plane 0's cell 1 and plane 2's cell 1 come back as one label, the same collision this diff fixes for cellpose. The coastal 3D output skips `split_z_gaps` entirely. One caveat on reusing it directly: coastal's pass 2, `_bridge_label_gaps` (gap_tolerance=1, `coastal/utils.py:199-200`), *deliberately* gives one label to runs separated by a single bad slice. So \"a z-gap means a collision\" is not exact here, and running `split_z_gaps` as-is would undo legitimate bridges. The collision also feeds `_bridge_label_gaps`' own `label_last_z` map.",
+      "branch": "fix-cellpose-stitch-ids",
+      "commit": "fff22d82ea0cb152953b8a0902016d7b984238f5",
+      "logged": "2026-10-02T10:49:57Z",
+      "outcome": "shipped_with_finding",
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`fix-cellpose-stitch-ids` hasn't reached fff22d82",
+      "id": "B32"
+    },
+    {
+      "key": "fanout-ec2311a1",
+      "marker": "plausible",
+      "file": "docs/todo/README.md",
+      "line": 62,
+      "desc": "`PRIMEVUE_RETIRE_PLAN.md` index row, stale positioner contract. The diff moves decision #3 in the plan from `@floating-ui/dom` to `utils/anchorPosition.ts` `placeBox`, and changes this row's status cell. The row's summary cell still says \"Own `v-tooltip` directive (`@floating-ui/dom`)\". The README says \"when they disagree, the plan's header wins — and fix the row\", so the summary is now a second copy of the design that no longer matches. To confirm, decide whether the summary cell counts as part of the index contract or is just prose.",
+      "branch": "feat/primevue-tooltip",
+      "commit": "fd18368ade46450c56ee41a091a9da94d8b38e6d",
+      "logged": "2026-10-02T10:49:30Z",
+      "outcome": null,
+      "first_seen": "2026-10-02",
+      "status": "unmerged",
+      "why": "`feat/primevue-tooltip` hasn't reached fff22d82",
+      "id": "B33"
+    }
+  ],
+  "queue": [
+    {
+      "kind": "proposal",
+      "ref": "P1"
+    },
+    {
+      "kind": "bug",
+      "ref": "B1"
+    },
+    {
+      "kind": "bug",
+      "ref": "B2"
+    },
+    {
+      "kind": "bug",
+      "ref": "B3"
+    },
+    {
+      "kind": "bug",
+      "ref": "B4"
+    },
+    {
+      "kind": "bug",
+      "ref": "B5"
+    },
+    {
+      "kind": "bug",
+      "ref": "B6"
+    },
+    {
+      "kind": "bug",
+      "ref": "B7"
+    },
+    {
+      "kind": "bug",
+      "ref": "B8"
+    },
+    {
+      "kind": "bug",
+      "ref": "B9"
+    },
+    {
+      "kind": "bug",
+      "ref": "B10"
+    },
+    {
+      "kind": "bug",
+      "ref": "B11"
+    },
+    {
+      "kind": "bug",
+      "ref": "B12"
+    },
+    {
+      "kind": "bug",
+      "ref": "B13"
+    },
+    {
+      "kind": "bug",
+      "ref": "B14"
+    },
+    {
+      "kind": "bug",
+      "ref": "B15"
+    },
+    {
+      "kind": "bug",
+      "ref": "B16"
+    },
+    {
+      "kind": "bug",
+      "ref": "B17"
+    },
+    {
+      "kind": "bug",
+      "ref": "B18"
+    },
+    {
+      "kind": "bug",
+      "ref": "B19"
+    },
+    {
+      "kind": "bug",
+      "ref": "B20"
+    },
+    {
+      "kind": "bug",
+      "ref": "B21"
+    },
+    {
+      "kind": "bug",
+      "ref": "B22"
+    },
+    {
+      "kind": "bug",
+      "ref": "B23"
+    },
+    {
+      "kind": "bug",
+      "ref": "B24"
+    },
+    {
+      "kind": "bug",
+      "ref": "B25"
+    }
+  ]
+}
