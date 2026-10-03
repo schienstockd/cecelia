@@ -203,8 +203,17 @@ function _require_cols(df::DataFrame, cols::AbstractVector{<:AbstractString}, wh
     have = Set(names(df))
     miss = [c for c in cols if !(c in have)]
     isempty(miss) && return
+    # a missing column is usually a missing STEP — name the task that makes it, since the bare
+    # column list reads like a bad param
+    is_state(c)  = startswith(c, "live.cell.hmm.")
+    is_motion(c) = (startswith(c, "live.cell.") || startswith(c, "live.track.")) && !is_state(c)
+    hint = any(is_state, miss) ?
+        " — HMM state columns come from behaviour.hmm_states (or behaviour.hmm); run it first" :
+        any(is_motion, miss) ?
+        " — motion measures come from tracking.track_measures (or tracking.bayesian_track_measures, " *
+        "which links and measures in one step); run it on this label set first" : ""
     error("$what: DataFrame is missing column(s) [", join(miss, ", "),
-          "] — got [", join(names(df), ", "), "]")
+          "] — got [", join(names(df), ", "), "]", hint)
 end
 
 function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString};
