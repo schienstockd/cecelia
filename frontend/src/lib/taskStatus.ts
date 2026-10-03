@@ -9,7 +9,7 @@ import type { TaskStatus } from '../stores/tasks'
 export type StatusTone = 'ok' | 'fail' | 'active' | 'neutral'
 
 export interface TaskStatusStyle {
-  icon: string     // PrimeVue icon class — the shape-distinct (non-colour) cue
+  icon: string     // primeicons class — the shape-distinct (non-colour) cue
   color: string    // icon/text colour — a CSS var into the validated palette
   tone: StatusTone // for a component's own bg/border tint
   label: string    // text label / tooltip — colour is never the only cue

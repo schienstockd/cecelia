@@ -34,8 +34,9 @@ describe('referencedTokens', () => {
       .toEqual([{ token: '--cc-b', hasFallback: false }])
   })
 
-  it('only considers our own prefix', () => {
-    expect(referencedTokens('a { color: var(--p-primary-color); }')).toEqual([])
+  it('counts a vendor-looking token too — no vendor stylesheet declares one any more', () => {
+    expect(referencedTokens('a { color: var(--p-primary-color); }'))
+      .toEqual([{ token: '--p-primary-color', hasFallback: false }])
   })
 })
 

@@ -475,7 +475,7 @@ without touching `.ts` or `.jl`. See `docs/todo/VIEWER_PARITY_PLAN.md`.
 
 **Every centred modal/dialog is built on `frontend/src/components/BaseModal.vue`. Never hand-roll an
 overlay (`position:fixed; inset:0`)** — that copy-paste produced four near-identical shells before this
-existed. We do **not** use PrimeVue Dialog.
+existed. There is no component library to reach for (PrimeVue was retired — `docs/todo/PRIMEVUE_RETIRE_PLAN.md`).
 
 `BaseModal` provides the dimmed overlay, the centred surface box, the header (icon + title + ✕), and
 close-on-✕ / click-outside / **Escape**. You provide the content via slots.
@@ -1522,7 +1522,7 @@ recorded `ori_path` fall back to the name, and the preview shows the string actu
 **Physical size & timing editor** (`frontend/src/components/PhysicalSizeDialog.vue`) is a modal,
 not a sidebar section — the first version crammed six fields + long explanatory paragraphs into
 the 280px `MetadataPanel` sidebar and was unreadable. Built on the shared `BaseModal` shell (see
-*Modals & dialogs* above — no PrimeVue Dialog). Explanatory text lives in tooltips
+*Modals & dialogs* above). Explanatory text lives in tooltips
 (the header's `pi-info-circle`, per-field labels, button tooltips), not inline paragraphs.
 Actions all write only the toggled fields (X/Y/Z/Δt chips — untick what's already correct so a fix
 to one axis doesn't also rewrite ones that are fine): **Apply** (to the selection it was opened
