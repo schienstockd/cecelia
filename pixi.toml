@@ -381,6 +381,9 @@ claude-md-eval-supervise = "python scripts/claude_md_eval/supervise.py"
 claude-md-eval-curate = "python scripts/claude_md_eval/curate.py"
 # Dry run of the weekly bug sweep (Decision 18): unfixed fanout findings vs origin/main, one judge call.
 claude-md-eval-bugs = "python scripts/claude_md_eval/bugs.py"
+# Candidate probe moments from the owner's own Claude Code sessions (Decision 23): counts per signal,
+# no model calls. `--dump` writes excerpts to ~/.cecelia-effectiveness/transcript-pilot/ — local only.
+claude-md-eval-moments = "python scripts/claude_md_eval/session_moments.py"
 
 # The owner's review queue for the newest CLAUDE.md eval run record: decisions, proposals, spot
 # checks, the loop review. One key per answer; answers are append-only events in
