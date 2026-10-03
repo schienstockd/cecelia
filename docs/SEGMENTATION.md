@@ -342,8 +342,6 @@ is segmented, which is most images.
 | `blockSize` | int (px) | 512 | XY tile size |
 | `overlap` | int (px) | 64 | XY tile overlap; provides border context and seam zone for stitching |
 | `labelOverlap` | float | 0.25 | Min IoU to join a cell cut by a tile seam; 0 = off |
-| `blockSizeZ` | int | 0 | Z tile size in slices (0 = whole stack; Z tiling not yet active) |
-| `overlapZ` | int | 0 | Z tile overlap in slices (future use) |
 | `matchThreshold` | float | 0.3 | IoU threshold for base-nuc label matching |
 | `removeUnmatched` | bool | false | Remove base cells with no matching nucleus |
 | `minCellSize` | int (px) | 0 | Remove labels smaller than N pixels |
@@ -1401,7 +1399,7 @@ structural extent, not a QC measure, and nothing reads it.
 
 ### $include template system
 
-The `imageTiling` param section in all task JSONs under `segment/` is shared via `{"$include": "imageTiling"}` which splices in `app/src/tasks/fragments/imageTiling.json` at spec load time (resolved in `_task_spec` via `_resolve_spec_includes`). Cellpose and measureLabels share the same `blockSize`, `overlap`, `blockSizeZ`, `overlapZ` definitions with no duplication.
+The `imageTiling` param section in all task JSONs under `segment/` is shared via `{"$include": "imageTiling"}` which splices in `app/src/tasks/fragments/imageTiling.json` at spec load time (resolved in `_task_spec` via `_resolve_spec_includes`). Cellpose and measureLabels share the same `blockSize`, `overlap` definitions with no duplication. There is no Z tiling: the whole stack goes to the segmenter in one call, which stitches across Z itself.
 
 ---
 

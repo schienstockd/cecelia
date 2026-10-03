@@ -22,8 +22,6 @@ Parameter contract (JSON written by Julia):
       stitchThreshold - cellpose z-stitch threshold (0.0 = per-slice 2D)
   blockSize         - XY tile size in pixels (default 512)
   overlap           - XY tile overlap in pixels (default 64)
-  blockSizeZ        - Z tile size in slices (0 = whole stack; Z tiling not yet active)
-  overlapZ          - Z tile overlap in slices (future use)
   labelOverlap      - min IoU to join a cell cut by a tile seam (0 = off)
   matchThreshold    - IoU threshold for nuc/base matching (default 0.3)
   removeUnmatched   - remove base cells with no matching nuc (default false)

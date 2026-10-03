@@ -8,8 +8,6 @@ Base.@kwdef struct CoastalSegmentParams
     outputValueName::String      = VERSIONED_DEFAULT_VAL
     blockSize::Int               = 512
     overlap::Int                 = 64
-    blockSizeZ::Int              = 0
-    overlapZ::Int                = 0
     labelOverlap::Float64        = 0.25
     matchThreshold::Float64      = 0.3
     removeUnmatched::Bool        = false
@@ -31,8 +29,6 @@ function parse_coastal_segment_params(d::AbstractDict)::CoastalSegmentParams
         outputValueName     = string(get(d, "outputValueName", VERSIONED_DEFAULT_VAL)),
         blockSize           = Int(get(d, "blockSize", 512)),
         overlap             = Int(get(d, "overlap", 64)),
-        blockSizeZ          = Int(get(d, "blockSizeZ", 0)),
-        overlapZ            = Int(get(d, "overlapZ", 0)),
         labelOverlap        = Float64(get(d, "labelOverlap", 0.25)),
         matchThreshold      = Float64(get(d, "matchThreshold", 0.3)),
         removeUnmatched     = Bool(get(d, "removeUnmatched", false)),
@@ -180,8 +176,6 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
            models              = models_converted,
            blockSize           = p.blockSize,
            overlap             = p.overlap,
-           blockSizeZ          = p.blockSizeZ,
-           overlapZ            = p.overlapZ,
            labelOverlap        = p.labelOverlap,
            matchThreshold      = p.matchThreshold,
            removeUnmatched     = p.removeUnmatched,

@@ -104,9 +104,6 @@ class SegmentationUtils:
                             if dim_utils else 1.0)
         self.block_size = int(params.get('blockSize', 512))
         self.overlap = int(params.get('overlap', 64))
-        # Z tiling — 0 means no Z tiling (whole stack passed to cellpose, which uses stitch_threshold internally)
-        self.block_size_z = int(params.get('blockSizeZ', 0))
-        self.overlap_z = int(params.get('overlapZ', 0))
         # Min IoU to join a cell cut by a tile seam (see `_stitch_tile_seams`); 0 = off
         self.label_overlap = float(params.get('labelOverlap', 0.25))
         self.match_threshold = float(params.get('matchThreshold', 0.3))

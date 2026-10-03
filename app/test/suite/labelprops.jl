@@ -112,7 +112,7 @@ end
 
 # ── $include fragment resolution ──────────────────────────────────────────
 # Verifies that {"$include": "imageTiling"} in cellpose.json is expanded
-# to the 4 shared tiling params (blockSize, overlap, blockSizeZ, overlapZ).
+# to the 2 shared tiling params (blockSize, overlap).
 @testset "\$include fragment resolution" begin
     task = CellposeSegment()
     spec = Cecelia._task_spec(task)
@@ -126,13 +126,11 @@ end
     @test !isnothing(tiling_sec)
     tiling_params = tiling_sec["params"]
     keys_in_tiling = [string(get(p, "key", "")) for p in tiling_params if p isa AbstractDict]
-    # Fragment contributes these 4; cellpose.json adds labelOverlap
+    # Fragment contributes these 2; cellpose.json adds labelOverlap
     @test "blockSize"  ∈ keys_in_tiling
     @test "overlap"    ∈ keys_in_tiling
-    @test "blockSizeZ" ∈ keys_in_tiling
-    @test "overlapZ"   ∈ keys_in_tiling
     @test "labelOverlap" ∈ keys_in_tiling
-    @test length(keys_in_tiling) == 5   # 4 from fragment + 1 inline
+    @test length(keys_in_tiling) == 3   # 2 from fragment + 1 inline
     # No raw $include entries should survive
     @test !any(p isa AbstractDict && haskey(p, "\$include") for p in tiling_params)
 end
