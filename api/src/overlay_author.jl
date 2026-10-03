@@ -12,8 +12,7 @@
 # table 181 times.
 #
 # **Coordinate space**: native voxels — the shader projects them with the frame's own camera.
-# `pixel_transform` maps native pixels onto a `render_view_frame` still (crop + stride) for the
-# card renderers (`behaviour_cards.jl`), which draw with `frame_overlays.jl`.
+# `pixel_transform` is the region + stride a 2D movie or still renders (`_view_render_params`).
 #
 # `hex_to_rgb` is here rather than as a general utility for the same reason. Pop colours arrive from
 # the gating maps as `#rrggbb`/`#rgb`; parsing them is a five-line helper whose only consumer today
@@ -56,11 +55,10 @@ end
 rgb_to_hex(c::RGB{N0f8})::String =
     "#" * join(string(reinterpret(UInt8, v); base = 16, pad = 2) for v in (red(c), green(c), blue(c)))
 
-# The pixel-space transform `render_view_frame` bakes into every frame. `crop` is 0-based inclusive
+# The region and stride a 2D movie or still renders (`_view_render_params`). `crop` is 0-based inclusive
 # `(x = x0:x1, y = y0:y1)`; the frame is then downsampled so `max(H, W) ≤ max_px` when max_px > 0.
 # `x_lo`/`y_lo` are the native 0-based origin of the cropped-and-drawn frame; `step` the stride;
-# `dW`/`dH` the size of the drawn frame. The mapping matches `_clamp_range` + `plane[1:step:H, ...]`
-# in image_render.jl — one derivation of the same numbers rather than two.
+# `dW`/`dH` the size of the drawn frame — one derivation of these numbers for every 2D render.
 struct PixelTransform
     x_lo::Int
     y_lo::Int
@@ -74,9 +72,8 @@ end
 """
     pixel_transform(H, W; crop = nothing, max_px = 0) -> PixelTransform
 
-Bake the crop + stride the offline renderer applies to a native (H, W) frame into a reusable mapping
-from native pixel coordinates to 1-based drawn coordinates. Matches `_clamp_range` +
-`plane[1:step:H, 1:step:W]` in `image_render.jl`.
+The region (`crop`, 0-based, clamped to the frame) and integer stride (the smallest that fits
+`max(H, W)` in `max_px`; 0 = native) a 2D movie or still renders of a native (H, W) frame.
 """
 function pixel_transform(H::Int, W::Int; crop = nothing, max_px::Int = 0)::PixelTransform
     (H > 0 && W > 0) || throw(ArgumentError("pixel_transform: frame size must be positive"))
@@ -100,22 +97,6 @@ function pixel_transform(H::Int, W::Int; crop = nothing, max_px::Int = 0)::Pixel
     dW = length(1:step:cW)
     dH = length(1:step:cH)
     PixelTransform(x_lo, y_lo, step, cW, cH, dW, dH)
-end
-
-# Native 0-based pixel (px, py) → 1-based drawn (dx, dy), or `nothing` if outside the drawn frame.
-# `_apply` rounds to the nearest drawn pixel — the primitives rasterise into discs anyway, so a
-# half-pixel bias here is invisible; using `div` instead would put every cell up-and-left of centre.
-function _apply(tf::PixelTransform, px::Real, py::Real)
-    (isfinite(px) && isfinite(py)) || return nothing
-    ix = Int(round(px)) - tf.x_lo
-    iy = Int(round(py)) - tf.y_lo
-    # Range check against the CROPPED native extent — a pixel outside the crop drops rather than
-    # clamps. The rounding overshoot below is a separate case (native pixel is inside the crop but
-    # rounds one drawn column past the last one).
-    (ix < 0 || iy < 0 || ix > tf.cW - 1 || iy > tf.cH - 1) && return nothing
-    dx = 1 + round(Int, ix / tf.step)
-    dy = 1 + round(Int, iy / tf.step)
-    (min(dx, tf.dW), min(dy, tf.dH))
 end
 
 # ─────────────────────────────────────────────────────────────────────────────────

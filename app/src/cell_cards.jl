@@ -3,8 +3,7 @@
 # The Julia half of docs/todo/CELL_CARDS_PLAN.md — no rendering, no HTTP. Given a clustering run
 # `clusters.{suffix}` on a `trackclust` pop, these four helpers resolve the ONE medoid track (pool-wide),
 # its pixel bbox over its own frame span, and per-pop median/IQR of the canonical `live.track.*`
-# measures. `render_view_frame` + `overlay_author` (api/) then bake frames on top; the route wires it
-# all together.
+# measures. `render_medoid_filmstrip` (api/) then renders the stills; the route wires it all together.
 #
 # Pool = `partOf` (clustfeatures.json) × `co_clustered_value_names(img, suffix; granularity=:track)`
 # per pool member (`CELL_CARDS_PLAN` Decision 0). A single-image run is a pool of one — the code path
@@ -177,8 +176,8 @@ The pixel-space bounding box of a single track over its own frame span, plus (t0
 per-cell centroids via `pop_df` (the label-props view path), so it never hits the h5ad directly.
 
 `pad_px` is applied to (xmin, xmax, ymin, ymax) before returning — enough room for a small crop
-around the medoid cell without cropping into its own shape. Not clamped here (the renderer clamps
-`crop` against the store's grid via `_clamp_range` in `render_view_frame`).
+around the medoid cell without cropping into its own shape. Not clamped here (`render_medoid_filmstrip`
+clamps it to the store's grid).
 """
 function track_bbox(img::CciaImage, value_name::AbstractString, track_id::Integer;
                     pad_px::Int=8)::@NamedTuple{x::Tuple{Int,Int}, y::Tuple{Int,Int}, t0::Int, t1::Int}

@@ -433,7 +433,7 @@ function handle_movie_record(ws, data)
     if keyframes !== nothing
         first_vn  = isempty(value_names) ? "" : String(first(value_names))
         # `renderQuality` picks the 3D ray-cast sample density: draft (0.5×) | standard (1×) | high
-        # (2×). Meaningless for 2D keyframes — `render_view_frame` ignores it — but harmless to thread.
+        # (2×). Meaningless for 2D keyframes — one plane is one sample — but harmless to thread.
         rq_sym = _render_quality(data)
         # Overlays for the animation — the frontend's per-set settings (colourBy, pointsSize,
         # tailWidth, showPopulations, showTracks, showGatedTracks, popType, popsFilter, etc.) ride

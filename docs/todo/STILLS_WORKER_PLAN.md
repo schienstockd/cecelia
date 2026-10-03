@@ -1,6 +1,6 @@
 # Stills on the shared shader, served by the preview worker
 
-**Status:** planning (2026-10-03), branch `feat/shared-renderer-p4`. Follows
+**Status:** built (2026-10-03), branch `feat/stills-worker` — Phases 1–4 (see *Result*). Follows
 [`SHARED_RENDERER_PLAN.md`](SHARED_RENDERER_PLAN.md), which put every movie on the viewer's shaders.
 
 ## Goal
@@ -82,6 +82,27 @@ the whole cost.
 - Delete `render_view_frame`'s compositing and `frame_overlays.jl`'s `draw_*` once nothing calls them;
   keep what other routes still use (`resolved_display_specs`, `pixel_transform`, …).
 - Docs: `docs/inventory/JULIA_API.md`, `docs/ARCHITECTURE.md`, `SHARED_RENDERER_PLAN.md`.
+
+## Result (2026-10-03)
+
+- **Phases 1–4 built.** `render_frames` is the runner's one frame loop; `render_stills` writes PNGs
+  (`outPaths`). The preview worker answers `render` (protocol 16) on a kept `MipHost`, off its event
+  loop under its own lock. Julia: `render_view_stills` (a 2D view's frames) and
+  `render_view_state_still` (one view state, 2D or 3D) share the movie's params builders
+  (`_view_render_params`, `_view_state_render_params`); `STILLS_VIA` picks the route — the worker,
+  else one-off; the API test suite pins it to one-off so it never touches :7656.
+- **Callers moved:** `render_medoid_filmstrip` (cell / motif / HMM-state cards) and
+  `/api/viewer/thumbnail` (a 3D keyframe now renders its 3D view, at its captured canvas).
+- **Retired:** `render_view_frame`, `frame_overlays.jl` (`draw_points!` / `draw_segments!` /
+  `draw_mask_outline!`) and their tests. The shared constants moved to `shader_constants.jl`.
+  `render_preview_frame` (the crop panel's preview) stays on the CPU compositor.
+- **Measured on yDfwP7** (gBT track 7, a 3-still card, 76x80): cold — imports 0.7 s + host 0.8 s +
+  first card 0.5 s; warm host — 0.05–0.12 s per card.
+- **Cards keep their look.** The trace is drawn at point radius 4 / tail width 4, measured against the
+  CPU renderer's card (same 37-px dot; trace 527 vs 503 px). Figure on the dev machine:
+  `~/Downloads/TMP/stills_worker_cards_yDfwP7.png`.
+- **Not exercised here:** a live worker over the socket — the route is covered in-process
+  (`test_preview_worker.py`); the Julia client's worker branch runs only in the app.
 
 ## Open
 

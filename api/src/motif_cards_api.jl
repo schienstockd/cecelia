@@ -339,7 +339,7 @@ function api_motif_cards(body_bytes::Vector{UInt8})
         uniform_side = max(uniform_side, bb.x[2] - bb.x[1] + 1, bb.y[2] - bb.y[1] + 1)
     end
     # Floor the crop so it uses a reasonable fraction of `max_px` — a tight bbox (say 15×9 px + 48 px
-    # pad = 63 px) renders at 63×63 native (`render_view_frame` step = cld(63, 512) = 1, no
+    # pad = 63 px) renders at 63×63 native (`pixel_transform` step = cld(63, 512) = 1, no
     # downscale), and CSS upscaling to the tile size makes the trace read as 2 pixels of noise. The
     # floor `max_px ÷ 3` gives every card at least ~170 px per side at max_px=512, so a 29-px
     # subtrack path renders as ~90 rendered px inside the tile instead of a smudge. Larger instances

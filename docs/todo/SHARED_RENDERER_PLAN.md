@@ -2,10 +2,10 @@
 
 **Status:** Phases 0–4 built and merged (2026-10-03): every movie, 2D and 3D, runs the viewer's
 shaders (PRs #1345, #1349, #1359, #1371).
-- **Open:** the viewer-side pixel capture (needs a browser — Dominik's click); stills (cell /
-  behaviour / motif cards, keyframe thumbnails) still render in Julia — moving them onto the shader is
-  [`STILLS_WORKER_PLAN.md`](STILLS_WORKER_PLAN.md); Phase 5 (bricks) for a level 0 over the device's
-  3D-texture limit.
+- **Stills** (cards, keyframe thumbnails) are on the shader too, served by the preview worker —
+  [`STILLS_WORKER_PLAN.md`](STILLS_WORKER_PLAN.md).
+- **Open:** the viewer-side pixel capture (needs a browser — Dominik's click); Phase 5 (bricks) for a
+  level 0 over the device's 3D-texture limit.
 
 Supersedes [`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay")
 and its "shared drawing library" non-goal. That plan's shared-JSON work (Phases 1–2, built) stands.
@@ -20,8 +20,8 @@ and its "shared drawing library" non-goal. That plan's shared-JSON work (Phases 
 - **Phase 3 (2D) and later wait for a review after Phase 2.** The Julia 2D path already
   sRGB-encodes and matches the viewer, so there is less to gain there.
 - **HPC is out of scope.** No Vulkan-loader or headless-node work.
-- **The torch sRGB bug is fixed separately** on `fix/torch-3d-srgb` and doesn't wait for this plan.
-  Measured against the viewer screenshot: mean |Δ| 48.5 → 4.5/255.
+- **The torch sRGB bug was fixed separately** (#1333): mean |Δ| 48.5 → 4.5/255 against the viewer
+  screenshot. Torch itself was deleted in Phase 2.
 
 ## Goal
 
@@ -50,7 +50,10 @@ path being a CPU compositor. Both have moved:
   ray"). Each viewer feature is a port, and each port is a new place to drift.
 - Viewer Parity Phase 3 (the decision-level parity test) was never built.
 
-## Current renderers (what this would replace)
+## Renderers before this plan (all replaced)
+
+As of 2026-10-01. Every movie and still now runs the viewer's shaders; only the crop panel's preview
+(`render_preview_frame`) stays on Julia's CPU compositor.
 
 | Surface | Renderer | Language | Shares with the viewer |
 |---|---|---|---|
@@ -62,7 +65,8 @@ path being a CPU compositor. Both have moved:
 Encoder-side overlays (timestamp, scale bar, title card) are not viewer pixels and stay where they
 are (`title_card.draw_frame_overlays`, `movie_io`).
 
-## Decisions (proposed — lock after Phase 0)
+## Decisions (locked after Phase 0; file names are as of then — `encode_movie_run.py`,
+`build_overlays_for` / `build_mask_for` and torch have since been deleted)
 
 **1. The shader source is the one truth.** WGSL moves out of the TS template strings into standalone
 `.wgsl` files (plus a tiny, shared substitution step for the handful of `${CONST}` values such as
@@ -301,6 +305,11 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
 - **Retired:** `write_raw_frames`, `encode_movie_run.py` / `movie_io.encode_raw_frames`,
   `build_overlays_for`, `build_mask_for`. `render_view_frame` + `frame_overlays.jl` stay for stills
   (cell / behaviour cards, keyframe thumbnails).
+- **Only the region a frame shows is uploaded** (`_xy_region`, 2026-10-03): the camera's visible rect
+  at the chosen level, with the host treating it as the whole image. Before that a 2D movie uploaded
+  the whole plane — a crop of a big tilescan failed on the texture limit (2048 on a Mac) or, on
+  f8gzA2, ran out of RAM (25 GB and climbing). A level steps down only if the region itself is over
+  the limit.
 - **Checked on fXgbTl:** a 2D keyframe pair and a plain 2D Record (z = 7, flowTom tracks) render
   through the shader with the source-coloured tails on the plane ± 2, timestamp and scale bar.
 
@@ -322,13 +331,16 @@ Phase 2.
 
 ## Open questions
 
-- **wgpu-native vs Dawn:** answered for `r16uint` volumes and the MIP pass (Phase 0). Still open:
-  `r32uint` label textures and the 3D texture limits (cf. `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md`).
-  Phase 2 is the first to bind real labels.
+- **wgpu-native vs Dawn:** answered. `r16uint` volumes and the MIP pass (Phase 0); `r32uint` label
+  textures (every mask movie since Phase 2); the 3D texture limit is the device's own, asked for
+  (`MipHost.max_texture_3d`).
 - **Software-adapter speed:** answered. llvmpipe takes 483 ms/frame at 1186x999, which is usable
   for batch.
 - **Packaging:** answered for Linux, macOS and Windows (Phase 1 CI). HPC is out of scope.
-- **Brick streaming:** does it matter for movies, or can a movie always upload the whole timepoint?
+- **Brick streaming:** answered — a 3D movie uploads one whole timepoint at the finest level that fits
+  one texture (logged when it has to go lower); a 2D movie uploads only the region it shows, so a crop
+  of a plane wider than the device limit renders at level 0 (f8gzA2, 20329 × 16898 × 25 channels: an
+  800 × 600 crop in 4.6 s, ~330 MB). Bricks (Phase 5) matter only for a 3D level 0 over the limit.
 
 ## Non-goals
 

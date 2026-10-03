@@ -54,7 +54,7 @@ SCHEMA_VERSION = 1
 FINDING_CLASSES = ("scorer_bug", "infra", "genuine", "decision")
 FINDING_STATUSES = ("open", "resolved", "dropped")
 RECURRENCE = ("recurring", "watch")
-PROPOSAL_KINDS = ("setup", "scorer", "retire", "add")
+PROPOSAL_KINDS = ("setup", "scorer", "retire", "add", "ratchet")
 QUEUE_KINDS = ("decision", "proposal", "spot_check", "loop_review", "bug")
 #: Decisions 18–19 (`bugs.py`). `dismissed` is the judge's `not_a_bug`, listed once so a person can
 #: overrule it; `wont_fix` is the owner's answer. `unjudged` is a candidate the judge didn't see
@@ -632,7 +632,10 @@ def render_markdown(record: dict) -> str:
         ("Retries", len(run["retries"])),
         ("Supervisor", (supervisor_spend(run["supervisor"])
                         + (f" · {run['supervisor']['skipped']} unjudged (budget)"
-                           if run["supervisor"].get("skipped") else ""))
+                           if run["supervisor"].get("skipped") else "")
+                        + (" · findings " + " · ".join(f"{n} {b.replace('_', ' ')}"
+                                                       for b, n in run["supervisor"]["finding_bins"].items())
+                           if run["supervisor"].get("finding_bins") else ""))
          if run.get("supervisor") else "not supervised (replayed)"),
         ("Traces", f"`{run.get('trace_root')}`"),
     ]

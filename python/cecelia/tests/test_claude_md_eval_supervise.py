@@ -15,6 +15,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import textwrap
 import unittest
 from unittest import mock
 
@@ -90,6 +91,28 @@ class TriageTest(_SuperviseFixture):
         self.assertIn("RULE: R", prompt)
         self.assertIn("ANTI-SIGNAL MATCHES (added lines):\n+BAD", prompt)
         self.assertIn("PROMPT FILE (task + scorer): scripts/claude_md_eval/prompts/p1.md", prompt)
+
+    def test_anti_matches_shown_to_the_judge_skip_comments_when_the_scorer_does(self):
+        prompts = self.sup._run_prompt._PROMPTS_DIR
+        (prompts / "p2.md").write_text(textwrap.dedent("""\
+            ---
+            id: p2
+            rule: R
+            compliant_signal: 'GOOD'
+            anti_signal: 'BAD'
+            anti_signal_ignore_comments: true
+            ---
+            do it
+            """), encoding="utf-8")
+        trace = self.tmp / "traces" / "p2r1"
+        trace.mkdir(parents=True)
+        (trace / "diff.patch").write_text("+GOOD // no BAD here\n+/* a block\n+   still no BAD\n+*/\n+BAD\n",
+                                          encoding="utf-8")
+        (trace / "stream.jsonl").write_text("", encoding="utf-8")
+        shown = self.sup.judge_input(trace, "p2")
+        self.assertIn("ANTI-SIGNAL MATCHES (added lines):\n+BAD\n", shown)
+        listed = shown.split("ANTI-SIGNAL MATCHES")[1].split("TOOL CALLS")[0]
+        self.assertNotIn("no BAD", listed)
 
     def test_a_quote_not_in_the_trace_is_marked_unverified(self):
         judged, _ = self.sup.triage(self._failures(), judge=self.judge(_verdict(evidence="+NOT THERE")))

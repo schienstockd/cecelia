@@ -77,22 +77,24 @@ eval could test:
 - **D5. Scorer surface for the primitive-catalog rule:**
   - `compliant_signal` — matches the canonical import or usage
     (e.g. `import InlineNote`, `<InlineNote`).
-  - `anti_signal` — matches the hand-rolled shape (e.g.
-    `pi-exclamation-triangle` in a `<i class=`, `color:\s*var\(--cc-sev-`).
+  - `anti_signal` — matches the hand-rolled shape (the severity icon or colour in markup). Regex of
+    record: `scripts/claude_md_eval/prompts/frontend-inlinenote.md`.
   - `tool_order` — inventory-touching Grep/Read/Glob before Write/Edit/MultiEdit,
     same widened matcher as the backend catalog.
 
 - **D6. Scorer surface for the UI-copy rule:**
   - Trickier — the canonical string lives in a `lib/*.ts` const, and the prompt
     asks the agent to add a button somewhere else. Compliant = import the const;
-    anti = string-literal-identical to the canonical.
+    anti = copy re-typed as a literal (regex of record:
+    `scripts/claude_md_eval/prompts/frontend-copy-canonical.md`).
   - Requires a per-prompt authoring pass ("here's the canonical string; here's
     the token to grep as anti"). Two prompts of this shape is enough for the
     pilot; scale after we see if the signal is clean.
 
 - **D7. Scorer surface for the coalescing rule:**
-  - `compliant_signal` — any of `debouncedLatest\(|rafCoalesce\(|debouncedSave\(`
-  - `anti_signal` — `setTimeout\(.*[Ss]equence|new AbortController|sequence[Tt]oken`
+  - `compliant_signal` — any of the three canonical schedulers; `anti_signal` — the hand-rolled shapes.
+    The regexes of record are in `scripts/claude_md_eval/prompts/frontend-coalesce.md` (tightened
+    2026-10-03, `CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md` phase 12).
   - Hard to catch every valid vs invalid shape; may need to add prompts iteratively
     as we see what agents actually reach for. Land this rule last.
 

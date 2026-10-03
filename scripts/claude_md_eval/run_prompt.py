@@ -200,11 +200,28 @@ def _regex_hits(diff: str, meta: dict[str, str]) -> tuple[int, int]:
     additions = _additions_only(diff)
     compliant_signal = meta.get("compliant_signal", "")
     anti_signal = meta.get("anti_signal", "")
-    anti_text = (_strip_comments(additions)
-                 if meta.get("anti_signal_ignore_comments", "").lower() == "true" else additions)
     compliant_hits = len(re.findall(compliant_signal, additions)) if compliant_signal else 0
-    anti_hits = len(re.findall(anti_signal, anti_text)) if anti_signal else 0
+    anti_hits = len(re.findall(anti_signal, _anti_text(additions, meta))) if anti_signal else 0
     return compliant_hits, anti_hits
+
+
+def _anti_text(additions: str, meta: dict[str, str]) -> str:
+    """The text `anti_signal` runs over: the additions, minus comments when the prompt opts in."""
+    if meta.get("anti_signal_ignore_comments", "").lower() == "true":
+        return _strip_comments(additions)
+    return additions
+
+
+def anti_signal_lines(diff: str, meta: dict[str, str]) -> list[str]:
+    """The added lines `anti_signal` counted, as `+` lines — what a reader is shown as the evidence.
+
+    Same text `_regex_hits` scores, so a line that only matched inside a comment isn't listed.
+    """
+    anti_signal = meta.get("anti_signal", "")
+    if not anti_signal:
+        return []
+    lines = _anti_text(_additions_only(diff), meta).splitlines()
+    return [ln if ln.startswith("+") else "+" + ln for ln in lines if re.search(anti_signal, ln)]
 
 
 def score_diff(diff: str, meta: dict[str, str]) -> tuple[str, int, int]:

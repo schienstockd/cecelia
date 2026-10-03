@@ -281,5 +281,57 @@ class PreviewWorkerAfTest(unittest.TestCase):
         self.assertIn('cleanupImages.afCorrect', reply['backends'])
 
 
+
+@unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')
+class PreviewWorkerRenderTest(unittest.TestCase):
+    """Stills on the shared shader (docs/todo/STILLS_WORKER_PLAN.md): the worker's `render` is the
+    runner's own frames, and it does not queue behind a preview."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cecelia.tests.test_render_animation_run import _store
+        from cecelia.tests.test_wgsl_utils import _shared_host
+        _shared_host()
+        cls.worker = _load_worker()
+        cls.dir = tempfile.mkdtemp()
+        img = np.zeros((1, 1, 16, 16, 16), np.uint16)
+        img[0, 0, :, 2:8, 2:8] = 1000
+        cls.zarr = _store(os.path.join(cls.dir, 'img.zarr'), img, 'tczyx')
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def _params(self, name):
+        st = {'t': 0, 'camera': {'angles': [0, 20, 0], 'zoom': 1.0}, 'snapH': 16,
+              'specs': [{'lo': 0, 'hi': 1000, 'lut': [[0, 0, 0], [0, 1, 0]], 'visible': True}]}
+        return {'zarrPath': self.zarr, 'states': [st], 'canvasH': 32, 'canvasW': 32,
+                'outPaths': [os.path.join(self.dir, f'{name}.png')]}
+
+    def test_render_is_the_runners_frame(self):
+        from PIL import Image
+        from cecelia.utils import wgpu_host
+        from cecelia.writers import render_animation_run
+        p = self._params('w')
+        reply = self.worker.execute_command({'type': 'render', 'params': p})
+        self.assertEqual(reply['paths'], p['outPaths'])
+        want = next(render_animation_run.render_frames(p, wgpu_host.MipHost(), self.worker.script_utils.StdoutLogger()))
+        np.testing.assert_array_equal(np.asarray(Image.open(p['outPaths'][0]).convert('RGB')), want)
+
+    def test_a_render_does_not_wait_for_a_preview(self):
+        import threading
+        done = threading.Event()
+        with self.worker._PREVIEW_LOCK:        # a preview in flight
+            t = threading.Thread(target=lambda: (self.worker._execute_locked(
+                {'type': 'render', 'params': self._params('busy')}), done.set()))
+            t.start()
+            self.assertTrue(done.wait(60), 'render queued behind the preview lock')
+        t.join()
+
+    def test_ping_takes_no_lock(self):
+        with self.worker._PREVIEW_LOCK, self.worker._RENDER_LOCK:
+            self.assertEqual(self.worker._execute_locked({'type': 'ping'})['protocol'], self.worker.PROTOCOL)
+
+
 if __name__ == '__main__':
     unittest.main()

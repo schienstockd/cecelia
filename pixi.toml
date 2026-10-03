@@ -385,6 +385,10 @@ claude-md-eval-bugs = "python scripts/claude_md_eval/bugs.py"
 # up to --cap USD; prints verdicts, never writes the record. The supervised pass runs it itself.
 claude-md-eval-verify = "python scripts/claude_md_eval/verify.py"
 
+# Candidate probe moments from the owner's own Claude Code sessions (Decision 23): counts per signal,
+# no model calls. `--dump` writes excerpts to ~/.cecelia-effectiveness/transcript-pilot/ — local only.
+claude-md-eval-moments = "python scripts/claude_md_eval/session_moments.py"
+
 # The owner's review queue for the newest CLAUDE.md eval run record: decisions, proposals, spot
 # checks, the loop review. One key per answer; answers are append-only events in
 # ~/.cecelia-effectiveness/review.jsonl, applied by the next supervised pass. `--date D` for another.

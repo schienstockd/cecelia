@@ -24,6 +24,9 @@ end
 using Test
 include(joinpath(@__DIR__, "..", "src", "server.jl"))   # defines handlers + shared state; does not start
 using JSON3
+# Stills render in a one-off process here, never through the preview worker: that route probes :7656,
+# where the developer's own backend may have a worker running (`STILLS_VIA`, movie_render.jl).
+STILLS_VIA[] = _stills_one_off
 
 # ── Test data fixtures ────────────────────────────────────────────────────────
 # Same committed fixtures the package suite uses (see test-data/README.md); resolved here too because
@@ -194,10 +197,9 @@ include(joinpath(@__DIR__, "suite", "taskconsole_b_and_chainbridge.jl"))
 # dispatches. Six path expressions use API_TEST_DIR.
 include(joinpath(@__DIR__, "suite", "e2e_sysimage_router.jl"))
 
-# ── Movie output params + zarr fmt + offline renderer frame + CPU overlays ─
-# Five testsets: movie output size (blank = canvas size), movie filename suffix (two movies of
-# one image), zarr v2/v3 read identically, render_view_frame (offline renderer movie frame),
-# frame_overlays (CPU point + segment drawing).
+# ── Movie output params + zarr fmt + mask geometry ─
+# Four testsets: movie output size (blank = canvas size), movie filename suffix (two movies of
+# one image), zarr v2/v3 read identically, a mask from another image version is not drawn.
 include(joinpath(@__DIR__, "suite", "movie_frames_and_overlays.jl"))
 
 # ── overlay_author trio testsets ──────────────────────────────
@@ -208,8 +210,8 @@ include(joinpath(@__DIR__, "suite", "overlay_author.jl"))
 
 # ── Offline renderer plumbing testsets ────────────────────────
 # Four testsets: _resolve_movie_overlays_mask honours String-keyed ov_raw (Symbol-vs-String
-# keying bug), render_view_frame (points/segments overlays), record_view_movie (raw frame
-# hand-off to the encoder), interpolate_keyframes (offline tween).
+# keying bug), record_view_movie (2D through the shared renderer), stills (the movie's frames as
+# PNGs), interpolate_keyframes (offline tween).
 include(joinpath(@__DIR__, "suite", "offline_renderer_plumbing.jl"))
 # ── Storage layout + VN versioning pilot + versions inventory + _json_safe testsets ─
 # Four testsets: store layout defaults (ZARR_V3_PLAN D10), keep-previous-version toggle (VN

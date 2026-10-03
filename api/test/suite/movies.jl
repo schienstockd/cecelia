@@ -233,7 +233,7 @@ end
     @test _grid_frame_total(wrapped, 20) == 140
     @test _grid_frame_total(four, 20) == 100
 
-    # Per-cell max_px scales UP to the cell's native long side. `render_view_frame` treats
+    # Per-cell max_px scales UP to the cell's native long side. `pixel_transform` treats
     # `max_px` as a stride cap (`step = cld(max(H,W), max_px)`), so a cell whose native canvas
     # EXCEEDS the grid-wide cap gets stride-subsampled while smaller siblings render at native —
     # the two land at different µm/output-pixel and a compare-grid reader sees them at different

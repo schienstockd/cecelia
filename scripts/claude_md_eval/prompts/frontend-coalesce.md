@@ -9,14 +9,18 @@ rule_section: CLAUDE.md → *Rendering UI? The primitive catalog is mandatory* �
 # volume-viewer scrubber before `debouncedLatest` was made the sanctioned sink,
 # documented under `docs/todo/CLAUDE_MD_EVAL_FRONTEND_PLAN.md` → *P1 pilot*.
 #
-# Anti_signal: the two hand-rolled shapes the drift kept producing at call sites —
-# a bare `setTimeout` paired with a sequence token to reject stale results, or a
-# hand-managed `AbortController` per drag frame. Additions-only per the runner.
+# Anti_signal: the hand-rolled shapes the drift kept producing at call sites — a bare
+# `setTimeout`, a hand-managed `AbortController` per drag frame, or a request counter
+# (`++reqId`, `seq++`) that rejects stale results. The counter catches a canonical scheduler
+# used for the throttle with the stale guard still hand-rolled beside it, and a local
+# definition of one of the three schedulers (the compliant regex would match it). Comments are
+# ignored: naming the shape you avoided isn't using it. Additions-only per the runner.
 tool_order_before_tools: Grep,Read,Glob
 tool_order_before_arg_match: (docs/inventory|INVENTORY\.md|frontend/CLAUDE\.md|docs/UI\.md|frontend/src/(?:lib|components|utils))
 tool_order_after_tools: Write,Edit,MultiEdit
 compliant_signal: '(?:debouncedLatest|rafCoalesce|debouncedSave)(?:<[^>]*>)?\('
-anti_signal: '(?:setTimeout\([^)]*[Ss]equence|new\s+AbortController|sequence[Tt]oken\s*[:=])'
+anti_signal: '(?:\bsetTimeout\s*\(|new\s+AbortController|sequence[Tt]oken\s*[:=]|\+\+\s*\w*(?:[Ss]eq|[Rr]eq|[Ii]d|[Tt]oken|[Gg]en)\b|\b\w*(?:[Ss]eq|[Rr]eq|[Ii]d|[Tt]oken|[Gg]en)\s*\+\+|(?:function\s+|(?:const|let|var)\s+)(?:debouncedLatest|rafCoalesce|debouncedSave)\b)'
+anti_signal_ignore_comments: true
 ---
 Add a small Vue single-file component at
 `frontend/src/scratch_ui/PreviewSlider.vue`.

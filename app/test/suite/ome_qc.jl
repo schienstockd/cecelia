@@ -1126,28 +1126,10 @@ end
         sat_ex = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
         @test occursin("saturated", sat_ex.exclusion_reason)
 
-        # ── AF channel by NAME → afCorrect prefilled (each marker vs the other markers, exclusive)
-        #    and drift referenced to AF. Alexa Fluor names never count as autofluorescence.
-        chans = ["P14-CTDR", "AF", "OTI-uGFP", "gBT-CTV"]
-        r = Cecelia.apply_rules(mk_scores(100, 8), Cecelia.preset_by_id(:custom); channel_names = chans)
-        af = only([s for s in r.included if s.fun_name == "cleanupImages.afCorrect"])
-        @test af.source == :computed_qc
-        combos = collect(values(af.params["afCombinations"]))
-        @test sort([only(c["targetChannel"]) for c in combos]) == ["OTI-uGFP", "P14-CTDR", "gBT-CTV"]
-        @test all(c -> !("AF" in c["competingChannels"]) && length(c["competingChannels"]) == 2 &&
-                       c["exclusive"] === true, combos)
-        dc = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
-        @test dc.params["driftChannel"] == ["AF"]
-        @test af.order_weight > dc.order_weight
-        for names in (["AF488", "AF647"], ["GFP", "CTV"], ["AF"])
-            r = Cecelia.apply_rules(mk_scores(100, 8), Cecelia.preset_by_id(:custom); channel_names = names)
-            @test !any(s -> s.fun_name == "cleanupImages.afCorrect", r.included)
-        end
-        @test Cecelia.af_channel_index(["CTV", "Autofluorescence"]) == 2
-        # no T axis: AF still drives afCorrect, but there is no drift step to reference
-        r = Cecelia.apply_rules(mk_scores(1, 8), Cecelia.preset_by_id(:custom); channel_names = chans)
-        @test any(s -> s.fun_name == "cleanupImages.afCorrect", r.included)
-        @test !any(s -> s.fun_name == "cleanupImages.driftCorrect", r.included)
+        # afCorrect is never auto-included: which channels share autofluorescence is a judgement
+        # (usually no channel is dedicated to it), not something a channel name can answer
+        r = Cecelia.apply_rules(mk_scores(100, 8), Cecelia.preset_by_id(:custom))
+        @test !any(s -> s.fun_name == "cleanupImages.afCorrect", r.included)
 
         # ── §5 C-Deep3D: stackAlign shipped on the card, referenceMode = middle.
         r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:deep_3d))
