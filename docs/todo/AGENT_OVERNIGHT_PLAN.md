@@ -175,6 +175,14 @@ cost, tool calls/errors, reads of the source project, the copy's label sets / ga
 the source's, and a size+mtime canary over the whole source project). `cron_app.sh` = the crontab
 entry (checks out origin/main first, skips if the app is down or a run holds the lock).
 
+**No breadcrumbs (Dominik, 2026-10-03).** The run measures autonomous reasoning in this domain, so
+the agent gets exactly what any user's install gives it — tools, their API docs, the app's own
+error messages and guidance — and NOTHING written for this task: no analysis hints in tool
+docstrings or server instructions ("gate in the valley", "check counts after"), no plan rules that
+pre-decide a step (a channel-name AF rule was built and withdrawn). A fix the run motivates must help
+any user (a clearer error, a missing capability), never steer this agent. The one operating contract
+is that pipelines run as whiteboard chains, so the run is recorded.
+
 Smoke findings, fixed in the same change:
 - the guard matched the spec's internal `task` id, not `fun_name` (refused `segment.cellpose`);
 - `get_module_params("segment")` (~70 KB) is unreadable without file tools → `fun_name=` filter, and
@@ -183,9 +191,9 @@ Smoke findings, fixed in the same change:
   refuses an unmeasured set by name (a gate would otherwise land on another segmentation);
 - the observer's "you cannot run a chain" made the agent skip the whiteboard → guidance carves out
   the autonomous session; its instructions now say chain-first;
-- the agent never cleaned the image (raw → segment): the correction plan was invisible to it and
-  left AF out → `recommend_correction_plan` tool + the AF-named-channel rule
-  (CORRECTION_QC_PLAN §1);
+- the agent never cleaned the image (raw → segment) → `recommend_correction_plan` tool (the
+  Cleanup module's metadata-only recommendation). A channel-name AF rule was tried and withdrawn:
+  WHETHER and HOW to correct autofluorescence is the agent's call — that is what the run measures;
 - the canary failed on the user opening the source project (project.json `lastOpenedAt`, runlog
   rewrite) → app bookkeeping reported separately, analysis files still fail it.
 

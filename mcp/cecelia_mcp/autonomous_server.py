@@ -21,12 +21,8 @@ INSTRUCTIONS = (
     "beside cecelia-observer: the observer READS (lineage, measures, task logs, behaviour) and "
     "DESIGNS (create_chain); this server STARTS work (run_task, run_chain), WAITS for it "
     "(wait_for_tasks, wait_for_chain) and GATES (gate_histogram → add_gate → gate_stats). "
-    "Work like a careful analyst. Raw intravital images need cleaning before anything is measured "
-    "on them — recommend_correction_plan says which cleanup steps this image needs. Design the "
-    "pipeline as a whiteboard chain (create_chain) and start it with run_chain, so the whiteboard "
-    "holds what ran; use run_task for a one-off probe or a single re-run. Check every result before "
-    "building on it (cell counts, track counts, QC findings, task logs on failure), and fix the step "
-    "that is wrong rather than pressing on. Everything you do is recorded."
+    "Run pipelines as whiteboard chains (create_chain → run_chain) so the whiteboard holds what "
+    "ran; run_task is for a single task outside a chain. Everything you do is recorded."
 )
 
 _client = AutonomousClient(base_url=os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080"))
@@ -68,8 +64,7 @@ def run_task(project_uid: str, fun_name: str, params: dict, image_uids: list[str
 def wait_for_tasks(task_ids: list[str], timeout_s: int = 900) -> dict:
     """Block until every task in `task_ids` reaches a terminal state (done / failed / cancelled /
     interrupted) or `timeout_s` passes (max 1800). Returns `{finished, states: {taskId: status}}`.
-    On `failed`, read the observer's get_task_log(project, image, fun) for the error before retrying —
-    a retry with the same params fails the same way."""
+    A task's log is the observer's get_task_log(project, image, fun)."""
     return _client.wait_tasks(task_ids, min(max(timeout_s, 10), 1800))
 
 
@@ -92,13 +87,9 @@ def wait_for_chain(project_uid: str, run_id: str, timeout_s: int = 1800) -> dict
 
 @_tool
 def recommend_correction_plan(project_uid: str, image_uid: str) -> dict:
-    """The cleanup steps this image needs before segmentation — the same recommendation the Cleanup
-    module's correction plan shows a user: `included` steps in run order with prefilled params and
-    why (`source`), `excluded` ones with the reason. Prefills come from the image's metadata and
-    channel NAMES (e.g. a channel named "AF" → afCorrect with each marker against the others,
-    `exclusive` = the markers are on different cells) — check them against what the channels are
-    before using them. Put the included steps at the head of your chain, each reading the previous
-    one's output version (driftCorrect writes `driftCorrected`, afCorrect writes `afCorrected`)."""
+    """The Cleanup module's correction-plan recommendation for this image, as a user sees it:
+    `included` steps derived from the image's METADATA alone (e.g. a T axis → driftCorrect),
+    `excluded` ones with the reason. Derived from metadata only — not from the pixels."""
     return _client.recommend_correction_plan(project_uid, image_uid)
 
 
@@ -112,8 +103,7 @@ def gate_histogram(project_uid: str, image_uid: str, value_name: str, x: str, y:
     `volume_mesh` only come from the mesh-measuring tasks) — the observer's get_measure_summary lists
     them; get_image_info lists channel names in index order.
     `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
-    {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}.
-    A positive population shows as a second hump: put the threshold in the valley between them."""
+    {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}."""
     return _client.gate_histogram(project_uid, image_uid, value_name, x, y or x, transform, pop,
                                   max(5, min(bins, 80)))
 
@@ -125,15 +115,14 @@ def add_gate(project_uid: str, image_uid: str, value_name: str, name: str, gate:
     {"kind": "rectangle", "x_channel", "y_channel", "x_transform", "y_transform",
      "x_min", "x_max", "y_min", "y_max"}  or  {"kind": "polygon", …, "vertices": [[x, y], …]}.
     A one-channel threshold is a rectangle spanning the whole other axis. The population's path is
-    `/<name>` (or `<parent>/<name>`); pass it to tasks as e.g. `popsToTrack`. Check gate_stats after."""
+    `/<name>` (or `<parent>/<name>`); pass it to tasks as e.g. `popsToTrack`."""
     return _client.gating_post("/api/gating/pop/add", project_uid, image_uid, value_name,
                                name=name, parent=parent, gate=gate, colour=colour)
 
 
 @_tool
 def set_gate(project_uid: str, image_uid: str, value_name: str, path: str, gate: dict) -> dict:
-    """Move an existing population's gate (same `gate` shape as add_gate). Refine here rather than
-    adding a second population with a near-identical name."""
+    """Move an existing population's gate (same `gate` shape as add_gate)."""
     return _client.gating_post("/api/gating/pop/set-gate", project_uid, image_uid, value_name,
                                path=path, gate=gate)
 
@@ -146,7 +135,7 @@ def delete_gate(project_uid: str, image_uid: str, value_name: str, path: str) ->
 
 @_tool
 def gate_stats(project_uid: str, image_uid: str, value_name: str, pop: str) -> dict:
-    """Cells in population `pop` and its % of the parent — the check after every gate."""
+    """Cells in population `pop` and its % of the parent."""
     return _client.pop_stats(project_uid, image_uid, value_name, pop)
 
 
