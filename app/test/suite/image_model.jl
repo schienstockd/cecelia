@@ -602,6 +602,37 @@ end
     end
 end
 
+# The flat-path label writers (measure_labels → label_props, segmentation → labels, branching →
+# branch_labels) write `<value_name>.<ext>`; on a versioned target `versioned_set_field!` would point
+# `_latest` at v1's path and orphan the vN store. They must refuse instead of clobbering.
+@testset "flat-path label writers refuse a versioned entry" begin
+    seeded() = Dict{String,Any}(
+        "label_props" => Dict{String,Any}(
+            "default" => Dict{String,Any}("v1" => "default.h5ad", "v2" => "v2/default.h5ad", "_latest" => "v2"),
+            "flat"    => "flat.h5ad", "_active" => "default"))
+    raw = seeded()
+    @test_throws ArgumentError unversioned_set_field!(raw, "label_props", "default.h5ad", "default")
+    @test raw == seeded()                                         # nothing clobbered
+    err = try; assert_unversioned_field(raw, "label_props", "default"); catch e; e; end
+    @test occursin("label_props", err.msg) && occursin("default", err.msg)
+    # legacy flat entries and new value_names still write as before
+    unversioned_set_field!(raw, "label_props", "flat2.h5ad", "flat")
+    @test raw["label_props"]["flat"] == "flat2.h5ad"
+    unversioned_set_field!(raw, "labels", ["new.zarr"], "new"; set_active = false)
+    @test raw["labels"]["new"] == ["new.zarr"]
+
+    # The real writer: measure_labels refuses before running anything and leaves ccid.json intact.
+    mktempdir() do dir
+        img_dir = joinpath(dir, "1", "uid1"); mkpath(img_dir)
+        img = CciaImage(; uid = "uid1", name = "n", dir = img_dir)
+        write(state_file(img), JSON3.write(seeded()))
+        before = read(state_file(img), String)
+        @test_throws ArgumentError Cecelia._run_task(Cecelia.MeasureLabels(), img,
+            Dict{String,Any}("outputValueName" => "default"); on_log = _ -> nothing)
+        @test read(state_file(img), String) == before
+    end
+end
+
 @testset "CciaImage load path — widened field types accept a versioned Dict entry" begin
     # Build an image on disk with a versioned filepath entry, then load through the model. This
     # verifies both the widened struct field types AND the `to_spaths`/`to_labels` load helpers.
