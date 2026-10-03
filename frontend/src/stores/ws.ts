@@ -577,11 +577,13 @@ export const useWsStore = defineStore('ws', () => {
         const patch: Record<string, unknown> = {}
         const removedValue = meta.removedValue as string | undefined
         if (removedValue) {
-          // remove task: drop the deleted valueName from filepaths
+          // remove task: drop the deleted valueName from filepaths — through `updateImageMeta`, so a
+          // remembered viewer pick of that version is re-pointed too (a chain node sends no task:status)
           const store = useProjectStore()
-          for (const set of store.sets) {
-            const img = set.images.find(i => i.uid === imageUid)
-            if (img?.filepaths) { delete img.filepaths[removedValue] }
+          const img = store.imageByUid(imageUid)
+          if (img?.filepaths) {
+            const { [removedValue]: _gone, ...filepaths } = img.filepaths
+            store.updateImageMeta(imageUid, { filepaths })
           }
         }
 
