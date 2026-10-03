@@ -1,7 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
-**Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03)
-not started; phase 12 goes first. Open: the first supervised pass, which measures the judge's cost so the cap can be
+**Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03):
+7 built; the rest not started, phase 12 first. Open: the first supervised pass, which measures the judge's cost so the cap can be
 set (Decision 4). Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
@@ -338,10 +338,29 @@ Each phase is its own PR.
    - **Loop review.** On every 8th run it shows scores per run, proposals accepted (of those
      made), the spot-check false-positive rate and total cost. It becomes a `loop_review` item.
    - **Setup size.** Growth over 10% in any setup-size metric is flagged in "Since last run".
-7. **Sweep prefilter (Decision 19) — not started.** `bugs.py`: frozen-path drop, file+symbol
-   merge, symbol-gone check, `unjudged` status, whole-function excerpt, and the stranded-commit
-   scan over PRs merged since the previous pass. Checkpoint: replayed on the 10-02 log it drops
-   B8, merges B27/B32, marks the 10 over-cap items `unjudged`, and finds `aca112aa`. No agent cost.
+7. **Sweep prefilter (Decision 19) — built.** `bugs.py` + `enclosing.py` (the per-language
+   function finder), tests in `python/cecelia/tests/test_claude_md_eval_bugs.py`.
+   - The function is found at the finding's own commit and looked up by name at the pinned SHA,
+     so a moved line still shows the right code; longer than 200 lines, or none found → ±60 lines.
+   - A function gone at the SHA is listed `gone` (once) without a call, so a wrong guess by the
+     heuristic stays visible instead of silently dropping a finding.
+   - Merge key: file + function, else file + line; unmerged findings merge by branch + file:line.
+     The lead keeps its key; `sources` lists every finding, `also` their descriptions, and the judge
+     sees all of them.
+   - `unjudged` (over the cap, no verdict, judge error, `--no-judge`) is carried, rendered under
+     *Waiting for the judge*, and never queued. Added to `BUG_STATUSES` without a schema bump
+     (additive). An `open` bug carries `opened`, the pass it became open; the owner queue and the
+     PR's "new" count key on it (`record.newly_open`), so one judged open after waiting is still asked.
+   - Stranded scan: `gh pr list --state merged --search merged:>=<since>`; a PR whose merge commit
+     isn't in the pinned SHA is skipped. Commits on `origin/<head>` after the PR's merged head,
+     minus any `git cherry` finds on the SHA as the same patch, are one `stranded-pr<N>` bug, rechecked
+     each pass until they land.
+   - Checkpoint met (2026-10-03, `bugs.py --date 2026-10-02 --ref fff22d82 --no-judge`, $0, today's
+     log so later findings are in the window too): the eval-run finding (B8) is gone; B27/B32 are
+     one bug; 44 judgeable groups, so a judged pass would leave 4 `unjudged`; the scan finds
+     `aca112aa` on #1371. Against today's main it finds nothing (`#1384`'s cherry-pick counts as
+     landed). The first run also flagged a #1379 commit; #1379 merged after `fff22d82`, which led to
+     the merged-after-SHA skip.
 8. **Log binning (Decision 21) — not started.** `curate.py`: `agent_made` / `legacy` from the
    finding kind and `git blame` at the finding's commit; `legacy` groups become ratchet-test
    proposals. Checkpoint: the 10 P1 source findings all bin `legacy`.

@@ -8,6 +8,7 @@ would catch a duplicate — this module is the pre-emptive extraction.
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -141,6 +142,32 @@ def repo_root() -> Path:
         if result is not None and result.returncode == 0 and result.stdout.strip():
             return Path(result.stdout.strip())
     return Path.cwd()
+
+
+def merged_prs_since(since: str, cwd: str | None = None) -> list[dict] | None:
+    """PRs merged on or after `since` (a date) via `gh pr list --search merged:>=…`, each with
+    `number`, `headRefName`, `headRefOid` (the head it merged at) and `mergeCommit`.
+
+    None on any failure (no `gh`, offline, not authenticated, timeout), so a caller can tell "no
+    PRs" from "couldn't ask". Same ladder as `pr_for_branch`, with a longer timeout for the list.
+    """
+    gh = shutil.which("gh")
+    if gh is None:
+        return None
+    try:
+        result = subprocess.run(
+            [gh, "pr", "list", "--state", "merged", "--search", f"merged:>={since}",
+             "--json", "number,headRefName,headRefOid,mergeCommit", "--limit", "200"],
+            capture_output=True, text=True, timeout=60.0, check=False, encoding="utf-8", cwd=cwd,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout or "[]")
+    except ValueError:
+        return None
 
 
 def git_output(*args: str, cwd: str | None = None) -> str | None:

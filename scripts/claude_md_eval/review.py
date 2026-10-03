@@ -214,7 +214,8 @@ def describe(record: dict, item: dict) -> list[str]:
         return [ln for ln in lines if ln]
     if item["kind"] == "bug":
         b = next(b for b in record.get("bugs", []) if b["id"] == item["ref"])
-        return [f"{b['id']} · {b['key']} · {b['file']}:{b['line']} · branch {b.get('branch') or '?'}",
+        where = f"PR #{b.get('pr')}" if b.get("kind") == "stranded" else f"{b['file']}:{b['line']}"
+        return [f"{b['id']} · {b['key']} · {where} · branch {b.get('branch') or '?'}",
                 b["desc"], f"Check: {b['why']}",
                 "Leave it open for a session to fix, or answer wont_fix to stop carrying it."]
     if item["kind"] == "proposal":
