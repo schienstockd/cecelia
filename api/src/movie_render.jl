@@ -621,11 +621,9 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     all_tracks  = _ov_bool(overlays_config, "allTracks", legacy_tracks)
     show_mask   = _ov_bool(overlays_config, "showMask",        false)
     ts_raw = get(overlays_config, "trackSources", nothing)
-    track_sources = all_tracks && ts_raw isa AbstractVector ?
-        [(_wstr_any(e, "valueName", :valueName), _wstr_any(e, "colour", :colour; default = OVERLAY_GREY))
-         for e in ts_raw if e isa AbstractDict] :
+    track_sources = all_tracks ?
+        [(s["valueName"], s["colour"]) for s in _normalise_track_sources(ts_raw)] :
         Tuple{String,String}[]
-    filter!(s -> !isempty(s[1]), track_sources)
     (show_pops || all_tracks || show_mask) || return (nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
