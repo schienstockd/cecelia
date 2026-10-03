@@ -207,10 +207,10 @@ class BinFindingTest(unittest.TestCase):
         r = self.repo = pathlib.Path(self.tmp.name)
         _sh(r, "init", "-q", "-b", "main")
         _sh(r, "config", "user.email", "t@t"); _sh(r, "config", "user.name", "t")
-        (r / "a.jl").write_text("".join(f"line {i}\n" for i in range(1, 11)))
-        (r / "b.jl").write_text("untouched\n" * 5)
-        (r / "c.jl").write_text("\n".join(["head"] + self.LONG + ["tail"]) + "\n")
-        (r / "old.jl").write_text("x\n" * 4)
+        (r / "a.jl").write_text("".join(f"line {i}\n" for i in range(1, 11)), encoding="utf-8")
+        (r / "b.jl").write_text("untouched\n" * 5, encoding="utf-8")
+        (r / "c.jl").write_text("\n".join(["head"] + self.LONG + ["tail"]) + "\n", encoding="utf-8")
+        (r / "old.jl").write_text("x\n" * 4, encoding="utf-8")
         _sh(r, "add", "-A"); _sh(r, "commit", "-qm", "base")
         self.base = _sh(r, "rev-parse", "HEAD")
         _sh(r, "switch", "-qc", "feat")
@@ -218,9 +218,9 @@ class BinFindingTest(unittest.TestCase):
         a[1] = "line 2 rewritten"                              # replaced: line 2
         a[4:4] = ["new A", "new B"]                            # pure addition: lines 5-6
         a += self.LONG                                         # moved here from c.jl: lines 13-18
-        (r / "a.jl").write_text("\n".join(a) + "\n")
-        (r / "c.jl").write_text("head\ntail\n")
-        (r / "new.jl").write_text("fresh\n")
+        (r / "a.jl").write_text("\n".join(a) + "\n", encoding="utf-8")
+        (r / "c.jl").write_text("head\ntail\n", encoding="utf-8")
+        (r / "new.jl").write_text("fresh\n", encoding="utf-8")
         _sh(r, "mv", "old.jl", "renamed.jl")
         _sh(r, "add", "-A"); _sh(r, "commit", "-qm", "the reviewed diff")
         self.git = self.c._git_in(self.repo)
@@ -261,12 +261,12 @@ class BinFindingTest(unittest.TestCase):
         # before the fix) now lands on a pure addition. The code the finding quotes stood there at the base.
         r = self.repo
         _sh(r, "switch", "-qc", "fixer", self.base)
-        base = (r / "a.jl").read_text().splitlines()
+        base = (r / "a.jl").read_text(encoding="utf-8").splitlines()
         base[4] = "    files = entry isa AbstractVector ? collect(entry) : [string(entry)]"
-        (r / "a.jl").write_text("\n".join(base) + "\n"); _sh(r, "add", "-A"); _sh(r, "commit", "-qm", "base2")
+        (r / "a.jl").write_text("\n".join(base) + "\n", encoding="utf-8"); _sh(r, "add", "-A"); _sh(r, "commit", "-qm", "base2")
         base2 = _sh(r, "rev-parse", "HEAD")
         fixed = base[:4] + ["    entry = unwrap(entry)"] + base[4:]
-        (r / "a.jl").write_text("\n".join(fixed) + "\n"); _sh(r, "add", "-A"); _sh(r, "commit", "-qm", "fix")
+        (r / "a.jl").write_text("\n".join(fixed) + "\n", encoding="utf-8"); _sh(r, "add", "-A"); _sh(r, "commit", "-qm", "fix")
         row = {"event": "fanout_audit_finding", "commit": base2, "branch": "fixer",
                "payload": {"slug": "s", "file": "a.jl", "line": "5", "marker": "confirmed",
                            "desc": "the reader does `entry isa AbstractVector ? collect(entry) : [string(entry)]`"}}
@@ -280,7 +280,7 @@ class BinFindingTest(unittest.TestCase):
     def test_a_main_merge_into_the_branch_does_not_make_every_sibling_on_branch(self):
         r = self.repo
         _sh(r, "switch", "-qc", "side", self.base)
-        (r / "a.jl").write_text("".join(f"line {i}\n" for i in range(1, 11)) + "side\n")
+        (r / "a.jl").write_text("".join(f"line {i}\n" for i in range(1, 11)) + "side\n", encoding="utf-8")
         _sh(r, "add", "-A"); _sh(r, "commit", "-qm", "unrelated sibling touching a.jl")
         _sh(r, "switch", "-q", "feat"); _sh(r, "merge", "-q", "--no-edit", "-X", "ours", "side")
         self.assertEqual(self._bin("a.jl", 5), "agent_made")
@@ -288,7 +288,7 @@ class BinFindingTest(unittest.TestCase):
     def test_off_branch_children_of_a_shared_base_do_not_decide(self):
         # another worktree's commit on the same base that never touched a.jl
         _sh(self.repo, "switch", "-qc", "other", self.base)
-        (self.repo / "z.jl").write_text("z\n"); _sh(self.repo, "add", "-A"); _sh(self.repo, "commit", "-qm", "other")
+        (self.repo / "z.jl").write_text("z\n", encoding="utf-8"); _sh(self.repo, "add", "-A"); _sh(self.repo, "commit", "-qm", "other")
         self.assertEqual(self._bin("a.jl", 5), "agent_made")
 
 
