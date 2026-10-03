@@ -19,6 +19,11 @@
   Rename/delete move BOTH files — `<name>.pt` and `<name>.json`. An orphaned .pt silently falls back
   to a default and drifts.
 
+  SCOPED BY WHO AND WHERE: the vault is per install, not per project, so on a shared machine it holds
+  every user's models from every project. The list shows yours from the open project by default; the
+  eye popover widens it, and the search box narrows it (`utils/vaultScope.ts` — same shape as the Task
+  Manager's toolbar). A User / Project column appears only once its toggle can make the rows differ.
+
   Chrome comes from `CanvasSidePanel` — the same shell the population manager uses — so it lives ON
   the training canvas and is toggled from the canvas bar, exactly like the pop manager. The scope
   footer is on because it means the same thing here as for populations — one pick for every plot, or
@@ -32,6 +37,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import CanvasSidePanel from '../../components/canvas/CanvasSidePanel.vue'
 import ChipSelect from '../../components/ChipSelect.vue'
+import CcToggle from '../../components/CcToggle.vue'
+import TeleportPopover from '../../components/TeleportPopover.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from '../../components/SelectionTable.vue'
 import FlowModelDetails from './FlowModelDetails.vue'
@@ -39,6 +46,13 @@ import DenoiseModelDetails from './DenoiseModelDetails.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useProjectStore } from '../../stores/project'
+import { useProjectMetaStore } from '../../stores/projectMeta'
+import { useAppControlStore } from '../../stores/appControl'
+import { useSettingsStore, VAULT_VIEW_DEFAULTS } from '../../stores/settings'
+import {
+  vaultInScope, vaultMatchesQuery, vaultUserLabel, vaultProjectLabel, vaultOriginGroup,
+  type VaultOrigin,
+} from '../../utils/vaultScope'
 import { useParamHandoffStore } from '../../stores/paramHandoff'
 import { paramsFromManifest, unmappedFields } from '../../utils/flowModelParams'
 import { VAULT_KIND_OPTIONS, endpointsFor, type VaultKind } from '../../utils/modelVaultKinds'
@@ -47,7 +61,7 @@ import type { FlowManifest } from '../../utils/flowManifest'
 import type { DenoiseManifest } from '../../utils/denoiseManifest'
 
 // The row shape is a superset of what either vault returns — kind decides which fields matter.
-type VaultRow = {
+type VaultRow = VaultOrigin & {
   name: string; label: string; stem: string
   bytes: number; modified: string
   hasManifest: boolean; manifest: FlowManifest | DenoiseManifest
@@ -128,14 +142,41 @@ async function post(url: string, body: Record<string, unknown>) {
 
 function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)} MB` }
 
-const COLUMNS: SelectionColumn[] = [
-  { key: 'stem',     label: 'Model' },
-  { key: 'modified', label: 'Date' },
-  { key: 'size',     label: 'Size' },
-]
-const tableRows = computed(() => models.value.map(m => ({
-  name: m.name, stem: m.stem, modified: m.modified, size: mb(m.bytes),
+// ── Scope + search ───────────────────────────────────────────────────────────
+const settings    = useSettingsStore()
+const projectMeta = useProjectMetaStore()
+const appControl  = useAppControlStore()
+const query       = ref('')   // transient, like the Task Manager's
+const viewOpen    = ref(false)
+const viewBtn     = ref<HTMLElement | null>(null)
+const viewChanged = computed(() =>
+  (Object.keys(VAULT_VIEW_DEFAULTS) as (keyof typeof VAULT_VIEW_DEFAULTS)[])
+    .some(k => settings[k] !== VAULT_VIEW_DEFAULTS[k]))
+
+const shown = computed(() => {
+  const scope = {
+    profile: appControl.activeProfileName, projectUid: projectMeta.current?.uid,
+    otherUsers: settings.vaultOtherUsers, otherProjects: settings.vaultOtherProjects,
+  }
+  return models.value.filter(m => vaultInScope(m, scope) && vaultMatchesQuery(m, query.value))
+})
+const hiddenCount = computed(() => models.value.length - shown.value.length)
+
+const COLUMNS = computed<SelectionColumn[]>(() => [
+  { key: 'stem',     label: 'Model', sortable: true },
+  ...(settings.vaultOtherUsers ? [{ key: 'user', label: 'User', sortable: true, ellipsis: true }] : []),
+  ...(settings.vaultOtherProjects
+    ? [{ key: 'project', label: 'Project', sortable: true, ellipsis: true }] : []),
+  { key: 'modified', label: 'Date', sortable: true },
+  { key: 'size',     label: 'Size', sortable: true, sortKey: 'bytes' },
+])
+const tableRows = computed(() => shown.value.map(m => ({
+  name: m.name, stem: m.stem, modified: m.modified, size: mb(m.bytes), bytes: m.bytes,
+  user: vaultUserLabel(m), project: vaultProjectLabel(m),
 })))
+// who + where on hover, whatever the columns — the row says it even with both toggles off
+const rowTip = (r: Record<string, unknown>) =>
+  [r.user && `by ${r.user}`, r.project && `in ${r.project}`].filter(Boolean).join(' ')
 const flowDetails = ref<VaultRow | null>(null)
 const denoiseDetails = ref<VaultRow | null>(null)
 function openDetails(m: VaultRow) {
@@ -179,13 +220,15 @@ const picked = computed({
   set: v => emit('update:selected', v),
 })
 
+const detailsOrigin = (m: VaultRow) => vaultOriginGroup(m)
+
 const emptyText = computed(() => kind.value === 'denoiseModels'
   ? 'No denoise models yet — run Train denoise model (SUPPORT) on an image set.'
   : 'No models yet — run Train flow model on an image.')
 </script>
 
 <template>
-  <CanvasSidePanel title="Model vault" icon="pi-database" :count="models.length" :width="340"
+  <CanvasSidePanel title="Model vault" icon="pi-database" :count="shown.length" :width="340"
                    :scope="scope" :docked="docked" @update:scope="emit('update:scope', $event)">
     <div class="vault">
       <div class="vault-kinds">
@@ -194,18 +237,38 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
       </div>
 
       <div class="vault-bar">
-        <span class="cc-muted vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
+        <input v-model="query" class="vault-search cc-input-xs" type="search" placeholder="Search"
+               aria-label="Search models"
+               v-tooltip.bottom="'Filter by name, channel, user or project'" />
+        <button ref="viewBtn" class="cc-btn cc-btn-bare cc-btn-icon"
+                :class="{ 'cc-btn-on cc-btn-on-solid': viewOpen, 'vault-view-set': viewChanged }"
+                @click="viewOpen = !viewOpen" v-tooltip.left="'View: other users, other projects'">
+          <i class="pi pi-eye" />
+        </button>
+        <TeleportPopover v-model="viewOpen" :anchor="viewBtn" placement="bottom-end">
+          <div class="vault-view">
+            <CcToggle v-model="settings.vaultOtherUsers" label="Other users"
+                      v-tooltip.bottom="'Include models other users trained'" />
+            <CcToggle v-model="settings.vaultOtherProjects" label="Other projects"
+                      v-tooltip.bottom="'Include models trained in other projects'" />
+          </div>
+        </TeleportPopover>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Refresh'"
                 :disabled="loading" @click="load">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
         </button>
       </div>
+      <span class="cc-muted cc-fs-xs vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
 
       <p v-if="error" class="cc-muted-warn">{{ error }}</p>
 
       <p v-if="!loading && !models.length" class="cc-muted">{{ emptyText }}</p>
+      <p v-else-if="!loading && !shown.length" class="cc-muted">
+        No models match — {{ hiddenCount }} hidden by search or view.
+      </p>
 
-      <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked" actions-label="">
+      <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked" actions-label=""
+                      :row-tooltip="rowTip">
         <template #actions="{ row }">
           <input v-if="isEditing(row.name)" v-model="draft" class="vault-rename" :ref="focusInput"
                  v-tooltip.top="'Enter to rename, Esc to cancel'"
@@ -235,10 +298,11 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
     </div>
   </CanvasSidePanel>
 
-  <FlowModelDetails v-if="flowDetails" :name="flowDetails.stem"
+  <FlowModelDetails v-if="flowDetails" :name="flowDetails.stem" :origin="detailsOrigin(flowDetails)"
                     :manifest="(flowDetails.manifest as FlowManifest)"
                     :path="`${vaultDir}/${flowDetails.name}`" @close="flowDetails = null" />
   <DenoiseModelDetails v-if="denoiseDetails" :name="denoiseDetails.stem"
+                       :origin="detailsOrigin(denoiseDetails)"
                        :manifest="(denoiseDetails.manifest as DenoiseManifest)"
                        :path="`${vaultDir}/${denoiseDetails.name}`" @close="denoiseDetails = null" />
 </template>
@@ -246,7 +310,10 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
 <style scoped>
 .vault { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.4rem 0.5rem; }
 .vault-kinds { display: flex; justify-content: center; }
-.vault-bar { display: flex; align-items: center; gap: 0.6rem; }
-.vault-dir { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vault-bar { display: flex; align-items: center; gap: 0.3rem; }
+.vault-search { flex: 1; min-width: 6rem; }
+.vault-view { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.5rem 0.65rem; }
+.vault-view-set { color: var(--cc-accent); }   /* a view preference is off its default */
+.vault-dir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vault-rename { width: 20ch; }
 </style>

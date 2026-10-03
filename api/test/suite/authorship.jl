@@ -108,3 +108,49 @@
         init_cecelia!()   # restore
     end
 end
+
+# ── Model vault origin — who trained a model, in which project ──────────────────────────────────────
+# The vaults are per install, so the manager scopes its list by these (`frontend/src/utils/vaultScope.ts`).
+@testset "Model vault origin — stamped at training, recovered for older models" begin
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="vault-origin")
+        img  = add_image!(add_set!(proj; name="s"); name="im")
+
+        # the stamp a training task merges into its manifest
+        # the launcher the scheduler passes as `_by` wins; none → the active profile
+        @test Cecelia.vault_origin_stamp(img, "bob")["createdBy"] == Dict("profile" => "bob")
+        st = Cecelia.vault_origin_stamp(img)
+        @test st["createdBy"] == Dict("profile" => active_profile_name())
+        @test st["project"] == Dict("uid" => proj.uid, "name" => "vault-origin")
+
+        projects = _scan_projects_raw()
+        o = vault_model_origin(st, projects)
+        @test o.createdBy == active_profile_name()
+        @test o.projectUid == proj.uid && o.projectName == "vault-origin" && !o.projectInferred
+
+        # a renamed project reads as it is called NOW, not as the manifest recorded it
+        stale = Dict{String,Any}("project" => Dict("uid" => proj.uid, "name" => "old name"))
+        @test vault_model_origin(stale, projects).projectName == "vault-origin"
+        # …and a deleted one keeps its recorded name
+        gone = Dict{String,Any}("project" => Dict("uid" => "GONE", "name" => "was here"))
+        @test vault_model_origin(gone, projects).projectName == "was here"
+
+        # A model trained before the stamp: no creator, project recovered from its source images —
+        # flow's `sourceImages` and denoise's `training.imageUids` alike.
+        for legacy in (Dict{String,Any}("sourceImages" => ["nope", img.uid]),
+                       Dict{String,Any}("training" => Dict("imageUids" => [img.uid])))
+            o = vault_model_origin(legacy, projects)
+            @test o.createdBy == "" && o.projectUid == proj.uid && o.projectInferred
+        end
+        # nothing to go on → all blank, which the manager treats as in scope
+        o = vault_model_origin(Dict{String,Any}("sourceImages" => ["nope"]), projects)
+        @test o.createdBy == "" && o.projectUid == "" && !o.projectInferred
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end

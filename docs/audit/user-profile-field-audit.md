@@ -120,7 +120,7 @@ so today every classification below is a *change* from the status quo.
 
 ### Working preferences → **per-profile** (~15)
 
-`taskListAutoFollow`, `tasksThisProjectOnly`, `tasksShowHistory`, `autoRefreshOnTask`,
+`taskListAutoFollow`, `tasksThisProjectOnly`, `tasksShowHistory`, `vaultOtherUsers`, `vaultOtherProjects`, `autoRefreshOnTask`,
 `viewerAutoUpdate`, `preferDevChannel`, `importPyramidAdvisor`, `animationSyncViewer`,
 `viewerAutoSaveLayerProps`, `viewerScaleBar`, `viewerTimestamp`, `viewerGrid`,
 `viewerLandscape`, `viewerLandscapeLabels`, `viewProfile`, `csvIncludeAttrs`.

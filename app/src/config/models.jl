@@ -188,6 +188,33 @@ function vault_model_manifest(dir::AbstractString, name::AbstractString)::Dict{S
     end
 end
 
+"""
+    vault_origin_stamp(img, by = "") -> Dict{String,Any}
+
+Who trained a model and in which project: `{createdBy = {profile}, project = {uid, name}}`, for a
+training runner to merge into the manifest it writes. `img` is the run's first image, so the project
+is wherever the training set lives. `by` is the launcher the scheduler hands a task as
+`params["_by"]` — not `author_stamp()`, which inside a pool worker is whoever is active when the job
+RUNS, and that need not be who queued it. Empty (a bare `_run_task` call) falls back to the active
+profile. No `via`: the scheduler carries only the profile.
+
+Why it exists: the vaults are per install, NOT per project. One person in one project never notices.
+On a shared machine every user's models from every project land in one list, and the manager uses
+these fields to show only yours from the open project by default (`frontend/src/utils/vaultScope.ts`).
+The project NAME is recorded next to the uid because the vault outlives projects — a deleted or
+re-identified project still has a readable name in the list.
+"""
+function vault_origin_stamp(img, by::AbstractString = "")::Dict{String,Any}   # untyped img: config loads first
+    # a missing name is not worth failing a finished training run over — the uid still scopes it
+    name = try
+        string(get(read_state_json(joinpath(img_project_dir(img), "project.json")), :name, ""))
+    catch
+        ""
+    end
+    Dict{String,Any}("createdBy" => Dict{String,Any}("profile" => isempty(by) ? active_profile_name() : by),
+                     "project"   => Dict{String,Any}("uid" => img_project_uid(img), "name" => name))
+end
+
 # ── Coastal (optical-flow) models ──────────────────────────────────────────────
 # The same drop-in vault as cellpose above, one directory over: `<config_dir>/models/coastalModels/`.
 # It is deliberately NOT a per-project store — a model trained on one movie is meant to be applied

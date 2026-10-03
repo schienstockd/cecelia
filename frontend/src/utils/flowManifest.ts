@@ -123,6 +123,8 @@ const KNOWN = new Set([
   'lossCurves', 'lossFloors',
   'foregroundBlurSigma', 'foregroundBoundaryWeight',
   'physicalScales', 'physicalScaleSource', 'coastalBuild',
+  // Rendered as the modal's Origin group, from the vault row (`utils/vaultScope.ts`).
+  'createdBy', 'project',
 ])
 
 // Array.isArray FIRST — an array of objects must NOT hit `String(v)` (renders as `[object Object]`)

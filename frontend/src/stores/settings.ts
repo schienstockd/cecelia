@@ -21,6 +21,7 @@ import { useAppControlStore } from './appControl'
 const PROFILE_KEYS = [
   // Working preferences
   'taskListAutoFollow', 'tasksThisProjectOnly', 'tasksShowHistory',
+  'vaultOtherUsers', 'vaultOtherProjects',
   'autoRefreshOnTask', 'viewerAutoUpdate', 'preferDevChannel', 'csvIncludeAttrs',
   'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps',
   // Overlay preferences
@@ -58,6 +59,11 @@ export const TASK_VIEW_DEFAULTS = {
   taskListAutoFollow: true, tasksThisProjectOnly: true, tasksShowHistory: false,
 } as const
 
+// The model vault's two scope widenings, as their defaults — off: the vault is per install, so the
+// default list is your models from the open project (`utils/vaultScope.ts`). Exported for the same
+// reason as TASK_VIEW_DEFAULTS: the vault lights its View button while either is off its default.
+export const VAULT_VIEW_DEFAULTS = { vaultOtherUsers: false, vaultOtherProjects: false } as const
+
 /** A stored boolean, or `dflt` when absent/unparseable — the one reading of a `'true'`/`'false'` key. */
 const _storedBool = (key: string, dflt: boolean) => {
   const v = localStorage.getItem(key)
@@ -82,6 +88,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // list looks empty for a reason it shouldn't: a window opened after the work finished (a reload, or
   // the pop-out task window) has no session to show for a project with hundreds of runs in it.
   const tasksShowHistory = ref(_storedBool('cc.tasksShowHistory', TASK_VIEW_DEFAULTS.tasksShowHistory))
+
+  // Model vault: also list other users' / other projects' models (see VAULT_VIEW_DEFAULTS).
+  const vaultOtherUsers    = ref(_storedBool('cc.vaultOtherUsers',    VAULT_VIEW_DEFAULTS.vaultOtherUsers))
+  const vaultOtherProjects = ref(_storedBool('cc.vaultOtherProjects', VAULT_VIEW_DEFAULTS.vaultOtherProjects))
 
   // Whether a plot's CSV export carries each image's name + attributes (Treatment, Mouse, …) next to
   // its uID. ON by default: a uID alone doesn't say which condition a row belongs to. Off gives the
@@ -685,6 +695,8 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
   watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
+  watch(vaultOtherUsers,          v => localStorage.setItem('cc.vaultOtherUsers',          String(v)))
+  watch(vaultOtherProjects,       v => localStorage.setItem('cc.vaultOtherProjects',       String(v)))
   watch(csvIncludeAttrs,          v => localStorage.setItem('cc.csvIncludeAttrs',          String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch([pickZMode, pickZWindow], ([mode, w]) => profileStorage.setItem('cc.pickZScope',
@@ -797,6 +809,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const _profileRefs: Record<ProfileKey, Ref<ProfileSettingsValue>> = {
     taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory,
+    vaultOtherUsers, vaultOtherProjects,
     autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, csvIncludeAttrs,
     importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps,
     viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity,
@@ -890,7 +903,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

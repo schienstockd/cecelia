@@ -11,7 +11,8 @@
 
 function api_denoise_models(::HTTP.Request)
     dir = Cecelia.denoise_models_dir()
-    models = [vault_model_row(dir, m) for m in Cecelia.list_denoise_models()]
+    projects = _scan_projects_raw()   # once per listing — origins resolve against it
+    models = [vault_model_row(dir, m, projects) for m in Cecelia.list_denoise_models()]
     200, JSON3.write((; dir = dir, models = models))
 end
 

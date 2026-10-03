@@ -411,6 +411,11 @@ end
         @test p.earlyStop === true
         @test p.patience === 5
     end
+    # the scheduler-injected launcher (`_by`) reaches both trainers — it is the manifest's `createdBy`
+    for parse in (Cecelia.parse_train_flow_model_params, Cecelia.parse_train_support_denoise_params)
+        @test parse(Dict{String,Any}("_by" => "bob")).by == "bob"
+        @test parse(Dict{String,Any}()).by == ""
+    end
 end
 
 # Typed per-task params for the remaining families — closing out the ChainNode.params arc.

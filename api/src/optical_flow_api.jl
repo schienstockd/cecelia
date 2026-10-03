@@ -23,7 +23,8 @@ import Cecelia: send
 
 function api_optical_flow_models(::HTTP.Request)
     dir = Cecelia.coastal_models_dir()
-    models = [vault_model_row(dir, m) for m in Cecelia.list_coastal_models()]
+    projects = _scan_projects_raw()   # once per listing — origins resolve against it
+    models = [vault_model_row(dir, m, projects) for m in Cecelia.list_coastal_models()]
     200, JSON3.write((; dir = dir, models = models))
 end
 
