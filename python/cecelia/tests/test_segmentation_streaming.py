@@ -114,7 +114,8 @@ _CASE_2D = ((3, 1, 2, 24, 20), (3, 2, 24, 20))
 class PredictFromZarrTest(unittest.TestCase):
     """base == nuc: the stub emits the same pattern on both channels, so nuc/base IoU matching makes
     nuc adopt the base IDs verbatim. Golden captured from the pre-refactor whole-stack implementation
-    (verified to survive the per-frame streaming refactor AND the read-frame-once change)."""
+    (verified to survive the per-frame streaming refactor AND the read-frame-once change), and
+    re-captured when the seam stitch started actually joining labels across seams."""
 
     def test_2d_timeseries_matches_golden(self):
         d = tempfile.mkdtemp()
@@ -122,8 +123,10 @@ class PredictFromZarrTest(unittest.TestCase):
             counts, base, nuc = _run(d, *_CASE_2D)
         finally:
             shutil.rmtree(d, ignore_errors=True)
-        gold = ((3, 24, 20), 17712, 24, '4f3ef287d29996db5ad53ad0c04357c607e7922d')
-        self.assertEqual(counts, {'base': 24, 'nuc': 24})
+        # Three bands per frame (y 0-8, 8-16, 16-24), each ONE id across both seams. The previous
+        # golden (24 labels) was every tile's two bands unjoined: the old seam stitch could not merge.
+        gold = ((3, 24, 20), 15840, 9, '21fc2b2a87017dfe3c284267863d5c335aec3594')
+        self.assertEqual(counts, {'base': 9, 'nuc': 9})
         self.assertEqual(_fingerprint(base), gold)
         self.assertEqual(_fingerprint(nuc), gold)
 

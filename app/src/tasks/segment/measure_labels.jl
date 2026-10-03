@@ -8,8 +8,6 @@ Base.@kwdef struct MeasureLabelsParams
     extendedMeasures::Bool     = false
     blockSize::Int             = 512
     overlap::Int               = 64
-    blockSizeZ::Int            = 0
-    overlapZ::Int              = 0
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -22,8 +20,6 @@ function parse_measure_labels_params(d::AbstractDict)::MeasureLabelsParams
         extendedMeasures   = Bool(get(d, "extendedMeasures", false)),
         blockSize          = Int(get(d, "blockSize", 512)),
         overlap            = Int(get(d, "overlap", 64)),
-        blockSizeZ         = Int(get(d, "blockSizeZ", 0)),
-        overlapZ           = Int(get(d, "overlapZ", 0)),
         version = parse_version_pin(d))
 end
 
@@ -89,8 +85,6 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
            extendedMeasures  = p.extendedMeasures,
            blockSize         = p.blockSize,
            overlap           = p.overlap,
-           blockSizeZ        = p.blockSizeZ,
-           overlapZ          = p.overlapZ,
            nThreads          = n_threads),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

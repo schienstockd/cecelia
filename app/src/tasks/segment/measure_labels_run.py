@@ -16,8 +16,6 @@ Parameter contract (JSON written by Julia):
   extendedMeasures  - bool: trimesh 3D shape descriptors (3D images only)
   blockSize         - XY tile size (informational; measurement is per-timepoint)
   overlap           - XY tile overlap (informational)
-  blockSizeZ        - Z tile size (informational)
-  overlapZ          - Z tile overlap (informational)
 """
 
 import sys
