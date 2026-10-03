@@ -85,7 +85,6 @@ const kind = computed<VaultKind>({
 })
 
 const models  = ref<VaultRow[]>([])
-const vaultDir = ref('')
 const loading = ref(false)
 const error   = ref('')
 const { draft, isEditing, start: startRename, cancel: cancelRename, commit, focusInput } =
@@ -106,7 +105,6 @@ async function load() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     models.value = data.models ?? []
-    vaultDir.value = data.dir ?? ''
   } catch (e) {
     error.value = String(e)
   } finally {
@@ -258,7 +256,6 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
         </button>
       </div>
-      <span class="cc-muted cc-fs-xs vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
 
       <p v-if="error" class="cc-muted-warn">{{ error }}</p>
 
@@ -299,12 +296,10 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
   </CanvasSidePanel>
 
   <FlowModelDetails v-if="flowDetails" :name="flowDetails.stem" :origin="detailsOrigin(flowDetails)"
-                    :manifest="(flowDetails.manifest as FlowManifest)"
-                    :path="`${vaultDir}/${flowDetails.name}`" @close="flowDetails = null" />
+                    :manifest="(flowDetails.manifest as FlowManifest)" @close="flowDetails = null" />
   <DenoiseModelDetails v-if="denoiseDetails" :name="denoiseDetails.stem"
                        :origin="detailsOrigin(denoiseDetails)"
-                       :manifest="(denoiseDetails.manifest as DenoiseManifest)"
-                       :path="`${vaultDir}/${denoiseDetails.name}`" @close="denoiseDetails = null" />
+                       :manifest="(denoiseDetails.manifest as DenoiseManifest)" @close="denoiseDetails = null" />
 </template>
 
 <style scoped>
@@ -314,6 +309,5 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
 .vault-search { flex: 1; min-width: 6rem; }
 .vault-view { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.5rem 0.65rem; }
 .vault-view-set { color: var(--cc-accent); }   /* a view preference is off its default */
-.vault-dir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vault-rename { width: 20ch; }
 </style>
