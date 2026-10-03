@@ -446,10 +446,14 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
         return
     end
 
-    # Axis gating (set-scope): drop images that don't satisfy the task's `requires.axes` and mark
-    # them :skipped. Set-scope tasks fit jointly across the vector, so a static image inside a
-    # T-requiring HMM would break the fit — better to run it on the applicable subset.
-    if !isempty(task_requires_axes(task_struct))
+    # Applicability gating (set-scope): drop images that don't satisfy the task's `requires.axes` or
+    # `requires.scale` and mark them :skipped. Set-scope tasks fit jointly across the vector, so a
+    # static image inside a T-requiring HMM would break the fit — better to run it on the applicable
+    # subset. Guard on BOTH: `task_applies` checks both, and a scale-only task left ungated fails the
+    # whole node (TaskApplicabilityError) over one uncalibrated image.
+    need_axes  = task_requires_axes(task_struct)
+    need_scale = task_requires_scale(task_struct)
+    if !isempty(need_axes) || !isempty(need_scale)
         keep_imgs = CciaImage[]
         keep_uids = String[]
         for (uid, img) in zip(participating_uids, imgs)
@@ -461,8 +465,10 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
             end
         end
         if isempty(keep_imgs)
-            axs = join(sort!(collect(task_requires_axes(task_struct))), ", ")
-            Base.invokelatest(on_log, "SKIP [$(first(imgs).uid)/$(node.id)] no images satisfy required axes: $axs")
+            why = String[]
+            isempty(need_axes)  || push!(why, "axes: "  * join(sort!(collect(need_axes)), ", "))
+            isempty(need_scale) || push!(why, "scale: " * join(sort!(collect(need_scale)), ", "))
+            Base.invokelatest(on_log, "SKIP [$(first(imgs).uid)/$(node.id)] no images satisfy required $(join(why, "; "))")
             _barrier_signal_done!(run, node.id)
             return
         end

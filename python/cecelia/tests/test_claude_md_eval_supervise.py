@@ -221,10 +221,41 @@ class SuperviseTest(_SuperviseFixture):
                                     bug_judge=self.bug_judge, merged_prs=self.no_prs)
         self.assertEqual(self.sup._record.validate(record), [])
         self.assertEqual([(b["id"], b["status"], b["file"]) for b in record["bugs"]], [("B1", "open", "CLAUDE.md")])
-        self.assertIn({"kind": "bug", "ref": "B1"}, record["queue"])
+        # a --session re-triage spends nothing on verification, and an unverified bug isn't the owner's
+        self.assertNotIn("verify", record["bugs"][0])
+        self.assertNotIn({"kind": "bug", "ref": "B1"}, record["queue"])
         self.assertEqual(record["run"]["supervisor"]["bugs_usd"], 0.05)
         self.assertIn("**Bugs: 1 open** (1 new)", self.sup._pr_body(record))
         self.assertIn("## Bugs", self.sup._record.render_markdown(record))
+
+    def test_a_verified_decide_bug_is_the_owners_and_a_fix_bug_is_not(self):
+        with open(self.tmp / "events.jsonl", "a", encoding="utf-8") as fh:
+            for line, desc in ((3, "is this intended?"), (5, "a sibling still does it the old way")):
+                fh.write(json.dumps(_event("fanout_audit_advisory", "2026-09-29T12:00:00Z", {
+                    "file": "CLAUDE.md", "line": line, "desc": desc, "marker": "plausible"}) | {"branch": None}) + "\n")
+        prompts = []
+
+        def verifier(prompt):
+            prompts.append(prompt)
+            keys = re.findall(r"^BUG (\S+) ", prompt, re.M)
+            return {"items": [{"key": k, "verdict": v, "evidence": "CLAUDE.md:3", "effect": "e",
+                               **({"question": "q?", "recommendation": "r"} if v == "decide" else {})}
+                              for k, v in zip(keys, ("decide", "fix"))]}, 0.4
+        # bug_judge merges by file + symbol; CLAUDE.md has no functions, so lines 3 and 5 stay apart
+        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign,
+                                    bug_judge=self.bug_judge, merged_prs=self.no_prs, verifier=verifier)
+        self.assertEqual(self.sup._record.validate(record), [])
+        self.assertEqual(len(prompts), 1)   # same file: one agent
+        verdicts = {b["id"]: b["verify"]["verdict"] for b in record["bugs"]}
+        decide = [i for i, v in verdicts.items() if v == "decide"]
+        self.assertEqual(sorted(verdicts.values()), ["decide", "fix"])
+        self.assertEqual([q for q in record["queue"] if q["kind"] == "bug"], [{"kind": "bug", "ref": decide[0]}])
+        self.assertAlmostEqual(record["run"]["supervisor"]["bugs_usd"], 0.45)
+        self.assertEqual(record["run"]["supervisor"]["verify"]["precision"], {"plausible": {"fix": 1, "decide": 1, "guard": 0, "dismiss": 0}})
+        md = self.sup._record.render_markdown(record)
+        self.assertIn("- Question: q?", md)
+        self.assertIn("1 for you to decide", self.sup._pr_body(record))
+        self.assertIn("· decide ·", md)
 
     def test_a_setup_over_budget_adds_a_decision_finding(self):
         with mock.patch.dict(self.sup._record.SETUP_BUDGET, {"claude_md_lines": 1}):

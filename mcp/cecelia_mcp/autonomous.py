@@ -368,14 +368,15 @@ class AutonomousClient:
         return {"x": {"channel": x, **histogram(xs, bins)}, "y": {"channel": y, **histogram(ys, bins)},
                 "transform": transform or {"kind": "linear"}}
 
-    def gating_post(self, path: str, project_uid: str, image_uid: str, value_name: str, **fields) -> dict:
+    def gating_post(self, route: str, project_uid: str, image_uid: str, value_name: str, **fields) -> dict:
+        # `route` (not `path`): `path` is a FIELD here — the population path set-gate/delete address
         prefix = required_prefix()
         if prefix and not value_name.startswith(prefix):
             raise LockViolation(f"gates may only be drawn on label sets starting with {prefix!r}")
         self._require_measured(project_uid, image_uid, value_name)
         body = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
                 "popType": "flow", **{k: v for k, v in fields.items() if v is not None}}
-        return self._request("POST", path, body=body)
+        return self._request("POST", route, body=body)
 
     def pop_stats(self, project_uid: str, image_uid: str, value_name: str, pop: str) -> dict:
         self._require_measured(project_uid, image_uid, value_name)

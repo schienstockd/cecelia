@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import PackagesDialog from '../components/PackagesDialog.vue'
@@ -139,7 +140,10 @@ async function reclaimAll() {
   if (!uid || !storage.value?.reclaimable.length) return
   storageBusy.value = true; storageError.value = ''
   try {
-    await reclaimStorage(uid, storage.value.reclaimable.map(r => r.imageUid))
+    const { reclaimed } = await reclaimStorage(uid, storage.value.reclaimable.map(r => r.imageUid))
+    // versions were deleted — re-pull those images so the store (and a remembered viewer pick) follow
+    const project = useProjectStore()
+    await Promise.all((reclaimed ?? []).map(u => project.refreshImageMeta(uid, u)))
     await scanStorage()   // re-scan so the numbers reflect what was freed
   } catch (e: any) {
     storageError.value = e?.message ?? 'Reclaim failed'

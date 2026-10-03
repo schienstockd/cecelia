@@ -71,6 +71,14 @@ struct _TestCustomTask <: CciaTask end
 # (`_CUSTOM_SPEC_PATHS` is keyed by concrete type, so two types is also the realistic case).
 struct _TestCustomTask2 <: CciaTask end
 
+# A set-scope task that declares `requires.scale` but no `requires.axes` — the shape the chain's
+# set-scope gating must not skip over (registered with its spec inside the chain testset).
+struct _ScaleOnlySetTask <: CciaTask end
+Cecelia._run_task(::_ScaleOnlySetTask, imgs::Vector{CciaImage}, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    Dict{String,Any}("ok" => true, "image_count" => length(imgs))
+
 # A task whose _run_task always throws — used to assert the scheduler tees a crash into the task log.
 struct _CrashTask <: CciaTask end
 Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};

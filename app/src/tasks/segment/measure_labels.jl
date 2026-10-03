@@ -32,6 +32,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     task_dir             = img._dir
     ccid                 = state_file(task_dir)
     raw                  = read_ccid_raw(ccid)
+    assert_unversioned_field(raw, "label_props", p.outputValueName)   # before the runner overwrites it
 
     # Resolve the intensity image path
     im_filename = versioned_get_field_at(raw, "filepath", p.intensityValueName; version = p.version)
@@ -115,7 +116,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     commit_state!(img) do raw
         # the segmentation just measured becomes the active label_props version, so gating (and any
         # value_name fallback) defaults to the most recently produced segmentation.
-        versioned_set_field!(raw, "label_props", h5ad_filename, p.outputValueName)
+        unversioned_set_field!(raw, "label_props", h5ad_filename, p.outputValueName)
     end
 
     Dict{String,Any}("outputValueName" => p.outputValueName,

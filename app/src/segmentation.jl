@@ -84,7 +84,7 @@ file makes the WHOLE project fail to open, every other image intact but unreacha
 function register_label_files!(img::CciaImage, out_value_name::AbstractString,
                               label_files::Vector{String})
     commit_state!(img) do raw
-        versioned_set_field!(raw, "labels", label_files, String(out_value_name); set_active = false)
+        unversioned_set_field!(raw, "labels", label_files, String(out_value_name); set_active = false)
     end
     label_files
 end

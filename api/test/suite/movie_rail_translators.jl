@@ -134,6 +134,21 @@
                             Dict("valueName" => "cpSAM", "colour" => "#4ecdc4")]), false)
     @test length(ov_ts_blank["trackSources"]) == 1
     @test ov_ts_blank["trackSources"][1]["valueName"] == "cpSAM"
+    # `_normalise_track_sources` — the one reader of both shapes, shared by the translator and both
+    # overlay readers (so a prebuilt `overlays` dict that skips the translator keeps its map).
+    @test _normalise_track_sources(Any[Dict("valueName" => "cpSAM", "colour" => "#ff6b6b"),
+                                       Dict(:valueName => "flowTom")]) ==
+          [Dict{String,Any}("valueName" => "cpSAM",   "colour" => "#ff6b6b"),
+           Dict{String,Any}("valueName" => "flowTom", "colour" => "#9ca3af")]
+    ts_map = _normalise_track_sources(Dict{String,Any}(
+        "flowTom" => Dict{String,Any}("visible" => true,  "colour" => "#AA1F5E"),
+        "cpSAM"   => Dict{String,Any}("visible" => false, "colour" => "#ff6b6b"),
+        "coastal" => Dict{String,Any}()))                       # no `visible` → visible, no colour → grey
+    @test Set((s["valueName"], s["colour"]) for s in ts_map) ==
+          Set([("flowTom", "#AA1F5E"), ("coastal", "#9ca3af")])
+    @test _normalise_track_sources(Dict(:B => Dict(:visible => true)); default_colour = "#123456") ==
+          [Dict{String,Any}("valueName" => "B", "colour" => "#123456")]
+    @test isempty(_normalise_track_sources(nothing))
 end
 
 @testset "API: movie rail — viewstate → render args (keyframe rendering)" begin

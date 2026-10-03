@@ -9,3 +9,16 @@ export function isStoredValueNameStale(
 ): boolean {
   return !!stored && !!filepaths && !(stored in filepaths)
 }
+
+// What a stale stored pick should become: the image's ACTIVE version, not '' — an open viewer
+// pop-out watches the stored pick and ignores '', so clearing it would leave the pop-out on the
+// deleted version's pixels (a version reclaimed or removed while it was open). Returns null when
+// the pick should be left alone (not stale, or nothing to tell).
+export function prunedImageVersion(
+  stored: string,
+  filepaths?: Record<string, string> | null,
+  activeValueName?: string | null,
+): string | null {
+  if (!isStoredValueNameStale(stored, filepaths)) return null
+  return activeValueName && activeValueName in filepaths! ? activeValueName : ''
+}

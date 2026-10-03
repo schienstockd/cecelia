@@ -215,6 +215,12 @@ def describe(record: dict, item: dict) -> list[str]:
     if item["kind"] == "bug":
         b = next(b for b in record.get("bugs", []) if b["id"] == item["ref"])
         where = f"PR #{b.get('pr')}" if b.get("kind") == "stranded" else f"{b['file']}:{b['line']}"
+        v = b.get("verify") or {}
+        if v.get("verdict") == "decide":
+            return [f"{b['id']} · {b['key']} · {where} · branch {b.get('branch') or '?'}",
+                    f"Question: {v.get('question') or b['desc']}",
+                    f"Recommendation: {v.get('recommendation') or '—'}", f"Evidence: {v.get('evidence', '')}",
+                    "Leave it open (a session acts on the recommendation), or answer wont_fix to stop carrying it."]
         return [f"{b['id']} · {b['key']} · {where} · branch {b.get('branch') or '?'}",
                 b["desc"], f"Check: {b['why']}",
                 "Leave it open for a session to fix, or answer wont_fix to stop carrying it."]

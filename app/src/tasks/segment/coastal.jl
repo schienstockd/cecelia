@@ -139,6 +139,7 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
     p    = parse_coastal_segment_params(params)
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
+    assert_unversioned_field(raw, "labels", p.outputValueName)   # before the runner overwrites it
 
     filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)
