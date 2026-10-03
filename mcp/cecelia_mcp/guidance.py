@@ -50,8 +50,9 @@ is relevant.
 
 Everything here is read-only except a handful of additive actions taken only when the user asks. You \
 can DESIGN work (a chain, a board, a notebook) but nothing here can START it — that is the design, \
-not a limitation to apologise for. If these tools cannot reach Cecelia, say so; do not try to \
-install, register or configure anything."""
+not a limitation to apologise for. (The one exception is an UNATTENDED run that was also given the \
+separate cecelia-autonomous server: there, its run_chain / run_task start what you design here.) If \
+these tools cannot reach Cecelia, say so; do not try to install, register or configure anything."""
 
 # ── Delivered by get_session_briefing — the working rules ─────────────────────────────────────────
 #
@@ -122,7 +123,9 @@ keys/ranges, and get_image_info for the CHANNEL names (a drift reference channel
 cell/nuc channels, cannot be picked without them). Then say which values came from the data, which \
 you left at defaults, and what genuinely could not be resolved yet — a population a later node \
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
-that part is the user's.
+that part is the user's. In an unattended run that also has the cecelia-autonomous server, the chain \
+IS how you run the pipeline: author it here, start it with run_chain, and the whiteboard keeps it as \
+the record of what ran.
 
 ON WHAT THE USER JUST SHOWED YOU. A CAPTURE here is specifically a frozen VIEWER FRAME the user \
 shared via cecelia's Share-with-Claude button — NOT a manual screenshot, an image file, or a \

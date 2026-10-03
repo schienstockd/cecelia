@@ -20,7 +20,12 @@ Shape:
 - **Linear edges** — `a → b → c …` in plan order. Bucketed order weights collapse to a linear DAG
   for one image; picnic set-scope tasks (not currently emitted by `apply_rules`) would need edges
   extended when they land.
-- **Params passed through unchanged** — the plan already resolved them from card + wizard + score
+- **Each node reads the previous node's output.** The executor does not thread value_names along
+  edges — a node reads the `valueName` in its params — so a step with none would read the RAW image
+  (`default`) and silently undo the step before it. Every node after the first gets the previous
+  step's output version (`task_output_name`, else the fixed `task_fixed_output`: driftCorrected,
+  afCorrected …) unless the plan set one.
+- **Params otherwise passed through unchanged** — the plan already resolved them from card + wizard + score
   precedence. Validation happens at chain-save time via `validate_template` (which calls
   `validate_params` per node), not here — so bad card params surface at the same natural point
   they would for a hand-authored chain.
@@ -39,10 +44,16 @@ function plan_to_chain_template(plan::CorrectionPlan;
                                 name::Union{AbstractString,Nothing} = nothing)::ChainTemplate
     tmpl_name = name === nothing ? "correction-plan-$(plan.image_uid)" : String(name)
     nodes = ChainNode[]
+    upstream = ""
     for step in plan.included
+        params = copy(step.params)
+        isempty(upstream) || haskey(params, "valueName") || (params["valueName"] = upstream)
         push!(nodes, ChainNode(; id = _plan_node_id(step.fun_name),
                                  fn = step.fun_name,
-                                 params = copy(step.params)))
+                                 params = params))
+        out = task_output_name(step.fun_name, params)
+        isempty(out) && (out = task_fixed_output(step.fun_name))
+        isempty(out) || (upstream = out)
     end
     edges = ChainEdge[]
     for i in 1:(length(nodes) - 1)

@@ -183,11 +183,48 @@ def _trim_module_params(raw: dict) -> dict:
             {
                 "fun_name": spec.get("fun_name", ""),
                 "label": spec.get("label", ""),
+                # a FIXED output version (driftCorrected, afCorrected …) — the name the next step
+                # reads; tasks that let the user name their output carry a `namespace` param instead
+                **({"writes": spec["outputValueName"]} if spec.get("outputValueName") else {}),
                 "params": [_trim_param(p) for p in spec.get("params", [])],
             }
             for spec in specs
         ]
     return out
+
+
+def http_json(base_url: str, method: str, path: str, params: dict | None = None,
+              body: dict | None = None, timeout: float = 60.0, raw: bool = False):
+    """The one HTTP transport for the MCP clients (observer + autonomous): JSON in, JSON (or the
+    raw bytes) out, the API's `{error: …}` surfaced as `ApiError`. The caller owns its allow-list."""
+    url = base_url + path
+    if params:
+        q = {k: v for k, v in params.items() if v is not None}  # drop unset optional params
+        if q:
+            url += "?" + urllib.parse.urlencode(q)
+    data = None
+    # marks Claude-made writes so the server stamps them `via: claude` (author_stamp)
+    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude"}
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = resp.read()
+            return payload if raw else json.loads(payload.decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(detail).get("error", detail)  # surface the API's {error: …}
+        except Exception:
+            pass
+        raise ApiError(e.code, detail) from e
+    except urllib.error.URLError as e:
+        raise ApiError(
+            0,
+            f"cannot reach Cecelia API at {base_url} ({e.reason}). Is `pixi run dev` running?",
+        ) from e
 
 
 class DisallowedRoute(RuntimeError):
@@ -269,33 +306,7 @@ class CeceliaClient:
                 project_uid = str(params.get("projectUid", "") or "")
             if project_uid:
                 self._maybe_pair(project_uid)
-        url = self.base_url + path
-        if params:
-            q = {k: v for k, v in params.items() if v is not None}  # drop unset optional params
-            if q:
-                url += "?" + urllib.parse.urlencode(q)
-        data = None
-        # marks Claude-made writes so the server stamps them `via: claude` (author_stamp)
-        headers = {"Accept": "application/json", "X-Cecelia-Client": "claude"}
-        if body is not None:
-            data = json.dumps(body).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        req = urllib.request.Request(url, data=data, method=method, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")
-            try:
-                detail = json.loads(detail).get("error", detail)  # surface the API's {error: …}
-            except Exception:
-                pass
-            raise ApiError(e.code, detail) from e
-        except urllib.error.URLError as e:
-            raise ApiError(
-                0,
-                f"cannot reach Cecelia API at {self.base_url} ({e.reason}). Is `pixi run dev` running?",
-            ) from e
+        return http_json(self.base_url, method, path, params, body, self.timeout)
 
     # ── read tools ────────────────────────────────────────────────────────────────
     def get_projects(self):
@@ -336,12 +347,18 @@ class CeceliaClient:
             "GET", "/api/tasks/history", {"projectUid": project_uid, "limit": limit}
         )
 
-    def get_module_params(self, category: str | None = None):
+    def get_module_params(self, category: str | None = None, fun_name: str | None = None):
         # Task param SPECS (valid ranges/defaults/types), project-independent. Optional `category`
-        # narrows to one module (the part before the dot in a fun_name, e.g. "tracking"). Trimmed to
-        # the suggestion-relevant fields (drops UI-widget plumbing) — see `_trim_module_params`.
-        raw = self._request("GET", "/api/tasks/definitions", {"category": category})
-        return _trim_module_params(raw)
+        # narrows to one module (the part before the dot in a fun_name, e.g. "tracking"); `fun_name`
+        # to one task (a whole module can exceed what a tool result shows — segment is ~70 KB).
+        # Trimmed to the suggestion-relevant fields (drops UI-widget plumbing) — see `_trim_module_params`.
+        if fun_name and not category:
+            category = fun_name.split(".", 1)[0]
+        out = _trim_module_params(self._request("GET", "/api/tasks/definitions", {"category": category}))
+        if fun_name:
+            out = {c: [s for s in specs if s["fun_name"] == fun_name] for c, specs in out.items()}
+            out = {c: specs for c, specs in out.items() if specs}
+        return out
 
     def get_available_plots(self, module: str | None = None):
         # Available plot types (chart types, data needs, scope modes), project-independent. Optional

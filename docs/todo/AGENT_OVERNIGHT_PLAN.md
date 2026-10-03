@@ -163,6 +163,32 @@ systemctl --user daemon-reload && systemctl --user enable --now agent-eval-night
 Open: delta vs the previous night in the record (the CLAUDE.md eval's `record.py` delta is the model);
 a real-crop brief in the nightly set once the synthetic one is understood.
 
+### P4b — app tier: the agent drives the RUNNING app — **built, supervised dress rehearsal 2026-10-03**
+The synthetic tier hands the agent a repo checkout; a user hands it the APP. `run_app.py` gives the
+agent only what any user's install offers: `claude -p --tools ""` (no shell, files or python) with the
+observer + the opt-in `cecelia-autonomous` server (`docs/inventory/MCP.md`), locked to a disposable
+raw-only copy of one image (`app_project.py`: `default` store only, fresh uids, left in the projects
+dir as the reviewable record). Brief: *"Hey. can you track the cells in that image and analyse their
+behaviour?"* plus the one-line open-project context the app would give. Records in
+`/tmp/cecelia-agent-app/<stamp>/` (`trace.jsonl` live — read with `trace_view.py`, `record.json`:
+cost, tool calls/errors, reads of the source project, the copy's label sets / gates / chains next to
+the source's, and a size+mtime canary over the whole source project). `cron_app.sh` = the crontab
+entry (checks out origin/main first, skips if the app is down or a run holds the lock).
+
+Smoke findings, fixed in the same change:
+- the guard matched the spec's internal `task` id, not `fun_name` (refused `segment.cellpose`);
+- `get_module_params("segment")` (~70 KB) is unreadable without file tools → `fun_name=` filter, and
+  it now shows a task's fixed output version (`writes: driftCorrected`) so a chain can be wired;
+- the gating routes silently swap an unknown value_name for the active one → the autonomous client
+  refuses an unmeasured set by name (a gate would otherwise land on another segmentation);
+- the observer's "you cannot run a chain" made the agent skip the whiteboard → guidance carves out
+  the autonomous session; its instructions now say chain-first;
+- the agent never cleaned the image (raw → segment): the correction plan was invisible to it and
+  left AF out → `recommend_correction_plan` tool + the AF-named-channel rule
+  (CORRECTION_QC_PLAN §1);
+- the canary failed on the user opening the source project (project.json `lastOpenedAt`, runlog
+  rewrite) → app bookkeeping reported separately, analysis files still fail it.
+
 ### P5 — act on findings
 Expected first candidates, in order of what P3 shows: close audit L1/L2 behind an explicit autonomous
 flag; task-interface or doc fixes where the agent got lost; more real-data crops (jFWePN) on the
