@@ -545,6 +545,25 @@ class ClientTest(unittest.TestCase):
         self.assertNotIn("options", channels)                      # picker options still stripped
         self.assertEqual(section["params"][0]["max"], 4096)         # sections recurse too
 
+    def test_fun_name_narrows_to_one_task(self):
+        # a whole module can exceed what a tool result shows (segment ≈ 70 KB); an agent without file
+        # tools cannot read it at all
+        raw = {"segment": [{"fun_name": "segment.cellpose", "label": "C", "params": []},
+                           {"fun_name": "segment.coastal", "label": "K", "params": []}]}
+        with _patch_urlopen(raw) as u:
+            out = self.c.get_module_params(fun_name="segment.cellpose")
+        self.assertIn("category=segment", u.call_args[0][0].full_url)
+        self.assertEqual([s["fun_name"] for s in out["segment"]], ["segment.cellpose"])
+
+    def test_fixed_output_version_is_kept_as_writes(self):
+        raw = {"cleanupImages": [{"fun_name": "cleanupImages.driftCorrect", "label": "D",
+                                  "outputValueName": "driftCorrected", "params": []},
+                                 {"fun_name": "cleanupImages.x", "label": "X", "params": []}]}
+        with _patch_urlopen(raw):
+            out = self.c.get_module_params("cleanupImages")
+        self.assertEqual(out["cleanupImages"][0]["writes"], "driftCorrected")
+        self.assertNotIn("writes", out["cleanupImages"][1])
+
     def test_select_options_are_capped(self):
         raw = {"m": [{"fun_name": "m.t", "label": "T", "params": [
             {"key": "k", "type": "select", "default": "v0",

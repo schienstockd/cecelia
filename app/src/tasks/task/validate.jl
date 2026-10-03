@@ -323,6 +323,23 @@ function task_output_name(task::CciaTask, params::Dict{String,Any})::String
     _spec_output_name(get(spec, "params", []), params)
 end
 
+"""
+    task_fixed_output(fun_name) -> String
+
+The output version a task ALWAYS writes, declared at its spec's top level (`"outputValueName":
+"driftCorrected"`) — the cleanup tasks, which offer no name param — or `""`. The run-time name for a
+task that lets the user name its output is `task_output_name`.
+"""
+function task_fixed_output(fun_name::AbstractString)::String
+    task = try
+        _task_from_fun_name(String(fun_name))
+    catch
+        nothing
+    end
+    spec = isnothing(task) ? nothing : _task_spec(task)
+    isnothing(spec) ? "" : string(something(get(spec, "outputValueName", nothing), ""))
+end
+
 # ── Applicability (axis gating) ───────────────────────────────────────────────
 # One declarative field, one predicate. The task JSON declares what image shape it needs:
 #

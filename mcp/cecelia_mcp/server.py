@@ -251,7 +251,7 @@ def get_task_history(project_uid: str, limit: int = 100) -> list:
 
 
 @_tool
-def get_module_params(category: str = "") -> dict:
+def get_module_params(category: str = "", fun_name: str = "") -> dict:
     """Task PARAMETER SPECS — the valid range / default / type of every task's params. Read this before
     suggesting a parameter change, so the suggestion is IN RANGE and names the real param `key`.
 
@@ -259,6 +259,7 @@ def get_module_params(category: str = "") -> dict:
     the suggestion-relevant fields (UI-widget plumbing is stripped). Numeric knobs (`type` int/float)
     also carry `min`/`max`/`step`. Pass `category` (the part before the dot in a fun_name — e.g.
     "tracking" for "tracking.bayesian_tracking") to get just that module; omit it for all modules.
+    Pass `fun_name` (e.g. "segment.cellpose") for ONE task — a whole module can be too large to read.
 
     **A `group` or `section` param NESTS its real knobs under its own `params`** — cellpose's diameter and
     channel assignment live inside its `models` group, not at the top level. When you set one, send it
@@ -286,7 +287,7 @@ def get_module_params(category: str = "") -> dict:
     population produced by a node in the same chain cannot be resolved at author time at all; leave it and
     say so. Project-independent; static package specs (plus any user drop-in modules). Suggest, cite the
     current value + range + QC; the user runs it — you don't."""
-    return _client.get_module_params(category or None)
+    return _client.get_module_params(category or None, fun_name or None)
 
 
 @_tool
