@@ -1391,7 +1391,10 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
     """DESIGN a whiteboard chain — the wired pipeline for a project. You author it; **you cannot run
     it**. There is no run tool: starting a chain is the user's act, in the Chains whiteboard. Say so
     when you're done ("it's in the Chains whiteboard — have a look and press Run when it looks right"),
-    and never imply it has started.
+    and never imply it has started. (Exception: an unattended session that also has the separate
+    cecelia-autonomous server starts it with that server's run_chain.)
+
+    `name` — letters, numbers, spaces, `.` `_` `-`; max 64 characters.
 
     `nodes` = `[{id, fn, params?, scope?, barrier_policy?, resource_pool?}]`:
       - `id` — any short unique string ("seg", "track"); `edges` reference these.
