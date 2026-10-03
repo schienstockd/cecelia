@@ -2351,6 +2351,10 @@ button, plots auto-refresh off a **targeted, per-image version signal**:
 - Gated by the global **`autoRefreshOnTask`** setting (Settings → Interface, on by default). Because
   `useDataRefresh` is the single chokepoint, that one toggle governs every plot; off → plots refresh on
   the next input change, or on returning to the page (activation of a kept-alive page).
+- **Channel renames are not tasks** — a rename is a POST, so the data version never bumps. A surface that
+  copies `channelNames` out of a response also calls `composables/useImageMetaRefresh.ts`
+  (`useImageMetaRefresh(() => uids, reloadLabels)`, not gated by `autoRefreshOnTask` — labels only).
+  Ratchet: `composables/imageMetaRefreshCoverage.test.ts`.
 
 This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old R app's success-time
 `retrieveState`. The **image viewer** refresh is a separate, data-vs-image path.

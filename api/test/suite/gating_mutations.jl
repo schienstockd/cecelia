@@ -6,6 +6,7 @@
 #  - `API: boolean populations combine, update and block an orphaning delete` (Decision 16).
 #  - `API: gating undo/redo steps through the population tree` (ring of snapshots at the
 #    single _persist_and_broadcast! chokepoint).
+#  - `API: gating channel labels follow the active channel-name version`.
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
@@ -303,3 +304,17 @@ end
   end
 end
 
+
+# ── Channel display names: which version labels the axes ─────────────────────────────────────────
+# `/api/gating/channels` labels intensity columns with ONE channel-name version. A rename writes
+# `default` and makes it active, and the image table / viewer / project store show the active list —
+# so gating must too, or two same-length versions (a denoised copy) label plots with a different list
+# than the rest of the app. Length still wins over activeness: an AF-corrected image adds channels.
+@testset "API: gating channel labels follow the active channel-name version" begin
+    vs = Dict{String,Any}("default" => ["GFP", "TOM"], "denoised" => ["g", "t"], "afc" => ["GFP", "TOM", "AF"])
+    @test _matching_channel_version(vs, 2; active = "denoised") == "denoised"
+    @test _matching_channel_version(vs, 2; active = "default") == "default"
+    @test _matching_channel_version(vs, 3; active = "default") == "afc"    # length beats active
+    @test _matching_channel_version(vs, 5; active = "denoised") == "denoised"  # nothing matches → active
+    @test _matching_channel_version(Dict{String,Any}(), 2; active = "default") == ""
+end

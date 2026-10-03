@@ -105,13 +105,20 @@ function _parse_multi_vns(img::CciaImage, raw::AbstractString)::Vector{String}
         if !isempty(strip(x)) && String(strip(x)) in keys_ok]
 end
 
-# pick the channel-name version whose length matches the intensity-column count
-# (handles AF-corrected images with extra channels); fall back to the active version.
-function _matching_channel_version(versions::AbstractDict, n_channels::Int)::String
+# pick the channel-name version to label the intensity columns with: the ACTIVE one when its length
+# matches (the names the image table, viewer and project store show — a rename writes there), else
+# the first whose length matches (an AF-corrected image adds channels); fall back to the active version.
+# Dict order is arbitrary, so without the active preference two same-length versions (a denoised copy)
+# could label plots with a different list than the rest of the app shows.
+function _matching_channel_version(versions::AbstractDict, n_channels::Int;
+                                   active::AbstractString = VERSIONED_DEFAULT_VAL)::String
+    isempty(versions) && return ""
+    a = get(versions, active, nothing)
+    a !== nothing && length(a) == n_channels && return String(active)
     for (v, names) in versions
         names !== nothing && length(names) == n_channels && return v
     end
-    isempty(versions) ? "" : VERSIONED_DEFAULT_VAL
+    haskey(versions, active) ? String(active) : VERSIONED_DEFAULT_VAL
 end
 
 # fetch label + cols for a value_name (the recompute/pop_df column provider).
@@ -572,7 +579,8 @@ function api_gating_channels(req::HTTP.Request)
         chans = channel_columns(lpc)
         versions = Dict{String,Any}(
             v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
-        display = get(versions, _matching_channel_version(versions, length(chans)), String[])
+        display = get(versions, _matching_channel_version(versions, length(chans);
+                                                      active = versioned_active(img.im_channel_names)), String[])
         tpath = img_track_props_path(img, scope_vn)
         tobs  = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
         pt    = get(q, "popType", "track")
@@ -624,7 +632,8 @@ function api_gating_channels(req::HTTP.Request)
     # length matches the number of intensity columns; expose all versions for the client.
     versions = Dict{String,Any}(
         v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
-    display = get(versions, _matching_channel_version(versions, length(chans)), String[])
+    display = get(versions, _matching_channel_version(versions, length(chans);
+                                                      active = versioned_active(img.im_channel_names)), String[])
     # TRACK-level cluster columns (clusters.* in `{vn}__tracks.h5ad`, written by clustTracks). These
     # aren't in the cell obs, but the viewer colour-by broadcasts them to cells via track_id so you
     # can colour tracks by their cluster/population. Offered alongside cell obs columns.
