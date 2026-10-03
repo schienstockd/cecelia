@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd, withCustomColours } from './batchMovie'
+import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, resolveTrackSources, defaultTrackSourceColour, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd, withCustomColours } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -8,19 +8,12 @@ describe('buildBatchMovieConfig', () => {
     expect(c.channels).toEqual({})
     expect(c.colourBy).toBe('')
     expect(c.showTracks).toBe(false)
-    expect(c.trackValueNames).toEqual([])   // tracks off → no segmentations sent
     expect(c.tailWidth).toBe(4)
     expect(c.popType).toBe('flow')
     expect(c.pointsSize).toBe(6)
     expect(c.pointBorder).toBe(0)            // no outline unless the look carries the viewer's
     expect(c.labelOpacity).toBe(0.7)         // the viewer's default fill opacity
     expect([c.pointZTol, c.trackZTol]).toEqual([2, 2])   // the viewer's default z tolerances
-  })
-
-  it('sends ALL segmentations when tracks are on', () => {
-    const c = buildBatchMovieConfig({ showTracks: true }, ['segA', 'segB'], {})
-    expect(c.showTracks).toBe(true)
-    expect(c.trackValueNames).toEqual(['segA', 'segB'])
   })
 
   it('passes through channels, colour-by and overlay flags', () => {
@@ -55,15 +48,14 @@ describe('buildBatchMovieConfig', () => {
       .toEqual([])
   })
 
-  it('trackSources emits only visible entries under showTracks && !showPops', () => {
-    // Not showTracks → no emit at all
-    expect(buildBatchMovieConfig({}, [], {}).trackSources).toEqual([])
-    // showTracks + showPops (pops wins) → empty (multi-source is a whole-seg-only feature)
+  it('trackSources: what the panel shows ticked, only under showTracks && !showPops', () => {
+    // Not showTracks → not sent; showTracks + showPops → not sent (tracks follow the pops' colours)
+    expect(buildBatchMovieConfig({}, [], {}, ['cpSAM']).trackSources).toBeUndefined()
     expect(buildBatchMovieConfig({
       showTracks: true, showPopulations: true,
       trackSources: { cpSAM: { visible: true, colour: '#ff6b6b' } },
-    }, [], {}).trackSources).toEqual([])
-    // Ordinary case — visible entries emitted as an ordered {valueName, colour} array
+    }, [], {}, ['cpSAM']).trackSources).toBeUndefined()
+    // Visible entries, in the tracked order, in their colours
     expect(buildBatchMovieConfig({
       showTracks: true,
       trackSources: {
@@ -71,10 +63,23 @@ describe('buildBatchMovieConfig', () => {
         flowTom: { visible: false, colour: '#4ecdc4' },
         default: { visible: true,  colour: '#a78bfa' },
       },
-    }, [], {}).trackSources).toEqual([
+    }, [], {}, ['cpSAM', 'flowTom', 'default']).trackSources).toEqual([
       { valueName: 'cpSAM',   colour: '#ff6b6b' },
       { valueName: 'default', colour: '#a78bfa' },
     ])
+    // An untouched source shows ticked in the panel, so it is drawn — in the palette's colour
+    expect(buildBatchMovieConfig({ showTracks: true }, [], {}, ['cpSAM', 'flowTom']).trackSources)
+      .toEqual([{ valueName: 'cpSAM', colour: defaultTrackSourceColour(0) },
+                { valueName: 'flowTom', colour: defaultTrackSourceColour(1) }])
+    // Every source hidden → an EMPTY list (draw none), not "unset" (which draws grey tracks)
+    expect(buildBatchMovieConfig({ showTracks: true, trackSources: {
+      cpSAM: { visible: false, colour: '#ff6b6b' } } }, [], {}, ['cpSAM']).trackSources).toEqual([])
+  })
+
+  it('resolveTrackSources keeps a visible source another image is tracked in', () => {
+    expect(resolveTrackSources({ other: { visible: true, colour: '#123456' } }, ['cpSAM']))
+      .toEqual([{ valueName: 'cpSAM', colour: defaultTrackSourceColour(0) },
+                { valueName: 'other', colour: '#123456' }])
   })
 
   it('popValueName defaults to the first mask column, else the first segmentation', () => {

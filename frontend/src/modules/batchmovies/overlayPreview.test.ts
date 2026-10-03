@@ -50,14 +50,28 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
     expect(r.ribbons.every(rib => rib.colour !== ALL_TRACKS_GREY)).toBe(true)
   })
 
-  it('showTracks alone → whole-seg grey, ribbons uniform grey', () => {
-    const r = renderOverlayPreview({ showTracks: true }, scene)
+  it('showTracks alone, coloured by pop → whole-seg grey, ribbons uniform grey', () => {
+    const r = renderOverlayPreview({ showTracks: true, trackColourMode: 'pop' }, scene)
     expect(r.points.length).toBe(0)   // tails only — points are populations
-    expect(r.ribbons.length).toBeGreaterThan(0)
-    expect(r.ribbons.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
     // includeTracks fires under showTracks (PR #751) → ribbons drawn AND uniformly grey
     expect(r.ribbons.length).toBeGreaterThan(0)
     expect(r.ribbons.every(rib => rib.colour === ALL_TRACKS_GREY)).toBe(true)
+  })
+
+  it('tails follow the track colour mode, as the overlay author colours them', () => {
+    const colours = (cfg: Parameters<typeof renderOverlayPreview>[0]) =>
+      new Set(renderOverlayPreview(cfg, scene).ribbons.map(r => r.colour))
+    // by track (the default): the palette cycled per track — not the source colour
+    const byTrack = colours({ showTracks: true, trackSources: [{ valueName: 'cpSAM', colour: '#123456' }] })
+    expect(byTrack.size).toBeGreaterThan(1)
+    expect(byTrack.has('#123456')).toBe(false)
+    // solid with no source picked: one colour, the palette's first
+    expect([...colours({ showTracks: true, trackColourMode: 'solid' })]).toEqual([PREVIEW_PALETTE[0]])
+    // a population's tails: its own colour under "pop", one colour under "solid", per track else
+    const pops = { showPopulations: true, showGatedTracks: true }
+    expect(colours({ ...pops, trackColourMode: 'solid' }).size).toBe(1)
+    expect([...colours({ ...pops, trackColourMode: 'pop' })].every(c => PREVIEW_PALETTE.includes(c))).toBe(true)
+    expect(colours({ ...pops, trackColourMode: 'speed' }).size).toBeGreaterThan(1)
   })
 
   it('showPops alone → points, no ribbons', () => {
@@ -153,7 +167,7 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
 
   it('showTracks alone + trackSources → cells split across two colours (multi-source)', () => {
     const r = renderOverlayPreview({
-      showTracks: true,
+      showTracks: true, trackColourMode: 'solid',
       trackSources: [
         { valueName: 'cpSAM', colour: '#ff6b6b' },
         { valueName: 'flowTom', colour: '#4ecdc4' },
@@ -170,7 +184,7 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
 
   it('showTracks + a SINGLE trackSource → every cell in that source colour', () => {
     const r = renderOverlayPreview({
-      showTracks: true,
+      showTracks: true, trackColourMode: 'solid',
       trackSources: [{ valueName: 'cpSAM', colour: '#ff6b6b' }],
     }, scene)
     expect(r.points.length).toBe(0)   // tails only — points are populations
@@ -178,11 +192,10 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
     expect(r.ribbons.every(p => p.colour === '#ff6b6b')).toBe(true)
   })
 
-  it('showTracks alone + empty trackSources → single-source grey (legacy behaviour)', () => {
+  it('showTracks alone + empty trackSources → every source hidden, no tails', () => {
     const r = renderOverlayPreview({ showTracks: true, trackSources: [] }, scene)
-    expect(r.points.length).toBe(0)   // tails only — points are populations
-    expect(r.ribbons.length).toBeGreaterThan(0)
-    expect(r.ribbons.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
+    expect(r.points.length).toBe(0)
+    expect(r.ribbons.length).toBe(0)
   })
 
   it('showPops overrides trackSources — pops win (allTracks false, so trackSources ignored)', () => {

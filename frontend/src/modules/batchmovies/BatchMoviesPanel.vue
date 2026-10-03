@@ -24,7 +24,7 @@ import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS, distinctChannelOptions } from '../../utils/viewerColormap'
 import { readViewerLook } from '../../utils/viewer/viewerLook'
-import { buildBatchMovieConfig, movieFilename, RENDER_QUALITY_DEFAULT, type RenderQuality, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, withCustomColours, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
+import { buildBatchMovieConfig, batchTrackSources, defaultTrackSourceColour, movieFilename, RENDER_QUALITY_DEFAULT, type RenderQuality, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, withCustomColours, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
 import { versionsFromConfig, compareSuffix, compareActionTip,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          segmentationsFromConfig, compareShape,
@@ -36,7 +36,6 @@ import SceneAid from '../../components/SceneAid.vue'
 import { buildOverlayScene, renderOverlayPreview } from './overlayPreview'
 import CcToggle from '../../components/CcToggle.vue'
 import ColourPicker from '../../components/ColourPicker.vue'
-import { PALETTES } from '../../plots/plot'
 import MovieCompareControls from '../../components/MovieCompareControls.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import PaneExpandBar from '../../components/PaneExpandBar.vue'
@@ -314,29 +313,20 @@ const trackSources = computed<Record<string, TrackSourceCfg>>({
   get: () => (cfg.value.trackSources as Record<string, TrackSourceCfg> | undefined) ?? {},
   set: v => patch({ trackSources: v }),
 })
-/** Default colour for a source at position `i` in the tracked-segs list — cycle the house palette so
- *  a first-time user gets distinguishable colours without touching any picker. */
-function _defaultTrackColour(i: number): string {
-  const p = PALETTES.cecelia
-  return p[i % p.length] as string
-}
 function setTrackSourceVisible(vn: string, visible: boolean) {
-  const idx = Math.max(0, trackedSegs.value.indexOf(vn))
-  const cur = trackSources.value[vn] ?? { visible: true, colour: _defaultTrackColour(idx) }
+  const cur = trackSources.value[vn] ?? { visible: true, colour: trackSourceColour(vn) }
   trackSources.value = { ...trackSources.value, [vn]: { ...cur, visible } }
 }
 function setTrackSourceColour(vn: string, colour: string) {
-  const idx = Math.max(0, trackedSegs.value.indexOf(vn))
-  const cur = trackSources.value[vn] ?? { visible: true, colour: _defaultTrackColour(idx) }
+  const cur = trackSources.value[vn] ?? { visible: true, colour: trackSourceColour(vn) }
   trackSources.value = { ...trackSources.value, [vn]: { ...cur, colour } }
 }
 function trackSourceVisible(vn: string): boolean {
   return trackSources.value[vn]?.visible ?? true
 }
 function trackSourceColour(vn: string): string {
-  const cur = trackSources.value[vn]
-  if (cur?.colour) return cur.colour
-  return _defaultTrackColour(Math.max(0, trackedSegs.value.indexOf(vn)))
+  return trackSources.value[vn]?.colour
+    || defaultTrackSourceColour(Math.max(0, trackedSegs.value.indexOf(vn)))
 }
 
 // Overlay preview — a schematic frame that shows what the batch's overlay config will draw,
@@ -355,11 +345,9 @@ const overlayPreview = computed(() => renderOverlayPreview({
   showScaleBar: movie.value.showScaleBar,
   titleCard: cfg.value.titleCard,
   popsFilter: cfg.value.popsFilter,
-  // Only meaningful under showTracks && !showPops (batch panel hides the picker otherwise); passed
-  // in every case so the preview stays a pure function of the config.
-  trackSources: trackedSegs.value
-    .filter(vn => trackSourceVisible(vn))
-    .map(vn => ({ valueName: vn, colour: trackSourceColour(vn) })),
+  // what the request sends (`undefined` = the backend's grey, `[]` = none)
+  trackSources: batchTrackSources(cfg.value, trackedSegs.value),
+  trackColourMode: cfg.value.trackColourMode,
 }, _previewScene))
 
 // ── seed the config so it's not blank (colours + pops of the first selected image) ─────────────
@@ -418,7 +406,7 @@ const filenamePreview = computed(() =>
 // ── build request + run ───────────────────────────────────────────────────────
 function buildConfig() {
   const overrides = setUid.value ? settings.getColourOverrides(setUid.value, colourBy.value) : {}
-  return buildBatchMovieConfig(cfg.value, segNames.value, overrides)
+  return buildBatchMovieConfig(cfg.value, segNames.value, overrides, trackedSegs.value)
 }
 
 const running = computed(() =>

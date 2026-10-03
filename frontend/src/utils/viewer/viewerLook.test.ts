@@ -70,7 +70,9 @@ describe('viewerLook', () => {
     expect(l.showTracks).toBe(true)
     expect(l.showPopulations).toBe(false)
     expect(l.popValueName).toBe('cpSAM')
-    expect(l.trackSources).toEqual({ cpSAM: { visible: true, colour: '#ff0000' } })
+    // the hidden one is named too — a source the map leaves out would be drawn
+    expect(l.trackSources?.cpSAM).toEqual({ visible: true, colour: '#ff0000' })
+    expect(l.trackSources?.other?.visible).toBe(false)
   })
 
   it('carries the overlay sizes, colour mode and colour-by', () => {

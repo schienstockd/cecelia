@@ -7,6 +7,7 @@
 
 import { viewerColormapForHex, channelsForRender } from './viewerColormap'
 import { LABEL_OPACITY } from './viewerLabels'
+import { PALETTES } from '../plots/plot'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
@@ -82,8 +83,8 @@ export interface BatchMovieCfg {
   popsFilter?: string[]
   // Per-segmentation whole-seg track visibility + colour, active only when `showTracks && !showPops`.
   // The batch panel enumerates every tracked segmentation on the first selected image and lets the
-  // user pick which to draw and what colour each gets. When empty (or `showPops` on), the backend
-  // falls back to the single-source `allTracks` grey path — the pre-picker behaviour. Backend:
+  // user pick which to draw and what colour each gets; one it does not name is drawn, in the palette
+  // (`resolveTrackSources`). Backend:
   // `_resolve_movie_overlays_mask` composes one `build_overlays3d_for` closure per visible source
   // (each with its own `all_tracks_colour`) and merges their outputs, so a fXgbTl movie with cpSAM
   // + flowTom + coastalFg all ticked draws all three simultaneously, each in its own colour.
@@ -141,7 +142,6 @@ export interface BatchMovieRequestConfig {
   channels: Record<string, string>
   colourBy: string
   showTracks: boolean
-  trackValueNames: string[]
   tailWidth: number
   tailLength: number
   trackColourMode: string
@@ -151,9 +151,10 @@ export interface BatchMovieRequestConfig {
   popType: string
   popValueName: string
   popsFilter: string[]
-  /** Multi-source composition for the whole-seg-tracks path — an array of visible `{valueName,
-   *  colour}` entries. Empty (or absent) when the batch should fall back to single-source. */
-  trackSources: Array<{ valueName: string; colour: string }>
+  /** The whole-seg-tracks path's sources (`resolveTrackSources`) — empty means none is drawn. Absent
+   *  when tracks follow the pops, or nothing is known to choose from: the backend then draws the
+   *  overlay segmentation's tracks in grey. */
+  trackSources?: TrackSource[]
   pointsSize: number
   pointBorder: number
   labelOpacity: number
@@ -174,10 +175,43 @@ export const LABEL_CONTOUR_MAX = 10
 export const clampContour = (v: number | undefined): number =>
   Math.min(LABEL_CONTOUR_MAX, Math.max(0, Math.round(v ?? 0) || 0))
 
+export type TrackSource = { valueName: string; colour: string }
+
+/** A tracked segmentation's default track colour: the house palette by position, so a first batch gets
+ *  distinguishable sources without touching a picker. */
+export function defaultTrackSourceColour(i: number): string {
+  const p = PALETTES.cecelia
+  return p[i % p.length] as string
+}
+
+/** The whole-segmentation track sources a batch movie draws, in order: every tracked segmentation the
+ *  config's map does not hide, in its colour (else `defaultTrackSourceColour`), then any other source
+ *  the map shows (one another image is tracked in). What the panel shows ticked is what is drawn. */
+export function resolveTrackSources(
+  map: Record<string, { visible: boolean; colour: string }> | undefined,
+  tracked: string[],
+): TrackSource[] {
+  const m = map ?? {}
+  const named = Object.keys(m).filter(vn => !tracked.includes(vn))
+  return [...tracked, ...named]
+    .filter(vn => m[vn]?.visible ?? true)
+    .map(vn => ({ valueName: vn,
+                  colour: m[vn]?.colour || defaultTrackSourceColour(Math.max(0, tracked.indexOf(vn))) }))
+}
+
+/** The request's `trackSources` — `resolveTrackSources` under `showTracks && !showPops`, else
+ *  `undefined` (tracks follow the pops, or there is nothing to choose from: the backend's grey). An
+ *  empty list draws no whole-segmentation tracks. The panel's preview reads the same value. */
+export function batchTrackSources(cfg: BatchMovieCfg, trackedSegs: string[]): TrackSource[] | undefined {
+  return cfg.showTracks && !cfg.showPopulations && (trackedSegs.length || cfg.trackSources)
+    ? resolveTrackSources(cfg.trackSources, trackedSegs) : undefined
+}
+
 export function buildBatchMovieConfig(
   cfg: BatchMovieCfg,
   segNames: string[],
   colourOverrides: Record<string, string>,
+  trackedSegs: string[] = [],
 ): BatchMovieRequestConfig {
   const tc = cfg.titleCard
   // The version list is authoritative; `valueName` stays in the payload as the FIRST column, which is
@@ -209,7 +243,6 @@ export function buildBatchMovieConfig(
     channels: channelsForRender(cfg.channels),
     colourBy: cfg.colourBy ?? '',
     showTracks: !!cfg.showTracks,
-    trackValueNames: cfg.showTracks ? segNames : [],
     tailWidth: cfg.tailWidth ?? 4,
     tailLength: cfg.tailLength ?? 30,
     trackColourMode: cfg.trackColourMode ?? 'track',
@@ -222,14 +255,8 @@ export function buildBatchMovieConfig(
     popValueName: cfg.popValueName ?? (cfg.labelValueNames?.[0] ?? segNames[0] ?? ''),
     // Empty list = ALL pops of the resolved popType (backend rule; matches the pre-picker default).
     popsFilter: cfg.showPopulations ? [...(cfg.popsFilter ?? [])] : [],
-    // Multi-source composition: emit an array of `{valueName, colour}` for the segs the user ticked
-    // visible in the batch panel's Track sources list. Only meaningful under `showTracks && !showPops`
-    // — else empty (single-source `allTracks` grey is what the pop branch overrides anyway).
-    trackSources: (!!cfg.showTracks && !cfg.showPopulations && cfg.trackSources)
-      ? Object.entries(cfg.trackSources)
-          .filter(([, v]) => v?.visible)
-          .map(([valueName, v]) => ({ valueName, colour: v.colour }))
-      : [],
+    // The sources the panel shows ticked, in their colours (`batchTrackSources`).
+    ...((ts => ts ? { trackSources: ts } : {})(batchTrackSources(cfg, trackedSegs))),
     pointsSize: cfg.pointsSize ?? 6,
     pointBorder: cfg.pointBorder ?? 0,
     labelOpacity: cfg.labelOpacity ?? LABEL_OPACITY,

@@ -66,7 +66,7 @@
             @test r.mask_diag["requested"] === true
             @test r.mask.contour_px == 2
             # "all cells" is every label in the viewer's palette (no colour table)
-            @test r.mask.colours === nothing
+            @test r.mask.colours isa ViewerPalette
             # a population mask — not all cells — carries its label → colour table
             ov_pop = merge(ov_str, Dict{String,Any}("allCells" => false, "allCellsColour" => "#00ff00"))
             rp = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_pop, "B")
@@ -162,10 +162,16 @@ end
     zr, filt = _plane_window(nothing, 10, style)
     @test zr == [0, 9] && filt === nothing                       # the whole stack: every overlay
     @test _plane_window(2:4, 10, style)[1] == [2, 4]
-    params = _mask_params!(Dict{String,Any}(), (; labels_path = "/x", contour_px = 1, opacity = 0.5,
-                                                  colours = Dict(7 => RGB{N0f8}(1, 0, 0), 3 => RGB{N0f8}(0, 0, 1))))
+    params = _mask_params!(Dict{String,Any}(), MovieMask("/x",
+        Dict(7 => RGB{N0f8}(1, 0, 0), 3 => RGB{N0f8}(0, 0, 1)), 1, 0.5))
+    @test params["labelColouring"] == "table"
     @test params["labelColours"]["ids"] == [3, 7]
     @test params["labelColours"]["colours"] == [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]
+    # a population with no cells here is an EMPTY table — it must still say "table", or the runner
+    # would fall back to the palette and draw every label
+    empty_tbl = _mask_params!(Dict{String,Any}(), MovieMask("/x", Dict{Int,RGB{N0f8}}(), 1, 0.5))
+    @test empty_tbl["labelColouring"] == "table" && isempty(empty_tbl["labelColours"]["ids"])
+    @test _mask_params!(Dict{String,Any}(), MovieMask("/x", ViewerPalette(), 1, 0.5))["labelColouring"] == "palette"
 
     v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
     if !api_have_fixture(v2)

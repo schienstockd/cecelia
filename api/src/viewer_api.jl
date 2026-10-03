@@ -1038,9 +1038,7 @@ end
 # ov_diag, mask_diag)`:
 #   - `overlays3d_for`: `t -> (points, segments)` in native voxel coordinates (`build_overlays3d_for`),
 #     which the shader projects with its own camera; `nothing` = none.
-#   - `mask`: `(; labels_path, colours, contour_px, opacity)` or `nothing`. `colours` is the label →
-#     colour map (`mask_id_colours`) for a population mask, `nothing` for every label in the viewer's
-#     palette.
+#   - `mask`: a `MovieMask` (`movie_mask`) or `nothing`.
 #   - `style`: point size / border, tail width, and the viewer's z tolerances (`pointZTol`, `trackZTol`).
 # `ov_diag` / `mask_diag` carry the smoke test's diagnostic breadcrumbs; with `tally = true` the
 # overlay closure additionally counts points/segments/frames into refs under `ov_diag["_tally"]`.
@@ -1088,7 +1086,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     tail_length      = Int(_ov(ov_raw, :tailLength, 30))
     # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring pops.
     all_tracks       = Bool(_ov(ov_raw, :allTracks, false))
-    all_tracks_col   = String(_ov(ov_raw, :allTracksColour, "#9ca3af"))
+    all_tracks_col   = String(_ov(ov_raw, :allTracksColour, OVERLAY_GREY))
     # Optional multi-source track composition — `trackSources` is a list of `{valueName, colour}`
     # entries; when present under `allTracks`, we call `build_overlays3d_for` once per source (each
     # with its own `all_tracks_colour`) and merge the resulting closures. Without this the whole-seg
@@ -1204,7 +1202,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 mask_diag["reason"] = "segmented on another version of this image (geometry mismatch)"
             end
             if show_mask
-                all_cells_col = String(_ov(ov_raw, :allCellsColour, "#9ca3af"))
+                all_cells_col = String(_ov(ov_raw, :allCellsColour, OVERLAY_GREY))
                 mask_contour_px = Int(_ov(ov_raw, :maskContourPx, mask_contour_px))
                 # colourBy / colourOverrides ride on `ov_raw` (from `_overlays_raw_from_config`) —
                 # nothing to do here beyond forwarding; the author does the actual recolour. Empty
@@ -1222,7 +1220,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 if mask === nothing
                     mask_diag["reason"] = "no label store, or its colours could not be resolved"
                 else
-                    mask_diag["ids"] = mask.colours === nothing ? "palette" : length(mask.colours)
+                    mask_diag["ids"] = mask.colours isa ViewerPalette ? "palette" : length(mask.colours)
                     isempty(mask_diag["reason"]) && (mask_diag["reason"] = "ok")
                     mask_diag["allCells"] = all_cells
                 end
@@ -1247,14 +1245,15 @@ end
 #   * `record_view_movie` end-to-end (the shared renderer, `writers/render_animation_run.py`),
 #   * optional `title_card` — passes through to the shared prepend helper.
 #
-# `maxFrames` caps the sweep (default 30 — a smoke test should not wait minutes). Absent overlays: the
-# author that resolves populations / centroids / tracks into the primitives' columnar shape is the
-# next chunk, and its output will need the eyes on real cells rather than a green frame.
+# `maxFrames` caps the sweep (default 30 — a smoke test should not wait minutes). `overlays` is the
+# resolver's own shape (`_resolve_movie_overlays_mask`), not a batch config or a look — those go through
+# `_overlays_raw_from_config` first, which is also what turns a look's `trackSources` map into the list.
 #
 # `POST /api/viewer/record-test` — body: `{ projectUid, imageUid, valueName?, ts?: [start, end],
 # z?: int, titleCard?, maxFrames?: 30, overlays?: { popType?: "flow", valueName?, popPaths?: [...],
 # pointSizePx?: 6, segmentWidthPx?: 2, tailLength?: 30, includeTracks?: true,
-# allTracks?: false, allTracksColour?: "#9ca3af", trackColorMode?: "track",
+# allTracks?: false, allTracksColour?: "#9ca3af", trackSources?: [{valueName, colour}],
+# trackColorMode?: "track",
 # showMask?: false, allCells?: false, allCellsColour?: "#9ca3af", maskContourPx?: 1 } }`
 # — response: `{ ok, path, filename, frames, width, height, overlays: {...}, mask: {...} }`.
 function api_viewer_record_test(body_bytes::Vector{UInt8})

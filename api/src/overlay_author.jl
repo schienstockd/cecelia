@@ -52,6 +52,10 @@ function hex_to_rgb(hex::AbstractString)::RGB{N0f8}
     RGB{N0f8}(r, g, b)
 end
 
+"The inverse of `hex_to_rgb`: `#rrggbb`, lower case."
+rgb_to_hex(c::RGB{N0f8})::String =
+    "#" * join(string(reinterpret(UInt8, v); base = 16, pad = 2) for v in (red(c), green(c), blue(c)))
+
 # The pixel-space transform `render_view_frame` bakes into every frame. `crop` is 0-based inclusive
 # `(x = x0:x1, y = y0:y1)`; the frame is then downsampled so `max(H, W) ≤ max_px` when max_px > 0.
 # `x_lo`/`y_lo` are the native 0-based origin of the cropped-and-drawn frame; `step` the stride;
@@ -183,6 +187,10 @@ const _PALETTES_DATA = _load_palettes()
 # The house 12-colour palette from `PALETTES.cecelia` in the shared JSON. Same list as the browser
 # look, so a movie's tracks share colours with a look's tracks by construction.
 const CECELIA_TRACK_PALETTE = _PALETTES_DATA.palette
+
+# The neutral grey for "every cell" / "every track" with no colour picked — the browser's
+# `ALL_TRACKS_GREY` / `TRACK_SOURCE_GREY`.
+const OVERLAY_GREY = "#9ca3af"
 
 # The track-colour-mode names accepted by `build_overlays3d_for(track_color_mode = ...)`. Read
 # from the JSON so a mode the browser knows is a mode this author accepts — no silent fallback to
@@ -359,7 +367,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
                               include_tracks::Bool = true,
                               tail_length::Int = 30,
                               all_tracks::Bool = false,
-                              all_tracks_colour::AbstractString = "#9ca3af",
+                              all_tracks_colour::AbstractString = OVERLAY_GREY,
                               track_color_mode::AbstractString = "track",
                               solid_colour::Union{Nothing,AbstractString} = nothing,
                               colour_by::Union{Nothing,AbstractString} = nothing,
@@ -647,7 +655,7 @@ end
 """
     build_overlays3d_for(img; value_name, pop_type,
                          pops_filter = nothing, include_tracks = true, tail_length = 30,
-                         all_tracks = false, all_tracks_colour = "#9ca3af",
+                         all_tracks = false, all_tracks_colour = OVERLAY_GREY,
                          track_color_mode = "track", solid_colour = nothing, include_points = true,
                          colour_by = nothing, colour_overrides = nothing)
         -> (t -> (points, segments))
@@ -661,7 +669,7 @@ function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopType
                               include_tracks::Bool = true,
                               tail_length::Int = 30,
                               all_tracks::Bool = false,
-                              all_tracks_colour::AbstractString = "#9ca3af",
+                              all_tracks_colour::AbstractString = OVERLAY_GREY,
                               track_color_mode::AbstractString = "track",
                               solid_colour::Union{Nothing,AbstractString} = nothing,
                               include_points::Bool = true,
@@ -691,7 +699,7 @@ end
 
 """
     mask_id_colours(img; value_name, pop_type, pops_filter = nothing,
-                    all_cells = false, all_cells_colour = "#9ca3af",
+                    all_cells = false, all_cells_colour = OVERLAY_GREY,
                     colour_by = nothing, colour_overrides = nothing) -> Dict{Int,RGB{N0f8}}
 
 Which labels a movie's mask draws, and in what colour: the populations' cells in their colours (or
@@ -701,7 +709,7 @@ drawn. The shader takes it as its label colour table (`labelColours`, `render_an
 function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
                          pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                          all_cells::Bool = false,
-                         all_cells_colour::AbstractString = "#9ca3af",
+                         all_cells_colour::AbstractString = OVERLAY_GREY,
                          colour_by::Union{Nothing,AbstractString} = nothing,
                          colour_overrides::Union{Nothing,AbstractDict} = nothing)
     pt = string(pop_type)
@@ -839,20 +847,40 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
 end
 
 """
-    movie_mask(img; value_name, contour_px, opacity, kwargs...) -> NamedTuple | nothing
+    ViewerPalette()
 
-A movie's mask, for the shader: `(; labels_path, colours, contour_px, opacity)`. "All cells" with no
-`colour_by` draws every label in the viewer's palette (`colours = nothing`); otherwise `colours` is
-`mask_id_colours` — the populations' labels in their colours, the shader's colour table. `nothing`
-when the label store is not on disk or the colours could not be resolved (logged). `kwargs` are
-`mask_id_colours`'s.
+A movie mask's colouring when it draws every label in the viewer's palette (`label_palette.json`,
+`id % rows`) — the other colouring is a label → colour table, where an id absent from it is not drawn.
+"""
+struct ViewerPalette end
+
+"""
+    MovieMask
+
+A movie's mask, for the shader (`_mask_params!`): the label store, its outline width and opacity, and
+how labels are coloured — `ViewerPalette()` or a `Dict{Int,RGB{N0f8}}` table. A table may be empty (a
+population with no cells here), which draws no labels, not every label.
+"""
+struct MovieMask
+    labels_path::String
+    colours::Union{ViewerPalette,Dict{Int,RGB{N0f8}}}
+    contour_px::Int
+    opacity::Float64
+end
+
+"""
+    movie_mask(img; value_name, contour_px, opacity, kwargs...) -> MovieMask | nothing
+
+"All cells" with no `colour_by` draws every label in the viewer's palette; otherwise the colours are
+`mask_id_colours` — the populations' labels in their colours. `nothing` when the label store is not
+on disk or the colours could not be resolved (logged). `kwargs` are `mask_id_colours`'s.
 """
 function movie_mask(img; value_name::AbstractString, contour_px::Integer, opacity::Real,
                     all_cells::Bool = false, colour_by = nothing, kwargs...)
     lp = img_labels_path(img, value_name)
     isdir(lp) || return nothing
     colours = if all_cells && (colour_by === nothing || isempty(String(colour_by)))
-        nothing
+        ViewerPalette()
     else
         try
             mask_id_colours(img; value_name = value_name, all_cells = all_cells,
@@ -862,5 +890,5 @@ function movie_mask(img; value_name::AbstractString, contour_px::Integer, opacit
             return nothing
         end
     end
-    (; labels_path = String(lp), colours, contour_px = Int(contour_px), opacity = Float64(opacity))
+    MovieMask(String(lp), colours, Int(contour_px), Float64(opacity))
 end

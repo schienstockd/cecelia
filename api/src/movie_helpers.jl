@@ -282,9 +282,8 @@ function _config_overlay_pops(img, config)
     end
 
     if Bool(get(config, :showTracks, false))
-        for vn in collect(String, get(config, :trackValueNames, String[]))   # whole-seg → generic "tracks" row
-            haskey(img.label_props, vn) && push!(out, Dict{String,Any}("valueName" => vn, "popType" => "track", "path" => "/_tracked"))
-        end
+        # Whole-segmentation tracks are not pops — `_track_source_items` lists them, in the colours
+        # the movie draws them.
         for vn in segs
             Bool(get(config, :showGatedTracks, false)) && _append_config_pop_paths!(out, img, vn, "track")
             Bool(get(config, :showTrackclust, false))  && _append_config_pop_paths!(out, img, vn, "trackclust")
@@ -382,7 +381,7 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
             path = String(get(pp, :path, ""))
             (isempty(vn) || isempty(pt)) && continue
             if endswith(path, "_tracked")   # whole-segmentation "all tracks" → one generic grey row
-                if !("tracks" in seen); push!(seen, "tracks"); push!(pops, Dict{String,Any}("name" => "tracks", "colour" => "#9ca3af")); end
+                if !("tracks" in seen); push!(seen, "tracks"); push!(pops, Dict{String,Any}("name" => "tracks", "colour" => OVERLAY_GREY)); end
                 continue
             end
             try
@@ -396,6 +395,26 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
         end
     end
     (; colourBy = Dict{String,Any}("column" => column, "items" => cby), populations = pops)
+end
+
+# The whole-segmentation tracks a movie draws (the translator's `allTracks`), as legend rows: one per
+# visible track source, else one "tracks" row. Read through `_overlays_raw_from_config`, so the legend
+# names what the renderer draws — not every segmentation the batch could have drawn. A swatch only
+# when one colour IS what the tails are (`_build_overlay_state`): "solid" and "pop" paint a source in
+# its colour; without sources "solid" is the palette's first colour and "pop" the grey. Coloured by
+# track or speed, one swatch would name a colour the tails are not.
+function _track_source_items(config)::Vector{Dict{String,Any}}
+    ov = _overlays_raw_from_config(config, false)
+    (ov === nothing || !ov["allTracks"]) && return Dict{String,Any}[]
+    mode = ov["trackColorMode"]
+    sources = get(ov, "trackSources", nothing)
+    if sources === nothing
+        swatch = mode == "solid" ? rgb_to_hex(CECELIA_TRACK_PALETTE[1]) :
+                 mode == "pop"   ? OVERLAY_GREY : nothing
+        return [Dict{String,Any}("label" => "tracks", "colour" => swatch)]
+    end
+    [Dict{String,Any}("label" => "$(s["valueName"]) tracks",
+                      "colour" => mode in ("solid", "pop") ? s["colour"] : nothing) for s in sources]
 end
 
 # Assemble the Julia-side title-card content for an image under a movie config (Phase H). Title = image
@@ -419,11 +438,14 @@ function _title_card_content(img, config)
     # Populations (incl. track pops) — the shown pops through the canonical legend helper → {name, colour}
     # rows. ONE section, matching the strip / single-record card (overlay_legend_content dedups by name).
     plist = _config_overlay_pops(img, config)
-    if !isempty(plist)
+    items = if !isempty(plist)
         rows  = overlay_legend_content(img, "", plist, nothing).populations
-        items = [Dict{String,Any}("label" => p["name"], "colour" => p["colour"]) for p in rows]
-        isempty(items) || push!(sections, Dict{String,Any}("heading" => "Populations", "items" => items))
+        [Dict{String,Any}("label" => p["name"], "colour" => p["colour"]) for p in rows]
+    else
+        Dict{String,Any}[]
     end
+    append!(items, _track_source_items(config))
+    isempty(items) || push!(sections, Dict{String,Any}("heading" => "Populations", "items" => items))
     # Colour-by — value → pop colour + name for the colour-by measure.
     column = String(get(config, :colourBy, ""))
     if !isempty(column)
