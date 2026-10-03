@@ -181,6 +181,35 @@ end
 #
 # `has_mask` tells the translator whether the caller has resolved a mask value_name to draw. `nothing`
 # means "no overlays to draw"; the caller drops that straight through to `_resolve_movie_overlays_mask`.
+# `trackSources` arrives in two shapes: the batch panel's list of `{valueName, colour}` and the
+# viewer look's map `{valueName => {visible, colour}}`. This is the ONE place that reads either into
+# the list — the translator below and both overlay readers (`_resolve_movie_overlays_mask`,
+# `_resolve_keyframe_overlay_builders`) call it, so a caller that skips the translator (a prebuilt
+# `overlays` dict) still gets its map honoured. Map entries without `visible` count as visible;
+# `visible = false` drops the entry; an entry without a `valueName` is dropped; a missing colour
+# becomes `default_colour`. Anything else (nothing, a scalar) → empty list.
+function _normalise_track_sources(x; default_colour::AbstractString = OVERLAY_GREY)
+    entries = if x isa AbstractDict
+        Any[Dict{String,Any}("valueName" => String(k), "colour" => _wstr_any(v, "colour", :colour))
+            for (k, v) in x
+            if v isa AbstractDict && something(get(v, "visible", nothing), get(v, :visible, nothing), true) === true]
+    elseif x isa AbstractVector
+        x
+    else
+        Any[]
+    end
+    sources = Dict{String,Any}[]
+    for e in entries
+        e isa AbstractDict || continue
+        vn  = _wstr_any(e, "valueName", :valueName)
+        col = _wstr_any(e, "colour", :colour)
+        isempty(vn) && continue
+        push!(sources, Dict{String,Any}("valueName" => vn,
+                                        "colour" => isempty(col) ? String(default_colour) : col))
+    end
+    sources
+end
+
 function _overlays_raw_from_config(cfg, has_mask::Bool)
     (cfg isa AbstractDict) || return nothing
     show_pops   = _cfg_bool(cfg, "showPopulations")
@@ -261,26 +290,8 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # can now see both, each in its own colour.
     ts_raw = get(cfg, "trackSources", nothing)
     ts_raw === nothing && (ts_raw = get(cfg, :trackSources, nothing))
-    # The viewer's look keeps them as a map, `{valueName: {visible, colour}}` (`viewerLook`); the
-    # batch request sends the list. Same entries either way — the visible ones.
-    if ts_raw isa AbstractDict
-        ts_raw = Any[Dict{String,Any}("valueName" => String(k),
-                                      "colour" => _wstr_any(v, "colour", :colour))
-                     for (k, v) in ts_raw
-                     if v isa AbstractDict && something(get(v, "visible", nothing), get(v, :visible, nothing), true) === true]
-    end
-    if ts_raw isa AbstractVector
-        # Symbol/String key tolerance — same reason `_ov` reads both shapes.
-        _svalue(e, k) = something(get(e, Symbol(k), nothing), get(e, String(k), ""))
-        sources = Any[]
-        for e in ts_raw
-            e isa AbstractDict || continue
-            vn = String(_svalue(e, "valueName"))
-            col = String(_svalue(e, "colour"))
-            isempty(vn) && continue
-            push!(sources, Dict{String,Any}("valueName" => vn,
-                                             "colour" => isempty(col) ? OVERLAY_GREY : col))
-        end
+    if ts_raw isa Union{AbstractDict,AbstractVector}
+        sources = _normalise_track_sources(ts_raw)
         if !isempty(sources)
             out["trackSources"] = sources
         elseif out["allTracks"]

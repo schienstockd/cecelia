@@ -83,6 +83,17 @@
             _, s3b = b3b(5)
             @test length(s3b.x0) == 2 * length(s3.x0)
             @test Set(s3b.colour) == Set([red, RGB{N0f8}(0, 0, 1)])
+            # A prebuilt overlays dict that skips the translator and carries the look's MAP shape
+            # still draws that source in its colour (not a silent grey fallback / nothing).
+            ov_map = Dict{String,Any}("allTracks" => true, "includeTracks" => true,
+                                      "showPopulations" => false, "tailLength" => 5,
+                                      "trackColorMode" => "solid",
+                                      "trackSources" => Dict{String,Any}(
+                                          "B" => Dict{String,Any}("colour" => "#0000ff")))
+            b3m, _ = _resolve_keyframe_overlay_builders(img, ov_map)
+            @test b3m !== nothing
+            _, s3m = b3m(5)
+            @test s3m !== nothing && all(==(RGB{N0f8}(0, 0, 1)), s3m.colour)
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
