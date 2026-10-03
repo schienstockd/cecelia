@@ -45,7 +45,7 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/gating/channels"),    # gateable columns of a segmentation
     ("GET", "/api/gating/plotdata"),    # x/y values (binary f32) — summarised into a histogram here
     ("GET", "/api/gating/stats"),       # count / % of parent for one population
-    ("POST", "/api/correction-plan/recommend"),  # pure: the cleanup steps this image needs (no write)
+    ("POST", "/api/correction-plan/recommend"),  # pure (no write): the metadata-only cleanup plan
     ("POST", "/api/gating/pop/add"),    # WRITE — add a population (gate) to a segmentation
     ("POST", "/api/gating/pop/set-gate"),  # WRITE — move an existing population's gate
     ("POST", "/api/gating/pop/delete"),    # WRITE — remove a population this agent drew

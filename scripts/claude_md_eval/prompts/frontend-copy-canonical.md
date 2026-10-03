@@ -20,7 +20,10 @@ tool_order_before_tools: Grep,Read,Glob
 tool_order_before_arg_match: (docs/inventory|INVENTORY\.md|frontend/CLAUDE\.md|frontend/src/(?:lib|components|utils))
 tool_order_after_tools: Write,Edit,MultiEdit
 compliant_signal: '(?:CLAUDE_TERMINAL\.(?:action|resync|busy)|from\s+["''][^"'']*claudeOverview|import[^;\n]*claudeOverview)'
-anti_signal: '["''](?:Set up|Fix|Setting up…)["'']'
+# The tooltip has a canonical too (`terminalSetupTooltip`), and the prompt asks for it to match:
+# a tooltip or `title` bound to a string literal is re-typed copy even when the labels come from
+# the const.
+anti_signal: '(?:["''](?:Set up|Fix|Setting up…)["'']|v-tooltip(?:\.\w+)*\s*=\s*"\s*[''`]|:title\s*=\s*"\s*[''`]|(?<![:\w-])title\s*=\s*"[^"]*\w)'
 # A component's header comment naming the button it replaces ("The "Fix terminal setup" button…")
 # isn't re-typed copy: a run that imported the const once failed on exactly that comment.
 anti_signal_ignore_comments: true

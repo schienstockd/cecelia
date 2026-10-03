@@ -25,7 +25,6 @@ import importlib.util as _importlib_util
 import json
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -235,9 +234,7 @@ def judge_input(trace_dir: pathlib.Path, prompt_id: str) -> str:
     stream = (trace_dir / "stream.jsonl").read_text(encoding="utf-8")
     signals = _run_prompt.parse_stream_json(stream)
     _, details = _run_prompt.score_all(diff, signals, meta)
-    additions = _run_prompt._additions_only(diff)
-    anti = meta.get("anti_signal", "")
-    anti_lines = [ln for ln in additions.splitlines() if anti and re.search(anti, ln)]
+    anti_lines = _run_prompt.anti_signal_lines(diff, meta)
     calls = []
     for i, c in enumerate(signals.tool_calls[:_TOOL_CALLS], 1):
         arg = c.get("input") or {}
