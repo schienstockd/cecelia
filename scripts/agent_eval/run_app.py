@@ -154,7 +154,7 @@ def run(a) -> dict:
             open(root / "stderr.log", "w", encoding="utf-8") as err:
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=out, stderr=err, cwd=str(workdir),
                                 text=True, encoding="utf-8")
-        (root / "pid").write_text(str(proc.pid))
+        (root / "pid").write_text(str(proc.pid), encoding="utf-8")
         proc.stdin.write(prompt)
         proc.stdin.close()
         try:
