@@ -370,9 +370,10 @@ def _pr_body(record: dict) -> str:
                      + ".")
     bugs = record.get("bugs", [])
     if bugs:
-        n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone")}
-        new = sum(b["status"] == "open" and b["first_seen"] == date for b in bugs)
-        lines += [f"**Bugs: {n['open']} open** ({new} new), {n['gone']} fixed since the last pass. "
+        n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone", "unjudged")}
+        new = sum(_record.newly_open(b, date) for b in bugs)
+        lines += [f"**Bugs: {n['open']} open** ({new} new), {n['gone']} fixed since the last pass"
+                  + (f", {n['unjudged']} waiting for the judge" if n["unjudged"] else "") + ". "
                   "To fix them, point a session at the record's *Bugs* section.", ""]
     lines += [f"- Findings: {len(record['findings'])}, owner queue: {len(record['queue'])}",
               f"- Supervisor: {_record.supervisor_spend(record['run']['supervisor'])}", "", _PR_FOOTER]
@@ -419,6 +420,7 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
               session: str | None = None, date: str | None = None, judge_budget: float = JUDGE_TOTAL_USD,
               judge: _t.Callable | None = None, assign: _t.Callable | None = None,
               bug_judge: _t.Callable | None = None,
+              merged_prs: _t.Callable | None = None,
               sandboxed: bool | None = None, persist: bool = True,
               state: dict | None = None) -> dict:
     """Run (or, with `session`, re-triage) one pass; returns its record, unwritten.
@@ -483,7 +485,7 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
     # Decision 18: the reviewer findings nobody fixed, checked against the code this pass ran on
     state["stage"] = "bugs"
     bugs, bug_cost = _load_sibling("bugs").sweep(events, date=date, sha=sha or _record._git("rev-parse", "HEAD"),
-                                                 previous=previous, judge=bug_judge)
+                                                 previous=previous, judge=bug_judge, merged_prs=merged_prs)
     notes = {"findings": findings, "next_actions": actions, "retries": retries, "sha": sha, "bugs": bugs,
              "supervisor": {**spend, "session": session, "bugs_usd": round(bug_cost, 4)}}
     record = _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)

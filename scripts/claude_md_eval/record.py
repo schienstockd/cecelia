@@ -56,9 +56,11 @@ FINDING_STATUSES = ("open", "resolved", "dropped")
 RECURRENCE = ("recurring", "watch")
 PROPOSAL_KINDS = ("setup", "scorer", "retire", "add", "ratchet")
 QUEUE_KINDS = ("decision", "proposal", "spot_check", "loop_review", "bug")
-#: Decision 18 (`bugs.py`). `dismissed` is the judge's `not_a_bug`, listed once so a person can
-#: overrule it; `wont_fix` is the owner's answer. Only `open` and `unmerged` carry to the next pass.
-BUG_STATUSES = ("open", "unmerged", "gone", "dismissed", "wont_fix")
+#: Decisions 18–19 (`bugs.py`). `dismissed` is the judge's `not_a_bug`, listed once so a person can
+#: overrule it; `wont_fix` is the owner's answer. `unjudged` is a candidate the judge didn't see
+#: (over the cap, or no verdict): carried, never on the owner queue. Only `open`, `unjudged` and
+#: `unmerged` carry to the next pass. `unjudged` was added without a schema bump: it is additive.
+BUG_STATUSES = ("open", "unjudged", "unmerged", "gone", "dismissed", "wont_fix")
 #: Decision 15: flag a setup metric that grew by more than this since the last record.
 SETUP_GROWTH_FLAG = 0.10
 #: Decision 16: line budgets for the setup the agents read, set 2026-10-02 at the then-current size
@@ -79,7 +81,9 @@ _BUGS_HOW_TO = (
     "To work them: for each `open` bug, read the code at `file:line` on `origin/main`, confirm it, "
     "and fix it on a normal branch (recital, PR), naming the bug's key in the commit message. "
     "The next pass checks each one again and marks the fixed ones `gone`. "
-    "A bug that isn't worth fixing: answer it `wont_fix` with `pixi run recital-review`.")
+    "A bug that isn't worth fixing: answer it `wont_fix` with `pixi run recital-review`. "
+    "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
+    "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
 
 
 class RecordError(ValueError):
@@ -252,11 +256,16 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
                   + [{"kind": "proposal", "ref": p["id"]} for p in proposals]
                   + [{"kind": "spot_check", "ref": fid} for fid in notes.get("spot_check") or []]
                   + ([{"kind": "loop_review", "ref": "loop"}] if notes.get("loop_review") else [])
-                  # new open bugs only: a carried one was already asked about
-                  + [{"kind": "bug", "ref": b["id"]} for b in notes.get("bugs", [])
-                     if b.get("status") == "open" and b.get("first_seen") == date]),
+                  # newly open bugs only (`opened`, Decision 19): a carried open one was already asked about
+                  + [{"kind": "bug", "ref": b["id"]} for b in notes.get("bugs", []) if newly_open(b, date)]),
     }
     return record
+
+
+def newly_open(bug: dict, date: str) -> bool:
+    """An `open` bug this pass put in front of the owner: it became open on `date` (a carried
+    `unjudged`/`unmerged` one judged live now counts). Older records have no `opened`."""
+    return bug.get("status") == "open" and (bug.get("opened") or bug.get("first_seen")) == date
 
 
 def failure_record(date: str, *, stage: str, error: str, sha: str | None = None) -> dict:
@@ -550,17 +559,31 @@ def _cell(text: _t.Any) -> str:
     return str(text if text is not None else "—").replace("|", "\\|").replace("\n", " ")
 
 
+def _bug_where(b: dict) -> str:
+    if b.get("kind") == "stranded":
+        return f"stranded · PR #{b.get('pr')} `{b.get('branch')}`"
+    return f"`{b['file']}:{b['line']}`"
+
+
 def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
     if not bugs:
         return ["None."]
     counts = {s: sum(b["status"] == s for b in bugs) for s in BUG_STATUSES}
     out = [_BUGS_HOW_TO, "",
            " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
-    for b in bugs:
-        out += [f"### {b['id']} · {b['status']} · `{b['file']}:{b['line']}` · `{b['key']}`", "",
+    for b in (b for b in bugs if b["status"] != "unjudged"):
+        out += [f"### {b['id']} · {b['status']} · {_bug_where(b)} · `{b['key']}`", "",
                 f"**Check:** {b['why']}", "",
                 f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
                 f"first seen {b['first_seen']}): {b['desc']}", ""]
+        out += [f"**Also raised** (`{a['key']}`, branch `{a.get('branch') or '?'}`): {a['desc']}"
+                for a in b.get("also", [])]
+        out += [""] if b.get("also") else []
+    waiting = [b for b in bugs if b["status"] == "unjudged"]
+    if waiting:
+        out += ["### Waiting for the judge", ""]
+        out += [f"- {b['id']} · {_bug_where(b)} · `{b['key']}` — {b['why']}" for b in waiting]
+        out.append("")
     return out
 
 

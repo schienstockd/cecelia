@@ -57,6 +57,11 @@ class _SuperviseFixture(_Fixture):
         # curation's finding→rule judge; injected so no test can ever reach a real `claude`
         return {"assignments": []}, 0.0
 
+    @staticmethod
+    def no_prs(since):
+        # the stranded-commit scan's PR list; injected so no test reaches `gh` or fetches
+        return []
+
     def bug_judge(self, prompt):
         # the bug sweep's judge (Decision 18); every finding it is shown is a live bug
         keys = re.findall(r"^FINDING (\S+) ", prompt, re.M)
@@ -200,7 +205,7 @@ class RetryTest(_SuperviseFixture):
 
 class SuperviseTest(_SuperviseFixture):
     def test_a_logged_pass_gets_a_valid_record_with_the_judge_spend_apart(self):
-        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge)
+        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge, merged_prs=self.no_prs)
         self.assertEqual(self.sup._record.validate(record), [])
         self.assertEqual(record["run"]["supervisor"]["judge_calls"], 1)
         self.assertEqual(record["run"]["cost_usd"], 0.3)   # the suite's, unchanged
@@ -213,7 +218,7 @@ class SuperviseTest(_SuperviseFixture):
                 "file": "CLAUDE.md", "line": 3, "desc": "a sibling still does it the old way",
                 "marker": "plausible"}) | {"branch": None}) + "\n")
         record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign,
-                                    bug_judge=self.bug_judge)
+                                    bug_judge=self.bug_judge, merged_prs=self.no_prs)
         self.assertEqual(self.sup._record.validate(record), [])
         self.assertEqual([(b["id"], b["status"], b["file"]) for b in record["bugs"]], [("B1", "open", "CLAUDE.md")])
         self.assertIn({"kind": "bug", "ref": "B1"}, record["queue"])
@@ -223,7 +228,7 @@ class SuperviseTest(_SuperviseFixture):
 
     def test_a_setup_over_budget_adds_a_decision_finding(self):
         with mock.patch.dict(self.sup._record.SETUP_BUDGET, {"claude_md_lines": 1}):
-            record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge)
+            record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge, merged_prs=self.no_prs)
         self.assertEqual(self.sup._record.validate(record), [])
         size = [f for f in record["findings"] if f["slug"] == "setup-size"]
         self.assertEqual([(f["id"], f["class"]) for f in size], [("F3", "decision")])
@@ -239,9 +244,9 @@ class SuperviseTest(_SuperviseFixture):
         review.append_review("finding_status", "2026-09-23", "F1", "resolved")
         stored = self.tmp / "eval-runs" / "2026-09-23.json"
 
-        self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge, persist=False)
+        self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge, merged_prs=self.no_prs, persist=False)
         self.assertEqual(self.sup._record.load(stored)["findings"][0]["status"], "open")    # a dry run
-        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge)
+        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge, merged_prs=self.no_prs)
         self.assertEqual(self.sup._record.load(stored)["findings"][0]["status"], "resolved")
         self.assertEqual(record["delta"]["previous"], "2026-09-23")
         self.assertEqual(record["delta"]["still_open"], [])     # resolved by the owner, so not "still open"
@@ -259,7 +264,7 @@ class SuperviseTest(_SuperviseFixture):
         self.assertIn("FAILED", self.sup._record.render_markdown(rec))
 
     def test_a_live_rerun_the_same_day_replaces_its_record(self):
-        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge)
+        record = self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge, merged_prs=self.no_prs)
         self.sup._record.write(record)
         with mock.patch.object(self.sup, "supervise", return_value=record), \
                 mock.patch.object(self.sup, "publish", return_value="url"):
@@ -295,7 +300,7 @@ class PublishTest(_SuperviseFixture):
         return run
 
     def _record(self):
-        return self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge)
+        return self.sup.supervise(session="eval-1", judge=self.judge(), assign=self.assign, bug_judge=self.bug_judge, merged_prs=self.no_prs)
 
     def test_commits_the_record_and_rollups_then_closes_the_older_run_pr(self):
         wt = self.tmp / "wt"
