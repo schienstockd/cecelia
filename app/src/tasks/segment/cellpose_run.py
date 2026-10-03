@@ -24,7 +24,7 @@ Parameter contract (JSON written by Julia):
   overlap           - XY tile overlap in pixels (default 64)
   blockSizeZ        - Z tile size in slices (0 = whole stack; Z tiling not yet active)
   overlapZ          - Z tile overlap in slices (future use)
-  labelOverlap      - IoU threshold for tile seam stitching (0 = simple max merge)
+  labelOverlap      - min IoU to join a cell cut by a tile seam (0 = off)
   matchThreshold    - IoU threshold for nuc/base matching (default 0.3)
   removeUnmatched   - remove base cells with no matching nuc (default false)
   minCellSize       - remove objects smaller than this AREA in um^2 (0 = off)

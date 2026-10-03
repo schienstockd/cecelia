@@ -175,8 +175,8 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
     subsampled read): those are different answers to the same question, and which one runs depends on
     how many levels the caller opened, so nothing about the store can distinguish them.
 - Global label ID tracking — `max_labels[match_as]` incremented per tile so IDs are unique across tiles and timepoints
-- Tile merge via `np.maximum`
-- Tile seam stitching (`labelOverlap > 0`): after tiling, labels split at tile boundaries are matched by IoU and remapped to a single ID
+- Tile merge: a later pass fills only unlabelled pixels (`fill_unlabelled`)
+- Tile seam stitching (`labelOverlap > 0`): both tiles beside a seam predict the overlap band, so a cell cut by the seam is matched by IoU of those two predictions and takes one id (`_stitch_tile_seams`). The written labels cannot be matched: two tiles never share a pixel
 - Post-processing: erosion, expansion, min/max size filter, XY border clearing, Z depth clearing (per timepoint)
 - Base-nuc IoU matching
 - Writing multiscale OME-ZARR output
@@ -341,7 +341,7 @@ is segmented, which is most images.
 | `models[].stitchThreshold` | float | 0.2 | Z-stitch threshold (0=2D per slice, no stitch — see *Cellpose 4* below) |
 | `blockSize` | int (px) | 512 | XY tile size |
 | `overlap` | int (px) | 64 | XY tile overlap; provides border context and seam zone for stitching |
-| `labelOverlap` | float | 0.0 | IoU threshold for tile seam stitching; 0 = simple np.maximum merge |
+| `labelOverlap` | float | 0.25 | Min IoU to join a cell cut by a tile seam; 0 = off |
 | `blockSizeZ` | int | 0 | Z tile size in slices (0 = whole stack; Z tiling not yet active) |
 | `overlapZ` | int | 0 | Z tile overlap in slices (future use) |
 | `matchThreshold` | float | 0.3 | IoU threshold for base-nuc label matching |

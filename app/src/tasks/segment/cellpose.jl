@@ -10,7 +10,7 @@ Base.@kwdef struct CellposeSegmentParams
     overlap::Int                 = 64
     blockSizeZ::Int              = 0
     overlapZ::Int                = 0
-    labelOverlap::Float64        = 0.0
+    labelOverlap::Float64        = 0.25
     matchThreshold::Float64      = 0.3
     removeUnmatched::Bool        = false
     minCellSize::Float64         = 0.0
@@ -32,7 +32,7 @@ function parse_cellpose_segment_params(d::AbstractDict)::CellposeSegmentParams
         overlap             = Int(get(d, "overlap", 64)),
         blockSizeZ          = Int(get(d, "blockSizeZ", 0)),
         overlapZ            = Int(get(d, "overlapZ", 0)),
-        labelOverlap        = Float64(get(d, "labelOverlap", 0.0)),
+        labelOverlap        = Float64(get(d, "labelOverlap", 0.25)),
         matchThreshold      = Float64(get(d, "matchThreshold", 0.3)),
         removeUnmatched     = Bool(get(d, "removeUnmatched", false)),
         minCellSize         = Float64(get(d, "minCellSize", 0.0)),

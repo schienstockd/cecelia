@@ -107,8 +107,8 @@ class SegmentationUtils:
         # Z tiling — 0 means no Z tiling (whole stack passed to cellpose, which uses stitch_threshold internally)
         self.block_size_z = int(params.get('blockSizeZ', 0))
         self.overlap_z = int(params.get('overlapZ', 0))
-        # IoU threshold for tile seam stitching; 0 = simple np.maximum merge (no seam matching)
-        self.label_overlap = float(params.get('labelOverlap', 0.0))
+        # Min IoU to join a cell cut by a tile seam (see `_stitch_tile_seams`); 0 = off
+        self.label_overlap = float(params.get('labelOverlap', 0.25))
         self.match_threshold = float(params.get('matchThreshold', 0.3))
         self.remove_unmatched = bool(params.get('removeUnmatched', False))
         # Sizes are AREAS in square microns; erosion/expansion are lengths in microns. Same reason
@@ -396,6 +396,7 @@ class SegmentationUtils:
                 frame_shape_t[fa_y] = y1 - y0
                 frame_shape_t[fa_x] = x1 - x0
                 frame = {ma: np.zeros(frame_shape_t, dtype=self.LABEL_DTYPE) for ma in match_as_list}
+                seam_strips = {k: {} for k in model_keys}
 
                 for read_yx, write_yx, crop_yx in xy_tiles_by_t[t]:
                     # The temporal window is a property of the TILE and the TIMEPOINT — no part of
@@ -456,12 +457,13 @@ class SegmentationUtils:
                         else:
                             # unchanged call for every non-temporal subclass
                             masks = self.predict_slice(tile, model_params, norm_p)
-                        masks = self._crop_masks(masks, crop_yx, is_3d)
 
                         # Every group's write takes the next block of ids off one monotonic
                         # counter, so the block IS the record of which pass produced them —
                         # nothing per-pixel or per-label has to be carried through stitching,
-                        # smoothing and the size filters to keep it true.
+                        # smoothing and the size filters to keep it true. Offset BEFORE the crop:
+                        # the seam stitch reads the padding, so a label living only there still
+                        # needs an id no other tile holds.
                         first_id = max_labels[match_as] + 1
                         masks, max_labels[match_as] = self.offset_pass(
                             masks, max_labels[match_as])
@@ -469,6 +471,10 @@ class SegmentationUtils:
                             pass_ranges[match_as].append(
                                 {'group': model_key, 'from': first_id,
                                  'to': max_labels[match_as]})
+                        if self.label_overlap > 0:
+                            self._collect_seam_strips(seam_strips[model_key], masks, read_yx,
+                                                      write_yx, y1 - y0, x1 - x0)
+                        masks = self._crop_masks(masks, crop_yx, is_3d)
 
                         # la_t=None → write into the frame buffer at its Y/X (no time index)
                         self._write_tile_to_arr(
@@ -479,11 +485,11 @@ class SegmentationUtils:
 
                 # Per-frame post-fill steps. Passing la_t=None, T=1 takes the whole-array branch of each
                 # helper — i.e. exactly one iteration of the loop each already ran over timepoints.
-                if self.label_overlap > 0:
-                    for ma in frame:
-                        # narrowed extent, not the canvas — the seams are where THIS frame's tiles met
-                        frame[ma] = self._stitch_tile_seams(
-                            frame[ma], y1 - y0, x1 - x0, None, fa_y, fa_x, 1)
+                # Per group: two passes are two segmentations, and one's cell is not the other's.
+                for model_key, strips in seam_strips.items():
+                    ma = models[model_key].get('matchAs', 'base')
+                    frame[ma] = self._stitch_tile_seams(frame[ma], strips)
+                del seam_strips
 
                 for ma in frame:
                     # no `real_border`: a run processes whole frames, so its array edge IS the image edge
@@ -875,64 +881,74 @@ class SegmentationUtils:
                     clipped.update(int(lb) for lb in np.unique(face) if lb > 0)
         return border_mask, clipped
 
-    def _stitch_tile_seams(self, arr, H, W, la_t, la_y, la_x, T):
-        """Merge label IDs split at tile boundaries using IoU matching.
+    def _collect_seam_strips(self, strips, masks, read_yx, write_yx, H, W):
+        """Keep this tile's PADDED prediction across each seam it borders, for `_stitch_tile_seams`.
 
-        After np.maximum tile merge, cells straddling a tile boundary appear with
-        different IDs on each side. For each seam, labels in the overlap zone on
-        one side are matched against the other; pairs with IoU >= label_overlap are
-        remapped to the same ID.
+        A seam at `pos` gets a band `[pos - h, pos + h)` with `h = min(overlap, pos, dim - pos)`; the
+        tiles either side both read that band (the overlap padding is exactly what makes it theirs
+        too), so each has its own prediction of every cell crossing it. The band spans this tile's
+        WRITE range on the other axis, which the neighbour across the seam shares on a regular grid.
+        Keyed `(axis, pos, other-axis start)`; `'lo'` is the tile before the seam, `'hi'` the one after.
+
+        Copied, not sliced: a view would keep the whole padded tile alive until the frame is done.
         """
-        ov = self.overlap
-        for t in range(T):
-            if la_t is not None:
-                t_idx = tuple(t if i == la_t else slice(None) for i in range(arr.ndim))
-                vol = arr[t_idx].copy()
-            else:
-                vol = arr.copy()
+        (ry, rx), (wy, wx) = read_yx, write_yx
+        rows = slice(wy.start - ry.start, wy.stop - ry.start)
+        cols = slice(wx.start - rx.start, wx.stop - rx.start)
+        for pos, side in ((wy.start, 'hi'), (wy.stop, 'lo')):
+            h = min(self.overlap, pos, H - pos)
+            if h > 0:
+                band = slice(pos - h - ry.start, pos + h - ry.start)
+                strips.setdefault(('Y', pos, wx.start), {})[side] = masks[..., band, cols].copy()
+        for pos, side in ((wx.start, 'hi'), (wx.stop, 'lo')):
+            h = min(self.overlap, pos, W - pos)
+            if h > 0:
+                band = slice(pos - h - rx.start, pos + h - rx.start)
+                strips.setdefault(('X', pos, wy.start), {})[side] = masks[..., rows, band].copy()
 
-            y = self.block_size
-            while y < H:
-                vol = self._stitch_seam(vol, la_y, y, ov, H)
-                y += self.block_size
+    def _stitch_tile_seams(self, vol, strips):
+        """Give a cell cut by a tile seam one id: match the two tiles' predictions of the seam band.
 
-            x = self.block_size
-            while x < W:
-                vol = self._stitch_seam(vol, la_x, x, ov, W)
-                x += self.block_size
+        Each tile writes only its own region, so a cell crossing a seam lands as two ids. Matching
+        must compare the two tiles' predictions over the SAME pixels — the band both read (see
+        `_collect_seam_strips`). Comparing the written labels instead can never match: two tiles'
+        labels never share a pixel, so their IoU is always 0.
 
-            if la_t is not None:
-                arr[t_idx] = vol
-            else:
-                arr[:] = vol
-        return arr
+        Per band, pairs with IoU >= `label_overlap` are taken greedily by IoU, one-to-one, so one
+        cell cannot absorb two. Merges chain through union-find — a cell on a tile corner crosses
+        two seams — and every chain takes its smallest id, an id an earlier tile already allocated,
+        so no id is invented (the pass ranges stay sufficient for provenance).
+        """
+        parent = {}
 
-    def _stitch_seam(self, vol, axis, pos, ov, dim_size):
-        """Match and remap labels across a single tile seam at `pos` along `axis`."""
-        half = min(ov, pos, dim_size - pos)
-        if half <= 0:
+        def find(a):
+            while parent.get(a, a) != a:
+                a = parent[a]
+            return a
+
+        for pair in strips.values():
+            if 'lo' not in pair or 'hi' not in pair:
+                continue
+            iou, labs_lo, labs_hi = self._compute_iou_matrix(pair['lo'], pair['hi'])
+            ii, jj = np.nonzero(iou >= self.label_overlap)
+            used_lo, used_hi = set(), set()
+            for k in np.argsort(-iou[ii, jj], kind='stable'):
+                i, j = int(ii[k]), int(jj[k])
+                if i in used_lo or j in used_hi:
+                    continue
+                used_lo.add(i)
+                used_hi.add(j)
+                a, b = find(int(labs_lo[i])), find(int(labs_hi[j]))
+                if a != b:
+                    parent[max(a, b)] = min(a, b)
+
+        if not parent:
             return vol
-
-        make_idx = lambda sl: tuple(sl if i == axis else slice(None) for i in range(vol.ndim))
-        left_zone  = vol[make_idx(slice(pos - half, pos))]
-        right_zone = vol[make_idx(slice(pos, pos + half))]
-
-        labels_l = np.unique(left_zone[left_zone > 0])
-        labels_r = np.unique(right_zone[right_zone > 0])
-        if len(labels_l) == 0 or len(labels_r) == 0:
-            return vol
-
-        a = np.where(np.isin(vol, labels_l), vol, 0)
-        b = np.where(np.isin(vol, labels_r), vol, 0)
-        iou_mat, lab_l, lab_r = self._compute_iou_matrix(a, b)
-        if iou_mat.size == 0:
-            return vol
-
-        for j, lb_r in enumerate(lab_r):
-            best_i = int(np.argmax(iou_mat[:, j]))
-            if iou_mat[best_i, j] >= self.label_overlap:
-                vol[vol == lb_r] = lab_l[best_i]
-        return vol
+        lut = np.arange(int(vol.max()) + 1, dtype=vol.dtype)
+        for lb in parent:
+            if lb < lut.size:
+                lut[lb] = find(lb)
+        return lut[vol]
 
     def _smooth_labels(self, vol, sigma, is_3d):
         """Round each label's XY outline by `sigma` px, without letting it take a neighbour's pixels.
