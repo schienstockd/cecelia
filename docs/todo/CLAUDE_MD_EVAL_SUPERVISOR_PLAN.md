@@ -1,7 +1,8 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
-**Status:** in progress — phases 1–6 built 2026-10-01; open: the first supervised pass, which
-measures the judge's cost so the cap can be set (Decision 4), and owner decision F6. Consolidates the two briefs at
+**Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03)
+not started; phase 12 goes first. Open: the first supervised pass, which measures the judge's cost so the cap can be
+set (Decision 4). Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
 
@@ -119,7 +120,80 @@ lost there.
     code-shape, not bugs, and stay curation's input; a fixed bug still counts there as evidence
     about the setup. The supervisor still opens no fix PRs (Decision 14). First dry run on the
     real log: 24 judged for $0.38, 16 open, and the two confirmed authorship findings mislogged as
-    dropped came back `gone`.
+    dropped came back `gone`. Decisions 19 and 22 revise this.
+
+## Decisions (2026-10-03) — after the 2026-10-02 bug sweep
+
+The 10-02 record listed 33 bugs. Tool-using agents checked every one against `origin/main`: 9 live,
+9 already fixed (3 of them before the pinned SHA, including the one marked confirmed), 8 not
+bugs, 5 latent, 1 duplicate, 1 unsettled. 10 of the 25 "open" ones had never been judged
+(over the cap) but read the same as judged ones. The most useful result — a commit pushed to
+`feat/shared-renderer-p3` after #1371 merged, never on main — was one no part of the sweep
+looks for. And all 27 runs passed, so the score carried no signal. P1 (versioned `filepath`, 10
+findings) was authored as a probe and passed 3/3 at $1.75: every source finding was a fanout
+finding on code written before the versioned shape existed, so none recorded an agent making
+the mistake.
+
+19. **The bug sweep filters mechanically before it judges.** Free checks first, in Python:
+    - drop findings on frozen paths (`docs/ai-assist/eval-runs/`, an earlier record);
+    - merge findings on the same file and symbol into one bug that lists every source finding;
+    - `unmerged` stays as in Decision 18; a finding whose symbol no longer exists at the pinned
+      SHA is `gone` without a judge call;
+    - findings over the per-pass cap are `unjudged`, not `open`, and render apart;
+    - **stranded commits:** for every PR merged since the previous pass, commits on its head
+      branch that the merge doesn't contain are a bug of their own (no finding needed).
+    The judge then sees the whole enclosing function (or ±60 lines when there is none), not ±20.
+20. **Verification is by tool-using agents, grouped by cause.** Judge survivors that are `live_bug`
+    go to a verify step: one agent per root-cause group (shared symbol or shared pattern),
+    read-only, in a sandboxed worktree at the pinned SHA, with `deniedDomains: ["*"]`. Each bug
+    comes back as `fix` / `decide` (a question for the owner, stated in one line with a
+    recommendation) / `guard` (latent: name what makes it live) / `dismiss`, with `file:line`
+    evidence. Per-pass budget cap; groups over it wait for the next pass, oldest first. The
+    record's owner queue holds `decide` items only; `fix` and `guard` are the work list.
+    Every verdict is kept, so the record measures how often `**confirmed**` / `**plausible**`
+    reviewer findings are real — the evidence `CONVENTION_CHECK_PLAN.md` needs to make the
+    convention check blocking.
+21. **Log findings are binned before curation proposes a probe.** Only a mistake an agent made
+    can become a probe:
+    - `agent_made`: convention findings (`**should reuse**`, `**wrong home**`), and fanout findings
+      whose flagged line was added in the same diff (`git blame -w -C` at the finding's commit, so
+      reformatting or moved code isn't credited to the wrong commit). These
+      feed Decision 8's add rule.
+    - `legacy`: fanout findings on code older than the diff. They go to the bug sweep; a pattern
+      with ≥3 of them is proposed as a **ratchet test** that bans the old shape, never as a probe.
+    An add proposal also names where the correct sibling lives, so the authored prompt doesn't
+    send the agent straight to it (P1 led to `storage.jl`, which already held the fixed pattern).
+22. **A fix stage opens PRs for `fix` bugs.** Decision 14 stays for the judge calls. The fix stage
+    is separate, through the agent-overnight harness: one agent per `fix` group in its own
+    worktree off the pinned SHA, sandboxed as in F7 with `deniedDomains: ["*"]` (`allowedDomains`
+    can't narrow it, F7), so the agent commits locally and Python runs the tests, pushes and opens
+    the PR. It never merges. Recital runs on each commit as in Decision 10. Per-pass cap; one PR per
+    group, naming its bug keys. The next pass marks the bugs `gone` once the PR merges.
+23. **The owner's session transcripts are a second probe source.** Last 30 days of
+    `~/.claude/projects/*/*.jsonl` (the transcript retention window, so a quiet week still has
+    material). Candidate moments, found mechanically:
+    - a feedback memory's `originSessionId` (a correction already written down, with its *Why*);
+    - `[Request interrupted by user]`;
+    - a refused tool call;
+    - the user's next message opening with a correction, or Claude retracting ("you're right").
+    A tool-less judge reads the turns before each moment and answers: is this a reproducible
+    decision (probe) or taste / one-off; which rule; what context made it hard. A probe built from
+    one carries that context into the prompt. Transcript text is data (Decision 14) and stays
+    local; records cite session id + turn, never quote more than the moment.
+    - A feedback memory whose transcript has aged out still has its *Why*; with the repo checked
+      out at the memory's date that is often enough to author the probe.
+    - **Memories must not leak into the eval.** A probe built from a correction would pass on the
+      memory, not on CLAUDE.md. Today the spawns run under `/tmp/cecelia-eval/…`, whose project
+      dirs have no memory, and there is no user-level `~/.claude/CLAUDE.md` (checked 2026-10-03).
+      `run_prompt.py` asserts both before spawning, so a later change can't silently break it.
+    - Behavioural probes ("stopped short", "ignored a memory") are not deterministic: score them as
+      a pass rate over N, with Decision 17's `noisy` rule, never one pass/fail.
+24. **Every scorer is shown to fail before its prompt counts.** A prompt that always passes says
+    nothing if its scorer can't fail. Each active prompt needs a test where a non-compliant answer
+    scores non-compliant (the shape: `python/cecelia/tests/test_claude_md_eval.py` cases that
+    feed a known-bad snippet to the prompt's scorer). On 2026-10-03,
+    `frontend-coalesce`, `frontend-copy-canonical`, `frontend-inlinenote` and `hand-rolled-debounce`
+    had none, so their 3/3 is not yet evidence. A prompt without one can't be retired.
 
 ## Run record (fields)
 
@@ -264,6 +338,24 @@ Each phase is its own PR.
    - **Loop review.** On every 8th run it shows scores per run, proposals accepted (of those
      made), the spot-check false-positive rate and total cost. It becomes a `loop_review` item.
    - **Setup size.** Growth over 10% in any setup-size metric is flagged in "Since last run".
+7. **Sweep prefilter (Decision 19) — not started.** `bugs.py`: frozen-path drop, file+symbol
+   merge, symbol-gone check, `unjudged` status, whole-function excerpt, and the stranded-commit
+   scan over PRs merged since the previous pass. Checkpoint: replayed on the 10-02 log it drops
+   B8, merges B27/B32, marks the 10 over-cap items `unjudged`, and finds `aca112aa`. No agent cost.
+8. **Log binning (Decision 21) — not started.** `curate.py`: `agent_made` / `legacy` from the
+   finding kind and `git blame` at the finding's commit; `legacy` groups become ratchet-test
+   proposals. Checkpoint: the 10 P1 source findings all bin `legacy`.
+9. **Verify step (Decision 20) — not started.** Grouping, sandboxed read-only agents, the four
+   verdicts, the per-pass cap, owner queue = `decide` only. Checkpoint: on the 10-02 bugs it
+   reproduces the hand-verified verdicts above; measure its cost on that run before setting the cap.
+10. **Transcript miner (Decision 23) — not started.** Pilot first, judged by hand: candidate
+    moments from the last 30 days, then how many make a reproducible probe. Wired into the pass
+    only if the pilot finds some.
+11. **Fix stage (Decision 22) — not started**, after 9 has run for a few passes and its `fix`
+    verdicts have held up. Hand-run the fixing agent on 3–5 `fix` items first, so the harness and
+    the verdicts aren't proven in one go; then automate as the harness's first real use.
+12. **Scorer known-fail tests (Decision 24) — not started.** The four prompts above get a failing-
+    answer test. Before 7–11: it decides whether the current 27/27 means anything.
 
 ## Open questions
 
