@@ -6,7 +6,8 @@ Design: docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md → *Decisions* 4–7, 13–
 Python does everything deterministic: the lock, pinning `origin/main`, the persistent worktree,
 the suite run, infra retries and the record. `claude -p` is used only to judge one failed run at a
 time, with **no tools**: the trace excerpts are inlined into the prompt as data, and the answer is
-validated with `--json-schema`. The judge's spend is logged apart from the suite's.
+validated with `--json-schema`. The supervisor's spend (judge, bug sweep, curation) is logged
+apart from the suite's.
 
 A crash at any stage still writes a failure record (`record.failure_record`), so a missing week is
 visible rather than silent.
@@ -377,8 +378,7 @@ def _pr_body(record: dict) -> str:
         lines += [f"**Bugs: {n['open']} open** ({new} new), {n['gone']} fixed since the last pass. "
                   "To fix them, point a session at the record's *Bugs* section.", ""]
     lines += [f"- Findings: {len(record['findings'])}, owner queue: {len(record['queue'])}",
-              f"- Judge: {record['run']['supervisor']['judge_calls']} call(s), "
-              f"${record['run']['supervisor']['cost_usd']:.2f}", "", _PR_FOOTER]
+              f"- Supervisor: {_record.supervisor_spend(record['run']['supervisor'])}", "", _PR_FOOTER]
     return "\n".join(lines) + "\n"
 
 
@@ -559,8 +559,7 @@ def main(argv: list[str] | None = None) -> int:
         path = _record.write(record, force=args.force or not args.session)[0]
         res, sup = record["results"], record["run"]["supervisor"]
         print(f"{record['date']}: {res['raw']['compliant']}/{res['raw']['total']} compliant, "
-              f"{len(record['findings'])} finding(s), judge ${sup['cost_usd']:.2f} "
-              f"over {sup['judge_calls']} call(s)\n  wrote {path}")
+              f"{len(record['findings'])} finding(s), supervisor {_record.supervisor_spend(sup)}\n  wrote {path}")
         if not args.session and not args.no_pr:   # a re-triage stays local
             state["stage"] = "publish"
             print(f"  PR {publish(record, worktree=args.worktree or default_worktree())}")
