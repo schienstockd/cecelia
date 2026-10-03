@@ -213,6 +213,95 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class Render2DRegionTest(unittest.TestCase):
+    """A 2D frame uploads only the region it shows (``_xy_region``) — the same picture as the whole
+    plane, and the reason a crop of a plane wider than the device's texture limit renders at all."""
+
+    W = 96          # x
+    H = 64          # y
+
+    @classmethod
+    def setUpClass(cls):
+        _shared_host()
+        cls.d = tempfile.mkdtemp()
+        rng = np.random.default_rng(3)
+        img = rng.integers(0, 1000, size=(1, 1, 4, cls.H, cls.W)).astype(np.uint16)
+        cls.zarr = _store(os.path.join(cls.d, "img.zarr"), img, "tczyx")
+        lab = np.zeros((1, 4, cls.H, cls.W), np.uint32)
+        lab[:, :, 30:50, 60:80] = 3
+        cls.labels = _store(os.path.join(cls.d, "lab.zarr"), lab, "tzyx")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.d, ignore_errors=True)
+
+    def _params(self):
+        # zoom 2 on a 40-px canvas = 20 L0 rows, centred off-centre at (y 40, x 70)
+        st = {"t": 0, "ndisplay": 2, "zRange": [1, 1], "snapH": 40,
+              "camera": {"center": [1, 40, 70], "zoom": 2.0, "angles": [0, 0, 0]},
+              "specs": [{"lo": 0, "hi": 1000, "lut": [[0, 0, 0], [1, 1, 1]], "visible": True}],
+              "overlays3d": {"points": {"x": [72.0], "y": [38.0], "z": [1.0], "colour": [[1.0, 0.0, 0.0]]},
+                             "segments": {"x0": [64.0], "y0": [34.0], "z0": [1.0], "x1": [76.0],
+                                          "y1": [44.0], "z1": [1.0], "colour": [[0.0, 1.0, 0.0]]}}}
+        return {"zarrPath": self.zarr, "states": [st], "canvasH": 40, "canvasW": 60,
+                "labelsPath": self.labels, "labelContourPx": 1, "labelOpacity": 1.0, "pointSizePx": 3}
+
+    def test_the_region_is_the_whole_planes_picture(self):
+        from unittest import mock
+        from cecelia.utils import wgpu_host
+        from cecelia.writers import render_animation_run as r
+        host = wgpu_host.MipHost()
+        region = next(r.render_frames(self._params(), host, _Log()))
+        H, W = self.H, self.W
+        whole = lambda st, l0, lyx, ch, cw: ((slice(0, lyx[0]), slice(0, lyx[1])), (0.0, 0.0, float(H), float(W)))
+        with mock.patch.object(r, "_xy_region", whole):
+            plane = next(r.render_frames(self._params(), host, _Log()))
+        self.assertEqual(region.shape, plane.shape)
+        # the same texels under the same pixels; a texel boundary may round the other way
+        self.assertGreater((np.abs(region.astype(int) - plane.astype(int)).max(-1) <= 2).mean(), 0.995)
+        self.assertGreater(region[..., 0].max(), 200)        # the point is drawn
+        self.assertGreater(region[..., 1].max(), 200)        # and the tail
+
+    def test_a_mask_on_another_grid_is_skipped(self):
+        from cecelia.utils import wgpu_host
+        from cecelia.writers import render_animation_run as r
+        odd = _store(os.path.join(self.d, "odd.zarr"), np.full((1, 4, self.H // 2, self.W // 2), 3, np.uint32), "tzyx")
+        host = wgpu_host.MipHost()
+        skipped = next(r.render_frames(dict(self._params(), labelsPath=odd), host, _Log()))
+        bare = {k: v for k, v in self._params().items() if not k.startswith("label")}
+        np.testing.assert_array_equal(skipped, next(r.render_frames(bare, host, _Log())))
+
+    def test_no_camera_centre_is_the_images(self):
+        from cecelia.writers import render_animation_run as r
+        st = dict(self._params()["states"][0])
+        st["camera"] = {"zoom": 2.0, "angles": [0, 0, 0]}
+        (_, _), origin = r._xy_region(st, (4, self.H, self.W), (self.H, self.W), 40, 60)
+        moved = r._in_region(st, origin, (4, self.H, self.W))["camera"]["center"]
+        self.assertEqual((moved[1] + origin[0], moved[2] + origin[1]), (self.H / 2, self.W / 2))
+
+    def test_the_region_is_what_the_camera_shows(self):
+        from cecelia.writers import render_animation_run as r
+        (ys, xs), (oy, ox, h, w) = r._xy_region(self._params()["states"][0], (4, self.H, self.W),
+                                                (self.H, self.W), 40, 60)
+        # 20 rows × 30 cols about (40, 70), a pixel of margin, clamped to the 96-wide image
+        self.assertEqual((ys.start, ys.stop, xs.start, xs.stop), (29, 51, 54, 86))
+        self.assertEqual((oy, ox, h, w), (29.0, 54.0, 22.0, 32.0))
+
+    def test_a_crop_of_a_plane_over_the_limit_stays_at_level_0(self):
+        from cecelia.utils import wgpu_host
+        from cecelia.writers import render_animation_run as r
+        host = wgpu_host.MipHost()
+        host.max_texture_3d = 48             # the plane (96 wide) is over it; the 32-wide region is not
+        logged = []
+
+        class Log:
+            def log(self, m):
+                logged.append(m)
+        frame = next(r.render_frames(self._params(), host, Log()))
+        self.assertEqual(frame.shape, (40, 60, 3))
+        self.assertFalse(any("does not fit" in m for m in logged), logged)
+
+
 class _Log:
     def log(self, _msg):
         pass
