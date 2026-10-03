@@ -80,6 +80,8 @@ _BUGS_HOW_TO = (
     "Possible bugs in shipped code, from fanout findings nobody fixed, checked against the pinned SHA. "
     "To work them: for each `open` bug, read the code at `file:line` on `origin/main`, confirm it, "
     "and fix it on a normal branch (recital, PR), naming the bug's key in the commit message. "
+    "A bug an agent verified says how: `fix` is live, `guard` can't happen yet (add the guard or test "
+    "its *Live once* names), `decide` waits for the owner's answer. "
     "The next pass checks each one again and marks the fixed ones `gone`. "
     "A bug that isn't worth fixing: answer it `wont_fix` with `pixi run recital-review`. "
     "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
@@ -256,15 +258,24 @@ def build(events: _t.Sequence[dict], date: str, *, annotations: dict | None = No
                   + [{"kind": "proposal", "ref": p["id"]} for p in proposals]
                   + [{"kind": "spot_check", "ref": fid} for fid in notes.get("spot_check") or []]
                   + ([{"kind": "loop_review", "ref": "loop"}] if notes.get("loop_review") else [])
-                  # newly open bugs only (`opened`, Decision 19): a carried open one was already asked about
-                  + [{"kind": "bug", "ref": b["id"]} for b in notes.get("bugs", []) if newly_open(b, date)]),
+                  # Decision 20: only a bug an agent verified as `decide` this pass is the owner's;
+                  # `fix` / `guard` are the work list
+                  + [{"kind": "bug", "ref": b["id"]} for b in notes.get("bugs", []) if owner_bug(b, date)]),
     }
     return record
 
 
+def owner_bug(bug: dict, date: str) -> bool:
+    """An open bug the owner has to answer: verified `decide` on `date` (Decision 20). A record from
+    before verification queued every newly open bug instead."""
+    v = bug.get("verify") or {}
+    return bug.get("status") == "open" and v.get("verdict") == "decide" and v.get("date") == date
+
+
 def newly_open(bug: dict, date: str) -> bool:
-    """An `open` bug this pass put in front of the owner: it became open on `date` (a carried
-    `unjudged`/`unmerged` one judged live now counts). Older records have no `opened`."""
+    """An `open` bug new to the work list: it became open on `date` (a carried `unjudged`/`unmerged`
+    one judged live now counts). The PR body's "N new". Not the owner queue — that's `owner_bug`.
+    Older records have no `opened`."""
     return bug.get("status") == "open" and (bug.get("opened") or bug.get("first_seen")) == date
 
 
@@ -572,9 +583,16 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
     out = [_BUGS_HOW_TO, "",
            " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
     for b in (b for b in bugs if b["status"] != "unjudged"):
-        out += [f"### {b['id']} · {b['status']} · {_bug_where(b)} · `{b['key']}`", "",
-                f"**Check:** {b['why']}", "",
-                f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
+        v = b.get("verify") or {}
+        out += [f"### {b['id']} · {b['status']}{' · ' + v['verdict'] if v else ''} · {_bug_where(b)} · `{b['key']}`", "",
+                f"**Check:** {b['why']}", ""]
+        if v:
+            out += [f"**Verified** ({v['verdict']}, {v.get('date')}): {v.get('effect', '')}",
+                    *([f"- Question: {v['question']}"] if v.get("question") else []),
+                    *([f"- Recommendation: {v['recommendation']}"] if v.get("recommendation") else []),
+                    *([f"- Live once: {v['trigger']}"] if v.get("trigger") else []),
+                    f"- Evidence: {v.get('evidence', '')}", ""]
+        out += [f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
                 f"first seen {b['first_seen']}): {b['desc']}", ""]
         out += [f"**Also raised** (`{a['key']}`, branch `{a.get('branch') or '?'}`): {a['desc']}"
                 for a in b.get("also", [])]
