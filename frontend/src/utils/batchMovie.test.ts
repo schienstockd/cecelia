@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd, withCustomColours } from './batchMovie'
+import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd, withCustomColours, defaultTrackColour, resolveTrackSources } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -75,6 +75,26 @@ describe('buildBatchMovieConfig', () => {
       { valueName: 'cpSAM',   colour: '#ff6b6b' },
       { valueName: 'default', colour: '#a78bfa' },
     ])
+  })
+
+  it('trackSources follows the panel: a tracked seg with no map entry is visible in its default colour', () => {
+    // The panel lists `trackedSegs` and shows an untouched one as on — the movie must draw it too,
+    // not fall back to one grey source because the map was never seeded.
+    expect(buildBatchMovieConfig({ showTracks: true }, [], {}, ['cpSAM', 'flowTom']).trackSources)
+      .toEqual([
+        { valueName: 'cpSAM',   colour: defaultTrackColour(0) },
+        { valueName: 'flowTom', colour: defaultTrackColour(1) },
+      ])
+    // Partly seeded: an explicit untick drops it, a missing entry stays on; order is the tracked list's
+    expect(buildBatchMovieConfig({
+      showTracks: true,
+      trackSources: { flowTom: { visible: false, colour: '#4ecdc4' }, cpSAM: { visible: true, colour: '#ff6b6b' } },
+    }, [], {}, ['cpSAM', 'flowTom', 'default']).trackSources).toEqual([
+      { valueName: 'cpSAM',   colour: '#ff6b6b' },
+      { valueName: 'default', colour: defaultTrackColour(2) },
+    ])
+    // The preview reads the same rule
+    expect(resolveTrackSources(['a'], undefined)).toEqual([{ valueName: 'a', colour: defaultTrackColour(0) }])
   })
 
   it('popValueName defaults to the first mask column, else the first segmentation', () => {

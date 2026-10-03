@@ -7,6 +7,7 @@
 
 import { viewerColormapForHex, channelsForRender } from './viewerColormap'
 import { LABEL_OPACITY } from './viewerLabels'
+import { PALETTES } from '../plots/plot'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
@@ -31,6 +32,9 @@ export interface TitleCardCfg {
   note: string
   durationSec: number
 }
+
+/** One row of the batch panel's Track sources list, keyed by segmentation value_name. */
+export type TrackSourceCfg = { visible: boolean; colour: string }
 
 /**
  * The AUTHORED movie config — what the Batch page's controls edit and what the settings store persists
@@ -87,7 +91,7 @@ export interface BatchMovieCfg {
   // `_resolve_movie_overlays_mask` composes one `build_overlays3d_for` closure per visible source
   // (each with its own `all_tracks_colour`) and merges their outputs, so a fXgbTl movie with cpSAM
   // + flowTom + coastalFg all ticked draws all three simultaneously, each in its own colour.
-  trackSources?: Record<string, { visible: boolean; colour: string }>
+  trackSources?: Record<string, TrackSourceCfg>
   colourLabels?: boolean
   tailWidth?: number
   // Track tail length in frames, and how ribbons are coloured ('track' | 'speed' | 'solid' | 'pop').
@@ -174,10 +178,32 @@ export const LABEL_CONTOUR_MAX = 10
 export const clampContour = (v: number | undefined): number =>
   Math.min(LABEL_CONTOUR_MAX, Math.max(0, Math.round(v ?? 0) || 0))
 
+/** Default colour for the track source at position `i` in the tracked-segs list (house palette, cycled). */
+export function defaultTrackColour(i: number): string {
+  const p = PALETTES.cecelia
+  return p[i % p.length] as string
+}
+
+/** The batch panel's track-source rule, shared by its list, its preview and the request: one row per
+ *  tracked segmentation, a segmentation with no map entry is visible in the default colour for its
+ *  position. With no tracked list (no image picked) the map's own entries are all there is. */
+export function resolveTrackSources(
+  trackedSegs: string[],
+  map: Record<string, TrackSourceCfg> | undefined,
+): Array<{ valueName: string; colour: string }> {
+  const m = map ?? {}
+  const segs = trackedSegs.length ? trackedSegs : Object.keys(m)
+  return segs
+    .map((vn, i) => ({ vn, i, e: m[vn] }))
+    .filter(({ e }) => e?.visible ?? true)
+    .map(({ vn, i, e }) => ({ valueName: vn, colour: e?.colour || defaultTrackColour(i) }))
+}
+
 export function buildBatchMovieConfig(
   cfg: BatchMovieCfg,
   segNames: string[],
   colourOverrides: Record<string, string>,
+  trackedSegs: string[] = [],
 ): BatchMovieRequestConfig {
   const tc = cfg.titleCard
   // The version list is authoritative; `valueName` stays in the payload as the FIRST column, which is
@@ -222,13 +248,11 @@ export function buildBatchMovieConfig(
     popValueName: cfg.popValueName ?? (cfg.labelValueNames?.[0] ?? segNames[0] ?? ''),
     // Empty list = ALL pops of the resolved popType (backend rule; matches the pre-picker default).
     popsFilter: cfg.showPopulations ? [...(cfg.popsFilter ?? [])] : [],
-    // Multi-source composition: emit an array of `{valueName, colour}` for the segs the user ticked
-    // visible in the batch panel's Track sources list. Only meaningful under `showTracks && !showPops`
-    // — else empty (single-source `allTracks` grey is what the pop branch overrides anyway).
-    trackSources: (!!cfg.showTracks && !cfg.showPopulations && cfg.trackSources)
-      ? Object.entries(cfg.trackSources)
-          .filter(([, v]) => v?.visible)
-          .map(([valueName, v]) => ({ valueName, colour: v.colour }))
+    // Multi-source composition: what the batch panel's Track sources list shows (`resolveTrackSources`).
+    // Only meaningful under `showTracks && !showPops` — else empty (single-source `allTracks` grey is
+    // what the pop branch overrides anyway).
+    trackSources: (!!cfg.showTracks && !cfg.showPopulations)
+      ? resolveTrackSources(trackedSegs, cfg.trackSources)
       : [],
     pointsSize: cfg.pointsSize ?? 6,
     pointBorder: cfg.pointBorder ?? 0,
