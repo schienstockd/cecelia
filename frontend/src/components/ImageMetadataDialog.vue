@@ -9,7 +9,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted } from 'vue'
-import { useToast } from 'primevue/usetoast'
+import { useToast } from '../composables/useToast'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
 import { useProjectStore } from '../stores/project'

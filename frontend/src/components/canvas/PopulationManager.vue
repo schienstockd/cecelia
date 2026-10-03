@@ -163,8 +163,8 @@ useWindowListener('keydown', onKey)
 const convertTo = (p: FlatPop) => p.gate ? otherGateKind(p.gate.kind) : null
 const convertIcon = (p: FlatPop) => convertTo(p) === 'polygon' ? 'pi pi-share-alt' : 'pi pi-stop'
 // SHORT on purpose. This panel is ~250px and the button sits at the LEFT of the icon cluster, so a
-// wide `.left` tooltip cannot fit beside it: PrimeVue's align() falls through left → top → bottom and
-// drops it onto the row below, hiding the controls there (docs/ui/COPY.md — a tooltip that covers the
+// wide `.left` tooltip cannot fit beside it: the directive flips left → right → top → bottom and
+// drops it onto a neighbouring row, hiding the controls there (docs/ui/COPY.md — a tooltip that covers the
 // thing you were about to click). "Rectangle" already implies the bounding box; the widening is in
 // docs/POPULATION.md, not in hover help.
 const convertTip = (p: FlatPop) =>
@@ -552,7 +552,7 @@ function moveTo(target: string) {
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @click="pick(p)">
           <!-- `.bottom`, not `.left`: this marker is the row's LEFTMOST element, so there is never room
-               beside it and PrimeVue drops the tip somewhere it covers a pop row. The injected viewer
+               beside it and the flip drops the tip somewhere it covers a pop row. The injected viewer
                pop is always the last root child, so below it is the panel edge, not a control. The row
                already reads "Viewer selection" — the tip carries only what the label can't. -->
           <i v-if="p.transient" class="pi pi-map-marker pm-viewer"
@@ -592,7 +592,7 @@ function moveTo(target: string) {
           </span>
 
           <!-- these `.left` tips are kept SHORT: this panel is ~250px, so a wide tooltip can't fit
-               beside an icon and PrimeVue drops it onto the row below (docs/ui/COPY.md). -->
+               beside an icon and the flip drops it onto the row below (docs/ui/COPY.md). -->
           <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: isLit(p) }"
                   v-tooltip.left="isLit(p) ? 'Hide colour on plots' : 'Highlight colour on plots'"
                   @click.stop="emit('toggleHighlight', p.path)">

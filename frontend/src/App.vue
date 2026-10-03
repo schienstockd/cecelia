@@ -15,8 +15,8 @@ import ViewerPanel from './components/ViewerPanel.vue'
 import LabLogPanel from './components/LabLogPanel.vue'
 import CorrectionCockpit from './components/correction/CorrectionCockpit.vue'
 import KiwiCockpit from './components/kiwi/KiwiCockpit.vue'
-import Toast from 'primevue/toast'
-import { useToast } from 'primevue/usetoast'
+import ToastHost from './components/ToastHost.vue'
+import { useToast } from './composables/useToast'
 import { useTaskStore } from './stores/tasks'
 import { useProjectStore } from './stores/project'
 import { useLogStore } from './stores/log'
@@ -225,7 +225,7 @@ const bare = computed(() => popout || route.meta.bare === true)
          settings toggle so it doesn't clutter first-run. See docs/todo/KIWI_PLAN.md. -->
     <KiwiCockpit v-if="settings.kiwiOpen" @close="settings.kiwiOpen = false" />
     <ErrorConsole />
-    <Toast position="bottom-right" />
+    <ToastHost />
     <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.
          State lives in lib/whatsNew.ts (isWhatsNewOpen); callers just call openWhatsNew(). -->
     <WhatsNewDialog v-if="isWhatsNewOpen" @close="closeWhatsNew" />

@@ -78,8 +78,8 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 
 ### Toast notifications (transient foreground feedback)
 
-PrimeVue `<Toast />` is mounted once in `App.vue` (registered via `ToastService` in `main.ts`); call
-`useToast()` anywhere. **Do not add a second notification system.** Toast is for a foreground action
+`components/ToastHost.vue` is mounted once in `App.vue`; call `useToast()` (`composables/useToast.ts`)
+anywhere, including stores and plain modules. Hovering a toast pauses its life. **Do not add a second notification system.** Toast is for a foreground action
 the user just triggered and is waiting on (a cohort check, a longer save) — NOT for background
 scheduler progress (that's the task manager) nor for every lab-log entry (those badge). Severity maps
 to the traffic-light scale: `info` (in progress) · `success` (done, all-clear) · `warn` (done, findings)
@@ -372,21 +372,19 @@ if it is the control. A narrow target — an icon button, a chip, a radio, a che
 `.left`/`.right`. Never write a bare `v-tooltip`. Enforced by `misplacedTooltips` in
 `utils/uiCopy.ts`, ratcheted to zero.
 
-**Why, from PrimeVue's own positioning code** (`primevue/tooltip/index.mjs`) — this is not a style
-preference, it is what the library does:
+**Why, from the positioner** (`directives/tooltip.ts` → `utils/anchorPosition.ts`) — this is not a style
+preference, it is what the positioning does:
 
-- `isOutOfBounds` tests the **viewport and nothing else**. It has no idea a panel exists.
-- `alignLeft` is `left = hostLeft - tooltipWidth` (and `alignRight` the mirror). So on a target that
-  spans its panel, sideways placement lands the tooltip *outside that panel by construction* — over
-  the next column — and the library reports it in bounds, because it is still on screen.
-- `alignTop`/`alignBottom` are the **only two that clamp horizontally**
-  (`if (left < 0) left = 0; else if (left + tooltipWidth > viewportWidth) …`). On a wide target that
-  clamp is the guarantee: the tooltip stays inside the target's own horizontal span, i.e. inside the
-  panel. They also never cover the target — `top` sits at `hostTop - tooltipHeight`, `bottom` at
-  `hostTop + hostHeight`. The sideways pair instead **centres vertically** on the target, so a
-  two-line tip on a one-line row spills over the rows above and below.
-- A **bare** `v-tooltip` is not "no opinion": `align()` falls through to `alignRight`, whose flip chain
-  (right → left → top → bottom → **right again, unchecked**) is the one that can land anywhere.
+- It flips and clamps against the **viewport and nothing else**. It has no idea a panel exists.
+- So on a target that spans its panel, sideways placement lands the tooltip *outside that panel by
+  construction* — over the next column — and it counts as in bounds, because it is still on screen.
+- `.top`/`.bottom` **centre the tip on the target horizontally**, so on a wide target it stays inside
+  the target's own span, i.e. inside the panel. They also never cover the target. The sideways pair
+  instead **centres vertically** on the target, so a two-line tip on a one-line row spills over the
+  rows above and below.
+- A **bare** `v-tooltip` is not "no opinion": no modifier means `right`, the same sideways placement.
+- When the preferred side does not fit, the tip flips in PrimeVue's old order (top ↔ bottom;
+  left → right → top → bottom; right → left → top → bottom), so a tip lands where it always did.
 
 **Which of top/bottom.** Point the tooltip *away from the row's own content*: a label names the
 control under it, so it takes `.top`; a control is named by the label above it, so it takes `.bottom`.
@@ -404,18 +402,13 @@ because neither is about placement: `duplicateTooltips` (a control repeating its
 `nestedTooltips` (a tipped control inside a tipped row, so hovering fires both). All three live in
 `utils/uiCopy.ts` — see [`docs/ui/COPY.md`](ui/COPY.md) → *Tooltip coverage* for the presence half.
 
-**Placement is only half of it — the width has to be measured on the right element.** PrimeVue
-positions off `getOuterWidth(tooltipElement)`, and `tooltipElement` is the `.p-tooltip` *container*,
-which Aura caps at `tooltip.max.width` = 12.5rem. So a `max-width` on the inner `.p-tooltip-text` does
-not widen the tooltip the library sees — the text just overflows a box still measured at 200px, and
-every placement is off by the difference. `alignLeft` being `left = hostLeft - measuredWidth`, a 280px
-tip measured as 200px reaches 80px *past* its target's left edge: that is how the module pages' CSV
-button, correctly placed at `.left`, ended up completely hidden under its own tooltip
-(2026-08-22, after the sweep above). **Size `.p-tooltip`, never `.p-tooltip-text`** — including
-per-tooltip overrides, which anchor on the root (`.p-tooltip.qc-tip`). `width: max-content` there
-needs `!important`, because the directive writes `width: fit-content` inline and, on an absolutely
-positioned box, that is the space left to the viewport edge. Enforced by *tooltip sizing* in
-`utils/cssScenarios.test.ts`.
+**Placement is only half of it — the width has to be measured on the right element.** The
+positioner measures the `.cc-tooltip` *root*. A `max-width` on the inner `.cc-tooltip-text` does not
+widen the box it measures — the text just overflows it, and every placement is off by the difference.
+With PrimeVue (whose Aura preset capped the root at 200px) that put a 280px `.left` tip 80px *past* its
+target's left edge, completely hiding the module pages' CSV button under its own tooltip (2026-08-22).
+**Size `.cc-tooltip`, never `.cc-tooltip-text`** — including per-tooltip overrides, which anchor on
+the root (`.cc-tooltip.qc-tip`). Enforced by *tooltip sizing* in `utils/cssScenarios.test.ts`.
 
 **`InlineNote` has no placement knob**, deliberately: it is fixed at `.bottom`, because a note
 annotates the control above it. It used to take a `placement` prop that passed `position` inside the
@@ -571,7 +564,7 @@ icon-flip or a Confirm+Cancel pair for deletes; that inconsistency is exactly wh
 ```
 
 Props: `title` / `armedTitle` (tooltips), `disabled`, `needsConfirm`, `autoDismissMs`; default slot →
-a text label beside the icon (e.g. "Delete set"). Tooltip position is PrimeVue's default + its
+a text label beside the icon (e.g. "Delete set"). Tooltip position is the directive's default + its
 out-of-bounds flip (a `tip` prop can't drive position — dynamic directive modifiers aren't possible).
 For a host with a **hover-reveal** row action, target the inner button with `:deep(.cc-del)` (see
 `ViewerPanel`). The louder **named** text confirms for whole-image / whole-set deletion (`ImageTable`,
@@ -1461,7 +1454,7 @@ consequences worth knowing before touching it:
   render a badge otherwise. Every interpolated string is escaped in `qcTooltipHtml` — that is not
   optional, and a new field rendered there must go through `esc` too.
 - The plain-text `QcSummary.long` is still produced (and still what MCP/lab-log style consumers would
-  want), but it is **not** what the tooltip shows: `.p-tooltip-text` sets no `white-space`, so its
+  want), but it is **not** what the tooltip shows: `.cc-tooltip-text` sets no `white-space`, so its
   `\n`s collapsed and three findings rendered as one run-on paragraph.
 
 **Include / exclude an image.** Any image can be excluded from further processing/analysis — the

@@ -27,7 +27,7 @@ export function moduleColor(m: string): string {
 const TAG_FILL_ALPHA = 0x22 / 255
 
 //: The surface the LABEL's contrast is computed against — `--cc-surface-2`, the LIGHTEST surface a tag
-//: sits on (the PrimeVue tooltip). The fill is translucent, so its painted colour depends on what is
+//: sits on (the tooltip). The fill is translucent, so its painted colour depends on what is
 //: behind it, and CSS cannot tell us; picking the lightest is the worst case for light label text, so a
 //: label readable here is readable on `--cc-bg` and `--cc-surface-1` too.
 const TAG_SURFACE = '#21262d'

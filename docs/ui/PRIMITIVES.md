@@ -47,7 +47,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | **Determinate progress** (a 0–1 fraction — a task, a patch, an export) | `components/CcProgressBar.vue` — `:value` (0–1, clamped, NaN-safe), `size` `thin` (3px, flush in a row/card) \| `bar` (4px, rounded, standalone). Width maths in `utils/progress.ts`. Caller keeps its own geometry (`flex`, `margin`) | a per-file track+fill pair — four of those existed on two heights, two radii, two transitions and three different fraction→width sums |
 | "Working", with no fraction to show | nothing, or the surface's existing cue — a running task row already says it via `lib/taskStatus.ts` | animating `CcProgressBar` to fake an indeterminate bar |
 | Which model an assistant run uses | `components/AgentModelSelect.vue` (`v-model` the caller's persisted setting, `tip`) | a per-panel `<select>` over `observer.models` |
-| Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
+| Transient "just did a thing" feedback | `useToast()` (`composables/useToast.ts`) — the one `<ToastHost />` in `App.vue` | a second notification system |
 | Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
 | Side panel of two stacked halves, either expandable to the whole panel | `composables/usePaneExpand.ts` + `components/PaneExpandBar.vue` (`utils/paneExpand.ts`) — see *Two-half side panels* | a per-panel mode `ref` + its own pair of toggle buttons |
 | Right-hand panel that folds away and can be dragged wider | `components/CollapsiblePanel.vue` (`storageKey` + `label`; drag-to-resize via `composables/usePanelResize.ts`) — see *Collapsible side panels*. **The content inside fills it (`flex: 1; min-width: 0`) and must not set a width of its own** | an inline handle + `v-show` + its own mousemove drag, or a slot child with its own `usePanelResize` — two widths and two handles on one edge, so dragging the outer one shifts the content instead of reflowing it |
@@ -58,7 +58,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | A short line with its reasoning on hover | `components/InlineNote.vue` | an `<i class="pi …"/> {{ text }}` + `v-tooltip` by hand (four sites had one each, two already drifted off the severity model) |
 | Explaining what a dropdown OPTION means | a `help` field on the option in the task JSON (`utils/optionHelp.ts` renders it) | overloading the param `tip`, or a param advisory — an advisory carries a severity, and `ok` draws a green check claiming a verdict nobody reached |
 | Teaching a multi-step workflow | a `GuideDef` in `lib/guides/` (a `moduleTaskGuide({…})` call when the page is ModuleLayout + TaskRunner) — see *Guides* | a page full of explanatory prose, a bespoke tour component, or hand-writing the five standard task-runner steps a fourth time |
-| Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover` and `GuideBubble` both call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
+| Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover`, `GuideBubble` and the `v-tooltip` directive all call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
 | "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
@@ -212,7 +212,7 @@ explain in the UI, that text goes in the relevant `docs/<AREA>.md` instead.
 
 **Tokens live on `:root`, and that is load-bearing.** `.cc-dark` is a `<div>` inside `<body>`
 (`App.vue`'s shell), so anything a library appends to `document.body` is a *sibling* of it and inherits
-nothing declared there. PrimeVue's tooltip does exactly that — so while the scale sat on `.cc-dark`,
+nothing declared there. The tooltip (`directives/tooltip.ts`, PrimeVue's before it) does exactly that — so while the scale sat on `.cc-dark`,
 every `var(--cc-*)` in the tooltip override was invalid at computed-value time and the tooltip rendered
 at the browser default **16px**, with `<body>`'s own `font-size` dead the same way. Declared ≠ reachable,
 and the symptoms are identical, which is why the token guard stayed green throughout. If you style

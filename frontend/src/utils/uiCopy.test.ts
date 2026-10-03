@@ -459,16 +459,16 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
   })
 
   // The THIRD way a tooltip lands on top of the UI, and the one the two checks above are blind to,
-  // because it is neither a repeated text nor a nested hover area. PrimeVue's `isOutOfBounds` tests
-  // the VIEWPORT and nothing else, and `alignLeft` is `left = hostLeft - tooltipWidth` — so on a
-  // target that spans its panel, `.left` puts the tooltip outside that panel by construction, over
-  // whatever column is next door, and the library reports it in bounds because it is still on screen.
+  // because it is neither a repeated text nor a nested hover area. The positioner flips and clamps
+  // against the VIEWPORT and nothing else — so on a target that spans its panel, `.left` puts the
+  // tooltip outside that panel by construction, over whatever column is next door, and it counts as
+  // in bounds because it is still on screen.
   // 123 sites were doing this, 26 of them in PlotOptions alone, where every row tip landed on the
   // plot it described.
   //
   // Swept to zero in the same change, so this is a plain no-violations check. Before adding an entry:
   // the fix is `.top` on a label or heading and `.bottom` on a control, never a nudge to the other
-  // side — those are the only two placements PrimeVue clamps horizontally. An entry is only justified
+  // side — those are the two that stay inside a wide target's own span. An entry is only justified
   // for a host this cannot measure as narrow, and `radio`/`checkbox` are already exempt by type.
   const ALLOWED_SIDEWAYS: string[] = []
 
@@ -491,13 +491,12 @@ describe('misplacedTooltips', () => {
       .toEqual([{ tag: 'select', line: 1, side: 'right' }])
   })
 
-  it('accepts the two placements PrimeVue clamps horizontally', () => {
+  it('accepts the two placements that stay inside the target\'s span', () => {
     expect(misplacedTooltips(sfc(`<label v-tooltip.top="'Suffix'">Name</label>`))).toEqual([])
     expect(misplacedTooltips(sfc(`<select v-tooltip.bottom="'Palette'" />`))).toEqual([])
   })
 
-  // No modifier is not "no opinion" — `align()` falls through to `alignRight`, whose flip chain ends
-  // by re-applying itself with no bounds test, so it is the one placement that can land anywhere.
+  // No modifier is not "no opinion" — it means `right`, the same sideways placement.
   it('flags a BARE v-tooltip on a wide host', () => {
     expect(misplacedTooltips(sfc(`<div v-tooltip="'Row'">x</div>`)))
       .toEqual([{ tag: 'div', line: 1, side: 'none' }])

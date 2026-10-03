@@ -97,6 +97,31 @@ describe('placeBox — the sides guide bubbles add', () => {
   })
 })
 
+describe('placeBox — a tooltip\'s fallback chain', () => {
+  const tip = { width: 120, height: 24 }
+  it('keeps the requested side when it fits', () => {
+    expect(placeBox({ anchor: mid, box: tip, viewport: vp, placement: 'left', fallbacks: ['right', 'top', 'bottom'] }).side)
+      .toBe('left')
+  })
+  it('takes the first fallback that fits, in order', () => {
+    // hugging the left edge: right fits, so right — not top, though top fits too
+    const a: AnchorRect = { top: 300, left: 2, width: 30, height: 20 }
+    expect(placeBox({ anchor: a, box: tip, viewport: vp, placement: 'left', fallbacks: ['right', 'top', 'bottom'] }).side)
+      .toBe('right')
+    // a full-width anchor: neither side fits, so top
+    const wide: AnchorRect = { top: 300, left: 0, width: 1000, height: 20 }
+    expect(placeBox({ anchor: wide, box: tip, viewport: vp, placement: 'left', fallbacks: ['right', 'top', 'bottom'] }).side)
+      .toBe('top')
+  })
+  it('stays on the requested side when no fallback fits either', () => {
+    const tiny = { width: 100, height: 50 }
+    const a: AnchorRect = { top: 0, left: 0, width: 100, height: 50 }
+    const placed = placeBox({ anchor: a, box: box, viewport: tiny, placement: 'top', fallbacks: ['bottom'] })
+    expect(placed.side).toBe('top')
+    expect(placed.flipped).toBe(false)
+  })
+})
+
 describe('arrowOffset', () => {
   it('points at the anchor centre, measured from the box corner', () => {
     const placed = placeBox({ anchor: mid, box, viewport: vp, placement: 'bottom' })

@@ -1,6 +1,6 @@
 # Retire PrimeVue
 
-**Status:** planning (2026-10-02). P0 done (exact pins + Dependabot ignore).
+**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast). P2 built (own tooltip), awaiting Dominik's visual pass.
 
 ## Goal
 
@@ -58,11 +58,14 @@ Modals and dialogs are already hand-rolled (`BaseModal.vue`). No other PrimeVue 
    data entries keep a string, and spinner/`pi-fw` become props or classes. Rejected: vendoring 7
    permanently (it freezes the set and keeps single-owner provenance), and Iconify as a runtime
    dependency (an extra layer for one icon set).
-3. **Tooltip positioning on `@floating-ui/dom` (MIT)**: `flip` + `shift` + `offset`, and `arrow` for
-   `.p-tooltip-arrow`'s equivalent. That replaces the PrimeVue placement quirks the comments in
-   `style.css` / `uiCopy.ts` work around ("`.top`/`.bottom` are the only placements PrimeVue clamps
-   horizontally", "`.left` falls through to top"). Re-audit those rules once it lands: some become
-   obsolete, and the `docs/ui/COPY.md` placement guidance may relax.
+3. **Tooltip positioning on `utils/anchorPosition.ts` `placeBox`** — the app's one positioner
+   (TeleportPopover, GuideBubble), extended with a `fallbacks` chain so the tip flips in PrimeVue's
+   order. First drafted on `@floating-ui/dom`; the convention check pointed at `placeBox`, which
+   already did side + gap + flip + clamp, so no new dependency. Clamping now applies on all four
+   sides, which retires the PrimeVue quirks the `style.css` / `uiCopy.ts` comments worked around
+   ("`.top`/`.bottom` are the only placements PrimeVue clamps horizontally", "a bare tip ends
+   unchecked"). The sideways-on-a-wide-target rule still holds: the positioner knows the viewport,
+   not the panel.
 4. **Keep the tooltip's DOM contract.** It is appended to `document.body`, so it inherits no `--cc-*`
    vars from the app root (see `docs/ui/PRIMITIVES.md` and the `style.css` header). Keep `body`-level
    token declarations and the "size the root, never the text" rule. New class names are `cc-tooltip*`;
@@ -77,13 +80,21 @@ Modals and dialogs are already hand-rolled (`BaseModal.vue`). No other PrimeVue 
 - **P0, done.** `primevue` 4.5.5, `@primeuix/themes` 2.0.3 and `primeicons` 7.0.0 are pinned
   **exactly** in `frontend/package.json`, because a caret would accept a patch released under the
   new licence. `.github/dependabot.yml` ignores all their updates. #1340 closed.
-- **P1, Toast.** `components/ToastHost.vue` + `composables/useToast.ts` (same signature), on the
-  traffic-light severity tokens. Swap the 5 importers. Vitest for the queue/expiry logic.
-- **P2, Tooltip.** `directives/tooltip.ts` on `@floating-ui/dom`: show/hide delays, hide on scroll and
-  on element unmount, the `escape: false` HTML path (`lib/qc.ts` already escapes every interpolation),
-  and reactive value updates. Pure placement/option parsing goes in `utils/` with Vitest. **Needs
-  Dominik's eyes before merging**: placement in dense panels (PopulationManager, the task panels,
-  the ImageTable QC badge), dark mode, and the floating windows.
+- **P1, Toast — done.** `components/ToastHost.vue` + `composables/useToast.ts` (same `add()`
+  signature, plus pause-on-hover as PrimeVue had), on the traffic-light severity tokens; pure queue
+  half in `utils/toastQueue.ts` with Vitest. `ToastService` is gone from `main.ts`.
+- **P2, Tooltip — built, awaiting the visual pass.** `directives/tooltip.ts` on `placeBox`
+  (4px gap, PrimeVue's fallback order, viewport clamp), binding parsed by
+  `utils/tooltipOptions.ts` (Vitest). No arrow (ours was `display: none`), no show/hide delays (no
+  caller set one). Hides on leave, click, Escape, scroll, resize, unmount, and when the pointer
+  reaches anything outside its target (which also covers a target that left the document). A
+  visible tip follows a changed binding (PrimeVue's didn't). `.p-tooltip*` rules moved to
+  `.cc-tooltip*`; the placement rules in `uiCopy.ts` / `docs/UI.md` re-audited — the sideways rule
+  still holds (the positioner knows the viewport, not the panel), only its rationale changed.
+  Headless-Chromium smoke test passed: flip at all four edges, clamp inside the viewport, a
+  full-width `.left` row falling to top, HTML path, live update, Escape, outside-hover, detached
+  target, scroll, unmount. **Needs Dominik's eyes before merging**: placement in dense panels
+  (PopulationManager, the task panels, the ImageTable QC badge), dark mode, and the floating windows.
 - **P3, remove.** Drop `primevue`, `@primeuix/themes`, the `PrimeVue` config + Aura preset and the
   `primevue` CSS layer. Check what Aura was still styling (base font, focus rings), add the ratchet
   test, and update `docs/inventory/FRONTEND.md`, `docs/ui/PRIMITIVES.md` and `docs/UI.md`.

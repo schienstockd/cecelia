@@ -3,8 +3,6 @@ import { keepAlivePause } from './composables/useKeepAlive'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import PrimeVue from 'primevue/config'
-import Tooltip from 'primevue/tooltip'
-import ToastService from 'primevue/toastservice'
 import Aura from '@primeuix/themes/aura'
 import 'primeicons/primeicons.css'
 import './style.css'
@@ -16,6 +14,7 @@ import { useLinkedSelectionStore } from './stores/linkedSelection'
 import { useViewerStore } from './stores/viewer'
 import { installRoLoopTrace } from './utils/roLoopTrace'
 import { popoutRouteOfWindow } from './lib/popout'
+import { tooltip } from './directives/tooltip'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
 // giant eager `index` bundle at boot (the heavy ones — ChainModule pulls @vue-flow, the canvas pages
@@ -135,8 +134,7 @@ app.use(PrimeVue, {
     },
   },
 })
-app.use(ToastService)
-app.directive('tooltip', Tooltip)
+app.directive('tooltip', tooltip)
 
 // ── The browser's own failures → the console ─────────────────────────────────
 // The console reported everything the SERVER side could go wrong with and nothing this half could. A
