@@ -7,12 +7,15 @@ viewer's Record, batch and the compare grid's cells, 2D and 3D. Each frame is dr
 contrast, colours, masks and overlays (``docs/todo/SHARED_RENDERER_PLAN.md`` Phases 2–3). It needs
 no CUDA: any GPU through Vulkan / Metal / DX12, else a software adapter.
 
+Stills (card filmstrips, keyframe thumbnails) are the same frames written as PNGs — ``render_stills``,
+which the resident preview worker serves with a host it keeps warm (``docs/todo/STILLS_WORKER_PLAN.md``).
+
 A 2D movie is drawn the way the viewer's 2D view is: the same pass, head-on and orthographic, over a
 slab of planes (one plane = one sample; several = their max), at the pyramid level its zoom picks.
 
 **Contract with Julia** — params dict:
     ``zarrPath``       : image store (a bioformats2raw ``0/`` or a flat ``.zarr``)
-    ``outPath``        : mp4 to write
+    ``outPath``        : mp4 to write — or ``outPaths``, one PNG per state (a still; no title card)
     ``states``         : one per frame:
         ``t``          : timepoint
         ``camera``     : the view state's camera, as the viewer stored it —
@@ -47,6 +50,7 @@ import os
 import numpy as np
 
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.atomic_io import atomic_path
 from cecelia.utils import wgpu_host, wgsl_utils
 from cecelia.utils.movie_io import movie_writer, crop_to_even
 from cecelia.utils.zarr_utils import open_as_zarr, read_axes, fortify
@@ -190,13 +194,10 @@ def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_st
     return u
 
 
-def run(params):
-    log = script_utils.get_logfile_utils(params)
-    host = wgpu_host.MipHost()
-    info = host.adapter_info
-    log.log(f"[INFO] render_animation_run: {info.get('device')} ({info.get('backend_type')}, "
-            f"{info.get('adapter_type')})")
-
+def render_frames(params, host, log):
+    """One sRGB ``(H, W, 3)`` uint8 frame per ``params['states']``, timestamp / scale bar drawn —
+    what the mp4 encodes and what a still saves. ``host`` is a ``MipHost``; its volume, labels and
+    palette are replaced here, so one host serves any number of calls in turn."""
     states = params['states']
     canvas_h = int(params.get('canvasH', 512))
     canvas_w = int(params.get('canvasW', 512))
@@ -204,7 +205,6 @@ def run(params):
     # unit, and the voxel's x size is the one every other length is already relative to.
     voxel_um = (1.0, 1.0, float(params.get('zAniso', 1.0)))
     steps = _QUALITY_STEPS.get(params.get('renderQuality', 'standard'), 256)
-    fps = float(params.get('fps', 15))
     overlays = params.get('overlays') if isinstance(params.get('overlays'), list) else None
     overlay_style = {'pointPx': float(params.get('pointSizePx', 6)),
                      'borderPx': float(params.get('pointBorderPx', 0)),
@@ -231,6 +231,7 @@ def run(params):
 
     palette = wgpu_host.label_palette()
     host.set_palette(palette)
+    host.set_labels(None)
     labels_arr = label_style = None
     if params.get('labelsPath'):
         # The mask goes on the same grid as the image level, or not at all — a mismatched texture
@@ -258,48 +259,74 @@ def run(params):
 
     cached = None
     dims = None
+    for i, state in enumerate(states):
+        t_idx = int(state['t'])
+        z_range = None
+        if flat:
+            zr = state.get('zRange')
+            z_range = (int(zr[0]), int(zr[1])) if zr else (0, l0_zyx[0] - 1)
+        if cached != (t_idx, z_range):
+            zs = _level_z(z_range, nz_level, l0_zyx[0]) if z_range else None
+            vol = _as_u16(_load_at_t(arr, t_idx, axes, z_slice=zs))
+            host.set_volume(vol)
+            dims = vol.shape
+            if labels_arr is not None:
+                lab = _load_at_t(labels_arr, t_idx, lab_axes, want=('z', 'y', 'x'), z_slice=zs)
+                host.set_labels(np.ascontiguousarray(lab, dtype=np.uint32))
+            cached = (t_idx, z_range)
+        host.set_lut(wgpu_host.lut_rows([s.get('lut') or [] for s in state.get('specs') or []]))
+        ov = state.get('overlays3d') or {}
+        host.set_points(_point_instances(ov.get('points'), voxel_um))
+        host.set_segments(_segment_instances(ov.get('segments'), voxel_um))
+        # 2D: one sample is the plane; a slab is a top-down max over its planes, one step
+        # each, which hits every plane's centre (the viewer's ± window marches it finer).
+        n_steps = max(1, dims[1]) if flat else steps
+        lanes = frame_uniforms(state, dims, l0_zyx, voxel_um, canvas_h, n_steps,
+                               label_style, overlay_style, z_range=z_range)
+        frame = host.render(canvas_w, canvas_h, lanes)[..., :3]
+        frame = crop_to_even(np.ascontiguousarray(frame))
+        # Timestamp / scale bar go onto the ENCODED frame, already sRGB — the same helper
+        # and order as the 2D encoder.
+        if overlays is not None and i < len(overlays):
+            item = overlays[i] or {}
+            from cecelia.utils.title_card import draw_frame_overlays
+            frame = draw_frame_overlays(frame, timestamp=item.get('timestamp'),
+                                        scale_bar=item.get('scaleBar'))
+        yield frame
+        if (i + 1) % 20 == 0:
+            log.log(f'[PROGRESS] {i + 1}/{len(states)}')
+
+
+def render_stills(params, host, log):
+    """``render_frames`` written to ``params['outPaths']`` as PNGs, one per state; returns the paths."""
+    from PIL import Image
+    out_paths = [str(p) for p in params['outPaths']]
+    if len(out_paths) != len(params['states']):
+        raise ValueError(f"render_animation_run: {len(out_paths)} outPaths for {len(params['states'])} states")
+    for path, frame in zip(out_paths, render_frames(params, host, log)):
+        with atomic_path(path) as tmp:
+            Image.fromarray(frame).save(tmp, format='PNG')
+    return out_paths
+
+
+def run(params):
+    log = script_utils.get_logfile_utils(params)
+    host = wgpu_host.MipHost()
+    info = host.adapter_info
+    log.log(f"[INFO] render_animation_run: {info.get('device')} ({info.get('backend_type')}, "
+            f"{info.get('adapter_type')})")
+    if params.get('outPaths'):
+        log.log(f'[INFO] rendered {len(render_stills(params, host, log))} still(s)')
+        return
+
     written = 0
     out_path = params['outPath']
     staging = f"{out_path}.tmp.mp4"
     try:
-        with movie_writer(staging, fps) as writer:
-            for i, state in enumerate(states):
-                t_idx = int(state['t'])
-                z_range = None
-                if flat:
-                    zr = state.get('zRange')
-                    z_range = (int(zr[0]), int(zr[1])) if zr else (0, l0_zyx[0] - 1)
-                if cached != (t_idx, z_range):
-                    zs = _level_z(z_range, nz_level, l0_zyx[0]) if z_range else None
-                    vol = _as_u16(_load_at_t(arr, t_idx, axes, z_slice=zs))
-                    host.set_volume(vol)
-                    dims = vol.shape
-                    if labels_arr is not None:
-                        lab = _load_at_t(labels_arr, t_idx, lab_axes, want=('z', 'y', 'x'), z_slice=zs)
-                        host.set_labels(np.ascontiguousarray(lab, dtype=np.uint32))
-                    cached = (t_idx, z_range)
-                host.set_lut(wgpu_host.lut_rows([s.get('lut') or [] for s in state.get('specs') or []]))
-                ov = state.get('overlays3d') or {}
-                host.set_points(_point_instances(ov.get('points'), voxel_um))
-                host.set_segments(_segment_instances(ov.get('segments'), voxel_um))
-                # 2D: one sample is the plane; a slab is a top-down max over its planes, one step
-                # each, which hits every plane's centre (the viewer's ± window marches it finer).
-                n_steps = max(1, dims[1]) if flat else steps
-                lanes = frame_uniforms(state, dims, l0_zyx, voxel_um, canvas_h, n_steps,
-                                       label_style, overlay_style, z_range=z_range)
-                frame = host.render(canvas_w, canvas_h, lanes)[..., :3]
-                frame = crop_to_even(np.ascontiguousarray(frame))
-                # Timestamp / scale bar go onto the ENCODED frame, already sRGB — the same helper
-                # and order as the 2D encoder.
-                if overlays is not None and i < len(overlays):
-                    item = overlays[i] or {}
-                    from cecelia.utils.title_card import draw_frame_overlays
-                    frame = draw_frame_overlays(frame, timestamp=item.get('timestamp'),
-                                                scale_bar=item.get('scaleBar'))
+        with movie_writer(staging, float(params.get('fps', 15))) as writer:
+            for frame in render_frames(params, host, log):
                 writer.append_data(frame)
                 written += 1
-                if (i + 1) % 20 == 0:
-                    log.log(f'[PROGRESS] {i + 1}/{len(states)}')
         os.replace(staging, out_path)
     except BaseException:
         try:

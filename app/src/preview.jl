@@ -85,7 +85,10 @@ const PREVIEW_PORT   = 7656
 # on AF against a backend that believes it works.
 # 15 adds `segment.ridges` to the previewable set. A protocol-14 worker answers "no preview backend
 # for 'segment.ridges'", which reads on the page as the preview button being dead.
-const PREVIEW_PROTOCOL = 15
+# 16 adds the `render` command (stills on the shared shader, `api/src/movie_render.jl`). The backend
+# falls back to a one-off renderer when the worker can't answer, which would hide a stale worker
+# forever — the bump is what replaces it.
+const PREVIEW_PROTOCOL = 16
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker

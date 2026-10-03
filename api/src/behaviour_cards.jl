@@ -2,9 +2,9 @@
 #
 # One helper (`render_medoid_filmstrip`) that every card family calls after it has resolved its own
 # medoid `(uid, value_name, track_id)` triple and the medoid's trace history. Owns everything that
-# is family-agnostic: crop from the medoid track's bbox, pixel transform, snap-to-nearest tracked
-# t, image specs from the saved viewer sidecar, per-frame render via `render_view_frame`, PNG-save
-# each frame as a board-asset.
+# is family-agnostic: crop from the medoid track's bbox, snap-to-nearest tracked t, image specs from
+# the saved viewer sidecar, the frames as stills on the viewer's shader (`render_view_stills`), each
+# saved as a board-asset.
 #
 # **What each family supplies:**
 #   - the medoid `(uid, value_name, track_id)` and its image (`med_img::CciaImage`)
@@ -15,9 +15,8 @@
 #   - `frames_ts` — which timepoints to render (before snap).
 #
 # **What the helper decides:**
-#   - crop rectangle (bbox + pad, or centred + `crop_side` for card-sheet parity).
-#   - `pixel_transform` for that crop → the closure that projects `(x, y)` from native pixels into
-#     the drawn frame.
+#   - crop rectangle (bbox + pad, or centred + `crop_side` for card-sheet parity); the stride that
+#     fits it in `max_px` is `pixel_transform`'s, inside `render_view_stills`.
 #   - snap every requested t to the nearest tracked t so the dot always lands on a rendered image.
 #   - `resolved_display_specs` from the medoid image's saved viewer sidecar (channels/LUT/contrast).
 #
@@ -34,6 +33,11 @@
 using PNGFiles
 using ColorTypes: RGB
 using FixedPointNumbers: N0f8
+
+# A card's dot and tail: the weight the cards always had (measured against the CPU renderer's 6-px
+# dot and 2-px Bresenham tail: same dot, trace within 5%) — a card is a small crop shown enlarged, not
+# the viewer's canvas.
+const _CARD_TRACE_STYLE = movie_overlay_style(k -> k == "pointSizePx" ? 4 : k == "segmentWidthPx" ? 4 : nothing)
 
 """
     render_medoid_filmstrip(med_img, value_name, track_id, frames_ts, project_uid;
@@ -61,7 +65,7 @@ Keyword arguments the caller resolves:
    past segments (arrival t ≤ frame t) in `trace_colour`. Empty history → no trace overlay.
 - `trace_colour::RGB{N0f8}` — the trace and dot colour, family-resolved (pop colour for cellCards,
    motif class palette entry for motifCards, hmm state palette entry for hmmCards).
-- `max_px::Int=320` — largest drawn-frame extent (`render_view_frame` stride target).
+- `max_px::Int=320` — largest drawn-frame extent (`pixel_transform` stride target).
 - `pad_px::Int=8` — halo around the medoid's bbox when `crop_side === nothing`.
 - `crop_side::Union{Nothing,Int}=nothing` — when set, EVERY card in this render batch uses the same
    physical pixel side, centred on each card's own medoid, so a card sheet is visually comparable.
@@ -115,7 +119,6 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
         ylo = max(0, bbox.y[1]); yhi = min(native_h - 1, bbox.y[2])
         crop = (x = xlo:xhi, y = ylo:yhi)
     end
-    tf = pixel_transform(native_h, native_w; crop=crop, max_px=max_px)
 
     # Materialise the trace so we can iterate it multiple times and read the tracked t's.
     hist = Tuple{Int,Float64,Float64}[]
@@ -125,31 +128,20 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
     end
     sort!(hist; by = first)
 
-    project = (x, y) -> _apply(tf, x, y)
-    build_points_and_segments = function(t::Int)
-        pts_x = Int[]; pts_y = Int[]; pts_c = RGB{N0f8}[]
-        segs_x0 = Int[]; segs_y0 = Int[]; segs_x1 = Int[]; segs_y1 = Int[]
-        segs_c = RGB{N0f8}[]; segs_a = Float64[]
-        # dot: cell at frame t (if the medoid was tracked at exactly this t)
-        for (tt, x, y) in hist
-            tt == t || continue
-            xy = project(x, y); xy === nothing && continue
-            push!(pts_x, xy[1]); push!(pts_y, xy[2]); push!(pts_c, trace_colour)
-        end
-        # tail: every consecutive pair whose ARRIVAL t is ≤ t (past segments only)
-        for i in 1:(length(hist) - 1)
-            t0, x0, y0 = hist[i]; t1, x1, y1 = hist[i + 1]
-            t1 <= t || continue
-            xy0 = project(x0, y0); xy1 = project(x1, y1)
-            (xy0 === nothing || xy1 === nothing) && continue
-            push!(segs_x0, xy0[1]); push!(segs_y0, xy0[2])
-            push!(segs_x1, xy1[1]); push!(segs_y1, xy1[2])
-            push!(segs_c, trace_colour); push!(segs_a, 1.0)
-        end
-        pts = isempty(pts_x) ? nothing : (; x = pts_x, y = pts_y, colour = pts_c)
-        segs = isempty(segs_x0) ? nothing :
-               (; x0 = segs_x0, y0 = segs_y0, x1 = segs_x1, y1 = segs_y1,
-                  colour = segs_c, alpha = segs_a)
+    # The trace in native pixels, for the shader to project: a dot at t (the medoid tracked at exactly
+    # this t) and the tail of every hop that has ARRIVED by t. No z — the still is the whole stack's
+    # max, which draws every overlay.
+    overlays3d_for = function(t::Int)
+        dots = [(x, y) for (tt, x, y) in hist if tt == t]
+        hops = [(hist[i][2], hist[i][3], hist[i + 1][2], hist[i + 1][3])
+                for i in 1:(length(hist) - 1) if hist[i + 1][1] <= t]
+        pts = isempty(dots) ? nothing :
+              (; x = first.(dots), y = last.(dots), z = zeros(length(dots)),
+                 colour = fill(trace_colour, length(dots)))
+        segs = isempty(hops) ? nothing :
+               (; x0 = getindex.(hops, 1), y0 = getindex.(hops, 2), z0 = zeros(length(hops)),
+                  x1 = getindex.(hops, 3), y1 = getindex.(hops, 4), z1 = zeros(length(hops)),
+                  colour = fill(trace_colour, length(hops)))
         (pts, segs)
     end
 
@@ -176,24 +168,26 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
     for t in snapped_ts; t in seen && continue; push!(seen, t); push!(frames_uniq, t); end
 
     out = Dict{String,Any}[]
-    for t in frames_uniq
-        pts, segs = build_points_and_segments(Int(t))
-        frame = try
-            render_view_frame(arr, caxes, Int(t);
-                              channels=channels, specs=specs, crop=crop, max_px=max_px,
-                              points=pts, segments=segs)
-        catch; nothing end
-        frame === nothing && continue
-        tmp = tempname() * ".png"
+    isempty(frames_uniq) && return out
+    dir = mktempdir()
+    try
+        paths = [joinpath(dir, "t$(t).png") for t in frames_uniq]
         try
-            PNGFiles.save(tmp, frame)
-            aid = _save_board_asset_file(project_uid, tmp)
-            entry = Dict{String,Any}("t" => Int(t), "asset_id" => aid)
+            render_view_stills(zp, paths, frames_uniq; channels = channels, specs = specs, crop = crop,
+                               max_px = max_px, overlays3d_for = overlays3d_for, style = _CARD_TRACE_STYLE,
+                               task_dir = joinpath(dir, "task"), on_log = _ -> nothing)
+        catch e
+            @warn "render_medoid_filmstrip: the stills failed" value_name track_id exception = e
+            return out
+        end
+        for (t, path) in zip(frames_uniq, paths)
+            isfile(path) || continue
+            entry = Dict{String,Any}("t" => Int(t), "asset_id" => _save_board_asset_file(project_uid, path))
             interval_s === nothing || (entry["t_s"] = Float64(t) * interval_s)
             push!(out, entry)
-        finally
-            isfile(tmp) && rm(tmp; force=true)
         end
+    finally
+        rm(dir; recursive = true, force = true)
     end
     out
 end

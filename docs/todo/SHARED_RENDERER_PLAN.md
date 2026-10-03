@@ -2,10 +2,10 @@
 
 **Status:** Phases 0–4 built and merged (2026-10-03): every movie, 2D and 3D, runs the viewer's
 shaders (PRs #1345, #1349, #1359, #1371).
-- **Open:** the viewer-side pixel capture (needs a browser — Dominik's click); stills (cell /
-  behaviour / motif cards, keyframe thumbnails) still render in Julia — moving them onto the shader is
-  [`STILLS_WORKER_PLAN.md`](STILLS_WORKER_PLAN.md); Phase 5 (bricks) for a level 0 over the device's
-  3D-texture limit.
+- **Stills** (cards, keyframe thumbnails) are on the shader too, served by the preview worker —
+  [`STILLS_WORKER_PLAN.md`](STILLS_WORKER_PLAN.md).
+- **Open:** the viewer-side pixel capture (needs a browser — Dominik's click); Phase 5 (bricks) for a
+  level 0 over the device's 3D-texture limit.
 
 Supersedes [`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay")
 and its "shared drawing library" non-goal. That plan's shared-JSON work (Phases 1–2, built) stands.

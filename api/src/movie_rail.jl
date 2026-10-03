@@ -47,13 +47,13 @@ end
 
 # The frontend sends canvas H/W here (a viewer's own dimensions, or a user override), which the
 # offline renderer has no viewer for — but max(H, W) is a reasonable `max_px` cap, so a UI that sized
-# down for a smaller mp4 still gets a smaller mp4. `0` = no downsample (`render_view_frame`'s own
+# down for a smaller mp4 still gets a smaller mp4. `0` = no downsample (`pixel_transform`'s own
 # default), which is what happens when the UI leaves them blank.
 _max_px_from_size(size_x, size_y) =
     max(size_x === nothing ? 0 : Int(size_x), size_y === nothing ? 0 : Int(size_y))
 
 # Per-cell `max_px` in a compare grid — never below this cell's own native long side.
-# `render_view_frame` treats `max_px` as a STRIDE cap (`step = cld(max(H,W), max_px)`), so a cell
+# `pixel_transform` treats `max_px` as a STRIDE cap (`step = cld(max(H,W), max_px)`), so a cell
 # whose native canvas exceeds the grid-wide `max_px` gets subsampled by an integer factor while
 # smaller siblings render at native — the two cells then land in the stitcher at different
 # µm/output-pixel, and the reader sees them at different scale rather than same-scale-different-processing.
@@ -674,7 +674,7 @@ function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
     (ovs === nothing || label_vn === nothing) || (ovs["maskValueName"] = String(label_vn))
     cw, ch = _config_3d_canvas(config, size_x, size_y)
     pxsz, ts_min = img_physical_sizes(img)
-    z_aniso = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[1] / pxsz[3] : 1.0
+    z_aniso = _z_aniso(pxsz)
     res = record_keyframes_view_movie(zp, out_path, _config_3d_keyframes(config, first(ts), last(ts)), chans;
                                       fps = fps, default_specs = specs,
                                       canvas_h = ch, canvas_w = cw, z_aniso = z_aniso,
@@ -1017,8 +1017,8 @@ end
 # ── Keyframe animation offline — the animation page's Record → offline renderer ───
 #
 # `keyframes` are the animation page's own shape: `[(viewState, steps, …)]`. `record_keyframes_view_movie`
-# tweens them into per-frame view states and renders each through `render_view_frame` with the
-# viewState-derived args (`viewstate_to_render_args`) — one frame per tween step. Cancel + progress +
+# tweens them into per-frame view states and renders each on the viewer's shader — one frame per
+# tween step. Cancel + progress +
 # `register_movie!` handling matches `run_single_offline`.
 function run_single_keyframes_offline(task_id::String, project_uid::String, image_uid::String;
                                        fps::Int = 15,
@@ -1065,7 +1065,7 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
     # Physical calibration: `z_aniso` for the 3D rotation renderer, `pixel_size_um` +
     # `time_step_min` for the encoder-side scale bar + timestamp overlays.
     pxsz, ts_min = img_physical_sizes(img)           # [sz, sy, sx] µm, ts_min = min/frame
-    z_aniso       = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[1] / pxsz[3] : 1.0
+    z_aniso       = _z_aniso(pxsz)
     pixel_size_um = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[3] : nothing
     time_step_min = ts_min > 0 ? ts_min : nothing
 

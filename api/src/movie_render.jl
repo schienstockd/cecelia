@@ -170,6 +170,99 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function = _ -> nothing,
                            cancelled::Function = () -> false)
+    v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, overlays3d_for, mask,
+                            style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min,
+                            caller = "record_view_movie")
+    cancelled() && return (; path = out_path, frames = 0, width = v.width, height = v.height, cancelled = true)
+    params = v.params
+    params["outPath"] = String(out_path)
+    params["fps"] = Float64(fps)
+    title_card === nothing || (params["titleCard"] = title_card)
+    mkpath(task_dir)
+    ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
+                        on_log = on_log, on_process = on_process)
+    ok || error("record_view_movie: the renderer failed — see the log above")
+    on_progress(length(v.frames), length(v.frames))
+    (; path = out_path, frames = length(v.frames), width = v.width, height = v.height, cancelled = false)
+end
+
+"""
+    render_view_stills(zarr_path, out_paths, ts; kwargs...) -> (; paths, width, height)
+
+`record_view_movie`'s frames as PNG stills, one per timepoint in `ts` (0-based; may repeat), written
+to `out_paths` — the same region, size, overlays and mask, so a still is the movie's frame of that
+timepoint. Takes `record_view_movie`'s keywords bar the encoder's (`fps`, `title_card`).
+
+`via(params, task_dir; on_log)` renders: `STILLS_VIA[]` by default — `_stills_via_worker`, the
+resident preview worker else a one-off renderer (`docs/todo/STILLS_WORKER_PLAN.md`); the result is the
+same either way.
+"""
+function render_view_stills(zarr_path::AbstractString, out_paths::AbstractVector{<:AbstractString},
+                            ts::AbstractVector{<:Integer};
+                            z = nothing, channels = nothing, specs = nothing,
+                            crop = nothing, max_px::Int = 0,
+                            overlays3d_for = nothing, mask = nothing,
+                            style = movie_overlay_style(),
+                            show_timestamp::Bool = false, show_scale_bar::Bool = false,
+                            pixel_size_um::Union{Nothing,Real} = nothing,
+                            time_step_min::Union{Nothing,Real} = nothing,
+                            task_dir::AbstractString = mktempdir(),
+                            on_log::Function = println,
+                            via::Function = STILLS_VIA[])
+    length(out_paths) == length(ts) ||
+        throw(ArgumentError("render_view_stills: $(length(out_paths)) paths for $(length(ts)) timepoints"))
+    v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, overlays3d_for, mask,
+                            style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min,
+                            caller = "render_view_stills", keep_all = true)
+    v.params["outPaths"] = String[String(p) for p in out_paths]
+    mkpath(task_dir)
+    via(v.params, task_dir; on_log = on_log)
+    (; paths = v.params["outPaths"], width = v.width, height = v.height)
+end
+
+# Stills through the resident preview worker when it is up (its GPU host is warm), else a one-off
+# renderer — which also starts the worker for next time (`_ensure_preview!` launches in the background
+# and answers at once). Either way the same `render_stills`, so the pixels do not depend on the route.
+function _stills_via_worker(params::AbstractDict, task_dir::AbstractString; on_log::Function = println)
+    if _ensure_preview!()
+        try
+            # Not under `_with_preview`: that lock serialises everything sent to the worker, which would
+            # queue a card sheet behind a cellpose preview. The worker orders requests itself — renders
+            # and previews under separate locks, one connection each.
+            send(_preview_ref[], Dict{String,Any}("type" => "render", "params" => params))
+            return nothing
+        catch e
+            Cecelia._is_probe_code_bug(e) && rethrow()
+            on_log("[WARN] the preview worker could not render the stills ($(sprint(showerror, e))) — " *
+                   "rendering them in a one-off process")
+        end
+    end
+    _stills_one_off(params, task_dir; on_log = on_log)
+end
+
+function _stills_one_off(params::AbstractDict, task_dir::AbstractString; on_log::Function = println)
+    Cecelia.run_py("writers/render_animation_run.py", params, task_dir; on_log = on_log) ||
+        error("render_view_stills: the renderer failed — see the log above")
+    nothing
+end
+
+# How stills render unless a caller says otherwise. The API test suite points it at `_stills_one_off`:
+# the worker route would probe — and on a protocol mismatch replace — whatever holds :7656 on the
+# machine running the tests.
+const STILLS_VIA = Ref{Function}(_stills_via_worker)
+
+# The renderer params a 2D view of timepoints `ts` needs — everything but the output — and the size it
+# comes out at: `(; params, frames, width, height, step)`. Shared by the movie and its stills.
+#
+# The frame is the image region `crop`, one output pixel per `step` image pixels (`pixel_transform`),
+# as a head-on camera: `step` image rows per output row, the frame's top-left at the crop's
+# (`applyViewStateToBrowser`'s centre / zoom, against a canvas of the output's height). Even sides,
+# because h264 / yuv420p wants them and a still is the movie's frame. `keep_all` keeps `ts` as given
+# (stills may repeat a timepoint; out-of-range is an error); a movie drops out-of-range ones.
+function _view_render_params(zarr_path::AbstractString, ts; z, channels, specs, crop, max_px,
+                             overlays3d_for, mask, style, show_timestamp, show_scale_bar,
+                             pixel_size_um, time_step_min, caller::AbstractString,
+                             keep_all::Bool = false)
     arr, caxes = open_level0(zarr_path)
     dims  = axis_dims(caxes, ndims(arr))
     nT    = haskey(dims, "t") ? size(arr, dims["t"]) : 1
@@ -178,19 +271,19 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
     H0    = haskey(dims, "y") ? size(arr, dims["y"]) : 0
     W0    = haskey(dims, "x") ? size(arr, dims["x"]) : 0
     frames = ts === nothing ? collect(0:(nT - 1)) : collect(Int, ts)
-    filter!(t -> 0 <= t < nT, frames)
-    isempty(frames) && throw(ArgumentError("record_view_movie: no timepoints in range (image has $nT)"))
+    if keep_all
+        all(t -> 0 <= t < nT, frames) || throw(ArgumentError("$caller: a timepoint is out of range (image has $nT)"))
+    else
+        filter!(t -> 0 <= t < nT, frames)
+    end
+    isempty(frames) && throw(ArgumentError("$caller: no timepoints in range (image has $nT)"))
 
-    # The region and the output size: crop, then an integer stride (`pixel_transform`).
-    (H0 > 0 && W0 > 0) || throw(ArgumentError("record_view_movie: the image has no y/x extent"))
+    (H0 > 0 && W0 > 0) || throw(ArgumentError("$caller: the image has no y/x extent"))
     tf = pixel_transform(H0, W0; crop = crop, max_px = max_px)
     step = tf.step
-    H = tf.dH - tf.dH % 2; W = tf.dW - tf.dW % 2   # h264 / yuv420p wants even sides
-    (H > 0 && W > 0) || throw(ArgumentError("record_view_movie: the frame is empty ($(tf.cH) × $(tf.cW), step $step)"))
-    cancelled() && return (; path = out_path, frames = 0, width = W, height = H, cancelled = true)
+    H = tf.dH - tf.dH % 2; W = tf.dW - tf.dW % 2
+    (H > 0 && W > 0) || throw(ArgumentError("$caller: the frame is empty ($(tf.cH) × $(tf.cW), step $step)"))
 
-    # Head-on camera on that region: `step` image rows per output row, the frame's top-left at the
-    # crop's (`applyViewStateToBrowser`'s centre / zoom, against a canvas of the output's height).
     z_range, plane_filter = _plane_window(z, nZ, style)
     camera = Dict{String,Any}("zoom" => 1.0 / step, "angles" => [0.0, 0.0, 0.0],
                               "center" => Float64[z_range[1], tf.y_lo + H * step / 2,
@@ -209,14 +302,12 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
         st
     end for t in frames]
 
-    params = Dict{String,Any}("zarrPath" => String(zarr_path), "outPath" => String(out_path),
-                              "states" => states, "canvasH" => H, "canvasW" => W,
-                              "fps" => Float64(fps),
+    params = Dict{String,Any}("zarrPath" => String(zarr_path), "states" => states,
+                              "canvasH" => H, "canvasW" => W,
                               "pointSizePx" => style.point_size_px,
                               "pointBorderPx" => style.point_border_px,
                               "segmentWidthPx" => style.segment_width_px)
     _mask_params!(params, mask)
-    title_card === nothing || (params["titleCard"] = title_card)
     # Timestamp + scale bar, drawn on the encoded frame. The bar tracks the encoded µm/pixel: native
     # µm × the stride.
     if show_timestamp || show_scale_bar
@@ -225,12 +316,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                                                         show_timestamp = show_timestamp,
                                                         show_scale_bar = show_scale_bar)
     end
-    mkpath(task_dir)
-    ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
-                        on_log = on_log, on_process = on_process)
-    ok || error("record_view_movie: the renderer failed — see the log above")
-    on_progress(length(frames), length(frames))
-    (; path = out_path, frames = length(frames), width = W, height = H, cancelled = false)
+    (; params, frames, width = W, height = H, step)
 end
 
 # ── Keyframe animation ────────────────────────────────────────────────────────────
@@ -309,10 +395,10 @@ function _kf_lerp(a::AbstractVector, b::AbstractVector, f)
 end
 _kf_lerp(a, b, f) = f >= 1 ? b : a          # strings, symbols, anything with no half-way point
 
-# ── View state → `render_view_frame` args ──────────────────────────────────────
+# ── View state → render args ──────────────────────────────────────────────────
 #
-# One viewState snapshot (a captured view state, or one frame of `interpolate_keyframes`) → the args
-# `render_view_frame` needs. Pure and tested: the animation renderer calls this per frame.
+# One viewState snapshot (a captured view state, or one frame of `interpolate_keyframes`) → its t, z,
+# ndisplay and per-channel specs. Pure and tested: the animation renderer calls this per frame.
 #
 # Where things come from:
 #   * `dims.current_step[0]` → `t`; `dims.current_step[1]` → `z` (T, Z axis order).
@@ -326,8 +412,7 @@ _kf_lerp(a, b, f) = f >= 1 ? b : a          # strings, symbols, anything with no
 #
 # `default_specs` is what to fall back to when a channel has no entry in the snapshot (typically the
 # resolved viewer props for the frame's zarr) — it keeps a keyframe animation that only touched the
-# camera + t from turning every channel grey. Returns a NamedTuple whose fields drop straight into
-# `render_view_frame` kwargs.
+# camera + t from turning every channel grey. Returns a NamedTuple `(; t, z, ndisplay, specs, crop, …)`.
 function viewstate_to_render_args(vs::AbstractDict, channel_names::AbstractVector{<:AbstractString},
                                    default_specs::Union{Nothing,AbstractVector},
                                    native_h::Int, native_w::Int;
@@ -612,10 +697,19 @@ end
 
 # The height of the canvas a state's zoom was measured on, or `nothing` (a batch camera, an older
 # snapshot) — then the movie's own canvas is the reference, as in the viewer.
-function _snapshot_canvas_h(state)
-    canv = state isa AbstractDict ? get(state, "canvas", nothing) : nothing
-    h = canv isa AbstractDict ? get(canv, "height", nothing) : nothing
-    h isa Real && h > 0 ? Float64(h) : nothing
+# physical z / physical x from `img_physical_sizes`' (z, y, x) µm — the renderer's `zAniso`; 1 when the
+# x size is missing or zero.
+_z_aniso(pxsz) = (length(pxsz) >= 3 && pxsz[3] > 0) ? Float64(pxsz[1] / pxsz[3]) : 1.0
+
+_snapshot_canvas_h(state) = _snapshot_canvas_dim(state, "height")
+
+# A side of the canvas a view state was captured on (`canvas.height` / `canvas.width`), or `nothing`.
+# String or Symbol keys: a stored config parses to one, a request body to the other.
+function _snapshot_canvas_dim(state, k::AbstractString)
+    field(d, key) = d isa AbstractDict ?
+        something(get(d, key, nothing), get(d, Symbol(key), nothing), Some(nothing)) : nothing
+    v = field(field(state, "canvas"), k)
+    v isa Real && v > 0 ? Float64(v) : nothing
 end
 
 # µm per output pixel of a 3D frame: the viewer shows `captured_h / zoom` image rows across the
@@ -707,6 +801,33 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
         throw(ArgumentError("record_keyframes_view_movie needs at least 2 keyframes, got $(length(keyframes))"))
     states = interpolate_keyframes(keyframes)
     isempty(states) && throw(ArgumentError("record_keyframes_view_movie: no frames after interpolation"))
+    v = _view_state_render_params(zarr_path, states, channel_names; default_specs, canvas_h, canvas_w,
+                                  z_aniso, render_quality, show_timestamp, show_scale_bar,
+                                  pixel_size_um, time_step_min, img, overlays_config, on_log,
+                                  caller = "record_keyframes_view_movie")
+    cancelled() && return (; path = out_path, frames = 0, width = v.width, height = v.height,
+                             cancelled = true)
+    params = v.params
+    params["outPath"] = String(out_path)
+    params["fps"] = Float64(fps)
+    title_card === nothing || (params["titleCard"] = title_card)
+    py_states = params["states"]
+    canvas3_w, canvas3_h = v.width, v.height
+    ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
+                         on_log = on_log, on_process = on_process)
+    ok || error("record_keyframes_view_movie: the renderer failed — see the log above")
+    (; path = out_path, frames = length(py_states),
+      width = canvas3_w, height = canvas3_h, cancelled = false)
+end
+
+# The renderer params for view states `states` (the viewer's own, already tweened) — everything but the
+# output — and the canvas they render at: `(; params, width, height)`. Shared by the keyframe movie and
+# a single view state's still (`render_view_state_still`).
+function _view_state_render_params(zarr_path::AbstractString, states::AbstractVector,
+                                   channel_names::AbstractVector{<:AbstractString};
+                                   default_specs, canvas_h, canvas_w, z_aniso, render_quality,
+                                   show_timestamp, show_scale_bar, pixel_size_um, time_step_min,
+                                   img, overlays_config, on_log, caller::AbstractString)
     arr, caxes = open_level0(zarr_path)
     nd    = ndims(arr)
     dims  = axis_dims(caxes, nd)
@@ -714,7 +835,7 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     native_h = haskey(dims, "y") ? size(arr, dims["y"]) : 0
     native_w = haskey(dims, "x") ? size(arr, dims["x"]) : 0
     (native_h == 0 || native_w == 0) &&
-        throw(ArgumentError("record_keyframes_view_movie: image has no y/x axes"))
+        throw(ArgumentError("$caller: image has no y/x axes"))
     nZ    = haskey(dims, "z") ? size(arr, dims["z"]) : 1
 
     # Resolve every state's render args upfront: overlays need it for per-frame t indices, and it lets
@@ -728,9 +849,7 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     is_3d = any(a -> a.ndisplay == 3, args_per_frame)
     # The output canvas: the one asked for, else the viewer canvas the first state was captured on
     # (a 2D movie then IS the viewer's frame), else 512.
-    snap1 = states[1] isa AbstractDict ? get(states[1], "canvas", nothing) : nothing
-    snap_dim(k) = (v = snap1 isa AbstractDict ? get(snap1, k, nothing) : nothing;
-                   v isa Real && v > 0 ? round(Int, Float64(v)) : nothing)
+    snap_dim(k) = (v = _snapshot_canvas_dim(states[1], k); v === nothing ? nothing : round(Int, v))
     canvas3_h = something(canvas_h, is_3d ? nothing : snap_dim("height"), 512)
     canvas3_w = something(canvas_w, is_3d ? nothing : snap_dim("width"), 512)
 
@@ -741,8 +860,6 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     style  = movie_overlay_style(k -> overlays_config === nothing ? nothing : get(overlays_config, k, nothing))
 
     # ── The viewer's own shaders, headless (`writers/render_animation_run.py`), 2D and 3D ──
-    cancelled() && return (; path = out_path, frames = 0, width = canvas3_w, height = canvas3_h,
-                             cancelled = true)
     # Per state: t, the camera as the viewer stored it, the canvas its zoom was measured on, the
     # per-channel specs, and the overlays as positions. The host applies the camera exactly as
     # the viewer does and projects the overlays with the raycast's own camera.
@@ -768,18 +885,15 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
     end
     params = Dict{String,Any}(
         "zarrPath"       => String(zarr_path),
-        "outPath"        => String(out_path),
         "states"         => py_states,
         "canvasH"        => canvas3_h, "canvasW" => canvas3_w,
         "zAniso"         => Float64(z_aniso),
         "renderQuality"  => String(render_quality),
-        "fps"            => Float64(fps),
         "pointSizePx"    => style.point_size_px,
         "pointBorderPx"  => style.point_border_px,
         "segmentWidthPx" => style.segment_width_px,
     )
     _mask_params!(params, movie_mask)
-    title_card === nothing || (params["titleCard"] = title_card)
     # Timestamp + scale bar, same shape the CPU encoder reads. The bar is sized to the first
     # state's view; an animation that zooms keeps one bar length rather than a flickering one.
     if show_timestamp || show_scale_bar
@@ -791,9 +905,36 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                                                         show_timestamp = show_timestamp,
                                                         show_scale_bar = show_scale_bar)
     end
-    ok = Cecelia.run_py("writers/render_animation_run.py", params, task_dir;
-                         on_log = on_log, on_process = on_process)
-    ok || error("record_keyframes_view_movie: the renderer failed — see the log above")
-    (; path = out_path, frames = length(py_states),
-      width = canvas3_w, height = canvas3_h, cancelled = false)
+    (; params, width = canvas3_w, height = canvas3_h)
+end
+
+"""
+    render_view_state_still(zarr_path, out_path, view_state, channel_names; kwargs...) -> (; path, width, height)
+
+One view state as a PNG still — the keyframe movie's frame of that state (`_view_state_render_params`),
+2D or 3D, at the canvas it was captured on unless `canvas_h` / `canvas_w` say otherwise. Channels only
+unless `img` + `overlays_config` are given, as for the movie. `via` as in `render_view_stills`.
+"""
+function render_view_state_still(zarr_path::AbstractString, out_path::AbstractString, view_state,
+                                 channel_names::AbstractVector{<:AbstractString};
+                                 default_specs::Union{Nothing,AbstractVector} = nothing,
+                                 canvas_h::Union{Int,Nothing} = nothing,
+                                 canvas_w::Union{Int,Nothing} = nothing,
+                                 z_aniso::Real = 1.0, render_quality::Symbol = :standard,
+                                 img = nothing, overlays_config::Union{Nothing,AbstractDict} = nothing,
+                                 task_dir::AbstractString = mktempdir(),
+                                 on_log::Function = println,
+                                 via::Function = STILLS_VIA[])
+    snap_dim(k) = (v = _snapshot_canvas_dim(view_state, k); v === nothing ? nothing : round(Int, v))
+    canvas_h = something(canvas_h, snap_dim("height"), Some(nothing))
+    canvas_w = something(canvas_w, snap_dim("width"), Some(nothing))
+    v = _view_state_render_params(zarr_path, [view_state], channel_names; default_specs, canvas_h,
+                                  canvas_w, z_aniso, render_quality, show_timestamp = false,
+                                  show_scale_bar = false, pixel_size_um = nothing,
+                                  time_step_min = nothing, img, overlays_config, on_log,
+                                  caller = "render_view_state_still")
+    v.params["outPaths"] = [String(out_path)]
+    mkpath(task_dir)
+    via(v.params, task_dir; on_log = on_log)
+    (; path = String(out_path), width = v.width, height = v.height)
 end
