@@ -51,7 +51,7 @@ const PLOT_OPTS_KEY = 'canvasSidePanel.plotOptionsVisible'
 
 const props = withDefaults(defineProps<{
   title?: string
-  icon?: string                    // header icon (a PrimeIcons class, e.g. 'pi-database')
+  icon?: string                    // header icon (an icon class, e.g. 'pi-database')
   count?: number | string          // shown at the right of the header (population count)
   width?: number                   // px; a wider list (the model vault's table) needs more room
   // when provided, the global/local footer renders (every manager passes it — see the header)

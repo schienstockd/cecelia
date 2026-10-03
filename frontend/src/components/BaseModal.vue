@@ -17,7 +17,7 @@ import { useWindowListener } from '../composables/useKeepAlive'
 
 const props = withDefaults(defineProps<{
   title?: string
-  icon?: string        // a PrimeIcons class, e.g. 'pi-box' (rendered as <i class="pi pi-box">)
+  icon?: string        // an icon class, e.g. 'pi-box' (rendered as <i class="pi pi-box">)
   width?: string       // CSS width, e.g. '480px'
   height?: string      // optional fixed CSS height; omit to size to content (capped at max-height)
 }>(), { title: '', icon: '', width: '480px', height: '' })

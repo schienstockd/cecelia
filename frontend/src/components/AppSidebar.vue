@@ -410,7 +410,7 @@ function isNavDisabled(item: NavItem): boolean {
 .panel-launcher-badge {
   position: absolute;
   top: -3px;
-  right: -3px;
+  left: -3px;
   font-size: var(--cc-fs-xs);
   background: var(--cc-surface-1);
   border-radius: 50%;

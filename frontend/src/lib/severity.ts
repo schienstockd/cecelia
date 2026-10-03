@@ -12,7 +12,7 @@
 export type Severity = 'ok' | 'warn' | 'fail'
 
 export interface SeverityStyle {
-  icon: string    // primeicons class — the primary (non-colour) channel
+  icon: string    // icon class — the primary (non-colour) channel
   color: string   // CSS var reference into the validated severity palette
   emoji: string   // shape-distinct glyph for markdown/lab-log text
   label: string   // text label — colour is never alone

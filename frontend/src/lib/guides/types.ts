@@ -98,7 +98,7 @@ export interface GuideDef {
   // ('Data' | 'Populations' | 'Explore' | 'Analysis' | 'Pipeline').
   group: string
   summary: string             // one line in the picker
-  icon: string                // a PrimeIcons class, e.g. 'pi-th-large'
+  icon: string                // an icon class, e.g. 'pi-th-large'
   prereqs: Prereq[]
   steps: GuideStep[]
 }

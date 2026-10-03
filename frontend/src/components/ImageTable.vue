@@ -993,7 +993,7 @@ const unselectableUids = computed(() =>
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-/* PrimeIcons freezes `pi-spin` under reduced-motion (`animation-duration: 1ms`), which is what every
+/* icons.css freezes `pi-spin` under reduced-motion (`animation-duration: 1ms`), which is what every
    other spinner-icon in the app does; this one is the last hand-rolled one that kept spinning. Match
    the same treatment — the badge's colour/background is still there to say "running", so freezing the
    arc costs no information. */

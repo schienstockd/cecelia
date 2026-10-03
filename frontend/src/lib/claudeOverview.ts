@@ -14,7 +14,7 @@
 
 export interface EntryPoint {
   name: string
-  icon: string      // PrimeIcons class, e.g. 'pi-sparkles'
+  icon: string      // icon class, e.g. 'pi-sparkles'
   what: string      // one line
   steps: string[]   // 2-3 short how-to steps
 }

@@ -13,12 +13,7 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
-    # primeicons 8 moved from MIT to the proprietary, key-gated PrimeUI License (with PrimeVue 5,
-    # which is already gone). Frozen at 7.0.0, its last MIT release (exact pin in package.json),
-    # until the icon swap — docs/todo/PRIMEVUE_RETIRE_PLAN.md P4. ALL updates are ignored: any new
-    # release, patches included, could ship under the new licence.
     ignore:
-      - dependency-name: primeicons
       # TypeScript 7 is the native (Go) rewrite and drops `typescript/lib/tsc`, which vue-tsc loads
       # (#1360 failed every typecheck). Majors stay ignored until vue-tsc supports 7.
       - dependency-name: typescript

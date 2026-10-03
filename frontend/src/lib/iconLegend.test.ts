@@ -7,10 +7,14 @@ import { ICON_LEGEND, iconMeaning, legendGlyphs } from './iconLegend'
 //
 // Sources are read raw (the trick uiCopy.test.ts / navGroups.test.ts use) because the glyph is a string
 // in a class attribute, not something a type can reach.
-// The installed icon set, read as text — the only way to know a glyph exists before it renders blank.
+// The vendored icon set (generated from this legend by scripts/vendor_icons.mjs), read as text — the
+// only way to know a glyph exists before it renders blank.
 const ICONS_CSS = Object.values(
-  import.meta.glob('/node_modules/primeicons/primeicons.css', { query: '?raw', import: 'default', eager: true }),
+  import.meta.glob('/src/icons.css', { query: '?raw', import: 'default', eager: true }),
 ).join('') as string
+/** `.pi-x { --cc-icon: … } /* lucide: y (filled) *\/` → pi-x → `y` / `y (filled)` */
+const VENDORED = new Map([...ICONS_CSS.matchAll(/\.(pi-[a-z0-9-]+) \{ --cc-icon:[^\n]*\/\* lucide: ([a-z0-9-]+(?: \(filled\))?) \*\//g)]
+  .map(m => [m[1], m[2]]))
 
 const SRC = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as
   Record<string, string>
@@ -58,17 +62,32 @@ describe('the icon glossary', () => {
     expect(dead, 'these are listed but rendered nowhere — drop them from ICON_LEGEND').toEqual([])
   })
 
-  // The check that matters most, and the one nothing had: PrimeIcons renders a MISSING glyph as an empty
-  // box, silently. Four invented names — `pi-ruler`, `pi-layer-group`, `pi-mouse-pointer`,
-  // `pi-grip-vertical` — had been shipping blank icons in the physical-size dialog, the metadata panel,
-  // the delete dialog and the chain palette until the glossary put them side by side (spotted
-  // all four by eye, 2026-08-17). The installed stylesheet is the authority.
-  it('only names glyphs PrimeIcons actually provides', () => {
-    const css = ICONS_CSS
-    expect(css.length, 'primeicons.css did not load').toBeGreaterThan(1000)
-    const provided = new Set([...css.matchAll(/\.(pi-[a-z0-9-]+):before/g)].map(m => m[1]))
-    const fake = [...renderedGlyphs().keys()].filter(g => !provided.has(g)).sort()
-    expect(fake, 'these render as an empty box — no such glyph in primeicons').toEqual([])
+  // The check that matters most, and the one nothing had: a MISSING glyph renders as nothing, silently.
+  // Four invented names — `pi-ruler`, `pi-layer-group`, `pi-mouse-pointer`, `pi-grip-vertical` — had
+  // been shipping blank icons in the physical-size dialog, the metadata panel, the delete dialog and
+  // the chain palette until the glossary put them side by side (spotted all four by eye, 2026-08-17).
+  // The vendored stylesheet is the authority.
+  it('only names glyphs the vendored set provides', () => {
+    expect(ICONS_CSS.length, 'src/icons.css did not load').toBeGreaterThan(1000)
+    const fake = [...renderedGlyphs().keys()].filter(g => !VENDORED.has(g)).sort()
+    expect(fake, 'these render as nothing — add them to ICON_LEGEND, then `pixi run icons`').toEqual([])
+  })
+
+  it('icons.css is in step with the legend — run `pixi run icons` when it is not', () => {
+    const want = new Map(ICON_LEGEND.flatMap(f => f.icons)
+      .map(i => [i.icon, i.fill ? `${i.lucide} (filled)` : i.lucide]))
+    expect(Object.fromEntries(VENDORED)).toEqual(Object.fromEntries(want))
+  })
+
+  it('maps each meaning to its own Lucide glyph, except a deliberate filled twin', () => {
+    const seen = new Map<string, string>()
+    const clash: string[] = []
+    for (const i of ICON_LEGEND.flatMap(f => f.icons)) {
+      const key = i.fill ? `${i.lucide} (filled)` : i.lucide
+      if (seen.has(key)) clash.push(`${seen.get(key)} + ${i.icon} → ${key}`)
+      seen.set(key, i.icon)
+    }
+    expect(clash).toEqual([])
   })
 
   it('gives each glyph exactly one meaning', () => {
