@@ -20,6 +20,7 @@ import TeleportPopover from '../TeleportPopover.vue'
 import type { Frame } from '../../plots/frame'
 import type { GateSpec, TransformSpec, PopNode, PopTree } from '../../stores/gating'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { useImageMetaRefresh } from '../../composables/useImageMetaRefresh'
 import { orientGate } from '../../plots/gateGeometry'
 import { defaultTransformForCol } from '../../utils/gatingAxes'
 import { dotRadiusFor } from '../../plots/density'
@@ -212,6 +213,8 @@ watch([imageUid, popType], () => { loadChannels().then(loadTree) }, { immediate:
 watch([valueName], loadTree)
 // a task finishing on THIS image → gates/stats may have changed; reload the tree (cascades to tiles)
 useDataRefresh(() => [imageUid.value], () => { loadChannels().then(loadTree) })
+// a channel rename → the axis/colour-by labels are a copy of the names; refetch them (labels only)
+useImageMetaRefresh(() => [imageUid.value], loadChannels)
 
 // PDF export: delegate to the shared montage renderer (single cell hi-res, or the whole grid on white).
 const montageRef = useTemplateRef<{

@@ -19,6 +19,16 @@ Three things about v4 shape this file, all verified against `cellpose==4.2.1.1`:
   "independent 2D slices". A Z stack with no stitching therefore goes through the list-of-planes
   form instead, which returns per-plane independent labels (the same thing v3 did).
 
+One thing about cellpose's Z stitching, both versions (`utils.stitch3D`, unchanged in 4.2.1.1 and on
+upstream main):
+
+* **It reuses label ids across an empty plane.** Until the first pair of adjacent planes has been
+  matched, an empty plane resets the running maximum id and the next plane keeps its raw ids 1..k,
+  which are already taken by cells on the planes above. Two unrelated cells several planes apart
+  then share ONE label, and its centroid lands in the empty space between them. Sparse labelling
+  (few cells over a few Z planes) hits it often. A stitched cell is z-contiguous by construction,
+  so `split_z_gaps` gives every z-run its own id.
+
 Cellpose 3 (opt-in `cellpose-v3` env, Mac only — MPS is much faster on the v3 CNNs than on the v4
 transformer):
 
@@ -55,6 +65,32 @@ def _cellpose_major_version() -> int:
 
 _CELLPOSE_MAJOR = _cellpose_major_version()
 _CELLPOSE_V3_BUILTINS = ('cyto2', 'cyto3')
+
+
+def split_z_gaps(masks):
+    """Give every z-contiguous run of a label its own id, so one label is one object.
+
+    The repair for cellpose's `stitch3D` id reuse (see the module docstring). Exact for it rather than
+    a heuristic: stitching only ever links ADJACENT planes, so a label with an empty plane inside its
+    z-range was never stitched; it is two cells that collided. The lowest run keeps the id and the
+    others get fresh ones above the current maximum. A label with no gap is left alone, so a correct
+    stitch passes through unchanged.
+
+    masks: [Z, Y, X] labels. Returns a uint32 copy.
+    """
+    masks = np.array(masks, dtype=np.uint32)
+    nxt = int(masks.max()) + 1
+    for lb, sl in enumerate(ndimage.find_objects(masks), 1):
+        if sl is None:
+            continue
+        sub = masks[sl]                                   # a view: writes land in `masks`
+        runs, n = ndimage.label((sub == lb).any(axis=(1, 2)))
+        for r in range(2, n + 1):
+            zs = np.flatnonzero(runs == r)
+            block = sub[zs[0]:zs[-1] + 1]                 # one run, so no other piece of `lb` inside
+            block[block == lb] = nxt
+            nxt += 1
+    return masks
 
 
 class CellposeUtils(SegmentationUtils):
@@ -251,4 +287,6 @@ class CellposeUtils(SegmentationUtils):
                 diameter=cell_diam_px,
             )
 
+        if is_3d and stitch_threshold > 0:
+            return split_z_gaps(masks)
         return masks.astype(np.uint32)

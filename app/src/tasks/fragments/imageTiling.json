@@ -18,25 +18,5 @@
     "step": 8,
     "default": 64,
     "tip": "XY overlap between tiles"
-  },
-  {
-    "key": "blockSizeZ",
-    "label": "Z tile size (slices)",
-    "type": "int",
-    "min": 0,
-    "max": 500,
-    "step": 1,
-    "default": 0,
-    "tip": "Number of Z slices per tile (0 = whole stack)"
-  },
-  {
-    "key": "overlapZ",
-    "label": "Z tile overlap (slices)",
-    "type": "int",
-    "min": 0,
-    "max": 50,
-    "step": 1,
-    "default": 0,
-    "tip": "Z overlap between tiles (future use)"
   }
 ]

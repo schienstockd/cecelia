@@ -175,8 +175,8 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
     subsampled read): those are different answers to the same question, and which one runs depends on
     how many levels the caller opened, so nothing about the store can distinguish them.
 - Global label ID tracking — `max_labels[match_as]` incremented per tile so IDs are unique across tiles and timepoints
-- Tile merge via `np.maximum`
-- Tile seam stitching (`labelOverlap > 0`): after tiling, labels split at tile boundaries are matched by IoU and remapped to a single ID
+- Tile merge: a later pass fills only unlabelled pixels (`fill_unlabelled`)
+- Tile seam stitching (`labelOverlap > 0`): both tiles beside a seam predict the overlap band, so a cell cut by the seam is matched by IoU of those two predictions and takes one id (`_stitch_tile_seams`). The written labels cannot be matched: two tiles never share a pixel
 - Post-processing: erosion, expansion, min/max size filter, XY border clearing, Z depth clearing (per timepoint)
 - Base-nuc IoU matching
 - Writing multiscale OME-ZARR output
@@ -224,6 +224,8 @@ Called once per model per tile in the outer loop. The outer loop in `segmentatio
 After prediction, `_crop_masks` trims the overlap, then `_write_tile_to_arr` merges via `np.maximum`.
 
 Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice + inter-slice stitch). No explicit Z tiling is done.
+
+That stitch (`cellpose.utils.stitch3D`) reuses ids across an empty plane before its first match, so two cells several planes apart can come back as ONE label whose centroid sits in the gap. `split_z_gaps` (`cellpose_utils.py`) gives every z-contiguous run its own id after every stitched call; a stitched cell is contiguous by construction, so a correct stitch passes through unchanged.
 
 ---
 
@@ -341,9 +343,7 @@ is segmented, which is most images.
 | `models[].stitchThreshold` | float | 0.2 | Z-stitch threshold (0=2D per slice, no stitch — see *Cellpose 4* below) |
 | `blockSize` | int (px) | 512 | XY tile size |
 | `overlap` | int (px) | 64 | XY tile overlap; provides border context and seam zone for stitching |
-| `labelOverlap` | float | 0.0 | IoU threshold for tile seam stitching; 0 = simple np.maximum merge |
-| `blockSizeZ` | int | 0 | Z tile size in slices (0 = whole stack; Z tiling not yet active) |
-| `overlapZ` | int | 0 | Z tile overlap in slices (future use) |
+| `labelOverlap` | float | 0.25 | Min IoU to join a cell cut by a tile seam; 0 = off |
 | `matchThreshold` | float | 0.3 | IoU threshold for base-nuc label matching |
 | `removeUnmatched` | bool | false | Remove base cells with no matching nucleus |
 | `minCellSize` | int (px) | 0 | Remove labels smaller than N pixels |
@@ -1401,7 +1401,7 @@ structural extent, not a QC measure, and nothing reads it.
 
 ### $include template system
 
-The `imageTiling` param section in all task JSONs under `segment/` is shared via `{"$include": "imageTiling"}` which splices in `app/src/tasks/fragments/imageTiling.json` at spec load time (resolved in `_task_spec` via `_resolve_spec_includes`). Cellpose and measureLabels share the same `blockSize`, `overlap`, `blockSizeZ`, `overlapZ` definitions with no duplication.
+The `imageTiling` param section in all task JSONs under `segment/` is shared via `{"$include": "imageTiling"}` which splices in `app/src/tasks/fragments/imageTiling.json` at spec load time (resolved in `_task_spec` via `_resolve_spec_includes`). Cellpose and measureLabels share the same `blockSize`, `overlap` definitions with no duplication. There is no Z tiling: the whole stack goes to the segmenter in one call, which stitches across Z itself.
 
 ---
 
