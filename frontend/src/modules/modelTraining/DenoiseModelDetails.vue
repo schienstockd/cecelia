@@ -19,7 +19,7 @@ import type { DetailGroup } from '../../utils/flowManifest'
 
 // `origin` = who trained it and in which project (`utils/vaultScope.ts`) — from the vault row, not
 // the manifest, because a model trained before the stamp has its project recovered server-side.
-const props = defineProps<{ name: string; manifest: DenoiseManifest; path?: string; origin?: DetailGroup }>()
+const props = defineProps<{ name: string; manifest: DenoiseManifest; origin?: DetailGroup }>()
 defineEmits<{ (e: 'close'): void }>()
 
 const groups = computed(() => denoiseModelDetailGroups(props.manifest))
@@ -42,7 +42,6 @@ const shownGroups = computed(() => [...(props.origin ? [props.origin] : []), ...
       </dl>
     </section>
 
-    <p v-if="path" class="cc-muted cc-fs-xs fmd-path" v-tooltip.top="path">{{ path }}</p>
   </BaseModal>
 </template>
 
@@ -52,5 +51,4 @@ const shownGroups = computed(() => [...(props.origin ? [props.origin] : []), ...
 .fmd-list dt { margin: 0; }
 .fmd-list dd { margin: 0; overflow-wrap: anywhere; }
 .fmd-mono { font-family: var(--cc-mono); font-size: var(--cc-fs-xs); }
-.fmd-path { margin: 0.9rem 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
