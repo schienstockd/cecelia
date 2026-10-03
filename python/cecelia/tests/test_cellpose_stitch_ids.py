@@ -77,6 +77,22 @@ class TestAgainstRealStitch3D(unittest.TestCase):
         self.assertEqual(len(np.unique(out[out > 0])), 1)
 
 
+class TestCoastalMatchFloor(unittest.TestCase):
+    """The coastal pin floor (`pixi.toml`): coastal's own Z matching must not collide ids either.
+    cecelia's coastal tests stub `_match_3d`, so this is the one place a rollback would show."""
+
+    def setUp(self):
+        try:
+            from coastal.utils import match_masks_3d
+        except ImportError:
+            self.skipTest('coastal not installed in this env')
+        self.match = match_masks_3d
+
+    def test_empty_plane_does_not_reuse_ids(self):
+        out = self.match(_collided().astype(np.int32), stitch_threshold=0.0)
+        self.assertNotEqual(out[0, 1, 1], out[2, 7, 7])
+
+
 class _CollidingModel:
     """A cellpose model whose stitched output carries the collision; per-plane output is all 1s."""
 
