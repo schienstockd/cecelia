@@ -211,3 +211,72 @@ class Render2DRunTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _Log:
+    def log(self, _msg):
+        pass
+
+
+class RenderStillsTest(unittest.TestCase):
+    """Stills are the movie's frames as PNGs, and one host serves request after request — what the
+    preview worker relies on (docs/todo/STILLS_WORKER_PLAN.md Decisions 3 and 6)."""
+
+    @classmethod
+    def setUpClass(cls):
+        _shared_host()
+        cls.d = tempfile.mkdtemp()
+        img = np.zeros((T, 1, N, N, N), np.uint16)
+        img[0, 0, :, 4:12, 4:12] = 1000
+        img[1, 0, :, 20:28, 20:28] = 1000
+        cls.zarr = _store(os.path.join(cls.d, "img.zarr"), img, "tczyx")
+        lab = np.zeros((T, N, N, N), np.uint32)
+        lab[:, :, 4:12, 4:12] = 2
+        cls.labels = _store(os.path.join(cls.d, "lab.zarr"), lab, "tzyx")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.d, ignore_errors=True)
+
+    def _params(self, name, **extra):
+        state = lambda t: {"t": t, "camera": {"angles": [0, 30, 0], "zoom": 1.0}, "snapH": N,
+                           "specs": [{"lo": 0, "hi": 1000, "lut": [[0, 0, 0], [1, 0, 0]], "visible": True}]}
+        return {"zarrPath": self.zarr, "states": [state(0), state(1)], "canvasH": 48, "canvasW": 64,
+                "outPaths": [os.path.join(self.d, f"{name}{i}.png") for i in range(2)], **extra}
+
+    def _pngs(self, paths):
+        from PIL import Image
+        return [np.asarray(Image.open(p).convert("RGB")) for p in paths]
+
+    def test_a_still_is_the_movie_frame(self):
+        from cecelia.utils import wgpu_host
+        from cecelia.writers import render_animation_run as r
+        p = self._params("still", labelsPath=self.labels, labelContourPx=1)
+        r.run(p)                                         # through the one-off entry, as `run_py` would
+        want = list(r.render_frames(p, wgpu_host.MipHost(), _Log()))
+        got = self._pngs(p["outPaths"])
+        self.assertEqual(got[0].shape, (48, 64, 3))
+        for g, w in zip(got, want):
+            np.testing.assert_array_equal(g, w)
+        self.assertFalse(np.array_equal(got[0], got[1]))   # each state its own frame
+
+    def test_a_reused_host_carries_nothing_over(self):
+        from cecelia.utils import wgpu_host
+        from cecelia.writers import render_animation_run as r
+        host = wgpu_host.MipHost()
+        # a population mask first, then every label in the palette on the same host — the table must
+        # not stand in for the palette
+        r.render_stills(self._params("a", labelsPath=self.labels, labelColouring="table", labelOpacity=1.0,
+                                     labelColours={"ids": [2], "colours": [[0.0, 0.0, 1.0]]}), host, _Log())
+        plain = self._params("b", labelsPath=self.labels, labelOpacity=1.0)
+        r.render_stills(plain, host, _Log())
+        fresh = list(r.render_frames(plain, wgpu_host.MipHost(), _Log()))
+        for g, w in zip(self._pngs(plain["outPaths"]), fresh):
+            np.testing.assert_array_equal(g, w)
+
+    def test_one_path_per_state(self):
+        from cecelia.writers import render_animation_run as r
+        p = self._params("n")
+        p["outPaths"] = p["outPaths"][:1]
+        with self.assertRaises(ValueError):
+            r.run(p)

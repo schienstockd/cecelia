@@ -38,7 +38,7 @@ include("optical_flow_api.jl")
 include("denoise_api.jl")
 include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
-include("frame_overlays.jl") # CPU-side overlay drawing primitives — points/tracks for the offline renderer
+include("shader_constants.jl") # the defaults the viewer, its shaders and the movie renderer share
 include("overlay_author.jl") # resolves populations/tracks into the primitives' columnar shape
 include("crop_api.jl")       # routes only; builds on both
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata

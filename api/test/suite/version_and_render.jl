@@ -257,19 +257,6 @@ end
     white = composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, [(0f0,0f0,0f0),(1f0,1f0,1f0)], true)])
     @test all(c -> isapprox(c(srgb_encode(white)[1, 1]), 1.0; atol = 1e-3), (r, g, b))
 
-    # `render_view_frame` bakes the encode in — the same specs the viewer draws with produce a
-    # frame whose mid-tone channel reads ABOVE the linear composite. This is what closes the
-    # visual gap between the movie and the on-screen canvas.
-    mktempdir() do dir
-        # A 1-t, 1-c, 1-z, 4-y, 4-x store filled at mid intensity; contrast 0..1 → composite 0.5.
-        arr = fill(Float32(0.5), 1, 1, 1, 4, 4)
-        caxes = ["t", "c", "z", "y", "x"]
-        frame = render_view_frame(arr, caxes, 0; z = 0, channels = 0:0,
-                                    specs = [(lo = 0.0, hi = 1.0,
-                                                lut = [(0f0,0f0,0f0),(1f0,0f0,0f0)],
-                                                visible = true)])
-        @test isapprox(r(frame[1, 1]), 0.7353; atol = 0.01)         # sRGB, not 0.5
-    end
 end
 
 # Minimal stand-in for a Zarr array: `read_native` only ever asks it for `arr[idx...]` and for

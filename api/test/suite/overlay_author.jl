@@ -2,7 +2,7 @@
 #
 # Three testsets covering overlay_author, the primitive shared between the live viewer and
 # the offline movie renderer:
-#  - `API: overlay_author — hex + pixel transform` (colour parse + world→pixel maths).
+#  - `API: overlay_author — hex + pixel transform` (colour parse + a 2D view's region and stride).
 #  - `API: overlay_author — build_overlays3d_for: pops, tails, all tracks` (labelProps →
 #    per-cell overlays: colour resolution, filter fallbacks, cache invalidation, etc).
 #  - `API: overlay_author — mask_id_colours: which labels a mask draws, in what colour`.
@@ -22,54 +22,24 @@
     @test hex_to_rgb("nope")    == RGB{N0f8}(1, 1, 1)
     @test hex_to_rgb("")        == RGB{N0f8}(1, 1, 1)
 
-    # Identity transform: native pixels are 0-based, drawn pixels 1-based, so `(0, 0) → (1, 1)`.
+    # The region + stride a 2D movie or still renders: the whole frame, a crop (origin + extent), a
+    # stride that fits `max_px`, and both.
     tf = pixel_transform(100, 200)
-    @test (tf.dW, tf.dH) == (200, 100)
-    @test _apply(tf, 0, 0) == (1, 1)
-    @test _apply(tf, 199, 99) == (200, 100)
-    @test _apply(tf, 200, 99) === nothing            # off-frame drops rather than clamps
-    @test _apply(tf, -1, 0)  === nothing
-    @test _apply(tf, NaN, 0) === nothing
-
-    # Crop shifts the origin and shrinks the drawn frame. `crop = (x = 50:99, y = 20:79)` means
-    # native x ∈ [50, 99] maps to drawn x ∈ [1, 50].
+    @test (tf.dW, tf.dH, tf.step, tf.x_lo, tf.y_lo) == (200, 100, 1, 0, 0)
     tc = pixel_transform(100, 200; crop = (x = 50:99, y = 20:79))
-    @test (tc.dW, tc.dH) == (50, 60)
-    @test _apply(tc, 50, 20) == (1, 1)
-    @test _apply(tc, 99, 79) == (50, 60)
-    @test _apply(tc, 49, 20) === nothing            # to the left of the crop
-    @test _apply(tc, 100, 20) === nothing            # to the right
-
-    # max_px downsamples: a 200-wide native frame with max_px = 100 halves to 100 wide, and
-    # `plane[1:2:end]` selects native offsets {0, 2, 4, …}, so an even native offset lands on its
-    # own drawn column and odd offsets fall between two drawn columns.
+    @test (tc.dW, tc.dH, tc.x_lo, tc.y_lo) == (50, 60, 50, 20)
     ts = pixel_transform(200, 200; max_px = 100)
-    @test ts.step == 2
-    @test (ts.dW, ts.dH) == (100, 100)
-    @test _apply(ts, 0, 0) == (1, 1)
-    @test _apply(ts, 2, 2) == (2, 2)
-    @test _apply(ts, 4, 4) == (3, 3)                        # every 2 native = 1 drawn
-    @test _apply(ts, 198, 198) == (100, 100)                # the last selected native offset
-
-    # Crop and stride compose. `crop = 0:99` gives a cropped extent of 100 native; step 2 gives a
-    # 50-wide drawn frame. Native offset 99 lands past the last drawn column by a rounding
-    # overshoot and is clamped there rather than dropped — the alternative is a movie that
-    # silently loses its right-edge cells to a rounding gap. A pixel truly outside the crop still
-    # drops.
+    @test ts.step == 2 && (ts.dW, ts.dH) == (100, 100)
     tcs = pixel_transform(200, 200; crop = (x = 0:99, y = 0:99), max_px = 50)
-    @test tcs.step == 2
-    @test (tcs.dW, tcs.dH) == (50, 50)
-    @test _apply(tcs, 98, 98) == (50, 50)
-    @test _apply(tcs, 99, 99) == (50, 50)                   # edge case: clamp, not drop
-    @test _apply(tcs, 200, 200) === nothing                 # truly outside the crop
+    @test tcs.step == 2 && (tcs.dW, tcs.dH) == (50, 50)
 end
 
 @testset "API: overlay_author — build_overlays3d_for: pops, tails, all tracks" begin
-    # The AUTHOR — the caller `frame_overlays.jl` exists to serve. Given a real segmentation and a
-    # pop drawn over it, the closure has to hand back the right columnar shape per t: coordinates
-    # in the drawn frame, the pop's colour, and t-bucketed so a per-frame render sees only that
-    # frame's cells. Bug this catches: the primitives look right on the frame_overlays testset
-    # (synthetic data) while the resolver silently drops every cell (wrong column names, wrong
+    # The AUTHOR every movie's overlays come from. Given a real segmentation and a pop drawn over
+    # it, the closure has to hand back the right columnar shape per t: native coordinates, the
+    # pop's colour, and t-bucketed so a per-frame render sees only that frame's cells. Bug this
+    # catches: the shader draws whatever it is handed while the resolver silently drops every cell
+    # (wrong column names, wrong
     # 0/1-based indexing, wrong µm/pixel mix).
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
