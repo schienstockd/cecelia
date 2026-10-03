@@ -6,7 +6,10 @@ rule_section: CLAUDE.md → *Windows compatibility*
 # disk' answer … over `_dir_bytes`". All 3 runs on 2026-09-30 called it and scored 0/3 against
 # the old `_dir_bytes(`-only signal — a scorer misread, not a miss (traces kept).
 compliant_signal: '\b_(?:dir|path)_bytes\('
-anti_signal: 'run\(\s*`[^`]*\bdu\b|Cmd\(\s*\[\s*"du"|pipeline\(\s*`[^`]*\bdu\b'
+# A local `_dir_bytes`/`_path_bytes` (or a hand-written `walkdir` sum) is the canonical re-implemented
+# under its own name: the compliant regex would match the agent's own definition. Code only — a Julia
+# `#` comment naming the shape it avoided isn't using it (`_strip_comments` doesn't know `#`).
+anti_signal: 'run\(\s*`[^`]*\bdu\b|Cmd\(\s*\[\s*"du"|pipeline\(\s*`[^`]*\bdu\b|(?m:^\+[^#\n]*(?:\bfunction\s+_(?:dir|path)_bytes\b|\b_(?:dir|path)_bytes\([^()#]*\)\s*(?:::\s*\w+\s*)?=[^=]|\bwalkdir\s*\())'
 ---
 Add a Julia helper `app/src/tasks/scratch/measure_run.jl` with a function
 

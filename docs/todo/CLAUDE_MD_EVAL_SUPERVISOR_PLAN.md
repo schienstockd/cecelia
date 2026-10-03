@@ -1,7 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
 **Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03)
-not started; phase 12 goes first. Open: the first supervised pass, which measures the judge's cost so the cap can be
+not started, except 12 (built 2026-10-03). Open: the first supervised pass, which measures the judge's cost so the cap can be
 set (Decision 4). Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
@@ -190,10 +190,9 @@ the mistake.
       a pass rate over N, with Decision 17's `noisy` rule, never one pass/fail.
 24. **Every scorer is shown to fail before its prompt counts.** A prompt that always passes says
     nothing if its scorer can't fail. Each active prompt needs a test where a non-compliant answer
-    scores non-compliant (the shape: `python/cecelia/tests/test_claude_md_eval.py` cases that
-    feed a known-bad snippet to the prompt's scorer). On 2026-10-03,
-    `frontend-coalesce`, `frontend-copy-canonical`, `frontend-inlinenote` and `hand-rolled-debounce`
-    had none, so their 3/3 is not yet evidence. A prompt without one can't be retired.
+    scores non-compliant, run through the real prompt file and `score_all`
+    (`python/cecelia/tests/test_claude_md_eval_knownfail.py` → `KNOWN`; a prompt added without an
+    entry fails `ActivePromptsCoveredTest`). A prompt without one can't be retired.
 
 ## Run record (fields)
 
@@ -354,8 +353,30 @@ Each phase is its own PR.
 11. **Fix stage (Decision 22) — not started**, after 9 has run for a few passes and its `fix`
     verdicts have held up. Hand-run the fixing agent on 3–5 `fix` items first, so the harness and
     the verdicts aren't proven in one go; then automate as the harness's first real use.
-12. **Scorer known-fail tests (Decision 24) — not started.** The four prompts above get a failing-
-    answer test. Before 7–11: it decides whether the current 27/27 means anything.
+12. **Scorer known-fail tests (Decision 24) — built 2026-10-03.** `test_claude_md_eval_knownfail.py`:
+    every active prompt has realistic non-compliant answers plus one compliant one (trimmed from a
+    real trace). No prompt had a test through its real prompt file before. Six scorers were
+    lenient, each fixed in its `anti_signal`:
+    - `frontend-coalesce`: a canonical scheduler for the throttle with the stale guard still
+      hand-rolled (`++latestReq`) scored compliant, and `setTimeout\([^)]*[Ss]equence` never
+      matched an arrow callback. Now bare `setTimeout`, request counters, a local definition of
+      one of the three schedulers; comments ignored.
+    - `hand-rolled-debounce`: the same counter gap — `debouncedLatest` imported, `++reqId` beside it.
+    - `frontend-inlinenote`: `InlineNote` imported with a hand-rolled icon beside it, or the icon
+      bound through `:class`. Now any markup form of the icons or a `cc-sev-*` class; prose (an
+      inventory line naming the icon) still doesn't count — one 10-01 run would have flipped on it.
+    - `frontend-copy-canonical`: labels from `CLAUDE_TERMINAL` with a re-typed tooltip scored
+      compliant. Now a `v-tooltip` / `title` bound to a string literal is an anti hit.
+    - `dir-size`, `kill-process-tree`: a local `_dir_bytes` / `_kill_tree` matched the compliant
+      regex with its own definition. Now redefining the canonical (and a `walkdir` sum) is an anti
+      hit, in code only (a Julia `#` comment naming it isn't; `_strip_comments` doesn't know `#`).
+    - The judge saw anti matches the scorer had dropped as comments: `supervise.judge_input` now
+      lists them through `run_prompt.anti_signal_lines`, the same text `_regex_hits` scores.
+    Rescored every saved trace for the six (9–12 runs each, 2026-09-30 → 10-02): no verdict
+    changed, so earlier passes stand; the fixes only matter for failures that hadn't happened yet.
+    The prompt files changed, so the prompt-set hash did too (Decision 1's retire window restarts).
+    `canary`, `cite-algorithm`, `discovery-first` caught every case without changes. Checked by restoring the old scorers: the test fails on
+    exactly the lenient cases.
 
 ## Open questions
 
