@@ -316,6 +316,53 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Chain run — set-scope node gated on a scale-only requirement ─────────
+# The set-scope gating used to run only when the task declared `requires.axes`, so a task declaring
+# just `requires.scale` kept its uncalibrated images in the vector and `run_task` then failed the
+# WHOLE node with TaskApplicabilityError. Those images must be skipped, the rest run.
+@testset "Chain run — picnic node skips images missing a required scale" begin
+    spec = joinpath(mktempdir(), "scaleOnlySet.json")
+    write(spec, JSON3.write(Dict(
+        "fun_name" => "customTest.scaleOnlySet", "task" => "scaleOnlySet",
+        "label" => "Scale-only set task", "scope" => "set", "resource_pool" => "cpu",
+        "requires" => Dict("scale" => ["xy"]), "params" => Any[])))
+    register_task!("customTest.scaleOnlySet", _ScaleOnlySetTask(); spec = spec)
+    @test isempty(task_requires_axes(_ScaleOnlySetTask()))
+    @test task_requires_scale(_ScaleOnlySetTask()) == Set([:XY])
+
+    proj = create_project!(name="chain-scale-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    imgs = map(("img-a", "img-b", "img-c")) do nm
+        add_image!(s; name=nm)
+    end
+    for img in imgs[2:3]   # img-a stays uncalibrated
+        img.meta = Dict{String,Any}("PhysicalSizeX" => "0.5", "PhysicalSizeY" => "0.5")
+        save!(img)
+    end
+    tpl = ChainTemplate("scale-chain",
+        [ChainNode(id="n1", fn="customTest.scaleOnlySet", scope="set", params=Dict{String,Any}())],
+        ChainEdge[])
+    save_chain_template!(proj, tpl)
+
+    logs = String[]
+    run = run_chain(proj, [i.uid for i in imgs]; chain="scale-chain",
+                    on_log = line -> push!(logs, line))
+    @test run.image_states[imgs[1].uid]["n1"].status == NODE_SKIPPED
+    for img in imgs[2:3]
+        @test run.image_states[img.uid]["n1"].status == NODE_DONE
+        @test run.image_states[img.uid]["n1"].result["image_count"] == 2
+    end
+    @test any(l -> contains(l, "SKIP [$(imgs[1].uid)/n1]") && contains(l, "pixel size"), logs)
+
+    # No image calibrated → the node is skipped, and the log names the scale, not axes.
+    logs2 = String[]
+    run2 = run_chain(proj, [imgs[1].uid]; chain="scale-chain", on_log = line -> push!(logs2, line))
+    @test run2.image_states[imgs[1].uid]["n1"].status == NODE_SKIPPED
+    @test any(l -> contains(l, "no images satisfy required scale: XY"), logs2)
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Chain start dot — end-to-end run prunes to the reachable subgraph ─────
 # Reservation guard: pruning to a start dot must still work when the reachable subgraph contains a
 # picnic (set-scope barrier) node. The target becomes a root — its dropped upstream doesn't block
