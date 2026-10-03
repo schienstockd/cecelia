@@ -347,9 +347,38 @@ Each phase is its own PR.
 9. **Verify step (Decision 20) — not started.** Grouping, sandboxed read-only agents, the four
    verdicts, the per-pass cap, owner queue = `decide` only. Checkpoint: on the 10-02 bugs it
    reproduces the hand-verified verdicts above; measure its cost on that run before setting the cap.
-10. **Transcript miner (Decision 23) — not started.** Pilot first, judged by hand: candidate
-    moments from the last 30 days, then how many make a reproducible probe. Wired into the pass
-    only if the pilot finds some.
+10. **Transcript miner (Decision 23) — pilot done 2026-10-03; not wired into the pass.**
+    `scripts/claude_md_eval/session_moments.py` (`pixi run claude-md-eval-moments`), tests in
+    `python/cecelia/tests/test_claude_md_eval_session_moments.py`. Mechanical, $0, 16 s over the
+    30-day window: 1119 session files, 274 interactive (845 `claude -p` spawns skipped). Moments:
+    correction 47, refused 40, interrupt 44, retraction 94, memory 23 (17 memory sessions still on
+    disk). The excerpts and the per-moment verdicts stay in
+    `~/.cecelia-effectiveness/transcript-pilot/2026-10-03.md`; this entry cites counts only.
+    - **Hand-judged sample, 20 (4 per signal).** Real pushback: memory 4/4, retraction 4/4,
+      refused 3/4, correction 3/4, interrupt 1/4 (interrupts are mostly the owner pasting logs or
+      adding status). The `memory` moment lands where the memory was written, often turns after
+      the mistake, so it marks the session, not the turn.
+    - **11 of 20 are probe-worthy, 2 as a single-shot sandbox prompt.** The two: per-dot
+      provenance from the server for pooled plots (a code rule), and answer length in a design
+      discussion (behavioural, scored as a pass rate). The other 9 need state the sandbox doesn't
+      have: a live PR (check it's open before pushing), host processes (check before removing a
+      worktree), the running app or project data (trace the wiring / run the pipeline's own
+      metrics instead of reasoning), a long debugging context (don't hand off when stuck), or an
+      interactive question tool (menus during exploration). 1 was already fixed by tooling
+      (`bootstrap-worktree`), 3 were one-off or taste, 5 false.
+    - **Whole-population check on `refused`:** 26 of 40 are `AskUserQuestion` menus, 25 of them
+      between 09-05 and 09-19. `feedback_no_menus_in_dialogue` was written 09-19; one since.
+      The older, general `feedback_ask_in_his_terms` (08-08) didn't stop them. A specific,
+      trigger-named memory ended a pattern a general one didn't — and that is not a CLAUDE.md
+      rule, so the eval would never have seen it.
+    - **Recommendation: no-go for wiring it into the weekly pass as a prompt source; go as a
+      weekly *report*.** Most hard failures are behaviour that needs live state, which single-shot
+      prompts can't reproduce (the same wall P1 hit from the other side). What the miner does
+      well is measure: a pattern's rate per week, before and after a rule or memory lands, as the
+      menus case shows. So the pass should print the per-signal counts and the top tools refused
+      in the record ("Since last run"), the two single-shot candidates go to curation as normal
+      add proposals, and the stateful ones wait for the agent-overnight harness, which can seed
+      a live app and project.
 11. **Fix stage (Decision 22) — not started**, after 9 has run for a few passes and its `fix`
     verdicts have held up. Hand-run the fixing agent on 3–5 `fix` items first, so the harness and
     the verdicts aren't proven in one go; then automate as the harness's first real use.
