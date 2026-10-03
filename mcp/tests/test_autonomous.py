@@ -85,6 +85,18 @@ class RequireMeasured(unittest.TestCase):
             c._require_measured("copy01", "img", "T")
 
 
+class GatingPost(unittest.TestCase):
+    def test_population_path_is_a_body_field_not_the_route(self):
+        c = au.AutonomousClient("http://x")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
+                mock.patch.object(c, "_require_measured"), \
+                mock.patch.object(c, "_request", return_value={"ok": True}) as req:
+            c.gating_post("/api/gating/pop/set-gate", "copy01", "img", "T", path="/pos", gate={"kind": "rectangle"})
+        method, route = req.call_args[0][:2]
+        self.assertEqual((method, route), ("POST", "/api/gating/pop/set-gate"))
+        self.assertEqual(req.call_args.kwargs["body"]["path"], "/pos")
+
+
 class Histogram(unittest.TestCase):
     def test_decode_and_bimodal_bins(self):
         vals = [1.0] * 50 + [9.0] * 30
