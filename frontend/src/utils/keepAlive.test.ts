@@ -12,6 +12,7 @@ const KEY_LISTENER_EXEMPT: Record<string, string> = {
   'composables/usePlotFullscreen.ts': 'one app-wide listener for the one app-wide maximised flag',
   'modules/ViewerWindow.vue': 'the viewer popout window — a bare route, never kept alive',
   'modules/MoviesModule.vue': 'not a kept-alive page (App.vue KEPT_ALIVE_PAGES)',
+  'directives/tooltip.ts': 'attached only while a tip shows, which hides when its target leaves the document',
 }
 
 const RAW = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>

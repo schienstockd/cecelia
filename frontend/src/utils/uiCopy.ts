@@ -356,8 +356,8 @@ const sideOf = (attrs: string): 'left' | 'right' | 'none' | null => {
   const mods = m[0].slice('v-tooltip'.length).replace(/\s*=$/, '')
   if (/\.left\b/.test(mods)) return 'left'
   if (/\.right\b/.test(mods)) return 'right'
-  // Only `.top`/`.bottom` are safe on a wide host; anything else here (`.focus` alone, no modifier
-  // at all) leaves PrimeVue on its unchecked `alignRight` default.
+  // Only `.top`/`.bottom` are safe on a wide host; anything else here (no modifier at all) is the
+  // `right` default.
   if (/\.(?:top|bottom)\b/.test(mods)) return null
   return 'none'
 }
@@ -471,23 +471,19 @@ export const nestedTooltips = (src: string, path = ''): DuplicateTooltip[] =>
  * Tooltips placed SIDEWAYS off a target that fills its column — the third way a tooltip ends up on
  * top of the UI, and the one neither check above can see, because it is not about text or nesting.
  *
- * PrimeVue's only safety net is the VIEWPORT, never the panel. `isOutOfBounds` (tooltip/index.mjs)
- * tests screen edges alone, and `alignLeft` sets `left = hostLeft - tooltipWidth`. So on a target
- * that spans its panel, `.left` puts the tooltip *definitionally* outside that panel — over the
- * neighbouring column — and the library is satisfied, because it is still on screen. `.right` does
- * the same in the other direction. That is what put a param tip over the task list and what
- * made 26 of PlotOptions' row tips land on the plot they describe.
+ * The positioner's only safety net is the VIEWPORT, never the panel. `directives/tooltip.ts` flips
+ * and clamps against screen edges alone, so on a target that spans its panel, `.left` puts the
+ * tooltip *definitionally* outside that panel — over the neighbouring column — and the positioner is
+ * satisfied, because it is still on screen. `.right` does the same in the other direction. That is
+ * what put a param tip over the task list and what made 26 of PlotOptions' row tips land on the plot
+ * they describe.
  *
- * `.top`/`.bottom` are the ONLY two placements PrimeVue clamps horizontally (`if (left < 0) left = 0;
- * else if (left + tooltipWidth > viewportWidth) …`). On a wide target that clamp is what guarantees
- * the tooltip stays inside the target's own horizontal span — i.e. inside the panel. They also never
- * overlap the target itself: `top` sits at `hostTop - tooltipHeight`, `bottom` at `hostTop + hostH`.
- * The sideways pair instead CENTRES vertically on the target, so a two-line tip on a one-line row
- * spills over the rows above and below it.
+ * `.top`/`.bottom` centre the tip on the target horizontally, so on a wide target it stays inside the
+ * target's own span — i.e. inside the panel. They also never overlap the target itself. The sideways
+ * pair instead CENTRES vertically on the target, so a two-line tip on a one-line row spills over the
+ * rows above and below it.
  *
- * A BARE `v-tooltip` is reported too. With no modifier `align()` falls through to `alignRight`, whose
- * flip chain ends by re-applying `alignRight` with no bounds test at all — the one placement that can
- * land anywhere.
+ * A BARE `v-tooltip` is reported too: no modifier means `right`, the same sideways placement.
  *
  * Scoped to hosts that fill their column. A narrow target — an icon button, a chip, a dot — has room
  * beside it and no row above or below worth covering, so `.left`/`.right` are right there and are

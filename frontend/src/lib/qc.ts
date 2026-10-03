@@ -125,12 +125,12 @@ const styleAttr = (s: Record<string, string>) => Object.entries(s)
  * task label is spelled out; the module is already carried by the pill's colour, and a tooltip this
  * narrow cannot afford a word restating it.
  *
- * Rendered with PrimeVue's `escape: false`, so **every interpolated string goes through `esc`**; the
+ * Rendered with v-tooltip's `escape: false`, so **every interpolated string goes through `esc`**; the
  * text is app-authored (qc.jl's `QC_TEXT` catalog + a task's own `label`), but escaping it costs
  * nothing and means a future finding interpolating a filename or channel name cannot break out.
  *
  * HTML rather than the plain `long` string because a tooltip cannot show a pill otherwise — and
- * because the plain version was worse than it looked: `.p-tooltip-text` has no `white-space` rule, so
+ * because the plain version was worse than it looked: `.cc-tooltip-text` has no `white-space` rule, so
  * the `\n`s in `long` collapsed and three findings rendered as one run-on paragraph in a 280px box.
  * `labelFor`/`tagStyle` are injected (rather than importing the store) to keep this pure and testable.
  */

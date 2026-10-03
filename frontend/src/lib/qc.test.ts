@@ -109,7 +109,7 @@ describe('qcTooltipHtml', () => {
     expect(html).toContain('<div class="qcf-a">af.bleedthrough long</div>')
   })
 
-  // The whole point of escaping: this is rendered with PrimeVue `escape: false`, so a finding whose
+  // The whole point of escaping: this is rendered with v-tooltip `escape: false`, so a finding whose
   // text ever interpolates a filename or channel name must not be able to inject markup.
   it('escapes every interpolated string, label included', () => {
     const html = qcTooltipHtml(

@@ -51,9 +51,9 @@ function pick(id: string): void {
 // (independent timers drift out of phase within seconds). 220 ms because below ~120 ms the eye
 // reads flicker rather than direction; `VisualAid.FRAME_MS` is 220 for the same reason.
 //
-// Advance PAUSES while the mouse is over any tile — the frame-tick's DOM patches were making
-// PrimeVue's tooltip dismiss instantly on hover (the tooltip's autoHide read the burst of
-// attribute updates on descendant rects as a leave). Pausing during hover keeps the DOM under
+// Advance PAUSES while the mouse is over any tile — the frame-tick's DOM patches made PrimeVue's
+// tooltip (the one before directives/tooltip.ts) dismiss instantly on hover, reading the burst of
+// attribute updates on descendant rects as a leave. Pausing during hover keeps the DOM under
 // the tooltip still and lets the tooltip persist normally; the animation resumes as soon as the
 // mouse moves off.
 const FRAME_MS = 220

@@ -151,36 +151,24 @@ body {
 ::-webkit-scrollbar-thumb  { background: #30363d; border-radius: var(--cc-radius-xs); }
 ::-webkit-scrollbar-thumb:hover { background: #484f58; }
 
-/* ── PrimeVue tooltip overrides ────────────────────────────────────────────── */
+/* ── Tooltip (directives/tooltip.ts) ───────────────────────────────────────── */
 
-/* SIZE THE ROOT, NEVER THE TEXT. PrimeVue places a tooltip off `getOuterWidth(tooltipElement)` — the
-   `.p-tooltip` container — in all four align functions and in `isOutOfBounds`. Aura caps that container
-   at `tooltip.max.width` = 12.5rem (200px), and a `max-width` on the inner `.p-tooltip-text` cannot
-   raise it: the text simply OVERFLOWS a container the library still measures as 200px wide. Every
-   placement is then wrong by the difference. `alignLeft` is `left = hostLeft - measuredWidth`, so a
-   280px tip measured as 200px lands its right edge 80px PAST the target's left edge — which is how the
-   module pages' CSV button (~56px wide) ended up completely hidden under its own tooltip.
-   `width: max-content` is load-bearing and must be `!important`: the directive writes
-   `width: fit-content` inline, and for an absolutely positioned box `fit-content` is the space
-   remaining to the viewport edge — near the right edge (e.g. the 280px TaskRunner panel) that is ~25px,
-   and the text wraps one character per line into a vertical strip. Worse, that also collapses the
-   width BEFORE `isOutOfBounds` reads it, so the strip "fits" and the library's own flip never fires.
-   Sizing to content keeps the measurement honest; clamping to the viewport keeps a narrow window
-   shortening the line rather than overflowing.
-   The `max-width` wins on the CASCADE LAYER, not on specificity: `main.ts` configures PrimeVue with
-   `cssLayer`, so its `.p-tooltip` sits in `@layer primevue` and this unlayered rule outranks it.
-   Dropping that option would silently restore the 200px cap — and with it this bug. */
-.p-tooltip {
-  width: max-content !important;
+/* Appended to <body>, so only :root tokens reach it. SIZE THE ROOT, NEVER THE TEXT: the directive
+   places the tip off the ROOT's measured box, so a width set on the inner `.cc-tooltip-text` makes the
+   text overflow a box still measured narrower — every placement is then off by the difference (with
+   PrimeVue that hid the module pages' CSV button under its own `.left` tip). `max-content` sizes the
+   box to its line; the viewport clamp shortens the line in a narrow window instead of overflowing. */
+.cc-tooltip {
+  position: fixed; top: 0; left: 0; z-index: 1100;
+  pointer-events: none;
+  width: max-content;
   max-width: min(280px, calc(100vw - 1rem));
+  animation: cc-tooltip-in 0.12s ease-out;
 }
-.p-tooltip .p-tooltip-text {
-  /* --cc-fs-xs (≈10.9px) is the step nearest the 0.72rem this rule carried before the tokenisation
-     sweep. The sweep's own choice (--cc-fs-sm) was defensible on rounding, but it silently turned a
-     working literal into an unreachable token — see the :root note above — so the tooltip stopped
-     being 11.5px and started inheriting the browser default 16px. That, not the rounding, is why
-     tooltips looked oversized. This is the first version of this rule whose font-size actually
-     applies. */
+@keyframes cc-tooltip-in { from { opacity: 0; } }
+.cc-tooltip .cc-tooltip-text {
+  /* --cc-fs-xs (≈10.9px): a token that resolves here — the tip is outside the app root, so only a
+     :root-declared token applies (see the :root note above). */
   font-size: var(--cc-fs-xs);
   padding: 0.3rem 0.6rem;
   background: #21262d;
@@ -188,20 +176,20 @@ body {
   color: #e6edf3;
   border-radius: var(--cc-radius-sm);
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
-.p-tooltip-arrow { display: none; }
 
 /* QC findings tooltip (ImageTable's qc-dot → lib/qc.ts qcTooltipHtml). The one tooltip in the app
    that is structured rather than a phrase: an image can carry findings from several tasks at once, so
    each is badged with the task that raised it. Scoped to `.qc-tip` — passed via v-tooltip's object
    form — so the block layout can't leak into the ~200 phrase tooltips everywhere else. */
-.p-tooltip.qc-tip {
+.cc-tooltip.qc-tip {
   /* wider than the 280px phrase cap: these lines are sentences, and at 280px a three-finding image
      wrapped into a ~14-line column. On the ROOT for the same reason as the cap above — the class is
-     passed through v-tooltip's object form and PrimeVue puts it on the container it measures. */
+     passed through v-tooltip's object form and lands on the box that gets measured. */
   max-width: min(340px, calc(100vw - 1rem));
 }
-.qc-tip .p-tooltip-text { text-align: left; }
+.qc-tip .cc-tooltip-text { text-align: left; }
 .qc-tip .qcf + .qcf { margin-top: 0.45rem; }
 .qc-tip .qcf-p { color: var(--cc-text); }
 /* the action line, subdued so the problem reads first — same split as the QC copy convention
@@ -213,7 +201,7 @@ body {
 /* Per-run breakdown behind the image table's module status badge, shown only when an image has more
    than one run in that module (ImageTable's `imageModuleStatusTip`). Plain text — this exists purely
    so the newlines survive, and stays scoped so the ~200 phrase tooltips keep collapsing theirs. */
-.task-tip .p-tooltip-text { white-space: pre-line; text-align: left; }
+.task-tip .cc-tooltip-text { white-space: pre-line; text-align: left; }
 
 /* ── Button utilities ──────────────────────────────────────────────────────── */
 /* Use these across all module pages and layout components.                    */

@@ -14,7 +14,7 @@
                        armed-title="Click again to permanently delete"
                        @confirm="deleteLabel(vn)" />
   Optional default slot → a text label beside the icon (e.g. "Delete set"). Tooltip position is left to
-  PrimeVue's default + out-of-bounds flip (dynamic modifiers can't be set from a prop).
+  the directive's default + out-of-bounds flip (dynamic modifiers can't be set from a prop).
 -->
 <script setup lang="ts">
 import ConfirmButton from './ConfirmButton.vue'
