@@ -1,11 +1,11 @@
 # Shared renderer — the viewer's shaders draw the movies too
 
-**Status:** in progress (2026-10-01).
-- **Phase 0 passed on Linux** (see Phase 0 → Result).
-- **Phase 1 built** on `feat/shared-renderer-p1` (PR #1345; see Phase 1 → Result).
-- **Phase 2 built** on `feat/shared-renderer-p2` (see Phase 2 → Result), except the viewer-side
-  pixel capture, which needs a browser. **The Phase 3+ review is next.**
-- **Committed scope is Phases 1–2.** Phases 3–5 are decided only after Phase 2 ships (see *Scope*).
+**Status:** Phases 0–4 built and merged (2026-10-03): every movie, 2D and 3D, runs the viewer's
+shaders (PRs #1345, #1349, #1359, #1371).
+- **Open:** the viewer-side pixel capture (needs a browser — Dominik's click); stills (cell /
+  behaviour / motif cards, keyframe thumbnails) still render in Julia — moving them onto the shader is
+  [`STILLS_WORKER_PLAN.md`](STILLS_WORKER_PLAN.md); Phase 5 (bricks) for a level 0 over the device's
+  3D-texture limit.
 
 Supersedes [`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay")
 and its "shared drawing library" non-goal. That plan's shared-JSON work (Phases 1–2, built) stands.

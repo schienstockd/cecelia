@@ -189,11 +189,17 @@ class Render2DRunTest(unittest.TestCase):
 
     def test_colour_table_draws_only_its_labels_in_their_colours(self):
         f = self._frame([3, 3], labelsPath=self.labels, labelOpacity=1.0, labelContourPx=0,
-                        labelColours={"ids": [2], "colours": [[0.0, 0.0, 1.0]]})
+                        labelColouring="table", labelColours={"ids": [2], "colours": [[0.0, 0.0, 1.0]]})
         tl = f[10:22, 10:22].reshape(-1, 3).mean(0)
         self.assertGreater(tl[2], 150)                      # label 2 in its table colour
         self.assertLess(tl[0], 60)
         self.assertLess(f[42:54, 42:54, 2].mean(), 40)      # label 5 is not in the table
+
+    def test_an_empty_colour_table_draws_no_mask(self):
+        # A population with no cells on this image — not the palette's every label.
+        f = self._frame([0, N - 1], labelsPath=self.labels, labelOpacity=1.0, labelContourPx=0,
+                        labelColouring="table", labelColours={"ids": [], "colours": []})
+        np.testing.assert_array_equal(f, self._frame([0, N - 1]))
 
     def test_points_off_the_plane_are_hidden(self):
         ov = {"points": {"x": [16.0], "y": [16.0], "z": [20.0], "colour": [[0.0, 1.0, 0.0]]}}

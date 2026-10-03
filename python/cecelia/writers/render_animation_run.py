@@ -33,9 +33,10 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
     ``fps``            : encoder frame rate
     ``labelsPath``     : optional label store drawn as the viewer's 3D mask (nearest id along the
                          ray, ``label_palette``), with ``labelOpacity`` (default the viewer's
-                         ``LABEL_OPACITY``) / ``labelContourPx``; ``labelColours`` =
-                         ``{ids, colours}`` draws only those labels, in those colours (a
-                         population mask), instead of the palette
+                         ``LABEL_OPACITY``) / ``labelContourPx``; ``labelColouring``
+                         ``palette`` (default) or ``table``: ``labelColours`` = ``{ids,
+                         colours}`` draws only those labels, in those colours (a population
+                         mask) — an empty table draws no mask
     ``pointSizePx`` / ``pointBorderPx`` / ``segmentWidthPx`` : overlay style, in output pixels
     ``titleCard``      : optional; prepended after the render (``title_card.prepend_title_to_movie``)
     ``overlays``       : optional per-frame ``[{timestamp?, scaleBar?}]`` — drawn onto the encoded
@@ -235,16 +236,21 @@ def run(params):
         # The mask goes on the same grid as the image level, or not at all — a mismatched texture
         # would outline the wrong voxels (Julia's `mask_fits_frame` already checked level 0).
         lab_levels, _ = open_as_zarr(params['labelsPath'])
-        if level < len(lab_levels):
+        colouring = params.get('labelColouring', 'palette')
+        if colouring not in ('palette', 'table'):
+            raise ValueError(f'render_animation_run: labelColouring {colouring!r} is not palette | table')
+        table = params.get('labelColours') or {}
+        if colouring == 'table' and not table.get('ids'):
+            # A population with no cells on this image — nothing to draw, which is not "every label".
+            log.log('[INFO] mask skipped — its populations have no labels on this image')
+        elif level < len(lab_levels):
             labels_arr, lab_axes = lab_levels[level], read_axes(params['labelsPath'])
             opacity = params.get('labelOpacity', wgsl_utils.shader_constants()['LABEL_OPACITY'])
             label_style = {'opacity': float(opacity),
                            'contourPx': max(0, int(round(float(params.get('labelContourPx', 0))))),
                            'rows': len(palette)}
-            # Per-label colours (a population-filtered, population-coloured mask): the shader's
-            # colour table; labels absent from it are not drawn.
-            table = params.get('labelColours')
-            if isinstance(table, dict) and table.get('ids'):
+            # A population mask: the shader's colour table; labels absent from it are not drawn.
+            if colouring == 'table':
                 host.set_palette(wgpu_host.label_table(table['ids'], table['colours']))
                 label_style['rows'] = -wgpu_host.LABEL_TABLE_W
         else:

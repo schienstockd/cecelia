@@ -96,19 +96,25 @@ _specs_payload(specs) = [begin
                          "lut" => [Float64[rgb[1], rgb[2], rgb[3]] for rgb in lut])
     end for s in specs]
 
-# A movie mask (`_resolve_movie_overlays_mask`'s `mask`) onto the runner's params: the label store, its
-# outline and opacity, and — for a population mask — the label → colour table.
-function _mask_params!(params::AbstractDict, mask)
+# A movie mask (`MovieMask`) onto the runner's params: the label store, its outline and opacity, and
+# its colouring — `labelColouring` "palette", or "table" with `labelColours` (an empty table draws no
+# labels; the runner must not read it as "no table").
+function _mask_params!(params::AbstractDict, mask::Union{Nothing,MovieMask})
     mask === nothing && return params
-    params["labelsPath"]     = String(mask.labels_path)
-    params["labelContourPx"] = Int(mask.contour_px)
-    params["labelOpacity"]   = Float64(mask.opacity)
-    if mask.colours !== nothing
-        ids = sort!(collect(keys(mask.colours)))
-        params["labelColours"] = Dict{String,Any}("ids" => ids, "colours" =>
-            [Float64[Float64(red(c)), Float64(green(c)), Float64(blue(c))]
-             for c in (mask.colours[i] for i in ids)])
-    end
+    params["labelsPath"]     = mask.labels_path
+    params["labelContourPx"] = mask.contour_px
+    params["labelOpacity"]   = mask.opacity
+    _label_colouring!(params, mask.colours)
+    params
+end
+
+_label_colouring!(params::AbstractDict, ::ViewerPalette) = (params["labelColouring"] = "palette"; params)
+
+function _label_colouring!(params::AbstractDict, colours::AbstractDict)
+    ids = sort!(collect(keys(colours)))
+    params["labelColouring"] = "table"
+    params["labelColours"] = Dict{String,Any}("ids" => ids, "colours" =>
+        [Float64[Float64(red(c)), Float64(green(c)), Float64(blue(c))] for c in (colours[i] for i in ids)])
     params
 end
 
@@ -531,7 +537,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     show_mask   = _ov_bool(overlays_config, "showMask",        false)
     ts_raw = get(overlays_config, "trackSources", nothing)
     track_sources = all_tracks && ts_raw isa AbstractVector ?
-        [(_wstr_any(e, "valueName", :valueName), _wstr_any(e, "colour", :colour; default = "#9ca3af"))
+        [(_wstr_any(e, "valueName", :valueName), _wstr_any(e, "colour", :colour; default = OVERLAY_GREY))
          for e in ts_raw if e isa AbstractDict] :
         Tuple{String,String}[]
     filter!(s -> !isempty(s[1]), track_sources)
@@ -553,7 +559,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     tcm  = _ov_str(overlays_config, "trackColourMode", _ov_str(overlays_config, "trackColorMode", "track"))
     pops_filter = something(_ov_strvec(overlays_config, "popPaths"),
                             _ov_strvec(overlays_config, "popsFilter"), Some(nothing))
-    all_tracks_col = _ov_str(overlays_config, "allTracksColour", "#9ca3af")
+    all_tracks_col = _ov_str(overlays_config, "allTracksColour", OVERLAY_GREY)
     # `colourBy` is optional — an obs column name. `colourOverrides` is a Dict{String,String}
     # mapping value → hex. Both empty / missing → author falls back to pop-derived colours.
     cb_raw = get(overlays_config, "colourBy", nothing)
@@ -584,7 +590,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
                    opacity = movie_overlay_style(k -> get(overlays_config, k, nothing)).mask_opacity,
                    pop_type = pt, pops_filter = pops_filter,
                    all_cells = _ov_bool(overlays_config, "allCells", false),
-                   all_cells_colour = _ov_str(overlays_config, "allCellsColour", "#9ca3af"),
+                   all_cells_colour = _ov_str(overlays_config, "allCellsColour", OVERLAY_GREY),
                    colour_by = colour_by, colour_overrides = colour_overrides)
     (per_t3d, mask)
 end

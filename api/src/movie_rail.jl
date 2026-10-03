@@ -269,7 +269,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
                      for (k, v) in ts_raw
                      if v isa AbstractDict && something(get(v, "visible", nothing), get(v, :visible, nothing), true) === true]
     end
-    if ts_raw isa AbstractVector && !isempty(ts_raw)
+    if ts_raw isa AbstractVector
         # Symbol/String key tolerance — same reason `_ov` reads both shapes.
         _svalue(e, k) = something(get(e, Symbol(k), nothing), get(e, String(k), ""))
         sources = Any[]
@@ -279,9 +279,16 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
             col = String(_svalue(e, "colour"))
             isempty(vn) && continue
             push!(sources, Dict{String,Any}("valueName" => vn,
-                                             "colour" => isempty(col) ? "#9ca3af" : col))
+                                             "colour" => isempty(col) ? OVERLAY_GREY : col))
         end
-        isempty(sources) || (out["trackSources"] = sources)
+        if !isempty(sources)
+            out["trackSources"] = sources
+        elseif out["allTracks"]
+            # Sources were chosen and every one is hidden: no whole-segmentation tracks — not the
+            # grey fallback an ABSENT list means (the viewer draws none).
+            out["allTracks"] = false
+            out["includeTracks"] = show_gated
+        end
     end
     out
 end

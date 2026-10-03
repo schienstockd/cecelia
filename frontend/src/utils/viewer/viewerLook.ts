@@ -78,8 +78,10 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     showGatedTracks: i.showGatedTracks,
     showTrackclust: i.popVisible('trackclust'),
     showTracks: tracked.length > 0,
-    trackSources: Object.fromEntries(tracked.map(vn =>
-      [vn, { visible: true, colour: i.trackSourceColours[vn] || TRACK_SOURCE_GREY }])),
+    // every tracked segmentation the viewer knows, hidden ones too — a source the map does not name is
+    // drawn (`resolveTrackSources`)
+    trackSources: Object.fromEntries(Object.keys(i.trackVisible).map(vn =>
+      [vn, { visible: !!i.trackVisible[vn], colour: i.trackSourceColours[vn] || TRACK_SOURCE_GREY }])),
     pointsSize: i.pointSize,
     pointBorder: i.pointBorder,
     labelOpacity: i.labelOpacity,

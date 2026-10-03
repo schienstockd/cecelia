@@ -39,6 +39,20 @@ export const PREVIEW_PALETTE = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#5e
  *  reads the same neutral tone the movie would. */
 export const ALL_TRACKS_GREY = '#9ca3af'
 
+/** Stand-in heat ramp (cool → hot) for "speed" tails — structure, not the real `heatRamp`. */
+const PREVIEW_HEAT = ['#1d4ed8', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444']
+
+/** A tail's colour under the track colour mode, as the overlay author picks it
+ *  (`_build_overlay_state`): "track" cycles the palette by track, "speed" the heat ramp (the scene has
+ *  no speeds, so by track), "solid" one colour for the source (`solid`), "pop" the cell's own (`own`
+ *  — its pop, or its source in the whole-seg branch). */
+function tailColour(mode: string | undefined, trackId: number, solid: string, own: string): string {
+  if (mode === 'solid') return solid
+  if (mode === 'pop') return own
+  if (mode === 'speed') return PREVIEW_HEAT[trackId % PREVIEW_HEAT.length]!
+  return PREVIEW_PALETTE[trackId % PREVIEW_PALETTE.length]!
+}
+
 const N_POPS = 6
 const N_CELLS = 60
 const RIBBON_STEPS = 4
@@ -116,8 +130,10 @@ export interface OverlayPreviewConfig {
    *  Track sources list. Only meaningful under `showTracks && !showPops`. When present, the preview
    *  paints all-tracks cells split across two pseudo-segmentations, each in its picked colour
    *  (schematic — the scene is fixed at two pseudo-segs regardless of how many real ones exist).
-   *  Empty or absent → single-source grey (`ALL_TRACKS_GREY`), matching pre-picker behaviour. */
+   *  Absent → single-source grey (`ALL_TRACKS_GREY`); empty → every source hidden, no tails. */
   trackSources?: Array<{ valueName: string; colour: string }>
+  /** How tails are coloured — `'track'` (default) | `'speed'` | `'solid'` | `'pop'`. */
+  trackColourMode?: string
 }
 
 /** Whether the preview should ring each drawn point (mask-outline hint). Any picked mask counts. */
@@ -227,18 +243,21 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
   // ── Pop points + cell-track ribbons ────────────────────────────────────────
   if (authorRuns) {
     if (allTracks) {
-      // Whole-seg branch — every tracked cell. `trackSources` (non-empty) splits the cells across
-      // two pseudo-segmentations and paints each in its picked colour — mirroring what the backend's
-      // multi-source composition does when the batch panel sends more than one visible source.
-      // Empty/absent → uniform grey (single-source behaviour). Untracked cells never drew here
-      // either (the overlay author's all_tracks branch reads `track_id`), so mirror that.
-      const srcs = cfg.trackSources ?? []
-      const multiColours = srcs.length
+      // Whole-seg branch — every tracked cell. `trackSources` splits the cells across two
+      // pseudo-segmentations and paints each in its picked colour, as the backend's multi-source
+      // composition does. Absent → uniform grey (single source); empty → every source hidden, no
+      // tails (the translator's rule). Untracked cells never drew here either (the overlay author's
+      // all_tracks branch reads `track_id`), so mirror that.
+      const srcs = cfg.trackSources
+      const multiColours = srcs?.length
         ? [srcs[0]!.colour, srcs[Math.min(1, srcs.length - 1)]!.colour]
         : null
       for (const c of scene.cells) {
-        if (c.trackId === null) continue
-        const colour = multiColours ? multiColours[c.segIdx % multiColours.length]! : ALL_TRACKS_GREY
+        if (c.trackId === null || (srcs && !srcs.length)) continue
+        const source = multiColours ? multiColours[c.segIdx % multiColours.length]! : null
+        // one source with no colour picked: "solid" is the palette's first colour, "pop" the grey
+        const colour = tailColour(cfg.trackColourMode, c.trackId, source ?? PREVIEW_PALETTE[0]!,
+                                  source ?? ALL_TRACKS_GREY)
         // tails only — the viewer's (and the movie's) points are its populations
         if (includeTracks) ribbons.push({ points: ribbonPath(c), colour })
       }
@@ -249,7 +268,8 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
         const pop = scene.pops[c.popIdx]
         points.push({ x: c.x, y: c.y, colour: pop.colour, ringed: hasMask })
         if (includeTracks && pop.hasTracks && c.trackId !== null) {
-          ribbons.push({ points: ribbonPath(c), colour: pop.colour })
+          ribbons.push({ points: ribbonPath(c),
+                         colour: tailColour(cfg.trackColourMode, c.trackId, PREVIEW_PALETTE[0]!, pop.colour) })
         }
       }
     }

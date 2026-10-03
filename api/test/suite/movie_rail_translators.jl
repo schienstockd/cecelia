@@ -92,12 +92,17 @@
 
     # `trackSources` — multi-segmentation composition for showTracks && !showPops. When present +
     # non-empty, `_resolve_movie_overlays_mask` composes one overlay closure per source, each with
-    # its own `all_tracks_colour`. Absent / empty → single-source `allTracks` grey (legacy).
+    # its own `all_tracks_colour`. Absent → single-source `allTracks` grey (legacy).
     ov_no_ts = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
-    @test !haskey(ov_no_ts, "trackSources")
+    @test !haskey(ov_no_ts, "trackSources") && ov_no_ts["allTracks"]
+    # Empty = every source hidden: no whole-segmentation tracks at all, as the viewer draws.
     ov_empty_ts = _overlays_raw_from_config(
         Dict{String,Any}("showTracks" => true, "trackSources" => []), false)
     @test !haskey(ov_empty_ts, "trackSources")
+    @test !ov_empty_ts["allTracks"] && !ov_empty_ts["includeTracks"]
+    # ... while cell-track ribbons asked for alongside keep their tails
+    @test _overlays_raw_from_config(Dict{String,Any}("showTracks" => true, "showGatedTracks" => true,
+                                                     "trackSources" => []), false)["includeTracks"]
     ov_ts = _overlays_raw_from_config(Dict{String,Any}(
         "showTracks" => true,
         "trackSources" => [
@@ -355,4 +360,38 @@ end
     sp2 = _live_specs(Dict{String,Any}("layers" => Dict{String,Any}()), ["A", "B"], base, 100, 100)
     @test (sp2[2].lo, sp2[2].hi) == (5.0, 9.0)
 
+end
+
+@testset "API: title card — the track rows name what the movie draws" begin
+    # The legend reads the translator, so it lists the visible track sources — not every segmentation
+    # the batch could have drawn. A swatch only when the tails ARE one colour ("solid" / "pop").
+    srcs = [Dict("valueName" => "flowTom", "colour" => "#ff8800"),
+            Dict("valueName" => "cpSAM", "colour" => "#00ccff")]
+    solid = Dict{Symbol,Any}(:showTracks => true, :trackColourMode => "solid", :trackSources => srcs)
+    @test _track_source_items(solid) == [Dict{String,Any}("label" => "flowTom tracks", "colour" => "#ff8800"),
+                                         Dict{String,Any}("label" => "cpSAM tracks", "colour" => "#00ccff")]
+    # coloured by track (the default) or speed: the sources, no swatch
+    by_track = _track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackSources => srcs))
+    @test [r["label"] for r in by_track] == ["flowTom tracks", "cpSAM tracks"]
+    @test all(r -> r["colour"] === nothing, by_track)
+    # the look's map form: hidden sources are not drawn, so not listed
+    look = Dict{String,Any}("showTracks" => true, "trackSources" => Dict(
+        "flowTom" => Dict("visible" => true, "colour" => "#ff8800"),
+        "cpSAM" => Dict("visible" => false, "colour" => "#00ccff")))
+    @test [r["label"] for r in _track_source_items(look)] == ["flowTom tracks"]
+    # every source hidden: none drawn, none listed
+    @test isempty(_track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackSources => Any[])))
+    # "pop" paints a source in its colour too
+    @test _track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackColourMode => "pop",
+                                               :trackSources => srcs))[2]["colour"] == "#00ccff"
+    # no sources: the one segmentation's tracks — "solid" is the palette's first colour, "pop" the grey
+    @test _track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackColourMode => "solid")) ==
+          [Dict{String,Any}("label" => "tracks", "colour" => rgb_to_hex(CECELIA_TRACK_PALETTE[1]))]
+    @test only(_track_source_items(Dict{Symbol,Any}(:showTracks => true,
+                                                    :trackColourMode => "pop")))["colour"] == OVERLAY_GREY
+    @test only(_track_source_items(Dict{Symbol,Any}(:showTracks => true)))["colour"] === nothing
+    @test rgb_to_hex(hex_to_rgb("#9CA3AF")) == "#9ca3af"
+    # tracks following populations are the pops' colours — the pop rows already name them
+    @test isempty(_track_source_items(Dict{Symbol,Any}(:showTracks => true, :showPopulations => true)))
+    @test isempty(_track_source_items(Dict{Symbol,Any}()))
 end
