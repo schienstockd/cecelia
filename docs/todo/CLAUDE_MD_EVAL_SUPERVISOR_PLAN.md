@@ -1,7 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
 **Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03):
-7 built; the rest not started, phase 12 first. Open: the first supervised pass, which measures the judge's cost so the cap can be
+7 and 9 built; the rest not started, phase 12 first. Open: the first supervised pass, which measures the judge's cost so the cap can be
 set (Decision 4). Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
@@ -364,9 +364,34 @@ Each phase is its own PR.
 8. **Log binning (Decision 21) — not started.** `curate.py`: `agent_made` / `legacy` from the
    finding kind and `git blame` at the finding's commit; `legacy` groups become ratchet-test
    proposals. Checkpoint: the 10 P1 source findings all bin `legacy`.
-9. **Verify step (Decision 20) — not started.** Grouping, sandboxed read-only agents, the four
-   verdicts, the per-pass cap, owner queue = `decide` only. Checkpoint: on the 10-02 bugs it
-   reproduces the hand-verified verdicts above; measure its cost on that run before setting the cap.
+9. **Verify step (Decision 20) — built 2026-10-03.** `scripts/claude_md_eval/verify.py`
+   (`pixi run claude-md-eval-verify` for a dry look at a record; the supervised pass calls it after
+   the sweep), tests in `python/cecelia/tests/test_claude_md_eval_verify.py`.
+   - **Grouping:** open, unverified, non-stranded bugs joined when they share a reviewed branch or a
+     file (one diff's fanout findings are usually one pattern), oldest group first, ≤8 per agent.
+   - **Agent:** `claude -p` in a detached worktree at the pinned SHA (`_make_detached_worktree(ref=)`),
+     `run_prompt._SANDBOX_SETTINGS` (no network, no writes outside the worktree), `--tools
+     Read,Grep,Glob,Bash`, `--strict-mcp-config`, `--no-session-persistence`, `--json-schema`.
+   - **Verdicts** stored as `bug.verify` (`verdict`, `evidence`, `effect`, plus `question` /
+     `recommendation` or `trigger`, `date`, `sha`); `dismiss` makes the bug `dismissed`. A verified
+     bug isn't re-verified while it stays open; the sweep's judge still re-checks it for `gone`.
+   - **Owner queue** = bugs verified `decide` this pass (`record.owner_bug`). A `--session` re-triage
+     verifies nothing unless an agent is injected, so it never spends on agents.
+   - **Cap:** `GROUP_USD` $2 per agent, `PASS_USD` $10 per pass, checked against the worst case;
+     unreached groups wait. `supervisor.verify` records groups, per-agent cost (`group_usd`) and the
+     reviewer-label × verdict tally (`precision`).
+   - **Checkpoint (measured):** the 10-02 record's 27 merged bugs at `fff22d82`, 12 agents,
+     **$3.88** ($0.32 per agent; ~6 min wall). Against the hand verdicts at the same SHA:
+
+     | | Bugs |
+     |---|---|
+     | agree | 25 — fix: B5 B7 B21 B22 B27 B32; dismiss: B1 B2 B8 B9 B10 B11 B15 B16 B17 B19 B23 B25; guard: B3 B6 B12 B13 B20; decide: B24 (the PrimeVue deps were still in at that SHA); B4 → `decide` on the same facts as the hand "drift risk, nothing visible today" |
+     | missed | B18: dismissed via the stale-pick self-heal on open; the hand check found the narrower live case (version reclaimed while the popup is open) |
+     | missed next door | B14: `guard` for the finding as worded (agrees), but not the live bug beside it (an unseeded `trackSources` map) |
+
+     So it reproduces the hand result on the finding as asked, and is less thorough than a person
+     on a neighbouring path. Precision tally on these 27: `confirmed` 3 fix / 1 dismiss; `plausible`
+     3 fix, 2 decide, 6 guard, 12 dismiss — a plausible finding was live 3 times in 23.
 10. **Transcript miner (Decision 23) — not started.** Pilot first, judged by hand: candidate
     moments from the last 30 days, then how many make a reproducible probe. Wired into the pass
     only if the pilot finds some.

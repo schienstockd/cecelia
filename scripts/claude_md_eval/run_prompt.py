@@ -382,8 +382,8 @@ def _capture_diff(worktree: pathlib.Path) -> str:
 
 
 def _make_detached_worktree(primary_repo: pathlib.Path, worktree_root: pathlib.Path,
-                            prompt_id: str, *, arm: str = "with") -> pathlib.Path:
-    """Create a detached worktree off HEAD at `<worktree_root>/cecelia-eval-<prompt_id>-<uuid>`.
+                            prompt_id: str, *, arm: str = "with", ref: str = "HEAD") -> pathlib.Path:
+    """Create a detached worktree off `ref` at `<worktree_root>/cecelia-eval-<prompt_id>-<uuid>`.
 
     `arm` controls the CLAUDE.md ablation: `with` keeps every CLAUDE.md (root + nested
     frontend/app), `without` strips them all AFTER the worktree is created but BEFORE
@@ -396,7 +396,7 @@ def _make_detached_worktree(primary_repo: pathlib.Path, worktree_root: pathlib.P
     worktree_root.mkdir(parents=True, exist_ok=True)
     dest = worktree_root / f"cecelia-eval-{prompt_id}-{tag}"
     subprocess.run(
-        ["git", "worktree", "add", "--detach", str(dest), "HEAD"],
+        ["git", "worktree", "add", "--detach", str(dest), ref],
         cwd=str(primary_repo), check=True, capture_output=True, text=True, encoding="utf-8",
     )
     env_src = primary_repo / ".env"
