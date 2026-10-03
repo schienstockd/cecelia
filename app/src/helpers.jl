@@ -96,6 +96,26 @@ function versioned_set_field!(d::Dict{String,Any}, field::String, item_value,
     d
 end
 
+# Flat-path writers (labels / label_props / branch_labels) always write `<value_name>.<ext>`, so on a
+# versioned `{vN…, _latest}` target `versioned_set_field!` would point `_latest` at v1's path and orphan
+# the vN store. Until those writers learn the version-append path, refuse instead of clobbering.
+function assert_unversioned_field(d::AbstractDict, field::String, value_name::AbstractString)
+    inner = get(d, field, get(d, Symbol(field), nothing))
+    inner isa AbstractDict || return nothing
+    entry = get(inner, String(value_name), get(inner, Symbol(value_name), nothing))
+    is_versioned_entry(entry) && throw(ArgumentError(
+        "'$field' entry for value_name '$value_name' is versioned; this writer does not support " *
+        "versioned entries yet — refusing to overwrite it"))
+    nothing
+end
+
+# `versioned_set_field!` for a writer that only knows flat paths — guarded by `assert_unversioned_field`.
+function unversioned_set_field!(d::Dict{String,Any}, field::String, item_value,
+                                value_name::AbstractString; set_active::Bool = true)
+    assert_unversioned_field(d, field, value_name)
+    versioned_set_field!(d, field, item_value, String(value_name); set_active = set_active)
+end
+
 # ── Convenience: list all user-facing value names (excludes _active) ─────────
 function versioned_keys(d::AbstractDict)::Vector{String}
     [string(k) for k in keys(d) if string(k) != VERSIONED_ACTIVE_KEY]

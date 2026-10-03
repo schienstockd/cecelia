@@ -142,6 +142,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     p    = parse_cellpose_segment_params(params)
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
+    assert_unversioned_field(raw, "labels", p.outputValueName)   # before the runner overwrites it
 
     # Resolve input image path
     filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)

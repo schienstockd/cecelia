@@ -116,6 +116,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     p = parse_branching_params(params)
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
+    assert_unversioned_field(raw, "branch_labels", p.outputValueName)   # before the runner overwrites it
 
     # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input). Read the
     # ACTIVE image version's channel names (nothing → `_active`; falls back to `default`) so a
@@ -243,7 +244,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # Register the branch labels zarr in ccid.json under `branch_labels` — NOT `labels`. Decision 6:
     # branch labels get their own registry so the generic labels picker never lists them.
     commit_state!(img) do raw
-        versioned_set_field!(raw, "branch_labels", [branch_zarr], p.outputValueName; set_active = false)
+        unversioned_set_field!(raw, "branch_labels", [branch_zarr], p.outputValueName; set_active = false)
     end
 
     # QC (advisory): objective branch count + zero-branches warning

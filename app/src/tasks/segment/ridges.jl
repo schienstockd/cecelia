@@ -73,6 +73,7 @@ function _run_task(task::Ridges, img::CciaImage, params::Dict{String,Any};
     p    = parse_ridges_params(params)
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
+    assert_unversioned_field(raw, "labels", p.outputValueName)   # before the runner overwrites it
 
     if !(p.filter in _RIDGES_FILTERS)
         on_log("[ERROR] Unknown filter '$(p.filter)'; expected one of $(join(_RIDGES_FILTERS, ", "))")
