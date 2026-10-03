@@ -489,9 +489,10 @@ def supervise(*, ref: str = "origin/main", runs: int = 3, worktree: pathlib.Path
     record = _record.build(events, date, annotations=notes, ref=sha, sandboxed=sandboxed, suite=suite)
     state["stage"] = "curate"
     curate = _load_sibling("curate")
-    proposals, cost = curate.propose(record, history=history, events=events, assign=assign)
+    bins: dict = {}
+    proposals, cost = curate.propose(record, history=history, events=events, assign=assign, stats=bins)
     notes["proposals"] = proposals
-    notes["supervisor"].update(curation_usd=round(cost, 4),
+    notes["supervisor"].update(curation_usd=round(cost, 4), finding_bins=bins,
                                cost_usd=round(spend["cost_usd"] + bug_cost + cost, 4))
     run_number = len(history) + 1
     notes["spot_check"] = review.spot_check_sample(findings, run_number=run_number, seed=date)

@@ -1,7 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
-**Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03)
-not started, except 12 (built 2026-10-03). Open: the first supervised pass, which measures the judge's cost so the cap can be
+**Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03):
+8, 10 (pilot) and 12 built 2026-10-03; 7, 9 and 11 not started. Open: the first supervised pass, which measures the judge's cost so the cap can be
 set (Decision 4). Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
@@ -341,9 +341,23 @@ Each phase is its own PR.
    merge, symbol-gone check, `unjudged` status, whole-function excerpt, and the stranded-commit
    scan over PRs merged since the previous pass. Checkpoint: replayed on the 10-02 log it drops
    B8, merges B27/B32, marks the 10 over-cap items `unjudged`, and finds `aca112aa`. No agent cost.
-8. **Log binning (Decision 21) — not started.** `curate.py`: `agent_made` / `legacy` from the
-   finding kind and `git blame` at the finding's commit; `legacy` groups become ratchet-test
-   proposals. Checkpoint: the 10 P1 source findings all bin `legacy`.
+8. **Log binning (Decision 21) — built 2026-10-03.** `curate.py` → `bin_findings`, no judge call.
+   - Convention `should reuse` / `wrong home` → `agent_made`.
+   - Fanout: a row's `commit` is the diff's BASE and its `file:line` reads the tree after the diff.
+     The diff is the single-parent child of that base on the branch's first-parent line (parallel
+     worktrees share a base; a later merge of main would reach every sibling). Blaming that child
+     alone misbins: it usually carries the session's own fix of the sibling. So the diff's hunks
+     decide: file added → `agent_made`; renamed → `unknown`; the line outside every hunk, or in one
+     that replaced lines → `legacy`; in a pure addition → `agent_made` unless `blame -w -C -C`
+     puts it in an older commit (moved code), or code the finding quotes stands at the base within
+     ±10 lines (the fix went in above the flagged code; its line numbers predate the fix) → `legacy`.
+   - Only `agent_made` feed `add` (≥3, uncovered). `legacy` ≥3 on one rule → a `ratchet` proposal
+     (a test banning the old shape), reviewed in `recital-review` like any proposal. `unknown`
+     feeds neither; the record's Supervisor line counts all three. The existing judge call also
+     names `correct_example` (where the right pattern lives); an add carries the commonest one.
+   - Checkpoint met on the 2026-10-03 log (30 days, 144 findings, 2.4 s, $0): the 10 P1 sources
+     all `legacy`. Overall 59 `agent_made` (54 convention, 5 fanout) · 77 `legacy` · 8 `unknown`
+     — of 91 fanout findings only 5 were mistakes the reviewed diff made.
 9. **Verify step (Decision 20) — not started.** Grouping, sandboxed read-only agents, the four
    verdicts, the per-pass cap, owner queue = `decide` only. Checkpoint: on the 10-02 bugs it
    reproduces the hand-verified verdicts above; measure its cost on that run before setting the cap.
