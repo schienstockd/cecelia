@@ -60,15 +60,24 @@ try {
 @layer cc-base {
   .pi {
     display: inline-block;
-    width: 1em;
-    height: 1em;
     font-size: 1rem;
     line-height: 1;
     vertical-align: -0.125em;
     flex-shrink: 0;
-    background-color: currentColor;
     /* no glyph class → nothing drawn, as the font drew nothing (an unset mask shows the whole box) */
     --cc-icon: linear-gradient(transparent, transparent);
+  }
+  /* The glyph is painted on a pseudo-element, not the <i> itself, so the <i> stays the box the font
+     glyph sat in: a rule giving it a background, padding or border-radius (a badge's backing disc)
+     draws behind the glyph instead of repainting it. A block, so the <i>'s baseline stays its
+     bottom edge; centred, so a wider <i> centres it as \`text-align: center\` centred the font. */
+  .pi::before {
+    content: '';
+    display: block;
+    width: 1em;
+    height: 1em;
+    margin: 0 auto;
+    background-color: currentColor;
     -webkit-mask: var(--cc-icon) center / contain no-repeat;
     mask: var(--cc-icon) center / contain no-repeat;
   }

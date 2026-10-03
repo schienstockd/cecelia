@@ -432,7 +432,7 @@ A new icon therefore fails the suite until somebody says what it means.
 Lucide glyph (`lucide: 'trash-2'`, `fill: true` for the few solid shapes), and `pixi run icons`
 (`scripts/vendor_icons.mjs`) writes `frontend/src/icons.css` — one CSS mask per `pi-*` class, in
 `@layer cc-base` with a 1rem baseline. So an icon is still `<i class="pi pi-trash">` and still takes
-`color` and `font-size` like the old icon font. The `pi-*` names are PrimeIcons' (the set before,
+`color` and `font-size` like the old icon font. The glyph is painted on the `<i>`'s `::before`, so a background, padding or radius on the `<i>` (a badge's backing disc) sits behind it, as with the font. The `pi-*` names are PrimeIcons' (the set before,
 retired with PrimeVue — `docs/todo/PRIMEVUE_RETIRE_PLAN.md`), kept so no call site changed. The test
 also fails when `icons.css` drifts from the legend, or two meanings map to one Lucide glyph.
 
