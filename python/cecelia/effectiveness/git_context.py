@@ -144,6 +144,13 @@ def repo_root() -> Path:
     return Path.cwd()
 
 
+def main_checkout(cwd: str | None = None) -> Path | None:
+    """The main checkout every worktree of this repo belongs to (the parent of git's common dir),
+    whichever worktree `cwd` is in. None when `cwd` is not in a repo."""
+    common = git_output("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd)
+    return Path(common).parent if common else None
+
+
 def merged_prs_since(since: str, cwd: str | None = None) -> list[dict] | None:
     """PRs merged on or after `since` (a date) via `gh pr list --search merged:>=…`, each with
     `number`, `headRefName`, `headRefOid` (the head it merged at) and `mergeCommit`.

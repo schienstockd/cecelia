@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Weekly judge — the owner's review queue, in the terminal.
+"""Weekly judge — the owner's queue, in the terminal: decide the bugs, then work them.
 
-Walks the bugs a verify agent sent to the owner (`decide`), one at a time, one key per answer:
-keep it open (a session follows the agent's recommendation), answer it in your own words (a session
-follows yours instead), or `wont_fix` to stop carrying it. Every answer is an append-only event in
-`~/.cecelia-effectiveness/review.jsonl`; an undo is a correcting event, never an edit. Nothing here
-touches the repo or the record: the weekly pass applies the events at the start of the next pass.
+First the bugs a verify agent sent to the owner (`decide`): keep it open (a session follows the
+agent's recommendation), answer it in your own words (a session follows yours instead), or
+`wont_fix` to stop carrying it. Then the rest of the open work list: `fix now` starts an
+interactive Claude Code session where the owner starts sessions (the folder holding the checkouts),
+briefed on that bug and told to make its own worktree; the queue resumes when it exits. Every answer is an append-only event in `~/.cecelia-effectiveness/review.jsonl`; an undo is a
+correcting event, never an edit. The weekly pass applies the events at the start of the next pass.
 
 Usage:
     pixi run judge-review                # the newest record
@@ -20,6 +21,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import typing as _t
 import uuid
@@ -27,11 +29,12 @@ import uuid
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness import read_events  # noqa: E402
+from cecelia.effectiveness import git_context, read_events  # noqa: E402
+from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
 # one look with `pixi run recital-console`: its divider, hanging-indent wrap and the shared palette
 from cecelia.effectiveness.console import _BOLD, _DIM, _col, _hr, _terminal_size, _wrap_desc  # noqa: E402
 from cecelia.effectiveness.palette import (  # noqa: E402
-    BLUISH_GREEN, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
+    BLUE, BLUISH_GREEN, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
 
 
 def _load_sibling(name: str):
@@ -45,11 +48,13 @@ _record = _load_sibling("record")
 
 REVIEW_SCHEMA_VERSION = 1
 
-#: queue item kind → (event name, {key: value}). The key is what the owner presses.
-ANSWERS: dict[str, tuple[str, dict[str, str]]] = {
-    "bug": ("bug_status", {"w": "wont_fix", "o": "open", "a": "open"}),
+#: queue item kind → {key the owner presses: (event, value)}. `decide` items are the record's queue;
+#: `work` items are the rest of its open bugs.
+ANSWERS: dict[str, dict[str, tuple[str, str]]] = {
+    "decide": {"w": ("bug_status", "wont_fix"), "o": ("bug_status", "open"), "a": ("bug_status", "open")},
+    "work": {"f": ("bug_work", "fix_session"), "w": ("bug_status", "wont_fix")},
 }
-REVIEW_EVENTS = tuple(e for e, _ in ANSWERS.values())
+REVIEW_EVENTS = ("bug_status", "bug_work")
 _CONTROL = {"n": "skip", "z": "undo", "q": "quit"}
 
 
@@ -111,30 +116,109 @@ def apply_reviews(record: dict, reviews: _t.Iterable[dict]) -> dict:
         row = now.get((record["date"], "bug_status", b["id"]))
         if row and row.get("value") in _record.BUG_STATUSES:
             b["status"] = row["value"]
+            b["owner_decision"] = row["value"]   # a `decide` bug kept open joins the work list
             if row.get("note"):
                 b["owner_answer"] = row["note"]
     return record
 
 
+#: Work-list order: what is known live first, then what the owner already decided, then the rest.
+_WORK_ORDER = {"fix": 0, "decide": 1, "guard": 2}
+
+
+def work_items(record: dict) -> list[dict]:
+    """Every open bug, live ones first, except a decide item the owner hasn't answered yet."""
+    queued = {item["ref"] for item in record.get("queue", [])}
+    bugs = [b for b in record.get("bugs", []) if b["status"] == "open"
+            and (b["id"] not in queued or b.get("owner_decision") == "open")]
+    bugs.sort(key=lambda b: _WORK_ORDER.get((b.get("verify") or {}).get("verdict"), 3))
+    return [{"kind": "work", "ref": b["id"]} for b in bugs]
+
+
+def items_of(record: dict) -> list[dict]:
+    """The whole queue: the record's decide items, then the work list."""
+    return [{"kind": "decide", "ref": item["ref"]} for item in record.get("queue", [])] + work_items(record)
+
+
 def pending(record: dict, reviews: _t.Iterable[dict]) -> list[dict]:
-    """The record's queue items with no live answer yet, in queue order."""
+    """The queue's items with no live answer yet, in queue order."""
     now = current(reviews)
-    out = []
-    for item in record.get("queue", []):
-        event = ANSWERS[item["kind"]][0]
-        row = now.get((record["date"], event, item["ref"]))
-        if row is None or row.get("value") is None:
-            out.append(item)
-    return out
+
+    def live(event: str, ref: str) -> str | None:
+        row = now.get((record["date"], event, ref))
+        return row.get("value") if row else None
+
+    def answered(item: dict) -> bool:
+        if item["kind"] == "decide":
+            return live("bug_status", item["ref"]) is not None
+        # a work item is done once a fix session was started or it was answered won't-fix; a decide
+        # answer of `open` is what put it on the work list, so it doesn't count here
+        return live("bug_work", item["ref"]) is not None or live("bug_status", item["ref"]) == "wont_fix"
+    return [item for item in items_of(record) if not answered(item)]
+
+
+def fix_brief(record: dict, bug: dict) -> str:
+    """The opening prompt of a fix session: the bug, what verify found, and how to work it."""
+    v = bug.get("verify") or {}
+    main = main_checkout()
+    lines = [f"Work bug {bug['id']} (`{bug['key']}`) from the weekly judge record of {record['date']} "
+             f"(`{_record.store_root() / (record['date'] + '.json')}`).", "",
+             f"Where: {_record._bug_where(bug)}, raised on branch `{bug.get('branch') or '?'}`.", f"Finding: {bug['desc']}"]
+    lines += [f"Also raised: {a['desc']}" for a in bug.get("also", [])]
+    if v:
+        lines.append(f"Verified ({v.get('verdict')}): {v.get('effect', '')}")
+    if bug.get("owner_answer"):
+        lines.append(f"My answer, which decides the fix over the agent's recommendation: {bug['owner_answer']}")
+    elif v.get("recommendation"):
+        lines.append(f"Recommendation: {v['recommendation']}")
+    if v.get("trigger"):
+        lines.append(f"Live once: {v['trigger']}")
+    if v.get("evidence"):
+        lines.append(f"Evidence: {v['evidence']}")
+    if bug.get("kind") == "stranded":
+        lines += ["", "These commits were pushed to the PR's branch after it merged: "
+                  + ", ".join(bug.get("commits", [])) + ". Land them in a new PR if they are still wanted."]
+    lines += ["", "Confirm it on origin/main first. If it isn't real, say so and stop; I'll answer it won't-fix. "
+              f"Otherwise work in your own worktree: from `{main}`, run "
+              f"`pixi run bootstrap-worktree fix-{bug['key']}` and work in the worktree it creates, never in "
+              f"`{main}` itself. Fix it there, including every sibling call site with the same shape, add a test "
+              "that fails without the fix, run the matching tests and recital, and name "
+              f"`{bug['key']}` in the commit message. Ask before committing, as usual."]
+    return "\n".join(lines)
+
+
+def main_checkout(repo: pathlib.Path = _REPO) -> pathlib.Path:
+    return git_context.main_checkout(str(repo)) or repo
+
+
+def workspace(repo: pathlib.Path = _REPO) -> pathlib.Path:
+    """Where the owner starts sessions: the folder holding the main checkout and its sibling
+    worktrees (`~/cc-workspace/cecelia`). A fix session starts here and makes its own worktree."""
+    return main_checkout(repo).parent
+
+
+def default_launch(prompt: str, cwd: pathlib.Path) -> str | None:
+    """An interactive `claude` in `cwd` opening on `prompt`; returns once the owner exits it.
+    None when it ran, else why it couldn't start."""
+    claude = resolve_claude_bin()
+    if not claude:
+        return "claude CLI not on PATH"
+    try:
+        subprocess.run([claude, prompt], cwd=str(cwd), check=False)
+    except OSError as e:
+        return f"claude failed to start: {e}"
+    return None
 
 
 # ── the terminal queue ─────────────────────────────────────────────────────────────────────────
 
 #: How each answer reads on the prompt and after it, and its colour.
-_LABELS = {"w": ("won't fix", VERMILLION), "o": ("keep open", BLUISH_GREEN), "a": ("answer", SKY_BLUE)}
+_LABELS = {"w": ("won't fix", VERMILLION), "o": ("keep open", BLUISH_GREEN), "a": ("answer", SKY_BLUE),
+           "f": ("fix now", BLUE)}
 _VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
-#: Section label → colour, in the order they are shown.
-_SECTIONS = (("Question", SKY_BLUE), ("Recommendation", BLUISH_GREEN), ("Evidence", GREY))
+#: Section label → colour, in the order they are shown; a card shows the ones it has text for.
+_SECTIONS = (("Question", SKY_BLUE), ("Bug", SKY_BLUE), ("Verified", ORANGE), ("Your answer", REDDISH_PURPLE),
+             ("Recommendation", BLUISH_GREEN), ("Live once", YELLOW), ("Evidence", GREY))
 _MAX_WIDTH = 100   # the recital console's wrap target
 #: `file.ext:12`, `file.ext:12-16,40`, and a bare `:368` that continues the previous file.
 _REF = re.compile(r"(?<![\w/])(?:[\w./-]+\.\w+)?:\d+(?:[-,:]\s?:?\d+)*")
@@ -170,7 +254,8 @@ def _paragraph(text: str, *, width: int, use_colour: bool, bullets: bool = False
 
 
 def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: bool = True) -> list[str]:
-    """The card for one bug: where it is, then the agent's question, recommendation and evidence."""
+    """The card for one bug: where it is, then the agent's question (a decide item) or the bug and what
+    verify found (a work item), the answer or recommendation, and the evidence."""
     b = next(b for b in record.get("bugs", []) if b["id"] == item["ref"])
     v = b.get("verify") or {}
     where = f"PR #{b.get('pr')}" if b.get("kind") == "stranded" else f"{b['file']}:{b['line']}"
@@ -179,8 +264,12 @@ def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: b
             f"{_col(_BOLD, where, use_colour=use_colour)}  "
             + _col(_DIM, f"{b.get('branch') or '?'} · {b['key']}", use_colour=use_colour))
     out = [head]
-    texts = {"Question": v.get("question") or b["desc"], "Recommendation": v.get("recommendation"),
-             "Evidence": v.get("evidence")}
+    decide = item["kind"] == "decide"
+    texts = {"Question": (v.get("question") or b["desc"]) if decide else None,
+             "Bug": None if decide else b["desc"], "Verified": None if decide else v.get("effect"),
+             "Your answer": b.get("owner_answer"),
+             "Recommendation": None if b.get("owner_answer") else v.get("recommendation"),
+             "Live once": v.get("trigger"), "Evidence": v.get("evidence")}
     for label, colour in _SECTIONS:
         if not texts[label]:
             continue
@@ -210,24 +299,35 @@ def _fit(lines: list[str], height: int, *, use_colour: bool) -> list[str]:
 
 def run_queue(record: dict, *, read: _t.Callable[[str], str] = input, out: _t.TextIO = sys.stdout,
               path: pathlib.Path | None = None, use_colour: bool = True, width: int | None = None,
-              fullscreen: bool = False) -> int:
-    """Walk the pending items; returns how many answers were recorded (net of undos).
+              fullscreen: bool = False, launch: _t.Callable[[str, pathlib.Path], str | None] = default_launch,
+              cwd: pathlib.Path | None = None) -> int:
+    """Walk the queue; returns how many answers were recorded this session (net of undos).
 
+    The queue is re-read after every answer, so a decide bug kept open joins the work list at once.
     `fullscreen` (a terminal) repaints one card per screen, like `pixi run recital-console`; off, the
-    cards scroll, which is what a pipe or a test reads.
+    cards scroll, which is what a pipe or a test reads. `launch` starts a fix session (`default_launch`)
+    in `cwd`, by default the `workspace()` the owner starts sessions in.
     """
     cols, rows = _terminal_size((_MAX_WIDTH, 40))
     width = width or min(cols, _MAX_WIDTH)
-    reviews = read_reviews(path)
-    items = pending(record, reviews)
-    total = len(record.get("queue", []))
+    base = record
+
+    def state() -> tuple[dict, list[dict], int]:
+        rec = apply_reviews(base, read_reviews(path))
+        left = [it for it in pending(rec, read_reviews(path)) if (it["kind"], it["ref"]) not in skipped]
+        return rec, left, len(items_of(rec))
+
+    skipped: set[tuple[str, str]] = set()
+    rec, items, total = state()
+    decide_n = sum(it["kind"] == "decide" for it in items)
     title = (_col(_BOLD, "Weekly judge review", use_colour=use_colour) + "  "
-             + _col(_DIM, f"{record['date']} · {total} bug(s) for you to decide", use_colour=use_colour))
+             + _col(_DIM, f"{record['date']} · {decide_n} to decide · {len(items) - decide_n} to work",
+                    use_colour=use_colour))
     if not items:
         print(title, file=out)
-        print(_col(BLUISH_GREEN, f"  nothing to review: all {total} answered", use_colour=use_colour), file=out)
+        print(_col(BLUISH_GREEN, "  nothing to review: every open bug is answered", use_colour=use_colour), file=out)
         return 0
-    done: list[tuple[dict, dict, str]] = []   # (item, event, key) answered this session, for undo
+    done: list[tuple[dict, str]] = []   # (event row, key) answered this session, for undo
     status = ""   # the last answer, shown under the title of the next card
     if fullscreen:
         out.write(_ENTER)
@@ -244,13 +344,12 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input, out: _t.Te
     if not fullscreen:
         print(title, file=out)
     try:
-        i = 0
-        while i < len(items):
-            item = items[i]
-            event, keys = ANSWERS[item["kind"]]
-            answered = total - len(items) + len(done)
-            show([_hr(f"{item['ref']} · {answered + 1} of {total}", width, use_colour=use_colour),
-                  *describe(record, item, width=width, use_colour=use_colour)])
+        while items:
+            item = items[0]
+            keys = ANSWERS[item["kind"]]
+            kind = "decide" if item["kind"] == "decide" else "work"
+            show([_hr(f"{item['ref']} · {kind} · {len(items)} left", width, use_colour=use_colour),
+                  *describe(rec, item, width=width, use_colour=use_colour)])
             status = ""
             try:
                 key = read(_prompt(keys, use_colour=use_colour)).strip().lower()[:1]
@@ -259,44 +358,55 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input, out: _t.Te
             if key == "q":
                 break
             if key == "n":
-                i += 1
-                continue
-            if key == "z":
+                skipped.add((item["kind"], item["ref"]))
+            elif key == "z":
                 if not done:
                     status = _col(YELLOW, "  nothing to undo in this session", use_colour=use_colour)
-                    continue
-                prev_item, prev, prev_key = done.pop()
-                append_review(prev["event"], prev["record"], prev["ref"], None, corrects=prev["id"], path=path)
-                status = _col(REDDISH_PURPLE, f"  ↺ undid {prev['ref']} = {_LABELS[prev_key][0]}",
-                              use_colour=use_colour)
-                i = items.index(prev_item)   # ask that one again
-                continue
-            if key not in keys:
+                else:
+                    prev, prev_key = done.pop()
+                    append_review(prev["event"], prev["record"], prev["ref"], None, corrects=prev["id"], path=path)
+                    status = _col(REDDISH_PURPLE, f"  ↺ undid {prev['ref']} = {_LABELS[prev_key][0]}",
+                                  use_colour=use_colour)
+            elif key not in keys:
                 status = _col(YELLOW, f"  press one of: {', '.join([*keys, *_CONTROL])}", use_colour=use_colour)
-                continue
-            note = None
-            if key == "a":
-                note = read("  " + _col(SKY_BLUE, "your answer", use_colour=use_colour)
-                            + _col(_DIM, " (a session follows it instead of the recommendation)", use_colour=use_colour)
-                            + f" {_col(_BOLD, '›', use_colour=use_colour)} ").strip()
-                if not note:
+            else:
+                event, value = keys[key]
+                note = None
+                if key == "a":
+                    note = read("  " + _col(SKY_BLUE, "your answer", use_colour=use_colour)
+                                + _col(_DIM, " (a session follows it instead of the recommendation)",
+                                       use_colour=use_colour)
+                                + f" {_col(_BOLD, '›', use_colour=use_colour)} ").strip()
+                if key == "a" and not note:
                     status = _col(YELLOW, "  empty answer: nothing recorded", use_colour=use_colour)
-                    continue
-            row = append_review(event, record["date"], item["ref"], keys[key], note=note, path=path)
-            done.append((item, row, key))
-            label, colour = _LABELS[key]
-            status = _col(colour, f"  ✓ {item['ref']} → {label}", use_colour=use_colour)
-            i += 1
+                elif key == "f":
+                    bug = next(b for b in rec["bugs"] if b["id"] == item["ref"])
+                    if fullscreen:   # the session gets the real screen; the queue comes back after
+                        out.write(_LEAVE)
+                        out.flush()
+                    failed = launch(fix_brief(rec, bug), cwd or workspace())
+                    if fullscreen:
+                        out.write(_ENTER)
+                    if failed:
+                        status = _col(YELLOW, f"  {failed}", use_colour=use_colour)
+                    else:
+                        done.append((append_review(event, record["date"], item["ref"], value, path=path), key))
+                        status = _col(BLUE, f"  ✓ {item['ref']} → fix session ended", use_colour=use_colour)
+                else:
+                    done.append((append_review(event, record["date"], item["ref"], value, note=note, path=path), key))
+                    label, colour = _LABELS[key]
+                    status = _col(colour, f"  ✓ {item['ref']} → {label}", use_colour=use_colour)
+            rec, items, total = state()
     finally:
         if fullscreen:
             out.write(_LEAVE)
             out.flush()
-    left = len(pending(record, read_reviews(path)))
+    left_n = len(pending(apply_reviews(base, read_reviews(path)), read_reviews(path)))
     if fullscreen:   # the alternate screen is gone; leave the outcome in the shell
         print(title, file=out)
     elif status:
         print(status, file=out)
-    print(_hr(f"{total - left} of {total} answered" + (f" · {left} left" if left else ""), width,
+    print(_hr(f"{len(done)} answered this session · " + (f"{left_n} left" if left_n else "nothing left"), width,
               use_colour=use_colour), file=out)
     print(_col(_DIM, "  the next weekly pass applies these", use_colour=use_colour), file=out)
     return len(done)

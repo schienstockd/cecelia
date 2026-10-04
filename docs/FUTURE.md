@@ -283,6 +283,23 @@ called from `inst/modules/sources/behaviourAnalysis/hmmStates.R:42-43`.
 
 ---
 
+## Unattended fix agent for the weekly judge
+
+**What:** After each weekly judge pass, a sandboxed `claude -p` per group of `fix` bugs: it edits a
+`/tmp` clone at the pinned SHA, the judge applies its diff, runs the matching tests and recital
+(sending confirmed findings back once), and opens a PR it never merges. Design: Decision 22 in
+[`archive/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md`](archive/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md).
+
+**Why deferred:** Hand-run once (#1400–#1403): four fixes, all right in shape with a failing test, two
+needing a sibling call site the agent missed. Every PR still needs a person to read it, so automation
+only saves starting the session, and the first pass had two `fix` bugs. An owner-started session
+(`pixi run judge-review` → `[f] fix now`) has full test suites and recital, which the sandbox lacks.
+
+**Revisit when:** a few weekly records show `fix` bugs routinely at 5+ a week, and the fixes from
+`[f]` sessions rarely need edits.
+
+---
+
 ## Adding entries
 
 Add an entry when you set something aside — a known-better approach, a non-goal, or work waiting on a

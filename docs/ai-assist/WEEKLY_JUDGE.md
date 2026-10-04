@@ -65,13 +65,28 @@ CLI's only limit: bug sweep $1.50, verify $10 ($2 per group), rule mapping $2.
 
 ## Working the record
 
-Point a session at `docs/ai-assist/judge-runs/<date>.md`:
+`pixi run judge-review` is where the record gets worked. It runs full screen, one bug per screen:
 
-- **Bugs.** For each `open` bug, read the code at `file:line` on `origin/main`, confirm it, and fix
-  it on a normal branch, naming the bug's key in the commit. The next pass marks fixed ones `gone`.
-- **`decide` bugs** are yours: `pixi run judge-review` (one key each: leave it open, or `wont_fix`).
-- **Rules.** Take a `tighten` or `ratchet` proposal like any other change. Every finding it cites is
-  listed under *Sources*.
+1. **Decide.** The bugs a verify agent sent to you. `[o] keep open` (a session follows the agent's
+   recommendation), `[a] answer` (in your own words; a session follows yours instead), or
+   `[w] won't fix` (dropped, never carried again).
+2. **Work.** Every other open bug: `fix` first, then the `decide` bugs you kept open or answered,
+   then `guard`, then the rest. `[f] fix now` starts an interactive Claude Code session where you
+   start sessions (the folder holding the main checkout and its worktrees, `~/cc-workspace/cecelia`),
+   briefed on that bug: where it is, what verify found, your answer or the recommendation, and how to
+   work it (confirm on `origin/main`, its own worktree from `pixi run bootstrap-worktree fix-<key>`,
+   sibling call sites, a failing test, recital, the bug key in the commit). You're in that session as usual; the queue comes back when
+   you exit it. `[w] won't fix` closes a bug you don't want.
+
+A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
+has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
+`docs/ai-assist/judge-runs/<date>.md` for any session pointed at the record.
+
+**Rules.** Take a `tighten` or `ratchet` proposal like any other change. Every finding it cites is
+listed under *Sources*.
+
+No fix runs unattended: an unattended fix agent is deferred, see
+[`../FUTURE.md`](../FUTURE.md) → *Unattended fix agent for the weekly judge*.
 
 ## Commands
 
@@ -81,7 +96,7 @@ Point a session at `docs/ai-assist/judge-runs/<date>.md`:
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
-| `pixi run judge-review` | The owner queue |
+| `pixi run judge-review` | Decide, then work the open bugs (`[f] fix now` opens a briefed session) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 
 Timer install, adjust and uninstall steps: [`scripts/judge/systemd/README.md`](../../scripts/judge/systemd/README.md).

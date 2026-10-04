@@ -34,11 +34,23 @@ class _ReviewFixture(_Fixture):
                   "recommendation": "guard it", "evidence": "a.py:3"}
         self.record = self.build(bugs=[_bug("B1", verify=decide), _bug("B2", verify=decide), _bug("B3")])
 
-    def queue(self, *presses):
+    def keys(self, *presses):
+        """Scripted keypresses; running out is end of input, which the queue treats as quit."""
         it = iter(presses)
+
+        def read(prompt):
+            try:
+                return next(it)
+            except StopIteration:
+                raise EOFError from None
+        return read
+
+    def queue(self, *presses, **kw):
         out = io.StringIO()
-        n = self.rv.run_queue(self.record, read=lambda prompt: next(it), out=out, path=self.log, use_colour=False,
-                              width=80)
+        self.launched = []
+        launch = kw.pop("launch", lambda prompt, cwd: self.launched.append(prompt))
+        n = self.rv.run_queue(self.record, read=self.keys(*presses), out=out, path=self.log, use_colour=False,
+                              width=80, launch=launch, **kw)
         return n, out.getvalue()
 
 
@@ -62,8 +74,9 @@ class EventLogTest(_ReviewFixture):
 
 
 class QueueTest(_ReviewFixture):
-    def test_the_queue_is_the_decide_bugs(self):
-        self.assertEqual([i["ref"] for i in self.rv.pending(self.record, [])], ["B1", "B2"])
+    def test_the_queue_is_the_decide_bugs_then_the_work_list(self):
+        self.assertEqual([(i["kind"], i["ref"]) for i in self.rv.pending(self.record, [])],
+                         [("decide", "B1"), ("decide", "B2"), ("work", "B3")])
 
     def test_one_key_per_answer_and_a_bad_key_asks_again(self):
         n, out = self.queue("x", "w", "o")
@@ -104,24 +117,82 @@ class QueueTest(_ReviewFixture):
 
     def test_skip_and_quit_leave_bugs_pending_and_an_answered_record_says_so(self):
         _, out = self.queue("n", "q")
-        self.assertIn("0 of 2 answered · 2 left", out)
-        self.queue("w", "w")
+        self.assertIn("0 answered this session · 3 left", out)
+        self.queue("w", "w", "w")
         _, out = self.queue()
-        self.assertIn("nothing to review: all 2 answered", out)
+        self.assertIn("nothing to review: every open bug is answered", out)
+
+
+class WorkTest(_ReviewFixture):
+    def setUp(self):
+        super().setUp()
+        fix = {"verdict": "fix", "date": "2026-10-05", "effect": "drops the tail", "evidence": "b.py:9"}
+        self.record = self.build(bugs=[_bug("B1", verify=fix), _bug("B2"), _bug("B3", status="gone")])
+
+    def test_live_bugs_lead_the_work_list_and_closed_ones_are_not_on_it(self):
+        self.record["bugs"].append(_bug("B4", verify={"verdict": "guard", "trigger": "a map-shaped input"}))
+        self.assertEqual([(i["kind"], i["ref"]) for i in self.rv.pending(self.record, [])],
+                         [("work", "B1"), ("work", "B4"), ("work", "B2")])
+
+    def test_fix_now_briefs_a_session_and_is_not_offered_again(self):
+        n, out = self.queue("f")
+        self.assertEqual(n, 1)
+        self.assertIn("  Bug\n    desc B1", out)
+        self.assertIn("  Verified\n    drops the tail", out)
+        self.assertIn("✓ B1 → fix session ended", out)
+        brief = self.launched[0]
+        self.assertIn("Work bug B1 (`fanout-b1`)", brief)
+        self.assertIn(str(self.tmp / "judge-runs" / "2026-10-05.json"), brief)
+        self.assertIn("Verified (fix): drops the tail", brief)
+        self.assertIn("name `fanout-b1` in the commit message", brief)
+        self.assertIn(f"from `{self.rv.main_checkout()}`, run `pixi run bootstrap-worktree fix-fanout-b1`", brief)
+        self.assertEqual([(r["event"], r["value"]) for r in self.rv.read_reviews(self.log)], [("bug_work", "fix_session")])
+        self.assertEqual([i["ref"] for i in self.rv.pending(self.record, self.rv.read_reviews(self.log))], ["B2"])
+
+    def test_a_session_that_cannot_start_records_nothing(self):
+        _, out = self.queue("f", launch=lambda prompt, cwd: "claude CLI not on PATH")
+        self.assertIn("claude CLI not on PATH", out)
+        self.assertEqual(self.rv.read_reviews(self.log), [])
+
+    def test_the_session_gets_the_real_screen(self):
+        seen = []
+        _, text = self.queue("f", "q", fullscreen=True, launch=lambda prompt, cwd: seen.append(cwd))
+        self.assertEqual(seen, [self.rv.workspace()])   # where sessions start, not this checkout
+        self.assertEqual(text.count(self.rv._LEAVE), 2)    # around the session, and on quitting
+        self.assertEqual(text.count(self.rv._ENTER), 2)
+
+    def test_won_t_fix_on_a_work_item_closes_it(self):
+        self.queue("w")
+        self.assertEqual(self.rv.apply_reviews(self.record, self.rv.read_reviews(self.log))["bugs"][0]["status"],
+                         "wont_fix")
+
+
+class WorkspaceTest(unittest.TestCase):
+    def test_the_workspace_holds_the_main_checkout_whichever_worktree_runs_this(self):
+        rv = _load_review()
+        main = rv.main_checkout()
+        self.assertTrue((main / ".git").is_dir())        # the main checkout, not a worktree's `.git` file
+        self.assertEqual(rv.workspace(), main.parent)
+
+
+class DecideThenWorkTest(_ReviewFixture):
+    def test_a_decide_bug_kept_open_joins_the_work_list_in_the_same_session(self):
+        _, out = self.queue("a", "Document it in SHIPPING.md.", "n", "f")
+        self.assertIn("── B1 · work", out)
+        self.assertIn("  Your answer\n    Document it in SHIPPING.md.", out)
+        self.assertIn("My answer, which decides the fix over the agent's recommendation: Document it in SHIPPING.md.",
+                      self.launched[0])
+        self.assertNotIn("Recommendation: guard it", self.launched[0])
 
 
 class FullscreenTest(_ReviewFixture):
     def test_one_card_per_screen_and_the_shell_gets_the_outcome(self):
-        it = iter(["o", "q"])
-        out = io.StringIO()
-        self.rv.run_queue(self.record, read=lambda prompt: next(it), out=out, path=self.log,
-                          use_colour=False, width=80, fullscreen=True)
-        text = out.getvalue()
+        _, text = self.queue("o", "q", fullscreen=True)
         self.assertTrue(text.startswith(self.rv._ENTER))
         self.assertEqual(text.count(self.rv._CLEAR), 2)              # B1, then B2 with B1's answer on top
         self.assertIn("✓ B1 → keep open", text.split(self.rv._CLEAR)[2])
         after = text.split(self.rv._LEAVE)[1]                        # back on the normal screen
-        self.assertIn("1 of 2 answered · 1 left", after)
+        self.assertIn("1 answered this session · 3 left", after)   # B2, and B1 + B3 to work
 
     def test_a_card_taller_than_the_terminal_says_what_it_cut(self):
         lines = self.rv._fit([str(i) for i in range(10)], 4, use_colour=False)
