@@ -33,6 +33,7 @@ runner = _load("run_overnight")
 sys.path.insert(0, str(_REPO / "scripts" / "agent_eval"))   # run_record imports its siblings by name
 app_project = _load("app_project")
 run_record = _load("run_record")
+run_findings = _load("run_findings")
 
 SPEC = fixture.FixtureSpec(size=96, n_frames=24, n_cells=6, min_dwell=6)
 
@@ -321,6 +322,69 @@ class TestRunRecord(unittest.TestCase):
         self.assertIn("### d01 · report · all · final message", md)
         self.assertIn("> because", md)
         self.assertIn("## Tool errors (unscored)\n\n- `set_gate`: Error executing tool set_gate", md)
+
+
+class TestRunFindings(unittest.TestCase):
+    def test_key_is_short_and_stable_across_runs(self):
+        a = run_findings.finding_key("set_gate", "Error executing tool set_gate: HTTP 500: no pop '/a' on Y6Xkl0/9u2DLD at 2026-10-04T00:31:40")
+        b = run_findings.finding_key("set_gate", "Error executing tool set_gate: HTTP 500: no pop '/b' on yMCypX/0OPUYX at 2026-10-05T01:02:03")
+        self.assertEqual(a, b)
+        self.assertRegex(a, r"^run-[0-9a-f]{10}$")
+        self.assertNotEqual(a, run_findings.finding_key("add_gate", "HTTP 500: no pop '/a'"))
+
+    def test_misuse_is_a_4xx_with_a_reason(self):
+        self.assertTrue(run_findings.is_agent_misuse("Error executing tool create_chain: HTTP 400: Invalid chain name"))
+        self.assertFalse(run_findings.is_agent_misuse("Error executing tool x: HTTP 500: boom"))
+        self.assertFalse(run_findings.is_agent_misuse("Error executing tool set_gate"))   # lost message → logged
+        self.assertFalse(run_findings.is_agent_misuse("HTTP 404:"))
+
+    def test_tool_findings_one_per_key_misuse_dropped(self):
+        dec = {"toolErrors": [{"tool": "set_gate", "error": "Error executing tool set_gate"}] * 3 +
+               [{"tool": "create_chain", "error": "HTTP 400: Invalid chain name 'x/y'"}]}
+        got = run_findings.tool_findings(dec, "R1")
+        self.assertEqual([(f["tool"], f["error"]) for f in got], [("set_gate", "(no error text)")])
+        self.assertNotIn("file", got[0])
+
+    def test_backend_errors_in_the_window_with_their_repo_frame(self):
+        import datetime as dt
+        logs = {"logs": [
+            {"level": "error", "ts": "2026-10-04T00:31:00Z", "message": "KeyError: pop",
+             "detail": "Stacktrace:\n [1] f @ /home/u/cecelia/api/src/gating_api.jl:412\n"},
+            {"level": "error", "ts": "2026-10-04T05:00:00Z", "message": "later, not this run", "detail": ""},
+            {"level": "info", "ts": "2026-10-04T00:31:00Z", "message": "fine", "detail": ""}]}
+        orig = run_findings.run_record._get
+        run_findings.run_record._get = lambda *a, **k: logs
+        try:
+            start = dt.datetime(2026, 10, 4, 0, 30, tzinfo=dt.timezone.utc)
+            got = run_findings.backend_findings("http://x", start, start + dt.timedelta(minutes=20), "R1")
+        finally:
+            run_findings.run_record._get = orig
+        self.assertEqual([(f["file"], f["line"]) for f in got], [("api/src/gating_api.jl", 412)])
+
+    def test_emit_writes_one_row_per_finding_with_the_run_commit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d) / "20261004T003001"
+            root.mkdir()
+            (root / "trace.jsonl").write_text(_trace(("call", "x", "set_gate", {"image_uid": "cp1"}),
+                                                     ("result", "x", "Error executing tool set_gate", True)),
+                                              encoding="utf-8")
+            (root / "run.json").write_text(json.dumps({"projectUid": "CP", "images": TestRunRecord.IMAGES,
+                                                       "source": {"projectUid": "SRC"}}), encoding="utf-8")
+            (root / "record.json").write_text(json.dumps({"codeSha": "abc1234"}), encoding="utf-8")   # not in this repo: kept
+            log = pathlib.Path(d) / "events.jsonl"
+            run_findings.emit(root, None, log_path=log)
+            rows = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(rows), 1)
+        r = rows[0]
+        self.assertEqual((r["event"], r["commit"], r["branch"], r["session"]), ("agent_run_finding", "abc1234", None, "S1"))
+        self.assertEqual(set(r["payload"]), {"key", "tool", "error", "desc"})
+
+    def test_short_sha_expands_to_the_full_one(self):
+        import subprocess
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO), capture_output=True, text=True).stdout.strip()
+        if not head:
+            self.skipTest("not a git checkout")
+        self.assertEqual(run_findings.full_sha(head[:8]), head)
 
 
 if __name__ == "__main__":
