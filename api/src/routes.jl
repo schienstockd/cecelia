@@ -62,8 +62,22 @@ end
 _valid_chain_name(name::AbstractString) =
     occursin(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$", name) && !occursin("..", name)
 
-_bad_chain_name(name) = (400, JSON3.write((;
-    error="Invalid chain name '$name' — use letters, numbers, spaces, . _ - (max 64 chars)")))
+# The name with what the guard refuses turned into spaces — offered back in the 400, so a caller
+# (a person, or an agent writing "Drift + segment") gets a name that works instead of a rule to apply.
+function _chain_name_suggestion(name::AbstractString)::String
+    s = replace(String(name), r"[^A-Za-z0-9._ -]" => " ", r"\.{2,}" => ".")
+    s = strip(replace(s, r"\s+" => " "), [' ', '.', '_', '-'])
+    s = String(strip(first(s, 64)))
+    _valid_chain_name(s) ? s : ""
+end
+
+function _bad_chain_name(name)
+    hint = _chain_name_suggestion(name)
+    (400, JSON3.write((;
+        error = "Invalid chain name '$name' — use letters, numbers, spaces, . _ - (max 64 chars)" *
+                (isempty(hint) ? "" : "; e.g. '$hint'"),
+        suggestion = hint)))
+end
 
 # The chains dir changed → tell every open whiteboard to re-read the LIST. Without this, a chain
 # written by anything other than the whiteboard itself (Claude via /api/chains/create, the REPL) is
