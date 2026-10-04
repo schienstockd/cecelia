@@ -354,6 +354,17 @@ function handle_movie_record(ws, data)
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
     tc          = get(data, :titleCard, nothing)
     card        = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
+    # the card's populations / tracks / colour-by from the look the movie draws (`_title_card_from_look`)
+    look_tc     = get(data, :look, nothing)
+    if card !== nothing && look_tc isa AbstractDict
+        img_tc, err_tc = _gating_image(project_uid, image_uid)
+        err_tc === nothing && (card = try
+            _title_card_from_look(img_tc, card, look_tc)
+        catch e
+            @warn "movie:record: title card from look failed — keeping the client's" exception = e
+            card
+        end)
+    end
     # Side-by-side comparison (docs/todo/MOVIE_COMPARE_PLAN.md): versions across the columns, masks
     # down the rows, one pass per cell into a single file. A single cell is the plain record it was.
     vns_raw     = get(data, :valueNames, nothing)

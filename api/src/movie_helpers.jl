@@ -439,6 +439,24 @@ function _title_card_content(img, config)
     )
 end
 
+# A recorded movie's card (single record, 3D record, animation) from the LOOK the movie draws: the
+# client builds title + sections from its view snapshot, which names only the channel layers — so a
+# card listed no populations or tracks. The look carries the overlay flags the recorder draws from,
+# so its sections come from the same `_title_card_content` the batch uses. Keeps the client's title,
+# note, duration and any "Channels" section it built (the animation's keyframe union); the recorder
+# still adds the live channels for a single record.
+function _title_card_from_look(img, card::AbstractDict, look::AbstractDict)::Dict{String,Any}
+    cfg = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in pairs(look))
+    cfg[:titleCard] = Dict{Symbol,Any}(:enabled => true)
+    out = Dict{String,Any}(String(k) => v for (k, v) in pairs(card))
+    content = _title_card_content(img, cfg)
+    content === nothing && return out
+    chans = Any[s for s in something(get(card, :sections, nothing), get(card, "sections", Any[]))
+                if _wstr_any(s, :heading, "heading") == "Channels"]
+    out["sections"] = vcat(chans, content["sections"])
+    out
+end
+
 # ── Side-by-side comparison ───────────────────────────────────────────────────
 # docs/todo/MOVIE_COMPARE_PLAN.md. A comparison is N recordings plus one compose, NOT one clever
 # render: each column goes through the SAME path a single movie uses, so overlays, staging, cancel and

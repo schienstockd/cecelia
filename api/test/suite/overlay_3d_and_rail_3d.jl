@@ -321,6 +321,20 @@ end
             @test _config_pop_segmentation(Dict{Symbol,Any}(:valueName => "v")) == "v"
             @test _config_pop_segmentation(Dict{Symbol,Any}(:popValueName => "P", :labelValueNames => ["M"])) == "P"
             c[:popValueName] = "B"
+            # a recorded movie's card: its sections come from the LOOK the movie draws (the client's
+            # snapshot names only channels), keeping the client's title / note / Channels section
+            client = JSON3.read("""{"enabled": true, "title": "KDIeEm — WT", "note": "n", "durationSec": 2,
+                "sections": [{"heading": "Channels", "items": [{"label": "gBT", "colour": "#00ff00"}]},
+                             {"heading": "Populations", "items": []}]}""")
+            look = JSON3.read("""{"showPopulations": true, "popType": "flow", "popValueName": "B",
+                                  "showTrackclust": true, "trackColourMode": "pop"}""")
+            lc = _title_card_from_look(img, client, look)
+            @test (lc["title"], lc["note"]) == ("KDIeEm — WT", "n")
+            @test [s["heading"] for s in lc["sections"]] == ["Channels", "Populations"]
+            @test [i["label"] for i in lc["sections"][2]["items"]] == ["all", "Scanning", "Directed", "Meandering"]
+            # nothing drawn → no Populations section, the client's channels stay
+            off = _title_card_from_look(img, client, JSON3.read("""{"showPopulations": false}"""))
+            @test [s["heading"] for s in off["sections"]] == ["Channels"]
             # popsFilter narrows the pop rows as it narrows the dots
             @test first.(card(merge(c, Dict{Symbol,Any}(:popsFilter => ["/nope"])))) == ["Scanning", "Directed", "Meandering"]
         finally
