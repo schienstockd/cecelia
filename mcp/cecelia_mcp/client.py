@@ -100,6 +100,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/blackboard/revise"),  # bidir Part 4 — SNAPSHOTS current content, then overwrites (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/status"),  # PROJECT_MEMORY_PLAN D3 — flip entry status open|resolved|parked (no snapshot; metadata-only)
         ("POST", "/api/blackboard/outcome"), # PROJECT_MEMORY_PLAN D11 — tag entry good|bad + required note (no snapshot; metadata-only)
+        ("POST", "/api/blackboard/section-outcome"),  # AGENT_RUN_REVIEW_PLAN D7 — PROPOSE a verdict on one section; never replaces a person's (409)
         ("POST", "/api/blackboard/search"),  # PROJECT_MEMORY_PLAN D4 — case-insensitive substring over title+body; title matches beat body matches
         # NB: /api/blackboard/{restore,prune,delete} are NOT allow-listed — those are user-driven
         # via Kiwi / the /blackboard page, matching the notebooks discipline (Claude never restores
@@ -721,6 +722,15 @@ class CeceliaClient:
         # (same verdict + same note) is idempotent and returns unchanged:true.
         return self._request("POST", "/api/blackboard/outcome", body={
             "projectUid": project_uid, "entryId": entry_id,
+            "verdict": verdict, "note": note,
+        })
+
+    def set_blackboard_section_outcome(self, project_uid: str, entry_id: str, section_id: str,
+                                       verdict: str, note: str):
+        # AGENT_RUN_REVIEW_PLAN Decision 7. Stamped by the server as from Claude (the client header),
+        # so it is a proposal: 409 when a person has already marked the section.
+        return self._request("POST", "/api/blackboard/section-outcome", body={
+            "projectUid": project_uid, "entryId": entry_id, "sectionId": section_id,
             "verdict": verdict, "note": note,
         })
 

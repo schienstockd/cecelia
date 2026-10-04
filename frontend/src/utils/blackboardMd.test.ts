@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderBlackboardMarkdown, mermaidBlocks } from './blackboardMd'
+import { renderBlackboardMarkdown, mermaidBlocks, splitEntrySections, appendMissSection } from './blackboardMd'
 
 describe('renderBlackboardMarkdown', () => {
   it('returns empty for empty input', () => {
@@ -107,5 +107,36 @@ describe('renderBlackboardMarkdown — wiki-link resolver', () => {
       'compare [[bb-20260920T110010-b96579]] with [[profile]]', titles)
     expect(html).toContain('href="#bb:bb-20260920T110010-b96579"')
     expect(html).toContain('href="#bb:profile"')
+  })
+})
+
+describe('splitEntrySections / appendMissSection', () => {
+  const md = [
+    '**Brief:** b', '', '## Decisions', '',
+    '### d01 · segment · img1 · cellpose', '- **Did:** x', '',
+    '### d02 · gate · img1 · add_gate on T', '- **Did:** y', '```', '### d99 · not a heading', '```', '',
+    '## Tool errors (unscored)', '', 'None.', '',
+  ].join('\n')
+
+  it('splits decisions out of the surrounding markdown, fences left alone', () => {
+    const parts = splitEntrySections(md)
+    expect(parts.map(p => p.kind === 'section' ? p.id : 'md')).toEqual(['md', 'd01', 'd02', 'md'])
+    expect(parts[2].md).toContain('### d99 · not a heading')
+    expect(parts[3].md.startsWith('## Tool errors')).toBe(true)
+  })
+
+  it('a note without decision headings stays one part', () => {
+    expect(splitEntrySections('# hi\n\ntext').map(p => p.kind)).toEqual(['md'])
+    expect(splitEntrySections('')).toEqual([])
+  })
+
+  it('appends a miss after the last decision, numbering on', () => {
+    const one = appendMissSection(md, 'gate', 'img1', 'a QC gate')
+    expect(one.id).toBe('m01')
+    const two = appendMissSection(one.md, 'track', '', 'retrack')
+    expect(two.id).toBe('m02')
+    const ids = splitEntrySections(two.md).map(p => p.kind === 'section' ? p.id : 'md')
+    expect(ids).toEqual(['md', 'd01', 'd02', 'm01', 'm02', 'md'])
+    expect(two.md).toContain('### m02 · track · all · missed\n- **Should have:** retrack')
   })
 })

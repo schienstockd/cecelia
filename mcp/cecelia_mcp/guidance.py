@@ -233,6 +233,11 @@ preemptively; re-tagging is fine when new evidence changes the verdict. When a `
 surfaces on a topic the user is asking about, LEAD WITH IT — the whole point of the tag is to \
 stop the same mistake being suggested again.
 
+An agent run's record (an entry with `agentRun`) has one `### dNN` section per decision. When the \
+user reviews one with you, `set_blackboard_section_outcome(project_uid, entry_id, section_id, \
+verdict, note)` proposes `good` / `bad` / `unsure` for a section; it shows as your proposal, and a \
+section the user already marked stays theirs (409).
+
 Reach for `search_blackboard(project_uid, query, status?, limit?)` when you're about to propose \
 something and want to check "has this come up before in this project". Substring, case-insensitive, \
 over titles AND bodies; title matches beat body matches; returns snippets so you can decide which \

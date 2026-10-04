@@ -1,6 +1,6 @@
 # Agent run review — the run's decisions on the blackboard, a verdict on each
 
-**Status:** P1 built (2026-10-04) — multi-image copies, `run_record.py`, the `agent_run` capture surface; the back-fill posts once the running app has the surface (dry-runs read). P1b–P4 not built. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
+**Status:** P1 + P2 section verdicts built (2026-10-04) — run records via `run_record.py` with the `agentRun` marker; Good / Bad / Unsure per decision, misses, the "Agent runs" filter, the MCP proposal tool. Not built: P2's refs into the copy (KiwiRef `projectUid` + `chain`), P1b, P3, P4. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
 P4b (the app-tier runs). Builds on the blackboard ([`BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md)
 Part 4, [`PROJECT_MEMORY_PLAN.md`](PROJECT_MEMORY_PLAN.md) Decision 11 outcomes), `KiwiRef`
 ([`KIWI_ASSISTANT_PLAN.md`](KIWI_ASSISTANT_PLAN.md) Decision 4) and the frozen-ref sidecar
@@ -74,7 +74,7 @@ Corrections become lab knowledge for later runs only after a person rewrites the
    list shows only yours. The capture route stays off the MCP allow-lists — the HARNESS writes these,
    never an agent.
 7. **Verdicts are per section, authored by a person.** `good | bad | unsure`, note required for `bad`.
-   Kiwi or a chat session may *propose* a verdict (stamped `by: claude`); the score counts only
+   A chat session may *propose* a verdict (Kiwi turns stay read-only) (stamped `by: claude`); the score counts only
    `by: user`. The entry-level outcome stays.
 8. **Misses are sections too.** What the agent should have done and did not (no QC gate, no AF
    correction) is added by the reviewer as a `missed` section — image + step — with a `bad` verdict.
@@ -144,6 +144,9 @@ heading's `dNN` and never renumber; misses are `mNN`.
   one bug, then `gone` at a SHA after the fix.
 
 ### P2 — refs into the copy + section verdicts
+*Section verdicts built (`api/src/blackboard_run_review.jl`, `components/blackboard/`); `by` is the
+caller's `author_stamp()`, so a Claude verdict is a proposal by construction, not by a body field.
+Refs into the copy are next — the record already reads completely without them (text + captures).*
 - `KiwiRef` gains an optional `projectUid` (resolver + chip open the copy; absent = the entry's own
   project, so every existing ref is unchanged); a `chain` kind `{name, node}`. Frozen labels written
   by the harness, so the existing `was: <label>` fallback covers a deleted copy.
