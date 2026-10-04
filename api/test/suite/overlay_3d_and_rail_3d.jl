@@ -312,6 +312,15 @@ end
             @test card(c)[2:end] == [("Scanning", "#4c78a8"), ("Directed", "#f58518"), ("Meandering", "#54a24b")]
             # no pops → nothing drawn, nothing named
             @test isempty(card(merge(c, Dict{Symbol,Any}(:showPopulations => false))))
+            # no popValueName: the movie's segmentation — the mask's, else none (not every segmentation)
+            delete!(c, :popValueName)
+            @test first.(card(merge(c, Dict{Symbol,Any}(:labelValueNames => ["B"])))) ==
+                  ["all", "Scanning", "Directed", "Meandering"]
+            @test isempty(card(c))
+            @test _config_pop_segmentation(Dict{Symbol,Any}(:labelValueNames => [" ", "M"], :valueName => "v")) == "M"
+            @test _config_pop_segmentation(Dict{Symbol,Any}(:valueName => "v")) == "v"
+            @test _config_pop_segmentation(Dict{Symbol,Any}(:popValueName => "P", :labelValueNames => ["M"])) == "P"
+            c[:popValueName] = "B"
             # popsFilter narrows the pop rows as it narrows the dots
             @test first.(card(merge(c, Dict{Symbol,Any}(:popsFilter => ["/nope"])))) == ["Scanning", "Directed", "Meandering"]
         finally

@@ -243,13 +243,10 @@ function _config_overlay_pops(img, config)
     out = Vector{Dict{String,Any}}()
     _has_label_props(img) || return out
     Bool(get(config, :showPopulations, false)) || return out
-    segs = String[v for v in versioned_keys(img.label_props) if !is_reserved_value_name(v)]
     pt = String(get(config, :popType, "flow"))
-    # When the config names a `popValueName` (batch picker for which segmentation's pop tree to draw
-    # from), the legend reflects that segmentation only. Absent → every segmentation (pre-picker
-    # fallback).
-    pop_vn = String(get(config, :popValueName, ""))
-    vns_for_pops = isempty(pop_vn) ? segs : String[pop_vn]
+    # The ONE segmentation the movie draws pops from (`_config_pop_segmentation`); none → none drawn.
+    pop_vn = _config_pop_segmentation(config)
+    vns_for_pops = isempty(pop_vn) ? String[] : String[pop_vn]
     pf = get(config, :popsFilter, nothing)
     keep = (pf isa AbstractVector && !isempty(pf)) ? Set(String.(pf)) : nothing
     for vn in vns_for_pops
