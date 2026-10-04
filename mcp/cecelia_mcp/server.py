@@ -32,6 +32,7 @@ from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
+from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, with_doc
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
 from cecelia_mcp.monitor import SessionMonitor
@@ -448,6 +449,22 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
     Definitions only — membership COUNTS (n cells/tracks per pop) are not here (they need computing gates
     over the full table); that's the measure summary. Reads current on-disk state."""
     return _client.get_populations(project_uid, image_uid or None, set_uid or None)
+
+
+@_tool
+@with_doc(GATE_PLOT_DOC)
+def gate_plot(project_uid: str, image_uid: str, value_name: str, x: str, y: str,
+              transform: dict | None = None, pop: str = "root") -> list:
+    png, meta = _client.gate_plot(project_uid, image_uid, value_name, x, y, transform, pop)
+    return [Image(data=png, format="png"), meta]
+
+
+@_tool
+@with_doc(GATE_CELLS_VIEW_DOC)
+def gate_cells_view(project_uid: str, image_uid: str, value_name: str, pop: str, t: int = -1,
+                    channels: list[int] | None = None, image_version: str = "") -> list:
+    png, meta = _client.gate_cells_view(project_uid, image_uid, value_name, pop, t, channels, image_version)
+    return [Image(data=png, format="png"), meta]
 
 
 @_tool

@@ -135,6 +135,10 @@ include(joinpath(@__DIR__, "suite", "version_and_render.jl"))
 # narrowing, interaction matrix (no population selection), cluster/region run resolution
 # (family-aware), plotmeta gate-autoscale helpers.
 include(joinpath(@__DIR__, "suite", "canvas_stores_and_plots.jl"))
+# ── Gating as pictures — gate plot PNG + cells-image guards ───
+# Two testsets: the pure gate-plot raster (clipping, numbered gates, white-gate ink) and the
+# plot-image / cells-image routes on the testpr fixture.
+include(joinpath(@__DIR__, "suite", "gating_views.jl"))
 # ── Project-ops testsets (lab log, chain, rename, delete, object find) ──
 # Six testsets covering the mutation/discovery API a project owner reaches for: lab log,
 # chain create (create-only + validated) + rename, set rename, project delete, delete-label-set

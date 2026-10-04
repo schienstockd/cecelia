@@ -807,6 +807,22 @@ function _include_range((lo, hi)::Tuple, glo, ghi; margin::Float64 = 0.05)
     (nlo, nhi)
 end
 
+# The child gates of `pop` drawn on this (x, y) pair, re-projected into the display transforms — each
+# a `project_gate` outline plus its `path` and `colour`. Gates on another channel pair are left out.
+# Shared by plotmeta (the browser plot) and the gate-plot image (`gating_views_api.jl`).
+function _child_gate_outlines(m::PopulationMap, pop, x, y, xt, yt)
+    gates = Dict{String,Any}[]
+    for cpath in direct_children(m, pop)
+        p = m.pops[cpath]
+        p.gate === nothing && continue
+        pj = project_gate(p.gate, x, y, xt, yt)
+        pj === nothing && continue
+        pj["path"] = cpath; pj["colour"] = p.colour
+        push!(gates, pj)
+    end
+    gates
+end
+
 # ── GET /api/gating/plotmeta ──────────────────────────────────────────────────
 # returns n + mode (scatter|density) + transformed extents + axis ticks
 function api_gating_plotmeta(req::HTTP.Request)
@@ -887,16 +903,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     # Child gates of the displayed population, re-projected into the EFFECTIVE display transform so
     # their outlines land on the dots even when a gate was drawn under a different transform (the client
     # has no transform math). Colour/path travel so the client renders directly. Membership is untouched.
-    m = load_pop_map(img; value_name = vn, pop_type = pop_type)
-    gates = Dict{String,Any}[]
-    for cpath in direct_children(m, pop)
-        p = m.pops[cpath]
-        p.gate === nothing && continue
-        pj = project_gate(p.gate, x, y, xt, yt)
-        pj === nothing && continue
-        pj["path"] = cpath; pj["colour"] = p.colour
-        push!(gates, pj)
-    end
+    gates = _child_gate_outlines(load_pop_map(img; value_name = vn, pop_type = pop_type), pop, x, y, xt, yt)
     # Autoscale to the child gates: a gate drawn beyond the data cloud would otherwise fall outside
     # the axes and be un-grabbable. Grow the display extent to enclose the projected outlines, and
     # re-derive the raw tick range from the widened extent so ticks span the whole axis. Only the
