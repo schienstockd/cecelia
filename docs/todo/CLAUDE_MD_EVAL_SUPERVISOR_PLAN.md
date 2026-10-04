@@ -1,7 +1,7 @@
 # CLAUDE.md eval — supervisor, run records, review queue
 
 **Status:** in progress — phases 1–6 built 2026-10-01; phases 7–12 (Decisions 19–24, 2026-10-03):
-7, 8, 9, 10 (pilot) and 12 built 2026-10-03; 11 not started. Open: the first supervised pass, which measures the judge's cost so the cap can be
+7, 8, 9, 10 (pilot) and 12 built 2026-10-03; 11 hand-run (not automated). Open: the first supervised pass, which measures the judge's cost so the cap can be
 set (Decision 4). Consolidates the two briefs at
 `docs/archive/eval-supervisor-prompt.md` and `docs/archive/eval-dev-ui-prompt.md`, corrected against
 the shipped eval and its sibling plans. Where this plan and a brief disagree, this plan wins.
@@ -437,9 +437,40 @@ Each phase is its own PR.
       in the record ("Since last run"), the two single-shot candidates go to curation as normal
       add proposals, and the stateful ones wait for the agent-overnight harness, which can seed
       a live app and project.
-11. **Fix stage (Decision 22) — not started**, after 9 has run for a few passes and its `fix`
-    verdicts have held up. Hand-run the fixing agent on 3–5 `fix` items first, so the harness and
-    the verdicts aren't proven in one go; then automate as the harness's first real use.
+11. **Fix stage (Decision 22) — hand-run 2026-10-03; not automated.** Automate after 9 has run for
+    a few passes and its `fix` verdicts have held up, as the harness's first real use. The hand-run:
+    one headless `claude -p` per bug in a local clone under `/tmp/cecelia-fix/<slug>` (the eval's
+    `_SANDBOX_SETTINGS`, network denied, no MCP, `--max-budget-usd 3`), told to fix, test and make one
+    WIP commit; then a person read the diff, ran the suite outside the sandbox, ran recital and opened
+    the PR. 4 items, $2.91 (plus ≈1 min of an aborted start, not captured):
+
+    | Bug | $ | Turns | Grade | PR |
+    |---|---|---|---|---|
+    | B12 set-scope gating on scale | 0.97 | 29 | as-is | #1400 |
+    | B3 label writers vs versioned entries | 0.63 | 15 | with edits — early guard missing at 3 of 5 writers | #1401 |
+    | B6+B13 `_normalise_track_sources` | 0.60 | 14 | as-is | #1402 |
+    | B18 stale viewer version pick | 0.71 | 26 | with edits — missed the ws.ts `removedValue` path its own comment claimed | #1403 |
+
+    - **Quality.** All four fixes were right in shape and came with a test that fails without them
+      (two shown by the agent reverting its fix). Both edits were sibling call sites the agent
+      missed, and recital's fanout audit found both. So the automated stage must run recital on the
+      agent's commit and either send confirmed fanout findings back to the agent or to the owner;
+      the agent alone stops one call site short.
+    - **What the sandbox blocked.**
+      - Writes under `~`: a worktree in `~/cc-workspace` is read-only to the agent, hence the `/tmp` clone.
+      - `git commit`: the repo's Claude Code guard refuses until git hooks are active, and `.git/config`
+        is read-only inside the sandbox. The driver must set the hooks path in the clone before spawning.
+      - `pixi`: unavailable. `julia --project=app|api` did run single testsets (B12, B3, B6); the full
+        suites ran only outside. Frontend: no `node_modules`, so B18 could not run Vitest or vue-tsc —
+        a frontend fix needs the driver to provide them, or it is graded on outside runs alone.
+    - **The agent worked around a guard.** On B12 a `cd` left the guard hook unreachable (it is found by
+      a relative path), and the agent planted a shim hook file to get its shell back, then deleted it.
+      It reported this itself. An unattended run must not edit `.claude/`; the automated driver should
+      deny `Edit/Write(**/.claude/**)` and reject a diff touching it.
+    - **Recommendation: not yet.** The agent's output needed a person on 2 of 4, and both gaps were
+      ones recital already catches. Next step: the driver runs recital itself and gives the agent one
+      round on confirmed findings, with the hooks path set, `.claude/` writes denied and `node_modules`
+      linked for frontend bugs; then hand-grade another 3–5 before the harness opens PRs unattended.
 12. **Scorer known-fail tests (Decision 24) — built 2026-10-03.** `test_claude_md_eval_knownfail.py`:
     every active prompt has realistic non-compliant answers plus one compliant one (trimmed from a
     real trace). No prompt had a test through its real prompt file before. Six scorers were
