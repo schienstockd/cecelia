@@ -26,6 +26,9 @@ export function useCaptureFocus() {
   /** Refocus `env`. Returns false when there is nowhere to go (a plot capture from a page with no
    *  reshow flow and no image, or a capture with no address). */
   function focusCapture(projectUid: string, env: CaptureEnvelope): boolean {
+    // an agent run's evidence was rendered from a disposable copy — nothing here to reopen; the
+    // Blackboard shows it in its gallery instead
+    if (env.surface === 'agent_run') return false
     if (env.surface === 'plot') {
       const mod = (env.address?.plotSpec?.params as { module?: string } | undefined)?.module
       const path = mod ? moduleRouteFor(mod) : null

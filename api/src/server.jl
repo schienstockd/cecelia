@@ -57,6 +57,7 @@ include("captures_api.jl")   # bidirectional context — share-in capture envelo
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 include("viewer_nav_api.jl") # viewer navigation — Claude → browser (RUBBER_DUCK_FIT_PLAN P2)
 include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
+include("blackboard_run_review.jl") # agent run records: per-section verdicts (AGENT_RUN_REVIEW_PLAN P2)
 include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDIR_CONTEXT_PLAN PR #6, Decision 14)
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
 include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
@@ -469,6 +470,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),
     "/api/blackboard/outcome" => (req, body_bytes) -> (api_blackboard_outcome(body_bytes)),
+    "/api/blackboard/section-outcome" => (req, body_bytes) -> (api_blackboard_section_outcome(body_bytes)),
     "/api/blackboard/search"  => (req, body_bytes) -> (api_blackboard_search(body_bytes)),
     "/api/blackboard/restore" => (req, body_bytes) -> (api_blackboard_restore(body_bytes)),
     "/api/blackboard/prune"   => (req, body_bytes) -> (api_blackboard_prune(body_bytes)),

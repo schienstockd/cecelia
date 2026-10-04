@@ -190,6 +190,38 @@ function _axis_ticks(t::AxisTransform, rmin::Real, rmax::Real; n::Int = 6)
      end for i in 1:n]
 end
 
+# Channel display names for a table's intensity columns. They are VERSIONED (e.g. AF correction adds
+# extra channels), and the label value_name doesn't map 1:1 to a channel-name version: pick the
+# version whose length matches the number of intensity columns (`nchans`). Returns every version (for
+# a client that picks itself) and the matched names (`nothing`/empty when none matches).
+function _channel_display_names(img, nchans::Int)
+    versions = Dict{String,Any}(
+        v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
+    display = get(versions, _matching_channel_version(versions, nchans;
+                                                      active = versioned_active(img.im_channel_names)), String[])
+    versions, display
+end
+
+# A plot axis's title as the Gate page shows it (`gating` store `colLabel` + `axisLabelWithUnit`): an
+# intensity column → its channel name, a centroid → "X position" / "Time", anything else as-is;
+# then " (unit)" when the axis has one.
+const _CENTROID_TITLES = Dict("centroid_x" => "X position", "centroid_y" => "Y position",
+                              "centroid_z" => "Z position", "centroid_t" => "Time")
+function _axis_title(img, vn, pop_type, col::AbstractString)::String
+    name = get(_CENTROID_TITLES, lowercase(col), String(col))
+    try
+        chans = channel_columns(label_props(img; value_name = vn))
+        i = findfirst(==(col), chans)
+        if i !== nothing
+            _, display = _channel_display_names(img, length(chans))
+            (display !== nothing && i <= length(display) && !isempty(display[i])) && (name = String(display[i]))
+        end
+    catch
+    end
+    unit = _axis_unit(img, vn, pop_type, col)
+    isempty(unit) ? name : "$name ($unit)"
+end
+
 # µm/px to apply to ONE plot axis so the DISPLAYED values are in the same unit as the GATES.
 # Returns 1.0 — no conversion — for a non-spatial axis, a legacy px-stamped map, or an uncalibrated
 # image. Deliberately the SAME three conditions `recompute!` scales on (docs/todo/SPATIAL_GATE_UNITS_
@@ -627,13 +659,7 @@ function api_gating_channels(req::HTTP.Request)
         chans = _intersect_cols_across_vns(multi_vns,
             v -> channel_columns(label_props(img; value_name = v)))
     end
-    # Channel display names are VERSIONED (e.g. AF correction adds extra channels), and the
-    # label value_name doesn't map 1:1 to a channel-name version. Pick the version whose
-    # length matches the number of intensity columns; expose all versions for the client.
-    versions = Dict{String,Any}(
-        v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
-    display = get(versions, _matching_channel_version(versions, length(chans);
-                                                      active = versioned_active(img.im_channel_names)), String[])
+    versions, display = _channel_display_names(img, length(chans))
     # TRACK-level cluster columns (clusters.* in `{vn}__tracks.h5ad`, written by clustTracks). These
     # aren't in the cell obs, but the viewer colour-by broadcasts them to cells via track_id so you
     # can colour tracks by their cluster/population. Offered alongside cell obs columns.

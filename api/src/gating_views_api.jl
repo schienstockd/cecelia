@@ -4,7 +4,7 @@
 # go with the picture arrive in the same response):
 #
 #   GET /api/gating/plot-image   — the gate plot: one population's cells on two transformed axes,
-#                                  its child gates outlined + numbered (`render_gate_plot`).
+#                                  its child gates outlined + named (`render_gate_plot`).
 #   GET /api/gating/cells-image  — the cells in the image: one timepoint, segmentation outlines
 #                                  coloured inside vs outside a population (`render_view_stills`).
 #
@@ -18,10 +18,11 @@ const _CELLS_IN_COLOUR  = "#ffffff"
 const _CELLS_OUT_COLOUR = "#ff2bd6"
 
 # ── GET /api/gating/plot-image ──────────────────────────────────────────────────
-# ?projectUid&imageUid&valueName&x&y[&pop][&xt…&yt… as plotmeta][&width&height]
-# → { png, n, x:{channel, transform, extent}, y:{…}, gates:[{n, path, colour, kind, …display coords}] }
-# Axes span the WHOLE segmentation (root), as in the browser plot, so walking down the tree keeps the
-# scale; a gate reaching past the cloud is clipped in the picture and stated in full in `gates`.
+# ?projectUid&imageUid&valueName&x&y[&pop][&xt…&yt… as plotmeta]
+# → { png, n, x:{channel, title, transform, extent}, y:{…}, gates:[{path, colour, kind, …display coords}] }
+# Axes as the Gate page draws them by default: raw 0 → the WHOLE segmentation's max (so walking down
+# the tree keeps the scale), grown to enclose the child gates; a gate reaching past the axes is clipped
+# in the picture and stated in full in `gates`.
 function api_gating_plot_image(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
@@ -36,20 +37,23 @@ function api_gating_plot_image(req::HTTP.Request)
     rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt)
     isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — not columns of this segmentation's table")
     xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, "flow", x, y, pop, xt, yt)
-    pad(e) = (s = e[2] > e[1] ? e[2] - e[1] : 1.0; (e[1] - 0.03s, e[2] + 0.03s))
-    xext = pad(_finite_extrema(rxv)); yext = pad(_finite_extrema(ryv))
+    # the Gate page's default axes (plotmeta x0/y0=1): raw 0 → the WHOLE dataset's max, so walking
+    # down the tree keeps the scale; grown to enclose the child gates, as the browser does
+    rx = _finite_extrema(invert_transform.(Ref(xt), rxv)); ry = _finite_extrema(invert_transform.(Ref(yt), ryv))
+    xext = (apply_transform(xt, 0.0), apply_transform(xt, float(rx[2])))
+    yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
     gates = _child_gate_outlines(m, pop, x, y, xt, yt)
-    w = clamp(parse(Int, get(q, "width", "520")), 240, 1200)
-    h = clamp(parse(Int, get(q, "height", "440")), 200, 1000)
+    gb = _gates_bbox(gates)
+    xext = _include_range(xext, gb[1], gb[2]); yext = _include_range(yext, gb[3], gb[4])
     png = render_gate_plot_png(xv, yv, xext, yext,
                                _axis_ticks(xt, invert_transform(xt, xext[1]), invert_transform(xt, xext[2])),
                                _axis_ticks(yt, invert_transform(yt, yext[1]), invert_transform(yt, yext[2])),
-                               gates; width = w, height = h)
+                               gates; xtitle = _axis_title(img, vn, "flow", x), ytitle = _axis_title(img, vn, "flow", y))
     200, JSON3.write((;
         png = base64encode(png), valueName = vn, pop = pop, n = count(isfinite, xv),
-        x = (; channel = x, transform = transform_spec(xt), extent = [xext[1], xext[2]]),
-        y = (; channel = y, transform = transform_spec(yt), extent = [yext[1], yext[2]]),
-        gates = [merge(Dict{String,Any}("n" => k), g) for (k, g) in enumerate(gates)]))
+        x = (; channel = x, title = _axis_title(img, vn, "flow", x), transform = transform_spec(xt), extent = [xext[1], xext[2]]),
+        y = (; channel = y, title = _axis_title(img, vn, "flow", y), transform = transform_spec(yt), extent = [yext[1], yext[2]]),
+        gates = gates))
 end
 
 # A small crop renders at its native size — a 190-px frame is too little to judge a cell's outline

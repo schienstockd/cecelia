@@ -448,8 +448,14 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
         with write_atomic(dry_run / "entry.md") as f:
             f.write(f"# {title}\n\n{content}")
         return {**out, "dryRun": str(dry_run)}
+    # the marker the Blackboard's "agent runs" filter and the section verdicts work from
+    agent_run = {"copyProjectUid": run["projectUid"], "copyProjectName": run["projectName"],
+                 "startedAt": rec.get("startedAt", ""), "run": root.name,
+                 "images": [{"sourceImageUid": im["sourceImageUid"], "imageUid": im["imageUid"]}
+                            for im in images],
+                 "sectionIds": [s["id"] for s in dec["sections"]]}
     r = _post(api, "/api/blackboard/create", {"projectUid": source_uid, "title": title, "content": content,
-                                              "attachments": attach})
+                                              "attachments": attach, "agentRun": agent_run})
     return {**out, "entryId": r.get("entryId"), "projectUid": source_uid}
 
 

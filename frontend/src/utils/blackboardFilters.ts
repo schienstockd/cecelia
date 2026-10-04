@@ -12,6 +12,8 @@ import type { BlackboardEntrySummary } from './blackboardApi'
 
 export type StatusChoice  = 'all' | 'open' | 'resolved' | 'parked'
 export type OutcomeChoice = 'all' | 'untagged' | 'good' | 'bad'
+/** Agent run records (AGENT_RUN_REVIEW_PLAN) vs everything else. */
+export type KindChoice    = 'all' | 'runs' | 'notes'
 
 export const PROFILE_ENTRY_ID = 'profile'
 
@@ -20,9 +22,11 @@ export function entryPassesFilters(
   e: BlackboardEntrySummary,
   status: StatusChoice,
   outcome: OutcomeChoice,
+  kind: KindChoice = 'all',
 ): boolean {
   if (e.entryId === PROFILE_ENTRY_ID) return true
   if (status !== 'all' && e.status !== status) return false
+  if (kind !== 'all' && (kind === 'runs') !== !!e.agentRun) return false
   if (outcome === 'all')      return true
   if (outcome === 'untagged') return !e.outcome
   return !!e.outcome && e.outcome.verdict === outcome
@@ -33,6 +37,7 @@ export function filterEntries(
   entries: BlackboardEntrySummary[],
   status: StatusChoice,
   outcome: OutcomeChoice,
+  kind: KindChoice = 'all',
 ): BlackboardEntrySummary[] {
-  return entries.filter(e => entryPassesFilters(e, status, outcome))
+  return entries.filter(e => entryPassesFilters(e, status, outcome, kind))
 }

@@ -1325,6 +1325,23 @@ def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: 
 
 
 @_tool
+def set_blackboard_section_outcome(project_uid: str, entry_id: str, section_id: str, verdict: str,
+                                   note: str = "") -> dict:
+    """PROPOSE a verdict on ONE section of a BLACKBOARD entry — a decision in an agent run's record
+    (`### d07 · gate · yDfwP7 · …`, or a reviewer-added miss `### m02 · …`). `section_id` is the
+    heading's id (`"d07"`); `verdict` is `"good"`, `"bad"` or `"unsure"`; `note` says why and is
+    REQUIRED for `"bad"`. Read the entry first (`read_blackboard_entry`: its `sectionOutcomes` holds
+    the verdicts so far).
+
+    Your verdict is stored as a PROPOSAL (stamped as from Claude): the user sees it next to their own
+    and only theirs count in a run's score. A section the user has already marked is theirs — the
+    call returns 409, and the right move is to tell them what you would change, not to retry.
+    Returns `{ok, sectionId, outcome:{verdict, note, by, at}}`. 404 when the section does not exist.
+    Metadata only; no snapshot."""
+    return _client.set_blackboard_section_outcome(project_uid, entry_id, section_id, verdict, note)
+
+
+@_tool
 def search_blackboard(project_uid: str, query: str,
                       status: str | None = None, limit: int | None = None) -> dict:
     """Search this project's BLACKBOARD entries. Case-insensitive substring over titles AND bodies;

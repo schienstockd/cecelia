@@ -48,6 +48,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "create_blackboard_entry", "revise_blackboard_entry", # bidir Part 4 (Blackboard) — writes
             "set_blackboard_status",                              # PROJECT_MEMORY_PLAN P1 — status flip (no snapshot)
             "set_blackboard_outcome",                             # PROJECT_MEMORY_PLAN P4 — outcome tag good|bad + required note
+            "set_blackboard_section_outcome",                     # AGENT_RUN_REVIEW_PLAN P2 — propose a verdict on one section
             "search_blackboard",                                  # PROJECT_MEMORY_PLAN P2 — substring search over titles+bodies
         ):
             self.assertIn(tool, self.names)
