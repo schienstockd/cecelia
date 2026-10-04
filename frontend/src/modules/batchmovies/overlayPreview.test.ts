@@ -104,13 +104,17 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
     expect(r.points.every(p => p.ringed === true)).toBe(true)
   })
 
-  it('trackclust adds its own ribbons under a pops config', () => {
+  it('trackclust ribbons replace the cell-track ribbons under a pops config', () => {
     const gated = renderOverlayPreview(
       { showPopulations: true, showGatedTracks: true }, scene)
+    const tcOnly = renderOverlayPreview(
+      { showPopulations: true, showTrackclust: true }, scene)
     const both = renderOverlayPreview(
       { showPopulations: true, showGatedTracks: true, showTrackclust: true }, scene)
-    // Trackclust adds ribbons ON TOP of the gated ones — the two families both render.
-    expect(both.ribbons.length).toBeGreaterThan(gated.ribbons.length)
+    expect(tcOnly.ribbons.length).toBeGreaterThan(0)
+    // the same tracks, by cluster — the cell-track ribbons stand down rather than stack (the movie's rule)
+    expect(both.ribbons).toEqual(tcOnly.ribbons)
+    expect(both.ribbons.length).toBe(gated.ribbons.length)
   })
 
   it('trackclust alone → empty + caption about needing populations', () => {

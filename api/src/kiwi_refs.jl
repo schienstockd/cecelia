@@ -408,7 +408,9 @@ function kiwi_population_cells(puid::AbstractString, ref; limit::Integer = _KIWI
     p = _kiwi_pop_type(img, vn, path)
     p === nothing && return "no population $path on $(img.name) ($vn)"
     df = try
-        pop_df(img, p.popType, [path]; value_name = vn, granularity = :cell, include_obs = false, include_x = false)
+        # one segmentation's ids — a cluster pop's run-wide expansion would pool other segmentations' labels
+        pop_df(img, p.popType, [path]; value_name = vn, granularity = :cell, include_obs = false, include_x = false,
+               expand_cluster_pops = false)
     catch e
         return "could not read $path: $(sprint(showerror, e))"
     end

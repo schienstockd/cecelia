@@ -48,9 +48,11 @@ propertynames_str(df) = String.(propertynames(df))
 function _labels_by_category_for(img, value_name::AbstractString, pop_type::AbstractString,
                                  pop::AbstractString, measure::AbstractString,
                                  category::AbstractString)::Vector{Int}
+    # one segmentation's ids — a cluster pop's run-wide expansion would pool other segmentations' labels
     df = pop_df(img, pop_type, [pop];
                 value_name = value_name,
                 granularity = :cell,
+                expand_cluster_pops = false,
                 cell_measures = [measure],
                 categorical = [measure])
     (length(df.label) == 0) && return Int[]

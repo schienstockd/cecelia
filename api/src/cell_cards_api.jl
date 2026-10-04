@@ -79,8 +79,10 @@ end
 function _cell_trace_history(med_img::CciaImage, value_name::String, pop_path::String,
                               track_id::Int)::Vector{Tuple{Int,Float64,Float64}}
     hist_df = try
+        # `expand_cluster_pops=false`: ONE segmentation's track — track ids are per segmentation, so
+        # pooling the clustering run's other segmentations could splice their same-id track in.
         pop_df(med_img, "trackclust", [pop_path]; value_name=value_name, granularity=:cell,
-               centroids=:pixel, include_x=false, include_obs=true)
+               centroids=:pixel, include_x=false, include_obs=true, expand_cluster_pops=false)
     catch; nothing end
     hist = Tuple{Int,Float64,Float64}[]
     hist_df === nothing && return hist

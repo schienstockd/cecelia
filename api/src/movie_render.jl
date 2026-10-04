@@ -587,6 +587,7 @@ end
 #   - `segmentWidthPx`: ribbon width
 #   - `popPaths`      : Vector{String} of pop paths to keep (nothing = all visible)
 #   - `trackColorMode`: "track" | "speed" | "solid"
+#   - `showTrackclust`: also draw the segmentation's track-cluster ribbons (`trackclust_requested`)
 # The same keys and the same gate as the 2D rail's `_resolve_movie_overlays_mask`. Older animation
 # configs said `showTracks` / `showGatedTracks` / `popsFilter`; those still read as before.
 _ov_str(cfg, k, dflt) = begin
@@ -656,8 +657,10 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     # (`merge_overlay_closures`) — as the 2D rail does. Otherwise one call on `vn`.
     # A source's colour is also its "solid" track colour, as in the viewer.
     sources = !isempty(track_sources) ? track_sources : [(vn, nothing)]
+    tc_on = trackclust_requested(_ov_bool(overlays_config, "showTrackclust", false), show_pops, all_tracks) &&
+            trackclust_draws(img, vn)
     author_kw(src_vn, src_col) = (; value_name = src_vn, pop_type = pt, pops_filter = pops_filter,
-                                    include_tracks = inc_tracks, tail_length = tail,
+                                    include_tracks = inc_tracks && !tc_on, tail_length = tail,
                                     all_tracks = all_tracks,
                                     all_tracks_colour = something(src_col, all_tracks_col),
                                     solid_colour = src_col,
@@ -665,7 +668,11 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
                                     include_points = show_pops,
                                     track_color_mode = tcm, colour_by = colour_by,
                                     colour_overrides = colour_overrides)
-    per_t3d = merge_overlay_closures([build_overlays3d_for(img; author_kw(s...)...) for s in sources])
+    closures = Any[build_overlays3d_for(img; author_kw(s...)...) for s in sources]
+    tc_on && push!(closures, build_overlays3d_for(img; value_name = vn, pop_type = "trackclust",
+                                                 include_tracks = true, tail_length = tail,
+                                                 include_points = false, track_color_mode = tcm))
+    per_t3d = merge_overlay_closures(closures)
 
     # The mask, for the shader (`movie_mask`).
     mask = !show_mask ? nothing :

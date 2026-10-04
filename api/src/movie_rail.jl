@@ -225,6 +225,8 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # was written, the reader defaulted `showPopulations` to true (for smoke-route back-compat)
         # and any `ov_raw` dict leaked pop dots.
         "showPopulations"  => show_pops,
+        # the "trackclust" chip — `trackclust_requested` decides whether it draws
+        "showTrackclust"   => _cfg_bool(cfg, "showTrackclust"),
         # Ribbon eligibility in the overlay author is `include_tracks && (is_track || has_tracks)` on
         # the pops path, and `include_tracks` alone on the all-tracks path. Both `tracks` (all-seg
         # ribbons) and `gated` (cell-track ribbons) chips should push ribbons; before this either flag
