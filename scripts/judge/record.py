@@ -44,6 +44,7 @@ _BUGS_HOW_TO = (
     "`pixi run judge-review` walks these one at a time and can open a briefed fix session for each, "
     "or answer `wont_fix` for a bug that isn't worth fixing. "
     "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
+    "An *agent run* bug is an error an autonomous run hit; with no `file:line`, start from the tool and the error. "
     "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
 _RULES_HOW_TO = (
     "Reviewer findings in the last {days} days, mapped to the CLAUDE.md rule each one breaks. "
@@ -187,10 +188,20 @@ def _cell(text: _t.Any) -> str:
     return str(text if text is not None else "—").replace("|", "\\|").replace("\n", " ")
 
 
+def bug_location(b: dict) -> str:
+    """Where a bug is, as plain text: `file:line`, the PR of stranded commits, or the tool an agent
+    run's error came from when there was no stacktrace."""
+    if b.get("kind") == "stranded":
+        return f"PR #{b.get('pr')}"
+    if not b.get("file"):
+        return f"agent run · {b.get('tool') or '?'}"
+    return f"{b['file']}:{b['line']}"
+
+
 def _bug_where(b: dict) -> str:
     if b.get("kind") == "stranded":
         return f"stranded · PR #{b.get('pr')} `{b.get('branch')}`"
-    return f"`{b['file']}:{b['line']}`"
+    return f"`{bug_location(b)}`"
 
 
 def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
@@ -199,7 +210,7 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
     counts = {s: sum(b["status"] == s for b in bugs) for s in BUG_STATUSES}
     out = [_BUGS_HOW_TO, "",
            " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
-    for b in (b for b in bugs if b["status"] != "unjudged"):
+    for b in (b for b in bugs if b["status"] != "unjudged" and not b.get("muted")):
         v = b.get("verify") or {}
         out += [f"### {b['id']} · {b['status']}{' · ' + v['verdict'] if v else ''} · {_bug_where(b)} · `{b['key']}`", "",
                 f"**Check:** {b['why']}", ""]
@@ -214,11 +225,21 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
         if b.get("kind") == "stranded":
             out += [f"**Commits:** {', '.join(f'`{c}`' for c in b.get('commits', []))}", ""]
             continue
-        out += [f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
-                f"first seen {b['first_seen']}): {b['desc']}", ""]
+        if b.get("kind") == "agent_run":
+            out += [f"**Error** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first seen "
+                    f"{b['first_seen']}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
+        else:
+            out += [f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
+                    f"first seen {b['first_seen']}): {b['desc']}", ""]
         out += [f"**Also raised** (`{a['key']}`, branch `{a.get('branch') or '?'}`): {a['desc']}"
                 for a in b.get("also", [])]
         out += [""] if b.get("also") else []
+    muted = [b for b in bugs if b.get("muted")]
+    if muted:
+        out += ["### Closed agent-run errors", "", "Carried so a run that hits one again doesn't raise it as new.", ""]
+        out += [f"- {b['id']} · {b['status'].replace('_', ' ')} · {_bug_where(b)} · `{b['key']}` — "
+                f"hit in {b.get('runs') or 1} run(s), last {(b.get('last_seen') or '?')[:10]}" for b in muted]
+        out.append("")
     waiting = [b for b in bugs if b["status"] == "unjudged"]
     if waiting:
         out += ["### Waiting for the judge", ""]

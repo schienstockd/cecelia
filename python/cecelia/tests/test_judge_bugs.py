@@ -42,6 +42,12 @@ def _advisory(file="a.py", line=3, desc="maybe", **kw):
     return _row("fanout_audit_advisory", {"file": file, "line": line, "desc": desc, "marker": "plausible"}, **kw)
 
 
+def _run_error(key, tool="create_chain", error="400 Bad Request: unknown step", ts="2026-10-04T00:30:00Z", **kw):
+    """An `agent_run_finding` row, shaped like the run harness writes it: no branch, the run's SHA."""
+    return {"event": "agent_run_finding", "ts": ts, "branch": None, "commit": "d" * 40,
+            "payload": {"key": key, "tool": tool, "error": error, "file": None, "line": None} | kw}
+
+
 class _Repo(unittest.TestCase):
     def setUp(self):
         self.b = _load_bugs()
@@ -291,6 +297,55 @@ class StrandedTest(_Repo):
         self.assertEqual(self.sweep([], prs=[{**self.pr, "headRefOid": "f" * 40}])[0], [])
 
 
+class AgentRunTest(_Repo):
+    def test_one_candidate_per_error_key_counting_its_runs(self):
+        events = [_run_error("run-aaaa"), _run_error("run-aaaa", ts="2026-10-04T01:00:00Z"),
+                  _run_error("run-bbbb", tool="get_cohort_qc", desc="cohort QC rejects a set uid"),
+                  _row("agent_run_finding", {"tool": "set_gate"})]                     # no key: skipped
+        cands = {c["key"]: c for c in self.b.candidates(events, since="2026-10-01")}
+        self.assertEqual(sorted(cands), ["run-aaaa", "run-bbbb"])
+        a = cands["run-aaaa"]
+        self.assertEqual((a["kind"], a["runs"], a["last_seen"], a["branch"]), ("agent_run", 2, "2026-10-04T01:00:00Z", None))
+        self.assertEqual(a["desc"], "`create_chain` failed: 400 Bad Request: unknown step")
+        self.assertEqual(cands["run-bbbb"]["desc"], "cohort QC rejects a set uid")
+
+    def test_an_error_without_a_file_is_open_without_the_judge_and_one_with_a_file_is_judged(self):
+        events = [_run_error("run-aaaa"), _run_error("run-cccc", tool="set_gate", file="a.py", line=30)]
+        bugs, _ = self.sweep(events)
+        self.assertEqual({b["key"]: b["status"] for b in bugs}, {"run-aaaa": "open", "run-cccc": "open"})
+        self.assertEqual(len(self.prompts), 1)
+        self.assertIn("FINDING run-cccc (agent run, a.py:30", self.prompts[0])
+        self.assertNotIn("run-aaaa", self.prompts[0])
+        self.assertEqual(next(b for b in bugs if b["key"] == "run-aaaa")["opened"], "2026-10-05")
+
+    def test_an_error_on_a_flagged_function_is_not_merged_into_the_finding(self):
+        bugs, _ = self.sweep([_finding("fanout-00000001", line=30),
+                              _run_error("run-cccc", tool="set_gate", file="a.py", line=30)])
+        self.assertEqual(sorted((b["key"], b.get("sources")) for b in bugs),
+                         [("fanout-00000001", None), ("run-cccc", None)])
+
+    def test_a_carried_error_hit_again_counts_the_runs_instead_of_a_new_bug(self):
+        prev, _ = self.sweep([_run_error("run-aaaa")])
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": prev}
+        bugs, _ = self.sweep([_run_error("run-aaaa", ts="2026-10-11T00:00:00Z"),
+                              _run_error("run-aaaa", ts="2026-10-12T00:00:00Z")], previous=previous)
+        self.assertEqual([(b["key"], b["status"], b["runs"], b["last_seen"]) for b in bugs],
+                         [("run-aaaa", "open", 3, "2026-10-12T00:00:00Z")])
+
+    def test_a_wont_fix_error_stays_closed_and_a_fixed_one_that_returns_is_new(self):
+        prev, _ = self.sweep([_run_error("run-aaaa"), _run_error("run-bbbb"), _run_error("run-cccc")])
+        closed = {"run-aaaa": "wont_fix", "run-bbbb": "gone", "run-cccc": "dismissed"}
+        prev = [{**b, "status": closed[b["key"]]} for b in prev]
+        again = [_run_error(k, ts="2026-10-11T00:00:00Z") for k in closed]
+        bugs, _ = self.sweep(again, previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": prev})
+        got = {b["key"]: (b["status"], b.get("muted", False), b["runs"]) for b in bugs}
+        self.assertEqual(got, {"run-aaaa": ("wont_fix", True, 2), "run-bbbb": ("open", False, 1),
+                               "run-cccc": ("open", False, 1)})
+        bugs, _ = self.sweep([], previous={"run": {"ts": "2026-10-12T00:00:00Z"}, "bugs": bugs})
+        self.assertEqual([(b["key"], b["status"]) for b in bugs],
+                         [("run-bbbb", "open"), ("run-cccc", "open"), ("run-aaaa", "wont_fix")])
+
+
 class RenderTest(unittest.TestCase):
     def test_unjudged_bugs_render_apart_and_stranded_ones_name_their_pr(self):
         spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
@@ -306,6 +361,21 @@ class RenderTest(unittest.TestCase):
         self.assertNotIn("### B2", md)
         self.assertIn("### Waiting for the judge\n\n- B2 · `a.py:2` · `fanout-1` — waiting for the judge", md)
         self.assertIn("1 open · 1 unjudged", md)
+
+    def test_an_agent_run_error_names_its_tool_and_runs_and_closed_ones_are_one_line(self):
+        spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
+        record = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(record)
+        common = {"kind": "agent_run", "marker": "agent run", "tool": "create_chain", "file": None, "line": None,
+                  "desc": "`create_chain` failed: 400", "first_seen": "2026-10-05", "runs": 3,
+                  "last_seen": "2026-10-12T00:00:00Z", "why": "w"}
+        md = "\n".join(record._render_bugs([{**common, "id": "B1", "key": "run-aaaa", "status": "open"},
+                                            {**common, "id": "B2", "key": "run-bbbb", "status": "wont_fix",
+                                             "muted": True}]))
+        self.assertIn("### B1 · open · `agent run · create_chain` · `run-aaaa`", md)
+        self.assertIn("**Error** (`create_chain`, hit in 3 run(s), first seen 2026-10-05, last 2026-10-12)", md)
+        self.assertNotIn("### B2", md)
+        self.assertIn("- B2 · wont fix · `agent run · create_chain` · `run-bbbb` — hit in 3 run(s), last 2026-10-12", md)
 
 
 class EnclosingTest(unittest.TestCase):

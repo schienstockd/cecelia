@@ -47,6 +47,16 @@ class VerifyTest(unittest.TestCase):
         gs = self.v.groups(bugs)
         self.assertEqual(sorted(sorted(b["key"] for b in g) for g in gs), [["a", "b", "c"], ["d"]])
 
+    def test_one_runs_errors_go_to_one_agent_and_name_their_tool(self):
+        run = {"kind": "agent_run", "marker": "agent run", "file": None, "line": None, "branch": None}
+        bugs = [_bug("r1", **run, tool="create_chain", commit="d" * 40, runs=2),
+                _bug("r2", **run, tool="get_cohort_qc", commit="d" * 40),
+                _bug("r3", **run, tool="set_gate", commit="e" * 40)]
+        self.assertEqual(sorted(sorted(b["key"] for b in g) for g in self.v.groups(bugs)), [["r1", "r2"], ["r3"]])
+        self.v.verify(bugs[:1], date="d", sha="s", agent=self.agent())
+        self.assertIn("BUG r1 (agent run, agent run · create_chain, hit in 2 run(s), first at commit dddddddd)",
+                      self.prompts[0])
+
     def test_a_big_group_is_split_and_oldest_goes_first(self):
         old = _bug("old", file="o.py", branch="o", first_seen="2026-09-01")
         many = [_bug(f"m{i}", line=i, branch="m") for i in range(self.v.GROUP_MAX + 2)]

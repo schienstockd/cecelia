@@ -137,11 +137,13 @@ heading's `dNN` and never renumber; misses are `mNN`.
   plainly the agent's own misuse; everything else goes to verify.
 - `key` = sha1(tool + error text with uuids, paths, numbers and timestamps stripped), so the same
   error does not open a new bug every night.
-- Judge side (the judge session's follow-up): `bugs.candidates()` reads the new event; a finding
-  without `file:line` skips the excerpt step — `open`, "no file:line — for the verify agent",
-  grouped by `key` — instead of merging every location-less finding into one bug.
+- Judge side: **built** (`scripts/judge/bugs.py` → `AGENT_RUN_EVENT`; design in
+  `docs/ai-assist/WEEKLY_JUDGE.md` → *Bug sweep*). One bug per `key` counting the runs that hit it; no
+  `file:line` → `open` without the judge, verified by an agent per run; `wont_fix` ones are carried so
+  a repeat isn't raised as new.
 - **Checkpoint:** a back-filled run's set_gate errors (fixed in #1405) appear in a judge dry run as
-  one bug, then `gone` at a SHA after the fix.
+  one bug, then closed at a SHA after the fix (`gone` with a `file:line`; without one, verify
+  dismisses it).
 
 ### P2 — refs into the copy + section verdicts
 *Section verdicts built (`api/src/blackboard_run_review.jl`, `components/blackboard/`); `by` is the
