@@ -1,4 +1,6 @@
 """The autonomous surface's guard: project lock, route allow-list, output-name prefix, spec lookup."""
+import asyncio
+import base64
 import os
 import struct
 import unittest
@@ -109,6 +111,59 @@ class Histogram(unittest.TestCase):
 
     def test_empty_and_nan(self):
         self.assertEqual(au.histogram([float("nan")]), {"n": 0})
+
+
+class GatingPictures(unittest.TestCase):
+    def _client(self, reply):
+        c = au.AutonomousClient("http://x")
+        return c, mock.patch.object(c, "_request", return_value=reply)
+
+    def test_gate_plot_decodes_the_png_and_sends_the_transform(self):
+        c, req = self._client({"png": base64.b64encode(b"PNGBYTES").decode(), "n": 3, "gates": []})
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
+                mock.patch.object(c, "_require_measured") as measured, req as r:
+            png, meta = c.gate_plot("copy01", "img", "T", "mean_intensity_2", "area",
+                                    {"kind": "asinh", "cof": 5}, "/qc")
+        self.assertEqual((png, meta), (b"PNGBYTES", {"n": 3, "gates": []}))
+        measured.assert_called_once()
+        method, route, q = r.call_args[0][:3]
+        self.assertEqual((method, route), ("GET", "/api/gating/plot-image"))
+        self.assertEqual((q["xt"], q["xcof"], q["yt"], q["ycof"], q["pop"]), ("asinh", 5, "asinh", 5, "/qc"))
+        self.assertIn((method, route), au.AUTONOMOUS_ROUTES)
+
+    def test_cells_view_only_sends_what_was_asked(self):
+        c, req = self._client({"png": base64.b64encode(b"P").decode(), "t": 4})
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
+                mock.patch.object(c, "_require_measured"), req as r:
+            c.gate_cells_view("copy01", "img", "T", "/qc", -1, None, "")
+            q = r.call_args[0][2]
+            self.assertFalse({"t", "channels", "imageVersion"} & set(q))
+            c.gate_cells_view("copy01", "img", "T", "/qc", 7, [2, 3], "driftCorrected")
+            q = r.call_args[0][2]
+        self.assertEqual((q["t"], q["channels"], q["imageVersion"]), (7, "2,3", "driftCorrected"))
+        self.assertIn(("GET", "/api/gating/cells-image"), au.AUTONOMOUS_ROUTES)
+
+
+class GatingPicturesShared(unittest.TestCase):
+    def test_observer_and_autonomous_send_the_same_read(self):
+        # one request builder and one docstring for both servers — they cannot drift apart
+        from cecelia_mcp import autonomous_server, server
+        from cecelia_mcp.client import ALLOWED_ROUTES, CeceliaClient
+        reply = {"png": base64.b64encode(b"P").decode(), "n": 1}
+        obs, auto = CeceliaClient("http://x"), au.AutonomousClient("http://x")
+        args = ("copy01", "img", "T", "mean_intensity_0", "area", {"kind": "log", "floor": 2}, "/qc")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
+                mock.patch.object(obs, "_request", return_value=reply) as r1, \
+                mock.patch.object(auto, "_request", return_value=reply) as r2, \
+                mock.patch.object(auto, "_require_measured"):
+            self.assertEqual(obs.gate_plot(*args), auto.gate_plot(*args))
+        self.assertEqual(r1.call_args, r2.call_args)
+        self.assertIn(("GET", "/api/gating/plot-image"), ALLOWED_ROUTES)
+        self.assertIn(("GET", "/api/gating/cells-image"), ALLOWED_ROUTES)
+        for mod in (server, autonomous_server):
+            tools = {t.name: t for t in asyncio.run(mod.mcp.list_tools())}
+            self.assertTrue(tools["gate_plot"].description.startswith("The gate plot as an image"))
+            self.assertTrue(tools["gate_cells_view"].description.startswith("The image with population"))
 
 
 if __name__ == "__main__":

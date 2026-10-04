@@ -25,6 +25,7 @@ import string
 import struct
 import time
 
+from cecelia_mcp import gating_views as gv
 from cecelia_mcp.client import ApiError, DEFAULT_BASE_URL, DisallowedRoute, http_json
 from cecelia_mcp.wsclient import api_url_to_ws
 
@@ -45,6 +46,8 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/gating/channels"),    # gateable columns of a segmentation
     ("GET", "/api/gating/plotdata"),    # x/y values (binary f32) — summarised into a histogram here
     ("GET", "/api/gating/stats"),       # count / % of parent for one population
+    ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, numbered gates)
+    ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
     ("POST", "/api/correction-plan/recommend"),  # pure (no write): the metadata-only cleanup plan
     ("POST", "/api/gating/pop/add"),    # WRITE — add a population (gate) to a segmentation
     ("POST", "/api/gating/pop/set-gate"),  # WRITE — move an existing population's gate
@@ -357,16 +360,23 @@ class AutonomousClient:
     def gate_histogram(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
                        transform: dict | None, pop: str, bins: int) -> dict:
         q = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
-             "x": x, "y": y, "pop": pop or "root"}
+             "x": x, "y": y, "pop": pop or "root", **gv.axis_transform_query(transform)}
         self._require_measured(project_uid, image_uid, value_name)
-        for axis in ("x", "y"):
-            t = dict(transform or {})
-            q[f"{axis}t"] = t.pop("kind", "linear")
-            for k, v in t.items():
-                q[f"{axis}{k}"] = v
         xs, ys = decode_pairs(self._request("GET", "/api/gating/plotdata", q, raw=True))
         return {"x": {"channel": x, **histogram(xs, bins)}, "y": {"channel": y, **histogram(ys, bins)},
                 "transform": transform or {"kind": "linear"}}
+
+    def gate_plot(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
+                  transform: dict | None, pop: str) -> tuple[bytes, dict]:
+        self._require_measured(project_uid, image_uid, value_name)
+        return gv.split_png(self._request("GET", gv.PLOT_ROUTE, gv.plot_query(
+            project_uid, image_uid, value_name, x, y, transform, pop)))
+
+    def gate_cells_view(self, project_uid: str, image_uid: str, value_name: str, pop: str, t: int,
+                        channels: list[int] | None, image_version: str) -> tuple[bytes, dict]:
+        self._require_measured(project_uid, image_uid, value_name)
+        return gv.split_png(self._request("GET", gv.CELLS_ROUTE, gv.cells_query(
+            project_uid, image_uid, value_name, pop, t, channels, image_version)))
 
     def gating_post(self, route: str, project_uid: str, image_uid: str, value_name: str, **fields) -> dict:
         # `route` (not `path`): `path` is a FIELD here — the population path set-gate/delete address

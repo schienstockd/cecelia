@@ -10,11 +10,12 @@ from __future__ import annotations
 import functools
 import os
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from cecelia_mcp.autonomous import AutonomousClient, LockViolation, locked_project, required_prefix
 from cecelia_mcp.client import ApiError, DisallowedRoute
+from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, with_doc
 
 INSTRUCTIONS = (
     "Runs analysis in ONE Cecelia project (the locked one) without a human at the keyboard. Use it "
@@ -106,6 +107,22 @@ def gate_histogram(project_uid: str, image_uid: str, value_name: str, x: str, y:
     {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}."""
     return _client.gate_histogram(project_uid, image_uid, value_name, x, y or x, transform, pop,
                                   max(5, min(bins, 80)))
+
+
+@_tool
+@with_doc(GATE_PLOT_DOC)
+def gate_plot(project_uid: str, image_uid: str, value_name: str, x: str, y: str,
+              transform: dict | None = None, pop: str = "root") -> list:
+    png, meta = _client.gate_plot(project_uid, image_uid, value_name, x, y, transform, pop)
+    return [Image(data=png, format="png"), meta]
+
+
+@_tool
+@with_doc(GATE_CELLS_VIEW_DOC)
+def gate_cells_view(project_uid: str, image_uid: str, value_name: str, pop: str, t: int = -1,
+                    channels: list[int] | None = None, image_version: str = "") -> list:
+    png, meta = _client.gate_cells_view(project_uid, image_uid, value_name, pop, t, channels, image_version)
+    return [Image(data=png, format="png"), meta]
 
 
 @_tool

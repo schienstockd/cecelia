@@ -36,6 +36,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from cecelia_mcp import gating_views as gv
+
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 
 # (method, path) → the ONLY routes the observer may ever call. Read-only except the three writes below.
@@ -80,6 +82,8 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
         ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
         ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
+        ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, numbered gates) — gating_views.py
+        ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
         ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
         ("GET", "/api/viewer/plots"),      # bidir PR #8 — live plot registry; discover mounted panels so mark_plot's plot_id isn't guessed
         ("GET", "/api/blackboard"),        # bidir Part 4 — list a project's blackboard entries (title + version + updatedAt)
@@ -450,6 +454,16 @@ class CeceliaClient:
         # content block).
         return self._request("GET", "/api/viewer/capture",
                              {"projectUid": project_uid, "captureId": capture_id})
+
+    def gate_plot(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
+                  transform: dict | None, pop: str) -> tuple[bytes, dict]:
+        return gv.split_png(self._request("GET", gv.PLOT_ROUTE, gv.plot_query(
+            project_uid, image_uid, value_name, x, y, transform, pop)))
+
+    def gate_cells_view(self, project_uid: str, image_uid: str, value_name: str, pop: str, t: int,
+                        channels: list[int] | None, image_version: str) -> tuple[bytes, dict]:
+        return gv.split_png(self._request("GET", gv.CELLS_ROUTE, gv.cells_query(
+            project_uid, image_uid, value_name, pop, t, channels, image_version)))
 
     def get_object_ids(self, project_uid: str, image_uid: str, value_name: str,
                        kind: str = "cells", limit: int = 200, sample: bool = False):

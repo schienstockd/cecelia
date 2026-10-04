@@ -46,6 +46,8 @@ include("movie_render.jl")   # the offline renderer's timelapse sweep — builds
 include("movie_rail.jl")     # movie rail (record button + batch) routed through the offline renderer, off napari
 include("behaviour_cards.jl") # shared filmstrip renderer for cell/motif/hmm cards (docs/todo/BEHAVIOUR_CARDS_PLAN.md Decision 5)
 include("cell_cards_api.jl") # /api/cell_cards — snapshot cards on the offline renderer (docs/todo/CELL_CARDS_PLAN.md)
+include("gate_plot_render.jl") # the gate plot as a PNG — pure raster (uses overlay_author.jl::hex_to_rgb)
+include("gating_views_api.jl") # /api/gating/plot-image + cells-image — gating as pictures for MCP clients
 include("motif_cards_api.jl") # /api/motif_cards — motif-class snapshot cards (docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 2)
 include("hmm_state_cards_api.jl") # /api/hmm_state_cards — HMM-state snapshot cards (docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 3)
 include("app_api.jl")
@@ -303,6 +305,8 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/plotmeta" => (req, body_bytes) -> (api_gating_plotmeta(req)),
     "/api/gating/plotdata" => (req, body_bytes) -> (api_gating_plotdata(req)),
     "/api/gating/density" => (req, body_bytes) -> (api_gating_density(req)),
+    "/api/gating/plot-image" => (req, body_bytes) -> (api_gating_plot_image(req)),
+    "/api/gating/cells-image" => (req, body_bytes) -> (api_gating_cells_image(req)),
     "/api/images/geometry" => (req, body_bytes) -> (api_image_geometry(req)),
     "/api/images/stores" => (req, body_bytes) -> (api_image_stores(req)),
     "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),

@@ -38,6 +38,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
 
             "list_plots",                   # bidir PR #8 — live plot registry discovery
             "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
+            "gate_plot", "gate_cells_view", # gating as pictures (shared with the autonomous server)
             "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)
