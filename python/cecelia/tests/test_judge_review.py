@@ -135,11 +135,11 @@ class EvidenceTest(unittest.TestCase):
 
     def test_one_bullet_per_sentence_and_reference_lists_stay_whole(self):
         text = ("pixi.toml:220 `prod` runs bare julia. app.py:26-44 is the only resolver, e.g. for app. "
-                "The docs say so (docs/A.md:1; docs/B.md:2).")
+                "The docs say so (a.md:1; b.md:2).")
         lines = self.rv._paragraph(text, width=100, use_colour=False, bullets=True)
         self.assertEqual(lines, ["    • pixi.toml:220 `prod` runs bare julia.",
                                  "    • app.py:26-44 is the only resolver, e.g. for app.",
-                                 "    • The docs say so (docs/A.md:1; docs/B.md:2)."])
+                                 "    • The docs say so (a.md:1; b.md:2)."])
 
     def test_a_coloured_bullet_does_not_leak_its_escape_code(self):
         lines = self.rv._paragraph("python/x.py:4 replaces it. pixi.toml:1 says so.", width=100,
