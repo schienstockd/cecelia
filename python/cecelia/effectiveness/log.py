@@ -77,20 +77,11 @@ EVENT_TYPES = frozenset({
     #: Retired 2026-09-30 (replaced by `inventory_coverage_run`); no emitter. Kept so the rows
     #: already in the log stay valid members of the closed taxonomy.
     "citation_currency_run",
-    # `claude_md_eval_*` — behavioural compliance eval, one row per (prompt, run) + one pass
-    # summary per prompt + one suite summary per full-catalog run. See
-    # docs/todo/CLAUDE_MD_EVAL_PLAN.md. Payload on `_run` carries prompt_id, rule, verdict
-    # ∈ {compliant, noncompliant, error}, compliant_hits, anti_hits. Row-level `commit` is the
-    # CLAUDE.md SHA the eval ran under (not the current worktree HEAD), so a trend across
-    # CLAUDE.md edits is legible in the rollup. `_suite` aggregates all prompts in one pass.
+    #: Retired with the CLAUDE.md compliance eval (the weekly judge replaced it); no
+    #: emitter. Kept so the rows already in the log stay valid members of the closed taxonomy.
     "claude_md_eval_run",
     "claude_md_eval_pass",
     "claude_md_eval_suite",
-    # One row per ablation pass — pairs a with-CLAUDE.md suite result against a
-    # without-CLAUDE.md suite result and emits per-prompt + total deltas. Fired by
-    # `scripts/claude_md_eval/run_ablation.py` / `pixi run claude-md-eval-ablation`.
-    # Payload carries `per_prompt: {id: {with_compliant, without_compliant, delta_compliant,
-    # with_cost, without_cost, delta_cost}}` + totals. See CLAUDE_MD_EVAL_PLAN.md.
     "claude_md_eval_ablation",
 })
 

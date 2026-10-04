@@ -1,7 +1,7 @@
 """Finding the `claude` CLI — one helper for every `claude -p` caller in the AI-assist tooling.
 
-Callers: `recital` (the reviewers), `scripts/claude_md_eval/run_prompt.py` and its suite /
-ablation drivers (the eval agents), `scripts/claude_md_eval/supervise.py` (the judge). Julia's
+Callers: `recital` (the reviewers), the weekly judge (`scripts/judge/judge.py`, `verify.py`) and
+the autonomous runs (`scripts/agent_eval/run_overnight.py`). Julia's
 counterpart is `agent_bin_path()` in `app/src/ai/agent_runner.jl`.
 """
 from __future__ import annotations

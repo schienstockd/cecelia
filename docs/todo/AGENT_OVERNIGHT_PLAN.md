@@ -16,9 +16,10 @@ Two things are measured separately, because they fail for different reasons:
   it hit and recovered from, whether it damaged anything that was already there.
 - **Performance** — how close its segmentation, tracks and behaviour states are to ground truth.
 
-This is an experiment on the setup, not on the model — same frame as the CLAUDE.md eval
-([`CLAUDE_MD_EVAL_PLAN.md`](CLAUDE_MD_EVAL_PLAN.md)): a failure points at a gap in docs, task
-interfaces or QC, and the fix goes into the framework.
+This is an experiment on the setup, not on the model: a failure points at a gap in docs, task
+interfaces or QC, and the fix goes into the framework. It replaced the CLAUDE.md compliance eval
+(retired 2026-10-04, [`../archive/CLAUDE_MD_EVAL_PLAN.md`](../archive/CLAUDE_MD_EVAL_PLAN.md)) as the
+test of whether an agent can use the framework.
 
 ## What exists (verified 2026-10-01)
 
@@ -31,11 +32,10 @@ interfaces or QC, and the fix goes into the framework.
   `behaviour.hmm_states` / `behaviour.hmm` (`app/src/tasks/task_registry.jl`).
 - **Isolated projects:** `custom.toml` with `[dirs] projects='<tmp>'` in a temp `CECELIA_DEV_DIR`,
   then `init_cecelia!()` + `create_project!` (`app/test/runtests.jl:22-28`, `scripts/kiwi_eval.jl`).
-- **Eval rig to reuse:** `scripts/claude_md_eval/run_prompt.py` — bwrap sandbox settings (network off,
-  `~/**` write-denied), `CECELIA_OBSERVER_NO_PAIR=1`, stream-json traces, cost/turns via
-  `transcript.py`; `cron_pass.sh` + `systemd/claude-md-eval.{service,timer}` (flock, AC power, nice);
-  run records via `record.py` (`schema_version`, delta). Supervisor (#1326) adds pinned worktree +
-  tool-less triage.
+- **Agent rig:** `python/cecelia/effectiveness/agent_sandbox.py` — bwrap sandbox settings (network
+  off, `~/**` write-denied), the detached checkout, stream-json cost/turns; `CECELIA_OBSERVER_NO_PAIR=1`.
+  `scripts/judge/cron_pass.sh` + `systemd/weekly-judge.{service,timer}` are the cron pattern (flock,
+  AC power, nice); the overnight run shares that lock.
 
 ## What does not exist
 

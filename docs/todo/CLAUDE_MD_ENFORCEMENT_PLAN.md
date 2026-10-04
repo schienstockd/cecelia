@@ -124,10 +124,9 @@ Re-open item 1 (the write-time gate cost comparison) when *any* of the following
 
 Re-open the full inventory when:
 
-- The compliance eval defined in [`CLAUDE_MD_EVAL_PLAN.md`](CLAUDE_MD_EVAL_PLAN.md) shows a
-  sustained drop in agent compliance on any rule — the behavioural signal, not a line count.
-  Concrete threshold set once baseline data exists (candidate: any rule below 80% pass rate
-  over three consecutive eval passes). The earlier "500-line trigger" was a placeholder
+- The weekly judge ([`../ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md)) keeps proposing
+  `tighten` for a rule — agents breaking it across sessions, the behavioural signal, not a line
+  count. (This was the compliance eval's job until it was retired on 2026-10-04.) The earlier "500-line trigger" was a placeholder
   invented at scoping time; a rule stops working when agents stop following it, and that is
   what should trigger the audit.
 

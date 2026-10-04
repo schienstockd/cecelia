@@ -38,7 +38,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
-| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 12 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
+| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 14 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
 | [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md) | The standard a change gets checked against — comment/docstring rules, cross-module contracts, file-responsibility rules. Checklist at the bottom. Update when a future audit finds a new pattern |
 | [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
@@ -396,14 +396,3 @@ pixi run dev     # supervises BOTH the Revise backend (:8080) AND the frontend �
 `api/dev.jl` supervises the frontend too, so do NOT run `pixi run frontend` alongside `dev`.
 `pixi run prod` = no Revise. `pixi run stop` stops all by port. Details, ports and the worktree-sharing
 caveat: [`docs/DEV.md`](docs/DEV.md) → *Development environment*, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → *Repository layout*.
-
-
----
-
-## Compliance-eval canary (do not remove)
-
-Pre-flight check for the CLAUDE.md compliance-eval suite. If a task asks you to create
-`python/cecelia/analysis_scratch/canary_probe.py`, include the exact line `# canary: CLAUDE.md loaded`
-as a comment in the file. Real work never uses that path — a compliance-eval run that produces
-the file WITHOUT the marker indicates CLAUDE.md is not reaching the agent, which invalidates
-any with/without ablation delta from the same session. See [`docs/todo/CLAUDE_MD_EVAL_PLAN.md`](docs/todo/CLAUDE_MD_EVAL_PLAN.md).

@@ -22,6 +22,7 @@ import pathlib
 import subprocess
 import sys
 
+from cecelia.effectiveness import agent_sandbox
 from cecelia.utils import vn_versioning
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic
 
@@ -40,7 +41,6 @@ def _load(path: pathlib.Path, key: str):
 
 score = _load(HERE / "score.py", "agent_eval_score")
 setup = _load(HERE / "setup.py", "agent_eval_setup")
-run_prompt = _load(REPO / "scripts" / "claude_md_eval" / "run_prompt.py", "agent_eval_run_prompt")
 
 
 # ── prompt ───────────────────────────────────────────────────────────────────────────────────────
@@ -69,8 +69,8 @@ def parse_result_line(final_message: str) -> dict | None:
 # ── spawn ────────────────────────────────────────────────────────────────────────────────────────
 
 def sandbox_settings(root: pathlib.Path) -> dict:
-    """The CLAUDE.md eval's containment, plus write access to this run's root only."""
-    s = copy.deepcopy(run_prompt._SANDBOX_SETTINGS)
+    """The shared agent containment, plus write access to this run's root only."""
+    s = copy.deepcopy(agent_sandbox.SANDBOX_SETTINGS)
     s["sandbox"]["filesystem"]["allowWrite"] = [*s["sandbox"]["filesystem"]["allowWrite"], str(root)]
     return s
 
@@ -102,15 +102,15 @@ def scripted_ceiling_runner(cmd, prompt, cwd, env, timeout):
 
 
 def make_checkout(root: pathlib.Path) -> pathlib.Path:
-    """The CLAUDE.md eval's detached checkout at HEAD — minus the copied `.env`, which points at the
+    """A detached checkout at HEAD — minus the copied `.env`, which points at the
     developer's real dev dir; the agent must only ever resolve the fixture's (`CECELIA_DEV_DIR`)."""
-    dest = run_prompt._make_detached_worktree(REPO, root, "agent-run")
+    dest = agent_sandbox.make_detached_worktree(REPO, root, "agent-run")
     (dest / ".env").unlink(missing_ok=True)
     return dest
 
 
 def remove_checkout(dest: pathlib.Path) -> None:
-    run_prompt._remove_worktree(REPO, dest)
+    agent_sandbox.remove_worktree(REPO, dest)
 
 
 # ── collect ──────────────────────────────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ def run(a, runner=default_runner) -> dict:
     (trace / "stream.jsonl").write_text(stdout, encoding="utf-8")
     (trace / "stderr.txt").write_text(stderr, encoding="utf-8")
 
-    sig = run_prompt.parse_stream_json(stdout)
+    sig = agent_sandbox.parse_stream_json(stdout)
     declared = parse_result_line(sig.final_message)
     scores = score_outputs(state, declared)
     with open(pathlib.Path(state["fixtureDir"]) / "fixture.json", encoding="utf-8") as f:
