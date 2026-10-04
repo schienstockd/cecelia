@@ -732,7 +732,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
                       class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'cc-btn-on': selected.knowledge }"
                       :disabled="savingKnowledge" @click="toggleKnowledge"
                       v-tooltip.bottom="selected.knowledge
-                        ? 'Lab knowledge: later agent runs on this project read it. Click to unmark'
+                        ? 'Lab knowledge, read by later agent runs; click to unmark'
                         : 'Mark as lab knowledge: later agent runs on this project read it'">
                 <i class="pi pi-book" /> Knowledge
               </button>
