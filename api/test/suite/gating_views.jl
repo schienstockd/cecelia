@@ -74,6 +74,16 @@ end
 
         @test get_(api_gating_plot_image, "x=mean_intensity_0&y=area&pop=/nope")[1] == 404
         @test get_(api_gating_plot_image, "x=not_a_column&y=area")[1] == 400
+        # the 400 says which column is missing, names near ones and lists what there is
+        st, b = get_(api_gating_plot_image, "x=intensity&y=area")
+        msg = String(JSON3.read(b).error)
+        @test st == 400 && occursin("`intensity` is not a column (near: mean_intensity_0", msg)
+        @test occursin("Cell columns: ", msg) && !occursin("`area`", msg)
+        tcols = _track_free_cols(Cecelia.init_object("testpr", "KDIeEm"), "B")
+        if !isempty(tcols)                                           # a per-track column, pointed at its table
+            msg = String(JSON3.read(get_(api_gating_plot_image, "x=$(first(tcols))&y=area")[2]).error)
+            @test occursin("per-track column", msg)
+        end
         @test get_(api_gating_plot_image, "y=area")[1] == 400
         @test get_(api_gating_cells_image, "pop=/nope")[1] == 404
         @test get_(api_gating_cells_image, "pop=/dim")[1] == 404      # the fixture has no label store / zarr

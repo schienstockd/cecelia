@@ -35,7 +35,7 @@ function api_gating_plot_image(req::HTTP.Request)
     (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
     rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt)
-    isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — not columns of this segmentation's table")
+    isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
     xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, "flow", x, y, pop, xt, yt)
     # the Gate page's default axes (plotmeta x0/y0=1): raw 0 → the WHOLE dataset's max, so walking
     # down the tree keeps the scale; grown to enclose the child gates, as the browser does
@@ -54,6 +54,28 @@ function api_gating_plot_image(req::HTTP.Request)
         x = (; channel = x, title = _axis_title(img, vn, "flow", x), transform = transform_spec(xt), extent = [xext[1], xext[2]]),
         y = (; channel = y, title = _axis_title(img, vn, "flow", y), transform = transform_spec(yt), extent = [yext[1], yext[2]]),
         gates = gates))
+end
+
+# What to say when a requested axis is not a cell-table column: which one, where it lives instead (a
+# per-track column is on the track table, which this plot does not read), near names, and the columns
+# there are — so a caller can pick a real one without another round trip.
+function _missing_column_hint(img, vn, wanted)::String
+    cell = _has_label_props(img) ? vcat(col_names(label_props(img; value_name = vn); data_type = :vars),
+                                        col_names(label_props(img; value_name = vn); data_type = :obs)) : String[]
+    track = _track_free_cols(img, vn)
+    missing = [c for c in wanted if !(c in cell)]
+    isempty(missing) && return "the columns have no finite values"
+    notes = String[]
+    for c in missing
+        if c in track
+            push!(notes, "`$c` is a per-track column (the track table); this plot reads the cell table")
+        else
+            near = filter(k -> occursin(lowercase(c), lowercase(k)), cell)
+            push!(notes, "`$c` is not a column" * (isempty(near) ? "" : " (near: $(join(first(near, 5), ", ")))"))
+        end
+    end
+    shown = first(cell, 40)
+    join(notes, "; ") * ". Cell columns: " * join(shown, ", ") * (length(cell) > length(shown) ? ", …" : "")
 end
 
 # A small crop renders at its native size — a 190-px frame is too little to judge a cell's outline
