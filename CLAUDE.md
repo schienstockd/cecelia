@@ -54,7 +54,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/TRACKING.md`](docs/TRACKING.md) | Cell tracking (btrack): gated-population input, track lineage in H5AD obs, vendored config. **50 KB — slice it** |
 | [`docs/DATAMODEL.md`](docs/DATAMODEL.md) | AnnData conventions: `.h5ad` layout, feature names, `label_props`, mesh paths |
 | [`docs/POPULATION.md`](docs/POPULATION.md) | Population manager & gating: pop types, transforms, `gating/{value_name}.json`, `pop_df`, gate↔track. **56 KB — slice it** |
-| [`docs/API.md`](docs/API.md) | HTTP/WS surface: routing conventions, binary responses, route index, HTTP.jl v2 conventions. **102 KB — slice it** |
+| [`docs/API.md`](docs/API.md) | HTTP/WS surface: routing conventions, binary responses, route index, HTTP.jl v2 conventions. **137 KB — slice it** |
 | [`docs/PLOTS.md`](docs/PLOTS.md) | **Adding ANY plot** — registry + `SummaryCanvas`, never a bespoke panel/route. Chart types, encoding model, renderer spec. **52 KB — slice it** |
 | [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | The Analysis board (`/analysis`): tabs, plates, persistence keys, plot-family registries, PDF/CSV export |
 | [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) | Notebooks Playground (`/notebooks`): Pluto engine, `CeceliaNb`, registry + snapshots, `/api/notebooks/*` |
