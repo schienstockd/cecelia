@@ -24,6 +24,7 @@ export keep_previous_version, set_keep_previous_version!, KEEP_PREVIOUS_VERSION_
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic
+export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources
 export write_http_body!
 export safe_name_part
 
@@ -91,7 +92,7 @@ export channel_index, channel_indices, ccid_channel_names
 export with_transaction, commit_state!
 
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────────
-export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, write_categorical_obs, n_obs
+export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, drop_obsm, write_categorical_obs, n_obs
 export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col
 export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
@@ -368,6 +369,7 @@ include("tasks/spatialAnalysis/aggregatesMeshes.jl")
 include("tasks/clustRegions/cluster.jl")
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")
+include("analysis_runs.jl")   # per-run delete registry (IMAGE_DELETE_PLAN Decision 14); after the task files it names
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")
 include("tasks/plugins.jl")

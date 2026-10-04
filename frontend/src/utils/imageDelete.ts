@@ -111,3 +111,72 @@ export function activeMismatches(images: HasVersions[], removing: string[], acti
 export function partialNames(counts: NameCount[], total: number): string[] {
   return counts.filter(c => c.count < total).map(c => c.name)
 }
+
+// ── Runs scope ─────────────────────────────────────────────────────────────────────────────────
+// One analysis run as `POST /api/images/analysis/runs` lists it (`list_analysis_runs`,
+// app/src/analysis_runs.jl). Identity is (kind, key, valueName); `valueName` is '' for a run that
+// spans segmentations or is image-level. Same union rule as names (rule 1): a run only some selected
+// images carry is offered with its count and skipped elsewhere.
+
+export interface AnalysisRunInfo {
+  kind: string
+  key: string
+  valueName: string
+  label: string
+  detail: string
+  valueNames: string[]
+  invalidates: string[]   // other runs a delete takes with it (a track set's HMM/track clusters)
+}
+
+export interface RunKindInfo { kind: string; label: string }
+
+/** What the modal sends back for one run — the identity only. */
+export interface RunRef { kind: string; key: string; valueName: string }
+
+/** Stable chip value for a run. JSON keeps the three parts unambiguous whatever characters they hold. */
+export const runId = (r: RunRef): string => JSON.stringify([r.kind, r.key, r.valueName])
+export const runRef = (id: string): RunRef => {
+  const [kind, key, valueName] = JSON.parse(id) as string[]
+  return { kind, key, valueName }
+}
+
+export interface RunCount { id: string; run: AnalysisRunInfo; count: number; invalidates: string[] }
+export interface RunGroup { kind: string; label: string; runs: RunCount[] }
+
+/**
+ * Runs offered by the Runs scope, grouped by kind in the server's kind order (empty kinds dropped).
+ * `perImage` maps image uid → that image's runs. The first image's label/detail is shown; a run's
+ * `invalidates` is the union across images, since the delete reaches every image carrying it.
+ */
+export function runGroups(kinds: RunKindInfo[], perImage: Record<string, AnalysisRunInfo[]>): RunGroup[] {
+  const byId = new Map<string, RunCount>()
+  for (const runs of Object.values(perImage)) {
+    for (const r of runs) {
+      const id = runId(r)
+      const hit = byId.get(id)
+      if (hit) {
+        hit.count++
+        for (const d of r.invalidates) if (!hit.invalidates.includes(d)) hit.invalidates.push(d)
+      } else {
+        byId.set(id, { id, run: r, count: 1, invalidates: [...r.invalidates] })
+      }
+    }
+  }
+  return kinds
+    .map(k => ({ kind: k.kind, label: k.label,
+                 runs: [...byId.values()].filter(c => c.run.kind === k.kind) }))
+    .filter(g => g.runs.length > 0)
+}
+
+/** Everything the picked runs take with them that isn't itself picked — said before the confirm. */
+export function alsoDeleted(groups: RunGroup[], picked: string[]): string[] {
+  const chosen = new Set(picked)
+  const pickedLabels = new Set(groups.flatMap(g => g.runs.filter(c => chosen.has(c.id))
+    .map(c => `${g.label} ${c.run.label}`)))
+  const out: string[] = []
+  for (const g of groups) for (const c of g.runs) {
+    if (!chosen.has(c.id)) continue
+    for (const d of c.invalidates) if (!pickedLabels.has(d) && !out.includes(d)) out.push(d)
+  }
+  return out
+}

@@ -46,7 +46,7 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    `ConfirmDeleteButton` is replaced by a button that opens `DeleteImagesDialog.vue`; the destructive
    confirm moves *inside* the modal (arm/confirm on its primary button), so nothing deletes on one
    click. Scope line at the top states what the selection is ("3 images").
-2. **Four delete scopes in one modal**, radio-selected, because they answer different questions and
+2. **Four delete scopes in one modal** (five since Decision 14), radio-selected, because they answer different questions and
    must not be silently combinable:
    - **Whole images** — today's behaviour (`/api/images/delete`, both dirs).
    - **Image versions** — a multi-select list of value names + a "new active version" picker
@@ -131,6 +131,26 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    Also settled while enumerating this: `spatialGraph/{suffix}.h5ad` and `spatialStats/{suffix}.json` are
    keyed by **run suffix, not value_name** (the graph pools across segmentations), so a per-label-set
    delete has nothing of theirs to take. They ARE dropped by an analysis reset, being recomputable.
+
+14. **A fifth scope, "Runs" — delete one analysis run** (Dominik, 2026-10-04, from a mistaken
+   whole-segmentation tracking run that left `P14/_tracked` beside the wanted `P14/qc/_tracked`, with
+   no way to remove it short of *All analysis*). One registry, `RUN_KINDS` in `app/src/analysis_runs.jl`:
+   per kind, the task funs that produce it, a disk-presence lister and a delete. Kinds: track sets
+   (per segmentation × `track_source`), HMM (`colName`), motifs, cell clusters, track clusters,
+   regions (suffix), neighbour graphs, neighbour stats, contacts, aggregates, branching (output name).
+   Rules:
+   - **A delete takes only what that run wrote** — columns, embedding, manifest key, its own-keyed QC.
+     Never gating (Decision 13 — cluster/region/`_aggregated`/branch pops stay and apply again on a
+     re-run), never `runlog.json`/`funParams` (Decision 8). `X_umap.{suffix}` is shared by cell
+     clusters and regions on the cell table, so it goes only when the other family lacks the suffix.
+   - **Tracks are the one exception**: deleting a track set = re-running its source with no tracks
+     (`merge_track_lineage`, the tracker's own merge), then rebuilding track measures. So the
+     segmentation's `live.cell.*` (HMM, live contacts/aggregates) and its track clusters go too —
+     exactly what a re-track does today — and the modal names them before the confirm.
+   - **Every registered task is classified** — a run kind, or a reasoned `NOT_RUN_TASKS` entry
+     (versions, label sets, in-place corrections, vault models). The `run-kind coverage ratchet`
+     testset fails on an unclassified task, the same KEEP-list discipline as Decision 7.
+   - Multi-image: union with `k/n` badges, skipped where absent (Decision 6).
 
 ## Architecture
 

@@ -50,6 +50,7 @@ _with_h5(f::Function, path::AbstractString, mode::AbstractString="r") =
     rename_channels::Bool = false              # map intensity var names → channel names
     pending_obs::Union{DataFrame,Nothing} = nothing   # staged obs columns to write (label + cols); flushed by save!
     pending_drop::Union{Vector{String},Nothing} = nothing # staged obs column names to delete; flushed by save!
+    pending_drop_obsm::Union{Vector{String},Nothing} = nothing # staged obsm keys to delete; flushed by save!
 end
 
 """
@@ -654,6 +655,22 @@ function drop_obs(lp::LabelProps, names)
     lp
 end
 
+"""
+    drop_obsm(lp, keys) -> lp
+
+Stage `obsm` matrices to delete (by key, e.g. `"X_umap.default"`). Absent keys are ignored
+(idempotent). Flushed by `save!` alongside any obs adds/drops — the per-run delete
+(`analysis_runs.jl`) uses it to take a clustering run's embedding with its cluster column.
+"""
+function drop_obsm(lp::LabelProps, keys)
+    isnothing(lp.pending_drop_obsm) && (lp.pending_drop_obsm = String[])
+    for k in keys
+        k = String(k)
+        k in lp.pending_drop_obsm || push!(lp.pending_drop_obsm, k)
+    end
+    lp
+end
+
 # ── Curried chain forms ──────────────────────────────────────────────────────────
 # Single-argument variants of the pipe verbs that capture the second argument and return
 # `lp -> verb(lp, …)`, so chains read without the `v -> verb(v, …)` lambda:
@@ -668,6 +685,7 @@ filter_rows(vals::AbstractVector; by::Symbol=:label)    = lp -> filter_rows(lp, 
 sort_by(col::Union{AbstractString,Symbol}; rev::Bool=false) = lp -> sort_by(lp, col; rev=rev)
 add_obs(df::DataFrame)                                  = lp -> add_obs(lp, df)
 drop_obs(names::AbstractVector)                         = lp -> drop_obs(lp, names)
+drop_obsm(keys::AbstractVector)                         = lp -> drop_obsm(lp, keys)
 
 """
     save!(lp) -> lp
@@ -687,8 +705,9 @@ A crash at any point leaves a readable file: orphan datasets (written-but-unlist
 dropped-but-undeleted) are simply ignored by the reader and by `anndata`. Do not reorder.
 """
 function save!(lp::LabelProps)
-    (isnothing(lp.pending_obs) && isnothing(lp.pending_drop)) && return lp
+    (isnothing(lp.pending_obs) && isnothing(lp.pending_drop) && isnothing(lp.pending_drop_obsm)) && return lp
     drops   = something(lp.pending_drop, String[])
+    obsm_drops = something(lp.pending_drop_obsm, String[])
     pend    = lp.pending_obs
     valcols = isnothing(pend) ? String[] : filter(!=("label"), names(pend))
     plabels = isnothing(pend) ? Int[] : _maybe_int.(pend.label)
@@ -732,10 +751,18 @@ function save!(lp::LabelProps)
         for c in drops
             haskey(obs, c) && HDF5.delete_object(obs, c)
         end
+
+        # (4) obsm matrices — nothing lists them, so a plain delete is already crash-safe.
+        if !isempty(obsm_drops) && haskey(fid, "obsm")
+            for k in obsm_drops
+                haskey(fid["obsm"], k) && HDF5.delete_object(fid["obsm"], k)
+            end
+        end
     end
 
     lp.pending_obs  = nothing
     lp.pending_drop = nothing
+    lp.pending_drop_obsm = nothing
     lp
 end
 

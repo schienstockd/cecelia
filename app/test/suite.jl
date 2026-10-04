@@ -178,6 +178,8 @@ include(joinpath(@__DIR__, "suite", "plugins.jl"))
 # without EOF conflicts on every append. The extracted file loads inside this file's aggregating
 # testset scope, so any helpers defined earlier in suite.jl are still in scope (lexical include).
 include(joinpath(@__DIR__, "suite", "image_model.jl"))
+# ── Per-run delete — run-kind coverage ratchet, drop_obsm, list → delete round trip ──
+include(joinpath(@__DIR__, "suite", "analysis_runs.jl"))
 # ── Scheduler + task-execution testsets ────────────────────────────────
 # 10 testsets covering: TaskJob target sum type, task crash tee'd into per-image log,
 # cancelled run banking, submitter-release on error-path throw, terminal task-rail replay,

@@ -99,10 +99,12 @@ end
 # minimal in P1: feature list + partOf + optional resolutionLockedAt. Extended (medoids,
 # centroidVectors) in P2 when DTW lands. Family "motifs" so it never clobbers a sibling
 # clusters/regions sidecar on the same suffix.
+_motiffeatures_path(props_path::AbstractString) = replace(props_path, r"\.h5ad$" => ".motiffeatures.json")
+
 function _write_motif_features!(props_path::AbstractString, suffix::AbstractString,
                                 features::Vector{String}, part_of::Vector{String};
                                 resolution_locked_at::Union{Nothing,String} = nothing)
-    sidecar  = replace(props_path, r"\.h5ad$" => ".motiffeatures.json")
+    sidecar  = _motiffeatures_path(props_path)
     existing = isfile(sidecar) ? JSON3.read(read(sidecar, String), Dict{String,Any}) :
                                  Dict{String,Any}()
     merged = Dict{String,Any}(String(k) => v for (k, v) in existing)

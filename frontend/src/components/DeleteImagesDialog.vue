@@ -6,6 +6,8 @@
     images    the whole image — pixels AND analysis (only the source file outside the project survives)
     versions  specific image versions, several at once, with the version that stays active
     labels    specific label sets (segmentations) and their measurements
+    runs      specific analysis runs — a track set, an HMM or clustering run, a neighbour graph …
+              (`list_analysis_runs`, app/src/analysis_runs.jl; Decision 14)
     analysis  everything derived, keeping the image itself — "re-run this from clean"
 
   It COLLECTS a plan and emits it; `ImageFileActions.vue` executes it, so the per-image loop, the k/N
@@ -23,7 +25,8 @@ import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import {
   versionCounts, labelCounts, resolveNewActive, unimportsImage, survivorCounts,
-  activeMismatches, partialNames, DEFAULT_VALUE_NAME, type NameCount,
+  activeMismatches, partialNames, runGroups, alsoDeleted, runRef, DEFAULT_VALUE_NAME,
+  type NameCount, type AnalysisRunInfo, type RunKindInfo, type RunRef,
 } from '../utils/imageDelete'
 import type { CciaImage } from '../stores/project'
 
@@ -31,9 +34,14 @@ export type DeletePlan =
   | { scope: 'images' }
   | { scope: 'versions'; valueNames: string[]; newActive: string }
   | { scope: 'labels'; valueNames: string[] }
+  | { scope: 'runs'; runs: RunRef[] }
   | { scope: 'analysis' }
 
-const props = defineProps<{ images: CciaImage[] }>()
+// `runs` is fetched by the opener (it owns the API calls); null while loading.
+const props = defineProps<{
+  images: CciaImage[]
+  runs: { kinds: RunKindInfo[]; images: Record<string, AnalysisRunInfo[]> } | null
+}>()
 const emit  = defineEmits<{ (e: 'close'): void; (e: 'confirm', plan: DeletePlan): void }>()
 
 type Scope = DeletePlan['scope']
@@ -70,6 +78,9 @@ const scopeOptions = computed<ChipOption[]>(() => [
   { value: 'labels',   label: 'Label sets', icon: 'pi pi-th-large',
     badge: labelNames.value.length, disabled: labelNames.value.length === 0,
     tip: labelNames.value.length ? 'Delete specific segmentations and their measurements' : 'No label set is registered yet' },
+  { value: 'runs',     label: 'Runs', icon: 'pi pi-list-check',
+    badge: props.runs ? runCount.value : undefined, disabled: !!props.runs && runCount.value === 0,
+    tip: !props.runs ? 'Loading runs' : runCount.value ? 'Delete specific analysis runs' : 'No analysis run yet' },
   { value: 'analysis', label: 'All analysis', icon: 'pi pi-eraser',
     tip: 'Delete everything derived, keeping the images themselves' },
 ])
@@ -116,18 +127,41 @@ const anySurvivor = computed(() => unimportCount.value < n.value)
 
 const pickedLabels = ref<string[]>([])
 
+// ── Runs scope ────────────────────────────────────────────────────────────────
+const groups   = computed(() => props.runs ? runGroups(props.runs.kinds, props.runs.images) : [])
+const runCount = computed(() => groups.value.reduce((n, g) => n + g.runs.length, 0))
+const pickedRuns = ref<string[]>([])
+const runOptions = (g: (typeof groups.value)[number]): ChipOption[] => g.runs.map(c => ({
+  value: c.id,
+  label: c.run.label,
+  badge: c.count < n.value ? `${c.count}/${n.value}` : undefined,
+  tip: [c.run.detail, c.count < n.value ? `on ${c.count} of ${n.value} images` : ''].filter(Boolean).join(' — ')
+       || c.run.label,
+}))
+// a group's picks within the one flat selection
+const pickedIn = (g: (typeof groups.value)[number]) => pickedRuns.value.filter(id => g.runs.some(c => c.id === id))
+function setPickedIn(g: (typeof groups.value)[number], ids: string[]) {
+  const mine = new Set(g.runs.map(c => c.id))
+  pickedRuns.value = [...pickedRuns.value.filter(id => !mine.has(id)), ...ids]
+}
+const cascade = computed(() => alsoDeleted(groups.value, pickedRuns.value))
+const partialRuns = computed(() => groups.value.flatMap(g => g.runs)
+  .filter(c => pickedRuns.value.includes(c.id) && c.count < n.value).length)
+
 // ── Confirm ───────────────────────────────────────────────────────────────────
 const canConfirm = computed(() =>
   scope.value === 'images'   ? n.value > 0
   : scope.value === 'analysis' ? n.value > 0
   // versions: the active-version conflict blocks; a skipped name does not
   : scope.value === 'versions' ? pickedVersions.value.length > 0 && activeConflicts.value === 0
+  : scope.value === 'runs'     ? pickedRuns.value.length > 0
   : pickedLabels.value.length > 0)
 
 const confirmLabel = computed(() => {
   if (scope.value === 'images')   return n.value === 1 ? 'Delete image' : `Delete ${n.value} images`
   if (scope.value === 'analysis') return n.value === 1 ? 'Delete analysis' : `Delete analysis of ${n.value} images`
   if (scope.value === 'versions') return `Delete ${pickedVersions.value.length} version(s)`
+  if (scope.value === 'runs')     return `Delete ${pickedRuns.value.length} run(s)`
   return `Delete ${pickedLabels.value.length} label set(s)`
 })
 
@@ -136,6 +170,7 @@ function submit() {
   const plan: DeletePlan =
     scope.value === 'versions' ? { scope: 'versions', valueNames: [...pickedVersions.value], newActive: newActive.value }
     : scope.value === 'labels' ? { scope: 'labels', valueNames: [...pickedLabels.value] }
+    : scope.value === 'runs'   ? { scope: 'runs', runs: pickedRuns.value.map(runRef) }
     : { scope: scope.value }
   emit('confirm', plan)
   emit('close')
@@ -145,6 +180,7 @@ function onScopeChange(v: string) {
   scope.value = v as Scope
   if (v === 'versions') seedVersions()
   if (v === 'labels')   pickedLabels.value = []
+  if (v === 'runs')     pickedRuns.value = []
 }
 </script>
 
@@ -154,7 +190,7 @@ function onScopeChange(v: string) {
 
     <div class="del-row">
       <span class="del-lbl cc-muted" v-tooltip.right="'What to delete from the selected images'">Delete</span>
-      <ChipSelect class="del-chips" variant="segmented" :options="scopeOptions"
+      <ChipSelect class="del-chips" variant="grid" :columns="3" :options="scopeOptions"
         :model-value="scope" @update:model-value="v => onScopeChange(v as string)" />
     </div>
 
@@ -211,6 +247,25 @@ function onScopeChange(v: string) {
       <p class="del-note cc-muted">
         Deletes each set's labels, measurements, tracks and skeleton output. Gating strategies are kept —
         re-run the segmentation under the same name and they apply again.
+      </p>
+    </template>
+
+    <!-- Runs: one row per run kind, one flat selection -->
+    <template v-else-if="scope === 'runs'">
+      <div v-for="g in groups" :key="g.kind" class="del-row">
+        <span class="del-lbl cc-muted"
+          v-tooltip.right="'Runs to delete; skipped on images without them'">{{ g.label }}</span>
+        <ChipSelect class="del-chips" multiple :options="runOptions(g)"
+          :model-value="pickedIn(g)" @update:model-value="v => setPickedIn(g, v as string[])" />
+      </div>
+      <p v-if="cascade.length" class="del-note cc-muted-warn">
+        Also deletes, re-run after: {{ cascade.join(', ') }}.
+      </p>
+      <p v-if="partialRuns" class="del-note cc-muted">
+        Skipped on images that don't have it.
+      </p>
+      <p class="del-note cc-muted">
+        Deletes only the selected runs' output. Gating and the run history are kept.
       </p>
     </template>
 
