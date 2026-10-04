@@ -4,11 +4,6 @@ Per docs/todo/EFFECTIVENESS_LOG_PLAN.md the rollup runs ON-DEMAND (not heartbeat
 commit) — invoke via `pixi run audit-rollup`, review the resulting diff, commit if the update
 is meaningful. The output is `docs/ai-assist/EFFECTIVENESS.md`.
 
-**Sibling — see also `scripts/claude_md_eval/rollup.py`.** Same input log, disjoint
-event families (`claude_md_eval_*` there; audit findings here), disjoint output
-artifacts. Kept separate — different audience, different render cadence — but a
-future reader touching one may want to check the other.
-
 v1 renders:
 - Header (run date, N events, date range, retrospective vs live split).
 - Per-mechanism sections (fanout audit, convention check, inventory check, maintainability lint,

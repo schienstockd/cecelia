@@ -223,7 +223,7 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
     claude_bin = _resolve_claude_bin()
     # Reviewer turns load the user's MCP servers; `CECELIA_OBSERVER_NO_PAIR` (read by
     # `mcp/cecelia_mcp/client.py`, inherited by MCP children) stops a throwaway turn re-pairing
-    # the user's project. Sibling: `scripts/claude_md_eval/run_prompt.py` → `default_claude_runner`.
+    # the user's project. Siblings: `scripts/judge/verify.py`, `scripts/agent_eval/run_overnight.py`.
     env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"}
     try:
         result = subprocess.run(

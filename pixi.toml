@@ -325,10 +325,6 @@ recital = "python scripts/recital.py"
 # from the last day; `-- --width COLS` overrides the wrap column.
 recital-console = "python -m cecelia.effectiveness.console"
 
-# Behavioural compliance eval — spawn N fresh `claude -p` agents on ONE canned prompt,
-# capture the diff, score it via regex against the prompt's compliant/anti signals, and emit
-# rows to the effectiveness log with the CLAUDE.md blob SHA. `pixi run claude-md-eval-one
-# <prompt_id>` — see docs/todo/CLAUDE_MD_EVAL_PLAN.md.
 # Agent overnight run (docs/todo/AGENT_OVERNIGHT_PLAN.md): build an isolated fixture project
 # (synthetic, or a crop of an analysed image), run the hand-tuned ceiling pipeline, score a run.
 # Run inside pixi so task subprocesses get this env's python. Spawn no agents.
@@ -338,61 +334,23 @@ agent-eval-ceiling = "julia --project=app scripts/agent_eval/ceiling.jl"
 agent-eval-score   = "python scripts/agent_eval/score.py"
 # Spawns ONE sandboxed `claude -p` (unless --dry-run) — cost capped by --budget-usd (default $10).
 agent-eval-run     = "python scripts/agent_eval/run_overnight.py"
-claude-md-eval-one = "python scripts/claude_md_eval/run_prompt.py"
 
-# Behavioural compliance eval — iterate the full prompt catalog under
-# `scripts/claude_md_eval/prompts/`, spawn N fresh `claude -p` agents per prompt (default
-# N=3), score each diff (+ optional tool-log signals via --output-format=stream-json), and
-# emit one `claude_md_eval_suite` summary to the effectiveness log. `pixi run claude-md-eval`
-# (see docs/todo/CLAUDE_MD_EVAL_PLAN.md).
-claude-md-eval = "python scripts/claude_md_eval/run_suite.py"
-
-# CLAUDE.md ablation — fires the suite twice, once with CLAUDE.md present in the throwaway
-# worktree, once with CLAUDE.md stripped, then computes per-prompt Δ (compliance + cost).
-# ~$11/pass at N=3 × 9 prompts × 2 arms (real API spend). D12: read at least one trace per
-# arm before quoting Δ anywhere — regex + tool-order graders can both pass on artefacts.
-claude-md-eval-ablation = "python scripts/claude_md_eval/run_ablation.py"
-
-# Regenerate `docs/ai-assist/CLAUDE_MD_EVAL.md` from the effectiveness log without spawning
-# any agents. `claude-md-eval` and `claude-md-eval-ablation` already re-render at the end of
-# each pass; this is the on-demand entry when you want to preview the artifact against
-# existing rows (e.g. after backfilling a `_suite` row by hand). Not auto-committed.
-claude-md-eval-rollup = "python scripts/claude_md_eval/render_rollup.py"
-
-# Diagnostic read of the eval log — per prompt: streak across full passes (closed / passing /
-# drift / failing / errored / new) + the trace dirs of the latest pass's failing runs, plus
-# cron status. Spawns no agents. `pixi run claude-md-eval-analyse`.
-claude-md-eval-analyse = "python scripts/claude_md_eval/analyse.py"
-
-# Run records — one JSON per pass in ~/.cecelia-effectiveness/eval-runs/, rendered to markdown.
-# `replay --date D` builds one from a pass already in the log and rescores its traces; `--mirror`
-# also writes docs/ai-assist/eval-runs/. Spawns no agents. Design:
-# docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md.
-claude-md-eval-record = "python scripts/claude_md_eval/record.py"
-
-# The supervised Monday pass: pin origin/main, reset the persistent worktree
-# (~/.cecelia-effectiveness/eval-worktree) to it, run the suite there, retry errored runs, judge
-# every failure with a tool-less `claude -p`, write the run record. `--session S` re-triages a pass
-# already in the log; `--dry-run` prints the record. Design: docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md.
-claude-md-eval-supervise = "python scripts/claude_md_eval/supervise.py"
-
-# Curation proposals for the newest run record (retire / add / setup), printed as JSON; the
-# supervised pass already puts them in the record. Never applies anything.
-claude-md-eval-curate = "python scripts/claude_md_eval/curate.py"
-# Dry run of the weekly bug sweep (Decision 18): unfixed fanout findings vs origin/main, one judge call.
-claude-md-eval-bugs = "python scripts/claude_md_eval/bugs.py"
-# Verify a record's bugs with read-only, sandboxed agents at its pinned SHA (Decision 20). Spends
-# up to --cap USD; prints verdicts, never writes the record. The supervised pass runs it itself.
-claude-md-eval-verify = "python scripts/claude_md_eval/verify.py"
-
-# Candidate probe moments from the owner's own Claude Code sessions (Decision 23): counts per signal,
-# no model calls. `--dump` writes excerpts to ~/.cecelia-effectiveness/transcript-pilot/ — local only.
-claude-md-eval-moments = "python scripts/claude_md_eval/session_moments.py"
-
-# The owner's review queue for the newest CLAUDE.md eval run record: decisions, proposals, spot
-# checks, the loop review. One key per answer; answers are append-only events in
-# ~/.cecelia-effectiveness/review.jsonl, applied by the next supervised pass. `--date D` for another.
-recital-review = "python scripts/claude_md_eval/review.py"
+# The weekly judge (docs/ai-assist/WEEKLY_JUDGE.md): pin origin/main, sweep the reviewer findings
+# nobody fixed, verify the open ones with sandboxed read-only agents, tally which CLAUDE.md rules
+# keep breaking, write the run record and open its PR. Real API spend, capped (~$14). The Monday
+# timer runs it; `-- --no-pr` writes the record only, `-- --dry-run` prints it.
+judge-weekly = "python scripts/judge/weekly.py"
+# The pieces on their own, printed, never written: the bug sweep (one judge call; `--no-judge` is
+# free), verify a record's bugs (`--date D`, spends up to `--cap`), the rule tally (one judge call).
+judge-bugs   = "python scripts/judge/bugs.py"
+judge-verify = "python scripts/judge/verify.py"
+judge-rules  = "python scripts/judge/rules.py"
+# Re-render a stored run record's markdown (`judge-record D [--mirror]`). Spawns nothing.
+judge-record = "python scripts/judge/record.py"
+# The owner's queue for the newest run record: the bugs a verify agent sent you (`decide`). One key
+# per answer (open / wont_fix); answers are append-only events in ~/.cecelia-effectiveness/review.jsonl,
+# applied by the next pass. `--date D` for another record.
+judge-review = "python scripts/judge/review.py"
 
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the

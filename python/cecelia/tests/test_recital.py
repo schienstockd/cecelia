@@ -374,8 +374,8 @@ class FindingsEmissionTest(unittest.TestCase):
         drifted = [
             ("- **python/cecelia/effectiveness/console.py:245-246** — `_Tally.add` bumps runs "
              "[**confirmed**]", "python/cecelia/effectiveness/console.py", 245),
-            ("- **docs/todo/CLAUDE_MD_EVAL_PLAN.md:11, :309**: the cadence text still says "
-             '"weekly Wednesday 00:00". [**confirmed**]', "docs/todo/CLAUDE_MD_EVAL_PLAN.md", 11),
+            ("- **docs/archive/CLAUDE_MD_EVAL_PLAN.md:11, :309**: the cadence text still says "
+             '"weekly Wednesday 00:00". [**confirmed**]', "docs/archive/CLAUDE_MD_EVAL_PLAN.md", 11),
             ("- **scripts/claude_md_eval/systemd/claude-md-eval.timer:8**: \"Pass takes ~15 min\" "
              "[**confirmed**]", "scripts/claude_md_eval/systemd/claude-md-eval.timer", 8),
             ("- **`python/cecelia/effectiveness/rollup.py:207`** — added `_pr_from_branch` "

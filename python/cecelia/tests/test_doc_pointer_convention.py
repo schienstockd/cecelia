@@ -80,13 +80,9 @@ _BACKTICK_ROOTED_PATH = re.compile(
 
 #: `docs/archive/` is explicitly not authoritative (`CLAUDE.md` -> *Where a note goes*), so a stale
 #: pointer inside an archived brief is a record of what was asked, not a defect to fix.
-#: `scripts/claude_md_eval/prompts/` holds task briefs handed to `claude -p` as inputs — their
-#: backticked paths (e.g. `python/cecelia/analysis_scratch/read_track_speed.py`) are aspirational
-#: (where the agent SHOULD write the file), not existing pointers to resolve. See
-#: `docs/todo/CLAUDE_MD_EVAL_PLAN.md` for the runner and rationale.
-#: `docs/ai-assist/eval-runs/` holds rendered eval run records: they quote agent diffs and traces as
-#: they were, so their paths go stale by design (`docs/todo/CLAUDE_MD_EVAL_SUPERVISOR_PLAN.md`).
-_SKIP_DIRS = ('docs/archive/', 'scripts/claude_md_eval/prompts/', 'docs/ai-assist/eval-runs/')
+#: `docs/ai-assist/judge-runs/` holds rendered weekly judge records: they quote reviewer findings as
+#: they were, so their paths go stale by design (`docs/ai-assist/WEEKLY_JUDGE.md`).
+_SKIP_DIRS = ('docs/archive/', 'docs/ai-assist/judge-runs/')
 #: This file itself: the docstring above has to spell out the pointer shapes being checked
 #: (`docs/todo/X_PLAN.md`, `CLAUDE.md` -> *Section*), and every one of them is a placeholder.
 #: It flagged itself the moment it was staged, which is at least evidence the matcher works.
@@ -172,12 +168,6 @@ class DocPointerConventionTest(unittest.TestCase):
                     # "`test-data/.../B.h5ad`") and build-artifact conventions ("`pluto/deps.so`")
                     # look like paths but never resolve. Skip explicit shapes.
                     if '...' in path or '<' in path or path.endswith(('X_PLAN.md', 'deps.so')):
-                        continue
-                    # `canary_probe.py` — CLAUDE.md § Compliance-eval canary cites this
-                    # path deliberately so a fresh agent can be *asked* to create it. The
-                    # file must NOT exist in the repo (that's what makes it a probe: a
-                    # real file would leak into ordinary greps). Skip.
-                    if path.endswith('/canary_probe.py'):
                         continue
                     full = os.path.join(_REPO, path)
                     if not os.path.exists(full):
