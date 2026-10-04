@@ -146,6 +146,28 @@ function register_cohort_metrics!(fun_name::AbstractString, keys::AbstractVector
     COHORT_METRICS[String(fun_name)] = String[String(k) for k in keys]
 end
 
+"""
+    cohort_parts(fun_name) -> Vector{String}
+
+For a composite task with no cohort metrics of its own (`segment.cellposeMeasure` runs
+`segment.cellpose` → `segment.measureLabels`), the steps that bank them: its QC is banked under those
+names. Empty for a task with its own metrics, a non-composite or an unknown name.
+"""
+function cohort_parts(fun_name::AbstractString)::Vector{String}
+    haskey(COHORT_METRICS, fun_name) && return String[]
+    task = try _task_from_fun_name(fun_name) catch; nothing end
+    task === nothing && return String[]
+    filter(s -> haskey(COHORT_METRICS, s), _composite_step_names(task))
+end
+
+# The no-metrics message, naming a composite's steps when it has them (the route's 400 and the
+# Julia API's error say the same thing).
+function cohort_no_metrics_message(fun_name::AbstractString)::String
+    parts = cohort_parts(fun_name)
+    isempty(parts) && return "No cohort metrics for fun '$fun_name'"
+    "No cohort metrics for fun '$fun_name' — its steps bank them; ask for $(join(parts, " or "))"
+end
+
 # Pure: robust outlier detection. Two regimes:
 #  • MAD > 0 — modified z-score (Iglewicz & Hoaglin): Mᵢ = 0.6745·(xᵢ − median)/MAD, flag |Mᵢ| ≥
 #    threshold. Robust: one bad image doesn't inflate the scale and mask itself, so a clear outlier
@@ -326,8 +348,8 @@ end
 
 function _cohort_keys(fun_name::AbstractString)
     ks = get(COHORT_METRICS, string(fun_name), nothing)
-    isnothing(ks) &&
-        error("No known cohort metrics for fun '$fun_name' (known: $(join(sort(collect(keys(COHORT_METRICS))), ", ")))")
+    isnothing(ks) && error(cohort_no_metrics_message(fun_name) *
+                           " (known: $(join(sort(collect(keys(COHORT_METRICS))), ", ")))")
     ks
 end
 
@@ -404,17 +426,22 @@ end
 # How a caller that doesn't know the suffix (the observer, the in-app button) gets per-label-set
 # cohorts — T-cells and B-cells as SEPARATE cohorts, which is correct (same value_name compared across
 # images). `run` restricts to one clustering run's value_names (see cohort_runs). Empty when the fun
-# banked nothing (or nothing under `run`) anywhere in the set.
-cohort_qc_for_all(set::CciaSet, fun_name::AbstractString;
-                  threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "")::Dict{String,Any} =
+# banked nothing (or nothing under `run`) anywhere in the set; an error for a composite, whose QC
+# is banked under its steps.
+function cohort_qc_for_all(set::CciaSet, fun_name::AbstractString;
+                           threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "")::Dict{String,Any}
+    isempty(cohort_parts(fun_name)) || error(cohort_no_metrics_message(fun_name))
     Dict{String,Any}(vn => cohort_qc_for(set, fun_name, vn; threshold = threshold)
                      for vn in _value_names_for_run(set, fun_name, cohort_value_names(set, fun_name), run))
+end
 
 # PERSIST variant of the above (the "check" action): writes each value_name's sidecar + per-image findings.
-cohort_qc_for_all!(set::CciaSet, fun_name::AbstractString;
-                   threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "")::Dict{String,Any} =
+function cohort_qc_for_all!(set::CciaSet, fun_name::AbstractString;
+                            threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "")::Dict{String,Any}
+    isempty(cohort_parts(fun_name)) || error(cohort_no_metrics_message(fun_name))
     Dict{String,Any}(vn => cohort_qc_for!(set, fun_name, vn; threshold = threshold)
                      for vn in _value_names_for_run(set, fun_name, cohort_value_names(set, fun_name), run))
+end
 
 read_cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
     (p = cohort_qc_path(set, fun_name, value_name); isfile(p) ? JSON3.read(read(p, String)) : nothing)

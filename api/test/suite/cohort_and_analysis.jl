@@ -38,6 +38,14 @@
         # GET validation
         @test _qc("")[1] == 400                                              # missing params
         @test _qc("$base&funName=bad.fun")[1] == 400                         # not a metric producer
+        # a composite names the steps its QC is banked under
+        st, body = _qc("$base&funName=segment.cellposeMeasure")
+        @test st == 400 && collect(JSON3.read(body).parts) == ["segment.cellpose", "segment.measureLabels"]
+        @test occursin("ask for segment.cellpose or segment.measureLabels", JSON3.read(body).error)
+        @test isempty(JSON3.read(_qc("$base&funName=bad.fun")[2]).parts)
+        @test_throws r"ask for segment.cellpose or segment.measureLabels" cohort_qc_for(s, "segment.cellposeMeasure")
+        @test_throws r"ask for segment.cellpose" cohort_qc_for_all(s, "segment.cellposeMeasure")
+        @test isempty(cohort_qc_for_all(s, "segment.cellpose"))              # banked nothing: empty, no error
         @test _qc("?projectUid=$(proj.uid)&setUid=nope&funName=segment.measureLabels")[1] == 404
         # GET with an explicit valueName → single doc; READ-ONLY (no sidecar)
         st, body = _qc("$base&funName=segment.measureLabels&valueName=default")

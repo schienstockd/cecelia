@@ -182,7 +182,7 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     INCLUDED images, into mean/SD + z-scored outliers.
 
     `set_uid` comes from get_project_info's `sets` / list_images' per-image set. `fun_name` must be a
-    metric producer (else the call errors AND lists the current valid funs). Check the fun of WHATEVER
+    metric producer (else the call errors AND lists the current valid funs; for a composite, the steps that bank its QC). Check the fun of WHATEVER
     task actually ran (from get_task_history) — e.g. if you just clustered, check clustPops/clustTracks,
     not segmentation. The metric producers:
       - "segment.cellpose"           → nCells

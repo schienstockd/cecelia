@@ -532,6 +532,13 @@ function api_tasks_history(req::HTTP.Request)
     200, JSON3.write((; projectUid=project_uid, count=length(rows), history=rows))
 end
 
+# The 400 for a fun with no cohort metrics. A composite's QC is banked under its steps, so the
+# reply names them rather than leaving the caller to guess.
+function _no_cohort_metrics(fun_name::AbstractString)
+    400, JSON3.write((; error = cohort_no_metrics_message(fun_name), parts = cohort_parts(fun_name),
+                       known = sort(collect(keys(COHORT_METRICS)))))
+end
+
 # GET /api/qc/cohort?projectUid&setUid&funName[&valueName][&threshold]
 # Recompute the cohort QC summary for one (task, output) across a set's included images and return
 # it (also writes the sidecar). `threshold` is the robust modified-z cutoff (default 3.5). Feeds the
@@ -542,9 +549,7 @@ function api_qc_cohort(req::HTTP.Request)
     fun_name    = get(q, "funName", "")
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
-    haskey(COHORT_METRICS, fun_name) ||
-        return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
-                                   known = sort(collect(keys(COHORT_METRICS)))))
+    haskey(COHORT_METRICS, fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = get(q, "valueName", "")
     run_param = get(q, "run", "")   # clustering: restrict to one run's value_names (see cohort_runs)
     thr = something(tryparse(Float64, get(q, "threshold", "")), Cecelia._COHORT_MODZ_THRESHOLD)
@@ -741,9 +746,7 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     fun_name    = _wstr(body, :funName)
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
-    haskey(COHORT_METRICS, fun_name) ||
-        return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
-                                   known = sort(collect(keys(COHORT_METRICS)))))
+    haskey(COHORT_METRICS, fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = _wstr(body, :valueName)
     run_param = _wstr(body, :run)   # clustering: check only this run's value_names (see cohort_runs)
     tv  = get(body, :threshold, nothing)
