@@ -41,7 +41,8 @@ _BUGS_HOW_TO = (
     "its *Live once* names), `decide` waits for the owner's answer; an *Owner's answer* overrides the "
     "agent's recommendation. "
     "The next pass checks each one again and marks the fixed ones `gone`. "
-    "A bug that isn't worth fixing: answer it `wont_fix` with `pixi run judge-review`. "
+    "`pixi run judge-review` walks these one at a time and can open a briefed fix session for each, "
+    "or answer `wont_fix` for a bug that isn't worth fixing. "
     "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
     "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
 _RULES_HOW_TO = (
