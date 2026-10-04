@@ -49,6 +49,7 @@ _review = _load_sibling("review")
 _bugs = _load_sibling("bugs")
 _verify = _load_sibling("verify")
 _rules = _load_sibling("rules")
+_judge = _load_sibling("judge")
 
 
 class JudgeRunError(RuntimeError):
@@ -158,7 +159,8 @@ def _pr_body(record: dict) -> str:
     props = record["proposals"]
     lines += ["", f"**Rules: {len(props)} proposal(s).**" if props else "**Rules:** nothing broken in enough sessions."]
     lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in props]
-    lines += ["", f"- Spend: {_record.spend_line(record['run']['spend'])}", "", _PR_FOOTER]
+    lines += ["", f"- Tokens: {_record.tokens_line(record['run']['spend'])}",
+              f"- Spend (list price): {_record.spend_line(record['run']['spend'])}", "", _PR_FOOTER]
     return "\n".join(lines) + "\n"
 
 
@@ -230,14 +232,21 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     previous = history[-1] if history else None
     events = list(read_events())
     state["stage"] = "bugs"
+    sweep_tokens: dict = {}
     bugs, sweep_usd = _bugs.sweep(events, date=date, sha=sha, previous=previous, judge=bug_judge,
-                                  merged_prs=merged_prs)
+                                  merged_prs=merged_prs, meter=sweep_tokens)
     state["stage"] = "verify"
     bugs, verified = _verify.verify(bugs, date=date, sha=sha, agent=verifier)
     state["stage"] = "rules"
-    rows, proposals, bins, rules_usd = _rules.propose(events, date=date, assign=assign)
+    rules_tokens: dict = {}
+    rows, proposals, bins, rules_usd = _rules.propose(events, date=date, assign=assign, meter=rules_tokens)
+    steps = {"sweep": sweep_tokens, "verify": verified.get("tokens") or {}, "rules": rules_tokens}
+    total: dict = {}
+    for t in steps.values():
+        _judge.add_tokens(total, t)
     spend = {"sweep_usd": round(sweep_usd, 4), "verify_usd": verified["usd"], "rules_usd": round(rules_usd, 4),
              "total_usd": round(sweep_usd + verified["usd"] + rules_usd, 4), "verify": verified,
+             "tokens": {**steps, "total": total},
              "finding_bins": bins}
     record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend)
     record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS)
@@ -288,8 +297,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         path = _record.write(record, force=True)[0]   # a rerun the same day replaces that day's record
         n = sum(b["status"] == "open" for b in record["bugs"])
-        print(f"{record['date']}: {n} open bug(s), {len(record['proposals'])} rule proposal(s), "
-              f"{_record.spend_line(record['run']['spend'])}\n  wrote {path}")
+        print(f"{record['date']}: {n} open bug(s), {len(record['proposals'])} rule proposal(s)\n"
+              f"  tokens: {_record.tokens_line(record['run']['spend'])}\n"
+              f"  spend (list price): {_record.spend_line(record['run']['spend'])}\n  wrote {path}")
         if not args.no_pr:
             state["stage"] = "publish"
             print(f"  PR {publish(record, worktree=args.worktree or default_worktree())}")

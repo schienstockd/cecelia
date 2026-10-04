@@ -49,6 +49,7 @@ def _load_sibling(name: str):
 
 
 _record = _load_sibling("record")
+_judge = _load_sibling("judge")
 
 VERDICTS = ("fix", "decide", "guard", "dismiss")
 #: Most bugs one agent is given; a bigger group is split.
@@ -144,8 +145,8 @@ def prompt_for(group: _t.Sequence[dict]) -> str:
 
 
 def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
-                  budget_usd: float = GROUP_USD, timeout: float = TIMEOUT_SEC) -> tuple[dict, float]:
-    """One sandboxed, read-only `claude -p` in a detached worktree at `sha`. (answer, cost)."""
+                  budget_usd: float = GROUP_USD, timeout: float = TIMEOUT_SEC) -> tuple[dict, float, dict]:
+    """One sandboxed, read-only `claude -p` in a detached worktree at `sha`. (answer, cost, tokens)."""
     claude = resolve_claude_bin()
     if not claude:
         raise VerifyError("claude CLI not on PATH")
@@ -171,7 +172,7 @@ def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
     if proc.returncode != 0 or out.get("is_error") or not isinstance(answer, dict):
         raise VerifyError(f"verify agent failed (exit {proc.returncode}, ${cost:.2f}): "
                           f"{(proc.stderr or proc.stdout or '')[-400:]}")
-    return answer, cost
+    return answer, cost, _judge.tokens(out)
 
 
 def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
@@ -186,13 +187,14 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
     run = agent or (lambda p: default_agent(p, sha=sha, budget_usd=group_usd))
     todo = groups(eligible(bugs))
     verdicts: dict[str, dict] = {}
-    spent, ran, failed, waiting, costs = 0.0, 0, 0, 0, []
+    spent, ran, failed, waiting, costs, meter = 0.0, 0, 0, 0, [], {}
     for g in todo:
         if spent + group_usd > cap_usd:
             waiting += len(g)
             continue
         try:
-            answer, cost = run(prompt_for(g))
+            answer, cost, used = _judge.unpack(run(prompt_for(g)))
+            _judge.add_tokens(meter, used)
         except VerifyError as e:
             print(f"verify: {e}", file=sys.stderr)
             failed += len(g)
@@ -215,7 +217,7 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
         else:
             out.append({**b, "verify": v})
     summary = {"groups": ran, "verified": len(verdicts), "failed": failed, "waiting": waiting,
-               "usd": round(spent, 4), "group_usd": costs, "precision": precision(out)}
+               "usd": round(spent, 4), "group_usd": costs, "tokens": meter, "precision": precision(out)}
     return out, summary
 
 

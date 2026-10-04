@@ -225,7 +225,7 @@ def default_merged_prs(since: str, repo: pathlib.Path = _REPO) -> list[dict]:
     return prs or []
 
 
-def default_judge(prompt: str) -> tuple[dict, float]:
+def default_judge(prompt: str) -> tuple[dict, float, dict]:
     return _judge.call_judge(prompt, JUDGE_SCHEMA, budget_usd=CALL_USD)
 
 
@@ -242,7 +242,7 @@ def _opened(b: dict, date: str) -> str:
 def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | None,
           judge: _t.Callable[[str], tuple[dict, float]] | None = None, no_judge: bool = False,
           merged_prs: _t.Callable[[str], list[dict]] | None = None,
-          repo: pathlib.Path = _REPO) -> tuple[list[dict], float]:
+          repo: pathlib.Path = _REPO, meter: dict | None = None) -> tuple[list[dict], float]:
     """This pass's `bugs` list and the judge's cost.
 
     Carried: the previous record's `open` / `unjudged` / `unmerged` bugs. New: `candidates` since
@@ -285,7 +285,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
             + f"CODE:\n{b['code']}" for b in ask)
         try:
-            answer, cost = (judge or default_judge)(prompt)
+            answer, cost, used = _judge.unpack((judge or default_judge)(prompt))
+            _judge.add_tokens(meter, used)
         except _judge.JudgeError as e:   # the pass still records; these wait for the next one
             print(f"bug sweep: judge failed ({e})", file=sys.stderr)
     verdicts = {a["key"]: a for a in answer.get("items", [])}

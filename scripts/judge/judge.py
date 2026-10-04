@@ -25,9 +25,35 @@ class JudgeError(RuntimeError):
     pass
 
 
+#: The token counts the CLI reports, under the names the record uses.
+_USAGE_KEYS = {"input": "input_tokens", "cache_write": "cache_creation_input_tokens",
+               "cache_read": "cache_read_input_tokens", "output": "output_tokens"}
+
+
+def tokens(out: dict) -> dict[str, int]:
+    """Token counts from one `claude -p --output-format json` result; zeros when it reported none."""
+    usage = out.get("usage") or {}
+    return {k: int(usage.get(src) or 0) for k, src in _USAGE_KEYS.items()}
+
+
+def add_tokens(meter: dict | None, counts: dict | None) -> None:
+    """Add one call's counts into `meter`, in place. A caller that passes no meter keeps nothing."""
+    if meter is None:
+        return
+    for k in _USAGE_KEYS:
+        meter[k] = meter.get(k, 0) + int((counts or {}).get(k, 0))
+
+
+def unpack(result: tuple) -> tuple[dict, float, dict]:
+    """(answer, cost, tokens) from a judge or agent callable. An injected one may return just
+    (answer, cost); its tokens are zero."""
+    answer, cost, *rest = result
+    return answer, cost, (rest[0] if rest else {})
+
+
 def call_judge(prompt: str, schema: dict, *, budget_usd: float = CALL_USD,
-               timeout: float = TIMEOUT_SEC) -> tuple[dict, float]:
-    """Returns (structured answer, cost in USD). Raises `JudgeError` on any failure."""
+               timeout: float = TIMEOUT_SEC) -> tuple[dict, float, dict]:
+    """Returns (structured answer, cost in USD, token counts). Raises `JudgeError` on any failure."""
     claude = resolve_claude_bin()
     if not claude:
         raise JudgeError("claude CLI not on PATH")
@@ -47,4 +73,4 @@ def call_judge(prompt: str, schema: dict, *, budget_usd: float = CALL_USD,
     answer = out.get("structured_output")
     if proc.returncode != 0 or out.get("is_error") or not isinstance(answer, dict):
         raise JudgeError(f"judge failed (exit {proc.returncode}): {(proc.stderr or proc.stdout or '')[-400:]}")
-    return answer, float(out.get("total_cost_usd") or 0.0)
+    return answer, float(out.get("total_cost_usd") or 0.0), tokens(out)

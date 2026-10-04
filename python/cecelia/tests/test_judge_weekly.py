@@ -36,14 +36,17 @@ class _WeeklyFixture(_Fixture):
         self.rec = self.w._record   # the module the pass writes with
         self.swept = {}
 
-        def sweep(events, *, date, sha, previous, judge=None, merged_prs=None):
+        def sweep(events, *, date, sha, previous, judge=None, merged_prs=None, meter=None):
             self.swept.update(previous=previous, sha=sha)
+            meter.update(input=10, cache_write=0, cache_read=2000, output=300)
             return [_bug("B1"), _bug("B2", verify={"verdict": "decide", "date": date})], 0.4
 
         def verify(bugs, *, date, sha, agent=None):
-            return bugs, {"groups": 1, "verified": 1, "failed": 0, "waiting": 0, "usd": 2.0}
+            return bugs, {"groups": 1, "verified": 1, "failed": 0, "waiting": 0, "usd": 2.0,
+                          "tokens": {"input": 5, "cache_write": 1000, "cache_read": 50000, "output": 4000}}
 
-        def propose(events, *, date, assign=None):
+        def propose(events, *, date, assign=None, meter=None):
+            meter.update(input=1, output=200)
             rows = [{"rule": "CLAUDE.md → *Testing*", "findings": 4, "sessions": 3, "agent_made": 4, "legacy": 0}]
             props = [{"id": "P1", "kind": "tighten", "rule": rows[0]["rule"], "summary": "s", "sources": ["a"]}]
             return rows, props, {"agent_made": 4, "legacy": 0, "unknown": 0}, 0.5
@@ -67,6 +70,14 @@ class WeeklyTest(_WeeklyFixture):
         self.assertEqual(record["queue"], [{"kind": "bug", "ref": "B2"}])
         self.assertEqual(record["proposals"][0]["kind"], "tighten")
         self.assertEqual((record["run"]["rules_window_days"], record["run"]["min_sessions"]), (30, 3))
+
+    def test_tokens_are_kept_per_step_and_summed(self):
+        tok = self.run_pass()["run"]["spend"]["tokens"]
+        self.assertEqual(tok["total"], {"input": 16, "cache_write": 1000, "cache_read": 52000, "output": 4500})
+        self.assertEqual(tok["rules"], {"input": 1, "output": 200})
+        md = self.rec.render_markdown(self.run_pass())
+        self.assertIn("| Tokens | 4.5k out · 16 in (+ cache read 52.0k, cache write 1.0k) — sweep 2.3k · "
+                      "verify 55.0k · rules 201 |", md)
 
     def test_owner_answers_go_into_the_previous_record_before_its_bugs_are_carried(self):
         prev = self.build("2026-09-28", bugs=[_bug("B1")])
