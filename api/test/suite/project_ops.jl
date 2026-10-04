@@ -148,6 +148,12 @@ end
         for bad in ("../../evil", "a/b", "..", ".hidden")
             @test create(tmpl(bad, [node("n1")], []))[1] == 400
         end
+        # the 400 offers a name that passes the guard
+        st, body = create(tmpl("Drift + segment (P14 / OTI)", [node("n1")], []))
+        @test st == 400 && JSON3.read(body).suggestion == "Drift segment P14 OTI"
+        @test occursin("e.g. 'Drift segment P14 OTI'", JSON3.read(body).error)
+        @test JSON3.read(create(tmpl("../../evil", [node("n1")], []))[2]).suggestion == "evil"
+        @test JSON3.read(create(tmpl("+++", [node("n1")], []))[2]).suggestion == ""
 
         # happy path
         st, body = create(tmpl("pipeline", [node("n1"), node("n2")],
