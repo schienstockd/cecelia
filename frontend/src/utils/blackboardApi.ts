@@ -33,6 +33,56 @@ function parseOutcome(v: unknown): BlackboardOutcome | undefined {
   return { verdict, note, taggedAt: typeof o.taggedAt === 'string' ? o.taggedAt : '' }
 }
 
+/** AGENT_RUN_REVIEW_PLAN — an unattended agent run's record. `agentRun` is set once by the run's
+ *  harness; `sectionIds` names its decision sections (`d01`…) so the list can show "3 / 15 marked"
+ *  without reading the body. */
+export interface AgentRun {
+  copyProjectUid: string
+  copyProjectName?: string
+  startedAt?: string
+  images: { sourceImageUid: string; imageUid: string }[]
+  sectionIds: string[]
+}
+function parseAgentRun(v: unknown): AgentRun | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  const o = v as Record<string, unknown>
+  const images = Array.isArray(o.images) ? (o.images as unknown[]).flatMap(x => {
+    const r = x as Record<string, unknown> | null
+    return r && typeof r.sourceImageUid === 'string'
+      ? [{ sourceImageUid: r.sourceImageUid, imageUid: typeof r.imageUid === 'string' ? r.imageUid : '' }] : []
+  }) : []
+  return {
+    copyProjectUid: typeof o.copyProjectUid === 'string' ? o.copyProjectUid : '',
+    ...(typeof o.copyProjectName === 'string' ? { copyProjectName: o.copyProjectName } : {}),
+    ...(typeof o.startedAt === 'string' ? { startedAt: o.startedAt } : {}),
+    images,
+    sectionIds: Array.isArray(o.sectionIds) ? (o.sectionIds as unknown[]).filter((x): x is string => typeof x === 'string') : [],
+  }
+}
+
+/** A verdict on ONE section of an entry (Decision 7). `by.via === 'claude'` marks a proposal from
+ *  a chat session; only a person's (`via: 'app'`) counts in a run's score. */
+export type SectionVerdict = 'good' | 'bad' | 'unsure'
+export const SECTION_VERDICTS: readonly SectionVerdict[] = ['good', 'bad', 'unsure'] as const
+export interface SectionOutcome {
+  verdict: SectionVerdict
+  note: string
+  by?: AuthorStamp
+  at: string
+}
+function parseSectionOutcomes(v: unknown): Record<string, SectionOutcome> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  const out: Record<string, SectionOutcome> = {}
+  for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
+    const o = raw as Record<string, unknown> | null
+    if (!o || !SECTION_VERDICTS.includes(o.verdict as SectionVerdict)) continue
+    const by = parseAuthorStamp(o.by)
+    out[k] = { verdict: o.verdict as SectionVerdict, note: typeof o.note === 'string' ? o.note : '',
+               at: typeof o.at === 'string' ? o.at : '', ...(by ? { by } : {}) }
+  }
+  return out
+}
+
 /** One row in the entry list — the shape returned by `GET /api/blackboard`. */
 export interface BlackboardEntrySummary {
   entryId: string
@@ -42,6 +92,8 @@ export interface BlackboardEntrySummary {
   attachmentsCount: number
   status: BlackboardStatus       // D3 — backfilled to "open" if missing on disk
   outcome?: BlackboardOutcome    // D11 — absent when untagged
+  agentRun?: AgentRun            // an agent run's record
+  sectionsMarked?: number        // on a run record: sections a person has marked
 }
 
 /** One full entry — the shape returned by `GET /api/blackboard/entry`. `content` is the LIVE entry.md
@@ -63,6 +115,8 @@ export interface BlackboardEntry {
   kiwiRefs?: Record<string, unknown>
   createdBy?: AuthorStamp        // absent on entries from before stamps, and on the project profile
   updatedBy?: AuthorStamp
+  agentRun?: AgentRun
+  sectionOutcomes?: Record<string, SectionOutcome>
 }
 
 interface ListResp    { entries?: unknown[] }
@@ -74,6 +128,7 @@ function parseSummary(raw: unknown): BlackboardEntrySummary | null {
   const entryId = typeof r.entryId === 'string' ? r.entryId : ''
   if (!entryId) return null
   const outcome = parseOutcome(r.outcome)
+  const agentRun = parseAgentRun(r.agentRun)
   return {
     entryId,
     title:            typeof r.title === 'string' ? r.title : '',
@@ -82,6 +137,7 @@ function parseSummary(raw: unknown): BlackboardEntrySummary | null {
     attachmentsCount: typeof r.attachmentsCount === 'number' ? r.attachmentsCount : 0,
     status:           parseStatus(r.status),
     ...(outcome ? { outcome } : {}),
+    ...(agentRun ? { agentRun, sectionsMarked: typeof r.sectionsMarked === 'number' ? r.sectionsMarked : 0 } : {}),
   }
 }
 
@@ -101,6 +157,8 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
     ? r.kiwiRefs as Record<string, unknown> : undefined
   const createdBy = parseAuthorStamp(r.createdBy)
   const updatedBy = parseAuthorStamp(r.updatedBy)
+  const agentRun = parseAgentRun(r.agentRun)
+  const sectionOutcomes = parseSectionOutcomes(r.sectionOutcomes)
   return {
     entryId,
     title:     typeof r.title === 'string' ? r.title : '',
@@ -114,6 +172,8 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
     ...(kiwiRefs ? { kiwiRefs } : {}),
     ...(createdBy ? { createdBy } : {}),
     ...(updatedBy ? { updatedBy } : {}),
+    ...(agentRun ? { agentRun } : {}),
+    ...(sectionOutcomes ? { sectionOutcomes } : {}),
   }
 }
 
@@ -228,3 +288,14 @@ export async function setBlackboardOutcome(
   return r ? (parseOutcome(r.outcome) ?? null) : null
 }
 
+
+/** POST /api/blackboard/section-outcome — a verdict on one section; `verdict: ''` clears it. Note
+ *  required for `bad`. Returns true on success. Metadata only; no snapshot. */
+export async function setSectionOutcome(
+  projectUid: string, entryId: string, sectionId: string, verdict: SectionVerdict | '', note: string,
+  apiBase = '',
+): Promise<boolean> {
+  const r = await postJson(`${apiBase}/api/blackboard/section-outcome`,
+    { projectUid, entryId, sectionId, verdict, note })
+  return r?.ok === true
+}

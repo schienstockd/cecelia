@@ -359,6 +359,14 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
         end
         meta["kiwiRefs"] = kr_out
     end
+    # Fields owned by their own route (`blackboard_run_review.jl`: an agent run's marker + per-section
+    # verdicts) ride through every other write unchanged, so no mutation site has to thread them.
+    prev = _read_bb_meta(uid, id)
+    if prev !== nothing
+        for k in _BB_PASSTHROUGH_KEYS
+            haskey(prev, k) && (meta[k] = prev[k])
+        end
+    end
     write_json_atomic(joinpath(dir, "meta.json"), meta)
 end
 # KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2. Cap the sidecar so a runaway plotSummary can't blow
@@ -529,6 +537,7 @@ function api_blackboard_list(req::HTTP.Request)
         # pass score the whole project without a per-entry fetch.
         fp = _fingerprint_from_meta(meta)
         fp !== nothing && (row["fingerprint"] = fp)
+        _bb_put_run_review!(row, meta; list_row = true)
         _bb_put_authors!(row, meta)
         push!(entries, row)
     end
@@ -595,6 +604,7 @@ function api_blackboard_entry_get(req::HTTP.Request)
     # discipline — a normal Blackboard entry has none; a saved Kiwi turn carries a map.
     kr = _kiwi_refs_from_meta(meta)
     kr !== nothing && (entry_out["kiwiRefs"] = kr)
+    _bb_put_run_review!(entry_out, meta)
     _bb_put_authors!(entry_out, meta)
     200, JSON3.write((; entry = entry_out))
 end
@@ -855,7 +865,7 @@ end
 """
     POST /api/blackboard/create
 
-Body: `{ projectUid, title, content, attachments?: [captureId, ...] }`
+Body: `{ projectUid, title, content, attachments?: [captureId, ...], status?, fingerprint?, kiwiRefs?, agentRun? }`
 Reply: `{ ok:true, entryId }`
 
 Creates `<proj>/blackboard/<entryId>/{entry.md, meta.json}` — no snapshot on create (current = 0
@@ -910,6 +920,10 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
         kiwi_refs = kr_in
     end
 
+    # Optional agentRun marker (AGENT_RUN_REVIEW_PLAN): set once by a run's harness.
+    agent_run = _agent_run_from_body(get(body, :agentRun, nothing))
+    agent_run isa Tuple && return agent_run
+
     dir = _bb_entry_dir(uid, id); mkpath(dir)
     write_atomic(joinpath(dir, "entry.md")) do io
         write(io, content)
@@ -918,6 +932,7 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
         title = title, createdAt = ts, updatedAt = ts, current = 0,
         attachments = attachments, status = status, fingerprint = fingerprint,
         kiwiRefs = kiwi_refs, createdBy = author_stamp())
+    agent_run === nothing || _set_bb_meta_field!(uid, id, "agentRun", agent_run)
 
     reg = _read_bb_registry(uid)
     reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)

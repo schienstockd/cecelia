@@ -956,7 +956,8 @@ end
 # `overlay_legend_content` the legacy route did.
 #
 # Body: `{projectUid, imageUid, colourBy?, overlayPops?, colourOverrides?}`
-#   overlayPops = `[{valueName, popType, path}, …]` parsed from the snapshot's overlay layer names.
+#   overlayPops = `[{valueName, popType, path, colour?}, …]` parsed from the snapshot's overlay layer
+#   names; `colour` (track layers) = what the tails are drawn in, null when by track id / speed.
 # Response: `{ok, colourBy, populations}` — same shape captureViewLegend consumes.
 function api_viewer_overlay_legend(body_bytes::Vector{UInt8})
     data = _parse_body(body_bytes)

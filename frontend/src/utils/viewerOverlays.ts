@@ -24,7 +24,8 @@ import { channelLegend, type LegendItem } from './viewLegend'
 // strip (ImageStripView) and the single-record movie card go through this, so their legends match.
 export interface CapturedViewLegend {
   channels: LegendItem[]
-  populations: { name: string; colour: string }[]
+  /** `colour` null = no one swatch is true (tracks coloured by track id or speed). */
+  populations: { name: string; colour: string | null }[]
   colourBy?: { column: string; items: { value: string; colour: string; label: string }[] }
 }
 export async function captureViewLegend(
@@ -35,8 +36,9 @@ export async function captureViewLegend(
   const layers = (snapshot?.layers ?? {}) as Record<string, { colormap?: string; visible?: boolean }>
   const channels = channelLegend(layers)
   const overlayPops = parseOverlays(snapshot?.layers as Record<string, unknown>)
-    .map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
-  let populations: { name: string; colour: string }[] = []
+    .map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path,
+                 ...(o.colour !== undefined ? { colour: o.colour } : {}) }))
+  let populations: CapturedViewLegend['populations'] = []
   let cby: CapturedViewLegend['colourBy'] | undefined
   const res = await fetch('/api/viewer/overlay-legend', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -489,7 +491,7 @@ export const TRACK_COLOR_MODES: readonly TrackColorMode[] =
  *  speed or nothing has speed. */
 export interface MultiTrackResult {
   segments: SegmentBuffer
-  sources: { vn: string; hex: string; count: number }[]
+  sources: { vn: string; hex: string; count: number; drawn: string | null }[]
   speedRange: [number, number] | null
 }
 
@@ -641,6 +643,11 @@ export function buildMultiTrackBuffer(
     // is only consulted when the mode UI actually shows it.
     hex: p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff'),
     count: perSource[i],
+    // The ONE colour this source's tails ARE drawn in — what a captured legend may name. Null when
+    // coloured by track or speed: no single swatch is true then.
+    drawn: mode === 'solid' ? (p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff'))
+         : mode === 'pop' ? (p.popColour ?? (palette.length ? palette[i % palette.length] : '#ffffff'))
+         : null,
   })).filter(s => s.count > 0)
 
   return {

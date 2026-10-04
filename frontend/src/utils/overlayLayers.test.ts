@@ -20,6 +20,16 @@ describe('parseOverlays', () => {
     expect(ovs).toContainEqual({ popType: 'clust', valueName: 'B', path: '/0', isTrack: false })
     expect(ovs).toHaveLength(5)                               // channels + labels excluded
   })
+  it("carries a track layer's captured colour — null too (by track / speed) — and only a track's", () => {
+    const ovs = parseOverlays({
+      '(track) (A) Tracks /_tracked': { visible: true, colour: '#ff8800' },
+      '(track) (B) Tracks /_tracked': { visible: true, colour: null },
+      '(flow) (A) /tcells': { visible: true, colour: '#000000' },
+    })
+    expect(ovs[0].colour).toBe('#ff8800')
+    expect(ovs[1].colour).toBeNull()
+    expect('colour' in ovs[2]).toBe(false)
+  })
   it('is safe on empty / missing input', () => {
     expect(parseOverlays(null)).toEqual([])
     expect(parseOverlays({})).toEqual([])

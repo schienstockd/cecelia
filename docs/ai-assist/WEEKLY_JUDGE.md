@@ -32,11 +32,17 @@ test whether an agent can actually use the framework.
    - a function that no longer exists is `gone`;
    - findings on one file + function are merged into one bug.
 
+   Errors the autonomous runs hit (`agent_run_finding`, one per error key, counting the runs that hit
+   it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks
+   above. One without has no code to excerpt: it is `open` straight away and goes to verify. A
+   `wont_fix` one is carried, so a run that hits it again doesn't raise it as new.
+
    Then one tool-less judge call reads the excerpts as data and marks each bug `live_bug` / `gone` /
    `not_a_bug`. Commits pushed to a PR's branch after it merged are reported as `stranded`.
 4. **Verify** (`verify.py`). Each open bug that no agent has checked yet goes to a read-only
    `claude -p` agent in a sandboxed checkout at the SHA (`agent_sandbox.py`: no network, `~` is
-   write-denied, no MCP). Bugs that share a branch or a file go to the same agent. The verdict is
+   write-denied, no MCP). Bugs that share a branch or a file go to the same agent, and so do one
+   run's errors. The verdict is
    one of:
    - `fix`: the bug is live;
    - `guard`: it can't happen today, and the agent names what would make it live;

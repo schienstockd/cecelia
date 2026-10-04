@@ -27,18 +27,23 @@ import { usePanelResize } from '../composables/usePanelResize'
 import {
   listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
-  setBlackboardStatus, setBlackboardOutcome,
+  setBlackboardStatus, setBlackboardOutcome, setSectionOutcome,
   type BlackboardEntrySummary, type BlackboardEntry,
-  type BlackboardStatus, type BlackboardVerdict,
+  type BlackboardStatus, type BlackboardVerdict, type SectionVerdict,
 } from '../utils/blackboardApi'
 import {
   filterEntries, PROFILE_ENTRY_ID,
-  type StatusChoice, type OutcomeChoice,
+  type StatusChoice, type OutcomeChoice, type KindChoice,
 } from '../utils/blackboardFilters'
-import { renderBlackboardMarkdown, mermaidBlocks } from '../utils/blackboardMd'
+import {
+  renderBlackboardMarkdown, mermaidBlocks, splitEntrySections, appendMissSection, type RunStep,
+} from '../utils/blackboardMd'
+import SectionVerdictControl from '../components/blackboard/SectionVerdict.vue'
+import MissedDecisionForm from '../components/blackboard/MissedDecisionForm.vue'
+import AttachmentGallery from '../components/blackboard/AttachmentGallery.vue'
 import { formatAgo } from '../utils/formatAgo'
 import { authorLabel } from '../utils/authorStamp'
-import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
+import { fetchCaptureEnvelope, CAPTURE_ID_RE, type CaptureEnvelope } from '../utils/kiwiCaptures'
 import { useRoute } from 'vue-router'
 import { useCaptureFocus } from '../composables/useCaptureFocus'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
@@ -94,6 +99,13 @@ const OUTCOME_FILTER_OPTS = [
   { value: 'good',     label: 'Good', icon: 'pi pi-thumbs-up' },
   { value: 'bad',      label: 'Bad',  icon: 'pi pi-thumbs-down' },
 ]
+// Agent run records (AGENT_RUN_REVIEW_PLAN) vs the rest.
+const KIND_FILTER_OPTS = [
+  { value: 'all',   label: 'All' },
+  { value: 'runs',  label: 'Agent runs', icon: 'pi pi-sparkles' },
+  { value: 'notes', label: 'Notes' },
+]
+const KIND_FILTER_KEY    = 'cc.blackboard.kindFilter'
 const STATUS_FILTER_KEY  = 'cc.blackboard.statusFilter'
 const OUTCOME_FILTER_KEY = 'cc.blackboard.outcomeFilter'
 function loadPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -106,12 +118,15 @@ const statusFilter  = ref<StatusChoice>(loadPref<StatusChoice>(
   STATUS_FILTER_KEY, ['all', 'open', 'resolved', 'parked'], 'all'))
 const outcomeFilter = ref<OutcomeChoice>(loadPref<OutcomeChoice>(
   OUTCOME_FILTER_KEY, ['all', 'untagged', 'good', 'bad'], 'all'))
+const kindFilter = ref<KindChoice>(loadPref<KindChoice>(KIND_FILTER_KEY, ['all', 'runs', 'notes'], 'all'))
+watch(kindFilter, v => { try { profileStorage.setItem(KIND_FILTER_KEY, v) } catch { /* private mode */ } })
 watch(statusFilter,  v => { try { profileStorage.setItem(STATUS_FILTER_KEY,  v) } catch { /* private mode */ } })
 watch(outcomeFilter, v => { try { profileStorage.setItem(OUTCOME_FILTER_KEY, v) } catch { /* private mode */ } })
 
 // Filtered rows that actually feed the SelectionTable. `filterEntries` keeps the profile row
 // visible regardless of the filters (Decision 2 — it's the pinned "what is this project" record).
-const filteredEntries = computed(() => filterEntries(entries.value, statusFilter.value, outcomeFilter.value))
+const filteredEntries = computed(() =>
+  filterEntries(entries.value, statusFilter.value, outcomeFilter.value, kindFilter.value))
 const filteredOutCount = computed(() => entries.value.length - filteredEntries.value.length)
 
 // ── Selected entry state ─────────────────────────────────────────────────────
@@ -211,6 +226,46 @@ const titleById = computed(() => {
   return m
 })
 const paneHtml = computed(() => renderBlackboardMarkdown(paneContent.value, titleById.value))
+
+// ── Agent run records — a verdict on each decision (AGENT_RUN_REVIEW_PLAN P2) ─────────────────
+// The live record renders part by part: each `### dNN ·` section gets its heading, a verdict control,
+// then its body. A history preview renders whole (verdicts describe the live entry).
+const paneParts = computed(() => {
+  if (!selected.value?.agentRun || viewingVersion.value !== null) return null
+  return splitEntrySections(paneContent.value).map((p, i) => {
+    if (p.kind === 'md') return { key: `md${i}`, id: '', pics: [] as string[], headHtml: '', html: renderBlackboardMarkdown(p.md, titleById.value) }
+    const nl = p.md.indexOf('\n')
+    const atts = selected.value?.attachments ?? []
+    // the pictures this decision cites by capture id, shown with it
+    const pics = [...p.md.matchAll(CAPTURE_ID_RE)].map(m => m[0]).filter(c => atts.includes(c))
+    return { key: p.id, id: p.id, pics,
+             headHtml: renderBlackboardMarkdown(nl < 0 ? p.md : p.md.slice(0, nl), titleById.value),
+             html: nl < 0 ? '' : renderBlackboardMarkdown(p.md.slice(nl + 1), titleById.value) }
+  })
+})
+const runImages = computed(() => selected.value?.agentRun?.images.map(i => i.sourceImageUid) ?? [])
+const savingSection = ref(false)
+async function onSectionSave(sectionId: string, verdict: SectionVerdict | '', note: string) {
+  if (savingSection.value || !selected.value || !projectUid.value) return
+  savingSection.value = true
+  try {
+    if (await setSectionOutcome(projectUid.value, selected.value.entryId, sectionId, verdict, note)) {
+      await loadEntry(selected.value.entryId)
+    }
+  } finally { savingSection.value = false }
+}
+async function onAddMiss(step: RunStep, image: string, text: string, note: string) {
+  if (savingSection.value || !selected.value || !projectUid.value) return
+  savingSection.value = true
+  const eid = selected.value.entryId
+  try {
+    const { md, id } = appendMissSection(selected.value.content, step, image, text)
+    if (await reviseBlackboardEntry(projectUid.value, eid, md) > 0) {
+      await setSectionOutcome(projectUid.value, eid, id, 'bad', note)
+      await loadEntry(eid)
+    }
+  } finally { savingSection.value = false }
+}
 const hasMermaid = computed(() => mermaidBlocks(paneContent.value).length > 0)
 
 // Click intercept for the wiki links the resolver produces — `<a href="#bb:<id>">…`. Bubbles from
@@ -257,7 +312,10 @@ async function loadAttachment(cid: string) {
 
 async function loadEntry(id: string, version?: number) {
   if (!projectUid.value || !id) { selected.value = null; return }
-  entryLoading.value = true
+  // Refreshing the entry already on screen (a verdict, a status flip, the WS echo) updates it in
+  // place: the "Loading…" swap would empty the pane and throw the reader back to the top.
+  const refresh = version === undefined && viewingVersion.value === null && selected.value?.entryId === id
+  if (!refresh) entryLoading.value = true
   try {
     if (version === undefined) {
       selected.value = await getBlackboardEntry(projectUid.value, id)
@@ -406,9 +464,18 @@ async function onDelete() {
 /** Open the capture in its source surface — the shared refocus path (`composables/useCaptureFocus`),
  *  the same one Kiwi's capture rows and claim chips use. */
 const { focusCapture: refocusCapture } = useCaptureFocus()
+// An agent run's evidence was rendered from a disposable copy — nothing to refocus in this project,
+// so it opens in the gallery instead.
+const galleryStart = ref<number | null>(null)
+const galleryItems = computed(() => (selected.value?.attachments ?? []).map(cid => {
+  const env = captureCache.value[cid]?.env
+  return { id: cid, src: env?.frame ?? '', caption: env?.notes ?? '' }
+}))
 function focusCapture(cid: string) {
   const slot = captureCache.value[cid]
-  if (slot?.env) refocusCapture(projectUid.value, slot.env)
+  if (!slot?.env) return
+  if (slot.env.surface === 'agent_run') galleryStart.value = selected.value?.attachments.indexOf(cid) ?? 0
+  else refocusCapture(projectUid.value, slot.env)
 }
 
 // Mermaid: dynamic-import only when the current pane contains ```mermaid fences (0 fences ⇒ no cost).
@@ -500,6 +567,11 @@ onUnmounted(() => { mermaidRenderSeq++ })
         <span class="bb-bar-spacer" />
         <!-- Filter chips (status + outcome). Profile row is always shown regardless. -->
         <ChipSelect variant="segmented"
+                    aria-label="Filter by kind"
+                    :options="KIND_FILTER_OPTS"
+                    :model-value="kindFilter"
+                    @update:modelValue="v => kindFilter = v as KindChoice" />
+        <ChipSelect variant="segmented"
                     aria-label="Filter by status"
                     :options="STATUS_FILTER_OPTS"
                     :model-value="statusFilter"
@@ -527,6 +599,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
               <span class="bb-list-title" :class="{ 'bb-list-title-profile': e.entryId === PROFILE_ENTRY_ID }">
                 <i v-if="e.entryId === PROFILE_ENTRY_ID" class="pi pi-thumbtack bb-list-pin"
                    v-tooltip.top="'Project profile — always at the top; describes what this project is'" />
+                <i v-if="e.agentRun" class="pi pi-sparkles bb-list-pin"
+                   v-tooltip.top="`Agent run — ${e.sectionsMarked ?? 0} of ${e.agentRun.sectionIds.length} decisions marked`" />
                 {{ e.title || '(untitled)' }}
               </span>
             </template>
@@ -711,6 +785,27 @@ onUnmounted(() => { mermaidRenderSeq++ })
             </div>
 
             <div v-if="entryLoading" class="cc-muted cc-fs-xs bb-pane-loading">Loading…</div>
+            <div v-else-if="paneParts" ref="paneRef" class="bb-body" @click="onPaneClick">
+              <template v-for="part in paneParts" :key="part.key">
+                <div v-if="!part.id" v-html="part.html" />
+                <div v-else class="bb-section"
+                     :class="`bb-section-${selected.sectionOutcomes?.[part.id]?.by?.via === 'claude'
+                       ? 'proposed' : (selected.sectionOutcomes?.[part.id]?.verdict ?? 'unmarked')}`">
+                  <div v-html="part.headHtml" />
+                  <SectionVerdictControl :outcome="selected.sectionOutcomes?.[part.id]" :busy="savingSection"
+                                         @save="(v, n) => onSectionSave(part.id, v, n)" />
+                  <div v-html="part.html" />
+                  <div v-if="part.pics.length" class="bb-attach-strip bb-section-pics">
+                    <button v-for="cid in part.pics" :key="cid" class="bb-attach-thumb bb-section-pic"
+                            @click="focusCapture(cid)" v-tooltip.top="'Click to enlarge'">
+                      <img v-if="captureCache[cid]?.thumb" :src="captureCache[cid].thumb" :alt="cid" />
+                      <span v-else class="bb-attach-fallback"><i class="pi pi-image" /></span>
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <MissedDecisionForm :images="runImages" :busy="savingSection" @add="onAddMiss" />
+            </div>
             <div v-else ref="paneRef" class="bb-body" v-html="paneHtml" @click="onPaneClick" />
 
             <div v-if="selected.attachments.length > 0" class="bb-attach">
@@ -719,7 +814,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
                 <button v-for="(cid, i) in selected.attachments" :key="cid"
                         class="bb-attach-thumb"
                         @click="focusCapture(cid)"
-                        v-tooltip.top="`capture ${i + 1} — ${cid} — click to focus the pop-out viewer + restore the annotation overlay`">
+                        v-tooltip.top="captureCache[cid]?.env?.surface === 'agent_run'
+                          ? `Picture ${i + 1} — click to enlarge` : `Capture ${i + 1} — click to show it in the viewer`">
                   <img v-if="captureCache[cid]?.thumb" :src="captureCache[cid].thumb" :alt="cid" />
                   <span v-else class="bb-attach-fallback"><i class="pi pi-image" /></span>
                   <span class="bb-attach-index cc-fs-2xs">{{ i + 1 }}</span>
@@ -748,6 +844,9 @@ onUnmounted(() => { mermaidRenderSeq++ })
               Pick an entry from the list, or click <strong>New entry</strong> to start one.
             </template>
           </div>
+
+          <AttachmentGallery v-if="galleryStart !== null" :items="galleryItems" :start="galleryStart"
+                             @close="galleryStart = null" />
         </section>
       </div>
     </template>
@@ -904,6 +1003,13 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-body :deep(ul), .bb-body :deep(ol) { margin: 0.4rem 0; padding-left: 1.4rem; }
 .bb-body :deep(li) { margin: 0.15rem 0; }
 .bb-body :deep(a) { color: var(--cc-accent); }
+/* an agent run's decision: a left rule coloured by its verdict */
+.bb-section { border-left: 3px solid var(--cc-border); padding-left: 10px; margin: 10px 0; }
+.bb-section-good   { border-left-color: rgba(86, 180, 233, 0.7); }
+.bb-section-bad    { border-left-color: rgba(213, 94, 0, 0.8); }
+.bb-section-unsure { border-left-color: rgba(148, 163, 184, 0.7); }
+.bb-section-pics { margin: 4px 0; }
+.bb-attach-thumb.bb-section-pic { width: 14rem; height: 12rem; }
 .bb-body :deep(code) {
   font-family: var(--cc-mono);
   background: var(--cc-surface-2);

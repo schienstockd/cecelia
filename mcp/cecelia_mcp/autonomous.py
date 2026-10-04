@@ -46,7 +46,7 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/gating/channels"),    # gateable columns of a segmentation
     ("GET", "/api/gating/plotdata"),    # x/y values (binary f32) — summarised into a histogram here
     ("GET", "/api/gating/stats"),       # count / % of parent for one population
-    ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, numbered gates)
+    ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates)
     ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
     ("POST", "/api/correction-plan/recommend"),  # pure (no write): the metadata-only cleanup plan
     ("POST", "/api/gating/pop/add"),    # WRITE — add a population (gate) to a segmentation

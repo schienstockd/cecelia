@@ -68,6 +68,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/blackboard/outcome"),
             ("POST", "/api/blackboard/revise"),
             ("POST", "/api/blackboard/search"),
+            ("POST", "/api/blackboard/section-outcome"),
             ("POST", "/api/blackboard/status"),
             ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),

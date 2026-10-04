@@ -69,6 +69,11 @@ EVENT_TYPES = frozenset({
     #: `files` + `routes` (what was warned), `duration_s`. See
     #: `python/cecelia/effectiveness/inventory_coverage.py`.
     "inventory_coverage_run",
+    #: A platform error an unattended agent run hit — a tool error or a backend error in the run's
+    #: window (`scripts/agent_eval/run_findings.py`). The weekly judge sweeps them as bugs, one per
+    #: `key`. Payload: `key` ("run-" + 10 hex), `tool`, `error`, `desc`, and `file` / `line` only when
+    #: a backend stacktrace names repo code. Row `commit` = the SHA the run's app was on, `branch` null.
+    "agent_run_finding",
     #: Maintainability lint — mechanical fourth recital step: warns when the staged diff pushes a
     #: task file past 200 lines or adds incident history to a source comment. Payload:
     #: `files_checked`, `warnings_emitted`, `findings` (check / path / line / detail),

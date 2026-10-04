@@ -83,3 +83,15 @@ describe('entryPassesFilters — single-row API', () => {
     expect(entryPassesFilters(rows[0], 'parked', 'bad')).toBe(true)
   })
 })
+
+describe('blackboardFilters — agent run records', () => {
+  const run: BlackboardEntrySummary = { entryId: 'bb-5', title: 'Agent run x', current: 0, updatedAt: 'x',
+    attachmentsCount: 0, status: 'open', sectionsMarked: 0,
+    agentRun: { copyProjectUid: 'CP', images: [], sectionIds: ['d01'] } }
+  const all = [...rows, run]
+  it('runs = only run records (+ profile); notes = everything else', () => {
+    expect(filterEntries(all, 'all', 'all', 'runs').map(r => r.entryId)).toEqual(['profile', 'bb-5'])
+    expect(filterEntries(all, 'all', 'all', 'notes').map(r => r.entryId)).not.toContain('bb-5')
+    expect(filterEntries(all, 'all', 'all').length).toBe(all.length)
+  })
+})

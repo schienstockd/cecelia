@@ -98,3 +98,56 @@ export function mermaidBlocks(md: string | undefined | null): string[] {
   while ((m = re.exec(md)) !== null) out.push(m[1])
   return out
 }
+
+// ── Agent run records — one `### dNN · step · image · …` section per decision ──────────────────
+// AGENT_RUN_REVIEW_PLAN P2. The Blackboard renders a run record part by part so each decision
+// section carries its own verdict control. A section runs from its heading to the next heading of
+// level ≤ 3; `mNN` sections are misses a reviewer added.
+
+export const RUN_STEPS = ['cleanup', 'segment', 'measure', 'gate', 'track', 'behaviour', 'report'] as const
+export type RunStep = typeof RUN_STEPS[number]
+
+export type EntryPart =
+  | { kind: 'md'; md: string }
+  | { kind: 'section'; id: string; md: string }
+
+const _SECTION_HEAD_RE = /^### ([dm][0-9]{2,3}) · /
+const _ANY_HEAD_RE = /^#{1,3} /
+
+/** Split an entry's markdown into plain parts and decision sections, in order. An entry with no
+ *  `### dNN ·` heading comes back as one `md` part. */
+export function splitEntrySections(md: string | undefined | null): EntryPart[] {
+  if (!md) return []
+  const parts: EntryPart[] = []
+  let cur: EntryPart = { kind: 'md', md: '' }
+  let inFence = false
+  for (const line of md.split('\n')) {
+    if (line.startsWith('```')) inFence = !inFence
+    const sec = inFence ? null : _SECTION_HEAD_RE.exec(line)
+    if (sec || (!inFence && cur.kind === 'section' && _ANY_HEAD_RE.test(line))) {
+      if (cur.md.trim()) parts.push(cur)
+      cur = sec ? { kind: 'section', id: sec[1], md: '' } : { kind: 'md', md: '' }
+    }
+    cur.md += (cur.md ? '\n' : '') + line
+  }
+  if (cur.md.trim()) parts.push(cur)
+  return parts
+}
+
+/** Append a reviewer's missed decision as the next `mNN` section, right after the last decision.
+ *  Returns the new markdown and the section id. */
+export function appendMissSection(
+  md: string, step: RunStep, image: string, text: string,
+): { md: string; id: string } {
+  const parts = splitEntrySections(md)
+  const ids = parts.flatMap(p => p.kind === 'section' && p.id.startsWith('m') ? [Number(p.id.slice(1))] : [])
+  const id = `m${String((ids.length ? Math.max(...ids) : 0) + 1).padStart(2, '0')}`
+  const section: EntryPart = {
+    kind: 'section', id,
+    md: `### ${id} · ${step} · ${image.trim() || 'all'} · missed\n- **Should have:** ${text.trim()}\n`,
+  }
+  let last = -1
+  parts.forEach((p, i) => { if (p.kind === 'section') last = i })
+  parts.splice(last + 1, 0, section)
+  return { md: parts.map(p => p.md.replace(/\n+$/, '')).join('\n\n') + '\n', id }
+}

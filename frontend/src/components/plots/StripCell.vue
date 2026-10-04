@@ -17,9 +17,9 @@ import { letterboxFrame, type Frame } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from './PlotPointOutMark.vue'
+import type { LegendSection } from '../../utils/viewLegend'
 
 interface ExtentUm { x?: number; y?: number; unit?: string | null }
-interface LegendSection { title: string; items: { label: string; colour: string }[] }
 
 const props = defineProps<{
   src?: string

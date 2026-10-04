@@ -16,6 +16,7 @@ project's blackboard (`run_record.py`, AGENT_RUN_REVIEW_PLAN P1) — the one wri
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -28,6 +29,7 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 
 import app_project  # noqa: E402
+import run_findings  # noqa: E402
 import run_record  # noqa: E402
 import score  # noqa: E402
 import trace_view  # noqa: E402
@@ -169,6 +171,9 @@ def run(a) -> dict:
     before = score.snapshot(src_root)
 
     stamp = time.strftime("%Y-%m-%d %H:%M")
+    started_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    code_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(REPO), capture_output=True,
+                              text=True).stdout.strip() or None
     name = f"Agent run {stamp}"
     info = {**app_project.build(projects_dir, a.source_project, a.image, name), "projectName": name}
     write_json_atomic(root / "run.json", info, indent=2)
@@ -205,7 +210,7 @@ def run(a) -> dict:
     canary["added"] = sorted(set(after["files"]) - set(before["files"]))[:20]
     canary["appBookkeeping"] = [f for f, h in before["files"].items()
                                 if any(x in f for x in APP_BOOKKEEPING) and after["files"].get(f) != h]
-    rec = {"startedAt": stamp, "wallS": wall, "exitCode": rc, "timedOut": timed_out,
+    rec = {"startedAt": stamp, "startedAtUtc": started_utc, "codeSha": code_sha, "wallS": wall, "exitCode": rc, "timedOut": timed_out,
            "brief": a.brief, "prompt": prompt, "budgetUsd": a.budget_usd, "copy": info,
            "trace": summarise_trace(root / "trace.jsonl", a.source_project),
            "canary": canary}
@@ -229,6 +234,12 @@ def run(a) -> dict:
                                              claude=a.claude)
     except (Exception, SystemExit) as e:  # noqa: BLE001 — the run is done; re-run run_record.py
         rec["blackboard"] = {"error": str(e)}
+    # its platform errors, for the weekly judge (P1b) — after record.json, which they read
+    write_json_atomic(root / "record.json", json.loads(json.dumps(rec, default=str)), indent=2)
+    try:
+        rec["findings"] = len(run_findings.emit(root, a.api_url))
+    except Exception as e:  # noqa: BLE001 — re-run run_findings.py
+        rec["findings"] = {"error": str(e)}
     write_json_atomic(root / "record.json", json.loads(json.dumps(rec, default=str)), indent=2)
     return rec
 

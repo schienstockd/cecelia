@@ -283,6 +283,7 @@ include(joinpath(@__DIR__, "suite", "bidir_push_writer.jl"))
 # One large testset covering the Blackboard storage discipline end-to-end (BIDIR_CONTEXT_PLAN.md
 # Part 4): Markdown entries with snapshot-per-revise history + attached captureIds.
 include(joinpath(@__DIR__, "suite", "bidir_blackboard.jl"))
+include(joinpath(@__DIR__, "suite", "blackboard_run_review.jl"))
 
 # ── VN P3b popmap + BIDIR landscape testsets ──────────────────
 # Five testsets: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b — drift banner),
