@@ -164,6 +164,23 @@ def spend_line(spend: dict) -> str:
             f"verify ${spend.get('verify_usd', 0):.2f} · rules ${spend.get('rules_usd', 0):.2f}")
 
 
+def _count(n: int) -> str:
+    return f"{n / 1e6:.2f}M" if n >= 1e6 else f"{n / 1e3:.1f}k" if n >= 1e3 else str(n)
+
+
+def tokens_line(spend: dict) -> str:
+    """The pass's tokens, total then per step. Records from before token counting say so."""
+    tok = spend.get("tokens")
+    if not tok:
+        return "not recorded"
+
+    def one(t: dict) -> str:
+        return (f"{_count(t.get('output', 0))} out · {_count(t.get('input', 0))} in "
+                f"(+ cache read {_count(t.get('cache_read', 0))}, cache write {_count(t.get('cache_write', 0))})")
+    steps = " · ".join(f"{k} {_count(sum(v.values()))}" for k, v in tok.items() if k != "total")
+    return f"{one(tok.get('total') or {})} — {steps}"
+
+
 def _cell(text: _t.Any) -> str:
     return str(text if text is not None else "—").replace("|", "\\|").replace("\n", " ")
 
@@ -238,7 +255,8 @@ def render_markdown(record: dict) -> str:
            _HOW_TO_USE.format(json=f"{record['date']}.json"), "",
            "| | |", "|---|---|",
            f"| Pinned SHA | `{run['sha']}` |",
-           f"| Spend | {spend_line(run['spend'])} |",
+           f"| Tokens | {tokens_line(run['spend'])} |",
+           f"| Spend (list price) | {spend_line(run['spend'])} |",
            f"| Owner queue | {len(record['queue'])} (`pixi run judge-review`) |", "",
            "## Bugs", "", *_render_bugs(record["bugs"]), "",
            "## Rules", "", *_render_rules(record)]

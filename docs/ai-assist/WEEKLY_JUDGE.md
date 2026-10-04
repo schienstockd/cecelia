@@ -58,8 +58,10 @@ test whether an agent can actually use the framework.
 A crash at any stage still writes a failure record and its PR. The recital console warns when the
 newest record is more than 9 days old or failed (`judge_staleness.py`).
 
-**Spend** is capped per pass at about $14: bug sweep $1.50, verify $10 ($2 per group), rule
-mapping $2. The record's *Spend* row shows what each step cost.
+**Spend.** The record's *Tokens* row has what each step used: output, uncached input, and cache read
+and write, taken from each call's `usage`. Its *Spend* row is the CLI's dollar figure, which is list
+price, not what a seat is charged. The caps are in dollars, because `--max-budget-usd` is the
+CLI's only limit: bug sweep $1.50, verify $10 ($2 per group), rule mapping $2.
 
 ## Working the record
 

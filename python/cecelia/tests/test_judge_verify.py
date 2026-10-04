@@ -115,9 +115,9 @@ class VerifyTest(unittest.TestCase):
              m.patch.object(self.v.agent_sandbox, "make_detached_worktree", return_value=pathlib.Path("/tmp/wt")) as mk, \
              m.patch.object(self.v.agent_sandbox, "remove_worktree") as rm, \
              m.patch.object(self.v, "resolve_claude_bin", return_value="/bin/claude"):
-            answer, cost = self.v.default_agent("p", sha="abc", budget_usd=2.5)
+            answer, cost, used = self.v.default_agent("p", sha="abc", budget_usd=2.5)
         cmd = calls["cmd"]
-        self.assertEqual((answer, cost), ({"items": []}, 0.3))
+        self.assertEqual((answer, cost, used["output"]), ({"items": []}, 0.3, 0))
         self.assertEqual(mk.call_args.kwargs["ref"], "abc")
         rm.assert_called_once()
         self.assertEqual(cmd[cmd.index("--tools") + 1], "Read,Grep,Glob,Bash")

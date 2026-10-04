@@ -119,6 +119,9 @@ class RenderTest(_Fixture):
         self.assertIn("$2.90 · bug sweep $0.40 · verify $2.00 · rules $0.50", md)
         self.assertIn("needs 3 different sessions", md)
 
+    def test_a_record_without_tokens_says_so(self):
+        self.assertIn("| Tokens | not recorded |", self.rec.render_markdown(self.build()))
+
     def test_no_rules_and_a_failure_render_plainly(self):
         self.assertIn("No reviewer findings mapped to a rule.", self.rec.render_markdown(self.build()))
         md = self.rec.render_markdown(self.rec.failure_record("2026-10-05", stage="verify", error="x"))
