@@ -8,7 +8,10 @@
 import type { OverlayMark } from './captureAddress'
 
 /** Capture surface tags — matches api/src/captures_api.jl `envelope.surface`. */
-export type CaptureSurface = 'ui' | 'plot' | 'viewer_frame' | 'viewer_slab'
+export type CaptureSurface = 'ui' | 'plot' | 'viewer_frame' | 'viewer_slab' | 'agent_run'
+
+/** A capture id — `cap-<yyyymmddThhmmss>-<6 hex>`, the format `api/src/captures_api.jl` mints. */
+export const CAPTURE_ID_RE = /cap-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}/g
 
 /** One-line address the row shows below the timestamp. */
 export interface CaptureAddress {

@@ -1,49 +1,102 @@
-# ── Server-side gate plot (PNG) ───────────────────────────────────────────────────
-# The gating scatter the GUI draws, as a picture: one population's cells on two (transformed) axes,
-# its child gates outlined and numbered, tick values on both axes. For a client that cannot run the
-# browser plot — an MCP session sees this image instead of a table of quantiles.
+# ── Gate plot raster — the browser's gating scatter as a PNG ────────────────────
+# A PURE renderer: dots + gate outlines + axes onto an RGB matrix, in the look of the Gate page's plot
+# (`GateScatterCell.vue` axes, `PlotLayers.vue` dots, `GateOverlay.vue` gates), so a picture an agent
+# looks at and the plot a person gates on read the same. Drawn at 2× the browser's CSS pixels
+# (`_PLOT_SCALE`) so the 1.4-px dots and the 10-px labels survive. No HTTP, no image access — the route
+# (`gating_views_api.jl`) hands it transformed values, extents, ticks, titles and gate outlines.
 #
-# Draws what the browser's gate plot draws (`GateScatterCell` + `PlotLayers`, default dot mode) — not
-# the same code (that is canvas/TS), the same look and the same numbers. PURE: takes the transformed points, the display extents, the ticks and the projected gate outlines
-# (all computed by the gating API — `_plot_xy`, `_axis_ticks`, `project_gate`) and only draws. No
-# text stack here: tick values use a 3×5 digit font (digits . - + e); axis names and the gate number
-# → path key travel next to the image in the route's JSON.
+# Text: the Julia API has no font rasteriser, so labels come from a prebuilt glyph atlas
+# (`api/assets/plot_font.json`, DejaVu Sans, built by `scripts/build_plot_font.py`).
+using PNGFiles, Base64, ColorTypes, FixedPointNumbers   # `_heat_ramp`, `hex_to_rgb`: overlay_author.jl
 
-using PNGFiles, ColorTypes, FixedPointNumbers   # `_heat_ramp`, `hex_to_rgb`: overlay_author.jl
+const _PLOT_SCALE  = 2
+const _PLOT_SIDE   = 300                                  # CSS px; the browser's plot area is square
+const _PLOT_PAD    = (top = 18, right = 22, bottom = 50, left = 84)   # GateScatterCell capture padding
+const _PLOT_BG     = RGB{N0f8}(0x16 / 255, 0x1b / 255, 0x22 / 255)  # --cc-surface-1, the panel it sits on
+const _PLOT_BORDER = RGB{N0f8}(0x30 / 255, 0x36 / 255, 0x3d / 255)  # --cc-border (axis lines)
+const _PLOT_DIM    = RGB{N0f8}(0x7d / 255, 0x85 / 255, 0x90 / 255)  # --cc-text-dim (ticks + tick labels)
+const _PLOT_TEXT   = RGB{N0f8}(0xe6 / 255, 0xed / 255, 0xf3 / 255)  # --cc-text (axis titles; white gates)
+const _DOT_R       = 0.7                                  # CSS px radius (`plots/density.ts` DOT_R)
+const _DOT_BUCKETS = 64                                   # density quantised as PlotLayers paints it
+const _GATE_WIDTH  = 1.5                                  # CSS px stroke (GatingPlots lineWidth)
+const _DOT_GRID = 160
+const _DOT_BLUR_RADIUS = 2
+const _DOT_BLUR_PASSES = 2
 
-const _GLYPHS_3x5 = Dict{Char,NTuple{5,UInt8}}(   # rows top→bottom, 3 bits each (MSB = left column)
-    '0' => (0b111, 0b101, 0b101, 0b101, 0b111), '1' => (0b010, 0b110, 0b010, 0b010, 0b111),
-    '2' => (0b111, 0b001, 0b111, 0b100, 0b111), '3' => (0b111, 0b001, 0b111, 0b001, 0b111),
-    '4' => (0b101, 0b101, 0b111, 0b001, 0b001), '5' => (0b111, 0b100, 0b111, 0b001, 0b111),
-    '6' => (0b111, 0b100, 0b111, 0b101, 0b111), '7' => (0b111, 0b001, 0b001, 0b010, 0b010),
-    '8' => (0b111, 0b101, 0b111, 0b101, 0b111), '9' => (0b111, 0b101, 0b111, 0b001, 0b111),
-    '.' => (0b000, 0b000, 0b000, 0b000, 0b010), '-' => (0b000, 0b000, 0b111, 0b000, 0b000),
-    '+' => (0b000, 0b010, 0b111, 0b010, 0b000), 'e' => (0b000, 0b111, 0b111, 0b100, 0b111))
-const _GLYPH_SCALE = 2
-const _GLYPH_ADV   = 4 * _GLYPH_SCALE                 # 3 columns + 1 gap
-
-_text_width(s::AbstractString) = max(0, length(s) * _GLYPH_ADV - _GLYPH_SCALE)
-const _TEXT_HEIGHT = 5 * _GLYPH_SCALE
-
-# draw `s` with its top-left at (row, col); characters outside the font are skipped as a blank
-function _draw_text!(img::AbstractMatrix, s::AbstractString, row::Int, col::Int, c)
-    H, W = size(img)
-    for (k, ch) in enumerate(s)
-        g = get(_GLYPHS_3x5, ch, nothing)
-        g === nothing && continue
-        x0 = col + (k - 1) * _GLYPH_ADV
-        for r in 1:5, b in 0:2
-            (g[r] >> (2 - b)) & 0x1 == 0x1 || continue
-            for dr in 0:(_GLYPH_SCALE - 1), dc in 0:(_GLYPH_SCALE - 1)
-                y = row + (r - 1) * _GLYPH_SCALE + dr; x = x0 + b * _GLYPH_SCALE + dc
-                (1 <= y <= H && 1 <= x <= W) && (img[y, x] = c)
-            end
-        end
+# ── glyph atlas ──────────────────────────────────────────────────────────────────
+const _FONT_PATH = normpath(joinpath(@__DIR__, "..", "assets", "plot_font.json"))
+const _FONT = Ref{Any}(nothing)
+function _font(face::String)
+    if _FONT[] === nothing
+        raw = JSON3.read(read(_FONT_PATH, String))
+        _FONT[] = Dict(String(k) => (ascent = Int(f.ascent), descent = Int(f.descent),
+            glyphs = Dict(first(String(c)) => (adv = Int(g.adv), x = Int(g.x), y = Int(g.y), w = Int(g.w), h = Int(g.h),
+                a = haskey(g, :a) ? permutedims(reshape(Float32.(base64decode(String(g.a))) ./ 255f0, Int(g.w), Int(g.h))) :
+                    zeros(Float32, 0, 0)) for (c, g) in f.glyphs))
+            for (k, f) in raw.faces)
     end
+    _FONT[][face]
 end
 
-# Liang–Barsky: clip segment (x0,y0)→(x1,y1) to [xlo,xhi]×[ylo,yhi]; `nothing` when it misses. A gate
-# drawn as "everything above 240" spans ±1e9 on the free axis — it must clip, not be walked pixel by pixel.
+# Coverage mask of `s` in `face`: rows = ascent + descent, columns = the pen advance.
+function _text_mask(face::String, s::AbstractString)::Matrix{Float32}
+    f = _font(face)
+    gl = [get(f.glyphs, c, f.glyphs['?']) for c in s]
+    m = zeros(Float32, f.ascent + f.descent, max(1, sum(g.adv for g in gl; init = 0)))
+    pen = 0
+    for g in gl
+        for r in 1:g.h, c in 1:g.w
+            rr, cc = g.y + r, pen + g.x + c
+            (1 <= rr <= size(m, 1) && 1 <= cc <= size(m, 2)) && (m[rr, cc] = max(m[rr, cc], g.a[r, c]))
+        end
+        pen += g.adv
+    end
+    m
+end
+
+# Blend `colour` over `img` through `mask` (scaled by `alpha`), mask's top-left at (row, col).
+function _blit!(img::AbstractMatrix, mask::AbstractMatrix, row::Int, col::Int, colour; alpha = 1.0)
+    H, W = size(img)
+    for r in axes(mask, 1), c in axes(mask, 2)
+        a = mask[r, c] * alpha
+        a > 0 || continue
+        i, j = row + r - 1, col + c - 1
+        (1 <= i <= H && 1 <= j <= W) || continue
+        img[i, j] = _mix(img[i, j], colour, a)
+    end
+end
+_mix(bg, fg, a) = RGB{N0f8}(clamp(red(fg) * a + red(bg) * (1 - a), 0, 1),
+                            clamp(green(fg) * a + green(bg) * (1 - a), 0, 1),
+                            clamp(blue(fg) * a + blue(bg) * (1 - a), 0, 1))
+
+# A dark halo around text (GateOverlay's strokeText, rgba(0,0,0,0.7), lineWidth 3) — the mask dilated.
+function _halo(mask::AbstractMatrix, r::Int)
+    out = zeros(Float32, size(mask, 1) + 2r, size(mask, 2) + 2r)
+    for dr in -r:r, dc in -r:r
+        dr^2 + dc^2 <= r^2 || continue
+        @views out[r + 1 + dr:r + dr + size(mask, 1), r + 1 + dc:r + dc + size(mask, 2)] .=
+            max.(out[r + 1 + dr:r + dr + size(mask, 1), r + 1 + dc:r + dc + size(mask, 2)], mask)
+    end
+    out
+end
+
+# Tick label as the browser shows it (`GateScatterCell.vue` fmtTick): ≥1e3 → k, ≥1e6 → M, ≥1e9 → G
+# with one decimal ("2.1k", "262k"); anything smaller passes the server label through.
+function _fmt_tick_label(label)::String
+    s = string(label)
+    n = tryparse(Float64, s)
+    (n === nothing || !isfinite(n)) && return s
+    a = abs(n)
+    for (lim, suf) in ((1e9, "G"), (1e6, "M"), (1e3, "k"))
+        a >= lim || continue
+        t = string(round(n / lim; digits = 1))
+        return replace(t, r"\.0$" => "") * suf
+    end
+    s
+end
+
+# ── geometry ─────────────────────────────────────────────────────────────────────
+# Liang–Barsky: the part of segment (x0,y0)→(x1,y1) inside the box, or `nothing`.
 function _clip_segment(x0, y0, x1, y1, xlo, xhi, ylo, yhi)
     t0, t1 = 0.0, 1.0
     dx, dy = x1 - x0, y1 - y0
@@ -64,30 +117,31 @@ function _clip_segment(x0, y0, x1, y1, xlo, xhi, ylo, yhi)
     (x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy)
 end
 
-function _draw_line!(img::AbstractMatrix, x0, y0, x1, y1, c; thick::Int = 2)
+# Anti-aliased stroke of canvas-space segments [(c0, r0, c1, r1), …], `width` px, blended once.
+function _stroke!(img::AbstractMatrix, segs, colour, width::Real)
     H, W = size(img)
-    n = max(1, ceil(Int, max(abs(x1 - x0), abs(y1 - y0))))
-    for i in 0:n
-        x = round(Int, x0 + (x1 - x0) * i / n); y = round(Int, y0 + (y1 - y0) * i / n)
-        for dy in 0:(thick - 1), dx in 0:(thick - 1)
-            (1 <= y + dy <= H && 1 <= x + dx <= W) && (img[y + dy, x + dx] = c)
+    cov = Dict{Tuple{Int,Int},Float32}()
+    hw = width / 2
+    for (c0, r0, c1, r1) in segs
+        dc, dr = c1 - c0, r1 - r0
+        len2 = dc^2 + dr^2
+        for i in max(1, floor(Int, min(r0, r1) - hw - 1)):min(H, ceil(Int, max(r0, r1) + hw + 1)),
+            j in max(1, floor(Int, min(c0, c1) - hw - 1)):min(W, ceil(Int, max(c0, c1) + hw + 1))
+            t = len2 > 0 ? clamp(((j - c0) * dc + (i - r0) * dr) / len2, 0, 1) : 0.0
+            d = hypot(j - (c0 + t * dc), i - (r0 + t * dr))
+            a = Float32(clamp(hw + 0.5 - d, 0, 1))
+            a > 0 && (cov[(i, j)] = max(get(cov, (i, j), 0f0), a))
         end
+    end
+    for ((i, j), a) in cov
+        img[i, j] = _mix(img[i, j], colour, a)
     end
 end
 
-# The browser plot's look, so the picture and the GUI read the same: its PNG-export background, the
-# theme's border + dim-text colours, and the FlowJo pseudocolour dot plot — each dot coloured by its
-# LOG-scaled, box-blurred local density through the shared `heatRamp` (`_heat_ramp`, palettes.json).
-# Port of `frontend/src/plots/density.ts` → `pointDensities` (grid 160, blur radius 2 × 2 passes);
-# keep the constants in step with it.
-const _PLOT_BG     = RGB{N0f8}(0x0d / 255, 0x0b / 255, 0x1a / 255)   # GateScatterCell exportImage bg
-const _PLOT_BORDER = RGB{N0f8}(0x30 / 255, 0x36 / 255, 0x3d / 255)   # --cc-border
-const _PLOT_DIM    = RGB{N0f8}(0x7d / 255, 0x85 / 255, 0x90 / 255)   # --cc-text-dim
-const _DOT_GRID = 160
-const _DOT_BLUR_RADIUS = 2
-const _DOT_BLUR_PASSES = 2
-
-# separable box blur, clamped edges — `boxBlur` in density.ts
+# ── density ──────────────────────────────────────────────────────────────────────
+# FlowJo-style pseudocolour, ported from the browser (`plots/density.ts`): bin into a 160² grid over
+# the view, box-blur (radius 2, 2 passes), each point takes its cell's LOG-scaled density through the
+# shared heat ramp (`_heat_ramp`, palettes.json). Bins via the gating engine's `density_2d`.
 function _box_blur!(g::Matrix{Float64}, radius::Int, passes::Int)
     G = size(g, 1); win = 2radius + 1; tmp = similar(g)
     for _ in 1:passes
@@ -132,80 +186,103 @@ function point_densities(xv::AbstractVector, yv::AbstractVector, xext, yext; G::
     out
 end
 
+# ── the plot ─────────────────────────────────────────────────────────────────────
 """
-    render_gate_plot(xv, yv, xext, yext, xticks, yticks, gates; width=520, height=440)
-        -> Matrix{RGB{N0f8}}
+    render_gate_plot(xv, yv, xext, yext, xticks, yticks, gates; xtitle = "", ytitle = "") -> Matrix{RGB{N0f8}}
 
-The population's points (`xv`, `yv`, already transformed) as the browser's pseudocolour dot plot
-(`point_densities` → `_heat_ramp`) inside the display box `xext` × `yext`. `xticks`/`yticks` are `_axis_ticks` dicts
-(`pos` in transformed space, `label` the raw value). `gates` are `project_gate` outlines carrying a
-`colour`; each is drawn clipped to the box and numbered 1…n in list order at its first on-screen
-vertex. Non-finite points are skipped; points outside the box are not drawn.
+The Gate page's scatter at 2×: dots (TRANSFORMED values) coloured by local density, painted in 64
+density buckets low → high; `gates` (`project_gate` outlines with `colour` and `path`) stroked in their
+colour and named above (below / inside when there is no room), as `GateOverlay` does; left + bottom
+axes with `_axis_ticks` ticks (labels formatted like the browser) and the axis titles. Points outside
+`xext`×`yext` are not drawn; gate outlines are clipped to it.
 """
 function render_gate_plot(xv::AbstractVector, yv::AbstractVector,
                           xext::Tuple{<:Real,<:Real}, yext::Tuple{<:Real,<:Real},
-                          xticks, yticks, gates; width::Int = 520, height::Int = 440)
-    ml, mr, mt, mb = 64, 12, 12, 32
-    pw, ph = width - ml - mr, height - mt - mb
+                          xticks, yticks, gates; xtitle::AbstractString = "", ytitle::AbstractString = "")
+    s = _PLOT_SCALE
+    P = _PLOT_SIDE * s
+    L, T = _PLOT_PAD.left * s, _PLOT_PAD.top * s
+    width, height = L + P + _PLOT_PAD.right * s, T + P + _PLOT_PAD.bottom * s
     img = fill(_PLOT_BG, height, width)
     xlo, xhi = float(xext[1]), float(xext[2]); ylo, yhi = float(yext[1]), float(yext[2])
     xspan = xhi > xlo ? xhi - xlo : 1.0; yspan = yhi > ylo ? yhi - ylo : 1.0
-    # data → canvas (column, row); y grows upward on the plot, downward in the matrix
-    col(x) = ml + (x - xlo) / xspan * (pw - 1) + 1
-    row(y) = mt + (yhi - y) / yspan * (ph - 1) + 1
+    # data → canvas pixel centre (column, row); y grows upward on the plot, downward in the matrix
+    col(x) = L + (x - xlo) / xspan * P + 0.5
+    row(y) = T + (yhi - y) / yspan * P + 0.5
+    B = T + P                                                  # last row of the plot area
 
-    # dots drawn sparse → dense, so the dense core sits on top as in the browser plot
+    # dots: anti-aliased discs, density buckets low → high so the dense core sits on top
     dens = point_densities(xv, yv, xext, yext)
-    for k in sortperm(dens)
+    bucket = [min(_DOT_BUCKETS - 1, floor(Int, d * _DOT_BUCKETS)) for d in dens]
+    r = _DOT_R * s
+    for k in sortperm(bucket)
         x = float(xv[k]); y = float(yv[k])
         (isfinite(x) && isfinite(y) && xlo <= x <= xhi && ylo <= y <= yhi) || continue
-        r = round(Int, row(y)); c = round(Int, col(x)); colour = _heat_ramp(dens[k])
-        img[max(mt + 1, r - 1):min(mt + ph, r + 1), max(ml + 1, c - 1):min(ml + pw, c + 1)] .= colour
+        c0, r0 = col(x), row(y)
+        colour = _heat_ramp(bucket[k] / (_DOT_BUCKETS - 1))
+        for i in max(T + 1, floor(Int, r0 - r)):min(B, ceil(Int, r0 + r)),
+            j in max(L + 1, floor(Int, c0 - r)):min(L + P, ceil(Int, c0 + r))
+            a = clamp(r + 0.5 - hypot(j - c0, i - r0), 0, 1)
+            a > 0 && (img[i, j] = _mix(img[i, j], colour, a))
+        end
     end
 
-    ink = _PLOT_DIM
-    _draw_line!(img, ml, mt + ph + 1, ml + pw, mt + ph + 1, _PLOT_BORDER; thick = 1)   # x axis
-    _draw_line!(img, ml, mt + 1, ml, mt + ph + 1, _PLOT_BORDER; thick = 1)             # y axis
-    for t in xticks
-        p = float(t["pos"]); xlo <= p <= xhi || continue
-        cx = round(Int, col(p))
-        _draw_line!(img, cx, mt + ph + 1, cx, mt + ph + 5, ink; thick = 1)
-        s = string(t["label"])
-        _draw_text!(img, s, mt + ph + 9, clamp(cx - _text_width(s) ÷ 2, 1, width - _text_width(s)), ink)
-    end
-    for t in yticks
-        p = float(t["pos"]); ylo <= p <= yhi || continue
-        cy = round(Int, row(p))
-        _draw_line!(img, ml - 4, cy, ml, cy, ink; thick = 1)
-        s = string(t["label"])
-        _draw_text!(img, s, clamp(cy - _TEXT_HEIGHT ÷ 2, 1, height - _TEXT_HEIGHT),
-                    max(1, ml - 7 - _text_width(s)), ink)
-    end
-
-    for (k, g) in enumerate(gates)
-        c = hex_to_rgb(string(get(g, "colour", "#ffffff")))
+    # gates, clipped, then their names
+    for g in gates
+        hex = lowercase(string(get(g, "colour", "")))
+        colour = hex in ("", "white", "#fff", "#ffffff", "#fafafa") ? _PLOT_TEXT : hex_to_rgb(hex)
         pts = if get(g, "kind", "") == "rectangle"
             [(g["x_min"], g["y_min"]), (g["x_max"], g["y_min"]), (g["x_max"], g["y_max"]), (g["x_min"], g["y_max"])]
         else
             [(v[1], v[2]) for v in get(g, "vertices", ())]
         end
         length(pts) >= 2 || continue
-        first_on = nothing
+        segs = Tuple{Float64,Float64,Float64,Float64}[]
         for i in eachindex(pts)
             a = pts[i]; b = pts[mod1(i + 1, length(pts))]
             seg = _clip_segment(float(a[1]), float(a[2]), float(b[1]), float(b[2]), xlo, xhi, ylo, yhi)
-            seg === nothing && continue
-            _draw_line!(img, col(seg[1]), row(seg[2]), col(seg[3]), row(seg[4]), c)
-            first_on === nothing && (first_on = (col(seg[1]), row(seg[2])))
+            seg === nothing || push!(segs, (col(seg[1]), row(seg[2]), col(seg[3]), row(seg[4])))
         end
-        if first_on !== nothing
-            s = string(k)
-            r0 = clamp(round(Int, first_on[2]) + 4, mt + 1, mt + ph - _TEXT_HEIGHT)
-            c0 = clamp(round(Int, first_on[1]) + 4, ml + 1, ml + pw - _text_width(s))
-            img[max(1, r0 - 2):min(height, r0 + _TEXT_HEIGHT + 1), max(1, c0 - 2):min(width, c0 + _text_width(s) + 1)] .=
-                _PLOT_BG                              # a backing box, so the number reads over dense dots
-            _draw_text!(img, s, r0, c0, c)
-        end
+        isempty(segs) && continue
+        _stroke!(img, segs, colour, _GATE_WIDTH * s)
+        parts = split(string(get(g, "path", "")), '/'; keepempty = false)
+        name = isempty(parts) ? "" : String(last(parts))
+        isempty(name) && continue
+        m = _text_mask("label", name)
+        cs = [c for sg in segs for c in (sg[1], sg[3])]; rs = [r for sg in segs for r in (sg[2], sg[4])]
+        top, bot = minimum(rs) - T, maximum(rs) - T            # gate bbox, plot-area rows
+        half = size(m, 2) / 2 + 3s
+        cx = clamp((minimum(cs) + maximum(cs)) / 2 - L, half, P - half)
+        rtop = top - 4s >= 15s ? top - 4s - size(m, 1) : bot + 19s <= P ? bot + 4s : top + 4s
+        rr, cc = round(Int, T + rtop), round(Int, L + cx - size(m, 2) / 2)
+        _blit!(img, _halo(m, round(Int, 1.5s)), rr - round(Int, 1.5s), cc - round(Int, 1.5s), RGB{N0f8}(0, 0, 0); alpha = 0.7)
+        _blit!(img, m, rr, cc, colour)
+    end
+
+    # axes: left + bottom lines, outward 5-px ticks, labels 8 px off the axis, titles
+    img[B + 1:B + s, L - s + 1:L + P] .= _PLOT_BORDER
+    img[T + 1:B + s, L - s + 1:L] .= _PLOT_BORDER
+    for t in xticks
+        p = float(t["pos"]); xlo - 1e-9 <= p <= xhi + 1e-9 || continue
+        c = round(Int, col(p))
+        img[B + s + 1:B + 5s, max(1, c - s ÷ 2):min(width, c + s ÷ 2)] .= _PLOT_DIM
+        m = _text_mask("tick", _fmt_tick_label(t["label"]))
+        _blit!(img, m, B + 8s, clamp(c - size(m, 2) ÷ 2, 1, width - size(m, 2)), _PLOT_DIM)
+    end
+    for t in yticks
+        p = float(t["pos"]); ylo - 1e-9 <= p <= yhi + 1e-9 || continue
+        r0 = round(Int, row(p))
+        img[max(1, r0 - s ÷ 2):min(height, r0 + s ÷ 2), L - 5s - s + 1:L - s] .= _PLOT_DIM
+        m = _text_mask("tick", _fmt_tick_label(t["label"]))
+        _blit!(img, m, clamp(r0 - size(m, 1) ÷ 2, 1, height - size(m, 1)), max(1, L - 8s - size(m, 2)), _PLOT_DIM)
+    end
+    if !isempty(xtitle)
+        m = _text_mask("title", xtitle)
+        _blit!(img, m, B + 40s - size(m, 1), L + (P - size(m, 2)) ÷ 2, _PLOT_TEXT)
+    end
+    if !isempty(ytitle)
+        m = rotl90(_text_mask("title", ytitle))                # reads bottom → top
+        _blit!(img, m, T + (P - size(m, 1)) ÷ 2, L - 66s, _PLOT_TEXT)
     end
     img
 end

@@ -82,7 +82,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
         ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
         ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
-        ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, numbered gates) — gating_views.py
+        ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates) — gating_views.py
         ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
         ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
         ("GET", "/api/viewer/plots"),      # bidir PR #8 — live plot registry; discover mounted panels so mark_plot's plot_id isn't guessed

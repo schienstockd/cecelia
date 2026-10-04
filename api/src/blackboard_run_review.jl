@@ -65,7 +65,9 @@ function _bb_has_section(uid::AbstractString, id::AbstractString, sid::AbstractS
     p = joinpath(_bb_entry_dir(uid, id), "entry.md")
     isfile(p) || return false
     head = "### " * sid * " "
-    any(l -> startswith(l, head), eachline(p))
+    # read whole: a lazy `eachline` that stops early leaves the file open, and Windows then
+    # refuses the next revise's atomic replace of entry.md (EBUSY)
+    any(l -> startswith(l, head), split(read(p, String), '\n'))
 end
 
 """

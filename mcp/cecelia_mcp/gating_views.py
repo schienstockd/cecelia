@@ -10,12 +10,13 @@ import base64
 
 GATE_PLOT_DOC = """The gate plot as an image: the cells of population `pop` on `x` × `y` AFTER `transform` (the
 space gate coordinates are in), drawn as the app's gating plot draws them — each dot coloured by its
-local density — with `pop`'s child gates outlined and numbered. Axes span the whole segmentation.
+local density — with `pop`'s child gates outlined and named. Axes run from 0 to the whole
+segmentation's maximum (grown to fit the gates), titled with the channel names.
 `x`/`y` are gateable columns of segmentation `value_name` (e.g. `mean_intensity_2` = channel index 2;
 get_measure_summary lists them, get_image_info lists channel names in index order).
 `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
 {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}.
-Alongside the image: each axis's extent and the gates by number with their path and coordinates (a
+Alongside the image: each axis's extent and the gates with their path and coordinates (a
 gate reaching past the axes is clipped in the picture, not in the list)."""
 
 GATE_CELLS_VIEW_DOC = """The image with population `pop` marked: one timepoint `t` (default the middle frame), z

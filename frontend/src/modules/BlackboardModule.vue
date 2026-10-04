@@ -40,9 +40,10 @@ import {
 } from '../utils/blackboardMd'
 import SectionVerdictControl from '../components/blackboard/SectionVerdict.vue'
 import MissedDecisionForm from '../components/blackboard/MissedDecisionForm.vue'
+import AttachmentGallery from '../components/blackboard/AttachmentGallery.vue'
 import { formatAgo } from '../utils/formatAgo'
 import { authorLabel } from '../utils/authorStamp'
-import { fetchCaptureEnvelope, type CaptureEnvelope } from '../utils/kiwiCaptures'
+import { fetchCaptureEnvelope, CAPTURE_ID_RE, type CaptureEnvelope } from '../utils/kiwiCaptures'
 import { useRoute } from 'vue-router'
 import { useCaptureFocus } from '../composables/useCaptureFocus'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
@@ -232,9 +233,12 @@ const paneHtml = computed(() => renderBlackboardMarkdown(paneContent.value, titl
 const paneParts = computed(() => {
   if (!selected.value?.agentRun || viewingVersion.value !== null) return null
   return splitEntrySections(paneContent.value).map((p, i) => {
-    if (p.kind === 'md') return { key: `md${i}`, id: '', headHtml: '', html: renderBlackboardMarkdown(p.md, titleById.value) }
+    if (p.kind === 'md') return { key: `md${i}`, id: '', pics: [] as string[], headHtml: '', html: renderBlackboardMarkdown(p.md, titleById.value) }
     const nl = p.md.indexOf('\n')
-    return { key: p.id, id: p.id,
+    const atts = selected.value?.attachments ?? []
+    // the pictures this decision cites by capture id, shown with it
+    const pics = [...p.md.matchAll(CAPTURE_ID_RE)].map(m => m[0]).filter(c => atts.includes(c))
+    return { key: p.id, id: p.id, pics,
              headHtml: renderBlackboardMarkdown(nl < 0 ? p.md : p.md.slice(0, nl), titleById.value),
              html: nl < 0 ? '' : renderBlackboardMarkdown(p.md.slice(nl + 1), titleById.value) }
   })
@@ -308,7 +312,10 @@ async function loadAttachment(cid: string) {
 
 async function loadEntry(id: string, version?: number) {
   if (!projectUid.value || !id) { selected.value = null; return }
-  entryLoading.value = true
+  // Refreshing the entry already on screen (a verdict, a status flip, the WS echo) updates it in
+  // place: the "Loading…" swap would empty the pane and throw the reader back to the top.
+  const refresh = version === undefined && viewingVersion.value === null && selected.value?.entryId === id
+  if (!refresh) entryLoading.value = true
   try {
     if (version === undefined) {
       selected.value = await getBlackboardEntry(projectUid.value, id)
@@ -457,9 +464,18 @@ async function onDelete() {
 /** Open the capture in its source surface — the shared refocus path (`composables/useCaptureFocus`),
  *  the same one Kiwi's capture rows and claim chips use. */
 const { focusCapture: refocusCapture } = useCaptureFocus()
+// An agent run's evidence was rendered from a disposable copy — nothing to refocus in this project,
+// so it opens in the gallery instead.
+const galleryStart = ref<number | null>(null)
+const galleryItems = computed(() => (selected.value?.attachments ?? []).map(cid => {
+  const env = captureCache.value[cid]?.env
+  return { id: cid, src: env?.frame ?? '', caption: env?.notes ?? '' }
+}))
 function focusCapture(cid: string) {
   const slot = captureCache.value[cid]
-  if (slot?.env) refocusCapture(projectUid.value, slot.env)
+  if (!slot?.env) return
+  if (slot.env.surface === 'agent_run') galleryStart.value = selected.value?.attachments.indexOf(cid) ?? 0
+  else refocusCapture(projectUid.value, slot.env)
 }
 
 // Mermaid: dynamic-import only when the current pane contains ```mermaid fences (0 fences ⇒ no cost).
@@ -779,6 +795,13 @@ onUnmounted(() => { mermaidRenderSeq++ })
                   <SectionVerdictControl :outcome="selected.sectionOutcomes?.[part.id]" :busy="savingSection"
                                          @save="(v, n) => onSectionSave(part.id, v, n)" />
                   <div v-html="part.html" />
+                  <div v-if="part.pics.length" class="bb-attach-strip bb-section-pics">
+                    <button v-for="cid in part.pics" :key="cid" class="bb-attach-thumb bb-section-pic"
+                            @click="focusCapture(cid)" v-tooltip.top="'Click to enlarge'">
+                      <img v-if="captureCache[cid]?.thumb" :src="captureCache[cid].thumb" :alt="cid" />
+                      <span v-else class="bb-attach-fallback"><i class="pi pi-image" /></span>
+                    </button>
+                  </div>
                 </div>
               </template>
               <MissedDecisionForm :images="runImages" :busy="savingSection" @add="onAddMiss" />
@@ -791,7 +814,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
                 <button v-for="(cid, i) in selected.attachments" :key="cid"
                         class="bb-attach-thumb"
                         @click="focusCapture(cid)"
-                        v-tooltip.top="`capture ${i + 1} — ${cid} — click to focus the pop-out viewer + restore the annotation overlay`">
+                        v-tooltip.top="captureCache[cid]?.env?.surface === 'agent_run'
+                          ? `Picture ${i + 1} — click to enlarge` : `Capture ${i + 1} — click to show it in the viewer`">
                   <img v-if="captureCache[cid]?.thumb" :src="captureCache[cid].thumb" :alt="cid" />
                   <span v-else class="bb-attach-fallback"><i class="pi pi-image" /></span>
                   <span class="bb-attach-index cc-fs-2xs">{{ i + 1 }}</span>
@@ -820,6 +844,9 @@ onUnmounted(() => { mermaidRenderSeq++ })
               Pick an entry from the list, or click <strong>New entry</strong> to start one.
             </template>
           </div>
+
+          <AttachmentGallery v-if="galleryStart !== null" :items="galleryItems" :start="galleryStart"
+                             @close="galleryStart = null" />
         </section>
       </div>
     </template>
@@ -981,6 +1008,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-section-good   { border-left-color: rgba(86, 180, 233, 0.7); }
 .bb-section-bad    { border-left-color: rgba(213, 94, 0, 0.8); }
 .bb-section-unsure { border-left-color: rgba(148, 163, 184, 0.7); }
+.bb-section-pics { margin: 4px 0; }
+.bb-attach-thumb.bb-section-pic { width: 14rem; height: 12rem; }
 .bb-body :deep(code) {
   font-family: var(--cc-mono);
   background: var(--cc-surface-2);
