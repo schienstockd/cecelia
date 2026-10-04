@@ -342,3 +342,40 @@ end
         end
     end
 end
+
+@testset "API: co-clustered segmentations stay apart — overlays, heatmap pooling" begin
+    # A cluster pop's bare path expands across every segmentation clustered in the same run. A read
+    # meant for ONE segmentation must not pool the others: here T is a copy of B clustered with it, so
+    # any leak shows up as an exact doubling of B's numbers.
+    src = api_fixture("testpr", "1", "KDIeEm")
+    if !api_have_fixture(joinpath(src, "labelProps", "B__tracks.h5ad"))
+        @test_skip "track fixture missing"
+    else
+        mkimg = function (with_t::Bool)
+            td = joinpath(mktempdir(), "KDIeEm"); cp(src, td)
+            lp = joinpath(td, "labelProps")
+            img = CciaImage(uid = "KDIeEm", dir = td)
+            img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+            if with_t
+                for f in ("B.h5ad", "B__tracks.h5ad", "B__tracks.clustfeatures.json")
+                    cp(joinpath(lp, f), joinpath(lp, replace(f, "B" => "T"; count = 1)))
+                end
+                img.label_props["T"] = "T.h5ad"
+            end
+            img
+        end
+        alone, paired = mkimg(false), mkimg(true)
+        @test Cecelia.co_clustered_value_names(paired, "movement"; granularity = :track) == ["B", "T"]
+        # points, not segments: T's copied rows share B's track ids, so a leak would fold into B's tails
+        pts(img) = (per_t = build_overlays3d_for(img; value_name = "B", pop_type = "trackclust",
+                                                 include_tracks = false);
+                    sum(t -> (p = per_t(t)[1]; p === nothing ? 0 : length(p.x)), 0:19))
+        @test pts(alone) > 0
+        @test pts(paired) == pts(alone)                            # B's cells only, not B's + T's
+        # the per-cluster heatmap pools the run itself — each segmentation once
+        n(img) = only(plot_summary_data(img, "trackclust", ["/Directed"], "matrix"; granularity = :track,
+                                        category = "clusters.movement", matrix_mode = "profile",
+                                        measures = ["live.track.speed"])["cells"])["n"]
+        @test n(paired) == 2 * n(alone)
+    end
+end
