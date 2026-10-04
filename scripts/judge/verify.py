@@ -80,7 +80,8 @@ SCHEMA = {
 
 _BRIEF = """You are verifying possible bugs in this repository, which is checked out at the commit to judge.
 Each BUG below came from a code reviewer on some branch, and a quick excerpt check could not rule
-it out. Read the actual code: the flagged function, its callers and producers, and anything the
+it out. A BUG marked `agent run` is instead an error an autonomous agent hit calling a tool; when it
+has no file:line, find the code path that returns that error from the tool's name and the message. Read the actual code: the flagged function, its callers and producers, and anything the
 bug's reasoning depends on. Trace it; don't infer. Read only: don't edit, build or run the app.
 `git log` / `git show` / `grep` are fine.
 
@@ -108,7 +109,8 @@ def eligible(bugs: _t.Sequence[dict]) -> list[dict]:
 
 
 def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
-    """Bugs joined when they share a reviewed branch or a file, oldest group first, each ≤ GROUP_MAX."""
+    """Bugs joined when they share a reviewed branch, a file, or (agent-run errors) the run's commit;
+    oldest group first, each ≤ GROUP_MAX."""
     parent = list(range(len(bugs)))
 
     def root(i: int) -> int:
@@ -118,7 +120,8 @@ def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
         return i
     seen: dict[tuple, int] = {}
     for i, b in enumerate(bugs):
-        for k in (("branch", b.get("branch")), ("file", b.get("file"))):
+        run = b.get("commit") if b.get("kind") == "agent_run" else None   # one run's errors: one agent
+        for k in (("branch", b.get("branch")), ("file", b.get("file")), ("run", run)):
             if k[1] is None:
                 continue
             if k in seen:
@@ -138,8 +141,10 @@ def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
 
 def prompt_for(group: _t.Sequence[dict]) -> str:
     return _BRIEF + "\n\n".join(
-        f"BUG {b['key']} ({b.get('marker') or '?'}, {b.get('file')}:{b.get('line')}, "
-        f"raised on branch {b.get('branch') or '?'}):\n{b['desc']}\n"
+        f"BUG {b['key']} ({b.get('marker') or '?'}, {_record.bug_location(b)}, "
+        + (f"hit in {b.get('runs') or 1} run(s), first at commit {(b.get('commit') or '?')[:8]}):\n"
+           if b.get("kind") == "agent_run" else f"raised on branch {b.get('branch') or '?'}):\n")
+        + f"{b['desc']}\n"
         + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
         + f"Excerpt check said: {b.get('why') or '—'}" for b in group)
 

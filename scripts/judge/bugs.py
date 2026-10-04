@@ -21,6 +21,11 @@ over the per-pass cap, or with no verdict, are `unjudged` (carried, never on the
 one check no finding raises: commits pushed to a PR's branch after it merged, which the merge
 never took (`stranded`).
 
+Errors an autonomous agent run hit (`agent_run_finding`, written by `scripts/agent_eval/run_record.py`)
+are candidates too, one bug per error key however many runs hit it. One with a `file:line` (a backend
+stacktrace) is judged like a finding; one without has no code to excerpt, so it skips the judge,
+stays `open` and goes to verify, whose agent finds the code path itself.
+
 Usage:
     pixi run judge-bugs [--date D]               # print the sweep (one judge call)
     pixi run judge-bugs --date D --no-judge      # free: everything the judge would see is `unjudged`
@@ -54,6 +59,9 @@ _judge = _load_sibling("judge")
 _enc = _load_sibling("enclosing")
 _record = _load_sibling("record")
 
+#: An error an autonomous agent run hit: payload `key`, `tool`, `error`, `desc`, and `file` / `line`
+#: only when a backend stacktrace gave one. `commit` is the SHA the run checked out; no branch.
+AGENT_RUN_EVENT = "agent_run_finding"
 #: A tagged finding resolved one of these ways is handled; anything else may still be live.
 _HANDLED = frozenset({"fixed_pre_commit", "false_positive"})
 _VERDICT_STATUS = {"live_bug": "open", "gone": "gone", "not_a_bug": "dismissed"}
@@ -65,6 +73,10 @@ MAX_FUNCTION_LINES = 200
 FROZEN_PATHS = ("docs/ai-assist/judge-runs/", "docs/archive/")
 #: Statuses the next pass carries; the rest are reported once.
 CARRY = ("open", "unjudged", "unmerged")
+#: An agent-run error the owner closed is carried too, unchanged: the next run that hits it would
+#: otherwise raise it as new. Not `gone` / `dismissed`: verify dismisses a fixed bug too, so one that
+#: comes back is a regression and is raised again.
+MUTED = ("wont_fix",)
 #: Most findings judged per pass; the rest wait for the next one (oldest first).
 MAX_ITEMS = 40
 WINDOW_DAYS = 7
@@ -100,14 +112,32 @@ def _key(row: dict) -> str:
                                   p.get("marker") or "", p.get("desc") or "")
 
 
+def _agent_run(r: dict) -> dict:
+    p = r["payload"]
+    return {"key": p["key"], "kind": "agent_run", "marker": "agent run", "tool": p.get("tool"),
+            "error": p.get("error"), "file": p.get("file"), "line": p.get("line"),
+            "desc": p.get("desc") or f"`{p.get('tool')}` failed: {p.get('error')}",
+            "branch": None, "commit": r.get("commit"), "logged": r.get("ts"), "runs": 1, "last_seen": r.get("ts")}
+
+
 def candidates(events: _t.Iterable[dict], *, since: str) -> list[dict]:
-    """Fanout findings logged since `since` that nobody fixed or rejected, one per key, oldest first."""
+    """Fanout findings logged since `since` that nobody fixed or rejected, and agent-run errors, one
+    per key, oldest first. An agent-run error keeps its first row and counts the rows (`runs`)."""
     events = list(events)
     outcome = {r["payload"]["slug"]: r["payload"].get("outcome") for r in events
                if r.get("event") == "fanout_audit_finding_resolved" and (r.get("payload") or {}).get("slug")}
     out: dict[str, dict] = {}
     for r in events:
-        if r.get("event") not in ("fanout_audit_finding", "fanout_audit_advisory") or r.get("ts", "") < since:
+        if r.get("ts", "") < since:
+            continue
+        if r.get("event") == AGENT_RUN_EVENT and (r.get("payload") or {}).get("key"):
+            key = r["payload"]["key"]
+            if key in out:
+                out[key].update(runs=out[key]["runs"] + 1, last_seen=r.get("ts"))
+            else:
+                out[key] = _agent_run(r)
+            continue
+        if r.get("event") not in ("fanout_audit_finding", "fanout_audit_advisory"):
             continue
         key = _key(r)
         if outcome.get(key) in _HANDLED:
@@ -230,7 +260,8 @@ def default_judge(prompt: str) -> tuple[dict, float, dict]:
 
 
 def _strip(b: dict) -> dict:
-    return {k: v for k, v in b.items() if k not in ("id", "status", "why", "code", "symbol", "carried", "was")}
+    return {k: v for k, v in b.items()
+            if k not in ("id", "status", "why", "code", "symbol", "carried", "was", "muted")}
 
 
 def _opened(b: dict, date: str) -> str:
@@ -245,22 +276,37 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
           repo: pathlib.Path = _REPO, meter: dict | None = None) -> tuple[list[dict], float]:
     """This pass's `bugs` list and the judge's cost.
 
-    Carried: the previous record's `open` / `unjudged` / `unmerged` bugs. New: `candidates` since
-    the previous pass, and stranded commits on PRs merged since then. `gone` is listed for a
+    Carried: the previous record's `open` / `unjudged` / `unmerged` bugs; an agent-run error seen
+    again adds this window's runs to its count. New: `candidates` since the previous pass, and
+    stranded commits on PRs merged since then. An agent-run error with no `file:line` is `open`
+    without the judge: there is no code to excerpt. `gone` is listed for a
     carried bug (its fix, reported once) and for a function that no longer exists; a new finding
     the judge calls gone was fixed before it was ever listed and isn't.
     """
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
     carried = {b["key"]: {**_strip(b), "carried": True, "was": b.get("status")} for b in (previous or {}).get("bugs", [])
-               if b.get("status") in CARRY and not _frozen(b.get("file"))}
+               if (b.get("status") in CARRY or b.get("kind") == "agent_run" and b.get("status") in MUTED)
+               and not _frozen(b.get("file"))}
     known = {k for b in carried.values() for k in (b.get("sources") or [b["key"]])}
-    fresh = [{**c, "first_seen": date} for c in candidates(events, since=since)
-             if c["key"] not in known and not _frozen(c.get("file"))]
+    found = candidates(events, since=since)
+    for c in found:
+        if c.get("kind") == "agent_run" and c["key"] in carried:   # hit again: same bug, more runs
+            b = carried[c["key"]]
+            b.update(runs=(b.get("runs") or 1) + c["runs"], last_seen=c["last_seen"])
+    fresh = [{**c, "first_seen": date} for c in found if c["key"] not in known and not _frozen(c.get("file"))]
     bugs: list[dict] = []
     groups: dict[tuple, list[dict]] = {}
     waits: dict[tuple, list[dict]] = {}   # unmerged: not at `sha` yet, so merged by branch + file:line
     for b in [*(b for b in carried.values() if b.get("kind") != "stranded"), *fresh]:
+        if b.get("was") in MUTED:
+            bugs.append({**_strip(b), "status": b["was"], "muted": True,
+                         "why": "closed earlier; carried so a new run's hit isn't raised again"})
+            continue
+        if b.get("kind") == "agent_run" and not b.get("file"):
+            bugs.append({**_strip(b), "status": "open", "opened": _opened(b, date),
+                         "why": "an agent run hit this error; no file:line to excerpt, so verify traces it"})
+            continue
         if not _landed(b.get("branch"), b.get("commit"), sha, repo):
             waits.setdefault((b.get("branch"), b.get("file"), b.get("line")), []).append(b)
             continue
@@ -269,7 +315,9 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             if b.get("carried") or where["symbol"]:   # a missing file on a new finding: nothing to say
                 bugs.append({**_strip(b), "status": "gone", "why": where["gone"]})
             continue
-        g = (b.get("file"), where["symbol"] or f"line {b.get('line')}")
+        g = (b.get("file"), where["symbol"] or f"line {b.get('line')}",
+             # never merged: its run count and a `wont_fix` are carried by its own key
+             b["key"] if b.get("kind") == "agent_run" else None)
         groups.setdefault(g, []).append({**b, "code": where["code"]})
     bugs += [{**_strip(_merge(g)), "status": "unmerged", "why": f"`{g[0]['branch']}` hasn't reached {sha[:8]}"}
              for g in waits.values()]

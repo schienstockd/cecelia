@@ -157,13 +157,20 @@ def pending(record: dict, reviews: _t.Iterable[dict]) -> list[dict]:
     return [item for item in items_of(record) if not answered(item)]
 
 
+def _origin(bug: dict) -> str:
+    """Where a bug came from: the reviewed branch, or the agent runs that hit it."""
+    if bug.get("kind") == "agent_run":
+        return f"hit in {bug.get('runs') or 1} agent run(s), first at commit `{(bug.get('commit') or '?')[:8]}`"
+    return f"raised on branch `{bug.get('branch') or '?'}`"
+
+
 def fix_brief(record: dict, bug: dict) -> str:
     """The opening prompt of a fix session: the bug, what verify found, and how to work it."""
     v = bug.get("verify") or {}
     main = main_checkout()
     lines = [f"Work bug {bug['id']} (`{bug['key']}`) from the weekly judge record of {record['date']} "
              f"(`{_record.store_root() / (record['date'] + '.json')}`).", "",
-             f"Where: {_record._bug_where(bug)}, raised on branch `{bug.get('branch') or '?'}`.", f"Finding: {bug['desc']}"]
+             f"Where: {_record._bug_where(bug)}, {_origin(bug)}.", f"Finding: {bug['desc']}"]
     lines += [f"Also raised: {a['desc']}" for a in bug.get("also", [])]
     if v:
         lines.append(f"Verified ({v.get('verdict')}): {v.get('effect', '')}")
@@ -258,11 +265,12 @@ def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: b
     verify found (a work item), the answer or recommendation, and the evidence."""
     b = next(b for b in record.get("bugs", []) if b["id"] == item["ref"])
     v = b.get("verify") or {}
-    where = f"PR #{b.get('pr')}" if b.get("kind") == "stranded" else f"{b['file']}:{b['line']}"
+    where = _record.bug_location(b)
     verdict = v.get("verdict") or b.get("status", "?")
     head = (f"  {_col(_VERDICT_COLOUR.get(verdict, YELLOW), verdict, use_colour=use_colour)}  "
             f"{_col(_BOLD, where, use_colour=use_colour)}  "
-            + _col(_DIM, f"{b.get('branch') or '?'} · {b['key']}", use_colour=use_colour))
+            + _col(_DIM, f"{b.get('branch') or (str(b.get('runs') or 1) + ' agent run(s)' if b.get('kind') == 'agent_run' else '?')}"
+                         f" · {b['key']}", use_colour=use_colour))
     out = [head]
     decide = item["kind"] == "decide"
     texts = {"Question": (v.get("question") or b["desc"]) if decide else None,
