@@ -345,8 +345,8 @@ class OwnerAnswerTest(unittest.TestCase):
         self.assertEqual(review.apply_reviews(record, rows)["bugs"][0]["status"], "wont_fix")
         self.assertEqual(review.pending(record, rows), [])
         self.assertEqual(review.describe({**record, "bugs": [{
-            "id": "B1", "key": "fanout-1", "file": "a.py", "line": 2, "desc": "d", "why": "w"}]},
-            {"kind": "bug", "ref": "B1"})[0], "B1 · fanout-1 · a.py:2 · branch ?")
+            "id": "B1", "key": "fanout-1", "status": "open", "file": "a.py", "line": 2, "desc": "d", "why": "w"}]},
+            {"kind": "bug", "ref": "B1"}, use_colour=False)[0], "  open  a.py:2  ? · fanout-1")
 
 
 if __name__ == "__main__":
