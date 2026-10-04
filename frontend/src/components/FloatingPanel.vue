@@ -25,6 +25,7 @@ import { reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { panelBounds, clampPanel, maximisedRect } from '../utils/panelBounds'
 import type { Edges } from '../utils/panelResize'
 import { useResizeHandles } from '../composables/useResizeHandles'
+import { canvasMaximised } from '../composables/usePlotFullscreen'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -97,7 +98,11 @@ function toggleMaximise() {
 // ── stacking: the most recently touched panel renders on top ──
 // Opening a panel raises it (you just asked for it, so it should be in front), and any pointer
 // press inside it raises it again. Closing drops it so it doesn't hold a slot in the ordering.
-const z = computed(() => panelZ(stack.value, props.storageKey))
+// While a module page's plot canvas is maximised it covers the app shell at z 200 — panels lift
+// above it so they stay usable there (opened from its launcher strip, or already open).
+// `canvasMaximised`, not the persisted flag: the flag stays set on pages that aren't maximised, where
+// a lifted panel would paint over AppHeader (the layering utils/panelBounds.ts relies on).
+const z = computed(() => panelZ(stack.value, props.storageKey, canvasMaximised.value))
 function raise() { stack.value = raisePanel(stack.value, props.storageKey) }
 
 onMounted(() => { clampIntoView(); raise(); window.addEventListener('resize', onViewportResize) })

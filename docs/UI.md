@@ -636,6 +636,10 @@ the **napari Viewer controls** are its first consumer — mounted in `App.vue`, 
   declaration order. The ordering lives in [`utils/panelStack.ts`](../frontend/src/utils/panelStack.ts)
   (`PANEL_Z_BASE` + one step per open panel, always well below the modal layer); `FloatingPanel`
   binds the result inline, so don't reintroduce a flat `z-index` in its stylesheet.
+  **While a module page's plot canvas is maximised** (`.is-plots-maximised`, z 200, covers the header
+  and sidebar) the whole stack lifts to `PANEL_Z_LIFTED` = 210, and the sidebar's four launchers
+  (`PanelLaunchers.vue`) appear compact in the maximised action bar — so Viewer / Lab log / Kiwi /
+  Correction stay openable and on top there.
   Point-out marks (`PointerBubble`, Kiwi's and Claude's "look here") on page content sit at
   `PANEL_Z_BASE - 1` — under every panel, so an open Kiwi / Viewer / Lab log covers them; a mark on
   something inside a panel stays above the panels, or its own panel would hide it.

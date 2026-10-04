@@ -16,6 +16,12 @@
 // that can be open at once this stays far below the modal layer. Mirrored in docs/UI.md.
 export const PANEL_Z_BASE = 60
 
+// Base while the module page's plot canvas is maximised (ModuleLayout `.is-plots-maximised`,
+// z-index 200 — it covers the app header and the sidebar launchers). Panels must still float over
+// it, or the Viewer / Lab log / Kiwi / Correction cockpit opened from its launcher strip would open
+// underneath. Still far below BaseModal (500) and TeleportPopover (1000).
+export const PANEL_Z_LIFTED = 210
+
 // Move `key` to the top of the stack. Returns a new array — callers assign it to a ref so Vue
 // tracks the change.
 export function raisePanel(stack: readonly string[], key: string): string[] {
@@ -29,8 +35,9 @@ export function dropPanel(stack: readonly string[], key: string): string[] {
   return stack.filter(k => k !== key)
 }
 
-// z-index for `key`. An unknown key (not yet raised) sits at the base.
-export function panelZ(stack: readonly string[], key: string): number {
+// z-index for `key`. An unknown key (not yet raised) sits at the base. `lifted` = the plot canvas
+// is maximised (see PANEL_Z_LIFTED).
+export function panelZ(stack: readonly string[], key: string, lifted = false): number {
   const i = stack.indexOf(key)
-  return PANEL_Z_BASE + (i < 0 ? 0 : i)
+  return (lifted ? PANEL_Z_LIFTED : PANEL_Z_BASE) + (i < 0 ? 0 : i)
 }
