@@ -37,7 +37,11 @@ _valid_capture_id(id::AbstractString)::Bool = !isnothing(match(_CAPTURE_ID_RE, S
 # structural fields we can and pass the rest through — the caller (frontend) is the one place
 # that assembles a shape from its own state, and a strict schema here would need updating
 # every time the frontend adds a field. Anything unknown at read time is ignored by Claude.
-const _CAPTURE_SURFACES = Set(["viewer_frame", "viewer_slab", "ui", "plot"])
+# `agent_run`: the evidence an unattended agent run looked at, written by its harness into the SOURCE
+# project's run record (docs/todo/AGENT_RUN_REVIEW_PLAN.md Decision 6). Not something the user
+# shared, so the list route leaves it out unless asked for and "Clear all captures" keeps it.
+const _AGENT_RUN_SURFACE = "agent_run"
+const _CAPTURE_SURFACES = Set(["viewer_frame", "viewer_slab", "ui", "plot", _AGENT_RUN_SURFACE])
 const _CAPTURE_OVERLAY_KINDS = Set(["rect", "poly", "stroke", "circle", "arrow"])
 # CVD-safe palette locked 2026-09-19 (see `frontend/src/utils/overlayCompose.ts`). Safelisted so
 # a tampered payload can't smuggle arbitrary CSS through; unknown names are DROPPED (the frontend
@@ -320,9 +324,11 @@ function api_viewer_capture(body_bytes::Vector{UInt8})
 end
 
 """
-    GET /api/viewer/captures?projectUid=…&limit=N
+    GET /api/viewer/captures?projectUid=…&limit=N[&surface=S]
 
-Reply: `{ items: [{ captureId, createdAt, surface, address }, …] }`, newest-first, capped.
+Reply: `{ items: [{ captureId, createdAt, surface, address }, …] }`, newest-first, capped. Without
+`surface`, every capture the user shared — `agent_run` evidence is left out; with it, only that
+surface.
 Skips a corrupt `meta.json` (never takes the list down for it — captures are additive decoration
 on top of a project, not core data).
 """
@@ -339,6 +345,7 @@ function api_viewer_captures_list(req::HTTP.Request)
         _CAPTURES_LIST_DEFAULT_LIMIT
     end
 
+    want_surface = get(query, "surface", "")
     dir = _captures_dir_for_project(uid)
     isdir(dir) || return 200, JSON3.write((; items = Any[]))
 
@@ -352,10 +359,12 @@ function api_viewer_captures_list(req::HTTP.Request)
         isfile(meta_path) || continue
         try
             meta = JSON3.read(read(meta_path, String))
+            surface = String(get(meta, :surface, ""))
+            (isempty(want_surface) ? surface == _AGENT_RUN_SURFACE : surface != want_surface) && continue
             row = Dict{String,Any}(
                 "captureId" => String(get(meta, :captureId, id)),
                 "createdAt" => String(get(meta, :createdAt, "")),
-                "surface"   => String(get(meta, :surface, "")),
+                "surface"   => surface,
                 "address"   => _capture_dict(get(meta, :address, nothing)),
             )
             prev = get(meta, :previousCaptureId, nothing)
@@ -444,12 +453,25 @@ function api_viewer_capture_delete(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, deleted = existed))
 end
 
+# A capture dir's `surface`; "" when its meta is missing or unreadable.
+function _capture_surface(dir::AbstractString)::String
+    p = joinpath(dir, "meta.json")
+    isfile(p) || return ""
+    try
+        String(get(JSON3.read(read(p, String)), :surface, ""))
+    catch
+        ""
+    end
+end
+
 """
     POST /api/viewer/captures/clear
 
 Body: `{projectUid}`. User-driven bulk delete — the "Clear all captures" button in Kiwi.
-Removes every `cap-…` subdir under `<proj>/captures/`. Skips non-matching entries so a stray
-file or a future format lives on. Returns the count so the UI can report "cleared 42".
+Removes every `cap-…` subdir under `<proj>/captures/` except `agent_run` evidence (a run record's
+pictures, not the user's shares — the list Kiwi clears never showed them). Skips non-matching
+entries so a stray file or a future format lives on. Returns the count so the UI can report
+"cleared 42".
 """
 function api_viewer_captures_clear(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -465,6 +487,7 @@ function api_viewer_captures_clear(body_bytes::Vector{UInt8})
             _valid_capture_id(name) || continue
             entry = joinpath(dir, name)
             isdir(entry) || continue
+            _capture_surface(entry) == _AGENT_RUN_SURFACE && continue
             try
                 rm(entry; recursive = true, force = true)
                 cleared += 1

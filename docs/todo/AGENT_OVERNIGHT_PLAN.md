@@ -167,12 +167,14 @@ a real-crop brief in the nightly set once the synthetic one is understood.
 The synthetic tier hands the agent a repo checkout; a user hands it the APP. `run_app.py` gives the
 agent only what any user's install offers: `claude -p --tools ""` (no shell, files or python) with the
 observer + the opt-in `cecelia-autonomous` server (`docs/inventory/MCP.md`), locked to a disposable
-raw-only copy of one image (`app_project.py`: `default` store only, fresh uids, left in the projects
-dir as the reviewable record). Brief: *"Hey. can you track the cells in that image and analyse their
-behaviour?"* plus the one-line open-project context the app would give. Records in
-`/tmp/cecelia-agent-app/<stamp>/` (`trace.jsonl` live — read with `trace_view.py`, `record.json`:
-cost, tool calls/errors, reads of the source project, the copy's label sets / gates / chains next to
-the source's, and a size+mtime canary over the whole source project). `cron_app.sh` = the crontab
+raw-only copy of the run images in one set (`app_project.py`: `default` store only, fresh uids).
+Brief: *"Hey. can you track the cells in these images and analyse their behaviour?"* plus the
+one-line open-project context the app would give. Records in `/tmp/cecelia-agent-app/<stamp>/`
+(`trace.jsonl` live — read with `trace_view.py`, `record.json`: cost, tool calls/errors, reads of the
+source project, per image the copy's label sets / gates / chains next to the source's, cohort QC on
+both sides, and a canary over the whole source project). The reviewable record is a blackboard entry
+in the SOURCE project, one section per decision (`run_record.py`,
+[`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) P1). `cron_app.sh` = the crontab
 entry (checks out origin/main first, skips if the app is down or a run holds the lock).
 
 **No breadcrumbs (Dominik, 2026-10-03).** The run measures autonomous reasoning in this domain, so

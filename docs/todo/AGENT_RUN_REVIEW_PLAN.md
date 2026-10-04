@@ -1,6 +1,6 @@
 # Agent run review — the run's decisions on the blackboard, a verdict on each
 
-**Status:** DESIGN (2026-10-04) — nothing built; open questions answered (Decisions 1, 11). Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
+**Status:** P1 built (2026-10-04) — multi-image copies, `run_record.py`, the `agent_run` capture surface; the back-fill posts once the running app has the surface (dry-runs read). P1b–P4 not built. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
 P4b (the app-tier runs). Builds on the blackboard ([`BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md)
 Part 4, [`PROJECT_MEMORY_PLAN.md`](PROJECT_MEMORY_PLAN.md) Decision 11 outcomes), `KiwiRef`
 ([`KIWI_ASSISTANT_PLAN.md`](KIWI_ASSISTANT_PLAN.md) Decision 4) and the frozen-ref sidecar
@@ -122,8 +122,9 @@ heading's `dNN` and never renumber; misses are `mNN`.
   from the trace's tool-result image block when present, else re-rendered through the same route).
 - Captures: `agent_run` added to `_CAPTURE_SURFACES`; `get_recent_captures` and the share-in list
   skip it.
-- Canary: the harness's writes into the source (`blackboard/`, `captures/` with `agent_run`) are
-  expected, everything else still fails it.
+- Canary: the record is written after the canary is read, so the harness's writes into the source
+  never meet it (built that way instead of an exemption).
+- Kiwi's "Clear all captures" keeps `agent_run` captures — they are a record's pictures, not shares.
 - **Checkpoint:** back-fill last night's three single-image runs (no agent cost) → three entries you
   read for completeness and grain.
 

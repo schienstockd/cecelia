@@ -10,32 +10,60 @@ import json
 import sys
 
 
-def lines(path: str, width: int) -> list[str]:
+def _result_text(content) -> str:
+    return content if isinstance(content, str) else " ".join(
+        x.get("text", "") for x in content or [] if isinstance(x, dict))
+
+
+def events(path: str) -> list[dict]:
+    """The trace in order, one dict per item: `init` {model, sessionId, tools, mcp}, `text` {text},
+    `call` {id, name, input}, `result` {id, text, isError, images: [base64 PNG]}, `final` {subtype,
+    cost, turns, text}. Tool names lose their `mcp__<server>__` prefix."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        raws = f.readlines()
     out = []
-    for raw in open(path, encoding="utf-8", errors="replace"):
+    for raw in raws:
         try:
             ev = json.loads(raw)
         except json.JSONDecodeError:
             continue
         if ev.get("type") == "system" and ev.get("subtype") == "init":
-            out.append(f"INIT model={ev.get('model')} tools={len(ev.get('tools') or [])} "
-                       f"mcp={[(s.get('name'), s.get('status')) for s in ev.get('mcp_servers') or []]}")
+            out.append({"kind": "init", "model": ev.get("model"), "sessionId": ev.get("session_id"),
+                        "tools": len(ev.get("tools") or []),
+                        "mcp": [(s.get("name"), s.get("status")) for s in ev.get("mcp_servers") or []]})
         for b in (ev.get("message") or {}).get("content") or []:
             if not isinstance(b, dict):
                 continue
             if b.get("type") == "text":
-                out.append("TEXT " + b["text"][: width * 3])
+                out.append({"kind": "text", "text": b["text"]})
             elif b.get("type") == "tool_use":
-                name = b.get("name", "?").split("__")[-1]
-                out.append(f"CALL {name} {json.dumps(b.get('input'))[:width]}")
+                out.append({"kind": "call", "id": b.get("id"), "name": b.get("name", "?").split("__")[-1],
+                            "input": b.get("input") or {}})
             elif b.get("type") == "tool_result":
                 c = b.get("content")
-                text = c if isinstance(c, str) else " ".join(
-                    x.get("text", "") for x in c or [] if isinstance(x, dict))
-                out.append(f"  {'ERR ' if b.get('is_error') else ''}→ {text[:width]}")
+                images = [x["source"]["data"] for x in c if isinstance(x, dict) and x.get("type") == "image"
+                          and (x.get("source") or {}).get("data")] if isinstance(c, list) else []
+                out.append({"kind": "result", "id": b.get("tool_use_id"), "text": _result_text(c),
+                            "isError": bool(b.get("is_error")), "images": images})
         if ev.get("type") == "result":
-            out.append(f"RESULT {ev.get('subtype')} cost=${ev.get('total_cost_usd')} "
-                       f"turns={ev.get('num_turns')}\n{ev.get('result') or ''}")
+            out.append({"kind": "final", "subtype": ev.get("subtype"), "cost": ev.get("total_cost_usd"),
+                        "turns": ev.get("num_turns"), "text": ev.get("result") or ""})
+    return out
+
+
+def lines(path: str, width: int) -> list[str]:
+    out = []
+    for e in events(path):
+        if e["kind"] == "init":
+            out.append(f"INIT model={e['model']} tools={e['tools']} mcp={e['mcp']}")
+        elif e["kind"] == "text":
+            out.append("TEXT " + e["text"][: width * 3])
+        elif e["kind"] == "call":
+            out.append(f"CALL {e['name']} {json.dumps(e['input'])[:width]}")
+        elif e["kind"] == "result":
+            out.append(f"  {'ERR ' if e['isError'] else ''}→ {e['text'][:width]}")
+        elif e["kind"] == "final":
+            out.append(f"RESULT {e['subtype']} cost=${e['cost']} turns={e['turns']}\n{e['text']}")
     return out
 
 

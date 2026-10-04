@@ -30,6 +30,9 @@ def _load(name):
 fixture = _load("fixture")
 score = _load("score")
 runner = _load("run_overnight")
+sys.path.insert(0, str(_REPO / "scripts" / "agent_eval"))   # run_record imports its siblings by name
+app_project = _load("app_project")
+run_record = _load("run_record")
 
 SPEC = fixture.FixtureSpec(size=96, n_frames=24, n_cells=6, min_dwell=6)
 
@@ -210,6 +213,114 @@ class TestCanary(unittest.TestCase):
             self.assertEqual(c["active_moved"][0]["after"], "agent")
             prior.write_bytes(b"overwritten")
             self.assertIn("1/img/labels/default.zarr", score.check_canary(before, score.snapshot(root))["changed_files"])
+
+
+def _trace(*items) -> str:
+    """A stream-json trace: ("text", s) | ("call", id, name, input) | ("result", id, text, is_error)."""
+    rows = [{"type": "system", "subtype": "init", "model": "m", "session_id": "S1", "tools": []}]
+    for it in items:
+        if it[0] == "text":
+            rows.append({"type": "assistant", "message": {"content": [{"type": "text", "text": it[1]}]}})
+        elif it[0] == "call":
+            rows.append({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": it[1], "name": f"mcp__cecelia-autonomous__{it[2]}", "input": it[3]}]}})
+        else:
+            rows.append({"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": it[1], "content": it[2], "is_error": it[3]}]}})
+    rows.append({"type": "result", "subtype": "success", "total_cost_usd": 1.5, "num_turns": 9,
+                 "result": "Done."})
+    return "\n".join(json.dumps(r) for r in rows)
+
+
+_RECT = {"kind": "rectangle", "x_channel": "a", "y_channel": "b", "x_min": 0, "x_max": 1, "y_min": 0, "y_max": 2}
+
+
+class TestAppProject(unittest.TestCase):
+    def test_copies_every_run_image_into_one_set(self):
+        with tempfile.TemporaryDirectory() as d:
+            projects = pathlib.Path(d)
+            for uid in ("imgA", "imgB"):
+                (projects / "SRC" / "0" / uid / "raw.ome.zarr").mkdir(parents=True)
+                (projects / "SRC" / "1" / uid).mkdir(parents=True)
+                (projects / "SRC" / "1" / uid / "ccid.json").write_text(json.dumps(
+                    {"uid": uid, "name": f"name {uid}", "filepath": {"default": "raw.ome.zarr", "_active": "default"},
+                     "imChannelNames": {"default": ["c0"], "_active": "default"}}), encoding="utf-8")
+            info = app_project.build(projects, "SRC", ["imgA", "imgB"], "Agent run x")
+            self.assertEqual([im["sourceImageUid"] for im in info["images"]], ["imgA", "imgB"])
+            root = pathlib.Path(info["projectDir"])
+            members = json.loads((root / "1" / info["setUid"] / "ccid.json").read_text(encoding="utf-8"))
+            self.assertEqual(members["image_uids"], [im["imageUid"] for im in info["images"]])
+            for im in info["images"]:
+                self.assertTrue((root / "0" / im["imageUid"] / "raw.ome.zarr").is_dir())
+        legacy = {"imageUid": "c1", "imageName": "n", "source": {"projectUid": "SRC", "imageUid": "imgA"}}
+        self.assertEqual(app_project.copy_images(legacy),
+                         [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])
+
+
+class TestRunRecord(unittest.TestCase):
+    IMAGES = [{"imageUid": "cp1", "imageName": "one", "sourceImageUid": "src1"}]
+
+    def _decisions(self, *items):
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "trace.jsonl"
+            path.write_text(_trace(*items), encoding="utf-8")
+            return run_record.decisions(str(path), self.IMAGES)
+
+    def test_step_of(self):
+        self.assertEqual(run_record.step_of("cleanupImages.driftCorrect"), "cleanup")
+        self.assertEqual(run_record.step_of("segment.cellpose"), "segment")
+        self.assertEqual(run_record.step_of("segment.measureLabels"), "measure")
+        self.assertEqual(run_record.step_of("tracking.bayesian_track_measures"), "track")
+        self.assertEqual(run_record.step_of("behaviour.hmm"), "behaviour")
+
+    def test_chain_nodes_become_decisions_with_their_states(self):
+        nodes = [{"id": "s1", "fn": "segment.cellpose", "params": {"outputValueName": "T"}},
+                 {"id": "s2", "fn": "segment.cellpose", "params": {"outputValueName": "B"}},
+                 {"id": "t1", "fn": "tracking.bayesian_track_measures", "params": {"valueName": "T"}}]
+        dec = self._decisions(
+            ("call", "c0", "get_image_info", {"project_uid": "P", "image_uid": "cp1"}),
+            ("result", "c0", "{}", False),
+            ("call", "c1", "create_chain", {"name": "bad (name)", "nodes": nodes}),
+            ("result", "c1", "HTTP 400: Invalid chain name", True),
+            ("text", "Fixing the name."),
+            ("call", "c2", "create_chain", {"name": "ok", "nodes": nodes}),
+            ("result", "c2", "{}", False),
+            ("call", "c3", "run_chain", {"chain_name": "ok", "image_uids": ["cp1"]}),
+            ("result", "c3", json.dumps({"runId": "R1"}), False),
+            ("call", "c4", "wait_for_chain", {"run_id": "R1"}),
+            ("result", "c4", json.dumps({"imageStates": {"cp1": {"s1": "done", "s2": "done", "t1": "failed"}}}), False))
+        seg, trk, final = dec["sections"]
+        self.assertEqual((seg["id"], seg["step"], seg["images"]), ("d01", "segment", ["src1"]))
+        self.assertEqual(len(seg["units"]), 2)                     # same fn, one chain → one decision
+        self.assertEqual(seg["lookedAt"], ["get_image_info(image_uid=src1)"])   # copy uid → source uid
+        self.assertEqual(seg["said"], ["Fixing the name."])
+        self.assertIn("HTTP 400", seg["triedFirst"][0])
+        self.assertEqual(trk["units"][0]["outcome"], {"src1": "failed"})
+        self.assertEqual(final["step"], "report")
+        self.assertEqual([e["tool"] for e in dec["toolErrors"]], ["create_chain"])
+        self.assertEqual(dec["sessionId"], "S1")
+
+    def test_gates_merge_until_something_is_read_between(self):
+        gate = lambda i, name: [("call", f"g{i}", "add_gate", {"image_uid": "cp1", "value_name": "T",   # noqa: E731
+                                                              "name": name, "gate": _RECT}),
+                                ("result", f"g{i}", "{}", False)]
+        dec = self._decisions(*gate(1, "a"), *gate(2, "b"),
+                              ("call", "h", "gate_histogram", {"image_uid": "cp1", "value_name": "T"}),
+                              ("result", "h", "{}", False), *gate(3, "c"))
+        gates = [s for s in dec["sections"] if s["step"] == "gate"]
+        self.assertEqual([len(s["units"]) for s in gates], [2, 1])
+        self.assertIn("add `/a` on T: rectangle a (linear) 0–1 × b (linear) 0–2", gates[0]["units"][0]["did"])
+
+    def test_render_heads_each_section_and_lists_errors_apart(self):
+        dec = self._decisions(("call", "x", "set_gate", {"image_uid": "cp1", "value_name": "T", "path": "/a"}),
+                              ("result", "x", "Error executing tool set_gate", True))
+        run = {"projectUid": "CP", "projectName": "Agent run x", "images": self.IMAGES,
+               "source": {"projectUid": "SRC"}}
+        md = run_record.render(run, {"brief": "b", "canary": {"intact": True}}, dec,
+                               {"d01": "because"}, {})
+        self.assertIn("### d01 · report · all · final message", md)
+        self.assertIn("> because", md)
+        self.assertIn("## Tool errors (unscored)\n\n- `set_gate`: Error executing tool set_gate", md)
 
 
 if __name__ == "__main__":
