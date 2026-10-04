@@ -3,11 +3,15 @@ app tier): the run images of a source project copied as a fresh project, in one 
 only its raw `default` version — no segmentation, gates, tracks or run log — so the agent starts
 where a user would, and the source project is never written.
 
+With `knowledge`, the source project's lab-knowledge entries (Blackboard entries a person marked as
+knowledge, docs/todo/AGENT_RUN_REVIEW_PLAN.md P4) are copied in as well, and nothing else from its
+Blackboard: no run records, no notes, no profile.
+
 The copy lands in the app's projects dir (the running app lists projects by scanning it), under new
 uids and a name that says what it is. `--source-project`/`--image` are read, never written.
 
     pixi run python scripts/agent_eval/app_project.py --projects-dir ~/cecelia-feijoa/projects \\
-        --source-project tSJpBI --image yDfwP7 --image UJS0Hz --name "Agent run 2026-10-05" --out run.json
+        --source-project tSJpBI --image yDfwP7 --image UJS0Hz --name "Agent run 2026-10-05" --out run.json [--knowledge]
 """
 from __future__ import annotations
 
@@ -45,9 +49,47 @@ def raw_ccid(src: dict, uid: str, filename: str) -> dict:
             "filepath": {"default": filename, "_active": "default"}, "labels": {}, "label_props": {}}
 
 
-def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str], name: str) -> dict:
+def knowledge_entries(src_root: pathlib.Path) -> list[tuple[pathlib.Path, dict]]:
+    """The source project's Blackboard entries marked as lab knowledge: `(entry dir, meta)`."""
+    out = []
+    for d in sorted((src_root / "blackboard").glob("*/meta.json")):
+        try:
+            with open(d, encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if isinstance(meta.get("knowledge"), dict) and "agentRun" not in meta and (d.parent / "entry.md").exists():
+            out.append((d.parent, meta))
+    return out
+
+
+def copy_knowledge(src_root: pathlib.Path, root: pathlib.Path) -> list[dict]:
+    """Copy the knowledge entries' live text into `root`'s Blackboard as fresh entries: no history,
+    no attachments (captures stay in the source), no link back to the run section a lesson came from."""
+    copied, registry = [], {}
+    for d, meta in knowledge_entries(src_root):
+        eid = d.name
+        (root / "blackboard" / eid).mkdir(parents=True)
+        shutil.copyfile(d / "entry.md", root / "blackboard" / eid / "entry.md")
+        kn = {k: v for k, v in meta["knowledge"].items() if k != "from"}
+        new = {"entryId": eid, "title": meta.get("title", eid), "createdAt": meta.get("createdAt", ""),
+               "updatedAt": meta.get("updatedAt", ""), "current": 0, "attachments": [], "snapshots": [],
+               "status": "open", "knowledge": kn,
+               **{k: meta[k] for k in ("createdBy", "updatedBy") if k in meta}}
+        write_json_atomic(root / "blackboard" / eid / "meta.json", new, indent=2)
+        registry[eid] = {"title": new["title"], "current": 0, "updatedAt": new["updatedAt"], "status": "open"}
+        copied.append({"entryId": eid, "title": new["title"]})
+    if registry:
+        (root / "settings").mkdir(parents=True, exist_ok=True)
+        write_json_atomic(root / "settings" / "blackboard.json", registry, indent=2)
+    return copied
+
+
+def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str], name: str,
+          knowledge: bool = False) -> dict:
     """Copy `image_uids` (in order) into one set of a new project. `images` maps each copy to its
-    source image, which is how a run's record names images after the copy is deleted."""
+    source image, which is how a run's record names images after the copy is deleted. `knowledge`
+    lists the lab-knowledge entries carried over (always present; empty without `knowledge`)."""
     src_root = projects_dir / source_project
     srcs = []
     for image_uid in image_uids:
@@ -80,8 +122,9 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
     write_json_atomic(root / "project.json",
                       {"uid": proj_uid, "name": name, "set_uids": [set_uid], "owners": ["default"],
                        "meta": {"agentEvalSource": source}}, indent=4)
+    carried = copy_knowledge(src_root, root) if knowledge else []
     return {"projectUid": proj_uid, "projectDir": str(root), "setUid": set_uid, "images": images,
-            "source": source}
+            "source": source, "knowledge": carried}
 
 
 def copy_images(info: dict) -> list[dict]:
@@ -100,8 +143,9 @@ def main(argv=None) -> int:
     ap.add_argument("--image", required=True, action="append", help="repeat for each run image")
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--knowledge", action="store_true", help="carry the source's lab-knowledge entries")
     a = ap.parse_args(argv)
-    info = build(pathlib.Path(a.projects_dir).expanduser(), a.source_project, a.image, a.name)
+    info = build(pathlib.Path(a.projects_dir).expanduser(), a.source_project, a.image, a.name, a.knowledge)
     write_json_atomic(a.out, info, indent=2)
     print(json.dumps(info))
     return 0

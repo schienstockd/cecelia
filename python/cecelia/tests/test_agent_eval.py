@@ -253,9 +253,36 @@ class TestAppProject(unittest.TestCase):
             self.assertEqual(members["image_uids"], [im["imageUid"] for im in info["images"]])
             for im in info["images"]:
                 self.assertTrue((root / "0" / im["imageUid"] / "raw.ome.zarr").is_dir())
+            self.assertEqual(info["knowledge"], [])
+            self.assertFalse((root / "blackboard").exists())
         legacy = {"imageUid": "c1", "imageName": "n", "source": {"projectUid": "SRC", "imageUid": "imgA"}}
         self.assertEqual(app_project.copy_images(legacy),
                          [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])
+
+
+    def test_carries_only_knowledge_entries(self):
+        with tempfile.TemporaryDirectory() as d:
+            projects = pathlib.Path(d)
+            (projects / "SRC" / "0" / "imgA" / "raw.ome.zarr").mkdir(parents=True)
+            (projects / "SRC" / "1" / "imgA").mkdir(parents=True)
+            (projects / "SRC" / "1" / "imgA" / "ccid.json").write_text(json.dumps(
+                {"uid": "imgA", "filepath": {"default": "raw.ome.zarr"}}), encoding="utf-8")
+            entries = {"bb-1": {"title": "Lesson", "attachments": ["cap-1"],
+                                "knowledge": {"at": "t", "from": {"entryId": "bb-3", "sectionId": "m01"}}},
+                       "bb-2": {"title": "A note"},
+                       "bb-3": {"title": "Agent run", "agentRun": {}, "knowledge": {"at": "t"}},
+                       "profile": {"title": "Profile"}}
+            for eid, meta in entries.items():
+                (projects / "SRC" / "blackboard" / eid).mkdir(parents=True)
+                (projects / "SRC" / "blackboard" / eid / "entry.md").write_text(f"text {eid}", encoding="utf-8")
+                (projects / "SRC" / "blackboard" / eid / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+            info = app_project.build(projects, "SRC", ["imgA"], "Agent run x", knowledge=True)
+            self.assertEqual(info["knowledge"], [{"entryId": "bb-1", "title": "Lesson"}])
+            bb = pathlib.Path(info["projectDir"]) / "blackboard"
+            self.assertEqual(sorted(p.name for p in bb.iterdir()), ["bb-1"])
+            self.assertEqual((bb / "bb-1" / "entry.md").read_text(encoding="utf-8"), "text bb-1")
+            meta = json.loads((bb / "bb-1" / "meta.json").read_text(encoding="utf-8"))
+            self.assertEqual((meta["attachments"], meta["knowledge"]), ([], {"at": "t"}))   # no link back
 
 
 class TestRunRecord(unittest.TestCase):

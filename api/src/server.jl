@@ -471,6 +471,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),
     "/api/blackboard/outcome" => (req, body_bytes) -> (api_blackboard_outcome(body_bytes)),
     "/api/blackboard/section-outcome" => (req, body_bytes) -> (api_blackboard_section_outcome(body_bytes)),
+    "/api/blackboard/knowledge" => (req, body_bytes) -> (api_blackboard_knowledge(body_bytes)),
     "/api/blackboard/search"  => (req, body_bytes) -> (api_blackboard_search(body_bytes)),
     "/api/blackboard/restore" => (req, body_bytes) -> (api_blackboard_restore(body_bytes)),
     "/api/blackboard/prune"   => (req, body_bytes) -> (api_blackboard_prune(body_bytes)),

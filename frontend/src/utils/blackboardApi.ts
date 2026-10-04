@@ -83,6 +83,23 @@ function parseSectionOutcomes(v: unknown): Record<string, SectionOutcome> | unde
   return out
 }
 
+/** AGENT_RUN_REVIEW_PLAN P4 — the entry is lab knowledge for this project: the run harness carries
+ *  it into a run's copy. `from` is the run section it was promoted from. */
+export interface Knowledge {
+  by?: AuthorStamp
+  at: string
+  from?: { entryId: string; sectionId: string }
+}
+function parseKnowledge(v: unknown): Knowledge | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  const o = v as Record<string, unknown>
+  const by = parseAuthorStamp(o.by)
+  const f = o.from as Record<string, unknown> | null | undefined
+  const from = f && typeof f.entryId === 'string' && typeof f.sectionId === 'string'
+    ? { entryId: f.entryId, sectionId: f.sectionId } : undefined
+  return { at: typeof o.at === 'string' ? o.at : '', ...(by ? { by } : {}), ...(from ? { from } : {}) }
+}
+
 /** One row in the entry list — the shape returned by `GET /api/blackboard`. */
 export interface BlackboardEntrySummary {
   entryId: string
@@ -94,6 +111,7 @@ export interface BlackboardEntrySummary {
   outcome?: BlackboardOutcome    // D11 — absent when untagged
   agentRun?: AgentRun            // an agent run's record
   sectionsMarked?: number        // on a run record: sections a person has marked
+  knowledge?: Knowledge          // P4 — lab knowledge, carried into run copies
 }
 
 /** One full entry — the shape returned by `GET /api/blackboard/entry`. `content` is the LIVE entry.md
@@ -117,6 +135,7 @@ export interface BlackboardEntry {
   updatedBy?: AuthorStamp
   agentRun?: AgentRun
   sectionOutcomes?: Record<string, SectionOutcome>
+  knowledge?: Knowledge
 }
 
 interface ListResp    { entries?: unknown[] }
@@ -129,6 +148,7 @@ function parseSummary(raw: unknown): BlackboardEntrySummary | null {
   if (!entryId) return null
   const outcome = parseOutcome(r.outcome)
   const agentRun = parseAgentRun(r.agentRun)
+  const knowledge = parseKnowledge(r.knowledge)
   return {
     entryId,
     title:            typeof r.title === 'string' ? r.title : '',
@@ -138,6 +158,7 @@ function parseSummary(raw: unknown): BlackboardEntrySummary | null {
     status:           parseStatus(r.status),
     ...(outcome ? { outcome } : {}),
     ...(agentRun ? { agentRun, sectionsMarked: typeof r.sectionsMarked === 'number' ? r.sectionsMarked : 0 } : {}),
+    ...(knowledge ? { knowledge } : {}),
   }
 }
 
@@ -159,6 +180,7 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
   const updatedBy = parseAuthorStamp(r.updatedBy)
   const agentRun = parseAgentRun(r.agentRun)
   const sectionOutcomes = parseSectionOutcomes(r.sectionOutcomes)
+  const knowledge = parseKnowledge(r.knowledge)
   return {
     entryId,
     title:     typeof r.title === 'string' ? r.title : '',
@@ -174,6 +196,7 @@ function parseEntry(raw: unknown): BlackboardEntry | null {
     ...(updatedBy ? { updatedBy } : {}),
     ...(agentRun ? { agentRun } : {}),
     ...(sectionOutcomes ? { sectionOutcomes } : {}),
+    ...(knowledge ? { knowledge } : {}),
   }
 }
 
@@ -297,5 +320,17 @@ export async function setSectionOutcome(
 ): Promise<boolean> {
   const r = await postJson(`${apiBase}/api/blackboard/section-outcome`,
     { projectUid, entryId, sectionId, verdict, note })
+  return r?.ok === true
+}
+
+/** POST /api/blackboard/knowledge — mark (or unmark) an entry as lab knowledge, which the run harness
+ *  carries into a run's copy (AGENT_RUN_REVIEW_PLAN P4). `from` names the run section a lesson was
+ *  promoted from. Returns true on success. Metadata only; no snapshot. */
+export async function setBlackboardKnowledge(
+  projectUid: string, entryId: string, knowledge: boolean,
+  from?: { entryId: string; sectionId: string }, apiBase = '',
+): Promise<boolean> {
+  const r = await postJson(`${apiBase}/api/blackboard/knowledge`,
+    { projectUid, entryId, knowledge, ...(from ? { from } : {}) })
   return r?.ok === true
 }

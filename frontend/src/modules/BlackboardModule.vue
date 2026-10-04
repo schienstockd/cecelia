@@ -27,7 +27,7 @@ import { usePanelResize } from '../composables/usePanelResize'
 import {
   listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
-  setBlackboardStatus, setBlackboardOutcome, setSectionOutcome,
+  setBlackboardStatus, setBlackboardOutcome, setSectionOutcome, setBlackboardKnowledge,
   type BlackboardEntrySummary, type BlackboardEntry,
   type BlackboardStatus, type BlackboardVerdict, type SectionVerdict,
 } from '../utils/blackboardApi'
@@ -103,6 +103,7 @@ const OUTCOME_FILTER_OPTS = [
 const KIND_FILTER_OPTS = [
   { value: 'all',   label: 'All' },
   { value: 'runs',  label: 'Agent runs', icon: 'pi pi-sparkles' },
+  { value: 'knowledge', label: 'Knowledge', icon: 'pi pi-book' },
   { value: 'notes', label: 'Notes' },
 ]
 const KIND_FILTER_KEY    = 'cc.blackboard.kindFilter'
@@ -118,7 +119,7 @@ const statusFilter  = ref<StatusChoice>(loadPref<StatusChoice>(
   STATUS_FILTER_KEY, ['all', 'open', 'resolved', 'parked'], 'all'))
 const outcomeFilter = ref<OutcomeChoice>(loadPref<OutcomeChoice>(
   OUTCOME_FILTER_KEY, ['all', 'untagged', 'good', 'bad'], 'all'))
-const kindFilter = ref<KindChoice>(loadPref<KindChoice>(KIND_FILTER_KEY, ['all', 'runs', 'notes'], 'all'))
+const kindFilter = ref<KindChoice>(loadPref<KindChoice>(KIND_FILTER_KEY, ['all', 'runs', 'knowledge', 'notes'], 'all'))
 watch(kindFilter, v => { try { profileStorage.setItem(KIND_FILTER_KEY, v) } catch { /* private mode */ } })
 watch(statusFilter,  v => { try { profileStorage.setItem(STATUS_FILTER_KEY,  v) } catch { /* private mode */ } })
 watch(outcomeFilter, v => { try { profileStorage.setItem(OUTCOME_FILTER_KEY, v) } catch { /* private mode */ } })
@@ -265,6 +266,35 @@ async function onAddMiss(step: RunStep, image: string, text: string, note: strin
       await loadEntry(eid)
     }
   } finally { savingSection.value = false }
+}
+// ── Lab knowledge (P4) — what a later run's copy carries ───────────────────────────────────────
+// A lesson starts as a section's note; the new entry opens in the editor to be written in general form.
+async function onPromote(sectionId: string, note: string) {
+  if (savingSection.value || !selected.value || !projectUid.value) return
+  savingSection.value = true
+  const from = { entryId: selected.value.entryId, sectionId }
+  try {
+    const title = 'Lesson: ' + (note.length > 80 ? note.slice(0, 79) + '…' : note)
+    const id = await createBlackboardEntry(projectUid.value, title, note + '\n')
+    if (!id) return
+    await setBlackboardKnowledge(projectUid.value, id, true, from)
+    await loadList()
+    selectedId.value = id
+    await loadEntry(id)
+    beginEditExisting()
+  } finally { savingSection.value = false }
+}
+const savingKnowledge = ref(false)
+async function toggleKnowledge() {
+  if (savingKnowledge.value || !selected.value || !projectUid.value) return
+  savingKnowledge.value = true
+  const id = selected.value.entryId
+  try {
+    if (await setBlackboardKnowledge(projectUid.value, id, !selected.value.knowledge)) {
+      await loadEntry(id)
+      await loadList()
+    }
+  } finally { savingKnowledge.value = false }
 }
 const hasMermaid = computed(() => mermaidBlocks(paneContent.value).length > 0)
 
@@ -599,6 +629,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
               <span class="bb-list-title" :class="{ 'bb-list-title-profile': e.entryId === PROFILE_ENTRY_ID }">
                 <i v-if="e.entryId === PROFILE_ENTRY_ID" class="pi pi-thumbtack bb-list-pin"
                    v-tooltip.top="'Project profile — always at the top; describes what this project is'" />
+                <i v-if="e.knowledge" class="pi pi-book bb-list-pin"
+                   v-tooltip.top="'Lab knowledge — carried into agent runs on this project'" />
                 <i v-if="e.agentRun" class="pi pi-sparkles bb-list-pin"
                    v-tooltip.top="`Agent run — ${e.sectionsMarked ?? 0} of ${e.agentRun.sectionIds.length} decisions marked`" />
                 {{ e.title || '(untitled)' }}
@@ -696,6 +728,14 @@ onUnmounted(() => { mermaidRenderSeq++ })
                                :kiwi-ref="viewingVersion !== null
                                  ? { kind: 'blackboard', entryId: selected.entryId, version: viewingVersion }
                                  : { kind: 'blackboard', entryId: selected.entryId }" />
+              <button v-if="selected.entryId !== PROFILE_ENTRY_ID && !selected.agentRun"
+                      class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'cc-btn-on': selected.knowledge }"
+                      :disabled="savingKnowledge" @click="toggleKnowledge"
+                      v-tooltip.bottom="selected.knowledge
+                        ? 'Lab knowledge, read by later agent runs; click to unmark'
+                        : 'Mark as lab knowledge: later agent runs on this project read it'">
+                <i class="pi pi-book" /> Knowledge
+              </button>
               <!-- Status flip — a chip select applied inline; no snapshot fired. -->
               <ChipSelect variant="segmented"
                           aria-label="Entry status"
@@ -793,7 +833,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
                        ? 'proposed' : (selected.sectionOutcomes?.[part.id]?.verdict ?? 'unmarked')}`">
                   <div v-html="part.headHtml" />
                   <SectionVerdictControl :outcome="selected.sectionOutcomes?.[part.id]" :busy="savingSection"
-                                         @save="(v, n) => onSectionSave(part.id, v, n)" />
+                                         @save="(v, n) => onSectionSave(part.id, v, n)"
+                                         @promote="n => onPromote(part.id, n)" />
                   <div v-html="part.html" />
                   <div v-if="part.pics.length" class="bb-attach-strip bb-section-pics">
                     <button v-for="cid in part.pics" :key="cid" class="bb-attach-thumb bb-section-pic"

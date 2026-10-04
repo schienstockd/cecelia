@@ -400,6 +400,9 @@ class GuidanceTest(unittest.TestCase):
             {"entryId": "bb-20260918T000000-4d5e6f", "title": "Thread C (untagged, oldest open)",
              "current": 1, "updatedAt": "2026-09-18", "attachmentsCount": 0,
              "status": "open"},
+            {"entryId": "bb-20260917T120000-0c0c0c", "title": "Lesson K (lab knowledge, oldest open)",
+             "current": 0, "updatedAt": "2026-09-17", "attachmentsCount": 0,
+             "status": "open", "knowledge": {"at": "2026-09-17T12:00:00"}},
             {"entryId": "bb-20260917T000000-fedcba", "title": "Thread R (resolved)",
              "current": 1, "updatedAt": "2026-09-17", "attachmentsCount": 0,
              "status": "resolved"},
@@ -441,11 +444,15 @@ class GuidanceTest(unittest.TestCase):
         self.assertNotIn("Project profile", titles)
         # Decision 12 tiebreak — the `bad`-tagged entry must lead, even though newer untagged
         # entries exist. Untagged entries fall to the back in stable order.
-        self.assertEqual(titles[0], "Thread B (bad-tagged, middle age)")
+        # Lab knowledge (AGENT_RUN_REVIEW P4) leads ahead of that, flagged as such.
+        self.assertEqual(titles[0], "Lesson K (lab knowledge, oldest open)")
+        self.assertIs(out["openBlackboardEntries"][0]["knowledge"], True)
+        self.assertEqual(titles[1], "Thread B (bad-tagged, middle age)")
         self.assertIn("Thread A (newest, untagged)", titles)
         self.assertIn("Thread C (untagged, oldest open)", titles)
         # The `bad` row still carries its outcome dict downstream (Claude reads the note).
-        bad_row = out["openBlackboardEntries"][0]
+        bad_row = out["openBlackboardEntries"][1]
+        self.assertNotIn("knowledge", bad_row)
         self.assertEqual(bad_row["outcome"]["verdict"], "bad")
         self.assertIn("galvo", bad_row["outcome"]["note"])
         # Recent captures relayed with the slim shape.

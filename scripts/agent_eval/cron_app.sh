@@ -19,6 +19,8 @@ SOURCE="${CECELIA_AGENT_APP_SOURCE:-tSJpBI}"
 # (docs/todo/AGENT_RUN_REVIEW_PLAN.md Decision 1).
 IMAGES="${CECELIA_AGENT_APP_IMAGES:-yDfwP7 UJS0Hz dvFmih 3vBHp8}"
 SOURCE_SET="${CECELIA_AGENT_APP_SOURCE_SET:-k58SK7}"
+# 1 = carry the source project's lab-knowledge entries into the copy (AGENT_RUN_REVIEW_PLAN P4)
+KNOWLEDGE="${CECELIA_AGENT_APP_KNOWLEDGE:-0}"
 BUDGET="${CECELIA_AGENT_APP_BUDGET:-15}"
 API="${CECELIA_API_URL:-http://127.0.0.1:8080}"
 
@@ -33,7 +35,7 @@ if ! flock -n 200; then
 fi
 
 {
-    echo "=== agent app run $(date -Is) — $SOURCE: $IMAGES, budget \$$BUDGET ==="
+    echo "=== agent app run $(date -Is) — $SOURCE: $IMAGES, knowledge $KNOWLEDGE, budget \$$BUDGET ==="
     if ! curl -sf -m 5 "$API/api/tasks" >/dev/null; then
         echo "the app is not answering at $API; skipping"
         exit 0
@@ -43,6 +45,6 @@ fi
     git log -1 --format='code: %h %s'
     .pixi/envs/default/bin/python3 scripts/agent_eval/run_app.py --projects-dir "$PROJECTS" \
         --source-project "$SOURCE" --source-set "$SOURCE_SET" $(printf -- '--image %s ' $IMAGES) \
-        --root "$ROOT/$STAMP" --budget-usd "$BUDGET"
+        $([ "$KNOWLEDGE" = 1 ] && echo --knowledge) --root "$ROOT/$STAMP" --budget-usd "$BUDGET"
     echo "=== finished $(date -Is) ==="
 } >>"$LOG" 2>&1

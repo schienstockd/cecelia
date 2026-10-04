@@ -261,6 +261,8 @@ def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict) -> str
              f"**Copy:** {run.get('projectName') or ''} `{run['projectUid']}` — disposable; this entry is the record.",
              "**Images:** " + "; ".join(f"`{im['sourceImageUid']}` = copy `{im['imageUid']}` ({im['imageName']})"
                                         for im in images),
+             "**Lab knowledge:** " + ("; ".join(f"[[{k['entryId']}]]" for k in run.get("knowledge") or [])
+                                      or "none — the copy started with an empty Blackboard"),
              f"**Run:** {dec.get('model') or t.get('model')} · ${t.get('costUsd') or dec.get('cost')} · "
              f"{t.get('turns') or dec.get('turns')} turns · {rec.get('wallS', '?')} s · "
              f"{t.get('toolCallsTotal', '?')} tool calls, {len(dec['toolErrors'])} errors · "
@@ -422,7 +424,8 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
     pics = pictures(api, run, dec)
     set_name = source_set_name(projects_dir, source_uid, [im["sourceImageUid"] for im in images]) \
         if projects_dir else ""
-    title = f"Agent run {rec.get('startedAt') or root.name} — {set_name or source_uid}"
+    title = f"Agent run {rec.get('startedAt') or root.name} — {set_name or source_uid}" + \
+        (" · with lab knowledge" if run.get("knowledge") else "")
     caps: dict[str, list[str]] = {}
     attach = []
     if dry_run:
@@ -453,7 +456,8 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
                  "startedAt": rec.get("startedAt", ""), "run": root.name,
                  "images": [{"sourceImageUid": im["sourceImageUid"], "imageUid": im["imageUid"]}
                             for im in images],
-                 "sectionIds": [s["id"] for s in dec["sections"]]}
+                 "sectionIds": [s["id"] for s in dec["sections"]],
+                 "knowledge": [k["entryId"] for k in run.get("knowledge") or []]}
     r = _post(api, "/api/blackboard/create", {"projectUid": source_uid, "title": title, "content": content,
                                               "attachments": attach, "agentRun": agent_run})
     return {**out, "entryId": r.get("entryId"), "projectUid": source_uid}
