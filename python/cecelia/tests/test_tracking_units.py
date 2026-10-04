@@ -17,7 +17,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cecelia.utils.tracking_utils import BayesianTrackingUtils
+from cecelia.utils.tracking_utils import BayesianTrackingUtils, merge_track_lineage
 from cecelia.utils.label_props_utils import LabelPropsView
 
 
@@ -441,6 +441,51 @@ class WriteBackOrphanSweepTest(unittest.TestCase):
         for l in range(6, 11):
             self.assertTrue(pd.isna(obs.loc[str(l), "track_source"]))
             self.assertTrue(np.isnan(obs.loc[str(l), "track_id"]))
+
+
+class DeleteTrackSourceTest(unittest.TestCase):
+    """The per-run delete's track-set path: `merge_track_lineage` with an EMPTY run is "delete this
+    source" (app/src/tasks/tracking/delete_track_source_run.py). The P14 case: a whole-segmentation
+    run, then a `/qc` run — deleting `whole_seg` must leave exactly the qc tracks, compacted."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "cells.h5ad")
+        _make_labelprops_h5ad(self.path, list(range(1, 11)))
+
+    def _delete(self, source):
+        empty = pd.DataFrame(columns=["track_id", "parent", "root", "state", "generation",
+                                      "t", "label_id", "cell_id"])
+        merge_track_lineage(self.path, empty, source, log=_Log())
+
+    def test_delete_whole_seg_keeps_the_pop_tracks(self):
+        _run_utils(self.path, "whole_seg")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 11)]))
+        _run_utils(self.path, "QC")._write_back(_lineage_df([(l, 500 + l) for l in range(1, 6)]))
+        self._delete("whole_seg")
+        obs = _obs(self.path)
+        for l in range(6, 11):
+            self.assertTrue(np.isnan(obs.loc[str(l), "track_id"]))
+        for l in range(1, 6):
+            self.assertEqual(obs.loc[str(l), "track_source"], "QC")
+        self.assertEqual(sorted(obs["track_id"].dropna().astype(int).tolist()), [1, 2, 3, 4, 5])
+
+    def test_delete_invalidates_track_derived_live_columns(self):
+        """Same as a re-run: every `live.cell.*` (speed/angle/HMM) goes, other obs stay."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        LabelPropsView(self.path).add_obs({"live.cell.hmm.state.movement": np.ones(10),
+                                           "clusters.default": np.ones(10)}).save()
+        self._delete("A")
+        cols = _obs(self.path).columns
+        self.assertNotIn("live.cell.hmm.state.movement", cols)
+        self.assertIn("clusters.default", cols)
+        self.assertTrue(_obs(self.path)["track_id"].isna().all())
+
+    def test_empty_source_deletes_legacy_unmarked_rows(self):
+        """Tracks written before provenance carry no `track_source`; "" addresses them."""
+        tid = np.array([1.0, 1.0, 2.0] + [np.nan] * 7)
+        LabelPropsView(self.path).add_obs({"track_id": tid}).save()
+        self._delete("")
+        self.assertTrue(_obs(self.path)["track_id"].isna().all())
 
 
 if __name__ == '__main__':

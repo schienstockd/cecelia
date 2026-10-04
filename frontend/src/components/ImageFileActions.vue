@@ -22,7 +22,8 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useSettingsStore } from '../stores/settings'
 import { isImported } from '../utils/inclusion'
-import { orderDefaultLast, resolveNewActive, DEFAULT_VALUE_NAME } from '../utils/imageDelete'
+import { orderDefaultLast, resolveNewActive, DEFAULT_VALUE_NAME,
+         type AnalysisRunInfo, type RunKindInfo } from '../utils/imageDelete'
 import { resolveSetDestination, destinationParams } from '../utils/setDestination'
 import type { CciaImage } from '../stores/project'
 
@@ -126,7 +127,7 @@ async function doMove() {
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
-// The button opens `DeleteImagesDialog`, which collects a PLAN; this executes it. Four scopes, four
+// The button opens `DeleteImagesDialog`, which collects a PLAN; this executes it. Five scopes, five
 // routes, ONE loop carrying the k/N readout + toast — so progress reporting is written once
 // (docs/UI.md → File operations) and the modal only decides what should happen.
 //
@@ -134,6 +135,23 @@ async function doMove() {
 // {proj}/0/{uid} (every image store) and {proj}/1/{uid} (labels, labelProps, gating, …). Only the
 // original microscope file, which lives outside the project, survives.
 const showDelete = ref(false)
+
+// The Runs scope's listing, fetched when the modal opens (null = loading). A failed listing leaves
+// the scope empty rather than blocking the other four.
+const runs = ref<{ kinds: RunKindInfo[]; images: Record<string, AnalysisRunInfo[]> } | null>(null)
+async function openDelete() {
+  showDelete.value = true
+  runs.value = null
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  try {
+    const body = await post('/api/images/analysis/runs', { projectUid, imageUids: images.value.map(i => i.uid) })
+    runs.value = { kinds: body.kinds ?? [], images: body.images ?? {} }
+  } catch (e) {
+    log.error(`Failed to list analysis runs: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
+    runs.value = { kinds: [], images: {} }
+  }
+}
 
 async function post(url: string, body: unknown): Promise<Record<string, any>> {
   const res = await fetch(url, {
@@ -228,6 +246,34 @@ async function runPlan(plan: DeletePlan) {
     return
   }
 
+  if (plan.scope === 'runs') {
+    // ONE bulk request too; a track-set delete rebuilds track measures, so this can take a while
+    const projectUid = projectMeta.current?.uid
+    if (!projectUid) return
+    const targets = [...images.value]
+    busy.value = { verb: 'Deleting runs', done: 0, total: targets.length }
+    try {
+      const body = await post('/api/images/analysis/runs/delete',
+        { projectUid, imageUids: targets.map(i => i.uid), runs: plan.runs })
+      for (const [uid, image] of Object.entries(body.images ?? {})) {
+        project.updateImageMeta(uid, image as Partial<CciaImage>)
+      }
+      const failed = (body.failed ?? []) as { imageUid: string; key: string; error: string }[]
+      for (const f of failed) log.error(`Run ${f.key} on ${f.imageUid}: ${f.error}`, { source: 'manageImages' })
+      log.info(`Deleted ${body.deleted ?? 0} run(s) across ${targets.length} image(s).`, { source: 'manageImages' })
+      toast.add(failed.length
+        ? { severity: 'error', summary: 'Delete failed', life: 4000, detail: `${failed.length} run(s) failed — see the log` }
+        : { severity: 'success', summary: 'Deleted', life: 2500, detail: `${body.deleted ?? 0} run(s)` })
+    } catch (e) {
+      log.error(`Failed to delete runs: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
+      toast.add({ severity: 'error', summary: 'Delete failed', life: 4000, detail: 'See the log' })
+    } finally {
+      busy.value = null
+      emit('done')
+    }
+    return
+  }
+
   // analysis: ONE bulk request (the route takes imageUids), so there is no per-image step to count
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
@@ -274,7 +320,7 @@ async function runPlan(plan: DeletePlan) {
     <!-- opens the structured modal; the confirm lives on its footer, so this is never one click from
          a deletion (docs/todo/IMAGE_DELETE_PLAN.md Decision 1) -->
     <button class="cc-btn cc-btn-danger-ghost" :disabled="n === 0 || converting || !!busy"
-      @click="showDelete = true"
+      @click="openDelete"
       v-tooltip.bottom="n === 0 ? 'Select images to delete'
         : converting ? 'Wait for the import to finish'
         : 'Delete images, versions, label sets or analysis'">
@@ -288,7 +334,7 @@ async function runPlan(plan: DeletePlan) {
     </span>
   </span>
 
-  <DeleteImagesDialog v-if="showDelete && n > 0" :images="images"
+  <DeleteImagesDialog v-if="showDelete && n > 0" :images="images" :runs="runs"
     @confirm="runPlan" @close="showDelete = false" />
 
   <!-- no `done` here: a copy leaves the source rows in place, so the selection stays valid -->

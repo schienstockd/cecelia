@@ -3,6 +3,7 @@ import {
   versionCounts, labelCounts, orderDefaultLast,
   survivingVersions, resolveNewActive, unimportsImage,
   survivorCounts, activeMismatches, partialNames,
+  runGroups, alsoDeleted, runId, runRef, type AnalysisRunInfo,
 } from './imageDelete'
 
 const IMG = (versions: string[], labels: string[] = []) => ({
@@ -124,5 +125,55 @@ describe('partialNames', () => {
   it('lists the names that are not on every selected image', () => {
     expect(partialNames([{ name: 'A', count: 1 }, { name: 'B', count: 3 }], 3)).toEqual(['A'])
     expect(partialNames([{ name: 'B', count: 3 }], 3)).toEqual([])
+  })
+})
+
+const RUN = (kind: string, key: string, valueName = '', invalidates: string[] = []): AnalysisRunInfo =>
+  ({ kind, key, valueName, label: valueName ? `${valueName} ${key}` : key, detail: '', valueNames: [], invalidates })
+const KINDS = [{ kind: 'tracks', label: 'Tracks' }, { kind: 'hmm', label: 'HMM' },
+               { kind: 'graphs', label: 'Neighbour graphs' }]
+
+describe('runId / runRef', () => {
+  it('round-trips a run identity, whatever characters the parts hold', () => {
+    const r = { kind: 'contacts', key: 'live#flow.a+b', valueName: 'P14' }
+    expect(runRef(runId(r))).toEqual(r)
+  })
+})
+
+describe('runGroups', () => {
+  it('unions runs across images with a per-run image count, in kind order, dropping empty kinds', () => {
+    const g = runGroups(KINDS, {
+      A: [RUN('hmm', 'movement'), RUN('tracks', 'whole_seg', 'P14')],
+      B: [RUN('hmm', 'movement')],
+    })
+    expect(g.map(x => x.kind)).toEqual(['tracks', 'hmm'])
+    expect(g[1].runs[0].count).toBe(2)
+    expect(g[0].runs[0].count).toBe(1)
+  })
+
+  it('keeps one track set per segmentation — same source key, different valueName', () => {
+    const g = runGroups(KINDS, { A: [RUN('tracks', 'whole_seg', 'P14'), RUN('tracks', 'whole_seg', 'OTI')] })
+    expect(g[0].runs).toHaveLength(2)
+  })
+})
+
+describe('alsoDeleted', () => {
+  const groups = runGroups(KINDS, {
+    A: [RUN('tracks', 'whole_seg', 'P14', ['HMM movement']), RUN('hmm', 'movement')],
+    B: [RUN('tracks', 'whole_seg', 'P14', ['HMM movement', 'Track clusters default'])],
+  })
+  const tracks = groups[0].runs[0].id
+  const hmm = groups[1].runs[0].id
+
+  it('names what a picked track set takes with it, unioned across images', () => {
+    expect(alsoDeleted(groups, [tracks])).toEqual(['HMM movement', 'Track clusters default'])
+  })
+
+  it('does not repeat a dependent the user already picked', () => {
+    expect(alsoDeleted(groups, [tracks, hmm])).toEqual(['Track clusters default'])
+  })
+
+  it('is empty when nothing picked cascades', () => {
+    expect(alsoDeleted(groups, [hmm])).toEqual([])
   })
 })

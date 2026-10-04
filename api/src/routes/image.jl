@@ -904,15 +904,8 @@ end
 # — shedding a version is /api/images/version/remove's job (IMAGE_DELETE_PLAN Decision 9). Core:
 # `reset_image_analysis!` (app/src/storage.jl).
 function api_images_analysis_reset(body_bytes::Vector{UInt8})
-    body = _parse_body(body_bytes)
-    body isa Tuple && return body
-    project_uid = _wstr(body, :projectUid)
-    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
-    image_uids = get(body, :imageUids, nothing)
-    (image_uids isa AbstractVector && !isempty(image_uids)) ||
-        return 400, JSON3.write((; error="imageUids (non-empty) required"))
-    isdir(joinpath(projects_dir(), project_uid)) ||
-        return 404, JSON3.write((; error="Project not found: $project_uid"))
+    project_uid, image_uids, _, err = _images_bulk_body(body_bytes)
+    err === nothing || return err
 
     freed  = 0
     images = Dict{String,Any}()
@@ -927,5 +920,70 @@ function api_images_analysis_reset(body_bytes::Vector{UInt8})
 
     @info "Reset image analysis" n=length(images) project=project_uid freed
     200, JSON3.write((; ok=true, freedBytes=freed, images=images))
+end
+
+# Per-RUN delete (IMAGE_DELETE_PLAN Decision 14) — the Delete modal's "Runs" scope. Core:
+# `list_analysis_runs` / `delete_analysis_run!` (app/src/analysis_runs.jl), one registry of run kinds.
+_run_json(r::AnalysisRun) = (; kind = r.kind, key = r.key, valueName = r.value_name, label = r.label,
+                              detail = r.detail, valueNames = r.value_names, invalidates = r.invalidates)
+
+# Shared body parse for the bulk image routes (analysis reset, run list/delete):
+# (project_uid, image_uids, body, nothing) or (…, error response).
+function _images_bulk_body(body_bytes)
+    body = _parse_body(body_bytes)
+    body isa Tuple && return nothing, nothing, nothing, body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return nothing, nothing, nothing, (400, JSON3.write((; error="projectUid required")))
+    image_uids = get(body, :imageUids, nothing)
+    (image_uids isa AbstractVector && !isempty(image_uids)) ||
+        return nothing, nothing, nothing, (400, JSON3.write((; error="imageUids (non-empty) required")))
+    isdir(joinpath(projects_dir(), project_uid)) ||
+        return nothing, nothing, nothing, (404, JSON3.write((; error="Project not found: $project_uid")))
+    project_uid, String[string(u) for u in image_uids], body, nothing
+end
+
+# POST /api/images/analysis/runs {projectUid, imageUids} → {kinds: [{kind, label}], images: {uid: [run]}}
+function api_images_analysis_runs(body_bytes::Vector{UInt8})
+    project_uid, image_uids, _, err = _images_bulk_body(body_bytes)
+    err === nothing || return err
+    images = Dict{String,Any}()
+    for uid in image_uids
+        img = init_object(project_uid, uid)
+        img isa CciaImage || continue
+        images[uid] = [_run_json(r) for r in list_analysis_runs(img)]
+    end
+    200, JSON3.write((; kinds = [(; kind = k.kind, label = k.label) for k in RUN_KINDS], images = images))
+end
+
+# POST /api/images/analysis/runs/delete {projectUid, imageUids, runs: [{kind, key, valueName}]}
+# Each run is deleted on every selected image that carries it and skipped on the rest. A failing run
+# is reported and the rest carry on. Returns {ok, deleted, failed: [{imageUid, label, error}],
+# images: {uid: <full image payload>}}.
+function api_images_analysis_runs_delete(body_bytes::Vector{UInt8})
+    project_uid, image_uids, body, err = _images_bulk_body(body_bytes)
+    err === nothing || return err
+    runs = get(body, :runs, nothing)
+    (runs isa AbstractVector && !isempty(runs)) || return 400, JSON3.write((; error="runs (non-empty) required"))
+    deleted = 0
+    failed  = Any[]
+    images  = Dict{String,Any}()
+    for uid in image_uids
+        img = init_object(project_uid, uid)
+        img isa CciaImage || continue
+        for r in runs
+            kind, key, vn = _wstr(r, :kind), _wstr(r, :key), _wstr(r, :valueName)
+            try
+                # re-read per run: a track-set delete rewrites tables a later run in the batch reads
+                delete_analysis_run!(init_object(project_uid, uid), kind, key, vn) && (deleted += 1)
+            catch e
+                push!(failed, (; imageUid = uid, kind, key, valueName = vn, error = sprint(showerror, e)))
+                @error "Run delete failed" image=uid kind key vn exception=(e, catch_backtrace())
+            end
+        end
+        fresh = init_object(project_uid, uid)
+        fresh isa CciaImage && (images[uid] = _image_payload(fresh))
+    end
+    @info "Deleted analysis runs" deleted n_failed=length(failed) project=project_uid
+    200, JSON3.write((; ok = isempty(failed), deleted, failed, images))
 end
 

@@ -287,6 +287,41 @@ function _resolve_track_family_pops(img::CciaImage, pt::AbstractString,
     out
 end
 
+
+"""
+    label_track_sources(img, value_name) -> Dict{Int,Union{String,Nothing}}
+
+Every TRACKED cell (`track_id > 0`) of a segmentation → the `track_source` that authored it: a pop
+UID, `WHOLE_SEG_TRACK_SOURCE`, or `nothing` for a legacy row written before provenance existed (no
+`track_source` column, or an empty/missing marker). Untracked cells are absent. Shared by the
+attribution predicate (`_pop_has_authored_tracks`) and the per-run delete's track-set listing
+(`analysis_runs.jl`); the viewer's track payload (`api/src/viewer_api.jl`) reads the column with the
+same legacy rule.
+"""
+function label_track_sources(img::CciaImage, value_name::AbstractString)::Dict{Int,Union{String,Nothing}}
+    label_to_source = Dict{Int,Union{String,Nothing}}()
+    lp = label_props(img; value_name = value_name)
+    obs_cols = col_names(lp; data_type = :obs)
+    "track_id" in obs_cols || return label_to_source
+    cols = "track_source" in obs_cols ? ["track_id", "track_source"] : ["track_id"]
+    select_cols(lp, cols)
+    tdf = as_df(lp)
+    has_src = "track_source" in names(tdf)
+    @inbounds for i in 1:size(tdf, 1)
+        tid = tdf[i, :track_id]
+        (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
+        src::Union{String,Nothing} = nothing
+        if has_src
+            s = tdf[i, :track_source]
+            # `s` may be missing (unmarked row, legacy), a string (categorical / object), or an
+            # empty string. Everything except a non-empty string is "unmarked" → legacy branch.
+            (s isa AbstractString && !isempty(s)) && (src = String(s))
+        end
+        label_to_source[Int(tdf[i, :label])] = src
+    end
+    label_to_source
+end
+
 """
     resolve_pops(img, pop_type; value_name) -> Vector{NamedTuple}
 
@@ -346,31 +381,7 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
     # (claimed by every pop that touches its label). Preserves the pre-orphan-guard behaviour for
     # projects tracked before the P1 provenance ship; re-tracking rewrites the marker and the guard
     # tightens.
-    label_to_source = Dict{Int,Union{String,Nothing}}()
-    begin
-        lp = label_props(img; value_name = value_name)
-        obs_cols = col_names(lp; data_type = :obs)
-        if "track_id" in obs_cols
-            cols = "track_source" in obs_cols ? ["track_id", "track_source"] : ["track_id"]
-            select_cols(lp, cols)
-            tdf = as_df(lp)
-            has_src = "track_source" in names(tdf)
-            @inbounds for i in 1:size(tdf, 1)
-                tid = tdf[i, :track_id]
-                (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
-                src::Union{String,Nothing} = nothing
-                if has_src
-                    s = tdf[i, :track_source]
-                    # `s` may be missing (unmarked row, legacy), a string (categorical / object), or an
-                    # empty string. Everything except a non-empty string is "unmarked" → legacy branch.
-                    if s isa AbstractString && !isempty(s)
-                        src = String(s)
-                    end
-                end
-                label_to_source[Int(tdf[i, :label])] = src
-            end
-        end
-    end
+    label_to_source = label_track_sources(img, value_name)
     out = NamedTuple[]
     for path in pop_paths(m)
         p = pop_at(m, path)

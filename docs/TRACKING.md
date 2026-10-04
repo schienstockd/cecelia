@@ -188,6 +188,16 @@ The `WHOLE_SEG_TRACK_SOURCE = "whole_seg"` sentinel is a single named constant i
 (`app/src/gating/population_manager.jl` and `python/cecelia/utils/tracking_utils.py`) so the writer,
 the guard, and the sweep can't drift apart.
 
+**Deleting one track set.** Manage images → Delete → *Runs* lists every `(segmentation,
+track_source)` pair as its own run — `P14/qc`, `P14 (all cells)` for `whole_seg`, `(deleted
+population)` for an orphan, `(unattributed)` for legacy rows — so a mistaken whole-segmentation run
+can go without re-tracking anything. The delete is `merge_track_lineage` (the `_write_back` merge,
+module-level) with an EMPTY run: DELETE + orphan-free COMPACT + the `live.*` invalidation, i.e. the
+state a re-run of that source leaves; then track measures are rebuilt for the survivors (or the
+`__tracks` table removed when none survive). So HMM states, live contacts and track clusters on that
+segmentation go too, and the dialog names them before the confirm. Registry:
+`app/src/analysis_runs.jl` (`tracks` kind).
+
 **Legacy data.** A row written before the P1 ship has no `track_source` marker. The P0 guard treats
 it as everyone's (has_tracks fires on every pop that touches its label), preserving pre-P1
 visibility for projects that haven't been re-tracked. Re-tracking the pop rewrites the marker and

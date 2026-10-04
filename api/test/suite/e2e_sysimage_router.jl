@@ -346,7 +346,7 @@ end
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
         "/api/gating/redo", "/api/gating/undo",
         "/api/images/attr/create", "/api/images/attr/delete",
-        "/api/images/analysis/reset", "/api/images/attr/set",
+        "/api/images/analysis/reset", "/api/images/analysis/runs", "/api/images/analysis/runs/delete", "/api/images/attr/set",
         "/api/images/channelnames",
         "/api/images/delete", "/api/images/inclusion/set",
         "/api/images/labels/delete", "/api/images/labels/rename",
