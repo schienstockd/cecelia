@@ -412,6 +412,16 @@ end
         # re-annotate captures written above (cap_id2, cap_id3) which weren't individually deleted,
         # the two multi-panel probes written for the panels[] round-trip (cap_mp, cap_sp), and
         # the two noPush probes (with + without the flag) above.
+        # agent_run evidence (AGENT_RUN_REVIEW_PLAN Decision 6): left out of the default list, the
+        # only row of `surface=agent_run`, and kept by the bulk clear below.
+        st_ar, r_ar = w(Dict("projectUid"=>uid, "surface"=>"agent_run", "noPush"=>true,
+                             "frames"=>[Dict("png"=>frame_data_url)]))
+        @test st_ar == 200
+        ar_id = String(JSON3.read(r_ar).captureId)
+        list_ids(q) = [String(r.captureId) for r in JSON3.read(api_viewer_captures_list(HTTP.Request("GET",
+            "/api/viewer/captures?projectUid=$uid&limit=100$q"))[2]).items]
+        @test !(ar_id in list_ids(""))
+        @test list_ids("&surface=agent_run") == [ar_id]
         addr2 = Dict("projectUid"=>uid, "imageUid"=>"IMG2", "t"=>0)
         for _ in 1:3
             w(Dict("projectUid"=>uid, "surface"=>"viewer_frame", "address"=>addr2,
@@ -420,6 +430,7 @@ end
         st_c, r_c = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c == 200
         @test JSON3.read(r_c, Dict{String,Any})["cleared"] == 9
+        @test isdir(joinpath(tmp, uid, "captures", ar_id))
         st_c2, r_c2 = api_viewer_captures_clear(Vector{UInt8}(JSON3.write(Dict("projectUid"=>uid))))
         @test st_c2 == 200
         @test JSON3.read(r_c2, Dict{String,Any})["cleared"] == 0
