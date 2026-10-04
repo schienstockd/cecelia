@@ -1148,3 +1148,45 @@ end
     @test isempty(offenders)
     @test scanned >= 40      # a moved/renamed source tree must not make this "pass" by scanning nothing
 end
+
+@testset "a rebuilt per-track table drops the cluster runs it no longer carries (KDIeEm B)" begin
+    # A re-track rewrites `{vn}__tracks.h5ad` from scratch; the track clusterings run on the old table
+    # go with it. Their sidecar entries must go too, or the run keeps listing this segmentation and its
+    # trackclust pops resolve to nothing without a word.
+    lp  = fixture_path("testpr", "1", "KDIeEm", "labelProps")
+    if !have_fixture(joinpath(lp, "B__tracks.h5ad")) || !have_fixture(joinpath(lp, "B__tracks.clustfeatures.json"))
+        @test_skip "track fixture missing"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        for f in ("B.h5ad", "B__tracks.h5ad", "B__tracks.clustfeatures.json")
+            cp(joinpath(lp, f), joinpath(td, "labelProps", f))
+        end
+        img = CciaImage(uid = "KDIeEm", dir = td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        trk = img_track_props_path(img, "B")
+        side = Cecelia._clustfeatures_path(trk)
+
+        # the helper: a key whose column is gone drops, the live `clusters.movement` stays
+        raw = JSON3.read(read(side, String), Dict{String,Any})
+        @test haskey(raw, "clusters.movement")
+        raw["clusters.gone"] = Dict("features" => String[]); raw["oldsuffix"] = Dict("features" => String[])
+        write(side, JSON3.write(raw))
+        @test sort(Cecelia.prune_stale_clustfeatures!(trk)) == ["clusters.gone", "oldsuffix"]
+        @test collect(keys(JSON3.read(read(side, String), Dict{String,Any}))) == ["clusters.movement"]
+        @test isempty(Cecelia.prune_stale_clustfeatures!(trk))                  # nothing more to drop
+
+        # the task: rebuilding the table takes the run's column — and now its sidecar entry
+        res = Cecelia._run_task(Cecelia.TrackMeasures(), img, Dict{String,Any}("valueName" => "B", "forceRecompute" => true))
+        @test res !== nothing
+        @test !("clusters.movement" in col_names(label_props(trk); data_type = :obs))
+        @test !isfile(side)
+        @test !("movement" in Cecelia._clustfeatures_suffixes(trk))
+
+        # the cell table, the same rule (what measureLabels calls on its fresh table)
+        cell = img_label_props_path(img, "B")
+        cell_side = Cecelia._clustfeatures_path(cell)
+        write(cell_side, JSON3.write(Dict("clusters.gone" => Dict("features" => String[]))))
+        @test Cecelia.prune_stale_clustfeatures!(cell) == ["clusters.gone"]
+        @test !isfile(cell_side)
+    end
+end
