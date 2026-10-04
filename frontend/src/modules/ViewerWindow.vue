@@ -86,7 +86,7 @@ import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
   buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource,
-  type OverlayPayload, type PointBuffer, type SegmentBuffer,
+  type OverlayPayload, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
@@ -718,7 +718,7 @@ const trackclustPayloads = ref<Map<string, OverlayPayload>>(new Map())
 /** Per-source (per-vn) counts + palette hex from the last `buildMultiTrackBuffer` result. Feeds the
  *  Tracks legend so a viewer with several ticked eyes shows a swatch key rather than a rainbow with
  *  no reading. */
-const trackSources = ref<{ vn: string; hex: string; count: number }[]>([])
+const trackSources = ref<MultiTrackResult['sources']>([])
 /** Speed range in µm per hop (Δt = 1 frame), or null when the mode isn't speed. Feeds the ramp
  *  legend under the Tracks control block, same shape as the point colour-by numeric scale. */
 const trackSpeedRange = ref<[number, number] | null>(null)
@@ -4534,13 +4534,15 @@ interface ViewerCapture {
   extentUm: { x: number; y: number; unit?: string | null } | null
   imageUid: string
   valueName: string
-  overlayLayers: Record<string, { visible: true }>
+  overlayLayers: Record<string, { visible: true; colour?: string | null }>
 }
 ;(window as unknown as { __cceceliaViewerCapture?: () => ViewerCapture }).__cceceliaViewerCapture = () => {
   const el = canvas.value
   if (!el) throw new Error('viewer canvas not ready')
   const ext = overlayExtent.value
-  const layers: Record<string, { visible: true }> = {}
+  const layers: Record<string, { visible: true; colour?: string | null }> = {}
+  // Track sources → the colour their tails are drawn in (null = by track / speed, no one swatch).
+  const drawn = new Map(trackSources.value.map(s => [s.vn, s.drawn]))
   // Point pops for the active gating pop_type (matches viewer's own gate on `getPopVisible`). The
   // vn comes from the OVERLAY payload's own `valueName` (the vn its pops were authored on) — not
   // from `valueName.value` (the image RENDER version), which is unrelated: a viewer can render
@@ -4561,16 +4563,20 @@ interface ViewerCapture {
       }
     }
   }
-  // Whole-segmentation tracks: one per vn currently in trackPayloads (a vn is only in the map when
-  // its per-vn "directions" eye is on).
+  // Whole-segmentation tracks: one per vn that DREW (its "directions" eye on, not stood down for
+  // trackclust, some segments), carrying the colour its tails are drawn in so the legend names it.
   for (const vnKey of trackPayloads.value.keys()) {
-    layers[`(track) (${vnKey}) Tracks /_tracked`] = { visible: true }
+    if (!drawn.has(vnKey)) continue
+    layers[`(track) (${vnKey}) Tracks /_tracked`] = { visible: true, colour: drawn.get(vnKey) }
   }
-  // Trackclust ribbons: whichever pops the trackclust payload publishes as `show`.
+  // Trackclust ribbons: whichever pops the trackclust payload publishes as `show`, with the colour
+  // their tails are drawn in when they drew (source key as `rebuildOverlays` builds it).
   for (const [vnKey, payload] of trackclustPayloads.value.entries()) {
     for (const p of (payload?.pops ?? [])) {
       if (!p.show) continue
-      layers[`(trackclust) (${vnKey}) Tracks ${p.path}`] = { visible: true }
+      const key = `${vnKey}::trackclust::${p.path}`
+      layers[`(trackclust) (${vnKey}) Tracks ${p.path}`] =
+        drawn.has(key) ? { visible: true, colour: drawn.get(key) } : { visible: true }
     }
   }
   // Segmentation mask: one per visible label layer (currently ≤1 — see the multi-mask decision above).

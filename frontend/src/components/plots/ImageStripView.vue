@@ -21,9 +21,9 @@ import { useProjectStore } from '../../stores/project'
 import { useViewerStore } from '../../stores/viewer'
 import type { ViewerViewState } from '../../utils/viewer/viewState'
 import { openViewerWindow } from '../../utils/viewerWindow'
-import { channelLegend } from '../../utils/viewLegend'
+import { channelLegend, type LegendSection } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
-import { captureViewLegend } from '../../utils/viewerOverlays'
+import { captureViewLegend, type CapturedViewLegend } from '../../utils/viewerOverlays'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
 import { getOpenPopoutWindow } from '../../lib/popout'
 import StripCell from './StripCell.vue'
@@ -46,10 +46,7 @@ const viewer = useViewerStore()
 // for zoom-to-source. See docs/todo/ANIMATION_PLAN.md.
 interface ExtentUm { x?: number; y?: number; unit?: string | null }
 // captured overlay legend (populations + colour-by), fetched at capture from /api/viewer/overlay-legend
-interface OverlaysLegend {
-  colourBy?: { column: string; items: { value: string; colour: string; label: string }[] }
-  populations?: { name: string; colour: string }[]
-}
+type OverlaysLegend = Partial<Pick<CapturedViewLegend, 'colourBy' | 'populations'>>
 // `colourBy` = the colour-by measure the overlays were coloured by when captured (not encoded in the
 // snapshot's layer names), so zoom-to-source can restore the tracks/pops in the same colours.
 // `overlaysLegend` = the pop + colour-by legend for this frame (durable, drawn under the channels).
@@ -194,8 +191,9 @@ async function capture(i: number) {
     c.colourBy = capturedColourBy
     // capture the overlay legend (pops + colour-by) for this frame — read-only, durable (drawn below the
     // channel legend). ALL pop overlays (points AND track/track-cluster ribbons) are sent, parsed from
-    // the snapshot's overlay layer names; the backend skips any that aren't a named population (e.g. the
-    // whole-segmentation "/_tracked" layer), so track-cluster + gated track pops get legend entries too.
+    // the snapshot's overlay layer names (track layers carry the colour their tails are drawn in); the
+    // whole-segmentation "/_tracked" layer becomes one "{vn} tracks" row per source, so track-cluster +
+    // gated track pops + whole-segmentation tracks all get legend entries.
     if (c.imageUid) {
       // shared capture-legend path (also used by the single-record movie card) — best-effort.
       // `colourOverridesForLegend` above is the same per-set recolour map (an HMM state with no
@@ -228,7 +226,7 @@ function legendSections(c: Cell) {
     const m = MASK_RE.exec(name)
     if (m) masks.push({ label: m[1], colour: '#9ca3af' })
   }
-  const secs: { title: string; items: { label: string; colour: string }[] }[] = []
+  const secs: LegendSection[] = []
   if (colourBy.length)    secs.push({ title: cbyTitle, items: colourBy })
   if (populations.length) secs.push({ title: 'Populations', items: populations })
   if (masks.length)       secs.push({ title: 'Masks', items: masks })

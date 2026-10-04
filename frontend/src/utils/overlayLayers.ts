@@ -5,7 +5,11 @@
 // the frame was captured — the durable source for restoring them (zoom-to-source) and for the strip
 // legend. Pure → unit-tested.
 
-export interface ParsedOverlay { popType: string; valueName: string; path: string; isTrack: boolean }
+// `colour` — only on a TRACK layer the viewer captured it for: the colour its tails are drawn in
+// (null = coloured by track / speed). Absent on older snapshots, where the name is all there is.
+export interface ParsedOverlay {
+  popType: string; valueName: string; path: string; isTrack: boolean; colour?: string | null
+}
 
 // "(popType) (vn) rest" — two parenthesised groups then the remainder. "(vn) Labels" has ONE group so
 // it doesn't match (labels aren't a pop/track overlay). Non-greedy groups so a path with spaces is kept.
@@ -13,12 +17,15 @@ const OVERLAY_RE = /^\(([^)]+)\) \(([^)]+)\) (.+)$/
 
 export function parseOverlays(layers: Record<string, unknown> | null | undefined): ParsedOverlay[] {
   const out: ParsedOverlay[] = []
-  for (const name of Object.keys(layers ?? {})) {
+  for (const [name, layer] of Object.entries(layers ?? {})) {
     const m = OVERLAY_RE.exec(name)
     if (!m) continue
     const [, popType, valueName, rest] = m
     const isTrack = rest.startsWith('Tracks ')
-    out.push({ popType, valueName, path: isTrack ? rest.slice('Tracks '.length) : rest, isTrack })
+    const ov: ParsedOverlay = { popType, valueName, path: isTrack ? rest.slice('Tracks '.length) : rest, isTrack }
+    const c = (layer as { colour?: unknown } | null)?.colour
+    if (isTrack && (c === null || typeof c === 'string')) ov.colour = c
+    out.push(ov)
   }
   return out
 }

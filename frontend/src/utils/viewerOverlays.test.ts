@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
-  buildTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
+  buildTrackBuffer, buildMultiTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
@@ -359,6 +359,25 @@ describe('buildTrackBuffer', () => {
       .toBe(0)
     expect(buildTrackBuffer(null, meta(), PAL).count).toBe(0)
     expect(buildTrackBuffer(tracked(), null, PAL).count).toBe(0)
+  })
+})
+
+describe('buildMultiTrackBuffer — the colour each source is drawn in', () => {
+  // A captured legend names a source's colour only when its tails ARE that colour.
+  const PAL = ['#ff0000', '#00ff00', '#0000ff']
+  const srcs = [{ vn: 'flowTom', payload: payload(), colour: '#ff8800' },
+                { vn: 'cpSAM', payload: payload(), popColour: '#123456' }]
+  const drawn = (mode: 'track' | 'speed' | 'solid' | 'pop') =>
+    buildMultiTrackBuffer(srcs, meta(), PAL, mode).sources.map(s => [s.vn, s.drawn])
+  it('solid: the override, else the palette cycle', () => {
+    expect(drawn('solid')).toEqual([['flowTom', '#ff8800'], ['cpSAM', '#00ff00']])
+  })
+  it("pop: the pop's colour, else the palette cycle — not the solid override", () => {
+    expect(drawn('pop')).toEqual([['flowTom', '#ff0000'], ['cpSAM', '#123456']])
+  })
+  it('track / speed: no one colour', () => {
+    expect(drawn('track')).toEqual([['flowTom', null], ['cpSAM', null]])
+    expect(drawn('speed')).toEqual([['flowTom', null], ['cpSAM', null]])
   })
 })
 

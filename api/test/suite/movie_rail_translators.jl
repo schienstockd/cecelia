@@ -410,3 +410,21 @@ end
     @test isempty(_track_source_items(Dict{Symbol,Any}(:showTracks => true, :showPopulations => true)))
     @test isempty(_track_source_items(Dict{Symbol,Any}()))
 end
+
+@testset "API: overlay legend — captured track rows name the colour the tails are drawn in" begin
+    # Each "/_tracked" source is its own row, in the colour the snapshot says its tails ARE drawn
+    # in — no swatch when coloured by track id / speed (null), as `_track_source_items` does.
+    # Blank colour-by → no pop maps walked, so `img` is never touched.
+    body = JSON3.read("""{"overlayPops": [
+        {"valueName": "flowTom", "popType": "track", "path": "/_tracked", "colour": "#ff8800"},
+        {"valueName": "cpSAM",   "popType": "track", "path": "/_tracked", "colour": null},
+        {"valueName": "flowTom", "popType": "track", "path": "/_tracked", "colour": "#ff8800"}]}""")
+    pops = overlay_legend_content(nothing, "", body[:overlayPops], nothing).populations
+    @test [p["name"] for p in pops] == ["flowTom tracks", "cpSAM tracks"]
+    @test pops[1]["colour"] == "#ff8800"
+    @test pops[2]["colour"] === nothing
+    # an older snapshot (no colour captured): the source is still named, with no swatch — not grey
+    old = JSON3.read("""[{"valueName": "flowTom", "popType": "track", "path": "/_tracked"}]""")
+    @test overlay_legend_content(nothing, "", old, nothing).populations ==
+          [Dict{String,Any}("name" => "flowTom tracks", "colour" => nothing)]
+end

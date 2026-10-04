@@ -3,6 +3,7 @@
 // grouped colour swatches. Style-light: text inherits `color`, size scales with the parent font-size,
 // so each host (image-strip overlay, animation page, viewer panel) styles it via its own container.
 // Section headings show only when there's more than one section (a lone group needs no title).
+// An item with no colour (tracks coloured by track id / speed) shows its label without a swatch.
 import type { LegendSection } from '../utils/viewLegend'
 
 // `vertical` stacks the items in each section in a column (one per line) instead of a wrapping row —
@@ -17,7 +18,7 @@ withDefaults(defineProps<{ sections: LegendSection[]; swatch?: number; vertical?
       <div v-if="sections.length > 1" class="vl-title">{{ sec.title }}</div>
       <div class="vl-items cc-row" :class="{ vertical }">
         <span v-for="it in sec.items" :key="it.label" class="vl-item">
-          <span class="vl-swatch" :style="{ background: it.colour, width: swatch + 'px', height: swatch + 'px' }" />
+          <span v-if="it.colour" class="vl-swatch" :style="{ background: it.colour, width: swatch + 'px', height: swatch + 'px' }" />
           {{ it.label }}
         </span>
       </div>

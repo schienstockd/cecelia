@@ -5,7 +5,8 @@
 // See docs/todo/ANIMATION_PLAN.md (Phase C — the legend derives from the view snapshot).
 import { viewerColormapHex } from './viewerColormap'
 
-export interface LegendItem { label: string; colour: string }
+/** `colour` null = no swatch (tracks coloured by track id / speed: no one colour is true). */
+export interface LegendItem { label: string; colour: string | null }
 export interface LegendSection { title: string; items: LegendItem[] }
 
 // `#rrggbb` in any case, with or without the leading `#`. The browser viewer's `captureViewState`
