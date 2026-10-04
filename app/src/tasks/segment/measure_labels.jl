@@ -90,11 +90,15 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
-    ok || return nothing
 
     on_log("[INFO] Measurement complete.")
 
     h5ad_filename = "$(p.outputValueName).h5ad"
+    # The table is new: cell clusterings / regions run on the old one are gone with it — drop their
+    # sidecar entries. Not inside the correction composite: its carry-over restore brings those
+    # columns back (`SegmentCorrectCarryOverRestore`), so the runs stand.
+    isfile(_carryover_snapshot_path(task_dir)) ||
+        prune_stale_clustfeatures!(joinpath(task_dir, "labelProps", h5ad_filename); on_log = on_log)
 
     # QC (advisory): bank the objective cell count so cohort stats can later flag anomalies. A count
     # of 0 (measured nothing) is the one unambiguous problem → an advisory finding. Read the count

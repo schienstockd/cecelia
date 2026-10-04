@@ -35,6 +35,30 @@ _clustfeatures_raw(props_path::AbstractString) =
                     Dict{String,Any}()
     end
 
+"""
+    prune_stale_clustfeatures!(props_path; on_log) -> Vector{String}
+
+Drop the sidecar entries whose cluster column is no longer on `props_path`, returning the dropped keys.
+A rebuilt table loses its runs' columns — a re-track writes `{vn}__tracks.h5ad` from scratch — and a
+sidecar still naming the run keeps this segmentation in it (`co_clustered_value_names`), so its pops
+resolve to nothing without a word. Legacy family-less keys stay while either family's column does.
+"""
+function prune_stale_clustfeatures!(props_path::AbstractString; on_log = _ -> nothing)::Vector{String}
+    raw = _clustfeatures_raw(props_path)
+    (isempty(raw) || !isfile(props_path)) && return String[]
+    cols = Set(col_names(label_props(props_path); data_type = :obs))
+    stale = String[]
+    for k in keys(raw)
+        sfx, fam = _clustfeatures_split_key(String(k))
+        any(f -> "$f.$sfx" in cols, fam === nothing ? _CLUSTFEATURES_FAMILIES : (fam,)) || push!(stale, String(k))
+    end
+    isempty(stale) && return stale
+    on_log("[INFO] $(basename(props_path)) no longer carries cluster run(s) $(join(sort(stale), ", ")) — " *
+           "re-run the clustering to restore them")
+    _drop_sidecar_keys!(_clustfeatures_path(props_path), raw, stale)
+    stale
+end
+
 # Suffixes recorded for `family` ("clusters" for clust/trackclust, "regions" for region). Legacy
 # family-less entries match every family (see `_clustfeatures_split_key`).
 function _clustfeatures_suffixes(props_path::AbstractString;

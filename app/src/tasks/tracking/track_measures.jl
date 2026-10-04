@@ -498,6 +498,9 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         on_log("[ERROR] Failed to write per-track table")
         return nothing
     end
+    # The table is new: track clusterings run on the old one are gone with it — drop their sidecar
+    # entries, so the runs stop listing this segmentation (and its trackclust pops stop claiming them).
+    prune_stale_clustfeatures!(track_path; on_log = on_log)
     on_progress(5, 5)
 
     # QC (advisory): bank per-track counts/means + the motion-dims finding. Means over the per-track
