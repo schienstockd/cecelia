@@ -17,7 +17,7 @@ export interface TitleCardPayload {
   note: string
   durationSec: number
   title: string
-  sections: { heading: string; items: { label: string; colour: string }[] }[]
+  sections: { heading: string; items: { label: string; colour: string | null }[] }[]   // null → no swatch
 }
 
 // Build the title-card payload for a captured view — the ONE builder shared by single-record and the

@@ -364,7 +364,8 @@ end
 # (analysis-board strip) and the title card. Given a `column` (colour-by measure), an `overlay_pops`
 # list ({valueName, popType, path} or nothing) and user recolours, returns:
 #  • colourBy:    {column, items:[{value, colour(pop hex), label(pop name)}]} for each value on `column`
-#  • populations: [{name, colour}] for each requested point/track pop (deduped by name).
+#  • populations: [{name, colour}] for each requested point/track pop (deduped by name); `colour` is
+#    `nothing` (no swatch) for tracks coloured by track id / speed.
 function overlay_legend_content(img, column::AbstractString, overlay_pops, user_overrides)
     pt_all  = ("trackclust", "track", "clust", "flow")
     colours = _apply_user_overrides!(_colour_overrides_for(img, column, pt_all), user_overrides)
@@ -380,15 +381,21 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
             pt   = String(get(pp, :popType, ""))
             path = String(get(pp, :path, ""))
             (isempty(vn) || isempty(pt)) && continue
-            if endswith(path, "_tracked")   # whole-segmentation "all tracks" → one generic grey row
-                if !("tracks" in seen); push!(seen, "tracks"); push!(pops, Dict{String,Any}("name" => "tracks", "colour" => OVERLAY_GREY)); end
+            # A captured track layer may say the colour its tails ARE drawn in (`colour`; null = by
+            # track id / speed, no one swatch is true) — the viewer's colour mode outranks the pop's.
+            drawn = haskey(pp, :colour) ? (pp[:colour] isa AbstractString ? String(pp[:colour]) : nothing) : missing
+            if endswith(path, "_tracked")   # whole-segmentation tracks → one row per source, as `_track_source_items`
+                name = "$(vn) tracks"
+                name in seen && continue
+                push!(seen, name)
+                push!(pops, Dict{String,Any}("name" => name, "colour" => drawn === missing ? nothing : drawn))
                 continue
             end
             try
                 p = pop_at(_live_map(img, vn, pt), path)
                 p.name in seen && continue
                 push!(seen, p.name)
-                push!(pops, Dict{String,Any}("name" => p.name, "colour" => p.colour))
+                push!(pops, Dict{String,Any}("name" => p.name, "colour" => drawn === missing ? p.colour : drawn))
             catch
                 # pop map / path unavailable → skip
             end
