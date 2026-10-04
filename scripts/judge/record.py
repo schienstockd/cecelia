@@ -38,7 +38,8 @@ _BUGS_HOW_TO = (
     "To work them: for each `open` bug, read the code at `file:line` on `origin/main`, confirm it, "
     "and fix it on a normal branch (recital, PR), naming the bug's key in the commit message. "
     "A bug an agent verified says how: `fix` is live, `guard` can't happen yet (add the guard or test "
-    "its *Live once* names), `decide` waits for the owner's answer. "
+    "its *Live once* names), `decide` waits for the owner's answer; an *Owner's answer* overrides the "
+    "agent's recommendation. "
     "The next pass checks each one again and marks the fixed ones `gone`. "
     "A bug that isn't worth fixing: answer it `wont_fix` with `pixi run judge-review`. "
     "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
@@ -201,6 +202,8 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
         v = b.get("verify") or {}
         out += [f"### {b['id']} · {b['status']}{' · ' + v['verdict'] if v else ''} · {_bug_where(b)} · `{b['key']}`", "",
                 f"**Check:** {b['why']}", ""]
+        if b.get("owner_answer"):
+            out += [f"**Owner's answer** (follow this, not the recommendation): {b['owner_answer']}", ""]
         if v:
             out += [f"**Verified** ({v['verdict']}, {v.get('date')}): {v.get('effect', '')}",
                     *([f"- Question: {v['question']}"] if v.get("question") else []),
