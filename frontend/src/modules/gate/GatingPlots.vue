@@ -353,6 +353,11 @@ function navTo(delta: number) {
   const i = navIndex.value + delta
   if (i < 0 || i >= props.orderedUids.length) return
   const uid = props.orderedUids[i]
+  // Stepping keeps the CURRENT segmentation: seed the target's last-vn memory with ours so the
+  // imageUid watch below opens it on the same vn — gating one value_name across a batch. Picking
+  // an image any other way still restores that image's own last vn. A target without this vn
+  // falls back server-side in load().
+  _writeLastVn(pageVn.value, uid)
   props.selectUids?.([uid])                    // switch the gating plots to the next image
   // Follow along in the viewer IF a browser viewer is currently open — so gating a batch keeps the
   // image in sync too, not just the plot. Don't force-launch a popup when it isn't open.
@@ -392,8 +397,8 @@ function showDefiningPlot(pop: FlatPop) {
 const _lastVnKey = (uid: string) => `cc.gate.lastVn.${props.popType}.${uid}`
 const _readLastVn = (): string | null =>
   props.imageUid ? localStorage.getItem(_lastVnKey(props.imageUid)) : null
-const _writeLastVn = (vn: string) => {
-  if (props.imageUid && vn) localStorage.setItem(_lastVnKey(props.imageUid), vn)
+const _writeLastVn = (vn: string, uid: string | null | undefined = props.imageUid) => {
+  if (uid && vn) localStorage.setItem(_lastVnKey(uid), vn)
 }
 async function load() {
   if (!props.imageUid) return
