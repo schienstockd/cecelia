@@ -94,4 +94,11 @@ describe('blackboardFilters — agent run records', () => {
     expect(filterEntries(all, 'all', 'all', 'notes').map(r => r.entryId)).not.toContain('bb-5')
     expect(filterEntries(all, 'all', 'all').length).toBe(all.length)
   })
+  it('knowledge = entries marked as lab knowledge; not in notes', () => {
+    const lesson: BlackboardEntrySummary = { entryId: 'bb-6', title: 'Lesson', current: 0, updatedAt: 'x',
+      attachmentsCount: 0, status: 'open', knowledge: { at: 'x' } }
+    const both = [...all, lesson]
+    expect(filterEntries(both, 'all', 'all', 'knowledge').map(r => r.entryId)).toEqual(['profile', 'bb-6'])
+    expect(filterEntries(both, 'all', 'all', 'notes').map(r => r.entryId)).not.toContain('bb-6')
+  })
 })

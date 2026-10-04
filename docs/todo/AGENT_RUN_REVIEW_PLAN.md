@@ -1,6 +1,6 @@
 # Agent run review — the run's decisions on the blackboard, a verdict on each
 
-**Status:** P1, P1b emitter and P2 section verdicts built (2026-10-04) — run records via `run_record.py` with the `agentRun` marker; Good / Bad / Unsure per decision, misses, the "Agent runs" filter, the MCP proposal tool; platform errors logged as `agent_run_finding` (`run_findings.py`). Not built: P2's refs into the copy (KiwiRef `projectUid` + `chain`), P3, P4. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
+**Status:** P1, P1b, P2 section verdicts and P4 built (2026-10-04) — run records via `run_record.py` with the `agentRun` marker; Good / Bad / Unsure per decision, misses, the "Agent runs" filter, the MCP proposal tool; platform errors logged as `agent_run_finding` (`run_findings.py`). P4: the `knowledge` marker, Lesson / Knowledge in the GUI, `run_app.py --knowledge`. Not built: P2's refs into the copy (KiwiRef `projectUid` + `chain`), P3. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
 P4b (the app-tier runs). Builds on the blackboard ([`BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md)
 Part 4, [`PROJECT_MEMORY_PLAN.md`](PROJECT_MEMORY_PLAN.md) Decision 11 outcomes), `KiwiRef`
 ([`KIWI_ASSISTANT_PLAN.md`](KIWI_ASSISTANT_PLAN.md) Decision 4) and the frozen-ref sidecar
@@ -173,6 +173,13 @@ Refs into the copy are next — the record already reads completely without them
 - **Checkpoint:** the back-filled runs scored after your P2 review.
 
 ### P4 — the knowledge loop
+*Built: `POST /api/blackboard/knowledge` (`knowledge {by, at, from?}` in meta, carried through every
+write); "Lesson" on a marked section with a note (a new entry, marked, opened for editing — no rename
+route, so its title is the note) and a Knowledge toggle on any note; the "Knowledge" list filter;
+`app_project.copy_knowledge` (live text only — no history, attachments or `from`) behind
+`run_app.py --knowledge` / `CECELIA_AGENT_APP_KNOWLEDGE=1`; the run record names the entries carried
+and its title says "with lab knowledge"; the briefing flags `knowledge: true` rows and lists them
+first.*
 - "Promote to lab knowledge" on a section: a new entry pre-filled with the note, marked as knowledge,
   for you to rewrite in general form.
 - The harness copies the source project's knowledge entries into each run's copy before the agent

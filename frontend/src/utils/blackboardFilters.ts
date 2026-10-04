@@ -12,10 +12,15 @@ import type { BlackboardEntrySummary } from './blackboardApi'
 
 export type StatusChoice  = 'all' | 'open' | 'resolved' | 'parked'
 export type OutcomeChoice = 'all' | 'untagged' | 'good' | 'bad'
-/** Agent run records (AGENT_RUN_REVIEW_PLAN) vs everything else. */
-export type KindChoice    = 'all' | 'runs' | 'notes'
+/** Agent run records (AGENT_RUN_REVIEW_PLAN), lab knowledge (P4), everything else. */
+export type KindChoice    = 'all' | 'runs' | 'knowledge' | 'notes'
 
 export const PROFILE_ENTRY_ID = 'profile'
+
+/** Which kind an entry is: a run record, lab knowledge, or a plain note. */
+export function entryKind(e: BlackboardEntrySummary): Exclude<KindChoice, 'all'> {
+  return e.agentRun ? 'runs' : e.knowledge ? 'knowledge' : 'notes'
+}
 
 /** True if the entry matches BOTH filters, or is the profile (which never drops out of the list). */
 export function entryPassesFilters(
@@ -26,7 +31,7 @@ export function entryPassesFilters(
 ): boolean {
   if (e.entryId === PROFILE_ENTRY_ID) return true
   if (status !== 'all' && e.status !== status) return false
-  if (kind !== 'all' && (kind === 'runs') !== !!e.agentRun) return false
+  if (kind !== 'all' && kind !== entryKind(e)) return false
   if (outcome === 'all')      return true
   if (outcome === 'untagged') return !e.outcome
   return !!e.outcome && e.outcome.verdict === outcome

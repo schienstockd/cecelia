@@ -175,7 +175,7 @@ def run(a) -> dict:
     code_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(REPO), capture_output=True,
                               text=True).stdout.strip() or None
     name = f"Agent run {stamp}"
-    info = {**app_project.build(projects_dir, a.source_project, a.image, name), "projectName": name}
+    info = {**app_project.build(projects_dir, a.source_project, a.image, name, a.knowledge), "projectName": name}
     write_json_atomic(root / "run.json", info, indent=2)
     mcp_path = root / "mcp.json"
     write_json_atomic(mcp_path, mcp_config(a.api_url, info["projectUid"], a.prefix), indent=2)
@@ -252,6 +252,8 @@ def main(argv=None) -> int:
     ap.add_argument("--source-set", default="", help="the source set, for its cohort QC")
     ap.add_argument("--no-ask-why", dest="ask_why", action="store_false",
                     help="skip the post-run why turn (it resumes the session once)")
+    ap.add_argument("--knowledge", action="store_true",
+                    help="carry the source project's lab-knowledge entries into the copy (P4)")
     ap.add_argument("--root", required=True)
     ap.add_argument("--brief", default=DEFAULT_BRIEF)
     ap.add_argument("--budget-usd", type=float, default=15.0)

@@ -6,7 +6,7 @@ import { ref, computed, watch } from 'vue'
 import type { SectionOutcome, SectionVerdict } from '../../utils/blackboardApi'
 
 const props = defineProps<{ outcome?: SectionOutcome; busy?: boolean }>()
-const emit = defineEmits<{ save: [verdict: SectionVerdict | '', note: string] }>()
+const emit = defineEmits<{ save: [verdict: SectionVerdict | '', note: string]; promote: [note: string] }>()
 
 const NOTE_MAX = 2 * 1024        // matches the server cap
 const OPTS: { v: SectionVerdict; icon: string; label: string; tip: string }[] = [
@@ -52,7 +52,13 @@ function save() {
               @click="save" v-tooltip.top="'Save the verdict'">Save</button>
       <button class="cc-btn cc-btn-ghost cc-btn-dense" :disabled="busy" @click="draftVerdict = null">Cancel</button>
     </template>
-    <span v-else-if="mine?.note" class="sv-note cc-fs-xs" v-tooltip.top="mine.note">{{ mine.note }}</span>
+    <template v-else-if="mine?.note">
+      <span class="sv-note cc-fs-xs" v-tooltip.top="mine.note">{{ mine.note }}</span>
+      <button class="cc-btn cc-btn-ghost cc-btn-dense sv-btn" :disabled="busy" @click="emit('promote', mine.note)"
+              v-tooltip.top="'Promote to lab knowledge: a new entry from this note, carried into later agent runs'">
+        <i class="pi pi-book" /> Lesson
+      </button>
+    </template>
     <span v-if="proposal && outcome" class="sv-proposal cc-fs-xs"
           v-tooltip.top="'A proposal from Claude; it does not count until you mark the section'">
       <i class="pi pi-sparkles" /> Claude proposes {{ outcome.verdict }}<template v-if="outcome.note">: {{ outcome.note }}</template>

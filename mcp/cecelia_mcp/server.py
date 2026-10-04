@@ -979,12 +979,16 @@ def _memory_briefing_slice(project_uid: str) -> dict:
         outcome = entry.get("outcome")
         if outcome:
             row["outcome"] = outcome
+        # AGENT_RUN_REVIEW_PLAN P4 — an entry a person marked as lab knowledge for this project.
+        if entry.get("knowledge"):
+            row["knowledge"] = True
         open_entries.append(row)
     # Decision 12 tiebreak — sort open entries by outcome rank (bad < good < untagged) with the
     # incoming list order as the stable secondary key (already newest-first from the list API).
     # Applied BEFORE the cap so a `bad`-tagged entry at position 9 of the list still lands in
     # the top-8 briefing slice instead of getting truncated off.
-    open_entries.sort(key=lambda r: _outcome_rank(r.get("outcome")))
+    # Lab knowledge leads: it is what a person wrote down for every session on this project.
+    open_entries.sort(key=lambda r: (not r.get("knowledge"), _outcome_rank(r.get("outcome"))))
     open_entries = open_entries[:_BRIEFING_OPEN_ENTRIES_MAX]
 
     try:
@@ -1039,8 +1043,9 @@ def get_session_briefing(project_uid: str) -> dict:
         propose anything until you've greeted the user and asked them to describe subject + goal;
         a briefing with no signal to lean on is worse than one that admits it needs signal.
       - `openBlackboardEntries`: up to 8 entries with status="open" — `[{entryId, title,
-        updatedAt, attachmentsCount, outcome?}]`. What's currently on the table across sessions.
-        Ordered by outcome tiebreak (Decision 12): `bad`-tagged first, then `good`, then
+        updatedAt, attachmentsCount, outcome?, knowledge?}]`. What's currently on the table across
+        sessions. `knowledge: true` marks lab knowledge the user wrote down for this project; those
+        come first. Then by outcome tiebreak (Decision 12): `bad`-tagged first, then `good`, then
         untagged; newer-first within each group. Reach for `read_blackboard_entry` on any that
         look relevant to what the user is about to ask; if a row carries `outcome.verdict:
         "bad"`, its `outcome.note` is what a prior session learned went wrong — lead with it.

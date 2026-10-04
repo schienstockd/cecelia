@@ -53,6 +53,27 @@
         @test set("m01", "bad", "no QC gate")[1] == 200       # a miss added by revise, then marked
         @test set("d02", "")[1] == 200                        # a person clears their own
         @test !haskey(entry().sectionOutcomes, :d02)
+
+        # P4 — a lesson promoted from a section is marked as lab knowledge; the mark rides through
+        # a revise; not on the run record itself or the profile
+        st, body = post("/api/blackboard/create", Dict("projectUid" => uid, "title" => "Lesson", "content" => "QC gate first"))
+        kid = String(JSON3.read(body).entryId)
+        mark(id, on; from = nothing) = post("/api/blackboard/knowledge",
+            Dict{String,Any}("projectUid" => uid, "entryId" => id, "knowledge" => on,
+                             (from === nothing ? () : ("from" => from,))...))
+        krow() = only(r for r in JSON3.read(api_blackboard_list(HTTP.Request("GET",
+            "/api/blackboard?projectUid=$uid"))[2]).entries if r.entryId == kid)
+        @test !haskey(krow(), :knowledge)
+        @test mark(eid, true)[1] == 400                       # a run record
+        @test mark("profile", true)[1] == 400
+        @test mark(kid, "yes")[1] == 400
+        @test mark(kid, true; from = Dict("entryId" => eid, "sectionId" => "zz"))[1] == 400
+        @test mark(kid, true; from = Dict("entryId" => eid, "sectionId" => "m01"))[1] == 200
+        @test krow().knowledge.from.sectionId == "m01" && krow().knowledge.by.via == "app"
+        @test _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => kid, "content" => "QC gates on volume"))[1] == 200
+        @test haskey(krow(), :knowledge)
+        @test mark(kid, false)[1] == 200
+        @test !haskey(krow(), :knowledge)
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
