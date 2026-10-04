@@ -288,7 +288,10 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
         # Stats footer: pop_df over the medoid's (uid, vn) — for the single-image pool this matches
         # the pool-wide pop, and for a multi-image pool the footer intentionally reflects "this pop
         # on this image" (the card's own frame). Whole-pool medians land in Phase 2's detail panel.
-        frame = pop_df(med_img, "trackclust", [path]; value_name=medoid.value_name, granularity=:track)
+        # `expand_cluster_pops=false` keeps it to that segmentation — the run-wide expansion pooled every
+        # co-clustered segmentation's tracks into the footer.
+        frame = pop_df(med_img, "trackclust", [path]; value_name=medoid.value_name, granularity=:track,
+                       expand_cluster_pops=false)
         stats = card_stats(frame)
 
         # Pop colour + display name from the map — falls back to path segment + white if not found
