@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { raisePanel, dropPanel, panelZ, PANEL_Z_BASE } from './panelStack'
+import { raisePanel, dropPanel, panelZ, PANEL_Z_BASE, PANEL_Z_LIFTED } from './panelStack'
 
 describe('panelStack', () => {
   it('puts a newly raised panel on top', () => {
@@ -29,6 +29,16 @@ describe('panelStack', () => {
 
   it('gives an unknown key the base z-index', () => {
     expect(panelZ(['a'], 'never-opened')).toBe(PANEL_Z_BASE)
+  })
+
+  // Maximised plot canvas is z 200 (ModuleLayout): lifted panels sit above it, keep their order,
+  // and stay below the modal layer.
+  it('lifts the whole stack above the maximised canvas, order kept', () => {
+    const s = raisePanel(raisePanel([], 'viewer'), 'lablog')
+    expect(panelZ(s, 'viewer', true)).toBe(PANEL_Z_LIFTED)
+    expect(panelZ(s, 'viewer', true)).toBeGreaterThan(200)
+    expect(panelZ(s, 'lablog', true)).toBe(PANEL_Z_LIFTED + 1)
+    expect(panelZ(s, 'lablog', true)).toBeLessThan(500)
   })
 
   // Panels must never climb into the modal (500) / popover (1000) layers.

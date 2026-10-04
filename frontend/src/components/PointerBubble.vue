@@ -20,7 +20,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useViewerStore } from '../stores/viewer'
 import { resolveAnchor, isReachable } from '../utils/guideAnchor'
-import { PANEL_Z_BASE } from '../utils/panelStack'
+import { PANEL_Z_BASE, PANEL_Z_LIFTED } from '../utils/panelStack'
+import { canvasMaximised } from '../composables/usePlotFullscreen'
 
 const viewer = useViewerStore()
 const POLL_MS = 250
@@ -55,8 +56,9 @@ interface Placed {
 
 // Two layers: a mark on page content sits just UNDER the floating panels, so an open panel covers
 // it (a plot highlight used to paint over Kiwi when Kiwi was expanded again); a mark on something
-// inside a panel sits above them all, or its own panel would hide it.
-const PAGE_Z = PANEL_Z_BASE - 1
+// inside a panel sits above them all, or its own panel would hide it. Follows the panels' lift while
+// a plot canvas is maximised (z 200), or a mark on the maximised plots would paint under it.
+const PAGE_Z = computed(() => (canvasMaximised.value ? PANEL_Z_LIFTED : PANEL_Z_BASE) - 1)
 const placed = computed<Placed[]>(() => {
   void domTick.value
   return viewer.uiMarks.map(m => {

@@ -42,10 +42,10 @@
   See docs/UI.md for the full module page authoring guide.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onUpdated, onBeforeUnmount, useSlots } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { onRevealPlots, setSectionOpen } from '../utils/sectionOpen'
-import { usePlotFullscreen } from '../composables/usePlotFullscreen'
+import { usePlotFullscreen, reportCanvasMaximised } from '../composables/usePlotFullscreen'
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
@@ -62,6 +62,7 @@ import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
 import HintCallout from './HintCallout.vue'
+import PanelLaunchers from './PanelLaunchers.vue'
 
 const props = withDefaults(defineProps<{
   module?:      string
@@ -128,6 +129,17 @@ const rightWidthKey = computed(() => props.module ? `cc.rightw.${props.module}` 
 const project    = useProjectStore()
 const taskDefs   = useTaskDefsStore()
 const activeSet  = computed(() => project.activeSet())
+// The flag is app-wide and persisted; THIS page is only maximised when it has plots and a set. One
+// predicate for the class, the launcher strip and the floating-panel lift (reported out).
+// `useSlots()` is not reactive (utils/slotsReactivity.test.ts), so slot presence is copied into a ref
+// after each render rather than read inside the computed.
+const slots = useSlots()
+const hasPlots = ref(!!slots.plots)   // seeded at setup, so a reload while maximised does not flash
+const syncHasPlots = () => { hasPlots.value = !!slots.plots }
+onMounted(syncHasPlots)
+onUpdated(syncHasPlots)
+const isMaximised = computed(() => plotsMaximised.value && hasPlots.value && !!activeSet.value)
+reportCanvasMaximised(isMaximised)
 // namespace remembered selections per module so they don't bleed across pages (docs/UI.md)
 const selScope   = computed(() => props.module ?? 'default')
 const selectedUids = ref<string[]>(
@@ -279,7 +291,7 @@ const visibleUids = computed<string[]>(() =>
            it. `no-right` adds a small right gutter so they have room. -->
       <!-- `is-plots-maximised` pins the panel to the viewport (see the CSS) -->
       <div class="image-panel"
-        :class="{ 'no-right': !$slots.right, 'is-plots-maximised': plotsMaximised && $slots.plots && activeSet }">
+        :class="{ 'no-right': !$slots.right, 'is-plots-maximised': isMaximised }">
 
         <!-- first-use hint (dismissed permanently per hintKey) -->
         <HintCallout v-if="hint && hintKey" :hint-key="hintKey" :text="hint" />
@@ -349,10 +361,15 @@ const visibleUids = computed<string[]>(() =>
               <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
             </button>
 
+            <!-- Maximised, the sidebar is covered — so its Viewer / Correction / Lab log / Kiwi
+                 launchers ride along here; the panels themselves lift above the maximised canvas
+                 (PANEL_Z_LIFTED, utils/panelStack.ts). -->
+            <PanelLaunchers v-if="isMaximised" compact />
+
             <!-- Maximise the image panel (this bar, filters, Images, plots) to the whole browser
-                 window (covers AppHeader, AppSidebar, SetBar, right panel and floating panels). The
-                 button rides along inside the panel, so restore stays where it was; Esc also
-                 restores. Icon + label wording mirrors FloatingPanel's per-panel maximise. -->
+                 window (covers AppHeader, AppSidebar, SetBar and right panel; floating panels stay
+                 on top). The button rides along inside the panel, so restore stays where it was; Esc
+                 also restores. Icon + label wording mirrors FloatingPanel's per-panel maximise. -->
             <button v-if="$slots.plots && activeSet"
               class="filter-toggle" :class="{ active: plotsMaximised }"
               @click="togglePlotsMaximised"
@@ -394,7 +411,7 @@ const visibleUids = computed<string[]>(() =>
         <!-- scrollable body: image table + below-table content -->
         <div class="panel-scroll">
           <!-- maximised: the table scrolls in its own capped box so the plots keep the viewport -->
-          <CollapsibleSection label="Images" :max-height="plotsMaximised ? '35vh' : 'none'"
+          <CollapsibleSection label="Images" :max-height="isMaximised ? '35vh' : 'none'"
             :storage-key="imagesOpenKey">
             <div v-if="!activeSet" class="no-set cc-empty">
               <i class="pi pi-folder-open" style="font-size:2rem; opacity:0.2" />
@@ -579,9 +596,11 @@ const visibleUids = computed<string[]>(() =>
 
 /* ── Plot canvas maximise ─────────────────────────────────────────────────
    The whole image panel covers the viewport when maximised, so the image table (select, filter)
-   comes along. z: 200 sits above AppHeader (100) and the floating-panel stack (PANEL_Z_BASE = 60
-   + open count) but BELOW BaseModal (500), TeleportPopover (1000) and the guide bubbles (1500) —
-   a modal or popover opened from inside the maximised panel must still paint on top of it.
+   comes along. z: 200 sits above AppHeader (100) and the normal floating-panel stack (PANEL_Z_BASE
+   = 60 + open count) but BELOW BaseModal (500), TeleportPopover (1000) and the guide bubbles (1500) —
+   a modal or popover opened from inside the maximised panel must still paint on top of it. Floating
+   panels (Viewer, Lab log, Kiwi, …) lift to PANEL_Z_LIFTED = 210 while this is up, so they float
+   over it rather than hide under it — keep 200 between those two numbers.
    The plots section takes the space left under the (capped) Images section; flex-basis 0 in a
    definite-height column gives it a definite height, so plots that ask for `height: 100%`
    (TabbedCanvas, SummaryCanvas) fill it. The min-height keeps them usable on a short screen with
