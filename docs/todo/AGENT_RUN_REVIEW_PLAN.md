@@ -1,6 +1,6 @@
 # Agent run review — the run's decisions on the blackboard, a verdict on each
 
-**Status:** P1 + P2 section verdicts built (2026-10-04) — run records via `run_record.py` with the `agentRun` marker; Good / Bad / Unsure per decision, misses, the "Agent runs" filter, the MCP proposal tool. Not built: P2's refs into the copy (KiwiRef `projectUid` + `chain`), P1b, P3, P4. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
+**Status:** P1, P1b emitter and P2 section verdicts built (2026-10-04) — run records via `run_record.py` with the `agentRun` marker; Good / Bad / Unsure per decision, misses, the "Agent runs" filter, the MCP proposal tool; platform errors logged as `agent_run_finding` (`run_findings.py`). Not built: P2's refs into the copy (KiwiRef `projectUid` + `chain`), P3, P4. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
 P4b (the app-tier runs). Builds on the blackboard ([`BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md)
 Part 4, [`PROJECT_MEMORY_PLAN.md`](PROJECT_MEMORY_PLAN.md) Decision 11 outcomes), `KiwiRef`
 ([`KIWI_ASSISTANT_PLAN.md`](KIWI_ASSISTANT_PLAN.md) Decision 4) and the frozen-ref sidecar
@@ -129,6 +129,12 @@ heading's `dNN` and never renumber; misses are `mNN`.
   read for completeness and grain.
 
 ### P1b — platform findings → the weekly judge (after the judge refactor merges)
+*Emitter built (`scripts/agent_eval/run_findings.py`, called by `run_app.py` after the record); the
+judge side is the judge session's `judge-agent-run-findings`. As built: `key` = `"run-"` + 10 hex (it
+lands in fix-worktree names); one row per key per run (the judge counts rows as runs); dropped =
+an HTTP 4xx with a reason only — an error with no text is LOGGED (a lost message is the bug — the empty
+set_gate errors #1405 fixed); backend errors from the app's recent-log ring in the run window, `file:line`
+= the first repo frame. `record.json` now carries `codeSha` + `startedAtUtc`.*
 - `agent_run_finding` added to the closed event taxonomy (`python/cecelia/effectiveness/log.py`).
   Payload `{key, tool, error, file, line, desc}`; row `commit` = the SHA the run checked out, `branch`
   = null, so the judge's sweep treats it as landed and reads the function at that commit.
