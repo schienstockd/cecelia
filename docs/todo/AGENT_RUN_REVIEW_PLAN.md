@@ -1,6 +1,6 @@
 # Agent run review — the run's decisions on the blackboard, a verdict on each
 
-**Status:** DESIGN (2026-10-04) — nothing built. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
+**Status:** DESIGN (2026-10-04) — nothing built; open questions answered (Decisions 1, 11). Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
 P4b (the app-tier runs). Builds on the blackboard ([`BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md)
 Part 4, [`PROJECT_MEMORY_PLAN.md`](PROJECT_MEMORY_PLAN.md) Decision 11 outcomes), `KiwiRef`
 ([`KIWI_ASSISTANT_PLAN.md`](KIWI_ASSISTANT_PLAN.md) Decision 4) and the frozen-ref sidecar
@@ -42,10 +42,12 @@ Corrections become lab knowledge for later runs only after a person rewrites the
 
 ## Locked decisions
 
-1. **A run covers the whole test set.** The copy holds every image of the source set (raw only), in
-   one set, so the agent works through them as a user would and cohort QC has a cohort. Brief: *"Hey.
-   can you track the cells in these images and analyse their behaviour?"* The source set (tSJpBI,
-   with yDfwP7 and 3–4 more) needs a reference analysis on every image.
+1. **A run covers the whole test set.** The copy holds every run image (raw only), in one set, so the
+   agent works through them as a user would and cohort QC has a cohort. Brief: *"Hey. can you track
+   the cells in these images and analyse their behaviour?"* The source is tSJpBI's "Crop" set (7 crops,
+   all with a reference analysis), split by mouse: the **run images are M1's four** (yDfwP7, UJS0Hz,
+   dvFmih, 3vBHp8); **M2's three are held out** (jV6p8M, 8F20qd, QWhG6x, Decision 9), so the P4
+   comparison tests whether a lesson from one mouse carries to another.
 2. **The unit is a decision, not the reasoning.** A section per decision, tagged with its image and
    one fixed step — `cleanup · segment · measure · gate · track · behaviour · report` — holding what
    was done (chain node + params, gate geometry, task run), the evidence looked at since the previous
@@ -80,14 +82,18 @@ Corrections become lab knowledge for later runs only after a person rewrites the
 9. **Corrections do not flow to the next run automatically.** A `bad` note on a given image
    ("OTI: CTV < 240") read back by a run on that image is the answer key, not reasoning. Promoting a note
    to lab knowledge is a person rewriting it in general form ("T-cell dyes bleed into each other's
-   channels — check each pair"). The with/without-knowledge comparison scores on **held-out images**.
-
+   channels — check each pair"). The with/without-knowledge comparison scores on **held-out images**
+   (M2's crops, Decision 1), which no run or correction has touched.
 10. **Platform findings are recorded apart from the agent's score.** A tool error or a backend error
    during the run is the app's fault, not the agent's: the record lists them in their own section,
    unscored, and the harness logs each as an `agent_run_finding` event to the effectiveness log so the
    weekly judge sweeps and verifies them like any other bug (Decision 10 detail below, agreed with the
    judge session 2026-10-04). Not `fanout_audit_finding`: those feed the commit hook's must-tag gate,
    reviewer precision and the rule mapping, where a tool error would count as a CLAUDE.md violation.
+11. **Lab knowledge lives in the project's own blackboard.** An entry marked as knowledge stays in the
+   project it was written in, and the harness carries that project's knowledge entries — and only
+   those — into a run copy. No machine-level store (as the model vault is): it would drift from the
+   project, miss from an export, and mix in other users' knowledge from the same machine.
 
 ## Shape
 
@@ -108,7 +114,7 @@ heading's `dNN` and never renumber; misses are `mNN`.
 ## Phases
 
 ### P1 — multi-image copies + the run record writer (harness)
-- `app_project.py`: copy every image of the source set (raw) into one set; `run_app.py` takes the set,
+- `app_project.py`: copy the run images (M1's four, raw) into one set; `run_app.py` takes the set,
   the plural brief, and records per image + the cohort QC numbers on both sides in `record.json`.
 - `scripts/agent_eval/run_record.py` (on `trace_view.py`'s existing stream-json parser, not a second one): `trace.jsonl` → decisions (actions, image, step, the reads since
   the previous action, the preceding text block) → the post-run "why" turn → one entry in the source
@@ -157,8 +163,9 @@ heading's `dNN` and never renumber; misses are `mNN`.
 ### P4 — the knowledge loop
 - "Promote to lab knowledge" on a section: a new entry pre-filled with the note, marked as knowledge,
   for you to rewrite in general form.
-- The harness copies knowledge entries into each run's copy before the agent starts.
-- **Checkpoint:** the same brief on held-out images, three runs with and three without the knowledge
+- The harness copies the source project's knowledge entries into each run's copy before the agent
+  starts (Decision 11).
+- **Checkpoint:** the same brief on the held-out images (M2's three), three runs with and three without the knowledge
   entries, scored with P3.
 
 ## Touchpoints
@@ -168,13 +175,6 @@ the canary. P1b: 1 event name in `log.py` + the harness emitter; judge side `bug
 location-less branch. P2: `kiwiRef.ts` + resolver + `KiwiRefChip` (project id, `chain`), 1 route + 1 meta field,
 `BlackboardModule.vue`, 1 MCP tool (server.py + guidance.py), tests. P3: 1 script + test. P4: 1 GUI
 action + 1 copy step in `app_project.py`.
-
-## Open questions
-
-1. **Where does lab knowledge live?** *Recommended:* entries you mark as knowledge stay where they
-   were written; the harness copies marked entries from a configured list of projects into the run
-   copy. *Alternative:* one dedicated "lab knowledge" project.
-2. **Which held-out images** for P4 — more crops in tSJpBI kept out of the test set, or another project.
 
 ## Out of scope
 
