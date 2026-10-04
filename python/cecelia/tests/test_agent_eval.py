@@ -370,7 +370,7 @@ class TestRunFindings(unittest.TestCase):
                                               encoding="utf-8")
             (root / "run.json").write_text(json.dumps({"projectUid": "CP", "images": TestRunRecord.IMAGES,
                                                        "source": {"projectUid": "SRC"}}), encoding="utf-8")
-            (root / "record.json").write_text(json.dumps({"codeSha": "abc1234"}), encoding="utf-8")
+            (root / "record.json").write_text(json.dumps({"codeSha": "abc1234"}), encoding="utf-8")   # not in this repo: kept
             log = pathlib.Path(d) / "events.jsonl"
             run_findings.emit(root, None, log_path=log)
             rows = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines()]
@@ -378,6 +378,13 @@ class TestRunFindings(unittest.TestCase):
         r = rows[0]
         self.assertEqual((r["event"], r["commit"], r["branch"], r["session"]), ("agent_run_finding", "abc1234", None, "S1"))
         self.assertEqual(set(r["payload"]), {"key", "tool", "error", "desc"})
+
+    def test_short_sha_expands_to_the_full_one(self):
+        import subprocess
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO), capture_output=True, text=True).stdout.strip()
+        if not head:
+            self.skipTest("not a git checkout")
+        self.assertEqual(run_findings.full_sha(head[:8]), head)
 
 
 if __name__ == "__main__":

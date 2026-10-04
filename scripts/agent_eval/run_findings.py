@@ -34,6 +34,7 @@ sys.path.insert(0, str(REPO / "python"))
 
 import app_project  # noqa: E402
 import run_record  # noqa: E402
+from cecelia.effectiveness.git_context import git_output  # noqa: E402
 from cecelia.effectiveness.log import append_event  # noqa: E402
 
 EVENT = "agent_run_finding"
@@ -111,15 +112,23 @@ def backend_findings(api: str, start: _dt.datetime, end: _dt.datetime, run: str)
     return list(out.values())
 
 
+def full_sha(sha: str | None) -> str | None:
+    """`sha` as the full 40-hex SHA (the rest of the effectiveness log carries full ones); unchanged
+    when git cannot resolve it here."""
+    if not sha:
+        return sha
+    return git_output("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", cwd=str(REPO)) or sha
+
+
 def run_commit(root: pathlib.Path, rec: dict) -> str | None:
     """The SHA the run's app was on: record.json's `codeSha`, else the cron log's `code:` line."""
     if rec.get("codeSha"):
-        return rec["codeSha"]
+        return full_sha(rec["codeSha"])
     log = root.parent / f"cron-{root.name}.log"
     if log.exists():
         m = re.search(r"^code: ([0-9a-f]{7,40})", log.read_text(encoding="utf-8", errors="replace"), re.M)
         if m:
-            return m.group(1)
+            return full_sha(m.group(1))
     return None
 
 
@@ -134,7 +143,7 @@ def emit(root: pathlib.Path, api: str | None, commit: str | None = None, dry_run
         start = _dt.datetime.fromisoformat(rec["startedAtUtc"])
         found += backend_findings(api, start, start + _dt.timedelta(seconds=int(rec.get("wallS", 0)) + 60),
                                   root.name)
-    commit = commit or run_commit(root, rec)
+    commit = full_sha(commit) or run_commit(root, rec)
     if not dry_run:
         for f in found:
             append_event(EVENT, f, session=dec.get("sessionId"), commit=commit, branch=None, log_path=log_path)
