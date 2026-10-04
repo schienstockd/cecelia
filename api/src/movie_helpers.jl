@@ -232,83 +232,41 @@ function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{
                              suffix = suffix, name = by_image ? String(img.name) : ""))
 end
 
-# Append every non-transient, shown pop of `(vn, pt)` to `out` as {valueName, popType, path} — the shape
-# overlay_legend_content consumes. Uses the SAME pop-map primitives the show-tracks handler does, so the
-# card can't drift from what's actually rendered.
-function _append_config_pop_paths!(out::Vector{Dict{String,Any}}, img, vn::AbstractString, pt::AbstractString)
-    try
-        m = _live_map(img, vn, pt)
-        for path in pop_paths(m)
-            p = pop_at(m, path)
-            (p.transient || !p.show) && continue
-            push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => path))
-        end
-    catch
-        # pop map for this (vn, pt) unavailable → nothing to contribute
-    end
-end
-
-# The overlay pops a movie config would SHOW, as one list of {valueName, popType, path} (the shape
-# overlay_legend_content turns into {name, colour}) — point pops AND tracks together, matching the ONE
-# "Populations" section the analysis-board strip / single-record card use. Reuses the CANONICAL
-# resolvers the show-handlers use — `resolve_pops` for point pops, the pop maps for track gates &
-# clusters, "/_tracked" for a segmentation's whole-track overlay — so it can't drift from what renders.
+# The overlay pops a movie config DRAWS, as one list of {valueName, popType, path, ribbon} (the shape
+# overlay_legend_content turns into {name, colour}), mirroring the renderer's own gates
+# (`_overlays_raw_from_config` → `build_overlays3d_for`) so the card names what the movie shows:
+#  • the shown `popType` pops (in `popsFilter`, when set) — points, and their cell-track ribbons ride
+#    on the same row, since the points ARE the pop's colour;
+#  • track-cluster ribbons (`trackclust_requested` + `trackclust_draws`) — ribbon-only rows (`ribbon`).
+# Whole-segmentation tracks are not pops — `_track_source_items` lists them.
 function _config_overlay_pops(img, config)
     out = Vector{Dict{String,Any}}()
     _has_label_props(img) || return out
-    segs = String[v for v in versioned_keys(img.label_props) if !is_reserved_value_name(v)]
-
-    if Bool(get(config, :showPopulations, false))
-        pt = String(get(config, :popType, "flow"))
-        # When the config names a `popValueName` (batch picker for which segmentation's pop tree to
-        # draw from), the legend must reflect that segmentation only — else it would list pops from
-        # every segmentation while the movie actually draws pops from just one. Absent → iterate all
-        # segmentations (pre-picker fallback, matches `_overlays_raw_from_config`).
-        pop_vn = String(get(config, :popValueName, ""))
-        vns_for_pops = isempty(pop_vn) ? segs : String[pop_vn]
-        for vn in vns_for_pops
-            try
-                for L in resolve_pops(img, pt; value_name = vn)
-                    # A pop counted as POINTS is one that's shown and NOT drawn as a ribbon. Under
-                    # MULTI_POP_TRACKING_PLAN.md Decision 2 ribbon eligibility is `is_track ||
-                    # has_tracks`, so both branches must exclude a pop the tracks legend below will
-                    # already list — otherwise a flow pop with tracked cells would show TWICE.
-                    (L.show && !L.is_track && !Bool(get(L, :has_tracks, false))) || continue
-                    push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => L.path))
-                end
-            catch
+    Bool(get(config, :showPopulations, false)) || return out
+    pt = String(get(config, :popType, "flow"))
+    # The ONE segmentation the movie draws pops from (`_config_pop_segmentation`); none → none drawn.
+    pop_vn = _config_pop_segmentation(config)
+    vns_for_pops = isempty(pop_vn) ? String[] : String[pop_vn]
+    pf = get(config, :popsFilter, nothing)
+    keep = (pf isa AbstractVector && !isempty(pf)) ? Set(String.(pf)) : nothing
+    for vn in vns_for_pops
+        try
+            for L in resolve_pops(img, pt; value_name = vn)
+                (L.show && (keep === nothing || L.path in keep)) || continue
+                push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => L.path, "ribbon" => false))
             end
+        catch
         end
     end
-
-    if Bool(get(config, :showTracks, false))
-        # Whole-segmentation tracks are not pops — `_track_source_items` lists them, in the colours
-        # the movie draws them.
-        for vn in segs
-            Bool(get(config, :showGatedTracks, false)) && _append_config_pop_paths!(out, img, vn, "track")
-            Bool(get(config, :showTrackclust, false))  && _append_config_pop_paths!(out, img, vn, "trackclust")
-        end
-        # Cell-track ribbons — flow pops whose cells hold `track_id > 0` (data flag `has_tracks`):
-        # a hand-drawn cell gate over cells that were later tracked. `_build_overlay_state` already
-        # renders these as ribbons under Decision 2 — the legend picks the same set up here so the
-        # title card names every ribbon the movie will actually draw. Gated by `showGatedTracks`
-        # (the master ribbon toggle — internal key kept for continuity; the UI label is "Show
-        # cell-track ribbons"). Distinct from "gated tracks" — a future track-poptype pop gated on
-        # TRACK measures; see docs/TRACKING.md → deferred 3d/3e.
-        if Bool(get(config, :showGatedTracks, false))
-            pt = String(get(config, :popType, "flow"))
-            # Same segmentation scope as the points block above: when `popValueName` is set, cell-
-            # track ribbons come from that segmentation's pops only.
-            pop_vn = String(get(config, :popValueName, ""))
-            vns_for_pops = isempty(pop_vn) ? segs : String[pop_vn]
-            for vn in vns_for_pops
-                try
-                    for L in resolve_pops(img, pt; value_name = vn)
-                        (L.show && Bool(get(L, :has_tracks, false)) && !L.is_track) || continue
-                        push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => L.path))
-                    end
-                catch
+    if trackclust_requested(Bool(get(config, :showTrackclust, false)), true, false)
+        for vn in vns_for_pops
+            try
+                for L in resolve_pops(img, "trackclust"; value_name = vn)
+                    L.show || continue
+                    push!(out, Dict{String,Any}("valueName" => vn, "popType" => "trackclust", "path" => L.path,
+                                                "ribbon" => true))
                 end
+            catch
             end
         end
     end
@@ -377,9 +335,10 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
     if overlay_pops !== nothing
         seen = Set{String}()   # dedupe by pop NAME — one pop spans segmentations (one layer each)
         for pp in overlay_pops
-            vn   = String(get(pp, :valueName, ""))
-            pt   = String(get(pp, :popType, ""))
-            path = String(get(pp, :path, ""))
+            # Both key spellings: the route's JSON3 body is Symbol-keyed, `_config_overlay_pops` String-keyed.
+            vn   = _wstr_any(pp, :valueName, "valueName")
+            pt   = _wstr_any(pp, :popType, "popType")
+            path = _wstr_any(pp, :path, "path")
             (isempty(vn) || isempty(pt)) && continue
             # A captured track layer may say the colour its tails ARE drawn in (`colour`; null = by
             # track id / speed, no one swatch is true) — the viewer's colour mode outranks the pop's.
@@ -444,12 +403,22 @@ function _title_card_content(img, config)
     sections = Vector{Dict{String,Any}}()
     # Populations (incl. track pops) — the shown pops through the canonical legend helper → {name, colour}
     # rows. ONE section, matching the strip / single-record card (overlay_legend_content dedups by name).
+    # A ribbon-only row's swatch is the pop's colour only when the tails ARE that colour ("pop" mode,
+    # `_build_overlay_state`); by track id, speed or one solid colour, no pop swatch is true.
     plist = _config_overlay_pops(img, config)
-    items = if !isempty(plist)
-        rows  = overlay_legend_content(img, "", plist, nothing).populations
-        [Dict{String,Any}("label" => p["name"], "colour" => p["colour"]) for p in rows]
-    else
-        Dict{String,Any}[]
+    ov    = _overlays_raw_from_config(config, false)
+    pop_coloured = ov !== nothing && ov["trackColorMode"] == "pop"
+    items = Dict{String,Any}[]
+    seen  = Set{String}()
+    for ribbon in (false, true)
+        part = filter(p -> p["ribbon"] == ribbon, plist)
+        isempty(part) && continue
+        for p in overlay_legend_content(img, "", part, nothing).populations
+            p["name"] in seen && continue
+            push!(seen, p["name"])
+            push!(items, Dict{String,Any}("label" => p["name"],
+                                          "colour" => (!ribbon || pop_coloured) ? p["colour"] : nothing))
+        end
     end
     append!(items, _track_source_items(config))
     isempty(items) || push!(sections, Dict{String,Any}("heading" => "Populations", "items" => items))

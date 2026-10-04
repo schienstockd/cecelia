@@ -240,6 +240,10 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
     showTitleChip: !!cfg.titleCard?.enabled,
   }
 
+  // Trackclust ribbons draw with the pops (`trackclust_requested`), and where they draw the pops' own
+  // cell-track ribbons stand down — trackclust colours the SAME tracks by cluster.
+  const trackclustOn = showTrackclust && !allTracks && !!cfg.showPopulations
+
   // ── Pop points + cell-track ribbons ────────────────────────────────────────
   if (authorRuns) {
     if (allTracks) {
@@ -267,7 +271,7 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
         if (!wantedPops.has(c.popIdx)) continue
         const pop = scene.pops[c.popIdx]
         points.push({ x: c.x, y: c.y, colour: pop.colour, ringed: hasMask })
-        if (includeTracks && pop.hasTracks && c.trackId !== null) {
+        if (includeTracks && !trackclustOn && pop.hasTracks && c.trackId !== null) {
           ribbons.push({ points: ribbonPath(c),
                          colour: tailColour(cfg.trackColourMode, c.trackId, PREVIEW_PALETTE[0]!, pop.colour) })
         }
@@ -275,12 +279,11 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
     }
   }
 
-  // ── Trackclust ribbons — a second ribbon family, gated on showPops ─────────
-  // The movie's trackclust overlay reaches `build_overlays3d_for` through the same overlay gate as
-  // the other pop-driven overlays (`_overlays_raw_from_config` needs one of showPops/showTracks/
-  // showGatedTracks/has_mask). Alone it renders nothing — trackclust ribbons need a pops context
-  // to attach to. Mirror that: only add trackclust ribbons when the pops branch is running.
-  if (showTrackclust && !allTracks && cfg.showPopulations) {
+  // ── Trackclust ribbons — their own author call, drawn with the pops ───────
+  // The movie draws them by a second `build_overlays3d_for(pop_type = "trackclust")` merged with the
+  // pops' (`trackclust_requested`: the chip AND showPops, not whole-seg tracks). Alone the chip draws
+  // nothing — `_overlays_raw_from_config` needs one of showPops/showTracks/showGatedTracks/has_mask.
+  if (trackclustOn) {
     for (const c of scene.cells) {
       if (!wantedPops.has(c.popIdx)) continue
       const pop = scene.pops[c.popIdx]

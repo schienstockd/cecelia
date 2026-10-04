@@ -968,7 +968,9 @@ function _cluster_matrix_suffix(chart_type, category)::Union{String,Nothing}
     nothing
 end
 
-# vcat pop_df across the co-clustered segmentations (`fetch_vn(vn)` returns one segment's frame).
+# vcat pop_df across the co-clustered segmentations (`fetch_vn(vn)` returns ONE segmentation's frame —
+# `expand_cluster_pops=false`, as the pooling IS the expansion; left on, a bare cluster-pop path pulled
+# every co-clustered segmentation into each call, counting each N times).
 _pool_co_clustered(vns, fetch_vn)::DataFrame = begin
     frames = DataFrame[]
     for vn in vns; d = fetch_vn(vn); nrow(d) > 0 && push!(frames, d); end
@@ -1021,7 +1023,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
         _pool_co_clustered(co_clustered_value_names(img, sfx; granularity=granularity,
                                                     family=_cluster_measure_family(pop_type)),
             vn -> pop_df(img, pop_type, pops; value_name=vn, granularity=granularity,
-                         pop_cols=cols, raw_channel_names=true)) :
+                         pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
         pop_df(img, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
@@ -1063,7 +1065,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         _pool_co_clustered(co_clustered_value_names(first(imgs), sfx; granularity=granularity,
                                                     family=_cluster_measure_family(pop_type)),
             vn -> pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
-                         pop_cols=cols, raw_channel_names=true)) :
+                         pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
         pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,

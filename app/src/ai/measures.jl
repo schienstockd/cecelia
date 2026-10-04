@@ -90,7 +90,10 @@ function _target_summary(img::CciaImage, vn::AbstractString, tgt, cache)
     # name, so output naming is consistent across pop_types with no local rename (the point of the
     # central raw↔channel resolution).
     df = try
-        pop_df(img, pop_type, [path]; value_name = vn, granularity = gran, pop_cols = cols)
+        # one segmentation per summary (it is labelled `valueName = vn`) — a cluster pop's run-wide
+        # expansion would pool the other co-clustered segmentations into it
+        pop_df(img, pop_type, [path]; value_name = vn, granularity = gran, pop_cols = cols,
+               expand_cluster_pops = false)
     catch
         return nothing
     end

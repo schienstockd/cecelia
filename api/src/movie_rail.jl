@@ -210,6 +210,20 @@ function _normalise_track_sources(x; default_colour::AbstractString = OVERLAY_GR
     sources
 end
 
+# The segmentation a batch movie draws its pops from: the picked `popValueName`, else the mask's
+# (`labelValueNames[1]`), else the config's `valueName` — the 2D rail's order
+# (`_resolve_movie_overlays_mask` falls back to the frame's mask, then its version). The 3D batch and
+# the title card read it here, so all three name the same segmentation. Not `_ov_look_seg`: in an
+# animation LOOK a bare `valueName` is the legacy name for the segmentation, in a batch config it is
+# the image version — so there it is the last resort, not the first.
+function _config_pop_segmentation(cfg)::String
+    pvn = _cfg_str(cfg, "popValueName", "")
+    isempty(pvn) || return pvn
+    masks = _config_compare_segmentations(cfg)
+    isempty(masks) || return first(masks)
+    _cfg_str(cfg, "valueName", "")
+end
+
 function _overlays_raw_from_config(cfg, has_mask::Bool)
     (cfg isa AbstractDict) || return nothing
     show_pops   = _cfg_bool(cfg, "showPopulations")
@@ -225,6 +239,8 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # was written, the reader defaulted `showPopulations` to true (for smoke-route back-compat)
         # and any `ov_raw` dict leaked pop dots.
         "showPopulations"  => show_pops,
+        # the "trackclust" chip — `trackclust_requested` decides whether it draws
+        "showTrackclust"   => _cfg_bool(cfg, "showTrackclust"),
         # Ribbon eligibility in the overlay author is `include_tracks && (is_track || has_tracks)` on
         # the pops path, and `include_tracks` alone on the all-tracks path. Both `tracks` (all-seg
         # ribbons) and `gated` (cell-track ribbons) chips should push ribbons; before this either flag
@@ -681,7 +697,7 @@ function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
     chans = something(channel_names(img; value_name = vnn), String[])
     specs = _apply_channel_picks(specs, config, img, vnn)
     ovs = _overlays_raw_from_config(config, label_vn !== nothing)
-    ovs === nothing || (ovs["valueName"] = _ov_look_seg(config, label_vn === nothing ? "" : String(label_vn)))
+    ovs === nothing || (ovs["valueName"] = _config_pop_segmentation(config))
     (ovs === nothing || label_vn === nothing) || (ovs["maskValueName"] = String(label_vn))
     cw, ch = _config_3d_canvas(config, size_x, size_y)
     pxsz, ts_min = img_physical_sizes(img)
