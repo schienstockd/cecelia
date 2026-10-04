@@ -261,3 +261,61 @@ end
         @test m in TRACK_COLOR_MODES
     end
 end
+
+@testset "API: movie — the trackclust chip draws its ribbons, and the title card names them" begin
+    # The batch "trackclust" chip draws the segmentation's track-cluster pops as ribbons, with the
+    # pops; the pops' own cell-track ribbons stand down there (the viewer's rule), and the title card
+    # lists what is drawn — a ribbon-only row has a swatch only when the tails ARE the pop's colour.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "track fixture missing"
+    else
+        dir = mktempdir()
+        cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, _ = _gating_image("testpr", "KDIeEm")
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            gate = Dict{String,Any}("kind" => "rectangle",
+                                    "x_channel" => String(chb.columns[1]), "y_channel" => String(chb.columns[2]),
+                                    "x_min" => -1e9, "x_max" => 1e9, "y_min" => -1e9, "y_max" => 1e9)
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(Dict{String,Any}(
+                "projectUid" => "testpr", "imageUid" => "KDIeEm", "valueName" => "B", "popType" => "flow",
+                "name" => "all", "colour" => "#00ff00", "gate" => gate))))
+            img, _ = _gating_image("testpr", "KDIeEm")
+            green = RGB{N0f8}(0, 1, 0)
+            clusters = Set(hex_to_rgb.(["#4c78a8", "#f58518", "#54a24b"]))   # Scanning / Directed / Meandering
+
+            look = Dict{String,Any}("showPopulations" => true, "showGatedTracks" => true, "popType" => "flow",
+                                    "popValueName" => "B", "tailLength" => 5, "trackColourMode" => "pop")
+            seg_colours(per_t) = Set(c for t in 0:19 for c in something(per_t(t)[2], (; colour = RGB{N0f8}[])).colour)
+            kf(cfg) = first(_resolve_keyframe_overlay_builders(img, _overlays_raw_from_config(cfg, false)))
+            @test seg_colours(kf(look)) == Set([green])                   # cell-track ribbons, pop colour
+            with_tc = merge(look, Dict{String,Any}("showTrackclust" => true))
+            @test seg_colours(kf(with_tc)) == clusters                    # the clusters draw; the pop's stand down
+            # the chip alone, without the gated chip, still draws them
+            @test seg_colours(kf(merge(with_tc, Dict{String,Any}("showGatedTracks" => false)))) == clusters
+            # the 2D rail, the same rule
+            arr, caxes = zeros(UInt8, 20, 1, 8, 8), ["t", "c", "y", "x"]
+            rail(cfg) = _resolve_movie_overlays_mask(img, nothing, arr, caxes,
+                                                     _overlays_raw_from_config(cfg, false), "B").overlays3d_for
+            @test seg_colours(rail(look)) == Set([green])
+            @test seg_colours(rail(with_tc)) == clusters
+
+            card(cfg) = [(i["label"], i["colour"]) for s in _title_card_content(img, cfg)["sections"] for i in s["items"]]
+            c = Dict{Symbol,Any}(:titleCard => Dict(:enabled => true), :showPopulations => true,
+                                 :popType => "flow", :popValueName => "B", :showTrackclust => true)
+            @test card(c) == [("all", "#00ff00"), ("Scanning", nothing), ("Directed", nothing), ("Meandering", nothing)]
+            c[:trackColourMode] = "pop"
+            @test card(c)[2:end] == [("Scanning", "#4c78a8"), ("Directed", "#f58518"), ("Meandering", "#54a24b")]
+            # no pops → nothing drawn, nothing named
+            @test isempty(card(merge(c, Dict{Symbol,Any}(:showPopulations => false))))
+            # popsFilter narrows the pop rows as it narrows the dots
+            @test first.(card(merge(c, Dict{Symbol,Any}(:popsFilter => ["/nope"])))) == ["Scanning", "Directed", "Meandering"]
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end

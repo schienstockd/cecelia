@@ -500,8 +500,11 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
         end
         if !isempty(want_paths)
             df = try
+                # `expand_cluster_pops=false`: ONE segmentation's overlay — the run-wide expansion would
+                # draw every co-clustered segmentation's cells on it (as `resolve_pops`, the viewer's).
                 pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
-                       centroids = :pixel, include_x = false, include_obs = true)
+                       centroids = :pixel, include_x = false, include_obs = true,
+                       expand_cluster_pops = false)
             catch e
                 @warn "_build_overlay_state: pop_df failed" value_name pop_type paths = want_paths exception = e
                 nothing
@@ -599,6 +602,29 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
     end
 
     OverlayState(pts_by_t, segs_by_end, hasT, tail_length, tracks_active)
+end
+
+# ── Track-cluster ribbons ──────────────────────────────────────────────────────────
+# The movie's "trackclust" chip: a segmentation's shown track-cluster pops, drawn as ribbons by their
+# own author call (`pop_type = "trackclust"`, no points) merged with the pops' closure. Drawn WITH the
+# pops, as the batch overlay preview has it. Where they draw, the pops' own cell-track ribbons stand
+# down on that segmentation — the viewer's rule (`rebuildOverlays`): trackclust colours the SAME tracks
+# by cluster, so drawing both stacks two ribbons per track.
+trackclust_requested(show_trackclust::Bool, show_pops::Bool, all_tracks::Bool) =
+    show_trackclust && show_pops && !all_tracks
+
+"""
+    trackclust_draws(img, value_name) -> Bool
+
+Whether `value_name` has any shown track-cluster pop — i.e. whether its trackclust ribbons draw (and
+its cell-track ribbons stand down). `false` when the pop map can't be read.
+"""
+function trackclust_draws(img, value_name::AbstractString)::Bool
+    try
+        any(L -> L.show, resolve_pops(img, "trackclust"; value_name = value_name))
+    catch
+        false
+    end
 end
 
 """
@@ -766,8 +792,11 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
         end
         if !isempty(want_paths)
             df = try
+                # `expand_cluster_pops=false`: ONE segmentation's overlay — the run-wide expansion would
+                # draw every co-clustered segmentation's cells on it (as `resolve_pops`, the viewer's).
                 pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
-                       centroids = :pixel, include_x = false, include_obs = true)
+                       centroids = :pixel, include_x = false, include_obs = true,
+                       expand_cluster_pops = false)
             catch e
                 @warn "mask_id_colours: pop_df failed for track pop_type" value_name pop_type paths = want_paths exception = e
                 nothing

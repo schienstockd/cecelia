@@ -1154,16 +1154,23 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 inner = merge_overlay_closures(per_source)
                 inner === nothing && (ov_diag["reason"] = "no track sources resolved")
             elseif show_pops || all_tracks
+                tc_on = trackclust_requested(Bool(_ov(ov_raw, :showTrackclust, false)), show_pops, all_tracks) &&
+                        trackclust_draws(img, ov_vn)
                 inner = try
-                    build_overlays3d_for(img; value_name = ov_vn, pop_type = ov_pt,
+                    main = build_overlays3d_for(img; value_name = ov_vn, pop_type = ov_pt,
                                        pops_filter = ov_paths,
-                                       include_tracks = include_tracks,
+                                       include_tracks = include_tracks && !tc_on,
                                        tail_length = tail_length,
                                        all_tracks = all_tracks,
                                        all_tracks_colour = all_tracks_col,
                                        # the viewer's points are its populations; tracks alone draw no dots
                                        include_points = show_pops,
                                        track_color_mode = track_color_mode)
+                    tc_on ? merge_overlay_closures(Any[main,
+                                build_overlays3d_for(img; value_name = ov_vn, pop_type = "trackclust",
+                                                     include_tracks = true, tail_length = tail_length,
+                                                     include_points = false,
+                                                     track_color_mode = track_color_mode)]) : main
                 catch e
                     ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
                     @warn "movie overlays: author failed" value_name = ov_vn pop_type = ov_pt exception = e
