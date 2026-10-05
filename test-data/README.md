@@ -39,7 +39,8 @@ projects/testpr/
                               # family="clusters". Pairs with the obs column above so the
                               # cell-cards pipeline can resolve trackclust pops on this fixture.
     gating/B__trackclust.json # SYNTHETIC trackclust pop map: three pops (Scanning/Directed/
-                              # Meandering) each filter `clusters.movement in [0|1|2]`.
+                              # Meandering) each filter `clusters.movement in [0|1|2]`. Also the
+                              # track-cluster INPUT to the track tasks (pop_df_multi_share.jl).
     labelProps/aniso__branch.h5ad  # SYNTHETIC branch sidecar (~32 KB): 6 branches over 3
                               # timepoints + the `uns` orientation block (3 frames x 4x4 boxes)
 ```

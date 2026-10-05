@@ -1,6 +1,6 @@
 # ── pop_df_multi + tracked_pop_parents + cluster-share testsets ───────
-# Four sections covering: pop_df_multi integration (KDIeEm) — cross-value_name pooling, track
-# gates resolved for the track tasks (KDIeEm),
+# Five sections covering: pop_df_multi integration (KDIeEm) — cross-value_name pooling, track
+# gates and track clusters resolved for the track tasks (KDIeEm),
 # tracked_pop_parents (no _tracked row that copies a deeper one, KDIeEm), and cluster pop
 # auto-share (co-clustered value_names). Extracted from suite.jl to keep it small enough
 # to merge without EOF conflicts on every append. The extracted file loads inside this
@@ -102,6 +102,64 @@ end
         @test Set(names(ft)) == Set(names(tt))
         @test length(unique(ft.track_id)) == nrow(ft)
         @test nrow(pop_df_multi(imgs, uids, ["B/_tracked", "B/fast"]; kw...)) == nrow(tt)        # dedup by track
+        rm(td; recursive=true)
+    end
+end
+
+# ── A track CLUSTER as input to the track tasks (committed `B__trackclust.json` fixture) ───────────
+# Same contract as the track-gate testset above, for the other track-grained type the pickers
+# `accepts`: `trackclust` pops filter the per-track table's `clusters.movement` column (21/20/21 tracks,
+# test-data/README.md). At :track (clustTracks' read) a cluster pop is exactly its tracks; at :cell
+# (the behaviour tasks' read) its tracks' member cells, with the same columns `_tracked` gives — and
+# hmm_states run end to end on one decodes states onto those cells only.
+@testset "pop_df_multi resolves track clusters for the track tasks (KDIeEm)" begin
+    src = fixture_path("testpr", "1", "KDIeEm")
+    files = (joinpath("labelProps", "B.h5ad"), joinpath("labelProps", "B__tracks.h5ad"),
+             joinpath("labelProps", "B__tracks.clustfeatures.json"), joinpath("gating", "B__trackclust.json"))
+    if !all(f -> have_fixture(joinpath(src, f)), files)
+        @test_skip "pop_df_multi track clusters (fixture missing)"
+    else
+        td = mktempdir()
+        for f in files
+            mkpath(dirname(joinpath(td, f))); cp(joinpath(src, f), joinpath(td, f))
+        end
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        imgs, uids = [img], ["KDIeEm"]
+
+        # truth, read independently of the gating engine: Directed = clusters.movement == 1
+        tt = label_props(joinpath(td, "labelProps", "B__tracks.h5ad")) |>
+             v -> select_cols(v, ["clusters.movement"]) |> as_df
+        directed = Set(Int(l) for (l, c) in zip(tt.label, tt[!, "clusters.movement"]) if c == 1)
+        cells = label_props(img; value_name="B") |> v -> select_cols(v, ["track_id"]) |> as_df
+        dcells = Set(Int(l) for (l, t) in zip(cells.label, cells.track_id)
+                     if t isa Real && isfinite(t) && Int(t) in directed)
+        @test 0 < length(directed) < nrow(tt)
+        @test resolve_pop_type(img, "B", "/Directed") == "trackclust"
+
+        # :track — clustTracks' exact read
+        kw = (granularity=:track, cell_measures=["area"], pop_cols=String[])
+        tr = pop_df_multi(imgs, uids, ["B/_tracked"]; kw...)
+        ct = pop_df_multi(imgs, uids, ["B/Directed"]; kw...)
+        @test Set(Int.(ct.track_id)) == directed
+        @test Set(names(ct)) == Set(names(tr))
+        @test nrow(pop_df_multi(imgs, uids, ["B/_tracked", "B/Directed"]; kw...)) == nrow(tr)
+
+        # :cell — the behaviour tasks' read
+        pc = ["track_id", "centroid_t", "live.cell.speed", "live.cell.angle"]
+        trc = pop_df_multi(imgs, uids, ["B/_tracked"]; pop_cols=pc, granularity=:cell)
+        cc  = pop_df_multi(imgs, uids, ["B/Directed"]; pop_cols=pc, granularity=:cell)
+        @test Set(Int.(cc.label)) == dcells
+        @test Set(names(cc)) == Set(names(trc))
+
+        # hmm_states end to end on a track cluster: states land on Directed's cells, nowhere else
+        Cecelia._run_task(Cecelia.HmmStates(), imgs,
+                          Dict{String,Any}("pops" => ["B/Directed"], "numStates" => 2, "colName" => "tc");
+                          on_log = _ -> nothing)
+        col = "live.cell.hmm.state.tc"
+        out = label_props(img; value_name="B") |> v -> select_cols(v, [col]) |> as_df
+        decoded = Set(Int(l) for (l, s) in zip(out.label, out[!, col]) if s isa Real && isfinite(s))
+        @test !isempty(decoded) && decoded ⊆ dcells
         rm(td; recursive=true)
     end
 end
