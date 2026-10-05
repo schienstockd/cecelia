@@ -836,7 +836,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
                                          @save="(v, n) => onSectionSave(part.id, v, n)"
                                          @promote="n => onPromote(part.id, n)" />
                   <div v-html="part.html" />
-                  <div v-if="part.pics.length" class="bb-attach-strip bb-section-pics">
+                  <div v-if="part.pics.length" class="bb-attach-strip bb-section-pics cc-row">
                     <button v-for="cid in part.pics" :key="cid" class="bb-attach-thumb bb-section-pic"
                             @click="focusCapture(cid)" v-tooltip.top="'Click to enlarge'">
                       <img v-if="captureCache[cid]?.thumb" :src="captureCache[cid].thumb" :alt="cid" />
@@ -851,7 +851,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
 
             <div v-if="selected.attachments.length > 0" class="bb-attach">
               <div class="bb-attach-label cc-muted cc-fs-2xs">Attachments</div>
-              <div class="bb-attach-strip">
+              <div class="bb-attach-strip cc-row">
                 <button v-for="(cid, i) in selected.attachments" :key="cid"
                         class="bb-attach-thumb"
                         @click="focusCapture(cid)"
@@ -1087,7 +1087,9 @@ onUnmounted(() => { mermaidRenderSeq++ })
   flex-shrink: 0;
 }
 .bb-attach-label { margin-bottom: 0.3rem; }
-.bb-attach-strip { display: flex; gap: 0.4rem; overflow-x: auto; }
+/* .cc-row wraps onto more rows instead of scrolling sideways; the bottom strip caps at ~3 rows, then scrolls. */
+.bb-attach-strip { gap: 0.4rem; align-items: flex-start; }
+.bb-attach > .bb-attach-strip { max-height: 13.2rem; overflow-y: auto; }
 .bb-kiwi-refs { flex-wrap: wrap; }
 /* Bare bordered picture button — canonical square thumbnail (same shape Kiwi's row uses). */
 .bb-attach-thumb {
