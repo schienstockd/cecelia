@@ -242,6 +242,14 @@ const selectedIds = computed<string[]>(() =>
     : props.modelValue ? [props.modelValue] : [])
 const isPicked = (row: Row) => selectedIds.value.includes(idOf(row))
 
+// Two quick clicks on a control inside a row (a cell-slot button, arm→confirm) also fire the row's
+// dblclick — only a double-click on the row itself means "activate this row". The pick column's
+// radio/checkbox is part of the row's hit target, so it still counts.
+function onRowDblClick(row: Row, e: MouseEvent) {
+  const t = e.target as HTMLElement
+  if (!t.closest('.sel-sticky-pick') && t.closest('button, a, input, select, textarea')) return
+  emit('row-dblclick', row)
+}
 function pick(row: Row) {
   emit('row-click', row)
   if (props.disabled || props.selectionMode === 'none') return
@@ -467,7 +475,7 @@ function colStyle(c: SelectionColumn) {
       <template v-for="row in sortedRows" :key="idOf(row)">
       <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isPicked(row) }, rowClass?.(row)]"
           v-tooltip.top="tipOf(row)"
-          @click="pick(row)" @dblclick="$emit('row-dblclick', row)">
+          @click="pick(row)" @dblclick="onRowDblClick(row, $event)">
         <td v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
           <input :type="selectionMode === 'multi' ? 'checkbox' : 'radio'"
                  :checked="isPicked(row)"
