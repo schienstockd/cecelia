@@ -9,8 +9,13 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import pathlib
+import sys
+import threading
+import time
 import unittest
+from unittest import mock
 
 from cecelia.tests.test_judge_record import _bug, _Fixture
 
@@ -86,6 +91,15 @@ class QueueTest(_ReviewFixture):
         self.assertIn("  decide  a.py:3  feat/x · fanout-b1", out)
         self.assertIn("✓ B1 → won't fix", out)
         self.assertEqual([r["value"] for r in self.rv.read_reviews(self.log)], ["wont_fix", "open"])
+
+    def test_keys_come_from_press_and_only_the_typed_answer_from_read(self):
+        lines = self.keys("my answer")
+        out = io.StringIO()
+        n = self.rv.run_queue(self.record, press=self.keys("w", "a", "q"), read=lines, out=out, path=self.log,
+                              use_colour=False, width=80, launch=lambda prompt, cwd: None)
+        self.assertEqual(n, 2)
+        self.assertEqual([(r["ref"], r["value"], r.get("note")) for r in self.rv.read_reviews(self.log)],
+                         [("B1", "wont_fix", None), ("B2", "open", "my answer")])
 
     def test_undo_writes_a_correction_and_asks_that_bug_again(self):
         n, _ = self.queue("w", "z", "o", "q")
@@ -229,3 +243,44 @@ class EvidenceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(sys.platform == "win32", "pty and termios are POSIX-only")
+class ReadKeyTest(unittest.TestCase):
+    """`read_key` on a real (pseudo-)terminal: one byte answers, no Enter."""
+
+    def press(self, typed: bytes) -> str:
+        import pty
+        import termios
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        before = termios.tcgetattr(slave)
+
+        def type_once_in_cbreak():   # setcbreak drops typeahead, so type once the key is awaited
+            for _ in range(500):
+                if not termios.tcgetattr(slave)[3] & termios.ICANON:
+                    os.write(master, typed)
+                    return
+                time.sleep(0.01)
+        threading.Thread(target=type_once_in_cbreak, daemon=True).start()
+        stdin = mock.Mock(fileno=lambda: slave)
+        try:
+            with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stdout", io.StringIO()):
+                return _load_review().read_key("› ")
+        finally:
+            after = termios.tcgetattr(slave)
+            # macOS's kernel sets PENDIN (reprint pending input) on leaving cbreak; not ours to restore
+            pendin = getattr(termios, "PENDIN", 0)
+            before[3], after[3] = before[3] & ~pendin, after[3] & ~pendin
+            self.assertEqual(after, before)   # the line discipline is put back
+
+    def test_one_key_without_enter(self):
+        self.assertEqual(self.press(b"f"), "f")
+
+    def test_an_arrow_key_is_not_its_trailing_letter(self):
+        self.assertEqual(self.press(b"\x1b[A"), "")
+
+    def test_ctrl_d_is_end_of_input(self):
+        with self.assertRaises(EOFError):
+            self.press(b"\x04")
