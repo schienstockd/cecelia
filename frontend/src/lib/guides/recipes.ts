@@ -69,6 +69,14 @@ export const RECIPES: RecipeDef[] = [
         guide: 'drift-correct',
         why: 'Tissue drift would read as movement in every track — remove it before anything else.',
       },
+      // After drift, not before: the AF task carries a drift-corrected store's valid box forward and
+      // its background estimate skips the zero padding. The condition is the user's to judge — no
+      // channel or threshold advice here.
+      {
+        guide: 'af-correct',
+        why: 'Only if one channel\'s signal shows in another (bleedthrough, shared autofluorescence): a cell counts in both.',
+        optional: true,
+      },
       {
         guide: 'segment-an-image',
         why: 'Cellpose finds the cells in most movies — start here.',

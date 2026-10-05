@@ -1000,7 +1000,8 @@ the same furniture — so the guide is file-picking, then the shared block, then
 reword the selection step for the context; `funHint` explains why THIS function and not the
 near-identically named neighbour in the dropdown; `withPreview` inserts a "preview it first" step
 before Run (only for a task the backend declares `task_previewable` — a composite inherits it from any
-step, which is how segment+measure qualifies). Every call registers itself in `TASK_RUN_USES`, which is what
+step, which is how segment+measure qualifies — pinned by the Julia testset *a guide's preview step names a
+previewable task*), with `previewHint` saying what that preview is for. Every call registers itself in `TASK_RUN_USES`, which is what
 the selection-scope ratchet iterates.
 
 **Anchors are `data-guide="<area>.<control>"` attributes**, namespaced, added to the markup at the

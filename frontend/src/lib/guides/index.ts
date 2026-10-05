@@ -16,7 +16,7 @@ import type { GuideDef } from './types'
 import { tourGuide } from './tour'
 import { importImagesGuide } from './importImages'
 import {
-  driftCorrectGuide, segmentGuide, trackCellsGuide,
+  driftCorrectGuide, afCorrectGuide, segmentGuide, trackCellsGuide,
   trainFlowModelGuide, trainDenoiseModelGuide, segmentByMotionGuide,
   clusterCellsGuide, clusterTracksGuide, behaviourStatesGuide,
   preprocessImagesGuide, clusterRegionsGuide, spatialAnalysisGuide,
@@ -42,6 +42,7 @@ export const GUIDES: GuideDef[] = [
   fixMetadataGuide,
   preprocessImagesGuide,
   driftCorrectGuide,
+  afCorrectGuide,
   segmentGuide,
   trainDenoiseModelGuide,
   trainFlowModelGuide,

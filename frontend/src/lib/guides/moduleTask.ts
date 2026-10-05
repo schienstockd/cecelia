@@ -42,6 +42,8 @@ export interface TaskRunStepsOpts {
   // qualifies. The control is `v-if`'d out unless exactly ONE image is selected, so the step carries a
   // reveal for that case rather than pointing at a button that isn't there.
   withPreview?: boolean
+  previewHint?: string             // what the preview is for — the step's first bullet; the default
+                                   // names segmentation's diameter and channels
 }
 
 export interface ModuleTaskGuideOpts extends TaskRunStepsOpts {
@@ -159,7 +161,7 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
       title: 'Preview before you commit',
       text: 'This runs the real compute over just the region the viewer is showing.',
       bullets: [
-        'Seconds instead of minutes — the way to judge the diameter and channels.',
+        o.previewHint ?? 'Seconds instead of minutes — the way to judge the diameter and channels.',
         'Open the image in the viewer first; the preview follows what it shows.',
       ],
       reveal: [
@@ -177,7 +179,8 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
       anchor: 'task.run',
       route: o.route,
       placement: 'left',
-      text: 'Happy with the preview? Run it — one task per selected image.',
+      // only ask about a preview the guide just showed — most tasks have none
+      text: `${o.withPreview ? 'Happy with the preview? ' : ''}Run it — one task per selected image.`,
       reveal: revealsFor('task.run'),
       clickAnchor: true,
     },
