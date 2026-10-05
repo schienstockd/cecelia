@@ -157,6 +157,7 @@ end
 # Does board slot `s` (a `board_summaries` plot) show what `ref` proposes? PURE → tested. `resolve` maps
 # a population as ASKED to the path a board stores it under (`board_pop_ref`: a hidden `_tracked` copy →
 # the offered set), so a proposal naming `B/_tracked` finds the board that stored `B/all/_tracked`.
+# Build `resolve` with `kiwi_pop_resolver`.
 function kiwi_slot_holds(s::AbstractDict, ref; resolve::Function = identity)::Bool
     string(get(s, "kind", "")) == "summary" || return false
     g(k) = string(something(_kiwi_get(ref, k), ""))
@@ -177,6 +178,12 @@ function kiwi_slot_holds(s::AbstractDict, ref; resolve::Function = identity)::Bo
     true
 end
 
+# THE "asked population → stored path" mapping for a proposal, over the project's offered populations
+# (`board_spec_populations`). Both the click (`kiwi_open_proposed_plot`) and the dry run
+# (`_kiwi_resolve_proposedPlot`, which hands the same `avail` to `expand_board`) resolve through this,
+# so "already on board X" and opening board X cannot disagree. Unresolvable → the name as asked.
+kiwi_pop_resolver(avail::AbstractDict) = p -> something(board_pop_ref(avail, p), p)
+
 const _KIWI_BOARD_NAME_MAX = 80
 
 function kiwi_open_proposed_plot(puid::AbstractString, ref)
@@ -184,7 +191,7 @@ function kiwi_open_proposed_plot(puid::AbstractString, ref)
     err = kiwi_ref_shape_error(ref); isempty(err) || return 400, Dict{String,Any}("error" => err)
     proj = try load_project(String(puid)) catch; return 404, Dict{String,Any}("error" => "no project $puid") end
     avail = try Cecelia.board_spec_populations(proj) catch; Dict{String,String}() end
-    resolve = p -> something(board_pop_ref(avail, p), p)
+    resolve = kiwi_pop_resolver(avail)
     for b in board_summaries(proj), s in get(b, "plots", Any[])
         kiwi_slot_holds(s, ref; resolve) && return 200, Dict{String,Any}("ok" => true, "board" => b["name"], "created" => false)
     end
