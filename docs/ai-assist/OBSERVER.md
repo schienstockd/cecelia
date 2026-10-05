@@ -75,6 +75,17 @@ create_chain              → author a whiteboard chain TEMPLATE (the wired task
 add_analysis_board        → ADD one board to /analysis. Add-only (409 on a duplicate name): cannot modify, rename, reorder or delete a board, so it sits beside the user's own. Server-validated against the project (422 rather than a board that renders blank).
 ```
 
+**Escaped newlines are repaired on the way in.** A model filling a JSON tool argument sometimes escapes
+twice and sends a whole Markdown body as one line with literal `\n` in it; stored as-is it renders as
+one line. The prose write tools (`create_blackboard_entry` / `revise_blackboard_entry` `content_md`,
+the `note` of `revise_blackboard_entry` / `set_blackboard_outcome` / `set_blackboard_section_outcome`, `append_lab_log` lines,
+`set_labarchives_context` section lines) pass their text through `mcp/cecelia_mcp/agent_text.py`
+first, and the reply names any argument it repaired in `repairedEscapedNewlines`. The rule only fires
+on text with no real line break, at least two `\n` outside code spans, and no other backslash-letter
+sequence (a regex, a Windows path) — so correct text and literal `\n` content pass untouched.
+Notebook cells are Julia source and are not touched. It lives in the MCP layer, not the API routes:
+the GUI sends real newlines, and a person who types a backslash-n meant it.
+
 **Write (Phase 2 — deferred):**
 ```
 submit_task               → propose and submit a task (requires user confirmation)
