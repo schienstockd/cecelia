@@ -15,7 +15,7 @@ stage that ran (segmentation, gating, tracking, HMM, clustering) also gets its R
 board plots for it, added to the copy and rendered headless by the app's own frontend
 (`stage_boards.py`); a stage whose board fails says so in its section, and the record is written anyway.
 
-    pixi run python scripts/agent_eval/run_record.py /tmp/cecelia-agent-app/<stamp> [--dry-run DIR]
+    pixi run python scripts/agent_eval/run_record.py ~/.cecelia-effectiveness/app-runs/<stamp> [--dry-run DIR]
                                                      [--no-stage-boards]
 
 `--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing. `--ask-why` resumes the
@@ -258,18 +258,36 @@ def _quote(text: str) -> str:
     return "\n".join("> " + ln for ln in text.splitlines())
 
 
+def knowledge_on(run: dict, rec: dict) -> bool:
+    """Whether the run was a knowledge run. Records from before `knowledgeOn` say it by what they carried."""
+    return bool(rec.get("knowledgeOn", bool(run.get("knowledge"))))
+
+
+def title_of(run: dict, rec: dict, root_name: str, set_name: str) -> str:
+    """The entry's title: the guide (when the brief named one), the start, the source set, and knowledge."""
+    head = f"Guide run {rec['guide']} · " if rec.get("guide") else "Agent run "
+    return f"{head}{rec.get('startedAt') or root_name} — {set_name}" + \
+        (" · with lab knowledge" if knowledge_on(run, rec) else "")
+
+
 def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict, notes: dict | None = None) -> str:
     """entry.md. `caps` = {sectionId: [captureId or local file name]}; `notes` = {sectionId: [what the
     stage boards could not show]}, `""` for the whole record."""
     notes = notes or {}
     images = app_project.copy_images(run)
     t = rec.get("trace") or {}
-    lines = [f"**Brief:** {rec.get('brief', '')}",
+    checklist = ["**Review checklist:**", *(f"- {c}" for c in rec["checklist"]), ""] \
+        if rec.get("checklist") else []
+    lines = [*checklist,
+             f"**Guide:** `{rec['guide']}`" if rec.get("guide") else "**Guide:** none — a free brief",
+             f"**Brief:** {rec.get('brief', '')}",
+             f"**Code:** `{(rec.get('codeSha') or '?')[:10]}`",
              f"**Copy:** {run.get('projectName') or ''} `{run['projectUid']}` — disposable; this entry is the record.",
              "**Images:** " + "; ".join(f"`{im['sourceImageUid']}` = copy `{im['imageUid']}` ({im['imageName']})"
                                         for im in images),
              "**Lab knowledge:** " + ("; ".join(f"[[{k['entryId']}]]" for k in run.get("knowledge") or [])
-                                      or "none — the copy started with an empty Blackboard"),
+                                      or ("on, but the source has no knowledge entries" if knowledge_on(run, rec)
+                                          else "none — the copy started with an empty Blackboard")),
              f"**Run:** {dec.get('model') or t.get('model')} · ${t.get('costUsd') or dec.get('cost')} · "
              f"{t.get('turns') or dec.get('turns')} turns · {rec.get('wallS', '?')} s · "
              f"{t.get('toolCallsTotal', '?')} tool calls, {len(dec['toolErrors'])} errors · "
@@ -448,8 +466,7 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
         pics.setdefault(sid, []).extend(got)
     set_name = source_set_name(projects_dir, source_uid, [im["sourceImageUid"] for im in images]) \
         if projects_dir else ""
-    title = f"Agent run {rec.get('startedAt') or root.name} — {set_name or source_uid}" + \
-        (" · with lab knowledge" if run.get("knowledge") else "")
+    title = title_of(run, rec, root.name, set_name or source_uid)
     caps: dict[str, list[str]] = {}
     attach = []
     if dry_run:
@@ -481,7 +498,8 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
                  "images": [{"sourceImageUid": im["sourceImageUid"], "imageUid": im["imageUid"]}
                             for im in images],
                  "sectionIds": [s["id"] for s in dec["sections"]],
-                 "knowledge": [k["entryId"] for k in run.get("knowledge") or []]}
+                 "knowledge": [k["entryId"] for k in run.get("knowledge") or []],
+                 "knowledgeOn": knowledge_on(run, rec), "guide": rec.get("guide"), "codeSha": rec.get("codeSha")}
     r = _post(api, "/api/blackboard/create", {"projectUid": source_uid, "title": title, "content": content,
                                               "attachments": attach, "agentRun": agent_run})
     return {**out, "entryId": r.get("entryId"), "projectUid": source_uid}

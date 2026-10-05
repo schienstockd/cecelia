@@ -22,6 +22,10 @@ over the per-pass cap, or with no verdict, are `unjudged` (carried, never on the
 one check no finding raises: commits pushed to a PR's branch after it merged, which the merge
 never took (`stranded`).
 
+A carried `open` / `unjudged` bug whose key a commit since the last pass names (`previous sha..sha`)
+gets `fix_landed`: the commits, and their PR where git shows one. No Claude call; it is evidence for
+the judge and the record, not a verdict: the judge still decides `gone`.
+
 Errors an autonomous agent run hit (`agent_run_finding`, written by `scripts/agent_eval/run_record.py`)
 are candidates too, one bug per error key however many runs hit it. One with a `file:line` (a backend
 stacktrace) is judged like a finding; one without has no code to excerpt, so it skips the judge,
@@ -41,6 +45,7 @@ import datetime as _dt
 import importlib.util as _importlib_util
 import json
 import pathlib
+import re
 import sys
 import typing as _t
 
@@ -87,6 +92,10 @@ MUTED = ("wont_fix",)
 #: the mistake, fixed or not, so a new hit is no regression. It re-opens once its run count reaches
 #: this many times the count it was dismissed at — growth that matters, at most log2(runs) re-opens.
 REOPEN_GROWTH = 2
+#: Carried statuses whose landed fixes are looked for (`fix_landed`).
+LANDED_FROM = ("open", "unjudged")
+_PR_IN_SUBJECT = re.compile(r"\(#(\d+)\)\s*$")
+_MERGE_PR = re.compile(r"^Merge pull request #(\d+)\b")
 #: Most findings judged per pass; the rest wait for the next one (oldest first).
 MAX_ITEMS = 40
 WINDOW_DAYS = 7
@@ -233,6 +242,55 @@ def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
     return {"code": _enc.window(lines, lo, hi), "symbol": symbol, "gone": None}
 
 
+def _merged_by(commit: str, sha: str, repo: pathlib.Path) -> int | None:
+    """The PR whose merge brought `commit` into `sha`: the first `Merge pull request #N` after it on
+    the ancestry path. Best effort; None for a squash or a direct push."""
+    subjects = git_output("log", "--ancestry-path", "--merges", "--reverse", "--format=%s", f"{commit}..{sha}",
+                          cwd=str(repo)) or ""
+    return next((int(m[1]) for m in map(_MERGE_PR.match, subjects.splitlines()) if m), None)
+
+
+def landed_fixes(keys: _t.Iterable[str], since: str | None, sha: str, repo: pathlib.Path) -> dict[str, list[dict]]:
+    """Commits in `since..sha` whose message names a key, per key: `{commit, subject, pr?}`.
+
+    The PR is `(#N)` at the end of the subject (a squash), else the merge that brought the commit
+    in. A matching PR merge commit (its branch is `fix-<key>`) only supplies that number, unless
+    nothing else names the key. No `since` (no previous pass): nothing to compare, so {}.
+    """
+    keys = set(keys)
+    if not keys or not since:
+        return {}
+    log = git_output("log", "--format=%H%x1f%s%x1f%b%x1e", f"{since}..{sha}", cwd=str(repo))
+    if not log:
+        return {}
+    # a key is hex after its prefix: no letter or digit may continue it (a branch's `fix-` may lead it)
+    pats = {k: re.compile(rf"(?<![A-Za-z0-9]){re.escape(k)}(?![A-Za-z0-9])") for k in keys}
+    found: dict[str, list[dict]] = {}
+    merges: dict[str, dict] = {}
+    for rec in log.split("\x1e"):
+        parts = rec.strip("\n").split("\x1f")
+        if len(parts) < 2:
+            continue
+        commit, subject, body = parts[0], parts[1], parts[2] if len(parts) > 2 else ""
+        merge, squash = _MERGE_PR.match(subject), _PR_IN_SUBJECT.search(subject)
+        for k, pat in pats.items():
+            if not pat.search(f"{subject}\n{body}"):
+                continue
+            if merge:
+                merges.setdefault(k, {"commit": commit, "subject": subject, "pr": int(merge[1])})
+            else:
+                found.setdefault(k, []).append({"commit": commit, "subject": subject,
+                                                **({"pr": int(squash[1])} if squash else {})})
+    for k, items in found.items():
+        for it in items:
+            pr = it.get("pr") or (merges.get(k) or {}).get("pr") or _merged_by(it["commit"], sha, repo)
+            if pr:
+                it["pr"] = pr
+    for k, m in merges.items():
+        found.setdefault(k, [m])
+    return found
+
+
 def _merge(group: list[dict]) -> dict:
     """One bug for findings on the same file + function: the carried (else oldest) one leads."""
     lead = next((b for b in group if b.get("carried")), group[0])
@@ -291,6 +349,15 @@ def _strip(b: dict) -> dict:
             if k not in ("id", "status", "why", "code", "symbol", "carried", "was", "muted")}
 
 
+def _not_judged(b: dict, date: str, why: str) -> dict:
+    """A bug this pass didn't judge. A carried `open` one stays open, its verdict kept: losing the
+    call (a failed judge, the cap) is no evidence it was fixed, and `unjudged` would take it off the
+    work list. Anything else waits as `unjudged`."""
+    if b.get("was") == "open":
+        return {**_strip(b), "status": "open", "opened": _opened(b, date), "why": f"still open; {why}"}
+    return {**_strip(b), "status": "unjudged", "why": why}
+
+
 def _opened(b: dict, date: str) -> str:
     """When this bug became `open`: kept while it stays open, else this pass (so it gets queued).
     Records from before `opened` existed queued an open bug on its `first_seen`."""
@@ -300,7 +367,8 @@ def _opened(b: dict, date: str) -> str:
 def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | None,
           judge: _t.Callable[[str], tuple[dict, float]] | None = None, no_judge: bool = False,
           merged_prs: _t.Callable[[str], list[dict]] | None = None,
-          repo: pathlib.Path = _REPO, meter: dict | None = None) -> tuple[list[dict], float]:
+          repo: pathlib.Path = _REPO, meter: dict | None = None,
+          failures: dict | None = None) -> tuple[list[dict], float]:
     """This pass's `bugs` list and the judge's cost.
 
     Carried: the previous record's `open` / `unjudged` / `unmerged` bugs; an agent-run error seen
@@ -308,11 +376,14 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     stranded commits on PRs merged since then. An agent-run error with no `file:line` is `open`
     without the judge: there is no code to excerpt. `gone` is listed for a
     carried bug (its fix, reported once) and for a function that no longer exists; a new finding
-    the judge calls gone was fixed before it was ever listed and isn't.
+    the judge calls gone was fixed before it was ever listed and isn't. A bug the judge didn't
+    answer for (failed, or over the cap) waits `unjudged`, except a carried `open` one, which stays
+    open. A failed judge call is said in `failures["sweep"]`; a `judge.RateLimited` propagates.
     """
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
-    carried = {b["key"]: {**_strip(b), "carried": True, "was": b.get("status"),
+    carried = {b["key"]: {**{k: v for k, v in _strip(b).items() if k != "fix_landed"},   # found afresh
+                          "carried": True, "was": b.get("status"),
                           **({"closed_runs": b.get("closed_runs") or b.get("runs") or 1}
                              if b.get("repeat") and b.get("status") == "dismissed" else {})}
                for b in (previous or {}).get("bugs", [])
@@ -320,6 +391,10 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
                    or b.get("repeat") and b.get("status") == "dismissed")
                and not _frozen(b.get("file"))}
     known = {k for b in carried.values() for k in (b.get("sources") or [b["key"]])}
+    owner = {k: b for b in carried.values() if b.get("was") in LANDED_FROM for k in (b.get("sources") or [b["key"]])}
+    for k, commits in landed_fixes(owner, (previous or {}).get("run", {}).get("sha"), sha, repo).items():
+        have = owner[k].setdefault("fix_landed", [])
+        have += [c for c in commits if c["commit"] not in {h["commit"] for h in have}]
     found = candidates(events, since=since)
     for c in found:
         if c.get("kind") == "agent_run" and c["key"] in carried:   # hit again: same bug, more runs
@@ -367,8 +442,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
              for g in waits.values()]
     ask = [_merge(g) for g in groups.values()]
     ask, waiting = ask[:MAX_ITEMS], ask[MAX_ITEMS:]
-    bugs += [{**_strip(b), "status": "unjudged", "why": "waiting for the judge (over the per-pass cap)"}
-             for b in waiting]
+    bugs += [_not_judged(b, date, "waiting for the judge (over the per-pass cap)") for b in waiting]
     cost, answer = 0.0, {}
     if ask and not no_judge:
         prompt = _BRIEF + "\n\n".join(
@@ -377,18 +451,21 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             + (f"(tagged {b['outcome']}" + (f": {b['reason']}" if b.get("reason") else "") + ")\n"
                if b.get("outcome") else "")
             + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
+            + _record.landed_hint(b)
             + f"CODE:\n{b['code']}" for b in ask)
         try:
             answer, cost, used = _judge.unpack((judge or default_judge)(prompt))
             _judge.add_tokens(meter, used)
         except _judge.JudgeError as e:   # the pass still records; these wait for the next one
             print(f"bug sweep: judge failed ({e})", file=sys.stderr)
+            if failures is not None:
+                failures["sweep"] = str(e)
     verdicts = {a["key"]: a for a in answer.get("items", [])}
     for b in ask:
         v = verdicts.get(b["key"])
         if v is None:   # skipped, failed or --no-judge: carried as unjudged, not put to the owner
             why = "not judged (--no-judge)" if no_judge else "not judged (the judge returned no verdict)"
-            bugs.append({**_strip(b), "status": "unjudged", "why": why})
+            bugs.append(_not_judged(b, date, why))
         elif v["verdict"] != "gone" or b.get("carried"):   # fixed before it was ever listed: nothing to say
             status = _VERDICT_STATUS[v["verdict"]]
             bugs.append({**_strip(b), "status": status, "why": v["why"],

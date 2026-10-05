@@ -244,9 +244,10 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
         raise RecitalError(f"claude could not be spawned: {e}") from e
 
     if result.returncode != 0:
-        raise RecitalError(
-            f"claude exited {result.returncode}; stderr:\n{(result.stderr or '').strip()}"
-        )
+        # A usage limit or API error is reported on stdout, with stderr empty: show whichever has it.
+        stderr, stdout = (result.stderr or "").strip(), (result.stdout or "").strip()
+        detail = f"stderr:\n{stderr}" if stderr else f"stdout:\n{stdout[-400:]}" if stdout else "no output"
+        raise RecitalError(f"claude exited {result.returncode}; {detail}")
     return (result.stdout or "").strip()
 
 
@@ -303,9 +304,10 @@ def _run_reviewer(
     append_event(event_name, payload, pr=pr, commit=commit, branch=branch)
 
     if error is not None:
+        # Not `tail_none`: "no audit needed" under an error would say the reviewer ran and cleared it.
         return (
             f"_{title} (evidence):_\n\n> **RECITAL SCRIPT ERROR** — {error}\n\n"
-            f"_{title}: {tail_none}_"
+            f"_{title}: not run — the reviewer errored_"
         )
 
     stripped = output.strip()

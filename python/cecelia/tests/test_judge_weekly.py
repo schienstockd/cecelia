@@ -36,8 +36,14 @@ class _WeeklyFixture(_Fixture):
         self.rec = self.w._record   # the module the pass writes with
         self.swept = {}
 
-        def sweep(events, *, date, sha, previous, judge=None, merged_prs=None, meter=None):
+        self.fail_steps: dict = {}   # step → error its judge "failed" with
+
+        def sweep(events, *, date, sha, previous, judge=None, merged_prs=None, meter=None, failures=None):
             self.swept.update(previous=previous, sha=sha)
+            if isinstance(self.fail_steps.get("sweep"), BaseException):
+                raise self.fail_steps["sweep"]
+            if self.fail_steps.get("sweep"):
+                failures["sweep"] = self.fail_steps["sweep"]
             meter.update(input=10, cache_write=0, cache_read=2000, output=300)
             return [_bug("B1"), _bug("B2", verify={"verdict": "decide", "date": date})], 0.4
 
@@ -45,7 +51,10 @@ class _WeeklyFixture(_Fixture):
             return bugs, {"groups": 1, "verified": 1, "failed": 0, "waiting": 0, "usd": 2.0,
                           "tokens": {"input": 5, "cache_write": 1000, "cache_read": 50000, "output": 4000}}
 
-        def propose(events, *, date, assign=None, meter=None):
+        def propose(events, *, date, assign=None, meter=None, failures=None):
+            if self.fail_steps.get("rules"):
+                failures["rules"] = self.fail_steps["rules"]
+                return [], [], {"agent_made": 0, "legacy": 0, "unknown": 0}, 0.0
             meter.update(input=1, output=200)
             rows = [{"rule": "CLAUDE.md → *Testing*", "findings": 4, "sessions": 3, "agent_made": 4, "legacy": 0}]
             props = [{"id": "P1", "kind": "tighten", "rule": rows[0]["rule"], "summary": "s", "sources": ["a"]}]
@@ -101,6 +110,74 @@ class WeeklyTest(_WeeklyFixture):
         rec = self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")
         self.assertEqual((rec["kind"], rec["run"]["stage"], rec["run"]["sha"]), ("failure", "verify", "abc123"))
 
+    def _limited(self, retry_left, message="You've hit your session limit · resets 1:40am (Australia/Sydney)"):
+        self.fail_steps["sweep"] = self.w._judge.RateLimited(message)
+        with mock.patch.dict(os.environ, {"JUDGE_RETRY_LEFT": str(retry_left)}), \
+                mock.patch.object(self.w, "publish", return_value="url") as publish:
+            code = self.w.main(["--date", "2026-10-05"])
+        return code, publish, json.loads(self.w.ratelimit_path().read_text(encoding="utf-8"))
+
+    def test_a_usage_limit_fails_the_pass_instead_of_recording_nothing_judged(self):
+        code, publish, limit = self._limited(0)
+        self.assertEqual(code, self.w.EX_TEMPFAIL)
+        rec = self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")
+        self.assertEqual((rec["kind"], rec["run"]["stage"]), ("failure", "bugs"))
+        self.assertIn("session limit · resets 1:40am", rec["run"]["error"])
+        # no attempts left: this one's failure is the PR
+        self.assertEqual(publish.call_args.args[0]["kind"], "failure")
+        self.assertFalse(limit["retry"])
+        self.assertEqual(limit["stage"], "bugs")
+
+    def test_a_usage_limit_with_a_retry_to_follow_opens_no_pr(self):
+        # 1:40am Sydney is up to 24h off on the real clock: any reset is "close enough" here
+        with mock.patch.object(self.w, "RETRY_MAX_WAIT", self.w._dt.timedelta(days=1)):
+            code, publish, limit = self._limited(2)
+        self.assertEqual(code, self.w.EX_TEMPFAIL)
+        publish.assert_not_called()
+        self.assertTrue(limit["retry"])
+        reset = self.w._dt.datetime.fromisoformat(limit["reset"])
+        self.assertLess(reset - self.w._dt.datetime.now(self.w._dt.timezone.utc), self.w._dt.timedelta(days=1))
+        # the failure record is still written; the retry's pass record replaces it
+        self.assertEqual(self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")["kind"], "failure")
+
+    def test_a_reset_too_far_off_is_not_waited_for(self):
+        with mock.patch.object(self.w, "RETRY_MAX_WAIT", self.w._dt.timedelta(minutes=1)):
+            code, publish, limit = self._limited(2)
+        self.assertEqual((code, limit["retry"]), (self.w.EX_TEMPFAIL, False))
+        self.assertEqual(publish.call_args.args[0]["kind"], "failure")
+
+    def test_a_failed_step_is_recorded_and_said_not_read_as_a_quiet_week(self):
+        self.fail_steps.update(sweep="judge failed (exit 1): overloaded", rules="judge failed (exit 1): `boom`")
+        record = self.run_pass()
+        self.assertEqual(self.rec.validate(record), [])
+        self.assertEqual(set(record["run"]["failed"]), {"sweep", "rules"})
+        body = self.w._pr_body(record)
+        self.assertIn("**The bug sweep's judge failed** (`judge failed (exit 1): overloaded`)", body)
+        self.assertIn("**Rules: the judge failed** (`judge failed (exit 1): 'boom'`)", body)
+        self.assertNotIn("nothing broken in enough sessions", body)
+        md = self.rec.render_markdown(record)
+        self.assertIn("| Failed | sweep: `judge failed (exit 1): overloaded` |", md)
+        self.assertIn("The rule-mapping judge failed this pass", md)
+        self.fail_steps.clear()
+        self.assertNotIn("failed", self.run_pass()["run"])
+
+    def test_the_headline_counts_verified_bugs_and_landed_fixes(self):
+        fix = {"commit": "abcdef0123" + "0" * 30, "subject": "fix: x (fanout-b1)", "pr": 1430}
+        bugs = [_bug("B1", fix_landed=[fix], first_seen="2026-09-28", opened="2026-09-28"),
+                _bug("B2", verify={"verdict": "fix", "date": "2026-10-05"}),
+                _bug("B3", status="gone", fix_landed=[{**fix, "pr": None}]),
+                _bug("B4", status="unjudged", fix_landed=[fix])]
+        record = self.build("2026-10-05", bugs=bugs)
+        body = self.w._pr_body(record)
+        # B1 is open but no agent checked it: "verified" counts only B2
+        self.assertIn("**Bugs: 2 open** (1 verified, 1 new), 1 fixed since the last pass "
+                      "(3 fix(es) landed since the last pass, 1 confirmed gone by the judge)", body)
+        md = self.rec.render_markdown(record)
+        self.assertIn("**Fix landed:** `abcdef01` #1430 — awaiting re-check", md)
+        self.assertIn("**Fix landed:** `abcdef01` — confirmed gone", md)
+        self.assertIn("3 fix(es) landed since the last pass (a commit names the bug's key), 1 confirmed gone", md)
+        self.assertIn("· `fanout-b4` — still there · fix landed `abcdef01` #1430", md)
+
     def test_a_failure_never_replaces_a_pass_record(self):
         self.rec.write(self.build("2026-10-05"))
         with mock.patch.object(self.w, "weekly", side_effect=RuntimeError("boom")), \
@@ -148,7 +225,7 @@ class PublishTest(_WeeklyFixture):
         self.assertIn("docs-only diff", commit)
         self.assertIn("Co-Authored-By:", commit)
         body = next(i for c, i in self.cmds if c[1:3] == ["pr", "create"])
-        self.assertIn("**Bugs: 2 open** (2 new)", body)
+        self.assertIn("**Bugs: 2 open** (1 verified, 2 new)", body)
         self.assertIn("1 for you to decide", body)
         self.assertIn("P1 · tighten", body)
         closed = [c for c, _ in self.cmds if c[1:3] == ["pr", "close"]]
@@ -160,10 +237,12 @@ class PublishTest(_WeeklyFixture):
             [{"number": 7, "headRefName": "judge-run/2026-10-05", "url": "u7"}]))
         self.assertFalse([c for c, _ in self.cmds if c[1:3] in (["pr", "create"], ["pr", "close"])])
 
-    def test_a_failure_record_skips_the_rollup(self):
+    def test_a_failure_record_skips_the_rollup_and_closes_no_older_pr(self):
         failed = self.rec.failure_record("2026-10-05", stage="bugs", error="boom", sha="abc")
-        self.w.publish(failed, worktree=self.tmp / "wt", run=self._fake_run([]))
+        self.w.publish(failed, worktree=self.tmp / "wt", run=self._fake_run(
+            [{"number": 5, "headRefName": "judge-run/2026-09-28", "url": "u5"}]))
         self.assertFalse([c for c, _ in self.cmds if "rollup" in c[-1]])
+        self.assertFalse([c for c, _ in self.cmds if c[1:3] == ["pr", "close"]])   # last week's bugs stay the work list
         body = next(i for c, i in self.cmds if c[1:3] == ["pr", "create"])
         self.assertIn("**failed** at `bugs`", body)
 

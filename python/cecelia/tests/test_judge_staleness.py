@@ -35,6 +35,12 @@ class JudgeStalenessTest(unittest.TestCase):
         self._record("2026-09-08", kind="failure")
         self.assertIn("pass failed", judge_record_warning(self.store, today=dt.date(2026, 9, 9)))
 
+    def test_a_pass_with_a_failed_judge_says_so(self):
+        (self.store / "2026-09-08.json").write_text(json.dumps(
+            {"kind": "pass", "run": {"failed": {"sweep": "boom", "rules": "boom"}}}), encoding="utf-8")
+        msg = judge_record_warning(self.store, today=dt.date(2026, 9, 9))
+        self.assertIn("its rules and sweep judge failed", msg)
+
     def test_no_store_is_silent(self):
         self.assertIsNone(judge_record_warning(self.store.parent / "missing"))
 

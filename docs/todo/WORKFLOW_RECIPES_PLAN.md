@@ -169,6 +169,14 @@ track clustering on whole-track measures + HMM states + transitions. The cluster
 "HMM is the supervised alternative" bullet was wrong the same way — the two are combined, not
 alternatives — and now says so. Found when the recipe was handed to an agent through `get_guide`.
 
+**AF correction is an optional step after drift** *(Dominik, 2026-10-06)*: "add af as an optional step if
+there is bleedthrough between the channels." New guide `af-correct` (`cleanupImages.afCorrect`, bare —
+no composite wraps it since the AF + drift one was retired). After drift, not before: the AF run carries
+a drift-corrected store's valid box forward and its background estimate skips the zero padding. Found
+when three unattended agent runs segmented all channels together and none corrected first — the recipe
+never mentioned it. The `why` names the condition only; which channels, and whether it applies, stay
+with the reader.
+
 ### D7 — Intravital needs no new guide; the other three each need one we should not write blind  *(2026-08-21)*
 
 > **Superseded for intravital by *D-rev* (2026-10-05):** the step list below is the original recipe.
@@ -190,7 +198,7 @@ rather than recipes (the first being that we do not know the scenario):
 
 | recipe | step with no guide | what it would be, when we get to it |
 |---|---|---|
-| Large multiplex images | **AF correction** | `/cleanup`, task `afCorrect` (`cleanupImages.afCorrect`), `selectionModule: 'cleanup'` — a `moduleTaskGuide()` beside `driftCorrectGuide`, ~20 lines |
+| Large multiplex images | ~~**AF correction**~~ — built 2026-10-06 as `af-correct` (see *D-rev*) | `/cleanup`, task `afCorrect` (`cleanupImages.afCorrect`), `selectionModule: 'cleanup'` — a `moduleTaskGuide()` beside `driftCorrectGuide` |
 | Behaviour/interactions · many small confocal | **spatial interactions** | `/spatial`, `selectionModule: 'spatialAnalysis'` — its own `GuideDef` splicing `taskRunSteps()` twice, ~50 lines |
 
 Both were already named as unbuilt candidates in `GUIDE_SYSTEM_PLAN.md` ("still-obvious candidates NOT

@@ -74,6 +74,19 @@ const viewerCheck = (what: string, toggleAnchor: string, lookFor: string[]): Gui
   },
 ]
 
+// Both cleanup corrections end the same way: a new image version, made active.
+const cleanupNewVersion: GuideStep = {
+  anchor: 'images.table',
+  route: '/cleanup',
+  placement: 'top-start',
+  title: 'It made a new version',
+  text: 'Corrections never overwrite your import — they add a version and make it active.',
+  bullets: [
+    'Everything downstream reads the ACTIVE version.',
+    'The row\'s info icon lists every version the image has.',
+  ],
+}
+
 export const driftCorrectGuide = moduleTaskGuide({
   id: 'drift-correct',
   title: 'Drift correct a time series',
@@ -89,13 +102,9 @@ export const driftCorrectGuide = moduleTaskGuide({
   waitLabel: 'Drift correcting',
   prereqs: [PREREQ.projectOpen, PREREQ.imageImported, PREREQ.timeSeries],
   intro: 'Cleanup holds the corrections you apply before segmenting — drift, autofluorescence, noise.',
-  // Deliberately the BARE task, unlike segment and track: the composite beside it in the dropdown
-  // ("AF + drift correction") adds autofluorescence removal, a separate scientific decision rather
-  // than the missing half of this one. Declared in the Julia ratchet so it stays a choice.
-  funHint: [
-    'Drift correction on its own — this is the whole operation, not half of one.',
-    '"AF + drift correction" also removes autofluorescence, if you need that in the same pass.',
-  ],
+  // The bare task; no composite wraps it. Autofluorescence removal is a separate scientific decision
+  // with its own guide (`af-correct`), not the missing half of this one.
+  funHint: ['Autofluorescence correction is a separate function here — run it after this one.'],
   selectHint: ['Only time series are worth correcting — a single frame cannot drift.'],
   params: [
     'Drift reference channel — pick a stable, bright structure, not a motile cell.',
@@ -103,17 +112,7 @@ export const driftCorrectGuide = moduleTaskGuide({
     'Max frame gap — higher is more robust and slower.',
   ],
   after: [
-    {
-      anchor: 'images.table',
-      route: '/cleanup',
-      placement: 'top-start',
-      title: 'It made a new version',
-      text: 'Corrections never overwrite your import — they add a version and make it active.',
-      bullets: [
-        'Everything downstream reads the ACTIVE version.',
-        'The row\'s info icon lists every version the image has.',
-      ],
-    },
+    cleanupNewVersion,
     {
       anchor: 'images.qcDot',
       route: '/cleanup',
@@ -123,6 +122,54 @@ export const driftCorrectGuide = moduleTaskGuide({
       bullets: [
         'A flag means the reference channel probably lost tracking.',
         'Re-run with a clearer, structural channel.',
+      ],
+    },
+  ],
+})
+
+// AF correction — `cleanupImages.afCorrect`, a bare task: no composite wraps it. Prose checked against
+// the code, not the label: per combination it subtracts the bleedthrough the target receives from its
+// competing channels, then keeps the share of signal the target owns where the tissue puts it in
+// several (`correction_utils.af_correct_frame`). `exclusive` ("Different cell types") picks the
+// bleedthrough estimator (`af_bleedthrough_alphas`). It runs after drift correction: the valid box a
+// drift-corrected store carries is passed forward, and the zero padding is outside the background
+// estimate (`intensity_utils.background_threshold`). QC: `af.saturated_input`, `af.bleedthrough`.
+// No channel, percentile or threshold advice here — that judgement is the user's.
+export const afCorrectGuide = moduleTaskGuide({
+  id: 'af-correct',
+  title: 'Correct bleedthrough and autofluorescence',
+  group: 'Data',
+  icon: 'pi-eraser',
+  summary: 'Remove signal one channel shares with another, so each cell shows up in its own channel.',
+  route: '/cleanup',
+  navLabel: 'Cleanup',
+  taskKey: 'afCorrect',
+  funName: 'cleanupImages.afCorrect',
+  funLabel: 'AF correction',
+  selectionModule: 'cleanup',
+  waitLabel: 'Correcting',
+  withPreview: true,
+  previewHint: 'Seconds instead of minutes — the way to judge the channel combinations.',
+  prereqs: [PREREQ.projectOpen, PREREQ.imageImported],
+  intro: 'Cleanup holds the corrections you apply before segmenting — drift, autofluorescence, noise.',
+  funHint: ['One pass removes both: what the filters leak between channels, and what the tissue emits into several.'],
+  params: [
+    'Image to correct — the active version is preselected; on a movie, drift-correct first.',
+    'Channel combinations — one entry per channel to correct, with the channels it competes with.',
+    'Different cell types — on if no cell carries both markers; off keeps real co-labelling.',
+    'Background detection — how each channel\'s background level is found.',
+  ],
+  after: [
+    cleanupNewVersion,
+    {
+      anchor: 'images.qcDot',
+      route: '/cleanup',
+      placement: 'left',
+      title: 'Did it work?',
+      text: 'Cecelia flags saturated input and any bleedthrough it measured — hover for the findings.',
+      bullets: [
+        'Saturated voxels were clipped at acquisition — no correction recovers them.',
+        'Bleedthrough was subtracted; a leak is a property of the filter set.',
       ],
     },
   ],
@@ -366,6 +413,7 @@ export const segmentByMotionGuide = moduleTaskGuide({
   selectionModule: 'segment',
   waitLabel: 'Segmenting',
   withPreview: true,
+  previewHint: 'Seconds instead of minutes — the way to judge the seed window and threshold.',
   prereqs: [PREREQ.projectOpen, PREREQ.imageImported, PREREQ.timeSeries],
   intro: 'This segments by motion, so it works where a cell is too dim to find in any single frame.',
   funHint: [
@@ -600,7 +648,6 @@ export const preprocessImagesGuide = moduleTaskGuide({
   funLabel: 'Crop image',
   selectionModule: 'preprocess',
   waitLabel: 'Cropping',
-  withPreview: true,
   prereqs: [PREREQ.projectOpen, PREREQ.imageImported],
   intro: 'Preprocess sits between import and cleanup — trim the region before every downstream step reads the full one.',
   funHint: [

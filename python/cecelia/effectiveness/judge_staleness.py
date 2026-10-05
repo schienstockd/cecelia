@@ -41,11 +41,15 @@ def judge_record_warning(store: pathlib.Path | None = None, *, today: _dt.date |
     today = today or _dt.datetime.now(_dt.timezone.utc).date()
     age = (today - newest).days
     try:
-        failed = json.loads(path.read_text(encoding="utf-8")).get("kind") == "failure"
+        record = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        failed = False
+        record = {}
     if age > cadence_days + SLACK_DAYS:
         return f"Weekly judge: no run record for {age} days (newest {newest}); is the timer running?"
-    if failed:
+    if record.get("kind") == "failure":
         return f"Weekly judge: the {newest} pass failed; see {path}"
+    # a pass whose sweep or rules judge failed still records, but its week wasn't judged
+    steps = sorted((record.get("run") or {}).get("failed") or {})
+    if steps:
+        return f"Weekly judge: the {newest} pass ran, but its {' and '.join(steps)} judge failed; see {path}"
     return None

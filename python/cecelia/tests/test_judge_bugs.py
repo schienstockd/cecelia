@@ -175,6 +175,30 @@ class SweepTest(_Repo):
         again, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs})
         self.assertEqual([(b["key"], b["status"]) for b in again], [("fanout-00000001", "open")])
 
+    def test_a_failed_judge_keeps_a_carried_open_bug_open_and_says_so(self):
+        bugs, _ = self.sweep([_finding("fanout-00000001")])
+        self.assertEqual(bugs[0]["status"], "open")
+        bugs[0]["verify"] = {"verdict": "fix", "date": "2026-10-05"}
+
+        def boom(prompt):
+            raise self.b._judge.JudgeError("judge failed (exit 1): overloaded")
+        failures: dict = {}
+        again = self.b.sweep([_finding("fanout-00000002", line=40, file="b.py")], date="2026-10-12", sha=self.sha,
+                             previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs}, judge=boom,
+                             merged_prs=lambda since: [], repo=self.repo, failures=failures)[0]
+        by = {b["key"]: b for b in again}
+        # no evidence it was fixed: still on the work list, verdict and `opened` kept
+        self.assertEqual((by["fanout-00000001"]["status"], by["fanout-00000001"]["opened"],
+                          by["fanout-00000001"]["verify"]["verdict"]), ("open", "2026-10-05", "fix"))
+        self.assertTrue(by["fanout-00000001"]["why"].startswith("still open; not judged"))
+        self.assertEqual(failures, {"sweep": "judge failed (exit 1): overloaded"})
+
+    def test_a_usage_limit_is_not_swallowed(self):
+        def limited(prompt):
+            raise self.b._judge.RateLimited("You've hit your session limit")
+        with self.assertRaises(self.b._judge.RateLimited):
+            self.sweep([_finding("fanout-00000001")], judge=limited)
+
     def test_an_unjudged_bug_judged_open_later_is_newly_open_that_pass(self):
         spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
         record = importlib.util.module_from_spec(spec)
@@ -198,6 +222,16 @@ class SweepTest(_Repo):
         self.assertEqual(sum(b["status"] == "unjudged" for b in bugs), 2)
         self.assertEqual(sum(b["status"] == "open" for b in bugs), 0)
 
+    def test_a_carried_open_bug_over_the_cap_stays_open(self):
+        events = [_finding(f"fanout-{i:08x}", line=i + 1) for i in range(self.b.MAX_ITEMS + 2)]
+        bugs, _ = self.sweep(events)
+        for b in bugs:   # all on the work list, as if an earlier pass had judged the overflow too
+            b.update(status="open", opened="2026-10-05")
+        later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous={"run": {}, "bugs": bugs},
+                             judge=self.judge(), merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual({b["status"] for b in later}, {"open"})
+        self.assertEqual(sum(b["why"].startswith("still open; waiting for the judge") for b in later), 2)
+
     def test_no_judge_makes_no_call(self):
         bugs, cost = self.sweep([_finding("fanout-00000001")], no_judge=True)
         self.assertEqual(([b["status"] for b in bugs], cost, self.prompts), (["unjudged"], 0.0, []))
@@ -217,6 +251,73 @@ def target(a, b):
         total += i
     return total * b
 """
+
+
+class LandedTest(_Repo):
+    """A commit since the last pass naming a carried bug's key: `fix_landed`, git only, no verdict."""
+
+    def setUp(self):
+        super().setUp()
+        self.git("commit", "-q", "--allow-empty", "-m", "early: names fanout-00000001 before the last pass")
+        self.sha = self.git("rev-parse", "HEAD")
+        self.first, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
+        self.previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": self.first}
+        # a PR branch merged with a merge commit, a squash with `(#N)`, and a near-miss key
+        self.git("checkout", "-q", "-b", "fix-fanout-00000001")
+        self.fix = self.commit("a.py", "fixed\n" * 60, "fix: the thing (fanout-00000001)")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--no-ff", "fix-fanout-00000001", "-m",
+                 "Merge pull request #12 from me/fix-fanout-00000001")
+        self.squash = self.commit("b.py", "x\n", "fix: the other (fanout-00000002) (#13)")
+        self.git("commit", "-q", "--allow-empty", "-m", "unrelated: fanout-000000012 is a longer key")
+        self.sha = self.git("rev-parse", "HEAD")
+
+    def test_commits_naming_a_carried_key_since_the_last_pass_are_recorded_with_their_pr(self):
+        bugs, _ = self.sweep([], previous=self.previous)
+        by = {b["key"]: b for b in bugs}
+        self.assertEqual(by["fanout-00000001"]["fix_landed"],
+                         [{"commit": self.fix, "subject": "fix: the thing (fanout-00000001)", "pr": 12}])
+        self.assertEqual(by["fanout-00000002"]["fix_landed"],
+                         [{"commit": self.squash, "subject": "fix: the other (fanout-00000002) (#13)", "pr": 13}])
+        # evidence, not a verdict: the judge said live, so they stay open
+        self.assertEqual({b["status"] for b in bugs}, {"open"})
+        self.assertIn("(a commit naming this key landed: fix: the thing (fanout-00000001) "
+                      f"({self.fix[:8]}))", self.prompts[-1])
+
+    def test_the_judge_still_decides_gone(self):
+        bugs, _ = self.sweep([], previous=self.previous, judge=self.judge("gone"))
+        self.assertEqual([(b["status"], len(b["fix_landed"])) for b in bugs], [("gone", 1), ("gone", 1)])
+        spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
+        record = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(record)
+        self.assertEqual(record.landed_counts(bugs), (2, 2))
+
+    def test_a_failed_judge_keeps_the_evidence_on_the_open_bug(self):
+        def boom(prompt):
+            raise self.b._judge.JudgeError("down")
+        bugs, _ = self.sweep([], previous=self.previous, judge=boom)
+        self.assertEqual([(b["status"], b["fix_landed"][0]["pr"]) for b in bugs], [("open", 12), ("open", 13)])
+
+    def test_no_previous_sha_looks_for_nothing_and_old_evidence_is_not_carried(self):
+        self.previous["run"].pop("sha")
+        bugs, _ = self.sweep([], previous=self.previous)
+        self.assertFalse([b for b in bugs if b.get("fix_landed")])
+        stale = [{**b, "fix_landed": [{"commit": "f" * 40, "subject": "old"}]} for b in self.first]
+        bugs, _ = self.sweep([], previous={"run": {"sha": self.sha}, "bugs": stale})
+        self.assertFalse([b for b in bugs if b.get("fix_landed")])   # nothing since `sha`: found afresh
+
+    def test_a_merge_commit_alone_names_the_key(self):
+        self.assertEqual(
+            self.b.landed_fixes({"fix-only"}, self.previous["run"]["sha"], self.sha, self.repo), {})
+        self.git("checkout", "-q", "-b", "quiet")
+        quiet = self.commit("c.py", "y\n", "change with no key")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--no-ff", "quiet", "-m", "Merge pull request #14 from me/fix-rep-abc123")
+        merge = self.git("rev-parse", "HEAD")
+        got = self.b.landed_fixes({"rep-abc123"}, self.previous["run"]["sha"], merge, self.repo)
+        self.assertEqual(got, {"rep-abc123": [{"commit": merge, "pr": 14,
+                                               "subject": "Merge pull request #14 from me/fix-rep-abc123"}]})
+        self.assertNotIn(quiet, str(got))
 
 
 class PrefilterTest(_Repo):

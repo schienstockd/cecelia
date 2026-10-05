@@ -5,7 +5,7 @@
 # $CECELIA_AGENT_NIGHT_ROOT (default /tmp/cecelia-agent-night — outside ~, which the sandbox
 # write-denies) are pruned after 7 days.
 #
-# Shares the weekly judge's lock, so it never overlaps the Monday pass (a busy lock = skip, exit 0).
+# Shares the weekly judge's lock, so it never overlaps the Tuesday pass (a busy lock = skip, exit 0).
 # Called by systemd/agent-eval-night.service; fails loudly so `systemctl --user status` shows red.
 
 set -euo pipefail

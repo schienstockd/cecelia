@@ -1,10 +1,10 @@
 [Unit]
-Description=Weekly judge — Monday 23:59
+Description=Weekly judge — Tuesday 23:59
 Documentation=file://%h/.cecelia-effectiveness/judge-worktree/docs/ai-assist/WEEKLY_JUDGE.md
 
 [Timer]
-# 23:59 Monday local time, so installing it on a Monday afternoon fires the same night.
-OnCalendar=Mon *-*-* 23:59:00
+# 23:59 Tuesday local time, so installing it on a Tuesday afternoon fires the same night.
+OnCalendar=Tue *-*-* 23:59:00
 # Deliberately NOT Persistent=true: a machine that was off at the scheduled hour must not fire a
 # paid pass on next boot. The next pass sweeps from the last record, so a missed week loses nothing.
 RandomizedDelaySec=5min
