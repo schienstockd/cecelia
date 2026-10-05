@@ -71,9 +71,15 @@ EVENT_TYPES = frozenset({
     "inventory_coverage_run",
     #: A platform error an unattended agent run hit — a tool error or a backend error in the run's
     #: window (`scripts/agent_eval/run_findings.py`). The weekly judge sweeps them as bugs, one per
-    #: `key`. Payload: `key` ("run-" + 10 hex), `tool`, `error`, `desc`, and `file` / `line` only when
-    #: a backend stacktrace names repo code. Row `commit` = the SHA the run's app was on, `branch` null.
+    #: `key`. Payload: `key` ("run-" + 10 hex), `tool`, `error`, `desc`, `run` (the run's directory
+    #: name), and `file` / `line` only when a backend stacktrace names repo code. Row `commit` = the
+    #: SHA the run's app was on, `branch` null. A `kind: "repeat"` row (key "rep-" + 10 hex, plus
+    #: `runs` and `template`) is a 4xx-with-reason hit in 2+ separate runs.
     "agent_run_finding",
+    #: A 4xx the API answered with a reason, in an agent run: the agent's own input, so not a
+    #: finding — an observation the emitter counts per `key` across runs to raise the repeats
+    #: above. The judge never reads it. Payload: `key`, `tool`, `status`, `template`, `error`, `run`.
+    "agent_run_misuse",
     #: Maintainability lint — mechanical fourth recital step: warns when the staged diff pushes a
     #: task file past 200 lines or adds incident history to a source comment. Payload:
     #: `files_checked`, `warnings_emitted`, `findings` (check / path / line / detail),

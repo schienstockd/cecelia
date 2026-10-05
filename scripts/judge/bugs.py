@@ -25,7 +25,10 @@ never took (`stranded`).
 Errors an autonomous agent run hit (`agent_run_finding`, written by `scripts/agent_eval/run_record.py`)
 are candidates too, one bug per error key however many runs hit it. One with a `file:line` (a backend
 stacktrace) is judged like a finding; one without has no code to excerpt, so it skips the judge,
-stays `open` and goes to verify, whose agent finds the code path itself.
+stays `open` and goes to verify, whose agent finds the code path itself. A `repeat` one is a 4xx the
+API answered with a reason that agents hit in several runs: the question is whether the platform's
+guidance failed them, and its `runs` is the emitter's count, not a row count. Dismissed, it is
+carried muted until that count doubles.
 
 Usage:
     pixi run judge-bugs [--date D]               # print the sweep (one judge call)
@@ -62,6 +65,7 @@ _record = _load_sibling("record")
 
 #: An error an autonomous agent run hit: payload `key`, `tool`, `error`, `desc`, and `file` / `line`
 #: only when a backend stacktrace gave one. `commit` is the SHA the run checked out; no branch.
+#: `kind: "repeat"` + `runs`: a 4xx-with-reason the emitter counted in that many separate runs.
 AGENT_RUN_EVENT = "agent_run_finding"
 #: A tagged finding resolved one of these ways is handled; anything else may still be live.
 #: Not `false_positive`: an agent wrongly calling a real bug false was the one way past the sweep.
@@ -79,6 +83,10 @@ CARRY = ("open", "unjudged", "unmerged")
 #: otherwise raise it as new. Not `gone` / `dismissed`: verify dismisses a fixed bug too, so one that
 #: comes back is a regression and is raised again.
 MUTED = ("wont_fix",)
+#: A dismissed repeated error is carried muted too: its message still fires on every run that makes
+#: the mistake, fixed or not, so a new hit is no regression. It re-opens once its run count reaches
+#: this many times the count it was dismissed at — growth that matters, at most log2(runs) re-opens.
+REOPEN_GROWTH = 2
 #: Most findings judged per pass; the rest wait for the next one (oldest first).
 MAX_ITEMS = 40
 WINDOW_DAYS = 7
@@ -118,10 +126,23 @@ def _key(row: dict) -> str:
 
 def _agent_run(r: dict) -> dict:
     p = r["payload"]
-    return {"key": p["key"], "kind": "agent_run", "marker": "agent run", "tool": p.get("tool"),
-            "error": p.get("error"), "file": p.get("file"), "line": p.get("line"),
+    repeat = p.get("kind") == "repeat"
+    return {"key": p["key"], "kind": "agent_run", "marker": "repeated agent error" if repeat else "agent run",
+            "tool": p.get("tool"), "error": p.get("error"), "file": p.get("file"), "line": p.get("line"),
             "desc": p.get("desc") or f"`{p.get('tool')}` failed: {p.get('error')}",
-            "branch": None, "commit": r.get("commit"), "logged": r.get("ts"), "runs": 1, "last_seen": r.get("ts")}
+            "branch": None, "commit": r.get("commit"), "logged": r.get("ts"),
+            "runs": int(p.get("runs") or 1) if repeat else 1, "last_seen": r.get("ts"),
+            **({"repeat": True} if repeat else {})}
+
+
+def _hit_again(b: dict, c: dict) -> None:
+    """Fold a newer sighting `c` of agent-run error `b` into it: a plain error adds its rows (one per
+    run); a repeat takes the emitter's newer count and latest message (it may have been improved)."""
+    if c.get("repeat"):
+        b.update(runs=max(b.get("runs") or 1, c["runs"]), error=c["error"], desc=c["desc"])   # `commit` stays the first
+    else:
+        b.update(runs=(b.get("runs") or 1) + c["runs"])
+    b["last_seen"] = c["last_seen"]
 
 
 def candidates(events: _t.Iterable[dict], *, since: str) -> list[dict]:
@@ -137,7 +158,7 @@ def candidates(events: _t.Iterable[dict], *, since: str) -> list[dict]:
         if r.get("event") == AGENT_RUN_EVENT and (r.get("payload") or {}).get("key"):
             key = r["payload"]["key"]
             if key in out:
-                out[key].update(runs=out[key]["runs"] + 1, last_seen=r.get("ts"))
+                _hit_again(out[key], _agent_run(r))
             else:
                 out[key] = _agent_run(r)
             continue
@@ -291,15 +312,18 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     """
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
-    carried = {b["key"]: {**_strip(b), "carried": True, "was": b.get("status")} for b in (previous or {}).get("bugs", [])
-               if (b.get("status") in CARRY or b.get("kind") == "agent_run" and b.get("status") in MUTED)
+    carried = {b["key"]: {**_strip(b), "carried": True, "was": b.get("status"),
+                          **({"closed_runs": b.get("closed_runs") or b.get("runs") or 1}
+                             if b.get("repeat") and b.get("status") == "dismissed" else {})}
+               for b in (previous or {}).get("bugs", [])
+               if (b.get("status") in CARRY or b.get("kind") == "agent_run" and b.get("status") in MUTED
+                   or b.get("repeat") and b.get("status") == "dismissed")
                and not _frozen(b.get("file"))}
     known = {k for b in carried.values() for k in (b.get("sources") or [b["key"]])}
     found = candidates(events, since=since)
     for c in found:
         if c.get("kind") == "agent_run" and c["key"] in carried:   # hit again: same bug, more runs
-            b = carried[c["key"]]
-            b.update(runs=(b.get("runs") or 1) + c["runs"], last_seen=c["last_seen"])
+            _hit_again(carried[c["key"]], c)
     fresh = [{**c, "first_seen": date} for c in found if c["key"] not in known and not _frozen(c.get("file"))]
     bugs: list[dict] = []
     groups: dict[tuple, list[dict]] = {}
@@ -309,9 +333,23 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             bugs.append({**_strip(b), "status": b["was"], "muted": True,
                          "why": "closed earlier; carried so a new run's hit isn't raised again"})
             continue
+        if b.get("closed_runs"):   # a dismissed repeat: muted until its count has grown enough
+            closed, runs = b["closed_runs"], b.get("runs") or 1
+            if runs < REOPEN_GROWTH * closed:
+                bugs.append({**_strip(b), "status": "dismissed", "muted": True,
+                             "why": f"dismissed at {closed} run(s); re-opens at {REOPEN_GROWTH * closed}"})
+                continue
+            was = (b.get("verify") or {}).get("effect")
+            b = {k: v for k, v in b.items() if k not in ("closed_runs", "verify")}   # verified afresh
+            bugs.append({**_strip(b), "status": "open", "opened": date,
+                         "why": f"dismissed at {closed} run(s), hit in {runs} now"
+                                + (f" (dismissed as: {was})" if was else "")})
+            continue
         if b.get("kind") == "agent_run" and not b.get("file"):
-            bugs.append({**_strip(b), "status": "open", "opened": _opened(b, date),
-                         "why": "an agent run hit this error; no file:line to excerpt, so verify traces it"})
+            why = (f"agents hit this 4xx in {b.get('runs')} separate runs: is the platform failing to guide "
+                   "them? Verify traces the tool's guidance" if b.get("repeat") else
+                   "an agent run hit this error; no file:line to excerpt, so verify traces it")
+            bugs.append({**_strip(b), "status": "open", "opened": _opened(b, date), "why": why})
             continue
         if not _landed(b.get("branch"), b.get("commit"), sha, repo):
             waits.setdefault((b.get("branch"), b.get("file"), b.get("line")), []).append(b)

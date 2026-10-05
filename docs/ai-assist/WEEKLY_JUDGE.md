@@ -37,6 +37,33 @@ test whether an agent can actually use the framework.
    above. One without has no code to excerpt: it is `open` straight away and goes to verify. A
    `wont_fix` one is carried, so a run that hits it again doesn't raise it as new.
 
+   A **repeated agent error** (`kind: "repeat"`, key `rep-…`) is the exception to "a 4xx with a
+   reason is the agent's own input". One alone never reaches the judge: the emitter logs it as an
+   `agent_run_misuse` observation, which the judge doesn't read. Once the same mistake has been
+   hit in **2 separate runs**, each run that hits it again logs a finding carrying the count
+   (`runs`). The judge takes that count, not the number of rows, and keeps the newest message,
+   because a fix often improves the message. Verify judges the guidance, not the input: does the
+   tool's description, its MCP guidance or the error message steer an agent to a call that
+   passes? A dismissed one is carried muted and re-opens, to be verified again, once its count
+   reaches **twice** what it was dismissed at. The message still fires on every run that makes the
+   mistake, even after a fix, so any single new hit would re-open it every week.
+
+   "The same mistake" = tool + HTTP status + the reason's template: its first clause (up to
+   ` — `, `; ` or `. `), normalised, cut to its leading plain words (at most 3). Values (quoted
+   names, ids, numbers, dotted column names) end the run of words. A hint a fix appends later
+   doesn't change the key. With fewer than two leading words (a value comes first), the whole
+   normalised clause is the template. Three words, because a plain-word value can follow the
+   template with nothing to mark it: `No values for volume / …` and `No values for
+   mean_intensity_0 / volume …` are one mistake.
+
+   On the 9 runs of 2026-10-04/05 this raised 4 repeats: the `+` in a chain name (5 runs),
+   `get_cohort_qc` with no cohort metrics for a composite (3), `gate_plot` on a column the cell
+   table doesn't have (3), and `get_cohort_qc` without a set uid (2, night 1's one-image copies).
+   The first three were the ones fixed by hand (#1426–#1428); the fourth came from one-image
+   copies with no set to name, which the multi-image copies replaced
+   ([`../todo/AGENT_RUN_REVIEW_PLAN.md`](../todo/AGENT_RUN_REVIEW_PLAN.md) Decision 1). The one
+   single-run 4xx (an unknown plot name) stayed out.
+
    Then one tool-less judge call reads the excerpts as data and marks each bug `live_bug` / `gone` /
    `not_a_bug`. Commits pushed to a PR's branch after it merged are reported as `stranded`.
 4. **Verify** (`verify.py`). Each open bug that no agent has checked yet goes to a read-only
