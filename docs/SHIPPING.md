@@ -349,8 +349,8 @@ note instead of the Update button. Re-running `install.sh` as root updates the s
 > **Verification status.** The user-scope path is verified on Linux. The **system-scope path is
 > authored but not yet verified on any real multi-user box — Linux, macOS, or Windows.** All three
 > are multi-user, and macOS is the *primary* target, so this matters most there. Unverified in
-> particular: the shared Pixi/Juliaup relocation (`PIXI_HOME`/`JULIAUP_DEPOT_PATH`, and the juliaup
-> `--path`), whether a non-admin account can `pixi run` a root-owned read-only env, and the
+> particular: the shared Pixi/Juliaup relocation (`PIXI_HOME`/`JULIAUP_DEPOT_PATH`, the juliaup
+> `--path`, and the portable juliaup on Windows), whether a non-admin account can `pixi run` a root-owned read-only env, and the
 > all-users launchers (`/usr/share/applications`, `/Applications/Cecelia.command`, the CommonPrograms
 > shortcut). First real test is a shared account on each OS.
 
@@ -396,7 +396,11 @@ and leaves the user's Julia alone. Whenever `<install>/juliaup` exists it wins, 
 `JULIAUP_DEPOT_PATH` pointed at it: `scripts/activate_juliaup.sh` (a pixi activation script) applies
 that to every `pixi run` task, so `pixi run stop` from a terminal gets the native Julia too, and
 `app.py`'s `_find_julia` applies the same rule for a launch that bypasses pixi. System scope uses the
-same layout.
+same layout and always installs its own juliaup there, never the admin's Julia (that is per-user, so
+other accounts couldn't run it). On Windows the Store/winget juliaup is per-user and can't go in a
+chosen dir, and the MSI edits the system `PATH` (juliaup's README discourages it), so `install.ps1`
+extracts juliaup's portable release archive (pinned, `CECELIA_JULIAUP_VERSION`)
+into `<install>\juliaup\bin`; `cecelia-launch.cmd` puts that dir on `PATH`.
 
 ### cellpose lives in TWO features
 `[feature.cellpose-v4]` (default env) carries `cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`).

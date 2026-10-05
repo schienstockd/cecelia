@@ -152,24 +152,51 @@ if (-not (Test-Path $Pixi)) {
 }
 if (-not (Test-Path $Pixi)) { throw 'Pixi not found after install. Open a new terminal and re-run.' }
 
-# ── Julia (juliaup via winget / MS Store) ──────────────────────────────────────
-# System scope threads a shared depot via $env:JULIAUP_DEPOT_PATH (set above). Windows julia
+# ── Julia (juliaup) ────────────────────────────────────────────────────────────
+# System scope: a Cecelia-owned juliaup in the shared depot, as install.sh does. Never the admin's own
+# Julia or a Store juliaup: both are per-user, so other accounts' launcher couldn't run them. The
+# portable release archive (juliaup.exe + julia.exe, flat) goes in a chosen dir without touching the
+# system PATH, which the MSI would.
+# User scope: reuse one on PATH / in ~\.juliaup, else winget's MS Store juliaup. Windows julia
 # resolution is the least-verified path — see the note at the top of this file.
-$Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
-if (-not $Julia -and -not (Test-Path (Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe'))) {
-  $Juliaup = (Get-Command juliaup -ErrorAction SilentlyContinue).Source
-  if ($Juliaup) {
-    # A juliaup with no `julia` launcher: winget would report it installed and do nothing, so ask the
-    # juliaup itself for a default channel; its launcher sits beside it (same as install.sh).
-    Say 'Adding a Julia release to the existing juliaup...'
-    & $Juliaup add release
-    & $Juliaup default release
-    $Julia = Join-Path (Split-Path $Juliaup) 'julia.exe'
-  } else {
-    Say 'Installing Julia (juliaup)...'
-    winget install --id 9NJNWW8PVKMN -e --source msstore --accept-package-agreements --accept-source-agreements
-    # The Store juliaup's `julia` alias lands in WindowsApps, normally already on PATH.
-    $Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
+if ($Scope -eq 'system') {
+  $JuliaupBin = Join-Path $JuliaupDepot 'bin'
+  $Julia = Join-Path $JuliaupBin 'julia.exe'
+  if (-not (Test-Path $Julia)) {
+    # Pinned version (reproducible installs). Override with $env:CECELIA_JULIAUP_VERSION. No ARM64
+    # build is published; Windows on ARM runs the x86_64 one emulated.
+    $JuliaupVersion = if ($env:CECELIA_JULIAUP_VERSION) { $env:CECELIA_JULIAUP_VERSION } else { '1.22.7' }
+    $JuliaupArch = if ([Environment]::Is64BitOperatingSystem) { 'x86_64' } else { 'i686' }
+    $JuliaupUrl = "https://github.com/JuliaLang/juliaup/releases/download/v$JuliaupVersion/juliaup-$JuliaupVersion-$JuliaupArch-pc-windows-gnu-portable.tar.gz"
+    Say "Installing Julia (juliaup $JuliaupVersion) into the shared runtime ($JuliaupDepot)..."
+    $juTgz = Join-Path ([System.IO.Path]::GetTempPath()) ('juliaup-' + [System.IO.Path]::GetRandomFileName() + '.tar.gz')
+    Invoke-WebRequest -Uri $JuliaupUrl -OutFile $juTgz
+    New-Item -ItemType Directory -Force -Path $JuliaupBin | Out-Null
+    tar -xzf $juTgz -C $JuliaupBin
+    Remove-Item $juTgz
+    # $env:JULIAUP_DEPOT_PATH (set above) keeps its state in the shared depot too.
+    $SharedJuliaup = Join-Path $JuliaupBin 'juliaup.exe'
+    & $SharedJuliaup add release
+    if ($LASTEXITCODE) { throw "juliaup could not add a Julia release to $JuliaupDepot." }
+    & $SharedJuliaup default release
+  }
+} else {
+  $Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
+  if (-not $Julia -and -not (Test-Path (Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe'))) {
+    $Juliaup = (Get-Command juliaup -ErrorAction SilentlyContinue).Source
+    if ($Juliaup) {
+      # A juliaup with no `julia` launcher: winget would report it installed and do nothing, so ask the
+      # juliaup itself for a default channel; its launcher sits beside it (same as install.sh).
+      Say 'Adding a Julia release to the existing juliaup...'
+      & $Juliaup add release
+      & $Juliaup default release
+      $Julia = Join-Path (Split-Path $Juliaup) 'julia.exe'
+    } else {
+      Say 'Installing Julia (juliaup)...'
+      winget install --id 9NJNWW8PVKMN -e --source msstore --accept-package-agreements --accept-source-agreements
+      # The Store juliaup's `julia` alias lands in WindowsApps, normally already on PATH.
+      $Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
+    }
   }
 }
 if (-not $Julia) { $Julia = Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe' }
@@ -258,7 +285,7 @@ if ($Scope -eq 'system') {
 set "PIXI_HOME=$PixiHome"
 set "JULIAUP_DEPOT_PATH=$JuliaupDepot"
 set "JULIA_DEPOT_PATH=$JuliaupDepot\depot"
-set "PATH=$PixiHome\bin;%PATH%"
+set "PATH=$PixiHome\bin;$JuliaupDepot\bin;%PATH%"
 cd /d "$InstallDir" && "$Pixi" run app
 "@ | Set-Content -Path $Launch -Encoding ASCII
   $Programs = [Environment]::GetFolderPath('CommonPrograms')
