@@ -30,6 +30,7 @@ const KIWI_READ_TOOLS = [
     "get_landscape", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
     "get_object_ids", "list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
     "read_lab_log", "list_notebooks", "get_notebook",
+    "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
 ]
 const KIWI_EXCLUDED_TOOLS = Dict(
     "list_projects" => "other projects — a turn is scoped to one",
