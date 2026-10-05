@@ -45,6 +45,8 @@ _BUGS_HOW_TO = (
     "or answer `wont_fix` for a bug that isn't worth fixing. "
     "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
     "An *agent run* bug is an error an autonomous run hit; with no `file:line`, start from the tool and the error. "
+    "A *repeated agent error* is a 4xx with a reason that agents hit in several runs: the input was wrong each "
+    "time, so the fix is the guidance (the tool's description, the MCP guidance, the error message), not the API. "
     "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
 _RULES_HOW_TO = (
     "Reviewer findings in the last {days} days, mapped to the CLAUDE.md rule each one breaks. "
@@ -194,7 +196,7 @@ def bug_location(b: dict) -> str:
     if b.get("kind") == "stranded":
         return f"PR #{b.get('pr')}"
     if not b.get("file"):
-        return f"agent run · {b.get('tool') or '?'}"
+        return f"{'repeated agent error' if b.get('repeat') else 'agent run'} · {b.get('tool') or '?'}"
     return f"{b['file']}:{b['line']}"
 
 
@@ -226,7 +228,7 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
             out += [f"**Commits:** {', '.join(f'`{c}`' for c in b.get('commits', []))}", ""]
             continue
         if b.get("kind") == "agent_run":
-            out += [f"**Error** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first seen "
+            out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first seen "
                     f"{b['first_seen']}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
         else:
             out += [f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
@@ -236,7 +238,8 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
         out += [""] if b.get("also") else []
     muted = [b for b in bugs if b.get("muted")]
     if muted:
-        out += ["### Closed agent-run errors", "", "Carried so a run that hits one again doesn't raise it as new.", ""]
+        out += ["### Closed agent-run errors", "", "Carried so a run that hits one again doesn't raise it as new; "
+                "a dismissed repeated error re-opens once its run count doubles.", ""]
         out += [f"- {b['id']} · {b['status'].replace('_', ' ')} · {_bug_where(b)} · `{b['key']}` — "
                 f"hit in {b.get('runs') or 1} run(s), last {(b.get('last_seen') or '?')[:10]}" for b in muted]
         out.append("")

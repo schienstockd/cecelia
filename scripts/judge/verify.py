@@ -81,7 +81,12 @@ SCHEMA = {
 _BRIEF = """You are verifying possible bugs in this repository, which is checked out at the commit to judge.
 Each BUG below came from a code reviewer on some branch, and a quick excerpt check could not rule
 it out. A BUG marked `agent run` is instead an error an autonomous agent hit calling a tool; when it
-has no file:line, find the code path that returns that error from the tool's name and the message. Read the actual code: the flagged function, its callers and producers, and anything the
+has no file:line, find the code path that returns that error from the tool's name and the message.
+A BUG marked `repeated agent error` is a 4xx the API answered with a reason, hit by agents in several
+separate runs: the input was wrong each time, so judge the guidance, not the input. Read what an agent
+sees before and after the call (the MCP tool's description, its guidance, the error message) and say
+`fix` when it doesn't steer an agent away from the mistake or straight to a passing call, `dismiss`
+when it already does. Read the actual code: the flagged function, its callers and producers, and anything the
 bug's reasoning depends on. Trace it; don't infer. Read only: don't edit, build or run the app.
 `git log` / `git show` / `grep` are fine.
 
@@ -120,7 +125,8 @@ def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
         return i
     seen: dict[tuple, int] = {}
     for i, b in enumerate(bugs):
-        run = b.get("commit") if b.get("kind") == "agent_run" else None   # one run's errors: one agent
+        # one run's errors: one agent; a repeat spans runs, so it joins none
+        run = b.get("commit") if b.get("kind") == "agent_run" and not b.get("repeat") else None
         for k in (("branch", b.get("branch")), ("file", b.get("file")), ("run", run)):
             if k[1] is None:
                 continue

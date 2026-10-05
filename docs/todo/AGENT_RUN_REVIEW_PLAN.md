@@ -1,6 +1,6 @@
 # Agent run review — the run's decisions on the blackboard, a verdict on each
 
-**Status:** P1, P1b, P2 section verdicts and P4 built (2026-10-04) — run records via `run_record.py` with the `agentRun` marker; Good / Bad / Unsure per decision, misses, the "Agent runs" filter, the MCP proposal tool; platform errors logged as `agent_run_finding` (`run_findings.py`). P4: the `knowledge` marker, Lesson / Knowledge in the GUI, `run_app.py --knowledge`. Not built: P2's refs into the copy (KiwiRef `projectUid` + `chain`), P3. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
+**Status:** P1, P1b (with repeated-4xx findings, 2026-10-05), P2 section verdicts and P4 built (2026-10-04) — run records via `run_record.py` with the `agentRun` marker; Good / Bad / Unsure per decision, misses, the "Agent runs" filter, the MCP proposal tool; platform errors logged as `agent_run_finding` (`run_findings.py`). P4: the `knowledge` marker, Lesson / Knowledge in the GUI, `run_app.py --knowledge`. Not built: P2's refs into the copy (KiwiRef `projectUid` + `chain`), P3. Follows [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md)
 P4b (the app-tier runs). Builds on the blackboard ([`BIDIR_CONTEXT_PLAN.md`](BIDIR_CONTEXT_PLAN.md)
 Part 4, [`PROJECT_MEMORY_PLAN.md`](PROJECT_MEMORY_PLAN.md) Decision 11 outcomes), `KiwiRef`
 ([`KIWI_ASSISTANT_PLAN.md`](KIWI_ASSISTANT_PLAN.md) Decision 4) and the frozen-ref sidecar
@@ -134,7 +134,12 @@ judge side is the judge session's `judge-agent-run-findings`. As built: `key` = 
 lands in fix-worktree names); one row per key per run (the judge counts rows as runs); dropped =
 an HTTP 4xx with a reason only — an error with no text is LOGGED (a lost message is the bug — the empty
 set_gate errors #1405 fixed); backend errors from the app's recent-log ring in the run window, `file:line`
-= the first repo frame. `record.json` now carries `codeSha` + `startedAtUtc`.*
+= the first repo frame. `record.json` now carries `codeSha` + `startedAtUtc`.
+Repeats built (2026-10-05): a 4xx-with-reason is logged as an `agent_run_misuse` observation keyed
+by tool + status + the reason's template; hit in 2+ separate runs, it is an `agent_run_finding`
+with `kind: "repeat"` + `runs`, framed for verify as "is the guidance failing them?". Every row now
+carries `run` (the run directory), so re-running the emitter logs nothing twice. Design and the
+dismissal rule (muted until the count doubles): `docs/ai-assist/WEEKLY_JUDGE.md` → *Bug sweep*.*
 - `agent_run_finding` added to the closed event taxonomy (`python/cecelia/effectiveness/log.py`).
   Payload `{key, tool, error, file, line, desc}`; row `commit` = the SHA the run checked out, `branch`
   = null, so the judge's sweep treats it as landed and reads the function at that commit.

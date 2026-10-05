@@ -358,6 +358,56 @@ class AgentRunTest(_Repo):
                          [("run-bbbb", "open"), ("run-cccc", "open"), ("run-aaaa", "wont_fix")])
 
 
+    def _repeat(self, runs, ts, error="HTTP 400: Invalid chain name 'a + b'"):
+        return _run_error("rep-aaaa", ts=ts, kind="repeat", runs=runs, error=error, desc=f"agents hit this in {runs} runs: {error}")
+
+    def test_a_repeated_4xx_takes_the_emitters_count_and_latest_message(self):
+        events = [self._repeat(2, "2026-10-04T01:00:00Z"),
+                  {**self._repeat(4, "2026-10-04T03:00:00Z", error="newer hint"), "commit": "e" * 40},
+                  self._repeat(3, "2026-10-04T02:00:00Z")]   # out of order: the count never goes down
+        (c,) = self.b.candidates(events, since="2026-10-01")
+        self.assertEqual((c["kind"], c["marker"], c["repeat"], c["runs"], c["error"]),
+                         ("agent_run", "repeated agent error", True, 4, "HTTP 400: Invalid chain name 'a + b'"))
+        self.assertEqual(c["commit"], "d" * 40)   # the first sighting's: briefs say "first at commit"
+        bugs, _ = self.sweep(events)
+        self.assertEqual([(b["status"], b["runs"]) for b in bugs], [("open", 4)])
+        self.assertIn("is the platform failing to guide them?", bugs[0]["why"])
+        self.assertEqual(self.prompts, [])   # no file:line: straight to verify, like any agent-run error
+
+    def test_a_dismissed_repeat_stays_muted_until_its_count_doubles(self):
+        prev, _ = self.sweep([self._repeat(3, "2026-10-04T01:00:00Z")])
+        prev = [{**b, "status": "dismissed", "verify": {"verdict": "dismiss", "effect": "the 400 names a passing name"}}
+                for b in prev]
+        bugs, _ = self.sweep([self._repeat(5, "2026-10-11T00:00:00Z")],
+                             previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": prev})
+        self.assertEqual([(b["status"], b.get("muted"), b["runs"], b["closed_runs"]) for b in bugs],
+                         [("dismissed", True, 5, 3)])
+        self.assertEqual(bugs[0]["why"], "dismissed at 3 run(s); re-opens at 6")
+        quiet, _ = self.sweep([], previous={"run": {"ts": "2026-10-12T00:00:00Z"}, "bugs": bugs})   # not hit: still muted
+        self.assertEqual([(b["status"], b["closed_runs"]) for b in quiet], [("dismissed", 3)])
+        bugs, _ = self.sweep([self._repeat(6, "2026-10-18T00:00:00Z")],
+                             previous={"run": {"ts": "2026-10-12T00:00:00Z"}, "bugs": quiet})
+        (b,) = bugs
+        self.assertEqual((b["status"], b["runs"], b.get("muted"), "verify" in b, "closed_runs" in b),
+                         ("open", 6, None, False, False))
+        self.assertEqual(b["why"], "dismissed at 3 run(s), hit in 6 now (dismissed as: the 400 names a passing name)")
+
+    def test_verify_keeps_a_repeat_out_of_a_runs_group(self):
+        spec = importlib.util.spec_from_file_location("verify", _REPO / "scripts" / "judge" / "verify.py")
+        verify = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verify)
+        common = {"kind": "agent_run", "commit": "d" * 40, "status": "open", "desc": "d"}
+        groups = verify.groups([{**common, "key": "run-a"}, {**common, "key": "run-b"},
+                                {**common, "key": "rep-c", "repeat": True}])
+        self.assertEqual(sorted(sorted(b["key"] for b in g) for g in groups), [["rep-c"], ["run-a", "run-b"]])
+
+    def test_a_plain_dismissed_error_is_still_not_carried(self):
+        prev, _ = self.sweep([_run_error("run-aaaa")])
+        bugs, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"},
+                                           "bugs": [{**b, "status": "dismissed"} for b in prev]})
+        self.assertEqual(bugs, [])
+
+
 class RenderTest(unittest.TestCase):
     def test_unjudged_bugs_render_apart_and_stranded_ones_name_their_pr(self):
         spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
@@ -388,6 +438,10 @@ class RenderTest(unittest.TestCase):
         self.assertIn("**Error** (`create_chain`, hit in 3 run(s), first seen 2026-10-05, last 2026-10-12)", md)
         self.assertNotIn("### B2", md)
         self.assertIn("- B2 · wont fix · `agent run · create_chain` · `run-bbbb` — hit in 3 run(s), last 2026-10-12", md)
+        md = "\n".join(record._render_bugs([{**common, "id": "B1", "key": "rep-aaaa", "status": "open", "repeat": True,
+                                             "marker": "repeated agent error"}]))
+        self.assertIn("### B1 · open · `repeated agent error · create_chain` · `rep-aaaa`", md)
+        self.assertIn("**Repeated error** (`create_chain`, hit in 3 run(s)", md)
 
 
 class EnclosingTest(unittest.TestCase):

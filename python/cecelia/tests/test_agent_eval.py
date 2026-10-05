@@ -404,7 +404,90 @@ class TestRunFindings(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         r = rows[0]
         self.assertEqual((r["event"], r["commit"], r["branch"], r["session"]), ("agent_run_finding", "abc1234", None, "S1"))
-        self.assertEqual(set(r["payload"]), {"key", "tool", "error", "desc"})
+        self.assertEqual(set(r["payload"]), {"key", "tool", "error", "desc", "run"})
+
+    # -- repeated 4xx-with-reason ------------------------------------------------------------------
+    CHAIN = "Error executing tool create_chain: HTTP 400: Invalid chain name '{}' — use letters, numbers, spaces, . _ - (max 64 chars)"
+    GATE = "Error executing tool gate_plot: HTTP 400: No values for {} on {} — not columns of this segmentation's table"
+
+    def test_repeat_key_groups_one_mistake_across_values_and_later_hints(self):
+        k = run_findings.repeat_key
+        a = k("create_chain", self.CHAIN.format("Drift + segment P14 OTI gBT"))
+        self.assertRegex(a, r"^rep-[0-9a-f]{10}$")
+        self.assertEqual(a, k("create_chain", self.CHAIN.format("drift-seg (P14 / OTI)")))
+        self.assertEqual(a, k("create_chain", self.CHAIN.format("1 drift + seg") + "; e.g. '1 drift seg'"))   # hint added by a fix
+        # a plain-word value (`volume`) right after the template's words, either order, any pop
+        g = k("gate_plot", self.GATE.format("mean_intensity_0 / volume", "P14f"))
+        self.assertEqual(g, k("gate_plot", self.GATE.format("volume / mean_intensity_0", "P14")))
+        self.assertEqual(g, k("gate_plot", self.GATE.format("clusters.motility / live.cell.speed", "gBTf")))
+        self.assertNotEqual(g, k("gate_histogram", self.GATE.format("volume", "P14")))   # another tool
+        self.assertNotEqual(g, k("gate_plot", self.GATE.format("volume", "P14").replace("400", "404")))
+        self.assertNotEqual(a, k("create_chain", "HTTP 400: Unknown step 'x'"))
+        # a value first: the whole normalised clause is the template
+        self.assertEqual(run_findings.misuse_template("HTTP 400: projectUid, setUid and funName required"),
+                         ("400", "projectuid, <id> and funname required"))
+        self.assertEqual(run_findings.misuse_template("HTTP 422: plots[3]: unknown plot \"hmm_states\". Available: a, b"),
+                         ("422", "plots[<n>]: unknown plot <v>"))
+
+    def _run(self, d, name, *errors, session=None):
+        root = pathlib.Path(d) / name
+        root.mkdir()
+        items = [x for i, (tool, err) in enumerate(errors)
+                 for x in (("call", f"c{i}", tool, {}), ("result", f"c{i}", err, True))]
+        (root / "trace.jsonl").write_text(_trace(*items).replace('"S1"', json.dumps(session or name)), encoding="utf-8")
+        (root / "run.json").write_text(json.dumps({"projectUid": "CP", "images": TestRunRecord.IMAGES,
+                                                   "source": {"projectUid": "SRC"}}), encoding="utf-8")
+        (root / "record.json").write_text(json.dumps({"codeSha": "abc1234"}), encoding="utf-8")
+        return root
+
+    def _rows(self, log):
+        return [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
+
+    def test_a_4xx_is_a_finding_only_once_a_second_run_hits_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = pathlib.Path(d) / "events.jsonl"
+            chain = ("create_chain", self.CHAIN.format("a + b"))
+            r1 = self._run(d, "R1", chain, chain, ("add_analysis_board", "HTTP 422: plots[3]: unknown plot 'x'"))
+            self.assertEqual(run_findings.emit(r1, None, log_path=log), [])          # one run: no finding
+            self.assertEqual([r["event"] for r in self._rows(log)], ["agent_run_misuse"] * 2)   # one per key, not per hit
+            got = run_findings.emit(self._run(d, "R2", ("create_chain", self.CHAIN.format("c + d"))), None, log_path=log)
+            self.assertEqual([(f["kind"], f["tool"], f["runs"], f["run"]) for f in got], [("repeat", "create_chain", 2, "R2")])
+            self.assertIn("agents hit this error in 2 separate runs", got[0]["desc"])
+            got = run_findings.emit(self._run(d, "R3", chain), None, log_path=log)
+            self.assertEqual([f["runs"] for f in got], [3])
+            finding = [r for r in self._rows(log) if r["event"] == "agent_run_finding"]
+            self.assertEqual([(r["payload"]["key"], r["commit"], r["branch"]) for r in finding],
+                             [(got[0]["key"], "abc1234", None)] * 2)
+
+    def test_re_emitting_a_run_logs_nothing_twice(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = pathlib.Path(d) / "events.jsonl"
+            chain = ("create_chain", self.CHAIN.format("a + b"))
+            r1 = self._run(d, "R1", chain, ("set_gate", "Error executing tool set_gate"))
+            r2 = self._run(d, "R2", chain)
+            for root in (r1, r2):
+                run_findings.emit(root, None, log_path=log)
+            before = self._rows(log)
+            self.assertEqual(sorted(r["event"] for r in before),
+                             ["agent_run_finding"] * 2 + ["agent_run_misuse"] * 2)
+            for root in (r1, r2, r1):
+                self.assertEqual(run_findings.emit(root, None, log_path=log), [])
+            self.assertEqual(len(self._rows(log)), len(before))
+            # a row from before `run` was in the payload is still known by its session
+            old = pathlib.Path(d) / "old.jsonl"
+            run_findings.append_event("agent_run_finding", {"key": run_findings.finding_key("set_gate", "Error executing tool set_gate")},
+                                      session="R1", log_path=old)
+            self.assertEqual([f["key"] for f in run_findings.emit(r1, None, log_path=old)], [])
+
+    def test_a_dry_run_over_several_runs_counts_their_repeats_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = pathlib.Path(d) / "events.jsonl"
+            chain = ("create_chain", self.CHAIN.format("a + b"))
+            pending: list = []
+            got = [f for name in ("R1", "R2") for f in
+                   run_findings.emit(self._run(d, name, chain), None, dry_run=True, log_path=log, pending=pending)]
+            self.assertEqual([(f["kind"], f["runs"]) for f in got], [("repeat", 2)])
+            self.assertFalse(log.exists())
 
     def test_short_sha_expands_to_the_full_one(self):
         import subprocess
