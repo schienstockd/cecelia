@@ -14,6 +14,7 @@
   tree independent of the gating store), so all reactivity is driven by props.
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import { isImageYAxis } from '../../utils/gatingAxes'
 import type { GateSpec, TransformSpec } from '../../stores/gating'
@@ -100,6 +101,8 @@ const valueRamp = ref<{ extent: [number, number]; ticks: Tick[] } | null>(null)
 const corrByGroup = ref<Record<string, number | null>>({})
 const corrFor = (d: PanelDef) => corrByGroup.value[canonicalOrient(d).groupKey]
 const loading = ref(false)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
+useDelayedLoading(loading)
 const err = ref('')
 let loadTok = 0
 

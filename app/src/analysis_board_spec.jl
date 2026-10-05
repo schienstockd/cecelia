@@ -169,7 +169,8 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
     isempty(id) && throw(BoardSpecError("plots[$i] needs a `plot` (a plot-spec id)"))
     sp = get(specs, id, nothing)
     sp === nothing && throw(BoardSpecError(
-        "plots[$i]: unknown plot \"$id\". Available: $(join(sort(collect(keys(specs))), ", "))"))
+        "plots[$i]: unknown plot \"$id\". Available: $(join(sort(collect(keys(specs))), ", ")); " *
+        "views: $(join(sort(collect(keys(BOARD_VIEWS))), ", "))"))
 
     charts = _bs_strs(get(sp, "chartTypes", nothing))
     chart  = _bs_str(get(d, "chart", nothing))
@@ -211,7 +212,12 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
     # `pops` (board_spec_populations) is the same enumeration the picker uses and tags each population
     # with its family, so it can answer exactly that question.
     offered = get(ds, "popTypes", nothing)
-    offered = offered isa AbstractVector ? offered : Any[]
+    # a spec on the legacy single `popType`/`granularity` pair offers exactly that one — the rule
+    # `popTypeOptions` (frontend plots/popTypes.ts) applies
+    legacy = _bs_str(get(ds, "popType", nothing))
+    offered = offered isa AbstractVector && !isempty(offered) ? offered :
+        isempty(legacy) ? Any[] :
+        Any[Dict{String,Any}("popType" => legacy, "granularity" => _bs_str(get(ds, "granularity", nothing), "cell"))]
     _pt_of  = e -> _bs_str(get(e, "popType", nothing))
     _gran_of = e -> _bs_str(get(e, "granularity", nothing))
     # families a given popType would make available on THIS spec (its own granularity entry)
@@ -283,7 +289,137 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
         state["imageAgg"] = agg
     end
 
+    title = _bs_str(get(d, "title", nothing))
+    isempty(title) || (state["title"] = title)
     Dict{String,Any}("kind" => "summary", "ref" => id, "state" => state)
+end
+
+# ── Board VIEWS: the registry-hosted plots that are not plot specs ───────────────────────────────────
+#
+# The board hosts three plot families (docs/ANALYSIS.md → *Plot families*): summary specs (above), the
+# INTERACTIVE views (`frontend/src/components/canvas/interactiveViews.ts`, `analysisBoard: true`) and the
+# CLUSTER panels (`frontend/src/modules/cluster/clusterPanels.ts`). Both of the latter are stored as
+# `{kind: "interactive", ref: <key>, state}` slots, so one expander covers them. The keys are the
+# frontend's; `interactiveViews.test.ts` pins that this table names every board-flagged key of both
+# registries — as a view here or as one of `BOARD_VIEWS_UNSUPPORTED` with the reason — so a view added
+# there cannot silently be unreachable here.
+#
+# `fields` are the semantic keys a caller may set; `cluster` says the view is driven by the board's ONE
+# clustering run (`shared.clustPopType` + `shared.clustSuffix`, docs/ANALYSIS.md → *Clustering — one run
+# per board*); `trackOnly` cluster panels need a track clustering (`trackclust`).
+const BOARD_VIEWS = Dict{String,NamedTuple}(
+    "gatingStrategy"   => (; fields = ("image", "valueName", "popType", "pop", "hierarchy"), cluster = false, trackOnly = false),
+    "trackPaths"       => (; fields = ("pops", "mode"), cluster = false, trackOnly = false),
+    "trackDiagnostics" => (; fields = ("pops",), cluster = false, trackOnly = false),
+    "hmmStateCards"    => (; fields = ("valueName", "hmmCol"), cluster = false, trackOnly = false),
+    "motifCards"       => (; fields = ("valueName",), cluster = false, trackOnly = false),
+    "umap"             => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
+    "heatmap"          => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
+    "hmmStates"        => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
+    "hmmTransitions"   => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
+    "cellCards"        => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
+)
+# Board-flagged, but nothing a spec could name would make them render: they show a viewer screenshot
+# the user captured, or a model picked in the vault.
+const BOARD_VIEWS_UNSUPPORTED = Dict{String,String}(
+    "filmstrip"       => "it shows viewer screenshots, which are captured in the GUI",
+    "flowMetrics"     => "it is a model-training view, picked on the Model training page",
+    "flowTraining"    => "it needs a model picked in the model vault",
+    "flowProbability" => "it needs a model picked in the model vault",
+)
+# what a view's state starts as on a GUI-added panel (`initialState` / the cluster-panel `hl` bag)
+_view_initial_state(key) = key == "umap" ? Dict{String,Any}("labels" => true, "hl" => Any[]) :
+    BOARD_VIEWS[key].cluster ? Dict{String,Any}("hl" => Any[]) : Dict{String,Any}()
+
+const _TRACK_FAMILIES = ("live", "track", "trackclust")   # interactiveViews.ts TRACK_FAMILIES
+const _CLUST_POP_TYPES = ("clust", "trackclust")
+
+"""
+    board_spec_cluster_suffixes(proj) -> Dict{String,Set{String}}
+
+The clustering runs a board may show, per cluster family: `"clust"` (cell clusterings, on each
+segmentation's cell table) and `"trackclust"` (track clusterings, on its `__tracks` table), unioned over
+the project's images. Cell runs through `img_cluster_suffixes`; the `__tracks` table has no image
+accessor, so its runs come from `_clustfeatures_suffixes`, the one sidecar reader.
+"""
+function board_spec_cluster_suffixes(proj::CciaProject)
+    out = Dict{String,Set{String}}(pt => Set{String}() for pt in _CLUST_POP_TYPES)
+    for img in images(proj), vn in versioned_keys(img.label_props)
+        try
+            union!(out["clust"], img_cluster_suffixes(img, vn))
+            tp = img_track_props_path(img, vn)
+            isfile(tp) && union!(out["trackclust"], _clustfeatures_suffixes(tp))
+        catch e
+            @warn "Could not read clustering runs for a board spec" image = img.uid value_name = vn exception = e
+        end
+    end
+    out
+end
+
+_project_image_uids(proj::CciaProject) = String[String(img.uid) for img in images(proj)]
+
+# One VIEW entry of `plots` → (`SlotContent`, the clustering run it needs or `nothing`).
+function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, ctx, i::Int)
+    def = BOARD_VIEWS[key]
+    extra = setdiff(keys(d), ("plot", "specId", "title", def.fields...))
+    isempty(extra) || throw(BoardSpecError(
+        "plots[$i]: \"$key\" does not take $(join(sort(collect(extra)), ", ")). " *
+        "It takes: $(join(def.fields, ", "))"))
+    state = _view_initial_state(key)
+    str = k -> _bs_str(get(d, k, nothing))
+    if key == "gatingStrategy"
+        img = str("image")
+        if !isempty(img)
+            uids = ctx.images()
+            img in uids || throw(BoardSpecError(
+                "plots[$i]: no image \"$img\" in this project. Images: $(join(uids, ", "))"))
+            state["imageUid"] = img
+        end
+        for (k, sk) in (("valueName", "valueName"), ("popType", "popType"), ("pop", "rootPop"))
+            v = str(k); isempty(v) || (state[sk] = v)
+        end
+        haskey(d, "hierarchy") && (state["showHierarchy"] = get(d, "hierarchy", false) === true)
+    elseif key in ("trackPaths", "trackDiagnostics")
+        wanted = _bs_strs(get(d, "pops", nothing))
+        for p in wanted
+            haskey(pops, p) || throw(BoardSpecError(
+                "plots[$i]: no population \"$p\" in this project. " *
+                "Use get_populations to see what exists (as valueName/pop)."))
+            pops[p] in _TRACK_FAMILIES || throw(BoardSpecError(
+                "plots[$i]: \"$key\" draws tracks; \"$p\" is a $(pops[p]) population. " *
+                "It takes $(join(_TRACK_FAMILIES, ", ")) populations."))
+        end
+        isempty(wanted) || (state["sel"] = String["$(pops[p])::$(p)" for p in wanted])
+        mode = str("mode")
+        if !isempty(mode)
+            mode in ("paths", "star", "rose") || throw(BoardSpecError(
+                "plots[$i]: mode must be one of paths, star, rose, got \"$mode\""))
+            state["mode"] = mode
+        end
+    elseif key in ("hmmStateCards", "motifCards")
+        for k in ("valueName", "hmmCol")
+            v = str(k); isempty(v) || (state[k] = v)
+        end
+    end
+    isempty(str("title")) || (state["title"] = str("title"))
+    content = Dict{String,Any}("kind" => "interactive", "ref" => String(key), "state" => state)
+    def.cluster || return content, nothing
+
+    pt = str("popType")
+    isempty(pt) && (pt = def.trackOnly ? "trackclust" : "clust")
+    pt in _CLUST_POP_TYPES || throw(BoardSpecError(
+        "plots[$i]: popType must be one of $(join(_CLUST_POP_TYPES, ", ")), got \"$pt\""))
+    def.trackOnly && pt != "trackclust" && throw(BoardSpecError(
+        "plots[$i]: \"$key\" is a track-clustering plot — it needs popType \"trackclust\""))
+    sfx = str("suffix")
+    have = sort(collect(get(ctx.clusters(), pt, Set{String}())))
+    isempty(sfx) && throw(BoardSpecError(
+        "plots[$i]: \"$key\" needs the clustering run's `suffix`. " *
+        (isempty(have) ? "This project has no $pt clustering." : "$pt runs: $(join(have, ", "))")))
+    sfx in have || throw(BoardSpecError(
+        "plots[$i]: no $pt clustering \"$sfx\" in this project. " *
+        (isempty(have) ? "It has none." : "$pt runs: $(join(have, ", "))")))
+    content, (pt, sfx)
 end
 
 # What the board compares across images → the `shared` keys `useSummaryData` reads
@@ -343,6 +479,11 @@ Validate a board spec against the project and expand it into a `LayoutEntry` (th
 `layouts["tab:<id>"]`). Throws `BoardSpecError` — with a message naming the bad value and the available
 ones — rather than writing a board that would render blank.
 
+A `plot` is a plot-spec id (a summary plot) or a board VIEW key (`BOARD_VIEWS`: the gating strategy,
+the track plots, HMM/motif cards, and the clustering plots). Clustering plots on one board must name the
+same run (`popType` + `suffix`), which becomes the board's `shared.clustPopType`/`clustSuffix`. Any plot
+may carry a `title` (the slot caption).
+
 `compare_by` sets what the board compares ACROSS IMAGES — board-level, because that is where
 `useSummaryData` keeps it (the `shared` bag, not per-slot):
 
@@ -358,7 +499,9 @@ exist groups nothing and the board silently falls back to per-image.
 function expand_board(proj::CciaProject, name::AbstractString, plots; template::AbstractString = "",
                       pops::Union{AbstractDict,Nothing} = nothing,
                       compare_by::AbstractString = "",
-                      attrs::Union{Vector{String},Nothing} = nothing)
+                      attrs::Union{Vector{String},Nothing} = nothing,
+                      clusters::Union{AbstractDict,Nothing} = nothing,
+                      image_uids::Union{Vector{String},Nothing} = nothing)
     isempty(strip(String(name))) && throw(BoardSpecError("the board needs a name"))
     plots isa AbstractVector || throw(BoardSpecError("`plots` must be a list"))
     isempty(plots) && throw(BoardSpecError("a board needs at least one plot"))
@@ -373,9 +516,30 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
     # `pops` is injectable so the accept/reject rules can be tested without a gated+tracked project on
     # disk; production always passes nothing and gets the picker's own list.
     available = pops === nothing ? board_spec_populations(proj) : pops
+    # what a VIEW may name, read only when one asks (both walk every image); injectable like `pops`
+    clust_memo = Ref{Any}(clusters)
+    img_memo = Ref{Any}(image_uids)
+    ctx = (; clusters = () -> clust_memo[] === nothing ? (clust_memo[] = board_spec_cluster_suffixes(proj)) : clust_memo[],
+             images = () -> img_memo[] === nothing ? (img_memo[] = _project_image_uids(proj)) : img_memo[])
     contents = Any[nothing for _ in 1:slots]
+    run = nothing          # the board's ONE clustering run, as (popType, suffix)
     for (i, p) in enumerate(plots)
-        contents[i] = _expand_plot(specs, available, p, i)
+        p isa AbstractDict || throw(BoardSpecError("plots[$i] must be an object"))
+        d = Dict{String,Any}(string(k) => v for (k, v) in pairs(p))
+        key = _bs_str(get(d, "plot", get(d, "specId", nothing)))
+        if haskey(BOARD_VIEWS, key)
+            contents[i], want = _expand_view(key, d, available, ctx, i)
+            if want !== nothing
+                run === nothing || run == want || throw(BoardSpecError(
+                    "plots[$i]: a board shows ONE clustering run, and an earlier plot already shows " *
+                    "$(run[1]) \"$(run[2])\" — put \"$(want[2])\" on its own board"))
+                run = want
+            end
+        elseif haskey(BOARD_VIEWS_UNSUPPORTED, key)
+            throw(BoardSpecError("plots[$i]: \"$key\" cannot be authored — $(BOARD_VIEWS_UNSUPPORTED[key])"))
+        else
+            contents[i] = _expand_plot(specs, available, d, i)
+        end
     end
 
     # `shared.scope` decides WHERE the board reads each panel's population selection: "global" (the
@@ -390,6 +554,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
     shared = any(c -> c !== nothing && haskey(c["state"], "sel"), contents) ?
         Dict{String,Any}("scope" => "local") : Dict{String,Any}()
     merge!(shared, _compare_state(proj, compare_by; attrs_available = attrs))
+    run === nothing || merge!(shared, Dict{String,Any}("clustPopType" => run[1], "clustSuffix" => run[2]))
 
     Dict{String,Any}(
         "cols" => cols, "rows" => rows,

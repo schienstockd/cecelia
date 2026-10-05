@@ -2041,6 +2041,63 @@ end
         @test_throws BoardSpecError append_board(doc3, "Behaviour & tracking", lay)
     end
 
+    @testset "board spec expander — board VIEWS (interactive + cluster panels)" begin
+        # The views a board hosts besides summary specs, stored as {kind:"interactive", ref, state}. A
+        # cluster view must name a run that exists, and one board shows ONE run — the board's
+        # useClusterContext reads a single shared.clustPopType/clustSuffix.
+        proj = CciaProject(; uid = "bsv", name = "views"); proj.root = mktempdir()
+        pops = Dict("Tcells/qc" => "live", "Tcells/qc/_tracked" => "live", "Tcells/qc/P14" => "flow")
+        clusters = Dict("clust" => Set(["cells"]), "trackclust" => Set(["movement"]))
+        ex(plots; pops = pops, kw...) = expand_board(proj, "stage", plots; pops = pops, clusters = clusters,
+                                        image_uids = ["img1", "img2"], kw...)
+
+        lay = ex([Dict("plot" => "umap", "popType" => "trackclust", "suffix" => "movement"),
+                  Dict("plot" => "heatmap", "popType" => "trackclust", "suffix" => "movement", "title" => "Heat")])
+        @test lay["contents"][1]["kind"] == "interactive" && lay["contents"][1]["ref"] == "umap"
+        @test lay["contents"][1]["state"]["labels"] == true          # the view's own initialState
+        @test lay["contents"][2]["state"]["title"] == "Heat"
+        @test lay["shared"]["clustPopType"] == "trackclust" && lay["shared"]["clustSuffix"] == "movement"
+        # a trackOnly panel defaults to trackclust; and refuses clust
+        @test ex([Dict("plot" => "hmmStates", "suffix" => "movement")])["shared"]["clustPopType"] == "trackclust"
+        @test_throws BoardSpecError ex([Dict("plot" => "hmmStates", "popType" => "clust", "suffix" => "cells")])
+        # a run that does not exist, no suffix, and two runs on one board are all refused
+        @test_throws BoardSpecError ex([Dict("plot" => "umap", "suffix" => "nope")])
+        @test_throws BoardSpecError ex([Dict("plot" => "umap")])
+        @test_throws BoardSpecError ex([Dict("plot" => "umap", "suffix" => "cells"),
+                                        Dict("plot" => "heatmap", "popType" => "trackclust", "suffix" => "movement")])
+
+        # track plots take track-family populations, as tkeys, and the board reads them per slot
+        tl = ex([Dict("plot" => "trackPaths", "pops" => ["Tcells/qc"], "mode" => "star")])
+        @test tl["contents"][1]["state"]["sel"] == ["live::Tcells/qc"]
+        @test tl["contents"][1]["state"]["mode"] == "star"
+        @test tl["shared"]["scope"] == "local"
+        @test_throws BoardSpecError ex([Dict("plot" => "trackPaths", "pops" => ["Tcells/qc/P14"])])   # flow
+        @test_throws BoardSpecError ex([Dict("plot" => "trackPaths", "mode" => "spiral")])
+
+        # gating strategy: the image must exist; fields map onto the view's own state keys
+        g = ex([Dict("plot" => "gatingStrategy", "image" => "img2", "valueName" => "Tcells",
+                     "popType" => "live", "pop" => "/qc", "hierarchy" => true)])["contents"][1]["state"]
+        @test g["imageUid"] == "img2" && g["valueName"] == "Tcells" && g["rootPop"] == "/qc"
+        @test g["popType"] == "live" && g["showHierarchy"] == true
+        @test_throws BoardSpecError ex([Dict("plot" => "gatingStrategy", "image" => "nope")])
+        # a field the view does not take is named, not dropped
+        @test_throws BoardSpecError ex([Dict("plot" => "gatingStrategy", "suffix" => "movement")])
+        # board-flagged views nothing in a spec could fill are refused with the reason
+        @test_throws BoardSpecError ex([Dict("plot" => "filmstrip")])
+        # views and summary specs mix on one board
+        mix = ex([Dict("plot" => "hmmStateCards", "valueName" => "Tcells"),
+                  Dict("plot" => "track_measures", "measure" => "live.track.speed")])
+        @test mix["contents"][1]["ref"] == "hmmStateCards" && mix["contents"][2]["kind"] == "summary"
+        @test !haskey(mix["shared"], "clustSuffix")
+
+        # a spec on the legacy single `dataSource.popType` (segmentation_qc: "labels") offers that one
+        # family — it used to refuse every population, as if it offered none
+        qc = ex([Dict("plot" => "segmentation_qc", "chart" => "count", "pops" => ["Tcells/labels"])];
+                pops = Dict("Tcells/labels" => "labels"))
+        @test qc["contents"][1]["state"]["sel"] == ["labels::Tcells/labels"]
+        @test qc["contents"][1]["state"]["popType"] == "labels"
+    end
+
     @testset "boards document — one reader, both shapes, versioned writes" begin
         # analysisBoards.json has had two shapes. The tab ARRAY used to sit at `tabs.tabs` (a TabGroup
         # nested under `tabs`) — the collision that made a second parser read `b.tabs` as the array and

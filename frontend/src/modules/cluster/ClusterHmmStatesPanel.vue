@@ -13,6 +13,7 @@
   of the generic stacked bar (x = group, fill = state) — not worth a new shared chart type.
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef, nextTick } from 'vue'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { useLogStore } from '../../stores/log'
@@ -52,6 +53,8 @@ const shortName = (c: string) => c.replace(/^live\.cell\.hmm\.state\./, '')
 
 const host = useTemplateRef<HTMLElement>('host')
 const loading = ref(false)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
+useDelayedLoading(loading)
 const err = ref('')
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let Plot: any = null

@@ -15,6 +15,7 @@
   GateScatterCell as the Gate page. No second gate renderer, no store mutation.
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import type { Frame } from '../../plots/frame'
@@ -94,7 +95,17 @@ const tree = ref<PopTree | null>(null)
 
 const idQ = () => `projectUid=${props.projectUid}&imageUid=${imageUid.value}&valueName=${encodeURIComponent(valueName.value)}&popType=${popType.value}`
 
-async function loadChannels() {
+// board idle (utils/plotReady): the montage's tiles only mount once the tree is here, so the tree's
+// own load must count too — or a board export / headless render captures an empty montage
+const pending = ref(0)
+useDelayedLoading(computed(() => pending.value > 0))
+async function counted<T>(p: Promise<T>): Promise<T> {
+  pending.value++
+  try { return await p } finally { pending.value-- }
+}
+async function loadChannels() { return counted(loadChannelsInner()) }
+async function loadTree() { return counted(loadTreeInner()) }
+async function loadChannelsInner() {
   if (!props.projectUid || !imageUid.value) { valueNames.value = []; return }
   try {
     const d = await (await fetch(`/api/gating/channels?projectUid=${props.projectUid}&imageUid=${imageUid.value}&popType=${popType.value}`)).json()
@@ -110,7 +121,7 @@ async function loadChannels() {
     columns.value = []; obsColumns.value = []; spatialAxes.value = []
   }
 }
-async function loadTree() {
+async function loadTreeInner() {
   if (!props.projectUid || !imageUid.value) { tree.value = null; return }
   try {
     const d = await (await fetch(`/api/gating/popmap?${idQ()}`)).json() as { tree: PopTree }

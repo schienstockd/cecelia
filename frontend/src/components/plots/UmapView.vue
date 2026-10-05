@@ -16,6 +16,7 @@
   the panel's persisted per-panel options bag (here just `labels`).
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
 import { letterboxFrame, type Frame, type FrameCell, type FrameRect } from '../../plots/frame'
@@ -111,6 +112,8 @@ const legend = ref<{ label: string; colour: string; n: number }[]>([])
 const centroids = ref<{ label: string; x: number; y: number }[]>([])
 const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })
 const loading = ref(false)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
+useDelayedLoading(loading)
 const err = ref('')
 const total = computed(() => (points.value ? points.value.length / 2 : 0))
 // current on-screen plot box (px) — tracked so the label map matches the canvas one under resize

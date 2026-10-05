@@ -34,6 +34,7 @@ sys.path.insert(0, str(_REPO / "scripts" / "agent_eval"))   # run_record imports
 app_project = _load("app_project")
 run_record = _load("run_record")
 run_findings = _load("run_findings")
+stage_boards = _load("stage_boards")
 
 SPEC = fixture.FixtureSpec(size=96, n_frames=24, n_cells=6, min_dwell=6)
 
@@ -349,6 +350,66 @@ class TestRunRecord(unittest.TestCase):
         self.assertIn("### d01 · report · all · final message", md)
         self.assertIn("> because", md)
         self.assertIn("## Tool errors (unscored)\n\n- `set_gate`: Error executing tool set_gate", md)
+
+
+class TestStageBoards(unittest.TestCase):
+    """What ran → which boards; and a board that cannot be made never costs the record."""
+    IMAGES = [{"imageUid": "cp1", "imageName": "one", "sourceImageUid": "src1"},
+              {"imageUid": "cp2", "imageName": "two", "sourceImageUid": "src2"}]
+
+    def _dec(self):
+        nodes = [{"id": "seg", "fn": "segment.cellposeMeasure", "params": {"outputValueName": "T"}},
+                 {"id": "trk", "fn": "tracking.bayesian_track_measures", "params": {"valueName": "T", "popsToTrack": "/qc"}},
+                 {"id": "hmm", "fn": "behaviour.hmm", "params": {"pops": ["T/qc"], "colName": "movement"}},
+                 {"id": "cl", "fn": "clustTracks.cluster", "params": {"valueNameSuffix": "mv"}},
+                 {"id": "dr", "fn": "cleanupImages.driftCorrect", "params": {}}]
+        gate = lambda i, img: [("call", f"g{i}", "add_gate", {"image_uid": img, "value_name": "T",   # noqa: E731
+                                                             "name": "qc", "gate": _RECT}),
+                               ("result", f"g{i}", "{}", False), ("text", f"next {i}")]
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "trace.jsonl"
+            path.write_text(_trace(
+                ("call", "c1", "create_chain", {"name": "all", "nodes": nodes}), ("result", "c1", "{}", False),
+                ("call", "c2", "run_chain", {"chain_name": "all"}), ("result", "c2", json.dumps({"runId": "R"}), False),
+                *gate(1, "cp1"), *gate(2, "cp2"), *gate(3, "cp1")), encoding="utf-8")
+            return run_record.decisions(str(path), self.IMAGES)
+
+    def test_one_board_per_stage_that_ran(self):
+        dec = self._dec()
+        specs = {s["label"]: s for s in stage_boards.board_specs(dec, "ST", self.IMAGES)}
+        self.assertEqual(sorted(specs), ["Clusters", "Gating strategy", "HMM", "Segmentation QC", "Tracks"])
+        self.assertEqual(specs["Segmentation QC"]["candidates"][0][0]["pops"], ["T/labels"])
+        self.assertEqual(specs["Tracks"]["candidates"][0][0]["pops"], ["T/qc/_tracked"])
+        self.assertEqual(specs["Tracks"]["candidates"][1][0]["pops"], ["T/qc"])     # the fallback
+        self.assertEqual([p["plot"] for p in specs["HMM"]["candidates"][0]],
+                         ["hmm_state_frequency", "state_signature", "transition_matrix", "hmmStateCards"])
+        self.assertEqual({p["suffix"] for p in specs["Clusters"]["candidates"][0]}, {"mv"})
+        # each slot attaches to its stage's section; the gating board to each image's LAST gate decision
+        g = specs["Gating strategy"]
+        self.assertEqual([p["image"] for p in g["candidates"][0]], ["cp1", "cp2"])      # copy uids
+        gate_ids = [s["id"] for s in dec["sections"] if s["step"] == "gate"]
+        self.assertEqual(g["attach"], [gate_ids[2], gate_ids[1]])
+        self.assertEqual(len(specs["HMM"]["attach"]), 4)
+        self.assertTrue(all(s["name"].startswith("Run ST · ") for s in specs.values()))
+
+    def test_no_app_costs_the_pictures_not_the_record(self):
+        dec = self._dec()
+        run = {"projectUid": "CP", "projectName": "x", "images": self.IMAGES, "source": {"projectUid": "SRC"}}
+        pics, notes = run_record.results("http://127.0.0.1:9", run, dec, "ST")   # nothing listens on :9
+        self.assertEqual(pics, {})
+        seg = next(s["id"] for s in dec["sections"] if s["fn"].startswith("segment"))
+        self.assertIn("did not answer", notes[seg][0])
+        md = run_record.render(run, {"brief": "b", "canary": {"intact": True}}, dec, None, {}, notes)
+        self.assertIn("- **Stage board:** Segmentation QC — the app did not answer", md)
+        # anything unexpected is a record-level note, never an exception
+        sb = run_record.stage_boards            # the module run_record imported, not this file's copy
+        orig = sb.stage_pictures
+        sb.stage_pictures = lambda *a: 1 / 0
+        try:
+            self.assertIn("ZeroDivisionError", run_record.results("http://x", run, dec, "ST")[1][""][0])
+        finally:
+            sb.stage_pictures = orig
+        self.assertEqual(run_record.results(None, run, dec, "ST"), ({}, {}))
 
 
 class TestRunFindings(unittest.TestCase):

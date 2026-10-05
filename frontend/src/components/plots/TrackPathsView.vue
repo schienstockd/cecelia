@@ -40,6 +40,7 @@
   measures) — a cell measure would need an aggregate chosen first, and this plot has nowhere to ask.
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
@@ -136,6 +137,8 @@ const data = ref<PathsResponse | null>(null)
 const valueNames = ref<string[]>([])
 const colorOptions = ref<string[]>([])
 const loading = ref(false)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
+useDelayedLoading(loading)
 const error = ref('')
 
 const MODES: ChipOption[] = [

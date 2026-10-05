@@ -341,6 +341,16 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
       - `statUnit` "individual" (every cell/track a point) or "image" (each image collapsed to one
                    `imageAgg`, "mean"/"median"). PREFER "image" when per-image n is small — pooling
                    every track across images treats one image's 400 tracks as 400 replicates.
+      - `title`    optional slot caption, on any plot.
+    `plot` may instead be a board VIEW key — the plots that are not specs — with its own fields:
+      - "gatingStrategy" {image?, valueName?, popType?, pop?, hierarchy?} — the gates leading to `pop`
+        (popType "live" for a segmentation's gates); `hierarchy: true` draws every gate below it.
+      - "trackPaths" {pops?, mode?: paths|star|rose} · "trackDiagnostics" {pops?} — tracked populations.
+      - "hmmStateCards" {valueName?, hmmCol?} · "motifCards" {valueName?} — example-cell cards.
+      - clustering plots "umap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",
+        "cellCards" (track clustering only) {suffix, popType?: clust|trackclust} — `suffix` is the run
+        (get_cluster_summary). ONE run per board: a second suffix needs a second board. Here popType
+        names the clustering family and IS a field (trackOnly views default to "trackclust").
     `template` is "<cols>x<rows>" (e.g. "2x2"); omitted picks a grid that fits. The comic plates are
     GUI-only. Grid areas, styling and captions are the user's — you choose which plots, in what order.
 

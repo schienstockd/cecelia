@@ -9,6 +9,7 @@
   RAW name (mean_intensity_N) but displayed via `nameMap` (raw → channel display name).
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
@@ -59,6 +60,8 @@ const granularity = computed(() => (props.popType === 'trackclust' ? 'track' : '
 const features = computed(() => props.state.features ?? [])
 const heatmap = ref<PlotDataResponse | null>(null)
 const loading = ref(false)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
+useDelayedLoading(loading)
 const err = ref('')
 // merge the canvas vis (dark-theme, font size, legend, …) over the defaults so the pop-manager
 // styling knobs drive the heatmap too; the matrix-specific fields below stay fixed regardless.
