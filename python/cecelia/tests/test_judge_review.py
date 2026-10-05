@@ -208,10 +208,35 @@ class FullscreenTest(_ReviewFixture):
         after = text.split(self.rv._LEAVE)[1]                        # back on the normal screen
         self.assertIn("1 answered this session · 3 left", after)   # B2, and B1 + B3 to work
 
-    def test_a_card_taller_than_the_terminal_says_what_it_cut(self):
-        lines = self.rv._fit([str(i) for i in range(10)], 4, use_colour=False)
-        self.assertEqual(lines[:3], ["0", "1", "2"])
-        self.assertIn("7 more line(s)", lines[3])
+    def card_rows(self, text: str, paint: int) -> list[str]:
+        return text.split(self.rv._CLEAR)[paint].splitlines()
+
+    def test_page_down_scrolls_a_card_taller_than_the_terminal(self):
+        with mock.patch.object(self.rv, "_terminal_size", return_value=(80, 12)):   # a 7-row card window
+            _, text = self.queue(self.rv.PGDN, self.rv.PGDN, self.rv.PGUP, "q", fullscreen=True)
+        first, down, end, up = (self.card_rows(text, i) for i in (1, 2, 3, 4))
+        self.assertIn("── B1 · decide", first[2])
+        self.assertIn("more line(s) · PgDn", first[-2])
+        self.assertIn("more line(s) · PgUp", down[2])
+        self.assertNotIn("── B1 · decide", "\n".join(down))
+        self.assertIn("a.py:3", end[-2])               # the evidence, last line of the card
+        self.assertNotIn("PgDn", "\n".join(end))
+        self.assertNotEqual(up, end)                   # PgUp from the clamped end moves at once
+        self.assertEqual(self.rv.read_reviews(self.log), [])   # scrolling answers nothing
+
+    def test_a_resize_repaints_the_card_at_the_new_size(self):
+        size = [(80, 40)]
+        presses = iter([self.rv.RESIZE, "q"])
+
+        def press(prompt):
+            key = next(presses)
+            if key == self.rv.RESIZE:
+                size[0] = (80, 12)   # the terminal shrinks while the card waits for a key
+            return key
+        with mock.patch.object(self.rv, "_terminal_size", side_effect=lambda *_: size[0]):
+            _, text = self.queue(press=press, fullscreen=True)
+        self.assertNotIn("PgDn", text.split(self.rv._CLEAR)[1])
+        self.assertIn("more line(s) · PgDn", text.split(self.rv._CLEAR)[2])
 
 
 class EvidenceTest(unittest.TestCase):
@@ -249,8 +274,10 @@ if __name__ == "__main__":
 class ReadKeyTest(unittest.TestCase):
     """`read_key` on a real (pseudo-)terminal: one byte answers, no Enter."""
 
-    def press(self, typed: bytes) -> str:
+    def press(self, typed: bytes | None) -> str:
+        """`typed` once the key is awaited; None resizes the terminal instead (a real SIGWINCH)."""
         import pty
+        import signal
         import termios
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)
@@ -260,7 +287,10 @@ class ReadKeyTest(unittest.TestCase):
         def type_once_in_cbreak():   # setcbreak drops typeahead, so type once the key is awaited
             for _ in range(500):
                 if not termios.tcgetattr(slave)[3] & termios.ICANON:
-                    os.write(master, typed)
+                    if typed is None:
+                        os.kill(os.getpid(), signal.SIGWINCH)
+                    else:
+                        os.write(master, typed)
                     return
                 time.sleep(0.01)
         threading.Thread(target=type_once_in_cbreak, daemon=True).start()
@@ -278,8 +308,15 @@ class ReadKeyTest(unittest.TestCase):
     def test_one_key_without_enter(self):
         self.assertEqual(self.press(b"f"), "f")
 
+    def test_page_down_is_named(self):
+        self.assertEqual(self.press(b"\x1b[6~"), _load_review().PGDN)
+
+    def test_a_resize_while_waiting_returns_to_repaint(self):
+        self.assertEqual(self.press(None), _load_review().RESIZE)
+
     def test_an_arrow_key_is_not_its_trailing_letter(self):
         self.assertEqual(self.press(b"\x1b[A"), "")
+        self.assertEqual(self.press(b"\x1b[D"), "")   # ← expands in the recital console, not here
 
     def test_ctrl_d_is_end_of_input(self):
         with self.assertRaises(EOFError):

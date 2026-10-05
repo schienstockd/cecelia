@@ -32,7 +32,8 @@ sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import git_context, read_events  # noqa: E402
 from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
 # one look with `pixi run recital-console`: its divider, hanging-indent wrap and the shared palette
-from cecelia.effectiveness.console import _BOLD, _DIM, _col, _hr, _terminal_size, _wrap_desc  # noqa: E402
+from cecelia.effectiveness.console import (  # noqa: E402
+    _BOLD, _DIM, LEFT, PGDN, PGUP, RESIZE, RIGHT, _col, _hr, _terminal_size, _wrap_desc, poll_key, scroll_window)
 from cecelia.effectiveness.palette import (  # noqa: E402
     BLUE, BLUISH_GREEN, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
 
@@ -297,32 +298,37 @@ def _prompt(keys: dict[str, str], *, use_colour: bool) -> str:
 _ENTER, _LEAVE, _CLEAR = "\033[?1049h", "\033[?1049l", "\033[2J\033[H"
 
 
-def _fit(lines: list[str], height: int, *, use_colour: bool) -> list[str]:
-    """`lines` cut to `height` rows, the last kept row saying how much was left out."""
-    if len(lines) <= height:
-        return lines
-    return lines[:height - 1] + [_col(_DIM, f"    … {len(lines) - height + 1} more line(s); "
-                                            "widen or heighten the terminal to see them", use_colour=use_colour)]
-
-
 def read_key(prompt: str) -> str:
-    """One keypress from the terminal, no Enter: the answer keys act at once (`z` undoes a slip). An
-    arrow or other escape sequence reads as nothing, so its trailing `A`..`D` can't pass as a key."""
+    """One keypress from the terminal, no Enter: the answer keys act at once (`z` undoes a slip).
+    PgUp/PgDn come back as `PGUP`/`PGDN` and a terminal resize as `RESIZE`, so the card repaints;
+    any other escape sequence (an arrow) reads as nothing."""
+    import signal
     import termios
     import tty
     sys.stdout.write(prompt)
     sys.stdout.flush()
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
+    resized = [False]
+    try:
+        prev_winch = signal.signal(signal.SIGWINCH, lambda *_: resized.__setitem__(0, True))
+    except ValueError:   # not the main thread: no resize repaint
+        prev_winch = None
     try:
         tty.setcbreak(fd)   # Ctrl-C still works; typeahead is dropped, so a double press skips no card
-        got = os.read(fd, 32).decode("utf-8", errors="ignore")
+        key = None
+        while key is None and not resized[0]:
+            key = poll_key(fd, 0.1)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-    if not got or got[0] == "\x04":
-        raise EOFError
-    key = "" if got[0] == "\x1b" else got[0]
-    sys.stdout.write(key.strip() + "\n")
+        if prev_winch is not None:
+            signal.signal(signal.SIGWINCH, prev_winch)
+    if key is None:
+        return RESIZE
+    if key in (LEFT, RIGHT):   # the recital console's expand keys; nothing here
+        key = ""
+    if key not in (PGUP, PGDN):
+        sys.stdout.write(key.strip() + "\n")
     return key
 
 
@@ -338,11 +344,15 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     cards scroll, which is what a pipe or a test reads. `launch` starts a fix session (`default_launch`)
     in `cwd`, by default the `workspace()` the owner starts sessions in. `press` reads the answer key
     (`read_key` on a terminal, no Enter); `read` reads a line: the typed answer, and the key when
-    `press` is None.
+    `press` is None. Full screen, PgUp/PgDn scroll a card taller than the terminal, and every paint
+    re-measures it, so a resize (`RESIZE` from `press`) re-wraps the card.
     """
     press = press or read
-    cols, rows = _terminal_size((_MAX_WIDTH, 40))
-    width = width or min(cols, _MAX_WIDTH)
+    fixed_width = width
+
+    def size() -> tuple[int, int]:
+        cols, rows = _terminal_size((_MAX_WIDTH, 40))
+        return fixed_width or min(cols, _MAX_WIDTH), rows
     base = record
 
     def state() -> tuple[dict, list[dict], int]:
@@ -365,14 +375,18 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     if fullscreen:
         out.write(_ENTER)
 
-    def show(lines: list[str]) -> None:
+    def show(card: _t.Callable[[int], list[str]], offset: int) -> tuple[int, int]:
+        """Paint `card(width)` from `offset` rows in; returns the clamped offset and the page step."""
+        w, rows = size()
         if fullscreen:
             # title, status, card, then a blank and the prompt row at the bottom
-            out.write(_CLEAR + "\n".join([title, status, *_fit(lines, rows - 5, use_colour=use_colour), ""]) + "\n")
+            lines, offset, page = scroll_window(card(w), rows - 5, offset, use_colour=use_colour)
+            out.write(_CLEAR + "\n".join([title, status, *lines, ""]) + "\n")
             out.flush()
-        else:
-            for ln in [*([status] if status else []), *lines, ""]:
-                print(ln, file=out)
+            return offset, page
+        for ln in [*([status] if status else []), *card(w), ""]:
+            print(ln, file=out)
+        return 0, 1
 
     if not fullscreen:
         print(title, file=out)
@@ -381,13 +395,23 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
             item = items[0]
             keys = ANSWERS[item["kind"]]
             kind = "decide" if item["kind"] == "decide" else "work"
-            show([_hr(f"{item['ref']} · {kind} · {len(items)} left", width, use_colour=use_colour),
-                  *describe(rec, item, width=width, use_colour=use_colour)])
+
+            def card(w: int) -> list[str]:
+                return [_hr(f"{item['ref']} · {kind} · {len(items)} left", w, use_colour=use_colour),
+                        *describe(rec, item, width=w, use_colour=use_colour)]
+            offset = 0
+            while True:   # scroll and resize repaint this card; any other key answers it
+                offset, page = show(card, offset)
+                try:
+                    pressed = press(_prompt(keys, use_colour=use_colour))
+                except EOFError:
+                    pressed = "q"
+                if pressed in (PGUP, PGDN):
+                    offset += page * (1 if pressed == PGDN else -1)
+                elif pressed != RESIZE:
+                    break
             status = ""
-            try:
-                key = press(_prompt(keys, use_colour=use_colour)).strip().lower()[:1]
-            except EOFError:
-                key = "q"
+            key = pressed.strip().lower()[:1]
             if key == "q":
                 break
             if key == "n":
@@ -439,7 +463,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
         print(title, file=out)
     elif status:
         print(status, file=out)
-    print(_hr(f"{len(done)} answered this session · " + (f"{left_n} left" if left_n else "nothing left"), width,
+    print(_hr(f"{len(done)} answered this session · " + (f"{left_n} left" if left_n else "nothing left"), size()[0],
               use_colour=use_colour), file=out)
     print(_col(_DIM, "  the next weekly pass applies these", use_colour=use_colour), file=out)
     return len(done)

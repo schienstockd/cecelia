@@ -25,8 +25,10 @@ import argparse
 import collections
 import datetime as _dt
 import json
+import os
 import pathlib
 import re
+import select
 import shutil
 import sys
 import textwrap
@@ -93,6 +95,51 @@ def _clip(line: str, width: int) -> str:
             out.append(tok[:width - 1 - shown])
             shown += len(out[-1])
     return "".join(out) + "…" + (_RESET if _ANSI_RE.search(line) else "")
+
+
+# ── Scrolling — shared with `pixi run judge-review`, whose cards outgrow the screen the same way.
+#: Named keys; every other key reads as its one character.
+PGUP, PGDN, LEFT, RIGHT, RESIZE = "pgup", "pgdn", "left", "right", "resize"
+_NAMED_KEYS = {"\x1b[5~": PGUP, "\x1b[6~": PGDN, "\x1b[D": LEFT, "\x1b[C": RIGHT,
+               "\x1bOD": LEFT, "\x1bOC": RIGHT}   # `O` form: a terminal in application-cursor mode
+
+
+def decode_key(got: str) -> str:
+    """One terminal read → a key: PgUp/PgDn/←/→ by name, any other escape sequence (↑) as "",
+    so its trailing letter can't pass as a key; else the first character."""
+    if got.startswith("\x1b"):
+        return next((name for seq, name in _NAMED_KEYS.items() if got.startswith(seq)), "")
+    return got[:1]
+
+
+def poll_key(fd: int, timeout: float) -> str | None:
+    """The key pressed on `fd` (already in cbreak mode) within `timeout` seconds, else None.
+    End of input — a closed terminal or Ctrl-D — raises `EOFError`."""
+    if not select.select([fd], [], [], timeout)[0]:
+        return None
+    got = os.read(fd, 32).decode("utf-8", errors="ignore")
+    if not got or got[0] == "\x04":
+        raise EOFError
+    return decode_key(got)
+
+
+def scroll_window(lines: list[str], height: int, offset: int, *,
+                  use_colour: bool) -> tuple[list[str], int, int]:
+    """`lines` cut to `height` rows from `offset` rows in, a dim row naming the key for what is
+    above or below. Returns `(rows, offset clamped to the content, page step)`."""
+    page = max(1, height - 2)
+    if len(lines) <= height or height < 3:
+        return lines[:max(0, height)], 0, page
+    last = len(lines) - (height - 1)   # the offset that shows the end, under one `↑` row
+    offset = max(0, min(offset, last))
+    above = ([_col(_DIM, f"    ↑ {offset} more line(s) · PgUp", use_colour=use_colour)]
+             if offset else [])
+    if offset == last:
+        return above + lines[offset:], offset, page
+    shown = lines[offset:offset + height - len(above) - 1]
+    below = len(lines) - offset - len(shown)
+    return (above + shown + [_col(_DIM, f"    ↓ {below} more line(s) · PgDn", use_colour=use_colour)],
+            offset, page)
 
 
 # ── Event → (short_label, colour) — leftmost fixed-width tag, so mechanisms line up as a
@@ -370,7 +417,9 @@ class DashboardState:
     Same shape as `task_console.jl`'s in-memory state (TASKS/TALLY/EVENTS/LOGS): counters
     updated on every event, plus two bounded ring buffers for the scrolling panes at the
     bottom. Findings are held as raw event dicts (not pre-rendered strings) so the pane can
-    re-wrap them if the terminal width changes between frames.
+    re-wrap them if the terminal width changes between frames. `findings_offset` is how far
+    PgDn has scrolled the findings pane; each frame clamps it and sets `findings_page`, the step.
+    `findings_expanded` (→, ← undoes) shows every description in full instead of capped.
     """
 
     def __init__(self, *, max_events: int = _MAX_EVENTS, max_findings: int = _MAX_FINDINGS):
@@ -379,6 +428,9 @@ class DashboardState:
         self.findings: collections.deque[dict] = collections.deque(maxlen=max_findings)
         self.started_at = _dt.datetime.now(_dt.timezone.utc)
         self.last_event_ts: str | None = None
+        self.findings_offset = 0
+        self.findings_page = 1
+        self.findings_expanded = False
 
     def add(self, event: dict) -> None:
         self.tally.add(event)
@@ -458,15 +510,16 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
       - Header counters: total runs · total findings by marker · total resolved by outcome
       - `judge_warning`, when given: the weekly judge has stopped or failed (`judge_staleness`)
       - `── by mechanism ──` block: one row per mechanism
-      - `── recent findings ──` pane: newest N findings with capped descriptions
+      - `── recent findings ──` pane: newest N findings with capped descriptions, scrolled by
+        PgUp/PgDn (`state.findings_offset`) when they outgrow it
       - `── activity ──` pane: newest M event lines
 
     Height budgeting — the same problem the task console solves: fixed chrome (title + counter
     line + section headers + blanks) is subtracted first. The activity pane gets a fixed
     `_ACTIVITY_ROWS` (a third of the remainder on a short terminal); the findings pane — the
     "what was flagged" the cockpit exists for — takes every other row, unfolding descriptions
-    as height allows. On a tiny terminal the activity pane collapses to zero and the findings
-    pane keeps one finding; below that only the counters remain.
+    as height allows; what still doesn't fit scrolls. On a tiny terminal the activity pane
+    collapses to zero and the findings pane keeps what fits; below that only the counters remain.
     """
     # Local time — matches per-event rows (`_fmt_hms`), so the reader compares like-for-like.
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -544,13 +597,16 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
             if wider == blocks or sum(map(len, wider)) > findings_budget:
                 break
             cap, blocks = cap + 1, wider
-        for block in blocks:
-            if len(findings_block) + len(block) > findings_budget:
-                # Room for at least the head line? Show it truncated; otherwise stop.
-                findings_block.extend(block[:findings_budget - len(findings_block)])
-                break
-            findings_block.extend(block)
-        findings_block.insert(0, _hr("recent findings", width, use_colour=use_colour))
+        full = _blocks(10 ** 6)
+        cut = full != blocks   # the collapsed view, `blocks`, hides some text
+        if state.findings_expanded:
+            blocks = full
+        findings_block, state.findings_offset, state.findings_page = scroll_window(
+            [row for block in blocks for row in block], findings_budget, state.findings_offset,
+            use_colour=use_colour)
+        # the hint only when the key changes something: a cut description, or the expanded view
+        hint = "" if not cut else " · ← cut text" if state.findings_expanded else " · → full text"
+        findings_block.insert(0, _hr("recent findings" + hint, width, use_colour=use_colour))
 
     activity_block: list[str] = [_hr("activity", width, use_colour=use_colour)]
     if activity_budget <= 0:
@@ -849,7 +905,7 @@ def _run_stream_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
 
 
 def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
-                        *, out: _t.TextIO, follow: bool) -> int:
+                        *, out: _t.TextIO, follow: bool, key_fd: int | None = None) -> int:
     """Full-screen dashboard — poll + repaint on every _REFRESH_TICK, plus SIGWINCH.
 
     The refresh tick exists to keep the title line's `HH:MM:SS` clock alive when nothing
@@ -863,6 +919,9 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     SIGWINCH (Unix only) sets a flag that the tick loop clears with an immediate repaint,
     so a resize is snappy rather than waiting up to _REFRESH_TICK. Windows / non-main
     thread falls back to tick-latency, which is imperceptible in practice.
+
+    `key_fd` (the terminal, POSIX) is read in cbreak mode during the sleep: PgUp/PgDn scroll the
+    findings pane, → shows its descriptions in full and ← cuts them again; each repaints at once.
     """
     state = DashboardState()
     for event in seed_events:
@@ -906,6 +965,16 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
         # In both cases we fall back to tick-latency resize response.
         _signal_mod = None
 
+    saved_tty, tty_fd = None, key_fd
+    if key_fd is not None:
+        try:
+            import termios
+            import tty
+            saved_tty = termios.tcgetattr(key_fd)
+            tty.setcbreak(key_fd)   # keys without Enter or echo; Ctrl-C still interrupts
+        except (ImportError, OSError):   # Windows (no termios), or not a terminal after all
+            key_fd = None
+
     offset = log_path.stat().st_size if log_path.exists() else 0
     try:
         while True:
@@ -923,11 +992,26 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
             slept = 0.0
             slice_ = 0.05
             while slept < _REFRESH_TICK and not resize_pending[0]:
-                time.sleep(slice_)
                 slept += slice_
+                if key_fd is None:
+                    time.sleep(slice_)
+                    continue
+                try:
+                    key = poll_key(key_fd, slice_)
+                except EOFError:   # the terminal is gone; keep painting, stop reading
+                    key_fd = None
+                    continue
+                if key in (PGUP, PGDN):
+                    state.findings_offset += state.findings_page * (1 if key == PGDN else -1)
+                    break
+                if key in (LEFT, RIGHT):
+                    state.findings_expanded, state.findings_offset = key == RIGHT, 0
+                    break
     except KeyboardInterrupt:
         pass
     finally:
+        if saved_tty is not None:
+            termios.tcsetattr(tty_fd, termios.TCSADRAIN, saved_tty)
         if _signal_mod is not None and _prev_winch is not None:
             try:
                 _signal_mod.signal(_signal_mod.SIGWINCH, _prev_winch)
@@ -965,7 +1049,9 @@ def main(argv: _t.Sequence[str] | None = None,
                                 use_colour=tty and not args.stream,
                                 follow=not args.no_follow, width=width)
 
-    return _run_dashboard_mode(seed, log_path, out=out, follow=not args.no_follow)
+    keys = stdout is None and not args.no_follow and sys.stdin.isatty()
+    return _run_dashboard_mode(seed, log_path, out=out, follow=not args.no_follow,
+                               key_fd=sys.stdin.fileno() if keys else None)
 
 
 if __name__ == "__main__":

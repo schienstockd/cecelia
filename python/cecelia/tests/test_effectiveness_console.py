@@ -744,6 +744,60 @@ class DashboardTest(unittest.TestCase):
                 self.assertEqual(len(row), 80)
                 self.assertTrue(row.endswith("…"))
 
+    def test_findings_that_outgrow_the_pane_scroll(self):
+        # Every held finding is reachable with PgDn; the pane says which key shows the rest.
+        events = [_finding(ts=f"2026-09-27T10:{i:02d}:00Z",
+                           payload={"slug": f"f{i}", "line": i, "desc": f"finding {i}"})
+                  for i in range(12)]
+        state = self._state_with(events)
+
+        def frame():
+            return render_dashboard(state, pathlib.Path("/tmp/x"), width=120, height=30,
+                                    use_colour=False)
+        top = frame()
+        self.assertIn("finding 11", top)
+        self.assertNotIn("finding 0\n", top)
+        self.assertIn("more line(s) · PgDn", top)
+        self.assertLessEqual(top.count("\n") + 1, 30)
+        state.findings_offset = 10 ** 6   # far past the end: clamped to it
+        end = frame()
+        self.assertIn("finding 0\n", end)
+        self.assertIn("more line(s) · PgUp", end)
+        self.assertNotIn("PgDn", end)
+        self.assertLessEqual(end.count("\n") + 1, 30)
+        state.findings_offset -= state.findings_page   # one PgUp from the end moves at once
+        self.assertNotEqual(frame(), end)
+
+    def test_right_arrow_shows_every_description_in_full(self):
+        long = " ".join(f"word{j}" for j in range(200))
+        state = self._state_with([_finding(payload={"desc": long + " END"})])
+
+        def frame():
+            return render_dashboard(state, pathlib.Path("/tmp/x"), width=100, height=30,
+                                    use_colour=False)
+        capped = frame()
+        self.assertNotIn("END", capped)
+        self.assertIn("recent findings · → full text", capped)
+        state.findings_expanded = True
+        full = frame()
+        self.assertIn("recent findings · ← cut text", full)
+        self.assertIn("more line(s) · PgDn", full)   # full text outgrows the pane: it scrolls
+        state.findings_offset = 10 ** 6
+        self.assertIn("END", frame())
+
+    def test_no_expand_hint_when_nothing_is_cut(self):
+        out = render_dashboard(self._state_with([_finding()]), pathlib.Path("/tmp/x"), width=120,
+                               use_colour=False)
+        self.assertNotIn("full text", out)
+
+    def test_no_collapse_hint_when_the_collapsed_view_is_already_full(self):
+        # 8 description lines: past the 3-line cap, but a tall terminal unfolds them all anyway
+        state = self._state_with([_finding(payload={"desc": " ".join(f"word{j}" for j in range(80))})])
+        state.findings_expanded = True
+        out = render_dashboard(state, pathlib.Path("/tmp/x"), width=100, height=60, use_colour=False)
+        self.assertIn("word79", out)
+        self.assertNotIn("cut text", out)
+
     def test_clip_leaves_short_lines_alone(self):
         self.assertEqual(console._clip("\x1b[1mabc\x1b[0m", 10), "\x1b[1mabc\x1b[0m")
 
@@ -784,3 +838,31 @@ class MechanicalRunVisibilityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScrollTest(unittest.TestCase):
+    """The scroll window + key decoding both full-screen consoles share."""
+
+    def test_short_content_is_untouched(self):
+        self.assertEqual(console.scroll_window(["a", "b"], 5, 3, use_colour=False), (["a", "b"], 0, 3))
+
+    def test_window_marks_what_is_above_and_below(self):
+        lines = [str(i) for i in range(10)]
+        rows, offset, page = console.scroll_window(lines, 5, 0, use_colour=False)
+        self.assertEqual((rows[:4], offset, page), (["0", "1", "2", "3"], 0, 3))
+        self.assertEqual(rows[4].strip(), "↓ 6 more line(s) · PgDn")
+        rows, offset, _ = console.scroll_window(lines, 5, 3, use_colour=False)
+        self.assertEqual([r.strip() for r in rows],
+                         ["↑ 3 more line(s) · PgUp", "3", "4", "5", "↓ 4 more line(s) · PgDn"])
+        rows, offset, _ = console.scroll_window(lines, 5, 99, use_colour=False)
+        self.assertEqual(offset, 6)
+        self.assertEqual([r.strip() for r in rows], ["↑ 6 more line(s) · PgUp", "6", "7", "8", "9"])
+        self.assertEqual(console.scroll_window(lines, 5, -4, use_colour=False)[1], 0)
+
+    def test_keys_decode(self):
+        self.assertEqual(console.decode_key("\x1b[5~"), console.PGUP)
+        self.assertEqual(console.decode_key("\x1b[6~\x1b[6~"), console.PGDN)   # two presses, one read
+        self.assertEqual(console.decode_key("\x1b[B"), "")
+        self.assertEqual(console.decode_key("\x1b[C"), console.RIGHT)
+        self.assertEqual(console.decode_key("\x1bOD"), console.LEFT)
+        self.assertEqual(console.decode_key("q"), "q")
