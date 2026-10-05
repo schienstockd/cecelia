@@ -861,6 +861,11 @@ if __name__ == "__main__":
 class ScrollTest(unittest.TestCase):
     """The scroll window + key decoding both full-screen consoles share."""
 
+    def test_scroll_step(self):
+        self.assertEqual([console.scroll_step(k, 7) for k in (console.PGUP, console.PGDN, console.UP,
+                                                             console.DOWN, console.LEFT, "q")],
+                         [-7, 7, -console.WHEEL_ROWS, console.WHEEL_ROWS, 0, 0])
+
     def test_short_content_is_untouched(self):
         self.assertEqual(console.scroll_window(["a", "b"], 5, 3, use_colour=False), (["a", "b"], 0, 3))
 
@@ -880,7 +885,9 @@ class ScrollTest(unittest.TestCase):
     def test_keys_decode(self):
         self.assertEqual(console.decode_key("\x1b[5~"), console.PGUP)
         self.assertEqual(console.decode_key("\x1b[6~\x1b[6~"), console.PGDN)   # two presses, one read
-        self.assertEqual(console.decode_key("\x1b[B"), "")
+        self.assertEqual(console.decode_key("\x1b[B"), console.DOWN)
+        self.assertEqual(console.decode_key("\x1b[A\x1b[A\x1b[A"), console.UP)   # a wheel notch: one key
+        self.assertEqual(console.decode_key("\x1b[3~"), "")
         self.assertEqual(console.decode_key("\x1b[C"), console.RIGHT)
         self.assertEqual(console.decode_key("\x1bOD"), console.LEFT)
         self.assertEqual(console.decode_key("q"), "q")

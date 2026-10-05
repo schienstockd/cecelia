@@ -99,13 +99,26 @@ def _clip(line: str, width: int) -> str:
 
 # ── Scrolling — shared with `pixi run judge-review`, whose cards outgrow the screen the same way.
 #: Named keys; every other key reads as its one character.
-PGUP, PGDN, LEFT, RIGHT, RESIZE = "pgup", "pgdn", "left", "right", "resize"
-_NAMED_KEYS = {"\x1b[5~": PGUP, "\x1b[6~": PGDN, "\x1b[D": LEFT, "\x1b[C": RIGHT,
-               "\x1bOD": LEFT, "\x1bOC": RIGHT}   # `O` form: a terminal in application-cursor mode
+PGUP, PGDN, UP, DOWN, LEFT, RIGHT, RESIZE = "pgup", "pgdn", "up", "down", "left", "right", "resize"
+_NAMED_KEYS = {"\x1b[5~": PGUP, "\x1b[6~": PGDN, "\x1b[A": UP, "\x1b[B": DOWN, "\x1b[D": LEFT,
+               "\x1b[C": RIGHT, "\x1bOA": UP, "\x1bOB": DOWN, "\x1bOD": LEFT,
+               "\x1bOC": RIGHT}   # `O` form: a terminal in application-cursor mode
+#: Rows one ↑/↓ scrolls. On the alternate screen the terminal sends the mouse wheel as ↑/↓
+#: (VTE, xterm, kitty, Konsole) — a notch arrives as one read of several arrows, read as one key.
+WHEEL_ROWS = 3
+#: The terminal's alternate screen, as a pager uses: the wheel scrolls the view, and quitting
+#: puts the shell back.
+ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN = "\033[?1049h", "\033[?1049l"
+
+
+def scroll_step(key: str, page: int) -> int:
+    """How far `key` moves a `scroll_window` offset: a page for PgUp/PgDn, `WHEEL_ROWS` for ↑/↓
+    (the wheel), 0 for any other key."""
+    return {PGUP: -page, PGDN: page, UP: -WHEEL_ROWS, DOWN: WHEEL_ROWS}.get(key, 0)
 
 
 def decode_key(got: str) -> str:
-    """One terminal read → a key: PgUp/PgDn/←/→ by name, any other escape sequence (↑) as "",
+    """One terminal read → a key: PgUp/PgDn and the arrows by name, any other escape sequence as "",
     so its trailing letter can't pass as a key; else the first character."""
     if got.startswith("\x1b"):
         return next((name for seq, name in _NAMED_KEYS.items() if got.startswith(seq)), "")
@@ -944,7 +957,9 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     thread falls back to tick-latency, which is imperceptible in practice.
 
     `key_fd` (the terminal, POSIX) is read in cbreak mode during the sleep: PgUp/PgDn scroll the
-    findings pane, → shows its descriptions in full and ← cuts them again; each repaints at once.
+    findings pane (↑/↓ and so the mouse wheel by `WHEEL_ROWS`), → shows its descriptions in full
+    and ← cuts them again; each repaints at once. Following, the dashboard runs on the alternate
+    screen, which is where the terminal turns the wheel into ↑/↓.
     """
     state = DashboardState()
     for event in seed_events:
@@ -965,12 +980,14 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
         out.write("\n")
         out.flush()
 
-    _paint()
     if not follow:
-        # Leave the last frame on screen; still restore cursor.
+        # Leave the last frame on the normal screen; still restore cursor.
+        _paint()
         out.write("\033[?25h")
         out.flush()
         return 0
+    out.write(ENTER_ALT_SCREEN)
+    _paint()
 
     # SIGWINCH handler — sets a flag, doesn't paint from the signal (a paint mid-signal
     # can interleave with the tick's paint, corrupting the frame). The tick loop notices
@@ -1024,8 +1041,8 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                 except EOFError:   # the terminal is gone; keep painting, stop reading
                     key_fd = None
                     continue
-                if key in (PGUP, PGDN):
-                    state.findings_offset += state.findings_page * (1 if key == PGDN else -1)
+                if scroll_step(key, state.findings_page):
+                    state.findings_offset += scroll_step(key, state.findings_page)
                     break
                 if key in (LEFT, RIGHT):
                     state.findings_expanded, state.findings_offset = key == RIGHT, 0
@@ -1040,9 +1057,9 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                 _signal_mod.signal(_signal_mod.SIGWINCH, _prev_winch)
             except (AttributeError, ValueError):
                 pass
-        # Restore the cursor no matter how we exit — leaving it hidden across a `pixi run`
-        # is the worst debug session I never want to repeat.
-        out.write("\033[?25h")
+        # Restore the cursor and the shell's screen no matter how we exit — leaving it hidden
+        # across a `pixi run` is the worst debug session I never want to repeat.
+        out.write("\033[?25h" + LEAVE_ALT_SCREEN)
         out.flush()
     return 0
 

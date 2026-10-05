@@ -33,7 +33,8 @@ from cecelia.effectiveness import git_context, read_events  # noqa: E402
 from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
 # one look with `pixi run recital-console`: its divider, hanging-indent wrap and the shared palette
 from cecelia.effectiveness.console import (  # noqa: E402
-    _BOLD, _DIM, LEFT, PGDN, PGUP, RESIZE, RIGHT, _col, _hr, _terminal_size, _wrap_desc, poll_key, scroll_window)
+    _BOLD, _DIM, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, LEFT, RESIZE, RIGHT, _col, _hr, _terminal_size, _wrap_desc,
+    poll_key, scroll_step, scroll_window)
 from cecelia.effectiveness.palette import (  # noqa: E402
     BLUE, BLUISH_GREEN, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
 
@@ -295,12 +296,12 @@ def _prompt(keys: dict[str, str], *, use_colour: bool) -> str:
 
 
 #: Full screen: the terminal's alternate screen, as a pager does, so quitting puts the shell back.
-_ENTER, _LEAVE, _CLEAR = "\033[?1049h", "\033[?1049l", "\033[2J\033[H"
+_ENTER, _LEAVE, _CLEAR = ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, "\033[2J\033[H"
 
 
 def read_key(prompt: str) -> str:
     """One keypress from the terminal, no Enter: the answer keys act at once (`z` undoes a slip).
-    PgUp/PgDn come back as `PGUP`/`PGDN` and a terminal resize as `RESIZE`, so the card repaints;
+    PgUp/PgDn and ↑/↓ (the wheel) come back by name and a terminal resize as `RESIZE`, so the card repaints;
     any other escape sequence (an arrow) reads as nothing."""
     import signal
     import termios
@@ -327,7 +328,7 @@ def read_key(prompt: str) -> str:
         return RESIZE
     if key in (LEFT, RIGHT):   # the recital console's expand keys; nothing here
         key = ""
-    if key not in (PGUP, PGDN):
+    if not scroll_step(key, 1):
         sys.stdout.write(key.strip() + "\n")
     return key
 
@@ -344,7 +345,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     cards scroll, which is what a pipe or a test reads. `launch` starts a fix session (`default_launch`)
     in `cwd`, by default the `workspace()` the owner starts sessions in. `press` reads the answer key
     (`read_key` on a terminal, no Enter); `read` reads a line: the typed answer, and the key when
-    `press` is None. Full screen, PgUp/PgDn scroll a card taller than the terminal, and every paint
+    `press` is None. Full screen, PgUp/PgDn and ↑/↓ (the wheel) scroll a card taller than the terminal, and every paint
     re-measures it, so a resize (`RESIZE` from `press`) re-wraps the card.
     """
     press = press or read
@@ -406,8 +407,8 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
                     pressed = press(_prompt(keys, use_colour=use_colour))
                 except EOFError:
                     pressed = "q"
-                if pressed in (PGUP, PGDN):
-                    offset += page * (1 if pressed == PGDN else -1)
+                if scroll_step(pressed, page):
+                    offset += scroll_step(pressed, page)
                 elif pressed != RESIZE:
                     break
             status = ""
