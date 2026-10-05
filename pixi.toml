@@ -344,6 +344,9 @@ agent-eval-ceiling = "julia --project=app scripts/agent_eval/ceiling.jl"
 agent-eval-score   = "python scripts/agent_eval/score.py"
 # Spawns ONE sandboxed `claude -p` (unless --dry-run) — cost capped by --budget-usd (default $10).
 agent-eval-run     = "python scripts/agent_eval/run_overnight.py"
+# An agent follows one in-app guide against the RUNNING app (docs/todo/GUIDE_RUNS_PLAN.md):
+# `guide-run <guide> [--runs N] [--at HH:MM] [--knowledge]`. Spends real money, ≤ $5 per run.
+guide-run          = "python scripts/agent_eval/guide_run.py"
 
 # The weekly judge (docs/ai-assist/WEEKLY_JUDGE.md): pin origin/main, sweep the reviewer findings
 # nobody fixed, verify the open ones with sandboxed read-only agents, tally which CLAUDE.md rules
