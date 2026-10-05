@@ -58,37 +58,6 @@ class TokensTest(unittest.TestCase):
         with self.assertRaisesRegex(self.j.JudgeError, r"exit 1\): Overloaded$"):
             self._call(1, {"is_error": True, "api_error_status": 529, "result": "Overloaded"})
 
-    def _at(self, message, now):
-        return self.j.reset_at(message, now)
-
-    def test_the_reset_is_the_next_time_that_clock_reads_it_in_its_zone(self):
-        dt = self.j._dt
-        syd = self.j.zoneinfo.ZoneInfo("Australia/Sydney")
-        # 00:03 in Sydney, limit lifts 01:40 the same night
-        now = dt.datetime(2026, 10, 6, 0, 3, tzinfo=syd)
-        at = self._at("You've hit your session limit · resets 1:40am (Australia/Sydney)", now)
-        self.assertEqual(at, dt.datetime(2026, 10, 6, 1, 40, tzinfo=syd))
-        # already past today: tomorrow
-        at = self._at("resets 1:40am (Australia/Sydney)", dt.datetime(2026, 10, 6, 9, 0, tzinfo=syd))
-        self.assertEqual(at, dt.datetime(2026, 10, 7, 1, 40, tzinfo=syd))
-        # a `now` in another zone (UTC) still reads the clock in Sydney: 13:03Z is 00:03 there
-        at = self._at("resets 1:40am (Australia/Sydney)", dt.datetime(2026, 10, 5, 13, 3, tzinfo=dt.timezone.utc))
-        self.assertEqual(at.astimezone(dt.timezone.utc), dt.datetime(2026, 10, 5, 14, 40, tzinfo=dt.timezone.utc))
-
-    def test_pm_noon_and_midnight(self):
-        dt = self.j._dt
-        utc = self.j.zoneinfo.ZoneInfo("UTC")
-        now = dt.datetime(2026, 10, 6, 0, 30, tzinfo=utc)
-        self.assertEqual(self._at("resets 11pm (UTC)", now).hour, 23)
-        self.assertEqual(self._at("resets 12pm (UTC)", now).hour, 12)
-        self.assertEqual(self._at("resets 12am (UTC)", now), dt.datetime(2026, 10, 7, 0, 0, tzinfo=utc))
-
-    def test_an_unreadable_reset_is_an_hour_from_now(self):
-        dt = self.j._dt
-        now = dt.datetime(2026, 10, 6, 0, 0, tzinfo=dt.timezone.utc)
-        for msg in ("You've hit your session limit", "resets 1:40am (Not/AZone)", "resets 13:00pm (UTC)", ""):
-            self.assertEqual(self._at(msg, now), now + dt.timedelta(hours=1), msg)
-
     def test_no_usage_is_zeros(self):
         self.assertEqual(self.j.tokens({}), {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0})
 

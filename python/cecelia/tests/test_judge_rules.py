@@ -7,11 +7,14 @@ Run with `pixi run test-py`.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
 _RULES_PATH = _REPO / "scripts" / "judge" / "rules.py"
@@ -214,6 +217,24 @@ class BinFindingTest(unittest.TestCase):
         _sh(self.repo, "switch", "-qc", "other", self.base)
         (self.repo / "z.jl").write_text("z\n", encoding="utf-8"); _sh(self.repo, "add", "-A"); _sh(self.repo, "commit", "-qm", "other")
         self.assertEqual(self._bin("a.jl", 5), "agent_made")
+
+
+
+class MainLimitTest(unittest.TestCase):
+    """`pixi run judge-rules` on the usage limit: one line with the reset time, exit 75 — no traceback."""
+
+    def test_a_usage_limit_is_one_line_and_exit_75(self):
+        r = _load_rules()
+
+        def limited(*a, **k):
+            raise r._judge.RateLimited("You've hit your session limit · resets 1:40am (Australia/Sydney)")
+        err = io.StringIO()
+        with mock.patch.object(r, "propose", limited), mock.patch.object(r, "read_events", return_value=[]), \
+                contextlib.redirect_stderr(err):
+            code = r.main(["--date", "2026-10-06"])
+        self.assertEqual(code, 75)
+        self.assertRegex(err.getvalue(), r"^judge-rules: usage limit — lifts \S+: ")
+        self.assertEqual(err.getvalue().count("\n"), 1)
 
 
 if __name__ == "__main__":

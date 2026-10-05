@@ -14,6 +14,8 @@ import subprocess
 import tempfile
 import uuid
 
+from cecelia.effectiveness.claude_cli import rate_limit
+
 # Probed against Claude Code: the sandbox wraps Bash only (bubblewrap on Linux; needs an AppArmor profile
 # for `bwrap` on Ubuntu 24.04); `permissions.deny` covers the file tools, and still holds under
 # skip-permissions. CLAUDE.md still loads.
@@ -69,11 +71,14 @@ class StreamSignals:
     turns: int = 0
     final_message: str = ""
     parse_errors: int = 0
+    #: The CLI's message when the run ended on the account's usage limit (`claude_cli.rate_limit`):
+    #: the run was cut short by quota, so what it left is not the agent's result.
+    rate_limited: str | None = None
 
 
 def parse_stream_json(stdout: str) -> StreamSignals:
-    """Every `tool_use` block in order, plus the terminal `result` event's cost, turns and text.
-    A malformed line is counted in `parse_errors` and skipped."""
+    """Every `tool_use` block in order, plus the terminal `result` event's cost, turns, text and
+    whether it was a usage-limit refusal. A malformed line is counted in `parse_errors` and skipped."""
     sig = StreamSignals()
     for line in stdout.splitlines():
         line = line.strip()
@@ -96,4 +101,5 @@ def parse_stream_json(stdout: str) -> StreamSignals:
             sig.turns = int(ev.get("num_turns") or 0)
             if isinstance(ev.get("result"), str):
                 sig.final_message = ev["result"]
+            sig.rate_limited = rate_limit(ev)
     return sig

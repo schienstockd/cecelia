@@ -7,12 +7,15 @@ Run with `pixi run test-py`.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import re
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
 _BUGS_PATH = _REPO / "scripts" / "judge" / "bugs.py"
@@ -584,6 +587,26 @@ class OwnerAnswerTest(unittest.TestCase):
         self.assertEqual(review.describe({**record, "bugs": [{
             "id": "B1", "key": "fanout-1", "status": "open", "file": "a.py", "line": 2, "desc": "d", "why": "w"}]},
             {"kind": "bug", "ref": "B1"}, use_colour=False)[0], "  open  a.py:2  ? · fanout-1")
+
+
+
+class MainLimitTest(unittest.TestCase):
+    """`pixi run judge-bugs` on the usage limit: one line with the reset time, exit 75 — no traceback."""
+
+    def test_a_usage_limit_is_one_line_and_exit_75(self):
+        b = _load_bugs()
+
+        def limited(*a, **k):
+            raise b._judge.RateLimited("You've hit your session limit · resets 1:40am (Australia/Sydney)")
+        review = mock.Mock(applied_pass_records=lambda before: [])
+        err = io.StringIO()
+        with mock.patch.object(b, "sweep", limited), mock.patch.object(b, "read_events", return_value=[]), \
+                mock.patch.object(b, "git_output", return_value="abc"), \
+                mock.patch.object(b, "_load_sibling", return_value=review), contextlib.redirect_stderr(err):
+            code = b.main(["--date", "2026-10-06"])
+        self.assertEqual(code, 75)
+        self.assertRegex(err.getvalue(), r"^judge-bugs: usage limit — lifts \S+: You've hit your session limit")
+        self.assertNotIn("Traceback", err.getvalue())
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@ import argparse
 import json
 import sys
 
+from cecelia.effectiveness.claude_cli import rate_limit
+
 
 def _result_text(content) -> str:
     return content if isinstance(content, str) else " ".join(
@@ -18,7 +20,8 @@ def _result_text(content) -> str:
 def events(path: str) -> list[dict]:
     """The trace in order, one dict per item: `init` {model, sessionId, tools, mcp}, `text` {text},
     `call` {id, name, input}, `result` {id, text, isError, images: [base64 PNG]}, `final` {subtype,
-    cost, turns, text}. Tool names lose their `mcp__<server>__` prefix."""
+    cost, turns, text, rateLimited (the CLI's message when the run ended on the usage limit, else
+    None)}. Tool names lose their `mcp__<server>__` prefix."""
     with open(path, encoding="utf-8", errors="replace") as f:
         raws = f.readlines()
     out = []
@@ -47,7 +50,8 @@ def events(path: str) -> list[dict]:
                             "isError": bool(b.get("is_error")), "images": images})
         if ev.get("type") == "result":
             out.append({"kind": "final", "subtype": ev.get("subtype"), "cost": ev.get("total_cost_usd"),
-                        "turns": ev.get("num_turns"), "text": ev.get("result") or ""})
+                        "turns": ev.get("num_turns"), "text": ev.get("result") or "",
+                        "rateLimited": rate_limit(ev)})
     return out
 
 
@@ -63,7 +67,8 @@ def lines(path: str, width: int) -> list[str]:
         elif e["kind"] == "result":
             out.append(f"  {'ERR ' if e['isError'] else ''}→ {e['text'][:width]}")
         elif e["kind"] == "final":
-            out.append(f"RESULT {e['subtype']} cost=${e['cost']} turns={e['turns']}\n{e['text']}")
+            limited = " RATE-LIMITED" if e["rateLimited"] else ""
+            out.append(f"RESULT {e['subtype']}{limited} cost=${e['cost']} turns={e['turns']}\n{e['text']}")
     return out
 
 

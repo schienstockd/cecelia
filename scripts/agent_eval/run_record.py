@@ -20,11 +20,17 @@ board plots for it, added to the copy and rendered headless by the app's own fro
 
 `--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing. `--ask-why` resumes the
 finished session once for the why (costs an agent turn; off for a back-fill).
+
+A run the account's usage limit stopped (the trace's `result` event is a 429 / limit refusal) is said
+in the title, at the top of the entry and in the `agentRun` marker (`rateLimited`): its decisions are
+where the limit cut it off, not a finished run, and the CLI's refusal is not shown as the agent's last
+message. A why turn the limit refuses (or that fails) is said in the entry, not left blank.
 """
 from __future__ import annotations
 
 import argparse
 import base64
+import datetime as _dt
 import json
 import os
 import pathlib
@@ -40,6 +46,7 @@ sys.path.insert(0, str(HERE))
 import app_project  # noqa: E402
 import stage_boards  # noqa: E402
 import trace_view  # noqa: E402
+from cecelia.effectiveness import claude_cli  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
 STEPS = ("cleanup", "segment", "measure", "gate", "track", "behaviour", "report")
@@ -217,7 +224,8 @@ def decisions(trace_path: str, images: list[dict]) -> dict:
                              "triedFirst": tried if first else [], "pictures": pics if first else []})
         looked, said, tried, pics = [], [], [], []
     final = next((e for e in reversed(evs) if e["kind"] == "final"), None)
-    if final and final["text"].strip():
+    limited = final and final.get("rateLimited")
+    if final and final["text"].strip() and not limited:     # a limit refusal is the CLI's, not the agent's
         sections.append({"key": ("report", "final", (), ""), "step": "report", "fn": "final message",
                          "images": [], "units": [{"did": "the run's last message", "outcome": {}}],
                          "lookedAt": looked, "said": [final["text"].strip()], "triedFirst": tried,
@@ -227,7 +235,8 @@ def decisions(trace_path: str, images: list[dict]) -> dict:
         del s["key"]
     init = next((e for e in evs if e["kind"] == "init"), {})
     return {"sessionId": init.get("sessionId"), "model": init.get("model"), "sections": sections,
-            "toolErrors": errors, "cost": final and final["cost"], "turns": final and final["turns"]}
+            "toolErrors": errors, "cost": final and final["cost"], "turns": final and final["turns"],
+            "rateLimited": limited or None}
 
 
 # ── the entry ────────────────────────────────────────────────────────────────────────────────────
@@ -258,13 +267,20 @@ def _quote(text: str) -> str:
     return "\n".join("> " + ln for ln in text.splitlines())
 
 
-def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict, notes: dict | None = None) -> str:
+def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict, notes: dict | None = None,
+           why_failed: str | None = None) -> str:
     """entry.md. `caps` = {sectionId: [captureId or local file name]}; `notes` = {sectionId: [what the
-    stage boards could not show]}, `""` for the whole record."""
+    stage boards could not show]}, `""` for the whole record; `why_failed` = why the after-run
+    question has no answers."""
     notes = notes or {}
     images = app_project.copy_images(run)
     t = rec.get("trace") or {}
-    lines = [f"**Brief:** {rec.get('brief', '')}",
+    lines = []
+    if dec.get("rateLimited"):
+        lines += [f"**Stopped by the usage limit:** {_short(dec['rateLimited'], 300)} — the decisions below "
+                  "are where the limit cut the run off, not a finished run. Leave it out of any comparison.",
+                  ""]
+    lines += [f"**Brief:** {rec.get('brief', '')}",
              f"**Copy:** {run.get('projectName') or ''} `{run['projectUid']}` — disposable; this entry is the record.",
              "**Images:** " + "; ".join(f"`{im['sourceImageUid']}` = copy `{im['imageUid']}` ({im['imageName']})"
                                         for im in images),
@@ -278,6 +294,8 @@ def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict, notes:
              "Each section is one decision the harness read from the run's trace. *Said before acting* is "
              "the agent's own words at the time; *explained after the run* was asked once the run was over "
              "and its record frozen.", ""]
+    if why_failed:
+        lines += [f"**Explained after the run:** {why_failed}", ""]
     lines += [f"**Stage boards:** {n}" for n in notes.get("", [])]
     lines += ["## Decisions", ""] if not notes.get("") else ["", "## Decisions", ""]
     for s in dec["sections"]:
@@ -393,16 +411,25 @@ WHY_PROMPT = ("Your run is over and its record is frozen: nothing you say now ch
               "e.g. {\"d01\": \"...\"}.\n\n")
 
 
+class WhyFailed(RuntimeError):
+    """The why turn failed for a reason other than the usage limit; the message is the CLI's."""
+
+
 def ask_why(root: pathlib.Path, session_id: str, dec: dict, claude: str = "claude",
             budget_usd: float = 2.0) -> dict:
-    """Resume the finished session once (no tools) and ask why for every decision."""
+    """Resume the finished session once (no tools) and ask why for every decision. Raises
+    `claude_cli.RateLimited` on the usage limit and `WhyFailed` on any other CLI failure — never an
+    empty answer that reads as "the agent had nothing to say"."""
     prompt = WHY_PROMPT + "\n".join(heading(s).removeprefix("### ") for s in dec["sections"])
     cmd = [claude, "-p", "--resume", session_id, "--tools", "", "--strict-mcp-config",
            "--mcp-config", json.dumps({"mcpServers": {}}), "--max-budget-usd", str(budget_usd),
            "--output-format", "json"]
     r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=str(root / "cwd"),
-                       timeout=900)
-    reply = (_json(r.stdout) or {}).get("result") or ""
+                       timeout=900, encoding="utf-8")
+    out = claude_cli.read_result(r)
+    if r.returncode != 0 or out.get("is_error"):
+        raise WhyFailed(f"exit {r.returncode}: {claude_cli.failure_text(r, out)}")
+    reply = out.get("result") or ""
     start, end = reply.find("{"), reply.rfind("}")
     got = _json(reply[start:end + 1]) if start >= 0 else None
     return {k: str(v) for k, v in (got or {}).items() if isinstance(k, str)}
@@ -431,6 +458,15 @@ def results(api: str | None, run: dict, dec: dict, stamp: str) -> tuple[dict, di
         return {}, {"": [f"not rendered — {type(e).__name__}: {e}"]}
 
 
+def _run_end(rec: dict) -> _dt.datetime | None:
+    """When the run stopped (start + wall-clock), so a reset time is read against the run's clock,
+    not a back-fill's. None when the record does not say."""
+    try:
+        return _dt.datetime.fromisoformat(rec["startedAtUtc"]) + _dt.timedelta(seconds=int(rec.get("wallS") or 0))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None, dry_run: pathlib.Path | None,
           why: bool = False, claude: str = "claude", boards: bool = True) -> dict:
     run = json.loads((root / "run.json").read_text(encoding="utf-8"))
@@ -441,7 +477,16 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
     images = app_project.copy_images(run)
     source_uid = run["source"]["projectUid"]
     dec = decisions(str(root / "trace.jsonl"), images)
-    answers = ask_why(root, dec["sessionId"], dec, claude) if why and dec.get("sessionId") else None
+    answers, why_failed = None, None
+    if why and dec.get("rateLimited"):
+        why_failed = "not asked — the run itself was stopped by the usage limit"
+    elif why and dec.get("sessionId"):
+        try:
+            answers = ask_why(root, dec["sessionId"], dec, claude)
+        except claude_cli.RateLimited as e:
+            why_failed = f"not answered — usage limit: {_short(str(e), 300)}"
+        except (WhyFailed, OSError, subprocess.TimeoutExpired) as e:
+            why_failed = f"not answered — {e}"
     pics = pictures(api, run, dec)
     stage_pics, notes = results(api, run, dec, root.name) if boards else ({}, {})
     for sid, got in stage_pics.items():
@@ -449,7 +494,8 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
     set_name = source_set_name(projects_dir, source_uid, [im["sourceImageUid"] for im in images]) \
         if projects_dir else ""
     title = f"Agent run {rec.get('startedAt') or root.name} — {set_name or source_uid}" + \
-        (" · with lab knowledge" if run.get("knowledge") else "")
+        (" · with lab knowledge" if run.get("knowledge") else "") + \
+        (" · stopped by usage limit" if dec.get("rateLimited") else "")
     caps: dict[str, list[str]] = {}
     attach = []
     if dry_run:
@@ -466,9 +512,10 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
                 cid = upload_capture(api, source_uid, png, caption, addr)
                 attach.append(cid)
                 caps.setdefault(sid, []).append(f"`{cid}` — {caption}")
-    content = render(run, rec, dec, answers, caps, notes)
+    content = render(run, rec, dec, answers, caps, notes, why_failed)
     out = {"title": title, "sections": len(dec["sections"]), "toolErrors": len(dec["toolErrors"]),
-           "pictures": sum(len(v) for v in pics.values()), "why": bool(answers)}
+           "pictures": sum(len(v) for v in pics.values()), "why": bool(answers), "whyFailed": why_failed,
+           "rateLimited": bool(dec.get("rateLimited"))}
     write_json_atomic(root / "decisions.json", json.loads(json.dumps({**dec, "why": answers}, default=str)),
                       indent=2)
     if dry_run:
@@ -481,7 +528,9 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
                  "images": [{"sourceImageUid": im["sourceImageUid"], "imageUid": im["imageUid"]}
                             for im in images],
                  "sectionIds": [s["id"] for s in dec["sections"]],
-                 "knowledge": [k["entryId"] for k in run.get("knowledge") or []]}
+                 "knowledge": [k["entryId"] for k in run.get("knowledge") or []],
+                 **({"rateLimited": claude_cli.rate_limit_note(dec["rateLimited"], _run_end(rec))}
+                    if dec.get("rateLimited") else {})}
     r = _post(api, "/api/blackboard/create", {"projectUid": source_uid, "title": title, "content": content,
                                               "attachments": attach, "agentRun": agent_run})
     return {**out, "entryId": r.get("entryId"), "projectUid": source_uid}

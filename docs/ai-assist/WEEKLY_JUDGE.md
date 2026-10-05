@@ -105,7 +105,8 @@ The PR's headline is **Bugs: N open** (K verified, X new): K counts the open bug
 a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug.
 
 A crash at any stage still writes a failure record and its PR. So does a **usage limit** (HTTP 429,
-`judge.RateLimited`, from the sweep, verify or rules): every call after it would fail too, and on
+`RateLimited`, from the sweep, verify or rules — read by `claude_cli.rate_limit`, the one reader the
+autonomous runs share; `judge.py` re-exports it): every call after it would fail too, and on
 2026-10-05 a pass that hit one recorded a normal-looking week with nothing judged, none of the
 fixes found, and $10 of "spend" for five agents that never started.
 
@@ -166,6 +167,9 @@ No fix runs unattended: an unattended fix agent is deferred, see
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
+
+On the usage limit, `judge-bugs` / `judge-verify` / `judge-rules` print one line with when it lifts
+(`judge-bugs: usage limit — lifts 2026-10-07T01:40+11:00: …`) and exit 75, not a traceback.
 | `pixi run judge-review` | Decide, then work the open bugs (`[f] fix now` opens a briefed session) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 
