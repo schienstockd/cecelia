@@ -251,11 +251,23 @@ function push_event!(kind::AbstractString, detail::AbstractString; colour=nothin
     STREAM_MODE && println(line)
 end
 
+# A raw log line as a terminal would SHOW it. tqdm redraws with `\r`, so one line holds every redraw;
+# printed as-is, the cursor jumps back to column 0 and the redraw overwrites this console's own
+# timestamp prefix (and the row's width is miscounted). Keep the last non-empty redraw, drop escape
+# sequences, and flatten newlines/tabs to spaces (a multi-line error would otherwise print extra rows
+# past the height budget) — the panes wrap and colour the text themselves.
+function clean_line(s::AbstractString)
+    segs = filter(!isempty, split(s, '\r'))
+    t = isempty(segs) ? "" : String(last(segs))
+    t = replace(t, r"\e\[[0-9;?]*[ -/]*[@-~]" => "")
+    filter(!iscntrl, replace(t, r"[\n\t]" => " "))
+end
+
 # Task log lines go in their OWN buffer, rendered in a separate confined pane (they're high-volume and
 # would otherwise drown the activity stream). Prefixed with the short task id for context.
 # Kept as fields, not a rendered string, so the pane can re-wrap them when the terminal is resized.
 function push_log!(id::AbstractString, line::AbstractString)
-    entry = (; ts = now_hms(), id = short(id), text = String(line))
+    entry = (; ts = now_hms(), id = short(id), text = clean_line(line))
     push!(LOGS, entry)
     length(LOGS) > MAX_LOGS && deleteat!(LOGS, 1:(length(LOGS) - MAX_LOGS))
     STREAM_MODE && println(log_prefix(entry), entry.text)
@@ -639,9 +651,9 @@ function handle_ws(raw::AbstractString)
             end
 
         elseif startswith(type, "chain:run:") || type == "chain:log"
-            detail = type == "chain:log" ? String(get(msg, :line, "")) :
+            detail = type == "chain:log" ? clean_line(String(get(msg, :line, ""))) :
                      string(col(BOLD, String(get(msg, :chain, ""))),
-                            haskey(msg, :error) ? col(RED, "  $(String(msg.error))") : "")
+                            haskey(msg, :error) ? col(RED, "  $(clean_line(String(msg.error)))") : "")
             push_event!(type, detail;
                         colour = endswith(type, "failed") ? RED :
                                  endswith(type, "done")   ? GREEN : BLUE)
@@ -672,21 +684,25 @@ function render()
 
     # ── ONE height budget so nothing ever clips: fixed chrome counted exactly (title, counts, pools,
     # blank, table header, dividers, footer); the rest splits between the task table (priority), a small
-    # activity peek and the logs pane, which takes whatever the other two leave — so the window is
-    # filled, not padded. EVERY section obeys this — no per-pane minimum can push content past the
-    # window (the earlier bug: min-6 logs + min-3 activity overran a short terminal and shoved the
-    # header off the top). Exact counting relies on every row fitting `cols` (`trunc_vis`, `log_pane`).
+    # activity peek and the logs pane, which takes whatever the other two leave — then activity takes
+    # whatever the logs didn't fill (no logs yet, or fewer than the pane holds), and only once both
+    # buffers run dry is the gap padded, ABOVE the footer, so the footer always sits on the last row.
+    # EVERY section obeys this — no per-pane minimum can push content past the window (the earlier
+    # bug: min-6 logs + min-3 activity overran a short terminal and shoved the header off the top).
+    # Exact counting relies on every row fitting `cols` (`trunc_vis`, `log_pane`).
     haveLogs  = !isempty(LOGS)
     havePools = !isempty(POOLS)
     chrome    = 5 + havePools + haveLogs + !isempty(tasks)
     content   = max(4, rows - chrome)
-    evtRows   = min(length(EVENTS), clamp(content ÷ 4, 1, 4))
+    evtPeek   = min(length(EVENTS), clamp(content ÷ 4, 1, 4))
     logMin    = haveLogs ? clamp(content ÷ 3, 1, 6) : 0
-    tableRoom = max(2, content - logMin - evtRows)
+    tableRoom = max(2, content - logMin - evtPeek)
     truncated = length(tasks) > tableRoom
     nShown    = truncated ? max(1, tableRoom - 1) : length(tasks)   # reserve a line for "…and N more"
     tableRows = isempty(tasks) ? 1 : nShown + truncated
-    logCap    = haveLogs ? max(1, content - evtRows - tableRows) : 0
+    logLines  = haveLogs ? log_pane(LOGS, cols, max(1, content - evtPeek - tableRows)) : String[]
+    evtRows   = clamp(content - tableRows - length(logLines), 0, length(EVENTS))
+    padRows   = max(0, content - tableRows - length(logLines) - evtRows)
 
     # header — live counts + cumulative finished tallies (so you see "how many done" without 50 rows)
     print(io, "\e[H\e[2J")
@@ -749,12 +765,13 @@ function render()
     for line in EVENTS[(end - evtRows + 1):end]
         print(io, trunc_vis(line, cols), "\n")
     end
-    if logCap > 0
+    if haveLogs
         print(io, col(DIM, "── logs " * "─"^max(0, w - 8)), "\n")
-        for line in log_pane(LOGS, cols, logCap)
+        for line in logLines
             print(io, line, "\n")
         end
     end
+    print(io, "\n"^padRows)
     print(io, col(DIM, "(reporting only — Ctrl-C to quit)"))
 
     print(String(take!(io)))
