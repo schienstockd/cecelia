@@ -206,15 +206,17 @@ function exportBoard(kind: string) {
           @click.stop :ref="el => (el as HTMLInputElement | null)?.focus()"
         />
         <template v-else>
+          <!-- buttons stop dblclick too: two quick clicks (duplicate, arm→confirm close) would
+               otherwise also reach the tab's dblclick and start a rename -->
           <!-- the tab's tip lives on its NAME, not the tab: the tab also holds the duplicate/close
                buttons, and a tip there fired on top of each of theirs -->
           <span class="tab-name" v-tooltip.bottom="'Double-click to rename · drag to reorder'">{{ t.name }}</span>
-          <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro tab-dup" type="button" @click.stop="duplicateBoard(t.id)"
+          <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro tab-dup" type="button" @click.stop="duplicateBoard(t.id)" @dblclick.stop
                   v-tooltip.bottom="'Duplicate board (plots + layout)'" aria-label="Duplicate board"><i class="pi pi-copy" /></button>
           <ConfirmButton v-if="tabs.length > 1" :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"
                          v-slot="{ armed, arm, confirm }">
             <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ armed }" type="button"
-                    @click.stop="armed ? confirm() : arm()"
+                    @click.stop="armed ? confirm() : arm()" @dblclick.stop
                     v-tooltip.bottom="armed ? `Click again — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}` : 'Close board'"
                     :aria-label="armed ? 'Confirm close board' : 'Close board'"><i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-times'" /></button>
           </ConfirmButton>

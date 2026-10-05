@@ -117,6 +117,11 @@ onUnmounted(() => {
 // `useResizeHandles` — see `docs/todo/PANEL_RESIZE_PRIMITIVE_PLAN.md`. ──
 let dragging = false
 let dragOffX = 0, dragOffY = 0
+// two quick clicks on a header button (incl. slotted header-actions) also fire the header's dblclick
+function onHeaderDblClick(e: MouseEvent) {
+  if ((e.target as HTMLElement).closest('.fp-btn')) return
+  toggleMaximise()
+}
 function onHeaderDown(e: PointerEvent) {
   if ((e.target as HTMLElement).closest('.fp-btn')) return   // header buttons aren't drag handles
   if (st.maximised) return                                   // a maximised window doesn't move
@@ -163,7 +168,7 @@ function onResizeDown(e: PointerEvent, edges: Edges) {
                  ...(accent ? { borderColor: accent } : {}) }">
     <!-- double-click to maximise/restore, the usual window gesture; the buttons stay the discoverable
          route, since a double-click affordance is invisible -->
-    <div class="fp-header" @pointerdown="onHeaderDown" @dblclick="toggleMaximise">
+    <div class="fp-header" @pointerdown="onHeaderDown" @dblclick="onHeaderDblClick">
       <i v-if="icon" :class="['pi', icon, 'fp-icon']" :style="accent ? { color: accent } : undefined" />
       <span class="fp-title">{{ title }}</span>
       <!-- Panel-specific header actions (e.g. an overview `?`) sit before the window glyphs so the
