@@ -60,7 +60,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) | Notebooks Playground (`/notebooks`): Pluto engine, `CeceliaNb`, registry + snapshots, `/api/notebooks/*` |
 | [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers**. **40 KB — slice it** |
 | [`docs/INSTALL.md`](docs/INSTALL.md) | Installation, Unix + Windows — the *how*. Needs review before production deployment |
-| [`docs/SHIPPING.md`](docs/SHIPPING.md) | Distribution architecture — the *why*: Pixi/constructor + browser stack, update model, Python env + version pins |
+| [`docs/SHIPPING.md`](docs/SHIPPING.md) | Distribution architecture — the *why*: Pixi/constructor + browser stack, update model, Python env + version pins. **40 KB — slice it** |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Release *policy*: when to tag, rc-vs-release-vs-milestone, pre-1.0 versioning, cutting checklist |
 | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) | How this software was built and how we know it works — field context, per-subsystem validation record, attribution + publication position. Longer version of the README's *How this software was built* section |
 | [`docs/FUTURE.md`](docs/FUTURE.md) | **Deliberately deferred**: known-better alternatives, non-goals, work gated on a trigger that may never fire |
