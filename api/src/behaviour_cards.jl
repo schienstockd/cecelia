@@ -147,11 +147,11 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
 
     # Specs: the SAVED VIEWER STATE for this image version (channels, LUT, contrast) — same JSON
     # the movie renderer and thumbnail route read via `_props_path`. Cold-start (no viewer opened
-    # yet) falls back to sampled-contrast defaults, same as the movie rail.
+    # yet) falls back to sampled-contrast defaults, from the stack's max (`project`) as the stills are.
     props = _props_path(med_img._dir, zp)
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
     specs = try resolved_display_specs(props, nc); catch; nothing end
-    specs === nothing && (specs = try resolved_display_specs(_sampled_specs(zp, nc)); catch; nothing end)
+    specs === nothing && (specs = try resolved_display_specs(_sampled_specs(zp, nc; project = true)); catch; nothing end)
     channels = collect(0:(nc - 1))
 
     # Snap each requested frame to the nearest tracked timepoint so the dot (medoid at t) always
@@ -204,13 +204,17 @@ end
     cards_specs_mtime(img) -> Float64
 
 mtime of the image's saved viewer display file (channels/LUT/contrast) — the file
-`render_medoid_filmstrip` reads specs from. 0.0 when never saved (sampled defaults).
+`render_medoid_filmstrip` reads specs from. When never saved the cards use the SAMPLED defaults, and
+the stamp is `-SAMPLED_SPECS_RULE` instead: a change to how those defaults are computed must re-render
+the cards, and with no file there is no mtime to say so (a sidecar from before the zero-fill fix in
+`percentile_spec` carried 0.0 and would otherwise keep its washed-out crops forever).
 """
+const SAMPLED_SPECS_RULE = 2      # bump when `percentile_spec` / `_sampled_specs` change their answer
 function cards_specs_mtime(img::CciaImage)::Float64
     zp = img_filepath(img)
     zp === nothing && return 0.0
     p = _props_path(img._dir, zp)
-    isfile(p) ? mtime(p) : 0.0
+    isfile(p) ? mtime(p) : -Float64(SAMPLED_SPECS_RULE)
 end
 
 """

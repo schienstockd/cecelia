@@ -18,7 +18,7 @@ import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, chartsForMeasure, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
+import { backendChart, defaultNormalize, chartsForMeasure, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
 import { centroidLabel } from '../../utils/gatingAxes'
@@ -209,7 +209,7 @@ function applyExplode() {
   showExplode.value = false
 }
 const bins = computed<number>({ get: () => props.ui.bins ?? Number(param('bins', 30)), set: v => (props.ui.bins = v) })
-const normalize = computed<boolean>({ get: () => props.ui.normalize ?? Boolean(param('normalize', true)), set: v => (props.ui.normalize = v) })
+const normalize = computed<boolean>({ get: () => props.ui.normalize ?? defaultNormalize(chartType.value, param('normalize', undefined)), set: v => (props.ui.normalize = v) })
 const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorMetric ?? 'ci95', set: v => (props.ui.errorMetric = v) })
 // statistical unit: plot each cell/track ('individual') or each IMAGE's mean ('image' — one dot per
 // image, the pseudoreplication-safe view). Only meaningful for the "each dot" charts with a measure.

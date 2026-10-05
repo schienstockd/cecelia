@@ -279,8 +279,13 @@ end
 caxes_or_fallback(caxes, nd) = length(caxes) == nd ? caxes : ["t", "c", "z", "y", "x"][(end - nd + 1):end]
 
 # Fallback per-channel spec when there's no viewer JSON: 1st/99.9th percentile contrast + default colour.
+#
+# Over the NONZERO pixels: an exact 0 is fill, not signal (the zero-padded border drift correction or a
+# registration leaves). Counted in, a padded plane puts `lo` at 0 and the camera offset renders mid-ramp.
+# A plane that is ALL zero keeps the old answer (0, 0).
 function percentile_spec(plane, cmap::String)
-    v = sort(vec(Float64.(plane)))
+    v = sort!(filter(!iszero, vec(Float64.(plane))))
+    isempty(v) && (v = zeros(Float64, max(1, length(plane))))
     n = length(v)
     lo = v[clamp(floor(Int, 0.01 * n) + 1, 1, n)]
     hi = v[clamp(ceil(Int, 0.999 * n), 1, n)]

@@ -53,7 +53,7 @@ def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
     if stage == "segment":
         pops = [f"{u['target']}/labels" for u in units if u.get("target")]
         return [("Segmentation QC", [[
-            # `count` alone normalises to 1 per image; split by frame it is the share of cells per frame
+            # a count chart's default is the raw count (`defaultNormalize`, plots/plot.ts) — cells per frame
             {"plot": "segmentation_qc", "chart": "count", "groupBy": "centroid_t", "pops": pops,
              "title": "Cells per frame"},
             {"plot": "segmentation_qc", "chart": "boxplot", "measure": "area", "pops": pops, "title": "Cell area"}]])]

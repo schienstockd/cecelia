@@ -12,7 +12,7 @@
 import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
 import { buildPlotOptions, type BuildOpts, facetMode } from '../../plots/plot'
-import { svgToImageURL, svgOf } from '../../plots/export'
+import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../../plots/export'
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
 import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
@@ -320,23 +320,34 @@ const hostBg = computed(() => (props.opts?.darkTheme ? '#1f2226' : 'white'))
 // expose image export to the host panel (shared helper — see plots/export.ts). SVG = native
 // serialisation (crisp); PNG = rasterise onto a 2× canvas over white.
 // `light` = build a one-off LIGHT-theme node (dark ink on white) for PDF export, without disturbing the
-// on-screen (dark-theme) chart — dark theme is only for webpage display. Legend/title overlays are HTML
-// (not in the SVG), so — as with the existing per-plot PNG export — they're omitted from the image.
+// on-screen (dark-theme) chart — dark theme is only for webpage display. The legend + title are HTML
+// overlays (not in the SVG), so both paths draw them in from the on-screen layout
+// (`collectOverlayItems` → `svgWithOverlays`) — without that a legend-dependent chart exported with no way
+// to tell its series apart, and a heatmap with no colour bar.
 async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | null> {
   // renders are coalesced to a frame, so `node` can be one frame behind the current props — an export
-  // must never serialise the PREVIOUS chart. The light path rebuilds from props anyway.
-  if (!light) { await frame.flush(); return svgToImageURL(svgOf(node as Element | null), type) }
+  // must never serialise the PREVIOUS chart (nor the previous chart's legend).
+  await frame.flush()
   if (!host.value) return null
+  const overlays = () => collectOverlayItems(host.value!, [legendNode, titleNode], light ? plotTheme(false).ink : null)
+  if (!light) {
+    const live = svgOf(node as Element | null)
+    return svgToImageURL(live && svgWithOverlays(live, overlays()), type)
+  }
   if (!Plot) Plot = await import('@observablehq/plot')
-  const base = props.data ? buildPlotOptions(Plot, props.data, { ...props.opts, darkTheme: false }) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (!base) return null
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
-  const off = Plot.plot({ ...base, width: w, height: h }) as SVGElement
+  // the SAME build inputs as the on-screen render (width for the x-label fit, the measured legend band),
+  // so the light copy has the on-screen layout and the measured overlays land where they belong
+  const opts = { ...props.opts, darkTheme: false, plotWidth: w, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const base = props.data ? buildPlotOptions(Plot, props.data, opts) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (!base) return null
+  const off = Plot.plot({ ...base, width: w, height: h }) as SVGSVGElement
   // Light by construction (`darkTheme: false` above), so this only restates Plot's own default — but
   // stated, so the ratchet holds and an export never inherits a ground nobody chose.
   applyPlotTheme(off, false)
-  return svgToImageURL(svgOf(off as unknown as Element), type)
+  const svg = svgOf(off as unknown as Element)
+  return svgToImageURL(svg && svgWithOverlays(svg, overlays()), type)
 }
 // The rendered plot's AXIS RECT in client space — Observable Plot attaches `scale(name)` to the
 // returned node; `range` on `scale('x')/'y'` is the axis edge in SVG px. Returned as a `FrameRect`

@@ -316,6 +316,27 @@ wrong is what made legends look arbitrary. Two rules, both in one place:
    so three long labels wrapped to two rows while one row's worth of margin was reserved and the second
    row landed on the frame. How many rows a legend takes depends on the label texts and the panel width;
    neither is visible to the option builder, so the estimate is a first frame only, never the answer.
+3. **Export carries it** — the overlay is HTML, so serialising the `<svg>` alone dropped it from every
+   image export (board PDF/PNG/SVG, a floating plot's PNG/SVG): a nine-line trend with no way to tell the
+   lines apart, a heatmap with no colour bar. `PlotChart.toImageURL` measures the on-screen overlay
+   (`plots/export.ts` `collectOverlayItems` — each text run and each swatch/ramp `<svg>` at its laid-out
+   rect) and draws it into the exported SVG as native vector elements (`svgWithOverlays`), so the export
+   has the browser's own wrap and spacing and stays editable. The light export is built with the same
+   `plotWidth` + measured `legendHeight` as the screen, so the overlay lands in the band reserved for it.
+
+**When colour is the only identity.** Grouped frequency bars (x axis hidden inside each facet), the
+histogram and the stacked charts have no per-series position label, so colour + legend is the only way to
+tell series apart (`COLOUR_IS_IDENTITY`, `plots/plot.ts`). Under the `standard` palette two series of one
+population share its colour — the same population across three images drew three identical bars and a
+one-entry legend (not drawn). On those charts colliding colours fall back to distinct hues, the same rule
+the trend line already had; a box/bar chart labels each series on its axis and keeps the population
+colour.
+
+**Count vs fraction.** The Proportion toggle's default comes from the spec's `normalize` param when it
+declares one (the frequency/summary families: proportion). A spec without one — `segmentation_qc`,
+`spatial_cell_properties` — defaults a `count` chart to the **count** (`defaultNormalize`): defaulting it
+to a fraction made "cells per frame" read `fraction (loess)` at 0…0.03, and an unsplit count chart draw
+every bar at exactly 1.
 
 **Option popovers MUST use `position: fixed`.** A `SummaryPanel` (like every canvas panel) has
 `overflow: hidden` on its card so the plot area clips cleanly — which also clips any `position:

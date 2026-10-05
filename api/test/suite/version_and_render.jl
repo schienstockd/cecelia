@@ -149,6 +149,14 @@ end
     @test isapprox(g(im2[1, 1]), 0.0; atol = 0.01)     # 0.0 < lo → 0
     @test isapprox(g(im2[1, 2]), 1.0; atol = 0.01)     # 1.0 > hi → 1
 
+    # cold-start contrast ignores zero FILL: a drift-corrected plane is zero-padded where the frames were
+    # shifted, and counting that border put lo at 0 — the ~100-count camera offset then rendered mid-ramp
+    # and the card / gate-cells crops washed out (RkJd6s, 2026-10-05)
+    padded = vcat(zeros(25), 100.0 .+ (0:74) .% 20)
+    lo, hi, cm, vis = percentile_spec(padded, "red")
+    @test lo >= 100 && hi >= lo && cm == "red" && vis
+    @test percentile_spec(zeros(16), "red")[1:2] == (0.0, 0.0)      # an all-fill plane: the old answer
+
     # invisible channel contributes nothing
     dark = composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, "red", false)])
     @test r(dark[1, 1]) == 0

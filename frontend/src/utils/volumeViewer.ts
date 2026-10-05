@@ -795,8 +795,10 @@ export function contrastFromSlab(
   topPercent = 99.99,
 ): { lo: number; hi: number; max: number } {
   const stride = sampleStride(v.length, rowLength, budget)
+  // NONZERO samples only — an exact 0 is fill (drift correction's zero-padded border), not signal; counted
+  // in, it puts `lo` at 0 and the camera offset renders mid-ramp. Same rule as `percentile_spec`.
   const s: number[] = []
-  for (let i = 0; i < v.length; i += stride) s.push(v[i])
+  for (let i = 0; i < v.length; i += stride) if (v[i] !== 0) s.push(v[i])
   if (s.length === 0) return { lo: 0, hi: 1, max: 1 }
   s.sort((a, b) => a - b)
   const at = (f: number) => s[Math.min(s.length - 1, Math.max(0, Math.floor(f * s.length)))]
