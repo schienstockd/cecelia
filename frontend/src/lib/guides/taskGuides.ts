@@ -575,6 +575,11 @@ export const behaviourStatesGuide = moduleTaskGuide({
       text: 'The Viewer panel can colour tracks by the new state column.',
       bullets: ['That is the quickest sanity check that the states mean something.'],
     },
+    {
+      title: 'What you now have',
+      text: 'A state per cell per timepoint, and the transitions between states in each track.',
+      bullets: ['Cluster tracks next — on track measures plus these states and transitions.'],
+    },
   ],
 })
 
