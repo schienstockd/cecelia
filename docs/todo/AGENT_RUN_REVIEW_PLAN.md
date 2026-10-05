@@ -195,6 +195,7 @@ names it in `removedMarked` so a Claude caller tells the user.*
   completely (pictures, `was:` chips). A Kiwi/chat session proposes verdicts that show as proposals.
 
 ### P3 — the score
+*Replaced (2026-10-06) by [`GUIDE_RUNS_PLAN.md`](GUIDE_RUNS_PLAN.md) Decision 2: a cause on each `bad` verdict and one overall verdict per run, no per-step score table.*
 - `scripts/agent_eval/score_review.py`: per run, per image and step — good / bad / unsure / missed;
   across runs the same table plus run-to-run spread; next to `record.json`'s comparison with the
   reference and the cohort QC. Lists runs with unmarked sections and their copies' names.
