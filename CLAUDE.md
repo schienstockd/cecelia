@@ -302,9 +302,13 @@ into your prioritized reservations list, tag each with a `[slug: outcome]` pair 
 closed vocabulary (copy the slug from the recital body verbatim):
 
 - `[<slug>: fixed_pre_commit]` — the fix is in the diff you're about to commit.
-- `[<slug>: shipped_with_finding]` — shipping despite the finding; reason goes in the commit body prose.
-- `[<slug>: false_positive]` — the finding is wrong; reason goes in the commit body prose.
-- `[<slug>: dropped_no_action]` — raised but not resolved before session ended; reason goes in the commit body prose.
+- `[<slug>: shipped_with_finding: <reason>]` — shipping despite the finding.
+- `[<slug>: false_positive: <reason>]` — the finding is wrong; the reason says why, citing the code.
+- `[<slug>: dropped_no_action: <reason>]` — raised but not resolved before session ended.
+
+The reason is one line inside the tag (no `]`); the hook blocks a pair that needs one and has none,
+and logs it on the resolution row. The weekly bug sweep re-judges `false_positive` findings
+against the code with that reason in front of it, so a wrong one doesn't hide a real bug.
 
 Bare `[fixed_pre_commit]` / `[<outcome>: <reason>]` forms are still accepted for legacy /
 un-slugged findings, but slug-paired form is preferred — the commit hook writes a
@@ -365,8 +369,8 @@ Claude Code Bash guard (`.claude/settings.json` PreToolUse) blocks `git commit` 
 and blocks `--no-verify` / `-n`. **An agent's commit (`CLAUDECODE=1`, set by Claude Code) is
 blocked unless recital actually ran for this change** — findings or not; never copy another
 commit's check trailer. A throwaway WIP commit uses `CECELIA_SKIP_RECITAL_CHECK=1`. It doesn't validate the
-outcome itself — a bad-faith `false_positive` still passes — but the disclosure step can't be
-silently skipped. That's what turns advisory into "advisory-with-teeth" for autonomous mode:
+outcome itself — a wrong `false_positive` still passes, until the weekly bug sweep checks it —
+but the disclosure step can't be silently skipped. That's what turns advisory into "advisory-with-teeth" for autonomous mode:
 findings in the log become gradeable later (did shipped-anyway correlate with real bugs?)
 rather than just noise in a text output the reader may not see.
 

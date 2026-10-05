@@ -330,6 +330,20 @@ class RollupTest(unittest.TestCase):
         self.assertNotIn("`false_positive`: 1", md)
         self.assertIn("[**fixed_pre_commit**]", md)
 
+    def test_rollup_row_shows_the_resolution_reason(self):
+        events = [
+            {"event": "fanout_audit_finding", "source": "live", "ts": "2026-10-05T10:00:00Z",
+             "pr": "#1400",
+             "payload": {"slug": "fanout-12121212", "file": "c.jl", "line": 3,
+                         "desc": "stale label", "marker": "confirmed"}},
+            {"event": "fanout_audit_finding_resolved", "source": "live",
+             "ts": "2026-10-05T10:05:00Z", "pr": "#1400",
+             "payload": {"slug": "fanout-12121212", "outcome": "dropped_no_action",
+                         "reason": "out of scope, filed #1401"}},
+        ]
+        md = render_rollup(events, rendered_ts="2026-10-05T11:00:00Z")
+        self.assertIn("stale label [**dropped_no_action**: out of scope, filed #1401]", md)
+
     def test_rollup_drops_redteam_probe_findings(self):
         # The 2026-09-27 prompt-injection red-team reviewed crafted diffs through the real
         # recital; its findings are in the (append-only) log but name code that never existed.

@@ -30,10 +30,11 @@ This hook enforces these gates on a commit whose message carries reviewer findin
 
 1. **Outcome-tag presence.** For every `**confirmed**` fanout / `**should reuse**` or
    `**wrong home**` convention finding line, the message must carry an outcome tag from the
-   closed vocabulary — `fixed_pre_commit`, `shipped_with_finding: <reason>`, or
-   `false_positive: <reason>`.
+   closed vocabulary — `fixed_pre_commit`, or `shipped_with_finding` / `false_positive` /
+   `dropped_no_action` with a reason (slug-paired: `[<slug>: false_positive: <reason>]`).
    Deliberately mechanical text-matching, not semantic judgment: an agent could still write
-   `false_positive: reasons` untruthfully; only the disclosure step is checked.
+   `false_positive: reasons` untruthfully. The weekly bug sweep (`scripts/judge/bugs.py`) is what
+   checks a `false_positive` against the code, with its reason in front of the judge.
 2. **SHA-anchored real-review.** A findings-carrying commit must have at least one recital
    `_run` row in the effectiveness log with `commit == HEAD-at-hook-time` — i.e. recital
    actually ran, and against the same tree the commit is being made on top of. Catches
@@ -48,7 +49,7 @@ This hook enforces these gates on a commit whose message carries reviewer findin
 P3 of FINDINGS_EMISSION_PLAN.md — log writing
 ---------------------------------------------
 When the message quotes a slug in a `[slug: outcome]` pair (e.g. `[fanout-abcd1234: fixed_pre_commit]`),
-the hook ALSO writes a matching `_finding_resolved` row to `~/.cecelia-effectiveness/events.jsonl`.
+the hook ALSO writes a matching `_finding_resolved` row (with the tag's `reason`, when it has one) to `~/.cecelia-effectiveness/events.jsonl`.
 That is what turns the recital's pending `_finding` rows into evidence in the rollup — see
 `python/cecelia/effectiveness/rollup.py`. Log-write failure is not a commit blocker (best-effort);
 the presence-check is the only gate.
@@ -100,13 +101,13 @@ _REASON_OUTCOMES = OUTCOME_VOCABULARY - _STANDALONE_OUTCOMES
 _alternation_reason = "|".join(sorted(map(re.escape, _REASON_OUTCOMES)))
 _alternation_standalone = "|".join(sorted(map(re.escape, _STANDALONE_OUTCOMES)))
 
-#: Slug-paired outcome — `[<slug>: <outcome>]` where slug is `<mechanism>-<8 hex>`. In the paired
-#: form the outcome is a bare vocabulary word (no `:reason`); rationale goes in the commit body
-#: prose, not in the tag. This keeps the pair-parse regex unambiguous vs the legacy bare
-#: `[<outcome>: <reason>]` form the hook still accepts.
+#: Slug-paired outcome — `[<slug>: <outcome>]` or `[<slug>: <outcome>: <reason>]`, where slug is
+#: `<mechanism>-<8 hex>`. The reason runs to the closing `]` (so it can't contain one) and is written
+#: to the resolution row: the bug sweep shows a `false_positive`'s reason to its judge, which checks
+#: it against the code. Every outcome but `fixed_pre_commit` needs one (`check`).
 _alternation_all = "|".join(sorted(map(re.escape, OUTCOME_VOCABULARY)))
 _SLUG_PAIR = re.compile(
-    rf"\[((?:fanout|conv)-[0-9a-f]{{8}}):\s*({_alternation_all})\]"
+    rf"\[((?:fanout|conv)-[0-9a-f]{{8}}):\s*({_alternation_all})(?:\s*:\s*([^\]\n]*?))?\s*\]"
 )
 
 #: Legacy bare outcome tags — accepted for counting so pre-P3 messages (or bespoke commits
@@ -120,8 +121,10 @@ _BARE_OUTCOME_TAGS = re.compile(
 def _outcome_help() -> str:
     """Build the help text listing every outcome, so a new vocabulary entry appears here for free."""
     lines = ["Slug-paired form (from `pixi run recital`):"]
-    for tag in sorted(OUTCOME_VOCABULARY):
+    for tag in sorted(_STANDALONE_OUTCOMES):
         lines.append(f"  - `[<slug>: {tag}]`  # e.g. `[fanout-abcd1234: {tag}]`")
+    for tag in sorted(_REASON_OUTCOMES):
+        lines.append(f"  - `[<slug>: {tag}: <reason>]`")
     lines.append("Legacy bare form (no slug):")
     for tag in sorted(_STANDALONE_OUTCOMES):
         lines.append(f"  - `[{tag}]`")
@@ -150,9 +153,9 @@ def _load_tool_call() -> dict:
         return {}
 
 
-def _parse_pairs(command: str) -> list[tuple[str, str]]:
-    """Return the list of (slug, outcome) pairs the commit message quotes."""
-    return [(m.group(1), m.group(2)) for m in _SLUG_PAIR.finditer(command)]
+def _parse_pairs(command: str) -> list[tuple[str, str, str]]:
+    """Return the (slug, outcome, reason) triples the commit message quotes; reason "" when absent."""
+    return [(m.group(1), m.group(2), (m.group(3) or "").strip()) for m in _SLUG_PAIR.finditer(command)]
 
 
 def _finding_event_for_slug(slug: str) -> str | None:
@@ -229,6 +232,17 @@ def check(command: str) -> str | None:
             "appear at most once — the same finding cannot have two outcomes."
         )
 
+    # The reason is what the bug sweep's judge weighs a `false_positive` against, and what tells a
+    # deliberate drop from an abandoned one. The legacy bare form already required it.
+    no_reason = [f"[{s}: {o}]" for s, o, r in pairs if o in _REASON_OUTCOMES and not r]
+    if no_reason:
+        return (
+            f"Outcome tag(s) with no reason: {', '.join(no_reason)}. Every outcome except "
+            "`fixed_pre_commit` carries a one-line reason inside the tag, e.g. "
+            "`[fanout-abcd1234: false_positive: the caller already filters empty rows]` "
+            "(no `]` in the reason)."
+        )
+
     total_outcomes = len(bare_outcomes) + len(set(slugs))
 
     if len(findings) > total_outcomes:
@@ -265,8 +279,8 @@ def check(command: str) -> str | None:
                 f"Recital logged {len(untagged)} finding(s) for HEAD {head_sha[:8]} that this "
                 f"commit doesn't tag by slug:\n{listed}\n"
                 "Tag each one `[<slug>: fixed_pre_commit]` if you fixed it, else "
-                "`shipped_with_finding`, `false_positive` or `dropped_no_action` with the reason "
-                "on the line — even when the message no longer quotes the finding. Bare tags like "
+                "`[<slug>: shipped_with_finding | false_positive | dropped_no_action: <reason>]` "
+                "— even when the message no longer quotes the finding. Bare tags like "
                 "`[fixed_pre_commit]` don't reach the log. "
                 "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`."
             )
@@ -289,12 +303,12 @@ def write_resolutions(
     is null at write time (typical — findings land pre-commit).
     """
     written = 0
-    for slug, outcome in _parse_pairs(command):
+    for slug, outcome, reason in _parse_pairs(command):
         event = _finding_event_for_slug(slug)
         if event is None:
             continue  # unknown mechanism prefix — silently skip; hook regex won't match anyway
         try:
-            append_event(event, {"slug": slug, "outcome": outcome},
+            append_event(event, {"slug": slug, "outcome": outcome, **({"reason": reason} if reason else {})},
                          pr=pr, commit=commit, branch=branch)
             written += 1
         except Exception:  # noqa: BLE001 — best-effort emission

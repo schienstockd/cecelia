@@ -23,8 +23,8 @@ test whether an agent can actually use the framework.
 2. **Owner answers.** Fold `pixi run judge-review` answers into the earlier records, so a bug
    answered `wont_fix` is not carried.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
-   never fixed (`shipped_with_finding`, `dropped_no_action`, untagged, every `plausible`), plus the
-   last record's `open` / `unjudged` / `unmerged` bugs. Free checks come first:
+   never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, every
+   `plausible`), plus the last record's `open` / `unjudged` / `unmerged` bugs. Free checks come first:
    - findings on frozen paths (a judge record, `docs/archive/`) are dropped;
    - a finding whose branch hasn't reached the SHA is `unmerged` and waits;
    - the excerpt is the whole function around the line (`enclosing.py`), found at the finding's
