@@ -113,6 +113,28 @@ class Histogram(unittest.TestCase):
         self.assertEqual(au.histogram([float("nan")]), {"n": 0})
 
 
+class Grid2D(unittest.TestCase):
+    def test_a_diagonal_cloud_lands_on_the_diagonal(self):
+        xs = [float(i % 100) for i in range(1000)]
+        g = au.grid2d(xs, xs, bins=4)
+        self.assertEqual(g["n"], 1000)
+        off_diagonal = sum(c for j, row in enumerate(g["counts"]) for i, c in enumerate(row) if i != j)
+        self.assertEqual(off_diagonal, 0)
+        self.assertEqual(len(g["x_edges"]), 5)
+
+    def test_a_tail_is_clamped_into_the_end_bin(self):
+        # one far outlier must not squash the other 999 cells into the first bin
+        xs = [float(i % 100) for i in range(999)] + [1e6]
+        g = au.grid2d(xs, xs, bins=4)
+        self.assertLess(g["x_edges"][-1], 1e6)
+        self.assertEqual(sum(map(sum, g["counts"])), 1000)
+        self.assertGreater(g["counts"][0][0], 0)
+        self.assertGreater(g["counts"][1][1], 0)
+
+    def test_empty_and_nan(self):
+        self.assertEqual(au.grid2d([float("nan")], [1.0]), {"n": 0})
+
+
 class GatingPictures(unittest.TestCase):
     def _client(self, reply):
         c = au.AutonomousClient("http://x")

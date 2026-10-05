@@ -100,7 +100,9 @@ def gate_histogram(project_uid: str, image_uid: str, value_name: str, x: str, y:
     """The distribution to choose a gate from: per axis, quantiles + an even-width count table of
     segmentation `value_name`'s cells (inside population `pop`), AFTER `transform` — the same space
     gate coordinates are in. `x`/`y` are gateable columns (e.g. `mean_intensity_2` = channel index 2);
-    `y` defaults to `x`. Which columns exist depends on the measure task (mesh measures such as
+    `y` defaults to `x`. With a `y`, also `grid`: the joint x × y counts on a 20 × 20 grid
+    (`counts[j][i]` = y-bin j low → high, x-bin i; edges in gate coordinates) — the shape of the
+    cloud, to trace a polygon round a population or cut debris off a diagonal. Which columns exist depends on the measure task (mesh measures such as
     `volume_mesh` only come from the mesh-measuring tasks) — the observer's get_measure_summary lists
     them; get_image_info lists channel names in index order.
     `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
@@ -130,8 +132,12 @@ def add_gate(project_uid: str, image_uid: str, value_name: str, name: str, gate:
              parent: str = "root", colour: str = "#22c55e") -> dict:
     """Add a gated population to segmentation `value_name`. `gate` is in TRANSFORMED coordinates:
     {"kind": "rectangle", "x_channel", "y_channel", "x_transform", "y_transform",
-     "x_min", "x_max", "y_min", "y_max"}  or  {"kind": "polygon", …, "vertices": [[x, y], …]}.
-    A one-channel threshold is a rectangle spanning the whole other axis. The population's path is
+     "x_min", "x_max", "y_min", "y_max"}  or
+    {"kind": "polygon", "x_channel", "y_channel", "x_transform", "y_transform",
+     "vertices": [[x1, y1], [x2, y2], [x3, y3], …]}  (≥ 3 vertices, closed implicitly).
+    A one-channel threshold is a rectangle spanning the whole other axis; a population whose cloud
+    is not axis-aligned (a diagonal, a curved edge against debris) is a polygon traced on
+    gate_histogram's `grid`. The population's path is
     `/<name>` (or `<parent>/<name>`); pass it to tasks as e.g. `popsToTrack`."""
     return _client.gating_post("/api/gating/pop/add", project_uid, image_uid, value_name,
                                name=name, parent=parent, gate=gate, colour=colour)

@@ -170,6 +170,34 @@ def histogram(values: list[float], bins: int = 30) -> dict:
             "bins": [{"from": edges[i], "to": edges[i + 1], "n": c} for i, c in enumerate(counts)]}
 
 
+def grid2d(xs: list[float], ys: list[float], bins: int = 20) -> dict:
+    """The joint x × y distribution as a coarse count grid, so a gate can follow the SHAPE of the cloud
+    (a polygon) rather than one threshold per axis. Each axis spans its 0.5–99.5th percentile; the
+    first and last row/column also hold the cells beyond them, so a long tail cannot squash every
+    other cell into one bin. `counts[j][i]` = cells in y-bin j (low → high) and x-bin i."""
+    pts = [(x, y) for x, y in zip(xs, ys) if x == x and y == y]      # drop NaN pairs
+    if not pts:
+        return {"n": 0}
+
+    def edges(vals: list[float]) -> list[float]:
+        v = sorted(vals)
+        lo = v[int(.005 * (len(v) - 1))]
+        hi = v[int(.995 * (len(v) - 1))]
+        w = (hi - lo) / bins if hi > lo else 1.0
+        return [lo + i * w for i in range(bins + 1)]
+
+    xe = edges([p[0] for p in pts]); ye = edges([p[1] for p in pts])
+
+    def idx(v: float, e: list[float]) -> int:
+        return max(0, min(bins - 1, int((v - e[0]) / (e[1] - e[0]))))
+
+    counts = [[0] * bins for _ in range(bins)]
+    for x, y in pts:
+        counts[idx(y, ye)][idx(x, xe)] += 1
+    return {"n": len(pts), "x_edges": [round(v, 4) for v in xe], "y_edges": [round(v, 4) for v in ye],
+            "counts": counts}
+
+
 # ── client ─────────────────────────────────────────────────────────────────────────────────────────
 
 class AutonomousClient:
@@ -363,8 +391,11 @@ class AutonomousClient:
              "x": x, "y": y, "pop": pop or "root", **gv.axis_transform_query(transform)}
         self._require_measured(project_uid, image_uid, value_name)
         xs, ys = decode_pairs(self._request("GET", "/api/gating/plotdata", q, raw=True))
-        return {"x": {"channel": x, **histogram(xs, bins)}, "y": {"channel": y, **histogram(ys, bins)},
-                "transform": transform or {"kind": "linear"}}
+        out = {"x": {"channel": x, **histogram(xs, bins)}, "y": {"channel": y, **histogram(ys, bins)},
+               "transform": transform or {"kind": "linear"}}
+        if y != x:
+            out["grid"] = grid2d(xs, ys)
+        return out
 
     def gate_plot(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
                   transform: dict | None, pop: str) -> tuple[bytes, dict]:
