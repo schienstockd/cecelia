@@ -150,16 +150,34 @@ if (-not (Test-Path $Pixi)) {
     powershell -ExecutionPolicy Bypass -c "irm -useb https://pixi.sh/install.ps1 | iex"
   }
 }
+if (-not (Test-Path $Pixi)) { throw 'Pixi not found after install. Open a new terminal and re-run.' }
 
 # ── Julia (juliaup via winget / MS Store) ──────────────────────────────────────
 # System scope threads a shared depot via $env:JULIAUP_DEPOT_PATH (set above). Windows julia
 # resolution is the least-verified path — see the note at the top of this file.
 $Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
 if (-not $Julia -and -not (Test-Path (Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe'))) {
-  Say 'Installing Julia (juliaup)...'
-  winget install --id 9NJNWW8PVKMN -e --source msstore --accept-package-agreements --accept-source-agreements
+  $Juliaup = (Get-Command juliaup -ErrorAction SilentlyContinue).Source
+  if ($Juliaup) {
+    # A juliaup with no `julia` launcher: winget would report it installed and do nothing, so ask the
+    # juliaup itself for a default channel; its launcher sits beside it (same as install.sh).
+    Say 'Adding a Julia release to the existing juliaup...'
+    & $Juliaup add release
+    & $Juliaup default release
+    $Julia = Join-Path (Split-Path $Juliaup) 'julia.exe'
+  } else {
+    Say 'Installing Julia (juliaup)...'
+    winget install --id 9NJNWW8PVKMN -e --source msstore --accept-package-agreements --accept-source-agreements
+    # The Store juliaup's `julia` alias lands in WindowsApps, normally already on PATH.
+    $Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
+  }
 }
 if (-not $Julia) { $Julia = Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe' }
+# Fail here, not after the multi-GB `pixi install` below. A Store juliaup's launcher is the `julia`
+# app execution alias, which can be switched off in Settings.
+if (-not (Get-Command $Julia -ErrorAction SilentlyContinue)) {
+  throw "Julia not found after install. Open a new terminal (or turn on the 'julia' app execution alias in Settings > Apps > Advanced app settings) and re-run."
+}
 
 # ── bioformats2raw (image import) ───────────────────────────────────────────────
 if (Get-Command bioformats2raw -ErrorAction SilentlyContinue) {
