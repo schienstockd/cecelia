@@ -49,6 +49,9 @@ The repeated tool errors (the mechanical part) already reach the judge.
    - `platform`: the information existed but the agent couldn't see it;
    - `agent`: the guide and the tools were enough.
 
+   When guide and platform both fit, pick the cause with the cheaper fix; the label routes the fix,
+   it is not a finding in itself. Expect `agent` to be a large bucket — the agent follows the text
+   literally and never asks; the repeat rule (Decision 3) turns a recurring one into a guide gap.
    A cause is one field on the existing section verdict, not a new scoring system. A run also gets an
    overall verdict, using the entry-level outcome: accept, accept with fixes, or reject.
 3. **What reaches the judge.**
@@ -72,6 +75,15 @@ The repeated tool errors (the mechanical part) already reach the judge.
    supervisor and no nudging mid-run.
 7. **Stop rule, per guide.** Three reviewed runs with no fix pause that guide. If every guide is
    paused, the runs stop.
+8. **Your review is the budget.** The cap on runs is what you will review in a week, not what the
+   machine can run. Review only runs that finished; one that aborted or hit the cap is read from its
+   errors, which already reach the judge. As guides multiply, the review budget decides which guides
+   run, not the cost of running them.
+9. **A short checklist per guide**, kept with its test project: the few things you look at (e.g. for
+   intravital: cleanup before segmenting, QC gate on the image, cells per frame, speeds, what the
+   clusters are made of). It holds one reviewer's judgement steady across weeks. What a reference
+   can answer (detections, track speeds against your own analysis of the same crops) comes from
+   `record.json`'s comparison, so your reading goes to the judgement calls.
 
 ## Phases
 
