@@ -39,6 +39,7 @@ class JuliaupActivationTest(unittest.TestCase):
         self.assertIn("scripts/activate_juliaup.sh", scripts)
         self.assertTrue(SCRIPT.is_file())
 
+    @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
     def test_install_owned_juliaup_wins_over_path(self):
         bin_dir = os.path.join(self.root, "juliaup", "bin")
         os.makedirs(bin_dir)
@@ -50,6 +51,7 @@ class JuliaupActivationTest(unittest.TestCase):
         self.assertEqual(path, bin_dir + ":/usr/local/bin:/usr/bin:/bin")
         self.assertEqual(depot, os.path.join(self.root, "juliaup"))
 
+    @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
     def test_dev_checkout_is_untouched(self):
         path, depot = _activated(self.root, "/usr/local/bin:/usr/bin:/bin")
         self.assertEqual(path, "/usr/local/bin:/usr/bin:/bin")
