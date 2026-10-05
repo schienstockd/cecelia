@@ -94,9 +94,16 @@ class ProposeTest(unittest.TestCase):
     def test_a_failed_judge_leaves_both_lists_empty(self):
         def boom(prompt):
             raise self.r._judge.JudgeError("down")
+        failures: dict = {}
         rows, props, _, cost = self.r.propose([_finding_event("y")], date="2026-10-02", assign=boom,
-                                              git=lambda *a: None)
-        self.assertEqual((rows, props, cost), ([], [], 0.0))
+                                              git=lambda *a: None, failures=failures)
+        self.assertEqual((rows, props, cost, failures), ([], [], 0.0, {"rules": "down"}))
+
+    def test_a_usage_limit_is_not_swallowed(self):
+        def limited(prompt):
+            raise self.r._judge.RateLimited("session limit")
+        with self.assertRaises(self.r._judge.RateLimited):
+            self.r.propose([_finding_event("y")], date="2026-10-02", assign=limited, git=lambda *a: None)
 
     def test_red_team_old_and_repeated_findings_are_not_counted(self):
         events = [_finding_event("fanout-c8482224"), _finding_event("x", ts="2026-08-01T00:00:00Z"),

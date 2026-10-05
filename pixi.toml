@@ -345,7 +345,7 @@ agent-eval-run     = "python scripts/agent_eval/run_overnight.py"
 
 # The weekly judge (docs/ai-assist/WEEKLY_JUDGE.md): pin origin/main, sweep the reviewer findings
 # nobody fixed, verify the open ones with sandboxed read-only agents, tally which CLAUDE.md rules
-# keep breaking, write the run record and open its PR. Real API spend, capped (~$14). The Monday
+# keep breaking, write the run record and open its PR. Real API spend, capped (~$14). The Tuesday
 # timer runs it; `-- --no-pr` writes the record only, `-- --dry-run` prints it.
 judge-weekly = "python scripts/judge/weekly.py"
 # The pieces on their own, printed, never written: the bug sweep (one judge call; `--no-judge` is

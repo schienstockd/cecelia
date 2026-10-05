@@ -1,6 +1,6 @@
-# Weekly judge timer (Monday 23:59)
+# Weekly judge timer (Tuesday 23:59)
 
-Systemd user timer that runs the weekly judge (`pixi run judge-weekly`) every Monday at 23:59 local
+Systemd user timer that runs the weekly judge (`pixi run judge-weekly`) every Tuesday at 23:59 local
 time. What the pass does: [`docs/ai-assist/WEEKLY_JUDGE.md`](../../../docs/ai-assist/WEEKLY_JUDGE.md).
 
 ## Install (Linux + systemd)
@@ -39,8 +39,14 @@ systemctl --user start weekly-judge.service       # a pass now (spends real API 
 journalctl --user -u weekly-judge.service -f
 ```
 
-Won't fire on battery (`ConditionACPower=true`), and won't fire on boot for a missed Monday
+Won't fire on battery (`ConditionACPower=true`), and won't fire on boot for a missed Tuesday
 (`Persistent=` omitted): the next pass sweeps from the last record, so nothing is lost.
+
+**The usage limit.** A pass that hits it exits 75. `cron_pass.sh` sleeps until 5 min after the reset
+the CLI names and reruns the pass (3 attempts at most, a reset at most 8h off), holding the cron lock,
+so that night's agent run is skipped. That is why `TimeoutStartSec` is 12h. Each wait is in the cron
+log: `usage limit, lifts …: waiting …s, then attempt 2/3`. Details:
+[`WEEKLY_JUDGE.md`](../../../docs/ai-assist/WEEKLY_JUDGE.md) → *Waiting out the limit*.
 
 ## Adjust, uninstall
 

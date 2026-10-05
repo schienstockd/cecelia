@@ -251,8 +251,10 @@ def proposals_from(rows: _t.Sequence[dict], *, min_sessions: int = MIN_SESSIONS)
 
 
 def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None = None,
-            repo: pathlib.Path = _REPO, git: GitRun | None = None, meter: dict | None = None) -> tuple[list[dict], list[dict], dict, float]:
-    """(rule rows, proposals, finding counts per bin, judge cost). A failed judge call leaves both lists empty."""
+            repo: pathlib.Path = _REPO, git: GitRun | None = None, meter: dict | None = None,
+            failures: dict | None = None) -> tuple[list[dict], list[dict], dict, float]:
+    """(rule rows, proposals, finding counts per bin, judge cost). A failed judge call leaves both
+    lists empty and says why in `failures["rules"]`; a `judge.RateLimited` propagates."""
     findings = recent_findings(events, today=_dt.date.fromisoformat(date))
     bins = bin_findings(findings, git=git or _git_in(repo))
     stats = {b: sum(v == b for v in bins.values()) for b in BINS}
@@ -267,6 +269,8 @@ def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None 
         _judge.add_tokens(meter, used)
     except _judge.JudgeError as e:
         print(f"rules: judge failed ({e})", file=sys.stderr)
+        if failures is not None:
+            failures["rules"] = str(e)
         return [], [], stats, 0.0
     rows = tally(findings, verdict.get("assignments", []), bins, rule_list)
     props = proposals_from(rows)

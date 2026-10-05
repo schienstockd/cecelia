@@ -16,7 +16,7 @@ test whether an agent can actually use the framework.
 
 ## What a pass does
 
-`pixi run judge-weekly` (`scripts/judge/weekly.py`), run by a systemd timer every Monday at 23:59:
+`pixi run judge-weekly` (`scripts/judge/weekly.py`), run by a systemd timer every Tuesday at 23:59:
 
 1. **Pin.** Fetch, resolve `origin/main` to a SHA, and reset the persistent worktree
    (`~/.cecelia-effectiveness/judge-worktree`) to it.
@@ -64,8 +64,20 @@ test whether an agent can actually use the framework.
    ([`../todo/AGENT_RUN_REVIEW_PLAN.md`](../todo/AGENT_RUN_REVIEW_PLAN.md) Decision 1). The one
    single-run 4xx (an unknown plot name) stayed out.
 
+   **Landed fixes** (no Claude call). For each carried `open` / `unjudged` bug, git looks for commits
+   since the last pass (`previous run.sha..sha`) whose message names one of its keys (`fanout-…`,
+   `rep-…`, `run-…`, `stranded-pr…`). They go on the bug as `fix_landed`, with the PR from `(#N)` in
+   the subject or the `Merge pull request #N` that brought them in. That is evidence, not a verdict:
+   the judge and verify prompts get it as a hint, and the judge still decides `gone`. The record says
+   *Fix landed: … — awaiting re-check* until it does. So a fix you landed with `pixi run
+   judge-review` shows up even on a pass whose judge failed. On 2026-10-05, 6 of the 7 carried open
+   bugs had a fix commit naming their key on main; the judge never ran, so the record said "0 fixed".
+
    Then one tool-less judge call reads the excerpts as data and marks each bug `live_bug` / `gone` /
-   `not_a_bug`. Commits pushed to a PR's branch after it merged are reported as `stranded`.
+   `not_a_bug`. Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the
+   judge gives no verdict for (the call failed, or the bug is over the 40-per-pass cap) waits as
+   `unjudged`, except one the last record had `open`: it stays `open`, with its verdict, because a
+   missing check is no evidence it was fixed.
 4. **Verify** (`verify.py`). Each open bug that no agent has checked yet goes to a read-only
    `claude -p` agent in a sandboxed checkout at the SHA (`agent_sandbox.py`: no network, `~` is
    write-denied, no MCP). Bugs that share a branch or a file go to the same agent, and so do one
@@ -86,15 +98,38 @@ test whether an agent can actually use the framework.
    pattern.
 6. **Record + PR.** Write `~/.cecelia-effectiveness/judge-runs/<date>.json`, mirror it with its
    rendered markdown to `docs/ai-assist/judge-runs/`, commit it on `judge-run/<date>` with recital,
-   and open the PR. Each new PR closes the previous one.
+   and open the PR. Each new PR closes the previous one. A failure's PR closes none: the last
+   pass's record is still the work list.
 
-A crash at any stage still writes a failure record and its PR. The recital console warns when the
-newest record is more than 9 days old or failed (`judge_staleness.py`).
+The PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
+a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug.
+
+A crash at any stage still writes a failure record and its PR. So does a **usage limit** (HTTP 429,
+`judge.RateLimited`, from the sweep, verify or rules): every call after it would fail too, and on
+2026-10-05 a pass that hit one recorded a normal-looking week with nothing judged, none of the
+fixes found, and $10 of "spend" for five agents that never started.
+
+**Waiting out the limit.** A pass stopped by the usage limit exits 75 (`EX_TEMPFAIL`) and writes
+`~/.cecelia-effectiveness/judge-ratelimit.json` (`reset`, `message`, `retry`, `stage`). The reset is
+read from the CLI's message ("resets 1:40am (Australia/Sydney)") as the next time that clock reads
+1:40 in that zone, or an hour from now when it can't be read. `cron_pass.sh` sleeps until 5 min
+after the reset and reruns the whole pass, at most 3 attempts. weekly.py decides whether a retry
+follows (`retry`: attempts left in `JUDGE_RETRY_LEFT`, and the reset at most 8h off), and while one
+does it opens no FAILED PR. The failure record is still written; the retry's pass record replaces
+it. The attempt that gives up opens the FAILED PR as before. A retry pins the same commit: the timer
+runs `--ref HEAD` in the judge worktree, and a pass stopped by the limit never commits there. The
+wrapper **keeps the cron lock through the wait**, so the nightly agent run is skipped: it would hit
+the same limit. The unit's `TimeoutStartSec=12h` covers one wait. Any other failed judge call
+doesn't stop the pass; the record's `run.failed` names the step, and the record and PR say that
+step didn't run instead of reporting a quiet week. The recital console warns when the newest record
+is more than 9 days old or failed (`judge_staleness.py`).
 
 **Spend.** The record's *Tokens* row has what each step used: output, uncached input, and cache read
 and write, taken from each call's `usage`. Its *Spend* row is the CLI's dollar figure, which is list
 price, not what a seat is charged. The caps are in dollars, because `--max-budget-usd` is the
-CLI's only limit: bug sweep $1.50, verify $10 ($2 per group), rule mapping $2.
+CLI's only limit: bug sweep $1.50, verify $10 ($2 per group), rule mapping $2. Verify's cap counts
+a failed agent that never said its cost at its whole budget (`reserved_usd`); its spend (`usd`) is
+only what the agents reported.
 
 ## Working the record
 

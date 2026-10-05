@@ -68,7 +68,7 @@ test of whether an agent can use the framework.
 7. **A human ceiling before any agent run.** We run the pipeline ourselves on the fixture with good
    parameters first. If we can't get a good score, the fixture is wrong, not the agent.
 8. **Cost discipline.** First runs are N=1, started by hand, spend reported. Nightly only once a run's
-   cost is measured. A hard per-run cap in the runner. Never overlaps the Monday CLAUDE.md eval (shared
+   cost is measured. A hard per-run cap in the runner. Never overlaps the Tuesday 23:59 weekly judge (shared
    lock).
 
 ## Phases

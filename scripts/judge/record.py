@@ -186,8 +186,32 @@ def tokens_line(spend: dict) -> str:
     return f"{one(tok.get('total') or {})} — {steps}"
 
 
+def one_line(text: _t.Any, limit: int = 200) -> str:
+    """An error message as one short line: whitespace collapsed, backticks dropped (it goes in code
+    spans), cut at `limit`."""
+    flat = " ".join(str(text).replace("`", "'").split())
+    return flat if len(flat) <= limit else flat[:limit - 1] + "…"
+
+
 def _cell(text: _t.Any) -> str:
     return str(text if text is not None else "—").replace("|", "\\|").replace("\n", " ")
+
+
+def landed_hint(b: dict) -> str:
+    """A judge or verify prompt's line per landed fix (`fix_landed`): a hint to check, given as data."""
+    return "".join(f"(a commit naming this key landed: {c['subject']} ({c['commit'][:8]}))\n"
+                   for c in b.get("fix_landed", []))
+
+
+def _landed(b: dict) -> str:
+    """`fix_landed` as markdown: `abcd1234` #1430 per commit."""
+    return ", ".join(f"`{c['commit'][:8]}`" + (f" #{c['pr']}" if c.get("pr") else "") for c in b.get("fix_landed", []))
+
+
+def landed_counts(bugs: _t.Sequence[dict]) -> tuple[int, int]:
+    """(bugs a fix landed for since the last pass, of those the ones the judge confirmed gone)."""
+    landed = [b for b in bugs if b.get("fix_landed")]
+    return len(landed), sum(b["status"] == "gone" for b in landed)
 
 
 def bug_location(b: dict) -> str:
@@ -212,10 +236,17 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
     counts = {s: sum(b["status"] == s for b in bugs) for s in BUG_STATUSES}
     out = [_BUGS_HOW_TO, "",
            " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
+    landed, confirmed = landed_counts(bugs)
+    if landed:
+        out += [f"{landed} fix(es) landed since the last pass (a commit names the bug's key), "
+                f"{confirmed} confirmed gone by the judge.", ""]
     for b in (b for b in bugs if b["status"] != "unjudged" and not b.get("muted")):
         v = b.get("verify") or {}
         out += [f"### {b['id']} · {b['status']}{' · ' + v['verdict'] if v else ''} · {_bug_where(b)} · `{b['key']}`", "",
                 f"**Check:** {b['why']}", ""]
+        if b.get("fix_landed"):
+            out += [f"**Fix landed:** {_landed(b)} — "
+                    + ("confirmed gone" if b["status"] == "gone" else "awaiting re-check"), ""]
         if b.get("owner_answer"):
             out += [f"**Owner's answer** (follow this, not the recommendation): {b['owner_answer']}", ""]
         if v:
@@ -246,13 +277,18 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
     waiting = [b for b in bugs if b["status"] == "unjudged"]
     if waiting:
         out += ["### Waiting for the judge", ""]
-        out += [f"- {b['id']} · {_bug_where(b)} · `{b['key']}` — {b['why']}" for b in waiting]
+        out += [f"- {b['id']} · {_bug_where(b)} · `{b['key']}` — {b['why']}"
+                + (f" · fix landed {_landed(b)}" if b.get("fix_landed") else "") for b in waiting]
         out.append("")
     return out
 
 
 def _render_rules(record: dict) -> list[str]:
     rules = record.get("rules", [])
+    failed = (record["run"].get("failed") or {}).get("rules")
+    if failed:
+        return [f"The rule-mapping judge failed this pass (`{one_line(failed)}`): nothing was tallied, "
+                "so no proposals. The next pass maps the same window."]
     if not rules:
         return ["No reviewer findings mapped to a rule."]
     window, need = record["run"].get("rules_window_days", "?"), record["run"].get("min_sessions", "?")
@@ -285,8 +321,14 @@ def render_markdown(record: dict) -> str:
            f"| Pinned SHA | `{run['sha']}` |",
            f"| Tokens | {tokens_line(run['spend'])} |",
            f"| Spend (list price) | {spend_line(run['spend'])} |",
-           f"| Owner queue | {len(record['queue'])} (`pixi run judge-review`) |", "",
-           "## Bugs", "", *_render_bugs(record["bugs"]), "",
+           f"| Owner queue | {len(record['queue'])} (`pixi run judge-review`) |",
+           *(f"| Failed | {step}: `{_cell(one_line(why))}` |" for step, why in (run.get("failed") or {}).items()),
+           "",
+           "## Bugs", "",
+           *([f"The bug sweep's judge failed, so nothing was re-checked: open bugs stay open (marked "
+              "*still open*), new findings wait for the next pass, and none can be marked fixed.", ""]
+             if (run.get("failed") or {}).get("sweep") else []),
+           *_render_bugs(record["bugs"]), "",
            "## Rules", "", *_render_rules(record)]
     return "\n".join(out) + "\n"
 
