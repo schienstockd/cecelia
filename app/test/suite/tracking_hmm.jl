@@ -89,6 +89,25 @@ end
     # bookkeeping + motility skipped; dedup across aggregates of the same base
     @test track_cell_measures(["track_id", "num_cells", "live.track.speed",
                                "area.mean", "area.sd"], mot) == ["area"]
+    # the HMM names a track-cluster run records (`featuresByRun`): state + transition frequencies
+    @test track_cell_measures(["live.cell.hmm.state.movement.2", "live.cell.hmm.transitions.movement.1_3"], mot) ==
+          ["live.cell.hmm.state.movement", "live.cell.hmm.transitions.movement"]
+
+    # WITH the existing cell columns the base is exact — the longest known one the name extends:
+    cells = ["area", "live.cell.hmm.state.movement", "live.cell.hmm.hybrid"]
+    # a category containing a dot (cross-model hybrid "1.2_3.4") still maps home (name-only would cut it)
+    @test track_cell_measures(["live.cell.hmm.hybrid.1.2_3.4"], mot) == ["live.cell.hmm.hybrid.1.2_3"]
+    @test track_cell_measures(["live.cell.hmm.hybrid.1.2_3.4"], mot; cell_cols=cells) == ["live.cell.hmm.hybrid"]
+    # a per-CELL column (asked of a cell-grained read) names no aggregate → no phantom base
+    @test isempty(track_cell_measures(["live.cell.hmm.state.movement", "clusters.movement"], mot; cell_cols=cells))
+    @test track_cell_measures(["area.mean", "live.cell.hmm.state.movement.1"], mot; cell_cols=cells) ==
+          ["area", "live.cell.hmm.state.movement"]
+    # the expansion direction (clustTracks) asks the same rule per column: a selected base `b` claims
+    # only its own columns, not those of a longer base that starts with `b.`
+    sel = Set(["hmm", "hmm.state"])
+    @test track_aggregate_base("hmm.state.1", Set(mot); cell_cols=sel) == "hmm.state"
+    @test track_aggregate_base("hmm.mean", Set(mot); cell_cols=sel) == "hmm"
+    @test track_aggregate_base("live.track.speed", Set(mot); cell_cols=sel) === nothing
 end
 
 # ── pop_df pop_type="track": gate DIRECTLY on per-track properties (3b) ────────

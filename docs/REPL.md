@@ -317,8 +317,11 @@ different value_name than the one passed.
   track_id). `granularity=:track` returns the gated track rows; `granularity=:cell` expands them to
   member cells (label/track_id/pop/value_name) — selecting a track pulls in all its cells.
   `cell_measures`/`categorical` are the *base* cell columns to aggregate into track properties
-  (numeric → `.mean/.median/.sum/.qUp/.qLow/.sd`, categorical → per-category frequency `{m}.{cat}`);
-  pass the base names being gated/plotted (mirrors R `tracksInfo`'s `trackStatsNames`).
+  (numeric → `.mean/.median/.sum/.qUp/.qLow/.sd`, categorical → per-category frequency `{m}.{cat}`).
+  Any aggregate a per-track read's `pop_cols` NAME is derived automatically (`track_aggregate_measures`
+  — `live.cell.hmm.state.movement.1` → base `live.cell.hmm.state.movement`), for every track-grained
+  read (`track`/`trackclust`, and `granularity=:track`); pass `cell_measures` only to get ALL of a
+  base's aggregates without naming them (clustTracks; mirrors R `tracksInfo`'s `trackStatsNames`).
 - `value_name=nothing` resolves to the image's **active** segmentation (parity with
   `label_props(img)`); pass a name to override the default value_name for unprefixed pops.
 - `labels_version` pins the cell-table reads (membership and output, `granularity=:track`'s cell-level
@@ -447,7 +450,7 @@ Compute-on-read; nothing persisted. Ports R `tracksInfo`.
 
 ### `track_cell_measures`
 
-track_cell_measures(cols, motility_cols) -> Vector{String}
+track_cell_measures(cols, motility_cols; cell_cols=nothing) -> Vector{String}
 
 Inverse of `track_props`'s column naming: given desired **track-property** column names (a gating
 axis or a gate's channels) and the set of motility columns (free from `{vn}__tracks.h5ad`), return
@@ -455,7 +458,9 @@ the base **cell** measures that must be aggregated to produce them — i.e. the 
 `track_props`/`pop_df(…, "track")`. A motility column (or `track_id`/`label`/`num_cells`
 bookkeeping) needs no aggregation; `{base}.mean|median|sum|qUp|qLow|sd` → `base`; any other
 `{base}.{cat}` (a categorical within-track frequency) → `base`. Lets the gating API request exactly
-the per-track aggregates an axis needs without enumerating every measure×aggregate.
+the per-track aggregates an axis needs without enumerating every measure×aggregate. Per column the rule
+is `track_aggregate_base` (pass `cell_cols` for the exact, existence-checked form); for an image,
+`track_aggregate_measures` does that lookup.
 
 ### `plot_summary_data`
 

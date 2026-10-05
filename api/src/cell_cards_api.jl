@@ -150,8 +150,7 @@ function api_cell_cards(body_bytes::Vector{UInt8})
     pool_uids = try
         entry = Cecelia._clustfeatures_entry(img_track_props_path(img, vn), suffix; family="clusters")
         entry === nothing && error("no clustfeatures entry")
-        part_of = String[string(x) for x in get(entry, "partOf", get(entry, :partOf, String[]))]
-        isempty(part_of) ? [img.uid] : part_of
+        Cecelia._clustfeatures_part_of(entry, img.uid)
     catch e
         return 404, JSON3.write((; error = "clustering run '$suffix' not found: $(sprint(showerror, e))"))
     end

@@ -548,7 +548,20 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
         under EVERY member segmentation). Read the sizes per valueName, but the run once.
       - `largestFrac` near 1.0 (one cluster swallowing most points) or a very low `nClusters` vs peers
         means a near-uninformative / collapsed clustering for that image — worth flagging.
-    Summary-level (sizes, not raw cluster assignments). Reads current on-disk state."""
+
+    WHAT DEFINES EACH CLUSTER — top-level `profiles`, one per RUN (pooled over every image + segmentation
+    it ran on, even when you scoped to one image): `{suffix, granularity, imageUids, valueNames, clusters,
+    n, features: [{feature, z}], missingFeatures}` — the numbers the cluster heatmap shows. `z[i]` is
+    cluster `clusters[i]`'s mean of that feature, z-scored ACROSS the run's clusters (row mean 0, sd 1;
+    null = undefined), so it is relative: +1.5 = "highest of these clusters", not "fast" in µm/s. Read a
+    cluster down its column: the features with the largest |z| are what push it apart from the others
+    (e.g. high `live.track.speed` + `live.track.straightness`, low `…hmm.state.movement.1`). `n` = tracks
+    (or cells) per cluster, summed over the run; `clusters` ids match `sizes[].value` ("0" ↔ "0.0").
+    `missingFeatures` = recorded features the tables no longer carry. Describe a cluster by its
+    features; a NAME ("scanning", "arrested") is the user's call — propose, never assert. With few
+    clusters the z-scores are coarse (3 clusters ⇒ values near ±1).
+    Summary-level (sizes + per-cluster means, not raw cluster assignments). Reads current on-disk
+    state."""
     return _client.get_cluster_summary(project_uid, image_uid or None, set_uid or None)
 
 

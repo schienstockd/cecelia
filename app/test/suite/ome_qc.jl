@@ -2481,6 +2481,60 @@ end
         end
     end
 
+    @testset "cluster summary profiles (what defines each cluster)" begin
+        # The profile is the cluster heatmap's matrix, from the heatmap's own aggregation — so an agent
+        # reads what the user sees. Fixture: KDIeEm B's track table + its `movement` run sidecar.
+        h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+        trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+        cf  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.clustfeatures.json")
+        if !have_fixture(h5) || !have_fixture(trk) || !have_fixture(cf)
+            @test_skip "cluster summary profiles (fixture missing)"
+        else
+            td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+            for f in (h5, trk, cf); cp(f, joinpath(td, "labelProps", basename(f))); end
+            img = CciaImage(uid = "KDIeEm", dir = td)
+            img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+            proj = CciaProject(; uid = "cP", name = "c"); proj.root = mktempdir()
+            st = CciaSet(; uid = "cS", dir = mktempdir()); push!(proj._sets, st); push!(proj.set_uids, st.uid)
+            push!(st._images, img); push!(st.image_uids, img.uid)
+
+            # the one partOf reader: recorded list, else (legacy) the own image, else nothing
+            @test Cecelia._clustfeatures_part_of(Dict("partOf" => ["a", "b"]), "a") == ["a", "b"]
+            @test Cecelia._clustfeatures_part_of(Dict("features" => ["x"]), "a") == ["a"]
+            @test isempty(Cecelia._clustfeatures_part_of(nothing))
+
+            c = cluster_summary(proj)
+            feats = c.featuresByRun["movement"]
+            @test length(c.profiles) == 1                       # one run, once — not per image
+            p = only(c.profiles)
+            @test p.suffix == "movement" && p.granularity == "track"
+            @test p.valueNames == ["B"] && p.imageUids == ["KDIeEm"]
+            @test [f.feature for f in p.features] == feats && isempty(p.missingFeatures)
+            @test length(p.clusters) == 3 && length(p.n) == 3
+            # n agrees with the per-image sizes (the same tracks, counted two ways)
+            sizes = only(e for e in c.images[1].clusters if e.suffix == "movement")
+            @test sum(p.n) == sizes.n && sort(p.n) == sort([s.n for s in sizes.sizes])
+            # z: one value per cluster, z-scored across clusters (each row sums to ~0)
+            for f in p.features
+                @test length(f.z) == 3
+                zs = filter(!isnothing, f.z)
+                isempty(zs) || @test abs(sum(zs)) < 0.05        # rounded to 2 dp
+            end
+            # …and it IS the heatmap's number: the same plot_summary_data call, rounded
+            r = plot_summary_data(img, "trackclust", ["root"], "matrix"; granularity = :track,
+                                  matrix_mode = "profile", measures = feats,
+                                  category = "clusters.movement", zscore = true, cluster_suffix = "movement")
+            sp = first(x for x in r["cells"] if x["y"] == "live.track.speed" && x["x"] == p.clusters[1])
+            @test p.features[1].z[1] == round(sp["value"]; digits = 2)
+            # a stale sidecar (a feature the table no longer has) is reported, not fatal
+            open(joinpath(td, "labelProps", "B__tracks.clustfeatures.json"), "w") do io
+                JSON3.write(io, Dict("clusters.movement" => Dict("partOf" => ["KDIeEm"], "family" => "clusters",
+                                     "features" => vcat(feats, "gone.mean"), "labels" => Dict())))
+            end
+            @test only(cluster_summary(proj).profiles).missingFeatures == ["gone.mean"]
+        end
+    end
+
     @testset "chains summary (Slice E)" begin
         proj = CciaProject(; uid = "chP", name = "ch"); proj.root = mktempdir()
         save_chain_template!(proj, ChainTemplate("pipe",

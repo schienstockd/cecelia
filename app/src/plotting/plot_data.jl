@@ -776,7 +776,7 @@ function _empty_matrix(mode::AbstractString, cat::AbstractString, normalize::Sym
         "xLabels" => String[], "yLabels" => String[], "cells" => Dict{String,Any}[],
         "category" => cat, "granularity" => String(granularity), "series" => Any[])
     mode == "profile"  && return merge(base, Dict{String,Any}(
-        "zscore" => zscore, "valueLabel" => zscore ? "z-score" : "mean"))
+        "zscore" => zscore, "valueLabel" => zscore ? "z-score" : "mean", "xCounts" => Int[]))
     mode == "crosstab" && return merge(base, Dict{String,Any}(
         "normalize" => String(normalize), "valueLabel" => _crosstab_value_label(normalize)))
     error("plot_summary_data: unknown matrix mode '$mode' (expected profile | crosstab)")
@@ -837,8 +837,12 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
                                               "value" => isnan(v) ? nothing : v, "n" => ns[lvl]))
             end
         end
+        # rows per level (a cluster's size), parallel to `xLabels` — a cell's `n` counts only the rows
+        # FINITE in that measure, so it is not the level's size where a measure has gaps
+        xcounts = Int[count(==(lvl), catkeys) for lvl in levels]
         return Dict{String,Any}("chartType" => "matrix", "matrixMode" => "profile",
             "xLabels" => levels, "yLabels" => ms, "cells" => cells, "category" => cat,
+            "xCounts" => xcounts,
             "zscore" => zscore, "valueLabel" => zscore ? "z-score" : "mean",
             "granularity" => String(granularity), "series" => Any[])
 

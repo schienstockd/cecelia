@@ -486,8 +486,11 @@ different value_name than the one passed.
   track_id). `granularity=:track` returns the gated track rows; `granularity=:cell` expands them to
   member cells (label/track_id/pop/value_name) — selecting a track pulls in all its cells.
   `cell_measures`/`categorical` are the *base* cell columns to aggregate into track properties
-  (numeric → `.mean/.median/.sum/.qUp/.qLow/.sd`, categorical → per-category frequency `{m}.{cat}`);
-  pass the base names being gated/plotted (mirrors R `tracksInfo`'s `trackStatsNames`).
+  (numeric → `.mean/.median/.sum/.qUp/.qLow/.sd`, categorical → per-category frequency `{m}.{cat}`).
+  Any aggregate a per-track read's `pop_cols` NAME is derived automatically (`track_aggregate_measures`
+  — `live.cell.hmm.state.movement.1` → base `live.cell.hmm.state.movement`), for every track-grained
+  read (`track`/`trackclust`, and `granularity=:track`); pass `cell_measures` only to get ALL of a
+  base's aggregates without naming them (clustTracks; mirrors R `tracksInfo`'s `trackStatsNames`).
 - `value_name=nothing` resolves to the image's **active** segmentation (parity with
   `label_props(img)`); pass a name to override the default value_name for unprefixed pops.
 - `labels_version` pins the cell-table reads (membership and output, `granularity=:track`'s cell-level

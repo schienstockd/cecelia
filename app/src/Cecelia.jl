@@ -133,7 +133,7 @@ export pop_df_multi, resolve_pop_type, pop_namespace, pop_name_conflict, pops_va
 export region_membership, region_enrichment
 export plot_summary_data
 export quiver_df, branch_segments, anisotropy_df
-export track_props, track_cell_measures, track_table_cols, is_tracked
+export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, is_tracked
 # manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
 # `apply_track_ops!`/`renumber_cell_ids!` are the names anything correcting tracks must go through;
 # the per-op `_remove_points!`-style methods stay internal so there is one entry point, not six.

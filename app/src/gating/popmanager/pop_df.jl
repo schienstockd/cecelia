@@ -122,7 +122,10 @@ function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::Ab
         # means). SAME source (`track_props`) as the `track`/`trackclust` gating path — so a `live`
         # `_tracked` population clusters on the identical per-track features as a hand-drawn track
         # gate. This is why clustTracks works off `_tracked` pops. Empty → untracked seg, skip.
-        ttab = track_props(img; value_name=vn, cell_measures=cell_measures, categorical=categorical)
+        # The aggregates are the caller's `cell_measures` PLUS whatever the requested columns name
+        # (`_track_read_measures`) — a plot asking for `live.cell.hmm.state.movement.1` gets it.
+        ttab = track_props(img; value_name=vn, categorical=categorical,
+                           cell_measures=_track_read_measures(img, vn, cell_measures, pop_cols))
         nrow(ttab) == 0 && begin
             @warn "pop_df(:track): no tracks for value_name=$vn — run tracking.track_measures first" vn
             continue
@@ -244,8 +247,10 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
     # cluster column (`clusters.{suffix}`, written by clustTracks into the track table obs) comes
     # free via track_props' motility leftjoin, so `trackclust` membership needs no cell_measures.
     tp_cache = Dict{String,DataFrame}()
+    cm_cache = Dict{String,Vector{String}}()
+    cm_for(vn) = get!(() -> _track_read_measures(img, vn, cell_measures, pop_cols), cm_cache, vn)
     get_tp(vn) = get!(tp_cache, vn) do
-        track_props(img; value_name=vn, cell_measures=cell_measures, categorical=categorical)
+        track_props(img; value_name=vn, cell_measures=cm_for(vn), categorical=categorical)
     end
     load_map = vn -> _hooked(load_pop_map(img; value_name=vn, pop_type=pop_type), map_hook)
     fetch = function (vn, cols)
@@ -256,12 +261,12 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
         select(tp, keep)
     end
     # Gate evaluation needs the aggregates the GATES name, which need not be among the caller's
-    # `cell_measures` (a gate on `area.mean` while plotting motility). Reuse the output table when it
+    # output columns (a gate on `area.mean` while plotting motility). Reuse the output table when it
     # already carries them; otherwise read through the shared source, which aggregates what is asked.
     membership_fetch = function (vn, cols)
-        extra = setdiff(track_cell_measures(cols, track_table_cols(img, vn)), String.(cell_measures))
+        extra = setdiff(track_aggregate_measures(img, vn, cols), cm_for(vn))
         isempty(extra) ? fetch(vn, cols) :
-            pop_membership_fetch(img, vn, pop_type; cell_measures=cell_measures, categorical=categorical)(cols)
+            pop_membership_fetch(img, vn, pop_type; cell_measures=cm_for(vn), categorical=categorical)(cols)
     end
 
     trackdf = _pop_df(load_map, fetch, pop_type, pops; default_vn=default_vn,
@@ -273,6 +278,16 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
         _expand_tracks_to_cells(img, trackdf; cell_cols=(pop_cols === nothing ? String[] : pop_cols),
                                 centroids=centroids, labels_version=labels_version)
 end
+
+# The cell measures a per-track read of `value_name` aggregates: the caller's explicit `cell_measures`
+# plus every base the requested `pop_cols` name (`track_aggregate_measures`). Derived HERE, in the one
+# accessor, so every track-grained plot that names an aggregate column (an HMM-state frequency,
+# `area.mean`) gets it without its caller spelling the base out. `nothing`/empty `pop_cols` (read
+# everything) derives nothing: there is no closed list of "every aggregate".
+_track_read_measures(img::CciaImage, vn::AbstractString, cell_measures, pop_cols)::Vector{String} =
+    unique(vcat(String.(collect(cell_measures)),
+                (pop_cols === nothing || isempty(pop_cols)) ? String[] :
+                    track_aggregate_measures(img, vn, pop_cols)))
 
 # ── Membership data source + the gate-plot read ──────────────────────────────────
 
@@ -309,7 +324,7 @@ end
 THE table a pop_type's gates and filters are evaluated over, as the `fetch_cols` closure `recompute!`
 takes. One definition so a population's members cannot depend on which caller resolved them:
 - `track`/`trackclust` → the per-track table (`track_props`, `label == track_id`), aggregating the cell
-  measures the requested columns name (`track_cell_measures`) on top of `cell_measures`;
+  measures the requested columns name (`track_aggregate_measures`) on top of `cell_measures`;
 - `branch` → the skeleton sidecar `{vn}__branch.h5ad`;
 - every other pop_type → the cell table, at `labels_version` (`nothing` = `_latest`; the per-track
   table has no labels-version axis, so the pin does not reach it).
@@ -322,8 +337,7 @@ function pop_membership_fetch(img::CciaImage, value_name::AbstractString, pop_ty
     vn = String(value_name)
     if is_track_grained(pop_type)
         return cols -> track_props(img; value_name=vn, categorical=categorical,
-            cell_measures=unique(vcat(String.(cell_measures),
-                                      track_cell_measures(cols, track_table_cols(img, vn)))))
+            cell_measures=_track_read_measures(img, vn, cell_measures, cols))
     end
     string(pop_type) == "branch" &&
         return cols -> (label_props(img_branch_props_path(img, vn); value_name=vn) |>
@@ -365,7 +379,7 @@ pop_type, in table order. On top of `pop_df`:
 - **raw column names** — gates and plot axes name raw `{measure}_intensity_{i}` columns;
 - **missing is empty, per column** — a column the table lacks comes back as an empty vector (no
   throw), so the caller decides what it means; an unknown or empty population makes every vector empty.
-NaNs are kept. Track-grained reads aggregate exactly the cell measures `cols` name.
+NaNs are kept. Track-grained reads aggregate exactly the cell measures `cols` name (pop_df derives them).
 """
 function pop_plot_cols(img::CciaImage, pop_type::PopTypeArg, pop::AbstractString, cols;
                        value_name::Union{AbstractString,Nothing}=nothing,
@@ -375,11 +389,11 @@ function pop_plot_cols(img::CciaImage, pop_type::PopTypeArg, pop::AbstractString
     cols = String.(collect(cols))
     want = unique(cols)
     track = is_track_grained(pop_type)
-    cm = track ? track_cell_measures(want, track_table_cols(img, vn)) : String[]
     # one pop, one segmentation: no dedup (keeps table order), no run-wide cluster expansion, and a
-    # track-grained pop_type's rows stay TRACKS (pop_df's default grain would expand them to cells)
+    # track-grained pop_type's rows stay TRACKS (pop_df's default grain would expand them to cells).
+    # The per-track aggregates `want` names are derived by pop_df itself (`_track_read_measures`).
     df = pop_df(img, pop_type, [String(pop)]; value_name=vn, pop_cols=want, raw_channel_names=true,
-                unique_labels=false, expand_cluster_pops=false, cell_measures=cm,
+                unique_labels=false, expand_cluster_pops=false,
                 granularity=track ? :track : :cell,
                 labels_version=labels_version, map_hook=map_hook)
     # into the gates' unit: the same predicate + conversion `recompute!` evaluates with (`df` is

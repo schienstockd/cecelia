@@ -386,7 +386,8 @@ class GuidanceTest(unittest.TestCase):
                      "excludedCount",           # …and it is not part of the cohort denominator
                      "`fun`",                   # which task's QC is talking (a probe ≠ segmentation)
                      "shared capture cap-",     # BIDIR PR #3: how Claude recognises a pushed frame
-                     "CITE THE TOOL"):          # RUBBER_DUCK_FIT_PLAN P3: readouts vs inference at the claim level
+                     "CITE THE TOOL",           # RUBBER_DUCK_FIT_PLAN P3: readouts vs inference at the claim level
+                     "the name is the user's call"):  # cluster profiles: describe a cluster, don't christen it
             self.assertIn(rule, guidance.BRIEFING_GUIDANCE)
 
     def test_the_briefing_ships_the_guidance(self):

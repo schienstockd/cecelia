@@ -88,7 +88,7 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 | `get_populations(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/populations` | per-image population definitions: tree + gate geometry / filter rule (defs only; counts are the measure slice) |
 | `get_measure_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/measures` | per-population phenotype (intensities+morphology) + motility summaries (median/quantiles/mean/n); gated pops else base |
 | `get_behaviour_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/behaviour` | per-image HMM state distribution (fraction per state) + transition counts |
-| `get_cluster_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/clusters` | per clustering run: n clusters, sizes, largest fraction, feature list (cell=clustPops, track=clustTracks) |
+| `get_cluster_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/clusters` | per clustering run: n clusters, sizes, largest fraction, feature list (cell=clustPops, track=clustTracks), and per run a `profiles` entry (per-cluster n + z-scored feature means — the heatmap's matrix) |
 | `get_region_clusters(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/spatial` | per-image spatial region-clustering runs (regions.{suffix}: n regions, sizes) — neighbourhood-composition niches |
 | `get_contact_stats(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/spatial` | per-image pairwise cell-type contact log-odds (association/avoidance per population pair, with permutation z/p) |
 | `get_chains(project_uid)` | `GET /api/analysis/chains` | whiteboard chains: wired templates (node DAG + task fns) + recent runs with node-outcome roll-ups |

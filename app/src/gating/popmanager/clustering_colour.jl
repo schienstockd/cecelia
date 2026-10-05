@@ -92,6 +92,14 @@ function _clustfeatures_entry(props_path::AbstractString, suffix::AbstractString
     nothing
 end
 
+# One run's `partOf` — the image uids clustered together — from a `_clustfeatures_entry`. A legacy entry
+# records none: with `own_uid` that reads as a single-image run on that image, without it as `String[]`.
+function _clustfeatures_part_of(entry, own_uid::Union{AbstractString,Nothing}=nothing)::Vector{String}
+    v = entry === nothing ? nothing : get(entry, "partOf", get(entry, :partOf, nothing))
+    part = v isa AbstractVector ? String[string(x) for x in v] : String[]
+    (isempty(part) && own_uid !== nothing) ? [String(own_uid)] : part
+end
+
 # One run's recorded feature columns (the heatmap's row universe), `String[]` when unrecorded.
 function _clustfeatures_features(props_path::AbstractString, suffix::AbstractString;
                                  family::AbstractString = "clusters")::Vector{String}
