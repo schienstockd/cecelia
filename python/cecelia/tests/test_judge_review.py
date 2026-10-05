@@ -269,7 +269,11 @@ class ReadKeyTest(unittest.TestCase):
             with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stdout", io.StringIO()):
                 return _load_review().read_key("› ")
         finally:
-            self.assertEqual(termios.tcgetattr(slave), before)   # the line discipline is put back
+            after = termios.tcgetattr(slave)
+            # macOS's kernel sets PENDIN (reprint pending input) on leaving cbreak; not ours to restore
+            pendin = getattr(termios, "PENDIN", 0)
+            before[3], after[3] = before[3] & ~pendin, after[3] & ~pendin
+            self.assertEqual(after, before)   # the line discipline is put back
 
     def test_one_key_without_enter(self):
         self.assertEqual(self.press(b"f"), "f")
