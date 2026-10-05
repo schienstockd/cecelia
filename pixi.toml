@@ -93,13 +93,15 @@ pandas       = ">=2.3"
 trimesh      = ">=4.0"
 btrack       = ">=0.7"
 # coastal (live-cell segmentation + the model-free smoothing engine used by
-# cleanupImages.smooth). A GIT dep, not the old editable sibling path: the reason it was
-# dropped was that `~/cc-workspace/coastal` had no remote, so a committed lockfile could not fetch
-# it. It has one now, so the "git dep (shipping)" option docs/SHIPPING.md prescribed is available.
+# cleanupImages.smooth). Pinned to a commit, but fetched as GitHub's source TARBALL for that
+# commit, not as a `git` dep: a git dep makes pixi shell out to the system `git`, and on macOS that
+# is Apple's shim, which exits 69 until the Xcode licence is accepted — and accepting it needs admin
+# rights a lab Mac user often lacks. Over HTTPS nothing outside pixi is needed. To bump: replace the
+# sha in the URL, `pixi lock`. See docs/SHIPPING.md.
 # The dependency direction stays coastal -> cecelia at the *source* level (coastal imports
 # cecelia's IO/napari helpers lazily); this entry is only cecelia consuming coastal's array-only
 # algorithms, which import nothing from cecelia.
-# The rev is a HARD floor, not a snapshot: `segment.coastal` calls
+# The pinned sha is a HARD floor, not a snapshot: `segment.coastal` calls
 # `flow_metrics_for_frame(flow_cache=..., window_offset=...)` (the optical flow two consecutive
 # timepoints share — the kwargs are what make the cache reachable, and an older coastal raises
 # TypeError on the first tile) and `LearnedAffinityInference(seed_blur_sigma=...)`,
@@ -121,7 +123,7 @@ btrack       = ">=0.7"
 # past the floors (`history['floor_<term>']`), and it is silent: a rollback simply writes
 # `lossFloors: {}`, which the panel treats as "this model predates floors" and greys the toggle
 # out, so the feature disappears with no error anywhere.
-coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "fad40f2b8308c2f231454c29a1bc66f8f8e13ceb" }
+coastal      = { url = "https://github.com/schienstockd/coastal/archive/fad40f2b8308c2f231454c29a1bc66f8f8e13ceb.tar.gz" }
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
@@ -433,7 +435,3 @@ stop-notebooks = { cmd = "julia --startup-file=no portkill.jl notebooks 7660",  
 #   gpu = ["gpu"]
 #
 # Left commented so the default solve stays clean. See docs/todo/CLUSTERING_PLAN.md.
-
-# coastal (live-cell seg/tracking) was an editable sibling-path install (~/cc-workspace/coastal,
-# not a git repo) — dropped for now to keep the lockfile reproducible. Re-add later as an
-# editable path-dep (dev) or a git/PyPI dep (shipping). See docs/SHIPPING.md.

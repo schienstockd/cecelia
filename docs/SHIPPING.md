@@ -422,20 +422,30 @@ The cu124 wheel index carries only Linux/Windows wheels, so `torch`/`torchvision
 `[target.linux-64.*]` / `[target.win-64.*]` with that index and in `[target.osx-arm64.*]` from the
 default index (MPS/CPU). A single global cu124 index would make macOS unsolvable.
 
-### coastal is a git dependency (2026-08-05)
+### coastal is a commit-pinned tarball dependency (2026-08-05; tarball since 2026-10-06)
 `coastal` (live-cell seg/tracking) is declared in `[pypi-dependencies]` as
-`{ git = "https://github.com/schienstockd/coastal.git" }`. cecelia consumes its model-free smoothing
-engine from `cleanupImages.smooth` (see `docs/todo/SMOOTHING_PLAN.md`).
+`{ url = "https://github.com/schienstockd/coastal/archive/<sha>.tar.gz" }`. cecelia consumes its
+model-free smoothing engine from `cleanupImages.smooth` (see `docs/todo/SMOOTHING_PLAN.md`).
+
+**Why a tarball, not `{ git = ..., rev = ... }`.** It was a git dep until 2026-10-06. A git dep makes
+pixi run the system `git`. On macOS `/usr/bin/git` is Apple's shim: until the Xcode licence is
+accepted it exits 69 ("You have not agreed to the Xcode license agreements"), and accepting it needs
+`sudo`. A lab Mac user without admin rights could not start the app after an env upgrade had to
+re-fetch coastal. The archive URL pins the same commit, and pixi downloads it over HTTPS, so the
+install needs nothing outside pixi. CI could not catch this: GitHub's macOS runners have the licence
+accepted. To bump, replace the sha in the URL and run `pixi lock`.
 
 It was previously omitted, and the stated reason was specific: it was an editable install from a
 *non-git* sibling path (`~/cc-workspace/coastal`), so a committed lockfile could not fetch it. That
-blocker is gone — the repo has a remote — so this is the "git dep (shipping)" option this section
+blocker is gone — the repo has a remote — so this was the "git dep (shipping)" option this section
 already prescribed, not a reversal.
 
 Two things to keep true:
 
-* **Pin a `rev`, not a branch, before tagging a release.** A branch ref lets `pixi lock` silently
-  follow `main`, which is fine in dev and wrong for a reproducible build.
+* **Pin a commit sha, not a branch, in the URL.** `archive/refs/heads/main.tar.gz` would let the
+  content change under the same URL, which is wrong for a reproducible build.
+* **No `git` pypi deps** — for coastal or any other package — see above. (npm's `github:` deps are
+  fine: npm fetches them as an HTTPS tarball and makes no `git` call.)
 * **The source-level dependency direction stays coastal → cecelia.** coastal imports cecelia's IO
   helpers *lazily* and keeps `coastal/` array-only; this entry is only cecelia consuming coastal's
   algorithms, which import nothing from cecelia. Do not let it become mutual — coastal's CI installs

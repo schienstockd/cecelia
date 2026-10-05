@@ -300,7 +300,7 @@ Two bots open monthly PRs. Both run the full CI matrix.
 - **`update-deps` PRs need CI approved by hand.** A PR opened with `GITHUB_TOKEN` starts its runs in
   an approval-required state. Click *Approve and run* on the PR banner.
 - **The lock refresh only moves versions inside the declared ranges.** Raising a floor or cap in
-  `pixi.toml`, the `coastal` `rev`, a Julia `[compat]` bound, or the pixi version pinned in `ci.yml`
+  `pixi.toml`, the `coastal` commit sha in its archive URL, a Julia `[compat]` bound, or the pixi version pinned in `ci.yml`
   (shared with `update-deps.yml`) is a manual edit.
 - To refresh Julia locally: `pixi run update-julia` (prints the markdown diff). For pixi, use
   `pixi update --dry-run --json | pixi exec pixi-diff-to-markdown` to preview.
