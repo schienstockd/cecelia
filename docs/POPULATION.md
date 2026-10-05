@@ -362,7 +362,7 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   stored map (`flow`) reads as `live`. A board (`board_pop_ref`, `analysis_board_spec.jl`) resolves a
   hidden `…/_tracked` to the offered set it copies — the shallowest `_tracked` in its subtree, when
   there is exactly one (tracking on `/P14qc` makes `P14/_tracked` ≡ `P14/P14qc/_tracked`) — so the
-  panel's picker can show it; two candidates (tracking split across sibling gates) stays a rejection.
+  panel's picker can show it; the board-add reply reports each such substitution (`resolvedPops`); two candidates (tracking split across sibling gates) stays a rejection.
 
 ## Gating pop types & copy across images
 

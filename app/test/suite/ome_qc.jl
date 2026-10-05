@@ -1951,6 +1951,13 @@ end
         dv = expand_board(proj, "hidden-tracked-view", [Dict("plot" => "trackPaths", "pops" => ["P14/_tracked"])];
                           pops = hid)["contents"][1]
         @test dv["state"]["sel"] == ["live::P14/P14qc/_tracked"]
+        # …and the substitution is REPORTED, per plot, never silent; an exact match reports nothing
+        res = Any[]
+        expand_board(proj, "hidden-tracked-report",
+                     [Dict("plot" => "track_measures", "pops" => ["P14/_tracked", "P14/P14qc"]),
+                      Dict("plot" => "trackPaths", "pops" => ["P14/_tracked"])]; pops = hid, resolved_pops = res)
+        @test res == [Dict{String,Any}("plot" => 1, "asked" => "P14/_tracked", "stored" => "P14/P14qc/_tracked"),
+                      Dict{String,Any}("plot" => 2, "asked" => "P14/_tracked", "stored" => "P14/P14qc/_tracked")]
         # ── popType must REACH the named populations ────────────────────────────────────────────────
         # The panel fetches its list with `plot_pop_types(popType, granularity)` and tags each pop with
         # the family it was found under; a tkey outside that expansion matches nothing and the panel

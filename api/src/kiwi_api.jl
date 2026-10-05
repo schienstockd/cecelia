@@ -154,8 +154,10 @@ end
 # Otherwise ONE board is added through the same create-only path `add_analysis_board` uses
 # (`api_boards_add` → `expand_board` + `append_board`), named after the plot; a taken name gets a number.
 
-# Does board slot `s` (a `board_summaries` plot) show what `ref` proposes? PURE → tested.
-function kiwi_slot_holds(s::AbstractDict, ref)::Bool
+# Does board slot `s` (a `board_summaries` plot) show what `ref` proposes? PURE → tested. `resolve` maps
+# a population as ASKED to the path a board stores it under (`board_pop_ref`: a hidden `_tracked` copy →
+# the offered set), so a proposal naming `B/_tracked` finds the board that stored `B/all/_tracked`.
+function kiwi_slot_holds(s::AbstractDict, ref; resolve::Function = identity)::Bool
     string(get(s, "kind", "")) == "summary" || return false
     g(k) = string(something(_kiwi_get(ref, k), ""))
     string(get(s, "ref", "")) == g("plot") || return false
@@ -168,7 +170,7 @@ function kiwi_slot_holds(s::AbstractDict, ref)::Bool
     isempty(want_m) || string(get(s, "measure", "")) == want_m || return false
     pops = _kiwi_get(ref, "pops")
     have = get(s, "pops", String[])
-    pops isa AbstractVector && !all(p -> string(p) in have, pops) && return false
+    pops isa AbstractVector && !all(p -> resolve(string(p)) in have, pops) && return false
     for k in ("groupBy", "statUnit")
         isempty(g(k)) || string(get(s, k, "")) == g(k) || return false
     end
@@ -181,8 +183,10 @@ function kiwi_open_proposed_plot(puid::AbstractString, ref)
     string(_kiwi_get(ref, "kind", "")) == "proposedPlot" || return 400, Dict{String,Any}("error" => "not a proposedPlot ref")
     err = kiwi_ref_shape_error(ref); isempty(err) || return 400, Dict{String,Any}("error" => err)
     proj = try load_project(String(puid)) catch; return 404, Dict{String,Any}("error" => "no project $puid") end
+    avail = try Cecelia.board_spec_populations(proj) catch; Dict{String,String}() end
+    resolve = p -> something(board_pop_ref(avail, p), p)
     for b in board_summaries(proj), s in get(b, "plots", Any[])
-        kiwi_slot_holds(s, ref) && return 200, Dict{String,Any}("ok" => true, "board" => b["name"], "created" => false)
+        kiwi_slot_holds(s, ref; resolve) && return 200, Dict{String,Any}("ok" => true, "board" => b["name"], "created" => false)
     end
     entry = Dict{String,Any}(String(k) => v for (k, v) in pairs(ref) if !(String(k) in ("kind", "compareBy")))
     base = String(first("Kiwi · " * kiwi_proposed_plot_label(ref), _KIWI_BOARD_NAME_MAX))

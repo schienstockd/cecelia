@@ -147,11 +147,11 @@ function render_medoid_filmstrip(med_img::CciaImage, value_name::AbstractString,
 
     # Specs: the SAVED VIEWER STATE for this image version (channels, LUT, contrast) — same JSON
     # the movie renderer and thumbnail route read via `_props_path`. Cold-start (no viewer opened
-    # yet) falls back to sampled-contrast defaults, from the stack's max (`project`) as the stills are.
+    # yet) falls back to sampled-contrast defaults, from the stack's max as the stills are — the one
+    # rule every stack render takes (`_render_default_specs`). `nothing` if neither can be read.
     props = _props_path(med_img._dir, zp)
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
-    specs = try resolved_display_specs(props, nc); catch; nothing end
-    specs === nothing && (specs = try resolved_display_specs(_sampled_specs(zp, nc; project = true)); catch; nothing end)
+    specs = try _render_default_specs(props, zp, nc; max_projection = true); catch; nothing end
     channels = collect(0:(nc - 1))
 
     # Snap each requested frame to the nearest tracked timepoint so the dot (medoid at t) always

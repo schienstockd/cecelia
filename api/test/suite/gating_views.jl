@@ -237,3 +237,52 @@ end
     end
   end
 end
+
+# The board route REPORTS a population it stored under a different path. A gate holding every cell makes
+# `/_tracked` a copy of `/all/_tracked`, so the picker hides it; a board asking for `B/_tracked` is stored
+# as `B/all/_tracked` (board_pop_ref) — and the reply says so, per plot. The board enumerates a
+# project's SETS, so the tracked fixture table is placed in a real set rather than used as `testpr`.
+@testset "API: boards/add reports resolved populations" begin
+  h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+  if !api_have_fixture(h5)
+    @test_skip "testpr fixture missing"
+  else
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "boards-add-resolved")
+        img = add_image!(add_set!(proj; name = "s"); name = "i", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        mkpath(joinpath(img._dir, "labelProps"))
+        cp(h5, joinpath(img._dir, "labelProps", "B.h5ad"))
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"; save!(img)
+        @test _post(api_gating_pop_add, Dict{String,Any}("projectUid" => proj.uid, "imageUid" => img.uid,
+            "valueName" => "B", "popType" => "flow", "name" => "all",
+            "gate" => Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0",
+                "y_channel" => "area", "x_min" => -1e12, "x_max" => 1e12, "y_min" => -1e12, "y_max" => 1e12)))[1] == 200
+        # Kiwi's proposal dry run (the same expander) says so too
+        kr = _kiwi_resolve_proposedPlot(proj.uid, Dict{String,Any}("kind" => "proposedPlot",
+                                        "plot" => "track_measures", "pops" => ["B/_tracked"]))
+        @test kr["ok"] == true && kr["detail"] == "draws B/_tracked as B/all/_tracked"
+        add(name, pops) = _post(api_boards_add, Dict{String,Any}("projectUid" => proj.uid, "name" => name,
+            "plots" => [Dict{String,Any}("plot" => "track_measures", "pops" => pops)]))
+        st, b = add("aliased", ["B/_tracked"])
+        r = JSON3.read(b)
+        @test st == 200
+        @test length(r.resolvedPops) == 1
+        @test (r.resolvedPops[1].plot, String(r.resolvedPops[1].asked), String(r.resolvedPops[1].stored)) ==
+              (1, "B/_tracked", "B/all/_tracked")
+        # …and once that board exists, Kiwi finds it under the asked name rather than adding a duplicate
+        st, o = kiwi_open_proposed_plot(proj.uid, Dict{String,Any}("kind" => "proposedPlot",
+                                        "plot" => "track_measures", "pops" => ["B/_tracked"]))
+        @test st == 200 && o["created"] == false && o["board"] == "aliased"
+        @test occursin("already on board", _kiwi_resolve_proposedPlot(proj.uid, Dict{String,Any}(
+            "kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/_tracked"]))["detail"])
+        st, b = add("exact", ["B/all/_tracked"])
+        @test st == 200 && isempty(JSON3.read(b).resolvedPops)        # nothing substituted → empty, present
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+  end
+end

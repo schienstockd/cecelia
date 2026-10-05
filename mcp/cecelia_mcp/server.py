@@ -378,6 +378,11 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     groups with list_images' `attr` FIRST: grouping by an axis where each group holds one image is not a
     comparison, and you should say so instead of drawing it.
 
+    The reply's `resolvedPops: [{plot, asked, stored}]` lists every population the board stored under a
+    DIFFERENT path than you named (1-based `plot`) — e.g. `P14/_tracked`, which the picker hides when
+    tracking ran on a gate, is stored as `P14/P14qc/_tracked`, the same tracks. Empty when nothing was
+    substituted. Tell the user the stored name when it is not empty.
+
     A spec the project cannot plot comes back 422 with a message naming what WAS available — read it
     and resubmit rather than reporting failure. What no validation can check is INTENT: a well-formed
     board built on the wrong clustering run is still wrong, and it is yours to get right. So say in

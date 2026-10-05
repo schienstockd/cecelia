@@ -160,12 +160,17 @@ function board_pop_ref(pops::AbstractDict, ref::AbstractString)::Union{String,No
 end
 
 # `board_pop_ref` for every reference, or the BoardSpecError naming the first that resolves to nothing.
-function _board_pop_refs(pops::AbstractDict, wanted::AbstractVector, i::Int)::Vector{String}
+# Each reference stored under a DIFFERENT path is recorded in `resolved` (`{plot, asked, stored}`), so the
+# caller can say so — a substitution must never be silent.
+function _board_pop_refs(pops::AbstractDict, wanted::AbstractVector, i::Int,
+                         resolved::Union{AbstractVector,Nothing} = nothing)::Vector{String}
     map(wanted) do p
         k = board_pop_ref(pops, p)
         k === nothing && throw(BoardSpecError(
             "plots[$i]: no population \"$p\" in this project. " *
             "Use get_populations to see what exists (as valueName/pop)."))
+        (resolved === nothing || k == p) ||
+            push!(resolved, Dict{String,Any}("plot" => i, "asked" => String(p), "stored" => k))
         k
     end
 end
@@ -199,7 +204,7 @@ const _IMAGE_AGGS = ("mean", "median")
 
 # One entry of `plots` → a `SlotContent`. Every rejection names the offending value AND what was
 # available, because the caller is an agent that can correct itself if told what the options are.
-function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
+function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int; resolved = nothing)
     raw isa AbstractDict || throw(BoardSpecError("plots[$i] must be an object"))
     d = Dict{String,Any}(string(k) => v for (k, v) in pairs(raw))
 
@@ -266,7 +271,7 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
     first_pt = isempty(offered) ? "" : _pt_of(first(offered))
     asked_pt = _bs_str(get(d, "popType", nothing))
 
-    wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i)
+    wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i, resolved)
     needed = unique(String[pops[p] for p in wanted])          # the families the named pops live in
 
     if isempty(asked_pt)
@@ -413,7 +418,7 @@ function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, 
         end
         haskey(d, "hierarchy") && (state["showHierarchy"] = get(d, "hierarchy", false) === true)
     elseif key in ("trackPaths", "trackDiagnostics")
-        wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i)
+        wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i, ctx.resolved)
         for p in wanted
             pops[p] in _TRACK_FAMILIES || throw(BoardSpecError(
                 "plots[$i]: \"$key\" draws tracks; \"$p\" is a $(pops[p]) population. " *
@@ -514,6 +519,9 @@ the track plots, HMM/motif cards, and the clustering plots). Clustering plots on
 same run (`popType` + `suffix`), which becomes the board's `shared.clustPopType`/`clustSuffix`. Any plot
 may carry a `title` (the slot caption).
 
+`resolved_pops` (a vector, optional) collects every population stored under a different path than the
+spec named — `{plot, asked, stored}`, see `board_pop_ref` — so the caller can report the substitution.
+
 `compare_by` sets what the board compares ACROSS IMAGES — board-level, because that is where
 `useSummaryData` keeps it (the `shared` bag, not per-slot):
 
@@ -531,7 +539,8 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
                       compare_by::AbstractString = "",
                       attrs::Union{Vector{String},Nothing} = nothing,
                       clusters::Union{AbstractDict,Nothing} = nothing,
-                      image_uids::Union{Vector{String},Nothing} = nothing)
+                      image_uids::Union{Vector{String},Nothing} = nothing,
+                      resolved_pops::Union{AbstractVector,Nothing} = nothing)
     isempty(strip(String(name))) && throw(BoardSpecError("the board needs a name"))
     plots isa AbstractVector || throw(BoardSpecError("`plots` must be a list"))
     isempty(plots) && throw(BoardSpecError("a board needs at least one plot"))
@@ -550,7 +559,8 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
     clust_memo = Ref{Any}(clusters)
     img_memo = Ref{Any}(image_uids)
     ctx = (; clusters = () -> clust_memo[] === nothing ? (clust_memo[] = board_spec_cluster_suffixes(proj)) : clust_memo[],
-             images = () -> img_memo[] === nothing ? (img_memo[] = _project_image_uids(proj)) : img_memo[])
+             images = () -> img_memo[] === nothing ? (img_memo[] = _project_image_uids(proj)) : img_memo[],
+             resolved = resolved_pops)
     contents = Any[nothing for _ in 1:slots]
     run = nothing          # the board's ONE clustering run, as (popType, suffix)
     for (i, p) in enumerate(plots)
@@ -568,7 +578,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
         elseif haskey(BOARD_VIEWS_UNSUPPORTED, key)
             throw(BoardSpecError("plots[$i]: \"$key\" cannot be authored — $(BOARD_VIEWS_UNSUPPORTED[key])"))
         else
-            contents[i] = _expand_plot(specs, available, d, i)
+            contents[i] = _expand_plot(specs, available, d, i; resolved = resolved_pops)
         end
     end
 
