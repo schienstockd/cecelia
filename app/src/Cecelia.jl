@@ -104,7 +104,7 @@ export apply_transform, invert_transform, transform_spec, transform_from_spec
 export transform_kind, transform_collapses, effective_transform
 export Gate, RectangleGate, PolygonGate
 export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
-export Density2D, density_2d
+export Density2D, density_2d, axis_summary, grid_summary
 
 # ── Population manager ─────────────────────────────────────────────────────────
 export Population, PopulationMap, ROOT, PopType, PopTypeArg

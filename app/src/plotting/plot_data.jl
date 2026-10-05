@@ -14,28 +14,8 @@
 using DataFrames: DataFrame, nrow, groupby, propertynames
 using Statistics: mean, median, std, quantile
 
-# Equal-width bin edges over the finite values; `nbins+1` edges, or empty when there's no data.
-function _hist_edges(vals, nbins::Int)::Vector{Float64}
-    finite = Float64[Float64(v) for v in vals if v isa Real && isfinite(v)]
-    isempty(finite) && return Float64[]
-    lo, hi = minimum(finite), maximum(finite)
-    hi <= lo && (hi = lo + 1.0)                      # degenerate (single value) → 1-wide bin
-    [lo + (hi - lo) * i / nbins for i in 0:nbins]
-end
-
-# Count finite values into the given edges (last bin is closed on the right).
-function _hist_counts(vals, edges::Vector{Float64})::Vector{Int}
-    n = length(edges) - 1
-    counts = zeros(Int, max(n, 0))
-    n <= 0 && return counts
-    lo = edges[1]; w = (edges[end] - lo) / n
-    for v in vals
-        (v isa Real && isfinite(v)) || continue
-        b = clamp(Int(floor((Float64(v) - lo) / w)) + 1, 1, n)
-        counts[b] += 1
-    end
-    counts
-end
+# `_hist_edges` / `_hist_counts` (equal-width binning) live in gating/density.jl, beside the other
+# binning they share a bin rule with.
 
 # category key for a categorical value: integers render as "1"/"2"/… (hmm.state, generation),
 # everything else stringified. obs columns are Float64, so integer states arrive as 1.0/2.0/…

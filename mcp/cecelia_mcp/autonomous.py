@@ -22,7 +22,6 @@ import json
 import os
 import secrets
 import string
-import struct
 import time
 
 from cecelia_mcp import gating_views as gv
@@ -44,7 +43,7 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/chains/runs"),        # chain runs, newest first
     ("GET", "/api/chains/run"),         # one run's per-image node status
     ("GET", "/api/gating/channels"),    # gateable columns of a segmentation
-    ("GET", "/api/gating/plotdata"),    # x/y values (binary f32) — summarised into a histogram here
+    ("GET", "/api/gating/summary"),     # quantiles + counts per axis, and the joint x × y grid
     ("GET", "/api/gating/stats"),       # count / % of parent for one population
     ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates)
     ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
@@ -141,61 +140,6 @@ def output_name_violations(spec: dict, params: dict, prefix: str) -> list[str]:
                 if not vn.startswith(prefix):
                     bad.append(f"{key} names {vn!r} (populations must be in a {prefix!r} label set)")
     return bad
-
-
-# ── histogram for gating ───────────────────────────────────────────────────────────────────────────
-
-def decode_pairs(raw: bytes) -> tuple[list[float], list[float]]:
-    n = len(raw) // 8
-    vals = struct.unpack(f"<{2 * n}f", raw[: 8 * n])
-    return list(vals[0::2]), list(vals[1::2])
-
-
-def histogram(values: list[float], bins: int = 30) -> dict:
-    """A compact 1-D summary an agent can read a threshold off: quantiles + an even-width count table
-    over the (transformed) range, so a bimodal positive/negative split is visible as two humps."""
-    v = sorted(x for x in values if x == x)          # drop NaN
-    if not v:
-        return {"n": 0}
-    q = lambda f: v[min(len(v) - 1, int(f * (len(v) - 1)))]
-    lo, hi = v[0], v[-1]
-    width = (hi - lo) / bins if hi > lo else 1.0
-    counts = [0] * bins
-    for x in v:
-        counts[min(bins - 1, int((x - lo) / width))] += 1
-    edges = [round(lo + i * width, 4) for i in range(bins + 1)]
-    return {"n": len(v), "min": lo, "max": hi,
-            "quantiles": {k: q(f) for k, f in (("p05", .05), ("p25", .25), ("p50", .5),
-                                                ("p75", .75), ("p95", .95))},
-            "bins": [{"from": edges[i], "to": edges[i + 1], "n": c} for i, c in enumerate(counts)]}
-
-
-def grid2d(xs: list[float], ys: list[float], bins: int = 20) -> dict:
-    """The joint x × y distribution as a coarse count grid, so a gate can follow the SHAPE of the cloud
-    (a polygon) rather than one threshold per axis. Each axis spans its 0.5–99.5th percentile; the
-    first and last row/column also hold the cells beyond them, so a long tail cannot squash every
-    other cell into one bin. `counts[j][i]` = cells in y-bin j (low → high) and x-bin i."""
-    pts = [(x, y) for x, y in zip(xs, ys) if x == x and y == y]      # drop NaN pairs
-    if not pts:
-        return {"n": 0}
-
-    def edges(vals: list[float]) -> list[float]:
-        v = sorted(vals)
-        lo = v[int(.005 * (len(v) - 1))]
-        hi = v[int(.995 * (len(v) - 1))]
-        w = (hi - lo) / bins if hi > lo else 1.0
-        return [lo + i * w for i in range(bins + 1)]
-
-    xe = edges([p[0] for p in pts]); ye = edges([p[1] for p in pts])
-
-    def idx(v: float, e: list[float]) -> int:
-        return max(0, min(bins - 1, int((v - e[0]) / (e[1] - e[0]))))
-
-    counts = [[0] * bins for _ in range(bins)]
-    for x, y in pts:
-        counts[idx(y, ye)][idx(x, xe)] += 1
-    return {"n": len(pts), "x_edges": [round(v, 4) for v in xe], "y_edges": [round(v, 4) for v in ye],
-            "counts": counts}
 
 
 # ── client ─────────────────────────────────────────────────────────────────────────────────────────
@@ -387,15 +331,9 @@ class AutonomousClient:
 
     def gate_histogram(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
                        transform: dict | None, pop: str, bins: int) -> dict:
-        q = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
-             "x": x, "y": y, "pop": pop or "root", **gv.axis_transform_query(transform)}
         self._require_measured(project_uid, image_uid, value_name)
-        xs, ys = decode_pairs(self._request("GET", "/api/gating/plotdata", q, raw=True))
-        out = {"x": {"channel": x, **histogram(xs, bins)}, "y": {"channel": y, **histogram(ys, bins)},
-               "transform": transform or {"kind": "linear"}}
-        if y != x:
-            out["grid"] = grid2d(xs, ys)
-        return out
+        q = {**gv.plot_query(project_uid, image_uid, value_name, x, y, transform, pop), "bins": bins}
+        return self._request("GET", "/api/gating/summary", q)
 
     def gate_plot(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
                   transform: dict | None, pop: str) -> tuple[bytes, dict]:

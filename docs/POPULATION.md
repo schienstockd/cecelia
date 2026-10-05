@@ -669,7 +669,8 @@ client-side; the server persistence was already correct.
 - **Routes** (synchronous, in-process): `GET /api/gating/popmap`; `POST/PUT/DELETE
   /api/gating/pop`; `POST /api/gating/pop/rename`; `GET /api/gating/plotdata`
   (transformed `Float32`, binary + JSON sidecar with extents + axis ticks);
-  `GET /api/gating/density` (2D-histogram fallback); `GET /api/gating/stats`;
+  `GET /api/gating/density` (2D-histogram fallback); `GET /api/gating/summary` (quantiles + 1D counts
+  + the joint grid — `axis_summary`/`grid_summary` in `gating/density.jl`); `GET /api/gating/stats`;
   `GET /api/gating/membership` (label IDs; **binary `Int32`** for large pops).
 - **WS**: `gating:popmap` broadcast after any mutation (reuses `broadcast_ws`).
 - **Frontend**: a 2D-canvas dot plot + a `canvas2D` overlay for gate drawing; density heatmap fallback above a point threshold; **re-entrancy guard**
