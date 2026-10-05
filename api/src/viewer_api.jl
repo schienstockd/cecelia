@@ -1086,7 +1086,6 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting.
     tail_length      = Int(_ov(ov_raw, :tailLength, 30))
     # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring pops.
-    all_tracks       = Bool(_ov(ov_raw, :allTracks, false))
     all_tracks_col   = String(_ov(ov_raw, :allTracksColour, OVERLAY_GREY))
     # Optional multi-source track composition — `trackSources` is a list of `{valueName, colour}`
     # entries (or the look's `{valueName => {visible, colour}}` map — `_normalise_track_sources` reads
@@ -1094,8 +1093,10 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # with its own `all_tracks_colour`) and merge the resulting closures. Without this the whole-seg
     # branch could only draw ONE segmentation's tracks in one grey — fXgbTl (cpSAM + flowTom +
     # coastalFg + coastalSm15 all tracked) had no way to show them together with distinct colours.
-    ts_raw_v = _ov(ov_raw, :trackSources, nothing)
-    track_sources = _normalise_track_sources(ts_raw_v; default_colour = all_tracks_col)
+    # A chosen-but-all-hidden `trackSources` turns `allTracks` off (`_whole_seg_track_sources`).
+    all_tracks, track_sources = _whole_seg_track_sources(Bool(_ov(ov_raw, :allTracks, false)),
+                                                         _ov(ov_raw, :trackSources, nothing);
+                                                         default_colour = all_tracks_col)
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     style = movie_overlay_style(k -> _ov(ov_raw, Symbol(k), nothing))

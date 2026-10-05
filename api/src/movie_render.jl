@@ -619,12 +619,11 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     legacy_gated  = _ov_bool(overlays_config, "showGatedTracks", false)
     # `include_tracks` gates the track-history build; `all_tracks` flips WHICH cells to iterate.
     inc_tracks  = _ov_bool(overlays_config, "includeTracks", legacy_gated || legacy_tracks)
-    all_tracks  = _ov_bool(overlays_config, "allTracks", legacy_tracks)
     show_mask   = _ov_bool(overlays_config, "showMask",        false)
-    ts_raw = get(overlays_config, "trackSources", nothing)
-    track_sources = all_tracks ?
-        [(s["valueName"], s["colour"]) for s in _normalise_track_sources(ts_raw)] :
-        Tuple{String,String}[]
+    # a chosen-but-all-hidden `trackSources` turns `allTracks` off, as in the 2D rail
+    all_tracks, ts = _whole_seg_track_sources(_ov_bool(overlays_config, "allTracks", legacy_tracks),
+                                              get(overlays_config, "trackSources", nothing))
+    track_sources = all_tracks ? [(s["valueName"], s["colour"]) for s in ts] : Tuple{String,String}[]
     (show_pops || all_tracks || show_mask) || return (nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
