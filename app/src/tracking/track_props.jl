@@ -177,6 +177,20 @@ end
 const _TRACK_NUM_AGG_SUFFIXES = (".mean", ".median", ".sum", ".qUp", ".qLow", ".sd")
 
 """
+    track_table_cols(img, value_name) -> Vector{String}
+
+Every column the per-track table `{vn}__tracks.h5ad` provides DIRECTLY, with no cell→track
+aggregation: motility (vars) + track-table obs (lineage, and `clusters.{suffix}` written by
+clustTracks). The `motility_cols` to hand `track_cell_measures`, so a `trackclust` filter on
+`clusters.{suffix}` isn't mistaken for a cell measure to aggregate. Empty for an untracked segmentation.
+"""
+function track_table_cols(img::CciaImage, value_name::AbstractString)::Vector{String}
+    p = img_track_props_path(img, value_name)
+    isfile(p) || return String[]
+    vcat(col_names(label_props(p); data_type = :vars), col_names(label_props(p); data_type = :obs))
+end
+
+"""
     track_cell_measures(cols, motility_cols) -> Vector{String}
 
 Inverse of `track_props`'s column naming: given desired **track-property** column names (a gating

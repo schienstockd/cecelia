@@ -280,6 +280,7 @@ include(joinpath(@__DIR__, "suite", "gate_centroids.jl"))
 # so any helpers defined earlier in suite.jl are still in scope for the extracted
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "pop_df.jl"))
+include(joinpath(@__DIR__, "suite", "pop_plot_cols.jl"))
 
 # ── resolve_pops: cached, display-ready per-pop membership (napari points overlay) ──
 # ── resolve_pops + labels + track-table + pop_df:track testsets ─────────

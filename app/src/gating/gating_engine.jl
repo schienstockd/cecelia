@@ -84,6 +84,29 @@ function _needed_columns(m::PopulationMap)::Vector{String}
 end
 
 """
+    gates_in_um(m) -> Bool
+
+Whether `m`'s spatial gates are in µm — the map is stamped `"um"` AND its image supplied a real pixel
+size. The ONE test for "convert pixel centroids into the gates' unit": `recompute!` scales the data it
+evaluates by it, and `gate_axis_scale` scales the data a gate plot DISPLAYS by it, so the dots, the
+ticks and the gate outlines cannot end up in different units (docs/todo/SPATIAL_GATE_UNITS_PLAN.md
+decision 3). A legacy (unstamped, px) map and an uncalibrated image are both `false`.
+"""
+gates_in_um(m::PopulationMap)::Bool = m.spatial_unit == SPATIAL_UNIT_UM && m.physical_sizes !== nothing
+
+"""
+    gate_axis_scale(m, col) -> Float64
+
+µm/px to multiply a STORED column by so it reads in the unit `m`'s gates are drawn in. `1.0` — no
+conversion — for a non-spatial column (`centroid_t` included: it stays a frame index), a px map, or an
+uncalibrated image. The labels-version pin never enters: the scale describes the gate geometry, not
+which labels version the cells come from.
+"""
+gate_axis_scale(m::PopulationMap, col::AbstractString)::Float64 =
+    (is_spatial_axis(String(col)) && gates_in_um(m)) ?
+        physical_size_for_axis(m.physical_sizes, axis_of(String(col))) : 1.0
+
+"""
     recompute!(m, fetch_cols) -> m
 
 Derive membership for every population. `fetch_cols(cols::Vector{String})` must return a
@@ -105,7 +128,7 @@ function recompute!(m::PopulationMap, fetch_cols::Function)
     # file holds pixel coordinates and must keep comparing against pixels, and an uncalibrated image has
     # no µm to convert to. `scale_centroids!` is the one shared conversion; it is a no-op on a frame
     # with no centroid columns, which is every intensity-only gate.
-    if m.spatial_unit == SPATIAL_UNIT_UM && m.physical_sizes !== nothing
+    if gates_in_um(m)
         df = scale_centroids!(copy(df), m.physical_sizes)   # copy: never mutate the caller's frame
     end
     labels = df.label

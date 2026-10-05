@@ -128,11 +128,12 @@ export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops
+export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
 export pop_df_multi, resolve_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
 export quiver_df, branch_segments, anisotropy_df
-export track_props, track_cell_measures, is_tracked
+export track_props, track_cell_measures, track_table_cols, is_tracked
 # manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
 # `apply_track_ops!`/`renumber_cell_ids!` are the names anything correcting tracks must go through;
 # the per-op `_remove_points!`-style methods stay internal so there is one entry point, not six.

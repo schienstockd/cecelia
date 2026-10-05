@@ -62,7 +62,7 @@ end
 function _missing_column_hint(img, vn, wanted)::String
     cell = _has_label_props(img) ? vcat(col_names(label_props(img; value_name = vn); data_type = :vars),
                                         col_names(label_props(img; value_name = vn); data_type = :obs)) : String[]
-    track = _track_free_cols(img, vn)
+    track = track_table_cols(img, vn)
     missing = [c for c in wanted if !(c in cell)]
     isempty(missing) && return "the columns have no finite values"
     notes = String[]

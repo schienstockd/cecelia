@@ -288,7 +288,8 @@ first" instead of erroring or showing an empty plot.
 
 pop_df(img, pop_type, pops; value_name=nothing, pop_cols=nothing, include_x=false,
            include_obs=true, unique_labels=true, drop_na=false, flush_cache=false,
-           raw_channel_names=false, centroids=false) -> DataFrame
+           raw_channel_names=false, centroids=false, labels_version=nothing,
+           map_hook=nothing) -> DataFrame
 
 Unified population accessor. Returns the cells of `pops` with a `pop` + `value_name`
 column and the requested `pop_cols` (read from the H5AD via `label_props`). Pools across
@@ -320,6 +321,11 @@ different value_name than the one passed.
   pass the base names being gated/plotted (mirrors R `tracksInfo`'s `trackStatsNames`).
 - `value_name=nothing` resolves to the image's **active** segmentation (parity with
   `label_props(img)`); pass a name to override the default value_name for unprefixed pops.
+- `labels_version` pins the cell-table reads (membership and output, `granularity=:track`'s cell-level
+  membership included) to a labels vN (`nothing` = `_latest`); the per-track table has no
+  labels-version axis, so track-table reads ignore it.
+- `map_hook(m)` edits each freshly-loaded map before membership is evaluated — e.g. the API's
+  transient pick-selection pop. A hooked read bypasses the cache.
 - `drop_na=true` drops cells that are NA/NaN in any requested `pop_cols` (mirrors R popDT
   `dropNA`).
 - Results are cached per image keyed by the request signature **plus the on-disk mtimes of the

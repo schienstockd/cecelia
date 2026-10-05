@@ -79,7 +79,7 @@ end
         msg = String(JSON3.read(b).error)
         @test st == 400 && occursin("`intensity` is not a column (near: mean_intensity_0", msg)
         @test occursin("Cell columns: ", msg) && !occursin("`area`", msg)
-        tcols = _track_free_cols(Cecelia.init_object("testpr", "KDIeEm"), "B")
+        tcols = track_table_cols(Cecelia.init_object("testpr", "KDIeEm"), "B")
         if !isempty(tcols)                                           # a per-track column, pointed at its table
             msg = String(JSON3.read(get_(api_gating_plot_image, "x=$(first(tcols))&y=area")[2]).error)
             @test occursin("per-track column", msg)
@@ -104,6 +104,80 @@ end
         @test get_(api_gating_plot_image, "y=area")[1] == 400
         @test get_(api_gating_cells_image, "pop=/nope")[1] == 404
         @test get_(api_gating_cells_image, "pop=/dim")[1] == 404      # the fixture has no label store / zarr
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
+
+# The gating plot routes read through the package's `pop_plot_cols` (docs/POPULATION.md → *The
+# gate-plot read*); the API adds only the pick selection and the transforms. Pinned on the fixture:
+# plotdata returns exactly the package read, the pick selection reaches every plot route on
+# cell-grained maps and never on track maps, and a track gate on an aggregate nobody plots evaluates.
+@testset "API: gating plot routes are a thin wrapper over pop_plot_cols" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        base = "projectUid=testpr&imageUid=KDIeEm&valueName=B"
+        get_(route, q) = route(HTTP.Request("GET", "/x?$base&$q"))
+        f32(b) = collect(reinterpret(Float32, b))
+        rect(x, y, x0, x1, y0, y1) = Dict{String,Any}("kind" => "rectangle", "x_channel" => x, "y_channel" => y,
+            "x_min" => x0, "x_max" => x1, "y_min" => y0, "y_max" => y1)
+        add(pt, name, gate) = _post(api_gating_pop_add, Dict{String,Any}("projectUid" => "testpr",
+            "imageUid" => "KDIeEm", "valueName" => "B", "popType" => pt, "name" => name, "gate" => gate))
+        add("flow", "dim", rect("mean_intensity_0", "area", 0.0, 1000.0, 0.0, 1e9))
+        add("track", "aggr", rect("mean_intensity_0.mean", "area.mean", 0.0, 1000.0, 0.0, 1e9))
+        img = Cecelia.init_object("testpr", "KDIeEm")
+
+        # plotdata (linear) == the package read, label-aligned, for root and a gated pop
+        for pop in ("root", "/dim")
+            st, b = get_(api_gating_plotdata, "popType=flow&pop=$pop&x=mean_intensity_0&y=area&z=centroid_x&withLabels=1")
+            v = pop_plot_cols(img, "flow", pop, ["mean_intensity_0", "area", "centroid_x", "label"]; value_name = "B")
+            buf = f32(b)
+            @test st == 200 && length(buf) == 4 * length(v[1])
+            @test buf[1:4:end] == Float32.(v[1]) && buf[3:4:end] == Float32.(v[3]) && buf[4:4:end] == Float32.(v[4])
+        end
+        @test length(f32(get_(api_gating_plotdata, "popType=flow&pop=root&x=mean_intensity_0&y=area")[2])) == 2 * 1377
+        # missing x/y → no points; a missing colour-by measure → NaN per dot, never fewer dots
+        @test isempty(f32(get_(api_gating_plotdata, "popType=flow&pop=root&x=mean_intensity_0&y=nope")[2]))
+        z = f32(get_(api_gating_plotdata, "popType=flow&pop=root&x=mean_intensity_0&y=area&z=nope")[2])
+        @test length(z) == 3 * 1377 && all(isnan, z[3:3:end])
+        # unknown pop → empty plot / n 0, but 404 where the route resolves the pop itself
+        @test isempty(f32(get_(api_gating_plotdata, "popType=flow&pop=/nope&x=mean_intensity_0&y=area")[2]))
+        @test JSON3.read(get_(api_gating_plotmeta, "popType=flow&pop=/nope&x=mean_intensity_0&y=area")[2]).n == 0
+        @test get_(api_gating_stats, "popType=flow&pop=/nope")[1] == 404
+        @test get_(api_gating_summary, "popType=flow&pop=/nope&x=mean_intensity_0&y=area")[1] == 404
+        @test get_(api_gating_summary, "popType=flow&pop=root&x=nope&y=area")[1] == 400
+
+        # the pick selection: a plot of it is exactly the picked cells, on every cell-grained route
+        labs = Int.(pop_plot_cols(img, "flow", "root", ["label"]; value_name = "B")[1])
+        pick = labs[3:2:80]
+        _set_pick_selection!(img._dir, "B", pick)
+        try
+            st, b = get_(api_gating_plotdata, "popType=flow&pop=/Pick%20selection&x=mean_intensity_0&y=area&withLabels=1")
+            @test Int.(f32(b)[3:3:end]) == pick
+            @test JSON3.read(get_(api_gating_plotmeta, "popType=flow&pop=/Pick%20selection&x=mean_intensity_0&y=area")[2]).n == length(pick)
+            @test JSON3.read(get_(api_gating_stats, "popType=flow&pop=/Pick%20selection")[2]).count == length(pick)
+            @test JSON3.read(get_(api_gating_summary, "popType=flow&pop=/Pick%20selection&x=mean_intensity_0&y=area")[2]).n == length(pick)
+            # never on a track map — its labels are track ids — so the track tree doesn't list it either
+            @test get_(api_gating_stats, "popType=track&pop=/Pick%20selection")[1] == 404
+            @test occursin("Pick selection", String(get_(api_gating_popmap, "popType=flow")[2]))
+            @test !occursin("Pick selection", String(get_(api_gating_popmap, "popType=track")[2]))
+        finally
+            _set_pick_selection!(img._dir, "B", Int[])
+        end
+
+        # track: one point per track; a gate on aggregates the axes don't name still evaluates
+        tp = track_props(img; value_name = "B", cell_measures = ["mean_intensity_0", "area"])
+        keep = (0 .<= tp[!, "mean_intensity_0.mean"] .<= 1000) .& (0 .<= tp[!, "area.mean"] .<= 1e9)
+        b = f32(get_(api_gating_plotdata, "popType=track&pop=/aggr&x=live.track.speed&y=live.track.duration&withLabels=1")[2])
+        @test Int.(b[3:3:end]) == Int.(tp.label[keep]) && 0 < count(keep) < size(tp, 1)
+        @test length(f32(get_(api_gating_plotdata, "popType=track&pop=root&x=live.track.speed&y=live.track.duration")[2])) == 2 * size(tp, 1)
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end

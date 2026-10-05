@@ -163,16 +163,17 @@ _pop_df_mtime(p::AbstractString) = isfile(p) ? string(mtime(p)) : "∅"
 # a manual override for in-memory edits that were never written to disk.
 function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols, include_x,
                            include_obs, unique_labels, drop_na, raw_channel_names,
-                           granularity, cell_measures, categorical, centroids = false)::String
-    is_track  = string(pop_type) == "track"
+                           granularity, cell_measures, categorical, centroids = false,
+                           labels_version = nothing)::String
+    is_track  = is_track_grained(pop_type)
     is_branch = string(pop_type) == "branch"
     stamps = String[]
     for vn in sort(collect(keys(_group_pops_by_value_name(pops, value_name))))
-        # track gating reads `{vn}__tracks.json`; branch gating reads `{vn}__branch.json`;
-        # cell-level pop_types read the flow map. Always fold the cell h5ad (track_props derives
+        # stamp the map file the read actually loads — `{vn}__tracks.json`, `__trackclust.json`,
+        # `__clust.json`, `__branch.json`…, or `flow`'s for a derived pop_type (`_stored_pop_type`) —
+        # so a saved edit to ANY of them invalidates. Always fold the cell h5ad (track_props derives
         # from it; branch_props does not, but folding it costs one stat and disambiguates keys).
-        gt = is_track ? "track" : (is_branch ? "branch" : "flow")
-        gmtime = _pop_df_mtime(gating_path(img._dir, vn; pop_type=gt))
+        gmtime = _pop_df_mtime(gating_path(img._dir, vn; pop_type=_stored_pop_type(pop_type)))
         s = string(vn, "@", gmtime, "/", _pop_df_mtime(img_label_props_path(img, vn)))
         # :track granularity and track-gating both read the companion track table — fold its mtime
         # so a re-run (or a saved track gate) auto-invalidates.
@@ -191,6 +192,8 @@ function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols,
              # frame as read (pixels) and `:physical` scales the returned copy, so `:pixel` and
              # `:physical` legitimately share one cached read instead of doubling the entries.
              centroids !== false,
+             # the pin changes which cell table is read — a pinned and an unpinned read never share
+             something(labels_version, ""),
              join(stamps, "|"))
     string(hash(parts))
 end
@@ -352,7 +355,7 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
     # cache read: the cache key hashes `img_label_props_path`'s mtime, which is insensitive to
     # updates in the `{vn}__tracks.h5ad` file we actually resolve against; `pop_df`'s own
     # mtime-keyed cache sits underneath the helper and handles that correctly.
-    if pt in ("track", "trackclust")
+    if is_track_grained(pt)
         return _resolve_track_family_pops(img, pt, String(value_name))
     end
     ckey = string("poplayers:", value_name, ":", pt, "@",
@@ -361,11 +364,10 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
     cached = get(img._pop_df_cache, ckey, nothing)
     cached === nothing || return cached::Vector{NamedTuple}
     m = load_pop_map(img; value_name = value_name, pop_type = pt)
-    # membership eval uses RAW column names (gates store raw intensity column names). No transient
-    # napari-selection injection here — it must not enter the cached (pure on-disk) result.
-    fetch = cols -> (lp = label_props(img; value_name = value_name);
-                     isempty(cols) || select_cols(lp, cols); as_df(lp))
-    recompute!(m, fetch)
+    # `labels` are CELL labels, so membership is evaluated over the cell table — the shared source's
+    # cell branch, whatever `pt` is (a `branch` map's ids are not cells). Raw column names. No transient
+    # selection injection here — it must not enter the cached (pure on-disk) result.
+    recompute!(m, pop_membership_fetch(img, value_name, "flow"))
     # `has_tracks`: does this pop hold any cell with `track_id > 0` AND authored by this pop (or by
     # whole-seg tracking, or from a legacy row with no `track_source` marker)? Provenance-aware — an
     # orphan row from a deleted pop whose label happens to fall inside a live pop's gate no longer
@@ -407,9 +409,9 @@ end
 # read), so `centroids=` costs the same as naming the columns in `pop_cols`: measured identical to a
 # bare `view_centroid_cols` read at 1.5M cells. An EMPTY selection is already the read-everything
 # shape, which carries the centroids anyway — leave it alone rather than narrowing it.
-_fetch_with_centroids(img::CciaImage, fetch::Function) = function (vn, cols)
+_fetch_with_centroids(img::CciaImage, fetch::Function; labels_version = nothing) = function (vn, cols)
     isempty(cols) && return fetch(vn, cols)
-    lp = label_props(img; value_name = vn)
+    lp = label_props(img; value_name = vn, version = labels_version)
     fetch(vn, unique(vcat(String.(cols), centroid_columns(lp), temporal_columns(lp))))
 end
 
@@ -445,10 +447,14 @@ function _pop_df_finish(df::DataFrame, img::CciaImage, centroids::Union{Bool,Sym
     scale_centroids!(df, img)
 end
 
+# a hooked read is not cached (see `pop_df`)
+_pop_df_store!(img::CciaImage, ckey, df, map_hook) = (map_hook === nothing && (img._pop_df_cache[ckey] = df); df)
+
 """
     pop_df(img, pop_type, pops; value_name=nothing, pop_cols=nothing, include_x=false,
            include_obs=true, unique_labels=true, drop_na=false, flush_cache=false,
-           raw_channel_names=false, centroids=false) -> DataFrame
+           raw_channel_names=false, centroids=false, labels_version=nothing,
+           map_hook=nothing) -> DataFrame
 
 Unified population accessor. Returns the cells of `pops` with a `pop` + `value_name`
 column and the requested `pop_cols` (read from the H5AD via `label_props`). Pools across
@@ -480,6 +486,11 @@ different value_name than the one passed.
   pass the base names being gated/plotted (mirrors R `tracksInfo`'s `trackStatsNames`).
 - `value_name=nothing` resolves to the image's **active** segmentation (parity with
   `label_props(img)`); pass a name to override the default value_name for unprefixed pops.
+- `labels_version` pins the cell-table reads (membership and output, `granularity=:track`'s cell-level
+  membership included) to a labels vN (`nothing` = `_latest`); the per-track table has no
+  labels-version axis, so track-table reads ignore it.
+- `map_hook(m)` edits each freshly-loaded map before membership is evaluated — e.g. the API's
+  transient pick-selection pop. A hooked read bypasses the cache.
 - `drop_na=true` drops cells that are NA/NaN in any requested `pop_cols` (mirrors R popDT
   `dropNA`).
 - Results are cached per image keyed by the request signature **plus the on-disk mtimes of the
@@ -517,7 +528,9 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
                 raw_channel_names::Bool=false, granularity::Symbol=:cell,
                 cell_measures=String[], categorical=String[],
                 expand_cluster_pops::Bool=true,
-                centroids::Union{Bool,Symbol}=false)::DataFrame
+                centroids::Union{Bool,Symbol}=false,
+                labels_version::Union{AbstractString,Nothing}=nothing,
+                map_hook::Union{Function,Nothing}=nothing)::DataFrame
     granularity in (:cell, :track) ||
         error("pop_df: granularity must be :cell or :track (got :$granularity)")
     (centroids === false || centroids === :pixel || centroids === :physical) ||
@@ -539,9 +552,11 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
 
     ckey = _pop_df_cache_key(img, pop_type, resolved_vn, pops, pop_cols, include_x, include_obs,
                              unique_labels, drop_na, raw_channel_names, granularity,
-                             cell_measures, categorical, centroids)
+                             cell_measures, categorical, centroids, labels_version)
     flush_cache && delete!(img._pop_df_cache, ckey)
-    haskey(img._pop_df_cache, ckey) &&
+    # A `map_hook` edits the map in memory, which no on-disk stamp can see, and a closure has no
+    # stable key — so a hooked read neither reads nor fills the cache (`_pop_df_store!`).
+    (map_hook === nothing && haskey(img._pop_df_cache, ckey)) &&
         return _pop_df_finish(copy(img._pop_df_cache[ckey]::DataFrame), img, centroids)
 
     # `track` / `trackclust` pop_types: membership is defined directly on per-track properties
@@ -550,13 +565,14 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
     # `gating/{vn}__trackclust.json`. `granularity` selects the return shape (:track rows, or
     # :cell-expanded member cells). Distinct from the `live`+:track path below, which gates CELL
     # properties and then aggregates to tracks.
-    if string(pop_type) in ("track", "trackclust")
+    if is_track_grained(pop_type)
         df = _pop_df_track_gating(img, pops, resolved_vn; pop_type=string(pop_type),
                                   cell_measures=cell_measures,
                                   categorical=categorical, pop_cols=pop_cols,
                                   unique_labels=unique_labels, drop_na=drop_na,
-                                  granularity=granularity, centroids=centroids)
-        img._pop_df_cache[ckey] = df
+                                  granularity=granularity, centroids=centroids,
+                                  map_hook=map_hook, labels_version=labels_version)
+        _pop_df_store!(img, ckey, df, map_hook)
         return _pop_df_finish(copy(df), img, centroids)
     end
 
@@ -579,8 +595,9 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
         # if a caller asked for coordinates on this path.
         df = _pop_df(branch_load, branch_fetch, "branch", pops;
                      default_vn=resolved_vn, pop_cols=pop_cols, unique_labels=unique_labels,
-                     drop_na=drop_na, membership_fetch=branch_fetch)
-        img._pop_df_cache[ckey] = df
+                     drop_na=drop_na,
+                     membership_fetch=(vn, cols) -> pop_membership_fetch(img, vn, "branch")(cols))
+        _pop_df_store!(img, ckey, df, map_hook)
         return _pop_df_finish(copy(df), img, centroids)
     end
 
@@ -608,7 +625,8 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
         # error as before, not a silently empty frame.
         parts = DataFrame[]
         for vn in filter(v -> v == resolved_vn || img_has_value_name(img, v), want)
-            lp = label_props(img; value_name=vn) |> v -> rename_channels!(v, !raw_channel_names)
+            lp = label_props(img; value_name=vn, version=labels_version) |>
+                 v -> rename_channels!(v, !raw_channel_names)
             # No columns requested — `nothing` OR `String[]` — means a bare cell COUNT: read neither X nor
             # obs, just label/centroids. Reading every obs measure for millions of cells only to count rows
             # needlessly loads the (single-process) API and would stall e.g. a queued napari open. (Empty and
@@ -636,53 +654,46 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
         # the real key — dedup by label alone would silently drop one segmentation's cells.
         df = isempty(parts) ? DataFrame() :
              length(parts) == 1 ? parts[1] : reduce((a, b) -> vcat(a, b; cols=:union), parts)
-        img._pop_df_cache[ckey] = df
+        _pop_df_store!(img, ckey, df, map_hook)
         return _pop_df_finish(copy(df), img, centroids)
     end
 
     # Derived pop_types (e.g. `live`): gates are stored under `flow`; layer the derived pops
     # (e.g. _tracked) on top, transiently. Pop_types with no registered derived specs load normally.
     groups = _group_pops_by_value_name(pops, resolved_vn)
-    has_derived = any(s -> s.pop_type == _coerce_pop_type(pop_type), values(_DERIVED_POPS))
-    load_map = function (vn)
-        if has_derived
-            m = load_pop_map(img; value_name=vn, pop_type="flow")
-            _inject_derived_pops!(m, get(groups, vn, String[]), pop_type)
-        else
-            load_pop_map(img; value_name=vn, pop_type=pop_type)
-        end
-    end
+    load_map = vn -> _read_pop_map(img, vn, pop_type; derived_paths=get(groups, vn, String[]),
+                                   map_hook=map_hook)
 
     # :track → one row per track (features from `track_props`: motility ⊕ `cell_measures` aggregates),
     # membership still evaluated at cell level then mapped to tracks.
     if granularity === :track
         df = _pop_df_tracks(img, load_map, pops, resolved_vn;
                             pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na,
-                            cell_measures=cell_measures, categorical=categorical)
-        img._pop_df_cache[ckey] = df
+                            cell_measures=cell_measures, categorical=categorical,
+                            labels_version=labels_version)
+        _pop_df_store!(img, ckey, df, map_hook)
         return _pop_df_finish(copy(df), img, centroids)
     end
     # label_props chain idiom (docs/DATAMODEL.md). Output columns resolve channel names by
     # default (raw_channel_names=true keeps raw); the conditional select + as_df kwargs keep
     # this as fluent statements rather than a single pipe.
     fetch = function (vn, cols)
-        lp = label_props(img; value_name=vn) |> v -> rename_channels!(v, !raw_channel_names)
+        lp = label_props(img; value_name=vn, version=labels_version) |>
+             v -> rename_channels!(v, !raw_channel_names)
         isempty(cols) || select_cols(lp, cols)
         as_df(lp; include_x=(isempty(cols) ? include_x : true), include_obs=include_obs)
     end
-    # membership/gate eval: always raw column names (gates store raw intensity column names)
-    membership_fetch = function (vn, cols)
-        lp = label_props(img; value_name=vn)
-        isempty(cols) || select_cols(lp, cols)
-        as_df(lp; include_x=(isempty(cols) ? include_x : true), include_obs=include_obs)
-    end
+    # membership/gate eval: the shared source, raw column names (gates store raw intensity names)
+    membership_fetch = (vn, cols) -> pop_membership_fetch(img, vn, pop_type;
+                                                          labels_version=labels_version)(cols)
     # only the OUTPUT fetch gains the centroid columns — gate eval (`membership_fetch`) reads exactly
     # the columns its gates name and must not be widened.
-    out_fetch = centroids === false ? fetch : _fetch_with_centroids(img, fetch)
+    out_fetch = centroids === false ? fetch :
+                _fetch_with_centroids(img, fetch; labels_version = labels_version)
     df = _pop_df(load_map, out_fetch, pop_type, pops;
                  default_vn=resolved_vn, pop_cols=pop_cols, unique_labels=unique_labels,
                  drop_na=drop_na, membership_fetch=membership_fetch)
-    img._pop_df_cache[ckey] = df
+    _pop_df_store!(img, ckey, df, map_hook)
     # a copy so callers never mutate the cached frame; `_pop_df_finish` converts units on that copy
     _pop_df_finish(copy(df), img, centroids)
 end

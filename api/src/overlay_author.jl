@@ -362,7 +362,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
     effective_tcm = cb_col === nothing ? String(track_color_mode) : "pop"
     pt = string(pop_type)
     vn = String(value_name)
-    is_track_pt = pt in ("track", "trackclust")
+    is_track_pt = is_track_grained(pt)
 
     lp   = label_props(img; value_name = vn)
     hasT = !isempty(temporal_columns(lp))
@@ -721,7 +721,7 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
                          colour_overrides::Union{Nothing,AbstractDict} = nothing)
     pt = string(pop_type)
     vn = String(value_name)
-    is_track_pt = pt in ("track", "trackclust")
+    is_track_pt = is_track_grained(pt)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
 

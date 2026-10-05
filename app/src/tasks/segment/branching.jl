@@ -108,6 +108,19 @@ function _aniso_grid_findings(bytes::Integer, n_boxes::Integer, box_um::Real)
                              "at $(round(box_um, digits = 2)) µm")]
 end
 
+# A `refPops` ref → its member CELL labels, or (nothing, why). Any pop type the picker offers — a gate,
+# a cluster, a `_tracked` subset, a per-track gate (its tracks' cells) — through `pop_df_multi`, the
+# mixed-type accessor; the map probe only tells "no such population" apart from an empty one.
+function _ref_pop_cell_labels(img::CciaImage, ref::AbstractString, default_vn::AbstractString)
+    vn, path = _split_pop_ref(ref, default_vn)
+    pt = resolve_pop_type(img, vn, path)
+    m = try; _read_pop_map(img, vn, pt; derived_paths = [path]); catch; nothing; end
+    (m !== nothing && (is_root(path) || has_pop(m, path))) ||
+        return (nothing, "Population not found for refPops='$ref' (value_name=$vn, pop_type=$pt)")
+    df = pop_df_multi(img, [ref]; value_name = default_vn, pop_cols = ["label"], restrict_to = vn)
+    (nrow(df) == 0 ? Int[] : unique(collect(Int, df.label)), nothing)
+end
+
 function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -183,16 +196,8 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # pop map. Multi-accept picker → resolve_pop_type discovers which map to load.
     label_ids = nothing
     if p.refPops != "NONE"
-        vn, path = _split_pop_ref(p.refPops, p.valueName)
-        pt = resolve_pop_type(img, vn, path)
-        m = try; load_pop_map(img; value_name = vn, pop_type = pt); catch; nothing; end
-        if isnothing(m) || !has_pop(m, path)
-            on_log("[ERROR] Population not found for refPops='$(p.refPops)' (value_name=$vn, pop_type=$pt)")
-            return nothing
-        end
-        recompute!(m, cols -> (label_props(img; value_name = vn) |>
-                               lp -> select_cols(lp, cols) |> as_df))
-        label_ids = collect(Int, cells_in_pop(m, path))
+        label_ids, err = _ref_pop_cell_labels(img, p.refPops, p.valueName)
+        err === nothing || (on_log("[ERROR] $err"); return nothing)
         on_log("[INFO] Restricting to $(length(label_ids)) label(s) from population '$(p.refPops)'")
         if isempty(label_ids)
             on_log("[ERROR] Population '$(p.refPops)' is empty — nothing to skeletonise")

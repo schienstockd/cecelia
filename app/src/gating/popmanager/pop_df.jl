@@ -60,20 +60,30 @@ function _pop_df(load_map::Function, fetch::Function, pop_type::PopTypeArg, pops
                  membership_fetch::Function=fetch)::DataFrame
     frames = DataFrame[]
     for (vn, vpops) in _group_pops_by_value_name(pops, default_vn)
-        m = load_map(vn)
+        # The root alone needs no membership — every row of the table IS the root — so skip the map
+        # load + gate evaluation. That is what keeps a whole-dataset read (a gate plot's extents, read
+        # on every render) at the cost of its own columns, not of every gate's columns too.
+        m = all(is_root, vpops) ? nothing : load_map(vn)
         # gate eval must read RAW channel columns (gates store {measure}_intensity_{i});
         # `fetch` may rename output columns to channel names, so keep them separate.
-        recompute!(m, cols -> membership_fetch(vn, cols))
+        m === nothing || recompute!(m, cols -> membership_fetch(vn, cols))
         cols = pop_cols === nothing ? nothing : unique(vcat("label", String.(pop_cols)))
-        base = fetch(vn, cols === nothing ? String[] : filter(!=("label"), cols))  # label + requested cols
-        byrow = Dict(lab => i for (i, lab) in enumerate(base.label))
+        req = cols === nothing ? String[] : filter(!=("label"), cols)
+        # `pop_cols = ["label"]` asks for the labels ALONE — fetch exactly that, because an empty
+        # selection is every fetch's "all columns" (a whole-table read to get one column).
+        label_only = pop_cols !== nothing && !isempty(pop_cols) && isempty(req)
+        base = fetch(vn, label_only ? ["label"] : req)                   # label + requested cols
+        byrow = m === nothing ? nothing : Dict(lab => i for (i, lab) in enumerate(base.label))
         for pop in vpops
             # a pop may be defined on only some images of a pooled set (e.g. a cluster pop written
             # to the run's `partOf` images): skip it where absent rather than erroring the whole set.
-            (is_root(pop) || has_pop(m, pop)) || continue
-            labs = cells_in_pop(m, pop)
-            isempty(labs) && continue
-            rows = [byrow[l] for l in labs if haskey(byrow, l)]
+            rows = if m === nothing
+                collect(1:nrow(base))                                   # root, no map: table order
+            else
+                (is_root(pop) || has_pop(m, pop)) || continue
+                [byrow[l] for l in cells_in_pop(m, pop) if haskey(byrow, l)]
+            end
+            isempty(rows) && continue
             sub = base[rows, :]
             sub[!, :pop] = fill(String(pop), nrow(sub))
             sub[!, :value_name] = fill(vn, nrow(sub))
@@ -103,7 +113,8 @@ end
 # the row key is the track (value_name, track_id), not the cell label.
 function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::AbstractString;
                         pop_cols=nothing, unique_labels::Bool=true, drop_na::Bool=false,
-                        cell_measures=String[], categorical=String[])::DataFrame
+                        cell_measures=String[], categorical=String[],
+                        labels_version::Union{AbstractString,Nothing}=nothing)::DataFrame
     frames = DataFrame[]
     for (vn, vpops) in _group_pops_by_value_name(pops, default_vn)
         # per-track feature table (label == track_id): motility (from `{vn}__tracks.h5ad`) ⊕ on-read
@@ -124,9 +135,9 @@ function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::Ab
 
         # cell-level gate membership (Julia is the evaluator), then cell label → track_id
         m = load_map(vn)
-        recompute!(m, cols -> (label_props(img; value_name=vn) |>
-                               lp -> select_cols(lp, cols) |> as_df))
-        cellobs = label_props(img; value_name=vn) |> lp -> select_cols(lp, ["track_id"]) |> as_df
+        recompute!(m, pop_membership_fetch(img, vn, "flow"; labels_version=labels_version))
+        cellobs = label_props(img; value_name=vn, version=labels_version) |>
+                  lp -> select_cols(lp, ["track_id"]) |> as_df
         cell_tid = Dict{Int,Int}()
         for r in eachrow(cellobs)
             (r.track_id isa Number && !isnan(r.track_id)) || continue
@@ -165,7 +176,8 @@ end
 # (the "selecting a track pulls in all its cells" behaviour). Cell measures are NOT re-attached —
 # the gate is over track properties; callers wanting cell measures read them via a `:cell` pop_df.
 function _expand_tracks_to_cells(img::CciaImage, trackdf::DataFrame; cell_cols=String[],
-                                centroids::Union{Bool,Symbol}=false)::DataFrame
+                                centroids::Union{Bool,Symbol}=false,
+                                labels_version::Union{AbstractString,Nothing}=nothing)::DataFrame
     # the per-track frame identifies each track by `label` (label == track_id on the track table);
     # older callers may pass an explicit `track_id` column. Accept either.
     tidcol = "track_id" in names(trackdf) ? "track_id" : ("label" in names(trackdf) ? "label" : nothing)
@@ -183,7 +195,7 @@ function _expand_tracks_to_cells(img::CciaImage, trackdf::DataFrame; cell_cols=S
         # `centroid_z`). Without it `pop_df(pop_type="track", granularity=:cell, centroids=:physical)`
         # returned a frame with no coordinates at all and `_pop_df_finish` could only warn about it —
         # which is what the track PLOTS need (a gated/clustered track's path is drawn from these).
-        lp = label_props(img; value_name=vn)
+        lp = label_props(img; value_name=vn, version=labels_version)
         want = centroids === false ? unique(vcat("track_id", ccols)) :
                unique(vcat("track_id", ccols, centroid_columns(lp), temporal_columns(lp)))
         co = select_cols(lp, want) |> as_df
@@ -225,7 +237,9 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
                               cell_measures=String[], categorical=String[], pop_cols=nothing,
                               unique_labels::Bool=true, drop_na::Bool=false,
                               granularity::Symbol=:track,
-                              centroids::Union{Bool,Symbol}=false)::DataFrame
+                              centroids::Union{Bool,Symbol}=false,
+                              map_hook::Union{Function,Nothing}=nothing,
+                              labels_version::Union{AbstractString,Nothing}=nothing)::DataFrame
     # one track_props table per value_name (label == track_id); cache within this call. The
     # cluster column (`clusters.{suffix}`, written by clustTracks into the track table obs) comes
     # free via track_props' motility leftjoin, so `trackclust` membership needs no cell_measures.
@@ -233,7 +247,7 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
     get_tp(vn) = get!(tp_cache, vn) do
         track_props(img; value_name=vn, cell_measures=cell_measures, categorical=categorical)
     end
-    load_map = vn -> load_pop_map(img; value_name=vn, pop_type=pop_type)
+    load_map = vn -> _hooked(load_pop_map(img; value_name=vn, pop_type=pop_type), map_hook)
     fetch = function (vn, cols)
         tp = get_tp(vn)
         isempty(tp) && return DataFrame(label=Int[])
@@ -241,14 +255,140 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
         keep = intersect(unique(vcat("label", String.(cols))), names(tp))
         select(tp, keep)
     end
+    # Gate evaluation needs the aggregates the GATES name, which need not be among the caller's
+    # `cell_measures` (a gate on `area.mean` while plotting motility). Reuse the output table when it
+    # already carries them; otherwise read through the shared source, which aggregates what is asked.
+    membership_fetch = function (vn, cols)
+        extra = setdiff(track_cell_measures(cols, track_table_cols(img, vn)), String.(cell_measures))
+        isempty(extra) ? fetch(vn, cols) :
+            pop_membership_fetch(img, vn, pop_type; cell_measures=cell_measures, categorical=categorical)(cols)
+    end
 
     trackdf = _pop_df(load_map, fetch, pop_type, pops; default_vn=default_vn,
-                      pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na)
+                      pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na,
+                      membership_fetch=membership_fetch)
     # :cell expansion carries the requested cell columns (pop_cols that are per-cell obs, e.g. the
     # HMM state/transition columns for the HMM plots) onto the member cells.
     granularity === :track ? trackdf :
         _expand_tracks_to_cells(img, trackdf; cell_cols=(pop_cols === nothing ? String[] : pop_cols),
-                                centroids=centroids)
+                                centroids=centroids, labels_version=labels_version)
+end
+
+# ── Membership data source + the gate-plot read ──────────────────────────────────
+
+# apply a caller's map edit (e.g. the API's transient pick-selection pop) to a freshly-loaded map
+_hooked(m::PopulationMap, hook::Union{Function,Nothing}) = (hook === nothing || hook(m); m)
+
+# The pop_type whose map FILE a read loads: a derived pop_type (`live`) has no file of its own and
+# reads `flow`'s; every other pop_type its own (`gating_path` picks the suffix). Compared as strings so
+# an unrecognised pop_type falls through to its own (empty) map rather than throwing.
+_stored_pop_type(pop_type)::String = isempty(_derived_pop_names(pop_type)) ? string(pop_type) : "flow"
+
+# reserved leaf names of the derived pops registered for `pop_type` (`["_tracked"]` for `live`)
+_derived_pop_names(pop_type)::Vector{String} =
+    [n for (n, sp) in _DERIVED_POPS if string(sp.pop_type) == string(pop_type)]
+
+# The map a read evaluates: `pop_type`'s stored map — or, for a pop_type with registered derived pops
+# (`live`), the `flow` map with those pops layered on (they are never stored). `derived_paths` names
+# which (`pop_df` passes the requested paths); `nothing` layers each derived pop under the root and
+# every population, for a caller that needs the whole map. Then the caller's `map_hook`.
+function _read_pop_map(img::CciaImage, value_name::AbstractString, pop_type::PopTypeArg;
+                       derived_paths=nothing, map_hook::Union{Function,Nothing}=nothing)::PopulationMap
+    names_ = _derived_pop_names(pop_type)
+    isempty(names_) && return _hooked(load_pop_map(img; value_name=value_name, pop_type=pop_type), map_hook)
+    m = load_pop_map(img; value_name=value_name, pop_type=_stored_pop_type(pop_type))
+    paths = derived_paths !== nothing ? derived_paths :
+            [string(is_root(p) ? "" : p, "/", n) for p in vcat(ROOT, pop_paths(m)) for n in names_]
+    _hooked(_inject_derived_pops!(m, paths, pop_type), map_hook)
+end
+
+"""
+    pop_membership_fetch(img, value_name, pop_type; labels_version=nothing,
+                         cell_measures=String[], categorical=String[]) -> (cols -> DataFrame)
+
+THE table a pop_type's gates and filters are evaluated over, as the `fetch_cols` closure `recompute!`
+takes. One definition so a population's members cannot depend on which caller resolved them:
+- `track`/`trackclust` → the per-track table (`track_props`, `label == track_id`), aggregating the cell
+  measures the requested columns name (`track_cell_measures`) on top of `cell_measures`;
+- `branch` → the skeleton sidecar `{vn}__branch.h5ad`;
+- every other pop_type → the cell table, at `labels_version` (`nothing` = `_latest`; the per-track
+  table has no labels-version axis, so the pin does not reach it).
+
+Reads exactly the requested columns (an empty request reads the labels alone — never the whole table).
+"""
+function pop_membership_fetch(img::CciaImage, value_name::AbstractString, pop_type::PopTypeArg;
+                              labels_version::Union{AbstractString,Nothing}=nothing,
+                              cell_measures=String[], categorical=String[])::Function
+    vn = String(value_name)
+    if is_track_grained(pop_type)
+        return cols -> track_props(img; value_name=vn, categorical=categorical,
+            cell_measures=unique(vcat(String.(cell_measures),
+                                      track_cell_measures(cols, track_table_cols(img, vn)))))
+    end
+    string(pop_type) == "branch" &&
+        return cols -> (label_props(img_branch_props_path(img, vn); value_name=vn) |>
+                        lp -> select_cols(lp, cols) |> as_df)
+    cols -> (label_props(img; value_name=vn, version=labels_version) |>
+             lp -> select_cols(lp, cols) |> as_df)
+end
+
+"""
+    computed_pop_map(img; value_name, pop_type="flow", labels_version=nothing, map_hook=nothing)
+        -> PopulationMap
+
+Load `pop_type`'s map for `value_name` and evaluate its membership over `pop_membership_fetch` —
+ready for `cells_in_pop`/`pop_stats`/`has_pop`. Derived pops (`live`'s `_tracked`) are layered under
+the root and every population, exactly as `pop_df` resolves them. `map_hook(m)` edits the loaded map before evaluation
+(the API injects its transient pick-selection pop this way). `labels_version` pins the cell-table read
+and is recorded on the map (`pinned_labels_version`). For a population's DATA use `pop_df`; this is
+for a caller that needs the map itself (counts, parent, the tree).
+"""
+function computed_pop_map(img::CciaImage; value_name::AbstractString, pop_type::PopTypeArg="flow",
+                          labels_version::Union{AbstractString,Nothing}=nothing,
+                          map_hook::Union{Function,Nothing}=nothing)::PopulationMap
+    m = _read_pop_map(img, value_name, pop_type; map_hook=map_hook)
+    m.pinned_labels_version = labels_version === nothing ? nothing : String(labels_version)
+    recompute!(m, pop_membership_fetch(img, value_name, pop_type; labels_version=labels_version))
+end
+
+"""
+    pop_plot_cols(img, pop_type, pop, cols; value_name=nothing, labels_version=nothing,
+                  map_hook=nothing) -> Vector{Vector{Float64}}
+
+One population's values on `cols`, as a gate plot draws them: one vector per REQUESTED column
+(duplicates allowed), all from ONE `pop_df` read so `v[k][i]` is the same row for every `k` — the
+colour-by measure of a dot must belong to that dot. Rows are cells, or tracks for a track-grained
+pop_type, in table order. On top of `pop_df`:
+- **gate units** — spatial columns are multiplied by `gate_axis_scale`, so the dots are in the unit
+  the map's gates are drawn in (the same `gates_in_um` rule `recompute!` evaluates with). Not
+  `centroids=:physical`: that follows the image's calibration, which a px-stamped map does not;
+- **raw column names** — gates and plot axes name raw `{measure}_intensity_{i}` columns;
+- **missing is empty, per column** — a column the table lacks comes back as an empty vector (no
+  throw), so the caller decides what it means; an unknown or empty population makes every vector empty.
+NaNs are kept. Track-grained reads aggregate exactly the cell measures `cols` name.
+"""
+function pop_plot_cols(img::CciaImage, pop_type::PopTypeArg, pop::AbstractString, cols;
+                       value_name::Union{AbstractString,Nothing}=nothing,
+                       labels_version::Union{AbstractString,Nothing}=nothing,
+                       map_hook::Union{Function,Nothing}=nothing)::Vector{Vector{Float64}}
+    vn = resolve_value_name(img, value_name)
+    cols = String.(collect(cols))
+    want = unique(cols)
+    track = is_track_grained(pop_type)
+    cm = track ? track_cell_measures(want, track_table_cols(img, vn)) : String[]
+    # one pop, one segmentation: no dedup (keeps table order), no run-wide cluster expansion, and a
+    # track-grained pop_type's rows stay TRACKS (pop_df's default grain would expand them to cells)
+    df = pop_df(img, pop_type, [String(pop)]; value_name=vn, pop_cols=want, raw_channel_names=true,
+                unique_labels=false, expand_cluster_pops=false, cell_measures=cm,
+                granularity=track ? :track : :cell,
+                labels_version=labels_version, map_hook=map_hook)
+    # into the gates' unit: the same predicate + conversion `recompute!` evaluates with (`df` is
+    # `pop_df`'s copy, so scaling it in place cannot reach the cache)
+    if any(is_spatial_axis, want)
+        m = load_pop_map(img; value_name=vn, pop_type=_stored_pop_type(pop_type))
+        gates_in_um(m) && scale_centroids!(df, m.physical_sizes)
+    end
+    [c in names(df) ? Float64.(df[!, c]) : Float64[] for c in cols]
 end
 
 # ── Derived populations ──────────────────────────────────────────────────────────
@@ -356,8 +496,7 @@ function _tracked_pop_parents(img::CciaImage, vn::AbstractString,
     m = try; load_pop_map(img; value_name=vn, pop_type=pop_type); catch; nothing; end
     (m === nothing || isempty(pop_paths(m))) && (push!(out, ""); return out)
     try
-        recompute!(m, cols -> (label_props(img; value_name=vn) |>
-                               lp -> select_cols(lp, cols) |> as_df))
+        recompute!(m, pop_membership_fetch(img, vn, pop_type))
     catch
         push!(out, ""); return out                     # can't evaluate the gates → hide nothing else
     end
