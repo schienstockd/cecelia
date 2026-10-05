@@ -1242,7 +1242,9 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
     `title` — ONE short label (capped at 200 chars); shown in the entries list and Kiwi.
     `content_md` — Markdown body, ≤ 100 KiB. Attach captured frames by id when the visual is
     load-bearing: `attach_capture_ids=[capX, capY]` — an unknown id is silently dropped (validated
-    against the captures on disk at write time), so a stale reference doesn't fail the write.
+    against the captures on disk at write time), so a stale reference doesn't fail the write. Two or
+    more claims the user could judge separately: one `### s01 · <claim>` heading each (`s02`, …) —
+    each section gets its own good / bad / unsure verdict.
     `image_uid` — optional; when the entry is ABOUT a specific image, pass its uid so a small
     context fingerprint (channel count, stain classes, pipeline stage) is snapshotted into the
     entry's meta. Set once at create; if the image is unknown or unresolvable, the entry is still
@@ -1272,7 +1274,9 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
     and clutters the list.
 
     Flow: read the current entry with `read_blackboard_entry` first, propose the change to the
-    user, THEN call this with the FULL new `content_md` (not a diff). `attach_capture_ids` is
+    user, THEN call this with the FULL new `content_md` (not a diff). Keep each `### sNN ·`
+    section's id when you reword it and number new sections on from the highest — a verdict is
+    stored against the id. `attach_capture_ids` is
     optional — OMIT to keep the entry's existing attachment set; pass an explicit list (possibly
     empty) to REPLACE it. Attachments are versioned per-snapshot: a later read at `version=N`
     returns the attachment set that was live when v<N> was captured. `note` is a short changelog
@@ -1332,14 +1336,15 @@ def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: 
 @_tool
 def set_blackboard_section_outcome(project_uid: str, entry_id: str, section_id: str, verdict: str,
                                    note: str = "") -> dict:
-    """PROPOSE a verdict on ONE section of a BLACKBOARD entry — a decision in an agent run's record
-    (`### d07 · gate · yDfwP7 · …`, or a reviewer-added miss `### m02 · …`). `section_id` is the
-    heading's id (`"d07"`); `verdict` is `"good"`, `"bad"` or `"unsure"`; `note` says why and is
+    """PROPOSE a verdict on ONE section of a BLACKBOARD entry — a claim in a note
+    (`### s02 · cluster 4 is debris`), a decision in an agent run's record
+    (`### d07 · gate · yDfwP7 · …`), or a reviewer-added miss (`### m02 · …`). `section_id` is the
+    heading's id (`"s02"`, `"d07"`); `verdict` is `"good"`, `"bad"` or `"unsure"`; `note` says why and is
     REQUIRED for `"bad"`. Read the entry first (`read_blackboard_entry`: its `sectionOutcomes` holds
     the verdicts so far).
 
     Your verdict is stored as a PROPOSAL (stamped as from Claude): the user sees it next to their own
-    and only theirs count in a run's score. A section the user has already marked is theirs — the
+    and only theirs count in the "k of N marked" score. A section the user has already marked is theirs — the
     call returns 409, and the right move is to tell them what you would change, not to retry.
     Returns `{ok, sectionId, outcome:{verdict, note, by, at}}`. 404 when the section does not exist.
     Metadata only; no snapshot."""

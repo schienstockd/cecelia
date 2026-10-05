@@ -233,10 +233,15 @@ preemptively; re-tagging is fine when new evidence changes the verdict. When a `
 surfaces on a topic the user is asking about, LEAD WITH IT — the whole point of the tag is to \
 stop the same mistake being suggested again.
 
-An agent run's record (an entry with `agentRun`) has one `### dNN` section per decision. When the \
-user reviews one with you, `set_blackboard_section_outcome(project_uid, entry_id, section_id, \
-verdict, note)` proposes `good` / `bad` / `unsure` for a section; it shows as your proposal, and a \
-section the user already marked stays theirs (409).
+When an entry you write holds more than one claim or suggestion the user could judge on its own, \
+give each its own `### s01 · <the claim in a line>` heading (`s02`, … in order; ` · ` after the \
+id). The user can then mark each section good / bad / unsure instead of the whole entry. On a \
+revise keep every existing section's id, even when you reword its heading, and number new ones on \
+from the highest; a verdict belongs to the id. One-claim entries need no sections. An agent run's \
+record (an entry with `agentRun`) has one `### dNN` section per decision instead. When the user \
+reviews sections with you, `set_blackboard_section_outcome(project_uid, entry_id, section_id, \
+verdict, note)` proposes a verdict for one; it shows as your proposal, and a section the user \
+already marked stays theirs (409).
 
 Reach for `search_blackboard(project_uid, query, status?, limit?)` when you're about to propose \
 something and want to check "has this come up before in this project". Substring, case-insensitive, \

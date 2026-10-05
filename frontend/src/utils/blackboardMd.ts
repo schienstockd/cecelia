@@ -99,10 +99,11 @@ export function mermaidBlocks(md: string | undefined | null): string[] {
   return out
 }
 
-// ── Agent run records — one `### dNN · step · image · …` section per decision ──────────────────
-// AGENT_RUN_REVIEW_PLAN P2. The Blackboard renders a run record part by part so each decision
-// section carries its own verdict control. A section runs from its heading to the next heading of
-// level ≤ 3; `mNN` sections are misses a reviewer added.
+// ── Entry sections — each carries its own verdict ─────────────────────────────────────────────
+// AGENT_RUN_REVIEW_PLAN P2. A run record has one `### dNN · step · image · …` section per decision
+// (`mNN`: a miss a reviewer added); any other entry may have `### sNN · …` sections its author wrote,
+// one per claim. The Blackboard renders such an entry part by part so each section carries its own
+// verdict control. A section runs from its heading to the next heading of level ≤ 3.
 
 export const RUN_STEPS = ['cleanup', 'segment', 'measure', 'gate', 'track', 'behaviour', 'report'] as const
 export type RunStep = typeof RUN_STEPS[number]
@@ -111,19 +112,23 @@ export type EntryPart =
   | { kind: 'md'; md: string }
   | { kind: 'section'; id: string; md: string }
 
-const _SECTION_HEAD_RE = /^### ([dm][0-9]{2,3}) · /
+const _SECTION_HEAD_RE = /^### ([dms][0-9]{2,3}) · /
 const _ANY_HEAD_RE = /^#{1,3} /
 
-/** Split an entry's markdown into plain parts and decision sections, in order. An entry with no
- *  `### dNN ·` heading comes back as one `md` part. */
+/** Split an entry's markdown into plain parts and sections, in order. An entry with no
+ *  `### dNN ·` / `mNN` / `sNN` heading comes back as one `md` part. A repeated id is not a second
+ *  section — its heading starts a plain part (the server's `_bb_section_ids` counts it once too). */
 export function splitEntrySections(md: string | undefined | null): EntryPart[] {
   if (!md) return []
   const parts: EntryPart[] = []
   let cur: EntryPart = { kind: 'md', md: '' }
   let inFence = false
+  const seen = new Set<string>()
   for (const line of md.split('\n')) {
     if (line.startsWith('```')) inFence = !inFence
-    const sec = inFence ? null : _SECTION_HEAD_RE.exec(line)
+    let sec = inFence ? null : _SECTION_HEAD_RE.exec(line)
+    if (sec && seen.has(sec[1])) sec = null
+    if (sec) seen.add(sec[1])
     if (sec || (!inFence && cur.kind === 'section' && _ANY_HEAD_RE.test(line))) {
       if (cur.md.trim()) parts.push(cur)
       cur = sec ? { kind: 'section', id: sec[1], md: '' } : { kind: 'md', md: '' }

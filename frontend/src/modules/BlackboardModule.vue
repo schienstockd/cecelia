@@ -228,12 +228,15 @@ const titleById = computed(() => {
 })
 const paneHtml = computed(() => renderBlackboardMarkdown(paneContent.value, titleById.value))
 
-// ── Agent run records — a verdict on each decision (AGENT_RUN_REVIEW_PLAN P2) ─────────────────
-// The live record renders part by part: each `### dNN ·` section gets its heading, a verdict control,
-// then its body. A history preview renders whole (verdicts describe the live entry).
+// ── Sections — a verdict on each (AGENT_RUN_REVIEW_PLAN P2) ──────────────────────────────────
+// A live entry with sections (a run record's `### dNN ·`, a note's `### sNN ·`) renders part by part:
+// each section gets its heading, a verdict control, then its body. A history preview renders whole
+// (verdicts describe the live entry).
 const paneParts = computed(() => {
-  if (!selected.value?.agentRun || viewingVersion.value !== null) return null
-  return splitEntrySections(paneContent.value).map((p, i) => {
+  if (!selected.value || viewingVersion.value !== null) return null
+  const split = splitEntrySections(paneContent.value)
+  if (!split.some(p => p.kind === 'section')) return null
+  return split.map((p, i) => {
     if (p.kind === 'md') return { key: `md${i}`, id: '', pics: [] as string[], headHtml: '', html: renderBlackboardMarkdown(p.md, titleById.value) }
     const nl = p.md.indexOf('\n')
     const atts = selected.value?.attachments ?? []
@@ -632,7 +635,9 @@ onUnmounted(() => { mermaidRenderSeq++ })
                 <i v-if="e.knowledge" class="pi pi-book bb-list-pin"
                    v-tooltip.top="'Lab knowledge — carried into agent runs on this project'" />
                 <i v-if="e.agentRun" class="pi pi-sparkles bb-list-pin"
-                   v-tooltip.top="`Agent run — ${e.sectionsMarked ?? 0} of ${e.agentRun.sectionIds.length} decisions marked`" />
+                   v-tooltip.top="`Agent run — ${e.sectionsMarked ?? 0} of ${e.sectionCount ?? e.agentRun.sectionIds.length} decisions marked`" />
+                <i v-else-if="e.sectionCount" class="pi pi-list-check bb-list-pin"
+                   v-tooltip.top="`${e.sectionsMarked ?? 0} of ${e.sectionCount} sections marked`" />
                 {{ e.title || '(untitled)' }}
               </span>
             </template>
@@ -845,7 +850,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
                   </div>
                 </div>
               </template>
-              <MissedDecisionForm :images="runImages" :busy="savingSection" @add="onAddMiss" />
+              <MissedDecisionForm v-if="selected.agentRun" :images="runImages" :busy="savingSection" @add="onAddMiss" />
             </div>
             <div v-else ref="paneRef" class="bb-body" v-html="paneHtml" @click="onPaneClick" />
 

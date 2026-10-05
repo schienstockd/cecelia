@@ -1,13 +1,14 @@
-# ── Agent run review on the Blackboard ─────────────────────────────────────────
+# ── Section verdicts on the Blackboard ─────────────────────────────────────────
 # `docs/todo/AGENT_RUN_REVIEW_PLAN.md` P2. An unattended agent run's record is one Blackboard entry
 # in the SOURCE project (`scripts/agent_eval/run_record.py`), one `### dNN · step · image · …`
-# section per decision. Three meta fields live here, all carried unchanged through every other write
-# (`_BB_PASSTHROUGH_KEYS` in `_write_bb_meta!`):
+# section per decision. Any other entry can be cut the same way: its author writes one
+# `### sNN · …` heading per claim, and each gets its own verdict. Three meta fields live here, all
+# carried unchanged through every other write (`_BB_PASSTHROUGH_KEYS` in `_write_bb_meta!`):
 #
 #   agentRun         — set once at create by the harness: `{copyProjectUid, startedAt, images,
 #                      sectionIds, …}`. Marks the entry as a run record (the list's filter) and says
 #                      which sections there are without reading entry.md.
-#   sectionOutcomes  — `{sectionId: {verdict, note, by, at}}`. A verdict on ONE decision (Decision 7):
+#   sectionOutcomes  — `{sectionId: {verdict, note, by, at}}`. A verdict on ONE section (Decision 7):
 #                      `good | bad | unsure`, note required for `bad`. `by` is `author_stamp()`, so
 #                      `via: "claude"` marks a proposal from a chat session; the score counts
 #                      only `via: "app"` (a person). A proposal never replaces a person's verdict.
@@ -17,10 +18,15 @@
 #
 # Misses (Decision 8) are `### mNN · …` sections the reviewer appends through the normal revise
 # route, then marks `bad` here.
+#
+# `sectionIds` (written by `_write_bb_meta!` from entry.md) lists the sections the live text has. A
+# verdict on a section a revise removed stays in `sectionOutcomes` (a restore brings it back) but is
+# not counted or shown.
 
 const _BB_PASSTHROUGH_KEYS = ("agentRun", "sectionOutcomes", "knowledge")
 const _BB_SECTION_VERDICTS = ("good", "bad", "unsure")
-const _BB_SECTION_ID_RE = r"^[dm][0-9]{2,3}$"
+const _BB_SECTION_ID_RE = r"^[dms][0-9]{2,3}$"
+const _BB_SECTION_HEAD_RE = r"^### ([dms][0-9]{2,3}) · "
 const _BB_AGENT_RUN_MAX_BYTES = 8 * 1024
 
 # Write one field into an entry's meta.json as it is on disk (no other field touched).
@@ -49,9 +55,39 @@ _section_outcomes(meta)::Dict{String,Any} =
 
 _by_person(o) = o isa AbstractDict && get(something(get(o, "by", nothing), Dict()), "via", "") == "app"
 
-# Put the run-review fields on a reply. A list row gets the marker and a count of the sections a
-# person has marked (the "3 / 15" in the list); the entry read gets both fields whole. Both get
-# the knowledge marker.
+# The section ids of a markdown body, in order: `### <id> · ` headings outside code fences (the
+# frontend's `splitEntrySections` reads the same way).
+function _bb_section_ids(md::AbstractString)::Vector{String}
+    ids = String[]
+    in_fence = false
+    for l in split(md, '\n')
+        startswith(l, "```") && (in_fence = !in_fence; continue)
+        in_fence && continue
+        m = match(_BB_SECTION_HEAD_RE, l)
+        m === nothing || m[1] in ids || push!(ids, String(m[1]))
+    end
+    ids
+end
+function _bb_section_ids(uid::AbstractString, id::AbstractString)::Vector{String}
+    p = joinpath(_bb_entry_dir(uid, id), "entry.md")
+    # read whole: a lazy `eachline` that stops early leaves the file open, and Windows then
+    # refuses the next revise's atomic replace of entry.md (EBUSY)
+    isfile(p) ? _bb_section_ids(read(p, String)) : String[]
+end
+
+# The sections the live entry has: `sectionIds` from meta; a run record written before that field
+# falls back to the ids its harness listed.
+function _bb_live_section_ids(meta)::Vector{String}
+    s = get(meta, "sectionIds", nothing)
+    s isa AbstractVector && return String.(s)
+    ar = get(meta, "agentRun", nothing)
+    s = ar isa AbstractDict ? get(ar, "sectionIds", nothing) : nothing
+    s isa AbstractVector ? String.(s) : String[]
+end
+
+# Put the section-review fields on a reply. A list row of an entry with sections gets the section
+# count and how many of them a person has marked (the "3 of 15" in the list); the entry read gets
+# the verdicts whole. Both get the run and knowledge markers.
 function _bb_put_run_review!(row::AbstractDict, meta; list_row::Bool = false)
     ar = get(meta, "agentRun", nothing)
     ar isa AbstractDict && (row["agentRun"] = ar)
@@ -59,7 +95,11 @@ function _bb_put_run_review!(row::AbstractDict, meta; list_row::Bool = false)
     kn isa AbstractDict && (row["knowledge"] = kn)
     so = _section_outcomes(meta)
     if list_row
-        ar isa AbstractDict && (row["sectionsMarked"] = count(_by_person, values(so)))
+        sids = _bb_live_section_ids(meta)
+        if !isempty(sids)
+            row["sectionCount"] = length(sids)
+            row["sectionsMarked"] = count(sid -> _by_person(get(so, sid, nothing)), sids)
+        end
     else
         isempty(so) || (row["sectionOutcomes"] = so)
     end
@@ -67,14 +107,8 @@ function _bb_put_run_review!(row::AbstractDict, meta; list_row::Bool = false)
 end
 
 # Does entry.md have a `### <sid> ·` heading?
-function _bb_has_section(uid::AbstractString, id::AbstractString, sid::AbstractString)::Bool
-    p = joinpath(_bb_entry_dir(uid, id), "entry.md")
-    isfile(p) || return false
-    head = "### " * sid * " "
-    # read whole: a lazy `eachline` that stops early leaves the file open, and Windows then
-    # refuses the next revise's atomic replace of entry.md (EBUSY)
-    any(l -> startswith(l, head), split(read(p, String), '\n'))
-end
+_bb_has_section(uid::AbstractString, id::AbstractString, sid::AbstractString)::Bool =
+    sid in _bb_section_ids(uid, id)
 
 """
     POST /api/blackboard/section-outcome
@@ -82,7 +116,8 @@ end
 Body: `{ projectUid, entryId, sectionId, verdict: "good"|"bad"|"unsure"|"", note? }`
 Reply: `{ ok:true, sectionId, outcome: {verdict, note, by, at} | null }`
 
-A verdict on one section (`### dNN ·` / `### mNN ·`) of an entry — AGENT_RUN_REVIEW_PLAN Decision 7.
+A verdict on one section (`### dNN ·` / `### mNN ·` in a run record, `### sNN ·` in any other
+entry) — AGENT_RUN_REVIEW_PLAN Decision 7.
 The note is required for `bad`. `verdict: ""` clears the section's verdict. `by` is the caller
 (`author_stamp()`): a call from Claude (`X-Cecelia-Client: claude`) is a PROPOSAL and may neither
 replace nor clear a person's verdict (409). No snapshot — metadata only, like `/outcome`.
@@ -96,7 +131,7 @@ function api_blackboard_section_outcome(body_bytes::Vector{UInt8})
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     _valid_bb_entry_id(id) || return 400, JSON3.write((; error = "Invalid entryId"))
     isnothing(match(_BB_SECTION_ID_RE, sid)) &&
-        return 400, JSON3.write((; error = "sectionId must look like d07 or m02"))
+        return 400, JSON3.write((; error = "sectionId must look like s01, d07 or m02"))
     isempty(verdict) || verdict in _BB_SECTION_VERDICTS ||
         return 400, JSON3.write((; error = "verdict must be one of $(_BB_SECTION_VERDICTS), or \"\" to clear"))
     verdict == "bad" && isempty(note) &&

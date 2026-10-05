@@ -367,6 +367,12 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
             haskey(prev, k) && (meta[k] = prev[k])
         end
     end
+    # The entry's `### sNN ·` / `dNN` / `mNN` sections as the live entry.md has them, so the list can
+    # show "k of N marked" without reading entry.md. Every content write lands here after entry.md.
+    # A run record keeps the key even when empty, so the harness's ids never stand in for a revise
+    # that removed every section.
+    sids = _bb_section_ids(uid, id)
+    (!isempty(sids) || haskey(meta, "agentRun")) && (meta["sectionIds"] = sids)
     write_json_atomic(joinpath(dir, "meta.json"), meta)
 end
 # KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2. Cap the sidecar so a runaway plotSummary can't blow

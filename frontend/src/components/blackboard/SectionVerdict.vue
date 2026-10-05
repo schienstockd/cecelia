@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// A verdict on one decision of an agent run's record (docs/todo/AGENT_RUN_REVIEW_PLAN.md Decision 7).
+// A verdict on one section of an entry: a decision of an agent run's record, or a claim in a note
+// (docs/todo/AGENT_RUN_REVIEW_PLAN.md Decision 7).
 // Good / Bad / Unsure, a note (required for Bad). A verdict from a chat session shows as a
 // proposal until a person marks the section; clicking the active verdict clears it.
 import { ref, computed, watch } from 'vue'
@@ -10,8 +11,8 @@ const emit = defineEmits<{ save: [verdict: SectionVerdict | '', note: string]; p
 
 const NOTE_MAX = 2 * 1024        // matches the server cap
 const OPTS: { v: SectionVerdict; icon: string; label: string; tip: string }[] = [
-  { v: 'good',   icon: 'pi-thumbs-up',   label: 'Good',   tip: 'The decision was right' },
-  { v: 'bad',    icon: 'pi-thumbs-down', label: 'Bad',    tip: 'The decision was wrong — say why' },
+  { v: 'good',   icon: 'pi-thumbs-up',   label: 'Good',   tip: 'This holds up' },
+  { v: 'bad',    icon: 'pi-thumbs-down', label: 'Bad',    tip: 'This is wrong — say why' },
   { v: 'unsure', icon: 'pi-question',    label: 'Unsure', tip: 'Cannot tell from what is here' },
 ]
 

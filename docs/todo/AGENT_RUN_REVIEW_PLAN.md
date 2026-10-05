@@ -154,7 +154,11 @@ set_gate errors #1405 fixed); backend errors from the app's recent-log ring in t
 ### P2 — refs into the copy + section verdicts
 *Section verdicts built (`api/src/blackboard_run_review.jl`, `components/blackboard/`); `by` is the
 caller's `author_stamp()`, so a Claude verdict is a proposal by construction, not by a body field.
-Refs into the copy are next — the record already reads completely without them (text + captures).*
+Refs into the copy are next — the record already reads completely without them (text + captures).
+Extended (2026-10-05) to any entry: an interactive session writes `### sNN · <claim>` per claim
+(MCP guidance), the page splits any live entry with sections, and the list shows "k of N sections
+marked" from meta `sectionIds` (recomputed from entry.md on every write; a removed section's verdict
+stays stored but is not counted).*
 - `KiwiRef` gains an optional `projectUid` (resolver + chip open the copy; absent = the entry's own
   project, so every existing ref is unchanged); a `chain` kind `{name, node}`. Frozen labels written
   by the harness, so the existing `was: <label>` fallback covers a deleted copy.
