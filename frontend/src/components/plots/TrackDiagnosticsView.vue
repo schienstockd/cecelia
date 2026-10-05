@@ -39,6 +39,7 @@
     average 90°; a lower average among the FAR pairs means the whole field moves together.
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
@@ -93,6 +94,8 @@ const vis = computed(() => props.vis ?? DEFAULT_VIS)
 const data = ref<DiagnosticsResponse | null>(null)
 const valueNames = ref<string[]>([])
 const loading = ref(false)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
+useDelayedLoading(loading)
 const error = ref('')
 
 const mode = computed<DiagMode | null>(() => resolveMode(data.value, props.state.mode))

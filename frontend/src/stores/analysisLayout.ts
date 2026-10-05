@@ -161,7 +161,12 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
       if (typeof body?.version === 'number') setVersion(uid, body.version)
     }
   }, { wait: 800 })
-  const scheduleBoardAutosave = () => _autosave.schedule()
+  // A VIEW-ONLY session (the headless board render, modules/BoardRenderView.vue) shows boards without
+  // owning them: panels settle their own state on first render (a resolved segmentation, a default
+  // column), and saving that would rewrite the project's boards from a window nobody is using.
+  let _readOnly = false
+  function setReadOnly(v: boolean) { _readOnly = v }
+  const scheduleBoardAutosave = () => { if (!_readOnly) _autosave.schedule() }
 
   // Re-key the loaded layouts onto the CURRENT project's group (`analysis:<uid>`) — tolerating both the
   // new relative form (`tab:<id>`) and a legacy baked-in `analysis:<oldUid>:tab:<id>` — so a project's
@@ -191,7 +196,7 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
   })
 
   return { entries, ensure, applyTemplate, setContent, setActive, swap, duplicateEntry, drop, clear,
-           serialize, load, setVersion, reloadBoards }
+           serialize, load, setVersion, reloadBoards, setReadOnly }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

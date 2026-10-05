@@ -104,7 +104,9 @@ ON BOARDS. add_analysis_board ADDS one board to the /analysis page — it cannot
 reorder or delete one, so it lands beside the user's own and costs a click to delete if it is wrong. \
 Give the plots in reading order using the spec ids from get_available_plots and the exact \
 "valueName/pop" strings from get_populations. Do NOT set popType — it is derived from the \
-populations. A spec the project cannot plot comes back 422 naming what was available: read it and \
+populations. Gating strategy, track plots, HMM/motif cards and the clustering plots (UMAP, heatmap, \
+HMM states/transitions) are VIEW keys with their own fields (see the tool); a clustering view names \
+its run's `suffix`, one run per board. A spec the project cannot plot comes back 422 naming what was available: read it and \
 resubmit rather than reporting failure. Set `compare_by` to whatever \
 the figure compares across images: an attribute name ("Mouse") for the experimental comparison, else \
 "per_image" or "summarised". Omitting it gives a single-image board, which is not a cross-image \

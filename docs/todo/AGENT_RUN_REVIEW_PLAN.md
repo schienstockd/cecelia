@@ -108,6 +108,24 @@ decision in run order:
 **Explained after the run:** …
 ```
 
+**Stage results.** The pictures the agent looked at are its inputs; a reviewer also needs what each
+stage PRODUCED. For every stage that ran — read from the chain/task decisions, not from whether the
+agent made a board — `stage_boards.py` adds one board to the copy (`Run <stamp> · dNN · <stage>`, via
+`/api/boards/add`, so a re-record re-renders the same board) and renders it headless with the app's
+own frontend (`board_render.py`, `docs/ANALYSIS.md` → *Rendering a board headless*); each slot becomes
+an `agent_run` capture on that stage's section:
+
+| Stage (fn) | Board plots |
+|---|---|
+| `segment.*` (not `measureLabels`) | `segmentation_qc` — cells per frame, cell area — per output segmentation |
+| gating (each image's last gate decision) | `gatingStrategy`, full hierarchy, one slot per image |
+| `tracking.*` | `track_measures` speed + straightness, `trackPaths` on the tracked pop |
+| `behaviour.hmm` | `hmm_state_frequency`, `state_signature`, `transition_matrix`, `hmmStateCards` |
+| `clustTracks.*` / `clustPops.*` | `umap`, cluster `heatmap` (+ `hmmStates`, `hmmTransitions`, `cellCards` for track clusters) |
+
+A board that cannot be added or rendered puts a `**Stage board:**` line saying why in its section;
+the record is written regardless (`--no-stage-boards` skips them).
+
 Section verdicts in `meta.json`: `sectionOutcomes: {"d07": {verdict, note, by, at}}`. Ids are the
 heading's `dNN` and never renumber; misses are `mNN`.
 

@@ -18,6 +18,30 @@ const SFC = import.meta.glob(
 const MANIFESTS = import.meta.glob('../../../../docs/examples/plugins/*/plugin.json', {
   eager: true }) as Record<string, { contributions?: { views?: { view: string }[] } }>
 
+// The board spec expander's view table (`add_analysis_board`), read as source for the parity check below.
+const BOARD_SPEC_JL = Object.values(import.meta.glob('../../../../app/src/analysis_board_spec.jl', {
+  query: '?raw', import: 'default', eager: true }) as Record<string, string>)[0] ?? ''
+const jlTableKeys = (name: string): string[] => {
+  const m = BOARD_SPEC_JL.match(new RegExp(`const ${name} = Dict\\{[^}]*\\}\\(([\\s\\S]*?)\\n\\)`))
+  return m ? [...m[1].matchAll(/^\s*"(\w+)"\s*=>/gm)].map(x => x[1]) : []
+}
+
+describe('board views the expander can author', () => {
+  // A board-flagged view the expander does not name is one Claude (and the run record's stage boards)
+  // can never put on a board, with nothing saying so. Every flagged key of BOTH registries must be in
+  // BOARD_VIEWS or in BOARD_VIEWS_UNSUPPORTED (with its reason) — and nothing else may be.
+  it('names every board-flagged interactive view and cluster panel, once', () => {
+    const views = jlTableKeys('BOARD_VIEWS'), unsupported = jlTableKeys('BOARD_VIEWS_UNSUPPORTED')
+    expect(views.length).toBeGreaterThan(5)                    // anti-vacuity: the table was found
+    expect(unsupported.length).toBeGreaterThan(0)
+    const flagged = [
+      ...Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => v.analysisBoard).map(([k]) => k),
+      ...Object.entries(CLUSTER_PANELS).filter(([, v]) => v.analysisBoard).map(([k]) => k),
+    ]
+    expect([...views, ...unsupported].sort()).toEqual([...flagged].sort())
+  })
+})
+
 describe('interactive view surface flags', () => {
   it('every analysisBoard view lands in exactly one board optgroup', () => {
     const flagged = Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => v.analysisBoard).map(([k]) => k)

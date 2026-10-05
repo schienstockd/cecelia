@@ -39,6 +39,18 @@ and is one click to remove. The in-app *"What can Claude do here?"* dialog
 and is where a user checks before letting Claude near their Analysis page. See
 `docs/ai-assist/OBSERVER.md` and `docs/todo/MCP_BOARD_AUTHORING_PLAN.md`.
 
+A `plot` is a summary spec id **or a board VIEW key** — the interactive views and cluster panels the
+board hosts (`BOARD_VIEWS` in the expander: `gatingStrategy`, `trackPaths`, `trackDiagnostics`,
+`hmmStateCards`, `motifCards`, and the clustering plots `umap`, `heatmap`, `hmmStates`,
+`hmmTransitions`, `cellCards`), each with its own few fields, stored as `{kind: "interactive", ref,
+state}`. Clustering views name their run (`suffix` + `popType` clust/trackclust), which becomes the
+board's `shared.clustPopType`/`clustSuffix` — one run per board, so a second suffix is refused rather
+than silently drawing the first. The views a spec cannot fill (viewer screenshots, flow-model views)
+are refused with the reason. `interactiveViews.test.ts` pins that the expander's two tables name every
+board-flagged key of both registries, so a new board view cannot be silently unauthorable. A summary
+spec on the legacy single `dataSource.popType` (`segmentation_qc`) offers that one family, as
+`popTypeOptions` reads it — the expander used to refuse every population for it.
+
 Two rules the expander enforces, both from one authored board that rendered completely blank:
 
 - **`popType` is DERIVED, and an explicit one must REACH the populations named.** The popType is half
@@ -412,6 +424,32 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
   sub-axis is set) — so two same-type plots (e.g. two "Track measures" boxplots on different measures)
   are distinguishable by filename, not just `Board_1_Track_measures`. `zip.ts` still disambiguates any
   genuine remaining collision with a ` (2)` suffix.
+
+## Rendering a board headless
+
+The agent-run record (`scripts/agent_eval/run_record.py` → `stage_boards.py`) puts each pipeline
+stage's RESULTS into the record by adding a board to the run's copy project and rendering it with
+the app's own frontend — no chart is re-implemented. `scripts/agent_eval/board_render.py` starts a
+throwaway headless Chromium (fresh profile: never the user's browser, localStorage or open project),
+serves `frontend/dist` from disk through the DevTools Fetch domain (nothing is started; built on
+demand when older than `frontend/src`) and opens the bare route `/board-render`
+(`modules/BoardRenderView.vue`). That page opens the project **view-only** (`projectMeta.peekProject`:
+the read routes only — `/api/projects/load` would stamp `lastOpenedAt` and move the copy to the top of
+the recent list, i.e. what `list_projects` calls the user's current project), turns the board autosave
+off, and per board waits for `waitForPlotsIdle` and returns `LayoutCanvas.capturePage()`'s per-slot
+PNGs — the PDF export's own light-theme `exportImage()` path. Two render-only choices, in memory
+(autosave is off): each board is shown `free` at a 720px row height, because the stored A4 lock leaves
+a 2×2 board's plots ~200px wide; and the board is captured until two captures agree, because a plot's
+loads can come in sequence with a quiet gap between (the UMAP fetches its run's features, then the
+embedding). The idle counter only sees hosts that feed it through `useDelayedLoading` — the UMAP, the
+gate montage, the cluster heatmap/HMM panels, the track plots and the cards did not, so a board PDF
+could capture them mid-load as well; they do now.
+
+The session must not write: every non-GET API call is refused (403) unless it is a read that happens
+to be a POST (`/api/plot_data`, `/api/labels/by_category`) or a card route (which only fills the
+copy's own render cache), and refused calls are reported in the record. The live socket (`/ws`) is
+blocked, so the page never pairs, registers plots with the observer, or receives pushes. Today the
+boot itself tries one refused write — the settings store's `/api/profile/settings/patch`.
 
 ## Cross-references
 `docs/UI.md` (generic plot-integration contract, `docked`, canvas shell), `docs/PLOTS.md` (summary-plot

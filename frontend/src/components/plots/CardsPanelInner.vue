@@ -12,6 +12,7 @@
   Design source: docs/todo/BEHAVIOUR_CARDS_PLAN.md — Decisions 1, 2, 5, 8.
 -->
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { computed, ref, useTemplateRef, watch, nextTick } from 'vue'
 import StripCell from './StripCell.vue'
 import PlotSpinner from './PlotSpinner.vue'
@@ -69,6 +70,8 @@ const cards = ref<Card[]>([])
 const pool  = ref<CardsResponse['pool']>([])
 const statScales = ref<CardsResponse['statScales']>({})
 const loading = ref(false)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
+useDelayedLoading(loading)
 const err = ref('')
 
 // BIDIR PR #4b (Decision 19). Card whose medoid track matches Claude's `mark_tracks` on the medoid's

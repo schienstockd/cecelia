@@ -78,44 +78,51 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     return openProject(newUid)
   }
 
+  // What opening a project hands the stores — the `/api/projects/load` payload, or `peekProject`'s
+  // read-only equivalent of it.
+  interface OpenPayload {
+    project: ProjectRecord
+    sets: CciaSet[]
+    boards?: Partial<BoardsDoc> | null
+    moduleCanvases?: { entries?: Record<string, unknown>; geom?: Record<string, unknown> } | null
+    animations?: { snapshots?: unknown[] } | null
+  }
+
+  function hydrate(body: OpenPayload) {
+    const projectStore = useProjectStore()
+    // Sets FIRST, then `current`. They are written in the same tick either way, but the order is
+    // what a reader sees if anything between them ever throws: with `current` first, the app names
+    // the new project while the store still holds the old one's images — which is exactly the state
+    // that was reported. `loadedProjectUid` makes the pairing checkable rather than assumed.
+    projectStore.loadFromApi(body.sets ?? [], body.project.uid)   // NB: clears the canvas/analysis stores — restore AFTER
+    current.value = body.project
+    // rehydrate the Analysis-canvas boards saved with the project (analysisBoards.json)
+    if (body.boards) {
+      const groupKey = `analysis:${body.project.uid}`
+      // The server normalises the document (both historical shapes) and stamps `version` — the
+      // optimistic-concurrency token the autosave must echo back. See utils/boardDoc.ts.
+      useAnalysisTabsStore().load(groupKey, tabGroupOf(body.boards) as never)
+      useAnalysisLayoutStore().load(groupKey, body.boards.layouts as never)
+      useAnalysisLayoutStore().setVersion(body.project.uid, body.boards.version ?? 0)
+    }
+    // rehydrate per-image module-page canvases (moduleCanvases.json)
+    if (body.moduleCanvases) useCanvasPanelsStore().load(body.moduleCanvases as never)
+    // rehydrate the Animation page's captured view snapshots (animations.json); always call so a
+    // project with none clears any leftover from the previously-open project
+    useAnimationStore().load(body.animations as never)
+  }
+
   async function openProject(uid: string): Promise<boolean> {
     loading.value = true
-    const projectStore = useProjectStore()
     try {
       const res = await fetch('/api/projects/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid }),
       })
-      const body = await res.json().catch(() => ({})) as {
-        project?: ProjectRecord
-        sets?: CciaSet[]
-        boards?: Partial<BoardsDoc> | null
-        moduleCanvases?: { entries?: Record<string, unknown>; geom?: Record<string, unknown> } | null
-        animations?: { snapshots?: unknown[] } | null
-        error?: string
-      }
+      const body = await res.json().catch(() => ({})) as Partial<OpenPayload> & { error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-      // Sets FIRST, then `current`. They are written in the same tick either way, but the order is
-      // what a reader sees if anything between them ever throws: with `current` first, the app names
-      // the new project while the store still holds the old one's images — which is exactly the state
-      // that was reported. `loadedProjectUid` makes the pairing checkable rather than assumed.
-      projectStore.loadFromApi(body.sets ?? [], body.project!.uid)   // NB: clears the canvas/analysis stores — restore AFTER
-      current.value = body.project!
-      // rehydrate the Analysis-canvas boards saved with the project (analysisBoards.json)
-      if (body.boards) {
-        const groupKey = `analysis:${body.project!.uid}`
-        // The server normalises the document (both historical shapes) and stamps `version` — the
-        // optimistic-concurrency token the autosave must echo back. See utils/boardDoc.ts.
-        useAnalysisTabsStore().load(groupKey, tabGroupOf(body.boards) as never)
-        useAnalysisLayoutStore().load(groupKey, body.boards.layouts as never)
-        useAnalysisLayoutStore().setVersion(body.project!.uid, body.boards.version ?? 0)
-      }
-      // rehydrate per-image module-page canvases (moduleCanvases.json)
-      if (body.moduleCanvases) useCanvasPanelsStore().load(body.moduleCanvases as never)
-      // rehydrate the Animation page's captured view snapshots (animations.json); always call so a
-      // project with none clears any leftover from the previously-open project
-      useAnimationStore().load(body.animations as never)
+      hydrate(body as OpenPayload)
       await fetchRecent()
       const nSets   = body.sets?.length ?? 0
       const nImages = body.sets?.reduce((n, s) => n + s.images.length, 0) ?? 0
@@ -126,6 +133,44 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       return true
     } catch (e) {
       log.error(`Failed to open project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Open a project for VIEWING ONLY — no write anywhere. `/api/projects/load` is a write: it stamps
+   * `lastOpenedAt` and moves the project to the top of the profile's recent list, which is what
+   * `list_projects` tells Claude is "the project the user is working in". A headless render of a run
+   * copy's boards (`modules/BoardRenderView.vue`) must not do that, so this composes the same payload
+   * from the read-only routes: the project list, `/api/images` (sets + uids), `/api/images/meta` per
+   * image (the full image payload) and `/api/projects/boards`. No module canvases or animations.
+   */
+  async function peekProject(uid: string): Promise<boolean> {
+    loading.value = true
+    try {
+      const q = `projectUid=${encodeURIComponent(uid)}`
+      const get = async <T>(url: string): Promise<T> => {
+        const r = await fetch(url)
+        if (!r.ok) throw new Error(`${url.split('?')[0]}: HTTP ${r.status}`)
+        return await r.json() as T
+      }
+      const [list, listing, boards] = await Promise.all([
+        get<{ projects?: ProjectRecord[] }>('/api/projects'),
+        get<{ name: string; sets: { uid: string; name: string }[]; images: { uid: string; setUid: string }[] }>(`/api/images?${q}`),
+        get<{ boards?: Partial<BoardsDoc> | null }>(`/api/projects/boards?${q}`),
+      ])
+      const metas = await Promise.all(listing.images.map(im =>
+        get<{ image: CciaSet['images'][number] }>(`/api/images/meta?${q}&imageUid=${encodeURIComponent(im.uid)}`)))
+      const sets: CciaSet[] = listing.sets.map(s => ({ uid: s.uid, name: s.name,
+        images: metas.map(m => m.image).filter((_, k) => listing.images[k].setUid === s.uid) }) as CciaSet)
+      const project = list.projects?.find(p => p.uid === uid) ??
+        { uid, name: listing.name, path: '', createdAt: '', lastOpenedAt: null }
+      hydrate({ project, sets, boards: boards.boards ?? null })
+      return true
+    } catch (e) {
+      log.error(`Failed to open project for viewing: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
       return false
     } finally {
       loading.value = false
@@ -213,7 +258,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     }
   }
 
-  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, renameProject, deleteProject, closeProject, claimProject, unclaimProject }
+  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, peekProject, renameProject, deleteProject, closeProject, claimProject, unclaimProject }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

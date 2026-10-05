@@ -10,9 +10,13 @@ after the run — *explained after the run*. Tool errors are listed apart, unsco
 
 The pictures it looked at are uploaded as `agent_run` captures into the source project and attached,
 so the entry reads completely after the copy is deleted. A gate decision with no picture in the trace
-gets one re-rendered from the copy (its gates as they are at record time — said in the caption).
+gets one re-rendered from the copy (its gates as they are at record time — said in the caption). Every
+stage that ran (segmentation, gating, tracking, HMM, clustering) also gets its RESULTS — the Analysis
+board plots for it, added to the copy and rendered headless by the app's own frontend
+(`stage_boards.py`); a stage whose board fails says so in its section, and the record is written anyway.
 
     pixi run python scripts/agent_eval/run_record.py /tmp/cecelia-agent-app/<stamp> [--dry-run DIR]
+                                                     [--no-stage-boards]
 
 `--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing. `--ask-why` resumes the
 finished session once for the why (costs an agent turn; off for a back-fill).
@@ -34,6 +38,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import app_project  # noqa: E402
+import stage_boards  # noqa: E402
 import trace_view  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
@@ -119,7 +124,7 @@ def units_of(items: list[dict], i: int, chains: dict, all_images: list[str]) -> 
             out.append({"step": step_of(fn), "fn": fn, "target": params.get("outputValueName") or
                         params.get("valueName", ""), "images": images,
                         "did": f"`{fn}` (chain {inp.get('chain_name')!r}, node {node.get('id')}) {_short(params, 400)}",
-                        "outcome": got})
+                        "params": params, "outcome": got})
         return out
     if name == "run_task":
         fn, params = inp.get("fun_name", "?"), inp.get("params") or {}
@@ -135,7 +140,7 @@ def units_of(items: list[dict], i: int, chains: dict, all_images: list[str]) -> 
             for img in ([t["imageUid"]] if t.get("imageUid") else images):
                 got[img] = state
         return [{"step": step_of(fn), "fn": fn, "target": params.get("valueName", ""), "images": images,
-                 "did": f"`{fn}` {_short(params, 400)}", "outcome": got}]
+                 "did": f"`{fn}` {_short(params, 400)}", "params": params, "outcome": got}]
     if name in GATE_TOOLS:
         img, vn = inp.get("image_uid", ""), inp.get("value_name", "")
         pop = inp.get("path") or f"{(inp.get('parent') or 'root').rstrip('/').removeprefix('root')}/{inp.get('name')}"
@@ -253,8 +258,10 @@ def _quote(text: str) -> str:
     return "\n".join("> " + ln for ln in text.splitlines())
 
 
-def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict) -> str:
-    """entry.md. `caps` = {sectionId: [captureId or local file name]}."""
+def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict, notes: dict | None = None) -> str:
+    """entry.md. `caps` = {sectionId: [captureId or local file name]}; `notes` = {sectionId: [what the
+    stage boards could not show]}, `""` for the whole record."""
+    notes = notes or {}
     images = app_project.copy_images(run)
     t = rec.get("trace") or {}
     lines = [f"**Brief:** {rec.get('brief', '')}",
@@ -270,7 +277,9 @@ def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict) -> str
              "",
              "Each section is one decision the harness read from the run's trace. *Said before acting* is "
              "the agent's own words at the time; *explained after the run* was asked once the run was over "
-             "and its record frozen.", "", "## Decisions", ""]
+             "and its record frozen.", ""]
+    lines += [f"**Stage boards:** {n}" for n in notes.get("", [])]
+    lines += ["## Decisions", ""] if not notes.get("") else ["", "## Decisions", ""]
     for s in dec["sections"]:
         lines.append(heading(s))
         for u in s["units"]:
@@ -282,6 +291,8 @@ def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict) -> str
             lines.append("- **Tried first:** " + " · ".join(s["triedFirst"]))
         for c in caps.get(s["id"], []):
             lines.append(f"- **Picture:** {c}")
+        for n in notes.get(s["id"], []):
+            lines.append(f"- **Stage board:** {n}")
         if s["said"]:
             lines += ["- **Said before acting:**", _quote("\n\n".join(s["said"]))]
         if why and why.get(s["id"]):
@@ -410,8 +421,18 @@ def source_set_name(projects_dir: pathlib.Path, source_uid: str, image_uids: lis
     return ""
 
 
+def results(api: str | None, run: dict, dec: dict, stamp: str) -> tuple[dict, dict]:
+    """The stages' board pictures + notes — never raises: the record must be written without them."""
+    if not api:
+        return {}, {}
+    try:
+        return stage_boards.stage_pictures(api, run, dec, stamp)
+    except Exception as e:  # noqa: BLE001 — anything here costs the pictures, never the record
+        return {}, {"": [f"not rendered — {type(e).__name__}: {e}"]}
+
+
 def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None, dry_run: pathlib.Path | None,
-          why: bool = False, claude: str = "claude") -> dict:
+          why: bool = False, claude: str = "claude", boards: bool = True) -> dict:
     run = json.loads((root / "run.json").read_text(encoding="utf-8"))
     rec_path = root / "record.json"
     rec = json.loads(rec_path.read_text(encoding="utf-8")) if rec_path.exists() else {}
@@ -422,6 +443,9 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
     dec = decisions(str(root / "trace.jsonl"), images)
     answers = ask_why(root, dec["sessionId"], dec, claude) if why and dec.get("sessionId") else None
     pics = pictures(api, run, dec)
+    stage_pics, notes = results(api, run, dec, root.name) if boards else ({}, {})
+    for sid, got in stage_pics.items():
+        pics.setdefault(sid, []).extend(got)
     set_name = source_set_name(projects_dir, source_uid, [im["sourceImageUid"] for im in images]) \
         if projects_dir else ""
     title = f"Agent run {rec.get('startedAt') or root.name} — {set_name or source_uid}" + \
@@ -442,7 +466,7 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
                 cid = upload_capture(api, source_uid, png, caption, addr)
                 attach.append(cid)
                 caps.setdefault(sid, []).append(f"`{cid}` — {caption}")
-    content = render(run, rec, dec, answers, caps)
+    content = render(run, rec, dec, answers, caps, notes)
     out = {"title": title, "sections": len(dec["sections"]), "toolErrors": len(dec["toolErrors"]),
            "pictures": sum(len(v) for v in pics.values()), "why": bool(answers)}
     write_json_atomic(root / "decisions.json", json.loads(json.dumps({**dec, "why": answers}, default=str)),
@@ -471,10 +495,12 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", default=None, help="write entry.md + pictures here; post nothing")
     ap.add_argument("--ask-why", action="store_true")
     ap.add_argument("--claude", default="claude")
+    ap.add_argument("--no-stage-boards", action="store_true", help="skip the per-stage board pictures")
     a = ap.parse_args(argv)
     out = write(pathlib.Path(a.root).expanduser().resolve(), a.api_url,
                 pathlib.Path(a.projects_dir).expanduser() if a.projects_dir else None,
-                pathlib.Path(a.dry_run).expanduser() if a.dry_run else None, a.ask_why, a.claude)
+                pathlib.Path(a.dry_run).expanduser() if a.dry_run else None, a.ask_why, a.claude,
+                not a.no_stage_boards)
     print(json.dumps(out))
     return 0
 

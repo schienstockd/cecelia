@@ -70,6 +70,9 @@ export const router = createRouter({
     // `?project=<uid>&image=<uid>&valueName=<vn>` because a popup opens with no project open.
     // docs/todo/WEB_VIEWER_PLAN.md.
     { path: '/viewer-window', component: () => import('./modules/ViewerWindow.vue'),      meta: { label: 'Viewer', bare: true } },
+    // a headless render of one Analysis board, driven by the agent-run record (stage_boards.py) — opens
+    // the project view-only and exposes `window.__ccBoardRender`. Not a page anyone navigates to.
+    { path: '/board-render', component: () => import('./modules/BoardRenderView.vue'),   meta: { label: 'Board render', bare: true } },
     // first-launch setup wizard — bare (clean welcome screen, no sidebar/header). The boot guard
     // below routes here when the backend reports setupRequired. See docs/todo/ONBOARDING_PLAN.md.
     { path: '/setup',     component: () => import('./modules/SetupModule.vue'),          meta: { label: 'Setup', bare: true } },
