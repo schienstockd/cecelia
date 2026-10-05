@@ -21,7 +21,7 @@ const _CELLS_OUT_COLOUR = "#ff2bd6"
 # ?projectUid&imageUid&valueName&x&y[&pop][&xt…&yt… as plotmeta]
 # → { png, n, x:{channel, title, transform, extent}, y:{…}, gates:[{path, colour, kind, …display coords}] }
 # Axes as the Gate page draws them by default: raw 0 → the WHOLE segmentation's max (so walking down
-# the tree keeps the scale), grown to enclose the child gates; a gate reaching past the axes is clipped
+# the tree keeps the scale), grown to enclose child-gate edges near the data (`_include_edges`); a gate reaching past the axes is clipped
 # in the picture and stated in full in `gates`.
 function api_gating_plot_image(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -38,13 +38,13 @@ function api_gating_plot_image(req::HTTP.Request)
     isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
     xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, "flow", x, y, pop, xt, yt)
     # the Gate page's default axes (plotmeta x0/y0=1): raw 0 → the WHOLE dataset's max, so walking
-    # down the tree keeps the scale; grown to enclose the child gates, as the browser does
+    # down the tree keeps the scale; grown to the child gates' near edges, as the browser does
     rx = _finite_extrema(invert_transform.(Ref(xt), rxv)); ry = _finite_extrema(invert_transform.(Ref(yt), ryv))
     xext = (apply_transform(xt, 0.0), apply_transform(xt, float(rx[2])))
     yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
     gates = _child_gate_outlines(m, pop, x, y, xt, yt)
-    gb = _gates_bbox(gates)
-    xext = _include_range(xext, gb[1], gb[2]); yext = _include_range(yext, gb[3], gb[4])
+    gx, gy = _gate_edges(gates)
+    xext = _include_edges(xext, gx); yext = _include_edges(yext, gy)
     png = render_gate_plot_png(xv, yv, xext, yext,
                                _axis_ticks(xt, invert_transform(xt, xext[1]), invert_transform(xt, xext[2])),
                                _axis_ticks(yt, invert_transform(yt, yext[1]), invert_transform(yt, yext[2])),

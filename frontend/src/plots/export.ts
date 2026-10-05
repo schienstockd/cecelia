@@ -234,6 +234,16 @@ export function svgPolygon(pts: [number, number][], o: { stroke?: string; fill?:
     o.stroke ? `stroke-width="${r1(o.width ?? 1)}"` : '', o.opacity != null && o.opacity < 1 ? `stroke-opacity="${r1(o.opacity)}"` : '']
   return `<polygon points="${p}" ${attrs.filter(Boolean).join(' ')}/>`
 }
+// `inner` clipped to the rect [x, y, w, h] — for marks that may run past a plot area (an open-ended
+// gate, dots outside a zoomed view), as the canvas clips them. The id comes from ONE module-wide counter,
+// so the clips of every plot stitched into one montage document stay distinct.
+let clipSeq = 0
+export function svgClip(rect: { x?: number; y?: number; w: number; h: number }, inner: string): string {
+  if (!inner) return ''
+  const id = `cc-clip-${++clipSeq}`
+  return `<clipPath id="${id}"><rect x="${r1(rect.x ?? 0)}" y="${r1(rect.y ?? 0)}" ` +
+         `width="${r1(rect.w)}" height="${r1(rect.h)}"/></clipPath><g clip-path="url(#${id})">${inner}</g>`
+}
 export function svgPath(d: string, o: { stroke?: string; fill?: string; width?: number; opacity?: number }): string {
   if (!d) return ''
   const attrs = [`fill="${o.fill ?? 'none'}"`, o.stroke ? `stroke="${o.stroke}"` : '',

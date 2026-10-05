@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { svgDoc, svgCircles, svgPolygon, svgPath, svgRect, svgLine, svgText, svgImage, svgEsc, nestSvg,
+import { svgDoc, svgCircles, svgPolygon, svgPath, svgRect, svgLine, svgText, svgImage, svgEsc, nestSvg, svgClip,
          svgSizeWarning, SVG_SIZE_WARN_BYTES } from './export'
 
 // The dot plots (UMAP, gating) export a TRUE-VECTOR SVG so figures open editable in Illustrator and the
@@ -54,6 +54,17 @@ describe('svgDoc — document wrapper', () => {
 })
 
 describe('vector primitives', () => {
+  it('svgClip wraps marks in a clip to the plot rect; nothing to clip → nothing', () => {
+    const c = svgClip({ w: 100, h: 50 }, '<polygon points="0,0 900,0 900,10"/>')
+    const id = /<clipPath id="([^"]+)"><rect x="0" y="0" width="100" height="50"\/><\/clipPath>/.exec(c)?.[1]
+    expect(id).toBeTruthy()
+    expect(c).toContain(`<g clip-path="url(#${id})"><polygon`)
+    // a montage stitches several plots into one document — two clips never share an id
+    const id2 = /<clipPath id="([^"]+)"/.exec(svgClip({ w: 100, h: 50 }, '<g/>'))?.[1]
+    expect(id2).not.toBe(id)
+    expect(svgClip({ w: 100, h: 50 }, '')).toBe('')
+  })
+
   it('svgPolygon builds a points list; no stroke → fill none', () => {
     const p = svgPolygon([[0, 0], [10, 0], [10, 10]], { stroke: '#a78bfa', width: 1.5 })
     expect(p).toContain('points="0,0 10,0 10,10"')

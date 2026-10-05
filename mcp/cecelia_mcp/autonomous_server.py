@@ -135,9 +135,11 @@ def add_gate(project_uid: str, image_uid: str, value_name: str, name: str, gate:
      "x_min", "x_max", "y_min", "y_max"}  or
     {"kind": "polygon", "x_channel", "y_channel", "x_transform", "y_transform",
      "vertices": [[x1, y1], [x2, y2], [x3, y3], …]}  (≥ 3 vertices, closed implicitly).
-    A one-channel threshold is a rectangle spanning the whole other axis; a population whose cloud
-    is not axis-aligned (a diagonal, a curved edge against debris) is a polygon traced on
-    gate_histogram's `grid`. The population's path is
+    A one-channel threshold is a rectangle spanning the whole other axis; write its open side at the
+    data's own edge (gate_histogram's `min`/`max`, a little beyond), not at an arbitrary large
+    number. A population whose cloud is not axis-aligned (a diagonal, a curved edge against debris)
+    is a polygon traced on gate_histogram's `grid`. Then CHECK it where it matters: gate_cells_view
+    on the new population shows which cells in the image it took. The population's path is
     `/<name>` (or `<parent>/<name>`); pass it to tasks as e.g. `popsToTrack`."""
     return _client.gating_post("/api/gating/pop/add", project_uid, image_uid, value_name,
                                name=name, parent=parent, gate=gate, colour=colour)
