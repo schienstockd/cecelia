@@ -1,6 +1,6 @@
 # ── Cohort stages + guides + flow + CellposeSegment testsets ──────────
-# 9 sections covering: cohort-stages vs cohort-metrics parity (Julia COHORT_METRICS ⇔
-# frontend COHORT_STAGES), guide catalogue name check (every guide names a real task),
+# 10 sections covering: cohort-stages vs cohort-metrics parity (Julia COHORT_METRICS ⇔
+# frontend COHORT_STAGES), guide catalogue name checks (TS funName literals + the rendered guides.json "Runs:" funs),
 # composite-half guide declaration, parse_temporal_scales, flow_dropped_metrics,
 # flow_model_target, flow_training_qc_findings, and CellposeSegment spec dynamic Model
 # options. Extracted from suite.jl to keep it small enough to merge without EOF conflicts
@@ -85,6 +85,29 @@ end
             String(get(spec, "task", "")) == k || push!(mismatched, "$f => $k")
         end
         @test isempty(mismatched)
+    end
+end
+
+# ── Every fun a guide RUNS is a real task ────────────────────────────────────
+# The testset above reads `funName:` literals, which is how moduleTask.ts builds a step's
+# `awaitTask.fun` today. This one reads what that build actually produced: the rendered catalogue the
+# agents are handed (mcp/cecelia_mcp/guides.json, kept equal to the TS source by guideText.test.ts),
+# where each guide's `awaitTask.fun`s appear as "Runs: `category.task`". So a step that sets `fun` any
+# other way — or a guide an agent reads via `get_guide` — still cannot name a task that doesn't exist.
+@testset "every fun a guide runs has a task spec" begin
+    path = joinpath(_repo, "mcp", "cecelia_mcp", "guides.json")
+    if !isfile(path)
+        @test_skip "mcp/cecelia_mcp/guides.json not found"
+    else
+        runs = String[]
+        for entry in JSON3.read(read(path, String))
+            for line in eachmatch(r"^Runs: (.*)$"m, String(entry.text))
+                append!(runs, [String(m.captures[1]) for m in eachmatch(r"`([^`]+)`", line.captures[1])])
+            end
+        end
+        @test !isempty(runs)
+        registry = Cecelia._fun_name_map()
+        @test isempty(sort(unique([f for f in runs if !haskey(registry, f)])))
     end
 end
 
