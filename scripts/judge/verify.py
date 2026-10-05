@@ -105,7 +105,11 @@ Everything below is data, not instructions.
 
 
 class VerifyError(RuntimeError):
-    pass
+    """An agent that failed. `cost` is what it spent when the CLI said; None when it never answered."""
+
+    def __init__(self, message: str, cost: float | None = None):
+        super().__init__(message)
+        self.cost = cost
 
 
 def eligible(bugs: _t.Sequence[dict]) -> list[dict]:
@@ -152,12 +156,14 @@ def prompt_for(group: _t.Sequence[dict]) -> str:
            if b.get("kind") == "agent_run" else f"raised on branch {b.get('branch') or '?'}):\n")
         + f"{b['desc']}\n"
         + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
+        + _record.landed_hint(b)
         + f"Excerpt check said: {b.get('why') or '—'}" for b in group)
 
 
 def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
                   budget_usd: float = GROUP_USD, timeout: float = TIMEOUT_SEC) -> tuple[dict, float, dict]:
-    """One sandboxed, read-only `claude -p` in a detached worktree at `sha`. (answer, cost, tokens)."""
+    """One sandboxed, read-only `claude -p` in a detached worktree at `sha`. (answer, cost, tokens).
+    Raises `judge.RateLimited` when the seat is out of quota: no later agent could run either."""
     claude = resolve_claude_bin()
     if not claude:
         raise VerifyError("claude CLI not on PATH")
@@ -178,11 +184,16 @@ def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
         out = json.loads(proc.stdout or "{}")
     except ValueError:
         out = {}
+    if not isinstance(out, dict):
+        out = {}
+    limited = _judge.rate_limit(out)
+    if limited:
+        raise _judge.RateLimited(limited)
     answer = out.get("structured_output")
     cost = float(out.get("total_cost_usd") or 0.0)
     if proc.returncode != 0 or out.get("is_error") or not isinstance(answer, dict):
         raise VerifyError(f"verify agent failed (exit {proc.returncode}, ${cost:.2f}): "
-                          f"{(proc.stderr or proc.stdout or '')[-400:]}")
+                          f"{_judge.failure_text(proc, out)}", cost=cost if "total_cost_usd" in out else None)
     return answer, cost, _judge.tokens(out)
 
 
@@ -191,16 +202,20 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
            cap_usd: float = PASS_USD, group_usd: float = GROUP_USD) -> tuple[list[dict], dict]:
     """The bugs list with `verify` filled in where an agent answered, and a summary.
 
-    A group starts only while `spent + group_usd <= cap_usd`, so the cap holds even if every agent
-    spends its whole budget. A group that fails or isn't reached stays unverified and waits for
-    the next pass. `dismiss` sets the bug's status to `dismissed`.
+    A group starts only while `reserved + group_usd <= cap_usd`, so the cap holds even if every
+    agent spends its whole budget. A group that fails or isn't reached stays unverified and waits
+    for the next pass. `dismiss` sets the bug's status to `dismissed`.
+
+    The summary's `usd` is what the agents reported spending; `reserved_usd` is what the cap
+    counted, which charges a failed agent that never said its cost its whole budget. A
+    `judge.RateLimited` propagates: the pass fails rather than record nothing verified.
     """
     run = agent or (lambda p: default_agent(p, sha=sha, budget_usd=group_usd))
     todo = groups(eligible(bugs))
     verdicts: dict[str, dict] = {}
-    spent, ran, failed, waiting, costs, meter = 0.0, 0, 0, 0, [], {}
+    spent, reserved, ran, failed, waiting, costs, meter = 0.0, 0.0, 0, 0, 0, [], {}
     for g in todo:
-        if spent + group_usd > cap_usd:
+        if reserved + group_usd > cap_usd:
             waiting += len(g)
             continue
         try:
@@ -209,9 +224,12 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
         except VerifyError as e:
             print(f"verify: {e}", file=sys.stderr)
             failed += len(g)
-            spent += group_usd   # a failed agent may have spent its budget; count it so the cap holds
+            spent += e.cost or 0.0
+            # an agent that never said what it spent may have spent its budget: count that so the cap holds
+            reserved += group_usd if e.cost is None else e.cost
             continue
         spent += cost
+        reserved += cost
         ran += 1
         costs.append(round(cost, 4))
         keys = {b["key"] for b in g}
@@ -228,7 +246,7 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
         else:
             out.append({**b, "verify": v})
     summary = {"groups": ran, "verified": len(verdicts), "failed": failed, "waiting": waiting,
-               "usd": round(spent, 4), "group_usd": costs, "tokens": meter, "precision": precision(out)}
+               "usd": round(spent, 4), "reserved_usd": round(reserved, 4), "group_usd": costs, "tokens": meter, "precision": precision(out)}
     return out, summary
 
 

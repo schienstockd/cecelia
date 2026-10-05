@@ -96,8 +96,39 @@ class VerifyTest(unittest.TestCase):
         def boom(prompt):
             raise self.v.VerifyError("exit 1")
         out, summary = self.v.verify([_bug("a")], date="d", sha="s", agent=boom, cap_usd=5, group_usd=1)
-        self.assertEqual((summary["failed"], summary["usd"], summary["groups"]), (1, 1.0, 0))
+        # it never said what it spent: the cap charges its budget, the spend doesn't claim it
+        self.assertEqual((summary["failed"], summary["usd"], summary["reserved_usd"], summary["groups"]),
+                         (1, 0.0, 1.0, 0))
         self.assertNotIn("verify", out[0])
+
+    def test_a_failed_agent_that_said_its_cost_is_charged_that(self):
+        def boom(prompt):
+            raise self.v.VerifyError("exit 1, $0.00", cost=0.0)
+        bugs = [_bug(k, file=f"{k}.py", branch=k) for k in "abcde"]
+        out, summary = self.v.verify(bugs, date="d", sha="s", agent=boom, cap_usd=10, group_usd=2)
+        # a failure that cost $0 counts $0, not its budget
+        self.assertEqual((summary["failed"], summary["usd"], summary["reserved_usd"]), (5, 0.0, 0.0))
+
+    def test_a_usage_limit_stops_verify(self):
+        def limited(prompt):
+            raise self.v._judge.RateLimited("You've hit your session limit")
+        with self.assertRaises(self.v._judge.RateLimited):
+            self.v.verify([_bug("a")], date="d", sha="s", agent=limited)
+
+    def test_the_spawn_turns_a_429_into_rate_limited(self):
+        import unittest.mock as m
+
+        class _P:
+            returncode, stderr = 1, ""
+            stdout = ('{"is_error": true, "api_error_status": 429, "total_cost_usd": 0, '
+                      '"result": "You\'ve hit your session limit · resets 1:40am"}')
+        with m.patch.object(self.v.subprocess, "run", return_value=_P()), \
+             m.patch.object(self.v.agent_sandbox, "make_detached_worktree", return_value=pathlib.Path("/tmp/wt")), \
+             m.patch.object(self.v.agent_sandbox, "remove_worktree") as rm, \
+             m.patch.object(self.v, "resolve_claude_bin", return_value="/bin/claude"):
+            with self.assertRaisesRegex(self.v._judge.RateLimited, "resets 1:40am"):
+                self.v.default_agent("p", sha="abc")
+        rm.assert_called_once()
 
     def test_an_answer_for_a_key_it_wasnt_given_is_ignored(self):
         def stray(prompt):

@@ -10,6 +10,11 @@ record and the PR. `claude -p` is used three ways, each capped: the bug sweep's 
 previous record first, so a `wont_fix` bug is not carried.
 
 A crash at any stage still writes a failure record, so a missing week is visible rather than silent.
+So does a usage limit (`judge.RateLimited`): no later call could run, and a record where nothing
+was judged would read like a quiet week. That one exits `EX_TEMPFAIL` and leaves the reset time in
+`judge-ratelimit.json`; `cron_pass.sh` waits for it and reruns the pass, and while a retry will follow
+(`JUDGE_RETRY_LEFT` > 0 and the reset within `RETRY_MAX_WAIT`) no FAILED PR is opened. A step whose judge failed any other way still records,
+and the record and PR say which step didn't run (`run.failed`).
 
 Usage:
     pixi run judge-weekly                  # pin origin/main, sweep, verify, record, open the PR
@@ -35,6 +40,7 @@ sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
 from cecelia.effectiveness.log import default_log_path  # noqa: E402
+from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
 
 def _load_sibling(name: str):
@@ -52,6 +58,13 @@ _rules = _load_sibling("rules")
 _judge = _load_sibling("judge")
 
 
+#: Exit code of a pass stopped by the usage limit (sysexits `EX_TEMPFAIL`): `cron_pass.sh` retries it.
+EX_TEMPFAIL = 75
+#: A reset further off than this isn't waited for: that attempt is the last, and opens the FAILED PR.
+#: `cron_pass.sh` follows the `retry` this decides; it holds no rule of its own.
+RETRY_MAX_WAIT = _dt.timedelta(hours=8)
+
+
 class JudgeRunError(RuntimeError):
     def __init__(self, stage: str, message: str):
         super().__init__(message)
@@ -62,6 +75,29 @@ class JudgeRunError(RuntimeError):
 
 def state_dir() -> pathlib.Path:
     return default_log_path().parent
+
+
+def ratelimit_path() -> pathlib.Path:
+    """Where a pass stopped by the usage limit says when it lifts, for `cron_pass.sh`."""
+    return state_dir() / "judge-ratelimit.json"
+
+
+def _note_rate_limit(error: Exception, stage: str) -> bool:
+    """Write `judge-ratelimit.json` (`reset`, `message`, `retry`, `stage`); returns whether the wrapper
+    will rerun the pass: it has attempts left (`JUDGE_RETRY_LEFT`) and the reset is close enough."""
+    now = _dt.datetime.now(_dt.timezone.utc)
+    reset = _judge.reset_at(str(error), now)
+    try:
+        left = int(os.environ.get("JUDGE_RETRY_LEFT") or 0)
+    except ValueError:
+        left = 0
+    retry = left > 0 and reset - now <= RETRY_MAX_WAIT
+    path = ratelimit_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(path, {"reset": reset.isoformat(), "message": str(error), "retry": retry, "stage": stage})
+    print(f"  usage limit: lifts {reset.isoformat()}; "
+          + ("the wrapper retries then" if retry else "no retry follows"), file=sys.stderr)
+    return retry
 
 
 def default_worktree() -> pathlib.Path:
@@ -147,17 +183,31 @@ def _pr_body(record: dict) -> str:
     date, rel = record["date"], f"{_record.MIRROR_REL}/{record['date']}.md"
     if record.get("kind") == "failure":
         return (f"The weekly judge pass for {date} **failed** at `{record['run']['stage']}`: "
-                f"`{record['run']['error']}`.\n\nRecord: `{rel}`.\n\n{_PR_FOOTER}\n")
+                f"`{record['run']['error']}`.\n\nRecord: `{rel}`. The previous run's PR stays open."
+                f"\n\n{_PR_FOOTER}\n")
     bugs = record["bugs"]
     n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone", "unjudged")}
     new = sum(_record.newly_open(b, date) for b in bugs)
+    verified = sum(b["status"] == "open" and bool(b.get("verify")) for b in bugs)
     decide = len(record["queue"])
+    landed, confirmed = _record.landed_counts(bugs)
     lines = [f"Weekly judge, {date}. Record: [`{rel}`]({rel}). Point a session at it to work the bugs.", "",
-             f"**Bugs: {n['open']} open** ({new} new), {n['gone']} fixed since the last pass"
+             f"**Bugs: {n['open']} open** ({verified} verified, {new} new), {n['gone']} fixed since the last pass"
+             + (f" ({landed} fix(es) landed since the last pass, {confirmed} confirmed gone by the judge)"
+                if landed else "")
              + (f", {n['unjudged']} waiting for the judge" if n["unjudged"] else "")
              + (f", {decide} for you to decide (`pixi run judge-review`)" if decide else "") + "."]
+    failed = record["run"].get("failed") or {}
+    if failed.get("sweep"):
+        lines += ["", f"**The bug sweep's judge failed** (`{_record.one_line(failed['sweep'])}`): nothing was "
+                      "re-checked, so open bugs stay open and new findings wait for the next pass."]
+    agents = (record["run"]["spend"].get("verify") or {}).get("failed")
+    if agents:
+        lines += ["", f"**Verify:** {agents} bug(s) unverified, their agent failed (the cron log has why)."]
     props = record["proposals"]
-    lines += ["", f"**Rules: {len(props)} proposal(s).**" if props else "**Rules:** nothing broken in enough sessions."]
+    lines += ["", f"**Rules: {len(props)} proposal(s).**" if props else
+              f"**Rules: the judge failed** (`{_record.one_line(failed['rules'])}`), nothing tallied."
+              if failed.get("rules") else "**Rules:** nothing broken in enough sessions."]
     lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in props]
     lines += ["", f"- Tokens: {_record.tokens_line(record['run']['spend'])}",
               f"- Spend (list price): {_record.spend_line(record['run']['spend'])}", "", _PR_FOOTER]
@@ -165,7 +215,7 @@ def _pr_body(record: dict) -> str:
 
 
 def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subprocess.CompletedProcess] = None) -> str:
-    """Commit the record on `judge-run/<date>`, open its PR, close older ones.
+    """Commit the record on `judge-run/<date>`, open its PR, close older ones (a failure closes none).
 
     Runs in the persistent worktree, which sits at the pinned SHA. One open PR at a time: the record
     is already in the local store, so closing an unmerged one loses nothing. Returns the PR's URL.
@@ -185,6 +235,8 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
     mine = next((p["url"] for p in existing if p["headRefName"] == branch), None)
     url = mine or run([gh, "pr", "create", "--base", "main", "--head", branch,
                        "--title", _title(record), "--body-file", "-"], input=_pr_body(record)).stdout.strip()
+    if record.get("kind") == "failure":   # it supersedes nothing: the last pass's bugs are still the work list
+        return url
     for p in existing:
         if p["headRefName"].startswith("judge-run/") and p["headRefName"] != branch:
             run([gh, "pr", "close", str(p["number"]), "--comment", f"Superseded by {url}."])
@@ -233,13 +285,15 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     events = list(read_events())
     state["stage"] = "bugs"
     sweep_tokens: dict = {}
+    failed: dict = {}   # step → why its judge didn't run; a usage limit raises instead
     bugs, sweep_usd = _bugs.sweep(events, date=date, sha=sha, previous=previous, judge=bug_judge,
-                                  merged_prs=merged_prs, meter=sweep_tokens)
+                                  merged_prs=merged_prs, meter=sweep_tokens, failures=failed)
     state["stage"] = "verify"
     bugs, verified = _verify.verify(bugs, date=date, sha=sha, agent=verifier)
     state["stage"] = "rules"
     rules_tokens: dict = {}
-    rows, proposals, bins, rules_usd = _rules.propose(events, date=date, assign=assign, meter=rules_tokens)
+    rows, proposals, bins, rules_usd = _rules.propose(events, date=date, assign=assign, meter=rules_tokens,
+                                                      failures=failed)
     steps = {"sweep": sweep_tokens, "verify": verified.get("tokens") or {}, "rules": rules_tokens}
     total: dict = {}
     for t in steps.values():
@@ -249,7 +303,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
              "tokens": {**steps, "total": total},
              "finding_bins": bins}
     record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend)
-    record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS)
+    record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS,
+                         **({"failed": failed} if failed else {}))
     return record
 
 
@@ -307,15 +362,19 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001 — any crash still leaves a record
         where = e.stage if isinstance(e, JudgeRunError) else state["stage"]
         print(f"judge-weekly: failed at {where}: {type(e).__name__}: {e}", file=sys.stderr)
+        limited = isinstance(e, _judge.RateLimited)
+        retrying = limited and not args.dry_run and _note_rate_limit(e, where)
         if not args.dry_run:
+            # written even when a retry follows: the retry's pass record replaces it
             failed = _write_failure(args.date, where, e, state["sha"])
-            # a failure gets its PR too, once there is a worktree at the pinned SHA to commit from
-            if failed and not args.no_pr and where not in ("start", "pin", "worktree", "publish"):
+            # a failure gets its PR too, once there is a worktree at the pinned SHA to commit from;
+            # not while a retry follows, which would open its own
+            if failed and not args.no_pr and not retrying and where not in ("start", "pin", "worktree", "publish"):
                 try:
                     print(f"  PR {publish(failed, worktree=args.worktree or default_worktree())}", file=sys.stderr)
                 except Exception as p:  # noqa: BLE001
                     print(f"  failure PR not opened: {p}", file=sys.stderr)
-        return 1
+        return EX_TEMPFAIL if limited else 1
     finally:
         lock.close()
 

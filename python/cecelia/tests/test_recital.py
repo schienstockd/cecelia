@@ -105,6 +105,10 @@ class RecitalTest(unittest.TestCase):
 
         # The recital text should still return, with the error surfaced in each section.
         self.assertIn("RECITAL SCRIPT ERROR", recital)
+        # and no "no … needed" tail under it: that would say the reviewer ran and cleared the diff
+        self.assertNotIn("no fanout audit needed", recital)
+        self.assertNotIn("no convention check needed", recital)
+        self.assertIn("_Fanout audit: not run — the reviewer errored_", recital)
 
     def test_short_circuit_reply_passes_through_as_tail_line(self):
         # A reviewer that returns e.g. `_no fanout audit needed_` should NOT get wrapped
@@ -617,6 +621,15 @@ class DefaultRunnerTest(unittest.TestCase):
         argv, kwargs = run.call_args.args[0], run.call_args.kwargs
         self.assertEqual(argv, ["/bin/claude", "-p"])
         self.assertEqual(kwargs["input"], big)
+
+    def test_a_failure_with_empty_stderr_shows_stdout(self):
+        # `claude -p` prints a usage-limit refusal on stdout and exits 1 with stderr empty
+        from cecelia.effectiveness import recital as r
+        done = mock.Mock(returncode=1, stdout="You've hit your session limit · resets 1:40am\n", stderr="")
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", return_value=done):
+            with self.assertRaisesRegex(RecitalError, "stdout:\nYou've hit your session limit"):
+                r._default_runner("p")
 
     def test_spawn_oserror_becomes_recital_error(self):
         from cecelia.effectiveness import recital as r
