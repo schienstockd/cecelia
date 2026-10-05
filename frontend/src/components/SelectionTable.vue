@@ -484,8 +484,10 @@ function colStyle(c: SelectionColumn) {
           </slot>
         </td>
         <!-- Per-row actions (rename, delete, …). `@click.stop` so a button never doubles as a row
-             pick — the row hit target is the whole row, which would otherwise swallow the intent. -->
-        <td v-if="$slots.actions" class="sel-actions" @click.stop>
+             pick — the row hit target is the whole row, which would otherwise swallow the intent.
+             `@dblclick.stop` too: arm→confirm on ConfirmDeleteButton is two quick clicks, which the
+             browser also reports as a row double-click (ProjectPanel opened a project + closed). -->
+        <td v-if="$slots.actions" class="sel-actions" @click.stop @dblclick.stop>
           <slot name="actions" :row="row" />
         </td>
       </tr>
