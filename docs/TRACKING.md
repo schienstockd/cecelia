@@ -746,7 +746,7 @@ Phase 3 shipped 2026-08-20.
   Verified on KDIeEm B (gate on `live.track.speed`; track rows ↔ expanded cells).
 - **Gate-map storage.** `gating_path(task_dir, vn; pop_type="track")` →
   `gating/{vn}__tracks.json`; `save_pop_map!`/`load_pop_map` route by `pop_type`.
-- **Gating API is track-aware.** `_track_grained(pop_type)` in `api/src/gating_api.jl` routes
+- **Gating API is track-aware.** `is_track_grained(pop_type)` (package, `popmanager/types.jl`) routes
   `popType ∈ ("track","trackclust")` at every gating endpoint: channels list motility + cell-
   aggregate columns, pop CRUD persists to `{vn}__tracks.json`, plots read from the per-track
   table.

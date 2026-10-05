@@ -24,6 +24,11 @@ const WHOLE_SEG_TRACK_SOURCE = "whole_seg"
 # ── Path helpers (root convention: "root"; pop paths start with "/") ─────────────
 is_root(p::AbstractString) = p == ROOT || p == "/" || isempty(p)
 
+"""True when a pop_type's populations are evaluated over the PER-TRACK table (one row per track,
+`label == track_id`): `track` (hand-drawn track gates) and `trackclust` (a `clusters.{suffix}` filter).
+Every other pop_type's rows are cells."""
+is_track_grained(pop_type)::Bool = string(pop_type) in ("track", "trackclust")
+
 """Parent path of a pop path. `/a/b` → `/a`; `/a` → `root`."""
 function pop_parent(path::AbstractString)::String
     is_root(path) && return ROOT

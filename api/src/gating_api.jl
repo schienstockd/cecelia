@@ -30,8 +30,11 @@ _set_pick_selection!(task_dir::AbstractString, vn::AbstractString, labels::Vecto
 _get_pick_selection(task_dir::AbstractString, vn::AbstractString) =
     lock(_pick_sel_lock) do; get(_pick_sel, (String(task_dir), String(vn)), nothing); end
 
-# add the transient pick-selection pop to a freshly-loaded map (no-op when no selection)
+# add the transient pick-selection pop to a freshly-loaded map (no-op when no selection). Cell-grained
+# maps only — its labels are CELL labels, which mean nothing on the per-track table (`label ==
+# track_id`) — so a track/trackclust tree never lists a pop no read can resolve.
 function _inject_pick_pop!(m::PopulationMap, img::CciaImage)
+    is_track_grained(m.pop_type) && return m
     labs = _get_pick_selection(img._dir, m.value_name)
     (labs === nothing || isempty(labs)) && return m
     has_pop(m, PICK_SEL_PATH) && return m
@@ -121,51 +124,21 @@ function _matching_channel_version(versions::AbstractDict, n_channels::Int;
     haskey(versions, active) ? String(active) : VERSIONED_DEFAULT_VAL
 end
 
-# fetch label + cols for a value_name (the recompute/pop_df column provider).
-# Uses the label_props chain idiom (docs/DATAMODEL.md) — read left-to-right. `version` threads the
-# P3b session pin (`labelsVersion` query param, `nothing` = `_latest`) into the reader so gate
-# membership + plot data both evaluate against the pinned labels vN.
-_fetch(img, vn; version=nothing) = cols -> (label_props(img; value_name = vn, version = version) |> lp -> select_cols(lp, cols) |> as_df)
-
 # track-table motility (var) columns — gateable per-track axes that need no per-cell aggregation.
 _track_motility_cols(img, vn) = (p = img_track_props_path(img, vn);
     isfile(p) ? col_names(label_props(p); data_type = :vars) : String[])
 
-# every column the per-track table provides DIRECTLY (no cell→track aggregation): motility (vars)
-# + track-table obs (lineage, and `clusters.{suffix}` written by clustTracks). Passed to
-# `track_cell_measures` as the free set so a `trackclust` filter on `clusters.{suffix}` isn't
-# mistaken for a cell measure to aggregate.
-_track_free_cols(img, vn) = (p = img_track_props_path(img, vn);
-    isfile(p) ? vcat(col_names(label_props(p); data_type = :vars),
-                     col_names(label_props(p); data_type = :obs)) : String[])
+# The ONE place the gating routes differ from the package's population read: the transient
+# pick-selection pop (a viewer selection mirrored onto the plots) is UI state held here, so it is
+# handed to the package as a `map_hook`. `nothing` on a track-grained pop_type (the pick never applies
+# there, see `_inject_pick_pop!`), which keeps those reads cacheable.
+_pick_hook(img, pop_type) = is_track_grained(pop_type) ? nothing : (m -> _inject_pick_pop!(m, img))
 
-# pop_types whose membership is evaluated over the per-track table (one point per track):
-# `track` (hand-drawn per-track gates) and `trackclust` (a `clusters.{suffix}` filter).
-_track_grained(pop_type) = string(pop_type) in ("track", "trackclust")
-
-# track data source: ONE row per track (`track_props`, label == track_id). The requested columns
-# (gate channels / plot axes / filter measure) drive which cell measures get aggregated
-# (`track_cell_measures`); motility + track-table obs come free. The track analogue of `_fetch`.
-_track_fetch(img, vn) = cols -> track_props(img; value_name = vn,
-    cell_measures = track_cell_measures(cols, _track_free_cols(img, vn)))
-
-# load + recompute a map (membership ready). For `flow`/`live` the data source is the cell table
-# and the transient pick-selection pop is injected so it is queryable like any population; for
-# `track` the source is the per-track table and the pick selection (cell labels, not track_ids)
-# does not apply, so it is not injected. `labels_version` is the P3b session pin — when set, both
-# gate membership and (via the same map) subsequent plot reads evaluate at that labels vN; the map
-# also carries the pin so a downstream `_plot_cols_stored` doesn't have to re-thread the query
-# param. `nothing` = follow `_latest`.
-function _live_map(img, vn, pop_type; labels_version::Union{String,Nothing}=nothing)
-    m = load_pop_map(img; value_name = vn, pop_type = pop_type)
-    m.pinned_labels_version = labels_version
-    is_track = _track_grained(pop_type)
-    is_track || _inject_pick_pop!(m, img)
-    # `_track_fetch` reads the per-track `.h5ad`, which is Bucket B keyed by (image, vn) — no
-    # labels-version axis for the track table itself; the pin still governs any cell-side reads.
-    recompute!(m, is_track ? _track_fetch(img, vn) : _fetch(img, vn; version = labels_version))
-    m
-end
+# load + recompute a map (membership ready) — `computed_pop_map` plus the pick selection.
+# `labels_version` is the P3b session pin (`nothing` = follow `_latest`).
+_live_map(img, vn, pop_type; labels_version::Union{String,Nothing}=nothing) =
+    computed_pop_map(img; value_name = vn, pop_type = pop_type, labels_version = labels_version,
+                     map_hook = _pick_hook(img, pop_type))
 
 # build an AxisTransform from query params, prefix "x"/"y" (e.g. xt=logicle&xT=262144)
 function _axis_transform(q::AbstractDict, p::AbstractString)
@@ -222,32 +195,16 @@ function _axis_title(img, vn, pop_type, col::AbstractString)::String
     isempty(unit) ? name : "$name ($unit)"
 end
 
-# µm/px to apply to ONE plot axis so the DISPLAYED values are in the same unit as the GATES.
-# Returns 1.0 — no conversion — for a non-spatial axis, a legacy px-stamped map, or an uncalibrated
-# image. Deliberately the SAME three conditions `recompute!` scales on (docs/todo/SPATIAL_GATE_UNITS_
-# PLAN.md decision 3), so the dots, the ticks and the gate outlines cannot end up in different units.
-# `centroid_t` is not spatial (`is_spatial_axis`) and stays a frame index.
-#
-# The labels vN pin does NOT enter here: `spatial_unit` + `physical_sizes` describe the *gate
-# geometry*, which is authored in the map's coordinate frame regardless of which labels version the
-# data comes from. A pin only changes which cells' XY get scaled, not the scale factor itself.
-function _axis_scale(img, vn, pop_type, col)::Float64
-    is_spatial_axis(String(col)) || return 1.0
-    m = load_pop_map(img; value_name = vn, pop_type = pop_type)
-    (m.spatial_unit == SPATIAL_UNIT_UM && m.physical_sizes !== nothing) || return 1.0
-    physical_size_for_axis(m.physical_sizes, axis_of(String(col)))
-end
-
 # The unit a plot axis is displayed in — served to the client so it can label the axis (and so the
 # label can never claim µm while the numbers are pixels). "" for a non-spatial axis (an intensity or
-# morphology column has no length unit to state).
+# morphology column has no length unit to state). Decided by `gate_axis_scale`, the package rule the
+# plot VALUES are scaled by, so the label and the numbers cannot disagree.
 _axis_unit(img, vn, pop_type, col)::String =
     !is_spatial_axis(String(col)) ? "" :
-    (_axis_scale(img, vn, pop_type, col) == 1.0 ? SPATIAL_UNIT_PX : "µm")
+    (gate_axis_scale(load_pop_map(img; value_name = vn, pop_type = pop_type), String(col)) == 1.0 ?
+        SPATIAL_UNIT_PX : "µm")
 
-# read the raw x/y vectors, then put SPATIAL axes into the gates' unit. One wrapper over the stored-value
-# read so every consumer — the point cloud, the whole-dataset extents that drive the ticks, density —
-# gets the same unit from one place; the plotdata handler reads both through this.
+# x/y in the gates' unit — the point cloud, the whole-dataset extents that drive the ticks, density.
 _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version=nothing) =
     _xy_pair(_plot_cols_raw(img, vn, pop_type, [x, y], pop; labels_version = labels_version))
 
@@ -255,61 +212,13 @@ _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version=nothing) =
 # vector beside an empty one would index past the end of the short one (a 500) in every consumer.
 _xy_pair(v) = (isempty(v[1]) || isempty(v[2])) ? (Float64[], Float64[]) : (v[1], v[2])
 
-# The same read for ANY number of plot columns — x/y, plus the optional "colour by" measure z (a third
-# property painted onto the 2D plot, FlowJo's colour-by-parameter). ONE read for all of them, because
-# `z[i]` has to be the SAME CELL as `(x[i], y[i])`: a second, separate read for z would align only by
-# luck (any difference in the population filter or row order silently mis-colours every dot).
-function _plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing)
-    vs = _plot_cols_stored(img, vn, pop_type, cols, pop; labels_version = labels_version)
-    [(s = _axis_scale(img, vn, pop_type, c); s == 1.0 ? v : v .* s) for (c, v) in zip(cols, vs)]
-end
-
-# read x/y (optionally subset to a population) → transformed Float32 vectors.
-# Chain idiom (docs/DATAMODEL.md): select the two channels, push the population's label
-# filter into the reader (filter_rows), then materialise once.
-# read the STORED columns for the scatter (one row per cell, or per track for pop_type="track"),
-# optionally subset to a population, before transform. Values as they are on disk — centroids in
-# pixels; `_plot_cols_raw` is the wrapper that converts spatial axes. Returns one vector per REQUESTED
-# column (duplicates allowed — the same measure on two axes reads once); a column this table doesn't
-# have comes back EMPTY, so the CALLER decides what missing means (see `_xy_pair` and `_plot_xyz`).
-#
-# `labels_version` is the P3b session pin: `nothing` = follow `_latest`, a concrete `vN` reads
-# both the cell scatter and any pop-membership recompute at that labels version.
-function _plot_cols_stored(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing)
-    cols = String.(cols)
-    empty = [Float64[] for _ in cols]
-    want = unique(cols)                                  # `select_cols` takes each column once
-    if _track_grained(pop_type)
-        # per-track scatter: one point per track from `track_props` (label == track_id)
-        tp = track_props(img; value_name = vn,
-                         cell_measures = track_cell_measures(want, _track_free_cols(img, vn)))
-        any(c -> c in names(tp), want) || return empty
-        if !is_root(pop)
-            m = _live_map(img, vn, pop_type; labels_version = labels_version)
-            has_pop(m, pop) || return empty
-            keep = Set(cells_in_pop(m, pop))                 # gated track_ids
-            tp = tp[[t in keep for t in tp.label], :]
-        end
-        return [c in names(tp) ? Float64.(tp[!, c]) : Float64[] for c in cols]
-    end
-    # cell scatter — chain idiom: select the columns, push the population's label filter into
-    # the reader (filter_rows), then materialise once.
-    lp = label_props(img; value_name = vn, version = labels_version) |> select_cols(want)
-    if !is_root(pop)
-        m = _live_map(img, vn, pop_type; labels_version = labels_version)
-        # the pop may have vanished since the client last rendered (e.g. a plot/highlight still
-        # pointing at a pick selection that has since been cleared) — return empty data rather
-        # than letting cells_in_pop throw a 500 ("pop_membership: not found: /Pick selection").
-        has_pop(m, pop) || return empty
-        filter_rows(lp, cells_in_pop(m, pop); by = :label)
-    end
-    df = as_df(lp)
-    # a requested column may not exist on the cell table (e.g. a stale panel pointing at track columns
-    # like `live.track.*` while popType=flow) — `select_cols` drops unknown columns, so guard here and
-    # return it EMPTY rather than throwing a 500. Per column, not all-or-nothing: an unusable COLOUR-BY
-    # measure must not blank the x/y cloud it was only supposed to tint.
-    [c in names(df) ? Float64.(df[!, c]) : Float64[] for c in cols]
-end
+# Any number of plot columns (x/y, the colour-by z, the point labels) from ONE aligned read —
+# `pop_plot_cols` (docs/POPULATION.md → *The gate-plot read*): membership, gate units, per-column
+# empty for a column the table lacks, empty for an unknown/vanished pop. Only the pick selection is
+# added here.
+_plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing) =
+    pop_plot_cols(img, pop_type, pop, cols; value_name = vn, labels_version = labels_version,
+                  map_hook = _pick_hook(img, pop_type))
 
 # transformed Float32 vectors for plotdata/density/plotmeta
 function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing)
@@ -558,7 +467,7 @@ function api_gating_channels(req::HTTP.Request)
     # var columns, directly gateable) plus on-read aggregates of any cell measure. We return the
     # motility columns + the aggregatable cell measures + the aggregate suffixes so the client can
     # offer e.g. "mean CD4 per track" → axis `mean_intensity_0.mean` (track_cell_measures inverts it).
-    if get(q, "popType", "flow") in ("track", "trackclust")
+    if is_track_grained(get(q, "popType", "flow"))
         # For track/trackclust, `scope_vn` MUST be a tracked segmentation — the branch below reads
         # `img_track_props_path(img, scope_vn)` and everything downstream (clusterSuffixes,
         # clusterIds, cellMeasures aggregation) needs that file to exist. `_resolve_vn` picks the
@@ -862,7 +771,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     # A track-grained plot (popType track/trackclust) of an untracked segmentation has no data — tell
     # the client to track first (it shows a message) and skip the empty data reads. `tracked` rides on
     # every plotmeta response so the client can distinguish "not tracked" from "genuinely no points".
-    if _track_grained(pop_type) && !is_tracked(img; value_name = vn)
+    if is_track_grained(pop_type) && !is_tracked(img; value_name = vn)
         return 200, JSON3.write((; n = 0, mode = "scatter", tracked = false,
             xExtent = [0.0, 1.0], yExtent = [0.0, 1.0], xLabel = x, yLabel = y,
             xUnit = "", yUnit = "",              # same response shape as the real path below
@@ -981,9 +890,9 @@ function api_gating_plotdata(req::HTTP.Request)
     z = get(q, "z", "")
     pin = _labels_version_pin(q)
     with_labels = get(q, "withLabels", "") == "1"
-    # Companion label read — same pop-filter chain via `_plot_cols_stored`, so labels align 1:1 with
-    # the x/y vectors (no independent read that could drift by row order).
-    labs = with_labels ? first(_plot_cols_stored(img, vn, pop_type, ["label"], pop; labels_version = pin)) :
+    # Companion label read — same read as x/y (`_plot_cols_raw`, table order), so labels align 1:1
+    # with the x/y vectors.
+    labs = with_labels ? first(_plot_cols_raw(img, vn, pop_type, ["label"], pop; labels_version = pin)) :
                          Float64[]
     if isempty(z)
         xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)
@@ -1031,7 +940,7 @@ function api_plots_umap(req::HTTP.Request)
     # the code column is the pop_type's OWN family (`clusters.{suffix}` | `regions.{suffix}`) — see
     # `_cluster_suffixes`. Hardcoding "clusters." here left every region UMAP point uncoloured.
     umap_key = "X_umap.$suffix"; clust_col = "$(Cecelia._cluster_measure_prefix(pop_type))$(suffix)"
-    track    = _track_grained(pop_type)
+    track    = is_track_grained(pop_type)
     # POOL across every segmentation that took part in this clustering run (co-clustered value_names),
     # so the UMAP shows all segments' points in the ONE shared embedding — not just the active one
     # (docs/todo/CLUSTER_POOLING_PLAN.md). An explicit `valueName` restricts to that single segmentation.

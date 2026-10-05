@@ -148,7 +148,7 @@ are cells. The Julia equivalent of the R `isTrack` pop-map attribute — the sol
 function is_track_pop(pop_type::PopTypeArg, path::AbstractString)::Bool
     leaf = String(last(split(String(path), '/')))
     haskey(_DERIVED_POPS, leaf) && return _DERIVED_POPS[leaf].is_track
-    string(pop_type) in ("track", "trackclust")
+    is_track_grained(pop_type)
 end
 
 """

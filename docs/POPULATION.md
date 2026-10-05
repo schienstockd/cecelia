@@ -240,7 +240,7 @@ pop_df(obj, pop_type, pops;
        drop_na=false, unique_labels=true, flush_cache=false,
        raw_channel_names=false, granularity=:cell,
        cell_measures=String[], categorical=String[],
-       centroids=false) -> DataFrame
+       centroids=false, labels_version=nothing, map_hook=nothing) -> DataFrame
 ```
 
 Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capabilities:
@@ -400,8 +400,8 @@ Four rules hold this together:
    strategy contains a position gate (`has_spatial_gate`), with a reason, rather than writing gates that
    would be read as px.
 
-The display path agrees by construction: `_plot_xy_raw` scales spatial axes with the same three
-conditions, so the dots, the whole-dataset extents that drive the ticks, and the projected gate outlines
+The display path agrees by construction: the gate-plot read (`pop_plot_cols`) scales spatial axes by
+`gate_axis_scale`, which tests the same `gates_in_um` predicate `recompute!` evaluates with, so the dots, the whole-dataset extents that drive the ticks, and the projected gate outlines
 are all in one unit — and the axis label carries it (`xUnit`/`yUnit` → `axisLabelWithUnit`), because a
 bare `centroid_x` reading in pixels is what made this ambiguous in the first place. `centroid_t` is
 **not** spatial (`is_spatial_axis`): it stays a frame index, labelled rather than converted.
@@ -448,6 +448,60 @@ now-deleted work branch — note that it needed the stamp for idempotency, becau
   result without corrupting the cache.
 - **Set level** (later): pool across images, add a `uID` column — image results `vcat`. The
   dedup key picks up `uID` automatically once present.
+
+- **`labels_version`** pins the cell-table reads — membership AND the returned columns — to a labels
+  vN (`nothing` = `_latest`; the gating module's "Use pinned vN" drift-banner action). The per-track
+  table has no labels-version axis, so track-table reads ignore it. Part of the cache key.
+- **`map_hook(m)`** edits each freshly-loaded map before membership is evaluated. It exists for UI
+  state the package does not own — the API's transient pick-selection pop — and a hooked read
+  bypasses the cache (an in-memory edit has no on-disk stamp, a closure no stable key).
+- **The root needs no gate evaluation.** A request for the root alone skips the map load and
+  `recompute!` — every row of the table is the root — so a whole-dataset read costs its own columns
+  only. `pop_cols = ["label"]` reads the labels alone (an empty selection would read every column).
+
+### The gate-plot read — `pop_plot_cols`, `computed_pop_map`, `pop_membership_fetch`
+
+Every gating plot route (`plotdata`, `plotmeta`, `density`, `summary`, the MCP `plot-image`) reads its
+values through ONE package function built on `pop_df`; the API (`_plot_cols_raw`, `_live_map` in
+`api/src/gating_api.jl`) only adds the pick selection and applies the display transforms.
+
+```julia
+pop_plot_cols(img, pop_type, pop, cols; value_name, labels_version=nothing, map_hook=nothing)
+    -> Vector{Vector{Float64}}          # one vector per requested column, all from one read
+```
+
+What it adds on top of `pop_df`, and why each is a plot concern:
+
+- **One aligned read.** x, y, the colour-by z and the point labels come from the same frame, so
+  `v[k][i]` is the same cell (or track) for every column — a separate read for z would align by luck.
+- **Table order, no dedup** (`unique_labels=false`): one pop of one segmentation has nothing to
+  collapse, and the dots draw in the order the table stores them.
+- **Gate units, not calibration units.** Spatial columns are multiplied by `gate_axis_scale(map, col)`
+  — µm only when the map is stamped `"um"` and the image calibrated (`gates_in_um`, the predicate
+  `recompute!` uses), so dots, ticks and gate outlines share one unit. This is deliberately NOT
+  `centroids=:physical`, which follows the image's calibration: a legacy px-stamped map on a
+  calibrated image must still plot in px, or its gates would sit in the wrong place.
+- **Missing is empty, per column**; an unknown or vanished pop (a cleared pick selection) is empty —
+  never a throw. The route decides what empty means (x/y are all-or-nothing, a missing z is NaN).
+- **Raw column names**; NaNs kept. Track-grained pop_types read one row per **track**
+  (`granularity=:track`), aggregating exactly the cell measures the columns name.
+
+**Membership has one data source**, `pop_membership_fetch(img, vn, pop_type; labels_version)` — the
+`fetch_cols` closure `recompute!` takes: the per-track table for `track`/`trackclust` (aggregating the
+cell measures the GATES name, so a track gate on `area.mean` evaluates even when nobody plots it), the
+branch sidecar for `branch`, else the cell table at the pinned version. `pop_df`, `computed_pop_map`,
+`tracked_pop_parents` and the cell-grained `resolve_pops` all evaluate through it (`resolve_pops` hands
+back CELL labels, so it always takes the cell-table branch; its track family goes through `pop_df`).
+The branching task's `refPops` resolves through `pop_df(granularity=:cell)`, so a track or `_tracked`
+ref yields its cells. `computed_pop_map(img;
+value_name, pop_type, labels_version, map_hook)` is the map itself, membership ready — for a caller
+that needs counts, the parent or the tree (`/api/gating/stats`, `/membership`, `cells-image`) rather
+than data.
+
+**The one deliberate difference** between the plot read and a package read is the **pick selection**:
+a viewer selection mirrored onto the plots as a transient explicit-label pop. It is UI state held by
+the API (`_pick_sel`), so the API passes it in as a `map_hook` (`_pick_hook`) — on cell-grained maps
+only, because its labels are cell labels and mean nothing on the per-track table.
 
 ### `resolve_pops` — cached per-pop membership + display attrs
 

@@ -155,7 +155,7 @@ function pop_namespace(img::CciaImage, pops; value_name::Union{AbstractString,No
     for ref in pops
         vn, path = _split_pop_ref(ref, resolved_vn)
         occursin("_tracked", path) && return "live"
-        resolve_pop_type(img, vn, path) in ("track", "trackclust") && return "live"
+        is_track_grained(resolve_pop_type(img, vn, path)) && return "live"
     end
     "flow"
 end

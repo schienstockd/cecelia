@@ -99,8 +99,7 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
             on_log("[ERROR] Population not found in gating/$(p.valueName).json: $(p.popsToTrack)")
             return nothing
         end
-        recompute!(m, cols -> (label_props(img; value_name = p.valueName) |>
-                               lp -> select_cols(lp, cols) |> as_df))
+        recompute!(m, pop_membership_fetch(img, p.valueName, "flow"))
         label_ids = collect(Int, cells_in_pop(m, p.popsToTrack))
         track_source = pop_uid(m, p.popsToTrack)
         on_log("[INFO] Tracking $(length(label_ids)) cells from population '$(p.popsToTrack)' (uid=$track_source)")
