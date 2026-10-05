@@ -44,6 +44,15 @@ class ClientTest(unittest.TestCase):
             self.c._request("POST", "/api/blackboard/create", body={"projectUid": "", "title": "t"})
         self.assertEqual(u.call_args[0][0].get_header("X-cecelia-client"), "claude")
 
+    def test_section_outcome_sends_cause_only_when_given(self):
+        # GUIDE_RUNS_PLAN Decision 2 — a `bad` on a run record names its cause; other calls omit it
+        with _patch_urlopen({"ok": True}) as u:
+            self.c.set_blackboard_section_outcome("P", "e", "d01", "bad", "why", "guide")
+        self.assertEqual(json.loads(u.call_args[0][0].data)["cause"], "guide")
+        with _patch_urlopen({"ok": True}) as u:
+            self.c.set_blackboard_section_outcome("P", "e", "s01", "good", "")
+        self.assertNotIn("cause", json.loads(u.call_args[0][0].data))
+
     def test_allowlist_blocks_unknown_routes(self):
         # a mutating route that exists in the API must NOT be reachable through the client
         with self.assertRaises(DisallowedRoute):

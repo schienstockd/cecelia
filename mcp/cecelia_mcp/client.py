@@ -726,13 +726,15 @@ class CeceliaClient:
         })
 
     def set_blackboard_section_outcome(self, project_uid: str, entry_id: str, section_id: str,
-                                       verdict: str, note: str):
+                                       verdict: str, note: str, cause: str | None = None):
         # AGENT_RUN_REVIEW_PLAN Decision 7. Stamped by the server as from Claude (the client header),
-        # so it is a proposal: 409 when a person has already marked the section.
-        return self._request("POST", "/api/blackboard/section-outcome", body={
-            "projectUid": project_uid, "entryId": entry_id, "sectionId": section_id,
-            "verdict": verdict, "note": note,
-        })
+        # so it is a proposal: 409 when a person has already marked the section. `cause` (GUIDE_RUNS_PLAN
+        # Decision 2) is sent only when given; the server requires it with `bad` on a run record.
+        body = {"projectUid": project_uid, "entryId": entry_id, "sectionId": section_id,
+                "verdict": verdict, "note": note}
+        if cause:
+            body["cause"] = cause
+        return self._request("POST", "/api/blackboard/section-outcome", body=body)
 
     def search_blackboard(self, project_uid: str, query: str,
                           status: str | None = None, limit: int | None = None):

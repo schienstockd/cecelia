@@ -8,8 +8,12 @@
 #   agentRun         — set once at create by the harness: `{copyProjectUid, startedAt, images,
 #                      sectionIds, …}`. Marks the entry as a run record (the list's filter) and says
 #                      which sections there are without reading entry.md.
-#   sectionOutcomes  — `{sectionId: {verdict, note, by, at}}`. A verdict on ONE section (Decision 7):
-#                      `good | bad | unsure`, note required for `bad`. `by` is `author_stamp()`, so
+#   sectionOutcomes  — `{sectionId: {verdict, note, cause?, by, at}}`. A verdict on ONE section
+#                      (Decision 7): `good | bad | unsure`, note required for `bad`. On a run record a
+#                      `bad` also names its `cause` (`docs/todo/GUIDE_RUNS_PLAN.md` Decision 2): `guide`
+#                      (the guide didn't say it), `platform` (the agent couldn't see it) or `agent`. A
+#                      `bad` stored before causes existed has none — read as "not set", never
+#                      rewritten. The weekly judge reads `guide`/`platform` ones. `by` is `author_stamp()`, so
 #                      `via: "claude"` marks a proposal from a chat session; the score counts
 #                      only `via: "app"` (a person). A proposal never replaces a person's verdict.
 #   knowledge        — `{by, at, from?: {entryId, sectionId}}`. Marks the entry as lab knowledge for
@@ -26,6 +30,7 @@
 
 const _BB_PASSTHROUGH_KEYS = ("agentRun", "sectionOutcomes", "knowledge")
 const _BB_SECTION_VERDICTS = ("good", "bad", "unsure")
+const _BB_SECTION_CAUSES = ("guide", "platform", "agent")
 const _BB_SECTION_ID_RE = r"^[dms][0-9]{2,3}$"
 const _BB_SECTION_HEAD_RE = r"^### ([dms][0-9]{2,3}) · "
 const _BB_AGENT_RUN_MAX_BYTES = 8 * 1024
@@ -122,12 +127,14 @@ _bb_has_section(uid::AbstractString, id::AbstractString, sid::AbstractString)::B
 """
     POST /api/blackboard/section-outcome
 
-Body: `{ projectUid, entryId, sectionId, verdict: "good"|"bad"|"unsure"|"", note? }`
-Reply: `{ ok:true, sectionId, outcome: {verdict, note, by, at} | null }`
+Body: `{ projectUid, entryId, sectionId, verdict: "good"|"bad"|"unsure"|"", note?, cause? }`
+Reply: `{ ok:true, sectionId, outcome: {verdict, note, cause?, by, at} | null }`
 
 A verdict on one section (`### dNN ·` / `### mNN ·` in a run record, `### sNN ·` in any other
 entry) — AGENT_RUN_REVIEW_PLAN Decision 7.
-The note is required for `bad`. `verdict: ""` clears the section's verdict, also on a section a
+The note is required for `bad`. On a run record (meta `agentRun`) a `bad` also requires
+`cause ∈ guide | platform | agent` (GUIDE_RUNS_PLAN Decision 2); a cause with any other verdict, or on
+an entry that is not a run record, is refused. `verdict: ""` clears the section's verdict, also on a section a
 revise removed. `by` is the caller
 (`author_stamp()`): a call from Claude (`X-Cecelia-Client: claude`) is a PROPOSAL and may neither
 replace nor clear a person's verdict (409). No snapshot — metadata only, like `/outcome`.
@@ -138,6 +145,7 @@ function api_blackboard_section_outcome(body_bytes::Vector{UInt8})
     uid, id, sid = _wstr(body, :projectUid), _wstr(body, :entryId), _wstr(body, :sectionId)
     verdict = _wstr(body, :verdict)
     note = String(strip(String(get(body, :note, ""))))
+    cause = _wstr(body, :cause)
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     _valid_bb_entry_id(id) || return 400, JSON3.write((; error = "Invalid entryId"))
     isnothing(match(_BB_SECTION_ID_RE, sid)) &&
@@ -146,11 +154,20 @@ function api_blackboard_section_outcome(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error = "verdict must be one of $(_BB_SECTION_VERDICTS), or \"\" to clear"))
     verdict == "bad" && isempty(note) &&
         return 400, JSON3.write((; error = "note required for a bad verdict"))
+    isempty(cause) || cause in _BB_SECTION_CAUSES ||
+        return 400, JSON3.write((; error = "cause must be one of $(_BB_SECTION_CAUSES)"))
+    isempty(cause) || verdict == "bad" ||
+        return 400, JSON3.write((; error = "cause goes only with a bad verdict"))
     length(codeunits(note)) > _BB_OUTCOME_NOTE_MAX_BYTES &&
         return 400, JSON3.write((; error = "note exceeds $_BB_OUTCOME_NOTE_MAX_BYTES bytes"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     meta = _read_bb_meta(uid, id)
     meta === nothing && return 404, JSON3.write((; error = "Entry not found"))
+    is_run = haskey(meta, "agentRun")
+    !is_run && !isempty(cause) &&
+        return 400, JSON3.write((; error = "cause goes only on an agent run's record"))
+    is_run && verdict == "bad" && isempty(cause) &&
+        return 400, JSON3.write((; error = "cause required for a bad verdict on a run record: one of $(_BB_SECTION_CAUSES)"))
     # clearing works on a section a revise removed too — the page lists those verdicts to clear
     isempty(verdict) || _bb_has_section(uid, id, sid) ||
         return 404, JSON3.write((; error = "No section $sid in this entry"))
@@ -163,8 +180,9 @@ function api_blackboard_section_outcome(body_bytes::Vector{UInt8})
         delete!(so, sid)
         nothing
     else
-        so[sid] = Dict{String,Any}("verdict" => verdict, "note" => note, "by" => by,
-                                   "at" => string(Dates.now()))
+        o = Dict{String,Any}("verdict" => verdict, "note" => note, "by" => by, "at" => string(Dates.now()))
+        isempty(cause) || (o["cause"] = cause)
+        so[sid] = o
     end
     _set_bb_meta_field!(uid, id, "sectionOutcomes", isempty(so) ? nothing : so)
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))

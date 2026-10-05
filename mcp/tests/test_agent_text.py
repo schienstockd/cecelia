@@ -110,6 +110,15 @@ class WriteToolsRepairTest(unittest.TestCase):
         self.assertEqual("debris\n\nsee cluster 4", m.call_args.args[4])
         self.assertEqual(["note"], out["repairedEscapedNewlines"])
 
+    def test_set_blackboard_section_outcome_cause(self):
+        # the cause passes through to the client unchanged; absent stays None
+        m, _ = self._call("set_blackboard_section_outcome", server.set_blackboard_section_outcome,
+                          "P1", "run-1", "d03", "bad", "no AF step", "guide")
+        self.assertEqual("guide", m.call_args.args[5])
+        m, _ = self._call("set_blackboard_section_outcome", server.set_blackboard_section_outcome,
+                          "P1", "bb-1", "s01", "good")
+        self.assertIsNone(m.call_args.args[5])
+
     def test_append_lab_log(self):
         m, out = self._call("append_lab_log", server.append_lab_log,
                             "P1", ["Segmented 3 images\\nTracked all 3\\n"])
