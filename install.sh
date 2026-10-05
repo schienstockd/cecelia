@@ -198,8 +198,8 @@ fi
 # and its children see an Intel `uname`, which broke wgpu's import in the movie renderer (see
 # `_native_arm_processor` in python/cecelia/utils/wgpu_host.py).
 # An Intel juliaup cannot add an arm64 Julia, so give Cecelia its own native juliaup in
-# <install>/juliaup, the same layout as system scope. app.py prefers it when present. The user's
-# own Julia is left alone.
+# <install>/juliaup, the same layout as system scope. Every `pixi run` task prefers it when present
+# (scripts/activate_juliaup.sh), and so does app.py. The user's own Julia is left alone.
 if [ "$SCOPE" != "system" ] && [ "$OS" = "Darwin" ] \
    && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
   JULIA_ARCH="$("$JULIA" --startup-file=no -e 'print(Sys.ARCH)' 2>/dev/null || true)"

@@ -392,8 +392,11 @@ baked into the conda env at build time — see **Building installers**.
 
 `install.sh` reuses a Julia already on PATH, with one exception. On Apple Silicon, if that Julia is
 an Intel build (it runs under Rosetta), the installer puts a native juliaup in `<install>/juliaup`
-and leaves the user's Julia alone. `app.py`'s `_find_julia` prefers `<install>/juliaup` whenever
-it exists, and sets `JULIAUP_DEPOT_PATH` for it. System scope uses the same layout.
+and leaves the user's Julia alone. Whenever `<install>/juliaup` exists it wins, with
+`JULIAUP_DEPOT_PATH` pointed at it: `scripts/activate_juliaup.sh` (a pixi activation script) applies
+that to every `pixi run` task, so `pixi run stop` from a terminal gets the native Julia too, and
+`app.py`'s `_find_julia` applies the same rule for a launch that bypasses pixi. System scope uses the
+same layout.
 
 ### cellpose lives in TWO features
 `[feature.cellpose-v4]` (default env) carries `cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`).

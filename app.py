@@ -29,7 +29,8 @@ def _find_julia() -> str:
 
     A juliaup inside the install (`<root>/juliaup`) wins. install.sh puts one there for system scope,
     and on Apple Silicon when the Julia it found was an Intel build. That juliaup keeps its own state,
-    so point JULIAUP_DEPOT_PATH at it, and put it first on PATH for anything that runs bare `julia`."""
+    so point JULIAUP_DEPOT_PATH at it, and put it first on PATH for anything that runs bare `julia`.
+    Every `pixi run` already gets this from scripts/activate_juliaup.sh; this covers a launch that bypasses pixi."""
     private = os.path.join(ROOT, "juliaup")
     if os.path.exists(os.path.join(private, "bin", "julia")):
         bin_dir = os.path.join(private, "bin")
