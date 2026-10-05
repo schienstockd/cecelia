@@ -41,6 +41,13 @@ platforms = ["linux-64", "win-64", "osx-arm64"]
 [activation.env]
 PYTHONPATH = "$PIXI_PROJECT_ROOT/python"
 
+# Prefer the install's own juliaup (`<root>/juliaup`) for every task that runs bare `julia`. install.sh
+# adds one for system scope and on Apple Silicon over an Intel Julia; without this, `pixi run stop`,
+# `prod`, `doctor`, … from a terminal ran the user's Julia under Rosetta. No-op in a dev checkout.
+# Unix only: Windows has no Rosetta case, and its system scope sets the env in its launcher.
+[target.unix.activation]
+scripts = ["scripts/activate_juliaup.sh"]
+
 [dependencies]
 python = "3.12.*"
 openjdk = ">=17"
