@@ -32,6 +32,7 @@ import os
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
 from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, with_doc
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
@@ -72,6 +73,15 @@ def _tool(fn):
         except (ApiError, DisallowedRoute) as e:
             raise ToolError(str(e)) from e
     return mcp.tool()(wrapped)
+
+
+def _noting_repairs(out, repaired: list[str]):
+    """Say on the reply which text arguments arrived with literal `\\n` and were stored with real
+    newlines (`agent_text.py`) — the write still happened; this only tells the model why its text
+    differs from what it sent."""
+    if repaired and isinstance(out, dict):
+        out = {**out, "repairedEscapedNewlines": repaired}
+    return out
 
 
 @_tool
@@ -1192,7 +1202,9 @@ def append_lab_log(project_uid: str, lines: list[str], source: str = "claude") -
     author = LAB_LOG_SOURCES.get(str(source).strip().lower())
     if author is None:
         return {"error": f"unknown source {source!r}; expected one of {sorted(LAB_LOG_SOURCES)}"}
-    return _client.append_lab_log(project_uid, author, lines)
+    lines, fixed = repair_lines(lines)
+    return _noting_repairs(_client.append_lab_log(project_uid, author, lines),
+                           ["lines"] if fixed else [])
 
 
 @_tool
@@ -1220,7 +1232,19 @@ def set_labarchives_context(project_uid: str, source: dict, sections: list,
     This REPLACES the sidecar (it mirrors the ELN as of now; a merge would let a deleted section
     linger). It never touches the lab log — record a CHANGE there separately with
     append_lab_log(source="labarchives"). Confirm with the user before the first sync of a project."""
-    return _client.set_labarchives_context(project_uid, source, sections, cohort or [])
+    fixed = False
+    if isinstance(sections, list):
+        repaired_sections = []
+        for sec in sections:
+            if isinstance(sec, dict) and "lines" in sec:
+                new_lines, did = repair_lines(sec["lines"])
+                fixed = fixed or did
+                sec = {**sec, "lines": new_lines}
+            repaired_sections.append(sec)
+        sections = repaired_sections
+    return _noting_repairs(
+        _client.set_labarchives_context(project_uid, source, sections, cohort or []),
+        ["sections.lines"] if fixed else [])
 
 
 @_tool
@@ -1267,8 +1291,8 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
     frontend); nothing here starts work.
 
     `title` — ONE short label (capped at 200 chars); shown in the entries list and Kiwi.
-    `content_md` — Markdown body, ≤ 100 KiB. Attach captured frames by id when the visual is
-    load-bearing: `attach_capture_ids=[capX, capY]` — an unknown id is silently dropped (validated
+    `content_md` — Markdown body, ≤ 100 KiB, with real line breaks (not `\\n` escapes). Attach
+    captured frames by id when the visual is load-bearing: `attach_capture_ids=[capX, capY]` — an unknown id is silently dropped (validated
     against the captures on disk at write time), so a stale reference doesn't fail the write. Two or
     more claims the user could judge separately: one `### s01 · <claim>` heading each (`s02`, …) —
     each section gets its own good / bad / unsure verdict.
@@ -1286,9 +1310,12 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
     have been developing. Don't create speculatively — an unused entry sits in the list forever.
     Follow-up edits go through `revise_blackboard_entry`, which snapshots the pre-edit content so
     nothing is lost. Say "it's on the Blackboard" when you're done, no more."""
+    content_md, fixed = repair_escaped_newlines(content_md)
     fingerprint = _infer_fingerprint(project_uid, image_uid)
-    return _client.create_blackboard_entry(project_uid, title, content_md,
-                                            attach_capture_ids, fingerprint, kiwi_refs)
+    return _noting_repairs(
+        _client.create_blackboard_entry(project_uid, title, content_md,
+                                        attach_capture_ids, fingerprint, kiwi_refs),
+        ["content_md"] if fixed else [])
 
 
 @_tool
@@ -1301,7 +1328,8 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
     and clutters the list.
 
     Flow: read the current entry with `read_blackboard_entry` first, propose the change to the
-    user, THEN call this with the FULL new `content_md` (not a diff). Keep each `### sNN ·`
+    user, THEN call this with the FULL new `content_md` (not a diff; real line breaks, not `\\n`
+    escapes). Keep each `### sNN ·`
     section's id when you reword it and number new sections on from the highest — a verdict is
     stored against the id. Don't drop a section the user marked (`sectionOutcomes` on the read)
     without saying so; if a revise does, the reply's `removedMarked` lists them — tell the user
@@ -1316,8 +1344,12 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
     snapshot — resending the same payload doesn't clutter the history.
 
     404 if the entry doesn't exist. Use `create_blackboard_entry` for a brand-new entry."""
-    return _client.revise_blackboard_entry(project_uid, entry_id, content_md,
-                                            attach_capture_ids, note)
+    content_md, fixed = repair_escaped_newlines(content_md)
+    note, note_fixed = repair_escaped_newlines(note)
+    return _noting_repairs(
+        _client.revise_blackboard_entry(project_uid, entry_id, content_md,
+                                        attach_capture_ids, note),
+        ["content_md"] * fixed + ["note"] * note_fixed)
 
 
 @_tool
@@ -1359,7 +1391,9 @@ def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: 
     over 2 KiB — keep the explanation to a couple of sentences, not a whole write-up (the
     Blackboard entry body is where the long form goes). PROJECT_MEMORY_PLAN Decision 11.
     Additive; never deletes."""
-    return _client.set_blackboard_outcome(project_uid, entry_id, verdict, note)
+    note, fixed = repair_escaped_newlines(note)
+    return _noting_repairs(_client.set_blackboard_outcome(project_uid, entry_id, verdict, note),
+                           ["note"] if fixed else [])
 
 
 @_tool
@@ -1377,7 +1411,10 @@ def set_blackboard_section_outcome(project_uid: str, entry_id: str, section_id: 
     call returns 409, and the right move is to tell them what you would change, not to retry.
     Returns `{ok, sectionId, outcome:{verdict, note, by, at}}`. 404 when the section does not exist.
     Metadata only; no snapshot."""
-    return _client.set_blackboard_section_outcome(project_uid, entry_id, section_id, verdict, note)
+    note, fixed = repair_escaped_newlines(note)
+    return _noting_repairs(
+        _client.set_blackboard_section_outcome(project_uid, entry_id, section_id, verdict, note),
+        ["note"] if fixed else [])
 
 
 @_tool
