@@ -35,6 +35,17 @@ def _section(header):
     return text[start:end]
 
 
+def _isolated_path(root, bin_dir):
+    """PATH of the stub dir + only the tools the stubs use. No system bin dirs: a `julia` already on
+    the machine (CI's ubuntu runner has one) would otherwise shadow the stubs."""
+    tools = os.path.join(root, "tools")
+    os.makedirs(tools, exist_ok=True)
+    for name in ("dirname", "chmod", "printf"):
+        if not os.path.lexists(os.path.join(tools, name)):
+            os.symlink(shutil.which(name), os.path.join(tools, name))
+    return bin_dir + os.pathsep + tools
+
+
 def _stub(path, body="#!/bin/sh\n"):
     pathlib.Path(path).write_text(body, encoding="utf-8")
     os.chmod(path, 0o755)
@@ -58,7 +69,7 @@ class InstallPs1JuliaTest(unittest.TestCase):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def _run(self, **extra_env):
-        env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "USERPROFILE": self.home,
+        env = {"PATH": _isolated_path(self.root, self.bin), "USERPROFILE": self.home,
                "HOME": self.home, "STUB_LOG": self.log, **extra_env}
         out = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", self.script],
                              env=env, capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -127,7 +138,7 @@ class InstallPs1PixiTest(unittest.TestCase):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def _run(self):
-        env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "HOME": self.root,
+        env = {"PATH": _isolated_path(self.root, self.bin), "HOME": self.root,
                "STUB_LOG": self.log, "STUB_PIXI_HOME": os.path.join(self.root, "pixi")}
         return subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", self.script],
                               env=env, capture_output=True, text=True, encoding="utf-8", timeout=120)
